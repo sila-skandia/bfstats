@@ -1,0 +1,56 @@
+/* ===== LANDING PAGE V2 - HACKER THEME ===== */
+
+/* Hide scrollbar for horizontal scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Slow spin animation */
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Timeline bar hover glow */
+.timeline-bar:hover {
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+}
+
+/* Server row selection state */
+tbody tr.selected {
+  background: rgba(245, 158, 11, 0.1) !important;
+  border-left: 3px solid var(--neon-cyan);
+}
+
+/* Responsive table */
+@media (max-width: 1024px) {
+  table {
+    min-width: 600px;
+  }
+}
+
+@media (max-width: 768px) {
+  table {
+    min-width: 0;
+  }
+
+  th, td {
+    padding: 0.5rem 0.25rem;
+  }
+
+  /* Hide MAP (inline in name cell), TIME, MODE, and IP on mobile */
+  th:nth-child(4), td:nth-child(4),
+  th:nth-child(5), td:nth-child(5),
+  th:nth-child(6), td:nth-child(6),
+  th:nth-child(7), td:nth-child(7) {
+    display: none;
+  }
+}

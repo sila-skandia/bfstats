@@ -1,0 +1,738 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "grafana",
+                    "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+            }
+        ]
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": 378,
+    "links": [],
+    "panels": [
+        {
+            "datasource": {
+                "type": "loki",
+                "uid": "loki"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "percentage",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "orange",
+                                "value": 70
+                            },
+                            {
+                                "color": "red",
+                                "value": 85
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 4,
+            "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true,
+                "sizing": "auto"
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "loki",
+                        "uid": "loki"
+                    },
+                    "direction": "backward",
+                    "editorMode": "code",
+                    "expr": "sum(count_over_time({service_name=\"junie-des-1942stats\"} | json | logfmt | Path=~\"/stats/data-explorer/.*\" [1m]))",
+                    "queryType": "range",
+                    "refId": "logs"
+                }
+            ],
+            "title": "Data Explorer Views",
+            "type": "gauge"
+        },
+        {
+            "datasource": {
+                "type": "loki",
+                "uid": "loki"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "custom": {
+                        "align": "auto",
+                        "cellOptions": {
+                            "type": "auto"
+                        },
+                        "inspect": false
+                    },
+                    "links": [
+                        {
+                            "title": "Trace",
+                            "url": "/d/405ad133-8823-4f07-841f-f591f453a0fe?var-traceId=${__data.fields.TraceId}"
+                        }
+                    ],
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "TraceId"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 448
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Browser"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 104
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "ClientIP"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 142
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "ElapsedMilliseconds"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 170
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "IsBot"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 88
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "StatusCode"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 120
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Path"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 328
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 17,
+                "w": 12,
+                "x": 0,
+                "y": 7
+            },
+            "id": 5,
+            "options": {
+                "cellHeight": "sm",
+                "footer": {
+                    "countRows": false,
+                    "fields": "",
+                    "reducer": [
+                        "sum"
+                    ],
+                    "show": false
+                },
+                "showHeader": true,
+                "sortBy": []
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "loki",
+                        "uid": "loki"
+                    },
+                    "direction": "backward",
+                    "editorMode": "code",
+                    "expr": "{service_name=\"junie-des-1942stats\"}\n  | json\n  | route_type=\"player_page\"\n  | SourceContext = \"Microsoft.AspNetCore.Hosting.Diagnostics\"\n  | ElapsedMilliseconds != \"\"\n  | RequestPath !~ \".*search.*\"\n  | label_format RequestPath=\"{{.RequestPath}}\", ElapsedMs=\"{{.ElapsedMilliseconds}}\", TraceId=\"{{.TraceId}}\", ClientIP=\"{{.client_ip}}\", Browser=\"{{.browser}}\", IsBot=\"{{.is_bot}}\",\n  UserAgent=\"{{.user_agent_original}}\"\n",
+                    "queryType": "range",
+                    "refId": "A"
+                }
+            ],
+            "title": "[ Players Page ]",
+            "transformations": [
+                {
+                    "id": "extractFields",
+                    "options": {
+                        "delimiter": ",",
+                        "format": "auto",
+                        "jsonPaths": [
+                            {
+                                "path": ""
+                            }
+                        ],
+                        "source": "labels"
+                    }
+                },
+                {
+                    "id": "organize",
+                    "options": {
+                        "excludeByName": {
+                            "ConnectionId": true,
+                            "ContentType": true,
+                            "ElapsedMs": true,
+                            "EnvironmentUserName": true,
+                            "EventId_Id": true,
+                            "Host": true,
+                            "Line": true,
+                            "MachineName": true,
+                            "Method": true,
+                            "ParentId": true,
+                            "PathBase": true,
+                            "Protocol": true,
+                            "QueryString": true,
+                            "RequestId": true,
+                            "RequestPath": true,
+                            "Scheme": true,
+                            "SourceContext": true,
+                            "SpanId": true,
+                            "Time": true,
+                            "TraceID": true,
+                            "UserAgent": true,
+                            "_i": true,
+                            "_m": true,
+                            "_t": true,
+                            "browser": true,
+                            "client_ip": true,
+                            "deployment_environment": true,
+                            "environment": true,
+                            "host": true,
+                            "host_name": true,
+                            "http_method": true,
+                            "id": true,
+                            "is_bot": true,
+                            "labelTypes": true,
+                            "labels": true,
+                            "level": true,
+                            "request_path": true,
+                            "route_type": true,
+                            "service": true,
+                            "service_name": true,
+                            "service_name_extracted": true,
+                            "service_version": true,
+                            "tsNs": true,
+                            "user_agent_original": true
+                        },
+                        "includeByName": {},
+                        "indexByName": {
+                            "Browser": 8,
+                            "ClientIP": 9,
+                            "ConnectionId": 10,
+                            "ContentType": 11,
+                            "ElapsedMilliseconds": 12,
+                            "ElapsedMs": 13,
+                            "EnvironmentUserName": 14,
+                            "EventId_Id": 15,
+                            "Host": 16,
+                            "IsBot": 17,
+                            "Line": 3,
+                            "MachineName": 18,
+                            "Method": 19,
+                            "ParentId": 20,
+                            "Path": 0,
+                            "PathBase": 21,
+                            "Protocol": 22,
+                            "QueryString": 23,
+                            "RequestId": 24,
+                            "RequestPath": 25,
+                            "Scheme": 26,
+                            "SourceContext": 27,
+                            "SpanId": 28,
+                            "StatusCode": 29,
+                            "Time": 2,
+                            "TraceID": 7,
+                            "TraceId": 30,
+                            "UserAgent": 31,
+                            "_i": 32,
+                            "_m": 33,
+                            "_t": 34,
+                            "browser": 35,
+                            "client_ip": 36,
+                            "deployment_environment": 37,
+                            "environment": 38,
+                            "host": 39,
+                            "host_name": 40,
+                            "http_method": 41,
+                            "id": 6,
+                            "is_bot": 42,
+                            "labelTypes": 5,
+                            "labels": 1,
+                            "level": 43,
+                            "request_path": 44,
+                            "route_type": 45,
+                            "service": 46,
+                            "service_name": 47,
+                            "service_name_extracted": 48,
+                            "service_version": 49,
+                            "tsNs": 4,
+                            "user_agent_original": 50
+                        },
+                        "renameByName": {
+                            "ParentId": ""
+                        }
+                    }
+                }
+            ],
+            "type": "table"
+        },
+        {
+            "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+            },
+            "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 30,
+                "w": 12,
+                "x": 12,
+                "y": 7
+            },
+            "id": 2,
+            "options": {
+                "spanFilters": {
+                    "criticalPathOnly": false,
+                    "matchesOnly": false,
+                    "serviceNameOperator": "=",
+                    "spanNameOperator": "=",
+                    "tags": [
+                        {
+                            "id": "a5e8e9c6-cb6",
+                            "operator": "="
+                        }
+                    ]
+                }
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "tempo",
+                        "uid": "tempo"
+                    },
+                    "hide": false,
+                    "limit": 20,
+                    "metricsQueryType": "range",
+                    "query": "${traceId:raw}",
+                    "queryType": "traceql",
+                    "refId": "B",
+                    "tableType": "traces"
+                }
+            ],
+            "title": "Trace",
+            "type": "traces"
+        },
+        {
+            "datasource": {
+                "type": "loki",
+                "uid": "loki"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "custom": {
+                        "align": "auto",
+                        "cellOptions": {
+                            "type": "auto"
+                        },
+                        "inspect": false
+                    },
+                    "links": [
+                        {
+                            "title": "Trace",
+                            "url": "/d/405ad133-8823-4f07-841f-f591f453a0fe?var-traceId=${__data.fields.TraceId}"
+                        }
+                    ],
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "TraceId"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 448
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Browser"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 104
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "ClientIP"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 132
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "ElapsedMilliseconds"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 180
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "IsBot"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 88
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "StatusCode"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 120
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Path"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 321
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 13,
+                "w": 12,
+                "x": 0,
+                "y": 24
+            },
+            "id": 6,
+            "options": {
+                "cellHeight": "sm",
+                "footer": {
+                    "countRows": false,
+                    "fields": "",
+                    "reducer": [
+                        "sum"
+                    ],
+                    "show": false
+                },
+                "showHeader": true,
+                "sortBy": []
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "loki",
+                        "uid": "loki"
+                    },
+                    "direction": "backward",
+                    "editorMode": "code",
+                    "expr": "{service_name=\"junie-des-1942stats\"}\n  | json\n  | route_type=\"server_page\"\n  | SourceContext = \"Microsoft.AspNetCore.Hosting.Diagnostics\"\n  | ElapsedMilliseconds != \"\"\n  | RequestPath !~ \"/stats/servers/rankings\"  \n  | label_format RequestPath=\"{{.RequestPath}}\", ElapsedMs=\"{{.ElapsedMilliseconds}}\", TraceId=\"{{.TraceId}}\", ClientIP=\"{{.client_ip}}\", Browser=\"{{.browser}}\", IsBot=\"{{.is_bot}}\",\n  UserAgent=\"{{.user_agent_original}}\"\n",
+                    "queryType": "range",
+                    "refId": "A"
+                }
+            ],
+            "title": "[ Server Page ]",
+            "transformations": [
+                {
+                    "id": "extractFields",
+                    "options": {
+                        "delimiter": ",",
+                        "format": "auto",
+                        "jsonPaths": [
+                            {
+                                "path": ""
+                            }
+                        ],
+                        "source": "labels"
+                    }
+                },
+                {
+                    "id": "organize",
+                    "options": {
+                        "excludeByName": {
+                            "ConnectionId": true,
+                            "ContentType": true,
+                            "ElapsedMs": true,
+                            "EnvironmentUserName": true,
+                            "EventId_Id": true,
+                            "Host": true,
+                            "Line": true,
+                            "MachineName": true,
+                            "Method": true,
+                            "ParentId": true,
+                            "PathBase": true,
+                            "Protocol": true,
+                            "QueryString": true,
+                            "RequestId": true,
+                            "RequestPath": true,
+                            "Scheme": true,
+                            "SourceContext": true,
+                            "SpanId": true,
+                            "Time": true,
+                            "TraceID": true,
+                            "UserAgent": true,
+                            "_i": true,
+                            "_m": true,
+                            "_t": true,
+                            "browser": true,
+                            "client_ip": true,
+                            "deployment_environment": true,
+                            "environment": true,
+                            "host": true,
+                            "host_name": true,
+                            "http_method": true,
+                            "id": true,
+                            "is_bot": true,
+                            "labelTypes": true,
+                            "labels": true,
+                            "level": true,
+                            "request_path": true,
+                            "route_type": true,
+                            "service": true,
+                            "service_name": true,
+                            "service_name_extracted": true,
+                            "service_version": true,
+                            "tsNs": true,
+                            "user_agent_original": true
+                        },
+                        "includeByName": {},
+                        "indexByName": {
+                            "Browser": 8,
+                            "ClientIP": 9,
+                            "ConnectionId": 10,
+                            "ContentType": 11,
+                            "ElapsedMilliseconds": 12,
+                            "ElapsedMs": 13,
+                            "EnvironmentUserName": 14,
+                            "EventId_Id": 15,
+                            "Host": 16,
+                            "IsBot": 17,
+                            "Line": 3,
+                            "MachineName": 18,
+                            "Method": 19,
+                            "ParentId": 20,
+                            "Path": 0,
+                            "PathBase": 21,
+                            "Protocol": 22,
+                            "QueryString": 23,
+                            "RequestId": 24,
+                            "RequestPath": 25,
+                            "Scheme": 26,
+                            "SourceContext": 27,
+                            "SpanId": 28,
+                            "StatusCode": 29,
+                            "Time": 2,
+                            "TraceID": 7,
+                            "TraceId": 30,
+                            "UserAgent": 31,
+                            "_i": 32,
+                            "_m": 33,
+                            "_t": 34,
+                            "browser": 35,
+                            "client_ip": 36,
+                            "deployment_environment": 37,
+                            "environment": 38,
+                            "host": 39,
+                            "host_name": 40,
+                            "http_method": 41,
+                            "id": 6,
+                            "is_bot": 42,
+                            "labelTypes": 5,
+                            "labels": 1,
+                            "level": 43,
+                            "request_path": 44,
+                            "route_type": 45,
+                            "service": 46,
+                            "service_name": 47,
+                            "service_name_extracted": 48,
+                            "service_version": 49,
+                            "tsNs": 4,
+                            "user_agent_original": 50
+                        },
+                        "renameByName": {
+                            "ParentId": "",
+                            "Path": "Server"
+                        }
+                    }
+                }
+            ],
+            "type": "table"
+        }
+    ],
+    "preload": false,
+    "schemaVersion": 41,
+    "tags": [],
+    "templating": {
+        "list": [
+            {
+                "current": {
+                    "text": "6e98435b146404e0e2e87b39d25ca1c2",
+                    "value": "6e98435b146404e0e2e87b39d25ca1c2"
+                },
+                "name": "traceId",
+                "options": [],
+                "query": "",
+                "type": "custom"
+            }
+        ]
+    },
+    "time": {
+        "from": "now-30m",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "site stats",
+    "uid": "405ad133-8823-4f07-841f-f591f453a0fe",
+    "version": 43
+}

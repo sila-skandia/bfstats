@@ -1,0 +1,76 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: filebrowser
+  namespace: bf42-stats
+spec:
+  replicas: 0  # Start scaled down — deploy after API creates the assets dir (subPath creates a directory if path doesn't exist)
+  selector:
+    matchLabels:
+      app: filebrowser
+  template:
+    metadata:
+      labels:
+        app: filebrowser
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: filebrowser
+          image: filebrowser/filebrowser:latest
+          ports:
+            - containerPort: 8080
+          command:
+            - filebrowser
+          args:
+            - "-a"
+            - "0.0.0.0"
+            - "-p"
+            - "8080"
+            - "-d"
+            - "/mnt/assets/.filebrowser.db"
+            - "-r"
+            - "/mnt/assets"
+          env:
+            # Mount directory for tournament images (restricted to assets only)
+            - name: FB_ROOT
+              value: "/mnt/assets"
+          volumeMounts:
+            # SECURITY: Mount ONLY the assets directory, not the entire /mnt/data
+            # This prevents access to the database or other sensitive files
+            - name: assets-data
+              mountPath: /mnt/assets
+              subPath: assets
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+      volumes:
+        - name: assets-data
+          persistentVolumeClaim:
+            claimName: bf42-stats-pvc
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: filebrowser-service
+  namespace: bf42-stats
+  labels:
+    app: filebrowser
+  annotations:
+    tailscale.com/expose: "true"
+    tailscale.com/hostname: filebrowser-hetzner
+spec:
+  selector:
+    app: filebrowser
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: web
