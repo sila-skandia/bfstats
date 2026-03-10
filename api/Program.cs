@@ -58,7 +58,7 @@ var seqUrl = earlyConfig["SEQ_URL"] ?? Environment.GetEnvironmentVariable("SEQ_U
 var otlpEndpoint = earlyConfig["OTLP_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("OTLP_ENDPOINT")
     ?? (!string.IsNullOrEmpty(seqUrl) ? $"{seqUrl.TrimEnd('/')}/ingest/otlp/v1/traces" : "http://localhost:4318/v1/traces");
-var serviceName = "junie-des-1942stats";
+var serviceName = "api";
 var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
 var samplingRatioEnv = Environment.GetEnvironmentVariable("TRACE_SAMPLING_RATIO");
 var samplingRatio = double.TryParse(samplingRatioEnv, out var ratio) && ratio is >= 0.0 and <= 1.0 ? ratio : 1.0;
@@ -84,7 +84,7 @@ var loggerConfig = new LoggerConfiguration()
         {
             var bulkOpValue = logEvent.Properties["bulk_operation"].ToString().Trim('"');
             var sourceContext = logEvent.Properties["SourceContext"].ToString();
-            
+
             // Check if bulk_operation is true (case-insensitive) and source is EF Core
             if (bulkOpValue.Equals("true", StringComparison.OrdinalIgnoreCase) &&
                 (sourceContext.Contains("Microsoft.EntityFrameworkCore.Database.Command") ||
@@ -127,7 +127,7 @@ Log.Logger = loggerConfig.CreateLogger();
 
 try
 {
-    Log.Information("Starting up junie-des-1942stats application");
+    Log.Information("Starting up api application");
     var loggingBackend = !string.IsNullOrEmpty(seqUrl) ? "Seq" : "Console only";
     Log.Information("Telemetry backend: {Backend}, Traces: OTLP ({OtlpEndpoint})", loggingBackend, otlpEndpoint);
 
@@ -178,7 +178,7 @@ try
                 metrics.AddRuntimeInstrumentation();
 
                 // Add custom background job meters for correlation analysis
-                metrics.AddMeter("junie-des-1942stats.BackgroundJobs");
+                metrics.AddMeter("BackgroundJobs");
 
                 metrics.AddPrometheusExporter();
             })
@@ -241,7 +241,7 @@ try
                 });
 
                 // Explicitly register only the activity sources we want to trace.
-                // NOTE: Do NOT use a wildcard like "junie-des-1942stats.*" — it would
+                // NOTE: Do NOT use a wildcard like "api.*" — it would
                 // match background-service sources (StatsCollection, Gamification) that
                 // we intentionally exclude to reduce telemetry overhead.
                 tracing.AddSource(ActivitySources.PlayerStats.Name);

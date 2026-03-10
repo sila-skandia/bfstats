@@ -13,7 +13,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deploy", "deploy", "{D2AAAE
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "app", "app", "{E9373366-3A5C-4916-A225-08477EE23649}"
 	ProjectSection(SolutionItems) = preProject
-		deploy\app\deployment-manager.yaml = deploy\app\deployment-manager.yaml
 		deploy\app\deployment.yaml = deploy\app\deployment.yaml
 		deploy\app\ingress.yaml = deploy\app\ingress.yaml
 		deploy\app\notifications-deployment.yaml = deploy\app\notifications-deployment.yaml

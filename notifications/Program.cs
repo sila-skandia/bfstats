@@ -29,7 +29,7 @@ var seqUrl = earlyConfig["SEQ_URL"] ?? Environment.GetEnvironmentVariable("SEQ_U
 var otlpEndpoint = earlyConfig["OTLP_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("OTLP_ENDPOINT")
     ?? (!string.IsNullOrEmpty(seqUrl) ? $"{seqUrl.TrimEnd('/')}/ingest/otlp/v1/traces" : "http://localhost:4318/v1/traces");
-var serviceName = "junie-des-1942stats.Notifications";
+var serviceName = "Notifications";
 var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
 var samplingRatioEnv = Environment.GetEnvironmentVariable("TRACE_SAMPLING_RATIO");
 var samplingRatio = double.TryParse(samplingRatioEnv, out var ratio) && ratio >= 0.0 && ratio <= 1.0 ? ratio : 1.0;
@@ -82,7 +82,7 @@ Log.Logger = loggerConfig.CreateLogger();
 
 try
 {
-    Log.Information("Starting up junie-des-1942stats.Notifications application");
+    Log.Information("Starting up Notifications application");
     var loggingBackend = !string.IsNullOrEmpty(seqUrl) ? "Seq" : "Console only";
     Log.Information("Telemetry backend: {Backend}, Traces: OTLP ({OtlpEndpoint})", loggingBackend, otlpEndpoint);
 
@@ -109,7 +109,7 @@ try
                     tracing.SetSampler(new TraceIdRatioBasedSampler(samplingRatio));
                     Log.Information("Trace sampling enabled: {SamplingRatio:P0}", samplingRatio);
                 }
-                
+
                 tracing.AddAspNetCoreInstrumentation(options =>
                 {
                     // Don't trace health checks and SignalR negotiate
@@ -121,13 +121,13 @@ try
                     options.RecordException = true;
                 });
                 tracing.AddHttpClientInstrumentation();
-                
+
                 tracing.AddOtlpExporter(opt =>
                 {
                     opt.Endpoint = new Uri(otlpEndpoint);
                     opt.Protocol = OtlpExportProtocol.HttpProtobuf;
                 });
-                
+
                 // Explicitly register only the activity sources we want to trace.
                 // Avoid wildcards as they can inadvertently include unwanted sources.
                 tracing.AddSource(ActivitySources.Redis.Name);
