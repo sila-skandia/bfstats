@@ -6,7 +6,7 @@ API backend for [bfstats.io](https://bfstats.io) – Battlefield 1942 player and
 
 ### Prerequisites
 
-- .NET 8+ SDK
+- .NET 10+ SDK
 - Docker & Docker Compose
 
 ### Running Locally
@@ -21,7 +21,7 @@ API backend for [bfstats.io](https://bfstats.io) – Battlefield 1942 player and
    dotnet run
    ```
 
-The API will be available at `http://localhost:9222`.
+The API will be available at `http://localhost:9222/stats`.
 
 ### Backing Up the Database
 
