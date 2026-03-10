@@ -1,10 +1,13 @@
 pipeline {
   agent none
+  parameters {
+    booleanParam(name: 'BUILD_ALL', defaultValue: false, description: 'Build and deploy all services, ignoring changeset detection')
+  }
   stages {
     stage('Build and Deploy') {
       parallel {
         stage('API Pipeline') {
-          when { changeset "api/**" }
+          when { anyOf { changeset "api/**"; expression { params.BUILD_ALL } } }
           stages {
             stage('Build API Docker Image') {
               agent {
@@ -72,7 +75,7 @@ pipeline {
           }
         }
         stage('Notifications Pipeline') {
-          when { changeset "notifications/**" }
+          when { anyOf { changeset "notifications/**"; expression { params.BUILD_ALL } } }
           stages {
             stage('Build Notifications Docker Image') {
               agent {
@@ -131,7 +134,7 @@ pipeline {
           }
         }
         stage('UI Pipeline') {
-          when { changeset "ui/**" }
+          when { anyOf { changeset "ui/**"; expression { params.BUILD_ALL } } }
           stages {
             stage('Build UI Docker Image') {
               agent {
