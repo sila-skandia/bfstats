@@ -1,0 +1,196 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: bf1942-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - bf1942-dev
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: bf1942-loki
+    ports:
+      - "3100:3100"
+    networks:
+      - bf1942-dev
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  tempo:
+    image: grafana/tempo:2.2.0
+    container_name: bf1942-tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    networks:
+      - bf1942-dev
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+      - tempo-data:/tmp/tempo
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3200/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  seq:
+    image: datalust/seq:latest
+    container_name: bf1942-seq
+    ports:
+      - "5341:80"      # Web UI + API + ingestion (SEQ_URL=http://localhost:5341, OTLP: http://localhost:5341/ingest/otlp/v1/traces)
+      - "5342:5341"    # Ingestion-only port (alternative: http://localhost:5342/ingest/otlp/v1/traces)
+    networks:
+      - bf1942-dev
+    environment:
+      - ACCEPT_EULA=Y
+      - SEQ_FIRSTRUN_ADMINPASSWORD=admin
+    volumes:
+      - seq-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: bf1942-grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - bf1942-dev
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - loki
+      - tempo
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: bf1942-filebrowser
+    ports:
+      - "8081:8080"
+    networks:
+      - bf1942-dev
+    environment:
+      # Mount directory for tournament images
+      - FB_ROOT=/data/tournament-images
+    volumes:
+      # Bind mount to host filesystem for easy access
+      - ./tournament-images:/data/tournament-images
+    user: "${UID:-1000}:${GID:-1000}"
+    # Start filebrowser listening on all interfaces
+    entrypoint: filebrowser -a 0.0.0.0 -p 8080 -d /data/tournament-images/.filebrowser.db -r /data/tournament-images
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  sqlite-browser:
+    image: alpine:latest
+    container_name: bf1942-sqlite-browser
+    ports:
+      - "8082:8080"
+    networks:
+      - bf1942-dev
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # Install Python and sqlite-web
+        apk add --no-cache python3 py3-pip sqlite
+        pip3 install sqlite-web --break-system-packages
+        # Start the web interface - database at /data/playertracker.db (from mounted api dir)
+        sqlite_web /data/playertracker.db --host 0.0.0.0 --port 8080
+    volumes:
+      # Mount api dir (not the file): bind-mounting a non-existent file makes Docker create
+      # a directory, which causes "mount a directory onto a file" on start. The DB is at
+      # ./api/playertracker.db; run the API first if it doesn't exist yet.
+      - ./api:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: bf1942-neo4j
+    ports:
+      - "7474:7474"   # HTTP web interface
+      - "7687:7687"   # Bolt protocol
+    networks:
+      - bf1942-dev
+    environment:
+      # Authentication
+      - NEO4J_AUTH=neo4j/bf1942stats
+      
+      # Performance tuning - adjust based on available RAM
+      # Rule of thumb: allocate 50% of available RAM to Neo4j
+      # These are conservative defaults for 8GB RAM system
+      - NEO4J_server_memory_heap_initial__size=1G
+      - NEO4J_server_memory_heap_max__size=2G
+      - NEO4J_server_memory_pagecache_size=1G
+      
+      # Query performance
+      - NEO4J_server_memory_query__cache_per__db__cache__num__entries=1000
+      
+      # Connection pooling
+      - NEO4J_server_bolt_thread__pool__min__size=5
+      - NEO4J_server_bolt_thread__pool__max__size=400
+      
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+      - neo4j-import:/var/lib/neo4j/import
+      - neo4j-plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+networks:
+  bf1942-dev:
+    driver: bridge
+
+volumes:
+  redis-data:
+  loki-data:
+  tempo-data:
+  seq-data:
+  grafana-data:
+  neo4j-data:
+  neo4j-logs:
+  neo4j-import:
+  neo4j-plugins:

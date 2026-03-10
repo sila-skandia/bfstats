@@ -1,0 +1,99 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "api", "api\api.csproj", "{8407897C-9190-4688-835C-0B1D2CD6D9D4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "notifications", "notifications\notifications.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deploy", "deploy", "{D2AAAE5D-8D28-4907-AD74-0417D6DDC04D}"
+	ProjectSection(SolutionItems) = preProject
+		deploy\Dockerfile = deploy\Dockerfile
+		deploy\pod.yaml = deploy\pod.yaml
+		Jenkinsfile = Jenkinsfile
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "app", "app", "{E9373366-3A5C-4916-A225-08477EE23649}"
+	ProjectSection(SolutionItems) = preProject
+		deploy\app\deployment-manager.yaml = deploy\app\deployment-manager.yaml
+		deploy\app\deployment.yaml = deploy\app\deployment.yaml
+		deploy\app\ingress.yaml = deploy\app\ingress.yaml
+		deploy\app\notifications-deployment.yaml = deploy\app\notifications-deployment.yaml
+		deploy\app\service-monitor.yaml = deploy\app\service-monitor.yaml
+		deploy\app\priority-class.yml = deploy\app\priority-class.yml
+		deploy\app\seq-deployment.yaml = deploy\app\seq-deployment.yaml
+		deploy\app\seq-external-service.yaml = deploy\app\seq-external-service.yaml
+		deploy\app\filebrowser-deployment.yaml = deploy\app\filebrowser-deployment.yaml
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "api.tests", "tests\api\api.tests.csproj", "{09D635B4-2E52-4D4C-8F45-F8B8A0D557C3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "notifications.tests", "tests\notifications\notifications.tests.csproj", "{85462485-0084-458B-A80F-583E37B800D1}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "agents", "agents", "{8A24561D-C8D9-47B0-A61A-3847CE79454A}"
+	ProjectSection(SolutionItems) = preProject
+		CLAUDE.md = CLAUDE.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "features", "features", "{F38BB0E5-DA50-4C54-9FBE-BB04D731BBA3}"
+	ProjectSection(SolutionItems) = preProject
+		features\achievements\achievements.md = features\achievements\achievements.md
+		features\api-testing\api-test-example.md = features\api-testing\api-test-example.md
+		features\admin-tournament-changes\ADMIN_TOURNAMENT_CHANGES.md = features\admin-tournament-changes\ADMIN_TOURNAMENT_CHANGES.md
+		features\oauth-implementation\OAUTH_IMPLEMENTATION_GUIDE.md = features\oauth-implementation\OAUTH_IMPLEMENTATION_GUIDE.md
+		features\logging-strategy\LOGGING_STRATEGY.md = features\logging-strategy\LOGGING_STRATEGY.md
+		features\api-schema-changes\API_SCHEMA_CHANGES.md = features\api-schema-changes\API_SCHEMA_CHANGES.md
+		features\code-quality-refactoring\FINAL_STATUS.md = features\code-quality-refactoring\FINAL_STATUS.md
+		features\code-quality-refactoring\IMPLEMENTATION_SUMMARY.md = features\code-quality-refactoring\IMPLEMENTATION_SUMMARY.md
+		features\observability-monitoring\README-observability.md = features\observability-monitoring\README-observability.md
+		features\tournament-leaderboard-implementation\TOURNAMENT_LEADERBOARD_IMPLEMENTATION.md = features\tournament-leaderboard-implementation\TOURNAMENT_LEADERBOARD_IMPLEMENTATION.md
+		features\discord-alerts\discord-alerts-setup.md = features\discord-alerts\discord-alerts-setup.md
+		features\tournament-rules-xss-prevention\TOURNAMENT_RULES_XSS_PREVENTION.md = features\tournament-rules-xss-prevention\TOURNAMENT_RULES_XSS_PREVENTION.md
+		features\api-change-quick-reference\API_CHANGE_QUICK_REFERENCE.md = features\api-change-quick-reference\API_CHANGE_QUICK_REFERENCE.md
+		features\tournament-rounds-update\TOURNAMENT_ROUNDS_UPDATE.md = features\tournament-rounds-update\TOURNAMENT_ROUNDS_UPDATE.md
+		features\discord-oauth-backend-setup\DISCORD_OAUTH_BACKEND_SETUP.md = features\discord-oauth-backend-setup\DISCORD_OAUTH_BACKEND_SETUP.md
+		features\test-achievement-response\test-achievement-response.md = features\test-achievement-response\test-achievement-response.md
+		features\tournament-ui-spec\TOURNAMENT_UI_SPEC.md = features\tournament-ui-spec\TOURNAMENT_UI_SPEC.md
+		features\discord-oauth-quick-start\DISCORD_OAUTH_QUICK_START.md = features\discord-oauth-quick-start\DISCORD_OAUTH_QUICK_START.md
+		features\game-trends-api\GAME_TRENDS_API.md = features\game-trends-api\GAME_TRENDS_API.md
+		features\similar-players\SIMILAR_PLAYERS_ALGORITHM.md = features\similar-players\SIMILAR_PLAYERS_ALGORITHM.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "local.dev", "local.dev", "{674057F4-2C8B-47AA-BBCC-9C302B2DCA2D}"
+	ProjectSection(SolutionItems) = preProject
+		docker-compose.dev.yml = docker-compose.dev.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ingress", "ingress", "{504C0194-68BC-44F6-A5AD-98C9EA71A346}"
+	ProjectSection(SolutionItems) = preProject
+		deploy\app\ingress\cloudflared-tunnel.yml = deploy\app\ingress\cloudflared-tunnel.yml
+		deploy\app\ingress\deployment.yaml = deploy\app\ingress\deployment.yaml
+		deploy\app\ingress\README.md = deploy\app\ingress\README.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8407897C-9190-4688-835C-0B1D2CD6D9D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8407897C-9190-4688-835C-0B1D2CD6D9D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8407897C-9190-4688-835C-0B1D2CD6D9D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8407897C-9190-4688-835C-0B1D2CD6D9D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{09D635B4-2E52-4D4C-8F45-F8B8A0D557C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{09D635B4-2E52-4D4C-8F45-F8B8A0D557C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{09D635B4-2E52-4D4C-8F45-F8B8A0D557C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{09D635B4-2E52-4D4C-8F45-F8B8A0D557C3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{85462485-0084-458B-A80F-583E37B800D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{85462485-0084-458B-A80F-583E37B800D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{85462485-0084-458B-A80F-583E37B800D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{85462485-0084-458B-A80F-583E37B800D1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{E9373366-3A5C-4916-A225-08477EE23649} = {D2AAAE5D-8D28-4907-AD74-0417D6DDC04D}
+		{504C0194-68BC-44F6-A5AD-98C9EA71A346} = {E9373366-3A5C-4916-A225-08477EE23649}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,38 @@
+{
+  "profiles": {
+    "junie-des-1942stats": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:9222",
+        "workingDirectory": ".",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASSETS_STORAGE_PATH": "../tournament-images",
+        "REDIS_CONNECTION_STRING": "localhost:6379",
+        "SEQ_URL": "http://localhost:5341",
+        "ENABLE_GAMIFICATION_PROCESSING": "true",
+        "STATS_COLLECTION_INTERVAL_SECONDS": "120",
+        "GAMIFICATION_MAX_CONCURRENT_ROUNDS": "10",
+        "PLAYER_INSIGHTS_MAX_CONCURRENT_QUERIES": "10",
+        "Neo4j:Uri": "bolt://localhost:7687",
+        "Neo4j:Username": "neo4j",
+        "Neo4j:Password": "bf1942stats",
+        "Neo4j:Database": "neo4j",
+        "Jwt:Issuer": "https://localhost:9222",
+        "Jwt:Audience": "http://localhost:5173",
+        "RefreshToken:CookieName": "rt",
+        "RefreshToken:CookiePath": "/stats",
+        "RefreshToken:Days": "60",
+        "BotDetection__DefaultPlayerNames__0": "BFPlayer",
+        "BotDetection__DefaultPlayerNames__1": "Player",
+        "BotDetection__DefaultPlayerNames__2": "BFSoldier",
+        "ServerFiltering__StuckServers__0": "Tragic! [USA] - Dallas",
+        "AzureOpenAI:Endpoint": "https://dylan-ml3fg2xi-eastus.cognitiveservices.azure.com/",
+        "AzureOpenAI:DeploymentName": "gpt-4o-mini",
+        "AzureOpenAI:MaxTokens": "4096",
+        "AzureOpenAI:Temperature": "0.7"
+      }
+    }
+  }
+}
