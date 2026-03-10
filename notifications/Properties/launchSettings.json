@@ -1,6 +1,6 @@
 ﻿{
   "profiles": {
-    "junie-des-1942stats.Notifications": {
+    "notifications": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,

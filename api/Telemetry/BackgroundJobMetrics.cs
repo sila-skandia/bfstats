@@ -8,7 +8,7 @@ namespace api.Telemetry;
 /// </summary>
 public static class BackgroundJobMetrics
 {
-    private static readonly Meter Meter = new("junie-des-1942stats.BackgroundJobs", "1.0.0");
+    private static readonly Meter Meter = new("BackgroundJobs", "1.0.0");
 
     // === Job Execution Tracking ===
     // Use rate() in PromQL to see which jobs are active at any time

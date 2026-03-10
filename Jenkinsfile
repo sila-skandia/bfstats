@@ -1,6 +1,6 @@
 pipeline {
   agent none
-  parameters {
+parameters {
     booleanParam(name: 'BUILD_ALL', defaultValue: false, description: 'Build and deploy all services, ignoring changeset detection')
   }
   stages {

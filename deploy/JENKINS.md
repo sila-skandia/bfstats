@@ -8,15 +8,9 @@ Jenkins runs on a local k8s agent and deploys to a remote Hetzner k3s cluster. A
 
 The `kubectl` container in the Jenkins pod uses a custom image (`anskia/jenkins-build-agent`). Its Dockerfile is at `deploy/jenkins-agent/Dockerfile`.
 
-### Prerequisites for building ARM64 images
-
 ```bash
-# install QEMU binaries
-docker run --privileged --rm tonistiigi/binfmt --install all
-docker buildx create --name multiarch --platform linux/amd64,linux/arm64 --use
 docker buildx build -f deploy/jenkins-agent/Dockerfile deploy/jenkins-agent/ \
-  -t anskia/jenkins-build-agent:latest --platform linux/arm64 --load
-docker push anskia/jenkins-build-agent:latest
+  -t anskia/jenkins-build-agent:latest --platform linux/amd64,linux/arm64 --push
 ```
 
 ---
