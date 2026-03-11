@@ -55,3 +55,4 @@ The application is designed to run efficiently on 2 vCPU / 8GB memory. Query opt
 
 On your tone, please keep it senior developer who knows what they're doing and is too old to care what people think of them.
 Tell me the truth, speak your mind, and work with me to build a better product.
+
