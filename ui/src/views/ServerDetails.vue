@@ -47,6 +47,16 @@ const showPlayersModal = ref(false);
 const currentLeaderboardPeriod = ref<'week' | 'month' | 'alltime'>('week');
 const minPlayersForWeighting = ref(15);
 const minRoundsForKillBoards = ref(20);
+const roundFilterMode = ref<'withPlayers' | 'all' | 'min'>('withPlayers');
+const roundParticipantThreshold = ref(4);
+const normalizedRoundParticipantThreshold = computed(() => Math.max(1, Math.round(roundParticipantThreshold.value)));
+const recentRoundFilters = computed<Record<string, string>>(() => {
+  if (roundFilterMode.value === 'all') {
+    return {};
+  }
+  const minParticipants = roundFilterMode.value === 'min' ? normalizedRoundParticipantThreshold.value : 1;
+  return { minParticipants: minParticipants.toString() };
+});
 const historyRollingWindow = ref('7d');
 const historyPeriod = ref<'1d' | '3d' | '7d' | 'longer'>('7d');
 const longerPeriod = ref<'1month' | '3months' | 'thisyear' | 'alltime'>('1month');
@@ -724,12 +734,53 @@ const closeForecastOverlay = () => {
                     </router-link>
                   </div>
                   <div class="explorer-card-body p-0">
+                    <div class="flex flex-col gap-2 px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-card)]">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-[10px] text-neutral-500 font-mono uppercase tracking-wide">Rounds</span>
+                        <button
+                          type="button"
+                          class="explorer-toggle-btn text-[10px] px-3 py-1.5"
+                          :class="{ 'explorer-toggle-btn--active': roundFilterMode === 'withPlayers' }"
+                          @click="roundFilterMode = 'withPlayers'"
+                        >
+                          With Players
+                        </button>
+                        <button
+                          type="button"
+                          class="explorer-toggle-btn text-[10px] px-3 py-1.5"
+                          :class="{ 'explorer-toggle-btn--active': roundFilterMode === 'all' }"
+                          @click="roundFilterMode = 'all'"
+                        >
+                          All Rounds
+                        </button>
+                        <button
+                          type="button"
+                          class="explorer-toggle-btn text-[10px] px-3 py-1.5"
+                          :class="{ 'explorer-toggle-btn--active': roundFilterMode === 'min' }"
+                          @click="roundFilterMode = 'min'"
+                        >
+                          ≥ {{ normalizedRoundParticipantThreshold }} players
+                        </button>
+                      </div>
+                      <div v-if="roundFilterMode === 'min'" class="flex items-center gap-2 text-[10px] text-neutral-400 font-mono uppercase tracking-wide">
+                        <label class="text-[10px] text-neutral-500">Threshold</label>
+                        <input
+                          v-model.number="roundParticipantThreshold"
+                          type="number"
+                          min="1"
+                          step="1"
+                          class="w-16 px-2 py-1 text-xs bg-neutral-900 border border-neutral-700 rounded text-white"
+                        />
+                        <span class="text-[10px] text-neutral-500 font-mono">players</span>
+                      </div>
+                    </div>
                     <RecentSessionsList
                       v-if="serverDetails?.serverGuid"
                       :server-guid="serverDetails.serverGuid"
                       :server-name="serverName"
                       :limit="5"
                       :initial-visible-count="2"
+                      :filters="recentRoundFilters"
                       empty-message="No recent sessions found"
                     />
                   </div>
