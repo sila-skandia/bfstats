@@ -38,6 +38,7 @@ const props = defineProps<{
   limit?: number;
   emptyMessage?: string;
   initialVisibleCount?: number; // If set, only show this many initially with expand option
+  filters?: Record<string, string>;
 }>();
 
 const router = useRouter();
@@ -45,6 +46,13 @@ const sessions = ref<ServerMapSession[]>([]);
 const isLoadingSessions = ref(false);
 const sessionsError = ref<string | null>(null);
 const isExpanded = ref(false);
+const filtersKey = computed(() => {
+  if (!props.filters) return '';
+  const entries = Object.entries(props.filters)
+    .map(([key, value]) => [key, value])
+    .sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify(entries);
+});
 
 // Computed property for visible sessions
 const visibleSessions = computed(() => {
@@ -115,6 +123,13 @@ const loadSessions = async () => {
     if (props.mapName) {
       filters.mapName = props.mapName;
     }
+    if (props.filters) {
+      Object.entries(props.filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          filters[key] = value;
+        }
+      });
+    }
 
     const response = await fetchSessions(1, props.limit || 5, filters, 'startTime', 'desc');
     
@@ -132,9 +147,12 @@ onMounted(() => {
   loadSessions();
 });
 
-watch(() => [props.serverGuid, props.mapName], () => {
-  loadSessions();
-});
+watch(
+  () => [props.serverGuid, props.mapName, filtersKey.value],
+  () => {
+    loadSessions();
+  }
+);
 </script>
 
 <template>
