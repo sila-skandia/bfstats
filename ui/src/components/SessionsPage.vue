@@ -1,10 +1,25 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, onUnmounted } from 'vue';
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchSessions, PlayerContextInfo } from '../services/playerStatsService';
 import HeroBackButton from './HeroBackButton.vue';
 import { formatPlayTime, formatRelativeTimeShort as formatRelativeTime } from '@/utils/timeUtils';
 import { calculateKDR, getKDRColor, getTeamColor, getMapAccentColor } from '@/utils/statsUtils';
+import { Line, Bar } from 'vue-chartjs';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
 
 // Router
 const router = useRouter();
@@ -58,9 +73,314 @@ const playerInfo = ref<PlayerContextInfo | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const currentPage = ref(1);
-const pageSize = ref(10);
+const pageSize = ref(100);
 const totalItems = ref(0);
 const totalPages = ref(0);
+
+// Filter state
+const showFilters = ref(false);
+const filterMinParticipants = ref<number | null>(null);
+const filterMapName = ref('');
+const filterDateFrom = ref('');
+const filterDateTo = ref('');
+
+const hasActiveFilters = computed(() => {
+  return (filterMinParticipants.value !== null && filterMinParticipants.value > 0)
+    || filterMapName.value.trim() !== ''
+    || filterDateFrom.value !== ''
+    || filterDateTo.value !== '';
+});
+
+const activeFilterCount = computed(() => {
+  let count = 0;
+  if (filterMinParticipants.value !== null && filterMinParticipants.value > 0) count++;
+  if (filterMapName.value.trim()) count++;
+  if (filterDateFrom.value || filterDateTo.value) count++;
+  return count;
+});
+
+const clearFilters = () => {
+  filterMinParticipants.value = null;
+  filterMapName.value = '';
+  filterDateFrom.value = '';
+  filterDateTo.value = '';
+  currentPage.value = 1;
+  fetchData();
+};
+
+const applyFilters = () => {
+  currentPage.value = 1;
+  fetchData();
+};
+
+// Show/hide charts
+const showCharts = ref(true);
+
+// --- Chart data: Winner vs Loser scores over time ---
+const roundsWithScores = computed(() => {
+  return [...rounds.value]
+    .filter(r => r.team1Points !== undefined && r.team2Points !== undefined && r.team1Label && r.team2Label)
+    .reverse(); // chronological order (oldest first)
+});
+
+const scoreLineChartData = computed(() => {
+  const data = roundsWithScores.value;
+  const labels = data.map(r => {
+    const d = new Date(r.startTime);
+    return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${r.mapName}`;
+  });
+
+  const winnerScores = data.map(r => {
+    const t1 = r.team1Points!;
+    const t2 = r.team2Points!;
+    return Math.max(t1, t2);
+  });
+
+  const loserScores = data.map(r => {
+    const t1 = r.team1Points!;
+    const t2 = r.team2Points!;
+    return Math.min(t1, t2);
+  });
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Winner',
+        data: winnerScores,
+        borderColor: '#34d399',
+        backgroundColor: 'rgba(52, 211, 153, 0.1)',
+        borderWidth: 2,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        tension: 0.3,
+        fill: false,
+      },
+      {
+        label: 'Loser',
+        data: loserScores,
+        borderColor: '#f87171',
+        backgroundColor: 'rgba(248, 113, 113, 0.1)',
+        borderWidth: 2,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        tension: 0.3,
+        fill: false,
+      },
+    ],
+  };
+});
+
+const scoreLineChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: {
+    mode: 'index' as const,
+    intersect: false,
+  },
+  plugins: {
+    legend: {
+      display: true,
+      position: 'top' as const,
+      labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 12, padding: 16 },
+    },
+    tooltip: {
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      titleColor: '#e2e8f0',
+      bodyColor: '#94a3b8',
+      borderColor: 'rgba(100, 116, 139, 0.3)',
+      borderWidth: 1,
+      padding: 10,
+      callbacks: {
+        title: (items: any[]) => {
+          const idx = items[0]?.dataIndex;
+          if (idx === undefined) return '';
+          const r = roundsWithScores.value[idx];
+          if (!r) return '';
+          return `${r.mapName} — ${r.serverName}`;
+        },
+        afterTitle: (items: any[]) => {
+          const idx = items[0]?.dataIndex;
+          if (idx === undefined) return '';
+          const r = roundsWithScores.value[idx];
+          if (!r) return '';
+          const t1 = r.team1Points!;
+          const t2 = r.team2Points!;
+          const winner = t1 >= t2 ? r.team1Label : r.team2Label;
+          const loser = t1 >= t2 ? r.team2Label : r.team1Label;
+          return `${winner} beat ${loser}`;
+        },
+      },
+    },
+  },
+  scales: {
+    x: {
+      display: false,
+    },
+    y: {
+      ticks: { color: '#64748b', font: { size: 10 } },
+      grid: { color: 'rgba(100, 116, 139, 0.15)' },
+      title: { display: true, text: 'Tickets', color: '#64748b', font: { size: 10 } },
+    },
+  },
+}));
+
+// --- Chart data: Player placement frequency (1st, 2nd, 3rd) ---
+const placementChartData = computed(() => {
+  const placements: Record<string, { first: number; second: number; third: number }> = {};
+
+  for (const round of rounds.value) {
+    if (!round.topPlayers || round.topPlayers.length === 0) continue;
+    const top3 = round.topPlayers.slice(0, 3);
+    top3.forEach((player, idx) => {
+      if (!placements[player.playerName]) {
+        placements[player.playerName] = { first: 0, second: 0, third: 0 };
+      }
+      if (idx === 0) placements[player.playerName].first++;
+      else if (idx === 1) placements[player.playerName].second++;
+      else if (idx === 2) placements[player.playerName].third++;
+    });
+  }
+
+  // Sort by total placements descending, take top 15
+  const sorted = Object.entries(placements)
+    .map(([name, counts]) => ({ name, ...counts, total: counts.first + counts.second + counts.third }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 15);
+
+  return {
+    labels: sorted.map(p => p.name),
+    datasets: [
+      {
+        label: '1st',
+        data: sorted.map(p => p.first),
+        backgroundColor: '#fbbf24',
+        borderColor: '#f59e0b',
+        borderWidth: 1,
+        borderRadius: 2,
+      },
+      {
+        label: '2nd',
+        data: sorted.map(p => p.second),
+        backgroundColor: '#94a3b8',
+        borderColor: '#64748b',
+        borderWidth: 1,
+        borderRadius: 2,
+      },
+      {
+        label: '3rd',
+        data: sorted.map(p => p.third),
+        backgroundColor: '#d97706',
+        borderColor: '#b45309',
+        borderWidth: 1,
+        borderRadius: 2,
+      },
+    ],
+  };
+});
+
+const placementChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  indexAxis: 'y' as const,
+  plugins: {
+    legend: {
+      display: true,
+      position: 'top' as const,
+      labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 12, padding: 16 },
+    },
+    tooltip: {
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      titleColor: '#e2e8f0',
+      bodyColor: '#94a3b8',
+      borderColor: 'rgba(100, 116, 139, 0.3)',
+      borderWidth: 1,
+      padding: 10,
+    },
+  },
+  scales: {
+    x: {
+      stacked: true,
+      ticks: { color: '#64748b', font: { size: 10 }, stepSize: 1 },
+      grid: { color: 'rgba(100, 116, 139, 0.15)' },
+      title: { display: true, text: 'Rounds', color: '#64748b', font: { size: 10 } },
+    },
+    y: {
+      stacked: true,
+      ticks: { color: '#e2e8f0', font: { size: 11 } },
+      grid: { display: false },
+    },
+  },
+}));
+
+// --- Chart data: Team win counts ---
+const teamWinChartData = computed(() => {
+  const wins: Record<string, number> = {};
+
+  for (const round of rounds.value) {
+    if (round.team1Points === undefined || round.team2Points === undefined) continue;
+    if (!round.team1Label || !round.team2Label) continue;
+    const winner = round.team1Points >= round.team2Points ? round.team1Label : round.team2Label;
+    wins[winner] = (wins[winner] || 0) + 1;
+  }
+
+  const sorted = Object.entries(wins).sort((a, b) => b[1] - a[1]);
+
+  // Map team names to colors
+  const teamColors: Record<string, string> = {};
+  for (const [team] of sorted) {
+    const lbl = team.toLowerCase();
+    if (lbl.includes('axis') || lbl.includes('red') || lbl.includes('north') || lbl.includes('nva') || lbl.includes('team 2')) {
+      teamColors[team] = '#f87171';
+    } else if (lbl.includes('allies') || lbl.includes('blue') || lbl.includes('south') || lbl.includes('usa') || lbl.includes('team 1')) {
+      teamColors[team] = '#60a5fa';
+    } else {
+      teamColors[team] = '#a78bfa';
+    }
+  }
+
+  return {
+    labels: sorted.map(([team]) => team),
+    datasets: [
+      {
+        label: 'Wins',
+        data: sorted.map(([, count]) => count),
+        backgroundColor: sorted.map(([team]) => teamColors[team]),
+        borderColor: sorted.map(([team]) => teamColors[team]),
+        borderWidth: 1,
+        borderRadius: 4,
+      },
+    ],
+  };
+});
+
+const teamWinChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  indexAxis: 'y' as const,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      titleColor: '#e2e8f0',
+      bodyColor: '#94a3b8',
+      borderColor: 'rgba(100, 116, 139, 0.3)',
+      borderWidth: 1,
+      padding: 10,
+    },
+  },
+  scales: {
+    x: {
+      ticks: { color: '#64748b', font: { size: 10 }, stepSize: 1 },
+      grid: { color: 'rgba(100, 116, 139, 0.15)' },
+      title: { display: true, text: 'Wins', color: '#64748b', font: { size: 10 } },
+    },
+    y: {
+      ticks: { color: '#e2e8f0', font: { size: 12, weight: 'bold' as const } },
+      grid: { display: false },
+    },
+  },
+}));
 
 const navigateToRoundReport = (roundId: string) => {
   router.push({
@@ -84,8 +404,22 @@ const fetchData = async () => {
     if (props.serverName) {
       filters.serverName = props.serverName;
     }
-    if (props.mapName) {
-      filters.mapName = props.mapName;
+    // Use filter map name if set, otherwise fall back to prop
+    const effectiveMapName = filterMapName.value.trim() || props.mapName;
+    if (effectiveMapName) {
+      filters.mapName = effectiveMapName;
+    }
+    if (filterMinParticipants.value !== null && filterMinParticipants.value > 0) {
+      filters.minParticipants = filterMinParticipants.value.toString();
+    }
+    if (filterDateFrom.value) {
+      filters.startTimeFrom = new Date(filterDateFrom.value).toISOString();
+    }
+    if (filterDateTo.value) {
+      // Set to end of day for the "to" date
+      const toDate = new Date(filterDateTo.value);
+      toDate.setHours(23, 59, 59, 999);
+      filters.startTimeTo = toDate.toISOString();
     }
 
     const response = await fetchSessions(
@@ -154,6 +488,94 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Filters -->
+    <div class="w-full max-w-screen-2xl mx-auto px-4 sm:px-8 lg:px-12 pt-4">
+      <div class="bg-slate-800/50 border border-slate-700/50 rounded-lg overflow-hidden">
+        <!-- Filter Toggle -->
+        <button
+          type="button"
+          class="w-full flex items-center justify-between px-4 py-3 text-sm text-slate-300 hover:bg-slate-700/30 transition-colors"
+          @click="showFilters = !showFilters"
+        >
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span class="font-medium">Filters</span>
+            <span v-if="activeFilterCount > 0" class="px-1.5 py-0.5 text-[10px] font-bold bg-cyan-500/20 text-cyan-400 rounded">
+              {{ activeFilterCount }}
+            </span>
+          </div>
+          <span class="text-xs text-slate-500" :class="{ 'rotate-180': showFilters }">▼</span>
+        </button>
+
+        <!-- Filter Controls -->
+        <form v-if="showFilters" class="px-4 py-4 border-t border-slate-700/50 space-y-4" @submit.prevent="applyFilters">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Min Participants -->
+            <div>
+              <label class="block text-[10px] text-slate-500 font-mono uppercase tracking-wide mb-1.5">Min Players</label>
+              <input
+                v-model.number="filterMinParticipants"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="e.g. 4"
+                class="w-full px-3 py-2 text-sm bg-slate-900/50 border border-slate-600/50 rounded text-white placeholder-slate-600 focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
+              />
+            </div>
+
+            <!-- Map Name -->
+            <div>
+              <label class="block text-[10px] text-slate-500 font-mono uppercase tracking-wide mb-1.5">Map</label>
+              <input
+                v-model="filterMapName"
+                type="text"
+                placeholder="e.g. Wake Island"
+                class="w-full px-3 py-2 text-sm bg-slate-900/50 border border-slate-600/50 rounded text-white placeholder-slate-600 focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
+              />
+            </div>
+
+            <!-- Date From -->
+            <div>
+              <label class="block text-[10px] text-slate-500 font-mono uppercase tracking-wide mb-1.5">From Date</label>
+              <input
+                v-model="filterDateFrom"
+                type="date"
+                class="w-full px-3 py-2 text-sm bg-slate-900/50 border border-slate-600/50 rounded text-white focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
+              />
+            </div>
+
+            <!-- Date To -->
+            <div>
+              <label class="block text-[10px] text-slate-500 font-mono uppercase tracking-wide mb-1.5">To Date</label>
+              <input
+                v-model="filterDateTo"
+                type="date"
+                class="w-full px-3 py-2 text-sm bg-slate-900/50 border border-slate-600/50 rounded text-white focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <!-- Filter Actions -->
+          <div class="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              class="px-4 py-2 text-xs font-medium bg-cyan-600 hover:bg-cyan-500 text-white rounded transition-colors"
+            >
+              Apply Filters
+            </button>
+            <button
+              v-if="hasActiveFilters"
+              type="button"
+              class="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white border border-slate-600/50 hover:border-slate-500 rounded transition-colors"
+              @click="clearFilters"
+            >
+              Clear All
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Main Content -->
     <div class="w-full max-w-screen-2xl mx-auto px-4 sm:px-8 lg:px-12 py-8">
       <!-- Loading State -->
@@ -200,7 +622,52 @@ onUnmounted(() => {
               <option value="10">10</option>
               <option value="20">20</option>
               <option value="50">50</option>
+              <option value="100">100</option>
             </select>
+          </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div v-if="rounds.length > 1" class="bg-slate-800/30 backdrop-blur-sm rounded-lg border border-slate-700/50 overflow-hidden">
+          <button
+            type="button"
+            class="w-full flex items-center justify-between px-4 py-3 text-sm text-slate-300 hover:bg-slate-700/30 transition-colors"
+            @click="showCharts = !showCharts"
+          >
+            <div class="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+              <span class="font-medium">Charts</span>
+            </div>
+            <span class="text-xs text-slate-500" :class="{ 'rotate-180': showCharts }">▼</span>
+          </button>
+
+          <div v-if="showCharts" class="border-t border-slate-700/50 p-4 space-y-6">
+            <!-- Score Timeline -->
+            <div v-if="roundsWithScores.length > 1">
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Winner vs Loser Tickets</h4>
+              <div class="h-48 sm:h-56">
+                <Line :key="`scores-${roundsWithScores.length}`" :data="scoreLineChartData" :options="scoreLineChartOptions" />
+              </div>
+            </div>
+
+            <!-- Team Wins + Player Placements side by side -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <!-- Team Wins -->
+              <div v-if="teamWinChartData.labels.length > 0">
+                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Team Wins</h4>
+                <div class="h-32">
+                  <Bar :key="`teamwins-${rounds.length}`" :data="teamWinChartData" :options="teamWinChartOptions" />
+                </div>
+              </div>
+
+              <!-- Player Placements -->
+              <div v-if="placementChartData.labels.length > 0">
+                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Top Player Placements</h4>
+                <div :style="{ height: Math.max(200, placementChartData.labels.length * 28) + 'px' }">
+                  <Bar :key="`placements-${rounds.length}`" :data="placementChartData" :options="placementChartOptions" />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
