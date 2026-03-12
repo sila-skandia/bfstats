@@ -69,5 +69,29 @@ public record MapRotationResponse(
     int TotalCount,
     int Page,
     int PageSize,
-    bool HasMore
+    bool HasMore,
+    ServerRotationInsightDto? DetectedRotation
+);
+
+public record ServerRotationInsightDto(
+    List<DetectedRotationItemDto> Rotation,
+    double Confidence,
+    int MatchedRecentRounds,
+    int SampleSize,
+    int CycleLength,
+    bool RecentlyChanged,
+    List<RotationChangeItemDto> RecentlyAdded,
+    List<RotationChangeItemDto> RecentlyRemoved
+);
+
+public record DetectedRotationItemDto(
+    int Position,
+    string MapName,
+    string GameType,
+    bool IsCurrent
+);
+
+public record RotationChangeItemDto(
+    string MapName,
+    string GameType
 );

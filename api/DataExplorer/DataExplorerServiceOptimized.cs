@@ -18,6 +18,8 @@ public class DataExplorerService(
     ILogger<DataExplorerService> logger) : IDataExplorerService
 {
     private const int Last30Days = 30;
+    private const int MaxRotationDetectionRounds = 240;
+    private const int MaxDetectedRotationLength = 12;
 
     /// <summary>
     /// Valid game types for filtering.
@@ -384,9 +386,24 @@ public class DataExplorerService(
             TopPlayerByWins: topWinnerByMap.TryGetValue(m.MapName, out var winner) ? winner : null
         )).ToList();
 
+        var recentRounds = await dbContext.Rounds
+            .AsNoTracking()
+            .Where(r => r.ServerGuid == serverGuid && !r.IsDeleted && r.StartTime >= fromDate)
+            .OrderByDescending(r => r.StartTime)
+            .Select(r => new ServerRotationDetector.RotationRoundSample(
+                r.MapName,
+                r.GameType,
+                r.StartTime))
+            .Take(MaxRotationDetectionRounds)
+            .ToListAsync();
+
+        var detectedRotation = ServerRotationDetector.Detect(
+            recentRounds,
+            MaxDetectedRotationLength);
+
         var hasMore = skip + paginatedData.Count < totalCount;
 
-        return new MapRotationResponse(mapRotation, totalCount, page, pageSize, hasMore);
+        return new MapRotationResponse(mapRotation, totalCount, page, pageSize, hasMore, detectedRotation);
     }
 
     private async Task<Dictionary<string, TopMapWinnerDto>> GetTopPlacementWinnersByMapAsync(

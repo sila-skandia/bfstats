@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ServerDetails, ServerInsights, LeaderboardsData, fetchServerDetails, fetchServerInsights, fetchServerLeaderboards, fetchLiveServerData, ServerBusyIndicator, ServerHourlyTimelineEntry, fetchServerBusyIndicators } from '../services/serverDetailsService';
-import { fetchServerMapRotation, type MapRotationItem } from '../services/dataExplorerService';
+import { fetchServerMapRotation, type DetectedRotation, type MapRotationItem } from '../services/dataExplorerService';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler } from 'chart.js';
 import { countryCodeToName } from '../types/countryCodes';
 import { ServerSummary } from '../types/server';
@@ -71,6 +71,7 @@ const mapRotationPageSize = ref(10);
 const mapRotationTotalCount = ref(0);
 const mapRotationTotalPages = computed(() => Math.max(1, Math.ceil(mapRotationTotalCount.value / mapRotationPageSize.value)));
 const mapRotationDays = ref(60);
+const detectedRotation = ref<DetectedRotation | null>(null);
 const isMapsLoading = ref(false);
 const mapsError = ref<string | null>(null);
 const hasLoadedMaps = ref(false);
@@ -245,9 +246,11 @@ const fetchMapRotationAsync = async (page: number = 1) => {
     mapRotation.value = response.maps;
     mapRotationPage.value = response.page;
     mapRotationTotalCount.value = response.totalCount;
+    detectedRotation.value = response.detectedRotation ?? null;
   } catch (err) {
     console.error('Error fetching server map rotation:', err);
     mapsError.value = 'Failed to load map rotation.';
+    detectedRotation.value = null;
   } finally {
     isMapsLoading.value = false;
   }
@@ -862,6 +865,7 @@ const closeForecastOverlay = () => {
                       :total-pages="mapRotationTotalPages"
                       :total-count="mapRotationTotalCount"
                       :page-size="mapRotationPageSize"
+                      :detected-rotation="detectedRotation"
                       :is-loading="isMapsLoading"
                       @navigate="handleMapNavigate"
                       @page-change="handleMapRotationPageChange"
