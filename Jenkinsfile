@@ -4,10 +4,30 @@ parameters {
     booleanParam(name: 'BUILD_ALL', defaultValue: false, description: 'Build and deploy all services, ignoring changeset detection')
   }
   stages {
+    stage('Detect Changes') {
+      agent {
+        kubernetes {
+          cloud 'Local k8s'
+          yamlFile 'deploy/pod.yaml'
+          nodeSelector 'kubernetes.io/hostname=bethany'
+        }
+      }
+      steps {
+        script {
+          def scmVars = checkout scm
+          def prevCommit = scmVars.GIT_PREVIOUS_SUCCESSFUL_COMMIT ?: scmVars.GIT_COMMIT
+          def changes = sh(script: "git diff --name-only ${prevCommit}..HEAD || echo ''", returnStdout: true).trim()
+          echo "Changed files since last successful build:\n${changes}"
+          env.API_CHANGED = changes.split('\n').any { it.startsWith('api/') } ? 'true' : 'false'
+          env.UI_CHANGED = changes.split('\n').any { it.startsWith('ui/') } ? 'true' : 'false'
+          env.NOTIFICATIONS_CHANGED = changes.split('\n').any { it.startsWith('notifications/') } ? 'true' : 'false'
+        }
+      }
+    }
     stage('Build and Deploy') {
       parallel {
         stage('API Pipeline') {
-          when { anyOf { changeset "api/**"; expression { params.BUILD_ALL } } }
+          when { anyOf { expression { env.API_CHANGED == 'true' }; expression { params.BUILD_ALL } } }
           stages {
             stage('Build API Docker Image') {
               agent {
@@ -75,7 +95,7 @@ parameters {
           }
         }
         stage('Notifications Pipeline') {
-          when { anyOf { changeset "notifications/**"; expression { params.BUILD_ALL } } }
+          when { anyOf { expression { env.NOTIFICATIONS_CHANGED == 'true' }; expression { params.BUILD_ALL } } }
           stages {
             stage('Build Notifications Docker Image') {
               agent {
@@ -134,7 +154,7 @@ parameters {
           }
         }
         stage('UI Pipeline') {
-          when { anyOf { changeset "ui/**"; expression { params.BUILD_ALL } } }
+          when { anyOf { expression { env.UI_CHANGED == 'true' }; expression { params.BUILD_ALL } } }
           stages {
             stage('Build UI Docker Image') {
               agent {
