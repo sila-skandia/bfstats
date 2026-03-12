@@ -116,40 +116,69 @@ const applyFilters = () => {
 // Show/hide charts
 const showCharts = ref(true);
 
-// --- Chart data: Winner vs Loser scores over time ---
+// --- Chart data: Team scores over time (plotted by team identity) ---
 const roundsWithScores = computed(() => {
   return [...rounds.value]
     .filter(r => r.team1Points !== undefined && r.team2Points !== undefined && r.team1Label && r.team2Label)
     .reverse(); // chronological order (oldest first)
 });
 
+// Get a consistent color for a team label
+const getTeamChartColor = (label: string): string => {
+  const lbl = label.toLowerCase();
+  if (lbl.includes('axis') || lbl.includes('red') || lbl.includes('north') || lbl.includes('nva') || lbl.includes('team 2')) return '#f87171';
+  if (lbl.includes('allies') || lbl.includes('allied') || lbl.includes('blue') || lbl.includes('south') || lbl.includes('usa') || lbl.includes('team 1')) return '#60a5fa';
+  return '#a78bfa';
+};
+
+// Discover the two consistent team labels across rounds
+const teamLabels = computed(() => {
+  const data = roundsWithScores.value;
+  if (data.length === 0) return { team1: '', team2: '' };
+  // Use the labels from the first round as the canonical order
+  return { team1: data[0].team1Label!, team2: data[0].team2Label! };
+});
+
 const scoreLineChartData = computed(() => {
   const data = roundsWithScores.value;
+  const { team1, team2 } = teamLabels.value;
+  if (!team1 || !team2) return { labels: [], datasets: [] };
+
   const labels = data.map(r => {
     const d = new Date(r.startTime);
     return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${r.mapName}`;
   });
 
-  const winnerScores = data.map(r => {
-    const t1 = r.team1Points!;
-    const t2 = r.team2Points!;
-    return Math.max(t1, t2);
-  });
+  // For each round, map team1/team2 scores consistently
+  // If a round has the same labels, use them directly; if swapped, flip
+  const team1Scores: (number | null)[] = [];
+  const team2Scores: (number | null)[] = [];
 
-  const loserScores = data.map(r => {
-    const t1 = r.team1Points!;
-    const t2 = r.team2Points!;
-    return Math.min(t1, t2);
-  });
+  for (const r of data) {
+    if (r.team1Label === team1) {
+      team1Scores.push(r.team1Points!);
+      team2Scores.push(r.team2Points!);
+    } else if (r.team2Label === team1) {
+      team1Scores.push(r.team2Points!);
+      team2Scores.push(r.team1Points!);
+    } else {
+      // Different teams entirely — plot as team1=team1Label, team2=team2Label
+      team1Scores.push(r.team1Points!);
+      team2Scores.push(r.team2Points!);
+    }
+  }
+
+  const color1 = getTeamChartColor(team1);
+  const color2 = getTeamChartColor(team2);
 
   return {
     labels,
     datasets: [
       {
-        label: 'Winner',
-        data: winnerScores,
-        borderColor: '#34d399',
-        backgroundColor: 'rgba(52, 211, 153, 0.1)',
+        label: team1,
+        data: team1Scores,
+        borderColor: color1,
+        backgroundColor: color1 + '1a',
         borderWidth: 2,
         pointRadius: 2,
         pointHoverRadius: 5,
@@ -157,10 +186,10 @@ const scoreLineChartData = computed(() => {
         fill: false,
       },
       {
-        label: 'Loser',
-        data: loserScores,
-        borderColor: '#f87171',
-        backgroundColor: 'rgba(248, 113, 113, 0.1)',
+        label: team2,
+        data: team2Scores,
+        borderColor: color2,
+        backgroundColor: color2 + '1a',
         borderWidth: 2,
         pointRadius: 2,
         pointHoverRadius: 5,
@@ -332,7 +361,7 @@ const teamWinChartData = computed(() => {
     const lbl = team.toLowerCase();
     if (lbl.includes('axis') || lbl.includes('red') || lbl.includes('north') || lbl.includes('nva') || lbl.includes('team 2')) {
       teamColors[team] = '#f87171';
-    } else if (lbl.includes('allies') || lbl.includes('blue') || lbl.includes('south') || lbl.includes('usa') || lbl.includes('team 1')) {
+    } else if (lbl.includes('allies') || lbl.includes('allied') || lbl.includes('blue') || lbl.includes('south') || lbl.includes('usa') || lbl.includes('team 1')) {
       teamColors[team] = '#60a5fa';
     } else {
       teamColors[team] = '#a78bfa';
@@ -642,9 +671,9 @@ onUnmounted(() => {
           </button>
 
           <div v-if="showCharts" class="border-t border-slate-700/50 p-4 space-y-6">
-            <!-- Score Timeline -->
-            <div v-if="roundsWithScores.length > 1">
-              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Winner vs Loser Tickets</h4>
+            <!-- Score Timeline (hidden on mobile) -->
+            <div v-if="roundsWithScores.length > 1" class="hidden sm:block">
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Team Scores Over Time</h4>
               <div class="h-48 sm:h-56">
                 <Line :key="`scores-${roundsWithScores.length}`" :data="scoreLineChartData" :options="scoreLineChartOptions" />
               </div>
@@ -669,6 +698,43 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Top Pagination (only when many rounds) -->
+        <div
+          v-if="totalPages > 1 && rounds.length > 20"
+          class="flex justify-center items-center gap-2"
+        >
+          <button
+            :disabled="currentPage === 1"
+            class="px-3 py-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-600/50 rounded-lg transition-colors text-sm text-slate-300"
+            @click="goToPage(currentPage - 1)"
+          >
+            ← Previous
+          </button>
+          <div class="flex items-center gap-1">
+            <button
+              v-for="page in Math.min(5, totalPages)"
+              :key="page"
+              :class="[
+                'px-3 py-2 rounded-lg border transition-colors text-sm',
+                currentPage === page
+                  ? 'bg-cyan-600 border-cyan-500 text-white'
+                  : 'bg-slate-700/50 hover:bg-slate-700 border-slate-600/50 text-slate-300'
+              ]"
+              @click="goToPage(page)"
+            >
+              {{ page }}
+            </button>
+            <span v-if="totalPages > 5" class="text-slate-500">...</span>
+          </div>
+          <button
+            :disabled="currentPage === totalPages"
+            class="px-3 py-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-600/50 rounded-lg transition-colors text-sm text-slate-300"
+            @click="goToPage(currentPage + 1)"
+          >
+            Next →
+          </button>
         </div>
 
         <!-- Sessions List -->
@@ -826,7 +892,7 @@ onUnmounted(() => {
           </table>
         </div>
 
-        <!-- Pagination -->
+        <!-- Bottom Pagination -->
         <div
           v-if="totalPages > 1"
           class="mt-6 flex justify-center items-center gap-2"
