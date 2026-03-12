@@ -1,5 +1,41 @@
 <template>
   <div class="rotation-table-wrap">
+    <div v-if="detectedRotation?.rotation?.length" class="rotation-insight">
+      <div class="rotation-insight-header">
+        <div>
+          <div class="rotation-insight-title">Detected current rotation</div>
+          <div class="rotation-insight-meta">
+            {{ Math.round(detectedRotation.confidence * 100) }}% confidence ·
+            {{ detectedRotation.matchedRecentRounds }}/{{ detectedRotation.sampleSize }} recent rounds matched
+          </div>
+        </div>
+      </div>
+
+      <div class="rotation-chip-list">
+        <div
+          v-for="item in detectedRotation.rotation"
+          :key="`${item.position}-${item.mapName}-${item.gameType}`"
+          :class="['rotation-chip', item.isCurrent && 'rotation-chip--current']"
+        >
+          <span class="rotation-chip-position">{{ item.position }}</span>
+          <span class="rotation-chip-map">{{ item.mapName }}</span>
+          <span v-if="item.gameType" class="rotation-chip-mode">{{ item.gameType }}</span>
+        </div>
+      </div>
+
+      <div
+        v-if="detectedRotation.recentlyAdded.length || detectedRotation.recentlyRemoved.length"
+        class="rotation-change-list"
+      >
+        <span v-if="detectedRotation.recentlyAdded.length">
+          Added: {{ formatChanges(detectedRotation.recentlyAdded) }}
+        </span>
+        <span v-if="detectedRotation.recentlyRemoved.length">
+          Removed: {{ formatChanges(detectedRotation.recentlyRemoved) }}
+        </span>
+      </div>
+    </div>
+
     <div class="rotation-table-scroll">
       <table class="rotation-table">
         <thead>
@@ -104,7 +140,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import type { MapRotationItem } from '../../services/dataExplorerService';
+import type { DetectedRotation, MapRotationItem, RotationChangeItem } from '../../services/dataExplorerService';
 
 const props = defineProps<{
   mapRotation: MapRotationItem[];
@@ -112,6 +148,7 @@ const props = defineProps<{
   totalPages: number;
   totalCount: number;
   pageSize: number;
+  detectedRotation?: DetectedRotation | null;
   isLoading?: boolean;
 }>();
 
@@ -184,6 +221,11 @@ const paginationRange = computed(() => {
 
   return range;
 });
+
+const formatChanges = (changes: RotationChangeItem[]) =>
+  changes
+    .map(change => change.gameType ? `${change.mapName} (${change.gameType})` : change.mapName)
+    .join(', ');
 </script>
 
 <style scoped>
@@ -191,6 +233,78 @@ const paginationRange = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.rotation-insight {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--portal-border);
+  background: color-mix(in srgb, var(--portal-accent-dim) 55%, transparent);
+}
+
+.rotation-insight-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.rotation-insight-title {
+  color: var(--portal-text-bright);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.rotation-insight-meta,
+.rotation-change-list {
+  color: var(--portal-text);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.rotation-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rotation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--portal-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--portal-text-bright);
+}
+
+.rotation-chip--current {
+  border-color: var(--portal-accent);
+  background: color-mix(in srgb, var(--portal-accent-dim) 70%, transparent);
+}
+
+.rotation-chip-position,
+.rotation-chip-mode {
+  color: var(--portal-accent);
+  font-family: ui-monospace, monospace;
+  font-size: 0.68rem;
+  flex-shrink: 0;
+}
+
+.rotation-chip-map {
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.rotation-change-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .rotation-table-scroll {
