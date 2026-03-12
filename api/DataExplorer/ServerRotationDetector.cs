@@ -4,6 +4,8 @@ namespace api.DataExplorer;
 
 public static class ServerRotationDetector
 {
+    private const int MinimumFullCycles = 3;
+
     public static ServerRotationInsightDto? Detect(
         IReadOnlyCollection<RotationRoundSample> rounds,
         int maxPatternLength = 12)
@@ -13,7 +15,7 @@ public static class ServerRotationDetector
             .OrderBy(r => r.StartTime)
             .ToList();
 
-        if (orderedRounds.Count < 4)
+        if (orderedRounds.Count < MinimumFullCycles)
             return null;
 
         var sequence = orderedRounds
@@ -21,9 +23,9 @@ public static class ServerRotationDetector
             .ToList();
 
         RotationCandidate? bestCandidate = null;
-        var maxLength = Math.Min(maxPatternLength, Math.Max(1, sequence.Count / 2));
+        var maxLength = Math.Min(maxPatternLength, Math.Max(1, sequence.Count / MinimumFullCycles));
 
-        for (var patternLength = 1; patternLength <= maxLength; patternLength++)
+        for (var patternLength = maxLength; patternLength >= 1; patternLength--)
         {
             var pattern = sequence.TakeLast(patternLength).ToList();
 
@@ -31,13 +33,12 @@ public static class ServerRotationDetector
                 continue;
 
             var matchedRounds = CountTrailingMatches(sequence, pattern);
-            var minimumMatches = Math.Max(6, patternLength * 2);
+            var fullCycles = matchedRounds / patternLength;
 
-            if (matchedRounds < minimumMatches)
+            if (fullCycles < MinimumFullCycles)
                 continue;
 
-            var fullCycles = matchedRounds / patternLength;
-            var score = (fullCycles * 1000) + (matchedRounds * 10) - patternLength;
+            var score = (patternLength * 10000) + (matchedRounds * 10) + fullCycles;
 
             if (bestCandidate is null || score > bestCandidate.Score)
             {
@@ -135,7 +136,7 @@ public static class ServerRotationDetector
 
     private static double CalculateConfidence(RotationCandidate candidate, int sampleSize)
     {
-        var cycleCoverage = Math.Min(1.0, (double)candidate.FullCycles / 3.0);
+        var cycleCoverage = Math.Min(1.0, (double)candidate.FullCycles / MinimumFullCycles);
         var tailCoverage = Math.Min(1.0, (double)candidate.MatchedRounds / Math.Max(12, sampleSize));
         var sampleCoverage = Math.Min(1.0, (double)sampleSize / 36.0);
 

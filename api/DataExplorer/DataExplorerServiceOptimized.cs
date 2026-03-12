@@ -19,7 +19,7 @@ public class DataExplorerService(
 {
     private const int Last30Days = 30;
     private const int MaxRotationDetectionRounds = 240;
-    private const int MaxDetectedRotationLength = 12;
+    private const int MaxDetectedRotationLength = 60;
 
     /// <summary>
     /// Valid game types for filtering.

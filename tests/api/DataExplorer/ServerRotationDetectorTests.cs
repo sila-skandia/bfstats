@@ -38,6 +38,30 @@ public class ServerRotationDetectorTests
     }
 
     [Fact]
+    public void Detect_PrefersLongerRotation_WhenItRepeatsThreeTimes()
+    {
+        var cycle = new[]
+        {
+            ("wake", "conquest"),
+            ("el alamein", "ctf"),
+            ("tobruk", "conquest"),
+            ("berlin", "ctf"),
+            ("gazala", "conquest")
+        };
+
+        var rounds = BuildRounds(cycle.Concat(cycle).Concat(cycle).ToArray());
+
+        var detected = ServerRotationDetector.Detect(rounds, maxPatternLength: 20);
+
+        Assert.NotNull(detected);
+        Assert.Equal(5, detected.CycleLength);
+        Assert.Equal(
+            ["wake", "el alamein", "tobruk", "berlin", "gazala"],
+            detected.Rotation.Select(item => item.MapName).ToArray());
+        Assert.Equal(15, detected.MatchedRecentRounds);
+    }
+
+    [Fact]
     public void Detect_FlagsRecentAdditionsAndRemovals()
     {
         var rounds = BuildRounds(
