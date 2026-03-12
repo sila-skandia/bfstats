@@ -59,6 +59,7 @@
             :total-pages="mapRotationTotalPages"
             :total-count="mapRotationTotalCount"
             :page-size="mapRotationPageSize"
+            :detected-rotation="detectedRotation"
             :is-loading="isLoadingMapRotation"
             @navigate="emit('navigateToMap', $event)"
             @page-change="handleMapRotationPageChange"
@@ -112,7 +113,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue';
-import { fetchServerDetail, fetchServerMapRotation, type ServerDetail, type MapRotationItem } from '../../services/dataExplorerService';
+import { fetchServerDetail, fetchServerMapRotation, type DetectedRotation, type ServerDetail, type MapRotationItem } from '../../services/dataExplorerService';
 import WinStatsBar from './WinStatsBar.vue';
 import MapRotationTable from './MapRotationTable.vue';
 import ActivityHeatmap from './ActivityHeatmap.vue';
@@ -141,6 +142,7 @@ const mapRotationPage = ref(1);
 const mapRotationPageSize = ref(10);
 const mapRotationTotalCount = ref(0);
 const mapRotationTotalPages = computed(() => Math.max(1, Math.ceil(mapRotationTotalCount.value / mapRotationPageSize.value)));
+const detectedRotation = ref<DetectedRotation | null>(null);
 const isLoadingMapRotation = ref(false);
 
 const getGameLabel = (game: string): string => {
@@ -183,10 +185,12 @@ const loadMapRotation = async (page: number) => {
     mapRotation.value = response.maps;
     mapRotationPage.value = response.page;
     mapRotationTotalCount.value = response.totalCount;
+    detectedRotation.value = response.detectedRotation ?? null;
   } catch (err) {
     console.error('Error loading map rotation:', err);
     mapRotation.value = [];
     mapRotationTotalCount.value = 0;
+    detectedRotation.value = null;
   } finally {
     isLoadingMapRotation.value = false;
   }
