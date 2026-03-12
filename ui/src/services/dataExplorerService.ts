@@ -44,12 +44,36 @@ export interface MapRotationItem {
   } | null;
 }
 
+export interface DetectedRotationItem {
+  position: number;
+  mapName: string;
+  gameType: string;
+  isCurrent: boolean;
+}
+
+export interface RotationChangeItem {
+  mapName: string;
+  gameType: string;
+}
+
+export interface DetectedRotation {
+  rotation: DetectedRotationItem[];
+  confidence: number;
+  matchedRecentRounds: number;
+  sampleSize: number;
+  cycleLength: number;
+  recentlyChanged: boolean;
+  recentlyAdded: RotationChangeItem[];
+  recentlyRemoved: RotationChangeItem[];
+}
+
 export interface MapRotationResponse {
   maps: MapRotationItem[];
   totalCount: number;
   page: number;
   pageSize: number;
   hasMore: boolean;
+  detectedRotation?: DetectedRotation | null;
 }
 
 export interface TopPlayer {
