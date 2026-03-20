@@ -42,22 +42,61 @@
 
       <!-- Content -->
       <template v-else>
-        <!-- Day selector -->
+        <!-- Controls row -->
         <div class="flex items-center justify-between flex-wrap gap-3">
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-neutral-400 font-medium">Period:</span>
-            <div class="flex gap-1">
-              <button
-                v-for="opt in dayOptions"
-                :key="opt"
-                @click="selectedDays = opt; loadData()"
-                class="px-3 py-1 text-xs font-medium rounded border transition-all"
-                :class="selectedDays === opt
-                  ? 'text-white bg-cyan-500/20 border-cyan-500/50'
-                  : 'text-neutral-400 bg-neutral-800/50 border-neutral-700/50 hover:border-neutral-600'"
+          <div class="flex items-center gap-4 flex-wrap">
+            <!-- Period -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-neutral-400 font-medium">Period:</span>
+              <div class="flex gap-1">
+                <button
+                  v-for="opt in dayOptions"
+                  :key="opt"
+                  @click="selectedDays = opt; loadData()"
+                  class="px-3 py-1 text-xs font-medium rounded border transition-all"
+                  :class="selectedDays === opt
+                    ? 'text-white bg-cyan-500/20 border-cyan-500/50'
+                    : 'text-neutral-400 bg-neutral-800/50 border-neutral-700/50 hover:border-neutral-600'"
+                >
+                  {{ opt }}d
+                </button>
+              </div>
+            </div>
+
+            <!-- Time of day filter -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-neutral-400 font-medium">Hours:</span>
+              <div class="flex gap-1">
+                <button
+                  v-for="preset in hourPresets"
+                  :key="preset.label"
+                  @click="applyHourPreset(preset)"
+                  class="px-3 py-1 text-xs font-medium rounded border transition-all"
+                  :class="activeHourPreset === preset.label
+                    ? 'text-white bg-amber-500/20 border-amber-500/50'
+                    : 'text-neutral-400 bg-neutral-800/50 border-neutral-700/50 hover:border-neutral-600'"
+                >
+                  {{ preset.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Custom hour range (shown when Custom is active) -->
+            <div v-if="activeHourPreset === 'Custom'" class="flex items-center gap-1.5">
+              <select
+                v-model.number="hourStart"
+                class="bg-neutral-800 border border-neutral-700/50 rounded px-2 py-1 text-xs text-neutral-200 focus:border-amber-500/50 outline-none"
               >
-                {{ opt }}d
-              </button>
+                <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ (h - 1).toString().padStart(2, '0') }}:00</option>
+              </select>
+              <span class="text-xs text-neutral-500">to</span>
+              <select
+                v-model.number="hourEnd"
+                class="bg-neutral-800 border border-neutral-700/50 rounded px-2 py-1 text-xs text-neutral-200 focus:border-amber-500/50 outline-none"
+              >
+                <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ (h - 1).toString().padStart(2, '0') }}:59</option>
+              </select>
+              <span class="text-xs text-neutral-500">(UTC)</span>
             </div>
           </div>
 
@@ -68,6 +107,12 @@
           >
             Filter Maps ({{ selectedMaps.size }}/{{ allMaps.length }})
           </button>
+        </div>
+
+        <!-- Active hour filter indicator -->
+        <div v-if="activeHourPreset !== 'All'" class="text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
+          Showing impact scores and averages for <strong>{{ hourRangeLabel }}</strong> only.
+          Timeline chart shows all hours for context.
         </div>
 
         <!-- Map filter panel -->
@@ -145,7 +190,11 @@
                     v-for="h in displayHours"
                     :key="h"
                     class="heatmap-cell"
-                    :style="{ backgroundColor: getHeatColor(summary.hourlyAvgPlayers[h]) }"
+                    :style="{
+                      backgroundColor: getHeatColor(summary.hourlyAvgPlayers[h]),
+                      opacity: isHourInRange(h) ? 1 : 0.25,
+                      outline: isHourInRange(h) && activeHourPreset !== 'All' ? '1px solid rgba(245, 158, 11, 0.3)' : 'none'
+                    }"
                     :title="`${summary.mapName} @ ${h.toString().padStart(2, '0')}:00 — ${summary.hourlyAvgPlayers[h].toFixed(1)} avg players`"
                   />
                 </div>
@@ -237,6 +286,45 @@ const dayOptions = [3, 7, 14, 30]
 const showMapFilter = ref(false)
 const selectedMaps = ref<Set<string>>(new Set())
 
+// Hour-of-day filter
+const hourStart = ref(0)
+const hourEnd = ref(23)
+const activeHourPreset = ref('All')
+
+interface HourPreset {
+  label: string
+  start: number
+  end: number
+}
+
+const hourPresets: HourPreset[] = [
+  { label: 'All', start: 0, end: 23 },
+  { label: 'Off-peak', start: 0, end: 11 },
+  { label: 'Afternoon', start: 12, end: 17 },
+  { label: 'Peak', start: 18, end: 23 },
+  { label: 'Custom', start: -1, end: -1 },
+]
+
+function applyHourPreset(preset: HourPreset) {
+  activeHourPreset.value = preset.label
+  if (preset.start >= 0) {
+    hourStart.value = preset.start
+    hourEnd.value = preset.end
+  }
+}
+
+function isHourInRange(hour: number): boolean {
+  if (hourStart.value <= hourEnd.value) {
+    return hour >= hourStart.value && hour <= hourEnd.value
+  }
+  // Wraps around midnight (e.g., 22:00 to 06:00)
+  return hour >= hourStart.value || hour <= hourEnd.value
+}
+
+const hourRangeLabel = computed(() =>
+  `${hourStart.value.toString().padStart(2, '0')}:00–${hourEnd.value.toString().padStart(2, '0')}:59 UTC`
+)
+
 const backLink = computed(() => `/explore/servers/${serverGuid.value}`)
 
 // --- Colors ---
@@ -273,9 +361,82 @@ const allMaps = computed<MapPopularitySummary[]>(() =>
   data.value?.mapSummaries ?? []
 )
 
-const filteredSummaries = computed(() =>
-  allMaps.value.filter(m => selectedMaps.value.has(m.mapName))
-)
+// Timeline points filtered by selected hour range
+const hourFilteredTimeline = computed(() => {
+  if (!data.value) return []
+  return data.value.timeline.filter(p => {
+    const hour = new Date(p.timestamp).getUTCHours()
+    return isHourInRange(hour)
+  })
+})
+
+// Recomputed summaries based on hour-filtered timeline
+const filteredSummaries = computed<MapPopularitySummary[]>(() => {
+  if (!data.value) return []
+  const isFiltered = activeHourPreset.value !== 'All'
+
+  // When no hour filter, use API summaries directly
+  if (!isFiltered) {
+    return allMaps.value.filter(m => selectedMaps.value.has(m.mapName))
+  }
+
+  const timeline = hourFilteredTimeline.value
+  const rounds = data.value.rounds
+
+  // Avg concurrent per map from filtered timeline
+  const mapPoints: Record<string, number[]> = {}
+  for (const p of timeline) {
+    if (p.mapName && selectedMaps.value.has(p.mapName)) {
+      ;(mapPoints[p.mapName] ??= []).push(p.playerCount)
+    }
+  }
+
+  // Compute per-round avg from filtered timeline for delta calculation
+  const roundAvgs: number[] = []
+  for (const round of rounds) {
+    const startMs = new Date(round.startTime).getTime()
+    const endMs = round.endTime ? new Date(round.endTime).getTime() : Date.now()
+    const points = timeline.filter(p => {
+      const ts = new Date(p.timestamp).getTime()
+      return ts >= startMs && ts <= endMs
+    })
+    roundAvgs.push(points.length > 0 ? points.reduce((s, p) => s + p.playerCount, 0) / points.length : 0)
+  }
+
+  // Delta per map
+  const mapDeltas: Record<string, number[]> = {}
+  for (let i = 1; i < rounds.length; i++) {
+    if (roundAvgs[i] === 0 && roundAvgs[i - 1] === 0) continue
+    ;(mapDeltas[rounds[i].mapName] ??= []).push(roundAvgs[i] - roundAvgs[i - 1])
+  }
+
+  // Round counts per map
+  const mapRoundCounts: Record<string, number> = {}
+  for (const r of rounds) {
+    mapRoundCounts[r.mapName] = (mapRoundCounts[r.mapName] ?? 0) + 1
+  }
+
+  return Object.keys(mapPoints)
+    .filter(name => selectedMaps.value.has(name))
+    .map(mapName => {
+      const pts = mapPoints[mapName]
+      const avgConcurrent = pts.length > 0 ? pts.reduce((s, v) => s + v, 0) / pts.length : 0
+      const deltas = mapDeltas[mapName]
+      const avgDelta = deltas?.length ? deltas.reduce((s, v) => s + v, 0) / deltas.length : 0
+
+      // Keep hourly from API (heatmap shows all hours regardless)
+      const apiSummary = allMaps.value.find(m => m.mapName === mapName)
+
+      return {
+        mapName,
+        totalRounds: mapRoundCounts[mapName] ?? 0,
+        avgConcurrentPlayers: Math.round(avgConcurrent * 10) / 10,
+        avgPlayerDelta: Math.round(avgDelta * 10) / 10,
+        hourlyAvgPlayers: apiSummary?.hourlyAvgPlayers ?? new Array(24).fill(0),
+      } as MapPopularitySummary
+    })
+    .sort((a, b) => b.totalRounds - a.totalRounds)
+})
 
 function selectAllMaps() {
   selectedMaps.value = new Set(allMaps.value.map(m => m.mapName))
