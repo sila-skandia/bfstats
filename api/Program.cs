@@ -630,8 +630,9 @@ try
     builder.Services.AddScoped<api.PlayerStats.ISqlitePlayerStatsService, api.PlayerStats.SqlitePlayerStatsService>();
     builder.Services.AddScoped<api.PlayerStats.ISqlitePlayerComparisonService, api.PlayerStats.SqlitePlayerComparisonService>();
 
-    // Register Data Explorer service
+    // Register Data Explorer services
     builder.Services.AddScoped<api.DataExplorer.IDataExplorerService, api.DataExplorer.DataExplorerService>();
+    builder.Services.AddScoped<api.DataExplorer.IMapPopularityService, api.DataExplorer.MapPopularityService>();
 
     // Register Admin Data Management service
     builder.Services.AddScoped<api.AdminData.AdminDataService>();

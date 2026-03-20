@@ -27,6 +27,7 @@ const AdminDataManagement = () => import('../views/AdminDataManagement.vue')
 const CommunitiesView = () => import('../views/CommunitiesView.vue')
 const CommunityDetailsView = () => import('../views/CommunityDetailsView.vue')
 const AliasDetectionView = () => import('../views/AliasDetectionView.vue')
+const MapPopularityView = () => import('../views/MapPopularityView.vue')
 
 const routes: RouteRecordRaw[] = [
     {
@@ -469,6 +470,16 @@ const routes: RouteRecordRaw[] = [
       meta: {
         title: (route: RouteLocationNormalized) => `Community ${route.params.id} - BF Stats`,
         description: (route: RouteLocationNormalized) => `Detailed view of player community ${route.params.id}. See all members, servers, network connections, and activity trends.`
+      }
+    },
+    {
+      path: '/map-popularity/:serverGuid',
+      name: 'map-popularity',
+      component: MapPopularityView,
+      props: true,
+      meta: {
+        title: 'Map Popularity Report - BF Stats',
+        description: 'Analyse map rotation popularity and player retention trends for server administration.'
       }
     },
     {
