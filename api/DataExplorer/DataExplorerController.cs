@@ -9,6 +9,7 @@ namespace api.DataExplorer;
 [Route("stats/data-explorer")]
 public class DataExplorerController(
     IDataExplorerService dataExplorerService,
+    IMapPopularityService mapPopularityService,
     ILogger<DataExplorerController> logger) : ControllerBase
 {
     /// <summary>
@@ -51,6 +52,27 @@ public class DataExplorerController(
             logger.LogWarning("Server not found: {ServerGuid}", serverGuid);
             return NotFound($"Server '{serverGuid}' not found");
         }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get map popularity analysis for a specific server.
+    /// Returns population timeline, round data, and per-map summaries with impact scores.
+    /// </summary>
+    [HttpGet("servers/{serverGuid}/map-popularity")]
+    [ProducesResponseType(typeof(MapPopularityResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<MapPopularityResponse>> GetMapPopularity(
+        string serverGuid,
+        [FromQuery] int days = 7)
+    {
+        logger.LogDebug("Getting map popularity for server {ServerGuid}, days: {Days}", serverGuid, days);
+
+        var result = await mapPopularityService.GetMapPopularityAsync(serverGuid, days);
+
+        if (result == null)
+            return NotFound($"Server '{serverGuid}' not found");
 
         return Ok(result);
     }
