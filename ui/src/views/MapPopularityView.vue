@@ -11,7 +11,7 @@
             &larr; Back
           </router-link>
           <div>
-            <h1 class="text-lg sm:text-xl font-bold text-neutral-100">Map Popularity Report</h1>
+            <h1 class="text-lg sm:text-xl font-bold text-neutral-100">Map Popularity</h1>
             <p v-if="serverName" class="text-sm text-neutral-400">{{ serverName }}</p>
           </div>
         </div>
@@ -23,7 +23,7 @@
       <div v-if="loading" class="flex items-center justify-center py-20">
         <div class="flex flex-col items-center gap-3">
           <div class="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
-          <span class="text-neutral-400 text-sm">Analysing map rotations...</span>
+          <span class="text-neutral-400 text-sm">Analysing map data...</span>
         </div>
       </div>
 
@@ -111,7 +111,7 @@
 
         <!-- Active hour filter indicator -->
         <div v-if="activeHourPreset !== 'All'" class="text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
-          Filtering transitions and averages to <strong>{{ hourRangeLabel }}</strong> only.
+          Showing averages for <strong>{{ hourRangeLabel }}</strong> only.
         </div>
 
         <!-- Map filter panel -->
@@ -140,113 +140,12 @@
           </div>
         </div>
 
-        <!-- Worst Transitions -->
+        <!-- Average Players per Map (bar chart) -->
         <div class="bg-neutral-900/80 border border-neutral-700/50 rounded-xl p-4 sm:p-6">
-          <h2 class="text-sm font-semibold text-neutral-200 mb-1">Map Transitions</h2>
-          <p class="text-xs text-neutral-500 mb-4">What happens to player count when the rotation moves between maps. Sorted by most damaging.</p>
-
-          <div v-if="sortedTransitions.length === 0" class="text-center py-8 text-neutral-500 text-sm">
-            Not enough round data to compute transitions.
-          </div>
-          <div v-else class="space-y-1.5">
-            <div
-              v-for="t in sortedTransitions"
-              :key="`${t.fromMap}-${t.toMap}`"
-              class="transition-row"
-            >
-              <!-- From → To -->
-              <div class="flex items-center gap-2 min-w-0 flex-1">
-                <span class="w-2 h-2 rounded-full flex-shrink-0" :style="{ backgroundColor: getMapColor(t.fromMap) }" />
-                <span class="truncate text-neutral-300 text-sm">{{ t.fromMap }}</span>
-                <span class="text-neutral-600 flex-shrink-0">&rarr;</span>
-                <span class="w-2 h-2 rounded-full flex-shrink-0" :style="{ backgroundColor: getMapColor(t.toMap) }" />
-                <span class="truncate text-neutral-300 text-sm">{{ t.toMap }}</span>
-              </div>
-
-              <!-- Stats -->
-              <div class="flex items-center gap-3 flex-shrink-0 text-xs">
-                <span class="text-neutral-500 hidden sm:inline" :title="`${t.count} transitions observed`">{{ t.count }}x</span>
-                <span class="font-mono text-neutral-400 hidden sm:inline">{{ t.avgBefore.toFixed(0) }}</span>
-                <span class="text-neutral-600 hidden sm:inline">&rarr;</span>
-                <span class="font-mono text-neutral-400 hidden sm:inline">{{ t.avgAfter.toFixed(0) }}</span>
-
-                <!-- Delta with visual bar -->
-                <div class="flex items-center gap-1.5 w-28 sm:w-36">
-                  <div class="flex-1 h-3 bg-neutral-800 rounded-sm overflow-hidden relative">
-                    <!-- Center line -->
-                    <div class="absolute top-0 bottom-0 left-1/2 w-px bg-neutral-600 z-10" />
-                    <!-- Bar -->
-                    <div
-                      class="absolute top-0 bottom-0 rounded-sm"
-                      :style="getTransitionBarStyle(t.avgDelta)"
-                    />
-                  </div>
-                  <span
-                    class="font-mono text-xs w-12 text-right font-medium"
-                    :class="t.avgDelta >= 0 ? 'text-emerald-400' : 'text-red-400'"
-                  >
-                    {{ t.avgDelta >= 0 ? '+' : '' }}{{ t.avgDelta.toFixed(1) }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Transition Matrix + Impact Chart grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <!-- Transition Matrix -->
-          <div class="bg-neutral-900/80 border border-neutral-700/50 rounded-xl p-4 sm:p-6">
-            <h2 class="text-sm font-semibold text-neutral-200 mb-1">Transition Matrix</h2>
-            <p class="text-xs text-neutral-500 mb-4">Row = from, Column = to. Red = server drains, green = players join.</p>
-            <div class="transition-matrix" v-if="matrixMaps.length > 0">
-              <!-- Column headers -->
-              <div class="matrix-header">
-                <div class="matrix-label-corner"></div>
-                <div
-                  v-for="map in matrixMaps"
-                  :key="`col-${map}`"
-                  class="matrix-col-label"
-                  :title="map"
-                >
-                  <span class="w-2 h-2 rounded-full inline-block" :style="{ backgroundColor: getMapColor(map) }" />
-                </div>
-              </div>
-              <!-- Rows -->
-              <div v-for="fromMap in matrixMaps" :key="`row-${fromMap}`" class="matrix-row">
-                <div class="matrix-row-label" :title="fromMap">
-                  <span class="truncate">{{ fromMap }}</span>
-                </div>
-                <div
-                  v-for="toMap in matrixMaps"
-                  :key="`cell-${fromMap}-${toMap}`"
-                  class="matrix-cell"
-                  :style="{ backgroundColor: getMatrixCellColor(fromMap, toMap) }"
-                  :title="getMatrixTooltip(fromMap, toMap)"
-                />
-              </div>
-              <!-- Legend -->
-              <div class="heatmap-legend mt-3">
-                <span class="text-red-400">Drains</span>
-                <div class="heatmap-legend-colors">
-                  <div class="heatmap-legend-swatch" style="background-color: rgba(239, 68, 68, 0.6)" />
-                  <div class="heatmap-legend-swatch" style="background-color: rgba(239, 68, 68, 0.25)" />
-                  <div class="heatmap-legend-swatch" style="background-color: #1a1a24" />
-                  <div class="heatmap-legend-swatch" style="background-color: rgba(16, 185, 129, 0.25)" />
-                  <div class="heatmap-legend-swatch" style="background-color: rgba(16, 185, 129, 0.6)" />
-                </div>
-                <span class="text-emerald-400">Attracts</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Map Impact Score -->
-          <div class="bg-neutral-900/80 border border-neutral-700/50 rounded-xl p-4 sm:p-6">
-            <h2 class="text-sm font-semibold text-neutral-200 mb-1">Map Impact Score</h2>
-            <p class="text-xs text-neutral-500 mb-4">Overall avg player change when this map starts, regardless of what came before.</p>
-            <div :style="{ height: Math.max(200, filteredSummaries.length * 32) + 'px' }">
-              <Bar :data="impactChartData" :options="impactChartOptions" />
-            </div>
+          <h2 class="text-sm font-semibold text-neutral-200 mb-1">Average Players per Map</h2>
+          <p class="text-xs text-neutral-500 mb-4">Maps in a rotation should track similarly. Low outliers indicate maps that drain the server.</p>
+          <div :style="{ height: Math.max(200, filteredSummaries.length * 36) + 'px' }">
+            <Bar :data="avgPlayersChartData" :options="avgPlayersChartOptions" />
           </div>
         </div>
 
@@ -258,7 +157,7 @@
             <div class="heatmap-header">
               <div class="heatmap-map-label"></div>
               <div class="heatmap-hours">
-                <span v-for="h in displayHours" :key="h" class="heatmap-hour-label">{{ h.toString().padStart(2, '0') }}</span>
+                <span v-for="h in 24" :key="h - 1" class="heatmap-hour-label">{{ (h - 1).toString().padStart(2, '0') }}</span>
               </div>
             </div>
             <div v-for="summary in filteredSummaries" :key="summary.mapName" class="heatmap-row">
@@ -268,15 +167,15 @@
               </div>
               <div class="heatmap-cells">
                 <div
-                  v-for="h in displayHours"
-                  :key="h"
+                  v-for="h in 24"
+                  :key="h - 1"
                   class="heatmap-cell"
                   :style="{
-                    backgroundColor: getHeatColor(summary.hourlyAvgPlayers[h]),
-                    opacity: isHourInRange(h) ? 1 : 0.25,
-                    outline: isHourInRange(h) && activeHourPreset !== 'All' ? '1px solid rgba(245, 158, 11, 0.3)' : 'none'
+                    backgroundColor: getHeatColor(summary.hourlyAvgPlayers[h - 1]),
+                    opacity: isHourInRange(h - 1) ? 1 : 0.25,
+                    outline: isHourInRange(h - 1) && activeHourPreset !== 'All' ? '1px solid rgba(245, 158, 11, 0.3)' : 'none'
                   }"
-                  :title="`${summary.mapName} @ ${h.toString().padStart(2, '0')}:00 — ${summary.hourlyAvgPlayers[h].toFixed(1)} avg players`"
+                  :title="`${summary.mapName} @ ${(h - 1).toString().padStart(2, '0')}:00 — ${summary.hourlyAvgPlayers[h - 1].toFixed(1)} avg players`"
                 />
               </div>
             </div>
@@ -300,7 +199,6 @@
                   <th class="pb-2 pr-4">Map</th>
                   <th class="pb-2 pr-4 text-right">Rounds</th>
                   <th class="pb-2 pr-4 text-right">Avg Players</th>
-                  <th class="pb-2 pr-4 text-right">Impact</th>
                 </tr>
               </thead>
               <tbody>
@@ -315,9 +213,6 @@
                   </td>
                   <td class="py-2 pr-4 text-right font-mono text-neutral-300">{{ s.totalRounds }}</td>
                   <td class="py-2 pr-4 text-right font-mono text-neutral-300">{{ s.avgConcurrentPlayers.toFixed(1) }}</td>
-                  <td class="py-2 pr-4 text-right font-mono" :class="s.avgPlayerDelta >= 0 ? 'text-emerald-400' : 'text-red-400'">
-                    {{ s.avgPlayerDelta >= 0 ? '+' : '' }}{{ s.avgPlayerDelta.toFixed(1) }}
-                  </td>
                 </tr>
               </tbody>
             </table>
@@ -424,129 +319,7 @@ const hourFilteredTimeline = computed(() => {
   })
 })
 
-// --- Transitions ---
-
-interface MapTransition {
-  fromMap: string
-  toMap: string
-  count: number
-  avgBefore: number
-  avgAfter: number
-  avgDelta: number
-  worstDelta: number
-}
-
-const transitions = computed<MapTransition[]>(() => {
-  if (!data.value || data.value.rounds.length < 2) return []
-  const rounds = data.value.rounds
-  const timeline = hourFilteredTimeline.value
-
-  // Pre-compute round avg player counts from (hour-filtered) timeline
-  const roundAvgs: number[] = []
-  for (const round of rounds) {
-    const startMs = new Date(round.startTime).getTime()
-    const endMs = round.endTime ? new Date(round.endTime).getTime() : Date.now()
-    const pts = timeline.filter(p => {
-      const ts = new Date(p.timestamp).getTime()
-      return ts >= startMs && ts <= endMs
-    })
-    roundAvgs.push(pts.length > 0 ? pts.reduce((s, p) => s + p.playerCount, 0) / pts.length : -1)
-  }
-
-  // Collect individual transitions
-  const grouped: Record<string, { count: number; totalBefore: number; totalAfter: number; deltas: number[] }> = {}
-
-  for (let i = 1; i < rounds.length; i++) {
-    // Skip if either round has no data in the selected hours
-    if (roundAvgs[i] < 0 || roundAvgs[i - 1] < 0) continue
-    // Skip if either map is not selected
-    if (!selectedMaps.value.has(rounds[i].mapName) || !selectedMaps.value.has(rounds[i - 1].mapName)) continue
-
-    const key = `${rounds[i - 1].mapName}\0${rounds[i].mapName}`
-    const g = grouped[key] ??= { count: 0, totalBefore: 0, totalAfter: 0, deltas: [] }
-    g.count++
-    g.totalBefore += roundAvgs[i - 1]
-    g.totalAfter += roundAvgs[i]
-    g.deltas.push(roundAvgs[i] - roundAvgs[i - 1])
-  }
-
-  return Object.entries(grouped).map(([key, g]) => {
-    const [fromMap, toMap] = key.split('\0')
-    return {
-      fromMap,
-      toMap,
-      count: g.count,
-      avgBefore: g.totalBefore / g.count,
-      avgAfter: g.totalAfter / g.count,
-      avgDelta: g.deltas.reduce((s, v) => s + v, 0) / g.deltas.length,
-      worstDelta: Math.min(...g.deltas),
-    }
-  })
-})
-
-const sortedTransitions = computed(() =>
-  [...transitions.value].sort((a, b) => a.avgDelta - b.avgDelta)
-)
-
-// Max absolute delta for scaling the visual bars
-const maxAbsDelta = computed(() => {
-  let max = 1
-  for (const t of transitions.value) {
-    const abs = Math.abs(t.avgDelta)
-    if (abs > max) max = abs
-  }
-  return max
-})
-
-function getTransitionBarStyle(delta: number) {
-  const pct = Math.abs(delta) / maxAbsDelta.value * 50 // max 50% of bar width
-  if (delta >= 0) {
-    return { left: '50%', width: `${pct}%`, backgroundColor: 'rgba(16, 185, 129, 0.6)' }
-  }
-  return { right: '50%', width: `${pct}%`, backgroundColor: 'rgba(239, 68, 68, 0.6)' }
-}
-
-// --- Transition matrix ---
-const matrixMaps = computed(() => {
-  // Only maps involved in transitions, ordered by round count
-  const involved = new Set<string>()
-  for (const t of transitions.value) {
-    involved.add(t.fromMap)
-    involved.add(t.toMap)
-  }
-  return allMaps.value
-    .filter(m => involved.has(m.mapName))
-    .map(m => m.mapName)
-})
-
-const transitionLookup = computed(() => {
-  const map = new Map<string, MapTransition>()
-  for (const t of transitions.value) {
-    map.set(`${t.fromMap}\0${t.toMap}`, t)
-  }
-  return map
-})
-
-function getMatrixCellColor(fromMap: string, toMap: string): string {
-  if (fromMap === toMap) return '#1a1a24'
-  const t = transitionLookup.value.get(`${fromMap}\0${toMap}`)
-  if (!t) return '#111118'
-  const intensity = Math.min(Math.abs(t.avgDelta) / maxAbsDelta.value, 1)
-  if (t.avgDelta >= 0) {
-    return `rgba(16, 185, 129, ${0.1 + intensity * 0.5})`
-  }
-  return `rgba(239, 68, 68, ${0.1 + intensity * 0.5})`
-}
-
-function getMatrixTooltip(fromMap: string, toMap: string): string {
-  if (fromMap === toMap) return `${fromMap} (same map)`
-  const t = transitionLookup.value.get(`${fromMap}\0${toMap}`)
-  if (!t) return `${fromMap} → ${toMap}: no data`
-  const sign = t.avgDelta >= 0 ? '+' : ''
-  return `${fromMap} → ${toMap}\n${t.count}x observed\nAvg: ${t.avgBefore.toFixed(1)} → ${t.avgAfter.toFixed(1)} (${sign}${t.avgDelta.toFixed(1)})`
-}
-
-// --- Recomputed summaries ---
+// --- Recomputed summaries (with hour filter applied) ---
 const filteredSummaries = computed<MapPopularitySummary[]>(() => {
   if (!data.value) return []
   const isFiltered = activeHourPreset.value !== 'All'
@@ -556,7 +329,6 @@ const filteredSummaries = computed<MapPopularitySummary[]>(() => {
   }
 
   const timeline = hourFilteredTimeline.value
-  const rounds = data.value.rounds
 
   const mapPoints: Record<string, number[]> = {}
   for (const p of timeline) {
@@ -565,46 +337,26 @@ const filteredSummaries = computed<MapPopularitySummary[]>(() => {
     }
   }
 
-  const roundAvgs: number[] = []
-  for (const round of rounds) {
-    const startMs = new Date(round.startTime).getTime()
-    const endMs = round.endTime ? new Date(round.endTime).getTime() : Date.now()
-    const points = timeline.filter(p => {
-      const ts = new Date(p.timestamp).getTime()
-      return ts >= startMs && ts <= endMs
-    })
-    roundAvgs.push(points.length > 0 ? points.reduce((s, p) => s + p.playerCount, 0) / points.length : 0)
-  }
-
-  const mapDeltas: Record<string, number[]> = {}
-  for (let i = 1; i < rounds.length; i++) {
-    if (roundAvgs[i] === 0 && roundAvgs[i - 1] === 0) continue
-    ;(mapDeltas[rounds[i].mapName] ??= []).push(roundAvgs[i] - roundAvgs[i - 1])
-  }
-
   const mapRoundCounts: Record<string, number> = {}
-  for (const r of rounds) {
+  for (const r of data.value.rounds) {
     mapRoundCounts[r.mapName] = (mapRoundCounts[r.mapName] ?? 0) + 1
   }
 
   return Object.keys(mapPoints)
-    .filter(name => selectedMaps.value.has(name))
     .map(mapName => {
       const pts = mapPoints[mapName]
       const avgConcurrent = pts.length > 0 ? pts.reduce((s, v) => s + v, 0) / pts.length : 0
-      const deltas = mapDeltas[mapName]
-      const avgDelta = deltas?.length ? deltas.reduce((s, v) => s + v, 0) / deltas.length : 0
       const apiSummary = allMaps.value.find(m => m.mapName === mapName)
 
       return {
         mapName,
         totalRounds: mapRoundCounts[mapName] ?? 0,
         avgConcurrentPlayers: Math.round(avgConcurrent * 10) / 10,
-        avgPlayerDelta: Math.round(avgDelta * 10) / 10,
+        avgPlayerDelta: 0,
         hourlyAvgPlayers: apiSummary?.hourlyAvgPlayers ?? new Array(24).fill(0),
       } as MapPopularitySummary
     })
-    .sort((a, b) => b.totalRounds - a.totalRounds)
+    .sort((a, b) => b.avgConcurrentPlayers - a.avgConcurrentPlayers)
 })
 
 function selectAllMaps() { selectedMaps.value = new Set(allMaps.value.map(m => m.mapName)) }
@@ -615,25 +367,23 @@ function toggleMap(name: string) {
   selectedMaps.value = s
 }
 
-// --- Impact chart ---
-const impactChartData = computed(() => {
-  const sorted = [...filteredSummaries.value].sort((a, b) => a.avgPlayerDelta - b.avgPlayerDelta)
+// --- Average Players chart ---
+const avgPlayersChartData = computed(() => {
+  const sorted = [...filteredSummaries.value].sort((a, b) => a.avgConcurrentPlayers - b.avgConcurrentPlayers)
   return {
     labels: sorted.map(s => s.mapName),
     datasets: [{
-      label: 'Avg Player Delta',
-      data: sorted.map(s => s.avgPlayerDelta),
-      backgroundColor: sorted.map(s =>
-        s.avgPlayerDelta >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)'
-      ),
-      borderColor: sorted.map(s => s.avgPlayerDelta >= 0 ? '#10b981' : '#ef4444'),
+      label: 'Avg Players',
+      data: sorted.map(s => s.avgConcurrentPlayers),
+      backgroundColor: sorted.map(s => getMapColor(s.mapName) + 'b3'),
+      borderColor: sorted.map(s => getMapColor(s.mapName)),
       borderWidth: 1,
       borderRadius: 3,
     }],
   }
 })
 
-const impactChartOptions = computed(() => ({
+const avgPlayersChartOptions = computed(() => ({
   indexAxis: 'y' as const,
   responsive: true,
   maintainAspectRatio: false,
@@ -641,7 +391,8 @@ const impactChartOptions = computed(() => ({
     x: {
       grid: { color: 'rgba(255,255,255,0.04)' },
       ticks: { color: '#8b949e', font: { size: 10 } },
-      title: { display: true, text: 'Avg Player Change', color: '#8b949e', font: { size: 10 } },
+      title: { display: true, text: 'Avg Concurrent Players', color: '#8b949e', font: { size: 10 } },
+      beginAtZero: true,
     },
     y: {
       grid: { display: false },
@@ -657,18 +408,13 @@ const impactChartOptions = computed(() => ({
       titleColor: '#e6edf3',
       bodyColor: '#8b949e',
       callbacks: {
-        label: (ctx: any) => {
-          const val = ctx.parsed.x
-          return `${val >= 0 ? '+' : ''}${val.toFixed(1)} players avg`
-        },
+        label: (ctx: any) => `${ctx.parsed.x.toFixed(1)} avg players`,
       },
     },
   },
 }))
 
 // --- Time of Day Heatmap ---
-const displayHours = computed(() => Array.from({ length: 24 }, (_, i) => i))
-
 const maxHourly = computed(() => {
   let max = 1
   for (const s of filteredSummaries.value) {
@@ -741,91 +487,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* Transition rows */
-.transition-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid transparent;
-  transition: all 0.15s;
-}
-
-.transition-row:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.06);
-}
-
-/* Transition matrix */
-.transition-matrix {
-  overflow-x: auto;
-}
-
-.matrix-header {
-  display: flex;
-  gap: 1px;
-  margin-bottom: 1px;
-}
-
-.matrix-label-corner {
-  width: 5.5rem;
-  flex-shrink: 0;
-}
-
-@media (max-width: 640px) {
-  .matrix-label-corner {
-    width: 4rem;
-  }
-}
-
-.matrix-col-label {
-  flex: 1;
-  min-width: 1.25rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 0.25rem 0;
-}
-
-.matrix-row {
-  display: flex;
-  gap: 1px;
-  margin-bottom: 1px;
-}
-
-.matrix-row-label {
-  width: 5.5rem;
-  flex-shrink: 0;
-  font-size: 0.6rem;
-  color: #8b949e;
-  font-family: ui-monospace, monospace;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-
-@media (max-width: 640px) {
-  .matrix-row-label {
-    width: 4rem;
-  }
-}
-
-.matrix-cell {
-  flex: 1;
-  min-width: 1.25rem;
-  aspect-ratio: 1;
-  border-radius: 2px;
-  transition: box-shadow 0.2s;
-  cursor: default;
-}
-
-.matrix-cell:hover {
-  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-}
-
 /* Heatmap styles */
 .map-heatmap {
   width: 100%;
