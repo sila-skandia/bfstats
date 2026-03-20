@@ -70,6 +70,7 @@ interface RoundData {
 // State
 const rounds = ref<RoundData[]>([]);
 const playerInfo = ref<PlayerContextInfo | null>(null);
+const playerStatsData = ref<Record<string, TopPlayer>>({});
 const loading = ref(true);
 const error = ref<string | null>(null);
 const currentPage = ref(1);
@@ -420,6 +421,153 @@ const navigateToRoundReport = (roundId: string) => {
   });
 };
 
+// --- Player performance worm chart (only in player context) ---
+const playerPerformanceRounds = computed(() => {
+  if (!props.playerName) return [];
+  return [...rounds.value]
+    .filter(r => playerStatsData.value[r.roundId])
+    .reverse(); // chronological (oldest first)
+});
+
+const playerPerformanceChartData = computed(() => {
+  const data = playerPerformanceRounds.value;
+  if (data.length === 0) return { labels: [], datasets: [] };
+
+  const labels = data.map(r => {
+    const d = new Date(r.startTime);
+    return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${r.mapName}`;
+  });
+
+  const playerKills = data.map(r => playerStatsData.value[r.roundId]?.kills ?? null);
+  const playerKD = data.map(r => {
+    const s = playerStatsData.value[r.roundId];
+    return s ? parseFloat(calculateKDR(s.kills, s.deaths)) : null;
+  });
+  const topKills = data.map(r => {
+    const top = r.topPlayers?.[0];
+    return top ? top.kills : null;
+  });
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Your Kills',
+        data: playerKills,
+        borderColor: '#4ade80',
+        backgroundColor: 'rgba(74, 222, 128, 0.12)',
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        pointBackgroundColor: '#4ade80',
+        pointBorderColor: '#1e293b',
+        pointBorderWidth: 1.5,
+        yAxisID: 'yKills',
+      },
+      {
+        label: '🥇 Top Kills',
+        data: topKills,
+        borderColor: '#f97316',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderDash: [4, 3],
+        fill: false,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        yAxisID: 'yKills',
+      },
+      {
+        label: 'Your K/D',
+        data: playerKD,
+        borderColor: '#a78bfa',
+        backgroundColor: 'rgba(167, 139, 250, 0.08)',
+        borderWidth: 2,
+        fill: false,
+        tension: 0.4,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#a78bfa',
+        pointBorderColor: '#1e293b',
+        pointBorderWidth: 1,
+        yAxisID: 'yKD',
+      },
+    ],
+  };
+});
+
+const playerPerformanceChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: {
+    mode: 'index' as const,
+    intersect: false,
+  },
+  plugins: {
+    legend: {
+      display: true,
+      position: 'top' as const,
+      labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 12, padding: 14 },
+    },
+    tooltip: {
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      titleColor: '#e2e8f0',
+      bodyColor: '#94a3b8',
+      borderColor: 'rgba(100, 116, 139, 0.3)',
+      borderWidth: 1,
+      padding: 10,
+      callbacks: {
+        title: (items: any[]) => {
+          const idx = items[0]?.dataIndex;
+          if (idx === undefined) return '';
+          const r = playerPerformanceRounds.value[idx];
+          return r ? `${r.mapName} · ${r.serverName}` : '';
+        },
+        afterBody: (items: any[]) => {
+          const idx = items[0]?.dataIndex;
+          if (idx === undefined) return [];
+          const r = playerPerformanceRounds.value[idx];
+          const s = r ? playerStatsData.value[r.roundId] : null;
+          return s ? [`Score: ${s.score}`] : [];
+        },
+      },
+    },
+  },
+  scales: {
+    x: { display: false },
+    yKills: {
+      type: 'linear' as const,
+      position: 'left' as const,
+      beginAtZero: true,
+      ticks: { color: '#64748b', font: { size: 10 } },
+      grid: { color: 'rgba(100, 116, 139, 0.12)' },
+      title: { display: true, text: 'Kills', color: '#64748b', font: { size: 10 } },
+    },
+    yKD: {
+      type: 'linear' as const,
+      position: 'right' as const,
+      beginAtZero: true,
+      ticks: { color: '#64748b', font: { size: 10 } },
+      grid: { display: false },
+      title: { display: true, text: 'K/D', color: '#64748b', font: { size: 10 } },
+    },
+  },
+}));
+
+const playerAggregate = computed(() => {
+  const values = Object.values(playerStatsData.value);
+  if (values.length === 0) return null;
+  const totalKills = values.reduce((s, p) => s + p.kills, 0);
+  const totalDeaths = values.reduce((s, p) => s + p.deaths, 0);
+  const avgKills = totalKills / values.length;
+  const bestKills = Math.max(...values.map(p => p.kills));
+  const bestScore = Math.max(...values.map(p => p.score));
+  const kd = parseFloat(calculateKDR(totalKills, totalDeaths));
+  return { avgKills: avgKills.toFixed(1), bestKills, bestScore, kd: kd.toFixed(2), rounds: values.length };
+});
+
 // Fetch data
 const fetchData = async () => {
   try {
@@ -451,18 +599,29 @@ const fetchData = async () => {
       filters.startTimeTo = toDate.toISOString();
     }
 
-    const response = await fetchSessions(
-      currentPage.value,
-      pageSize.value,
-      filters,
-      'startTime',
-      'desc'
-    );
+    const [response, playerResponse] = await Promise.all([
+      fetchSessions(currentPage.value, pageSize.value, filters, 'startTime', 'desc', false),
+      props.playerName
+        ? fetchSessions(currentPage.value, pageSize.value, filters, 'startTime', 'desc', true)
+        : Promise.resolve(null),
+    ]);
 
     rounds.value = response.items as unknown as RoundData[];
     playerInfo.value = response.playerInfo || null;
     totalItems.value = response.totalItems;
     totalPages.value = response.totalPages;
+
+    if (playerResponse) {
+      const data: Record<string, TopPlayer> = {};
+      for (const round of playerResponse.items as unknown as RoundData[]) {
+        if (round.topPlayers && round.topPlayers.length > 0) {
+          data[round.roundId] = round.topPlayers[0];
+        }
+      }
+      playerStatsData.value = data;
+    } else {
+      playerStatsData.value = {};
+    }
   } catch (err) {
     console.error('Error fetching sessions:', err);
     error.value = 'Failed to load sessions. Please try again.';
@@ -656,6 +815,29 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- Player Aggregate Stats (player context only) -->
+        <div
+          v-if="props.playerName && playerAggregate"
+          class="grid grid-cols-2 sm:grid-cols-4 gap-3"
+        >
+          <div class="bg-slate-800/40 border border-slate-700/50 rounded-lg px-4 py-3 text-center">
+            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">Avg Kills</div>
+            <div class="text-xl font-bold text-green-400">{{ playerAggregate.avgKills }}</div>
+          </div>
+          <div class="bg-slate-800/40 border border-slate-700/50 rounded-lg px-4 py-3 text-center">
+            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">Overall K/D</div>
+            <div class="text-xl font-bold text-violet-400">{{ playerAggregate.kd }}</div>
+          </div>
+          <div class="bg-slate-800/40 border border-slate-700/50 rounded-lg px-4 py-3 text-center">
+            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">Best Kills</div>
+            <div class="text-xl font-bold text-cyan-400">{{ playerAggregate.bestKills }}</div>
+          </div>
+          <div class="bg-slate-800/40 border border-slate-700/50 rounded-lg px-4 py-3 text-center">
+            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">Best Score</div>
+            <div class="text-xl font-bold text-amber-400">{{ playerAggregate.bestScore }}</div>
+          </div>
+        </div>
+
         <!-- Charts Section -->
         <div v-if="rounds.length > 1" class="bg-slate-800/30 backdrop-blur-sm rounded-lg border border-slate-700/50 overflow-hidden">
           <button
@@ -671,6 +853,21 @@ onUnmounted(() => {
           </button>
 
           <div v-if="showCharts" class="border-t border-slate-700/50 p-4 space-y-6">
+            <!-- Player Performance Worm (player context only) -->
+            <div v-if="props.playerName && playerPerformanceRounds.length > 1">
+              <div class="flex items-center gap-2 mb-3">
+                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">My Performance</h4>
+                <span class="text-[10px] text-slate-600 font-mono">{{ playerPerformanceRounds.length }} rounds · oldest → newest</span>
+              </div>
+              <div class="h-52 sm:h-64">
+                <Line
+                  :key="`player-perf-${playerPerformanceRounds.length}`"
+                  :data="playerPerformanceChartData"
+                  :options="playerPerformanceChartOptions"
+                />
+              </div>
+            </div>
+
             <!-- Score Timeline (hidden on mobile) -->
             <div v-if="roundsWithScores.length > 1" class="hidden sm:block">
               <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Team Scores Over Time</h4>
@@ -679,8 +876,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Team Wins + Player Placements side by side -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Team Wins + Player Placements side by side (non-player context) -->
+            <div v-if="!props.playerName" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <!-- Team Wins -->
               <div v-if="teamWinChartData.labels.length > 0">
                 <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Team Wins</h4>
@@ -749,7 +946,7 @@ onUnmounted(() => {
                   Team Matchup
                 </th>
                 <th class="text-left py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Top Players
+                  {{ props.playerName ? 'My Performance' : 'Top Players' }}
                 </th>
                 <th class="text-center py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider hidden lg:table-cell">
                   Participants
@@ -823,55 +1020,83 @@ onUnmounted(() => {
                   </span>
                 </td>
 
-                <!-- Top Players Column -->
+                <!-- Performance Column -->
                 <td class="py-4 px-4">
-                  <div
-                    v-if="round.topPlayers && round.topPlayers.length > 0"
-                    class="space-y-1.5"
-                  >
-                    <div
-                      v-for="(player, playerIdx) in round.topPlayers.slice(0, 3)"
-                      :key="playerIdx"
-                      class="text-xs rounded-lg px-2.5 py-1.5 transition-all duration-200"
-                      :class="player.playerName === props.playerName
-                        ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/20 border border-cyan-400/50 shadow-lg shadow-cyan-500/20'
-                        : ''"
-                    >
-                      <div class="flex items-center gap-2">
-                        <span
-                          class="font-bold tabular-nums"
-                          :class="player.playerName === props.playerName
-                            ? 'text-cyan-300 drop-shadow-sm'
-                            : 'text-slate-400'"
+                  <!-- Player context: show own stats prominently, top 3 below -->
+                  <template v-if="props.playerName">
+                    <div v-if="playerStatsData[round.roundId]" class="space-y-2">
+                      <!-- Own stats card -->
+                      <div class="bg-gradient-to-r from-cyan-500/20 to-blue-500/15 border border-cyan-400/40 rounded-lg px-3 py-2">
+                        <div class="flex items-center gap-3 flex-wrap">
+                          <div class="flex items-center gap-1.5">
+                            <span class="text-[10px] font-mono uppercase text-cyan-500/70">K</span>
+                            <span class="text-sm font-bold text-green-400">{{ playerStatsData[round.roundId].kills }}</span>
+                          </div>
+                          <div class="flex items-center gap-1.5">
+                            <span class="text-[10px] font-mono uppercase text-cyan-500/70">D</span>
+                            <span class="text-sm font-bold text-red-400">{{ playerStatsData[round.roundId].deaths }}</span>
+                          </div>
+                          <div class="flex items-center gap-1.5">
+                            <span class="text-[10px] font-mono uppercase text-cyan-500/70">K/D</span>
+                            <span
+                              class="text-sm font-bold font-mono"
+                              :class="getKDRColor(playerStatsData[round.roundId].kills, playerStatsData[round.roundId].deaths)"
+                            >
+                              {{ calculateKDR(playerStatsData[round.roundId].kills, playerStatsData[round.roundId].deaths) }}
+                            </span>
+                          </div>
+                          <div class="flex items-center gap-1.5">
+                            <span class="text-[10px] font-mono uppercase text-cyan-500/70">Score</span>
+                            <span class="text-sm font-semibold text-amber-300">{{ playerStatsData[round.roundId].score }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <!-- Top 3 context (subtle) -->
+                      <div v-if="round.topPlayers && round.topPlayers.length > 0" class="space-y-0.5">
+                        <div
+                          v-for="(player, playerIdx) in round.topPlayers.slice(0, 3)"
+                          :key="playerIdx"
+                          class="flex items-center gap-1.5 text-[11px]"
                         >
-                          {{ playerIdx + 1 }}.
-                        </span>
-                        <span
-                          class="font-medium truncate max-w-[100px]"
-                          :class="player.playerName === props.playerName
-                            ? 'text-cyan-200 font-semibold'
-                            : 'text-slate-200'"
-                          :title="player.playerName"
-                        >
-                          {{ player.playerName }}
-                        </span>
-                        <span class="text-slate-600">/</span>
-                        <span
-                          class="font-mono font-semibold"
-                          :class="getKDRColor(player.kills, player.deaths)"
-                        >
-                          {{ calculateKDR(player.kills, player.deaths) }}
-                        </span>
-                        <span class="text-slate-600">{{ player.score }}</span>
+                          <span class="text-slate-600 tabular-nums w-3">{{ playerIdx + 1 }}.</span>
+                          <span
+                            class="truncate max-w-[90px]"
+                            :class="player.playerName === props.playerName ? 'text-cyan-400 font-semibold' : 'text-slate-500'"
+                          >{{ player.playerName }}</span>
+                          <span class="text-slate-700">/</span>
+                          <span :class="getKDRColor(player.kills, player.deaths)" class="font-mono">{{ calculateKDR(player.kills, player.deaths) }}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <span
-                    v-else
-                    class="text-sm text-slate-500"
-                  >
-                    —
-                  </span>
+                    <span v-else class="text-sm text-slate-500">—</span>
+                  </template>
+
+                  <!-- Non-player context: original top 3 display -->
+                  <template v-else>
+                    <div
+                      v-if="round.topPlayers && round.topPlayers.length > 0"
+                      class="space-y-1.5"
+                    >
+                      <div
+                        v-for="(player, playerIdx) in round.topPlayers.slice(0, 3)"
+                        :key="playerIdx"
+                        class="text-xs rounded-lg px-2.5 py-1.5 transition-all duration-200"
+                      >
+                        <div class="flex items-center gap-2">
+                          <span class="font-bold tabular-nums text-slate-400">{{ playerIdx + 1 }}.</span>
+                          <span class="font-medium truncate max-w-[100px] text-slate-200" :title="player.playerName">
+                            {{ player.playerName }}
+                          </span>
+                          <span class="text-slate-600">/</span>
+                          <span class="font-mono font-semibold" :class="getKDRColor(player.kills, player.deaths)">
+                            {{ calculateKDR(player.kills, player.deaths) }}
+                          </span>
+                          <span class="text-slate-600">{{ player.score }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span v-else class="text-sm text-slate-500">—</span>
+                  </template>
                 </td>
 
                 <!-- Participants Column (hidden on mobile/tablet) -->

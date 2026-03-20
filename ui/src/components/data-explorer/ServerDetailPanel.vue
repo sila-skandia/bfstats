@@ -51,7 +51,15 @@
 
       <!-- Map Rotation -->
       <div class="detail-section">
-        <h3 class="detail-section-title">MAP ROTATION</h3>
+        <div class="flex items-center justify-between">
+          <h3 class="detail-section-title">MAP ROTATION</h3>
+          <router-link
+            :to="{ name: 'map-popularity', params: { serverGuid: props.serverGuid } }"
+            class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+          >
+            Popularity Report &rarr;
+          </router-link>
+        </div>
         <div class="detail-card">
           <MapRotationTable
             :map-rotation="mapRotation"
