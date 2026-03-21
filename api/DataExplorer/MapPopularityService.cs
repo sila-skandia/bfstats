@@ -7,7 +7,7 @@ namespace api.DataExplorer;
 
 public interface IMapPopularityService
 {
-    Task<MapPopularityResponse?> GetMapPopularityAsync(string serverGuid, int days = 7);
+    Task<MapPopularityResponse?> GetMapPopularityAsync(string serverGuid, int days = 7, int? hourStart = null, int? hourEnd = null);
 }
 
 public class MapPopularityService(
@@ -17,7 +17,7 @@ public class MapPopularityService(
     private const int BucketMinutes = 10;
     private const int MaxBuckets = 7 * 24 * 6; // 7 days at 10-min intervals
 
-    public async Task<MapPopularityResponse?> GetMapPopularityAsync(string serverGuid, int days = 7)
+    public async Task<MapPopularityResponse?> GetMapPopularityAsync(string serverGuid, int days = 7, int? hourStart = null, int? hourEnd = null)
     {
         days = Math.Clamp(days, 1, 30);
         var cutoff = DateTime.UtcNow.AddDays(-days);
@@ -112,9 +112,22 @@ public class MapPopularityService(
                 mapName));
         }
 
-        var mapSummaries = ComputeMapSummaries(timeline, rounds);
+        // Filter timeline by hour range if specified
+        var filteredTimeline = timeline;
+        if (hourStart is not null && hourEnd is not null)
+        {
+            var hs = Math.Clamp(hourStart.Value, 0, 23);
+            var he = Math.Clamp(hourEnd.Value, 0, 23);
+            filteredTimeline = timeline
+                .Where(p => hs <= he
+                    ? p.Timestamp.Hour >= hs && p.Timestamp.Hour <= he
+                    : p.Timestamp.Hour >= hs || p.Timestamp.Hour <= he)
+                .ToList();
+        }
 
-        return new MapPopularityResponse(timeline, rounds, mapSummaries);
+        var mapSummaries = ComputeMapSummaries(filteredTimeline, rounds);
+
+        return new MapPopularityResponse(filteredTimeline, rounds, mapSummaries);
     }
 
     /// <summary>

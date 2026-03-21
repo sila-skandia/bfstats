@@ -65,11 +65,14 @@ public class DataExplorerController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<MapPopularityResponse>> GetMapPopularity(
         string serverGuid,
-        [FromQuery] int days = 7)
+        [FromQuery] int days = 7,
+        [FromQuery] int? hourStart = null,
+        [FromQuery] int? hourEnd = null)
     {
-        logger.LogDebug("Getting map popularity for server {ServerGuid}, days: {Days}", serverGuid, days);
+        logger.LogDebug("Getting map popularity for server {ServerGuid}, days: {Days}, hours: {HourStart}-{HourEnd}",
+            serverGuid, days, hourStart, hourEnd);
 
-        var result = await mapPopularityService.GetMapPopularityAsync(serverGuid, days);
+        var result = await mapPopularityService.GetMapPopularityAsync(serverGuid, days, hourStart, hourEnd);
 
         if (result == null)
             return NotFound($"Server '{serverGuid}' not found");

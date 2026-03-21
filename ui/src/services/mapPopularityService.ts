@@ -30,12 +30,19 @@ export interface MapPopularityResponse {
 
 export async function fetchMapPopularity(
   serverGuid: string,
-  days: number = 7
+  days: number = 7,
+  hourStart?: number,
+  hourEnd?: number
 ): Promise<MapPopularityResponse | null> {
   try {
+    const params: Record<string, number> = { days };
+    if (hourStart !== undefined && hourEnd !== undefined) {
+      params.hourStart = hourStart;
+      params.hourEnd = hourEnd;
+    }
     const response = await axios.get<MapPopularityResponse>(
       `/stats/data-explorer/servers/${encodeURIComponent(serverGuid)}/map-popularity`,
-      { params: { days } }
+      { params }
     );
     return response.data;
   } catch (err: any) {
