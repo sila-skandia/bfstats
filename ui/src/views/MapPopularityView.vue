@@ -224,7 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Bar } from 'vue-chartjs'
 import {
@@ -275,7 +275,13 @@ function applyHourPreset(preset: HourPreset) {
     hourStart.value = preset.start
     hourEnd.value = preset.end
   }
+  loadData()
 }
+
+// Reload when custom hour range changes
+watch([hourStart, hourEnd], () => {
+  if (activeHourPreset.value === 'Custom') loadData()
+})
 
 function isHourInRange(hour: number): boolean {
   if (hourStart.value <= hourEnd.value) {
@@ -309,55 +315,12 @@ function getMapColor(mapName: string): string {
 // --- Data ---
 const allMaps = computed<MapPopularitySummary[]>(() => data.value?.mapSummaries ?? [])
 
-// Timeline points filtered by selected hour range
-const hourFilteredTimeline = computed(() => {
-  if (!data.value) return []
-  if (activeHourPreset.value === 'All') return data.value.timeline
-  return data.value.timeline.filter(p => {
-    const hour = new Date(p.timestamp).getUTCHours()
-    return isHourInRange(hour)
-  })
-})
-
-// --- Recomputed summaries (with hour filter applied) ---
-const filteredSummaries = computed<MapPopularitySummary[]>(() => {
-  if (!data.value) return []
-  const isFiltered = activeHourPreset.value !== 'All'
-
-  if (!isFiltered) {
-    return allMaps.value.filter(m => selectedMaps.value.has(m.mapName))
-  }
-
-  const timeline = hourFilteredTimeline.value
-
-  const mapPoints: Record<string, number[]> = {}
-  for (const p of timeline) {
-    if (p.mapName && selectedMaps.value.has(p.mapName)) {
-      ;(mapPoints[p.mapName] ??= []).push(p.playerCount)
-    }
-  }
-
-  const mapRoundCounts: Record<string, number> = {}
-  for (const r of data.value.rounds) {
-    mapRoundCounts[r.mapName] = (mapRoundCounts[r.mapName] ?? 0) + 1
-  }
-
-  return Object.keys(mapPoints)
-    .map(mapName => {
-      const pts = mapPoints[mapName]
-      const avgConcurrent = pts.length > 0 ? pts.reduce((s, v) => s + v, 0) / pts.length : 0
-      const apiSummary = allMaps.value.find(m => m.mapName === mapName)
-
-      return {
-        mapName,
-        totalRounds: mapRoundCounts[mapName] ?? 0,
-        avgConcurrentPlayers: Math.round(avgConcurrent * 10) / 10,
-        avgPlayerDelta: 0,
-        hourlyAvgPlayers: apiSummary?.hourlyAvgPlayers ?? new Array(24).fill(0),
-      } as MapPopularitySummary
-    })
+// Summaries filtered by selected maps
+const filteredSummaries = computed<MapPopularitySummary[]>(() =>
+  allMaps.value
+    .filter(m => selectedMaps.value.has(m.mapName))
     .sort((a, b) => b.avgConcurrentPlayers - a.avgConcurrentPlayers)
-})
+)
 
 function selectAllMaps() { selectedMaps.value = new Set(allMaps.value.map(m => m.mapName)) }
 function deselectAllMaps() { selectedMaps.value = new Set() }
@@ -439,7 +402,12 @@ async function loadData() {
   loading.value = true
   error.value = null
   try {
-    const result = await fetchMapPopularity(serverGuid.value, selectedDays.value)
+    const result = await fetchMapPopularity(
+      serverGuid.value,
+      selectedDays.value,
+      activeHourPreset.value !== 'All' ? hourStart.value : undefined,
+      activeHourPreset.value !== 'All' ? hourEnd.value : undefined
+    )
     if (!result) {
       error.value = 'Server not found'
       return
