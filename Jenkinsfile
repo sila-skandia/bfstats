@@ -1,7 +1,11 @@
 pipeline {
   agent none
-parameters {
+  parameters {
     booleanParam(name: 'BUILD_ALL', defaultValue: false, description: 'Build and deploy all services, ignoring changeset detection')
+  }
+  triggers {
+    githubPush()
+    pollSCM('H/5 * * * *')
   }
   stages {
     stage('Detect Changes') {
@@ -14,14 +18,40 @@ parameters {
       }
       steps {
         script {
-          def scmVars = checkout scm
-          def prevCommit = scmVars.GIT_PREVIOUS_SUCCESSFUL_COMMIT ?: sh(script: 'git rev-parse HEAD~1', returnStdout: true).trim()
-          def changes = sh(script: "git diff --name-only ${prevCommit}..HEAD", returnStdout: true).trim()
-          echo "Changed files since last successful build:\n${changes}"
-          def changedFiles = changes ? changes.split('\n').toList() : []
+          checkout scm
+          
+          def changedFiles = []
+          // 1. Try to get changes from changeSets (standard Jenkins way for SCM-triggered builds)
+          for (int i = 0; i < currentBuild.changeSets.size(); i++) {
+              def entries = currentBuild.changeSets[i].items
+              for (int j = 0; j < entries.length; j++) {
+                  def entry = entries[j]
+                  changedFiles.addAll(entry.affectedPaths)
+              }
+          }
+          
+          // 2. Fallback to git diff if changeSets is empty (e.g. manual build or logic gap)
+          if (!changedFiles) {
+              echo "No changes detected via changeSets. Falling back to git diff."
+              try {
+                  def prevCommit = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT ?: sh(script: 'git rev-parse HEAD~1', returnStdout: true).trim()
+                  def changes = sh(script: "git diff --name-only ${prevCommit}..HEAD", returnStdout: true).trim()
+                  changedFiles = changes ? changes.split('\n').toList() : []
+              } catch (Exception e) {
+                  echo "Error during git diff fallback: ${e.message}"
+              }
+          }
+
+          if (changedFiles) {
+              echo "Detected changed files: ${changedFiles.unique().join(', ')}"
+          } else {
+              echo "No changed files detected."
+          }
+
           env.API_CHANGED = changedFiles.any { it.startsWith('api/') } ? 'true' : 'false'
           env.UI_CHANGED = changedFiles.any { it.startsWith('ui/') } ? 'true' : 'false'
           env.NOTIFICATIONS_CHANGED = changedFiles.any { it.startsWith('notifications/') } ? 'true' : 'false'
+          
           echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}"
         }
       }

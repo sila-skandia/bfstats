@@ -140,19 +140,22 @@ try
     builder.Logging.AddFilter((category, level) =>
     {
         // Suppress EF Core Database.Command logs when inside a bulk operation (background service)
-        if (category != null && category.Contains("Microsoft.EntityFrameworkCore.Database.Command"))
+        if (category != null && (category.Contains("Microsoft.EntityFrameworkCore.Database.Command") || category.Contains("Microsoft.EntityFrameworkCore.Infrastructure")))
         {
             // Check if we're currently in a bulk operation by examining the current Activity
             var activity = System.Diagnostics.Activity.Current;
-            if (activity != null)
+            while (activity != null)
             {
-                foreach (var tag in activity.Tags)
+                if (activity.Tags.Any(tag =>
+                    (tag.Key == "bulk_operation" && tag.Value == "true") ||
+                    tag.Key == "StatsCollection.Cycle" ||
+                    tag.Key == "Gamification.Processing" ||
+                    tag.Key == "AggregateCalculation.Cycle" ||
+                    tag.Key == "RankingCalculation.Cycle"))
                 {
-                    if (tag.Key == "bulk_operation" && tag.Value == "true")
-                    {
-                        return false; // Suppress this log
-                    }
+                    return false; // Suppress this log
                 }
+                activity = activity.Parent;
             }
         }
         return true; // Allow all other logs
@@ -213,7 +216,9 @@ try
                             if (activity.Tags.Any(tag =>
                                 (tag.Key == "bulk_operation" && tag.Value == "true") ||
                                 tag.Key == "StatsCollection.Cycle" ||
-                                tag.Key == "Gamification.Processing"))
+                                tag.Key == "Gamification.Processing" ||
+                                tag.Key == "AggregateCalculation.Cycle" ||
+                                tag.Key == "RankingCalculation.Cycle"))
                             {
                                 return false;
                             }
@@ -227,11 +232,48 @@ try
                 tracing.AddEntityFrameworkCoreInstrumentation(options =>
                 {
                     options.SetDbStatementForText = true;
+                    options.Filter = (commandName, command) =>
+                    {
+                        var activity = System.Diagnostics.Activity.Current;
+                        while (activity != null)
+                        {
+                            // Skip tracing if we're in a background service operation (identified by bulk_operation tag or specific activity names)
+                            if (activity.Tags.Any(tag =>
+                                (tag.Key == "bulk_operation" && tag.Value == "true") ||
+                                tag.Key == "StatsCollection.Cycle" ||
+                                tag.Key == "Gamification.Processing" ||
+                                tag.Key == "AggregateCalculation.Cycle" ||
+                                tag.Key == "RankingCalculation.Cycle"))
+                            {
+                                return false;
+                            }
+                            activity = activity.Parent;
+                        }
+                        return true;
+                    };
                 });
 
                 tracing.AddSqlClientInstrumentation(options =>
                 {
                     options.SetDbStatementForText = true;
+                    options.Filter = (command) =>
+                    {
+                        var activity = System.Diagnostics.Activity.Current;
+                        while (activity != null)
+                        {
+                            if (activity.Tags.Any(tag =>
+                                (tag.Key == "bulk_operation" && tag.Value == "true") ||
+                                tag.Key == "StatsCollection.Cycle" ||
+                                tag.Key == "Gamification.Processing" ||
+                                tag.Key == "AggregateCalculation.Cycle" ||
+                                tag.Key == "RankingCalculation.Cycle"))
+                            {
+                                return false;
+                            }
+                            activity = activity.Parent;
+                        }
+                        return true;
+                    };
                 });
 
                 tracing.AddOtlpExporter(opt =>
