@@ -1,3 +1,21 @@
+## Verification & Testing
+
+After making any code changes, you **must** run the verification script. This script runs API unit tests and containerized Playwright E2E tests.
+
+- **Full Verification**: `./scripts/verify.sh`
+- **Fast Logic Check**: `./scripts/verify.sh --skip-e2e`
+- **Targeted E2E**: `./scripts/verify.sh e2e/relevant-test.spec.ts --project=chromium`
+
+### Feature to Test Mapping
+- **Players/Search**: `e2e/player-search.spec.ts`, `e2e/players-extended.spec.ts`
+- **Servers/Landing**: `e2e/landing.spec.ts`, `e2e/server-details.spec.ts`
+- **Responsive/Mobile**: `e2e/responsive-mobile.spec.ts`
+- **Data Explorer**: `e2e/data-explorer.spec.ts`
+
+If E2E tests fail, view the report on your host with: `npx playwright show-report ui/playwright-report`
+
+---
+
 ## Folder Structure Convention
 
 We use a **feature-first organization** pattern rather than type-based organization (no `/Services`, `/Controllers`, `/Models` at the root level).

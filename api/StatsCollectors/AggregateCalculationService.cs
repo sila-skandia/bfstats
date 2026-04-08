@@ -45,6 +45,7 @@ public class AggregateCalculationService(
                 ActivityKind.Internal,
                 parentContext: default);
             activity?.SetTag("bulk_operation", "true");
+            activity?.SetTag("AggregateCalculation.Cycle", "true"); // Explicit tag for filtering in Program.cs
 
             var cycleStopwatch = Stopwatch.StartNew();
             try
