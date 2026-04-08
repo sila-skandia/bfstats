@@ -39,6 +39,16 @@ public class GamificationBackgroundService(IServiceProvider services, ILogger<Ga
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            // Use explicit default parentContext to create a root activity with a fresh traceId.
+            // Without this, StartActivity() could inherit Activity.Current from the thread pool,
+            // causing background cycles to share a traceId with unrelated HTTP requests.
+            using var activity = api.Telemetry.ActivitySources.Gamification.StartActivity(
+                "Gamification.Cycle",
+                ActivityKind.Internal,
+                parentContext: default);
+            activity?.SetTag("bulk_operation", "true");
+            activity?.SetTag("Gamification.Processing", "true"); // Also set specific tag checked in Program.cs
+
             try
             {
                 using var scope = services.CreateScope();
@@ -51,6 +61,7 @@ public class GamificationBackgroundService(IServiceProvider services, ILogger<Ga
             }
             catch (Exception ex)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, $"Gamification cycle failed: {ex.Message}");
                 logger.LogError(ex, "Error during gamification processing cycle");
             }
 

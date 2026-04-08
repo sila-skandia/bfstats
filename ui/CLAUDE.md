@@ -9,6 +9,7 @@ All changes must be mobile-friendly. UI components must render cleanly on both m
 
 ### End-to-End Tests
 Maintain and update Playwright E2E tests with all changes. Tests are located in `/e2e` and must pass after any UI modifications.
+- **Verification**: After any change, you MUST run `./scripts/verify.sh` with relevant E2E tests (e.g., `e2e/responsive-mobile.spec.ts` for mobile-related changes). 
 
 ## Design System
 

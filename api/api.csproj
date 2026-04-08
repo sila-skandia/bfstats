@@ -48,7 +48,7 @@
       <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
       <PackageReference Include="Serilog.Enrichers.Process" Version="3.0.0" />
       <PackageReference Include="CsvHelper" Version="33.0.1" />
-      <PackageReference Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.0.0-rc9" />
+      <PackageReference Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.11.0-beta.1" />
       <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
       <PackageReference Include="Microsoft.SemanticKernel" Version="1.30.0" />
       <PackageReference Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" Version="1.30.0" />

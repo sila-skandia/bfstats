@@ -62,6 +62,7 @@ public class StatsCollectionBackgroundService(
         activity?.SetTag("cycle_number", currentCycle);
         activity?.SetTag("collection_interval_seconds", _collectionInterval.TotalSeconds);
         activity?.SetTag("bulk_operation", "true");
+        activity?.SetTag("StatsCollection.Cycle", "true"); // Explicit tag for filtering in Program.cs
 
         var cycleStopwatch = Stopwatch.StartNew();
 
