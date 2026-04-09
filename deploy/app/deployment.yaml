@@ -135,7 +135,7 @@ spec:
                   optional: true
             # Azure OpenAI Configuration
             - name: AzureOpenAI__Endpoint
-              value: "https://bfstats-openai-eastus.cognitiveservices.azure.com/"
+              value: "https://bfstats-ai.openai.azure.com/openai/v1/"
             - name: AzureOpenAI__DeploymentName
               value: "gpt-4o-mini"
             - name: AzureOpenAI__MaxTokens
