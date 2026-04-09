@@ -75,25 +75,50 @@ var loggerConfig = new LoggerConfiguration()
     .MinimumLevel.Override("Microsoft.AspNetCore.Mvc.Infrastructure", Serilog.Events.LogEventLevel.Warning)
     // Enable EF Core SQL statement logging
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", Serilog.Events.LogEventLevel.Information)
-    // Filter to suppress EF Core SQL logs only during bulk operations
+    // Filter to suppress EF Core SQL logs during bulk/background operations.
+    // EF command logs do not always carry LogContext properties, so we also inspect Activity tags.
     .Filter.ByExcluding(logEvent =>
     {
-        // Suppress EF Core SQL logs when they're part of bulk operations
-        if (logEvent.Properties.ContainsKey("bulk_operation") &&
-            logEvent.Properties.ContainsKey("SourceContext"))
+        if (!logEvent.Properties.TryGetValue("SourceContext", out var sourceContextValue))
         {
-            var bulkOpValue = logEvent.Properties["bulk_operation"].ToString().Trim('"');
-            var sourceContext = logEvent.Properties["SourceContext"].ToString();
-
-            // Check if bulk_operation is true (case-insensitive) and source is EF Core
-            if (bulkOpValue.Equals("true", StringComparison.OrdinalIgnoreCase) &&
-                (sourceContext.Contains("Microsoft.EntityFrameworkCore.Database.Command") ||
-                 sourceContext.Contains("Microsoft.EntityFrameworkCore.Infrastructure")))
-            {
-                return true; // Exclude this log
-            }
+            return false;
         }
-        return false; // Include this log
+
+        var sourceContext = sourceContextValue.ToString();
+        var isEfCoreCommandLog =
+            sourceContext.Contains("Microsoft.EntityFrameworkCore.Database.Command") ||
+            sourceContext.Contains("Microsoft.EntityFrameworkCore.Infrastructure");
+
+        if (!isEfCoreCommandLog)
+        {
+            return false;
+        }
+
+        // Fast path: explicit Serilog property pushed via LogContext.
+        if (logEvent.Properties.TryGetValue("bulk_operation", out var bulkOperationValue) &&
+            bulkOperationValue.ToString().Trim('"').Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Fallback: check current Activity tag chain for background/bulk markers.
+        var activity = Activity.Current;
+        while (activity != null)
+        {
+            if (activity.Tags.Any(tag =>
+                (tag.Key == "bulk_operation" && tag.Value == "true") ||
+                tag.Key == "StatsCollection.Cycle" ||
+                tag.Key == "Gamification.Processing" ||
+                tag.Key == "AggregateCalculation.Cycle" ||
+                tag.Key == "RankingCalculation.Cycle"))
+            {
+                return true;
+            }
+
+            activity = activity.Parent;
+        }
+
+        return false;
     })
     // Filter out OTLP trace export HTTP requests
     .Filter.ByExcluding(logEvent =>
