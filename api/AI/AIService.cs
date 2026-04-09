@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 
 namespace api.AI;
 
@@ -118,7 +118,7 @@ public partial class AIService(
 
         var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
 
-        var executionSettings = new AzureOpenAIPromptExecutionSettings
+        var executionSettings = new OpenAIPromptExecutionSettings
         {
             MaxTokens = options.Value.MaxTokens,
             Temperature = options.Value.Temperature,

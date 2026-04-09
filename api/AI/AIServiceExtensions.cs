@@ -1,8 +1,10 @@
+using System.ClientModel;
 using api.AI.Models;
 using api.AI.Plugins;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
+using OpenAI;
 
 namespace api.AI;
 
@@ -50,11 +52,14 @@ public static class AIServiceExtensions
         {
             var builder = Kernel.CreateBuilder();
 
-            // Add Azure OpenAI chat completion
-            builder.AddAzureOpenAIChatCompletion(
-                deploymentName: options.DeploymentName,
-                endpoint: options.Endpoint,
-                apiKey: options.ApiKey);
+            // Add OpenAI-compatible chat completion with custom Azure endpoint
+            var openAIClient = new OpenAIClient(
+                new ApiKeyCredential(options.ApiKey),
+                new OpenAIClientOptions { Endpoint = new Uri(options.Endpoint) });
+
+            builder.AddOpenAIChatCompletion(
+                modelId: options.DeploymentName,
+                openAIClient: openAIClient);
 
             var kernel = builder.Build();
 
