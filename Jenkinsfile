@@ -199,8 +199,7 @@ pipeline {
               steps {
                 container('dind') {
                   withCredentials([
-                    usernamePassword(credentialsId: 'jenkins-bf1942-stats-dockerhub-pat', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD'),
-                    string(credentialsId: 'bfstats-appi-connection-string', variable: 'APPINSIGHTS_CONNECTION_STRING')
+                    usernamePassword(credentialsId: 'jenkins-bf1942-stats-dockerhub-pat', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')
                   ]) {
                     sh '''
                       # Login to Docker Hub
@@ -211,11 +210,10 @@ pipeline {
                       docker buildx use multiarch-builder-ui
 
                       # Build and push ARM64 image for UI
-                      # Pass Application Insights connection string as build arg
                       DOCKER_BUILDKIT=1 docker buildx build -f ui/Dockerfile ui/ \
                         --platform linux/arm64 \
                         --build-arg BUILDKIT_PROGRESS=plain \
-                        --build-arg VITE_APPLICATIONINSIGHTS_CONNECTION_STRING="${APPINSIGHTS_CONNECTION_STRING}" \
+                        --build-arg VITE_DISCORD_CLIENT_ID="1410567423119196251" \
                         --push \
                         -t anskia/bfstats-ui:latest
                     '''
