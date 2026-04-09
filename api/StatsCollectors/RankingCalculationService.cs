@@ -39,6 +39,7 @@ public class RankingCalculationService(IServiceProvider services, ILogger<Rankin
             var cycleStopwatch = Stopwatch.StartNew();
             try
             {
+                using (BulkOperationContext.Begin())
                 using (LogContext.PushProperty("bulk_operation", true))
                 using (var scope = services.CreateScope())
                 {

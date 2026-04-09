@@ -94,6 +94,11 @@ var loggerConfig = new LoggerConfiguration()
             return false;
         }
 
+        if (BulkOperationContext.IsActive)
+        {
+            return true;
+        }
+
         // Fast path: explicit Serilog property pushed via LogContext.
         if (logEvent.Properties.TryGetValue("bulk_operation", out var bulkOperationValue) &&
             bulkOperationValue.ToString().Trim('"').Equals("true", StringComparison.OrdinalIgnoreCase))
@@ -167,6 +172,11 @@ try
         // Suppress EF Core Database.Command logs when inside a bulk operation (background service)
         if (category != null && (category.Contains("Microsoft.EntityFrameworkCore.Database.Command") || category.Contains("Microsoft.EntityFrameworkCore.Infrastructure")))
         {
+            if (BulkOperationContext.IsActive)
+            {
+                return false;
+            }
+
             // Check if we're currently in a bulk operation by examining the current Activity
             var activity = System.Diagnostics.Activity.Current;
             while (activity != null)
@@ -234,6 +244,11 @@ try
                     // Only trace HTTP calls from API requests, not background services
                     options.FilterHttpRequestMessage = (httpRequestMessage) =>
                     {
+                        if (BulkOperationContext.IsActive)
+                        {
+                            return false;
+                        }
+
                         var activity = System.Diagnostics.Activity.Current;
                         while (activity != null)
                         {
@@ -259,6 +274,11 @@ try
                     options.SetDbStatementForText = true;
                     options.Filter = (commandName, command) =>
                     {
+                        if (BulkOperationContext.IsActive)
+                        {
+                            return false;
+                        }
+
                         var activity = System.Diagnostics.Activity.Current;
                         while (activity != null)
                         {
@@ -283,6 +303,11 @@ try
                     options.SetDbStatementForText = true;
                     options.Filter = (command) =>
                     {
+                        if (BulkOperationContext.IsActive)
+                        {
+                            return false;
+                        }
+
                         var activity = System.Diagnostics.Activity.Current;
                         while (activity != null)
                         {

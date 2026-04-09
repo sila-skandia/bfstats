@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using api.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +43,7 @@ public class DailyAggregateRefreshBackgroundService(
 
                 await Task.Delay(delay, stoppingToken);
 
+                using var bulkScope = BulkOperationContext.Begin();
                 using var scope = scopeFactory.CreateScope();
                 var runner = scope.ServiceProvider.GetRequiredService<IDailyAggregateRefreshBackgroundService>();
                 await runner.RunAsync(stoppingToken);

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using api.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +39,7 @@ public class WeeklyCleanupJob(
 
                 await Task.Delay(delay, stoppingToken);
 
+                using var bulkScope = BulkOperationContext.Begin();
                 using var scope = scopeFactory.CreateScope();
                 var runner = scope.ServiceProvider.GetRequiredService<IWeeklyCleanupBackgroundService>();
                 await runner.RunAsync(stoppingToken);
