@@ -125,6 +125,7 @@ const handleDiscordLogin = async () => {
     isDropdownOpen.value = false;
     await loginWithDiscord();
   } catch (error) {
+    console.error('Discord login failed:', error);
     alert('Discord login failed. Please try again.');
   } finally {
     isLoading.value = false;
