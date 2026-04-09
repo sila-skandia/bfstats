@@ -33,6 +33,7 @@ public class DailyAggregateRefreshJob(
         var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
 
         // Suppress EF SQL logging during bulk operations
+        using (BulkOperationContext.Begin())
         using (LogContext.PushProperty("bulk_operation", true))
         {
             try
@@ -80,6 +81,7 @@ public class DailyAggregateRefreshJob(
         var stopwatch = Stopwatch.StartNew();
         logger.LogInformation("Starting full ServerMapStats backfill from all Rounds data");
 
+        using var bulkScope = BulkOperationContext.Begin();
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
 
@@ -135,6 +137,7 @@ public class DailyAggregateRefreshJob(
     /// </summary>
     public async Task RefreshServerMapStatsForServerMapPeriodAsync(string serverGuid, string mapName, int year, int month, CancellationToken ct = default)
     {
+        using var bulkScope = BulkOperationContext.Begin();
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
 
