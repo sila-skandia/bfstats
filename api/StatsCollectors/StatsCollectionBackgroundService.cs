@@ -68,6 +68,7 @@ public class StatsCollectionBackgroundService(
 
         try
         {
+            using (BulkOperationContext.Begin())
             using (LogContext.PushProperty("bulk_operation", true))
             using (var scope = scopeFactory.CreateScope())
             {

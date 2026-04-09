@@ -1,5 +1,6 @@
 using api.Gamification.Models;
 using api.Analytics.Models;
+using api.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Serilog.Context;
@@ -32,6 +33,7 @@ public class GamificationService(SqliteGamificationService gamificationService, 
     {
         try
         {
+            using (BulkOperationContext.Begin())
             using (LogContext.PushProperty("bulk_operation", true))
             {
                 // Get the last time we processed achievements
@@ -87,6 +89,7 @@ public class GamificationService(SqliteGamificationService gamificationService, 
     /// </summary>
     public async Task ProcessAchievementsForRoundIdAsync(string roundId)
     {
+        using (BulkOperationContext.Begin())
         using (LogContext.PushProperty("bulk_operation", true))
         {
             var rounds = await gamificationService.GetPlayerRoundsForRoundAsync(roundId);

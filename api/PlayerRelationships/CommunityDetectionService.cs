@@ -1,4 +1,5 @@
 using api.PlayerRelationships.Models;
+using api.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,7 @@ public class CommunityDetectionService(
             {
                 await Task.Delay(_delay, stoppingToken);
                 
+                using var bulkScope = BulkOperationContext.Begin();
                 using var scope = serviceProvider.CreateScope();
                 var relationshipService = scope.ServiceProvider.GetRequiredService<IPlayerRelationshipService>();
                 
