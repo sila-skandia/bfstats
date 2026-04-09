@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using api.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -51,11 +52,14 @@ public class GamificationBackgroundService(IServiceProvider services, ILogger<Ga
 
             try
             {
-                using var scope = services.CreateScope();
-                var gamificationService = scope.ServiceProvider.GetRequiredService<GamificationService>();
+                using (BulkOperationContext.Begin())
+                {
+                    using var scope = services.CreateScope();
+                    var gamificationService = scope.ServiceProvider.GetRequiredService<GamificationService>();
 
-                // Process new achievements every 5 minutes
-                await gamificationService.ProcessNewAchievementsAsync();
+                    // Process new achievements every 5 minutes
+                    await gamificationService.ProcessNewAchievementsAsync();
+                }
 
                 logger.LogDebug("Completed gamification processing cycle");
             }

@@ -31,6 +31,7 @@ public class WeeklyCleanupBackgroundService(
         var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
 
         // Suppress EF SQL logging during bulk operations
+        using (BulkOperationContext.Begin())
         using (LogContext.PushProperty("bulk_operation", true))
         {
             try

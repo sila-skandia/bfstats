@@ -50,6 +50,7 @@ public class AggregateCalculationService(
             var cycleStopwatch = Stopwatch.StartNew();
             try
             {
+                using (BulkOperationContext.Begin())
                 using (LogContext.PushProperty("bulk_operation", true))
                 using (var scope = services.CreateScope())
                 {

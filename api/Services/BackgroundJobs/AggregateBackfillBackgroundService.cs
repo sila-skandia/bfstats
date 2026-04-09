@@ -40,6 +40,7 @@ public class AggregateBackfillBackgroundService(
 
     public async Task RunAsync(CancellationToken ct = default)
     {
+        using var bulkScope = BulkOperationContext.Begin();
         logger.LogInformation("Starting full aggregate backfill (all tiers)");
 
         foreach (var (tier, _, _) in Tiers)
@@ -69,6 +70,7 @@ public class AggregateBackfillBackgroundService(
         var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
 
         // Suppress EF SQL logging during bulk operations
+        using (BulkOperationContext.Begin())
         using (LogContext.PushProperty("bulk_operation", true))
         {
             await concurrency.ExecuteWithPlayerAggregatesLockAsync(async (c) =>
@@ -160,6 +162,7 @@ public class AggregateBackfillBackgroundService(
         var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
 
         // Suppress EF SQL logging during bulk operations
+        using (BulkOperationContext.Begin())
         using (LogContext.PushProperty("bulk_operation", true))
         {
             await concurrency.ExecuteWithPlayerAggregatesLockAsync(async (c) =>
