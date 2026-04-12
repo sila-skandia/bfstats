@@ -33,18 +33,53 @@
               {{ comment.authorPlayerName }}
             </router-link>
             <div class="pc-comment-meta-right">
+              <span v-if="comment.updatedAt !== comment.createdAt" class="pc-timestamp pc-edited-tag">EDITED</span>
               <span class="pc-timestamp">{{ formatDate(comment.createdAt) }}</span>
-              <button
-                v-if="canDelete(comment)"
-                class="pc-btn pc-btn-danger pc-btn-sm"
-                title="Delete comment"
-                @click="deleteComment(comment.id)"
-              >
-                DEL
-              </button>
+              <template v-if="canDelete(comment)">
+                <button
+                  class="pc-btn pc-btn-ghost pc-btn-sm"
+                  title="Edit comment"
+                  @click="startEdit(comment)"
+                >
+                  EDIT
+                </button>
+                <button
+                  class="pc-btn pc-btn-danger pc-btn-sm"
+                  title="Delete comment"
+                  @click="deleteComment(comment.id)"
+                >
+                  DEL
+                </button>
+              </template>
             </div>
           </div>
+
+          <!-- Inline edit form -->
+          <div v-if="editingId === comment.id" class="pc-edit-form">
+            <textarea
+              v-model="editContent"
+              class="pc-textarea"
+              :disabled="editSaving"
+            />
+            <div class="pc-form-footer">
+              <span class="pc-hint">{{ editContent.length }}/2000</span>
+              <div class="pc-form-footer-right">
+                <span v-if="editError" class="pc-error-text">{{ editError }}</span>
+                <button class="pc-btn pc-btn-ghost pc-btn-sm" :disabled="editSaving" @click="cancelEdit">CANCEL</button>
+                <button
+                  class="pc-btn pc-btn-primary pc-btn-sm"
+                  :disabled="editSaving || !editContent.trim()"
+                  @click="saveEdit(comment.id)"
+                >
+                  {{ editSaving ? 'SAVING…' : 'SAVE' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rendered content -->
           <div
+            v-else
             class="pc-markdown"
             v-html="renderMarkdown(comment.content)"
           />
@@ -150,6 +185,12 @@ const submitError = ref('');
 const linkedProfiles = ref<LinkedProfile[]>([]);
 const selectedProfile = ref('');
 
+// Edit state
+const editingId = ref<number | null>(null);
+const editContent = ref('');
+const editSaving = ref(false);
+const editError = ref('');
+
 marked.setOptions({ breaks: true, gfm: true });
 
 function renderMarkdown(content: string): string {
@@ -210,6 +251,40 @@ async function submitComment() {
     submitError.value = err?.response?.data?.message ?? 'Failed to post comment.';
   } finally {
     submitting.value = false;
+  }
+}
+
+function startEdit(comment: PlayerComment) {
+  editingId.value = comment.id;
+  editContent.value = comment.content;
+  editError.value = '';
+}
+
+function cancelEdit() {
+  editingId.value = null;
+  editContent.value = '';
+  editError.value = '';
+}
+
+async function saveEdit(commentId: number) {
+  if (!editContent.value.trim()) return;
+  editSaving.value = true;
+  editError.value = '';
+  try {
+    const token = localStorage.getItem('authToken');
+    const comment = comments.value.find(c => c.id === commentId)!;
+    const response = await axios.patch<PlayerComment>(
+      `/stats/players/${encodeURIComponent(props.playerName)}/comments/${commentId}`,
+      { content: editContent.value.trim(), authorPlayerName: comment.authorPlayerName },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const idx = comments.value.findIndex(c => c.id === commentId);
+    if (idx !== -1) comments.value[idx] = response.data;
+    cancelEdit();
+  } catch (err: any) {
+    editError.value = err?.response?.data?.message ?? 'Failed to save.';
+  } finally {
+    editSaving.value = false;
   }
 }
 
@@ -474,4 +549,27 @@ onMounted(() => {
 }
 
 .pc-btn-sm { padding: 0.2rem 0.5rem; font-size: 0.65rem; }
+
+.pc-btn-ghost {
+  background: transparent;
+  color: var(--text-secondary, #a3a3a3);
+  border-color: var(--border-color);
+}
+.pc-btn-ghost:hover:not(:disabled) {
+  color: var(--text-primary, #e5e5e5);
+  border-color: var(--neon-cyan);
+}
+
+.pc-edited-tag {
+  color: var(--text-muted, #737373);
+  font-style: italic;
+  font-size: 0.6rem;
+}
+
+.pc-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
 </style>
