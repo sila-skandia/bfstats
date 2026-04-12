@@ -103,6 +103,52 @@ public class PlayerCommentsController(
     }
 
     /// <summary>
+    /// Edits a comment's content. Author only.
+    /// </summary>
+    [HttpPatch("{commentId:int}")]
+    [Authorize]
+    public async Task<ActionResult<PlayerCommentDto>> EditComment(
+        string playerName,
+        int commentId,
+        [FromBody] CreatePlayerCommentRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest(new { message = "Comment content cannot be empty." });
+
+        if (request.Content.Length > 2000)
+            return BadRequest(new { message = "Comment content cannot exceed 2000 characters." });
+
+        var userEmail = User.FindFirstValue(ClaimTypes.Email);
+        if (userEmail == null)
+            return Unauthorized();
+
+        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
+        if (user == null)
+            return Unauthorized();
+
+        var comment = await context.PlayerComments
+            .FirstOrDefaultAsync(c => c.Id == commentId && c.PlayerName == playerName);
+
+        if (comment == null)
+            return NotFound();
+
+        if (comment.AuthorUserId != user.Id)
+            return Forbid();
+
+        comment.Content = request.Content.Trim();
+        comment.UpdatedAt = clock.GetCurrentInstant();
+        await context.SaveChangesAsync();
+
+        return Ok(new PlayerCommentDto(
+            comment.Id,
+            comment.PlayerName,
+            comment.Content,
+            comment.AuthorPlayerName,
+            comment.CreatedAt,
+            comment.UpdatedAt));
+    }
+
+    /// <summary>
     /// Deletes a comment. Author (by user account) or admin only.
     /// </summary>
     [HttpDelete("{commentId:int}")]
