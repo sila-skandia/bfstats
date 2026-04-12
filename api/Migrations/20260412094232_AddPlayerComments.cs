@@ -19,6 +19,7 @@ namespace api.Migrations
                     PlayerName = table.Column<string>(type: "TEXT", nullable: false),
                     Content = table.Column<string>(type: "TEXT", nullable: false),
                     AuthorUserId = table.Column<int>(type: "INTEGER", nullable: false),
+                    AuthorPlayerName = table.Column<string>(type: "TEXT", nullable: false),
                     CreatedAt = table.Column<string>(type: "TEXT", nullable: false),
                     UpdatedAt = table.Column<string>(type: "TEXT", nullable: false)
                 },
