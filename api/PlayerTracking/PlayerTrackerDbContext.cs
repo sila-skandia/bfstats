@@ -1632,6 +1632,7 @@ public class PlayerComment
     public string PlayerName { get; set; } = "";
     public string Content { get; set; } = ""; // Markdown comment text
     public int AuthorUserId { get; set; }
+    public string AuthorPlayerName { get; set; } = ""; // Linked player profile name chosen at post time
     public Instant CreatedAt { get; set; }
     public Instant UpdatedAt { get; set; }
 

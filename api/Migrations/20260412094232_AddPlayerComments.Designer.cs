@@ -11,7 +11,7 @@ using api.PlayerTracking;
 namespace api.Migrations
 {
     [DbContext(typeof(PlayerTrackerDbContext))]
-    [Migration("20260412092715_AddPlayerComments")]
+    [Migration("20260412094232_AddPlayerComments")]
     partial class AddPlayerComments
     {
         /// <inheritdoc />
@@ -800,6 +800,10 @@ namespace api.Migrations
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("AuthorPlayerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("AuthorUserId")
                         .HasColumnType("INTEGER");
