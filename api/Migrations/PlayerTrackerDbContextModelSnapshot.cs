@@ -798,6 +798,10 @@ namespace api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AuthorPlayerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("AuthorUserId")
                         .HasColumnType("INTEGER");
 

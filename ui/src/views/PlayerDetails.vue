@@ -842,10 +842,28 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- Right Column: Best Scores, Map Preference, Servers, Achievements -->
+              <!-- Right Column: Activity Heatmap, Best Scores, Map Preference, Servers, Achievements -->
               <div class="xl:col-span-5 space-y-6">
 
-                <!-- Best Scores (moved up) -->
+                <!-- Activity Heatmap (top of right column) -->
+                <div ref="activityHeatmapRef" class="explorer-card">
+                  <div class="explorer-card-header">
+                    <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
+                    <p class="text-[10px] text-neutral-500 font-mono mt-1">WHEN YOU TYPICALLY PLAY</p>
+                  </div>
+                  <div class="explorer-card-body">
+                    <PlayerActivityHeatmap
+                      v-if="activityHeatmapVisible"
+                      :player-name="playerName"
+                      :game="playerPanelGame"
+                    />
+                    <div v-else class="h-48 flex items-center justify-center text-neutral-500">
+                      <div class="explorer-spinner" />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Best Scores -->
                 <div class="explorer-card explorer-card--trophy">
                   <div class="explorer-card-header flex items-center justify-between">
                     <h3 class="explorer-card-title">BEST SCORES</h3>
@@ -1007,24 +1025,6 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-              </div>
-            </div>
-
-            <!-- Activity Heatmap (full width, below performance trends grid) -->
-            <div ref="activityHeatmapRef" class="explorer-card">
-              <div class="explorer-card-header">
-                <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
-                <p class="text-[10px] text-neutral-500 font-mono mt-1">WHEN YOU TYPICALLY PLAY</p>
-              </div>
-              <div class="explorer-card-body">
-                <PlayerActivityHeatmap
-                  v-if="activityHeatmapVisible"
-                  :player-name="playerName"
-                  :game="playerPanelGame"
-                />
-                <div v-else class="h-48 flex items-center justify-center text-neutral-500">
-                  <div class="explorer-spinner" />
-                </div>
               </div>
             </div>
 
