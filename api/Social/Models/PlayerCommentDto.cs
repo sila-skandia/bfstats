@@ -6,7 +6,7 @@ public record PlayerCommentDto(
     int Id,
     string PlayerName,
     string Content,
-    string AuthorEmail,
+    string AuthorPlayerName,
     Instant CreatedAt,
     Instant UpdatedAt
 );

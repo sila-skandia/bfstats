@@ -12,7 +12,7 @@
       </div>
 
       <div v-else-if="error" class="text-sm text-red-400 font-mono py-2">
-        Failed to load comments.
+        FAILED TO LOAD COMMENTS.
       </div>
 
       <div v-else-if="comments.length === 0" class="text-sm text-neutral-500 font-mono py-2">
@@ -23,15 +23,20 @@
         <div
           v-for="comment in comments"
           :key="comment.id"
-          class="border border-[var(--border-color)] rounded p-3 space-y-1"
+          class="border border-[var(--border-color)] rounded p-3 space-y-2 bg-[var(--bg-panel)]"
         >
           <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-mono text-neon-cyan truncate">{{ comment.authorEmail }}</span>
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <router-link
+              :to="`/players/${encodeURIComponent(comment.authorPlayerName)}`"
+              class="explorer-link text-xs font-mono font-bold truncate"
+            >
+              {{ comment.authorPlayerName }}
+            </router-link>
+            <div class="flex items-center gap-3 flex-shrink-0">
               <span class="text-[10px] text-neutral-500 font-mono">{{ formatDate(comment.createdAt) }}</span>
               <button
                 v-if="canDelete(comment)"
-                class="text-[10px] text-neutral-600 hover:text-red-400 font-mono transition-colors"
+                class="explorer-btn explorer-btn--ghost explorer-btn--sm text-red-400 hover:text-red-300"
                 title="Delete comment"
                 @click="deleteComment(comment.id)"
               >
@@ -48,24 +53,48 @@
 
       <!-- Input area -->
       <div class="border-t border-[var(--border-color)] pt-4">
+
+        <!-- Not logged in -->
         <div v-if="!isAuthenticated" class="text-sm text-neutral-500 font-mono">
-          <span>Sign in to leave a comment. </span>
-          <button
-            class="explorer-link font-mono text-sm"
-            @click="emit('request-login')"
-          >
+          <router-link to="/dashboard" class="explorer-link font-mono text-sm">
             SIGN IN
-          </button>
+          </router-link>
+          <span class="ml-1">to leave a comment.</span>
         </div>
 
-        <form v-else @submit.prevent="submitComment" class="space-y-2">
+        <!-- Logged in but no linked player profiles -->
+        <div v-else-if="linkedProfiles.length === 0" class="text-sm text-neutral-500 font-mono">
+          Link a player profile on your
+          <router-link to="/dashboard" class="explorer-link font-mono text-sm">DASHBOARD</router-link>
+          to post comments.
+        </div>
+
+        <!-- Logged in with profiles -->
+        <form v-else @submit.prevent="submitComment" class="space-y-3">
+          <!-- Profile selector -->
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-mono text-neutral-500 flex-shrink-0">POST AS</span>
+            <select
+              v-model="selectedProfile"
+              class="explorer-select flex-1 text-sm font-mono"
+              :disabled="submitting"
+            >
+              <option v-for="p in linkedProfiles" :key="p.id" :value="p.playerName">
+                {{ p.playerName }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Textarea -->
           <textarea
             v-model="newComment"
-            class="explorer-input w-full h-24 resize-none font-mono text-sm"
+            class="w-full h-24 resize-none font-mono text-sm bg-[var(--bg-panel)] border border-[var(--border-color)] rounded p-3 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-[var(--neon-cyan,#00e5ff)] transition-colors"
             placeholder="Write a comment… (Markdown supported)"
             :disabled="submitting"
             maxlength="2000"
           />
+
+          <!-- Footer row -->
           <div class="flex items-center justify-between gap-2">
             <span class="text-[10px] text-neutral-600 font-mono">{{ newComment.length }}/2000 · Markdown supported</span>
             <div class="flex items-center gap-2">
@@ -80,8 +109,8 @@
             </div>
           </div>
         </form>
-      </div>
 
+      </div>
     </div>
   </div>
 </template>
@@ -92,13 +121,10 @@ import { marked } from 'marked';
 import axios from 'axios';
 import { useAuth } from '@/composables/useAuth';
 import { formatRelativeTime } from '@/utils/timeUtils';
+import { statsService } from '@/services/statsService';
 
 const props = defineProps<{
   playerName: string;
-}>();
-
-const emit = defineEmits<{
-  (e: 'request-login'): void;
 }>();
 
 const { isAuthenticated, user } = useAuth();
@@ -107,9 +133,14 @@ interface PlayerComment {
   id: number;
   playerName: string;
   content: string;
-  authorEmail: string;
+  authorPlayerName: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface LinkedProfile {
+  id: number;
+  playerName: string;
 }
 
 const comments = ref<PlayerComment[]>([]);
@@ -118,6 +149,8 @@ const error = ref(false);
 const newComment = ref('');
 const submitting = ref(false);
 const submitError = ref('');
+const linkedProfiles = ref<LinkedProfile[]>([]);
+const selectedProfile = ref('');
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -130,7 +163,8 @@ function formatDate(isoString: string): string {
 }
 
 function canDelete(comment: PlayerComment): boolean {
-  return isAuthenticated.value && user.value?.email === comment.authorEmail;
+  if (!isAuthenticated.value) return false;
+  return linkedProfiles.value.some(p => p.playerName === comment.authorPlayerName);
 }
 
 async function loadComments() {
@@ -148,15 +182,28 @@ async function loadComments() {
   }
 }
 
+async function loadLinkedProfiles() {
+  if (!isAuthenticated.value) return;
+  try {
+    const profile = await statsService.getUserProfile();
+    linkedProfiles.value = profile.playerNames.map(p => ({ id: p.id, playerName: p.playerName }));
+    if (linkedProfiles.value.length > 0) {
+      selectedProfile.value = linkedProfiles.value[0].playerName;
+    }
+  } catch {
+    // Not critical — leave empty
+  }
+}
+
 async function submitComment() {
-  if (!newComment.value.trim()) return;
+  if (!newComment.value.trim() || !selectedProfile.value) return;
   submitting.value = true;
   submitError.value = '';
   try {
     const token = localStorage.getItem('authToken');
     const response = await axios.post<PlayerComment>(
       `/stats/players/${encodeURIComponent(props.playerName)}/comments`,
-      { content: newComment.value.trim() },
+      { content: newComment.value.trim(), authorPlayerName: selectedProfile.value },
       { headers: { Authorization: `Bearer ${token}` } }
     );
     comments.value.push(response.data);
@@ -181,7 +228,10 @@ async function deleteComment(commentId: number) {
   }
 }
 
-onMounted(loadComments);
+onMounted(() => {
+  loadComments();
+  loadLinkedProfiles();
+});
 </script>
 
 <style scoped>
@@ -193,7 +243,7 @@ onMounted(loadComments);
   margin-bottom: 0;
 }
 .comment-markdown :deep(a) {
-  color: var(--neon-cyan);
+  color: var(--neon-cyan, #00e5ff);
   text-decoration: underline;
 }
 .comment-markdown :deep(ul),
@@ -212,6 +262,7 @@ onMounted(loadComments);
   padding-left: 0.75rem;
   opacity: 0.85;
   margin-left: 0;
+  margin-bottom: 0.5rem;
 }
 .comment-markdown :deep(strong) {
   color: var(--text-primary, #e5e5e5);

@@ -24,13 +24,12 @@ public class PlayerCommentsController(
     {
         var comments = await context.PlayerComments
             .Where(c => c.PlayerName == playerName)
-            .Include(c => c.Author)
             .OrderBy(c => c.CreatedAt)
             .Select(c => new PlayerCommentDto(
                 c.Id,
                 c.PlayerName,
                 c.Content,
-                c.Author.Email,
+                c.AuthorPlayerName,
                 c.CreatedAt,
                 c.UpdatedAt))
             .ToListAsync();
@@ -40,6 +39,7 @@ public class PlayerCommentsController(
 
     /// <summary>
     /// Posts a new comment on a player profile. Requires authentication.
+    /// AuthorPlayerName must be one of the user's linked player profiles.
     /// </summary>
     [HttpPost]
     [Authorize]
@@ -53,13 +53,26 @@ public class PlayerCommentsController(
         if (request.Content.Length > 2000)
             return BadRequest(new { message = "Comment content cannot exceed 2000 characters." });
 
+        if (string.IsNullOrWhiteSpace(request.AuthorPlayerName))
+            return BadRequest(new { message = "A player profile must be selected." });
+
         var userEmail = User.FindFirstValue(ClaimTypes.Email);
         if (userEmail == null)
             return Unauthorized();
 
-        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
+        var user = await context.Users
+            .Include(u => u.PlayerNames)
+            .FirstOrDefaultAsync(u => u.Email == userEmail);
+
         if (user == null)
             return Unauthorized();
+
+        // Validate chosen player name is one the user has linked
+        var linkedName = user.PlayerNames
+            .FirstOrDefault(p => p.PlayerName.Equals(request.AuthorPlayerName, StringComparison.OrdinalIgnoreCase));
+
+        if (linkedName == null)
+            return BadRequest(new { message = "Selected player profile is not linked to your account." });
 
         var now = clock.GetCurrentInstant();
         var comment = new PlayerComment
@@ -67,6 +80,7 @@ public class PlayerCommentsController(
             PlayerName = playerName,
             Content = request.Content.Trim(),
             AuthorUserId = user.Id,
+            AuthorPlayerName = linkedName.PlayerName,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -74,13 +88,14 @@ public class PlayerCommentsController(
         context.PlayerComments.Add(comment);
         await context.SaveChangesAsync();
 
-        logger.LogInformation("User {Email} posted comment on player {PlayerName}", userEmail, playerName);
+        logger.LogInformation("User {Email} posted comment on player {PlayerName} as {AuthorPlayerName}",
+            userEmail, playerName, linkedName.PlayerName);
 
         var dto = new PlayerCommentDto(
             comment.Id,
             comment.PlayerName,
             comment.Content,
-            user.Email,
+            comment.AuthorPlayerName,
             comment.CreatedAt,
             comment.UpdatedAt);
 
@@ -88,7 +103,7 @@ public class PlayerCommentsController(
     }
 
     /// <summary>
-    /// Deletes a comment. Author or admin only.
+    /// Deletes a comment. Author (by user account) or admin only.
     /// </summary>
     [HttpDelete("{commentId:int}")]
     [Authorize]
@@ -98,17 +113,21 @@ public class PlayerCommentsController(
         if (userEmail == null)
             return Unauthorized();
 
+        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
+        if (user == null)
+            return Unauthorized();
+
         var comment = await context.PlayerComments
-            .Include(c => c.Author)
             .FirstOrDefaultAsync(c => c.Id == commentId && c.PlayerName == playerName);
 
         if (comment == null)
             return NotFound();
 
-        var isAdmin = User.IsInRole("admin") ||
-                      userEmail.Equals(Environment.GetEnvironmentVariable("ADMIN_EMAIL"), StringComparison.OrdinalIgnoreCase);
+        var isAdmin = userEmail.Equals(
+            Environment.GetEnvironmentVariable("ADMIN_EMAIL"),
+            StringComparison.OrdinalIgnoreCase);
 
-        if (comment.Author.Email != userEmail && !isAdmin)
+        if (comment.AuthorUserId != user.Id && !isAdmin)
             return Forbid();
 
         context.PlayerComments.Remove(comment);
