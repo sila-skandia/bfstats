@@ -29,15 +29,30 @@ public class PlayerCommentsController(
             Sanitizer.AllowedAttributes.Add(attr);
     }
 
+    private const int DefaultPageSize = 10;
+
     /// <summary>
-    /// Returns all comments for a player profile. Public, no auth required.
+    /// Returns a page of comments for a player profile. Public, no auth required.
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<PlayerCommentDto>>> GetComments(string playerName)
+    public async Task<ActionResult<PagedCommentsDto>> GetComments(
+        string playerName,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize)
     {
-        var comments = await context.PlayerComments
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 50) pageSize = DefaultPageSize;
+
+        var query = context.PlayerComments
             .Where(c => c.PlayerName == playerName)
-            .OrderBy(c => c.CreatedAt)
+            .OrderByDescending(c => c.CreatedAt);
+
+        var totalCount = await query.CountAsync();
+        var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(c => new PlayerCommentDto(
                 c.Id,
                 c.PlayerName,
@@ -47,7 +62,7 @@ public class PlayerCommentsController(
                 c.UpdatedAt))
             .ToListAsync();
 
-        return Ok(comments);
+        return Ok(new PagedCommentsDto(items, totalCount, page, pageSize, totalPages));
     }
 
     /// <summary>
