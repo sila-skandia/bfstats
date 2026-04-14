@@ -19,6 +19,7 @@ import MapPerformanceRace from '../components/data-explorer/MapPerformanceRace.v
 import PlayerActivityHeatmap from '../components/PlayerActivityHeatmap.vue';
 import PlayerMapPreference from '../components/PlayerMapPreference.vue';
 import PingProximityOrbit from '@/components/PingProximityOrbit.vue';
+import PlayerComments from '../components/PlayerComments.vue';
 import { formatRelativeTime } from '@/utils/timeUtils';
 import { calculateKDR } from '@/utils/statsUtils';
 import { useAIContext } from '@/composables/useAIContext';
@@ -75,6 +76,10 @@ const isWideScreen = ref(false);
 const updateWideScreen = () => {
   isWideScreen.value = typeof window !== 'undefined' && window.innerWidth >= 1024;
 };
+
+// Servers pagination state
+const SERVERS_PAGE_SIZE = 3;
+const serversPage = ref(0);
 
 // Best Scores state
 const selectedBestScoresTab = ref<'allTime' | 'last30Days' | 'thisWeek'>('thisWeek');
@@ -549,6 +554,13 @@ const unifiedServerList = computed<UnifiedServer[]>(() => {
   return unified;
 });
 
+// Paged server list (client-side)
+const pagedServers = computed(() => {
+  const start = serversPage.value * SERVERS_PAGE_SIZE;
+  return unifiedServerList.value.slice(start, start + SERVERS_PAGE_SIZE);
+});
+const serversTotalPages = computed(() => Math.ceil(unifiedServerList.value.length / SERVERS_PAGE_SIZE));
+
 // Proximity server selection (defaults to most-played server)
 const selectedProximityServerGuid = ref('')
 watch(unifiedServerList, (list) => {
@@ -830,27 +842,27 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- Right Column: Achievements, Best Scores, Servers -->
+              <!-- Right Column: Comments, Activity Heatmap, Best Scores, Map Preference, Servers, Achievements -->
               <div class="xl:col-span-5 space-y-6">
-                
-                <!-- Achievements -->
-                <div class="explorer-card explorer-card--achievement">
-                  <div class="explorer-card-header flex items-center justify-between">
-                    <h3 class="explorer-card-title">ACHIEVEMENTS</h3>
-                    <router-link
-                      :to="`/players/${encodeURIComponent(playerName)}/achievements`"
-                      class="explorer-link text-xs font-mono uppercase"
-                    >
-                      View All &rarr;
-                    </router-link>
+
+                <!-- Comments (top of right column) -->
+                <PlayerComments :player-name="playerName" />
+
+                <!-- Activity Heatmap -->
+                <div ref="activityHeatmapRef" class="explorer-card">
+                  <div class="explorer-card-header">
+                    <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
+                    <p class="text-[10px] text-neutral-500 font-mono mt-1">WHEN YOU TYPICALLY PLAY</p>
                   </div>
                   <div class="explorer-card-body">
-                    <PlayerAchievementSummary
+                    <PlayerActivityHeatmap
+                      v-if="activityHeatmapVisible"
                       :player-name="playerName"
-                      :achievement-groups="achievementGroups"
-                      :loading="achievementGroupsLoading"
-                      :error="achievementGroupsError"
+                      :game="playerPanelGame"
                     />
+                    <div v-else class="h-48 flex items-center justify-center text-neutral-500">
+                      <div class="explorer-spinner" />
+                    </div>
                   </div>
                 </div>
 
@@ -920,7 +932,7 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <!-- Servers List -->
+                <!-- Servers List (paged, 3 at a time) -->
                 <div class="explorer-card explorer-card--trophy">
                   <div class="explorer-card-header flex items-center justify-between">
                     <h3 class="explorer-card-title">SERVERS</h3>
@@ -935,7 +947,7 @@ onUnmounted(() => {
                   <div class="explorer-card-body p-0">
                     <div class="divide-y divide-[var(--border-color)]">
                       <div
-                        v-for="server in unifiedServerList"
+                        v-for="server in pagedServers"
                         :key="server.serverGuid"
                         class="group p-2 sm:p-3 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-2 sm:gap-3"
                         @click="showServerMapStats(server.serverGuid)"
@@ -972,24 +984,47 @@ onUnmounted(() => {
                         </div>
                       </div>
                     </div>
+                    <!-- Pagination controls -->
+                    <div v-if="serversTotalPages > 1" class="flex items-center justify-between px-3 py-2 border-t border-[var(--border-color)]">
+                      <button
+                        class="explorer-btn explorer-btn--ghost explorer-btn--sm"
+                        :disabled="serversPage === 0"
+                        @click="serversPage--"
+                      >
+                        &larr; PREV
+                      </button>
+                      <span class="text-[10px] font-mono text-neutral-500">
+                        {{ serversPage + 1 }} / {{ serversTotalPages }}
+                      </span>
+                      <button
+                        class="explorer-btn explorer-btn--ghost explorer-btn--sm"
+                        :disabled="serversPage >= serversTotalPages - 1"
+                        @click="serversPage++"
+                      >
+                        NEXT &rarr;
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <!-- Activity Heatmap -->
-                <div ref="activityHeatmapRef" class="explorer-card">
-                  <div class="explorer-card-header">
-                    <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
-                    <p class="text-[10px] text-neutral-500 font-mono mt-1">WHEN YOU TYPICALLY PLAY</p>
+                <!-- Achievements (moved down) -->
+                <div class="explorer-card explorer-card--achievement">
+                  <div class="explorer-card-header flex items-center justify-between">
+                    <h3 class="explorer-card-title">ACHIEVEMENTS</h3>
+                    <router-link
+                      :to="`/players/${encodeURIComponent(playerName)}/achievements`"
+                      class="explorer-link text-xs font-mono uppercase"
+                    >
+                      View All &rarr;
+                    </router-link>
                   </div>
                   <div class="explorer-card-body">
-                    <PlayerActivityHeatmap
-                      v-if="activityHeatmapVisible"
+                    <PlayerAchievementSummary
                       :player-name="playerName"
-                      :game="playerPanelGame"
+                      :achievement-groups="achievementGroups"
+                      :loading="achievementGroupsLoading"
+                      :error="achievementGroupsError"
                     />
-                    <div v-else class="h-48 flex items-center justify-center text-neutral-500">
-                      <div class="explorer-spinner" />
-                    </div>
                   </div>
                 </div>
 
