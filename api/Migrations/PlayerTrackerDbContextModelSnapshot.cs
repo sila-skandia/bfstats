@@ -1075,6 +1075,46 @@ namespace api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("api.PlayerTracking.ServerComment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AuthorPlayerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AuthorUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ServerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorUserId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ServerName");
+
+                    b.ToTable("ServerComments");
+                });
+
             modelBuilder.Entity("api.PlayerTracking.ServerPlayerRanking", b =>
                 {
                     b.Property<int>("Id")
@@ -1932,6 +1972,17 @@ namespace api.Migrations
                         .IsRequired();
 
                     b.Navigation("GameServer");
+                });
+
+            modelBuilder.Entity("api.PlayerTracking.ServerComment", b =>
+                {
+                    b.HasOne("api.PlayerTracking.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
                 });
 
             modelBuilder.Entity("api.PlayerTracking.ServerPlayerRanking", b =>

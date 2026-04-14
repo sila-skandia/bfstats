@@ -60,6 +60,7 @@ public class PlayerTrackerDbContext : DbContext
 
     // Social comments
     public DbSet<PlayerComment> PlayerComments { get; set; }
+    public DbSet<ServerComment> ServerComments { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -1076,6 +1077,33 @@ public class PlayerTrackerDbContext : DbContext
             .HasOne(c => c.Author)
             .WithMany()
             .HasForeignKey(c => c.AuthorUserId);
+
+        // Configure ServerComment entity
+        modelBuilder.Entity<ServerComment>()
+            .HasKey(c => c.Id);
+
+        modelBuilder.Entity<ServerComment>()
+            .HasIndex(c => c.ServerName);
+
+        modelBuilder.Entity<ServerComment>()
+            .HasIndex(c => c.CreatedAt);
+
+        modelBuilder.Entity<ServerComment>()
+            .Property(c => c.CreatedAt)
+            .HasConversion(
+                v => FormatInstant(v),
+                v => ParseInstant(v));
+
+        modelBuilder.Entity<ServerComment>()
+            .Property(c => c.UpdatedAt)
+            .HasConversion(
+                v => FormatInstant(v),
+                v => ParseInstant(v));
+
+        modelBuilder.Entity<ServerComment>()
+            .HasOne(c => c.Author)
+            .WithMany()
+            .HasForeignKey(c => c.AuthorUserId);
     }
 
     private static string FormatInstant(Instant instant) => InstantExtendedIsoPattern.Format(instant);
@@ -1633,6 +1661,20 @@ public class PlayerComment
     public string Content { get; set; } = ""; // Markdown comment text
     public int AuthorUserId { get; set; }
     public string AuthorPlayerName { get; set; } = ""; // Linked player profile name chosen at post time
+    public Instant CreatedAt { get; set; }
+    public Instant UpdatedAt { get; set; }
+
+    // Navigation properties
+    public User Author { get; set; } = null!;
+}
+
+public class ServerComment
+{
+    public int Id { get; set; }
+    public string ServerName { get; set; } = "";
+    public string Content { get; set; } = "";
+    public int AuthorUserId { get; set; }
+    public string AuthorPlayerName { get; set; } = "";
     public Instant CreatedAt { get; set; }
     public Instant UpdatedAt { get; set; }
 
