@@ -364,16 +364,52 @@
                       </div>
                     </th>
                     <th
-                      class="group p-1.5 text-left font-bold text-xs uppercase tracking-wide text-neutral-300 cursor-pointer hover:bg-neutral-700/50 transition-all duration-300 border-b border-neutral-700/30 hover:border-cyan-500/50"
+                      class="group p-1.5 text-left font-bold text-xs uppercase tracking-wide text-neutral-300 cursor-pointer hover:bg-neutral-700/50 transition-all duration-300 border-b border-neutral-700/30 hover:border-red-500/50"
+                      @click="sortPlayersBy('kills')"
+                    >
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-red-400 text-xs">⚔️</span>
+                        <span class="font-mono font-bold">KILLS</span>
+                        <span
+                          class="text-xs transition-transform duration-200"
+                          :class="{
+                            'text-red-400 opacity-100': playerSortField === 'kills',
+                            'opacity-50': playerSortField !== 'kills',
+                            'rotate-0': playerSortField === 'kills' && playerSortDirection === 'asc',
+                            'rotate-180': playerSortField === 'kills' && playerSortDirection === 'desc'
+                          }"
+                        >▲</span>
+                      </div>
+                    </th>
+                    <th
+                      class="group p-1.5 text-left font-bold text-xs uppercase tracking-wide text-neutral-300 cursor-pointer hover:bg-neutral-700/50 transition-all duration-300 border-b border-neutral-700/30 hover:border-orange-500/50"
+                      @click="sortPlayersBy('deaths')"
+                    >
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-orange-400 text-xs">💀</span>
+                        <span class="font-mono font-bold">DEATHS</span>
+                        <span
+                          class="text-xs transition-transform duration-200"
+                          :class="{
+                            'text-orange-400 opacity-100': playerSortField === 'deaths',
+                            'opacity-50': playerSortField !== 'deaths',
+                            'rotate-0': playerSortField === 'deaths' && playerSortDirection === 'asc',
+                            'rotate-180': playerSortField === 'deaths' && playerSortDirection === 'desc'
+                          }"
+                        >▲</span>
+                      </div>
+                    </th>
+                    <th
+                      class="group p-1.5 text-left font-bold text-xs uppercase tracking-wide text-neutral-300 cursor-pointer hover:bg-neutral-700/50 transition-all duration-300 border-b border-neutral-700/30 hover:border-blue-500/50"
                       @click="sortPlayersBy('ping')"
                     >
                       <div class="flex items-center gap-1.5">
-                        <span class="text-cyan-400 text-xs">📶</span>
+                        <span class="text-blue-400 text-xs">📡</span>
                         <span class="font-mono font-bold">PING</span>
                         <span
                           class="text-xs transition-transform duration-200"
                           :class="{
-                            'text-cyan-400 opacity-100': playerSortField === 'ping',
+                            'text-blue-400 opacity-100': playerSortField === 'ping',
                             'opacity-50': playerSortField !== 'ping',
                             'rotate-0': playerSortField === 'ping' && playerSortDirection === 'asc',
                             'rotate-180': playerSortField === 'ping' && playerSortDirection === 'desc'
@@ -391,7 +427,7 @@
                     @click="navigateToPlayerProfile(player.name)"
                   >
                     <td class="p-1.5">
-                      <div class="font-mono font-bold text-neutral-200 group-hover:text-cyan-400 transition-colors truncate max-w-[10rem] sm:max-w-xs">
+                      <div class="font-mono font-bold text-neutral-200 group-hover:text-cyan-400 transition-colors truncate max-w-[8rem] sm:max-w-xs">
                         {{ player.name }}
                       </div>
                     </td>
@@ -401,6 +437,22 @@
                         :class="getScoreClass(player.score)"
                       >
                         {{ player.score }}
+                      </div>
+                    </td>
+                    <td class="p-1.5">
+                      <div
+                        class="text-sm font-mono font-bold"
+                        :class="getKillsClass(player.kills)"
+                      >
+                        {{ player.kills }}
+                      </div>
+                    </td>
+                    <td class="p-1.5">
+                      <div
+                        class="text-sm font-mono font-bold"
+                        :class="getDeathsClass(player.deaths)"
+                      >
+                        {{ player.deaths }}
                       </div>
                     </td>
                     <td class="p-1.5">

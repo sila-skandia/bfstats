@@ -4,22 +4,22 @@
       <h3 class="pc-card-title">COMMENTS</h3>
       <p class="pc-card-subtitle">COMMUNITY NOTES ON THIS PLAYER</p>
     </div>
-    <div class="pc-card-body pc-space-y">
+    <div class="pc-card-body">
 
       <!-- Comment list -->
-      <div v-if="loading" class="pc-center py-6">
+      <div v-if="loading" class="pc-center pc-py">
         <div class="pc-spinner" />
       </div>
 
-      <div v-else-if="error" class="pc-error-text">
+      <div v-else-if="error" class="pc-error-text pc-py">
         FAILED TO LOAD COMMENTS.
       </div>
 
-      <div v-else-if="comments.length === 0" class="pc-muted-text">
+      <div v-else-if="comments.length === 0" class="pc-muted-text pc-py">
         NO COMMENTS YET. BE THE FIRST.
       </div>
 
-      <div v-else class="pc-space-y">
+      <div v-else class="pc-comment-list">
         <div
           v-for="comment in comments"
           :key="comment.id"
@@ -33,44 +33,33 @@
               {{ comment.authorPlayerName }}
             </router-link>
             <div class="pc-comment-meta-right">
-              <span v-if="comment.updatedAt !== comment.createdAt" class="pc-timestamp pc-edited-tag">EDITED</span>
+              <span v-if="comment.updatedAt !== comment.createdAt" class="pc-edited-tag">EDITED</span>
               <span class="pc-timestamp">{{ formatDate(comment.createdAt) }}</span>
-              <template v-if="canDelete(comment)">
-                <button
-                  class="pc-btn pc-btn-ghost pc-btn-sm"
-                  title="Edit comment"
-                  @click="startEdit(comment)"
-                >
-                  EDIT
-                </button>
-                <button
-                  class="pc-btn pc-btn-danger pc-btn-sm"
-                  title="Delete comment"
-                  @click="deleteComment(comment.id)"
-                >
-                  DEL
-                </button>
+              <template v-if="canEdit(comment)">
+                <button class="pc-btn pc-btn-ghost pc-btn-sm" @click="startEdit(comment)">EDIT</button>
+                <button class="pc-btn pc-btn-danger pc-btn-sm" @click="deleteComment(comment.id)">DEL</button>
               </template>
             </div>
           </div>
 
           <!-- Inline edit form -->
           <div v-if="editingId === comment.id" class="pc-edit-form">
-            <textarea
-              v-model="editContent"
-              class="pc-textarea"
-              :disabled="editSaving"
-            />
+            <div class="pc-editor-wrapper">
+              <div class="pc-toolbar">
+                <button type="button" class="pc-tool" :class="{ active: editEditor?.isActive('bold') }" @click="editEditor?.chain().focus().toggleBold().run()" title="Bold"><strong>B</strong></button>
+                <button type="button" class="pc-tool" :class="{ active: editEditor?.isActive('italic') }" @click="editEditor?.chain().focus().toggleItalic().run()" title="Italic"><em>I</em></button>
+                <button type="button" class="pc-tool" :class="{ active: editEditor?.isActive('underline') }" @click="editEditor?.chain().focus().toggleUnderline().run()" title="Underline"><u>U</u></button>
+                <button type="button" class="pc-tool" :class="{ active: editEditor?.isActive('link') }" @click="toggleLink(editEditor)" title="Link">🔗</button>
+                <button type="button" class="pc-tool" @click="insertImage(editEditor)" title="Image">🖼</button>
+              </div>
+              <editor-content :editor="editEditor" class="pc-editor-content" />
+            </div>
             <div class="pc-form-footer">
-              <span class="pc-hint">{{ editContent.length }}/2000</span>
+              <span class="pc-hint">Markdown not used — use toolbar for formatting</span>
               <div class="pc-form-footer-right">
                 <span v-if="editError" class="pc-error-text">{{ editError }}</span>
                 <button class="pc-btn pc-btn-ghost pc-btn-sm" :disabled="editSaving" @click="cancelEdit">CANCEL</button>
-                <button
-                  class="pc-btn pc-btn-primary pc-btn-sm"
-                  :disabled="editSaving || !editContent.trim()"
-                  @click="saveEdit(comment.id)"
-                >
+                <button class="pc-btn pc-btn-primary pc-btn-sm" :disabled="editSaving" @click="saveEdit(comment.id)">
                   {{ editSaving ? 'SAVING…' : 'SAVE' }}
                 </button>
               </div>
@@ -80,8 +69,8 @@
           <!-- Rendered content -->
           <div
             v-else
-            class="pc-markdown"
-            v-html="renderMarkdown(comment.content)"
+            class="pc-comment-body"
+            v-html="sanitize(comment.content)"
           />
         </div>
       </div>
@@ -91,7 +80,7 @@
 
         <!-- Not logged in -->
         <div v-if="!isAuthenticated" class="pc-muted-text">
-          <router-link to="/dashboard" class="pc-link">SIGN IN</router-link>
+          <button class="pc-link" @click="handleSignIn">SIGN IN</button>
           <span class="ml-1">to leave a comment.</span>
         </div>
 
@@ -107,36 +96,29 @@
           <!-- Profile selector -->
           <div class="pc-profile-row">
             <span class="pc-label">POST AS</span>
-            <select
-              v-model="selectedProfile"
-              class="pc-select"
-              :disabled="submitting"
-            >
-              <option v-for="p in linkedProfiles" :key="p.id" :value="p.playerName">
-                {{ p.playerName }}
-              </option>
+            <select v-model="selectedProfile" class="pc-select" :disabled="submitting">
+              <option v-for="p in linkedProfiles" :key="p.id" :value="p.playerName">{{ p.playerName }}</option>
             </select>
           </div>
 
-          <!-- Textarea -->
-          <textarea
-            v-model="newComment"
-            class="pc-textarea"
-            placeholder="Write a comment… (Markdown supported)"
-            :disabled="submitting"
-            maxlength="2000"
-          />
+          <!-- Rich text editor -->
+          <div class="pc-editor-wrapper">
+            <div class="pc-toolbar">
+              <button type="button" class="pc-tool" :class="{ active: newEditor?.isActive('bold') }" @click="newEditor?.chain().focus().toggleBold().run()" title="Bold"><strong>B</strong></button>
+              <button type="button" class="pc-tool" :class="{ active: newEditor?.isActive('italic') }" @click="newEditor?.chain().focus().toggleItalic().run()" title="Italic"><em>I</em></button>
+              <button type="button" class="pc-tool" :class="{ active: newEditor?.isActive('underline') }" @click="newEditor?.chain().focus().toggleUnderline().run()" title="Underline"><u>U</u></button>
+              <button type="button" class="pc-tool" :class="{ active: newEditor?.isActive('link') }" @click="toggleLink(newEditor)" title="Link">🔗</button>
+              <button type="button" class="pc-tool" @click="insertImage(newEditor)" title="Image">🖼</button>
+            </div>
+            <editor-content :editor="newEditor" class="pc-editor-content" />
+          </div>
 
           <!-- Footer row -->
           <div class="pc-form-footer">
-            <span class="pc-hint">{{ newComment.length }}/2000 · Markdown supported</span>
+            <span class="pc-hint">Bold · Italic · Underline · Links · Images</span>
             <div class="pc-form-footer-right">
               <span v-if="submitError" class="pc-error-text">{{ submitError }}</span>
-              <button
-                type="submit"
-                class="pc-btn pc-btn-primary"
-                :disabled="submitting || !newComment.trim()"
-              >
+              <button type="submit" class="pc-btn pc-btn-primary" :disabled="submitting || isEditorEmpty(newEditor)">
                 {{ submitting ? 'POSTING…' : 'POST' }}
               </button>
             </div>
@@ -149,18 +131,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { marked } from 'marked';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
+import DOMPurify from 'dompurify';
 import axios from 'axios';
+import { useEditor, EditorContent } from '@tiptap/vue-3';
+import StarterKit from '@tiptap/starter-kit';
+import Underline from '@tiptap/extension-underline';
+import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
+import { Editor } from '@tiptap/core';
 import { useAuth } from '@/composables/useAuth';
 import { formatRelativeTime } from '@/utils/timeUtils';
 import { statsService } from '@/services/statsService';
 
-const props = defineProps<{
-  playerName: string;
-}>();
+const props = defineProps<{ playerName: string }>();
 
-const { isAuthenticated } = useAuth();
+const { isAuthenticated, loginWithDiscord } = useAuth();
 
 interface PlayerComment {
   id: number;
@@ -171,54 +157,99 @@ interface PlayerComment {
   updatedAt: string;
 }
 
-interface LinkedProfile {
-  id: number;
-  playerName: string;
+interface LinkedProfile { id: number; playerName: string; }
+
+const ALLOWED_TAGS = ['p', 'strong', 'em', 'u', 'a', 'img', 'ul', 'ol', 'li', 'br', 'blockquote'];
+const ALLOWED_ATTR = ['href', 'src', 'alt', 'target', 'rel'];
+
+function sanitize(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    ALLOW_DATA_ATTR: false,
+    FORCE_BODY: false,
+  });
 }
+
+const tiptapExtensions = [
+  StarterKit.configure({ heading: false, codeBlock: false, code: false, horizontalRule: false }),
+  Underline,
+  Link.configure({ openOnClick: false, autolink: true }),
+  Image.configure({ inline: false }),
+];
+
+// New comment editor
+const newEditor = useEditor({
+  extensions: tiptapExtensions,
+  editorProps: { attributes: { class: 'pc-editor' } },
+});
+
+// Edit editor (created/destroyed per-comment)
+const editEditor = ref<Editor | null>(null);
 
 const comments = ref<PlayerComment[]>([]);
 const loading = ref(true);
 const error = ref(false);
-const newComment = ref('');
 const submitting = ref(false);
 const submitError = ref('');
 const linkedProfiles = ref<LinkedProfile[]>([]);
 const selectedProfile = ref('');
-
-// Edit state
 const editingId = ref<number | null>(null);
-const editContent = ref('');
 const editSaving = ref(false);
 const editError = ref('');
 
-marked.setOptions({ breaks: true, gfm: true });
+function formatDate(iso: string) { return formatRelativeTime(iso); }
 
-function renderMarkdown(content: string): string {
-  return marked.parse(content) as string;
+function canEdit(comment: PlayerComment) {
+  return isAuthenticated.value && linkedProfiles.value.some(p => p.playerName === comment.authorPlayerName);
 }
 
-function formatDate(isoString: string): string {
-  return formatRelativeTime(isoString);
+function isEditorEmpty(editor: Editor | null | undefined): boolean {
+  return !editor || editor.isEmpty;
 }
 
-function canDelete(comment: PlayerComment): boolean {
-  if (!isAuthenticated.value) return false;
-  return linkedProfiles.value.some(p => p.playerName === comment.authorPlayerName);
+function toggleLink(editor: Editor | null | undefined) {
+  if (!editor) return;
+  if (editor.isActive('link')) {
+    editor.chain().focus().unsetLink().run();
+  } else {
+    const url = window.prompt('URL');
+    if (url) editor.chain().focus().setLink({ href: url, target: '_blank', rel: 'noopener noreferrer' }).run();
+  }
+}
+
+function insertImage(editor: Editor | null | undefined) {
+  if (!editor) return;
+  const url = window.prompt('Image URL (https only)');
+  if (url && url.startsWith('https://')) editor.chain().focus().setImage({ src: url }).run();
+}
+
+function startEdit(comment: PlayerComment) {
+  cancelEdit();
+  editingId.value = comment.id;
+  editError.value = '';
+  editEditor.value = new Editor({
+    extensions: tiptapExtensions,
+    content: comment.content,
+    editorProps: { attributes: { class: 'pc-editor' } },
+  });
+}
+
+function cancelEdit() {
+  editEditor.value?.destroy();
+  editEditor.value = null;
+  editingId.value = null;
+  editError.value = '';
 }
 
 async function loadComments() {
   loading.value = true;
   error.value = false;
   try {
-    const response = await axios.get<PlayerComment[]>(
-      `/stats/players/${encodeURIComponent(props.playerName)}/comments`
-    );
-    comments.value = response.data;
-  } catch {
-    error.value = true;
-  } finally {
-    loading.value = false;
-  }
+    const r = await axios.get<PlayerComment[]>(`/stats/players/${encodeURIComponent(props.playerName)}/comments`);
+    comments.value = r.data;
+  } catch { error.value = true; }
+  finally { loading.value = false; }
 }
 
 async function loadLinkedProfiles() {
@@ -226,66 +257,52 @@ async function loadLinkedProfiles() {
   try {
     const profile = await statsService.getUserProfile();
     linkedProfiles.value = profile.playerNames.map(p => ({ id: p.id, playerName: p.playerName }));
-    if (linkedProfiles.value.length > 0) {
-      selectedProfile.value = linkedProfiles.value[0].playerName;
-    }
-  } catch {
-    // Not critical — leave empty
-  }
+    if (linkedProfiles.value.length > 0) selectedProfile.value = linkedProfiles.value[0].playerName;
+  } catch { /* not critical */ }
+}
+
+async function handleSignIn() {
+  try { await loginWithDiscord(); } catch { /* handled by auth service */ }
 }
 
 async function submitComment() {
-  if (!newComment.value.trim() || !selectedProfile.value) return;
+  if (!newEditor.value || newEditor.value.isEmpty) return;
   submitting.value = true;
   submitError.value = '';
   try {
     const token = localStorage.getItem('authToken');
-    const response = await axios.post<PlayerComment>(
+    const html = newEditor.value.getHTML();
+    const r = await axios.post<PlayerComment>(
       `/stats/players/${encodeURIComponent(props.playerName)}/comments`,
-      { content: newComment.value.trim(), authorPlayerName: selectedProfile.value },
+      { content: html, authorPlayerName: selectedProfile.value },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    comments.value.push(response.data);
-    newComment.value = '';
+    comments.value.push(r.data);
+    newEditor.value.commands.clearContent();
   } catch (err: any) {
     submitError.value = err?.response?.data?.message ?? 'Failed to post comment.';
-  } finally {
-    submitting.value = false;
-  }
-}
-
-function startEdit(comment: PlayerComment) {
-  editingId.value = comment.id;
-  editContent.value = comment.content;
-  editError.value = '';
-}
-
-function cancelEdit() {
-  editingId.value = null;
-  editContent.value = '';
-  editError.value = '';
+  } finally { submitting.value = false; }
 }
 
 async function saveEdit(commentId: number) {
-  if (!editContent.value.trim()) return;
+  if (!editEditor.value || editEditor.value.isEmpty) return;
   editSaving.value = true;
   editError.value = '';
   try {
     const token = localStorage.getItem('authToken');
     const comment = comments.value.find(c => c.id === commentId)!;
-    const response = await axios.patch<PlayerComment>(
+    const html = editEditor.value.getHTML();
+    const r = await axios.patch<PlayerComment>(
       `/stats/players/${encodeURIComponent(props.playerName)}/comments/${commentId}`,
-      { content: editContent.value.trim(), authorPlayerName: comment.authorPlayerName },
+      { content: html, authorPlayerName: comment.authorPlayerName },
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const idx = comments.value.findIndex(c => c.id === commentId);
-    if (idx !== -1) comments.value[idx] = response.data;
+    if (idx !== -1) comments.value[idx] = r.data;
     cancelEdit();
   } catch (err: any) {
     editError.value = err?.response?.data?.message ?? 'Failed to save.';
-  } finally {
-    editSaving.value = false;
-  }
+  } finally { editSaving.value = false; }
 }
 
 async function deleteComment(commentId: number) {
@@ -296,19 +313,16 @@ async function deleteComment(commentId: number) {
       { headers: { Authorization: `Bearer ${token}` } }
     );
     comments.value = comments.value.filter(c => c.id !== commentId);
-  } catch {
-    // silently ignore
-  }
+    if (editingId.value === commentId) cancelEdit();
+  } catch { /* silently ignore */ }
 }
 
-onMounted(() => {
-  loadComments();
-  loadLinkedProfiles();
-});
+onMounted(() => { loadComments(); loadLinkedProfiles(); });
+onBeforeUnmount(() => { newEditor.value?.destroy(); cancelEdit(); });
 </script>
 
 <style scoped>
-/* ── Card shell ─────────────────────────────────────────────────────────── */
+/* ── Card ────────────────────────────────────────────────────────────────── */
 .pc-card {
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
@@ -340,21 +354,17 @@ onMounted(() => {
   font-family: 'JetBrains Mono', monospace;
   margin-top: 0.25rem;
 }
-.pc-card-body {
-  padding: 0.75rem;
-}
-@media (min-width: 640px) {
-  .pc-card-body { padding: 1rem; }
-}
+.pc-card-body { padding: 0.75rem; }
+@media (min-width: 640px) { .pc-card-body { padding: 1rem; } }
 
 /* ── Layout helpers ──────────────────────────────────────────────────────── */
-.pc-space-y > * + * { margin-top: 0.75rem; }
+.pc-py { padding: 0.5rem 0; }
 .pc-center { display: flex; align-items: center; justify-content: center; }
+.pc-comment-list { display: flex; flex-direction: column; gap: 0; }
 
 /* ── Spinner ─────────────────────────────────────────────────────────────── */
 .pc-spinner {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.25rem; height: 1.25rem;
   border: 2px solid var(--border-color);
   border-top-color: var(--neon-cyan);
   border-radius: 50%;
@@ -362,214 +372,123 @@ onMounted(() => {
 }
 @keyframes pc-spin { to { transform: rotate(360deg); } }
 
-/* ── Text helpers ────────────────────────────────────────────────────────── */
-.pc-muted-text {
-  font-size: 0.8rem;
-  color: var(--text-muted, #737373);
-  font-family: 'JetBrains Mono', monospace;
-  padding: 0.25rem 0;
-}
-.pc-error-text {
-  font-size: 0.75rem;
-  color: #f87171;
-  font-family: 'JetBrains Mono', monospace;
-}
-.pc-link {
-  color: var(--neon-cyan);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.8rem;
-  text-decoration: underline;
-}
+/* ── Text helpers ─────────────────────────────────────────────────────────── */
+.pc-muted-text { font-size: 0.8rem; color: var(--text-muted, #737373); font-family: 'JetBrains Mono', monospace; }
+.pc-error-text { font-size: 0.75rem; color: #f87171; font-family: 'JetBrains Mono', monospace; }
+.pc-link { color: var(--neon-cyan); font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 0; }
 .pc-link:hover { color: #00ffff; }
 
-/* ── Individual comment ──────────────────────────────────────────────────── */
+/* ── Comments ────────────────────────────────────────────────────────────── */
 .pc-comment {
-  border: 1px solid var(--border-color);
+  padding: 0.625rem 0.75rem;
   border-radius: 4px;
-  padding: 0.75rem;
-  background: var(--bg-panel);
-}
-.pc-comment-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
   margin-bottom: 0.5rem;
+  transition: background 0.2s;
 }
-.pc-comment-meta-right {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-shrink: 0;
+.pc-comment:hover { background: rgba(255, 255, 255, 0.05); }
+.pc-comment:last-child { margin-bottom: 0; }
+
+.pc-comment-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.5rem; margin-bottom: 0.375rem;
 }
+.pc-comment-meta-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 .pc-author-link {
-  font-size: 0.75rem;
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 700;
-  color: var(--neon-cyan);
-  text-decoration: none;
-  truncate: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
+  font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; font-weight: 700;
+  color: var(--neon-cyan); text-decoration: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .pc-author-link:hover { color: #00ffff; text-decoration: underline; }
-.pc-timestamp {
-  font-size: 0.625rem;
-  color: var(--text-muted, #737373);
-  font-family: 'JetBrains Mono', monospace;
-}
+.pc-timestamp { font-size: 0.6rem; color: var(--text-muted, #737373); font-family: 'JetBrains Mono', monospace; }
+.pc-edited-tag { font-size: 0.6rem; color: var(--text-muted, #737373); font-family: 'JetBrains Mono', monospace; font-style: italic; }
 
-/* ── Markdown content ────────────────────────────────────────────────────── */
-.pc-markdown { font-size: 0.875rem; color: #d4d4d4; line-height: 1.5; }
-.pc-markdown :deep(p) { margin-bottom: 0.5rem; }
-.pc-markdown :deep(p:last-child) { margin-bottom: 0; }
-.pc-markdown :deep(a) { color: var(--neon-cyan); text-decoration: underline; }
-.pc-markdown :deep(ul), .pc-markdown :deep(ol) { margin-left: 1.25rem; margin-bottom: 0.5rem; }
-.pc-markdown :deep(code) {
-  background: rgba(0,0,0,0.3);
-  padding: 0.1rem 0.3rem;
-  border-radius: 0.2rem;
-  font-size: 0.85em;
-}
-.pc-markdown :deep(blockquote) {
-  border-left: 3px solid var(--neon-cyan, #00e5ff);
-  padding-left: 0.75rem;
-  opacity: 0.85;
-  margin-left: 0;
-  margin-bottom: 0.5rem;
-}
-.pc-markdown :deep(strong) { color: #e5e5e5; }
+/* ── Comment body (rendered HTML) ───────────────────────────────────────── */
+.pc-comment-body { font-size: 0.875rem; color: #d4d4d4; line-height: 1.55; }
+.pc-comment-body :deep(p) { margin-bottom: 0.4rem; }
+.pc-comment-body :deep(p:last-child) { margin-bottom: 0; }
+.pc-comment-body :deep(a) { color: var(--neon-cyan); text-decoration: underline; }
+.pc-comment-body :deep(strong) { color: #e5e5e5; }
+.pc-comment-body :deep(em) { opacity: 0.85; }
+.pc-comment-body :deep(u) { text-decoration: underline; }
+.pc-comment-body :deep(ul), .pc-comment-body :deep(ol) { margin-left: 1.25rem; margin-bottom: 0.4rem; }
+.pc-comment-body :deep(blockquote) { border-left: 3px solid var(--neon-cyan, #00e5ff); padding-left: 0.75rem; opacity: 0.85; margin: 0 0 0.4rem; }
+.pc-comment-body :deep(img) { max-width: 100%; border-radius: 4px; margin-top: 0.25rem; }
 
 /* ── Input area ──────────────────────────────────────────────────────────── */
-.pc-input-area {
-  border-top: 1px solid var(--border-color);
-  padding-top: 1rem;
-  margin-top: 0.75rem;
-}
+.pc-input-area { border-top: 1px solid var(--border-color); padding-top: 0.875rem; margin-top: 0.75rem; }
 .pc-form { display: flex; flex-direction: column; gap: 0.625rem; }
-.pc-profile-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.pc-label {
-  font-size: 0.625rem;
-  font-family: 'JetBrains Mono', monospace;
-  color: var(--text-muted, #737373);
-  white-space: nowrap;
-}
+.pc-profile-row { display: flex; align-items: center; gap: 0.5rem; }
+.pc-label { font-size: 0.625rem; font-family: 'JetBrains Mono', monospace; color: var(--text-muted, #737373); white-space: nowrap; }
 .pc-select {
-  flex: 1;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.8rem;
-  font-family: 'JetBrains Mono', monospace;
-  background: var(--bg-card, #0d0d18);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-primary, #e5e5e5);
-  cursor: pointer;
-  transition: border-color 0.2s;
+  flex: 1; padding: 0.35rem 0.5rem; font-size: 0.8rem; font-family: 'JetBrains Mono', monospace;
+  background: var(--bg-card, #0d0d18); border: 1px solid var(--border-color); border-radius: 4px;
+  color: var(--text-primary, #e5e5e5); cursor: pointer; transition: border-color 0.2s;
 }
-.pc-select:focus {
-  outline: none;
-  border-color: var(--neon-cyan);
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
-}
+.pc-select:focus { outline: none; border-color: var(--neon-cyan); }
 .pc-select:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.pc-textarea {
-  width: 100%;
-  height: 6rem;
-  resize: none;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.8rem;
-  background: var(--bg-card, #0d0d18);
+/* ── Tiptap editor wrapper ───────────────────────────────────────────────── */
+.pc-editor-wrapper {
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  color: var(--text-primary, #e5e5e5);
-  padding: 0.625rem 0.75rem;
+  overflow: hidden;
   transition: border-color 0.2s;
 }
-.pc-textarea::placeholder { color: var(--text-muted, #737373); }
-.pc-textarea:focus {
-  outline: none;
-  border-color: var(--neon-cyan);
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
-}
-.pc-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+.pc-editor-wrapper:focus-within { border-color: var(--neon-cyan); }
 
-.pc-form-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+.pc-toolbar {
+  display: flex; gap: 2px; padding: 0.3rem 0.4rem;
+  background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--border-color);
 }
-.pc-form-footer-right { display: flex; align-items: center; gap: 0.5rem; }
-.pc-hint {
-  font-size: 0.625rem;
+.pc-tool {
+  padding: 0.2rem 0.45rem; font-size: 0.8rem; min-width: 1.75rem; text-align: center;
+  background: transparent; border: 1px solid transparent; border-radius: 3px;
+  color: var(--text-secondary, #a3a3a3); cursor: pointer; transition: all 0.15s;
+  font-family: inherit; line-height: 1.4;
+}
+.pc-tool:hover { background: rgba(255,255,255,0.08); color: var(--text-primary, #e5e5e5); }
+.pc-tool.active { background: rgba(0, 229, 255, 0.15); color: var(--neon-cyan); border-color: rgba(0,229,255,0.3); }
+
+.pc-editor-content { background: var(--bg-card, #0d0d18); }
+.pc-editor-content :deep(.pc-editor) {
+  min-height: 5rem; padding: 0.625rem 0.75rem;
+  font-size: 0.875rem; color: var(--text-primary, #e5e5e5);
+  font-family: inherit; line-height: 1.55; outline: none;
+}
+.pc-editor-content :deep(.pc-editor p) { margin-bottom: 0.4rem; }
+.pc-editor-content :deep(.pc-editor p:last-child) { margin-bottom: 0; }
+.pc-editor-content :deep(.pc-editor a) { color: var(--neon-cyan); text-decoration: underline; }
+.pc-editor-content :deep(.pc-editor img) { max-width: 100%; border-radius: 4px; }
+.pc-editor-content :deep(.ProseMirror-focused) { outline: none; }
+.pc-editor-content :deep(.ProseMirror p.is-editor-empty:first-child::before) {
+  content: attr(data-placeholder);
   color: var(--text-muted, #737373);
-  font-family: 'JetBrains Mono', monospace;
+  pointer-events: none;
+  float: left;
+  height: 0;
 }
+
+/* ── Edit form ───────────────────────────────────────────────────────────── */
+.pc-edit-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
+
+/* ── Form footer ─────────────────────────────────────────────────────────── */
+.pc-form-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.pc-form-footer-right { display: flex; align-items: center; gap: 0.5rem; }
+.pc-hint { font-size: 0.6rem; color: var(--text-muted, #737373); font-family: 'JetBrains Mono', monospace; }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .pc-btn {
-  padding: 0.35rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  font-family: 'JetBrains Mono', monospace;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-  text-transform: uppercase;
-  line-height: 1.4;
+  padding: 0.35rem 0.75rem; font-size: 0.75rem; font-weight: 600;
+  letter-spacing: 0.04em; font-family: 'JetBrains Mono', monospace;
+  border-radius: 4px; cursor: pointer; transition: all 0.2s ease;
+  border: 1px solid transparent; text-transform: uppercase; line-height: 1.4;
 }
 .pc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.pc-btn-primary {
-  background: var(--neon-cyan);
-  color: var(--bg-dark, #0a0a0f);
-  border-color: var(--neon-cyan);
-}
-.pc-btn-primary:hover:not(:disabled) {
-  background: #00ffff;
-  border-color: #00ffff;
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
-}
-
-.pc-btn-danger {
-  background: transparent;
-  color: #f87171;
-  border-color: var(--border-color);
-}
-.pc-btn-danger:hover:not(:disabled) {
-  color: #fca5a5;
-  border-color: #f87171;
-}
-
+.pc-btn-primary { background: var(--neon-cyan); color: var(--bg-dark, #0a0a0f); border-color: var(--neon-cyan); }
+.pc-btn-primary:hover:not(:disabled) { background: #00ffff; border-color: #00ffff; box-shadow: 0 0 16px rgba(0,229,255,0.4); }
+.pc-btn-ghost { background: transparent; color: var(--text-secondary, #a3a3a3); border-color: var(--border-color); }
+.pc-btn-ghost:hover:not(:disabled) { color: var(--text-primary, #e5e5e5); border-color: var(--neon-cyan); }
+.pc-btn-danger { background: transparent; color: #f87171; border-color: var(--border-color); }
+.pc-btn-danger:hover:not(:disabled) { color: #fca5a5; border-color: #f87171; }
 .pc-btn-sm { padding: 0.2rem 0.5rem; font-size: 0.65rem; }
-
-.pc-btn-ghost {
-  background: transparent;
-  color: var(--text-secondary, #a3a3a3);
-  border-color: var(--border-color);
-}
-.pc-btn-ghost:hover:not(:disabled) {
-  color: var(--text-primary, #e5e5e5);
-  border-color: var(--neon-cyan);
-}
-
-.pc-edited-tag {
-  color: var(--text-muted, #737373);
-  font-style: italic;
-  font-size: 0.6rem;
-}
-
-.pc-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-}
 </style>
