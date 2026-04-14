@@ -792,6 +792,46 @@ namespace api.Migrations
                     b.ToTable("Players");
                 });
 
+            modelBuilder.Entity("api.PlayerTracking.PlayerComment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AuthorPlayerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AuthorUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PlayerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorUserId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("PlayerName");
+
+                    b.ToTable("PlayerComments");
+                });
+
             modelBuilder.Entity("api.PlayerTracking.PlayerObservation", b =>
                 {
                     b.Property<int>("ObservationId")
@@ -1824,6 +1864,17 @@ namespace api.Migrations
                         .HasColumnType("INTEGER");
 
                     b.ToTable("ServerBestScoreRaw");
+                });
+
+            modelBuilder.Entity("api.PlayerTracking.PlayerComment", b =>
+                {
+                    b.HasOne("api.PlayerTracking.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
                 });
 
             modelBuilder.Entity("api.PlayerTracking.PlayerObservation", b =>
