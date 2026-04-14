@@ -842,10 +842,13 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- Right Column: Activity Heatmap, Best Scores, Map Preference, Servers, Achievements -->
+              <!-- Right Column: Comments, Activity Heatmap, Best Scores, Map Preference, Servers, Achievements -->
               <div class="xl:col-span-5 space-y-6">
 
-                <!-- Activity Heatmap (top of right column) -->
+                <!-- Comments (top of right column) -->
+                <PlayerComments :player-name="playerName" />
+
+                <!-- Activity Heatmap -->
                 <div ref="activityHeatmapRef" class="explorer-card">
                   <div class="explorer-card-header">
                     <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
@@ -1050,12 +1053,6 @@ onUnmounted(() => {
                 @player-click="(name: string) => router.push(`/players/${encodeURIComponent(name)}`)"
               />
             </div>
-
-            <!-- Comments -->
-            <PlayerComments
-              :player-name="playerName"
-              @request-login="() => router.push('/dashboard')"
-            />
 
           </div>
 
