@@ -58,6 +58,9 @@ public class PlayerTrackerDbContext : DbContext
     // AI chat feedback
     public DbSet<AIChatFeedback> AIChatFeedback { get; set; }
 
+    // Social comments
+    public DbSet<PlayerComment> PlayerComments { get; set; }
+
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
         LocalDateTimePattern.CreateWithInvariantCulture("yyyy-MM-dd HH:mm:ss.FFFFFFF");
@@ -1046,6 +1049,33 @@ public class PlayerTrackerDbContext : DbContext
 
         modelBuilder.Entity<AIChatFeedback>()
             .HasIndex(f => f.IsPositive);
+
+        // Configure PlayerComment entity
+        modelBuilder.Entity<PlayerComment>()
+            .HasKey(c => c.Id);
+
+        modelBuilder.Entity<PlayerComment>()
+            .HasIndex(c => c.PlayerName);
+
+        modelBuilder.Entity<PlayerComment>()
+            .HasIndex(c => c.CreatedAt);
+
+        modelBuilder.Entity<PlayerComment>()
+            .Property(c => c.CreatedAt)
+            .HasConversion(
+                v => FormatInstant(v),
+                v => ParseInstant(v));
+
+        modelBuilder.Entity<PlayerComment>()
+            .Property(c => c.UpdatedAt)
+            .HasConversion(
+                v => FormatInstant(v),
+                v => ParseInstant(v));
+
+        modelBuilder.Entity<PlayerComment>()
+            .HasOne(c => c.Author)
+            .WithMany()
+            .HasForeignKey(c => c.AuthorUserId);
     }
 
     private static string FormatInstant(Instant instant) => InstantExtendedIsoPattern.Format(instant);
@@ -1594,6 +1624,20 @@ public class TournamentMatchComment
     // Navigation properties
     public TournamentMatch Match { get; set; } = null!;
     public User CreatedByUser { get; set; } = null!;
+}
+
+public class PlayerComment
+{
+    public int Id { get; set; }
+    public string PlayerName { get; set; } = "";
+    public string Content { get; set; } = ""; // Markdown comment text
+    public int AuthorUserId { get; set; }
+    public string AuthorPlayerName { get; set; } = ""; // Linked player profile name chosen at post time
+    public Instant CreatedAt { get; set; }
+    public Instant UpdatedAt { get; set; }
+
+    // Navigation properties
+    public User Author { get; set; } = null!;
 }
 
 public class TournamentPost
