@@ -19,6 +19,7 @@ import ForecastModal from '../components/ForecastModal.vue';
 import discordIcon from '@/assets/discord.webp';
 import { useAIContext } from '@/composables/useAIContext';
 import PingProximityOrbit from '@/components/PingProximityOrbit.vue';
+import ServerComments from '@/components/ServerComments.vue';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -814,7 +815,10 @@ const closeForecastOverlay = () => {
 
               <!-- Right Column -->
               <div class="xl:col-span-6 space-y-6">
-                
+
+                <!-- Comments -->
+                <ServerComments :server-name="serverName" />
+
                 <!-- Map Rotation -->
                 <div class="explorer-card">
                   <div 
