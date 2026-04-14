@@ -48,6 +48,13 @@ const achievementGroups = ref<PlayerAchievementGroup[]>([]);
 const achievementGroupsLoading = ref(false);
 const achievementGroupsError = ref<string | null>(null);
 
+// V2 Tab Navigation
+const activeTab = ref<'overview' | 'rankings' | 'awards'>('overview');
+const tabs = [
+  { id: 'overview' as const, label: 'OVERVIEW' },
+  { id: 'rankings' as const, label: 'RANKINGS' },
+  { id: 'awards' as const, label: 'AWARDS' },
+];
 
 // State for server map stats view
 const selectedServerGuid = ref<string | null>(null);
@@ -755,48 +762,166 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <!-- Recent Rounds Compact -->
-                <div v-if="playerStats?.recentSessions && playerStats.recentSessions.length > 0" class="mt-4 pt-4 border-t border-[var(--border-color)]">
-                  <PlayerRecentRoundsCompact
-                    :sessions="playerStats.recentSessions"
-                    :player-name="playerName"
-                  />
-                </div>
+                <!-- Recent Rounds Compact (V1 legacy moved to Combat Log, but we can keep a mini version or just remove it from header) -->
               </div>
             </div>
 
-            <!-- Performance Trends (Always Visible) -->
-            <div v-if="playerStats?.recentStats && (playerStats.recentStats.kdRatioTrend.length > 0 || playerStats.recentStats.killRateTrend.length > 0)" class="explorer-card">
-              <div class="explorer-card-header">
-                <h3 class="explorer-card-title">PERFORMANCE TRENDS</h3>
-                <p class="text-[10px] text-neutral-500 font-mono mt-1">90-DAY ANALYSIS</p>
-              </div>
-              <div class="explorer-card-body">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div class="space-y-2">
-                    <div class="text-sm font-mono text-neon-pink">K/D RATIO TREND</div>
-                    <div class="h-48">
-                      <Line :data="kdRatioTrendChartData" :options="trendChartOptions" />
-                    </div>
+            <!-- Tab Navigation (V2) -->
+            <div class="explorer-tabs mb-6 overflow-x-auto no-scrollbar flex flex-nowrap border-b border-[var(--border-color)]">
+              <button
+                v-for="tab in tabs"
+                :key="tab.id"
+                class="explorer-tab whitespace-nowrap px-6 py-3 text-sm font-mono transition-all border-b-2"
+                :class="activeTab === tab.id ? 'text-neon-cyan border-neon-cyan bg-neon-cyan/5' : 'text-neutral-500 border-transparent hover:text-neutral-300'"
+                @click="activeTab = tab.id"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="space-y-6">
+              <!-- OVERVIEW TAB (Default, merged Combat Log + Breakdown + Comments) -->
+              <div v-if="activeTab === 'overview'" class="space-y-6">
+                <!-- Performance Trends -->
+                <div v-if="playerStats?.recentStats" class="explorer-card">
+                  <div class="explorer-card-header">
+                    <h3 class="explorer-card-title">PERFORMANCE TRENDS</h3>
+                    <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">90-Day Analysis</p>
                   </div>
-                  <div class="space-y-2">
-                    <div class="text-sm font-mono text-neon-cyan">KILL RATE TREND</div>
-                    <div class="h-48">
-                      <Line :data="killRateTrendChartData" :options="trendChartOptions" />
+                  <div class="explorer-card-body">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div class="space-y-2">
+                        <div class="text-xs font-mono text-neon-pink uppercase">K/D Ratio Trend</div>
+                        <div class="h-48">
+                          <Line :data="kdRatioTrendChartData" :options="trendChartOptions" />
+                        </div>
+                      </div>
+                      <div class="space-y-2">
+                        <div class="text-xs font-mono text-neon-cyan uppercase">Kill Rate Trend</div>
+                        <div class="h-48">
+                          <Line :data="killRateTrendChartData" :options="trendChartOptions" />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <!-- Main Grid Layout -->
-            <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-              
-              <!-- Left Column: Data Explorer Breakdown + Competitive Rankings -->
-              <div class="xl:col-span-7 space-y-6">
+                <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                  <!-- Recent Rounds & Best Scores -->
+                  <div class="xl:col-span-7 space-y-6">
+                    <div class="explorer-card">
+                      <div class="explorer-card-header">
+                        <h3 class="explorer-card-title">RECENT ROUNDS</h3>
+                      </div>
+                      <div class="explorer-card-body">
+                        <PlayerRecentRoundsCompact
+                          v-if="playerStats?.recentSessions && playerStats.recentSessions.length > 0"
+                          :sessions="playerStats.recentSessions"
+                          :player-name="playerName"
+                        />
+                        <div v-else class="text-center py-8 text-neutral-500 font-mono uppercase">No recent rounds found</div>
+                      </div>
+                    </div>
+
+                    <!-- Best Scores (Full) -->
+                    <div class="explorer-card explorer-card--trophy">
+                      <div class="explorer-card-header flex items-center justify-between">
+                        <h3 class="explorer-card-title">BEST ROUND SCORES</h3>
+                        <div class="explorer-toggle-group">
+                          <button
+                            v-for="tab in bestScoresTabOptions"
+                            :key="tab.key"
+                            class="explorer-toggle-btn"
+                            :class="{ 'explorer-toggle-btn--active': selectedBestScoresTab === tab.key }"
+                            @click="changeBestScoresTab(tab.key)"
+                          >
+                            {{ tab.label }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="explorer-card-body p-0">
+                        <div v-if="currentBestScores.length === 0" class="p-4 sm:p-6 text-center text-neutral-500 text-sm font-mono">
+                          NO SCORES RECORDED
+                        </div>
+                        <div v-else class="divide-y divide-[var(--border-color)]">
+                          <div
+                            v-for="(score, index) in currentBestScores.slice(0, 10)"
+                            :key="`${score.roundId}-${index}`"
+                            class="p-2 sm:p-3 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-2 sm:gap-3"
+                            @click="navigateToRoundReport(score.roundId)"
+                          >
+                            <div class="w-6 h-6 rounded bg-[var(--bg-panel)] border border-[var(--border-color)] flex items-center justify-center text-xs font-bold text-neon-gold font-mono">
+                              {{ index + 1 }}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <div class="text-sm font-bold text-neon-cyan font-mono truncate">
+                                {{ score.score.toLocaleString() }} PTS
+                              </div>
+                              <div class="text-xs text-neutral-400 truncate font-mono">
+                                {{ score.mapName }} • {{ score.serverName }}
+                              </div>
+                            </div>
+                            <div class="text-[10px] text-neutral-500 font-mono text-right">
+                              <div>{{ formatRelativeTime(score.timestamp) }}</div>
+                              <div>K/D {{ calculateKDR(score.kills, score.deaths) }}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Comments & Activity Heatmap -->
+                  <div class="xl:col-span-5 space-y-6">
+                    <!-- Player Comments (Renamed/Moved from Social) -->
+                    <PlayerComments :player-name="playerName" />
+
+                    <div ref="activityHeatmapRef" class="explorer-card">
+                      <div class="explorer-card-header">
+                        <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
+                        <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Typical play times</p>
+                      </div>
+                      <div class="explorer-card-body">
+                        <PlayerActivityHeatmap
+                          v-if="activityHeatmapVisible"
+                          :player-name="playerName"
+                          :game="playerPanelGame"
+                        />
+                      </div>
+                    </div>
+
+                    <!-- Player Network (Moved from Awards) -->
+                    <div class="explorer-card">
+                      <div class="explorer-card-header">
+                        <h3 class="explorer-card-title">PLAYER NETWORK</h3>
+                        <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Frequent companions & rivals</p>
+                      </div>
+                      <div class="explorer-card-body p-0">
+                        <div v-if="unifiedServerList.length > 0" class="p-4">
+                          <div v-if="unifiedServerList.length > 1" class="mb-4">
+                            <select v-model="selectedProximityServerGuid" class="proximity-server-select w-full">
+                              <option v-for="server in unifiedServerList" :key="server.serverGuid" :value="server.serverGuid">{{ server.serverName }}</option>
+                            </select>
+                          </div>
+                          <PingProximityOrbit
+                            :server-guid="selectedProximityServerGuid"
+                            :server-name="selectedProximityServer?.serverName"
+                            @player-click="(name: string) => router.push(`/players/${encodeURIComponent(name)}`)"
+                          />
+                        </div>
+                        <div class="p-4 border-t border-[var(--border-color)] text-center">
+                          <router-link :to="`/players/${encodeURIComponent(playerName)}/network`" class="explorer-btn explorer-btn--ghost explorer-btn--sm w-full font-mono uppercase">Interactive Network Graph</router-link>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Detailed Breakdown (moved to bottom) -->
                 <div class="explorer-card">
                   <div class="explorer-card-header">
-                    <h3 class="explorer-card-title">BREAKDOWN</h3>
+                    <h3 class="explorer-card-title uppercase">Detailed Breakdown</h3>
                   </div>
                   <div class="explorer-card-body">
                     <PlayerDetailPanel
@@ -806,252 +931,130 @@ onUnmounted(() => {
                     />
                   </div>
                 </div>
+              </div>
 
-                <!-- Competitive Rankings -->
-                <div class="explorer-card">
-                  <div class="explorer-card-header">
-                    <h3 class="explorer-card-title">MAPS</h3>
-                    <p class="text-[10px] text-neutral-500 font-mono mt-1">YOUR POSITION AMONG ALL PLAYERS</p>
+              <!-- RANKINGS TAB (Swapped Columns) -->
+              <div v-if="activeTab === 'rankings'" class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                <!-- Col 1: All Server Ranks & Map Preference -->
+                <div class="xl:col-span-5 space-y-6">
+                  <!-- Servers List (paged) -->
+                  <div class="explorer-card explorer-card--trophy">
+                    <div class="explorer-card-header flex items-center justify-between">
+                      <h3 class="explorer-card-title">ALL SERVER RANKS</h3>
+                      <button type="button" class="explorer-btn explorer-btn--ghost explorer-btn--sm" @click="showAllServerMaps">ALL MAPS</button>
+                    </div>
+                    <div class="explorer-card-body p-0">
+                      <div class="divide-y divide-[var(--border-color)]">
+                        <div
+                          v-for="server in pagedServers"
+                          :key="server.serverGuid"
+                          class="group p-3 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-3"
+                          @click="showServerMapStats(server.serverGuid)"
+                        >
+                          <div class="w-8 text-center font-mono text-sm" :class="getRankBadgeClass(rankNum(server.ranking))">
+                            <span v-if="server.ranking">#{{ server.ranking.rankDisplay ?? server.ranking.rank }}</span>
+                            <span v-else class="text-neutral-600">-</span>
+                          </div>
+                          <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-neutral-200 truncate font-mono">{{ server.serverName }}</div>
+                            <div class="flex items-center gap-2 text-[10px] text-neutral-500 font-mono">
+                              <span v-if="server.hasStats">K/D {{ Number(server.kdRatio).toFixed(2) }}</span>
+                              <span v-else-if="server.ranking">{{ server.ranking.scoreDisplay || server.ranking.totalScore.toLocaleString() }} score</span>
+                            </div>
+                          </div>
+                          <div class="text-neutral-600 group-hover:text-neon-cyan transition-colors">&rarr;</div>
+                        </div>
+                      </div>
+                      <!-- Pagination controls -->
+                      <div v-if="serversTotalPages > 1" class="flex items-center justify-between px-3 py-2 border-t border-[var(--border-color)]">
+                        <button class="explorer-btn explorer-btn--ghost explorer-btn--sm" :disabled="serversPage === 0" @click="serversPage--">&larr;</button>
+                        <span class="text-[10px] font-mono text-neutral-500">{{ serversPage + 1 }} / {{ serversTotalPages }}</span>
+                        <button class="explorer-btn explorer-btn--ghost explorer-btn--sm" :disabled="serversPage >= serversTotalPages - 1" @click="serversPage++">&rarr;</button>
+                      </div>
+                    </div>
                   </div>
-                  <div class="explorer-card-body">
-                    <PlayerCompetitiveRankings
-                      :player-name="playerName"
-                      :game="playerPanelGame"
-                      @navigate-to-map="openMapDetail"
-                    />
+
+                  <!-- Map Preference -->
+                  <div ref="mapPreferenceRef" class="explorer-card explorer-card--trophy">
+                    <div class="explorer-card-header">
+                      <h3 class="explorer-card-title">MAP PREFERENCE</h3>
+                      <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Last 30 days</p>
+                    </div>
+                    <div class="explorer-card-body">
+                      <PlayerMapPreference
+                        v-if="mapPreferenceVisible"
+                        :player-name="playerName"
+                        :game="playerPanelGame"
+                        @navigate-to-map="openMapDetail"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <!-- Map Performance Race -->
-                <div ref="mapPerformanceRef" class="explorer-card">
-                  <div class="explorer-card-header">
-                    <h3 class="explorer-card-title">MAP PERFORMANCE OVER TIME</h3>
-                    <p class="text-[10px] text-neutral-500 font-mono mt-1">TRACK YOUR EVOLVING MAP PREFERENCES</p>
+                <!-- Col 2: Global Map Rankings & Map Performance Race -->
+                <div class="xl:col-span-7 space-y-6">
+                  <!-- Global Map Rankings -->
+                  <div class="explorer-card">
+                    <div class="explorer-card-header">
+                      <h3 class="explorer-card-title">GLOBAL MAP RANKINGS</h3>
+                      <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Your position among all players</p>
+                    </div>
+                    <div class="explorer-card-body">
+                      <PlayerCompetitiveRankings
+                        :player-name="playerName"
+                        :game="playerPanelGame"
+                        @navigate-to-map="openMapDetail"
+                      />
+                    </div>
                   </div>
-                  <div class="explorer-card-body">
-                    <MapPerformanceRace
-                      v-if="mapPerformanceVisible"
-                      :player-name="playerName"
-                      :game="playerPanelGame"
-                      @navigate-to-map="openMapDetail"
-                    />
-                    <div v-else class="h-48 flex items-center justify-center text-neutral-500">
-                      <div class="explorer-spinner" />
+
+                  <!-- Map Performance Race -->
+                  <div ref="mapPerformanceRef" class="explorer-card">
+                    <div class="explorer-card-header">
+                      <h3 class="explorer-card-title">MAP PERFORMANCE OVER TIME</h3>
+                    </div>
+                    <div class="explorer-card-body">
+                      <MapPerformanceRace
+                        v-if="mapPerformanceVisible"
+                        :player-name="playerName"
+                        :game="playerPanelGame"
+                        @navigate-to-map="openMapDetail"
+                      />
+                      <div v-else class="h-48 flex items-center justify-center text-neutral-500">
+                        <div class="explorer-spinner" />
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Right Column: Comments, Activity Heatmap, Best Scores, Map Preference, Servers, Achievements -->
-              <div class="xl:col-span-5 space-y-6">
-
-                <!-- Comments (top of right column) -->
-                <PlayerComments :player-name="playerName" />
-
-                <!-- Activity Heatmap -->
-                <div ref="activityHeatmapRef" class="explorer-card">
-                  <div class="explorer-card-header">
-                    <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
-                    <p class="text-[10px] text-neutral-500 font-mono mt-1">WHEN YOU TYPICALLY PLAY</p>
-                  </div>
-                  <div class="explorer-card-body">
-                    <PlayerActivityHeatmap
-                      v-if="activityHeatmapVisible"
-                      :player-name="playerName"
-                      :game="playerPanelGame"
-                    />
-                    <div v-else class="h-48 flex items-center justify-center text-neutral-500">
-                      <div class="explorer-spinner" />
+              <!-- AWARDS TAB (Prev Social) -->
+              <div v-if="activeTab === 'awards'" class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                <div class="xl:col-span-12 space-y-6">
+                  <!-- Achievements -->
+                  <div class="explorer-card explorer-card--achievement">
+                    <div class="explorer-card-header flex items-center justify-between">
+                      <h3 class="explorer-card-title">ACHIEVEMENTS</h3>
+                      <router-link :to="`/players/${encodeURIComponent(playerName)}/achievements`" class="explorer-link text-xs uppercase">View All &rarr;</router-link>
+                    </div>
+                    <div class="explorer-card-body">
+                      <PlayerAchievementSummary
+                        :player-name="playerName"
+                        :achievement-groups="achievementGroups"
+                        :loading="achievementGroupsLoading"
+                        :error="achievementGroupsError"
+                      />
                     </div>
                   </div>
                 </div>
-
-                <!-- Best Scores -->
-                <div class="explorer-card explorer-card--trophy">
-                  <div class="explorer-card-header flex items-center justify-between">
-                    <h3 class="explorer-card-title">BEST SCORES</h3>
-                    <div class="explorer-toggle-group">
-                      <button
-                        v-for="tab in bestScoresTabOptions"
-                        :key="tab.key"
-                        class="explorer-toggle-btn"
-                        :class="{ 'explorer-toggle-btn--active': selectedBestScoresTab === tab.key }"
-                        @click="changeBestScoresTab(tab.key)"
-                      >
-                        {{ tab.label === 'All Time' ? 'ALL' : tab.label === '30 Days' ? '30D' : 'WK' }}
-                      </button>
-                    </div>
-                  </div>
-                  <div class="explorer-card-body p-0">
-                    <div v-if="currentBestScores.length === 0" class="p-4 sm:p-6 text-center text-neutral-500 text-sm font-mono">
-                      NO SCORES RECORDED
-                    </div>
-                    <div v-else class="divide-y divide-[var(--border-color)]">
-                      <div
-                        v-for="(score, index) in currentBestScores.slice(0, 5)"
-                        :key="`${score.roundId}-${index}`"
-                        class="p-2 sm:p-3 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-2 sm:gap-3"
-                        @click="navigateToRoundReport(score.roundId)"
-                      >
-                        <div class="w-6 h-6 rounded bg-[var(--bg-panel)] border border-[var(--border-color)] flex items-center justify-center text-xs font-bold text-neon-gold font-mono">
-                          {{ index + 1 }}
-                        </div>
-                        <div class="flex-1 min-w-0">
-                          <div class="text-sm font-bold text-neon-cyan font-mono truncate">
-                            {{ score.score.toLocaleString() }} PTS
-                          </div>
-                          <div class="text-xs text-neutral-400 truncate font-mono">
-                            {{ score.mapName }} • {{ score.serverName }}
-                          </div>
-                        </div>
-                        <div class="text-[10px] text-neutral-500 font-mono text-right">
-                          <div>{{ formatRelativeTime(score.timestamp) }}</div>
-                          <div>K/D {{ calculateKDR(score.kills, score.deaths) }}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Map Preference -->
-                <div ref="mapPreferenceRef" class="explorer-card explorer-card--trophy">
-                  <div class="explorer-card-header">
-                    <h3 class="explorer-card-title">MAP PREFERENCE</h3>
-                    <p class="text-[10px] text-neutral-500 font-mono mt-1">LAST 30 DAYS</p>
-                  </div>
-                  <div class="explorer-card-body">
-                    <PlayerMapPreference
-                      v-if="mapPreferenceVisible"
-                      :player-name="playerName"
-                      :game="playerPanelGame"
-                      @navigate-to-map="openMapDetail"
-                    />
-                    <div v-else class="h-32 flex items-center justify-center text-neutral-500">
-                      <div class="explorer-spinner" />
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Servers List (paged, 3 at a time) -->
-                <div class="explorer-card explorer-card--trophy">
-                  <div class="explorer-card-header flex items-center justify-between">
-                    <h3 class="explorer-card-title">SERVERS</h3>
-                    <button
-                      type="button"
-                      class="explorer-btn explorer-btn--ghost explorer-btn--sm"
-                      @click="showAllServerMaps"
-                    >
-                      ALL MAP RANKINGS
-                    </button>
-                  </div>
-                  <div class="explorer-card-body p-0">
-                    <div class="divide-y divide-[var(--border-color)]">
-                      <div
-                        v-for="server in pagedServers"
-                        :key="server.serverGuid"
-                        class="group p-2 sm:p-3 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-2 sm:gap-3"
-                        @click="showServerMapStats(server.serverGuid)"
-                      >
-                        <!-- Rank -->
-                        <div class="w-8 text-center font-mono text-sm" :class="getRankBadgeClass(rankNum(server.ranking))">
-                          <span v-if="server.ranking">#{{ server.ranking.rankDisplay ?? server.ranking.rank }}</span>
-                          <span v-else class="text-neutral-600">-</span>
-                        </div>
-
-                        <!-- Icon -->
-                        <div v-if="server.gameId" class="w-8 h-8 rounded bg-black/20 p-0.5">
-                          <img :src="getGameIcon(server.gameId)" alt="" class="w-full h-full object-cover rounded-sm" />
-                        </div>
-
-                        <!-- Details -->
-                        <div class="flex-1 min-w-0">
-                          <div class="text-sm font-medium text-neutral-200 truncate group-hover:text-neon-cyan transition-colors font-mono">
-                            {{ server.serverName }}
-                          </div>
-                          <div class="flex items-center gap-2 text-[10px] text-neutral-500 font-mono mt-0.5">
-                            <span v-if="server.hasStats">{{ formatPlayTime(server.totalMinutes) }}</span>
-                            <span v-if="server.hasStats">|</span>
-                            <span v-if="server.hasStats">K/D {{ Number(server.kdRatio).toFixed(2) }}</span>
-                            <span v-else-if="server.ranking">{{ server.ranking.scoreDisplay || server.ranking.totalScore.toLocaleString() }} score</span>
-                            <span v-if="server.ranking?.averagePing">|</span>
-                            <span v-if="server.ranking?.averagePing" class="text-neon-cyan">PING {{ Math.round(server.ranking.averagePing) }}ms</span>
-                          </div>
-                        </div>
-
-                        <!-- Arrow -->
-                        <div class="text-neutral-600 group-hover:text-neon-cyan transition-colors">
-                          &rarr;
-                        </div>
-                      </div>
-                    </div>
-                    <!-- Pagination controls -->
-                    <div v-if="serversTotalPages > 1" class="flex items-center justify-between px-3 py-2 border-t border-[var(--border-color)]">
-                      <button
-                        class="explorer-btn explorer-btn--ghost explorer-btn--sm"
-                        :disabled="serversPage === 0"
-                        @click="serversPage--"
-                      >
-                        &larr; PREV
-                      </button>
-                      <span class="text-[10px] font-mono text-neutral-500">
-                        {{ serversPage + 1 }} / {{ serversTotalPages }}
-                      </span>
-                      <button
-                        class="explorer-btn explorer-btn--ghost explorer-btn--sm"
-                        :disabled="serversPage >= serversTotalPages - 1"
-                        @click="serversPage++"
-                      >
-                        NEXT &rarr;
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Achievements (moved down) -->
-                <div class="explorer-card explorer-card--achievement">
-                  <div class="explorer-card-header flex items-center justify-between">
-                    <h3 class="explorer-card-title">ACHIEVEMENTS</h3>
-                    <router-link
-                      :to="`/players/${encodeURIComponent(playerName)}/achievements`"
-                      class="explorer-link text-xs font-mono uppercase"
-                    >
-                      View All &rarr;
-                    </router-link>
-                  </div>
-                  <div class="explorer-card-body">
-                    <PlayerAchievementSummary
-                      :player-name="playerName"
-                      :achievement-groups="achievementGroups"
-                      :loading="achievementGroupsLoading"
-                      :error="achievementGroupsError"
-                    />
-                  </div>
-                </div>
-
               </div>
             </div>
 
-            <!-- Ping Proximity -->
-            <div v-if="unifiedServerList.length > 0">
-              <div v-if="unifiedServerList.length > 1" class="mb-2">
-                <select
-                  v-model="selectedProximityServerGuid"
-                  class="proximity-server-select"
-                >
-                  <option
-                    v-for="server in unifiedServerList"
-                    :key="server.serverGuid"
-                    :value="server.serverGuid"
-                  >
-                    {{ server.serverName }}
-                  </option>
-                </select>
-              </div>
-              <PingProximityOrbit
-                :server-guid="selectedProximityServerGuid"
-                :server-name="selectedProximityServer?.serverName"
-                @player-click="(name: string) => router.push(`/players/${encodeURIComponent(name)}`)"
-              />
+            <div class="hidden">
+              <!-- Proximity hidden placeholders for lazy load refs if needed -->
+              <div ref="mapPerformanceRef"></div>
+              <div ref="activityHeatmapRef"></div>
+              <div ref="mapPreferenceRef"></div>
             </div>
 
           </div>
