@@ -24,6 +24,19 @@ public class AssetsController(IAssetServingService assetServingService) : Contro
         return HandleAssetResult(result);
     }
 
+    /// <summary>
+    /// Get a player asset file by relative path
+    /// Path should be relative to the players folder, e.g., "some-player/avatar.png"
+    /// </summary>
+    /// <param name="path">Relative path to the asset file within players</param>
+    [HttpGet("players/{*path}")]
+    public async Task<IActionResult> GetPlayerAsset(string path)
+    {
+        var basePath = Path.Combine(TournamentImagesConfig.ResolveBasePath(), "players");
+        var result = await assetServingService.GetAssetAsync(basePath, path);
+        return HandleAssetResult(result);
+    }
+
     private IActionResult HandleAssetResult(AssetResult result)
     {
         if (!result.IsSuccess)
