@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using api.PlayerTracking;
 using api.Social.Models;
+using Ganss.Xss;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,18 @@ public class PlayerCommentsController(
     IClock clock,
     ILogger<PlayerCommentsController> logger) : ControllerBase
 {
+    private static readonly HtmlSanitizer Sanitizer = new HtmlSanitizer();
+
+    static PlayerCommentsController()
+    {
+        Sanitizer.AllowedTags.Clear();
+        foreach (var tag in new[] { "p", "strong", "em", "u", "a", "img", "ul", "ol", "li", "br", "blockquote" })
+            Sanitizer.AllowedTags.Add(tag);
+        Sanitizer.AllowedAttributes.Clear();
+        foreach (var attr in new[] { "href", "src", "alt", "target", "rel" })
+            Sanitizer.AllowedAttributes.Add(attr);
+    }
+
     /// <summary>
     /// Returns all comments for a player profile. Public, no auth required.
     /// </summary>
@@ -75,10 +88,11 @@ public class PlayerCommentsController(
             return BadRequest(new { message = "Selected player profile is not linked to your account." });
 
         var now = clock.GetCurrentInstant();
+        var sanitizedContent = Sanitizer.Sanitize(request.Content.Trim());
         var comment = new PlayerComment
         {
             PlayerName = playerName,
-            Content = request.Content.Trim(),
+            Content = sanitizedContent,
             AuthorUserId = user.Id,
             AuthorPlayerName = linkedName.PlayerName,
             CreatedAt = now,
@@ -135,7 +149,7 @@ public class PlayerCommentsController(
         if (comment.AuthorUserId != user.Id)
             return Forbid();
 
-        comment.Content = request.Content.Trim();
+        comment.Content = Sanitizer.Sanitize(request.Content.Trim());
         comment.UpdatedAt = clock.GetCurrentInstant();
         await context.SaveChangesAsync();
 
