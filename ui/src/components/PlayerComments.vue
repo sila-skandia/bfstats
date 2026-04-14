@@ -75,6 +75,13 @@
         </div>
       </div>
 
+      <!-- Pagination -->
+      <div v-if="totalPages > 1" class="pc-pagination">
+        <button class="pc-btn pc-btn-ghost pc-btn-sm" :disabled="currentPage <= 1 || loading" @click="goToPage(currentPage - 1)">&#8249;</button>
+        <span class="pc-page-label">{{ currentPage }} / {{ totalPages }}</span>
+        <button class="pc-btn pc-btn-ghost pc-btn-sm" :disabled="currentPage >= totalPages || loading" @click="goToPage(currentPage + 1)">&#8250;</button>
+      </div>
+
       <!-- Input area -->
       <div class="pc-input-area">
 
@@ -156,6 +163,14 @@ interface PlayerComment {
   updatedAt: string;
 }
 
+interface PagedComments {
+  items: PlayerComment[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 interface LinkedProfile { id: number; playerName: string; }
 
 const ALLOWED_TAGS = ['p', 'strong', 'em', 'u', 'a', 'img', 'ul', 'ol', 'li', 'br', 'blockquote'];
@@ -190,6 +205,9 @@ const editEditor = shallowRef<Editor | null>(null);
 const editEditorTick = ref(0);
 
 const comments = ref<PlayerComment[]>([]);
+const currentPage = ref(1);
+const totalPages = ref(1);
+const totalCount = ref(0);
 const loading = ref(true);
 const error = ref(false);
 const submitting = ref(false);
@@ -245,14 +263,26 @@ function cancelEdit() {
   editError.value = '';
 }
 
-async function loadComments() {
+async function loadComments(page = currentPage.value) {
   loading.value = true;
   error.value = false;
   try {
-    const r = await axios.get<PlayerComment[]>(`/stats/players/${encodeURIComponent(props.playerName)}/comments`);
-    comments.value = r.data;
+    const r = await axios.get<PagedComments>(
+      `/stats/players/${encodeURIComponent(props.playerName)}/comments`,
+      { params: { page, pageSize: 10 } }
+    );
+    comments.value = r.data.items;
+    currentPage.value = r.data.page;
+    totalPages.value = r.data.totalPages;
+    totalCount.value = r.data.totalCount;
   } catch { error.value = true; }
   finally { loading.value = false; }
+}
+
+function goToPage(page: number) {
+  if (page < 1 || page > totalPages.value) return;
+  cancelEdit();
+  loadComments(page);
 }
 
 async function loadLinkedProfiles() {
@@ -275,13 +305,13 @@ async function submitComment() {
   try {
     const token = localStorage.getItem('authToken');
     const html = newEditor.value.getHTML();
-    const r = await axios.post<PlayerComment>(
+    await axios.post<PlayerComment>(
       `/stats/players/${encodeURIComponent(props.playerName)}/comments`,
       { content: html, authorPlayerName: selectedProfile.value },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    comments.value.push(r.data);
     newEditor.value.commands.clearContent();
+    await loadComments(1);
   } catch (err: any) {
     submitError.value = err?.response?.data?.message ?? 'Failed to post comment.';
   } finally { submitting.value = false; }
@@ -295,14 +325,13 @@ async function saveEdit(commentId: number) {
     const token = localStorage.getItem('authToken');
     const comment = comments.value.find(c => c.id === commentId)!;
     const html = editEditor.value.getHTML();
-    const r = await axios.patch<PlayerComment>(
+    await axios.patch<PlayerComment>(
       `/stats/players/${encodeURIComponent(props.playerName)}/comments/${commentId}`,
       { content: html, authorPlayerName: comment.authorPlayerName },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    const idx = comments.value.findIndex(c => c.id === commentId);
-    if (idx !== -1) comments.value[idx] = r.data;
     cancelEdit();
+    await loadComments(currentPage.value);
   } catch (err: any) {
     editError.value = err?.response?.data?.message ?? 'Failed to save.';
   } finally { editSaving.value = false; }
@@ -315,8 +344,12 @@ async function deleteComment(commentId: number) {
       `/stats/players/${encodeURIComponent(props.playerName)}/comments/${commentId}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    comments.value = comments.value.filter(c => c.id !== commentId);
     if (editingId.value === commentId) cancelEdit();
+    // If this was the last item on the page, go back one page
+    const newPage = comments.value.length === 1 && currentPage.value > 1
+      ? currentPage.value - 1
+      : currentPage.value;
+    await loadComments(newPage);
   } catch { /* silently ignore */ }
 }
 
@@ -416,6 +449,13 @@ onBeforeUnmount(() => { newEditor.value?.destroy(); cancelEdit(); });
 .pc-comment-body :deep(ul), .pc-comment-body :deep(ol) { margin-left: 1.25rem; margin-bottom: 0.4rem; }
 .pc-comment-body :deep(blockquote) { border-left: 3px solid var(--neon-cyan, #00e5ff); padding-left: 0.75rem; opacity: 0.85; margin: 0 0 0.4rem; }
 .pc-comment-body :deep(img) { max-width: 100%; border-radius: 4px; margin-top: 0.25rem; }
+
+/* ── Pagination ──────────────────────────────────────────────────────────── */
+.pc-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+  padding: 0.5rem 0 0.25rem;
+}
+.pc-page-label { font-size: 0.65rem; font-family: 'JetBrains Mono', monospace; color: var(--text-muted, #737373); }
 
 /* ── Input area ──────────────────────────────────────────────────────────── */
 .pc-input-area { border-top: 1px solid var(--border-color); padding-top: 0.875rem; margin-top: 0.75rem; }
