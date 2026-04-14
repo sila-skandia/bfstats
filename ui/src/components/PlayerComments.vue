@@ -46,13 +46,13 @@
           <div v-if="editingId === comment.id" class="pc-edit-form">
             <div class="pc-editor-wrapper">
               <div class="pc-toolbar">
-                <button type="button" class="pc-tool" :class="{ active: editEditor?.isActive('bold') }" @click="editEditor?.chain().focus().toggleBold().run()" title="Bold"><strong>B</strong></button>
-                <button type="button" class="pc-tool" :class="{ active: editEditor?.isActive('italic') }" @click="editEditor?.chain().focus().toggleItalic().run()" title="Italic"><em>I</em></button>
-                <button type="button" class="pc-tool" :class="{ active: editEditor?.isActive('underline') }" @click="editEditor?.chain().focus().toggleUnderline().run()" title="Underline"><u>U</u></button>
-                <button type="button" class="pc-tool" :class="{ active: editEditor?.isActive('link') }" @click="toggleLink(editEditor)" title="Link">🔗</button>
+                <button type="button" class="pc-tool" :class="{ active: editEditorTick && editEditor?.isActive('bold') }" @click="editEditor?.chain().focus().toggleBold().run()" title="Bold"><strong>B</strong></button>
+                <button type="button" class="pc-tool" :class="{ active: editEditorTick && editEditor?.isActive('italic') }" @click="editEditor?.chain().focus().toggleItalic().run()" title="Italic"><em>I</em></button>
+                <button type="button" class="pc-tool" :class="{ active: editEditorTick && editEditor?.isActive('underline') }" @click="editEditor?.chain().focus().toggleUnderline().run()" title="Underline"><u>U</u></button>
+                <button type="button" class="pc-tool" :class="{ active: editEditorTick && editEditor?.isActive('link') }" @click="toggleLink(editEditor)" title="Link">🔗</button>
                 <button type="button" class="pc-tool" @click="insertImage(editEditor)" title="Image">🖼</button>
               </div>
-              <editor-content :editor="editEditor" class="pc-editor-content" />
+              <editor-content :editor="editEditor ?? undefined" class="pc-editor-content" />
             </div>
             <div class="pc-form-footer">
               <span class="pc-hint">Markdown not used — use toolbar for formatting</span>
@@ -131,15 +131,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, shallowRef, onMounted, onBeforeUnmount } from 'vue';
 import DOMPurify from 'dompurify';
 import axios from 'axios';
-import { useEditor, EditorContent } from '@tiptap/vue-3';
+import { useEditor, EditorContent, Editor } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
-import { Editor } from '@tiptap/core';
 import { useAuth } from '@/composables/useAuth';
 import { formatRelativeTime } from '@/utils/timeUtils';
 import { statsService } from '@/services/statsService';
@@ -184,8 +183,11 @@ const newEditor = useEditor({
   editorProps: { attributes: { class: 'pc-editor' } },
 });
 
-// Edit editor (created/destroyed per-comment)
-const editEditor = ref<Editor | null>(null);
+// Edit editor (created/destroyed per-comment).
+// Must use shallowRef — deep reactive wrapping of a Tiptap Editor hangs ProseMirror.
+const editEditor = shallowRef<Editor | null>(null);
+// Bumped on every transaction so toolbar active states re-render.
+const editEditorTick = ref(0);
 
 const comments = ref<PlayerComment[]>([]);
 const loading = ref(true);
@@ -232,6 +234,7 @@ function startEdit(comment: PlayerComment) {
     extensions: tiptapExtensions,
     content: comment.content,
     editorProps: { attributes: { class: 'pc-editor' } },
+    onTransaction: () => { editEditorTick.value++; },
   });
 }
 
@@ -407,7 +410,7 @@ onBeforeUnmount(() => { newEditor.value?.destroy(); cancelEdit(); });
 .pc-comment-body :deep(p) { margin-bottom: 0.4rem; }
 .pc-comment-body :deep(p:last-child) { margin-bottom: 0; }
 .pc-comment-body :deep(a) { color: var(--neon-cyan); text-decoration: underline; }
-.pc-comment-body :deep(strong) { color: #e5e5e5; }
+.pc-comment-body :deep(strong) { color: #e5e5e5; font-weight: 700; }
 .pc-comment-body :deep(em) { opacity: 0.85; }
 .pc-comment-body :deep(u) { text-decoration: underline; }
 .pc-comment-body :deep(ul), .pc-comment-body :deep(ol) { margin-left: 1.25rem; margin-bottom: 0.4rem; }
@@ -457,6 +460,7 @@ onBeforeUnmount(() => { newEditor.value?.destroy(); cancelEdit(); });
 }
 .pc-editor-content :deep(.pc-editor p) { margin-bottom: 0.4rem; }
 .pc-editor-content :deep(.pc-editor p:last-child) { margin-bottom: 0; }
+.pc-editor-content :deep(.pc-editor strong) { font-weight: 700; }
 .pc-editor-content :deep(.pc-editor a) { color: var(--neon-cyan); text-decoration: underline; }
 .pc-editor-content :deep(.pc-editor img) { max-width: 100%; border-radius: 4px; }
 .pc-editor-content :deep(.ProseMirror-focused) { outline: none; }
