@@ -2,7 +2,8 @@
   <div class="map-performance-race">
     <!-- Loading state -->
     <div v-if="loading" class="loading-state">
-      Loading map performance timeline...
+      <div class="explorer-spinner" />
+      <span>Loading performance stream...</span>
     </div>
 
     <!-- Error state -->
@@ -12,45 +13,47 @@
 
     <!-- Race chart content -->
     <div v-else-if="timelineData && timelineData.months.length > 0" class="race-content">
-      <!-- Month label -->
-      <div class="month-label">
-        {{ currentMonth?.monthLabel || '' }}
-      </div>
-
-      <!-- Controls -->
-      <div class="race-controls">
-        <button
-          @click="togglePlayback"
-          :class="['control-btn', isPlaying ? 'pause' : 'play']"
-        >
-          {{ isPlaying ? '&#10074;&#10074; PAUSE' : '&#9654; PLAY' }}
-        </button>
-
-        <div class="metric-toggle">
+      <!-- Compact Toolbar -->
+      <div class="race-toolbar">
+        <div class="toolbar-left">
           <button
-            v-for="metric in metrics"
-            :key="metric.value"
-            :class="['metric-btn', { active: selectedMetric === metric.value }]"
-            @click="selectedMetric = metric.value"
+            @click="togglePlayback"
+            :class="['playback-btn', { 'is-playing': isPlaying }]"
+            :title="isPlaying ? 'Pause' : 'Play'"
           >
-            {{ metric.label }}
+            <span v-if="isPlaying" class="icon-pause">||</span>
+            <span v-else class="icon-play">▶</span>
           </button>
+          
+          <div class="month-display">
+            <span class="month-label-small">{{ currentMonth?.monthLabel || '' }}</span>
+          </div>
         </div>
-      </div>
 
-      <!-- Month scrubber -->
-      <div class="month-scrubber">
-        <input
-          type="range"
-          v-model.number="currentMonthIndex"
-          :min="0"
-          :max="timelineData.months.length - 1"
-          :disabled="isPlaying"
-          class="scrubber"
-        />
-        <div class="scrubber-labels">
-          <span>{{ timelineData.months[0].monthLabel }}</span>
-          <span>{{ timelineData.months[timelineData.months.length - 1].monthLabel }}</span>
+        <div class="toolbar-center">
+          <div class="scrubber-container">
+            <input
+              type="range"
+              v-model.number="currentMonthIndex"
+              :min="0"
+              :max="timelineData.months.length - 1"
+              :disabled="isPlaying"
+              class="explorer-scrubber"
+            />
+          </div>
+        </div>
+
+        <div class="toolbar-right">
+          <div class="explorer-toggle-group">
+            <button
+              v-for="metric in metrics"
+              :key="metric.value"
+              :class="['explorer-toggle-btn', { 'explorer-toggle-btn--active': selectedMetric === metric.value }]"
+              @click="selectedMetric = metric.value"
+            >
+              {{ metric.label }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -62,12 +65,14 @@
             :key="map.mapName"
             class="bar-row"
           >
-            <div class="bar-label bar-label--clickable" :title="map.mapName" @click.stop="emit('navigateToMap', map.mapName)">{{ map.mapName }}</div>
+            <div class="bar-label bar-label--clickable" :title="map.mapName" @click.stop="emit('navigateToMap', map.mapName)">
+              {{ map.mapName }}
+            </div>
             <div class="bar-track">
               <div
                 class="bar-fill"
                 :style="{ width: getBarWidth(map) + '%' }"
-                :class="getBarClass(index)"
+                :class="{ 'bar-fill--top': index === 0 }"
               />
             </div>
             <div class="bar-value">{{ formatValue(map) }}</div>
@@ -78,7 +83,7 @@
 
     <!-- No data state -->
     <div v-else class="no-data">
-      No map performance data available
+      No performance data stream available
     </div>
   </div>
 </template>
@@ -102,7 +107,7 @@ const error = ref<string | null>(null);
 const timelineData = ref<MapPerformanceTimelineResponse | null>(null);
 const currentMonthIndex = ref(0);
 const isPlaying = ref(false);
-const selectedMetric = ref<'kdRatio' | 'score' | 'kills'>('kdRatio' as 'kdRatio' | 'score' | 'kills');
+const selectedMetric = ref<'kdRatio' | 'score' | 'kills'>('kdRatio');
 const playbackSpeed = ref(1500);
 
 let playbackInterval: number | null = null;
@@ -141,11 +146,6 @@ const maxValue = computed(() => {
 const getBarWidth = (map: { kdRatio: number; score: number; kills: number }): number => {
   const val = getValue(map);
   return maxValue.value > 0 ? (val / maxValue.value) * 100 : 0;
-};
-
-const getBarClass = (index: number): string => {
-  if (index === 0) return 'bar-fill--top';
-  return '';
 };
 
 const formatValue = (map: { kdRatio: number; score: number; kills: number; playTimeMinutes: number }): string => {
@@ -204,7 +204,7 @@ async function loadData() {
     );
     currentMonthIndex.value = 0;
   } catch (err) {
-    error.value = 'Failed to load map performance timeline';
+    error.value = 'Failed to load performance timeline';
     console.error(err);
   } finally {
     loading.value = false;
@@ -226,14 +226,34 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
 }
 
+/* States */
 .loading-state,
 .error-state,
 .no-data {
-  padding: 32px;
+  padding: 1.5rem;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
+}
+
+.explorer-spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--neon-cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .error-state {
@@ -246,151 +266,154 @@ onUnmounted(() => {
   height: 100%;
 }
 
-.month-label {
-  font-size: 24px;
-  font-weight: 600;
-  text-align: center;
-  color: var(--neon-cyan);
-  text-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
-  margin-bottom: 16px;
-}
-
-.race-controls {
-  display: flex;
-  justify-content: space-between;
+/* Toolbar */
+.race-toolbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  margin-bottom: 16px;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
 }
 
-.control-btn {
-  padding: 8px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-size: 13px;
-  font-family: 'JetBrains Mono', monospace;
-  cursor: pointer;
-  transition: all 0.2s;
+@media (max-width: 640px) {
+  .race-toolbar {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  
+  .toolbar-left, .toolbar-center, .toolbar-right {
+    justify-content: center;
+  }
 }
 
-.control-btn:hover {
-  border-color: var(--neon-cyan);
-  color: var(--neon-cyan);
-}
-
-.control-btn.play {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: var(--neon-cyan);
-  color: var(--neon-cyan);
-}
-
-.control-btn.pause {
-  background: rgba(255, 107, 107, 0.1);
-  border-color: #ff6b6b;
-  color: #ff6b6b;
-}
-
-.metric-toggle {
+.toolbar-left {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.metric-btn {
-  padding: 4px 12px;
+.playback-btn {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-family: 'JetBrains Mono', monospace;
+  border-radius: 4px;
+  color: var(--neon-cyan);
   cursor: pointer;
   transition: all 0.2s;
+  font-size: 0.7rem;
 }
 
-.metric-btn.active {
-  background: var(--neon-cyan);
-  color: var(--bg-dark);
+.playback-btn:hover {
   border-color: var(--neon-cyan);
+  background: rgba(245, 158, 11, 0.1);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
 }
 
-.metric-btn:hover:not(.active) {
-  border-color: var(--neon-cyan);
-  color: var(--neon-cyan);
+.playback-btn.is-playing {
+  color: var(--neon-red);
+  border-color: rgba(248, 113, 113, 0.3);
 }
 
-.month-scrubber {
-  margin-bottom: 16px;
+.playback-btn.is-playing:hover {
+  background: rgba(248, 113, 113, 0.1);
+  border-color: var(--neon-red);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.2);
 }
 
-.scrubber {
+.month-label-small {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.toolbar-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.scrubber-container {
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.explorer-scrubber {
   width: 100%;
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--bg-panel);
+  background: var(--bg-card);
+  border-radius: 2px;
   outline: none;
   cursor: pointer;
 }
 
-.scrubber::-webkit-slider-thumb {
+.explorer-scrubber::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   background: var(--neon-cyan);
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 2px;
+  box-shadow: 0 0 5px rgba(245, 158, 11, 0.5);
 }
 
-.scrubber::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+.explorer-scrubber::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
   background: var(--neon-cyan);
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 2px;
   border: none;
+  box-shadow: 0 0 5px rgba(245, 158, 11, 0.5);
 }
 
-.scrubber:disabled {
+.explorer-scrubber:disabled {
+  opacity: 0.3;
   cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.scrubber-labels {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-secondary);
 }
 
 /* Bar chart */
 .bar-chart {
   position: relative;
+  overflow: hidden;
 }
 
 .bar-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   position: relative;
 }
 
 .bar-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 28px;
+  gap: 12px;
+  height: 20px;
 }
 
 .bar-label {
-  width: 120px;
-  min-width: 120px;
-  font-size: 11px;
+  width: 100px;
+  min-width: 100px;
+  font-size: 10px;
+  font-weight: 500;
   color: var(--text-secondary);
   text-align: right;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.02em;
 }
 
 .bar-label--clickable {
@@ -404,45 +427,49 @@ onUnmounted(() => {
 
 @media (max-width: 640px) {
   .bar-label {
-    width: 80px;
-    min-width: 80px;
-    font-size: 10px;
+    width: 70px;
+    min-width: 70px;
+    font-size: 9px;
   }
 }
 
 .bar-track {
   flex: 1;
-  height: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 3px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 1px;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.03);
 }
 
 .bar-fill {
   height: 100%;
-  background: rgba(245, 158, 11, 0.6);
-  border-radius: 3px;
+  background: var(--portal-accent-dim, rgba(245, 158, 11, 0.15));
+  border-right: 2px solid var(--neon-cyan);
   transition: width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .bar-fill--top {
-  background: rgba(251, 191, 36, 0.85);
-  box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
+  background: var(--portal-accent-glow, rgba(245, 158, 11, 0.25));
+  border-right: 2px solid var(--neon-gold);
 }
 
 .bar-value {
-  width: 70px;
-  min-width: 70px;
-  font-size: 11px;
+  width: 50px;
+  min-width: 50px;
+  font-size: 10px;
+  font-weight: 700;
   color: var(--text-primary);
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 
 @media (max-width: 640px) {
   .bar-value {
-    width: 55px;
-    min-width: 55px;
-    font-size: 10px;
+    width: 40px;
+    min-width: 40px;
+    font-size: 9px;
   }
 }
 
@@ -463,11 +490,45 @@ onUnmounted(() => {
 
 .bar-reorder-enter-from {
   opacity: 0;
-  transform: translateX(-20px);
+  transform: translateX(-10px);
 }
 
 .bar-reorder-leave-to {
   opacity: 0;
-  transform: translateX(20px);
+  transform: translateX(10px);
+}
+
+/* Theme integration helpers */
+.explorer-toggle-group {
+  display: flex;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.125rem;
+}
+
+.explorer-toggle-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+}
+
+.explorer-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.explorer-toggle-btn--active {
+  background: var(--neon-cyan);
+  color: var(--bg-dark);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
 }
 </style>
+

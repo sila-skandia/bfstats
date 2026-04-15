@@ -2,7 +2,8 @@
   <div class="player-map-preference">
     <!-- Loading state -->
     <div v-if="loading" class="loading-state">
-      Loading map preferences...
+      <div class="explorer-spinner" />
+      <span>Loading map preferences...</span>
     </div>
 
     <!-- Error state -->
@@ -14,37 +15,42 @@
     <div v-else-if="topMap" class="preference-content">
       <!-- Hero card for top map -->
       <div class="hero-map hero-map--clickable" @click="emit('navigateToMap', topMap.mapName)">
-        <h4 class="hero-map-name">{{ topMap.mapName }}</h4>
+        <div class="hero-header">
+          <span class="hero-label">TOP MAP</span>
+          <h4 class="hero-map-name">{{ topMap.mapName }}</h4>
+        </div>
         <div class="hero-stats">
           <div class="stat-item">
-            <span class="stat-label">K/D</span>
             <span class="stat-value">{{ calculateKD(topMap) }}</span>
+            <span class="stat-label">K/D</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Sessions</span>
             <span class="stat-value">{{ topMap.sessionsPlayed }}</span>
+            <span class="stat-label">SESSIONS</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Time</span>
             <span class="stat-value">{{ formatPlayTime(topMap.totalPlayTimeMinutes) }}</span>
+            <span class="stat-label">PLAYTIME</span>
           </div>
         </div>
       </div>
 
       <!-- Top 5 maps bars -->
       <div v-if="topMaps.length > 1" class="map-bars">
-        <div v-for="(map, index) in topMaps.slice(0, 5)" :key="map.mapName" class="map-bar-row map-bar-row--clickable" @click="emit('navigateToMap', map.mapName)">
-          <div class="map-bar-label">
+        <div class="section-header">RECENT ACTIVITY</div>
+        <div v-for="(map, index) in topMaps.slice(0, 5)" :key="map.mapName" class="bar-row bar-row--clickable" @click="emit('navigateToMap', map.mapName)">
+          <div class="bar-label" :title="map.mapName">
             <span class="map-position">{{ index + 1 }}</span>
             <span class="map-name">{{ map.mapName }}</span>
           </div>
-          <div class="map-bar-container">
+          <div class="bar-track">
             <div 
-              class="map-bar"
+              class="bar-fill"
               :style="{ width: getBarWidth(map) + '%' }"
+              :class="{ 'bar-fill--top': index === 0 }"
             ></div>
-            <span class="map-bar-time">{{ formatPlayTime(map.totalPlayTimeMinutes) }}</span>
           </div>
+          <div class="bar-value">{{ formatPlayTime(map.totalPlayTimeMinutes) }}</div>
         </div>
       </div>
 
@@ -141,7 +147,9 @@ onMounted(() => {
 
 <style scoped>
 .player-map-preference {
-  padding: 16px;
+  padding: 0;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
 }
 
 .loading-state,
@@ -150,142 +158,207 @@ onMounted(() => {
 .no-maps {
   text-align: center;
   color: var(--text-secondary);
-  padding: 24px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.explorer-spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--neon-cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .error-state {
-  color: var(--error-color);
+  color: var(--neon-red);
 }
 
 /* Hero map card */
 .hero-map {
-  background: rgba(245, 158, 11, 0.05); /* Subtle amber tint */
-  border: 1px solid rgba(245, 158, 11, 0.2);
-  border-radius: 4px;
-  padding: 16px;
-  margin-bottom: 20px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
 }
 
 .hero-map--clickable {
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .hero-map--clickable:hover {
-  border-color: rgba(245, 158, 11, 0.5);
-  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.1);
+}
+
+.hero-header {
+  margin-bottom: 1rem;
+}
+
+.hero-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--neon-gold);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 0.25rem;
 }
 
 .hero-map-name {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--neon-gold);
-  margin: 0 0 12px 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.02em;
 }
 
 .hero-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .stat-label {
-  font-size: 11px;
-  text-transform: uppercase;
+  font-size: 0.65rem;
   color: var(--text-secondary);
-  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .stat-value {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neon-cyan);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* Section Header */
+.section-header {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--neon-cyan);
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
 }
 
 /* Map bars */
 .map-bars {
-  margin-top: 16px;
+  margin-top: 1rem;
 }
 
-.map-bar-row {
-  margin-bottom: 12px;
-}
-
-.map-bar-row--clickable {
-  cursor: pointer;
-  border-radius: 4px;
-  padding: 4px;
-  margin-left: -4px;
-  margin-right: -4px;
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 24px;
+  padding: 0 4px;
   transition: background 0.2s ease;
+  border-radius: 4px;
 }
 
-.map-bar-row--clickable:hover {
-  background: rgba(255, 255, 255, 0.05);
+.bar-row--clickable {
+  cursor: pointer;
 }
 
-.map-bar-row--clickable:hover .map-name {
+.bar-row--clickable:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.bar-row--clickable:hover .map-name {
   color: var(--neon-cyan);
 }
 
-.map-bar-label {
+.bar-label {
+  width: 120px;
+  min-width: 120px;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
-}
-
-.map-position {
-  width: 20px;
-  height: 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.map-name {
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
-.map-bar-container {
-  position: relative;
-  height: 20px;
-  background: var(--bg-panel);
-  border-radius: 2px;
+  font-size: 0.75rem;
   overflow: hidden;
 }
 
-.map-bar {
+.map-position {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  width: 12px;
+}
+
+.map-name {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.2s;
+}
+
+.bar-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  position: relative;
+}
+
+.bar-fill {
   position: absolute;
   top: 0;
   left: 0;
   height: 100%;
-  background: linear-gradient(90deg, 
-    rgba(0, 217, 255, 0.3) 0%, 
-    rgba(0, 217, 255, 0.6) 100%
-  );
+  background: var(--portal-accent-dim, rgba(245, 158, 11, 0.15));
+  border-right: 2px solid var(--neon-cyan);
   transition: width 0.3s ease;
 }
 
-.map-bar-time {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 11px;
-  color: var(--text-secondary);
-  z-index: 1;
+.bar-fill--top {
+  background: var(--portal-accent-glow, rgba(245, 158, 11, 0.25));
+  border-right: 2px solid var(--neon-gold);
+}
+
+.bar-value {
+  width: 50px;
+  min-width: 50px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+@media (max-width: 640px) {
+  .bar-label {
+    width: 90px;
+    min-width: 90px;
+  }
 }
 </style>

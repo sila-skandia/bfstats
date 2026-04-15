@@ -22,120 +22,138 @@
     <!-- Content -->
     <div v-else-if="slicedData">
 
-      <!-- Header / Controls -->
-      <div class="mb-6 sm:mb-8">
-        <!-- Metric Selector Tabs -->
-        <div class="metric-selector mb-4 sm:mb-5">
-          <div class="metric-tabs">
-            <button
-              v-for="tab in metricTabs"
-              :key="tab.type"
-              @click="selectMetric(tab.type)"
-              class="metric-tab"
-              :class="{ 'metric-tab--active': getMetricTypeForSlice(selectedSliceType) === tab.type }"
-              :data-metric="tab.type"
-            >
-              <span class="metric-tab-label">{{ tab.label }}</span>
-            </button>
+      <!-- Integrated Header Area -->
+      <div class="explorer-header-integrated mb-6">
+        <div class="explorer-header-main">
+          <div class="explorer-title-minimal">
+            <h2 class="metric-title-subtle" :data-metric="getMetricTypeForSlice(selectedSliceType)">
+              {{ getCurrentSliceName() }}
+            </h2>
+            <p class="metric-description-subtle">{{ getCurrentSliceDescription() }}</p>
           </div>
 
-          <!-- Scope Toggle -->
-          <div class="metric-scope-toggle">
-            <span class="scope-label">Breakdown:</span>
-            <div class="scope-buttons">
+          <div class="explorer-header-actions">
+            <!-- Metric Selector -->
+            <div class="explorer-toggle-group" :data-metric="getMetricTypeForSlice(selectedSliceType)">
+              <button
+                v-for="tab in metricTabs"
+                :key="tab.type"
+                @click="selectMetric(tab.type)"
+                class="explorer-toggle-btn explorer-toggle-btn--compact"
+                :class="{ 'explorer-toggle-btn--active': getMetricTypeForSlice(selectedSliceType) === tab.type }"
+                :data-metric="tab.type"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
+
+            <!-- Scope Toggle -->
+            <div class="explorer-toggle-group">
               <button
                 @click="toggleScope('map')"
-                class="scope-btn"
-                :class="{ 'scope-btn--active': !includeServerInSlice() }"
+                class="explorer-toggle-btn explorer-toggle-btn--compact"
+                :class="{ 'explorer-toggle-btn--active': !includeServerInSlice() }"
               >
-                Map Only
+                MAP
               </button>
               <button
                 @click="toggleScope('map-server')"
-                class="scope-btn"
-                :class="{ 'scope-btn--active': includeServerInSlice() }"
+                class="explorer-toggle-btn explorer-toggle-btn--compact"
+                :class="{ 'explorer-toggle-btn--active': includeServerInSlice() }"
               >
-                Map + Server
+                +SERVER
+              </button>
+            </div>
+
+            <!-- Time Range -->
+            <select
+              :value="selectedTimeRange"
+              @change="changeTimeRange(parseInt(($event.target as HTMLSelectElement).value))"
+              class="explorer-select explorer-select--compact explorer-mono text-xs"
+              :disabled="isLoading"
+            >
+              <option v-for="option in timeRangeOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compact Summary Stats -->
+      <div v-if="slicedData.results.length > 0" class="explorer-stats-grid-compact mb-8">
+        <!-- Card 1: Count -->
+        <div class="explorer-stat-minimal">
+          <div class="explorer-stat-label-minimal">{{ getResultTypeLabel() }}</div>
+          <div class="explorer-stat-value-minimal">{{ slicedData.pagination.totalItems }}</div>
+        </div>
+
+        <!-- Card 2: Primary Metric -->
+        <div class="explorer-stat-minimal">
+          <div class="explorer-stat-label-minimal">{{ getPrimaryMetricLabel() }}</div>
+          <div class="explorer-stat-value-minimal" :class="themeStatClass">{{ getTotalPrimaryValue() }}</div>
+        </div>
+
+        <!-- Card 3: Secondary Metric -->
+        <div class="explorer-stat-minimal">
+          <div class="explorer-stat-label-minimal">{{ getSecondaryMetricLabel() }}</div>
+          <div class="explorer-stat-value-minimal">{{ getTotalSecondaryValue() }}</div>
+        </div>
+
+        <!-- Card 4: Average Primary Per Round -->
+        <div class="explorer-stat-minimal">
+          <div class="explorer-stat-label-minimal">{{ getAveragePrimaryLabel() }}</div>
+          <div class="explorer-stat-value-minimal" :class="themeStatClass">{{ getAveragePrimaryPerRound() }}</div>
+        </div>
+
+        <!-- Card 5: Average K/D or Win Rate -->
+        <div class="explorer-stat-minimal">
+          <div class="explorer-stat-label-minimal">{{ getPercentageLabel() }}</div>
+          <div class="explorer-stat-value-minimal" :class="percentageStatClass">
+            {{ getAveragePercentage() }}<span class="text-[10px] ml-0.5 opacity-50">{{ getPercentageUnit() || '' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <div v-if="slicedData.results.length > 0" class="explorer-results-area">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="explorer-section-title !mb-0 border-none !pb-0">DETAILED RESULTS</h3>
+          <div v-if="slicedData.pagination.totalPages > 1" class="flex items-center gap-4">
+            <span class="text-[10px] explorer-mono" style="color: var(--text-secondary)">
+              PAGE <span style="color: var(--text-primary)">{{ slicedData.pagination.page }}</span> / {{ slicedData.pagination.totalPages }}
+            </span>
+            <div class="explorer-pagination-controls">
+              <button
+                @click="changePage(slicedData.pagination.page - 1)"
+                :disabled="!slicedData.pagination.hasPrevious || isLoading"
+                class="explorer-pagination-btn explorer-pagination-btn--compact"
+              >
+                &larr;
+              </button>
+              <button
+                @click="changePage(slicedData.pagination.page + 1)"
+                :disabled="!slicedData.pagination.hasNext || isLoading"
+                class="explorer-pagination-btn explorer-pagination-btn--compact"
+              >
+                &rarr;
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Title and Description -->
-        <div class="mb-4">
-          <h2 class="metric-title" :data-metric="getMetricTypeForSlice(selectedSliceType)">
-            {{ getCurrentSliceName() }}
-          </h2>
-          <p class="metric-description">{{ getCurrentSliceDescription() }}</p>
-        </div>
-
-        <!-- Time Range Controls (Secondary) -->
-        <div class="time-range-controls">
-          <span class="time-range-label">Time Range</span>
-          <div class="explorer-time-pills">
-            <button
-              v-for="option in timeRangeOptions"
-              :key="option.value"
-              class="explorer-time-pill"
-              :class="{ 'explorer-time-pill--active': selectedTimeRange === option.value }"
-              @click="changeTimeRange(option.value)"
-              :disabled="isLoading"
-            >
-              {{ option.label }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Summary Stats -->
-      <div v-if="slicedData.results.length > 0" class="explorer-stats-grid mb-4 sm:mb-8">
-        <!-- Card 1: Count -->
-        <div class="explorer-stat">
-          <div class="explorer-stat-value">{{ slicedData.pagination.totalItems }}</div>
-          <div class="explorer-stat-label">{{ getResultTypeLabel() }}</div>
-        </div>
-
-        <!-- Card 2: Primary Metric -->
-        <div class="explorer-stat">
-          <div class="explorer-stat-value" :class="themeStatClass">{{ getTotalPrimaryValue() }}</div>
-          <div class="explorer-stat-label">{{ getPrimaryMetricLabel() }}</div>
-        </div>
-
-        <!-- Card 3: Secondary Metric -->
-        <div class="explorer-stat">
-          <div class="explorer-stat-value">{{ getTotalSecondaryValue() }}</div>
-          <div class="explorer-stat-label">{{ getSecondaryMetricLabel() }}</div>
-        </div>
-
-        <!-- Card 4: Average Primary Per Round -->
-        <div class="explorer-stat">
-          <div class="explorer-stat-value" :class="themeStatClass">{{ getAveragePrimaryPerRound() }}</div>
-          <div class="explorer-stat-label">{{ getAveragePrimaryLabel() }}</div>
-        </div>
-
-        <!-- Card 5: Average K/D or Win Rate -->
-        <div class="explorer-stat">
-          <div class="explorer-stat-value" :class="percentageStatClass">{{ getAveragePercentage() }}<span class="text-sm ml-1 opacity-50">{{ getPercentageUnit() || '' }}</span></div>
-          <div class="explorer-stat-label">{{ getPercentageLabel() }}</div>
-        </div>
-      </div>
-
-      <!-- Results Table -->
-      <div v-if="slicedData.results.length > 0">
-        <h3 class="explorer-section-title mb-2 sm:mb-3">DETAILED RESULTS</h3>
-
-        <div class="explorer-card" style="padding: 0">
+        <div class="explorer-table-wrapper">
           <div class="overflow-x-auto">
-            <table class="explorer-table">
+            <table class="explorer-table explorer-table--integrated">
               <!-- Table Header -->
               <thead>
                 <tr>
-                  <th class="w-12 text-center">#</th>
+                  <th class="w-10 text-center">#</th>
                   <th class="text-left pl-4">{{ getTableHeaderLabel() }}</th>
                   <th class="text-right">{{ getSecondaryMetricLabel() }}</th>
                   <th class="text-right" :class="themeColorClass">{{ getPrimaryMetricLabel() }}</th>
                   <th class="text-right pr-6" :class="percentageColorClass">{{ getPercentageLabel() }}</th>
-                  <th v-if="hasAdditionalData()" class="text-left pl-4">Additional Stats</th>
+                  <th v-if="hasAdditionalData()" class="text-left pl-4">ADDITIONAL</th>
                 </tr>
               </thead>
 
@@ -148,48 +166,48 @@
                   @click="handleSliceClick(result)"
                 >
                   <!-- Rank -->
-                  <td class="text-center explorer-mono">
+                  <td class="text-center explorer-mono text-[11px]">
                     <span :class="getRankClass(result.rank)">{{ result.rank }}</span>
                   </td>
 
                   <!-- Main Label -->
                   <td class="pl-4">
-                    <div>
-                      <span class="font-bold" :class="{ 'text-neon-cyan': isMapSlice() }" style="color: var(--text-primary)">
+                    <div class="flex items-center">
+                      <span class="font-bold text-[13px]" :class="{ 'text-neon-cyan': isMapSlice() }" style="color: var(--text-primary)">
                         {{ result.sliceLabel }}
                       </span>
-                      <span v-if="result.subKey" class="explorer-tag ml-2">
+                      <span v-if="result.subKey" class="explorer-tag explorer-tag--mini ml-2">
                         {{ result.subKeyLabel || getServerName(result.subKey) }}
                       </span>
                     </div>
                   </td>
 
                   <!-- Secondary Value -->
-                  <td class="text-right explorer-mono explorer-table-muted">
+                  <td class="text-right explorer-mono explorer-table-muted text-[11px]">
                     {{ result.secondaryValue.toLocaleString() }}
                   </td>
 
                   <!-- Primary Value -->
-                  <td class="text-right explorer-mono font-bold" :class="themeColorClass">
+                  <td class="text-right explorer-mono font-bold text-[12px]" :class="themeColorClass">
                     {{ result.primaryValue.toLocaleString() }}
                   </td>
 
                   <!-- Percentage -->
-                  <td class="text-right pr-6 explorer-mono" :class="percentageColorClass">
-                    {{ result.percentage.toFixed(1) }}<span class="text-xs ml-0.5 opacity-70">{{ getPercentageUnit() }}</span>
+                  <td class="text-right pr-6 explorer-mono text-[11px]" :class="percentageColorClass">
+                    {{ result.percentage.toFixed(1) }}<span class="text-[10px] ml-0.5 opacity-70">{{ getPercentageUnit() }}</span>
                   </td>
 
                   <!-- Additional Data -->
-                  <td v-if="hasAdditionalData()" class="pl-4 py-2">
-                    <div v-if="isTeamWinSlice()" class="w-full max-w-[200px]">
+                  <td v-if="hasAdditionalData()" class="pl-4 py-1.5">
+                    <div v-if="isTeamWinSlice()" class="w-full max-w-[140px]">
                       <!-- Visual Win Rate Bar -->
-                      <div v-if="getTeamLabel(result.additionalData, 'team1Label') || getTeamLabel(result.additionalData, 'team2Label')" class="mb-1">
+                      <div v-if="getTeamLabel(result.additionalData, 'team1Label') || getTeamLabel(result.additionalData, 'team2Label')">
                         <WinStatsBar :winStats="getTeamWinStats(result)" />
                       </div>
                     </div>
-                    <div v-else class="text-xs space-y-1" style="color: var(--text-secondary)">
-                      <div v-for="(value, key) in result.additionalData" :key="key" class="flex gap-2">
-                        <span class="opacity-70">{{ formatAdditionalKey(key) }}:</span>
+                    <div v-else class="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]" style="color: var(--text-secondary)">
+                      <div v-for="(value, key) in result.additionalData" :key="key" class="flex gap-1">
+                        <span class="opacity-50 uppercase tracking-tighter">{{ formatAdditionalKey(key) }}:</span>
                         <span class="explorer-mono" style="color: var(--text-primary)">{{ formatAdditionalValue(value) }}</span>
                       </div>
                     </div>
@@ -197,31 +215,6 @@
                 </tr>
               </tbody>
             </table>
-          </div>
-
-          <!-- Pagination Controls -->
-          <div v-if="slicedData.pagination.totalPages > 1" class="explorer-pagination">
-            <span class="text-xs explorer-mono" style="color: var(--text-secondary)">
-              PAGE <span style="color: var(--text-primary)">{{ slicedData.pagination.page }}</span> OF <span style="color: var(--text-primary)">{{ slicedData.pagination.totalPages }}</span>
-            </span>
-
-            <div class="explorer-pagination-controls">
-              <button
-                @click="changePage(slicedData.pagination.page - 1)"
-                :disabled="!slicedData.pagination.hasPrevious || isLoading"
-                class="explorer-pagination-btn"
-              >
-                &larr;
-              </button>
-
-              <button
-                @click="changePage(slicedData.pagination.page + 1)"
-                :disabled="!slicedData.pagination.hasNext || isLoading"
-                class="explorer-pagination-btn"
-              >
-                &rarr;
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -668,377 +661,207 @@ watch(() => props.serverGuid, () => {
 </script>
 
 <style scoped>
-/* ===== Styles mirroring DataExplorer.vue.css explorer-* patterns =====
-   The parent CSS is <style scoped>, so child components don't inherit it.
-   These replicate the explorer theme using the same variables & effects. */
+/* ===== Integrated Data Dashboard Theme ===== */
 
-/* --- Section Title --- */
-.explorer-section-title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  color: var(--neon-cyan);
-  margin: 0 0 1rem;
-  padding-bottom: 0.5rem;
-  font-family: 'JetBrains Mono', monospace;
-  text-transform: uppercase;
-  text-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
-  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
-  transition: all 0.3s ease;
+/* --- Integrated Header --- */
+.explorer-header-integrated {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0 0 1rem 0;
 }
 
-/* --- Stats Grid --- */
-.explorer-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+.explorer-header-main {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 
-@media (min-width: 640px) {
-  .explorer-stats-grid {
-    grid-template-columns: repeat(3, 1fr);
+@media (min-width: 1024px) {
+  .explorer-header-main {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
   }
 }
 
-@media (min-width: 768px) {
-  .explorer-stats-grid {
+.explorer-title-minimal {
+  border-left: 2px solid var(--neon-cyan);
+  padding-left: 0.75rem;
+}
+
+.metric-title-subtle {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.05em;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+}
+
+.metric-title-subtle[data-metric="score"] { color: var(--neon-cyan); }
+.metric-title-subtle[data-metric="kills"] { color: var(--neon-red); }
+.metric-title-subtle[data-metric="wins"] { color: var(--neon-green); }
+
+.metric-description-subtle {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  margin-top: 0.1rem;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+}
+
+.explorer-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* --- Compact Stats Grid --- */
+.explorer-stats-grid-compact {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .explorer-stats-grid-compact {
     grid-template-columns: repeat(5, 1fr);
   }
 }
 
-.explorer-stat {
-  text-align: center;
-  padding: 0.75rem 0.5rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@media (min-width: 640px) {
-  .explorer-stat {
-    padding: 1rem;
-  }
-}
-
-.explorer-stat:hover {
-  border-color: rgba(245, 158, 11, 0.5);
-  box-shadow: 0 0 25px rgba(245, 158, 11, 0.15);
-  background: rgba(245, 158, 11, 0.05);
-}
-
-.explorer-stat-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.explorer-stat-value--accent {
-  color: var(--neon-cyan);
-  text-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
-  transition: all 0.4s ease;
-}
-
-.explorer-stat-value--green {
-  color: var(--neon-green);
-  text-shadow: 0 0 12px rgba(52, 211, 153, 0.6);
-  transition: all 0.4s ease;
-}
-
-.explorer-stat-value--pink {
-  color: var(--neon-red);
-  text-shadow: 0 0 12px rgba(255, 0, 0, 0.6);
-  transition: all 0.4s ease;
-}
-
-.explorer-stat-value--gold {
-  color: var(--neon-gold);
-  text-shadow: 0 0 12px rgba(251, 191, 36, 0.6);
-  transition: all 0.4s ease;
-}
-
-.explorer-stat-label {
-  font-size: 0.7rem;
-  color: var(--text-secondary);
-  margin-top: 0.25rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-/* --- Card --- */
-.explorer-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.explorer-card:hover {
-  border-color: rgba(245, 158, 11, 0.4);
-  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.15);
-}
-
-/* --- Table --- */
-.explorer-table {
-  width: 100%;
-  font-size: 0.8rem;
-  border-collapse: collapse;
-}
-
-.explorer-table th {
-  text-align: left;
-  padding: 0.65rem 0.5rem;
-  background: var(--bg-card);
-  color: var(--neon-cyan);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  font-family: 'JetBrains Mono', monospace;
-  border-bottom: 2px solid rgba(245, 158, 11, 0.2);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  white-space: nowrap;
+.explorer-stat-minimal {
+  padding: 0.5rem 0.75rem;
+  background: rgba(22, 27, 34, 0.4);
+  border-left: 1px solid var(--border-color);
   transition: all 0.3s ease;
 }
 
-@media (min-width: 640px) {
-  .explorer-table th {
-    padding: 0.75rem 0.75rem;
-  }
+.explorer-stat-minimal:hover {
+  background: rgba(245, 158, 11, 0.03);
+  border-left-color: var(--neon-cyan);
 }
 
-.explorer-table th.text-right {
-  text-align: right;
-}
-
-.explorer-table td {
-  padding: 0.6rem 0.5rem;
-  border-bottom: 1px solid rgba(245, 158, 11, 0.05);
-  color: var(--text-primary);
-}
-
-@media (min-width: 640px) {
-  .explorer-table td {
-    padding: 0.6rem 0.75rem;
-  }
-}
-
-.explorer-table td.text-right {
-  text-align: right;
-}
-
-.explorer-table tbody tr {
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  position: relative;
-}
-
-.explorer-table tbody tr:hover td {
-  background: rgba(245, 158, 11, 0.12);
-  color: var(--text-primary);
-}
-
-.explorer-table-muted {
+.explorer-stat-label-minimal {
+  font-size: 0.6rem;
   color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.15rem;
 }
 
-/* --- Tag --- */
-.explorer-tag {
-  display: inline-block;
-  padding: 0.125rem 0.375rem;
+.explorer-stat-value-minimal {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.explorer-stat-value--accent { color: var(--neon-cyan); }
+.explorer-stat-value--green { color: var(--neon-green); }
+.explorer-stat-value--pink { color: var(--neon-red); }
+.explorer-stat-value--gold { color: var(--neon-gold); }
+
+/* --- Integrated Table --- */
+.explorer-table-wrapper {
+  background: transparent;
+  border-top: 1px solid var(--border-color);
+}
+
+.explorer-table--integrated {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.explorer-table--integrated th {
+  background: transparent;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.75rem 0.5rem;
+  font-size: 0.65rem;
+  opacity: 0.8;
+}
+
+.explorer-table--integrated td {
+  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+  padding: 0.5rem 0.5rem;
+  background: transparent;
+}
+
+.explorer-table--integrated tbody tr:hover td {
+  background: rgba(245, 158, 11, 0.05);
+}
+
+/* --- Controls & UI Elements --- */
+.explorer-toggle-group {
+  display: flex;
+  background: rgba(13, 17, 23, 0.5);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.1rem;
+}
+
+.explorer-toggle-btn--compact {
+  padding: 0.25rem 0.5rem;
   font-size: 0.65rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  font-family: 'JetBrains Mono', monospace;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-secondary);
+  letter-spacing: 0.03em;
 }
 
-/* --- Select --- */
-.explorer-select {
-  padding: 0.35rem 0.5rem;
-  font-size: 0.8rem;
-  font-family: 'JetBrains Mono', monospace;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.explorer-select:focus {
-  outline: none;
-  border-color: var(--neon-cyan);
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
-}
-
-/* --- Time Pills --- */
-.explorer-time-pills {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.explorer-time-pill {
-  padding: 0.35rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: 'JetBrains Mono', monospace;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-}
-
-.explorer-time-pill:hover:not(:disabled) {
-  color: var(--text-primary);
-  border-color: rgba(245, 158, 11, 0.3);
-}
-
-.explorer-time-pill--active {
+.explorer-toggle-btn--active {
   background: var(--neon-cyan);
   color: var(--bg-dark);
-  border-color: var(--neon-cyan);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
 }
 
-.explorer-time-pill:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.explorer-toggle-btn--active[data-metric="score"] { background: var(--neon-cyan); }
+.explorer-toggle-btn--active[data-metric="kills"] { background: var(--neon-red); }
+.explorer-toggle-btn--active[data-metric="wins"] { background: var(--neon-green); }
 
-/* --- Pagination --- */
-.explorer-pagination {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.5rem 0.5rem;
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-card);
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-@media (min-width: 640px) {
-  .explorer-pagination {
-    gap: 0.75rem;
-    padding: 0.6rem 0.75rem;
-  }
-}
-
-.explorer-pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.explorer-pagination-btn {
-  padding: 0.25rem 0.5rem;
+.explorer-select--compact {
+  padding: 0.2rem 0.4rem;
+  height: 1.75rem;
   font-size: 0.7rem;
-  font-weight: 600;
-  font-family: 'JetBrains Mono', monospace;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 1.5rem;
-  text-align: center;
+  background: rgba(13, 17, 23, 0.5);
 }
 
-.explorer-pagination-btn:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.1);
+.explorer-pagination-btn--compact {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.65rem;
+  min-width: 1.25rem;
+}
+
+.explorer-tag--mini {
+  font-size: 0.6rem;
+  padding: 0.05rem 0.25rem;
+  opacity: 0.8;
+}
+
+/* Base Explorer Styles (Re-applied as needed) */
+.explorer-section-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   color: var(--neon-cyan);
-  border-color: rgba(245, 158, 11, 0.3);
-}
-
-.explorer-pagination-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* --- Buttons --- */
-.explorer-btn {
-  padding: 0.5rem 1rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
   font-family: 'JetBrains Mono', monospace;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
   text-transform: uppercase;
 }
 
-.explorer-btn--ghost {
-  background: transparent;
-  color: var(--text-secondary);
-  border-color: var(--border-color);
+.explorer-mono { font-family: 'JetBrains Mono', monospace; }
+.explorer-table-muted { color: var(--text-secondary); opacity: 0.6; }
+
+/* Rank Colors */
+.explorer-rank-1 { color: var(--neon-gold); font-weight: 700; }
+.explorer-rank-2 { color: #c0c0c0; }
+.explorer-rank-3 { color: #cd7f32; }
+
+/* Transitions */
+.explorer-btn, .explorer-toggle-btn, .explorer-select, .explorer-table tbody tr {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.explorer-btn--ghost:hover:not(:disabled) {
-  color: var(--text-primary);
-  border-color: var(--neon-cyan);
-  background: rgba(245, 158, 11, 0.1);
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
-}
-
-.explorer-btn--sm {
-  padding: 0.35rem 0.65rem;
-  font-size: 0.75rem;
-}
-
-/* --- Empty State --- */
-.explorer-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 1.5rem;
-  text-align: center;
-}
-
-.explorer-empty-icon {
-  font-size: 2.5rem;
-  color: var(--neon-cyan);
-  opacity: 0.5;
-  margin-bottom: 0.75rem;
-  font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
-}
-
-.explorer-empty-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 0.04em;
-}
-
-.explorer-empty-desc {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-top: 0.35rem;
-  max-width: 20rem;
-}
-
-/* --- Skeleton Loading --- */
+/* Skeleton & Empty States */
 .explorer-skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--bg-card) 0%,
-    var(--border-color) 50%,
-    var(--bg-card) 100%
-  );
+  background: linear-gradient(90deg, var(--bg-card) 0%, var(--border-color) 50%, var(--bg-card) 100%);
   background-size: 200% 100%;
   animation: explorer-skeleton 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -1049,206 +872,40 @@ watch(() => props.serverGuid, () => {
   100% { background-position: -200% 0; }
 }
 
-/* --- Rank Colors --- */
-.explorer-rank-1 {
-  color: var(--neon-gold);
-  font-weight: 700;
-  text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+.explorer-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
 }
 
-.explorer-rank-2 {
-  color: #c0c0c0;
+.explorer-empty-icon {
+  font-size: 2rem;
+  color: var(--neon-cyan);
+  opacity: 0.3;
+  margin-bottom: 0.5rem;
+}
+
+.explorer-empty-title {
+  font-size: 0.8rem;
   font-weight: 600;
-  text-shadow: 0 0 10px rgba(192, 192, 192, 0.3);
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
 }
 
-.explorer-rank-3 {
-  color: #cd7f32;
-  font-weight: 600;
-  text-shadow: 0 0 10px rgba(205, 127, 50, 0.3);
+.explorer-empty-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+  opacity: 0.7;
 }
 
-/* --- Monospace --- */
-.explorer-mono {
-  font-family: 'JetBrains Mono', monospace;
-}
-
-/* --- Neon text utilities --- */
+/* Neon text utilities */
 .text-neon-cyan { color: var(--neon-cyan); }
 .text-neon-green { color: var(--neon-green); }
 .text-neon-pink { color: var(--neon-pink); }
 .text-neon-gold { color: var(--neon-gold); }
 .text-neon-red { color: var(--neon-red); }
-
-/* --- Metric Selector Tabs --- */
-.metric-selector {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.metric-tabs {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.metric-tab {
-  padding: 0.65rem 1.25rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border: 2px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  position: relative;
-}
-
-.metric-tab:hover {
-  border-color: rgba(245, 158, 11, 0.4);
-  color: var(--text-primary);
-}
-
-.metric-tab--active {
-  border-color: currentColor;
-  color: var(--bg-dark);
-  font-weight: 800;
-}
-
-/* Color-coded active states */
-.metric-tab--active[data-metric="score"] {
-  background: var(--neon-cyan);
-  border-color: var(--neon-cyan);
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.5), inset 0 0 20px rgba(245, 158, 11, 0.1);
-}
-
-.metric-tab--active[data-metric="kills"] {
-  background: var(--neon-red);
-  border-color: var(--neon-red);
-  box-shadow: 0 0 20px rgba(255, 0, 0, 0.5), inset 0 0 20px rgba(255, 0, 0, 0.1);
-}
-
-.metric-tab--active[data-metric="wins"] {
-  background: var(--neon-green);
-  border-color: var(--neon-green);
-  box-shadow: 0 0 20px rgba(52, 211, 153, 0.5), inset 0 0 20px rgba(52, 211, 153, 0.1);
-}
-
-/* --- Scope Toggle --- */
-.metric-scope-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.scope-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.scope-buttons {
-  display: flex;
-  gap: 0.25rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 0.25rem;
-}
-
-.scope-btn {
-  padding: 0.45rem 0.85rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: 'JetBrains Mono', monospace;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.25s ease;
-}
-
-.scope-btn:hover {
-  color: var(--text-primary);
-  border-color: rgba(245, 158, 11, 0.2);
-}
-
-.scope-btn--active {
-  background: var(--bg-panel);
-  border-color: var(--neon-cyan);
-  color: var(--neon-cyan);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
-}
-
-/* Metric Title with Color Theming */
-.metric-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin: 0;
-  letter-spacing: 0.02em;
-  font-family: 'JetBrains Mono', monospace;
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.metric-title[data-metric="score"] {
-  color: var(--neon-cyan);
-  text-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
-}
-
-.metric-title[data-metric="kills"] {
-  color: var(--neon-red);
-  text-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
-}
-
-.metric-title[data-metric="wins"] {
-  color: var(--neon-green);
-  text-shadow: 0 0 15px rgba(52, 211, 153, 0.4);
-}
-
-/* Metric Description */
-.metric-description {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-top: 0.35rem;
-  letter-spacing: 0.03em;
-  transition: color 0.3s ease;
-}
-
-/* Time Range Controls (Secondary) */
-.time-range-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: flex-start;
-  padding-top: 0.75rem;
-  border-top: 1px solid rgba(245, 158, 11, 0.1);
-}
-
-@media (min-width: 640px) {
-  .time-range-controls {
-    flex-direction: row;
-    align-items: center;
-    gap: 1rem;
-  }
-}
-
-.time-range-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  font-family: 'JetBrains Mono', monospace;
-}
 </style>
