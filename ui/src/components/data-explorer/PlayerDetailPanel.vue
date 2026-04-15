@@ -117,7 +117,7 @@
 
       <!-- Results Table -->
       <div v-if="slicedData.results.length > 0" class="explorer-results-area">
-        <div class="flex items-center justify-between mb-3">
+        <div class="explorer-section-header flex items-center justify-between">
           <h3 class="explorer-section-title !mb-0 border-none !pb-0">DETAILED RESULTS</h3>
           <div v-if="slicedData.pagination.totalPages > 1" class="flex items-center gap-4">
             <span class="text-[10px] explorer-mono" style="color: var(--text-secondary)">
@@ -668,7 +668,7 @@ watch(() => props.serverGuid, () => {
   background: transparent;
   border: none;
   border-radius: 0;
-  padding: 0 0 1rem 0;
+  padding: 1rem 1rem 1.5rem 1rem;
 }
 
 .explorer-header-main {
@@ -723,6 +723,7 @@ watch(() => props.serverGuid, () => {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0.75rem;
+  padding: 0 1rem 2rem 1rem;
 }
 
 @media (min-width: 640px) {
@@ -764,14 +765,24 @@ watch(() => props.serverGuid, () => {
 .explorer-stat-value--gold { color: var(--neon-gold); }
 
 /* --- Integrated Table --- */
+.explorer-results-area {
+  width: 100%;
+}
+
+.explorer-section-header {
+  padding: 0 1rem 0.75rem 1rem;
+}
+
 .explorer-table-wrapper {
   background: transparent;
   border-top: 1px solid var(--border-color);
+  width: 100%;
 }
 
 .explorer-table--integrated {
   border-collapse: separate;
   border-spacing: 0;
+  width: 100%;
 }
 
 .explorer-table--integrated th {
@@ -782,10 +793,26 @@ watch(() => props.serverGuid, () => {
   opacity: 0.8;
 }
 
+.explorer-table--integrated th:first-child {
+  padding-left: 1rem;
+}
+
+.explorer-table--integrated th:last-child {
+  padding-right: 1rem;
+}
+
 .explorer-table--integrated td {
   border-bottom: 1px solid rgba(48, 54, 61, 0.5);
   padding: 0.5rem 0.5rem;
   background: transparent;
+}
+
+.explorer-table--integrated td:first-child {
+  padding-left: 1rem;
+}
+
+.explorer-table--integrated td:last-child {
+  padding-right: 1rem;
 }
 
 .explorer-table--integrated tbody tr:hover td {
