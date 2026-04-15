@@ -101,6 +101,31 @@
           </div>
         </div>
 
+        <!-- Give Feedback Section -->
+        <div v-if="stats" class="mt-8">
+          <div class="bg-gradient-to-r from-neutral-800/40 to-neutral-900/40 backdrop-blur-lg rounded-2xl border border-cyan-500/30 overflow-hidden transition-all duration-300 hover:border-cyan-500/50 hover:shadow-lg hover:shadow-cyan-500/10">
+            <div class="p-6 sm:p-8">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                <div>
+                  <h2 class="text-xl font-semibold text-neutral-300 mb-2">Give Feedback</h2>
+                  <p class="text-neutral-400 text-sm">
+                    Found a bug or have a suggestion? Join our Discord to let us know!
+                  </p>
+                </div>
+                <a
+                  href="https://discord.gg/6saqqTTYEM"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex items-center justify-center gap-3 px-6 py-3 bg-[#5865F2] hover:bg-[#4752C4] text-white rounded-xl transition-all duration-200 font-medium group shadow-lg shadow-indigo-500/20"
+                >
+                  <img src="@/assets/discord.webp" class="w-6 h-6 transition-transform group-hover:scale-110" alt="Discord icon" />
+                  <span>Join Discord</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Credits Section -->
         <div v-if="stats" class="mt-8">
           <div class="bg-gradient-to-r from-neutral-800/40 to-neutral-900/40 backdrop-blur-lg rounded-2xl border border-neutral-700/50 overflow-hidden">
