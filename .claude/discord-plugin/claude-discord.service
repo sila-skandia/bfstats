@@ -1,0 +1,24 @@
+[Unit]
+Description=Long-running Claude Code session with Discord plugin
+After=network-online.target
+
+[Service]
+# oneshot + RemainAfterExit=yes: run the start script once, then consider
+# the unit active forever without tracking any process. This is critical —
+# with Type=forking + default KillMode, systemd tears down the cgroup
+# when the script exits and kills the tmux server with it.
+Type=oneshot
+RemainAfterExit=yes
+
+# systemd user services start with a minimal PATH that does NOT include
+# ~/.local/bin. Fix it explicitly so the start script and any child
+# processes can find claude and friends.
+Environment=HOME=%h
+Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WorkingDirectory=%h
+ExecStart=%h/.bin/start-claude-discord.sh
+ExecStop=/usr/bin/tmux kill-session -t claude
+
+[Install]
+WantedBy=default.target
