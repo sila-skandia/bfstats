@@ -903,13 +903,11 @@ onUnmounted(() => {
                 <div class="xl:col-span-5 space-y-6">
                   <!-- Detailed Breakdown -->
                   <div class="explorer-card">
-                    <div class="explorer-card-body">
-                      <PlayerDetailPanel
-                        :player-name="playerName"
-                        :game="playerPanelGame"
-                        @navigate-to-map="openMapDetail"
-                      />
-                    </div>
+                    <PlayerDetailPanel
+                      :player-name="playerName"
+                      :game="playerPanelGame"
+                      @navigate-to-map="openMapDetail"
+                    />
                   </div>
 
                   <!-- Servers List (paged) -->
