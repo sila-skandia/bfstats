@@ -40,6 +40,19 @@
           </svg>
           <span class="link-text">GitHub</span>
         </a>
+
+        <span class="divider"></span>
+
+        <a
+          href="https://discord.gg/6saqqTTYEM"
+          class="discord-link"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Join our Discord"
+        >
+          <img src="@/assets/discord.webp" class="discord-icon" alt="Discord">
+          <span class="link-text">Discord</span>
+        </a>
       </div>
     </div>
   </footer>
@@ -118,7 +131,8 @@
 }
 
 .stats-link,
-.github-link {
+.github-link,
+.discord-link {
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -131,21 +145,24 @@
 }
 
 .stats-link:hover,
-.github-link:hover {
+.github-link:hover,
+.discord-link:hover {
   color: var(--color-text);
   background: rgba(64, 64, 64, 0.5);
   transform: translateY(-1px);
 }
 
 .stats-icon,
-.github-icon {
+.github-icon,
+.discord-icon {
   width: 1rem;
   height: 1rem;
   transition: transform 0.2s ease;
 }
 
 .stats-link:hover .stats-icon,
-.github-link:hover .github-icon {
+.github-link:hover .github-icon,
+.discord-link:hover .discord-icon {
   transform: scale(1.1);
 }
 
