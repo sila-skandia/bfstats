@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
-import { useLazyLoad } from '@/composables/useLazyLoad';
 import { useRouter, useRoute } from 'vue-router';
 import { PlayerTimeStatistics, fetchPlayerStats } from '../services/playerStatsService';
 import { TrendDataPoint, PlayerAchievementGroup } from '../types/playerStatsTypes';
@@ -49,10 +48,11 @@ const achievementGroupsLoading = ref(false);
 const achievementGroupsError = ref<string | null>(null);
 
 // V2 Tab Navigation
-const activeTab = ref<'overview' | 'rankings' | 'awards'>('overview');
+const activeTab = ref<'overview' | 'rankings' | 'network' | 'awards'>('overview');
 const tabs = [
   { id: 'overview' as const, label: 'OVERVIEW' },
   { id: 'rankings' as const, label: 'RANKINGS' },
+  { id: 'network' as const, label: 'NETWORK' },
   { id: 'awards' as const, label: 'AWARDS' },
 ];
 
@@ -69,14 +69,6 @@ const selectedMapDetailName = ref<string | null>(null);
 
 // State for server map detail panel (drill-down from map detail)
 const selectedServerMapDetail = ref<{ serverGuid: string; mapName: string } | null>(null);
-
-// Lazy loading for below-the-fold sections
-const mapPerformanceRef = ref<HTMLElement | null>(null);
-const activityHeatmapRef = ref<HTMLElement | null>(null);
-const mapPreferenceRef = ref<HTMLElement | null>(null);
-const mapPerformanceVisible = useLazyLoad(mapPerformanceRef);
-const activityHeatmapVisible = useLazyLoad(activityHeatmapRef);
-const mapPreferenceVisible = useLazyLoad(mapPreferenceRef);
 
 // Wide viewport: show slide-out panel side-by-side (lg: 1024px+)
 const isWideScreen = ref(false);
@@ -383,9 +375,14 @@ const openPlayerServerMapDetail = (mapName: string) => {
 const fetchData = async () => {
   isLoading.value = true;
   error.value = null;
-  fetchAchievementGroups();
+  
   try {
     playerStats.value = await fetchPlayerStats(playerName.value);
+    
+    // Auto-fetch achievements if we're on a tab that needs them
+    if (activeTab.value === 'overview' || activeTab.value === 'awards') {
+      fetchAchievementGroups();
+    }
   } catch (err) {
     error.value = `Failed to fetch player stats for ${playerName.value}.`;
     console.error(err);
@@ -393,6 +390,13 @@ const fetchData = async () => {
     isLoading.value = false;
   }
 };
+
+// Watch for tab changes to fetch data only when needed
+watch(activeTab, (newTab) => {
+  if ((newTab === 'overview' || newTab === 'awards') && achievementGroups.value.length === 0 && !achievementGroupsLoading.value) {
+    fetchAchievementGroups();
+  }
+});
 
 const fetchAchievementGroups = async () => {
   achievementGroupsLoading.value = true;
@@ -877,72 +881,47 @@ onUnmounted(() => {
                     <!-- Player Comments (Renamed/Moved from Social) -->
                     <PlayerComments :player-name="playerName" />
 
-                    <div ref="activityHeatmapRef" class="explorer-card">
+                    <div class="explorer-card">
                       <div class="explorer-card-header">
                         <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
                         <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Typical play times</p>
                       </div>
                       <div class="explorer-card-body">
                         <PlayerActivityHeatmap
-                          v-if="activityHeatmapVisible"
                           :player-name="playerName"
                           :game="playerPanelGame"
                         />
                       </div>
                     </div>
-
-                    <!-- Player Network (Moved from Awards) -->
-                    <div class="explorer-card">
-                      <div class="explorer-card-header">
-                        <h3 class="explorer-card-title">PLAYER NETWORK</h3>
-                        <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Frequent companions & rivals</p>
-                      </div>
-                      <div class="explorer-card-body p-0">
-                        <div v-if="unifiedServerList.length > 0" class="p-4">
-                          <div v-if="unifiedServerList.length > 1" class="mb-4">
-                            <select v-model="selectedProximityServerGuid" class="proximity-server-select w-full">
-                              <option v-for="server in unifiedServerList" :key="server.serverGuid" :value="server.serverGuid">{{ server.serverName }}</option>
-                            </select>
-                          </div>
-                          <PingProximityOrbit
-                            :server-guid="selectedProximityServerGuid"
-                            :server-name="selectedProximityServer?.serverName"
-                            @player-click="(name: string) => router.push(`/players/${encodeURIComponent(name)}`)"
-                          />
-                        </div>
-                        <div class="p-4 border-t border-[var(--border-color)] text-center">
-                          <router-link :to="`/players/${encodeURIComponent(playerName)}/network`" class="explorer-btn explorer-btn--ghost explorer-btn--sm w-full font-mono uppercase">Interactive Network Graph</router-link>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Detailed Breakdown (moved to bottom) -->
-                <div class="explorer-card">
-                  <div class="explorer-card-header">
-                    <h3 class="explorer-card-title uppercase">Detailed Breakdown</h3>
-                  </div>
-                  <div class="explorer-card-body">
-                    <PlayerDetailPanel
-                      :player-name="playerName"
-                      :game="playerPanelGame"
-                      @navigate-to-map="openMapDetail"
-                    />
                   </div>
                 </div>
               </div>
 
               <!-- RANKINGS TAB (Swapped Columns) -->
               <div v-if="activeTab === 'rankings'" class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                <!-- Col 1: All Server Ranks & Map Preference -->
+                <!-- Col 1: Breakdown, All Server Ranks & Map Preference -->
                 <div class="xl:col-span-5 space-y-6">
-                  <!-- Servers List (paged) -->
-                  <div class="explorer-card explorer-card--trophy">
-                    <div class="explorer-card-header flex items-center justify-between">
-                      <h3 class="explorer-card-title">ALL SERVER RANKS</h3>
-                      <button type="button" class="explorer-btn explorer-btn--ghost explorer-btn--sm" @click="showAllServerMaps">ALL MAPS</button>
+                  <!-- Detailed Breakdown -->
+                  <div class="explorer-card">
+                    <div class="explorer-card-body">
+                      <PlayerDetailPanel
+                        :player-name="playerName"
+                        :game="playerPanelGame"
+                        @navigate-to-map="openMapDetail"
+                      />
                     </div>
+                  </div>
+
+                  <!-- Servers List (paged) -->
+                  <div class="explorer-card">
+                    <div class="explorer-card-header flex items-center justify-between">
+                      <div>
+                        <h3 class="explorer-card-title">SERVER RANKINGS</h3>
+                        <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">Performance by Server Cluster</p>
+                      </div>
+                      <button type="button" class="explorer-btn explorer-btn--ghost explorer-btn--sm" @click="showAllServerMaps">GLOBAL MAPS</button>
+                    </div>
+
                     <div class="explorer-card-body p-0">
                       <div class="divide-y divide-[var(--border-color)]">
                         <div
@@ -975,14 +954,13 @@ onUnmounted(() => {
                   </div>
 
                   <!-- Map Preference -->
-                  <div ref="mapPreferenceRef" class="explorer-card explorer-card--trophy">
+                  <div class="explorer-card">
                     <div class="explorer-card-header">
                       <h3 class="explorer-card-title">MAP PREFERENCE</h3>
-                      <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Last 30 days</p>
+                      <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">Last 30 days activity</p>
                     </div>
                     <div class="explorer-card-body">
                       <PlayerMapPreference
-                        v-if="mapPreferenceVisible"
                         :player-name="playerName"
                         :game="playerPanelGame"
                         @navigate-to-map="openMapDetail"
@@ -997,7 +975,7 @@ onUnmounted(() => {
                   <div class="explorer-card">
                     <div class="explorer-card-header">
                       <h3 class="explorer-card-title">GLOBAL MAP RANKINGS</h3>
-                      <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Your position among all players</p>
+                      <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">Your position among all players</p>
                     </div>
                     <div class="explorer-card-body">
                       <PlayerCompetitiveRankings
@@ -1009,21 +987,59 @@ onUnmounted(() => {
                   </div>
 
                   <!-- Map Performance Race -->
-                  <div ref="mapPerformanceRef" class="explorer-card">
+                  <div class="explorer-card">
                     <div class="explorer-card-header">
                       <h3 class="explorer-card-title">MAP PERFORMANCE OVER TIME</h3>
+                      <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">Historical Map Race</p>
                     </div>
                     <div class="explorer-card-body">
                       <MapPerformanceRace
-                        v-if="mapPerformanceVisible"
                         :player-name="playerName"
                         :game="playerPanelGame"
                         @navigate-to-map="openMapDetail"
                       />
-                      <div v-else class="h-48 flex items-center justify-center text-neutral-500">
-                        <div class="explorer-spinner" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- NETWORK TAB -->
+              <div v-if="activeTab === 'network'" class="space-y-6">
+                <div class="explorer-card">
+                  <!-- Integrated Header for Network -->
+                  <div class="explorer-card-header flex flex-wrap items-center justify-between gap-4 border-b border-[var(--border-color)] pb-4">
+                    <div>
+                      <h3 class="explorer-card-title !mb-0">RELATIONSHIP MAPPING</h3>
+                      <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase tracking-wider">Proximity Analysis & Companion Detection</p>
+                    </div>
+                    
+                    <div v-if="unifiedServerList.length > 1" class="flex items-center gap-3">
+                      <span class="text-[10px] text-neutral-500 font-mono uppercase">Node Filter:</span>
+                      <select v-model="selectedProximityServerGuid" class="explorer-select text-[11px] min-w-[220px] h-8 py-0">
+                        <option v-for="server in unifiedServerList" :key="server.serverGuid" :value="server.serverGuid">{{ server.serverName }}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- Proximity Orbit (Seamless inside card) -->
+                  <div class="explorer-card-body p-0 sm:p-6">
+                    <div v-if="unifiedServerList.length > 0" class="flex flex-col items-center justify-center">
+                      <div class="w-full">
+                        <PingProximityOrbit
+                          seamless
+                          :server-guid="selectedProximityServerGuid"
+                          :server-name="selectedProximityServer?.serverName"
+                          @player-click="(name: string) => router.push(`/players/${encodeURIComponent(name)}`)"
+                        />
                       </div>
                     </div>
+                  </div>
+
+                  <!-- Footer Actions -->
+                  <div class="p-4 border-t border-[var(--border-color)] text-center bg-white/5">
+                    <router-link :to="`/players/${encodeURIComponent(playerName)}/network`" class="explorer-btn explorer-btn--ghost explorer-btn--sm px-12 font-mono uppercase tracking-widest">
+                      Open Full Interactive Social Graph &rarr;
+                    </router-link>
                   </div>
                 </div>
               </div>
@@ -1048,13 +1064,6 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div class="hidden">
-              <!-- Proximity hidden placeholders for lazy load refs if needed -->
-              <div ref="mapPerformanceRef"></div>
-              <div ref="activityHeatmapRef"></div>
-              <div ref="mapPreferenceRef"></div>
             </div>
 
           </div>

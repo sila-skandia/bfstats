@@ -9,50 +9,76 @@
 
     <!-- Content -->
     <div v-else-if="rankingsData">
-      <!-- Time Period Selection -->
-      <div class="time-period-selector mb-6">
-        <div class="time-period-buttons">
-          <button
-            :class="['time-period-btn', { active: timePeriod === 'last-month' }]"
-            @click="selectTimePeriod('last-month')"
-          >
-            Last Month
-          </button>
-          <button
-            :class="['time-period-btn', { active: timePeriod === 'all-time' }]"
-            @click="selectTimePeriod('all-time')"
-          >
-            All Time
-          </button>
-        </div>
-        <div class="time-period-picker">
-          <select v-model.number="selectedYear" @change="onDateChange" class="explorer-select">
-            <option v-for="year in availableYears" :key="year" :value="year">
-              {{ year }}
-            </option>
-          </select>
-          <select v-model.number="selectedMonth" @change="onDateChange" class="explorer-select">
-            <option v-for="month in availableMonths" :key="month.value" :value="month.value" :disabled="month.disabled">
-              {{ month.label }}
-            </option>
-          </select>
-          <button @click="loadRankingsForPeriod" class="explorer-btn explorer-btn--ghost explorer-btn--sm">
-            View
-          </button>
-        </div>
-      </div>
+      <!-- Integrated Toolbar -->
+      <div class="explorer-header-integrated mb-4">
+        <div class="explorer-header-main">
+          <!-- Left side: Tabs -->
+          <div class="explorer-toggle-group">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              class="explorer-toggle-btn explorer-toggle-btn--compact"
+              :class="{ 'explorer-toggle-btn--active': activeTab === tab.id }"
+              @click="activeTab = tab.id"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
 
-      <!-- Tab Navigation -->
-      <div class="explorer-tabs mb-4">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          class="explorer-tab"
-          :class="{ 'explorer-tab--active': activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          {{ tab.label }}
-        </button>
+          <div class="explorer-header-actions">
+            <!-- View Mode Toggle (only for Performance tab) -->
+            <div v-if="activeTab === 'current'" class="explorer-toggle-group">
+               <button 
+                class="explorer-toggle-btn explorer-toggle-btn--compact"
+                :class="{ 'explorer-toggle-btn--active': viewMode === 'chart' }"
+                @click="viewMode = 'chart'"
+              >
+                CHART
+              </button>
+              <button 
+                class="explorer-toggle-btn explorer-toggle-btn--compact"
+                :class="{ 'explorer-toggle-btn--active': viewMode === 'list' }"
+                @click="viewMode = 'list'"
+              >
+                LIST
+              </button>
+            </div>
+
+            <!-- Time Period Selection -->
+            <div class="flex items-center gap-2">
+              <div class="explorer-toggle-group">
+                <button
+                  class="explorer-toggle-btn explorer-toggle-btn--compact"
+                  :class="{ 'explorer-toggle-btn--active': timePeriod === 'last-month' }"
+                  @click="selectTimePeriod('last-month')"
+                >
+                  30D
+                </button>
+                <button
+                  class="explorer-toggle-btn explorer-toggle-btn--compact"
+                  :class="{ 'explorer-toggle-btn--active': timePeriod === 'all-time' }"
+                  @click="selectTimePeriod('all-time')"
+                >
+                  ALL
+                </button>
+              </div>
+
+              <div class="flex items-center gap-1">
+                <select v-model.number="selectedYear" @change="onDateChange" class="explorer-select explorer-select--compact explorer-mono text-[10px]">
+                  <option v-for="year in availableYears" :key="year" :value="year">{{ year }}</option>
+                </select>
+                <select v-model.number="selectedMonth" @change="onDateChange" class="explorer-select explorer-select--compact explorer-mono text-[10px]">
+                  <option v-for="month in availableMonths" :key="month.value" :value="month.value" :disabled="month.disabled">
+                    {{ month.label.substring(0, 3) }}
+                  </option>
+                </select>
+                <button @click="loadRankingsForPeriod" class="explorer-btn explorer-btn--ghost explorer-btn--sm !py-1 !px-2 text-[10px]">
+                  VIEW
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Error State (shown inline with controls) -->
@@ -69,23 +95,7 @@
       </div>
 
       <!-- Performance Tab -->
-      <div v-if="!error && activeTab === 'current'" class="space-y-2">
-        <!-- View mode toggle -->
-        <div class="view-toggle">
-          <button 
-            :class="['toggle-btn', { active: viewMode === 'chart' }]"
-            @click="viewMode = 'chart'"
-          >
-            CHART
-          </button>
-          <button 
-            :class="['toggle-btn', { active: viewMode === 'list' }]"
-            @click="viewMode = 'list'"
-          >
-            LIST
-          </button>
-        </div>
-
+      <div v-if="!error && activeTab === 'current'" class="space-y-0">
         <!-- Chart view -->
         <div v-if="viewMode === 'chart'">
           <PlayerCompetitiveRankingsChart
@@ -96,68 +106,69 @@
         </div>
 
         <!-- List view -->
-        <div v-else>
-        <div 
-          v-for="ranking in paginatedRankings"
-          :key="ranking.mapName"
-          class="ranking-item"
-          @click="navigateToMapRankings(ranking.mapName)"
-        >
-          <div class="ranking-position">
-            <div class="ranking-badge" :class="getRankBadgeClass(ranking.rank)">
-              <span v-if="ranking.rank === 1">🥇</span>
-              <span v-else-if="ranking.rank === 2">🥈</span>
-              <span v-else-if="ranking.rank === 3">🥉</span>
-              <span v-else>#{{ ranking.rank }}</span>
+        <div v-else class="explorer-table-wrapper">
+          <div 
+            v-for="ranking in paginatedRankings"
+            :key="ranking.mapName"
+            class="ranking-item-compact"
+            @click="navigateToMapRankings(ranking.mapName)"
+          >
+            <div class="ranking-position-compact">
+              <div class="ranking-badge-compact" :class="getRankBadgeClass(ranking.rank)">
+                <span v-if="ranking.rank === 1">🥇</span>
+                <span v-else-if="ranking.rank === 2">🥈</span>
+                <span v-else-if="ranking.rank === 3">🥉</span>
+                <span v-else>{{ ranking.rank }}</span>
+              </div>
             </div>
-            <div class="ranking-trend" :class="getTrendClass(ranking.trend)">
-              <span v-if="ranking.trend === 'up'">↑</span>
-              <span v-else-if="ranking.trend === 'down'">↓</span>
-              <span v-else-if="ranking.trend === 'stable'">→</span>
-              <span v-else>★</span>
-              <span v-if="ranking.previousRank" class="text-xs ml-1">{{ Math.abs(ranking.rank - ranking.previousRank) }}</span>
+
+            <div class="ranking-details-compact">
+              <div class="flex items-center gap-2">
+                <div class="ranking-map-compact">{{ ranking.mapName }}</div>
+                <div class="ranking-trend-compact" :class="getTrendClass(ranking.trend)">
+                  <span v-if="ranking.trend === 'up'">↑</span>
+                  <span v-else-if="ranking.trend === 'down'">↓</span>
+                  <span v-else-if="ranking.trend === 'stable'">→</span>
+                  <span v-else>★</span>
+                  <span v-if="ranking.previousRank" class="text-[9px] ml-0.5 opacity-70">{{ Math.abs(ranking.rank - ranking.previousRank) }}</span>
+                </div>
+              </div>
+              <div class="ranking-stats-compact">
+                <span class="ranking-stat-compact">
+                  <span class="opacity-50">SCORE:</span>
+                  <span class="font-bold">{{ ranking.totalScore.toLocaleString() }}</span>
+                </span>
+                <span class="ranking-stat-compact">
+                  <span class="opacity-50">K/D:</span>
+                  <span class="font-bold" :class="ranking.kdRatio >= 1 ? 'text-neon-green' : 'text-neon-red'">{{ ranking.kdRatio.toFixed(2) }}</span>
+                </span>
+                <span class="ranking-stat-compact">
+                  <span class="opacity-50">TIME:</span>
+                  <span class="font-bold">{{ formatPlayTime(ranking.playTimeMinutes) }}</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="ranking-percentile-compact">
+              <div class="percentile-badge-compact" :class="getPercentileClass(ranking.percentile)">
+                TOP {{ (100 - ranking.percentile).toFixed(1) }}%
+              </div>
+              <div class="text-[9px] opacity-50 font-mono mt-0.5 text-right">
+                {{ ranking.totalPlayers }} PLRS
+              </div>
             </div>
           </div>
 
-          <div class="ranking-details">
-            <div class="ranking-map">{{ ranking.mapName }}</div>
-            <div class="ranking-stats">
-              <span class="ranking-stat">
-                <span class="text-neutral-500">Score:</span>
-                <span class="font-mono">{{ ranking.totalScore.toLocaleString() }}</span>
-              </span>
-              <span class="ranking-stat">
-                <span class="text-neutral-500">K/D:</span>
-                <span class="font-mono">{{ ranking.kdRatio.toFixed(2) }}</span>
-              </span>
-              <span class="ranking-stat">
-                <span class="text-neutral-500">Time:</span>
-                <span class="font-mono">{{ formatPlayTime(ranking.playTimeMinutes) }}</span>
-              </span>
-            </div>
+          <!-- Empty state for no rankings -->
+          <div v-if="rankingsData.mapRankings.length === 0" class="explorer-empty">
+            <p class="text-neutral-500">No competitive rankings available for this time period.</p>
           </div>
-
-          <div class="ranking-percentile">
-            <div class="percentile-badge" :class="getPercentileClass(ranking.percentile)">
-              TOP {{ (100 - ranking.percentile).toFixed(1) }}%
-            </div>
-            <div class="text-xs text-neutral-500 font-mono mt-1">
-              of {{ ranking.totalPlayers }} players
-            </div>
-          </div>
-        </div>
-
-        <!-- Empty state for no rankings -->
-        <div v-if="rankingsData.mapRankings.length === 0" class="explorer-empty">
-          <p class="text-neutral-500">No competitive rankings available for this time period.</p>
-        </div>
-
         </div>
 
         <!-- Pagination Controls (only for list view) -->
-        <div v-if="viewMode === 'list' && totalPages > 1" class="pagination-controls">
+        <div v-if="viewMode === 'list' && totalPages > 1" class="pagination-controls-compact">
           <button
-            class="pagination-btn"
+            class="pagination-btn-compact"
             :disabled="currentPage === 1"
             @click="goToPage(currentPage - 1)"
           >
@@ -167,15 +178,15 @@
           <button
             v-for="pageNum in paginationRange"
             :key="pageNum"
-            class="pagination-btn"
-            :class="{ 'pagination-btn--active': pageNum === currentPage }"
+            class="pagination-btn-compact"
+            :class="{ 'pagination-btn-compact--active': pageNum === currentPage }"
             @click="goToPage(pageNum)"
           >
             {{ pageNum }}
           </button>
           
           <button
-            class="pagination-btn"
+            class="pagination-btn-compact"
             :disabled="currentPage === totalPages"
             @click="goToPage(currentPage + 1)"
           >
@@ -186,18 +197,19 @@
 
       <!-- Timeline Tab -->
       <div v-else-if="!error && activeTab === 'timeline'" class="timeline-content">
-        <!-- Map Selector -->
-        <div class="mb-4">
+        <!-- Map Selector and controls Integrated -->
+        <div class="flex items-center justify-between mb-4">
           <select 
             v-model="selectedTimelineMap" 
             @change="loadTimeline"
-            class="explorer-select w-full sm:w-auto"
+            class="explorer-select explorer-select--compact explorer-mono text-xs"
           >
             <option value="">All Maps (Average)</option>
             <option v-for="map in availableMaps" :key="map" :value="map">
               {{ map }}
             </option>
           </select>
+          <div class="text-[10px] explorer-mono opacity-50 uppercase">Historical Trend (12 Months)</div>
         </div>
 
         <!-- Timeline Chart -->
@@ -680,475 +692,102 @@ watch(() => props.playerName, () => {
 </script>
 
 <style scoped>
-/* Base styles following explorer theme */
+/* ===== Integrated Data Dashboard Style ===== */
 .competitive-rankings {
   font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
 }
 
-/* Time Period Selector */
-.time-period-selector {
+/* --- Integrated Header & Toolbar --- */
+.explorer-header-integrated {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0 0 1rem 0;
+}
+
+.explorer-header-main {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  gap: 0.75rem;
 }
 
-.time-period-buttons {
+@media (min-width: 1024px) {
+  .explorer-header-main {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.explorer-header-actions {
   display: flex;
-  gap: 0.5rem;
-}
-
-.time-period-btn {
-  flex: 1;
-  padding: 0.65rem 1rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.time-period-btn:hover {
-  border-color: var(--neon-cyan);
-  color: var(--text-primary);
-}
-
-.time-period-btn.active {
-  background: var(--neon-cyan);
-  border-color: var(--neon-cyan);
-  color: var(--bg-dark);
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
-}
-
-.time-period-picker {
-  display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
-  flex-wrap: wrap;
 }
 
-.time-period-picker select {
-  flex: 1;
-  min-width: 120px;
-  padding: 0.5rem;
-  font-size: 0.8rem;
-  font-family: 'JetBrains Mono', monospace;
-  background: var(--bg-panel);
+/* --- Toggle Groups (Tabs/Modes) --- */
+.explorer-toggle-group {
+  display: flex;
+  background: rgba(13, 17, 23, 0.5);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  color: var(--text-primary);
+  padding: 0.125rem;
+}
+
+.explorer-toggle-btn--compact {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-family: 'JetBrains Mono', monospace;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
+  text-transform: uppercase;
 }
 
-.time-period-picker select:hover {
-  border-color: var(--neon-cyan);
+.explorer-toggle-btn--compact:hover:not(.explorer-toggle-btn--active) {
+  color: var(--text-primary);
+  background: rgba(245, 158, 11, 0.05);
 }
 
-.time-period-picker select:focus {
-  outline: none;
-  border-color: var(--neon-cyan);
+.explorer-toggle-btn--active {
+  background: var(--neon-cyan);
+  color: var(--bg-dark);
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
 }
 
-@media (max-width: 640px) {
-  .time-period-selector {
-    gap: 0.75rem;
-    padding: 0.75rem;
-  }
-
-  .time-period-picker {
-    flex-direction: column;
-  }
-
-  .time-period-picker select,
-  .time-period-picker button {
-    width: 100%;
-  }
-}
-
-/* Hero section */
-.rankings-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 1.5rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  margin-bottom: 1.5rem;
-}
-
-.rankings-hero-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border-radius: 20px;
-  margin-bottom: 1rem;
-}
-
-.badge-elite {
-  background: linear-gradient(135deg, var(--neon-gold) 0%, rgba(251, 191, 36, 0.2) 100%);
-  color: var(--bg-dark);
-  box-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
-}
-
-.badge-master {
-  background: linear-gradient(135deg, var(--neon-cyan) 0%, rgba(245, 158, 11, 0.2) 100%);
-  color: var(--bg-dark);
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
-}
-
-.badge-expert {
-  background: linear-gradient(135deg, var(--neon-pink) 0%, rgba(251, 113, 133, 0.2) 100%);
-  color: var(--bg-dark);
-  box-shadow: 0 0 20px rgba(251, 113, 133, 0.5);
-}
-
-.badge-veteran {
-  background: var(--bg-panel);
-  color: var(--text-primary);
-  border: 2px solid var(--neon-cyan);
-}
-
-.badge-regular {
-  background: var(--bg-panel);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-}
-
-.rankings-hero-icon {
-  font-size: 1.25rem;
-}
-
-.rankings-hero-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2rem;
-  width: 100%;
-  max-width: 24rem;
-}
-
-.rankings-hero-stat {
-  text-align: center;
-}
-
-.rankings-hero-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 0.25rem;
-}
-
-.rankings-hero-label {
-  font-size: 0.625rem;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-/* Tabs */
-.explorer-tabs {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 1rem;
-}
-
-.explorer-tab {
-  padding: 0.5rem 1rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.explorer-tab:hover {
-  color: var(--text-primary);
-}
-
-.explorer-tab--active {
-  color: var(--neon-cyan);
-  border-bottom-color: var(--neon-cyan);
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
-}
-
-/* Ranking items */
-.ranking-item {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.ranking-item:hover {
-  border-color: rgba(245, 158, 11, 0.3);
-  transform: translateX(4px);
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.1);
-}
-
-.ranking-position {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.ranking-badge {
-  width: 3rem;
-  height: 3rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.875rem;
-  font-weight: 700;
-  background: var(--bg-panel);
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
-}
-
-.rank-gold {
-  color: var(--neon-gold);
-  border-color: var(--neon-gold);
-  box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
-}
-
-.rank-silver {
-  color: #c0c0c0;
-  border-color: #c0c0c0;
-}
-
-.rank-bronze {
-  color: #cd7f32;
-  border-color: #cd7f32;
-}
-
-.rank-top10 {
-  color: var(--neon-cyan);
-  border-color: var(--neon-cyan);
-}
-
-.rank-top25 {
-  color: var(--neon-pink);
-  border-color: var(--neon-pink);
-}
-
-.ranking-trend {
-  display: flex;
-  align-items: center;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.trend-up {
-  color: var(--neon-green);
-}
-
-.trend-down {
-  color: var(--neon-red);
-}
-
-.trend-stable {
-  color: var(--text-secondary);
-}
-
-.trend-new {
-  color: var(--neon-gold);
-}
-
-.ranking-details {
-  flex: 1;
-  min-width: 0;
-}
-
-.ranking-map {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 0.25rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ranking-stats {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.625rem;
-}
-
-.ranking-stat {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.ranking-percentile {
-  text-align: right;
-}
-
-.percentile-badge {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  border-radius: 4px;
-  text-transform: uppercase;
-}
-
-.percentile-elite {
-  background: var(--neon-gold);
-  color: var(--bg-dark);
-  box-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
-}
-
-.percentile-master {
-  background: var(--neon-cyan);
-  color: var(--bg-dark);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
-}
-
-.percentile-expert {
-  background: var(--neon-pink);
-  color: var(--bg-dark);
-  box-shadow: 0 0 10px rgba(251, 113, 133, 0.4);
-}
-
-.percentile-veteran {
-  background: var(--bg-panel);
-  color: var(--text-primary);
-  border: 1px solid var(--neon-cyan);
-}
-
-/* Timeline */
-.timeline-content {
-  padding: 1rem 0;
-}
-
-.timeline-chart-container {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1rem;
-  height: 400px;
-  position: relative;
-}
-
-.timeline-chart {
-  height: 100%;
-}
-
-/* Select */
-.explorer-select {
-  padding: 0.5rem 2rem 0.5rem 0.75rem;
-  font-size: 0.75rem;
-  font-family: 'JetBrains Mono', monospace;
-  background: var(--bg-card);
+/* --- Compact Selects & Buttons --- */
+.explorer-select--compact {
+  padding: 0.2rem 1.5rem 0.2rem 0.4rem;
+  height: 1.75rem;
+  font-size: 0.7rem;
+  background: rgba(13, 17, 23, 0.5);
   border: 1px solid var(--border-color);
   border-radius: 4px;
   color: var(--text-primary);
   cursor: pointer;
-  transition: all 0.2s ease;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2300fff2' d='M6 8.825L1.175 4l1.414-1.415L6 6l3.411-3.415L10.825 4z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%23F59E0B' d='M6 8.825L1.175 4l1.414-1.415L6 6l3.411-3.415L10.825 4z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  background-size: 12px;
+  background-position: right 0.4rem center;
+  background-size: 10px;
 }
 
-.explorer-select:focus {
+.explorer-select--compact:focus {
   outline: none;
   border-color: var(--neon-cyan);
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
 }
 
-/* Empty state */
-.explorer-empty {
-  text-align: center;
-  padding: 3rem 1.5rem;
-}
-
-.explorer-empty-icon {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
-  opacity: 0.5;
-}
-
-.explorer-empty-title {
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-primary);
-  margin-bottom: 0.5rem;
-}
-
-.explorer-empty-desc {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-/* Skeleton */
-.explorer-skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--bg-card) 0%,
-    var(--border-color) 50%,
-    var(--bg-card) 100%
-  );
-  background-size: 200% 100%;
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
-  border-radius: 4px;
-}
-
-@keyframes skeleton-pulse {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* Spinner */
-.explorer-spinner {
-  width: 2rem;
-  height: 2rem;
-  border: 2px solid var(--border-color);
-  border-top-color: var(--neon-cyan);
-  border-radius: 50%;
-  animation: spinner-rotate 0.8s linear infinite;
-}
-
-@keyframes spinner-rotate {
-  to { transform: rotate(360deg); }
-}
-
-/* Button */
 .explorer-btn {
-  padding: 0.5rem 1rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
   font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   border-radius: 4px;
   cursor: pointer;
@@ -1165,114 +804,236 @@ watch(() => props.playerName, () => {
 .explorer-btn--ghost:hover {
   color: var(--text-primary);
   border-color: var(--neon-cyan);
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(245, 158, 11, 0.05);
 }
 
-.explorer-btn--sm {
-  padding: 0.375rem 0.75rem;
-  font-size: 0.625rem;
+/* --- Compact Ranking Items (List View) --- */
+.explorer-table-wrapper {
+  border-top: 1px solid var(--border-color);
 }
 
-/* Text utilities */
-.text-neon-gold { color: var(--neon-gold); }
-.text-neon-cyan { color: var(--neon-cyan); }
-.text-neon-pink { color: var(--neon-pink); }
-.text-neon-red { color: var(--neon-red); }
-.text-neon-green { color: var(--neon-green); }
-.text-neutral-500 { color: var(--text-secondary); }
-.text-xs { font-size: 0.625rem; }
-.font-mono { font-family: 'JetBrains Mono', monospace; }
-
-/* View toggle */
-.view-toggle {
+.ranking-item-compact {
   display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  justify-content: center;
-}
-
-.toggle-btn {
-  padding: 4px 12px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 12px;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.toggle-btn.active {
-  background: var(--neon-cyan);
-  color: var(--bg-dark);
-  border-color: var(--neon-cyan);
+.ranking-item-compact:hover {
+  background: rgba(245, 158, 11, 0.05);
+  padding-left: 0.9rem;
 }
 
-.toggle-btn:hover:not(.active) {
-  border-color: var(--neon-cyan);
-  color: var(--neon-cyan);
+.ranking-position-compact {
+  flex-shrink: 0;
 }
 
-/* Pagination */
-.pagination-controls {
+.ranking-badge-compact {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(13, 17, 23, 0.5);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.rank-gold { color: var(--neon-gold); border-color: var(--neon-gold); text-shadow: 0 0 8px rgba(251, 191, 36, 0.3); }
+.rank-silver { color: #c0c0c0; border-color: #c0c0c0; }
+.rank-bronze { color: #cd7f32; border-color: #cd7f32; }
+.rank-top10 { color: var(--neon-cyan); border-color: var(--neon-cyan); }
+.rank-top25 { color: var(--neon-pink); border-color: var(--neon-pink); }
+
+.ranking-details-compact {
+  flex: 1;
+  min-width: 0;
+}
+
+.ranking-map-compact {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ranking-trend-compact {
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+}
+
+.trend-up { color: var(--neon-green); }
+.trend-down { color: var(--neon-red); }
+.trend-stable { color: var(--text-secondary); opacity: 0.5; }
+.trend-new { color: var(--neon-gold); }
+
+.ranking-stats-compact {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.65rem;
+  margin-top: 0.1rem;
+}
+
+.ranking-stat-compact {
+  display: flex;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.ranking-percentile-compact {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.percentile-badge-compact {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.percentile-elite { background: var(--neon-gold); color: var(--bg-dark); }
+.percentile-master { background: var(--neon-cyan); color: var(--bg-dark); }
+.percentile-expert { background: var(--neon-pink); color: var(--bg-dark); }
+.percentile-veteran { border: 1px solid var(--neon-cyan); color: var(--neon-cyan); }
+
+/* --- Compact Pagination --- */
+.pagination-controls-compact {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
-  padding-top: 1rem;
-  margin-top: 1rem;
+  padding: 0.75rem;
+  margin-top: 0.5rem;
   border-top: 1px solid var(--border-color);
 }
 
-.pagination-btn {
-  padding: 0.375rem 0.75rem;
-  font-size: 0.75rem;
+.pagination-btn-compact {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
   font-weight: 600;
   font-family: 'JetBrains Mono', monospace;
-  background: var(--bg-panel);
+  background: rgba(13, 17, 23, 0.5);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
-  border-radius: 4px;
+  border-radius: 3px;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-width: 2rem;
+  min-width: 1.5rem;
 }
 
-.pagination-btn:hover:not(:disabled) {
+.pagination-btn-compact:hover:not(:disabled) {
   color: var(--text-primary);
   border-color: var(--neon-cyan);
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(245, 158, 11, 0.05);
 }
 
-.pagination-btn:disabled {
-  opacity: 0.4;
+.pagination-btn-compact:disabled {
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
-.pagination-btn--active {
+.pagination-btn-compact--active {
   background: var(--neon-cyan);
   color: var(--bg-dark);
   border-color: var(--neon-cyan);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
 }
 
-.pagination-btn--active:hover {
-  background: var(--neon-cyan);
-  color: var(--bg-dark);
+/* --- Timeline & Charts --- */
+.timeline-content {
+  padding: 0.5rem 0;
 }
 
-/* Responsive */
+.timeline-chart-container {
+  background: rgba(13, 17, 23, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.75rem;
+  height: 350px;
+  position: relative;
+}
+
+.timeline-chart {
+  height: 100%;
+}
+
+/* --- Utilities & Common --- */
+.explorer-empty {
+  text-align: center;
+  padding: 2.5rem 1rem;
+}
+
+.explorer-empty-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.3;
+  color: var(--neon-cyan);
+}
+
+.explorer-empty-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.explorer-skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 0%, var(--border-color) 50%, var(--bg-card) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.explorer-spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--neon-cyan);
+  border-radius: 50%;
+  animation: spinner-rotate 0.8s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+.text-neon-green { color: var(--neon-green); }
+.text-neon-red { color: var(--neon-red); }
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+
 @media (max-width: 640px) {
-  .rankings-hero-stats {
-    gap: 1rem;
-  }
-  
-  .ranking-stats {
+  .ranking-stats-compact {
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.1rem;
   }
   
-  .ranking-item {
-    padding: 0.75rem;
+  .ranking-item-compact {
+    padding: 0.5rem;
+  }
+  
+  .explorer-header-actions {
+    justify-content: space-between;
+    width: 100%;
   }
 }
 </style>

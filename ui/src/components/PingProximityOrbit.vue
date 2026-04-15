@@ -20,6 +20,8 @@ const props = defineProps<{
   serverName?: string
   /** When set, switches to delta mode: shows players with similar ping to this player */
   playerName?: string
+  /** When true, removes the outer container styles for integrated layouts */
+  seamless?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -528,8 +530,8 @@ const hoveredItem = computed(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="ping-orbit-container" :class="{ 'ping-orbit--fullscreen': isFullscreen }">
-    <div class="orbit-header">
+  <div ref="containerRef" class="ping-orbit-container" :class="{ 'ping-orbit--fullscreen': isFullscreen, 'ping-orbit--seamless': seamless }">
+    <div v-if="!seamless" class="orbit-header">
       <h3 class="orbit-title">{{ isDeltaMode ? 'NEARBY PLAYERS' : 'PLAYER PROXIMITY' }}</h3>
       <p class="orbit-subtitle">
         <template v-if="isDeltaMode">
@@ -969,6 +971,13 @@ const hoveredItem = computed(() => {
 }
 
 /* Fullscreen mode */
+.ping-orbit--seamless {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
 .ping-orbit--fullscreen {
   position: fixed;
   top: 0;
