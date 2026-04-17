@@ -15,7 +15,6 @@ const isLoading = ref(true);
 const error = ref<string | null>(null);
 
 const milestoneTypes = new Set(['milestone']);
-
 const isUsingExternalGroups = computed(() => Array.isArray(props.achievementGroups));
 
 const displayGroups = computed(() => {
@@ -42,32 +41,23 @@ const getAchievementImage = (achievementId: string, tier?: string): string => {
   return getAchievementImageFromObject({ achievementId, tier });
 };
 
-const getTierBorderClass = (tier: string): string => {
-  switch (tier.toLowerCase()) {
+const getTierColor = (tier: string): string => {
+  switch (tier?.toLowerCase()) {
     case 'legend':
-    case 'legendary':
-      return 'border-orange-500/40 hover:border-orange-400/70';
-    case 'gold':
-      return 'border-yellow-500/40 hover:border-yellow-400/70';
-    case 'silver':
-      return 'border-blue-500/40 hover:border-blue-400/70';
-    case 'bronze':
-      return 'border-orange-600/40 hover:border-orange-500/70';
-    default:
-      return 'border-slate-600/40 hover:border-slate-500/70';
+    case 'legendary': return 'text-orange-400';
+    case 'gold': return 'text-yellow-400';
+    case 'silver': return 'text-blue-400';
+    case 'bronze': return 'text-orange-600';
+    default: return 'text-slate-400';
   }
 };
 
 const fetchAchievementGroups = async () => {
-  if (isUsingExternalGroups.value) {
-    return;
-  }
+  if (isUsingExternalGroups.value) return;
   isLoading.value = true;
   error.value = null;
   try {
-    const response = await fetch(
-      `/stats/gamification/player/${encodeURIComponent(props.playerName)}/achievement-groups`
-    );
+    const response = await fetch(`/stats/gamification/player/${encodeURIComponent(props.playerName)}/achievement-groups`);
     if (!response.ok) throw new Error('Failed to fetch achievements');
     groups.value = await response.json();
   } catch (err: unknown) {
@@ -78,175 +68,107 @@ const fetchAchievementGroups = async () => {
   }
 };
 
-onMounted(() => {
-  fetchAchievementGroups();
-});
-
-watch(
-  () => props.playerName,
-  (newName, oldName) => {
-    if (newName && newName !== oldName) {
-      fetchAchievementGroups();
-    }
-  }
-);
-
-watch(
-  () => props.achievementGroups,
-  (newGroups) => {
-    if (Array.isArray(newGroups)) {
-      groups.value = newGroups;
-      isLoading.value = false;
-      error.value = null;
-    }
-  },
-  { immediate: true }
-);
-
-watch(
-  () => props.loading,
-  (newLoading) => {
-    if (typeof newLoading === 'boolean') {
-      isLoading.value = newLoading;
-    }
-  },
-  { immediate: true }
-);
-
-watch(
-  () => props.error,
-  (newError) => {
-    if (newError !== undefined) {
-      error.value = newError ?? null;
-    }
-  },
-  { immediate: true }
-);
+onMounted(() => fetchAchievementGroups());
+watch(() => props.playerName, (newName, oldName) => { if (newName && newName !== oldName) fetchAchievementGroups(); });
+watch(() => props.achievementGroups, (newGroups) => { if (Array.isArray(newGroups)) { groups.value = newGroups; isLoading.value = false; error.value = null; } }, { immediate: true });
+watch(() => props.loading, (newLoading) => { if (typeof newLoading === 'boolean') isLoading.value = newLoading; }, { immediate: true });
+watch(() => props.error, (newError) => { if (newError !== undefined) error.value = newError ?? null; }, { immediate: true });
 </script>
 
 <template>
-  <div class="relative">
-    <div
-      v-if="isLoading"
-      class="flex flex-col items-center justify-center py-16 text-slate-400"
-    >
-      <div class="w-12 h-12 border-4 border-slate-600/30 border-t-yellow-400 rounded-full animate-spin mb-4" />
-      <p class="text-lg font-medium">
-        Loading achievements...
-      </p>
-      <p class="text-sm text-slate-500 mt-2">
-        Counting battlefield honors
-      </p>
+  <div class="space-y-12">
+    <!-- Status Rendering -->
+    <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 opacity-50">
+      <div class="w-10 h-10 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-4" />
+      <div class="font-mono text-[10px] text-cyan-400 uppercase tracking-[0.3em]">Auditing_Trophies...</div>
     </div>
 
-    <div
-      v-else-if="error"
-      class="bg-red-900/20 backdrop-blur-sm border border-red-700/50 rounded-2xl p-8 text-center"
-    >
-      <div class="text-5xl mb-4 opacity-60">
-        ⚠️
-      </div>
-      <p class="text-red-400 text-lg font-semibold mb-4">
-        {{ error }}
-      </p>
-      <button
-        class="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors"
-        @click="fetchAchievementGroups"
-      >
-        Try Again
-      </button>
+    <div v-else-if="error" class="bg-red-500/5 border border-red-500/20 rounded p-8 text-center">
+      <div class="text-3xl mb-4">⚠️</div>
+      <p class="text-red-400 font-mono text-sm uppercase tracking-widest mb-6">{{ error }}</p>
+      <button @click="fetchAchievementGroups" class="px-6 py-2 bg-red-500/10 border border-red-500/50 text-red-400 text-[10px] font-mono font-black uppercase tracking-widest hover:bg-red-500/20 transition-all">Retry_Audit</button>
     </div>
 
-    <div
-      v-else-if="groups.length === 0"
-      class="bg-slate-800/40 backdrop-blur-lg rounded-2xl border border-slate-700/50 p-12 text-center"
-    >
-      <div class="text-6xl mb-4 opacity-40">
-        🏆
-      </div>
-      <h3 class="text-2xl font-bold text-slate-400 mb-2">
-        No Achievements Yet
-      </h3>
-      <p class="text-slate-500">
-        This soldier hasn't unlocked achievements yet.
-      </p>
+    <div v-else-if="groups.length === 0" class="bg-white/5 border border-white/5 rounded-xl p-16 text-center opacity-30">
+      <div class="text-5xl mb-6">∅</div>
+      <p class="text-xs font-mono text-slate-400 uppercase tracking-[0.4em]">Zero_Honors_Detected</p>
     </div>
 
-    <div
-      v-else
-      class="space-y-6"
-    >
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="px-4 py-2 bg-slate-800/50 rounded-lg border border-slate-700/50 text-sm text-slate-300">
-          🎯 {{ totalEarned }} earned
+    <!-- Main Content -->
+    <div v-else class="space-y-12">
+      <!-- Milestones: High Impact Cards -->
+      <section v-if="milestoneGroups.length > 0" class="space-y-6">
+        <div class="flex items-center gap-4">
+          <div class="w-1 h-5 bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)]" />
+          <h3 class="text-lg font-black text-white uppercase italic tracking-tighter">Operational Milestones</h3>
+          <div class="h-px flex-1 bg-white/5" />
         </div>
-        <div class="px-4 py-2 bg-slate-800/50 rounded-lg border border-slate-700/50 text-sm text-slate-300">
-          🏅 {{ groups.length }} unique types
-        </div>
-      </div>
-
-      <div v-if="milestoneGroups.length > 0" class="space-y-3">
-        <h4 class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400">
-          Milestones
-        </h4>
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           <div
-            v-for="milestone in milestoneGroups"
-            :key="milestone.achievementId"
-            class="group relative bg-gradient-to-br from-slate-800/60 to-slate-900/70 backdrop-blur-sm rounded-xl border border-yellow-500/30 hover:border-yellow-400/60 transition-all duration-300 overflow-hidden"
+            v-for="m in milestoneGroups"
+            :key="m.achievementId"
+            class="group relative bg-black/40 border border-yellow-500/20 rounded-xl p-6 flex flex-col items-center text-center transition-all hover:bg-yellow-500/5 hover:border-yellow-500/40 hover:-translate-y-1 shadow-[inset_0_0_20px_rgba(0,0,0,0.4)]"
           >
-            <div class="absolute inset-0 bg-gradient-to-br from-yellow-500/10 to-orange-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div class="relative z-10 p-3 flex flex-col items-center text-center gap-2">
+            <!-- Decorative FX -->
+            <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none overflow-hidden rounded-xl">
+               <div class="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-yellow-500/5 to-transparent" />
+               <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(234,179,8,0.1),transparent_70%)]" />
+            </div>
+
+            <img
+              :src="getAchievementImage(m.achievementId, m.tier)"
+              :alt="m.achievementName"
+              class="w-20 h-24 object-contain filter drop-shadow-[0_0_15px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform duration-500 mb-4 z-10"
+            >
+            
+            <div class="z-10">
+              <div class="text-[9px] font-mono font-black text-yellow-500 uppercase tracking-[0.2em] mb-1">MILESTONE_LOGGED</div>
+              <div class="text-xs font-bold text-white uppercase tracking-tight leading-tight group-hover:text-yellow-400 transition-colors">{{ m.achievementName }}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Achievement Collection: High Density Grid -->
+      <section class="space-y-6">
+        <div class="flex items-center gap-4">
+          <div class="w-1 h-5 bg-cyan-500 shadow-[0_0_10px_rgba(0,229,255,0.5)]" />
+          <h3 class="text-lg font-black text-white uppercase italic tracking-tighter">Combat Trophy Collection</h3>
+          <div class="h-px flex-1 bg-white/5" />
+          <div class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">{{ totalEarned }} TOTAL_UNITS</div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          <div
+            v-for="a in otherGroups"
+            :key="a.achievementId"
+            class="group relative bg-white/[0.02] border border-white/5 rounded p-4 transition-all hover:bg-white/5 hover:border-white/20"
+          >
+            <div class="absolute top-2 right-2 px-1.5 py-0.5 bg-black/60 border border-white/10 rounded text-[10px] font-mono font-black text-cyan-400 z-10 shadow-lg">
+              ×{{ a.count }}
+            </div>
+            
+            <div class="flex flex-col items-center text-center gap-3">
               <img
-                :src="getAchievementImage(milestone.achievementId, milestone.tier)"
-                :alt="milestone.achievementName"
-                class="w-16 h-20 object-contain drop-shadow-lg group-hover:scale-110 transition-transform duration-300"
+                :src="getAchievementImage(a.achievementId, a.tier)"
+                :alt="a.achievementName"
+                class="w-12 h-14 object-contain opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300"
               >
-              <div class="text-sm font-semibold text-slate-200 line-clamp-2">
-                {{ milestone.achievementName }}
+              <div>
+                <div class="text-[8px] font-mono font-black uppercase tracking-widest mb-0.5" :class="getTierColor(a.tier)">{{ a.tier || 'Standard' }}</div>
+                <div class="text-[10px] font-bold text-slate-300 uppercase tracking-tighter leading-none group-hover:text-white transition-colors">{{ a.achievementName }}</div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="space-y-3">
-        <h4 class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
-          Achievement Collection
-        </h4>
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          <div
-            v-for="achievement in otherGroups"
-            :key="achievement.achievementId"
-            class="group relative bg-gradient-to-br from-slate-800/60 to-slate-900/70 backdrop-blur-sm rounded-xl border transition-all duration-300 overflow-hidden"
-            :class="getTierBorderClass(achievement.tier)"
-          >
-            <div class="absolute inset-0 bg-gradient-to-br from-slate-600/10 to-slate-700/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div class="relative z-10 p-3 flex flex-col items-center text-center gap-2">
-              <div class="absolute -top-1 -right-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold px-2 py-1 rounded-lg shadow-lg border border-amber-400/60">
-                ×{{ achievement.count }}
-              </div>
-              <img
-                :src="getAchievementImage(achievement.achievementId, achievement.tier)"
-                :alt="achievement.achievementName"
-                class="w-14 h-16 object-contain drop-shadow-lg group-hover:scale-110 transition-transform duration-300"
-              >
-              <div class="text-sm font-semibold text-slate-200 line-clamp-2">
-                {{ achievement.achievementName }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      </section>
     </div>
   </div>
 </template>
 
 <style scoped>
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
 }
 </style>
