@@ -37,11 +37,8 @@ const currentPage = ref(1);
 const totalPages = ref(0);
 const totalCount = ref(0);
 
-
-
 const selectedDays = ref(props.days || 60);
 const selectedMinRounds = ref(3);
-
 const minRoundsOptions = [3, 5, 10, 20, 50];
 
 const handleMinRoundsChange = (rounds: number) => {
@@ -85,8 +82,6 @@ const loadRankings = async () => {
     isRefreshing.value = false;
   }
 };
-
-
 
 const handleDaysChange = (days: number) => {
   if (days === selectedDays.value || isRefreshing.value) return;
@@ -185,257 +180,198 @@ watch(() => props.days, (newDays) => {
 </script>
 
 <template>
-  <div class="map-rankings-panel space-y-3">
-
-
-    <!-- Header with Search -->
-    <div class="flex flex-col gap-3">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div class="flex items-center gap-2">
-          <h3 class="text-sm font-bold text-[var(--neon-cyan)] uppercase tracking-wider font-mono">Full Rankings</h3>
-          <span v-if="totalCount > 0" class="text-xs text-[var(--text-secondary)] font-mono">({{ totalCount.toLocaleString() }} players)</span>
-          <div v-if="isRefreshing" class="w-3.5 h-3.5 border-2 border-[var(--border-color)] border-t-[var(--neon-cyan)] rounded-full animate-spin" />
+  <div class="p-6 bg-[#05050a] flex flex-col gap-6">
+    <!-- Search & Control Cluster -->
+    <div class="flex flex-col gap-6 border-b border-white/5 pb-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-1 h-5 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+          <h3 class="text-lg font-black text-white uppercase italic tracking-tighter">Global Engagement Ladder</h3>
+          <span v-if="totalCount > 0" class="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-mono text-slate-500 uppercase tracking-widest">{{ totalCount.toLocaleString() }} Operatives</span>
         </div>
-        
-        <div class="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          <!-- Period Selector -->
-          <div class="flex items-center gap-0 bg-[var(--bg-panel)] rounded border border-[var(--border-color)] p-0.5">
-            <button
-              v-for="days in [30, 60, 90, 365]"
-              :key="days"
-              class="px-2.5 py-1 text-[10px] font-mono rounded transition-all font-semibold uppercase tracking-wider"
-              :class="selectedDays === days
-                ? 'bg-[var(--neon-cyan)] text-[var(--bg-dark)] shadow-[0_0_10px_rgba(0,255,242,0.4)]'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5'"
-              @click="handleDaysChange(days)"
-            >
-              {{ days === 365 ? '1Y' : `${days}D` }}
-            </button>
-          </div>
 
-          <!-- Min Rounds Filter -->
-          <div class="flex items-center gap-0 bg-[var(--bg-panel)] rounded border border-[var(--border-color)] p-0.5">
-            <span class="px-1.5 text-[10px] font-mono text-[var(--text-secondary)] uppercase tracking-wider">Rnds</span>
+        <div class="flex flex-wrap items-center gap-3">
+           <!-- Min Rounds Filter -->
+           <div class="flex bg-black/40 p-0.5 border border-white/5 rounded">
+            <div class="px-2 py-1 text-[8px] font-mono text-slate-600 uppercase flex items-center">Engagements</div>
             <button
               v-for="rounds in minRoundsOptions"
               :key="rounds"
-              class="px-2 py-1 text-[10px] font-mono rounded transition-all font-semibold"
+              class="px-2.5 py-1 text-[9px] font-mono font-black transition-all"
               :class="selectedMinRounds === rounds
-                ? 'bg-[var(--neon-cyan)] text-[var(--bg-dark)] shadow-[0_0_10px_rgba(0,255,242,0.4)]'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5'"
+                ? 'bg-cyan-500 text-black shadow-[0_0_10px_rgba(0,229,255,0.3)]'
+                : 'text-slate-500 hover:text-slate-300'"
               @click="handleMinRoundsChange(rounds)"
             >
               {{ rounds }}+
             </button>
           </div>
+
+          <!-- Period Selector -->
+          <div class="flex bg-black/40 p-0.5 border border-white/5 rounded">
+            <button
+              v-for="days in [30, 60, 90, 365]"
+              :key="days"
+              class="px-2.5 py-1 text-[9px] font-mono font-black transition-all uppercase"
+              :class="selectedDays === days
+                ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                : 'text-slate-500 hover:text-slate-300'"
+              @click="handleDaysChange(days)"
+            >
+              {{ days === 365 ? '1Y' : `${days}D` }}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div class="relative w-full">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--neon-green)] opacity-80"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <!-- Search Input -->
+      <div class="relative group">
+        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <svg class="w-4 h-4 text-slate-600 group-focus-within:text-cyan-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+        </div>
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="Search players..."
-          class="w-full pl-8 pr-3 py-1.5 text-xs font-mono rounded transition-all"
+          placeholder="SEARCH_OPERATIVE_ID..."
+          class="w-full bg-black/40 border border-white/5 focus:border-cyan-500/50 rounded-lg pl-10 pr-4 py-2.5 text-xs font-mono text-cyan-400 placeholder:text-slate-800 transition-all focus:bg-cyan-500/[0.02]"
           @input="handleSearchInput"
         />
       </div>
     </div>
 
-    <!-- Sort Tabs -->
-    <div class="flex gap-0 border-b border-[var(--border-color)]">
+    <!-- Metric Tabs -->
+    <div class="flex bg-white/5 p-1 rounded-lg border border-white/5">
       <button
         v-for="tab in tabs"
         :key="tab.id"
         :disabled="isRefreshing"
-        :class="[
-          'px-3 py-2 text-xs font-semibold uppercase tracking-wider font-mono border-b-2 -mb-px transition-all',
-          activeTab === tab.id
-            ? 'border-[var(--neon-cyan)] text-[var(--neon-cyan)] shadow-[0_0_10px_rgba(0,255,242,0.3)]'
-            : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-        ]"
+        class="flex-1 py-2 text-[9px] font-mono font-black uppercase tracking-widest transition-all rounded"
+        :class="activeTab === tab.id
+          ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.2)]'
+          : 'text-slate-500 hover:text-slate-300'"
         @click="selectTab(tab.id)"
       >
         {{ tab.label }}
       </button>
     </div>
 
-    <!-- Loading -->
-    <div v-if="isLoading && rankings.length === 0" class="flex flex-col items-center justify-center py-12 gap-3">
-      <div class="w-6 h-6 border-2 border-[var(--border-color)] border-t-[var(--neon-cyan)] rounded-full animate-spin" />
-      <span class="text-xs text-[var(--text-secondary)] font-mono uppercase tracking-wider">Loading rankings...</span>
-    </div>
-
-    <!-- Error -->
-    <div v-else-if="error && rankings.length === 0" class="text-center py-8 bg-[var(--bg-card)] rounded border border-[var(--neon-red)] shadow-[0_0_20px_rgba(255,49,49,0.2)]">
-      <div class="text-sm text-[var(--neon-red)] mb-2 font-mono">{{ error }}</div>
-      <button class="text-xs text-[var(--neon-cyan)] hover:text-[var(--neon-cyan)]/80 font-mono uppercase tracking-wider font-semibold" @click="loadRankings">Try again</button>
-    </div>
-
-    <!-- Rankings Table -->
-    <div v-else-if="rankings.length > 0" :class="{ 'opacity-50 pointer-events-none': isRefreshing }">
-      <div class="overflow-x-auto bg-[var(--bg-card)] rounded border border-[var(--border-color)]">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-left border-b border-[var(--border-color)]">
-              <th class="p-2 sm:p-3 text-xs w-10">#</th>
-              <th class="p-2 sm:p-3 text-xs">Player</th>
-              <th class="p-2 sm:p-3 text-xs text-right">{{ primaryColumnHeader }}</th>
-              <th class="p-2 sm:p-3 text-xs text-right hidden sm:table-cell">K/D</th>
-              <th class="p-2 sm:p-3 text-xs text-right hidden sm:table-cell">Rounds</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="entry in rankings"
-              :key="entry.playerName"
-              :class="[
-                'border-b border-[var(--border-color)] transition-colors cursor-pointer',
-                isHighlighted(entry.playerName)
-                  ? 'bg-[var(--neon-cyan)]/10 border-l-2 border-l-[var(--neon-cyan)]'
-                  : ''
-              ]"
-            >
-              <td class="p-2 sm:p-3">
-                <span :class="getRankClass(entry.rank)">{{ entry.rank }}</span>
-              </td>
-              <td class="p-2 sm:p-3 max-w-[140px] truncate">
-                <button
-                  class="text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors font-medium text-left"
-                  @click="navigateToPlayer(entry.playerName)"
-                >
-                  {{ entry.playerName }}
-                </button>
-              </td>
-              <td class="p-2 sm:p-3 text-right font-mono text-[var(--neon-cyan)] font-bold">
-                {{ formatPrimaryValue(entry) }}
-              </td>
-              <td class="p-2 sm:p-3 text-right font-mono text-[var(--neon-green)] hidden sm:table-cell">
-                {{ entry.kdRatio.toFixed(2) }}
-              </td>
-              <td class="p-2 sm:p-3 text-right font-mono text-[var(--text-secondary)] hidden sm:table-cell">
-                {{ entry.totalRounds }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- Data State Rendering -->
+    <div class="flex-1 relative min-h-[400px]">
+      <!-- Loading Overlay -->
+      <div v-if="isLoading || isRefreshing" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#05050a]/60 backdrop-blur-sm transition-opacity">
+        <div class="w-8 h-8 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-3" />
+        <span class="text-[9px] font-mono text-cyan-400 uppercase tracking-[0.3em] animate-pulse">Syncing_Telemetry...</span>
       </div>
 
-      <!-- Pagination -->
-      <div v-if="totalPages > 1" class="flex items-center justify-center gap-1 pt-3 mt-3 border-t border-[var(--border-color)]">
-        <button
-          class="px-2.5 py-1 text-xs font-semibold font-mono uppercase bg-[var(--bg-panel)] border border-[var(--border-color)] rounded disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:bg-white/5 hover:border-[var(--neon-cyan)] hover:text-[var(--neon-cyan)]"
-          :class="currentPage === 1 || isRefreshing ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'"
-          :disabled="currentPage === 1 || isRefreshing"
-          @click="goToPage(currentPage - 1)"
-        >
-          &larr;
-        </button>
+      <!-- Error State -->
+      <div v-if="error" class="flex flex-col items-center justify-center py-20 text-center">
+        <div class="text-4xl mb-4">⚠️</div>
+        <p class="text-sm font-mono text-red-400 uppercase tracking-widest mb-6">{{ error }}</p>
+        <button class="px-6 py-2 bg-red-500/10 border border-red-500/50 text-red-400 text-[10px] font-mono font-black uppercase tracking-widest hover:bg-red-500/20 transition-all" @click="loadRankings">Retransmit_Query</button>
+      </div>
+
+      <!-- Table View -->
+      <div v-else-if="rankings.length > 0" class="overflow-hidden border border-white/5 rounded-xl bg-black/20">
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-white/5 border-b border-white/10 font-mono text-[9px] text-slate-500 uppercase tracking-[0.2em]">
+                <th class="p-3 w-12 text-center">#</th>
+                <th class="p-3">Operative</th>
+                <th class="p-3 text-right">{{ primaryColumnHeader }}</th>
+                <th class="p-3 text-right">Efficiency</th>
+                <th class="p-3 text-right">Engagements</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 font-mono">
+              <tr
+                v-for="entry in rankings"
+                :key="entry.playerName"
+                class="group transition-all cursor-pointer"
+                :class="isHighlighted(entry.playerName) ? 'bg-cyan-500/10' : 'hover:bg-white/[0.03]'"
+                @click="navigateToPlayer(entry.playerName)"
+              >
+                <td class="p-3">
+                  <div class="w-7 h-7 flex items-center justify-center rounded border text-[10px] font-black" :class="[getRankClass(entry.rank), 'border-current/20 shadow-[inset_0_0_8px_rgba(0,0,0,0.5)]']">
+                    {{ entry.rank }}
+                  </div>
+                </td>
+                <td class="p-3">
+                  <div class="flex items-center gap-2">
+                    <div v-if="isHighlighted(entry.playerName)" class="w-1 h-3 bg-cyan-400 animate-pulse" />
+                    <span class="text-xs font-bold text-white uppercase group-hover:text-cyan-400 transition-colors" :class="{ 'text-cyan-400': isHighlighted(entry.playerName) }">{{ entry.playerName }}</span>
+                  </div>
+                </td>
+                <td class="p-3 text-right">
+                  <span class="text-xs font-black text-cyan-400">{{ formatPrimaryValue(entry) }}</span>
+                </td>
+                <td class="p-3 text-right">
+                  <span class="text-xs font-bold text-emerald-500">{{ entry.kdRatio.toFixed(2) }}</span>
+                </td>
+                <td class="p-3 text-right text-slate-500 text-xs">
+                  {{ entry.totalRounds }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else class="flex flex-col items-center justify-center py-20 text-center opacity-30">
+        <div class="text-5xl mb-6">∅</div>
+        <p class="text-xs font-mono text-slate-400 uppercase tracking-[0.4em]">Zero_Data_Points_Detected</p>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="totalPages > 1" class="flex items-center justify-center gap-2 pt-6 mt-auto border-t border-white/5">
+      <button
+        class="w-8 h-8 flex items-center justify-center rounded border border-white/5 text-slate-500 hover:border-cyan-500/50 hover:text-cyan-400 transition-all disabled:opacity-20"
+        :disabled="currentPage === 1 || isRefreshing"
+        @click="goToPage(currentPage - 1)"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+      </button>
+      
+      <div class="flex items-center gap-1">
         <button
           v-for="pageNum in paginationRange"
           :key="pageNum"
-          :class="[
-            'px-2.5 py-1 text-xs font-semibold font-mono rounded border transition-all min-w-[1.75rem]',
-            pageNum === currentPage
-              ? 'bg-[var(--neon-cyan)] text-[var(--bg-dark)] border-[var(--neon-cyan)] shadow-[0_0_10px_rgba(0,255,242,0.4)]'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] bg-[var(--bg-panel)] border-[var(--border-color)] hover:border-[var(--neon-cyan)]'
-          ]"
-          :disabled="isRefreshing"
+          class="w-8 h-8 text-[10px] font-mono font-black transition-all rounded border"
+          :class="pageNum === currentPage
+            ? 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.3)]'
+            : 'border-white/5 text-slate-500 hover:border-white/20 hover:text-white'"
           @click="goToPage(pageNum)"
         >
           {{ pageNum }}
         </button>
-        <button
-          class="px-2.5 py-1 text-xs font-semibold font-mono uppercase bg-[var(--bg-panel)] border border-[var(--border-color)] rounded disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:bg-white/5 hover:border-[var(--neon-cyan)] hover:text-[var(--neon-cyan)]"
-          :class="currentPage === totalPages || isRefreshing ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'"
-          :disabled="currentPage === totalPages || isRefreshing"
-          @click="goToPage(currentPage + 1)"
-        >
-          &rarr;
-        </button>
       </div>
-    </div>
 
-    <!-- Empty -->
-    <div v-else class="text-center py-8 bg-[var(--bg-card)] rounded border border-[var(--border-color)]">
-      <div class="text-2xl text-[var(--neon-cyan)] opacity-50 mb-2 font-mono">{ }</div>
-      <div class="text-sm text-[var(--text-secondary)] font-mono">No rankings data available</div>
+      <button
+        class="w-8 h-8 flex items-center justify-center rounded border border-white/5 text-slate-500 hover:border-cyan-500/50 hover:text-cyan-400 transition-all disabled:opacity-20"
+        :disabled="currentPage === totalPages || isRefreshing"
+        @click="goToPage(currentPage + 1)"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+      </button>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Match DataExplorer.vue.css theme */
-.map-rankings-panel {
-  --neon-cyan: #F59E0B;
-  --neon-green: #34D399;
-  --neon-pink: #FB7185;
-  --neon-gold: #FBBF24;
-  --neon-red: #F87171;
-  --bg-dark: #0a0a0f;
-  --bg-panel: #0d1117;
-  --bg-card: #161b22;
-  --border-color: #30363d;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  
-  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
-}
-
-.map-rankings-panel input {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-}
-
-.map-rankings-panel input::placeholder {
-  color: var(--text-secondary);
-  opacity: 0.5;
-}
-
-.map-rankings-panel input:focus {
-  outline: none;
-  border-color: var(--neon-cyan);
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
-}
-
-.map-rankings-panel table {
+.font-mono {
   font-family: 'JetBrains Mono', monospace;
 }
-
-.map-rankings-panel th {
-  background: var(--bg-card);
-  color: var(--neon-cyan);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 700;
-  font-size: 0.7rem;
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
 }
-
-.map-rankings-panel tbody tr {
-  border-color: var(--border-color);
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
 }
-
-.map-rankings-panel tbody tr:hover {
-  background: rgba(245, 158, 11, 0.08);
-}
-
-/* Rank badge styling */
-.map-rankings-panel tbody tr td:first-child span {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 700;
-  font-size: 0.8rem;
-}
-
-/* Add glow effect to active tab */
-.map-rankings-panel button:not(:disabled):hover {
-  cursor: pointer;
-}
-
-.map-rankings-panel button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
 }
 </style>

@@ -620,6 +620,89 @@ const toggleForecastOverlay = () => {
 const closeForecastOverlay = () => {
   showForecastOverlay.value = false;
 };
+
+// ===== Server Beacon =====
+
+// Normalize gameId to an accent color key used by CSS
+const beaconGameAccent = computed<'bf1942' | 'fh2' | 'bfvietnam' | 'unknown'>(() => {
+  const id = (serverDetails.value?.gameId || '').toLowerCase();
+  if (id === 'fh2') return 'fh2';
+  if (id === 'bfv' || id === 'bfvietnam') return 'bfvietnam';
+  if (id === 'bf1942' || id === '42') return 'bf1942';
+  // Fallback: guess from the server name
+  const name = (serverName.value || '').toLowerCase();
+  if (name.includes('fh2')) return 'fh2';
+  if (name.includes('vietnam')) return 'bfvietnam';
+  if (!serverDetails.value) return 'unknown';
+  return 'bf1942';
+});
+
+// Current server capacity percentage (0-100)
+const capacityPercent = computed(() => {
+  const n = liveServerInfo.value?.numPlayers ?? 0;
+  const m = liveServerInfo.value?.maxPlayers ?? 0;
+  return m > 0 ? Math.min(100, Math.round((n / m) * 100)) : 0;
+});
+
+// Pulse level for the beacon — prefer server's busy indicator when present,
+// otherwise fall back to capacity thresholds, and 'offline' when we have
+// live data but zero players.
+const beaconPulseLevel = computed<'very_busy' | 'busy' | 'moderate' | 'quiet' | 'very_quiet' | 'offline'>(() => {
+  const level = serverBusyIndicator.value?.busyLevel;
+  if (level === 'very_busy' || level === 'busy' || level === 'moderate' || level === 'quiet' || level === 'very_quiet') {
+    return level;
+  }
+  if (liveServerInfo.value) {
+    const n = liveServerInfo.value.numPlayers ?? 0;
+    if (n === 0) return 'offline';
+    const pct = capacityPercent.value;
+    if (pct >= 80) return 'very_busy';
+    if (pct >= 50) return 'busy';
+    if (pct >= 20) return 'moderate';
+    return 'quiet';
+  }
+  return 'quiet';
+});
+
+// Human-readable status label shown inside the beacon badge
+const beaconStatusLabel = computed(() => {
+  switch (beaconPulseLevel.value) {
+    case 'very_busy': return 'PEAK COMBAT';
+    case 'busy': return 'ACTIVE FRONT';
+    case 'moderate': return 'OPERATIONAL';
+    case 'quiet': return 'LOW ACTIVITY';
+    case 'very_quiet': return 'STANDING BY';
+    case 'offline': return 'DORMANT';
+    default: return 'STANDING BY';
+  }
+});
+
+// Typical playerbase from busy indicator (for forecast status line)
+const beaconTypicalPlayers = computed(() => {
+  const t = serverBusyIndicator.value?.typicalPlayers;
+  return typeof t === 'number' ? Math.round(t) : null;
+});
+
+// Forecast bar height (0-28px) for the beacon bars
+const getForecastBarHeight = (entry: ServerHourlyTimelineEntry): number => {
+  const timeline = serverHourlyTimeline.value || [];
+  const maxTypical = Math.max(1, ...timeline.map(e => Math.max(0, e.typicalPlayers || 0)));
+  const pct = Math.max(0, Math.min(1, (entry.typicalPlayers || 0) / maxTypical));
+  const maxHeight = 28;
+  const minHeight = 3;
+  return Math.max(minHeight, Math.round(pct * maxHeight));
+};
+
+// Peak hour in the shown timeline
+const forecastPeakHour = computed(() => {
+  const timeline = serverHourlyTimeline.value || [];
+  if (timeline.length === 0) return null;
+  let peak = timeline[0];
+  for (const e of timeline) {
+    if ((e.typicalPlayers || 0) > (peak.typicalPlayers || 0)) peak = e;
+  }
+  return peak;
+});
 </script>
 
 <template>
@@ -630,108 +713,232 @@ const closeForecastOverlay = () => {
         <div class="explorer-inner">
           
           <!-- Loading State -->
-          <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 text-neutral-400" role="status" aria-label="Loading server profile">
-            <div class="explorer-spinner mb-4" />
-            <p class="text-lg text-neutral-300">Loading server profile...</p>
+          <div v-if="isLoading" class="beacon-loading" role="status" aria-label="Loading server profile">
+            <div class="beacon-loading__card">
+              <div class="beacon-loading__header">
+                <span class="beacon-loading__dot" />
+                <span class="beacon-loading__dot" />
+                <span class="beacon-loading__dot" />
+                <span class="beacon-loading__title">gamefront://server/{{ serverName }}</span>
+              </div>
+              <div class="beacon-loading__body">
+                <div class="beacon-loading__line"><span class="beacon-loading__prompt">$</span> locate_server --name="{{ serverName }}"</div>
+                <div class="beacon-loading__line beacon-loading__line--muted">Opening encrypted channel...</div>
+                <div class="beacon-loading__line beacon-loading__line--muted">Fetching telemetry, leaderboards, rotation...</div>
+                <div class="beacon-loading__line beacon-loading__line--cursor">Streaming live roster<span class="beacon-loading__caret">▊</span></div>
+              </div>
+              <div class="beacon-loading__progress">
+                <div class="beacon-loading__progress-fill" />
+              </div>
+            </div>
           </div>
 
           <!-- Error State -->
-          <div v-else-if="error" class="explorer-card p-8 text-center" role="alert">
-            <div class="flex items-center justify-center mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-400"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          <div v-else-if="error" class="beacon-error" role="alert">
+            <div class="beacon-error__card">
+              <div class="beacon-error__glitch" aria-hidden="true">
+                <span>SIGNAL LOST</span>
+                <span>SIGNAL LOST</span>
+                <span>SIGNAL LOST</span>
+              </div>
+              <div class="beacon-error__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              </div>
+              <div class="beacon-error__title">SERVER UNREACHABLE</div>
+              <div class="beacon-error__msg">{{ error }}</div>
+              <router-link to="/servers" class="beacon-error__retry">
+                <span>←</span> BACK TO SERVERS
+              </router-link>
             </div>
-            <p class="text-neon-red text-lg font-medium">{{ error }}</p>
           </div>
 
           <!-- Content -->
-          <div v-else-if="serverDetails" class="space-y-6">
-            
-            <!-- Server Header Card (V2) -->
-            <div class="explorer-card">
-              <div class="explorer-card-body">
-                <div class="flex flex-wrap items-center gap-4">
-                  <div class="flex-1 min-w-0">
-                    <h1 class="text-xl md:text-2xl font-bold text-neon-cyan truncate max-w-full font-mono uppercase">
-                      {{ serverName }}
-                    </h1>
-                    <div class="flex items-center gap-3 mt-1">
-                      <div v-if="serverDetails?.region" class="text-[10px] text-neutral-500 font-mono uppercase tracking-wider">{{ serverDetails.region }}</div>
-                      <div v-if="serverDetails?.country || serverDetails?.countryCode" class="text-[10px] text-neutral-500 font-mono uppercase tracking-wider">
-                        {{ getCountryName(serverDetails?.countryCode, serverDetails?.country) }}
+          <div v-else-if="serverDetails" class="server-details-v2 space-y-6">
+
+            <!-- Server Beacon Hero -->
+            <section
+              class="server-beacon"
+              :class="[`server-beacon--${beaconGameAccent}`, `server-beacon--${beaconPulseLevel}`]"
+              aria-label="Server status beacon"
+            >
+              <div class="server-beacon__bg" aria-hidden="true" />
+              <div class="server-beacon__scan" aria-hidden="true" />
+              <div class="server-beacon__inner">
+
+                <!-- Status row: badge + location meta -->
+                <div class="server-beacon__status-row">
+                  <div class="server-beacon__badge">
+                    <span class="server-beacon__dot" aria-hidden="true" />
+                    <span>{{ beaconStatusLabel }}</span>
+                  </div>
+                  <div class="server-beacon__meta">
+                    <span v-if="serverDetails?.region" class="server-beacon__meta-item--accent">{{ serverDetails.region }}</span>
+                    <span v-if="serverDetails?.region && (serverDetails?.country || serverDetails?.countryCode)" class="server-beacon__meta-divider">·</span>
+                    <span v-if="serverDetails?.country || serverDetails?.countryCode">{{ getCountryName(serverDetails?.countryCode, serverDetails?.country) }}</span>
+                    <template v-if="getTimezoneDisplay(serverDetails?.timezone)">
+                      <span class="server-beacon__meta-divider">·</span>
+                      <span>{{ getTimezoneDisplay(serverDetails?.timezone) }}</span>
+                    </template>
+                    <template v-if="serverDetails?.serverIp && serverDetails?.serverPort">
+                      <span class="server-beacon__meta-divider">·</span>
+                      <span>{{ serverDetails.serverIp }}:{{ serverDetails.serverPort }}</span>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- Server name -->
+                <h1 class="server-beacon__name">{{ serverName }}</h1>
+
+                <!-- Now playing -->
+                <div v-if="liveServerInfo?.mapName" class="server-beacon__current">
+                  <span class="server-beacon__current-chev" aria-hidden="true">▸</span>
+                  <span class="server-beacon__current-label">Now Playing</span>
+                  <span class="server-beacon__map">{{ liveServerInfo.mapName }}</span>
+                </div>
+
+                <!-- Action deck -->
+                <div class="server-beacon__deck">
+                  <!-- Online panel -->
+                  <div v-if="liveServerInfo" class="beacon-online">
+                    <div class="beacon-online__head">
+                      <div>
+                        <span class="beacon-online__num" :class="{ 'beacon-online__num--empty': liveServerInfo.numPlayers === 0 }">{{ liveServerInfo.numPlayers }}</span>
+                        <span class="beacon-online__max">/{{ liveServerInfo.maxPlayers }}</span>
                       </div>
-                      <!-- Discord & Forum Links -->
-                      <div class="flex gap-2 ml-2">
-                        <a v-if="liveServerInfo?.discordUrl" :href="liveServerInfo.discordUrl" target="_blank" rel="noopener noreferrer" class="hover:opacity-80 transition-opacity" title="Join Discord">
-                          <img :src="discordIcon" alt="Discord" class="w-4 h-4">
-                        </a>
-                        <a v-if="liveServerInfo?.forumUrl" :href="liveServerInfo.forumUrl" target="_blank" rel="noopener noreferrer" class="text-[10px] font-mono text-neon-cyan hover:underline" title="Visit Forum">
-                          FORUM
-                        </a>
+                    </div>
+                    <div class="beacon-online__label">Soldiers Engaged</div>
+                    <div class="beacon-online__bar">
+                      <div class="beacon-online__bar-fill" :style="{ width: capacityPercent + '%' }" />
+                    </div>
+                  </div>
+                  <div v-else-if="isLiveServerLoading" class="beacon-online">
+                    <div class="beacon-online__head">
+                      <div>
+                        <span class="beacon-online__num beacon-online__num--empty">—</span>
                       </div>
+                    </div>
+                    <div class="beacon-online__label">Connecting...</div>
+                    <div class="beacon-online__bar">
+                      <div class="beacon-online__bar-fill" style="width: 0%" />
+                    </div>
+                  </div>
+                  <div v-else-if="liveServerError" class="beacon-online">
+                    <div class="beacon-online__head">
+                      <div>
+                        <span class="beacon-online__num beacon-online__num--empty">?</span>
+                      </div>
+                    </div>
+                    <div class="beacon-online__label">Offline / Unreachable</div>
+                  </div>
+
+                  <!-- Forecast panel -->
+                  <button
+                    v-if="serverBusyIndicator && serverHourlyTimeline.length > 0"
+                    type="button"
+                    class="beacon-forecast"
+                    aria-label="Open 24-hour forecast"
+                    @click.stop="toggleForecastOverlay"
+                  >
+                    <div class="beacon-forecast__head">
+                      <span class="beacon-forecast__label">24H Forecast</span>
+                      <span v-if="beaconTypicalPlayers !== null" class="beacon-forecast__status">
+                        Typical {{ beaconTypicalPlayers }}
+                      </span>
+                    </div>
+                    <div class="beacon-forecast__bars">
+                      <span
+                        v-for="(entry, idx) in serverHourlyTimeline"
+                        :key="idx"
+                        class="beacon-forecast__bar"
+                        :class="{
+                          'beacon-forecast__bar--now': entry.isCurrentHour,
+                          'beacon-forecast__bar--peak': forecastPeakHour && !entry.isCurrentHour && entry.hour === forecastPeakHour.hour
+                        }"
+                        :style="{ height: getForecastBarHeight(entry) + 'px' }"
+                        :title="formatTimelineTooltip(entry)"
+                      />
+                    </div>
+                    <div class="beacon-forecast__hint">Tap for details</div>
+                    <ForecastModal
+                      :show-overlay="false"
+                      :show-modal="showForecastOverlay"
+                      :hourly-timeline="serverHourlyTimeline"
+                      :current-status="`${serverBusyIndicator.currentPlayers} players (typical: ${Math.round(serverBusyIndicator.typicalPlayers)})`"
+                      :current-players="serverBusyIndicator.currentPlayers"
+                      @close="closeForecastOverlay"
+                    />
+                  </button>
+                  <div v-else-if="isBusyIndicatorLoading" class="beacon-forecast" aria-hidden="true">
+                    <div class="beacon-forecast__head">
+                      <span class="beacon-forecast__label">24H Forecast</span>
+                      <span class="beacon-forecast__status">Calibrating…</span>
+                    </div>
+                    <div class="beacon-forecast__bars">
+                      <span v-for="n in 24" :key="n" class="beacon-forecast__bar" :style="{ height: ((n % 6) + 3) + 'px' }" />
                     </div>
                   </div>
 
-                  <!-- Live Stats & Join (Right Side) -->
-                  <div class="flex items-center gap-4 ml-auto">
-                    <!-- Online Count + Forecast integrated -->
-                    <button
-                      v-if="liveServerInfo || (serverBusyIndicator && serverHourlyTimeline.length > 0)"
-                      type="button"
-                      class="flex items-center gap-4 px-4 py-2 bg-neutral-900/50 border border-[var(--border-color)] rounded-lg group/forecast transition-colors hover:border-neon-cyan/50"
-                      @click.stop="toggleForecastOverlay"
-                    >
-                      <div v-if="liveServerInfo" class="text-right">
-                        <div class="text-[10px] text-neutral-500 font-mono uppercase leading-none mb-1">Online</div>
-                        <div class="text-xl font-bold font-mono" :class="liveServerInfo.numPlayers > 0 ? 'text-neon-green' : 'text-neutral-400'">
-                          {{ liveServerInfo.numPlayers }}
-                        </div>
-                      </div>
-
-                      <div v-if="serverBusyIndicator && serverHourlyTimeline.length > 0" class="flex items-end gap-0.5 h-8">
-                        <span
-                          v-for="(entry, index) in serverHourlyTimeline"
-                          :key="index"
-                          class="w-1 rounded-t transition-all"
-                          :class="entry.isCurrentHour ? 'bg-neon-cyan' : 'bg-neutral-700'"
-                          :style="{ height: getMiniTimelineBarHeight(entry) + 'px' }"
-                        />
-                        <ForecastModal
-                          :show-overlay="true"
-                          :show-modal="showForecastOverlay"
-                          :hourly-timeline="serverHourlyTimeline"
-                          :current-status="`${serverBusyIndicator.currentPlayers} players (typical: ${Math.round(serverBusyIndicator.typicalPlayers)})`"
-                          :current-players="serverBusyIndicator.currentPlayers"
-                          overlay-class="opacity-0 group-hover/forecast:opacity-100"
-                          @close="closeForecastOverlay"
-                        />
-                      </div>
-                    </button>
-
-                    <!-- Join Button -->
+                  <!-- Deploy actions -->
+                  <div class="beacon-actions">
                     <button
                       v-if="liveServerInfo?.joinLink"
-                      class="explorer-btn explorer-btn--primary px-8 py-3 h-auto"
+                      type="button"
+                      class="beacon-deploy"
+                      :class="{ 'beacon-deploy--disabled': liveServerInfo.numPlayers >= liveServerInfo.maxPlayers }"
+                      :disabled="liveServerInfo.numPlayers >= liveServerInfo.maxPlayers"
+                      :aria-label="liveServerInfo.numPlayers >= liveServerInfo.maxPlayers ? 'Server full' : 'Join server'"
                       @click="joinServer"
                     >
-                      <span class="text-lg font-bold">JOIN SERVER</span>
+                      <span class="beacon-deploy__text">{{ liveServerInfo.numPlayers >= liveServerInfo.maxPlayers ? 'SERVER FULL' : 'DEPLOY →' }}</span>
+                      <span class="beacon-deploy__sub">{{ liveServerInfo.numPlayers >= liveServerInfo.maxPlayers ? 'No open slots' : 'Join Game' }}</span>
                     </button>
+
+                    <a
+                      v-if="liveServerInfo?.discordUrl"
+                      :href="liveServerInfo.discordUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="beacon-link"
+                      title="Join Discord"
+                      aria-label="Join Discord"
+                    >
+                      <img :src="discordIcon" alt="Discord">
+                    </a>
+
+                    <a
+                      v-if="liveServerInfo?.forumUrl"
+                      :href="liveServerInfo.forumUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="beacon-link beacon-link__label"
+                      title="Visit Forum"
+                      aria-label="Visit Forum"
+                    >
+                      FORUM
+                    </a>
                   </div>
                 </div>
               </div>
-            </div>
+            </section>
 
-            <!-- Tab Navigation (V2) -->
-            <div class="explorer-tabs mb-6 overflow-x-auto no-scrollbar flex flex-nowrap border-b border-[var(--border-color)]">
+            <!-- Tab Navigation (Terminal style) -->
+            <nav class="terminal-tabs" role="tablist" aria-label="Server detail sections">
               <button
                 v-for="tab in tabs"
                 :key="tab.id"
-                class="explorer-tab whitespace-nowrap px-6 py-3 text-sm font-mono transition-all border-b-2"
-                :class="activeTab === tab.id ? 'text-neon-cyan border-neon-cyan bg-neon-cyan/5' : 'text-neutral-500 border-transparent hover:text-neutral-300'"
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === tab.id"
+                class="terminal-tab"
+                :class="{ 'terminal-tab--active': activeTab === tab.id }"
                 @click="activeTab = tab.id"
               >
-                {{ tab.label }}
+                <span class="terminal-tab__bracket" aria-hidden="true">[</span>
+                <span>{{ tab.label }}</span>
+                <span class="terminal-tab__bracket" aria-hidden="true">]</span>
+                <span class="terminal-tab__underline" aria-hidden="true" />
               </button>
-            </div>
+            </nav>
 
             <!-- Tab Content -->
             <div class="space-y-6">
@@ -960,3 +1167,4 @@ const closeForecastOverlay = () => {
 
 <style src="./portal-layout.css"></style>
 <style scoped src="./DataExplorer.vue.css"></style>
+<style scoped src="./ServerDetails.vue.css"></style>
