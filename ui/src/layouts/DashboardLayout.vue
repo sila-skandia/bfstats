@@ -45,7 +45,7 @@ import Footer from '../components/Footer.vue';
 .layout-wrapper {
   display: flex;
   flex-direction: column;
-  margin-right: 60px; /* Same as sidebar width */
+  margin-right: 80px; /* Match Sidebar w-20 (80px) */
   flex-grow: 1;
   min-width: 0;
   min-height: 100vh;

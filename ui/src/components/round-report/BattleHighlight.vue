@@ -13,51 +13,32 @@ const highlightStyle = computed(() => {
   switch (props.highlight.type) {
     case 'first_blood':
       return {
-        bg: 'from-red-500/20 to-red-600/10',
-        border: 'border-red-500/40',
-        glow: 'shadow-red-500/20',
+        bg: 'from-red-500/10 to-transparent',
+        border: 'border-red-500/30',
         text: 'text-red-400',
       };
     case 'killing_spree':
       return {
-        bg: 'from-orange-500/20 to-yellow-600/10',
-        border: 'border-orange-500/40',
-        glow: 'shadow-orange-500/20',
+        bg: 'from-orange-500/10 to-transparent',
+        border: 'border-orange-500/30',
         text: 'text-orange-400',
       };
     case 'lead_change':
       return {
-        bg: 'from-purple-500/20 to-blue-600/10',
-        border: 'border-purple-500/40',
-        glow: 'shadow-purple-500/20',
+        bg: 'from-purple-500/10 to-transparent',
+        border: 'border-purple-500/30',
         text: 'text-purple-400',
-      };
-    case 'comeback':
-      return {
-        bg: 'from-green-500/20 to-emerald-600/10',
-        border: 'border-green-500/40',
-        glow: 'shadow-green-500/20',
-        text: 'text-green-400',
-      };
-    case 'domination':
-      return {
-        bg: 'from-amber-500/20 to-orange-600/10',
-        border: 'border-amber-500/40',
-        glow: 'shadow-amber-500/20',
-        text: 'text-amber-400',
       };
     case 'mvp':
       return {
-        bg: 'from-yellow-500/20 to-amber-600/10',
-        border: 'border-yellow-500/40',
-        glow: 'shadow-yellow-500/20',
+        bg: 'from-yellow-500/10 to-transparent',
+        border: 'border-yellow-500/30',
         text: 'text-yellow-400',
       };
     default:
       return {
-        bg: 'from-slate-500/20 to-slate-600/10',
-        border: 'border-slate-500/40',
-        glow: 'shadow-slate-500/20',
+        bg: 'from-slate-500/10 to-transparent',
+        border: 'border-slate-500/30',
         text: 'text-slate-400',
       };
   }
@@ -65,44 +46,42 @@ const highlightStyle = computed(() => {
 
 const typeLabel = computed(() => {
   switch (props.highlight.type) {
-    case 'first_blood': return 'First Blood';
-    case 'killing_spree': return 'Kill Streak';
-    case 'lead_change': return 'Lead Change';
-    case 'comeback': return 'Comeback';
-    case 'domination': return 'Domination';
+    case 'first_blood': return 'FIRST BLOOD';
+    case 'killing_spree': return 'STREAK';
+    case 'lead_change': return 'LEAD CHANGE';
     case 'mvp': return 'MVP';
-    default: return 'Highlight';
+    default: return 'LOG';
   }
 });
 </script>
 
 <template>
   <div
-    class="group relative flex items-center gap-3 p-3 rounded-lg border transition-all duration-300 hover:scale-[1.02] cursor-default bg-gradient-to-r shadow-lg"
-    :class="[highlightStyle.bg, highlightStyle.border, highlightStyle.glow]"
+    class="group relative flex items-center gap-4 p-3 rounded border transition-all duration-300 hover:bg-white/5 cursor-default bg-gradient-to-r"
+    :class="[highlightStyle.bg, highlightStyle.border]"
   >
     <!-- Icon -->
-    <div class="flex-shrink-0 text-2xl transform group-hover:scale-110 transition-transform duration-300">
+    <div class="flex-shrink-0 text-2xl filter drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">
       {{ highlight.icon }}
     </div>
 
     <!-- Content -->
     <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2 mb-0.5">
+      <div class="flex items-center gap-2 mb-1">
         <span
-          class="text-xs font-bold uppercase tracking-wider"
+          class="text-[9px] font-mono font-black uppercase tracking-[0.2em]"
           :class="highlightStyle.text"
         >
           {{ typeLabel }}
         </span>
-        <span class="text-xs text-slate-500 font-mono">
-          {{ formatTimeOffset(highlight.timestamp) }}
+        <span class="text-[9px] text-slate-500 font-mono">
+          T+{{ formatTimeOffset(highlight.timestamp) }}
         </span>
       </div>
-      <div class="text-sm text-slate-200 font-medium truncate">
+      <div class="text-xs font-bold text-white uppercase truncate tracking-tight mb-0.5">
         {{ highlight.playerName }}
       </div>
-      <div class="text-xs text-slate-400 truncate">
+      <div class="text-[10px] text-slate-400 font-mono truncate leading-none">
         {{ highlight.description }}
       </div>
     </div>
@@ -110,16 +89,16 @@ const typeLabel = computed(() => {
     <!-- Value Badge -->
     <div
       v-if="highlight.value"
-      class="flex-shrink-0 px-2 py-1 rounded-full text-xs font-bold font-mono bg-slate-900/60"
+      class="flex-shrink-0 px-2 py-1 rounded bg-black/40 border border-white/5 text-[10px] font-mono font-bold"
       :class="highlightStyle.text"
     >
       {{ highlight.value }}
     </div>
-
-    <!-- Decorative glow effect -->
-    <div
-      class="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none bg-gradient-to-r blur-xl -z-10"
-      :class="highlightStyle.bg"
-    />
   </div>
 </template>
+
+<style scoped>
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+</style>
