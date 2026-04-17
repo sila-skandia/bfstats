@@ -26,101 +26,41 @@ const mvpKdColor = computed(() => {
 </script>
 
 <template>
-  <div class="bg-gradient-to-r from-slate-800/60 to-slate-900/60 backdrop-blur-lg rounded-xl border border-slate-700/50 overflow-hidden">
-    <!-- Header -->
-    <div class="px-4 py-3 border-b border-slate-700/50 bg-slate-900/40">
-      <h3 class="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 uppercase tracking-wider flex items-center gap-2">
-        <span class="text-base">📊</span>
-        Battle Statistics
-      </h3>
+  <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+    <!-- Main Stats Row (8 cols) -->
+    <div class="md:col-span-8 grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div v-for="stat in [
+        { label: 'DURATION', value: summary.duration, color: 'text-cyan-400' },
+        { label: 'TOTAL KILLS', value: summary.totalKills, color: 'text-emerald-400' },
+        { label: 'PARTICIPANTS', value: summary.participants, color: 'text-blue-400' },
+        { label: 'AVG K/D', value: summary.avgKD.toFixed(2), color: kdColor }
+      ]" :key="stat.label" class="bg-black/40 backdrop-blur-md border border-white/5 p-4 rounded-lg flex flex-col items-center justify-center group hover:border-cyan-500/30 transition-all">
+        <span class="text-[9px] font-mono text-slate-500 uppercase tracking-widest mb-1">{{ stat.label }}</span>
+        <span class="text-xl font-black font-mono transition-transform group-hover:scale-110" :class="stat.color">{{ stat.value }}</span>
+      </div>
     </div>
 
-    <!-- Stats Grid -->
-    <div class="p-4">
-      <!-- Primary Stats Row -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-        <!-- Duration -->
-        <div class="text-center p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
-          <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Duration</div>
-          <div class="text-lg font-bold text-cyan-400 font-mono">{{ summary.duration }}</div>
-        </div>
-
-        <!-- Total Kills -->
-        <div class="text-center p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
-          <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Total Kills</div>
-          <div class="text-lg font-bold text-emerald-400 font-mono">{{ summary.totalKills }}</div>
-        </div>
-
-        <!-- Participants -->
-        <div class="text-center p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
-          <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Participants</div>
-          <div class="text-lg font-bold text-blue-400 font-mono">{{ summary.participants }}</div>
-        </div>
-
-        <!-- Avg K/D -->
-        <div class="text-center p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
-          <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Avg K/D</div>
-          <div class="text-lg font-bold font-mono" :class="kdColor">{{ summary.avgKD.toFixed(2) }}</div>
-        </div>
+    <!-- MVP Card (4 cols) -->
+    <div v-if="summary.mvp" class="md:col-span-4 bg-gradient-to-br from-yellow-500/10 to-orange-600/10 backdrop-blur-md border border-yellow-500/20 p-4 rounded-lg flex items-center gap-4 relative overflow-hidden group">
+      <div class="absolute top-[-10px] right-[-10px] text-4xl opacity-10 rotate-12 group-hover:rotate-0 transition-transform">🏆</div>
+      <div class="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-yellow-500/20 rounded-full border border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.2)]">
+        <span class="text-xl">🎖️</span>
       </div>
-
-      <!-- Secondary Stats Row -->
-      <div class="grid grid-cols-2 gap-4 mb-4">
-        <!-- Lead Changes -->
-        <div class="text-center p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
-          <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Lead Changes</div>
-          <div class="text-lg font-bold text-purple-400 font-mono">{{ summary.leadChanges }}</div>
-        </div>
-
-        <!-- Closest Gap -->
-        <div class="text-center p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
-          <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Closest Gap</div>
-          <div class="text-lg font-bold text-orange-400 font-mono">{{ summary.closestGap }} pts</div>
-        </div>
-      </div>
-
-      <!-- MVP Section -->
-      <div v-if="summary.mvp" class="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-lg p-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <span class="text-2xl">🏆</span>
-            <div>
-              <div class="text-xs text-yellow-400/80 uppercase tracking-wide font-bold">MVP</div>
-              <div class="text-lg font-bold text-yellow-400">{{ summary.mvp.playerName }}</div>
-            </div>
-          </div>
-          <div class="text-right">
-            <div class="text-sm text-slate-300">
-              <span class="text-yellow-400 font-bold">{{ summary.mvp.score }}</span> pts
-            </div>
-            <div class="text-xs text-slate-400">
-              {{ summary.mvp.kills }}/{{ summary.mvp.deaths }}
-              <span :class="mvpKdColor" class="font-bold">({{ summary.mvp.kd.toFixed(1) }})</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Highlights Row -->
-      <div v-if="summary.longestStreak || summary.firstBlood" class="mt-4 flex flex-wrap gap-3">
-        <!-- First Blood -->
-        <div v-if="summary.firstBlood" class="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
-          <span class="text-sm">🩸</span>
-          <div class="text-xs">
-            <span class="text-red-400 font-bold">First Blood</span>
-            <span class="text-slate-400 ml-1">{{ summary.firstBlood.playerName }}</span>
-          </div>
-        </div>
-
-        <!-- Longest Streak -->
-        <div v-if="summary.longestStreak" class="flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/30 rounded-lg">
-          <span class="text-sm">🔥</span>
-          <div class="text-xs">
-            <span class="text-orange-400 font-bold">Best Streak</span>
-            <span class="text-slate-400 ml-1">{{ summary.longestStreak.playerName }} ({{ summary.longestStreak.streak }})</span>
-          </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-[9px] font-mono text-yellow-500 uppercase tracking-[0.2em] mb-0.5">Tactical MVP</div>
+        <div class="text-lg font-black text-white uppercase truncate tracking-tight">{{ summary.mvp.playerName }}</div>
+        <div class="flex items-center gap-3 text-[10px] font-mono text-slate-400">
+          <span>{{ summary.mvp.score }} PTS</span>
+          <span class="text-slate-600">|</span>
+          <span :class="mvpKdColor">{{ summary.mvp.kills }}/{{ summary.mvp.deaths }}</span>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+</style>

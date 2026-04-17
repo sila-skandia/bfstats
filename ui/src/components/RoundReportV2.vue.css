@@ -1,42 +1,228 @@
-/* Custom scrollbar styling for theme consistency */
+/* ── Variables & Theme ─────────────────────────────────────────────────── */
+:root {
+  --neon-cyan: #00e5ff;
+  --neon-gold: #f59e0b;
+  --neon-red: #f87171;
+  --neon-orange: #fb923c;
+  --neon-purple: #c084fc;
+  --bg-card: rgba(13, 13, 24, 0.8);
+  --bg-console: rgba(5, 5, 10, 0.9);
+  --border-color: rgba(48, 54, 61, 0.5);
+  --border-glow: rgba(0, 229, 255, 0.2);
+}
+
+/* ── Global Utilities ───────────────────────────────────────────────────── */
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.3);
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, rgba(6, 182, 212, 0.6), rgba(59, 130, 246, 0.6));
-  border-radius: 4px;
-  border: 1px solid rgba(100, 116, 139, 0.2);
+  background: rgba(100, 116, 139, 0.3);
+  border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, rgba(6, 182, 212, 0.8), rgba(59, 130, 246, 0.8));
-  border-color: rgba(6, 182, 212, 0.4);
+  background: rgba(0, 229, 255, 0.4);
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:active {
-  background: linear-gradient(to bottom, rgba(6, 182, 212, 1), rgba(59, 130, 246, 1));
+/* ── Layout & Sections ──────────────────────────────────────────────────── */
+.rr-container {
+  max-width: 1600px;
+  margin: 0 auto;
 }
 
-/* Time navigator specific styling */
-.time-navigator .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+.rr-header-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--neon-cyan);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-.time-navigator .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.2);
+.rr-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.time-navigator .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.4);
-  border: none;
+.rr-card:hover {
+  border-color: var(--border-glow);
 }
 
-.time-navigator .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.6);
+/* ── Battle Console ─────────────────────────────────────────────────────── */
+.console-wrapper {
+  background: var(--bg-console);
+  position: relative;
+  overflow: hidden;
+}
+
+.console-wrapper::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.05) 50%
+  ),
+  linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.01),
+    rgba(0, 255, 0, 0.005),
+    rgba(0, 0, 255, 0.01)
+  );
+  background-size: 100% 4px, 3px 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.console-header {
+  background: rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.75rem 1rem;
+}
+
+.console-line {
+  padding: 0.125rem 0.5rem;
+  border-left: 2px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.console-line:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-left-color: var(--neon-cyan);
+}
+
+.console-line.highlight {
+  background: rgba(245, 158, 11, 0.05);
+  border-left-color: var(--neon-gold);
+}
+
+/* ── Time Navigator ─────────────────────────────────────────────────────── */
+.time-navigator {
+  width: 80px;
+  background: rgba(0, 0, 0, 0.4);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.time-checkpoint {
+  padding: 0.5rem 0;
+  text-align: center;
+  font-size: 0.65rem;
+  color: #64748b;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.time-checkpoint:hover {
+  color: var(--neon-cyan);
+  background: rgba(0, 229, 255, 0.05);
+}
+
+.time-checkpoint.active {
+  color: var(--neon-cyan);
+  background: rgba(0, 229, 255, 0.1);
+  border-left-color: var(--neon-cyan);
+  font-weight: bold;
+}
+
+/* ── Leaderboard ────────────────────────────────────────────────────────── */
+.leaderboard-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.leaderboard-table th {
+  padding: 0.75rem 0.5rem;
+  text-align: left;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+  z-index: 20;
+}
+
+.leaderboard-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.3);
+  font-size: 0.75rem;
+}
+
+.leaderboard-row:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.team-header {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem 1rem;
+  font-weight: bold;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--neon-cyan);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes pulse-cyan {
+  0% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(0, 229, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); }
+}
+
+.live-indicator {
+  width: 8px;
+  height: 8px;
+  background: var(--neon-cyan);
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulse-cyan 2s infinite;
+}
+
+@keyframes slide-in {
+  from { transform: translateX(-10px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease forwards;
+}
+
+/* ── Transitions ────────────────────────────────────────────────────────── */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.4s ease, backdrop-filter 0.4s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  backdrop-filter: blur(0);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 1280px) {
+  .rr-layout {
+    grid-template-columns: 1fr;
+  }
 }
