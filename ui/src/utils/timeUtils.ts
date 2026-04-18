@@ -64,6 +64,22 @@ export function formatShortAbsoluteTime(utcTimestamp: string): string {
 }
 
 /**
+ * Format a UTC timestamp as a date only in the user's locale
+ * e.g., "Dec 25, 2023"
+ */
+export function formatDate(dateString: string): string {
+  if (!dateString) return '';
+  const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+  if (isNaN(date.getTime())) return '';
+  
+  return new Intl.DateTimeFormat('default', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  }).format(date);
+}
+
+/**
  * Format time remaining in seconds to MM:SS format
  * e.g., 90 seconds becomes "1:30", 30 seconds becomes "0:30"
  * Returns "-" for invalid or negative values

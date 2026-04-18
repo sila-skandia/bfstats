@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import type { Session } from '@/types/playerStatsTypes';
-import { formatRelativeTime } from '@/utils/timeUtils';
+import { formatDate } from '@/utils/timeUtils';
 import { calculateKDR } from '@/utils/statsUtils';
 
 const props = defineProps<{
@@ -44,15 +44,27 @@ const navigateToRoundReport = (session: Session) => {
 
 <template>
   <div class="overflow-x-auto">
-    <table class="w-full text-left border-collapse">
+    <table class="w-full border-collapse">
       <thead>
-        <tr class="border-b border-neutral-700/30 font-mono text-[9px] text-neutral-500 uppercase tracking-widest">
-          <th class="py-2 px-3 font-medium">RESULT</th>
-          <th class="py-2 px-3 font-medium">MAP / CLUSTER</th>
-          <th class="py-2 px-3 font-medium text-right">SCORE</th>
-          <th class="py-2 px-3 font-medium text-center">RANK</th>
-          <th class="py-2 px-3 font-medium text-right">K/D</th>
-          <th class="py-2 px-3 font-medium text-right">SEEN</th>
+        <tr class="border-b border-neutral-700/30 font-mono text-[9px] text-neutral-500 uppercase">
+          <th class="py-2 px-3 font-medium" style="text-align: left">
+            RESULT
+          </th>
+          <th class="py-2 px-3 font-medium" style="text-align: left">
+            MAP / CLUSTER
+          </th>
+          <th class="py-2 px-3 font-medium" style="text-align: right">
+            SCORE
+          </th>
+          <th class="py-2 px-3 font-medium" style="text-align: center">
+            RANK
+          </th>
+          <th class="py-2 px-3 font-medium" style="text-align: right">
+            K/D
+          </th>
+          <th class="py-2 px-3 font-medium" style="text-align: right">
+            DATE
+          </th>
         </tr>
       </thead>
       <tbody class="divide-y divide-neutral-700/20">
@@ -63,20 +75,23 @@ const navigateToRoundReport = (session: Session) => {
           @click="navigateToRoundReport(session)"
         >
           <!-- Result -->
-          <td class="py-2.5 px-3">
+          <td class="py-2.5 px-3" style="text-align: left">
             <div class="flex items-center gap-1.5">
               <div 
                 class="w-1.5 h-1.5 rounded-full shadow-[0_0_8px_currentColor]" 
                 :class="getResultClass(session.teamResult)" 
               />
-              <span class="text-[10px] font-black tracking-tight font-mono" :class="getResultClass(session.teamResult)">
+              <span
+                class="text-[10px] font-black tracking-tight font-mono"
+                :class="getResultClass(session.teamResult)"
+              >
                 {{ getResultLabel(session.teamResult) }}
               </span>
             </div>
           </td>
 
           <!-- Map / Server -->
-          <td class="py-2.5 px-3 min-w-0">
+          <td class="py-2.5 px-3 min-w-0" style="text-align: left">
             <div class="flex flex-col">
               <span class="text-xs font-bold text-neutral-200 truncate uppercase tracking-tight">{{ session.mapName }}</span>
               <span class="text-[9px] text-neutral-500 truncate font-mono uppercase tracking-tighter">{{ session.serverName }}</span>
@@ -84,12 +99,12 @@ const navigateToRoundReport = (session: Session) => {
           </td>
 
           <!-- Score -->
-          <td class="py-2.5 px-3 text-right">
+          <td class="py-2.5 px-3" style="text-align: right">
             <span class="text-xs font-black text-neon-gold font-mono">{{ session.totalScore.toLocaleString() }}</span>
           </td>
 
           <!-- Rank -->
-          <td class="py-2.5 px-3 text-center">
+          <td class="py-2.5 px-3" style="text-align: center">
             <span 
               class="text-[10px] font-bold font-mono"
               :class="session.placement && session.placement <= 3 ? 'text-cyan-400' : 'text-neutral-400'"
@@ -99,16 +114,16 @@ const navigateToRoundReport = (session: Session) => {
           </td>
 
           <!-- K/D -->
-          <td class="py-2.5 px-3 text-right">
+          <td class="py-2.5 px-3" style="text-align: right">
             <span class="text-[10px] font-bold text-neutral-300 font-mono">
-              {{ calculateKDR(session.kills, session.deaths) }}
+              {{ calculateKDR(session.totalKills, session.totalDeaths) }}
             </span>
           </td>
 
           <!-- Time -->
-          <td class="py-2.5 px-3 text-right">
+          <td class="py-2.5 px-3" style="text-align: right">
             <span class="text-[10px] text-neutral-500 font-mono uppercase">
-              {{ formatRelativeTime(session.timestamp) }}
+              {{ formatDate(session.startTime) }}
             </span>
           </td>
         </tr>
