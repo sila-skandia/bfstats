@@ -146,6 +146,18 @@ watch(() => [props.serverGuid, filtersKey.value], load);
       v-else
       class="rsf-feed"
     >
+      <div
+        class="rsf-hint"
+        aria-hidden="true"
+      >
+        <span class="rsf-hint__pulse" />
+        <span class="rsf-hint__text">
+          <span class="text-neon-cyan">TAP</span> ANY ROUND FOR FULL
+          <span class="text-neon-cyan">DEBRIEFING</span> —
+          TIMELINE · PHASE CHARTS · PLAYER BREAKDOWN
+        </span>
+      </div>
+
       <article
         v-for="(s, idx) in visibleSessions"
         :key="s.roundId"
@@ -277,8 +289,16 @@ watch(() => [props.serverGuid, filtersKey.value], load);
             >◉</span>
             {{ s.participantCount }} operatives
           </span>
-          <span class="rsf-card__cta">
-            VIEW REPORT <span aria-hidden="true">→</span>
+          <span
+            class="rsf-briefing"
+            :class="{ 'rsf-briefing--new': idx === 0 }"
+            aria-hidden="true"
+          >
+            <span class="briefing-chart">
+              <span /><span /><span />
+            </span>
+            <span class="rsf-briefing__label">Open Briefing</span>
+            <span class="rsf-briefing__arrow">▸</span>
           </span>
         </footer>
       </article>
@@ -640,6 +660,138 @@ watch(() => [props.serverGuid, filtersKey.value], load);
 .rsf-card:focus-visible .rsf-card__cta {
   opacity: 1;
   transform: translateX(0);
+}
+
+/* ——— OPEN BRIEFING chip (always-visible click affordance) ——— */
+.rsf-briefing {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.6rem 0.28rem 0.5rem;
+  border: 1px dashed rgba(0, 229, 255, 0.5);
+  border-radius: 3px;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 229, 255, 0.05) 0%,
+    rgba(0, 229, 255, 0.12) 100%
+  );
+  color: #00e5ff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  text-transform: uppercase;
+  transition:
+    background 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    transform 200ms ease,
+    color 200ms ease;
+}
+.rsf-briefing__label { line-height: 1; }
+.rsf-briefing__arrow {
+  font-size: 0.85rem;
+  line-height: 1;
+  transition: transform 200ms ease;
+}
+
+/* mini bar-chart icon carved from CSS — evokes "report with charts" */
+.briefing-chart {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  width: 15px;
+  height: 13px;
+  padding: 2px 2px 1px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.briefing-chart > span {
+  width: 2px;
+  background: currentColor;
+  display: block;
+  transition: height 320ms ease;
+}
+.briefing-chart > span:nth-child(1) { height: 38%; }
+.briefing-chart > span:nth-child(2) { height: 72%; }
+.briefing-chart > span:nth-child(3) { height: 52%; }
+
+.rsf-card:hover .rsf-briefing,
+.rsf-card:focus-visible .rsf-briefing {
+  background: linear-gradient(
+    135deg,
+    rgba(0, 229, 255, 0.18) 0%,
+    rgba(0, 229, 255, 0.28) 100%
+  );
+  border-style: solid;
+  border-color: #00e5ff;
+  box-shadow:
+    0 0 0 1px rgba(0, 229, 255, 0.25),
+    0 6px 18px -6px rgba(0, 229, 255, 0.55);
+  transform: translateX(2px);
+  color: #e0fbff;
+}
+.rsf-card:hover .rsf-briefing__arrow,
+.rsf-card:focus-visible .rsf-briefing__arrow {
+  transform: translateX(3px);
+}
+.rsf-card:hover .briefing-chart > span:nth-child(1),
+.rsf-card:focus-visible .briefing-chart > span:nth-child(1) { height: 62%; }
+.rsf-card:hover .briefing-chart > span:nth-child(2),
+.rsf-card:focus-visible .briefing-chart > span:nth-child(2) { height: 92%; }
+.rsf-card:hover .briefing-chart > span:nth-child(3),
+.rsf-card:focus-visible .briefing-chart > span:nth-child(3) { height: 45%; }
+
+/* subtle attention-pull on the newest card's chip */
+.rsf-briefing--new {
+  animation: briefing-pulse 2.6s ease-in-out infinite;
+}
+@keyframes briefing-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.18),
+                0 0 14px rgba(0, 229, 255, 0.35);
+  }
+}
+
+/* ——— top-of-feed hint line ——— */
+.rsf-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.25rem;
+  border-left: 2px solid rgba(0, 229, 255, 0.45);
+  background:
+    linear-gradient(90deg, rgba(0, 229, 255, 0.08), transparent 70%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #8b949e);
+}
+.rsf-hint__pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00e5ff;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.75);
+  animation: rsf-hint-blink 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes rsf-hint-blink {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+.text-neon-cyan { color: #00e5ff; font-weight: 700; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rsf-briefing--new,
+  .rsf-hint__pulse { animation: none; }
 }
 
 .rsf-more {

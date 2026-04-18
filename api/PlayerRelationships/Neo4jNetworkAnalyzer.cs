@@ -1,12 +1,14 @@
 using Neo4j.Driver;
 using api.PlayerRelationships.Models;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace api.PlayerRelationships;
 
 /// <summary>
 /// Analyzes player networks and temporal consistency using Neo4j.
 /// </summary>
-public class Neo4jNetworkAnalyzer(IDriver neoDriver)
+public class Neo4jNetworkAnalyzer(IDriver neoDriver, ILogger<Neo4jNetworkAnalyzer> logger)
 {
     /// <summary>
     /// Analyze network similarity and temporal consistency between two players.
@@ -16,6 +18,7 @@ public class Neo4jNetworkAnalyzer(IDriver neoDriver)
         string player2,
         int lookBackDays = 3650)
     {
+        var sw = Stopwatch.StartNew();
         try
         {
             using var session = neoDriver.AsyncSession();
@@ -23,10 +26,14 @@ public class Neo4jNetworkAnalyzer(IDriver neoDriver)
             var networkAnalysis = await AnalyzeNetworkSimilarityAsync(session, player1, player2);
             var temporalAnalysis = await AnalyzeTemporalConsistencyAsync(session, player1, player2);
 
+            logger.LogInformation("Neo4j analysis for {Player1} vs {Player2} completed in {ElapsedMs}ms", 
+                player1, player2, sw.ElapsedMilliseconds);
+
             return (networkAnalysis, temporalAnalysis);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger.LogError(ex, "Neo4j analysis failed for {Player1} and {Player2}", player1, player2);
             // Neo4j unavailable or data missing - return analyses marked as insufficient
             return (
                 new NetworkAnalysis(

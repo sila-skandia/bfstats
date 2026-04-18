@@ -2,6 +2,7 @@ using api.PlayerTracking;
 using api.PlayerRelationships.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
+using Microsoft.Extensions.Logging;
 
 namespace api.PlayerRelationships;
 
@@ -9,7 +10,9 @@ namespace api.PlayerRelationships;
 /// Analyzes behavioral patterns: play times, server preferences, ping consistency.
 /// Uses raw SQL to offload aggregation to database - does NOT load sessions into memory.
 /// </summary>
-public class BehavioralPatternAnalyzer(PlayerTrackerDbContext dbContext)
+public class BehavioralPatternAnalyzer(
+    PlayerTrackerDbContext dbContext,
+    ILogger<BehavioralPatternAnalyzer> logger)
 {
     /// <summary>
     /// Analyze behavioral patterns between two players.
@@ -27,6 +30,8 @@ public class BehavioralPatternAnalyzer(PlayerTrackerDbContext dbContext)
         // If either player has no data, return insufficient
         if (lastActive1 == DateTime.MinValue || lastActive2 == DateTime.MinValue)
         {
+            logger.LogWarning("Insufficient behavioral data for {Player1} (LastActive: {LA1}) or {Player2} (LastActive: {LA2})", 
+                player1, lastActive1, player2, lastActive2);
             return new BehavioralAnalysis(
                 Score: 0.0,
                 PlayTimeOverlapScore: 0.0,
@@ -123,6 +128,9 @@ public class BehavioralPatternAnalyzer(PlayerTrackerDbContext dbContext)
                 new Microsoft.Data.Sqlite.SqliteParameter("@cutoff", cutoff2))
             .ToListAsync();
 
+        logger.LogInformation("Hour distribution data counts: {P1} records for {Player1}, {P2} records for {Player2}", 
+            hourStats1.Count, player1, hourStats2.Count, player2);
+
         // Build normalized probability vectors from aggregated data
         var probs1 = BuildHourProbabilities(hourStats1);
         var probs2 = BuildHourProbabilities(hourStats2);
@@ -193,6 +201,9 @@ public class BehavioralPatternAnalyzer(PlayerTrackerDbContext dbContext)
                 new Microsoft.Data.Sqlite.SqliteParameter("@cutoff2", cutoff2))
             .SingleAsync();
 
+        logger.LogInformation("Server affinity: {Common} common servers out of {Total} total unique servers for {Player1} and {Player2}", 
+            commonServerCount, totalUniqueServers, player1, player2);
+
         if (totalUniqueServers == 0)
             return 0.0;
 
@@ -234,6 +245,9 @@ public class BehavioralPatternAnalyzer(PlayerTrackerDbContext dbContext)
         // Filter out null pings
         pings1 = pings1.Where(p => p.AvgPing.HasValue).ToList();
         pings2 = pings2.Where(p => p.AvgPing.HasValue).ToList();
+
+        logger.LogInformation("Ping data: {P1} servers with ping data for {Player1}, {P2} servers for {Player2}", 
+            pings1.Count, player1, pings2.Count, player2);
 
         if (pings1.Count == 0 || pings2.Count == 0)
             return 0.5; // Neutral if no ping data
@@ -313,6 +327,9 @@ public class BehavioralPatternAnalyzer(PlayerTrackerDbContext dbContext)
                 new Microsoft.Data.Sqlite.SqliteParameter("@playerName", player2),
                 new Microsoft.Data.Sqlite.SqliteParameter("@cutoff", cutoff2))
             .SingleAsync();
+
+        logger.LogInformation("Session pattern stats: {P1} sessions for {Player1}, {P2} sessions for {Player2}", 
+            stats1.SessionCount, player1, stats2.SessionCount, player2);
 
         // If no sessions for either player in their window, return neutral score
         if (stats1.SessionCount == 0 || stats2.SessionCount == 0)
