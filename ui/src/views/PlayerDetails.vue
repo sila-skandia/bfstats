@@ -19,6 +19,8 @@ import PlayerActivityHeatmap from '../components/PlayerActivityHeatmap.vue';
 import PlayerMapPreference from '../components/PlayerMapPreference.vue';
 import PingProximityOrbit from '@/components/PingProximityOrbit.vue';
 import PlayerComments from '../components/PlayerComments.vue';
+import CommunityCard from '@/components/CommunityCard.vue';
+import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi';
 import { formatRelativeTime } from '@/utils/timeUtils';
 import { calculateKDR } from '@/utils/statsUtils';
 import { useAIContext } from '@/composables/useAIContext';
@@ -43,14 +45,36 @@ const achievementGroupsLoading = ref(false);
 const achievementGroupsError = ref<string | null>(null);
 
 // V2 Tab Navigation
-const activeTab = ref<'overview' | 'rankings' | 'network' | 'awards' | 'deep-dive'>('overview');
+const activeTab = ref<'overview' | 'rankings' | 'network' | 'communities' | 'awards' | 'deep-dive'>('overview');
 const tabs = [
   { id: 'overview' as const, label: 'OVERVIEW' },
   { id: 'rankings' as const, label: 'RANKINGS' },
   { id: 'network' as const, label: 'NETWORK' },
+  { id: 'communities' as const, label: 'COMMUNITIES' },
   { id: 'awards' as const, label: 'AWARDS' },
   { id: 'deep-dive' as const, label: 'DEEP DIVE' },
 ];
+
+// Communities tab state
+const playerCommunities = ref<PlayerCommunity[]>([]);
+const communitiesLoading = ref(false);
+const communitiesError = ref<string | null>(null);
+const communitiesLoaded = ref(false);
+
+const fetchPlayerCommunitiesData = async () => {
+  if (communitiesLoaded.value || communitiesLoading.value) return;
+  communitiesLoading.value = true;
+  communitiesError.value = null;
+  try {
+    playerCommunities.value = await fetchPlayerCommunities(playerName.value);
+    communitiesLoaded.value = true;
+  } catch (err) {
+    console.error('Error fetching player communities:', err);
+    communitiesError.value = 'Failed to load communities.';
+  } finally {
+    communitiesLoading.value = false;
+  }
+};
 
 // State for server map stats view
 const selectedServerGuid = ref<string | null>(null);
@@ -386,6 +410,9 @@ const fetchData = async () => {
 watch(activeTab, (newTab) => {
   if ((newTab === 'overview' || newTab === 'awards') && achievementGroups.value.length === 0 && !achievementGroupsLoading.value) {
     fetchAchievementGroups();
+  }
+  if (newTab === 'communities') {
+    fetchPlayerCommunitiesData();
   }
 });
 
@@ -724,7 +751,14 @@ watch(
       rankingsServerGuid.value = null;
       selectedMapDetailName.value = null;
       selectedServerMapDetail.value = null;
+      // Reset communities cache so the new player's data is loaded on next visit
+      playerCommunities.value = [];
+      communitiesLoaded.value = false;
+      communitiesError.value = null;
       fetchData();
+      if (activeTab.value === 'communities') {
+        fetchPlayerCommunitiesData();
+      }
     }
   }
 );
@@ -1242,6 +1276,20 @@ onUnmounted(() => {
                   cy="19"
                   r="2"
                 /><path d="m6.5 6.5 4 4" /><path d="m17.5 6.5-4 4" /><path d="m6.5 17.5 4-4" /><path d="m17.5 17.5-4-4" /></svg>
+                <svg
+                  v-else-if="tab.id === 'communities'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle
+                  cx="9"
+                  cy="7"
+                  r="4"
+                /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                 <svg
                   v-else-if="tab.id === 'awards'"
                   viewBox="0 0 24 24"
@@ -2316,6 +2364,107 @@ onUnmounted(() => {
                       class="w-3.5 h-3.5"
                     ><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
                   </router-link>
+                </div>
+              </div>
+
+              <!-- COMMUNITIES TAB -->
+              <div
+                v-if="activeTab === 'communities'"
+                class="space-y-6"
+              >
+                <div class="combat-banner">
+                  <div class="combat-banner-eyebrow">
+                    <span
+                      class="combat-banner-dot"
+                      aria-hidden="true"
+                    />
+                    SOCIAL GRAPH //
+                    <span class="text-neon-cyan">DETECTED COMMUNITIES</span>
+                  </div>
+                  <div class="network-banner-main">
+                    <h2 class="network-banner-title">
+                      Communities
+                    </h2>
+                    <p class="network-banner-sub">
+                      Groups of players <span class="text-neon-cyan">{{ playerName }}</span> frequently plays with, automatically detected from session overlap.
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Loading -->
+                <div
+                  v-if="communitiesLoading"
+                  class="grid grid-cols-1 md:grid-cols-2 gap-4"
+                >
+                  <div
+                    v-for="i in 4"
+                    :key="i"
+                    class="animate-pulse bg-neutral-800 h-80 rounded"
+                  />
+                </div>
+
+                <!-- Error -->
+                <div
+                  v-else-if="communitiesError"
+                  class="explorer-card"
+                >
+                  <div class="explorer-card-body text-center">
+                    <p class="text-red-400 mb-4">
+                      {{ communitiesError }}
+                    </p>
+                    <button
+                      class="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 text-sm hover:bg-red-500/30 transition-colors"
+                      @click="fetchPlayerCommunitiesData"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Empty -->
+                <div
+                  v-else-if="playerCommunities.length === 0"
+                  class="explorer-card"
+                >
+                  <div class="explorer-card-body p-0 sm:p-6">
+                    <div class="explorer-empty">
+                      <div class="explorer-empty-icon">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="48"
+                          height="48"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle
+                          cx="9"
+                          cy="7"
+                          r="4"
+                        /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                      </div>
+                      <p class="explorer-empty-title">
+                        NO COMMUNITIES DETECTED
+                      </p>
+                      <p class="explorer-empty-desc">
+                        {{ playerName }} is not currently a member of any detected communities. Detection runs automatically once per day from session overlap.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Communities Grid -->
+                <div
+                  v-else
+                  class="grid grid-cols-1 md:grid-cols-2 gap-4"
+                >
+                  <CommunityCard
+                    v-for="community in playerCommunities"
+                    :key="community.id"
+                    :community="community"
+                  />
                 </div>
               </div>
 

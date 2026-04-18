@@ -416,6 +416,8 @@ namespace api.Migrations
 
                     b.HasIndex("Year", "Month");
 
+                    b.HasIndex("PlayerName", "ServerGuid", "Year", "Month");
+
                     b.ToTable("PlayerMapStats");
                 });
 
