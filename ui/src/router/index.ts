@@ -23,7 +23,6 @@ const PublicTournamentMatches = () => import('../views/PublicTournamentMatches.v
 const PublicTournamentStats = () => import('../views/PublicTournamentStats.vue')
 const PublicTournamentFiles = () => import('../views/PublicTournamentFiles.vue')
 const AdminDataManagement = () => import('../views/AdminDataManagement.vue')
-const CommunitiesView = () => import('../views/CommunitiesView.vue')
 const CommunityDetailsView = () => import('../views/CommunityDetailsView.vue')
 const AliasDetectionView = () => import('../views/AliasDetectionView.vue')
 const MapPopularityView = () => import('../views/MapPopularityView.vue')
@@ -404,15 +403,6 @@ const routes: RouteRecordRaw[] = [
       meta: {
         title: 'Discord Authentication - BF Stats',
         description: 'Completing Discord authentication...'
-      }
-    },
-    {
-      path: '/communities',
-      name: 'communities',
-      component: CommunitiesView,
-      meta: {
-        title: 'Player Communities - BF Stats',
-        description: 'Explore detected player communities in Battlefield. View community connections, cohesion scores, and player relationships.'
       }
     },
     {
