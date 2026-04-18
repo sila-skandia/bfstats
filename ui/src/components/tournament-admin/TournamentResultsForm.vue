@@ -3,7 +3,9 @@
     <div class="portal-card">
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ MATCH RESULTS ]</h2>
+          <h2 class="portal-card-title">
+            [ MATCH RESULTS ]
+          </h2>
           <p class="portal-card-subtitle">
             {{ match.team1Name }} vs {{ match.team2Name }} - {{ formatMatchDate(match.scheduledDate) }}
           </p>
@@ -12,8 +14,18 @@
           class="portal-btn portal-btn--ghost"
           @click="$emit('close')"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
           Back to Matches
         </button>
@@ -21,42 +33,54 @@
 
       <div class="portal-card-body">
         <!-- Error Message Banner -->
-        <div v-if="saveError" class="portal-form-error error-banner">
+        <div
+          v-if="saveError"
+          class="portal-form-error error-banner"
+        >
           <div class="error-banner-content">
             <span class="error-icon">⚠️</span>
             <span>{{ saveError }}</span>
           </div>
           <button
             class="error-banner-close"
-            @click="saveError = null"
             type="button"
             aria-label="Close error"
+            @click="saveError = null"
           >
             ✕
           </button>
         </div>
 
         <!-- Link Warning Banner -->
-        <div v-if="linkWarning" class="portal-form-error warning-banner">
+        <div
+          v-if="linkWarning"
+          class="portal-form-error warning-banner"
+        >
           <div class="error-banner-content">
             <span class="warning-icon">⚠️</span>
             <span>{{ linkWarning }}</span>
           </div>
           <button
             class="error-banner-close"
-            @click="linkWarning = null"
             type="button"
             aria-label="Close warning"
+            @click="linkWarning = null"
           >
             ✕
           </button>
         </div>
 
         <!-- Maps Loop -->
-        <div v-for="map in match.maps || []" :key="map.id" class="map-section">
+        <div
+          v-for="map in match.maps || []"
+          :key="map.id"
+          class="map-section"
+        >
           <!-- Map Header -->
           <div class="map-header">
-            <h3 class="map-title">{{ map.mapName }}</h3>
+            <h3 class="map-title">
+              {{ map.mapName }}
+            </h3>
             <span class="map-results-count">
               {{ map.matchResults.length }} result<span v-if="map.matchResults.length !== 1">s</span>
             </span>
@@ -67,48 +91,86 @@
             <table class="portal-table results-table">
               <thead>
                 <tr>
-                  <th style="width: 2rem;">#</th>
+                  <th style="width: 2rem;">
+                    #
+                  </th>
                   <th>Team 1</th>
-                  <th style="text-align: center; width: 4rem;">Score</th>
+                  <th style="text-align: center; width: 4rem;">
+                    Score
+                  </th>
                   <th>Team 2</th>
-                  <th style="text-align: center; width: 4rem;">Score</th>
-                  <th style="text-align: center;">Winner</th>
-                  <th style="text-align: right; width: 10rem;">Actions</th>
+                  <th style="text-align: center; width: 4rem;">
+                    Score
+                  </th>
+                  <th style="text-align: center;">
+                    Winner
+                  </th>
+                  <th style="text-align: right; width: 10rem;">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 <!-- Existing Results -->
-                <template v-for="(result, index) in map.matchResults" :key="result.id">
+                <template
+                  v-for="(result, index) in map.matchResults"
+                  :key="result.id"
+                >
                   <!-- Read-only view -->
-                  <tr v-if="!editingResult || editingResult.id !== result.id" class="result-row">
-                    <td class="result-index">{{ index + 1 }}</td>
+                  <tr
+                    v-if="!editingResult || editingResult.id !== result.id"
+                    class="result-row"
+                  >
+                    <td class="result-index">
+                      {{ index + 1 }}
+                    </td>
                     <td>{{ result.team1Name || '-' }}</td>
-                    <td class="result-score">{{ result.team1Tickets }}</td>
+                    <td class="result-score">
+                      {{ result.team1Tickets }}
+                    </td>
                     <td>{{ result.team2Name || '-' }}</td>
-                    <td class="result-score">{{ result.team2Tickets }}</td>
+                    <td class="result-score">
+                      {{ result.team2Tickets }}
+                    </td>
                     <td class="result-winner">
-                      <span v-if="result.winningTeamName" class="winner-badge">
+                      <span
+                        v-if="result.winningTeamName"
+                        class="winner-badge"
+                      >
                         {{ result.winningTeamName }}
                       </span>
-                      <span v-else class="no-winner">-</span>
+                      <span
+                        v-else
+                        class="no-winner"
+                      >-</span>
                     </td>
                     <td>
                       <div class="portal-table-actions">
                         <button
                           class="portal-cell-btn"
-                          @click="editResult(map, result)"
                           title="Edit result"
+                          @click="editResult(map, result)"
                         >
                           Edit
                         </button>
                         <button
                           class="portal-icon-btn portal-icon-btn--danger"
-                          @click="deleteResult(map, result.id)"
                           :disabled="isSaving"
                           title="Delete result"
+                          @click="deleteResult(map, result.id)"
                         >
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          <svg
+                            class="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
                           </svg>
                         </button>
                       </div>
@@ -116,7 +178,10 @@
                   </tr>
 
                   <!-- Inline edit view -->
-                  <tr v-else class="edit-row">
+                  <tr
+                    v-else
+                    class="edit-row"
+                  >
                     <td colspan="7">
                       <div class="edit-form">
                         <div class="edit-form-grid">
@@ -127,8 +192,14 @@
                               v-model.number="formData.team1Id"
                               class="portal-form-input"
                             >
-                              <option :value="undefined">Select team</option>
-                              <option v-for="team in getMatchTeams()" :key="team.id" :value="team.id">
+                              <option :value="undefined">
+                                Select team
+                              </option>
+                              <option
+                                v-for="team in getMatchTeams()"
+                                :key="team.id"
+                                :value="team.id"
+                              >
                                 {{ team.name }}
                               </option>
                             </select>
@@ -143,7 +214,7 @@
                               min="0"
                               class="portal-form-input portal-form-input--mono"
                               placeholder="0"
-                            />
+                            >
                           </div>
 
                           <!-- Team 2 -->
@@ -153,8 +224,14 @@
                               v-model.number="formData.team2Id"
                               class="portal-form-input"
                             >
-                              <option :value="undefined">Select team</option>
-                              <option v-for="team in getMatchTeams()" :key="team.id" :value="team.id">
+                              <option :value="undefined">
+                                Select team
+                              </option>
+                              <option
+                                v-for="team in getMatchTeams()"
+                                :key="team.id"
+                                :value="team.id"
+                              >
                                 {{ team.name }}
                               </option>
                             </select>
@@ -169,26 +246,29 @@
                               min="0"
                               class="portal-form-input portal-form-input--mono"
                               placeholder="0"
-                            />
+                            >
                           </div>
                         </div>
 
                         <!-- Round Linking -->
                         <div class="round-link-section">
-                          <div v-if="formData.roundId" class="linked-round">
+                          <div
+                            v-if="formData.roundId"
+                            class="linked-round"
+                          >
                             <span class="linked-round-label">Linked Round:</span>
                             <span class="linked-round-id portal-mono">{{ formData.roundId }}</span>
                             <button
                               class="portal-btn portal-btn--ghost portal-btn--sm"
-                              @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                               :disabled="isSaving"
+                              @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                             >
                               Change
                             </button>
                             <button
                               class="portal-btn portal-btn--danger portal-btn--sm"
-                              @click="unlinkRoundFromResult()"
                               :disabled="isSaving"
+                              @click="unlinkRoundFromResult()"
                             >
                               Unlink
                             </button>
@@ -196,8 +276,8 @@
                           <div v-else>
                             <button
                               class="portal-btn portal-btn--ghost portal-btn--sm"
-                              @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                               :disabled="isSaving"
+                              @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                             >
                               Link Round
                             </button>
@@ -214,8 +294,8 @@
                           </button>
                           <button
                             class="portal-btn portal-btn--primary"
-                            @click="saveResult(map)"
                             :disabled="isSaving || !formData.team1Id || !formData.team2Id"
+                            @click="saveResult(map)"
                           >
                             {{ isSaving ? 'Saving...' : 'Update' }}
                           </button>
@@ -226,23 +306,28 @@
                 </template>
 
                 <!-- Add New Result Row -->
-                <tr v-if="editingMapId !== map.id && !editingResult" class="add-row">
-                  <td class="result-index">+</td>
+                <tr
+                  v-if="editingMapId !== map.id && !editingResult"
+                  class="add-row"
+                >
+                  <td class="result-index">
+                    +
+                  </td>
                   <td colspan="6">
                     <div class="add-result-actions">
                       <span class="add-result-label">Add New Result:</span>
                       <button
                         class="portal-cell-btn"
-                        @click="openManualEntry(map)"
                         title="Enter a manual result"
+                        @click="openManualEntry(map)"
                       >
                         + Manual
                       </button>
                       <span class="add-divider">|</span>
                       <button
                         class="portal-cell-btn portal-cell-btn--link"
-                        @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                         title="Link a round from the server"
+                        @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                       >
                         + Link Round
                       </button>
@@ -251,7 +336,10 @@
                 </tr>
 
                 <!-- New Result Form Row -->
-                <tr v-if="editingMapId === map.id && !editingResult" class="edit-row">
+                <tr
+                  v-if="editingMapId === map.id && !editingResult"
+                  class="edit-row"
+                >
                   <td colspan="7">
                     <div class="edit-form">
                       <div class="edit-form-grid">
@@ -262,8 +350,14 @@
                             v-model.number="formData.team1Id"
                             class="portal-form-input"
                           >
-                            <option :value="undefined">Select team</option>
-                            <option v-for="team in getMatchTeams()" :key="team.id" :value="team.id">
+                            <option :value="undefined">
+                              Select team
+                            </option>
+                            <option
+                              v-for="team in getMatchTeams()"
+                              :key="team.id"
+                              :value="team.id"
+                            >
                               {{ team.name }}
                             </option>
                           </select>
@@ -278,7 +372,7 @@
                             min="0"
                             class="portal-form-input portal-form-input--mono"
                             placeholder="0"
-                          />
+                          >
                         </div>
 
                         <!-- Team 2 -->
@@ -288,8 +382,14 @@
                             v-model.number="formData.team2Id"
                             class="portal-form-input"
                           >
-                            <option :value="undefined">Select team</option>
-                            <option v-for="team in getMatchTeams()" :key="team.id" :value="team.id">
+                            <option :value="undefined">
+                              Select team
+                            </option>
+                            <option
+                              v-for="team in getMatchTeams()"
+                              :key="team.id"
+                              :value="team.id"
+                            >
                               {{ team.name }}
                             </option>
                           </select>
@@ -304,26 +404,29 @@
                             min="0"
                             class="portal-form-input portal-form-input--mono"
                             placeholder="0"
-                          />
+                          >
                         </div>
                       </div>
 
                       <!-- Round Linking (when adding new) -->
                       <div class="round-link-section">
-                        <div v-if="formData.roundId" class="linked-round">
+                        <div
+                          v-if="formData.roundId"
+                          class="linked-round"
+                        >
                           <span class="linked-round-label">Linked Round:</span>
                           <span class="linked-round-id portal-mono">{{ formData.roundId }}</span>
                           <button
                             class="portal-btn portal-btn--ghost portal-btn--sm"
-                            @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                             :disabled="isSaving"
+                            @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                           >
                             Change
                           </button>
                           <button
                             class="portal-btn portal-btn--danger portal-btn--sm"
-                            @click="formData.roundId = undefined"
                             :disabled="isSaving"
+                            @click="formData.roundId = undefined"
                           >
                             Remove
                           </button>
@@ -331,8 +434,8 @@
                         <div v-else>
                           <button
                             class="portal-btn portal-btn--ghost portal-btn--sm"
-                            @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                             :disabled="isSaving"
+                            @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                           >
                             Link Round
                           </button>
@@ -349,8 +452,8 @@
                         </button>
                         <button
                           class="portal-btn portal-btn--primary"
-                          @click="saveResult(map)"
                           :disabled="isSaving || !formData.team1Id || !formData.team2Id"
+                          @click="saveResult(map)"
                         >
                           {{ isSaving ? 'Saving...' : 'Add Result' }}
                         </button>
@@ -360,7 +463,10 @@
                 </tr>
 
                 <!-- Empty State -->
-                <tr v-if="map.matchResults.length === 0 && editingMapId !== map.id" class="empty-row">
+                <tr
+                  v-if="map.matchResults.length === 0 && editingMapId !== map.id"
+                  class="empty-row"
+                >
                   <td colspan="7">
                     <div class="empty-message">
                       No results yet. Click "Add New Result" to add one.

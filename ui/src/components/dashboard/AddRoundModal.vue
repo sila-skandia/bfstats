@@ -19,8 +19,18 @@
             class="text-slate-400 hover:text-slate-200 transition-colors"
             @click="$emit('close')"
           >
-            <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              class="w-5 h-5 sm:w-6 sm:h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -55,7 +65,10 @@
       </div>
 
       <!-- Direct Round ID Input Mode -->
-      <div v-if="searchMode === 'direct'" class="flex-1 overflow-y-auto p-6">
+      <div
+        v-if="searchMode === 'direct'"
+        class="flex-1 overflow-y-auto p-6"
+      >
         <div class="max-w-2xl mx-auto">
           <label class="block text-sm font-medium text-slate-300 mb-2">
             Round ID
@@ -73,7 +86,10 @@
       </div>
 
       <!-- Search Mode -->
-      <div v-else class="flex-1 overflow-y-auto">
+      <div
+        v-else
+        class="flex-1 overflow-y-auto"
+      >
         <!-- Filters -->
         <div class="bg-gradient-to-r from-slate-800/95 to-slate-900/95 backdrop-blur-sm border-b border-slate-700/50 p-3 sm:p-6 space-y-2 sm:space-y-4">
           <!-- Server Selection -->
@@ -83,7 +99,10 @@
             </label>
 
             <!-- Selected Server Display -->
-            <div v-if="selectedServer" class="mb-2 sm:mb-3">
+            <div
+              v-if="selectedServer"
+              class="mb-2 sm:mb-3"
+            >
               <div class="flex items-center justify-between gap-2 sm:gap-3 p-2 sm:p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
                 <div class="flex items-center gap-2 flex-1 min-w-0">
                   <span class="text-cyan-400 text-xs sm:text-sm">🖥️</span>
@@ -91,25 +110,41 @@
                     <div class="font-medium text-slate-200 text-xs sm:text-sm truncate">
                       {{ selectedServer.serverName }}
                     </div>
-                    <div v-if="selectedServer.serverIp && selectedServer.serverPort" class="text-xs text-slate-400 mt-0.5 hidden sm:block">
+                    <div
+                      v-if="selectedServer.serverIp && selectedServer.serverPort"
+                      class="text-xs text-slate-400 mt-0.5 hidden sm:block"
+                    >
                       {{ selectedServer.serverIp }}:{{ selectedServer.serverPort }}
                     </div>
                   </div>
                 </div>
                 <button
                   class="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
-                  @click="clearServerSelection"
                   title="Change server"
+                  @click="clearServerSelection"
                 >
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    class="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
             </div>
 
             <!-- Server Search Input (only show when no server selected) -->
-            <div v-else class="relative">
+            <div
+              v-else
+              class="relative"
+            >
               <div class="absolute left-3 top-1/2 transform -translate-y-1/2 z-10">
                 <span class="text-slate-500 text-xs">🖥️</span>
               </div>
@@ -176,21 +211,39 @@
         <!-- Rounds List -->
         <div class="p-3 sm:p-6">
           <!-- Loading State -->
-          <div v-if="loading" class="flex items-center justify-center py-12">
+          <div
+            v-if="loading"
+            class="flex items-center justify-center py-12"
+          >
             <div class="w-12 h-12 border-4 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
           </div>
 
           <!-- Error State -->
-          <div v-else-if="searchError" class="text-center py-12">
-            <div class="text-6xl mb-4">⚠️</div>
-            <h3 class="text-xl font-bold text-slate-300 mb-2">Unable to Load Rounds</h3>
-            <p class="text-slate-400">{{ searchError }}</p>
+          <div
+            v-else-if="searchError"
+            class="text-center py-12"
+          >
+            <div class="text-6xl mb-4">
+              ⚠️
+            </div>
+            <h3 class="text-xl font-bold text-slate-300 mb-2">
+              Unable to Load Rounds
+            </h3>
+            <p class="text-slate-400">
+              {{ searchError }}
+            </p>
           </div>
 
           <!-- Rounds Table -->
-          <div v-else-if="rounds.length > 0" class="space-y-2">
+          <div
+            v-else-if="rounds.length > 0"
+            class="space-y-2"
+          >
             <!-- Selection Actions -->
-            <div v-if="multiSelect" class="flex items-center justify-between text-xs text-slate-400 pb-2">
+            <div
+              v-if="multiSelect"
+              class="flex items-center justify-between text-xs text-slate-400 pb-2"
+            >
               <span>{{ selectedRoundIds.length }} of {{ rounds.length }} selected</span>
               <div class="flex gap-2">
                 <button
@@ -208,98 +261,111 @@
                 </button>
               </div>
             </div>
-            <div v-else class="text-xs text-slate-400 pb-2">
+            <div
+              v-else
+              class="text-xs text-slate-400 pb-2"
+            >
               <span v-if="selectedRoundIds.length > 0">1 round selected</span>
               <span v-else>Select a round</span>
             </div>
 
             <div class="overflow-x-auto">
               <table class="w-full">
-              <thead>
-                <tr class="border-b border-slate-700/50">
-                  <th class="text-left py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider w-6 sm:w-8" />
-                  <th class="text-left py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Map
-                  </th>
-                  <th class="text-center py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Players
-                  </th>
-                  <th class="text-center py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider hidden md:table-cell">
-                    Duration
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="round in rounds"
-                  :key="round.roundId"
-                  class="group border-b border-slate-700/30 hover:bg-slate-800/40 transition-all duration-150 cursor-pointer"
-                  :class="{ 'bg-cyan-500/10 border-l-4 border-l-cyan-400': isRoundSelected(round.roundId) }"
-                  @click="toggleRoundSelection(round.roundId)"
-                >
-                  <!-- Selection Indicator -->
-                  <td class="py-1.5 sm:py-2 px-2 sm:px-3">
-                    <div
-                      class="w-4 h-4 sm:w-5 sm:h-5 border-2 flex items-center justify-center transition-all"
-                      :class="[
-                        multiSelect ? 'rounded' : 'rounded-full',
-                        isRoundSelected(round.roundId)
-                          ? 'border-cyan-400 bg-cyan-400'
-                          : 'border-slate-600 bg-transparent group-hover:border-slate-500'
-                      ]"
-                    >
-                      <!-- Checkbox checkmark for multi-select -->
-                      <svg
-                        v-if="multiSelect && isRoundSelected(round.roundId)"
-                        class="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-900"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                      </svg>
-                      <!-- Radio dot for single-select -->
+                <thead>
+                  <tr class="border-b border-slate-700/50">
+                    <th class="text-left py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider w-6 sm:w-8" />
+                    <th class="text-left py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                      Map
+                    </th>
+                    <th class="text-center py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                      Players
+                    </th>
+                    <th class="text-center py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider hidden md:table-cell">
+                      Duration
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="round in rounds"
+                    :key="round.roundId"
+                    class="group border-b border-slate-700/30 hover:bg-slate-800/40 transition-all duration-150 cursor-pointer"
+                    :class="{ 'bg-cyan-500/10 border-l-4 border-l-cyan-400': isRoundSelected(round.roundId) }"
+                    @click="toggleRoundSelection(round.roundId)"
+                  >
+                    <!-- Selection Indicator -->
+                    <td class="py-1.5 sm:py-2 px-2 sm:px-3">
                       <div
-                        v-else-if="!multiSelect && isRoundSelected(round.roundId)"
-                        class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-slate-900"
-                      />
-                    </div>
-                  </td>
+                        class="w-4 h-4 sm:w-5 sm:h-5 border-2 flex items-center justify-center transition-all"
+                        :class="[
+                          multiSelect ? 'rounded' : 'rounded-full',
+                          isRoundSelected(round.roundId)
+                            ? 'border-cyan-400 bg-cyan-400'
+                            : 'border-slate-600 bg-transparent group-hover:border-slate-500'
+                        ]"
+                      >
+                        <!-- Checkbox checkmark for multi-select -->
+                        <svg
+                          v-if="multiSelect && isRoundSelected(round.roundId)"
+                          class="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-900"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="3"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        <!-- Radio dot for single-select -->
+                        <div
+                          v-else-if="!multiSelect && isRoundSelected(round.roundId)"
+                          class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-slate-900"
+                        />
+                      </div>
+                    </td>
 
-                  <!-- Map Column (with time as subheading) -->
-                  <td class="py-1.5 sm:py-2 px-2 sm:px-3">
-                    <div class="flex flex-col gap-0.5">
-                      <span class="text-xs sm:text-sm font-bold text-slate-200">
-                        {{ round.mapName }}
+                    <!-- Map Column (with time as subheading) -->
+                    <td class="py-1.5 sm:py-2 px-2 sm:px-3">
+                      <div class="flex flex-col gap-0.5">
+                        <span class="text-xs sm:text-sm font-bold text-slate-200">
+                          {{ round.mapName }}
+                        </span>
+                        <span class="text-xs text-slate-500 font-medium">
+                          {{ formatDateTime(round.startTime) }}
+                        </span>
+                      </div>
+                    </td>
+
+                    <!-- Players Column (always visible now) -->
+                    <td class="py-1.5 sm:py-2 px-2 sm:px-3 text-center">
+                      <span class="text-xs sm:text-sm text-slate-400">
+                        {{ round.participantCount }}
                       </span>
-                      <span class="text-xs text-slate-500 font-medium">
-                        {{ formatDateTime(round.startTime) }}
+                    </td>
+
+                    <!-- Duration Column (hidden on mobile/tablet) -->
+                    <td class="py-1.5 sm:py-2 px-2 sm:px-3 text-center hidden md:table-cell">
+                      <span class="text-xs sm:text-sm text-slate-400 font-mono">
+                        {{ round.durationMinutes }}m
                       </span>
-                    </div>
-                  </td>
-
-                  <!-- Players Column (always visible now) -->
-                  <td class="py-1.5 sm:py-2 px-2 sm:px-3 text-center">
-                    <span class="text-xs sm:text-sm text-slate-400">
-                      {{ round.participantCount }}
-                    </span>
-                  </td>
-
-                  <!-- Duration Column (hidden on mobile/tablet) -->
-                  <td class="py-1.5 sm:py-2 px-2 sm:px-3 text-center hidden md:table-cell">
-                    <span class="text-xs sm:text-sm text-slate-400 font-mono">
-                      {{ round.durationMinutes }}m
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
           <!-- Empty State -->
-          <div v-else class="text-center py-12">
-            <div class="text-6xl mb-4">{{ selectedServer ? '🔍' : '🖥️' }}</div>
+          <div
+            v-else
+            class="text-center py-12"
+          >
+            <div class="text-6xl mb-4">
+              {{ selectedServer ? '🔍' : '🖥️' }}
+            </div>
             <h3 class="text-xl font-bold text-slate-300 mb-2">
               {{ selectedServer ? 'No Rounds Found' : 'Select a Server First' }}
             </h3>
@@ -309,7 +375,10 @@
           </div>
 
           <!-- Pagination -->
-          <div v-if="totalPages > 1" class="mt-6 flex items-center justify-center gap-2">
+          <div
+            v-if="totalPages > 1"
+            class="mt-6 flex items-center justify-center gap-2"
+          >
             <button
               :disabled="currentPage === 1"
               class="px-3 py-1 bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -338,7 +407,9 @@
           v-if="error"
           class="mb-3 sm:mb-4 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 rounded-lg"
         >
-          <p class="text-xs sm:text-sm text-red-400">{{ error }}</p>
+          <p class="text-xs sm:text-sm text-red-400">
+            {{ error }}
+          </p>
         </div>
 
         <!-- Actions -->
@@ -370,7 +441,6 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
-import { adminTournamentService } from '@/services/adminTournamentService';
 
 interface ServerSearchResult {
   serverGuid: string;

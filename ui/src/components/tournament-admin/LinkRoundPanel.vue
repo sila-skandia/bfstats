@@ -23,7 +23,10 @@
     </div>
 
     <!-- Direct Round ID Input Mode -->
-    <div v-if="searchMode === 'direct'" class="portal-form-section">
+    <div
+      v-if="searchMode === 'direct'"
+      class="portal-form-section"
+    >
       <label class="portal-form-label">Round ID</label>
       <input
         v-model="directRoundId"
@@ -31,34 +34,48 @@
         placeholder="e.g., bf1942-server-guid-2025-10-29-10-00-00"
         class="portal-form-input portal-form-input--mono"
       >
-      <p class="portal-form-hint">Enter the exact round ID if you know it</p>
+      <p class="portal-form-hint">
+        Enter the exact round ID if you know it
+      </p>
     </div>
 
     <!-- Search Mode -->
-    <div v-else class="search-mode">
+    <div
+      v-else
+      class="search-mode"
+    >
       <!-- Server Selection -->
       <div class="portal-form-section">
         <label class="portal-form-label portal-form-label--required">Server</label>
 
         <!-- Selected Server Display -->
-        <div v-if="selectedServer" class="selected-server">
+        <div
+          v-if="selectedServer"
+          class="selected-server"
+        >
           <div class="selected-server-info">
             <span class="selected-server-name">{{ selectedServer.serverName }}</span>
-            <span v-if="selectedServer.serverIp && selectedServer.serverPort" class="selected-server-ip">
+            <span
+              v-if="selectedServer.serverIp && selectedServer.serverPort"
+              class="selected-server-ip"
+            >
               {{ selectedServer.serverIp }}:{{ selectedServer.serverPort }}
             </span>
           </div>
           <button
             class="portal-btn portal-btn--ghost portal-btn--sm"
-            @click="clearServerSelection"
             title="Change server"
+            @click="clearServerSelection"
           >
             Change
           </button>
         </div>
 
         <!-- Server Search Input -->
-        <div v-else class="server-search-wrap">
+        <div
+          v-else
+          class="server-search-wrap"
+        >
           <input
             v-model="serverSearchQuery"
             type="text"
@@ -70,22 +87,31 @@
           >
 
           <!-- Server Suggestions Dropdown -->
-          <div v-if="showServerDropdown && serverSuggestions.length > 0" class="server-dropdown">
+          <div
+            v-if="showServerDropdown && serverSuggestions.length > 0"
+            class="server-dropdown"
+          >
             <div
               v-for="server in serverSuggestions"
               :key="server.serverGuid"
               class="server-option"
               @mousedown.prevent="selectServer(server)"
             >
-              <div class="server-option-name">{{ server.serverName }}</div>
-              <div class="server-option-ip">{{ server.serverIp }}:{{ server.serverPort }}</div>
+              <div class="server-option-name">
+                {{ server.serverName }}
+              </div>
+              <div class="server-option-ip">
+                {{ server.serverIp }}:{{ server.serverPort }}
+              </div>
             </div>
           </div>
           <div
             v-else-if="showServerDropdown && serverSearchQuery.length >= 2 && !isServerSearchLoading"
             class="server-dropdown"
           >
-            <div class="server-dropdown-empty">No servers found</div>
+            <div class="server-dropdown-empty">
+              No servers found
+            </div>
           </div>
         </div>
       </div>
@@ -114,19 +140,34 @@
       <!-- Rounds List -->
       <div class="rounds-section">
         <!-- Loading State -->
-        <div v-if="loading" class="portal-empty portal-empty--loading">
+        <div
+          v-if="loading"
+          class="portal-empty portal-empty--loading"
+        >
           <div class="loading-spinner" />
         </div>
 
         <!-- Error State -->
-        <div v-else-if="searchError" class="portal-empty">
-          <div class="portal-empty-icon">!</div>
-          <h3 class="portal-empty-title">Unable to Load Rounds</h3>
-          <p class="portal-empty-desc">{{ searchError }}</p>
+        <div
+          v-else-if="searchError"
+          class="portal-empty"
+        >
+          <div class="portal-empty-icon">
+            !
+          </div>
+          <h3 class="portal-empty-title">
+            Unable to Load Rounds
+          </h3>
+          <p class="portal-empty-desc">
+            {{ searchError }}
+          </p>
         </div>
 
         <!-- Rounds Table -->
-        <div v-else-if="rounds.length > 0" class="rounds-list">
+        <div
+          v-else-if="rounds.length > 0"
+          class="rounds-list"
+        >
           <div class="rounds-count">
             <span v-if="selectedRoundId">1 round selected</span>
             <span v-else>Select a round</span>
@@ -136,10 +177,14 @@
             <table class="portal-table">
               <thead>
                 <tr>
-                  <th style="width: 2rem;"></th>
+                  <th style="width: 2rem;" />
                   <th>Map</th>
-                  <th style="text-align: center;">Players</th>
-                  <th style="text-align: center;">Duration</th>
+                  <th style="text-align: center;">
+                    Players
+                  </th>
+                  <th style="text-align: center;">
+                    Duration
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -156,7 +201,10 @@
                         { 'round-selector--selected': selectedRoundId === round.roundId }
                       ]"
                     >
-                      <div v-if="selectedRoundId === round.roundId" class="round-selector-dot" />
+                      <div
+                        v-if="selectedRoundId === round.roundId"
+                        class="round-selector-dot"
+                      />
                     </div>
                   </td>
                   <td>
@@ -177,7 +225,10 @@
           </div>
 
           <!-- Pagination -->
-          <div v-if="totalPages > 1" class="portal-pagination">
+          <div
+            v-if="totalPages > 1"
+            class="portal-pagination"
+          >
             <span>Page {{ currentPage }} of {{ totalPages }}</span>
             <div class="portal-pagination-controls">
               <button
@@ -199,23 +250,44 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else-if="hasSearched" class="portal-empty">
-          <div class="portal-empty-icon">?</div>
-          <h3 class="portal-empty-title">No Rounds Found</h3>
-          <p class="portal-empty-desc">Try adjusting your filters</p>
+        <div
+          v-else-if="hasSearched"
+          class="portal-empty"
+        >
+          <div class="portal-empty-icon">
+            ?
+          </div>
+          <h3 class="portal-empty-title">
+            No Rounds Found
+          </h3>
+          <p class="portal-empty-desc">
+            Try adjusting your filters
+          </p>
         </div>
 
         <!-- Initial State -->
-        <div v-else class="portal-empty">
-          <div class="portal-empty-icon">@</div>
-          <h3 class="portal-empty-title">Select a Server</h3>
-          <p class="portal-empty-desc">Search and select a server to view rounds</p>
+        <div
+          v-else
+          class="portal-empty"
+        >
+          <div class="portal-empty-icon">
+            @
+          </div>
+          <h3 class="portal-empty-title">
+            Select a Server
+          </h3>
+          <p class="portal-empty-desc">
+            Search and select a server to view rounds
+          </p>
         </div>
       </div>
     </div>
 
     <!-- Error Message -->
-    <div v-if="error" class="portal-form-error">
+    <div
+      v-if="error"
+      class="portal-form-error"
+    >
       {{ error }}
     </div>
 

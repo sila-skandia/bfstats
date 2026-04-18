@@ -186,14 +186,21 @@ watch(() => props.days, (newDays) => {
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div class="flex items-center gap-4">
           <div class="w-1 h-5 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-          <h3 class="text-lg font-black text-white uppercase italic tracking-tighter">Global Engagement Ladder</h3>
-          <span v-if="totalCount > 0" class="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-mono text-slate-500 uppercase tracking-widest">{{ totalCount.toLocaleString() }} Operatives</span>
+          <h3 class="text-lg font-black text-white uppercase italic tracking-tighter">
+            Global Engagement Ladder
+          </h3>
+          <span
+            v-if="totalCount > 0"
+            class="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-mono text-slate-500 uppercase tracking-widest"
+          >{{ totalCount.toLocaleString() }} Operatives</span>
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-           <!-- Min Rounds Filter -->
-           <div class="flex bg-black/40 p-0.5 border border-white/5 rounded">
-            <div class="px-2 py-1 text-[8px] font-mono text-slate-600 uppercase flex items-center">Engagements</div>
+          <!-- Min Rounds Filter -->
+          <div class="flex bg-black/40 p-0.5 border border-white/5 rounded">
+            <div class="px-2 py-1 text-[8px] font-mono text-slate-600 uppercase flex items-center">
+              Engagements
+            </div>
             <button
               v-for="rounds in minRoundsOptions"
               :key="rounds"
@@ -227,7 +234,17 @@ watch(() => props.days, (newDays) => {
       <!-- Search Input -->
       <div class="relative group">
         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <svg class="w-4 h-4 text-slate-600 group-focus-within:text-cyan-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <svg
+            class="w-4 h-4 text-slate-600 group-focus-within:text-cyan-400 transition-colors"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          ><path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          /></svg>
         </div>
         <input
           v-model="searchQuery"
@@ -235,7 +252,7 @@ watch(() => props.days, (newDays) => {
           placeholder="SEARCH_OPERATIVE_ID..."
           class="w-full bg-black/40 border border-white/5 focus:border-cyan-500/50 rounded-lg pl-10 pr-4 py-2.5 text-xs font-mono text-cyan-400 placeholder:text-slate-800 transition-all focus:bg-cyan-500/[0.02]"
           @input="handleSearchInput"
-        />
+        >
       </div>
     </div>
 
@@ -258,29 +275,57 @@ watch(() => props.days, (newDays) => {
     <!-- Data State Rendering -->
     <div class="flex-1 relative min-h-[400px]">
       <!-- Loading Overlay -->
-      <div v-if="isLoading || isRefreshing" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#05050a]/60 backdrop-blur-sm transition-opacity">
+      <div
+        v-if="isLoading || isRefreshing"
+        class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#05050a]/60 backdrop-blur-sm transition-opacity"
+      >
         <div class="w-8 h-8 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-3" />
         <span class="text-[9px] font-mono text-cyan-400 uppercase tracking-[0.3em] animate-pulse">Syncing_Telemetry...</span>
       </div>
 
       <!-- Error State -->
-      <div v-if="error" class="flex flex-col items-center justify-center py-20 text-center">
-        <div class="text-4xl mb-4">⚠️</div>
-        <p class="text-sm font-mono text-red-400 uppercase tracking-widest mb-6">{{ error }}</p>
-        <button class="px-6 py-2 bg-red-500/10 border border-red-500/50 text-red-400 text-[10px] font-mono font-black uppercase tracking-widest hover:bg-red-500/20 transition-all" @click="loadRankings">Retransmit_Query</button>
+      <div
+        v-if="error"
+        class="flex flex-col items-center justify-center py-20 text-center"
+      >
+        <div class="text-4xl mb-4">
+          ⚠️
+        </div>
+        <p class="text-sm font-mono text-red-400 uppercase tracking-widest mb-6">
+          {{ error }}
+        </p>
+        <button
+          class="px-6 py-2 bg-red-500/10 border border-red-500/50 text-red-400 text-[10px] font-mono font-black uppercase tracking-widest hover:bg-red-500/20 transition-all"
+          @click="loadRankings"
+        >
+          Retransmit_Query
+        </button>
       </div>
 
       <!-- Table View -->
-      <div v-else-if="rankings.length > 0" class="overflow-hidden border border-white/5 rounded-xl bg-black/20">
+      <div
+        v-else-if="rankings.length > 0"
+        class="overflow-hidden border border-white/5 rounded-xl bg-black/20"
+      >
         <div class="overflow-x-auto custom-scrollbar">
           <table class="w-full text-left border-collapse">
             <thead>
               <tr class="bg-white/5 border-b border-white/10 font-mono text-[9px] text-slate-500 uppercase tracking-[0.2em]">
-                <th class="p-3 w-12 text-center">#</th>
-                <th class="p-3">Operative</th>
-                <th class="p-3 text-right">{{ primaryColumnHeader }}</th>
-                <th class="p-3 text-right">Efficiency</th>
-                <th class="p-3 text-right">Engagements</th>
+                <th class="p-3 w-12 text-center">
+                  #
+                </th>
+                <th class="p-3">
+                  Operative
+                </th>
+                <th class="p-3 text-right">
+                  {{ primaryColumnHeader }}
+                </th>
+                <th class="p-3 text-right">
+                  Efficiency
+                </th>
+                <th class="p-3 text-right">
+                  Engagements
+                </th>
               </tr>
             </thead>
             <tbody class="divide-y divide-white/5 font-mono">
@@ -292,14 +337,23 @@ watch(() => props.days, (newDays) => {
                 @click="navigateToPlayer(entry.playerName)"
               >
                 <td class="p-3">
-                  <div class="w-7 h-7 flex items-center justify-center rounded border text-[10px] font-black" :class="[getRankClass(entry.rank), 'border-current/20 shadow-[inset_0_0_8px_rgba(0,0,0,0.5)]']">
+                  <div
+                    class="w-7 h-7 flex items-center justify-center rounded border text-[10px] font-black"
+                    :class="[getRankClass(entry.rank), 'border-current/20 shadow-[inset_0_0_8px_rgba(0,0,0,0.5)]']"
+                  >
                     {{ entry.rank }}
                   </div>
                 </td>
                 <td class="p-3">
                   <div class="flex items-center gap-2">
-                    <div v-if="isHighlighted(entry.playerName)" class="w-1 h-3 bg-cyan-400 animate-pulse" />
-                    <span class="text-xs font-bold text-white uppercase group-hover:text-cyan-400 transition-colors" :class="{ 'text-cyan-400': isHighlighted(entry.playerName) }">{{ entry.playerName }}</span>
+                    <div
+                      v-if="isHighlighted(entry.playerName)"
+                      class="w-1 h-3 bg-cyan-400 animate-pulse"
+                    />
+                    <span
+                      class="text-xs font-bold text-white uppercase group-hover:text-cyan-400 transition-colors"
+                      :class="{ 'text-cyan-400': isHighlighted(entry.playerName) }"
+                    >{{ entry.playerName }}</span>
                   </div>
                 </td>
                 <td class="p-3 text-right">
@@ -318,20 +372,40 @@ watch(() => props.days, (newDays) => {
       </div>
 
       <!-- Empty State -->
-      <div v-else class="flex flex-col items-center justify-center py-20 text-center opacity-30">
-        <div class="text-5xl mb-6">∅</div>
-        <p class="text-xs font-mono text-slate-400 uppercase tracking-[0.4em]">Zero_Data_Points_Detected</p>
+      <div
+        v-else
+        class="flex flex-col items-center justify-center py-20 text-center opacity-30"
+      >
+        <div class="text-5xl mb-6">
+          ∅
+        </div>
+        <p class="text-xs font-mono text-slate-400 uppercase tracking-[0.4em]">
+          Zero_Data_Points_Detected
+        </p>
       </div>
     </div>
 
     <!-- Pagination -->
-    <div v-if="totalPages > 1" class="flex items-center justify-center gap-2 pt-6 mt-auto border-t border-white/5">
+    <div
+      v-if="totalPages > 1"
+      class="flex items-center justify-center gap-2 pt-6 mt-auto border-t border-white/5"
+    >
       <button
         class="w-8 h-8 flex items-center justify-center rounded border border-white/5 text-slate-500 hover:border-cyan-500/50 hover:text-cyan-400 transition-all disabled:opacity-20"
         :disabled="currentPage === 1 || isRefreshing"
         @click="goToPage(currentPage - 1)"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        ><path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M15 19l-7-7 7-7"
+        /></svg>
       </button>
       
       <div class="flex items-center gap-1">
@@ -353,7 +427,17 @@ watch(() => props.days, (newDays) => {
         :disabled="currentPage === totalPages || isRefreshing"
         @click="goToPage(currentPage + 1)"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        ><path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M9 5l7 7-7 7"
+        /></svg>
       </button>
     </div>
   </div>

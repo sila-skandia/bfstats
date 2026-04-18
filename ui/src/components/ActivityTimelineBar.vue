@@ -90,7 +90,9 @@ const formatMinutes = (minutes: number) => {
     <div class="timeline-wrapper">
       <!-- Player 1 Timeline -->
       <div class="player-timeline">
-        <div class="player-label">{{ player1Name }}</div>
+        <div class="player-label">
+          {{ player1Name }}
+        </div>
         <div class="hours-grid">
           <div
             v-for="hour in hourStats"
@@ -105,14 +107,18 @@ const formatMinutes = (minutes: number) => {
                 :style="{ height: hour.player1Height + '%' }"
               />
             </div>
-            <div class="hour-label">{{ hour.hour }}</div>
+            <div class="hour-label">
+              {{ hour.hour }}
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Overlap Indicator -->
       <div class="overlap-timeline">
-        <div class="overlap-label">Overlap</div>
+        <div class="overlap-label">
+          Overlap
+        </div>
         <div class="hours-grid">
           <div
             v-for="hour in hourStats"
@@ -121,14 +127,20 @@ const formatMinutes = (minutes: number) => {
             :class="{ 'has-overlap': hour.hasOverlap }"
             :title="hour.hasOverlap ? `${formatTime(hour.hour)}: ${hour.overlapMinutes}m overlap` : 'No overlap'"
           >
-            <div v-if="hour.hasOverlap" class="overlap-indicator" :style="{ opacity: Math.min(hour.overlapPercentage / 100, 1) }" />
+            <div
+              v-if="hour.hasOverlap"
+              class="overlap-indicator"
+              :style="{ opacity: Math.min(hour.overlapPercentage / 100, 1) }"
+            />
           </div>
         </div>
       </div>
 
       <!-- Player 2 Timeline -->
       <div class="player-timeline">
-        <div class="player-label">{{ player2Name }}</div>
+        <div class="player-label">
+          {{ player2Name }}
+        </div>
         <div class="hours-grid">
           <div
             v-for="hour in hourStats"
@@ -143,7 +155,9 @@ const formatMinutes = (minutes: number) => {
                 :style="{ height: hour.player2Height + '%' }"
               />
             </div>
-            <div class="hour-label">{{ hour.hour }}</div>
+            <div class="hour-label">
+              {{ hour.hour }}
+            </div>
           </div>
         </div>
       </div>
@@ -152,15 +166,15 @@ const formatMinutes = (minutes: number) => {
     <!-- Legend -->
     <div class="legend">
       <div class="legend-item">
-        <div class="legend-color player1-bar"></div>
+        <div class="legend-color player1-bar" />
         <span>{{ player1Name }} Activity</span>
       </div>
       <div class="legend-item">
-        <div class="legend-color overlap-indicator"></div>
+        <div class="legend-color overlap-indicator" />
         <span>Overlap Time</span>
       </div>
       <div class="legend-item">
-        <div class="legend-color player2-bar"></div>
+        <div class="legend-color player2-bar" />
         <span>{{ player2Name }} Activity</span>
       </div>
     </div>

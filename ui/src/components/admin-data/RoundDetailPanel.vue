@@ -1,16 +1,36 @@
 <template>
   <div class="round-panel">
-    <div v-if="detail.isDeleted" class="round-panel-deleted-banner">
+    <div
+      v-if="detail.isDeleted"
+      class="round-panel-deleted-banner"
+    >
       This round has been marked as deleted. It is excluded from stats and aggregates. Achievements were removed; round and sessions remain for recovery.
-      <span v-if="props.undeleteError" class="round-panel-deleted-err">{{ props.undeleteError }}</span>
+      <span
+        v-if="props.undeleteError"
+        class="round-panel-deleted-err"
+      >{{ props.undeleteError }}</span>
     </div>
     <div class="round-panel-head">
       <div class="round-panel-meta">
-        <h3 class="round-panel-title">[ ROUND ] {{ detail.roundId }}</h3>
-        <div v-if="detail.mapName || detail.serverName" class="round-panel-tags">
-          <span v-if="detail.mapName" class="round-panel-tag">{{ detail.mapName }}</span>
-          <span v-if="detail.serverName" class="round-panel-tag">{{ detail.serverName }}</span>
-          <span v-if="detail.startTime" class="round-panel-tag round-panel-tag--mono">{{ formatDate(detail.startTime) }}</span>
+        <h3 class="round-panel-title">
+          [ ROUND ] {{ detail.roundId }}
+        </h3>
+        <div
+          v-if="detail.mapName || detail.serverName"
+          class="round-panel-tags"
+        >
+          <span
+            v-if="detail.mapName"
+            class="round-panel-tag"
+          >{{ detail.mapName }}</span>
+          <span
+            v-if="detail.serverName"
+            class="round-panel-tag"
+          >{{ detail.serverName }}</span>
+          <span
+            v-if="detail.startTime"
+            class="round-panel-tag round-panel-tag--mono"
+          >{{ formatDate(detail.startTime) }}</span>
         </div>
       </div>
       <button
@@ -53,18 +73,26 @@
             </button>
           </span>
         </div>
-        <div v-if="detail.observationCountToDelete != null" class="round-stat">
+        <div
+          v-if="detail.observationCountToDelete != null"
+          class="round-stat"
+        >
           <span class="round-stat-label">observations</span>
           <span class="round-stat-value">{{ detail.observationCountToDelete }}</span>
         </div>
-        <div v-if="detail.sessionCountToDelete != null" class="round-stat">
+        <div
+          v-if="detail.sessionCountToDelete != null"
+          class="round-stat"
+        >
           <span class="round-stat-label">sessions</span>
           <span class="round-stat-value">{{ detail.sessionCountToDelete }}</span>
         </div>
       </div>
 
       <div class="round-panel-table-wrap">
-        <div class="round-panel-table-label">[ PLAYERS IN ROUND ]</div>
+        <div class="round-panel-table-label">
+          [ PLAYERS IN ROUND ]
+        </div>
         <table class="round-panel-table">
           <thead>
             <tr>
@@ -75,11 +103,20 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="p in playersByScoreDesc" :key="p.playerName">
+            <tr
+              v-for="p in playersByScoreDesc"
+              :key="p.playerName"
+            >
               <td>{{ p.playerName }}</td>
-              <td class="round-panel-mono">{{ pickScore(p) }}</td>
-              <td class="round-panel-mono">{{ pickKills(p) }}</td>
-              <td class="round-panel-mono">{{ pickDeaths(p) }}</td>
+              <td class="round-panel-mono">
+                {{ pickScore(p) }}
+              </td>
+              <td class="round-panel-mono">
+                {{ pickKills(p) }}
+              </td>
+              <td class="round-panel-mono">
+                {{ pickDeaths(p) }}
+              </td>
             </tr>
           </tbody>
         </table>

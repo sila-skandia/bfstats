@@ -23,11 +23,6 @@ import { formatRelativeTime } from '@/utils/timeUtils';
 import { calculateKDR } from '@/utils/statsUtils';
 import { useAIContext } from '@/composables/useAIContext';
 
-import bf1942Icon from '@/assets/bf1942.webp';
-import fh2Icon from '@/assets/fh2.webp';
-import bfvIcon from '@/assets/bfv.webp';
-import defaultIcon from '@/assets/servers.webp';
-
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
@@ -289,78 +284,6 @@ const trendChartOptions = computed(() => {
   };
 });
 
-const microChartOptions = computed(() => {
-  const computedStyles = window.getComputedStyle(document.documentElement);
-  const isDarkMode = computedStyles.getPropertyValue('--color-background').trim().includes('26, 16, 37') ||
-                    document.documentElement.classList.contains('dark-mode') ||
-                    (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: {
-      intersect: false,
-      mode: 'index' as const
-    },
-    scales: {
-      y: {
-        display: false,
-        grid: {
-          display: false
-        }
-      },
-      x: {
-        display: false,
-        grid: {
-          display: false
-        }
-      }
-    },
-    plugins: {
-      legend: {
-        display: false
-      },
-      tooltip: {
-        enabled: true,
-        backgroundColor: isDarkMode ? 'rgba(35, 21, 53, 0.95)' : 'rgba(0, 0, 0, 0.8)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: isDarkMode ? '#9c27b0' : '#666666',
-        borderWidth: 1,
-        cornerRadius: 6,
-        displayColors: false,
-        padding: 8,
-        titleFont: { size: 12, weight: 'bold' as const },
-        bodyFont: { size: 11 },
-        callbacks: {
-          title: function(context: any[]) {
-            return context[0].label;
-          },
-          label: function(context: any) {
-            const label = context.dataset.label;
-            const value = context.parsed.y;
-            if (label === 'Kill Rate') {
-              return `${value.toFixed(3)} k/min`;
-            } else if (label === 'K/D Ratio') {
-              return `${value.toFixed(2)}`;
-            }
-            return `${value.toFixed(2)}`;
-          }
-        }
-      }
-    },
-    elements: {
-      point: {
-        radius: 0,
-        hoverRadius: 2
-      },
-      line: {
-        borderWidth: 1
-      }
-    }
-  };
-});
-
 // Function to show map stats for a server
 const showServerMapStats = (serverGuid: string) => {
   scrollPositionBeforeMapStats.value = window.scrollY;
@@ -546,17 +469,6 @@ onUnmounted(() => {
   clearContext();
 });
 
-const gameIcons: { [key: string]: string } = {
-  bf1942: bf1942Icon,
-  fh2: fh2Icon,
-  bfv: bfvIcon,
-};
-
-const getGameIcon = (gameId: string): string => {
-  if (!gameId) return defaultIcon;
-  return gameIcons[gameId.toLowerCase()] || defaultIcon;
-};
-
 // --- Server List ---
 
 // Unified server entry type: stats fields are optional because rankings-only entries won't have them
@@ -693,6 +605,99 @@ const rankingsSummary = computed(() => {
   return { totalRanked: rankings.length, numOnes, numTop10, best };
 });
 
+// =====================================================================
+// OPERATIVE DOSSIER — derived signatures
+// =====================================================================
+
+// Threat tier: Rookie → Veteran → Elite → Legend → Ghost, computed
+// from a blend of K/D, hours logged, and lifetime kills.
+type ThreatTier = {
+  id: 'rookie' | 'veteran' | 'elite' | 'legend' | 'ghost';
+  label: string;
+  chevrons: number;
+  desc: string;
+};
+const threatTier = computed<ThreatTier | null>(() => {
+  if (!playerStats.value) return null;
+  const kdStr = calculateKDR(playerStats.value.totalKills || 0, playerStats.value.totalDeaths || 0);
+  const kd = parseFloat(kdStr) || 0;
+  const hours = (playerStats.value.totalPlayTimeMinutes || 0) / 60;
+  const kills = playerStats.value.totalKills || 0;
+  // Score 0–100: K/D weighted heaviest, endurance + volume fill the rest
+  const score = Math.min(100, (kd * 28) + Math.min(36, hours / 6) + Math.min(36, kills / 250));
+  if (score >= 80) return { id: 'ghost', label: 'GHOST', chevrons: 5, desc: 'Top 1% · Ghost-tier operative' };
+  if (score >= 60) return { id: 'legend', label: 'LEGEND', chevrons: 4, desc: 'Legendary combatant' };
+  if (score >= 40) return { id: 'elite', label: 'ELITE', chevrons: 3, desc: 'Elite threat level' };
+  if (score >= 20) return { id: 'veteran', label: 'VETERAN', chevrons: 2, desc: 'Proven in the field' };
+  return { id: 'rookie', label: 'ROOKIE', chevrons: 1, desc: 'New on the front line' };
+});
+
+// Deterministic hex callsign derived from player name — gives the card a
+// "service record" feel without adding real PII.
+const dossierCallsign = computed(() => {
+  const name = playerName.value || '';
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = ((hash << 5) - hash) + name.charCodeAt(i);
+    hash |= 0;
+  }
+  const hex = Math.abs(hash).toString(16).toUpperCase().padStart(6, '0').slice(-6);
+  const clearance = threatTier.value
+    ? ({ rookie: 'DELTA', veteran: 'GAMMA', elite: 'BETA', legend: 'ALPHA', ghost: 'OMEGA' } as const)[threatTier.value.id]
+    : 'DELTA';
+  return { id: hex, clearance };
+});
+
+// Combat fingerprint — four 0–100 traits + a computed archetype label.
+// All values are derived from existing stats (no backend work needed).
+const combatFingerprint = computed(() => {
+  if (!playerStats.value) return null;
+  const totalMin = playerStats.value.totalPlayTimeMinutes || 0;
+  const totalKills = playerStats.value.totalKills || 0;
+  const totalDeaths = playerStats.value.totalDeaths || 0;
+  const totalSessions = playerStats.value.totalSessions || 0;
+  if (totalMin === 0 || totalSessions === 0) return null;
+
+  const kdStr = calculateKDR(totalKills, totalDeaths);
+  const kd = parseFloat(kdStr) || 0;
+  const killsPerMin = totalKills / totalMin;
+  const avgSessionMin = totalMin / totalSessions;
+  const hours = totalMin / 60;
+
+  // Scale each trait into 0–100. Calibrated against typical ranges so most
+  // players land 20–80 and standout players get the 80+ glow.
+  const aggression = Math.max(2, Math.min(100, Math.round((killsPerMin / 1.2) * 100)));
+  const lethality = Math.max(2, Math.min(100, Math.round((kd / 3) * 100)));
+  const endurance = Math.max(2, Math.min(100, Math.round((avgSessionMin / 75) * 100)));
+  const devotion = Math.max(2, Math.min(100, Math.round((hours / 400) * 100)));
+
+  const band = (v: number) => v >= 80 ? 'ELITE' : v >= 60 ? 'HIGH' : v >= 40 ? 'MEDIUM' : v >= 20 ? 'LOW' : 'MINIMAL';
+
+  // Archetype: whichever trait is highest wins — unless two are tied and high
+  const traits = [
+    { key: 'aggression', val: aggression, pick: 'Assault Specialist' },
+    { key: 'lethality', val: lethality, pick: 'Precision Marksman' },
+    { key: 'endurance', val: endurance, pick: 'Trench Veteran' },
+    { key: 'devotion', val: devotion, pick: 'Devoted Regular' },
+  ] as const;
+  const top = [...traits].sort((a, b) => b.val - a.val)[0];
+  let archetype = 'Balanced Operator';
+  if (top.val >= 55) archetype = top.pick;
+  if (aggression >= 70 && lethality >= 70) archetype = 'Apex Predator';
+  else if (endurance >= 70 && devotion >= 70) archetype = 'Battle-Worn Legend';
+  else if (aggression >= 60 && endurance >= 60) archetype = 'Relentless Pusher';
+
+  return {
+    aggression, lethality, endurance, devotion,
+    aggressionLabel: `${killsPerMin.toFixed(2)} k/min · ${band(aggression)}`,
+    lethalityLabel: `K/D ${kd.toFixed(2)} · ${band(lethality)}`,
+    enduranceLabel: `${Math.round(avgSessionMin)}m avg · ${band(endurance)}`,
+    devotionLabel: `${Math.round(hours).toLocaleString()}h · ${band(devotion)}`,
+    archetype,
+    totalKills, totalMin, killsPerMin, kd, hours,
+  };
+});
+
 
 
 // Add watcher for route changes to update playerName and refetch data
@@ -730,78 +735,205 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="portal-page">
-    <div class="portal-grid" aria-hidden="true" />
+  <div class="portal-page pd-v2">
+    <div
+      class="portal-grid"
+      aria-hidden="true"
+    />
+    <div
+      class="pd-v2-fx"
+      aria-hidden="true"
+    >
+      <div class="pd-v2-orb pd-v2-orb--cyan" />
+      <div class="pd-v2-orb pd-v2-orb--purple" />
+    </div>
     <div class="portal-inner">
-      <div class="data-explorer">
+      <div class="data-explorer pd-v2-explorer">
         <div class="explorer-inner">
-          
           <!-- Loading State -->
-          <div v-if="isLoading" class="loading-terminal" role="status" aria-label="Loading player statistics">
+          <div
+            v-if="isLoading"
+            class="loading-terminal"
+            role="status"
+            aria-label="Loading player statistics"
+          >
             <div class="loading-terminal-frame">
               <div class="loading-terminal-header">
-                <div class="loading-terminal-dots" aria-hidden="true">
+                <div
+                  class="loading-terminal-dots"
+                  aria-hidden="true"
+                >
                   <span class="loading-dot loading-dot--red" />
                   <span class="loading-dot loading-dot--amber" />
                   <span class="loading-dot loading-dot--green" />
                 </div>
-                <div class="text-[10px] font-mono text-neutral-500 uppercase tracking-widest">OPERATIVE_DOSSIER.ENCRYPTED</div>
+                <div class="text-[10px] font-mono text-neutral-500 uppercase tracking-widest">
+                  OPERATIVE_DOSSIER.ENCRYPTED
+                </div>
               </div>
               <div class="loading-terminal-body">
-                <div class="terminal-line"><span class="terminal-prompt">&gt;</span><span>connect --target <span class="text-neon-cyan">{{ playerName }}</span></span></div>
-                <div class="terminal-line terminal-line--muted"><span class="terminal-prompt">$</span><span>fetching telemetry</span><span class="terminal-dots" /></div>
-                <div class="terminal-line terminal-line--muted"><span class="terminal-prompt">$</span><span>decrypting rankings</span><span class="terminal-dots" /></div>
-                <div class="terminal-line terminal-line--muted"><span class="terminal-prompt">$</span><span>resolving combat log</span><span class="terminal-dots" /></div>
-                <div class="terminal-line"><span class="terminal-prompt terminal-prompt--cyan">&gt;</span><span class="text-neon-cyan">loading dossier</span><span class="terminal-cursor">█</span></div>
+                <div class="terminal-line">
+                  <span class="terminal-prompt">&gt;</span><span>connect --target <span class="text-neon-cyan">{{ playerName }}</span></span>
+                </div>
+                <div class="terminal-line terminal-line--muted">
+                  <span class="terminal-prompt">$</span><span>fetching telemetry</span><span class="terminal-dots" />
+                </div>
+                <div class="terminal-line terminal-line--muted">
+                  <span class="terminal-prompt">$</span><span>decrypting rankings</span><span class="terminal-dots" />
+                </div>
+                <div class="terminal-line terminal-line--muted">
+                  <span class="terminal-prompt">$</span><span>resolving combat log</span><span class="terminal-dots" />
+                </div>
+                <div class="terminal-line">
+                  <span class="terminal-prompt terminal-prompt--cyan">&gt;</span><span class="text-neon-cyan">loading dossier</span><span class="terminal-cursor">█</span>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Error State -->
-          <div v-else-if="error" class="explorer-card p-8 text-center" role="alert">
+          <div
+            v-else-if="error"
+            class="explorer-card p-8 text-center"
+            role="alert"
+          >
             <div class="flex items-center justify-center mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-400"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-red-400"
+              ><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
             </div>
-            <p class="text-neon-red text-lg font-medium">{{ error }}</p>
+            <p class="text-neon-red text-lg font-medium">
+              {{ error }}
+            </p>
           </div>
 
           <!-- Content -->
-          <div v-else-if="playerStats" class="space-y-6">
-            
+          <div
+            v-else-if="playerStats"
+            class="space-y-6"
+          >
             <!-- Player Hero / Command Dossier -->
-            <section class="player-hero" :class="{ 'player-hero--active': playerStats?.isActive }" aria-label="Player dossier">
-              <span class="hero-corner hero-corner--tl" aria-hidden="true" />
-              <span class="hero-corner hero-corner--tr" aria-hidden="true" />
-              <span class="hero-corner hero-corner--bl" aria-hidden="true" />
-              <span class="hero-corner hero-corner--br" aria-hidden="true" />
+            <section
+              class="player-hero"
+              :class="{ 'player-hero--active': playerStats?.isActive }"
+              aria-label="Player dossier"
+            >
+              <span
+                class="hero-corner hero-corner--tl"
+                aria-hidden="true"
+              />
+              <span
+                class="hero-corner hero-corner--tr"
+                aria-hidden="true"
+              />
+              <span
+                class="hero-corner hero-corner--bl"
+                aria-hidden="true"
+              />
+              <span
+                class="hero-corner hero-corner--br"
+                aria-hidden="true"
+              />
 
               <div class="hero-body">
                 <!-- Identity row -->
                 <div class="hero-identity">
-                  <div class="relative group cursor-pointer flex-shrink-0" @click="showLastOnline = !showLastOnline">
-                    <div class="hero-avatar" :class="{ 'hero-avatar--active': playerStats?.isActive }">
+                  <div
+                    class="relative group cursor-pointer flex-shrink-0"
+                    @click="showLastOnline = !showLastOnline"
+                  >
+                    <div
+                      class="hero-avatar"
+                      :class="{ 'hero-avatar--active': playerStats?.isActive }"
+                    >
                       <span class="hero-avatar-initial">{{ playerName?.charAt(0)?.toUpperCase() || '?' }}</span>
-                      <span class="hero-avatar-ring" aria-hidden="true" />
+                      <span
+                        class="hero-avatar-ring"
+                        aria-hidden="true"
+                      />
                     </div>
-                    <div class="hero-status-dot" :class="playerStats?.isActive ? 'hero-status-dot--on' : 'hero-status-dot--off'" aria-hidden="true" />
+                    <div
+                      class="hero-status-dot"
+                      :class="playerStats?.isActive ? 'hero-status-dot--on' : 'hero-status-dot--off'"
+                      aria-hidden="true"
+                    />
                     <div
                       v-if="showLastOnline"
                       class="hero-tooltip"
                       role="tooltip"
                     >
-                      <div class="w-2 h-2 rounded-full" :class="playerStats?.isActive ? 'bg-neon-green' : 'bg-neutral-500'" />
+                      <div
+                        class="w-2 h-2 rounded-full"
+                        :class="playerStats?.isActive ? 'bg-neon-green' : 'bg-neutral-500'"
+                      />
                       <span>{{ playerStats?.isActive ? 'CURRENTLY ONLINE' : `LAST ONLINE: ${formatRelativeTime(playerStats?.lastPlayed || '')}`.toUpperCase() }}</span>
                     </div>
                   </div>
 
                   <div class="hero-identity-text">
                     <div class="hero-eyebrow">
-                      <span class="hero-eyebrow-pulse" :class="playerStats?.isActive ? 'hero-eyebrow-pulse--on' : 'hero-eyebrow-pulse--off'" aria-hidden="true" />
+                      <span
+                        class="hero-eyebrow-pulse"
+                        :class="playerStats?.isActive ? 'hero-eyebrow-pulse--on' : 'hero-eyebrow-pulse--off'"
+                        aria-hidden="true"
+                      />
                       <span>OPERATIVE // {{ playerStats?.isActive ? 'ACTIVE' : 'DORMANT' }}</span>
-                      <span class="hero-eyebrow-sep" aria-hidden="true">·</span>
+                      <span
+                        class="hero-eyebrow-sep"
+                        aria-hidden="true"
+                      >·</span>
                       <span class="uppercase tracking-wider">SEEN {{ formatRelativeTime(playerStats?.lastPlayed || '') }}</span>
                     </div>
-                    <h1 class="hero-name">{{ playerName }}</h1>
+
+                    <!-- THREAT TIER INSIGNIA — dynamic chevron rank + service callsign -->
+                    <div
+                      v-if="threatTier"
+                      class="threat-tier"
+                      :class="`threat-tier--${threatTier.id}`"
+                      :title="threatTier.desc"
+                    >
+                      <div
+                        class="threat-tier__chevrons"
+                        aria-hidden="true"
+                      >
+                        <span
+                          v-for="n in 5"
+                          :key="n"
+                          class="threat-chevron"
+                          :class="{ 'threat-chevron--on': n <= threatTier.chevrons }"
+                          :style="{ '--chev-delay': (n * 0.08) + 's' }"
+                        />
+                      </div>
+                      <div class="threat-tier__meta">
+                        <span class="threat-tier__label">{{ threatTier.label }}</span>
+                        <span
+                          class="threat-tier__sep"
+                          aria-hidden="true"
+                        >·</span>
+                        <span class="threat-tier__callsign">
+                          <span class="threat-tier__callsign-key">ID</span>
+                          <span class="threat-tier__callsign-val">BF-{{ dossierCallsign.id }}</span>
+                        </span>
+                        <span
+                          class="threat-tier__sep"
+                          aria-hidden="true"
+                        >·</span>
+                        <span class="threat-tier__clearance">CLEARANCE: <span class="threat-tier__clearance-val">{{ dossierCallsign.clearance }}</span></span>
+                      </div>
+                    </div>
+
+                    <h1 class="hero-name">
+                      {{ playerName }}
+                    </h1>
                     <div class="hero-badges-inline">
                       <PlayerAchievementHeroBadges :player-name="playerName" />
                     </div>
@@ -813,7 +945,35 @@ onUnmounted(() => {
                       class="explorer-btn explorer-btn--ghost explorer-btn--sm hero-action-btn"
                       title="View player network"
                     >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-action-icon"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="m7 7 3 3"/><path d="m17 7-3 3"/><path d="m7 17 3-3"/><path d="m17 17-3-3"/></svg>
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="hero-action-icon"
+                      ><circle
+                        cx="12"
+                        cy="12"
+                        r="3"
+                      /><circle
+                        cx="5"
+                        cy="5"
+                        r="2"
+                      /><circle
+                        cx="19"
+                        cy="5"
+                        r="2"
+                      /><circle
+                        cx="5"
+                        cy="19"
+                        r="2"
+                      /><circle
+                        cx="19"
+                        cy="19"
+                        r="2"
+                      /><path d="m7 7 3 3" /><path d="m17 7-3 3" /><path d="m7 17 3-3" /><path d="m17 17-3-3" /></svg>
                       NETWORK
                     </router-link>
                     <router-link
@@ -821,7 +981,15 @@ onUnmounted(() => {
                       class="explorer-btn explorer-btn--ghost explorer-btn--sm hero-action-btn"
                       title="Compare this player"
                     >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-action-icon"><path d="m8 3 4 8 5-5 5 15H2L8 3z"/></svg>
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="hero-action-icon"
+                      ><path d="m8 3 4 8 5-5 5 15H2L8 3z" /></svg>
                       COMPARE
                     </router-link>
                   </div>
@@ -830,54 +998,147 @@ onUnmounted(() => {
                 <!-- KPI grid -->
                 <div class="hero-kpi-grid">
                   <div class="hero-kpi">
-                    <div class="hero-kpi-label">K/D Ratio</div>
-                    <div class="hero-kpi-value hero-kpi-value--cyan">{{ calculateKDR(playerStats?.totalKills || 0, playerStats?.totalDeaths || 0) }}</div>
-                    <div class="hero-kpi-foot">{{ (playerStats?.totalKills || 0).toLocaleString() }} K · {{ (playerStats?.totalDeaths || 0).toLocaleString() }} D</div>
+                    <div class="hero-kpi-label">
+                      K/D Ratio
+                    </div>
+                    <div class="hero-kpi-value hero-kpi-value--cyan">
+                      {{ calculateKDR(playerStats?.totalKills || 0, playerStats?.totalDeaths || 0) }}
+                    </div>
+                    <div class="hero-kpi-foot">
+                      {{ (playerStats?.totalKills || 0).toLocaleString() }} K · {{ (playerStats?.totalDeaths || 0).toLocaleString() }} D
+                    </div>
                   </div>
                   <div class="hero-kpi">
-                    <div class="hero-kpi-label">Total Kills</div>
-                    <div class="hero-kpi-value hero-kpi-value--green">{{ (playerStats?.totalKills || 0).toLocaleString() }}</div>
-                    <div class="hero-kpi-foot">{{ playerStats?.totalSessions ?? 0 }} sessions</div>
+                    <div class="hero-kpi-label">
+                      Total Kills
+                    </div>
+                    <div class="hero-kpi-value hero-kpi-value--green">
+                      {{ (playerStats?.totalKills || 0).toLocaleString() }}
+                    </div>
+                    <div class="hero-kpi-foot">
+                      {{ playerStats?.totalSessions ?? 0 }} sessions
+                    </div>
                   </div>
                   <div class="hero-kpi">
-                    <div class="hero-kpi-label">Playtime</div>
-                    <div class="hero-kpi-value hero-kpi-value--gold">{{ formatPlayTime(playerStats?.totalPlayTimeMinutes || 0) }}</div>
-                    <div class="hero-kpi-foot">since {{ playerStats?.firstPlayed ? new Date(playerStats.firstPlayed).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : '—' }}</div>
+                    <div class="hero-kpi-label">
+                      Playtime
+                    </div>
+                    <div class="hero-kpi-value hero-kpi-value--gold">
+                      {{ formatPlayTime(playerStats?.totalPlayTimeMinutes || 0) }}
+                    </div>
+                    <div class="hero-kpi-foot">
+                      since {{ playerStats?.firstPlayed ? new Date(playerStats.firstPlayed).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : '—' }}
+                    </div>
                   </div>
                   <div class="hero-kpi">
-                    <div class="hero-kpi-label">High Score</div>
-                    <div class="hero-kpi-value hero-kpi-value--pink">{{ (playerStats?.highestScore || 0).toLocaleString() }}</div>
-                    <div class="hero-kpi-foot">single round peak</div>
+                    <div class="hero-kpi-label">
+                      High Score
+                    </div>
+                    <div class="hero-kpi-value hero-kpi-value--pink">
+                      {{ (playerStats?.highestScore || 0).toLocaleString() }}
+                    </div>
+                    <div class="hero-kpi-foot">
+                      single round peak
+                    </div>
                   </div>
                 </div>
 
                 <!-- Rankings summary strip -->
-                <div v-if="rankingsSummary" class="hero-ranks-strip">
-                  <div class="hero-rank-chip" v-if="rankingsSummary.numOnes > 0">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-rank-icon text-neon-gold"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+                <div
+                  v-if="rankingsSummary"
+                  class="hero-ranks-strip"
+                >
+                  <div
+                    v-if="rankingsSummary.numOnes > 0"
+                    class="hero-rank-chip"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="hero-rank-icon text-neon-gold"
+                    ><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>
                     <div class="hero-rank-chip-body">
-                      <div class="hero-rank-num text-neon-gold">{{ rankingsSummary.numOnes }}</div>
-                      <div class="hero-rank-label">#1 RANKS</div>
+                      <div class="hero-rank-num text-neon-gold">
+                        {{ rankingsSummary.numOnes }}
+                      </div>
+                      <div class="hero-rank-label">
+                        #1 RANKS
+                      </div>
                     </div>
                   </div>
                   <div class="hero-rank-chip">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-rank-icon text-neon-cyan"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="hero-rank-icon text-neon-cyan"
+                    ><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
                     <div class="hero-rank-chip-body">
-                      <div class="hero-rank-num text-neon-cyan">{{ rankingsSummary.numTop10 }}</div>
-                      <div class="hero-rank-label">TOP 10</div>
+                      <div class="hero-rank-num text-neon-cyan">
+                        {{ rankingsSummary.numTop10 }}
+                      </div>
+                      <div class="hero-rank-label">
+                        TOP 10
+                      </div>
                     </div>
                   </div>
                   <div class="hero-rank-chip">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-rank-icon text-neon-pink"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="hero-rank-icon text-neon-pink"
+                    ><rect
+                      x="2"
+                      y="2"
+                      width="20"
+                      height="8"
+                      rx="2"
+                    /><rect
+                      x="2"
+                      y="14"
+                      width="20"
+                      height="8"
+                      rx="2"
+                    /><line
+                      x1="6"
+                      y1="6"
+                      x2="6.01"
+                      y2="6"
+                    /><line
+                      x1="6"
+                      y1="18"
+                      x2="6.01"
+                      y2="18"
+                    /></svg>
                     <div class="hero-rank-chip-body">
-                      <div class="hero-rank-num text-neon-pink">{{ rankingsSummary.totalRanked }}</div>
-                      <div class="hero-rank-label">RANKED SERVERS</div>
+                      <div class="hero-rank-num text-neon-pink">
+                        {{ rankingsSummary.totalRanked }}
+                      </div>
+                      <div class="hero-rank-label">
+                        RANKED SERVERS
+                      </div>
                     </div>
                   </div>
                   <div class="hero-rank-chip hero-rank-chip--best">
-                    <div class="hero-rank-label">Best Rank</div>
+                    <div class="hero-rank-label">
+                      Best Rank
+                    </div>
                     <div class="hero-rank-best-row">
-                      <span class="hero-rank-best-num" :class="getRankBadgeClass(rankNum(rankingsSummary.best))">#{{ rankingsSummary.best.rankDisplay ?? rankingsSummary.best.rank }}</span>
+                      <span
+                        class="hero-rank-best-num"
+                        :class="getRankBadgeClass(rankNum(rankingsSummary.best))"
+                      >#{{ rankingsSummary.best.rankDisplay ?? rankingsSummary.best.rank }}</span>
                       <span class="hero-rank-best-server">{{ rankingsSummary.best.serverName }}</span>
                     </div>
                   </div>
@@ -886,7 +1147,10 @@ onUnmounted(() => {
             </section>
 
             <!-- Tab Navigation -->
-            <div class="hero-tabs" role="tablist">
+            <div
+              class="hero-tabs"
+              role="tablist"
+            >
               <button
                 v-for="tab in tabs"
                 :key="tab.id"
@@ -896,66 +1160,441 @@ onUnmounted(() => {
                 :class="{ 'hero-tab--active': activeTab === tab.id }"
                 @click="activeTab = tab.id"
               >
-                <svg v-if="tab.id === 'overview'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-tab-icon"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-                <svg v-else-if="tab.id === 'rankings'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-tab-icon"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
-                <svg v-else-if="tab.id === 'network'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-tab-icon"><circle cx="12" cy="12" r="2"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="m6.5 6.5 4 4"/><path d="m17.5 6.5-4 4"/><path d="m6.5 17.5 4-4"/><path d="m17.5 17.5-4-4"/></svg>
-                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hero-tab-icon"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
+                <svg
+                  v-if="tab.id === 'overview'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><rect
+                  x="3"
+                  y="3"
+                  width="7"
+                  height="9"
+                /><rect
+                  x="14"
+                  y="3"
+                  width="7"
+                  height="5"
+                /><rect
+                  x="14"
+                  y="12"
+                  width="7"
+                  height="9"
+                /><rect
+                  x="3"
+                  y="16"
+                  width="7"
+                  height="5"
+                /></svg>
+                <svg
+                  v-else-if="tab.id === 'rankings'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>
+                <svg
+                  v-else-if="tab.id === 'network'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><circle
+                  cx="12"
+                  cy="12"
+                  r="2"
+                /><circle
+                  cx="5"
+                  cy="5"
+                  r="2"
+                /><circle
+                  cx="19"
+                  cy="5"
+                  r="2"
+                /><circle
+                  cx="5"
+                  cy="19"
+                  r="2"
+                /><circle
+                  cx="19"
+                  cy="19"
+                  r="2"
+                /><path d="m6.5 6.5 4 4" /><path d="m17.5 6.5-4 4" /><path d="m6.5 17.5 4-4" /><path d="m17.5 17.5-4-4" /></svg>
+                <svg
+                  v-else
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><circle
+                  cx="12"
+                  cy="8"
+                  r="6"
+                /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg>
                 <span>{{ tab.label }}</span>
-                <span class="hero-tab-underline" aria-hidden="true" />
+                <span
+                  class="hero-tab-underline"
+                  aria-hidden="true"
+                />
               </button>
             </div>
 
             <!-- Tab Content -->
             <div class="space-y-6">
               <!-- OVERVIEW TAB (Default, merged Combat Log + Breakdown + Comments) -->
-              <div v-if="activeTab === 'overview'" class="space-y-6">
+              <div
+                v-if="activeTab === 'overview'"
+                class="space-y-6"
+              >
                 <!-- Combat Stats Banner -->
-                <div v-if="combatSummary" class="combat-banner">
+                <div
+                  v-if="combatSummary"
+                  class="combat-banner"
+                >
                   <div class="combat-banner-eyebrow">
-                    <span class="combat-banner-dot" aria-hidden="true" />
+                    <span
+                      class="combat-banner-dot"
+                      aria-hidden="true"
+                    />
                     COMBAT RECORD //
                     <span class="text-neon-cyan">{{ combatSummary.roundsAnalyzed }}</span>
                     rounds analyzed over last 90d
                   </div>
                   <div class="combat-banner-grid">
                     <div class="combat-banner-stat">
-                      <div class="combat-banner-value text-neon-cyan">{{ combatSummary.totalSessions.toLocaleString() }}</div>
-                      <div class="combat-banner-label">Sessions Logged</div>
+                      <div class="combat-banner-value text-neon-cyan">
+                        {{ combatSummary.totalSessions.toLocaleString() }}
+                      </div>
+                      <div class="combat-banner-label">
+                        Sessions Logged
+                      </div>
                     </div>
                     <div class="combat-banner-stat">
-                      <div class="combat-banner-value text-neon-gold">{{ combatSummary.highestScore.toLocaleString() }}</div>
-                      <div class="combat-banner-label">Peak Round Score</div>
+                      <div class="combat-banner-value text-neon-gold">
+                        {{ combatSummary.highestScore.toLocaleString() }}
+                      </div>
+                      <div class="combat-banner-label">
+                        Peak Round Score
+                      </div>
                     </div>
                     <div class="combat-banner-stat">
-                      <div class="combat-banner-value text-neon-green">{{ combatSummary.killsPerMin.toFixed(2) }}</div>
-                      <div class="combat-banner-label">Lifetime K/Min</div>
+                      <div class="combat-banner-value text-neon-green">
+                        {{ combatSummary.killsPerMin.toFixed(2) }}
+                      </div>
+                      <div class="combat-banner-label">
+                        Lifetime K/Min
+                      </div>
                     </div>
                     <div class="combat-banner-stat">
-                      <div class="combat-banner-value text-neon-pink">{{ combatSummary.firstPlayed ? new Date(combatSummary.firstPlayed).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : '—' }}</div>
-                      <div class="combat-banner-label">First Deployed</div>
+                      <div class="combat-banner-value text-neon-pink">
+                        {{ combatSummary.firstPlayed ? new Date(combatSummary.firstPlayed).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : '—' }}
+                      </div>
+                      <div class="combat-banner-label">
+                        First Deployed
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                <!-- COMBAT FINGERPRINT — derived playstyle radar + archetype verdict -->
+                <section
+                  v-if="combatFingerprint"
+                  class="fingerprint"
+                  aria-label="Combat fingerprint"
+                >
+                  <div
+                    class="fingerprint__scan"
+                    aria-hidden="true"
+                  />
+                  <div
+                    class="fingerprint__grid-bg"
+                    aria-hidden="true"
+                  />
+
+                  <header class="fingerprint__head">
+                    <span class="fingerprint__tag">
+                      <span
+                        class="fingerprint__tag-dot"
+                        aria-hidden="true"
+                      />
+                      COMBAT FINGERPRINT
+                    </span>
+                    <div class="fingerprint__title-row">
+                      <h3 class="fingerprint__title">
+                        Operational Signature
+                      </h3>
+                      <span
+                        class="fingerprint__archetype"
+                        :title="'Derived playstyle archetype'"
+                      >
+                        <span class="fingerprint__archetype-key">ARCHETYPE //</span>
+                        <span class="fingerprint__archetype-val">{{ combatFingerprint.archetype }}</span>
+                      </span>
+                    </div>
+                    <p class="fingerprint__sub">
+                      Four traits scored 0–100 from this operative's complete deployment history.
+                    </p>
+                  </header>
+
+                  <div class="fingerprint__meters">
+                    <div
+                      class="fp-trait fp-trait--aggression"
+                      :style="{ '--fp-pct': combatFingerprint.aggression + '%' }"
+                    >
+                      <div class="fp-trait__head">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          class="fp-trait__icon"
+                        ><circle
+                          cx="12"
+                          cy="12"
+                          r="10"
+                        /><circle
+                          cx="12"
+                          cy="12"
+                          r="6"
+                        /><circle
+                          cx="12"
+                          cy="12"
+                          r="2"
+                        /></svg>
+                        <div class="fp-trait__label">
+                          Aggression
+                        </div>
+                        <div class="fp-trait__num">
+                          {{ combatFingerprint.aggression }}
+                        </div>
+                      </div>
+                      <div
+                        class="fp-trait__meter"
+                        aria-hidden="true"
+                      >
+                        <div class="fp-trait__meter-grid" />
+                        <div class="fp-trait__meter-fill" />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 25%"
+                        />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 50%"
+                        />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 75%"
+                        />
+                      </div>
+                      <div class="fp-trait__desc">
+                        {{ combatFingerprint.aggressionLabel }}
+                      </div>
+                    </div>
+
+                    <div
+                      class="fp-trait fp-trait--lethality"
+                      :style="{ '--fp-pct': combatFingerprint.lethality + '%' }"
+                    >
+                      <div class="fp-trait__head">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          class="fp-trait__icon"
+                        ><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
+                        <div class="fp-trait__label">
+                          Lethality
+                        </div>
+                        <div class="fp-trait__num">
+                          {{ combatFingerprint.lethality }}
+                        </div>
+                      </div>
+                      <div
+                        class="fp-trait__meter"
+                        aria-hidden="true"
+                      >
+                        <div class="fp-trait__meter-grid" />
+                        <div class="fp-trait__meter-fill" />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 25%"
+                        />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 50%"
+                        />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 75%"
+                        />
+                      </div>
+                      <div class="fp-trait__desc">
+                        {{ combatFingerprint.lethalityLabel }}
+                      </div>
+                    </div>
+
+                    <div
+                      class="fp-trait fp-trait--endurance"
+                      :style="{ '--fp-pct': combatFingerprint.endurance + '%' }"
+                    >
+                      <div class="fp-trait__head">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          class="fp-trait__icon"
+                        ><circle
+                          cx="12"
+                          cy="12"
+                          r="10"
+                        /><polyline points="12 6 12 12 16 14" /></svg>
+                        <div class="fp-trait__label">
+                          Endurance
+                        </div>
+                        <div class="fp-trait__num">
+                          {{ combatFingerprint.endurance }}
+                        </div>
+                      </div>
+                      <div
+                        class="fp-trait__meter"
+                        aria-hidden="true"
+                      >
+                        <div class="fp-trait__meter-grid" />
+                        <div class="fp-trait__meter-fill" />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 25%"
+                        />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 50%"
+                        />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 75%"
+                        />
+                      </div>
+                      <div class="fp-trait__desc">
+                        {{ combatFingerprint.enduranceLabel }}
+                      </div>
+                    </div>
+
+                    <div
+                      class="fp-trait fp-trait--devotion"
+                      :style="{ '--fp-pct': combatFingerprint.devotion + '%' }"
+                    >
+                      <div class="fp-trait__head">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          class="fp-trait__icon"
+                        ><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+                        <div class="fp-trait__label">
+                          Devotion
+                        </div>
+                        <div class="fp-trait__num">
+                          {{ combatFingerprint.devotion }}
+                        </div>
+                      </div>
+                      <div
+                        class="fp-trait__meter"
+                        aria-hidden="true"
+                      >
+                        <div class="fp-trait__meter-grid" />
+                        <div class="fp-trait__meter-fill" />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 25%"
+                        />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 50%"
+                        />
+                        <div
+                          class="fp-trait__meter-tick"
+                          style="left: 75%"
+                        />
+                      </div>
+                      <div class="fp-trait__desc">
+                        {{ combatFingerprint.devotionLabel }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="fingerprint__footer">
+                    <span
+                      class="fingerprint__stamp"
+                      aria-hidden="true"
+                    >ANALYSIS::COMPLETE</span>
+                    <span class="fingerprint__foot-sep">//</span>
+                    <span class="fingerprint__foot-note">
+                      Ratings calibrated against the 1942.community operative index.
+                    </span>
+                  </div>
+                </section>
 
                 <!-- Section 01 -->
                 <div class="section-divider">
                   <span class="section-num">01</span>
                   <div class="section-head">
-                    <div class="section-title">Telemetry Trends</div>
-                    <div class="section-sub">Ninety-day moving combat analysis</div>
+                    <div class="section-title">
+                      Telemetry Trends
+                    </div>
+                    <div class="section-sub">
+                      Ninety-day moving combat analysis
+                    </div>
                   </div>
-                  <span class="section-line" aria-hidden="true" />
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
                 </div>
 
                 <!-- Performance Trends -->
-                <div v-if="playerStats?.recentStats" class="explorer-card">
+                <div
+                  v-if="playerStats?.recentStats"
+                  class="explorer-card"
+                >
                   <div class="explorer-card-header flex items-start justify-between gap-3">
                     <div>
-                      <h3 class="explorer-card-title">PERFORMANCE TRENDS</h3>
-                      <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase tracking-wider">90-Day Telemetry · {{ playerStats.recentStats.totalRoundsAnalyzed }} rounds analyzed</p>
+                      <h3 class="explorer-card-title">
+                        PERFORMANCE TRENDS
+                      </h3>
+                      <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase tracking-wider">
+                        90-Day Telemetry · {{ playerStats.recentStats.totalRoundsAnalyzed }} rounds analyzed
+                      </p>
                     </div>
                     <div class="hidden sm:flex items-center gap-1 text-[9px] font-mono text-neutral-500 uppercase tracking-widest">
-                      <span class="w-1.5 h-1.5 rounded-full bg-neon-green animate-pulse" aria-hidden="true" />
+                      <span
+                        class="w-1.5 h-1.5 rounded-full bg-neon-green animate-pulse"
+                        aria-hidden="true"
+                      />
                       LIVE
                     </div>
                   </div>
@@ -963,10 +1602,18 @@ onUnmounted(() => {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                       <div class="trend-block">
                         <div class="trend-head">
-                          <div class="trend-label text-neon-pink">K/D Ratio</div>
-                          <div v-if="kdTrendSummary" class="trend-current">
+                          <div class="trend-label text-neon-pink">
+                            K/D Ratio
+                          </div>
+                          <div
+                            v-if="kdTrendSummary"
+                            class="trend-current"
+                          >
                             <span class="trend-current-value text-neon-pink">{{ kdTrendSummary.current.toFixed(2) }}</span>
-                            <span class="trend-delta" :class="`trend-delta--${kdTrendSummary.direction}`">
+                            <span
+                              class="trend-delta"
+                              :class="`trend-delta--${kdTrendSummary.direction}`"
+                            >
                               <span class="trend-delta-arrow">
                                 <template v-if="kdTrendSummary.direction === 'up'">&#9650;</template>
                                 <template v-else-if="kdTrendSummary.direction === 'down'">&#9660;</template>
@@ -977,16 +1624,27 @@ onUnmounted(() => {
                           </div>
                         </div>
                         <div class="h-44">
-                          <Line :data="kdRatioTrendChartData" :options="trendChartOptions" />
+                          <Line
+                            :data="kdRatioTrendChartData"
+                            :options="trendChartOptions"
+                          />
                         </div>
                       </div>
                       <div class="trend-block">
                         <div class="trend-head">
-                          <div class="trend-label text-neon-cyan">Kill Rate</div>
-                          <div v-if="killRateTrendSummary" class="trend-current">
+                          <div class="trend-label text-neon-cyan">
+                            Kill Rate
+                          </div>
+                          <div
+                            v-if="killRateTrendSummary"
+                            class="trend-current"
+                          >
                             <span class="trend-current-value text-neon-cyan">{{ killRateTrendSummary.current.toFixed(2) }}</span>
                             <span class="trend-current-unit">k/min</span>
-                            <span class="trend-delta" :class="`trend-delta--${killRateTrendSummary.direction}`">
+                            <span
+                              class="trend-delta"
+                              :class="`trend-delta--${killRateTrendSummary.direction}`"
+                            >
                               <span class="trend-delta-arrow">
                                 <template v-if="killRateTrendSummary.direction === 'up'">&#9650;</template>
                                 <template v-else-if="killRateTrendSummary.direction === 'down'">&#9660;</template>
@@ -997,7 +1655,10 @@ onUnmounted(() => {
                           </div>
                         </div>
                         <div class="h-44">
-                          <Line :data="killRateTrendChartData" :options="trendChartOptions" />
+                          <Line
+                            :data="killRateTrendChartData"
+                            :options="trendChartOptions"
+                          />
                         </div>
                       </div>
                     </div>
@@ -1008,10 +1669,17 @@ onUnmounted(() => {
                 <div class="section-divider">
                   <span class="section-num">02</span>
                   <div class="section-head">
-                    <div class="section-title">Combat Log &amp; Trophies</div>
-                    <div class="section-sub">Recent deployments and peak scores</div>
+                    <div class="section-title">
+                      Combat Log &amp; Trophies
+                    </div>
+                    <div class="section-sub">
+                      Recent deployments and peak scores
+                    </div>
                   </div>
-                  <span class="section-line" aria-hidden="true" />
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
                 </div>
 
                 <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -1019,7 +1687,9 @@ onUnmounted(() => {
                   <div class="xl:col-span-7 space-y-6">
                     <div class="explorer-card">
                       <div class="explorer-card-header">
-                        <h3 class="explorer-card-title">RECENT ROUNDS</h3>
+                        <h3 class="explorer-card-title">
+                          RECENT ROUNDS
+                        </h3>
                       </div>
                       <div class="explorer-card-body">
                         <PlayerRecentRoundsCompact
@@ -1027,14 +1697,21 @@ onUnmounted(() => {
                           :sessions="playerStats.recentSessions"
                           :player-name="playerName"
                         />
-                        <div v-else class="text-center py-8 text-neutral-500 font-mono uppercase">No recent rounds found</div>
+                        <div
+                          v-else
+                          class="text-center py-8 text-neutral-500 font-mono uppercase"
+                        >
+                          No recent rounds found
+                        </div>
                       </div>
                     </div>
 
                     <!-- Best Scores (Full) -->
                     <div class="explorer-card explorer-card--trophy">
                       <div class="explorer-card-header flex items-center justify-between">
-                        <h3 class="explorer-card-title">BEST ROUND SCORES</h3>
+                        <h3 class="explorer-card-title">
+                          BEST ROUND SCORES
+                        </h3>
                         <div class="explorer-toggle-group">
                           <button
                             v-for="tab in bestScoresTabOptions"
@@ -1048,10 +1725,16 @@ onUnmounted(() => {
                         </div>
                       </div>
                       <div class="explorer-card-body p-0">
-                        <div v-if="currentBestScores.length === 0" class="p-4 sm:p-6 text-center text-neutral-500 text-sm font-mono">
+                        <div
+                          v-if="currentBestScores.length === 0"
+                          class="p-4 sm:p-6 text-center text-neutral-500 text-sm font-mono"
+                        >
                           NO SCORES RECORDED
                         </div>
-                        <div v-else class="divide-y divide-[var(--border-color)]">
+                        <div
+                          v-else
+                          class="divide-y divide-[var(--border-color)]"
+                        >
                           <div
                             v-for="(score, index) in currentBestScores.slice(0, 10)"
                             :key="`${score.roundId}-${index}`"
@@ -1063,13 +1746,28 @@ onUnmounted(() => {
                             }"
                             @click="navigateToRoundReport(score.roundId)"
                           >
-                            <div class="best-score-medal"
-                                 :class="{
-                                   'best-score-medal--gold': index === 0,
-                                   'best-score-medal--silver': index === 1,
-                                   'best-score-medal--bronze': index === 2,
-                                 }">
-                              <svg v-if="index < 3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="best-score-medal-icon"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
+                            <div
+                              class="best-score-medal"
+                              :class="{
+                                'best-score-medal--gold': index === 0,
+                                'best-score-medal--silver': index === 1,
+                                'best-score-medal--bronze': index === 2,
+                              }"
+                            >
+                              <svg
+                                v-if="index < 3"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                class="best-score-medal-icon"
+                              ><circle
+                                cx="12"
+                                cy="8"
+                                r="6"
+                              /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg>
                               <span class="best-score-medal-num">{{ index + 1 }}</span>
                             </div>
                             <div class="flex-1 min-w-0">
@@ -1079,13 +1777,20 @@ onUnmounted(() => {
                               </div>
                               <div class="best-score-meta">
                                 <span class="best-score-map">{{ score.mapName }}</span>
-                                <span class="best-score-sep" aria-hidden="true">·</span>
+                                <span
+                                  class="best-score-sep"
+                                  aria-hidden="true"
+                                >·</span>
                                 <span class="truncate">{{ score.serverName }}</span>
                               </div>
                             </div>
                             <div class="best-score-aside">
-                              <div class="best-score-kd">K/D {{ calculateKDR(score.kills, score.deaths) }}</div>
-                              <div class="best-score-time">{{ formatRelativeTime(score.timestamp) }}</div>
+                              <div class="best-score-kd">
+                                K/D {{ calculateKDR(score.kills, score.deaths) }}
+                              </div>
+                              <div class="best-score-time">
+                                {{ formatRelativeTime(score.timestamp) }}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1100,8 +1805,12 @@ onUnmounted(() => {
 
                     <div class="explorer-card">
                       <div class="explorer-card-header">
-                        <h3 class="explorer-card-title">ACTIVITY HEATMAP</h3>
-                        <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Typical play times</p>
+                        <h3 class="explorer-card-title">
+                          ACTIVITY HEATMAP
+                        </h3>
+                        <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">
+                          Typical play times
+                        </p>
                       </div>
                       <div class="explorer-card-body">
                         <PlayerActivityHeatmap
@@ -1115,13 +1824,24 @@ onUnmounted(() => {
               </div>
 
               <!-- RANKINGS TAB (Swapped Columns) -->
-              <div v-if="activeTab === 'rankings'" class="space-y-6">
+              <div
+                v-if="activeTab === 'rankings'"
+                class="space-y-6"
+              >
                 <!-- Rankings Banner -->
-                <div v-if="rankingsSummary" class="rankings-banner">
+                <div
+                  v-if="rankingsSummary"
+                  class="rankings-banner"
+                >
                   <div class="rankings-banner-left">
-                    <div class="rankings-banner-eyebrow">PEAK STANDING</div>
+                    <div class="rankings-banner-eyebrow">
+                      PEAK STANDING
+                    </div>
                     <div class="rankings-banner-rank-row">
-                      <span class="rankings-banner-rank" :class="getRankBadgeClass(rankNum(rankingsSummary.best))">
+                      <span
+                        class="rankings-banner-rank"
+                        :class="getRankBadgeClass(rankNum(rankingsSummary.best))"
+                      >
                         #{{ rankingsSummary.best.rankDisplay ?? rankingsSummary.best.rank }}
                       </span>
                       <span class="rankings-banner-on">on</span>
@@ -1133,16 +1853,28 @@ onUnmounted(() => {
                   </div>
                   <div class="rankings-banner-grid">
                     <div class="rankings-banner-cell">
-                      <div class="rankings-banner-value text-neon-gold">{{ rankingsSummary.numOnes }}</div>
-                      <div class="rankings-banner-label">#1 FINISHES</div>
+                      <div class="rankings-banner-value text-neon-gold">
+                        {{ rankingsSummary.numOnes }}
+                      </div>
+                      <div class="rankings-banner-label">
+                        #1 FINISHES
+                      </div>
                     </div>
                     <div class="rankings-banner-cell">
-                      <div class="rankings-banner-value text-neon-cyan">{{ rankingsSummary.numTop10 }}</div>
-                      <div class="rankings-banner-label">TOP 10</div>
+                      <div class="rankings-banner-value text-neon-cyan">
+                        {{ rankingsSummary.numTop10 }}
+                      </div>
+                      <div class="rankings-banner-label">
+                        TOP 10
+                      </div>
                     </div>
                     <div class="rankings-banner-cell">
-                      <div class="rankings-banner-value text-neon-pink">{{ rankingsSummary.totalRanked }}</div>
-                      <div class="rankings-banner-label">RANKED SERVERS</div>
+                      <div class="rankings-banner-value text-neon-pink">
+                        {{ rankingsSummary.totalRanked }}
+                      </div>
+                      <div class="rankings-banner-label">
+                        RANKED SERVERS
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1151,133 +1883,202 @@ onUnmounted(() => {
                 <div class="section-divider">
                   <span class="section-num">01</span>
                   <div class="section-head">
-                    <div class="section-title">Server Standings</div>
-                    <div class="section-sub">Your position on each active cluster</div>
+                    <div class="section-title">
+                      Server Standings
+                    </div>
+                    <div class="section-sub">
+                      Your position on each active cluster
+                    </div>
                   </div>
-                  <span class="section-line" aria-hidden="true" />
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
                 </div>
 
                 <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                <!-- Col 1: Breakdown, All Server Ranks & Map Preference -->
-                <div class="xl:col-span-5 space-y-6">
-                  <!-- Detailed Breakdown -->
-                  <div class="explorer-card">
-                    <PlayerDetailPanel
-                      :player-name="playerName"
-                      :game="playerPanelGame"
-                      @navigate-to-map="openMapDetail"
-                    />
-                  </div>
-
-                  <!-- Servers List (paged) -->
-                  <div class="explorer-card">
-                    <div class="explorer-card-header flex items-center justify-between">
-                      <div>
-                        <h3 class="explorer-card-title">SERVER RANKINGS</h3>
-                        <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">Performance by Server Cluster</p>
-                      </div>
-                      <button type="button" class="explorer-btn explorer-btn--ghost explorer-btn--sm" @click="showAllServerMaps">GLOBAL MAPS</button>
+                  <!-- Col 1: Breakdown, All Server Ranks & Map Preference -->
+                  <div class="xl:col-span-5 space-y-6">
+                    <!-- Detailed Breakdown -->
+                    <div class="explorer-card">
+                      <PlayerDetailPanel
+                        :player-name="playerName"
+                        :game="playerPanelGame"
+                        @navigate-to-map="openMapDetail"
+                      />
                     </div>
 
-                    <div class="explorer-card-body p-0">
-                      <div class="divide-y divide-[var(--border-color)]">
-                        <div
-                          v-for="server in pagedServers"
-                          :key="server.serverGuid"
-                          class="server-rank-row group"
-                          :class="server.ranking ? `server-rank-row--r${Math.min(rankNum(server.ranking), 4)}` : ''"
-                          @click="showServerMapStats(server.serverGuid)"
+                    <!-- Servers List (paged) -->
+                    <div class="explorer-card">
+                      <div class="explorer-card-header flex items-center justify-between">
+                        <div>
+                          <h3 class="explorer-card-title">
+                            SERVER RANKINGS
+                          </h3>
+                          <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">
+                            Performance by Server Cluster
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          class="explorer-btn explorer-btn--ghost explorer-btn--sm"
+                          @click="showAllServerMaps"
                         >
-                          <div class="server-rank-badge" :class="getRankBadgeClass(rankNum(server.ranking))">
-                            <span v-if="server.ranking">#{{ server.ranking.rankDisplay ?? server.ranking.rank }}</span>
-                            <span v-else class="text-neutral-600">—</span>
-                          </div>
-                          <div class="flex-1 min-w-0">
-                            <div class="text-sm font-medium text-neutral-200 truncate font-mono">{{ server.serverName }}</div>
-                            <div class="flex items-center gap-2 text-[10px] text-neutral-500 font-mono mt-0.5">
-                              <span v-if="server.hasStats">K/D {{ Number(server.kdRatio).toFixed(2) }}</span>
-                              <span v-if="server.hasStats && server.totalMinutes > 0">·</span>
-                              <span v-if="server.hasStats && server.totalMinutes > 0">{{ formatPlayTime(server.totalMinutes) }}</span>
-                              <span v-else-if="server.ranking">{{ server.ranking.scoreDisplay || server.ranking.totalScore.toLocaleString() }} score</span>
+                          GLOBAL MAPS
+                        </button>
+                      </div>
+
+                      <div class="explorer-card-body p-0">
+                        <div class="divide-y divide-[var(--border-color)]">
+                          <div
+                            v-for="server in pagedServers"
+                            :key="server.serverGuid"
+                            class="server-rank-row group"
+                            :class="server.ranking ? `server-rank-row--r${Math.min(rankNum(server.ranking), 4)}` : ''"
+                            @click="showServerMapStats(server.serverGuid)"
+                          >
+                            <div
+                              class="server-rank-badge"
+                              :class="getRankBadgeClass(rankNum(server.ranking))"
+                            >
+                              <span v-if="server.ranking">#{{ server.ranking.rankDisplay ?? server.ranking.rank }}</span>
+                              <span
+                                v-else
+                                class="text-neutral-600"
+                              >—</span>
                             </div>
-                            <div v-if="server.hasStats && server.totalMinutes > 0" class="server-rank-bar" aria-hidden="true">
-                              <span class="server-rank-bar-fill" :style="{ width: Math.min(getPlaytimePercentage(server.totalMinutes), 100) + '%' }" />
+                            <div class="flex-1 min-w-0">
+                              <div class="text-sm font-medium text-neutral-200 truncate font-mono">
+                                {{ server.serverName }}
+                              </div>
+                              <div class="flex items-center gap-2 text-[10px] text-neutral-500 font-mono mt-0.5">
+                                <span v-if="server.hasStats">K/D {{ Number(server.kdRatio).toFixed(2) }}</span>
+                                <span v-if="server.hasStats && server.totalMinutes > 0">·</span>
+                                <span v-if="server.hasStats && server.totalMinutes > 0">{{ formatPlayTime(server.totalMinutes) }}</span>
+                                <span v-else-if="server.ranking">{{ server.ranking.scoreDisplay || server.ranking.totalScore.toLocaleString() }} score</span>
+                              </div>
+                              <div
+                                v-if="server.hasStats && server.totalMinutes > 0"
+                                class="server-rank-bar"
+                                aria-hidden="true"
+                              >
+                                <span
+                                  class="server-rank-bar-fill"
+                                  :style="{ width: Math.min(getPlaytimePercentage(server.totalMinutes), 100) + '%' }"
+                                />
+                              </div>
+                            </div>
+                            <div class="server-rank-arrow">
+                              &rarr;
                             </div>
                           </div>
-                          <div class="server-rank-arrow">&rarr;</div>
+                        </div>
+                        <!-- Pagination controls -->
+                        <div
+                          v-if="serversTotalPages > 1"
+                          class="flex items-center justify-between px-3 py-2 border-t border-[var(--border-color)]"
+                        >
+                          <button
+                            class="explorer-btn explorer-btn--ghost explorer-btn--sm"
+                            :disabled="serversPage === 0"
+                            @click="serversPage--"
+                          >
+                            &larr;
+                          </button>
+                          <span class="text-[10px] font-mono text-neutral-500">{{ serversPage + 1 }} / {{ serversTotalPages }}</span>
+                          <button
+                            class="explorer-btn explorer-btn--ghost explorer-btn--sm"
+                            :disabled="serversPage >= serversTotalPages - 1"
+                            @click="serversPage++"
+                          >
+                            &rarr;
+                          </button>
                         </div>
                       </div>
-                      <!-- Pagination controls -->
-                      <div v-if="serversTotalPages > 1" class="flex items-center justify-between px-3 py-2 border-t border-[var(--border-color)]">
-                        <button class="explorer-btn explorer-btn--ghost explorer-btn--sm" :disabled="serversPage === 0" @click="serversPage--">&larr;</button>
-                        <span class="text-[10px] font-mono text-neutral-500">{{ serversPage + 1 }} / {{ serversTotalPages }}</span>
-                        <button class="explorer-btn explorer-btn--ghost explorer-btn--sm" :disabled="serversPage >= serversTotalPages - 1" @click="serversPage++">&rarr;</button>
+                    </div>
+
+                    <!-- Map Preference -->
+                    <div class="explorer-card">
+                      <div class="explorer-card-header">
+                        <h3 class="explorer-card-title">
+                          MAP PREFERENCE
+                        </h3>
+                        <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">
+                          Last 30 days activity
+                        </p>
+                      </div>
+                      <div class="explorer-card-body">
+                        <PlayerMapPreference
+                          :player-name="playerName"
+                          :game="playerPanelGame"
+                          @navigate-to-map="openMapDetail"
+                        />
                       </div>
                     </div>
                   </div>
 
-                  <!-- Map Preference -->
-                  <div class="explorer-card">
-                    <div class="explorer-card-header">
-                      <h3 class="explorer-card-title">MAP PREFERENCE</h3>
-                      <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">Last 30 days activity</p>
+                  <!-- Col 2: Global Map Rankings & Map Performance Race -->
+                  <div class="xl:col-span-7 space-y-6">
+                    <!-- Global Map Rankings -->
+                    <div class="explorer-card">
+                      <div class="explorer-card-header">
+                        <h3 class="explorer-card-title">
+                          GLOBAL MAP RANKINGS
+                        </h3>
+                        <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">
+                          Your position among all players
+                        </p>
+                      </div>
+                      <div class="explorer-card-body">
+                        <PlayerCompetitiveRankings
+                          :player-name="playerName"
+                          :game="playerPanelGame"
+                          @navigate-to-map="openMapDetail"
+                        />
+                      </div>
                     </div>
-                    <div class="explorer-card-body">
-                      <PlayerMapPreference
-                        :player-name="playerName"
-                        :game="playerPanelGame"
-                        @navigate-to-map="openMapDetail"
-                      />
-                    </div>
-                  </div>
-                </div>
 
-                <!-- Col 2: Global Map Rankings & Map Performance Race -->
-                <div class="xl:col-span-7 space-y-6">
-                  <!-- Global Map Rankings -->
-                  <div class="explorer-card">
-                    <div class="explorer-card-header">
-                      <h3 class="explorer-card-title">GLOBAL MAP RANKINGS</h3>
-                      <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">Your position among all players</p>
-                    </div>
-                    <div class="explorer-card-body">
-                      <PlayerCompetitiveRankings
-                        :player-name="playerName"
-                        :game="playerPanelGame"
-                        @navigate-to-map="openMapDetail"
-                      />
-                    </div>
-                  </div>
-
-                  <!-- Map Performance Race -->
-                  <div class="explorer-card">
-                    <div class="explorer-card-header">
-                      <h3 class="explorer-card-title">MAP PERFORMANCE OVER TIME</h3>
-                      <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">Historical Map Race</p>
-                    </div>
-                    <div class="explorer-card-body">
-                      <MapPerformanceRace
-                        :player-name="playerName"
-                        :game="playerPanelGame"
-                        @navigate-to-map="openMapDetail"
-                      />
+                    <!-- Map Performance Race -->
+                    <div class="explorer-card">
+                      <div class="explorer-card-header">
+                        <h3 class="explorer-card-title">
+                          MAP PERFORMANCE OVER TIME
+                        </h3>
+                        <p class="text-[10px] text-neutral-500 font-mono mt-0.5 uppercase">
+                          Historical Map Race
+                        </p>
+                      </div>
+                      <div class="explorer-card-body">
+                        <MapPerformanceRace
+                          :player-name="playerName"
+                          :game="playerPanelGame"
+                          @navigate-to-map="openMapDetail"
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
                 </div>
               </div>
 
               <!-- NETWORK TAB -->
-              <div v-if="activeTab === 'network'" class="space-y-6">
+              <div
+                v-if="activeTab === 'network'"
+                class="space-y-6"
+              >
                 <!-- Network Banner -->
                 <div class="network-banner">
                   <div class="network-banner-main">
                     <div class="network-banner-eyebrow">
-                      <span class="network-banner-live" aria-hidden="true" />
+                      <span
+                        class="network-banner-live"
+                        aria-hidden="true"
+                      />
                       SIGNAL INTEL //
                       <span class="text-neon-cyan">PROXIMITY ANALYSIS</span>
                     </div>
-                    <h2 class="network-banner-title">Relationship Mapping</h2>
+                    <h2 class="network-banner-title">
+                      Relationship Mapping
+                    </h2>
                     <p class="network-banner-sub">
                       Real-time companion detection derived from ping correlation and session overlap across
                       <span class="text-neon-cyan">{{ networkSummary?.serverCount ?? 0 }}</span>
@@ -1286,13 +2087,29 @@ onUnmounted(() => {
                   </div>
                   <div class="network-banner-side">
                     <div class="network-banner-metric">
-                      <div class="network-banner-metric-label">ACTIVE NODE</div>
-                      <div class="network-banner-metric-value text-neon-cyan">{{ networkSummary?.selectedServerName || networkSummary?.topServerName || '—' }}</div>
+                      <div class="network-banner-metric-label">
+                        ACTIVE NODE
+                      </div>
+                      <div class="network-banner-metric-value text-neon-cyan">
+                        {{ networkSummary?.selectedServerName || networkSummary?.topServerName || '—' }}
+                      </div>
                     </div>
-                    <div v-if="unifiedServerList.length > 1" class="network-banner-filter">
+                    <div
+                      v-if="unifiedServerList.length > 1"
+                      class="network-banner-filter"
+                    >
                       <label class="network-banner-filter-label">FILTER BY NODE</label>
-                      <select v-model="selectedProximityServerGuid" class="explorer-select network-banner-select">
-                        <option v-for="server in unifiedServerList" :key="server.serverGuid" :value="server.serverGuid">{{ server.serverName }}</option>
+                      <select
+                        v-model="selectedProximityServerGuid"
+                        class="explorer-select network-banner-select"
+                      >
+                        <option
+                          v-for="server in unifiedServerList"
+                          :key="server.serverGuid"
+                          :value="server.serverGuid"
+                        >
+                          {{ server.serverName }}
+                        </option>
                       </select>
                     </div>
                   </div>
@@ -1302,15 +2119,25 @@ onUnmounted(() => {
                 <div class="section-divider">
                   <span class="section-num">01</span>
                   <div class="section-head">
-                    <div class="section-title">Proximity Orbit</div>
-                    <div class="section-sub">Companions ordered by session correlation</div>
+                    <div class="section-title">
+                      Proximity Orbit
+                    </div>
+                    <div class="section-sub">
+                      Companions ordered by session correlation
+                    </div>
                   </div>
-                  <span class="section-line" aria-hidden="true" />
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
                 </div>
 
                 <div class="explorer-card">
                   <div class="explorer-card-body p-0 sm:p-6">
-                    <div v-if="unifiedServerList.length > 0" class="w-full">
+                    <div
+                      v-if="unifiedServerList.length > 0"
+                      class="w-full"
+                    >
                       <PingProximityOrbit
                         seamless
                         :server-guid="selectedProximityServerGuid"
@@ -1318,12 +2145,33 @@ onUnmounted(() => {
                         @player-click="(name: string) => router.push(`/players/${encodeURIComponent(name)}`)"
                       />
                     </div>
-                    <div v-else class="explorer-empty">
+                    <div
+                      v-else
+                      class="explorer-empty"
+                    >
                       <div class="explorer-empty-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/></svg>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="48"
+                          height="48"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ><circle
+                          cx="12"
+                          cy="12"
+                          r="3"
+                        /><path d="M12 3v3" /><path d="M12 18v3" /><path d="M3 12h3" /><path d="M18 12h3" /></svg>
                       </div>
-                      <p class="explorer-empty-title">NO SIGNAL DETECTED</p>
-                      <p class="explorer-empty-desc">This operative has no recorded server sessions yet.</p>
+                      <p class="explorer-empty-title">
+                        NO SIGNAL DETECTED
+                      </p>
+                      <p class="explorer-empty-desc">
+                        This operative has no recorded server sessions yet.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1332,62 +2180,129 @@ onUnmounted(() => {
                 <div class="section-divider">
                   <span class="section-num">02</span>
                   <div class="section-head">
-                    <div class="section-title">Deep Analysis</div>
-                    <div class="section-sub">Full interactive social graph</div>
+                    <div class="section-title">
+                      Deep Analysis
+                    </div>
+                    <div class="section-sub">
+                      Full interactive social graph
+                    </div>
                   </div>
-                  <span class="section-line" aria-hidden="true" />
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
                 </div>
 
                 <div class="network-cta">
                   <div class="network-cta-text">
-                    <div class="network-cta-title">Extended Network Investigation</div>
-                    <div class="network-cta-desc">Time-lapse view of squads, alt accounts, and recurring opponents.</div>
+                    <div class="network-cta-title">
+                      Extended Network Investigation
+                    </div>
+                    <div class="network-cta-desc">
+                      Time-lapse view of squads, alt accounts, and recurring opponents.
+                    </div>
                   </div>
-                  <router-link :to="`/players/${encodeURIComponent(playerName)}/network`" class="network-cta-btn">
+                  <router-link
+                    :to="`/players/${encodeURIComponent(playerName)}/network`"
+                    class="network-cta-btn"
+                  >
                     <span>LAUNCH GRAPH</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="w-3.5 h-3.5"
+                    ><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
                   </router-link>
                 </div>
               </div>
 
               <!-- AWARDS TAB (Prev Social) -->
-              <div v-if="activeTab === 'awards'" class="space-y-6">
+              <div
+                v-if="activeTab === 'awards'"
+                class="space-y-6"
+              >
                 <!-- Trophy Cabinet Banner -->
                 <div class="trophy-banner">
-                  <div class="trophy-banner-glow" aria-hidden="true" />
+                  <div
+                    class="trophy-banner-glow"
+                    aria-hidden="true"
+                  />
                   <div class="trophy-banner-left">
                     <div class="trophy-banner-eyebrow">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="w-3.5 h-3.5"
+                      ><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>
                       TROPHY CABINET
                     </div>
                     <h2 class="trophy-banner-title">
-                      <span v-if="achievementsSummary" class="text-neon-gold">{{ achievementsSummary.totalCount.toLocaleString() }}</span>
-                      <span v-else class="text-neutral-600">—</span>
+                      <span
+                        v-if="achievementsSummary"
+                        class="text-neon-gold"
+                      >{{ achievementsSummary.totalCount.toLocaleString() }}</span>
+                      <span
+                        v-else
+                        class="text-neutral-600"
+                      >—</span>
                       <span class="trophy-banner-unit">achievements earned</span>
                     </h2>
-                    <div v-if="achievementsSummary?.latest" class="trophy-banner-latest">
+                    <div
+                      v-if="achievementsSummary?.latest"
+                      class="trophy-banner-latest"
+                    >
                       <span class="text-neutral-500 uppercase tracking-wider">Latest unlock:</span>
                       <span class="text-neon-cyan font-mono">{{ achievementsSummary.latest.achievementName }}</span>
-                      <span class="trophy-banner-tier" :class="`trophy-tier-${(achievementsSummary.latest.tier || '').toLowerCase()}`">{{ achievementsSummary.latest.tier?.toUpperCase() }}</span>
+                      <span
+                        class="trophy-banner-tier"
+                        :class="`trophy-tier-${(achievementsSummary.latest.tier || '').toLowerCase()}`"
+                      >{{ achievementsSummary.latest.tier?.toUpperCase() }}</span>
                       <span class="text-neutral-500 font-mono">{{ formatRelativeTime(achievementsSummary.latest.latestAchievedAt) }}</span>
                     </div>
                   </div>
-                  <div v-if="achievementsSummary" class="trophy-banner-tiers">
+                  <div
+                    v-if="achievementsSummary"
+                    class="trophy-banner-tiers"
+                  >
                     <div class="trophy-tier-cell trophy-tier-cell--legend">
-                      <div class="trophy-tier-count">{{ achievementsSummary.tiers.legend }}</div>
-                      <div class="trophy-tier-label">LEGEND</div>
+                      <div class="trophy-tier-count">
+                        {{ achievementsSummary.tiers.legend }}
+                      </div>
+                      <div class="trophy-tier-label">
+                        LEGEND
+                      </div>
                     </div>
                     <div class="trophy-tier-cell trophy-tier-cell--gold">
-                      <div class="trophy-tier-count">{{ achievementsSummary.tiers.gold }}</div>
-                      <div class="trophy-tier-label">GOLD</div>
+                      <div class="trophy-tier-count">
+                        {{ achievementsSummary.tiers.gold }}
+                      </div>
+                      <div class="trophy-tier-label">
+                        GOLD
+                      </div>
                     </div>
                     <div class="trophy-tier-cell trophy-tier-cell--silver">
-                      <div class="trophy-tier-count">{{ achievementsSummary.tiers.silver }}</div>
-                      <div class="trophy-tier-label">SILVER</div>
+                      <div class="trophy-tier-count">
+                        {{ achievementsSummary.tiers.silver }}
+                      </div>
+                      <div class="trophy-tier-label">
+                        SILVER
+                      </div>
                     </div>
                     <div class="trophy-tier-cell trophy-tier-cell--bronze">
-                      <div class="trophy-tier-count">{{ achievementsSummary.tiers.bronze }}</div>
-                      <div class="trophy-tier-label">BRONZE</div>
+                      <div class="trophy-tier-count">
+                        {{ achievementsSummary.tiers.bronze }}
+                      </div>
+                      <div class="trophy-tier-label">
+                        BRONZE
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1396,11 +2311,23 @@ onUnmounted(() => {
                 <div class="section-divider">
                   <span class="section-num">01</span>
                   <div class="section-head">
-                    <div class="section-title">Badge Collection</div>
-                    <div class="section-sub">Grouped by category &amp; tier</div>
+                    <div class="section-title">
+                      Badge Collection
+                    </div>
+                    <div class="section-sub">
+                      Grouped by category &amp; tier
+                    </div>
                   </div>
-                  <span class="section-line" aria-hidden="true" />
-                  <router-link :to="`/players/${encodeURIComponent(playerName)}/achievements`" class="section-link">VIEW ALL &rarr;</router-link>
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
+                  <router-link
+                    :to="`/players/${encodeURIComponent(playerName)}/achievements`"
+                    class="section-link"
+                  >
+                    VIEW ALL &rarr;
+                  </router-link>
                 </div>
 
                 <div class="explorer-card explorer-card--achievement">
@@ -1415,21 +2342,47 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-
           </div>
 
           <!-- Empty State -->
-          <div v-else class="explorer-empty">
-            <div class="explorer-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-neutral-500"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
-            <p class="explorer-empty-title">No player data available</p>
+          <div
+            v-else
+            class="explorer-empty"
+          >
+            <div class="explorer-empty-icon">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-neutral-500"
+              ><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></svg>
+            </div>
+            <p class="explorer-empty-title">
+              No player data available
+            </p>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Map Stats Panel (Overlay) -->
-    <div v-if="isMapStatsPanelOpen && playerStats?.servers" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4" @click="closeServerMapStats" @keydown.esc="closeServerMapStats" tabindex="-1">
-      <div class="w-full max-w-5xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl" @click.stop>
+    <div
+      v-if="isMapStatsPanelOpen && playerStats?.servers"
+      class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4"
+      tabindex="-1"
+      @click="closeServerMapStats"
+      @keydown.esc="closeServerMapStats"
+    >
+      <div
+        class="w-full max-w-5xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl"
+        @click.stop
+      >
         <!-- Header -->
         <div class="p-3 sm:p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-panel)] sticky top-0 z-10">
           <div class="flex-1 min-w-0 mr-4">
@@ -1440,12 +2393,21 @@ onUnmounted(() => {
               {{ selectedServerName || 'SELECTED SERVER' }}
             </p>
           </div>
-          <button class="explorer-btn explorer-btn--ghost explorer-btn--sm flex-shrink-0" aria-label="Close map rankings panel" @click="closeServerMapStats">CLOSE</button>
+          <button
+            class="explorer-btn explorer-btn--ghost explorer-btn--sm flex-shrink-0"
+            aria-label="Close map rankings panel"
+            @click="closeServerMapStats"
+          >
+            CLOSE
+          </button>
         </div>
 
         <!-- Content -->
         <div class="flex-1 overflow-y-auto">
-          <div v-if="rankingsMapName" class="p-3 sm:p-4">
+          <div
+            v-if="rankingsMapName"
+            class="p-3 sm:p-4"
+          >
             <button
               class="explorer-btn explorer-btn--ghost explorer-btn--sm mb-4 flex items-center gap-2"
               @click="closeRankingsPanel"
@@ -1473,8 +2435,17 @@ onUnmounted(() => {
     </div>
 
     <!-- Map Detail Panel (Overlay from Data Explorer Breakdown) -->
-    <div v-if="selectedMapDetailName" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4" @click="closeMapDetail" @keydown.esc="closeMapDetail" tabindex="-1">
-      <div class="w-full max-w-5xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl" @click.stop>
+    <div
+      v-if="selectedMapDetailName"
+      class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4"
+      tabindex="-1"
+      @click="closeMapDetail"
+      @keydown.esc="closeMapDetail"
+    >
+      <div
+        class="w-full max-w-5xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl"
+        @click.stop
+      >
         <!-- Header -->
         <div class="p-3 sm:p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-panel)] sticky top-0 z-10">
           <div class="flex-1 min-w-0 mr-4">
@@ -1485,7 +2456,13 @@ onUnmounted(() => {
               {{ selectedMapDetailName }}
             </p>
           </div>
-          <button class="explorer-btn explorer-btn--ghost explorer-btn--sm flex-shrink-0" aria-label="Close map detail panel" @click="closeMapDetail">CLOSE</button>
+          <button
+            class="explorer-btn explorer-btn--ghost explorer-btn--sm flex-shrink-0"
+            aria-label="Close map detail panel"
+            @click="closeMapDetail"
+          >
+            CLOSE
+          </button>
         </div>
 
         <!-- Content -->
@@ -1502,8 +2479,17 @@ onUnmounted(() => {
     </div>
 
     <!-- Server Map Detail Panel (Overlay from Map Detail Panel) -->
-    <div v-if="selectedServerMapDetail" class="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4" @click="closeServerMapDetail" @keydown.esc="closeServerMapDetail" tabindex="-1">
-      <div class="w-full max-w-5xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl" @click.stop>
+    <div
+      v-if="selectedServerMapDetail"
+      class="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4"
+      tabindex="-1"
+      @click="closeServerMapDetail"
+      @keydown.esc="closeServerMapDetail"
+    >
+      <div
+        class="w-full max-w-5xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl"
+        @click.stop
+      >
         <!-- Header -->
         <div class="p-3 sm:p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-panel)] sticky top-0 z-10">
           <div class="flex-1 min-w-0 mr-4">
@@ -1514,7 +2500,13 @@ onUnmounted(() => {
               {{ selectedServerMapDetail.mapName }}
             </p>
           </div>
-          <button class="explorer-btn explorer-btn--ghost explorer-btn--sm flex-shrink-0" aria-label="Close server map detail panel" @click="closeServerMapDetail">CLOSE</button>
+          <button
+            class="explorer-btn explorer-btn--ghost explorer-btn--sm flex-shrink-0"
+            aria-label="Close server map detail panel"
+            @click="closeServerMapDetail"
+          >
+            CLOSE
+          </button>
         </div>
 
         <!-- Content -->
@@ -1528,7 +2520,6 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-
   </div>
 </template>
 
@@ -1536,11 +2527,91 @@ onUnmounted(() => {
 <style scoped src="./DataExplorer.vue.css"></style>
 
 <style scoped>
+/* ============ V2 WAR-ROOM PALETTE OVERRIDE ============
+   Aligns PlayerDetails to the cyan "War Room" aesthetic from
+   RoundReportV2. Shifts the inherited amber/ember portal theme
+   to true cyan (#00e5ff) and deep violet accents.
+
+   The variable override sits at .pd-v2 (root) AND on the
+   .data-explorer.pd-v2-explorer wrapper with higher specificity
+   than DataExplorer.vue.css so child components inherit cyan.
+*/
+.pd-v2 {
+  --pd-cyan: #00e5ff;
+  --pd-cyan-soft: rgba(0, 229, 255, 0.18);
+  --pd-cyan-glow: rgba(0, 229, 255, 0.45);
+  --pd-purple: #c084fc;
+  --pd-purple-soft: rgba(192, 132, 252, 0.18);
+  --pd-bg: #0a0a0f;
+  --pd-panel: rgba(13, 13, 24, 0.82);
+  --pd-border: rgba(48, 54, 61, 0.55);
+  --pd-border-hot: rgba(0, 229, 255, 0.35);
+  background: var(--pd-bg);
+  color: #cbd5e1;
+}
+
+.pd-v2 .pd-v2-fx {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.pd-v2 .pd-v2-orb {
+  position: absolute;
+  width: 46%;
+  height: 46%;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.9;
+}
+
+.pd-v2 .pd-v2-orb--cyan {
+  top: -14%;
+  left: -12%;
+  background: rgba(0, 229, 255, 0.08);
+}
+
+.pd-v2 .pd-v2-orb--purple {
+  bottom: -14%;
+  right: -12%;
+  background: rgba(168, 85, 247, 0.08);
+}
+
+/* Defeat portal's warm grid mask and swap for a cool cyan grid */
+.pd-v2 .portal-grid {
+  background-image:
+    linear-gradient(rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Override the .data-explorer palette for this view only so all
+   descendant components (PlayerDetailPanel, MapPerformanceRace,
+   PlayerCompetitiveRankings, PlayerServerMapStats, etc.) render
+   with true cyan. CSS custom properties inherit through the
+   component tree regardless of scoped styling. */
+.pd-v2 .data-explorer.pd-v2-explorer {
+  --neon-cyan: #00e5ff;
+  --accent-rgb: 0, 229, 255;
+  --bg-dark: #0a0a0f;
+  --bg-panel: rgba(13, 13, 24, 0.82);
+  --bg-card: rgba(22, 27, 34, 0.78);
+  --border-color: rgba(48, 54, 61, 0.55);
+  --portal-accent: #00e5ff;
+  --portal-accent-dim: rgba(0, 229, 255, 0.12);
+  --portal-accent-glow: rgba(0, 229, 255, 0.25);
+}
+
+/* Focus ring — cool cyan */
+.pd-v2 :focus-visible { outline-color: var(--pd-cyan) !important; }
+
 /* ============ PLAYER HERO / COMMAND DOSSIER ============ */
 .player-hero {
   position: relative;
   background:
-    linear-gradient(135deg, rgba(245, 158, 11, 0.04) 0%, rgba(168, 85, 247, 0.04) 100%),
+    linear-gradient(135deg, rgba(0, 229, 255, 0.04) 0%, rgba(168, 85, 247, 0.04) 100%),
     var(--bg-panel, #0d1117);
   border: 1px solid var(--border-color, #30363d);
   border-radius: 10px;
@@ -1553,8 +2624,8 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(245, 158, 11, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(245, 158, 11, 0.04) 1px, transparent 1px);
+    linear-gradient(rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px);
   background-size: 32px 32px;
   mask-image: radial-gradient(ellipse at top left, black 0%, transparent 65%);
   -webkit-mask-image: radial-gradient(ellipse at top left, black 0%, transparent 65%);
@@ -1585,7 +2656,7 @@ onUnmounted(() => {
   position: absolute;
   width: 16px;
   height: 16px;
-  border: 1.5px solid var(--neon-cyan, #F59E0B);
+  border: 1.5px solid var(--neon-cyan, #00e5ff);
   opacity: 0.55;
   pointer-events: none;
   z-index: 1;
@@ -1621,7 +2692,7 @@ onUnmounted(() => {
   height: 3.25rem;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 30% 30%, rgba(245, 158, 11, 0.18), transparent 60%),
+    radial-gradient(circle at 30% 30%, rgba(0, 229, 255, 0.18), transparent 60%),
     var(--bg-card, #161b22);
   border: 1px solid var(--border-color, #30363d);
   display: flex;
@@ -1637,15 +2708,15 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   font-size: 1.5rem;
-  color: var(--neon-cyan, #F59E0B);
-  text-shadow: 0 0 14px rgba(245, 158, 11, 0.5);
+  color: var(--neon-cyan, #00e5ff);
+  text-shadow: 0 0 14px rgba(0, 229, 255, 0.5);
 }
 
 .hero-avatar-ring {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 1px dashed rgba(245, 158, 11, 0.35);
+  border: 1px dashed rgba(0, 229, 255, 0.35);
   opacity: 0.6;
 }
 
@@ -1739,8 +2810,8 @@ onUnmounted(() => {
   font-size: 1.5rem;
   line-height: 1.1;
   font-weight: 700;
-  color: var(--neon-cyan, #F59E0B);
-  text-shadow: 0 0 20px rgba(245, 158, 11, 0.35);
+  color: var(--neon-cyan, #00e5ff);
+  text-shadow: 0 0 20px rgba(0, 229, 255, 0.35);
   letter-spacing: -0.01em;
   word-break: break-word;
   margin: 0;
@@ -1786,13 +2857,13 @@ onUnmounted(() => {
   position: absolute;
   top: 0; left: 0;
   width: 3px; height: 100%;
-  background: var(--neon-cyan, #F59E0B);
+  background: var(--neon-cyan, #00e5ff);
   opacity: 0.35;
 }
 .hero-kpi:hover {
-  border-color: rgba(245, 158, 11, 0.35);
+  border-color: rgba(0, 229, 255, 0.35);
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 229, 255, 0.08);
 }
 
 .hero-kpi-label {
@@ -1813,7 +2884,7 @@ onUnmounted(() => {
 }
 @media (min-width: 640px) { .hero-kpi-value { font-size: 1.625rem; } }
 
-.hero-kpi-value--cyan { color: var(--neon-cyan, #F59E0B); text-shadow: 0 0 14px rgba(245, 158, 11, 0.4); }
+.hero-kpi-value--cyan { color: var(--neon-cyan, #00e5ff); text-shadow: 0 0 14px rgba(0, 229, 255, 0.4); }
 .hero-kpi-value--green { color: var(--neon-green, #34d399); text-shadow: 0 0 14px rgba(52, 211, 153, 0.4); }
 .hero-kpi-value--gold { color: var(--neon-gold, #fbbf24); text-shadow: 0 0 14px rgba(251, 191, 36, 0.4); }
 .hero-kpi-value--pink { color: var(--neon-pink, #fb7185); text-shadow: 0 0 14px rgba(251, 113, 133, 0.4); }
@@ -1946,16 +3017,16 @@ onUnmounted(() => {
   right: 1rem;
   bottom: -1px;
   height: 2px;
-  background: var(--neon-cyan, #F59E0B);
+  background: var(--neon-cyan, #00e5ff);
   transform: scaleX(0);
   transform-origin: center;
   transition: transform 0.25s ease;
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.6);
 }
 
 .hero-tab--active {
-  color: var(--neon-cyan, #F59E0B);
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+  color: var(--neon-cyan, #00e5ff);
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.35);
 }
 .hero-tab--active .hero-tab-icon { opacity: 1; transform: scale(1.05); }
 .hero-tab--active .hero-tab-underline { transform: scaleX(1); }
@@ -2123,7 +3194,7 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   font-size: 0.95rem;
-  color: var(--neon-cyan, #F59E0B);
+  color: var(--neon-cyan, #00e5ff);
   letter-spacing: -0.01em;
 }
 .best-score-row--gold .best-score-pts { color: var(--neon-gold, #fbbf24); text-shadow: 0 0 10px rgba(251, 191, 36, 0.45); }
@@ -2212,7 +3283,7 @@ onUnmounted(() => {
 .server-rank-bar-fill {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.55), rgba(168, 85, 247, 0.55));
+  background: linear-gradient(90deg, rgba(0, 229, 255, 0.55), rgba(168, 85, 247, 0.55));
   transition: width 0.4s ease;
 }
 
@@ -2224,7 +3295,7 @@ onUnmounted(() => {
 }
 .server-rank-row:hover .server-rank-arrow {
   opacity: 1;
-  color: var(--neon-cyan, #F59E0B);
+  color: var(--neon-cyan, #00e5ff);
   transform: translateX(2px);
 }
 
@@ -2242,7 +3313,7 @@ onUnmounted(() => {
   border: 1px solid var(--border-color, #30363d);
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35), 0 0 20px rgba(245, 158, 11, 0.08);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35), 0 0 20px rgba(0, 229, 255, 0.08);
 }
 
 .loading-terminal-header {
@@ -2301,7 +3372,7 @@ onUnmounted(() => {
   color: var(--neon-green, #34d399);
   font-weight: 700;
 }
-.terminal-prompt--cyan { color: var(--neon-cyan, #F59E0B); }
+.terminal-prompt--cyan { color: var(--neon-cyan, #00e5ff); }
 
 .terminal-dots::after {
   content: '';
@@ -2320,7 +3391,7 @@ onUnmounted(() => {
   display: inline-block;
   width: 0.5rem;
   animation: terminal-blink 1s steps(2) infinite;
-  color: var(--neon-cyan, #F59E0B);
+  color: var(--neon-cyan, #00e5ff);
 }
 @keyframes terminal-blink {
   0%, 50% { opacity: 1; }
@@ -2340,14 +3411,14 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   font-size: 0.65rem;
-  color: var(--neon-cyan, #F59E0B);
+  color: var(--neon-cyan, #00e5ff);
   padding: 0.2rem 0.45rem;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.3);
   border-radius: 4px;
   letter-spacing: 0.14em;
   flex-shrink: 0;
-  text-shadow: 0 0 6px rgba(245, 158, 11, 0.3);
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.3);
 }
 
 .section-head { flex-shrink: 0; min-width: 0; }
@@ -2374,7 +3445,7 @@ onUnmounted(() => {
 .section-line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.35), transparent 75%);
+  background: linear-gradient(90deg, rgba(0, 229, 255, 0.35), transparent 75%);
   min-width: 1.5rem;
 }
 
@@ -2383,17 +3454,17 @@ onUnmounted(() => {
   font-size: 0.65rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--neon-cyan, #F59E0B);
+  color: var(--neon-cyan, #00e5ff);
   padding: 0.3rem 0.55rem;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  border: 1px solid rgba(0, 229, 255, 0.3);
   border-radius: 4px;
   flex-shrink: 0;
   transition: all 0.2s;
 }
 .section-link:hover {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.55);
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.2);
+  background: rgba(0, 229, 255, 0.1);
+  border-color: rgba(0, 229, 255, 0.55);
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.2);
 }
 
 /* ============ COMBAT BANNER ============ */
@@ -2401,7 +3472,7 @@ onUnmounted(() => {
   position: relative;
   padding: 1rem 1.25rem;
   background:
-    linear-gradient(135deg, rgba(52, 211, 153, 0.04) 0%, rgba(245, 158, 11, 0.04) 100%),
+    linear-gradient(135deg, rgba(52, 211, 153, 0.04) 0%, rgba(0, 229, 255, 0.04) 100%),
     var(--bg-panel, #0d1117);
   border: 1px solid var(--border-color, #30363d);
   border-radius: 8px;
@@ -2586,7 +3657,7 @@ onUnmounted(() => {
   padding: 1.25rem;
   background:
     radial-gradient(ellipse at bottom right, rgba(168, 85, 247, 0.08), transparent 60%),
-    radial-gradient(ellipse at top left, rgba(245, 158, 11, 0.05), transparent 60%),
+    radial-gradient(ellipse at top left, rgba(0, 229, 255, 0.05), transparent 60%),
     var(--bg-panel, #0d1117);
   border: 1px solid var(--border-color, #30363d);
   border-radius: 8px;
@@ -2600,7 +3671,7 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(circle at 20% 30%, rgba(245, 158, 11, 0.12) 1px, transparent 1.5px),
+    radial-gradient(circle at 20% 30%, rgba(0, 229, 255, 0.12) 1px, transparent 1.5px),
     radial-gradient(circle at 80% 70%, rgba(168, 85, 247, 0.12) 1px, transparent 1.5px),
     radial-gradient(circle at 60% 20%, rgba(52, 211, 153, 0.12) 1px, transparent 1.5px);
   background-size: 60px 60px, 80px 80px, 100px 100px;
@@ -2626,8 +3697,8 @@ onUnmounted(() => {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
-  background: var(--neon-cyan, #F59E0B);
-  box-shadow: 0 0 10px var(--neon-cyan, #F59E0B);
+  background: var(--neon-cyan, #00e5ff);
+  box-shadow: 0 0 10px var(--neon-cyan, #00e5ff);
   animation: hero-dot-pulse 2s ease-in-out infinite;
   flex-shrink: 0;
 }
@@ -2700,7 +3771,7 @@ onUnmounted(() => {
   gap: 0.75rem;
   padding: 1rem 1.25rem;
   background:
-    linear-gradient(90deg, rgba(168, 85, 247, 0.08), rgba(245, 158, 11, 0.05));
+    linear-gradient(90deg, rgba(168, 85, 247, 0.08), rgba(0, 229, 255, 0.05));
   border: 1px solid var(--border-color, #30363d);
   border-radius: 8px;
 }
@@ -2736,16 +3807,16 @@ onUnmounted(() => {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--bg-dark, #0a0a0f);
-  background: linear-gradient(90deg, var(--neon-cyan, #F59E0B), #fbbf24);
+  background: linear-gradient(90deg, var(--neon-cyan, #00e5ff), #fbbf24);
   border: none;
   border-radius: 6px;
   white-space: nowrap;
   transition: all 0.2s;
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.25);
 }
 .network-cta-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 0 30px rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 30px rgba(0, 229, 255, 0.5);
 }
 
 /* ============ TROPHY BANNER ============ */
@@ -2899,5 +3970,441 @@ onUnmounted(() => {
   .player-hero--active::after {
     animation: none !important;
   }
+}
+
+
+/* ============================================================
+   THREAT TIER INSIGNIA — chevron rank + service callsign
+   ============================================================ */
+.threat-tier {
+  --tier-color: var(--neon-cyan, #00e5ff);
+  --tier-soft: rgba(0, 229, 255, 0.15);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.55rem 0.3rem 0.35rem;
+  margin: 0.35rem 0 0.45rem;
+  border: 1px solid var(--border-color, #30363d);
+  border-left: 2px solid var(--tier-color);
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--tier-soft), transparent 70%);
+  max-width: 100%;
+  flex-wrap: wrap;
+  position: relative;
+}
+.threat-tier::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  border-top: 1px solid var(--tier-color);
+  border-right: 1px solid var(--tier-color);
+  opacity: 0.55;
+  pointer-events: none;
+  border-top-right-radius: 4px;
+}
+
+.threat-tier--rookie { --tier-color: #94a3b8; --tier-soft: rgba(148, 163, 184, 0.12); }
+.threat-tier--veteran { --tier-color: var(--neon-green, #34d399); --tier-soft: rgba(52, 211, 153, 0.12); }
+.threat-tier--elite { --tier-color: var(--neon-cyan, #00e5ff); --tier-soft: rgba(0, 229, 255, 0.15); }
+.threat-tier--legend { --tier-color: var(--neon-gold, #fbbf24); --tier-soft: rgba(251, 191, 36, 0.18); }
+.threat-tier--ghost { --tier-color: #c084fc; --tier-soft: rgba(192, 132, 252, 0.2); }
+
+.threat-tier__chevrons {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  padding: 0.1rem 0.35rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.threat-chevron {
+  display: block;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 7px solid rgba(148, 163, 184, 0.15);
+  transition: border-bottom-color 0.3s;
+}
+.threat-chevron--on {
+  border-bottom-color: var(--tier-color);
+  filter: drop-shadow(0 0 4px var(--tier-color));
+  animation: chev-pulse 2.4s ease-in-out infinite;
+  animation-delay: var(--chev-delay, 0s);
+}
+@keyframes chev-pulse {
+  0%, 100% { opacity: 0.85; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-1px); }
+}
+
+.threat-tier__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  min-width: 0;
+}
+
+.threat-tier__label {
+  color: var(--tier-color);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 8px var(--tier-soft);
+}
+
+.threat-tier__sep { color: var(--border-color, #30363d); opacity: 0.7; }
+
+.threat-tier__callsign,
+.threat-tier__clearance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-secondary, #8b949e);
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.threat-tier__callsign-key,
+.threat-tier__clearance > span:first-child {
+  color: var(--text-secondary, #8b949e);
+  opacity: 0.7;
+}
+.threat-tier__callsign-val {
+  color: var(--text-primary, #e6edf3);
+  letter-spacing: 0.14em;
+  padding: 0 0.3rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 2px;
+  font-weight: 600;
+}
+.threat-tier__clearance-val {
+  color: var(--tier-color);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+@media (max-width: 640px) {
+  .threat-tier { padding: 0.25rem 0.4rem 0.25rem 0.3rem; gap: 0.35rem; }
+  .threat-tier__meta { font-size: 0.55rem; gap: 0.3rem; }
+  .threat-chevron { border-left-width: 5px; border-right-width: 5px; border-bottom-width: 6px; }
+}
+
+/* ============================================================
+   COMBAT FINGERPRINT — playstyle radar + archetype verdict
+   ============================================================ */
+.fingerprint {
+  position: relative;
+  padding: 1.125rem 1.25rem 1rem;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(168, 85, 247, 0.1), transparent 55%),
+    radial-gradient(ellipse at 100% 100%, rgba(0, 229, 255, 0.08), transparent 55%),
+    rgba(13, 17, 23, 0.75);
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 10px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.fingerprint__grid-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 229, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse at center, black 0%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 75%);
+  pointer-events: none;
+  opacity: 0.7;
+  z-index: 0;
+}
+
+.fingerprint__scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.55), transparent);
+  animation: fp-scan 6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes fp-scan {
+  0% { transform: translateY(0); opacity: 0.2; }
+  50% { transform: translateY(120px); opacity: 0.85; }
+  100% { transform: translateY(240px); opacity: 0.1; }
+}
+
+.fingerprint__head {
+  position: relative;
+  z-index: 2;
+  margin-bottom: 1rem;
+}
+
+.fingerprint__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--neon-cyan, #00e5ff);
+  background: rgba(0, 229, 255, 0.1);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.fingerprint__tag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--neon-cyan, #00e5ff);
+  box-shadow: 0 0 8px var(--neon-cyan, #00e5ff);
+  animation: hero-dot-pulse 2s ease-in-out infinite;
+}
+
+.fingerprint__title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fingerprint__title {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-primary, #e6edf3);
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+@media (min-width: 640px) { .fingerprint__title { font-size: 1.35rem; } }
+
+.fingerprint__archetype {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.65rem;
+  background:
+    linear-gradient(90deg, rgba(168, 85, 247, 0.15), rgba(0, 229, 255, 0.1));
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-primary, #e6edf3);
+  white-space: nowrap;
+}
+.fingerprint__archetype-key {
+  font-size: 0.55rem;
+  color: var(--text-secondary, #8b949e);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.fingerprint__archetype-val {
+  font-weight: 700;
+  color: #c084fc;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 10px rgba(192, 132, 252, 0.35);
+}
+
+.fingerprint__sub {
+  margin: 0.45rem 0 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-secondary, #8b949e);
+  line-height: 1.5;
+}
+
+.fingerprint__meters {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+@media (min-width: 640px) {
+  .fingerprint__meters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+}
+@media (min-width: 1024px) {
+  .fingerprint__meters { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.fp-trait {
+  --fp-pct: 0%;
+  --fp-color: var(--neon-cyan, #00e5ff);
+  position: relative;
+  padding: 0.75rem 0.85rem 0.7rem;
+  background: rgba(22, 27, 34, 0.6);
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.25s;
+}
+.fp-trait::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 2px; height: 100%;
+  background: var(--fp-color);
+  opacity: 0.7;
+}
+.fp-trait:hover {
+  border-color: var(--fp-color);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--fp-color) 15%, transparent);
+}
+
+.fp-trait--aggression { --fp-color: #f87171; }
+.fp-trait--lethality { --fp-color: var(--neon-cyan, #00e5ff); }
+.fp-trait--endurance { --fp-color: var(--neon-green, #34d399); }
+.fp-trait--devotion { --fp-color: #c084fc; }
+
+.fp-trait__head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+
+.fp-trait__icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--fp-color);
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fp-color) 45%, transparent));
+}
+
+.fp-trait__label {
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-secondary, #8b949e);
+  font-weight: 600;
+}
+
+.fp-trait__num {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 1.125rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--fp-color);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--fp-color) 40%, transparent);
+}
+
+.fp-trait__meter {
+  position: relative;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.45rem;
+}
+
+.fp-trait__meter-grid {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 4px);
+}
+
+.fp-trait__meter-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--fp-pct);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--fp-color) 85%, transparent), var(--fp-color));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--fp-color) 50%, transparent), inset 0 0 6px rgba(255, 255, 255, 0.1);
+  border-right: 1px solid color-mix(in srgb, var(--fp-color) 90%, white);
+  animation: fp-fill 1.1s cubic-bezier(.2, .7, .2, 1) both;
+}
+@keyframes fp-fill {
+  from { width: 0; }
+  to { width: var(--fp-pct); }
+}
+
+.fp-trait__meter-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+.fp-trait__desc {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem;
+  color: var(--text-secondary, #8b949e);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fingerprint__footer {
+  position: relative;
+  z-index: 2;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed var(--border-color, #30363d);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--text-secondary, #8b949e);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.fingerprint__stamp {
+  color: var(--neon-green, #34d399);
+  padding: 0.15rem 0.45rem;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  border-radius: 3px;
+  background: rgba(52, 211, 153, 0.08);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.fingerprint__foot-sep { opacity: 0.5; }
+.fingerprint__foot-note { opacity: 0.8; text-transform: none; letter-spacing: 0.04em; }
+
+@media (max-width: 640px) {
+  .fingerprint { padding: 0.85rem 0.9rem; }
+  .fingerprint__title-row { gap: 0.45rem; }
+  .fingerprint__archetype { font-size: 0.625rem; padding: 0.2rem 0.5rem; }
+  .fp-trait__num { font-size: 1rem; }
+}
+
+/* Reduced motion overrides for new elements */
+@media (prefers-reduced-motion: reduce) {
+  .threat-chevron--on,
+  .fingerprint__scan,
+  .fingerprint__tag-dot,
+  .fp-trait__meter-fill {
+    animation: none !important;
+  }
+  .fp-trait__meter-fill { width: var(--fp-pct); }
 }
 </style>

@@ -1,7 +1,7 @@
 <template>
   <div
-    @click="emit('click')"
     :class="['list-item', isSelected && 'list-item--selected']"
+    @click="emit('click')"
   >
     <div class="list-item-row">
       <!-- Map Icon -->
@@ -11,7 +11,9 @@
 
       <!-- Map Info -->
       <div class="list-item-content">
-        <div class="list-item-title">{{ map.mapName }}</div>
+        <div class="list-item-title">
+          {{ map.mapName }}
+        </div>
         <div class="list-item-meta">
           <span>{{ map.serversPlayingCount }} server{{ map.serversPlayingCount !== 1 ? 's' : '' }}</span>
           <span>{{ map.totalRoundsLast30Days }} rounds</span>
@@ -21,8 +23,18 @@
 
       <!-- Arrow -->
       <div class="list-item-arrow">
-        <svg class="list-item-arrow-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        <svg
+          class="list-item-arrow-icon"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 5l7 7-7 7"
+          />
         </svg>
       </div>
     </div>

@@ -1,15 +1,32 @@
 <template>
   <section class="portal-card portal-notice">
     <div class="portal-notice-head">
-      <h3 class="portal-notice-title">[ NOTICE ]</h3>
-      <p class="portal-notice-desc">Manage site-wide notice banner. Displays above all pages when active.</p>
+      <h3 class="portal-notice-title">
+        [ NOTICE ]
+      </h3>
+      <p class="portal-notice-desc">
+        Manage site-wide notice banner. Displays above all pages when active.
+      </p>
     </div>
 
-    <div v-if="error" class="portal-notice-err">{{ error }}</div>
-    <div v-if="success" class="portal-notice-ok">{{ success }}</div>
+    <div
+      v-if="error"
+      class="portal-notice-err"
+    >
+      {{ error }}
+    </div>
+    <div
+      v-if="success"
+      class="portal-notice-ok"
+    >
+      {{ success }}
+    </div>
 
     <!-- Current Notice Preview -->
-    <div v-if="currentNotice" class="portal-notice-preview">
+    <div
+      v-if="currentNotice"
+      class="portal-notice-preview"
+    >
       <div class="portal-notice-preview-header">
         <span class="portal-notice-preview-label">CURRENT NOTICE</span>
         <span :class="['portal-notice-type-badge', `portal-notice-type-badge--${currentNotice.type}`]">
@@ -17,11 +34,20 @@
         </span>
       </div>
       <div :class="['portal-notice-preview-content', `portal-notice-preview-content--${currentNotice.type}`]">
-        <div class="portal-notice-preview-text" v-html="renderedCurrentNotice" />
+        <div
+          class="portal-notice-preview-text"
+          v-html="renderedCurrentNotice"
+        />
       </div>
       <div class="portal-notice-preview-meta">
-        <span v-if="currentNotice.dismissible" class="portal-notice-meta-item">Dismissible</span>
-        <span v-if="currentNotice.expiresAt" class="portal-notice-meta-item">
+        <span
+          v-if="currentNotice.dismissible"
+          class="portal-notice-meta-item"
+        >Dismissible</span>
+        <span
+          v-if="currentNotice.expiresAt"
+          class="portal-notice-meta-item"
+        >
           Expires: {{ formatDate(currentNotice.expiresAt) }}
         </span>
         <span class="portal-notice-meta-item">
@@ -48,7 +74,10 @@
     </div>
 
     <!-- No Notice State -->
-    <div v-else-if="!isEditing && !loading" class="portal-notice-empty">
+    <div
+      v-else-if="!isEditing && !loading"
+      class="portal-notice-empty"
+    >
       <span class="portal-notice-empty-icon">[ ]</span>
       <span class="portal-notice-empty-text">No active notice</span>
       <button
@@ -61,12 +90,18 @@
     </div>
 
     <!-- Loading State -->
-    <div v-else-if="loading" class="portal-notice-loading">
+    <div
+      v-else-if="loading"
+      class="portal-notice-loading"
+    >
       <span class="portal-notice-loading-text">Loading...</span>
     </div>
 
     <!-- Editor -->
-    <div v-if="isEditing" class="portal-notice-editor">
+    <div
+      v-if="isEditing"
+      class="portal-notice-editor"
+    >
       <div class="portal-notice-editor-header">
         <span class="portal-notice-editor-label">{{ currentNotice ? 'EDIT NOTICE' : 'CREATE NOTICE' }}</span>
       </div>
@@ -86,11 +121,22 @@
         <!-- Type -->
         <div class="portal-field">
           <label class="portal-label">Type</label>
-          <select v-model="form.type" class="portal-input">
-            <option value="info">Info (Cyan)</option>
-            <option value="warning">Warning (Gold)</option>
-            <option value="success">Success (Green)</option>
-            <option value="error">Error (Red)</option>
+          <select
+            v-model="form.type"
+            class="portal-input"
+          >
+            <option value="info">
+              Info (Cyan)
+            </option>
+            <option value="warning">
+              Warning (Gold)
+            </option>
+            <option value="success">
+              Success (Green)
+            </option>
+            <option value="error">
+              Error (Red)
+            </option>
           </select>
         </div>
 
@@ -103,8 +149,11 @@
               v-model="form.dismissible"
               type="checkbox"
               class="portal-checkbox"
-            />
-            <label for="dismissible" class="portal-checkbox-label">
+            >
+            <label
+              for="dismissible"
+              class="portal-checkbox-label"
+            >
               Allow users to dismiss
             </label>
           </div>
@@ -117,15 +166,21 @@
             v-model="form.expiresAt"
             type="datetime-local"
             class="portal-input"
-          />
+          >
         </div>
 
         <!-- Preview -->
         <div class="portal-field portal-field--wide">
           <label class="portal-label">Preview</label>
           <div :class="['portal-notice-form-preview', `portal-notice-form-preview--${form.type}`]">
-            <div v-if="form.content" v-html="renderedFormContent" />
-            <span v-else class="portal-notice-form-preview-empty">Enter content to see preview...</span>
+            <div
+              v-if="form.content"
+              v-html="renderedFormContent"
+            />
+            <span
+              v-else
+              class="portal-notice-form-preview-empty"
+            >Enter content to see preview...</span>
           </div>
         </div>
 

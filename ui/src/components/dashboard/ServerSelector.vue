@@ -118,7 +118,10 @@ watch(() => props.selectedServer, (newServer) => {
     </label>
 
     <!-- Selected Server Display -->
-    <div v-if="selectedServer" class="mb-3">
+    <div
+      v-if="selectedServer"
+      class="mb-3"
+    >
       <div class="flex items-center justify-between gap-3 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
         <div class="flex items-center gap-2 flex-1 min-w-0">
           <span class="text-cyan-400 text-sm">🖥️</span>
@@ -134,18 +137,31 @@ watch(() => props.selectedServer, (newServer) => {
         <button
           type="button"
           class="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
-          @click="clearServerSelection"
           title="Change server"
+          @click="clearServerSelection"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
     </div>
 
     <!-- Server Search Input (only show when no server selected) -->
-    <div v-else class="relative">
+    <div
+      v-else
+      class="relative"
+    >
       <div class="absolute left-3 top-1/2 transform -translate-y-1/2 z-10">
         <span class="text-slate-500 text-sm">🖥️</span>
       </div>

@@ -1,522 +1,851 @@
 <template>
-  <div class="portal-page" @click="closeAllModals">
-    <div class="portal-grid" aria-hidden="true" />
-    <div class="portal-inner px-0 sm:px-6">
+  <div
+    class="portal-page"
+    @click="closeAllModals"
+  >
     <div
-      class="pt-4 flex flex-col min-h-0 min-h-screen"
-      :class="{ 'lg:flex-row': showPlayersPanel && isWideScreen }"
-    >
-      <!-- Main Server Table -->
-      <div class="flex-1 min-w-0 w-full">
-        <!-- Header -->
-        <div class="sticky top-0 z-20 bg-neutral-950/95 backdrop-blur-sm border-b border-neutral-700/50 p-1 sm:p-3">
-          <!-- Mobile: Player Search Full Width -->
-          <div class="block lg:hidden w-full mb-4">
-            <PlayerSearch
-              v-model="playerSearchQuery"
-              :full-width="true"
-              @select="selectPlayer"
-              @enter="navigateToPlayer"
-            />
-          </div>
-
-          <!-- Desktop: Original Layout -->
-          <div class="hidden lg:flex lg:items-center lg:justify-between gap-4">
-            <!-- Game Filter Buttons -->
-            <GameFilterButtons
-              :game-types="gameTypes"
-              :active-filter="activeFilter"
-              :get-game-icon="getGameIcon"
-              @update:active-filter="setActiveFilter"
-            />
-
-            <!-- Installation Links & Player Search -->
-            <div class="flex items-center gap-4 justify-end">
-              <!-- Installation Links Dropdown -->
-              <InstallationLinksDropdown ref="installDropdownRef" />
-
-              <!-- Player Search -->
-              <PlayerSearch
-                v-model="playerSearchQuery"
-                @select="selectPlayer"
-                @enter="navigateToPlayer"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- Mobile: Game Filter Buttons (Above Table) -->
-        <div class="block lg:hidden p-2 sm:p-3 border-b border-neutral-700/30">
-          <GameFilterButtons
-            :game-types="gameTypes"
-            :active-filter="activeFilter"
-            :get-game-icon="getGameIcon"
-            @update:active-filter="setActiveFilter"
-          />
-        </div>
-
-        <!-- LIVE PULSE BANNER -->
-        <section
-          v-if="!loading && !error"
-          class="live-pulse"
-          :class="[`live-pulse--${activeFilter}`, `live-pulse--${networkPulseLevel}`]"
-          aria-label="Live network status"
-        >
-          <div class="live-pulse__bg" aria-hidden="true" />
-          <div class="live-pulse__scan" aria-hidden="true" />
-          <div class="live-pulse__inner">
-            <!-- Status badge + tagline -->
-            <div class="live-pulse__lead">
-              <div class="live-pulse__badge">
-                <span class="live-pulse__dot" aria-hidden="true" />
-                <span class="live-pulse__badge-text">{{ networkPulseLabel }}</span>
-              </div>
-              <div class="live-pulse__headline">
-                <span class="live-pulse__num">{{ totalPlayersOnline.toLocaleString() }}</span>
-                <span class="live-pulse__text">online across</span>
-                <span class="live-pulse__num live-pulse__num--sub">{{ activeServersCount }}</span>
-                <span class="live-pulse__text">of {{ servers.length }} {{ getActiveGameName() }} servers</span>
-              </div>
-            </div>
-
-            <!-- Stat tiles -->
-            <div class="live-pulse__stats">
-              <div class="pulse-stat">
-                <div class="pulse-stat__value">{{ totalPlayersOnline.toLocaleString() }}</div>
-                <div class="pulse-stat__label">In Combat</div>
-                <div class="pulse-stat__bar">
-                  <div class="pulse-stat__bar-fill" :style="{ width: Math.min(100, capacityUsedPercent) + '%' }" />
-                </div>
-              </div>
-              <div class="pulse-stat">
-                <div class="pulse-stat__value">{{ activeServersCount }}</div>
-                <div class="pulse-stat__label">Live Hosts</div>
-                <div class="pulse-stat__sub">of {{ servers.length }} online</div>
-              </div>
-              <div class="pulse-stat">
-                <div class="pulse-stat__value">{{ capacityUsedPercent }}<span class="pulse-stat__suffix">%</span></div>
-                <div class="pulse-stat__label">Load</div>
-                <div class="pulse-stat__sub">network capacity</div>
-              </div>
-            </div>
-
-            <!-- Top server spotlight -->
-            <router-link
-              v-if="topServer && topServer.numPlayers > 0"
-              :to="`/servers/${encodeURIComponent(topServer.name)}`"
-              class="live-pulse__spotlight"
-              aria-label="View top server"
-            >
-              <div class="spotlight__rail" aria-hidden="true" />
-              <div class="spotlight__col">
-                <div class="spotlight__label">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L13.09 8.26L19 9L14.5 13.5L15.91 19.76L12 16.27L8.09 19.76L9.5 13.5L5 9L10.91 8.26L12 2Z"/></svg>
-                  <span>HOTTEST SERVER</span>
-                </div>
-                <div class="spotlight__name">{{ topServer.name }}</div>
-                <div class="spotlight__meta">
-                  <span class="spotlight__players">{{ topServer.numPlayers }}/{{ topServer.maxPlayers }}</span>
-                  <span class="spotlight__dot">·</span>
-                  <span class="spotlight__map">{{ topServer.mapName }}</span>
-                </div>
-              </div>
-              <div class="spotlight__arrow" aria-hidden="true">→</div>
-            </router-link>
-          </div>
-        </section>
-
-        <!-- Player History Section -->
-        <PlayerHistorySection
-          :active-game-name="getActiveGameName()"
-          :player-history-data="playerHistoryData"
-          :player-history-insights="playerHistoryInsights"
-          :history-period="historyPeriod"
-          :longer-period="longerPeriod"
-          :history-rolling-window="historyRollingWindow"
-          :history-loading="historyLoading"
-          :history-error="historyError"
-          ref="playerHistorySectionRef"
-          @toggle="togglePlayerHistory"
-          @period-change="changePeriod"
-          @longer-period-change="selectLongerPeriod"
-          @rolling-window-change="changeRollingWindow"
-        />
-
-        <!-- Loading State -->
-        <div
-          v-if="loading"
-          class="landing-loading"
-          role="status"
-          aria-label="Loading servers"
-        >
-          <div class="landing-loading__card">
-            <div class="landing-loading__header">
-              <span class="landing-loading__dot" />
-              <span class="landing-loading__dot" />
-              <span class="landing-loading__dot" />
-              <span class="landing-loading__title">gamefront://connect</span>
-            </div>
-            <div class="landing-loading__body">
-              <div class="landing-loading__line"><span class="landing-loading__prompt">$</span> init network_scan --game={{ activeFilter }}</div>
-              <div class="landing-loading__line landing-loading__line--muted">Resolving master list...</div>
-              <div class="landing-loading__line landing-loading__line--muted">Pinging active hosts...</div>
-              <div class="landing-loading__line landing-loading__line--cursor">Fetching live telemetry<span class="landing-loading__caret">▊</span></div>
-            </div>
-            <div class="landing-loading__progress">
-              <div class="landing-loading__progress-fill" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Error State -->
-        <div
-          v-else-if="error"
-          class="landing-error"
-          role="alert"
-        >
-          <div class="landing-error__card">
-            <div class="landing-error__glitch" aria-hidden="true">
-              <span>SIGNAL LOST</span>
-              <span>SIGNAL LOST</span>
-              <span>SIGNAL LOST</span>
-            </div>
-            <div class="landing-error__icon" aria-hidden="true">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-            </div>
-            <div class="landing-error__title">CONNECTION SEVERED</div>
-            <div class="landing-error__msg">{{ error }}</div>
-            <button
-              class="landing-error__retry"
-              @click="fetchServersForGame(activeFilter as 'bf1942' | 'fh2' | 'bfvietnam', true)"
-            >
-              <span>↻</span> RETRY HANDSHAKE
-            </button>
-          </div>
-        </div>
-
-        <!-- Server Grid (replaces old server table) -->
-        <div
-          v-else
-          class="server-view"
-          :class="`server-view--${activeFilter}`"
-        >
-          <!-- Command Bar: filter + sort + count -->
-          <div class="command-bar" role="toolbar" aria-label="Server filter and sort controls">
-            <div class="command-bar__filter">
-              <span class="command-bar__prompt">&gt;</span>
-              <input
-                v-model="serverFilterQuery"
-                type="search"
-                class="command-bar__input"
-                placeholder="grep --hosts name,map,ip..."
-                aria-label="Filter servers by name, map, or IP"
-              >
-              <button
-                v-if="serverFilterQuery"
-                type="button"
-                class="command-bar__clear"
-                aria-label="Clear filter"
-                @click="serverFilterQuery = ''"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
-              </button>
-            </div>
-
-            <div class="command-bar__sort" role="group" aria-label="Sort by">
-              <span class="command-bar__sort-label">SORT</span>
-              <button
-                v-for="field in [
-                  { id: 'rank', label: 'RANK' },
-                  { id: 'name', label: 'NAME' },
-                  { id: 'numPlayers', label: 'PLAYERS' },
-                  { id: 'mapName', label: 'MAP' },
-                  { id: 'roundTimeRemain', label: 'TIME' },
-                  { id: 'gameType', label: 'MODE' }
-                ]"
-                :key="field.id"
-                type="button"
-                class="command-bar__chip"
-                :class="{ 'command-bar__chip--active': sortField === field.id }"
-                :aria-pressed="sortField === field.id"
-                @click="sortBy(field.id as any)"
-              >
-                {{ field.label }}
-                <span
-                  v-if="sortField === field.id"
-                  class="command-bar__chip-arrow"
-                  :class="{ 'command-bar__chip-arrow--desc': sortDirection === 'desc' }"
-                  aria-hidden="true"
-                >▲</span>
-              </button>
-            </div>
-
-            <div class="command-bar__count" aria-live="polite">
-              <span class="command-bar__count-num">{{ sortedServers.length }}</span>
-              <span class="command-bar__count-label">
-                {{ serverFilterQuery ? 'matched' : 'online' }}
-                <template v-if="serverFilterQuery">· {{ servers.length }} total</template>
-              </span>
-            </div>
-          </div>
-
-          <!-- Server Grid -->
-          <div
-            v-if="sortedServers.length > 0"
-            class="server-grid"
-            role="list"
-            aria-label="Live servers"
+      class="portal-grid"
+      aria-hidden="true"
+    />
+    <div class="portal-inner px-0 sm:px-6">
+      <div
+        class="pt-4 flex flex-col min-h-0 min-h-screen"
+        :class="{ 'lg:flex-row': showPlayersPanel && isWideScreen }"
+      >
+        <!-- Main Server Table -->
+        <div class="flex-1 min-w-0 w-full">
+          <!-- LIVE PULSE BANNER -->
+          <section
+            v-if="!loading && !error"
+            class="live-pulse"
+            :class="[`live-pulse--${activeFilter}`, `live-pulse--${networkPulseLevel}`]"
+            aria-label="Live network status"
           >
-            <article
-              v-for="(server, serverIndex) in sortedServers"
-              :key="server.guid"
-              class="server-card"
-              :class="[
-                `server-card--${getCardGameAccent(server)}`,
-                `server-card--${getCardHeat(server.guid)}`,
-                { 'server-card--full': server.numPlayers >= server.maxPlayers && server.maxPlayers > 0 }
-              ]"
-              role="listitem"
+            <div
+              class="live-pulse__fx"
+              aria-hidden="true"
             >
-              <!-- Scan line accent -->
-              <div class="server-card__scan" aria-hidden="true" />
+              <div class="live-pulse__bg" />
+              <div class="live-pulse__scan" />
+            </div>
+            <div class="live-pulse__inner">
+              <!-- LIVE PULSE CONTROLS (Merged from Header) -->
+              <div class="col-span-full live-pulse__controls mb-2">
+                <div class="flex-1 md:max-w-2xl w-full">
+                  <PlayerSearch
+                    v-model="playerSearchQuery"
+                    :full-width="true"
+                    @select="selectPlayer"
+                    @enter="navigateToPlayer"
+                  />
+                </div>
+              </div>
 
-              <!-- Row 1: heat · rank · flag · capacity (compact) -->
-              <header class="server-card__strip">
-                <div class="server-card__strip-left">
-                  <div class="server-card__heat" :title="getCardHeatTitle(server.guid)">
+              <!-- Status badge + tagline -->
+              <div class="live-pulse__lead">
+                <div class="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
+                  <div class="live-pulse__badge">
+                    <span
+                      class="live-pulse__dot"
+                      aria-hidden="true"
+                    />
+                    <span class="live-pulse__badge-text">{{ networkPulseLabel }}</span>
+                  </div>
+                  
+                  <GameFilterButtons
+                    :game-types="gameTypes"
+                    :active-filter="activeFilter"
+                    :get-game-icon="getGameIcon"
+                    @update:active-filter="setActiveFilter"
+                  />
+                  
+                  <InstallationLinksDropdown ref="installDropdownRef" />
+                </div>
+                
+                <div class="live-pulse__headline">
+                  <span class="live-pulse__num">{{ totalPlayersOnline.toLocaleString() }}</span>
+                  <span class="live-pulse__text">online across</span>
+                  <span class="live-pulse__num live-pulse__num--sub">{{ activeServersCount }}</span>
+                  <span class="live-pulse__text">of {{ servers.length }} {{ getActiveGameName() }} servers</span>
+                </div>
+              </div>
+
+              <!-- Stat tiles -->
+              <div class="live-pulse__stats">
+                <div class="pulse-stat">
+                  <div class="pulse-stat__value">
+                    {{ totalPlayersOnline.toLocaleString() }}
+                  </div>
+                  <div class="pulse-stat__label">
+                    In Combat
+                  </div>
+                  <div class="pulse-stat__bar">
+                    <div
+                      class="pulse-stat__bar-fill"
+                      :style="{ width: Math.min(100, capacityUsedPercent) + '%' }"
+                    />
+                  </div>
+                </div>
+                <div class="pulse-stat">
+                  <div class="pulse-stat__value">
+                    {{ activeServersCount }}
+                  </div>
+                  <div class="pulse-stat__label">
+                    Live Hosts
+                  </div>
+                  <div class="pulse-stat__sub">
+                    of {{ servers.length }} online
+                  </div>
+                </div>
+                <div class="pulse-stat">
+                  <div class="pulse-stat__value">
+                    {{ capacityUsedPercent }}<span class="pulse-stat__suffix">%</span>
+                  </div>
+                  <div class="pulse-stat__label">
+                    Load
+                  </div>
+                  <div class="pulse-stat__sub">
+                    network capacity
+                  </div>
+                </div>
+              </div>
+
+              <!-- Top server spotlight -->
+              <router-link
+                v-if="topServer && topServer.numPlayers > 0"
+                :to="`/servers/${encodeURIComponent(topServer.name)}`"
+                class="live-pulse__spotlight"
+                aria-label="View top server"
+              >
+                <div
+                  class="spotlight__rail"
+                  aria-hidden="true"
+                />
+                <div class="spotlight__col">
+                  <div class="spotlight__label">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    ><path d="M12 2L13.09 8.26L19 9L14.5 13.5L15.91 19.76L12 16.27L8.09 19.76L9.5 13.5L5 9L10.91 8.26L12 2Z" /></svg>
+                    <span>HOTTEST SERVER</span>
+                  </div>
+                  <div class="spotlight__name">
+                    {{ topServer.name }}
+                  </div>
+                  <div class="spotlight__meta">
+                    <span class="spotlight__players">{{ topServer.numPlayers }}/{{ topServer.maxPlayers }}</span>
+                    <span class="spotlight__dot">·</span>
+                    <span class="spotlight__map">{{ topServer.mapName }}</span>
+                  </div>
+                </div>
+                <div
+                  class="spotlight__arrow"
+                  aria-hidden="true"
+                >
+                  →
+                </div>
+              </router-link>
+            </div>
+          </section>
+
+          <!-- Player History Section -->
+          <PlayerHistorySection
+            ref="playerHistorySectionRef"
+            :active-game-name="getActiveGameName()"
+            :player-history-data="playerHistoryData"
+            :player-history-insights="playerHistoryInsights"
+            :history-period="historyPeriod"
+            :longer-period="longerPeriod"
+            :history-rolling-window="historyRollingWindow"
+            :history-loading="historyLoading"
+            :history-error="historyError"
+            @toggle="togglePlayerHistory"
+            @period-change="changePeriod"
+            @longer-period-change="selectLongerPeriod"
+            @rolling-window-change="changeRollingWindow"
+          />
+
+          <!-- Loading State -->
+          <div
+            v-if="loading"
+            class="landing-loading"
+            role="status"
+            aria-label="Loading servers"
+          >
+            <div class="landing-loading__card">
+              <div class="landing-loading__header">
+                <span class="landing-loading__dot" />
+                <span class="landing-loading__dot" />
+                <span class="landing-loading__dot" />
+                <span class="landing-loading__title">bfstats://servers/connect</span>
+              </div>
+              <div class="landing-loading__body">
+                <div class="landing-loading__line">
+                  <span class="landing-loading__prompt">$</span> init network_scan --game={{ activeFilter }}
+                </div>
+                <div class="landing-loading__line landing-loading__line--muted">
+                  Resolving master list...
+                </div>
+                <div class="landing-loading__line landing-loading__line--muted">
+                  Pinging active hosts...
+                </div>
+                <div class="landing-loading__line landing-loading__line--cursor">
+                  Fetching live telemetry<span class="landing-loading__caret">▊</span>
+                </div>
+              </div>
+              <div class="landing-loading__progress">
+                <div class="landing-loading__progress-fill" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Error State -->
+          <div
+            v-else-if="error"
+            class="landing-error"
+            role="alert"
+          >
+            <div class="landing-error__card">
+              <div
+                class="landing-error__glitch"
+                aria-hidden="true"
+              >
+                <span>SIGNAL LOST</span>
+                <span>SIGNAL LOST</span>
+                <span>SIGNAL LOST</span>
+              </div>
+              <div
+                class="landing-error__icon"
+                aria-hidden="true"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line
+                    x1="12"
+                    y1="9"
+                    x2="12"
+                    y2="13"
+                  />
+                  <line
+                    x1="12"
+                    y1="17"
+                    x2="12.01"
+                    y2="17"
+                  />
+                </svg>
+              </div>
+              <div class="landing-error__title">
+                CONNECTION SEVERED
+              </div>
+              <div class="landing-error__msg">
+                {{ error }}
+              </div>
+              <button
+                class="landing-error__retry"
+                @click="fetchServersForGame(activeFilter as 'bf1942' | 'fh2' | 'bfvietnam', true)"
+              >
+                <span>↻</span> RETRY HANDSHAKE
+              </button>
+            </div>
+          </div>
+
+          <!-- Server Grid (replaces old server table) -->
+          <div
+            v-else
+            class="server-view"
+            :class="`server-view--${activeFilter}`"
+          >
+            <!-- Command Bar: filter + sort + count -->
+            <div
+              class="command-bar"
+              role="toolbar"
+              aria-label="Server filter and sort controls"
+            >
+              <div class="command-bar__filter">
+                <span class="command-bar__prompt">&gt;</span>
+                <input
+                  v-model="serverFilterQuery"
+                  type="search"
+                  class="command-bar__input"
+                  placeholder="grep --hosts name,map,ip..."
+                  aria-label="Filter servers by name, map, or IP"
+                >
+                <button
+                  v-if="serverFilterQuery"
+                  type="button"
+                  class="command-bar__clear"
+                  aria-label="Clear filter"
+                  @click="serverFilterQuery = ''"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  ><path d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+
+                <div class="command-bar__divider" aria-hidden="true" />
+
+                <div class="command-bar__country">
+                  <select
+                    v-model="selectedCountry"
+                    class="command-bar__select"
+                    aria-label="Filter by country"
+                  >
+                    <option value="all">ALL REGIONS</option>
+                    <option
+                      v-for="code in availableCountries"
+                      :key="code"
+                      :value="code"
+                    >
+                      {{ getCountryFlag(code) }} {{ code }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div
+                class="command-bar__sort"
+                role="group"
+                aria-label="Sort by"
+              >
+                <span class="command-bar__sort-label">SORT</span>
+                <button
+                  v-for="field in [
+                    { id: 'rank', label: 'RANK' },
+                    { id: 'name', label: 'NAME' },
+                    { id: 'numPlayers', label: 'PLAYERS' },
+                    { id: 'mapName', label: 'MAP' },
+                    { id: 'roundTimeRemain', label: 'TIME' },
+                    { id: 'gameType', label: 'MODE' }
+                  ]"
+                  :key="field.id"
+                  type="button"
+                  class="command-bar__chip"
+                  :class="{ 'command-bar__chip--active': sortField === field.id }"
+                  :aria-pressed="sortField === field.id"
+                  @click="sortBy(field.id as any)"
+                >
+                  {{ field.label }}
+                  <span
+                    v-if="sortField === field.id"
+                    class="command-bar__chip-arrow"
+                    :class="{ 'command-bar__chip-arrow--desc': sortDirection === 'desc' }"
+                    aria-hidden="true"
+                  >▲</span>
+                </button>
+              </div>
+
+              <div
+                class="command-bar__view"
+                role="group"
+                aria-label="View mode"
+              >
+                <button
+                  type="button"
+                  class="command-bar__view-btn"
+                  :class="{ 'command-bar__view-btn--active': viewMode === 'grid' }"
+                  aria-label="Grid view"
+                  @click="viewMode = 'grid'"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                </button>
+                <button
+                  type="button"
+                  class="command-bar__view-btn"
+                  :class="{ 'command-bar__view-btn--active': viewMode === 'list' }"
+                  aria-label="List view"
+                  @click="viewMode = 'list'"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                </button>
+              </div>
+
+              <div
+                class="command-bar__count"
+                aria-live="polite"
+              >
+                <span class="command-bar__count-num">{{ sortedServers.length }}</span>
+                <span class="command-bar__count-label">
+                  {{ serverFilterQuery ? 'matched' : 'online' }}
+                  <template v-if="serverFilterQuery">· {{ servers.length }} total</template>
+                </span>
+              </div>
+            </div>
+
+            <!-- Server Grid -->
+            <div
+              v-if="viewMode === 'grid' && sortedServers.length > 0"
+              class="server-grid"
+              role="list"
+              aria-label="Live servers"
+            >
+              <article
+                v-for="(server, serverIndex) in sortedServers"
+                :key="server.guid"
+                class="server-card"
+                :class="[
+                  `server-card--${getCardGameAccent(server)}`,
+                  `server-card--${getCardHeat(server.guid)}`,
+                  { 'server-card--full': server.numPlayers >= server.maxPlayers && server.maxPlayers > 0 }
+                ]"
+                role="listitem"
+              >
+                <!-- Scan line accent -->
+                <div
+                  class="server-card__scan"
+                  aria-hidden="true"
+                />
+
+                <!-- Row 1: heat · rank · flag · capacity (compact) -->
+                <header class="server-card__strip">
+                  <div class="server-card__strip-left">
+                    <div
+                      class="server-card__heat"
+                      :title="getCardHeatTitle(server.guid)"
+                    >
+                      <span
+                        class="server-card__heat-dot"
+                        aria-hidden="true"
+                      />
+                      <span class="server-card__heat-label">{{ getCardHeatLabel(server.guid) }}</span>
+                    </div>
+                    <button
+                      v-if="getServerRank(server.guid)"
+                      type="button"
+                      class="server-card__rank"
+                      :title="`Ranked by total playtime · ${formatTotalPlayTime(getServerTotalPlayTime(server.guid))} last 60 days`"
+                      @click.stop="toggleRankTooltip(server.guid)"
+                    >
+                      #{{ getServerRank(server.guid) }}
+                    </button>
+                    <span
+                      v-if="server.country"
+                      class="server-card__flag"
+                      :aria-label="server.country"
+                    >{{ getCountryFlag(server.country) }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="server-card__capacity"
+                    :aria-label="`View ${server.numPlayers} online players`"
+                    @click="showPlayers(server)"
+                  >
+                    <span class="server-card__capacity-num">
+                      <span class="server-card__capacity-now">{{ server.numPlayers }}</span><span class="server-card__capacity-slash">/</span><span class="server-card__capacity-max">{{ server.maxPlayers }}</span>
+                    </span>
+                    <span
+                      class="server-card__capacity-bar"
+                      aria-hidden="true"
+                    >
+                      <span
+                        class="server-card__capacity-fill"
+                        :style="{ width: getPlayerPercentage(server) + '%' }"
+                      />
+                      <span
+                        class="server-card__capacity-trail"
+                        :style="{ width: getPlayerPercentage(server) + '%' }"
+                      />
+                    </span>
+                  </button>
+                </header>
+
+                <!-- Row 2: Name (hero link) -->
+                <router-link
+                  :to="`/servers/${encodeURIComponent(server.name)}`"
+                  class="server-card__name"
+                  :title="server.name"
+                >
+                  {{ server.name }}
+                </router-link>
+
+                <!-- Row 3: compact meta line — mode · map · remaining · ip -->
+                <div class="server-card__meta">
+                  <span
+                    class="server-card__meta-item server-card__meta-item--mode"
+                    :title="getGameDisplayName(server.gameType)"
+                  >
+                    <span
+                      class="server-card__game-icon"
+                      :style="{ backgroundImage: getGameIcon(getGameIconClass(server.gameType)) }"
+                      aria-hidden="true"
+                    />
+                    {{ getGameDisplayName(server.gameType) }}
+                  </span>
+                  <span
+                    class="server-card__meta-sep"
+                    aria-hidden="true"
+                  >·</span>
+                  <span
+                    class="server-card__meta-item server-card__meta-item--map"
+                    :title="server.mapName || '—'"
+                  >
+                    <span class="server-card__meta-map">{{ server.mapName || '—' }}</span>
+                  </span>
+                  <span
+                    class="server-card__meta-sep"
+                    aria-hidden="true"
+                  >·</span>
+                  <span
+                    class="server-card__meta-item server-card__meta-item--time"
+                    :title="'Round time remaining'"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    ><circle
+                      cx="12"
+                      cy="12"
+                      r="10"
+                    /><polyline points="12 6 12 12 16 14" /></svg>
+                    {{ formatTimeRemaining(server.roundTimeRemain) }}
+                  </span>
+                  <span
+                    v-if="getTimezoneDisplay(server.timezone)"
+                    class="server-card__meta-item server-card__meta-item--tz"
+                    :title="server.timezone || ''"
+                  >
+                    <span
+                      class="server-card__meta-sep"
+                      aria-hidden="true"
+                    >·</span>
+                    {{ getTimezoneDisplay(server.timezone) }}
+                  </span>
+                  <span
+                    class="server-card__meta-item server-card__meta-item--ip"
+                    :title="`${server.ip}:${server.port}`"
+                  >
+                    <span
+                      class="server-card__meta-sep"
+                      aria-hidden="true"
+                    >·</span>
+                    {{ server.ip }}:{{ server.port }}
+                  </span>
+                </div>
+
+                <!-- Row 4: Google-style 24H busy-periods graph -->
+                <div
+                  v-if="serverTrendsByGuid[server.guid]?.hourlyTimeline"
+                  class="server-card__busy"
+                  role="group"
+                  :aria-label="`Busy periods · ${serverTrendsByGuid[server.guid].busyIndicator.busyText}`"
+                  :title="getCardHeatTitle(server.guid)"
+                >
+                  <div class="server-card__busy-head">
+                    <span class="server-card__busy-title">POPULAR TIMES</span>
+                    <span
+                      class="server-card__busy-status"
+                      :class="`server-card__busy-status--${serverTrendsByGuid[server.guid].busyIndicator.busyLevel}`"
+                    >
+                      {{ serverTrendsByGuid[server.guid].busyIndicator.busyText }}
+                      <span class="server-card__busy-status-sub">· typ {{ Math.round(serverTrendsByGuid[server.guid].busyIndicator.typicalPlayers) }}</span>
+                    </span>
+                  </div>
+                  <div class="server-card__busy-graph">
+                    <div
+                      v-for="(entry, idx) in serverTrendsByGuid[server.guid].hourlyTimeline"
+                      :key="idx"
+                      class="server-card__busy-col"
+                      :title="formatTimelineTooltip(entry)"
+                    >
+                      <div
+                        class="server-card__busy-bar"
+                        :class="[
+                          `server-card__busy-bar--${entry.busyLevel}`,
+                          { 'server-card__busy-bar--now': entry.isCurrentHour }
+                        ]"
+                        :style="{ height: getTimelineBarHeight(server.guid, entry) + 'px' }"
+                      />
+                      <span
+                        v-if="entry.isCurrentHour"
+                        class="server-card__busy-now"
+                        aria-hidden="true"
+                      >NOW</span>
+                    </div>
+                  </div>
+                  <div
+                    class="server-card__busy-axis"
+                    aria-hidden="true"
+                  >
+                    <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
+                  </div>
+                </div>
+
+                <!-- Row 5: Actions -->
+                <footer class="server-card__actions">
+                  <button
+                    type="button"
+                    class="server-card__deploy"
+                    :disabled="server.numPlayers >= server.maxPlayers"
+                    @click="joinServer(server)"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="server-card__deploy-icon"
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    ><path d="M8 5v14l11-7z" /></svg>
+                    <span class="server-card__deploy-label">
+                      {{ server.numPlayers >= server.maxPlayers ? 'FULL' : 'JOIN' }}
+                    </span>
+                  </button>
+                  <a
+                    v-if="server.discordUrl"
+                    :href="server.discordUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="server-card__link server-card__link--discord"
+                    title="Join Discord"
+                    aria-label="Join Discord"
+                  >
+                    <img
+                      :src="discordIcon"
+                      alt=""
+                      class="server-card__link-icon"
+                    >
+                  </a>
+                  <a
+                    v-if="server.forumUrl"
+                    :href="server.forumUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="server-card__link server-card__link--forum"
+                    title="Visit Forum"
+                    aria-label="Visit Forum"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    ><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg>
+                  </a>
+                </footer>
+
+                <!-- Rank tooltip overlay -->
+                <div
+                  v-if="rankTooltipServer === server.guid"
+                  class="server-card__rank-tip"
+                  role="tooltip"
+                >
+                  <div class="server-card__rank-tip-title">
+                    Ranked #{{ getServerRank(server.guid) }}
+                  </div>
+                  <div class="server-card__rank-tip-sub">
+                    {{ formatTotalPlayTime(getServerTotalPlayTime(server.guid)) }} · last 60d
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <!-- Server List -->
+            <div
+              v-else-if="viewMode === 'list' && sortedServers.length > 0"
+              class="server-list"
+              role="list"
+              aria-label="Live servers list"
+            >
+              <div class="server-list__header" role="row">
+                <div class="server-list__col server-list__col-label server-list__col--heat">HEAT</div>
+                <div class="server-list__col server-list__col-label server-list__col--name">SERVER NAME</div>
+                <div class="server-list__col server-list__col-label server-list__col--players">PLAYERS</div>
+                <div class="server-list__col server-list__col-label server-list__col--map">MAP</div>
+                <div class="server-list__col server-list__col-label server-list__col--mode">MODE</div>
+                <div class="server-list__col server-list__col-label server-list__col--time">TIME</div>
+                <div class="server-list__col server-list__col-label server-list__col--ip">IP ADDRESS</div>
+                <div class="server-list__col server-list__col-label server-list__col--actions">JOIN</div>
+              </div>
+
+              <div
+                v-for="server in sortedServers"
+                :key="server.guid"
+                class="server-list__row"
+                :class="[
+                  `server-list__row--${getCardGameAccent(server)}`,
+                  `server-card--${getCardHeat(server.guid)}`
+                ]"
+                role="listitem"
+              >
+                <div class="server-list__col server-list__col--heat">
+                  <div
+                    class="server-card__heat"
+                    :title="getCardHeatTitle(server.guid)"
+                  >
                     <span class="server-card__heat-dot" aria-hidden="true" />
                     <span class="server-card__heat-label">{{ getCardHeatLabel(server.guid) }}</span>
                   </div>
-                  <button
-                    v-if="getServerRank(server.guid)"
-                    type="button"
-                    class="server-card__rank"
-                    :title="`Ranked by total playtime · ${formatTotalPlayTime(getServerTotalPlayTime(server.guid))} last 60 days`"
-                    @click.stop="toggleRankTooltip(server.guid)"
-                  >
-                    #{{ getServerRank(server.guid) }}
-                  </button>
-                  <span
-                    v-if="server.country"
-                    class="server-card__flag"
-                    :aria-label="server.country"
-                  >{{ getCountryFlag(server.country) }}</span>
                 </div>
-                <button
-                  type="button"
-                  class="server-card__capacity"
-                  :aria-label="`View ${server.numPlayers} online players`"
-                  @click="showPlayers(server)"
-                >
-                  <span class="server-card__capacity-num">
-                    <span class="server-card__capacity-now">{{ server.numPlayers }}</span><span class="server-card__capacity-slash">/</span><span class="server-card__capacity-max">{{ server.maxPlayers }}</span>
-                  </span>
-                  <span class="server-card__capacity-bar" aria-hidden="true">
-                    <span
-                      class="server-card__capacity-fill"
-                      :style="{ width: getPlayerPercentage(server) + '%' }"
-                    />
-                    <span
-                      class="server-card__capacity-trail"
-                      :style="{ width: getPlayerPercentage(server) + '%' }"
-                    />
-                  </span>
-                </button>
-              </header>
 
-              <!-- Row 2: Name (hero link) -->
-              <router-link
-                :to="`/servers/${encodeURIComponent(server.name)}`"
-                class="server-card__name"
-                :title="server.name"
-              >
-                {{ server.name }}
-              </router-link>
+                <div class="server-list__col server-list__col--name">
+                  <div class="flex items-center gap-2 overflow-hidden relative">
+                    <button
+                      v-if="getServerRank(server.guid)"
+                      type="button"
+                      class="server-card__rank flex-shrink-0"
+                      :title="`Ranked by total playtime · ${formatTotalPlayTime(getServerTotalPlayTime(server.guid))} last 60 days`"
+                      @click.stop="toggleRankTooltip(server.guid)"
+                    >
+                      #{{ getServerRank(server.guid) }}
+                    </button>
+                    <router-link
+                      :to="`/servers/${encodeURIComponent(server.name)}`"
+                      class="server-list__name"
+                      :title="server.name"
+                    >
+                      <span v-if="server.country" class="mr-1">{{ getCountryFlag(server.country) }}</span>
+                      {{ server.name }}
+                    </router-link>
 
-              <!-- Row 3: compact meta line — mode · map · remaining · ip -->
-              <div class="server-card__meta">
-                <span class="server-card__meta-item server-card__meta-item--mode" :title="getGameDisplayName(server.gameType)">
-                  <span
-                    class="server-card__game-icon"
-                    :style="{ backgroundImage: getGameIcon(getGameIconClass(server.gameType)) }"
-                    aria-hidden="true"
-                  />
-                  {{ getGameDisplayName(server.gameType) }}
-                </span>
-                <span class="server-card__meta-sep" aria-hidden="true">·</span>
-                <span class="server-card__meta-item server-card__meta-item--map" :title="server.mapName || '—'">
-                  <span class="server-card__meta-map">{{ server.mapName || '—' }}</span>
-                </span>
-                <span class="server-card__meta-sep" aria-hidden="true">·</span>
-                <span class="server-card__meta-item server-card__meta-item--time" :title="'Round time remaining'">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  {{ formatTimeRemaining(server.roundTimeRemain) }}
-                </span>
-                <span
-                  v-if="getTimezoneDisplay(server.timezone)"
-                  class="server-card__meta-item server-card__meta-item--tz"
-                  :title="server.timezone || ''"
-                >
-                  <span class="server-card__meta-sep" aria-hidden="true">·</span>
-                  {{ getTimezoneDisplay(server.timezone) }}
-                </span>
-                <span class="server-card__meta-item server-card__meta-item--ip" :title="`${server.ip}:${server.port}`">
-                  <span class="server-card__meta-sep" aria-hidden="true">·</span>
-                  {{ server.ip }}:{{ server.port }}
-                </span>
-              </div>
-
-              <!-- Row 4: Google-style 24H busy-periods graph -->
-              <div
-                v-if="serverTrendsByGuid[server.guid]?.hourlyTimeline"
-                class="server-card__busy"
-                role="group"
-                :aria-label="`Busy periods · ${serverTrendsByGuid[server.guid].busyIndicator.busyText}`"
-                :title="getCardHeatTitle(server.guid)"
-              >
-                <div class="server-card__busy-head">
-                  <span class="server-card__busy-title">POPULAR TIMES</span>
-                  <span
-                    class="server-card__busy-status"
-                    :class="`server-card__busy-status--${serverTrendsByGuid[server.guid].busyIndicator.busyLevel}`"
-                  >
-                    {{ serverTrendsByGuid[server.guid].busyIndicator.busyText }}
-                    <span class="server-card__busy-status-sub">· typ {{ Math.round(serverTrendsByGuid[server.guid].busyIndicator.typicalPlayers) }}</span>
-                  </span>
-                </div>
-                <div class="server-card__busy-graph">
-                  <div
-                    v-for="(entry, idx) in serverTrendsByGuid[server.guid].hourlyTimeline"
-                    :key="idx"
-                    class="server-card__busy-col"
-                    :title="formatTimelineTooltip(entry)"
-                  >
+                    <!-- Rank tooltip overlay -->
                     <div
-                      class="server-card__busy-bar"
-                      :class="[
-                        `server-card__busy-bar--${entry.busyLevel}`,
-                        { 'server-card__busy-bar--now': entry.isCurrentHour }
-                      ]"
-                      :style="{ height: getTimelineBarHeight(server.guid, entry) + 'px' }"
-                    />
-                    <span
-                      v-if="entry.isCurrentHour"
-                      class="server-card__busy-now"
-                      aria-hidden="true"
-                    >NOW</span>
+                      v-if="rankTooltipServer === server.guid"
+                      class="server-card__rank-tip"
+                      style="top: 1.5rem; left: 0;"
+                      role="tooltip"
+                    >
+                      <div class="server-card__rank-tip-title">
+                        Ranked #{{ getServerRank(server.guid) }}
+                      </div>
+                      <div class="server-card__rank-tip-sub">
+                        {{ formatTotalPlayTime(getServerTotalPlayTime(server.guid)) }} · last 60d
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div class="server-card__busy-axis" aria-hidden="true">
-                  <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
+
+                <div class="server-list__col server-list__col--players">
+                  <button
+                    type="button"
+                    class="server-list__players"
+                    @click="showPlayers(server)"
+                  >
+                    <span class="server-list__players-num">{{ server.numPlayers }}/{{ server.maxPlayers }}</span>
+                    <div class="server-card__capacity-bar" aria-hidden="true">
+                      <div class="server-card__capacity-fill" :style="{ width: getPlayerPercentage(server) + '%' }" />
+                    </div>
+                  </button>
+                </div>
+
+                <div class="server-list__col server-list__col--map">
+                  {{ server.mapName || '—' }}
+                </div>
+
+                <div class="server-list__col server-list__col--mode">
+                  {{ getGameDisplayName(server.gameType) }}
+                </div>
+
+                <div class="server-list__col server-list__col--time">
+                  {{ formatTimeRemaining(server.roundTimeRemain) }}
+                </div>
+
+                <div class="server-list__col server-list__col--ip">
+                  {{ server.ip }}:{{ server.port }}
+                </div>
+
+                <div class="server-list__col server-list__col--actions">
+                  <button
+                    type="button"
+                    class="server-card__deploy"
+                    :disabled="server.numPlayers >= server.maxPlayers"
+                    @click="joinServer(server)"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                    <span>JOIN</span>
+                  </button>
                 </div>
               </div>
+            </div>
 
-              <!-- Row 5: Actions -->
-              <footer class="server-card__actions">
+
+            <!-- Empty Filter State -->
+            <div
+              v-if="serverFilterQuery && filteredServers.length === 0"
+              class="landing-empty"
+              role="status"
+              aria-live="polite"
+            >
+              <div class="landing-empty__card">
+                <div class="landing-empty__header">
+                  <span class="landing-empty__dot" />
+                  <span class="landing-empty__dot" />
+                  <span class="landing-empty__dot" />
+                  <span class="landing-empty__title">bfstats://servers/filter</span>
+                </div>
+                <div class="landing-empty__body">
+                  <div class="landing-empty__line">
+                    <span class="landing-empty__prompt">$</span> grep --hosts "{{ serverFilterQuery }}"
+                  </div>
+                  <div class="landing-empty__line landing-empty__line--muted">
+                    Scanned {{ servers.length }} active hosts...
+                  </div>
+                  <div class="landing-empty__result">
+                    <span class="landing-empty__result-num">0</span>
+                    <span class="landing-empty__result-label">matches</span>
+                  </div>
+                  <div class="landing-empty__line landing-empty__line--hint">
+                    Try a different name, map, or IP fragment.
+                  </div>
+                </div>
                 <button
+                  class="landing-empty__clear"
                   type="button"
-                  class="server-card__deploy"
-                  :disabled="server.numPlayers >= server.maxPlayers"
-                  @click="joinServer(server)"
+                  @click="serverFilterQuery = ''"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="server-card__deploy-icon" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-                  <span class="server-card__deploy-label">
-                    {{ server.numPlayers >= server.maxPlayers ? 'FULL' : 'JOIN' }}
-                  </span>
+                  <span aria-hidden="true">↺</span> CLEAR FILTER
                 </button>
-                <a
-                  v-if="server.discordUrl"
-                  :href="server.discordUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="server-card__link server-card__link--discord"
-                  title="Join Discord"
-                  aria-label="Join Discord"
-                >
-                  <img :src="discordIcon" alt="" class="server-card__link-icon">
-                </a>
-                <a
-                  v-if="server.forumUrl"
-                  :href="server.forumUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="server-card__link server-card__link--forum"
-                  title="Visit Forum"
-                  aria-label="Visit Forum"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                </a>
-              </footer>
-
-              <!-- Rank tooltip overlay -->
-              <div
-                v-if="rankTooltipServer === server.guid"
-                class="server-card__rank-tip"
-                role="tooltip"
-              >
-                <div class="server-card__rank-tip-title">Ranked #{{ getServerRank(server.guid) }}</div>
-                <div class="server-card__rank-tip-sub">{{ formatTotalPlayTime(getServerTotalPlayTime(server.guid)) }} · last 60d</div>
               </div>
-            </article>
-          </div>
-
-
-          <!-- Empty Filter State -->
-          <div
-            v-if="serverFilterQuery && filteredServers.length === 0"
-            class="landing-empty"
-            role="status"
-            aria-live="polite"
-          >
-            <div class="landing-empty__card">
-              <div class="landing-empty__header">
-                <span class="landing-empty__dot" />
-                <span class="landing-empty__dot" />
-                <span class="landing-empty__dot" />
-                <span class="landing-empty__title">gamefront://filter</span>
-              </div>
-              <div class="landing-empty__body">
-                <div class="landing-empty__line">
-                  <span class="landing-empty__prompt">$</span> grep --hosts "{{ serverFilterQuery }}"
-                </div>
-                <div class="landing-empty__line landing-empty__line--muted">Scanned {{ servers.length }} active hosts...</div>
-                <div class="landing-empty__result">
-                  <span class="landing-empty__result-num">0</span>
-                  <span class="landing-empty__result-label">matches</span>
-                </div>
-                <div class="landing-empty__line landing-empty__line--hint">
-                  Try a different name, map, or IP fragment.
-                </div>
-              </div>
-              <button
-                class="landing-empty__clear"
-                type="button"
-                @click="serverFilterQuery = ''"
-              >
-                <span aria-hidden="true">↺</span> CLEAR FILTER
-              </button>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Players Panel: overlay on mobile, right panel on lg when space permits -->
-      <div
-        v-if="showPlayersPanel"
-        class="fixed inset-0 z-[100] lg:relative lg:inset-auto lg:z-auto lg:w-[480px] xl:w-[520px] lg:flex-shrink-0 lg:border-l lg:border-neutral-700/50 lg:min-h-0 lg:min-w-[480px] xl:min-w-[520px]"
-      >
-        <PlayersPanel
-          :show="showPlayersPanel"
-          :server="selectedServer"
-          :inline="isWideScreen"
-          @close="closePlayersPanel"
-        />
+        <!-- Players Panel: overlay on mobile, right panel on lg when space permits -->
+        <div
+          v-if="showPlayersPanel"
+          class="fixed inset-0 z-[100] lg:relative lg:inset-auto lg:z-auto lg:w-[480px] xl:w-[520px] lg:flex-shrink-0 lg:border-l lg:border-neutral-700/50 lg:min-h-0 lg:min-w-[480px] xl:min-w-[520px]"
+        >
+          <PlayersPanel
+            :show="showPlayersPanel"
+            :server="selectedServer"
+            :inline="isWideScreen"
+            @close="closePlayersPanel"
+          />
+        </div>
       </div>
-    </div>
     </div>
   </div>
 </template>
@@ -528,10 +857,8 @@ import { fetchAllServers, fetchServerBusyIndicators, fetchServerRankings, type S
 import { ServerSummary } from '../types/server'
 import { PlayerHistoryDataPoint, PlayerHistoryInsights, ServerRank } from '../types/playerStatsTypes'
 import PlayersPanel from '../components/PlayersPanel.vue'
-import PlayerHistoryChart from '../components/PlayerHistoryChart.vue'
 import { fetchPlayerOnlineHistory } from '../services/playerStatsService'
 import { formatTimeRemaining } from '../utils/timeUtils'
-import ForecastModal from '../components/ForecastModal.vue'
 import PlayerSearch from '../components/PlayerSearch.vue'
 import GameFilterButtons from '../components/GameFilterButtons.vue'
 import InstallationLinksDropdown from '../components/InstallationLinksDropdown.vue'
@@ -570,30 +897,25 @@ const props = defineProps<Props>();
 
 // Game types configuration
 const gameTypes = [
-  { id: 'all', name: 'ALL', iconClass: '' },
   { id: 'bf1942', name: 'BF1942', iconClass: 'icon-bf1942' },
-  { id: 'fh2', name: 'FH2', iconClass: 'icon-fh2' },
-  { id: 'bfvietnam', name: 'BFV', iconClass: 'icon-bfv' }
 ]
 
 // Map router props to filter IDs
-const getFilterFromMode = (mode?: string) => {
-  switch (mode) {
-    case '42':
-      return 'bf1942'
-    case 'FH2':
-      return 'fh2'
-    case 'BFV':
-      return 'bfvietnam'
-    default:
-      return 'bf1942'
-  }
+const getFilterFromMode = (_mode?: string) => {
+  return 'bf1942'
 }
 
 // State
 const playerSearchQuery = ref('')
 const serverFilterQuery = ref('')
+const selectedCountry = ref('all')
 const activeFilter = ref(getFilterFromMode(props.initialMode))
+const viewMode = ref<'grid' | 'list'>((localStorage.getItem('serverViewMode') as 'grid' | 'list') || 'grid')
+
+watch(viewMode, (newMode) => {
+  localStorage.setItem('serverViewMode', newMode)
+})
+
 const sortField = ref('numPlayers')
 const sortDirection = ref('desc')
 const servers = ref<ServerSummary[]>([])
@@ -678,25 +1000,41 @@ const toggleRankTooltip = (serverGuid: string) => {
 }
 
 // Computed properties
+const availableCountries = computed(() => {
+  const countries = new Set<string>()
+  servers.value.forEach(s => {
+    if (s.country) countries.add(s.country)
+  })
+  
+  return Array.from(countries).sort((a, b) => a.localeCompare(b))
+})
+
 const filteredServers = computed(() => {
-  if (!serverFilterQuery.value.trim()) {
-    return servers.value
+  let result = servers.value
+
+  // Country filter
+  if (selectedCountry.value !== 'all') {
+    result = result.filter(s => s.country === selectedCountry.value)
   }
 
-  const query = serverFilterQuery.value.toLowerCase().trim()
+  // Text search filter
+  if (serverFilterQuery.value.trim()) {
+    const query = serverFilterQuery.value.toLowerCase().trim()
+    result = result.filter(server => {
+      // Search across multiple fields
+      return (
+        server.name?.toLowerCase().includes(query) ||
+        server.mapName?.toLowerCase().includes(query) ||
+        server.ip?.toLowerCase().includes(query) ||
+        server.gameType?.toLowerCase().includes(query) ||
+        server.country?.toLowerCase().includes(query) ||
+        server.timezone?.toLowerCase().includes(query) ||
+        `${server.ip}:${server.port}`.toLowerCase().includes(query)
+      )
+    })
+  }
 
-  return servers.value.filter(server => {
-    // Search across multiple fields
-    return (
-      server.name?.toLowerCase().includes(query) ||
-      server.mapName?.toLowerCase().includes(query) ||
-      server.ip?.toLowerCase().includes(query) ||
-      server.gameType?.toLowerCase().includes(query) ||
-      server.country?.toLowerCase().includes(query) ||
-      server.timezone?.toLowerCase().includes(query) ||
-      `${server.ip}:${server.port}`.toLowerCase().includes(query)
-    )
-  })
+  return result
 })
 
 const getTimezoneOffset = (timezone: string | undefined): number => {
@@ -1132,29 +1470,6 @@ const hasValidBusyIndicator = (serverGuid: string): boolean => {
   return !!(data && data.busyText !== 'Not enough data')
 }
 
-// UI helpers for busy badge
-const getBusyEmoji = (level: BusyLevel): string => {
-  switch (level) {
-    case 'very_busy': return '🔥'
-    case 'busy': return '⚡'
-    case 'moderate': return '⚖️'
-    case 'quiet': return '🌙'
-    case 'very_quiet': return '💤'
-    default: return '❓'
-  }
-}
-
-const getBusyBadgeClass = (level: BusyLevel): string => {
-  switch (level) {
-    case 'very_busy': return 'bg-red-500/20 text-red-300 border-red-500/30'
-    case 'busy': return 'bg-orange-500/20 text-orange-300 border-orange-500/30'
-    case 'moderate': return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
-    case 'quiet': return 'bg-green-500/20 text-green-300 border-green-500/30'
-    case 'very_quiet': return 'bg-blue-500/20 text-blue-300 border-blue-500/30'
-    default: return 'bg-neutral-600/30 text-neutral-300 border-neutral-600/40'
-  }
-}
-
 // Server Card helpers — per-game accent + heat level
 const getCardGameAccent = (server: ServerSummary): 'bf1942' | 'fh2' | 'bfvietnam' => {
   const g = (server.gameType || '').toLowerCase()
@@ -1207,15 +1522,6 @@ const getTimelineBarHeight = (guid: string, entry: ServerHourlyTimelineEntry): n
   return Math.max(minHeight, Math.round(pct * maxHeight))
 }
 
-// Modal helpers
-const toggleServerModal = (serverGuid: string) => {
-  serverModalStates.value[serverGuid] = !serverModalStates.value[serverGuid]
-}
-
-const closeServerModal = (serverGuid: string) => {
-  serverModalStates.value[serverGuid] = false
-}
-
 const closeAllModals = () => {
   // Close all server modals
   Object.keys(serverModalStates.value).forEach(guid => {
@@ -1250,7 +1556,6 @@ const fetchPlayerHistory = async () => {
   historyError.value = null
 
   try {
-    const currentPeriod = getCurrentPeriod()
     const apiPeriod = getCurrentPeriodForAPI()
 
     const response = await fetchPlayerOnlineHistory(
@@ -1266,7 +1571,7 @@ const fetchPlayerHistory = async () => {
     if (response.insights) {
       playerHistoryInsights.value = response.insights
     }
-  } catch (err) {
+  } catch {
     historyError.value = 'Failed to load player history'
     // Only clear data on error, not during normal updates
     if (playerHistoryData.value.length === 0) {

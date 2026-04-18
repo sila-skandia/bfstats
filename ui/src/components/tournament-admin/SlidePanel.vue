@@ -6,20 +6,40 @@
         class="slide-panel-overlay"
         @click.self="$emit('close')"
       >
-        <div class="slide-panel" :class="[sizeClass]">
+        <div
+          class="slide-panel"
+          :class="[sizeClass]"
+        >
           <!-- Header -->
           <header class="slide-panel-header">
             <div>
-              <h2 class="slide-panel-title">{{ title }}</h2>
-              <p v-if="subtitle" class="slide-panel-subtitle">{{ subtitle }}</p>
+              <h2 class="slide-panel-title">
+                {{ title }}
+              </h2>
+              <p
+                v-if="subtitle"
+                class="slide-panel-subtitle"
+              >
+                {{ subtitle }}
+              </p>
             </div>
             <button
               class="slide-panel-close"
-              @click="$emit('close')"
               title="Close"
+              @click="$emit('close')"
             >
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              <svg
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </header>
@@ -30,7 +50,10 @@
           </div>
 
           <!-- Footer -->
-          <footer v-if="$slots.footer" class="slide-panel-footer">
+          <footer
+            v-if="$slots.footer"
+            class="slide-panel-footer"
+          >
             <slot name="footer" />
           </footer>
         </div>

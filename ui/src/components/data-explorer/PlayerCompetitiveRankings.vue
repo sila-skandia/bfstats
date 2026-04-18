@@ -1,10 +1,22 @@
 <template>
   <div class="competitive-rankings">
     <!-- Loading State -->
-    <div v-if="isLoading" class="flex flex-col gap-4">
-      <div class="explorer-skeleton" style="height: 2.5rem"></div>
-      <div class="explorer-skeleton" style="height: 10rem"></div>
-      <div class="explorer-skeleton" style="height: 15rem"></div>
+    <div
+      v-if="isLoading"
+      class="flex flex-col gap-4"
+    >
+      <div
+        class="explorer-skeleton"
+        style="height: 2.5rem"
+      />
+      <div
+        class="explorer-skeleton"
+        style="height: 10rem"
+      />
+      <div
+        class="explorer-skeleton"
+        style="height: 15rem"
+      />
     </div>
 
     <!-- Content -->
@@ -27,8 +39,11 @@
 
           <div class="explorer-header-actions">
             <!-- View Mode Toggle (only for Performance tab) -->
-            <div v-if="activeTab === 'current'" class="explorer-toggle-group">
-               <button 
+            <div
+              v-if="activeTab === 'current'"
+              class="explorer-toggle-group"
+            >
+              <button 
                 class="explorer-toggle-btn explorer-toggle-btn--compact"
                 :class="{ 'explorer-toggle-btn--active': viewMode === 'chart' }"
                 @click="viewMode = 'chart'"
@@ -64,15 +79,37 @@
               </div>
 
               <div class="flex items-center gap-1">
-                <select v-model.number="selectedYear" @change="onDateChange" class="explorer-select explorer-select--compact explorer-mono text-[10px]">
-                  <option v-for="year in availableYears" :key="year" :value="year">{{ year }}</option>
+                <select
+                  v-model.number="selectedYear"
+                  class="explorer-select explorer-select--compact explorer-mono text-[10px]"
+                  @change="onDateChange"
+                >
+                  <option
+                    v-for="year in availableYears"
+                    :key="year"
+                    :value="year"
+                  >
+                    {{ year }}
+                  </option>
                 </select>
-                <select v-model.number="selectedMonth" @change="onDateChange" class="explorer-select explorer-select--compact explorer-mono text-[10px]">
-                  <option v-for="month in availableMonths" :key="month.value" :value="month.value" :disabled="month.disabled">
+                <select
+                  v-model.number="selectedMonth"
+                  class="explorer-select explorer-select--compact explorer-mono text-[10px]"
+                  @change="onDateChange"
+                >
+                  <option
+                    v-for="month in availableMonths"
+                    :key="month.value"
+                    :value="month.value"
+                    :disabled="month.disabled"
+                  >
                     {{ month.label.substring(0, 3) }}
                   </option>
                 </select>
-                <button @click="loadRankingsForPeriod" class="explorer-btn explorer-btn--ghost explorer-btn--sm !py-1 !px-2 text-[10px]">
+                <button
+                  class="explorer-btn explorer-btn--ghost explorer-btn--sm !py-1 !px-2 text-[10px]"
+                  @click="loadRankingsForPeriod"
+                >
                   VIEW
                 </button>
               </div>
@@ -82,12 +119,22 @@
       </div>
 
       <!-- Error State (shown inline with controls) -->
-      <div v-if="error" class="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-lg">
+      <div
+        v-if="error"
+        class="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-lg"
+      >
         <div class="flex items-center gap-3">
-          <div class="text-red-400 text-lg">!</div>
+          <div class="text-red-400 text-lg">
+            !
+          </div>
           <div>
-            <p class="text-red-400 font-medium">{{ error }}</p>
-            <button @click="loadData()" class="text-red-400 text-sm underline mt-1 hover:text-red-300">
+            <p class="text-red-400 font-medium">
+              {{ error }}
+            </p>
+            <button
+              class="text-red-400 text-sm underline mt-1 hover:text-red-300"
+              @click="loadData()"
+            >
               Try again
             </button>
           </div>
@@ -95,18 +142,24 @@
       </div>
 
       <!-- Performance Tab -->
-      <div v-if="!error && activeTab === 'current'" class="space-y-0">
+      <div
+        v-if="!error && activeTab === 'current'"
+        class="space-y-0"
+      >
         <!-- Chart view -->
         <div v-if="viewMode === 'chart'">
           <PlayerCompetitiveRankingsChart
             :rankings="rankingsData.mapRankings"
-            :sortBy="'kdRatio'"
+            :sort-by="'kdRatio'"
             @navigate-to-map="navigateToMapRankings"
           />
         </div>
 
         <!-- List view -->
-        <div v-else class="explorer-table-wrapper">
+        <div
+          v-else
+          class="explorer-table-wrapper"
+        >
           <div 
             v-for="ranking in paginatedRankings"
             :key="ranking.mapName"
@@ -114,7 +167,10 @@
             @click="navigateToMapRankings(ranking.mapName)"
           >
             <div class="ranking-position-compact">
-              <div class="ranking-badge-compact" :class="getRankBadgeClass(ranking.rank)">
+              <div
+                class="ranking-badge-compact"
+                :class="getRankBadgeClass(ranking.rank)"
+              >
                 <span v-if="ranking.rank === 1">🥇</span>
                 <span v-else-if="ranking.rank === 2">🥈</span>
                 <span v-else-if="ranking.rank === 3">🥉</span>
@@ -124,13 +180,21 @@
 
             <div class="ranking-details-compact">
               <div class="flex items-center gap-2">
-                <div class="ranking-map-compact">{{ ranking.mapName }}</div>
-                <div class="ranking-trend-compact" :class="getTrendClass(ranking.trend)">
+                <div class="ranking-map-compact">
+                  {{ ranking.mapName }}
+                </div>
+                <div
+                  class="ranking-trend-compact"
+                  :class="getTrendClass(ranking.trend)"
+                >
                   <span v-if="ranking.trend === 'up'">↑</span>
                   <span v-else-if="ranking.trend === 'down'">↓</span>
                   <span v-else-if="ranking.trend === 'stable'">→</span>
                   <span v-else>★</span>
-                  <span v-if="ranking.previousRank" class="text-[9px] ml-0.5 opacity-70">{{ Math.abs(ranking.rank - ranking.previousRank) }}</span>
+                  <span
+                    v-if="ranking.previousRank"
+                    class="text-[9px] ml-0.5 opacity-70"
+                  >{{ Math.abs(ranking.rank - ranking.previousRank) }}</span>
                 </div>
               </div>
               <div class="ranking-stats-compact">
@@ -140,7 +204,10 @@
                 </span>
                 <span class="ranking-stat-compact">
                   <span class="opacity-50">K/D:</span>
-                  <span class="font-bold" :class="ranking.kdRatio >= 1 ? 'text-neon-green' : 'text-neon-red'">{{ ranking.kdRatio.toFixed(2) }}</span>
+                  <span
+                    class="font-bold"
+                    :class="ranking.kdRatio >= 1 ? 'text-neon-green' : 'text-neon-red'"
+                  >{{ ranking.kdRatio.toFixed(2) }}</span>
                 </span>
                 <span class="ranking-stat-compact">
                   <span class="opacity-50">TIME:</span>
@@ -150,7 +217,10 @@
             </div>
 
             <div class="ranking-percentile-compact">
-              <div class="percentile-badge-compact" :class="getPercentileClass(ranking.percentile)">
+              <div
+                class="percentile-badge-compact"
+                :class="getPercentileClass(ranking.percentile)"
+              >
                 TOP {{ (100 - ranking.percentile).toFixed(1) }}%
               </div>
               <div class="text-[9px] opacity-50 font-mono mt-0.5 text-right">
@@ -160,13 +230,21 @@
           </div>
 
           <!-- Empty state for no rankings -->
-          <div v-if="rankingsData.mapRankings.length === 0" class="explorer-empty">
-            <p class="text-neutral-500">No competitive rankings available for this time period.</p>
+          <div
+            v-if="rankingsData.mapRankings.length === 0"
+            class="explorer-empty"
+          >
+            <p class="text-neutral-500">
+              No competitive rankings available for this time period.
+            </p>
           </div>
         </div>
 
         <!-- Pagination Controls (only for list view) -->
-        <div v-if="viewMode === 'list' && totalPages > 1" class="pagination-controls-compact">
+        <div
+          v-if="viewMode === 'list' && totalPages > 1"
+          class="pagination-controls-compact"
+        >
           <button
             class="pagination-btn-compact"
             :disabled="currentPage === 1"
@@ -196,46 +274,77 @@
       </div>
 
       <!-- Timeline Tab -->
-      <div v-else-if="!error && activeTab === 'timeline'" class="timeline-content">
+      <div
+        v-else-if="!error && activeTab === 'timeline'"
+        class="timeline-content"
+      >
         <!-- Map Selector and controls Integrated -->
         <div class="flex items-center justify-between mb-4">
           <select 
             v-model="selectedTimelineMap" 
-            @change="loadTimeline"
             class="explorer-select explorer-select--compact explorer-mono text-xs"
+            @change="loadTimeline"
           >
-            <option value="">All Maps (Average)</option>
-            <option v-for="map in availableMaps" :key="map" :value="map">
+            <option value="">
+              All Maps (Average)
+            </option>
+            <option
+              v-for="map in availableMaps"
+              :key="map"
+              :value="map"
+            >
               {{ map }}
             </option>
           </select>
-          <div class="text-[10px] explorer-mono opacity-50 uppercase">Historical Trend (12 Months)</div>
+          <div class="text-[10px] explorer-mono opacity-50 uppercase">
+            Historical Trend (12 Months)
+          </div>
         </div>
 
         <!-- Timeline Chart -->
-        <div v-if="timelineData && timelineData.timeline.length > 0" class="timeline-chart-container">
+        <div
+          v-if="timelineData && timelineData.timeline.length > 0"
+          class="timeline-chart-container"
+        >
           <div class="timeline-chart">
-            <canvas ref="timelineCanvas"></canvas>
+            <canvas ref="timelineCanvas" />
           </div>
         </div>
 
         <!-- Loading state for timeline -->
-        <div v-else-if="isTimelineLoading" class="flex justify-center py-8">
+        <div
+          v-else-if="isTimelineLoading"
+          class="flex justify-center py-8"
+        >
           <div class="explorer-spinner" />
         </div>
 
         <!-- No timeline data -->
-        <div v-else class="explorer-empty">
-          <p class="text-neutral-500">No historical ranking data available.</p>
+        <div
+          v-else
+          class="explorer-empty"
+        >
+          <p class="text-neutral-500">
+            No historical ranking data available.
+          </p>
         </div>
       </div>
     </div>
 
     <!-- No Data State -->
-    <div v-else class="explorer-empty">
-      <div class="explorer-empty-icon">📊</div>
-      <p class="explorer-empty-title">NO RANKING DATA</p>
-      <p class="explorer-empty-desc">Play more matches to establish your competitive rankings.</p>
+    <div
+      v-else
+      class="explorer-empty"
+    >
+      <div class="explorer-empty-icon">
+        📊
+      </div>
+      <p class="explorer-empty-title">
+        NO RANKING DATA
+      </p>
+      <p class="explorer-empty-desc">
+        Play more matches to establish your competitive rankings.
+      </p>
     </div>
   </div>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { calculateKDR, getRankClass } from '@/utils/statsUtils';
+import { getRankClass } from '@/utils/statsUtils';
 import { PLAYER_STATS_TIME_RANGE_OPTIONS } from '@/utils/constants';
 import { fetchPlayerMapRankings, type PlayerMapRankingsResponse, type GameType } from '../services/dataExplorerService';
 
@@ -174,15 +174,27 @@ watch(() => props.serverGuid, () => loadData());
 <template>
   <div class="p-4 sm:p-8 flex flex-col h-full bg-[#05050a]">
     <!-- Terminal Loading -->
-    <div v-if="isLoading" class="flex-1 flex flex-col items-center justify-center space-y-4 opacity-50">
-      <div class="w-12 h-12 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
-      <div class="font-mono text-[10px] text-cyan-400 uppercase tracking-[0.3em]">Querying_Database...</div>
+    <div
+      v-if="isLoading"
+      class="flex-1 flex flex-col items-center justify-center space-y-4 opacity-50"
+    >
+      <div class="w-12 h-12 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
+      <div class="font-mono text-[10px] text-cyan-400 uppercase tracking-[0.3em]">
+        Querying_Database...
+      </div>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="flex-1 flex flex-col items-center justify-center p-12 text-center">
-      <div class="text-3xl mb-4">📡</div>
-      <p class="text-sm font-mono text-slate-400 mb-8 uppercase tracking-widest">{{ error }}</p>
+    <div
+      v-else-if="error"
+      class="flex-1 flex flex-col items-center justify-center p-12 text-center"
+    >
+      <div class="text-3xl mb-4">
+        📡
+      </div>
+      <p class="text-sm font-mono text-slate-400 mb-8 uppercase tracking-widest">
+        {{ error }}
+      </p>
       <div class="flex flex-wrap justify-center gap-2">
         <button
           v-for="option in timeRangeOptions"
@@ -197,16 +209,29 @@ watch(() => props.serverGuid, () => loadData());
     </div>
 
     <!-- Main Content -->
-    <div v-else-if="mapStats.length > 0" class="flex flex-col h-full space-y-8">
+    <div
+      v-else-if="mapStats.length > 0"
+      class="flex flex-col h-full space-y-8"
+    >
       <!-- High Density Header -->
       <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 border-b border-white/5 pb-8">
         <div class="flex items-start gap-6">
           <button
-            @click="emit('close')"
             class="w-12 h-12 flex items-center justify-center rounded border border-white/10 hover:border-cyan-500/50 hover:bg-cyan-500/5 text-slate-400 hover:text-cyan-400 transition-all group"
+            @click="emit('close')"
           >
-            <svg class="w-5 h-5 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            <svg
+              class="w-5 h-5 group-hover:-translate-x-1 transition-transform"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
           </button>
           <div>
@@ -214,8 +239,12 @@ watch(() => props.serverGuid, () => loadData());
               <span class="px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/30 text-[9px] font-mono text-cyan-400 uppercase tracking-[0.2em]">Intel_Report</span>
               <span class="text-[10px] text-slate-500 font-mono uppercase">Nodes_Found: {{ mapStats.length }}</span>
             </div>
-            <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Strategic Deployments</h2>
-            <div class="text-[10px] text-slate-500 font-mono mt-1 uppercase tracking-widest">Temporal Range: Last {{ playerData?.dateRange.days }} Cycles</div>
+            <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">
+              Strategic Deployments
+            </h2>
+            <div class="text-[10px] text-slate-500 font-mono mt-1 uppercase tracking-widest">
+              Temporal Range: Last {{ playerData?.dateRange.days }} Cycles
+            </div>
           </div>
         </div>
         
@@ -239,26 +268,61 @@ watch(() => props.serverGuid, () => loadData());
           <table class="w-full text-left border-collapse">
             <thead>
               <tr class="bg-white/5 border-b border-white/10 font-mono text-[10px] text-slate-500 uppercase tracking-[0.2em]">
-                <th class="p-4 font-black cursor-pointer hover:text-white transition-colors" @click="changeSort('rank')">
-                  <div class="flex items-center gap-2"># <span v-if="sortField === 'rank'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span></div>
+                <th
+                  class="p-4 font-black cursor-pointer hover:text-white transition-colors"
+                  @click="changeSort('rank')"
+                >
+                  <div class="flex items-center gap-2">
+                    # <span v-if="sortField === 'rank'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+                  </div>
                 </th>
-                <th class="p-4 font-black cursor-pointer hover:text-white transition-colors" @click="changeSort('mapName')">
-                  <div class="flex items-center gap-2">Designation <span v-if="sortField === 'mapName'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span></div>
+                <th
+                  class="p-4 font-black cursor-pointer hover:text-white transition-colors"
+                  @click="changeSort('mapName')"
+                >
+                  <div class="flex items-center gap-2">
+                    Designation <span v-if="sortField === 'mapName'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+                  </div>
                 </th>
-                <th class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors" @click="changeSort('totalScore')">
-                  <div class="flex items-center justify-end gap-2">Net_Score <span v-if="sortField === 'totalScore'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span></div>
+                <th
+                  class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors"
+                  @click="changeSort('totalScore')"
+                >
+                  <div class="flex items-center justify-end gap-2">
+                    Net_Score <span v-if="sortField === 'totalScore'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+                  </div>
                 </th>
-                <th class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors" @click="changeSort('kdRatio')">
-                  <div class="flex items-center justify-end gap-2">Efficiency <span v-if="sortField === 'kdRatio'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span></div>
+                <th
+                  class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors"
+                  @click="changeSort('kdRatio')"
+                >
+                  <div class="flex items-center justify-end gap-2">
+                    Efficiency <span v-if="sortField === 'kdRatio'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+                  </div>
                 </th>
-                <th class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors" @click="changeSort('totalKills')">
-                  <div class="flex items-center justify-end gap-2">Kills <span v-if="sortField === 'totalKills'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span></div>
+                <th
+                  class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors"
+                  @click="changeSort('totalKills')"
+                >
+                  <div class="flex items-center justify-end gap-2">
+                    Kills <span v-if="sortField === 'totalKills'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+                  </div>
                 </th>
-                <th class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors" @click="changeSort('totalDeaths')">
-                  <div class="flex items-center justify-end gap-2">Losses <span v-if="sortField === 'totalDeaths'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span></div>
+                <th
+                  class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors"
+                  @click="changeSort('totalDeaths')"
+                >
+                  <div class="flex items-center justify-end gap-2">
+                    Losses <span v-if="sortField === 'totalDeaths'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+                  </div>
                 </th>
-                <th class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors" @click="changeSort('sessionsPlayed')">
-                  <div class="flex items-center justify-end gap-2">Engagements <span v-if="sortField === 'sessionsPlayed'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span></div>
+                <th
+                  class="p-4 font-black text-right cursor-pointer hover:text-white transition-colors"
+                  @click="changeSort('sessionsPlayed')"
+                >
+                  <div class="flex items-center justify-end gap-2">
+                    Engagements <span v-if="sortField === 'sessionsPlayed'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+                  </div>
                 </th>
               </tr>
             </thead>
@@ -278,7 +342,10 @@ watch(() => props.serverGuid, () => loadData());
                   >
                     {{ map.rank }}
                   </div>
-                  <span v-else class="text-slate-700 text-xs">—</span>
+                  <span
+                    v-else
+                    class="text-slate-700 text-xs"
+                  >—</span>
                 </td>
                 <td class="p-4">
                   <div class="flex flex-col">
@@ -309,8 +376,12 @@ watch(() => props.serverGuid, () => loadData());
       
       <!-- Operational Footer -->
       <div class="flex items-center justify-between px-4 py-2 border-t border-white/5 opacity-40">
-        <div class="text-[9px] font-mono uppercase tracking-[0.3em] text-slate-500">Auto_Refresh: Nominal</div>
-        <div class="text-[9px] font-mono uppercase tracking-[0.3em] text-slate-500">Terminal_ID: INTEL_PRIME_01</div>
+        <div class="text-[9px] font-mono uppercase tracking-[0.3em] text-slate-500">
+          Auto_Refresh: Nominal
+        </div>
+        <div class="text-[9px] font-mono uppercase tracking-[0.3em] text-slate-500">
+          Terminal_ID: INTEL_PRIME_01
+        </div>
       </div>
     </div>
   </div>

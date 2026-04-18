@@ -22,14 +22,20 @@ const bannerClass = computed(() => {
 
 <template>
   <Transition name="notice-slide">
-    <div v-if="isVisible" :class="bannerClass">
-      <div class="markdown-content" v-html="renderedContent" />
+    <div
+      v-if="isVisible"
+      :class="bannerClass"
+    >
+      <div
+        class="markdown-content"
+        v-html="renderedContent"
+      />
       <button
         v-if="notice?.dismissible"
         type="button"
         class="hacker-notice-dismiss"
-        @click="dismissNotice"
         aria-label="Dismiss notice"
+        @click="dismissNotice"
       >
         DISMISS
       </button>

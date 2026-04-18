@@ -83,7 +83,10 @@ onMounted(() => {
 
 <template>
   <!-- Loading State -->
-  <div v-if="isLoading" class="flex items-center gap-2">
+  <div
+    v-if="isLoading"
+    class="flex items-center gap-2"
+  >
     <div
       v-for="n in 6"
       :key="n"
@@ -92,12 +95,18 @@ onMounted(() => {
   </div>
 
   <!-- Error State -->
-  <div v-else-if="error" class="text-[10px] font-mono text-red-400 opacity-60 uppercase tracking-widest">
+  <div
+    v-else-if="error"
+    class="text-[10px] font-mono text-red-400 opacity-60 uppercase tracking-widest"
+  >
     DATA_UNAVAILABLE
   </div>
 
   <!-- Achievement Badges -->
-  <div v-else-if="headerBadges.length > 0" class="flex items-center gap-1.5 flex-wrap">
+  <div
+    v-else-if="headerBadges.length > 0"
+    class="flex items-center gap-1.5 flex-wrap"
+  >
     <button
       v-for="item in headerBadges"
       :key="`${item.kind}-${item.achievement.achievementId}-${item.achievement.achievedAt}`"
@@ -118,13 +127,18 @@ onMounted(() => {
         <div class="text-[9px] font-black uppercase text-neutral-400 tracking-tighter mb-0.5">
           {{ item.kind === 'milestone' ? 'MAJOR MILESTONE' : 'RECENT HONOR' }}
         </div>
-        <div class="text-xs font-bold text-white whitespace-nowrap">{{ item.achievement.achievementName }}</div>
+        <div class="text-xs font-bold text-white whitespace-nowrap">
+          {{ item.achievement.achievementName }}
+        </div>
       </div>
     </button>
   </div>
 
   <!-- No Achievements -->
-  <div v-else class="text-[10px] font-mono text-neutral-600 uppercase tracking-widest">
+  <div
+    v-else
+    class="text-[10px] font-mono text-neutral-600 uppercase tracking-widest"
+  >
     ZERO_HONORS_LOGGED
   </div>
 

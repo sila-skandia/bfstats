@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as d3 from 'd3'
 import type { PlayerCommunity } from '@/services/playerRelationshipsApi'
 
@@ -327,28 +327,43 @@ onUnmounted(() => {
 <template>
   <div class="space-y-4">
     <!-- Loading State -->
-    <div v-if="loading" class="explorer-card">
+    <div
+      v-if="loading"
+      class="explorer-card"
+    >
       <div class="explorer-card-body text-center py-8">
         <div class="animate-spin inline-block w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full mb-4" />
-        <p class="text-neutral-400">Rendering network visualization...</p>
+        <p class="text-neutral-400">
+          Rendering network visualization...
+        </p>
       </div>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="explorer-card">
+    <div
+      v-else-if="error"
+      class="explorer-card"
+    >
       <div class="explorer-card-body text-center">
-        <p class="text-red-400 mb-4">{{ error }}</p>
+        <p class="text-red-400 mb-4">
+          {{ error }}
+        </p>
       </div>
     </div>
 
     <!-- Visualization -->
-    <div v-else class="explorer-card">
+    <div
+      v-else
+      class="explorer-card"
+    >
       <div class="explorer-card-header flex items-center justify-between">
-        <h2 class="font-mono font-bold text-cyan-300">PLAYER NETWORK</h2>
+        <h2 class="font-mono font-bold text-cyan-300">
+          PLAYER NETWORK
+        </h2>
         <button
-          @click="resetView"
           class="px-3 py-1 text-sm bg-cyan-500/20 border border-cyan-500/50 rounded text-cyan-300 hover:bg-cyan-500/30 transition-colors"
           title="Reset view (Ctrl+R)"
+          @click="resetView"
         >
           ⟲ Reset
         </button>
@@ -364,14 +379,19 @@ onUnmounted(() => {
     </div>
 
     <!-- Legend -->
-    <div v-if="!loading && !error" class="grid grid-cols-2 gap-3">
+    <div
+      v-if="!loading && !error"
+      class="grid grid-cols-2 gap-3"
+    >
       <div class="explorer-card">
         <div class="explorer-card-body">
           <div class="flex items-center gap-2 mb-2">
             <div class="w-4 h-4 rounded-full bg-green-500" />
             <span class="text-sm text-neutral-400">Core Players</span>
           </div>
-          <p class="text-xs text-neutral-500">Most connected members</p>
+          <p class="text-xs text-neutral-500">
+            Most connected members
+          </p>
         </div>
       </div>
       <div class="explorer-card">
@@ -380,17 +400,26 @@ onUnmounted(() => {
             <div class="w-3 h-3 rounded-full bg-gray-500" />
             <span class="text-sm text-neutral-400">Regular Players</span>
           </div>
-          <p class="text-xs text-neutral-500">Other community members</p>
+          <p class="text-xs text-neutral-500">
+            Other community members
+          </p>
         </div>
       </div>
     </div>
 
     <!-- Network Stats -->
-    <div v-if="!loading && !error" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div
+      v-if="!loading && !error"
+      class="grid grid-cols-1 sm:grid-cols-2 gap-4"
+    >
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Cohesion Score</div>
-          <div class="text-2xl font-bold text-purple-400 font-mono">{{ (props.community.cohesionScore * 100).toFixed(0) }}%</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Cohesion Score
+          </div>
+          <div class="text-2xl font-bold text-purple-400 font-mono">
+            {{ (props.community.cohesionScore * 100).toFixed(0) }}%
+          </div>
           <div class="text-xs text-neutral-500 mt-2">
             How tightly connected the community is overall
           </div>
@@ -398,7 +427,9 @@ onUnmounted(() => {
       </div>
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Network Density</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Network Density
+          </div>
           <div class="text-2xl font-bold text-green-400 font-mono">
             {{ ((props.community.avgSessionsPerPair / 10) * 100).toFixed(0) }}%
           </div>
@@ -410,9 +441,14 @@ onUnmounted(() => {
     </div>
 
     <!-- Network Info -->
-    <div v-if="!loading && !error" class="explorer-card">
+    <div
+      v-if="!loading && !error"
+      class="explorer-card"
+    >
       <div class="explorer-card-header">
-        <h2 class="font-mono font-bold text-cyan-300">NETWORK INFO</h2>
+        <h2 class="font-mono font-bold text-cyan-300">
+          NETWORK INFO
+        </h2>
       </div>
       <div class="explorer-card-body space-y-3 text-sm">
         <div class="p-3 bg-neutral-800/50 rounded">
@@ -437,7 +473,10 @@ onUnmounted(() => {
     </div>
 
     <!-- Interaction Info -->
-    <div v-if="!loading && !error" class="explorer-card">
+    <div
+      v-if="!loading && !error"
+      class="explorer-card"
+    >
       <div class="explorer-card-body text-sm text-neutral-300 space-y-2">
         <p>👆 <strong>Drag</strong> nodes to reposition them</p>
         <p>🖱️ <strong>Click</strong> on players to view their profiles</p>

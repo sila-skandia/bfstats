@@ -1,7 +1,10 @@
 <template>
   <div class="admin-data-portal">
     <!-- Subtle grid overlay -->
-    <div class="portal-grid" aria-hidden="true" />
+    <div
+      class="portal-grid"
+      aria-hidden="true"
+    />
 
     <div class="portal-inner">
       <header class="portal-header">
@@ -72,25 +75,58 @@
       </div>
 
       <!-- Post-delete hint: run Daily Aggregate to refresh stats -->
-      <div v-if="showPostDeleteAggregateHint" class="portal-hint-banner">
+      <div
+        v-if="showPostDeleteAggregateHint"
+        class="portal-hint-banner"
+      >
         <span class="portal-hint-banner-text">Round marked as deleted (achievements removed; round and sessions kept). Aggregate stats may be stale — run Daily Aggregate Refresh in Cron to recalc.</span>
         <div class="portal-hint-banner-actions">
-          <button type="button" class="portal-btn portal-btn--primary portal-btn--sm" @click="activeTab = 'cron'; showPostDeleteAggregateHint = false">Go to Cron</button>
-          <button type="button" class="portal-btn portal-btn--ghost portal-btn--sm" @click="showPostDeleteAggregateHint = false">Dismiss</button>
+          <button
+            type="button"
+            class="portal-btn portal-btn--primary portal-btn--sm"
+            @click="activeTab = 'cron'; showPostDeleteAggregateHint = false"
+          >
+            Go to Cron
+          </button>
+          <button
+            type="button"
+            class="portal-btn portal-btn--ghost portal-btn--sm"
+            @click="showPostDeleteAggregateHint = false"
+          >
+            Dismiss
+          </button>
         </div>
       </div>
 
       <!-- Post-undelete hint: run Daily Aggregate to refresh stats -->
-      <div v-if="showPostUndeleteAggregateHint" class="portal-hint-banner">
+      <div
+        v-if="showPostUndeleteAggregateHint"
+        class="portal-hint-banner"
+      >
         <span class="portal-hint-banner-text">Round restored. Aggregate stats may be stale — run Daily Aggregate Refresh in Cron to recalc. Achievements need to be rebuilt separately.</span>
         <div class="portal-hint-banner-actions">
-          <button type="button" class="portal-btn portal-btn--primary portal-btn--sm" @click="activeTab = 'cron'; showPostUndeleteAggregateHint = false">Go to Cron</button>
-          <button type="button" class="portal-btn portal-btn--ghost portal-btn--sm" @click="showPostUndeleteAggregateHint = false">Dismiss</button>
+          <button
+            type="button"
+            class="portal-btn portal-btn--primary portal-btn--sm"
+            @click="activeTab = 'cron'; showPostUndeleteAggregateHint = false"
+          >
+            Go to Cron
+          </button>
+          <button
+            type="button"
+            class="portal-btn portal-btn--ghost portal-btn--sm"
+            @click="showPostUndeleteAggregateHint = false"
+          >
+            Dismiss
+          </button>
         </div>
       </div>
 
       <!-- Query tab -->
-      <div v-show="activeTab === 'query'" class="portal-panel">
+      <div
+        v-show="activeTab === 'query'"
+        class="portal-panel"
+      >
         <AdminQueryTab
           :game-filter="activeGameFilter"
           :can-delete="isAdmin"
@@ -100,27 +136,45 @@
       </div>
 
       <!-- Audit tab -->
-      <div v-show="activeTab === 'audit'" class="portal-panel">
+      <div
+        v-show="activeTab === 'audit'"
+        class="portal-panel"
+      >
         <AdminAuditTab ref="auditTabRef" />
       </div>
 
       <!-- Cron tab (admin only) -->
-      <div v-if="isAdmin" v-show="activeTab === 'cron'" class="portal-panel">
+      <div
+        v-if="isAdmin"
+        v-show="activeTab === 'cron'"
+        class="portal-panel"
+      >
         <AdminCronTab />
       </div>
 
       <!-- Access tab (admin only) -->
-      <div v-show="activeTab === 'access'" class="portal-panel">
+      <div
+        v-show="activeTab === 'access'"
+        class="portal-panel"
+      >
         <AdminAccessTab ref="accessTabRef" />
       </div>
 
       <!-- Notice tab (admin only) -->
-      <div v-if="isAdmin" v-show="activeTab === 'notice'" class="portal-panel">
+      <div
+        v-if="isAdmin"
+        v-show="activeTab === 'notice'"
+        class="portal-panel"
+      >
         <AdminNoticeTab ref="noticeTabRef" />
       </div>
 
       <!-- AI Feedback tab (admin only) -->
-      <div v-if="isAdmin" v-show="activeTab === 'ai-feedback'" class="portal-panel">
+      <div
+        v-if="isAdmin"
+        v-show="activeTab === 'ai-feedback'"
+        class="portal-panel"
+      >
         <AdminAIFeedbackTab ref="aiFeedbackTabRef" />
       </div>
     </div>

@@ -1,18 +1,24 @@
 <template>
   <div class="space-y-4">
     <!-- Current Players Display -->
-    <div v-if="currentPlayers.length > 0" class="current-players-section">
+    <div
+      v-if="currentPlayers.length > 0"
+      class="current-players-section"
+    >
       <div class="flex items-center justify-between mb-2">
-        <label class="block text-sm font-medium" :style="{ color: textMutedColor }">
+        <label
+          class="block text-sm font-medium"
+          :style="{ color: textMutedColor }"
+        >
           Current Players ({{ currentPlayers.length }})
         </label>
         <button
           class="text-xs transition-colors"
           :style="{ color: '#ef4444' }"
+          :disabled="loading"
           @mouseenter="$el.style.color = '#fca5a5'"
           @mouseleave="$el.style.color = '#ef4444'"
           @click="$emit('clearAllPlayers')"
-          :disabled="loading"
         >
           Remove All
         </button>
@@ -35,18 +41,31 @@
             :style="{ backgroundColor: props.accentColor + '33', borderColor: props.accentColor + '50', borderWidth: '1px', borderStyle: 'solid' }"
           >
             <span :style="{ color: props.accentColor }">👤</span>
-            <span class="font-medium" :style="{ color: accentTextColor }">{{ player }}</span>
+            <span
+              class="font-medium"
+              :style="{ color: accentTextColor }"
+            >{{ player }}</span>
             <button
               class="transition-colors ml-1"
               :style="{ color: '#ef4444' }"
+              :disabled="loading"
+              title="Remove player"
               @mouseenter="$el.style.color = '#fca5a5'"
               @mouseleave="$el.style.color = '#ef4444'"
               @click="$emit('removePlayer', index)"
-              :disabled="loading"
-              title="Remove player"
             >
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              <svg
+                class="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -78,8 +97,15 @@
       </div>
 
       <!-- Player Search Results -->
-      <div v-if="showPlayerDropdown && playerSearchResults.length > 0" class="rounded-lg max-h-64 overflow-y-auto" :style="{ backgroundColor: backgroundColor + '95', borderColor: accentColor + '30', borderWidth: '1px', borderStyle: 'solid' }">
-        <div class="p-2 flex items-center justify-between text-xs" :style="{ borderColor: accentColor + '20', borderBottomWidth: '1px', borderBottomStyle: 'solid', color: textMutedColor }">
+      <div
+        v-if="showPlayerDropdown && playerSearchResults.length > 0"
+        class="rounded-lg max-h-64 overflow-y-auto"
+        :style="{ backgroundColor: backgroundColor + '95', borderColor: accentColor + '30', borderWidth: '1px', borderStyle: 'solid' }"
+      >
+        <div
+          class="p-2 flex items-center justify-between text-xs"
+          :style="{ borderColor: accentColor + '20', borderBottomWidth: '1px', borderBottomStyle: 'solid', color: textMutedColor }"
+        >
           <span>{{ selectedPlayerNames.length }} selected</span>
           <div class="flex gap-2">
             <button
@@ -128,14 +154,25 @@
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="3"
+                d="M5 13l4 4L19 7"
+              />
             </svg>
           </div>
           <div class="flex-1 min-w-0">
-            <div class="font-medium text-sm truncate" :style="{ color: textColor }">
+            <div
+              class="font-medium text-sm truncate"
+              :style="{ color: textColor }"
+            >
               {{ player.playerName }}
             </div>
-            <div class="text-xs mt-0.5" :style="{ color: textMutedColor }">
+            <div
+              class="text-xs mt-0.5"
+              :style="{ color: textMutedColor }"
+            >
               {{ formatPlayerStats(player) }}
             </div>
           </div>
@@ -143,16 +180,35 @@
       </div>
 
       <!-- Loading State -->
-      <div v-if="searchingPlayers" class="text-center py-4">
-        <div class="w-6 h-6 border-4 rounded-full animate-spin mx-auto"
-             :style="{ borderColor: accentColor + '30', borderTopColor: accentColor }" />
-        <p class="text-xs mt-2" :style="{ color: textMutedColor }">Searching...</p>
+      <div
+        v-if="searchingPlayers"
+        class="text-center py-4"
+      >
+        <div
+          class="w-6 h-6 border-4 rounded-full animate-spin mx-auto"
+          :style="{ borderColor: accentColor + '30', borderTopColor: accentColor }"
+        />
+        <p
+          class="text-xs mt-2"
+          :style="{ color: textMutedColor }"
+        >
+          Searching...
+        </p>
       </div>
 
       <!-- No Results -->
-      <div v-if="showPlayerDropdown && !searchingPlayers && playerSearchQuery.length >= 2 && playerSearchResults.length === 0" class="text-center py-8 rounded-lg" :style="{ backgroundColor: backgroundMuteColor + '80', borderColor: accentColor + '30', borderWidth: '1px', borderStyle: 'solid' }">
+      <div
+        v-if="showPlayerDropdown && !searchingPlayers && playerSearchQuery.length >= 2 && playerSearchResults.length === 0"
+        class="text-center py-8 rounded-lg"
+        :style="{ backgroundColor: backgroundMuteColor + '80', borderColor: accentColor + '30', borderWidth: '1px', borderStyle: 'solid' }"
+      >
         <span class="text-4xl mb-2 block">🔍</span>
-        <p class="text-sm" :style="{ color: textMutedColor }">No players found</p>
+        <p
+          class="text-sm"
+          :style="{ color: textMutedColor }"
+        >
+          No players found
+        </p>
       </div>
 
       <!-- Add Selected Button -->
@@ -163,16 +219,19 @@
           background: `linear-gradient(90deg, ${props.accentColor}, ${props.accentColor}dd)`,
           color: accentTextColor
         }"
+        :disabled="loading"
         @mouseenter="handleAddButtonHover(true)"
         @mouseleave="handleAddButtonHover(false)"
         @click="addSelectedPlayers"
-        :disabled="loading"
       >
         <span>Add {{ selectedPlayerNames.length }} {{ selectedPlayerNames.length === 1 ? 'Player' : 'Players' }}</span>
       </button>
     </div>
 
-    <p class="mt-2 text-xs" :style="{ color: textMutedColor }">
+    <p
+      class="mt-2 text-xs"
+      :style="{ color: textMutedColor }"
+    >
       {{ helpText }}
     </p>
   </div>

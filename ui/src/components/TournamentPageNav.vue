@@ -1,5 +1,8 @@
 <template>
-  <div class="py-6 px-4 sm:px-6 border-b" :style="{ borderColor: getAccentColor(), backgroundColor: getBackgroundSoftColor() }">
+  <div
+    class="py-6 px-4 sm:px-6 border-b"
+    :style="{ borderColor: getAccentColor(), backgroundColor: getBackgroundSoftColor() }"
+  >
     <div class="max-w-6xl mx-auto">
       <!-- Navigation Buttons -->
       <div class="flex flex-wrap items-center justify-center gap-2 sm:gap-3">

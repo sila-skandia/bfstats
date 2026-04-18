@@ -75,7 +75,10 @@ const handleClose = () => emit('close');
 
     <form @submit.prevent="handleSubmit">
       <div class="form-group">
-        <label for="playerName" class="form-label">
+        <label
+          for="playerName"
+          class="form-label"
+        >
           &gt; PLAYER_NAME
         </label>
         <PlayerSearch
@@ -90,17 +93,29 @@ const handleClose = () => emit('close');
         </small>
       </div>
 
-      <div v-if="error" class="error-box">
+      <div
+        v-if="error"
+        class="error-box"
+      >
         <span class="error-icon">[!]</span>
         <span>{{ error }}</span>
       </div>
 
-      <div v-if="selectedPlayer" class="player-preview">
+      <div
+        v-if="selectedPlayer"
+        class="player-preview"
+      >
         <div class="preview-header">
           <span class="preview-icon">&gt;</span>
           <span class="preview-name">{{ selectedPlayer.playerName }}</span>
-          <span v-if="selectedPlayer.isActive" class="status-badge online">ONLINE</span>
-          <span v-else class="status-badge offline">OFFLINE</span>
+          <span
+            v-if="selectedPlayer.isActive"
+            class="status-badge online"
+          >ONLINE</span>
+          <span
+            v-else
+            class="status-badge offline"
+          >OFFLINE</span>
         </div>
         <div class="preview-stats">
           <div class="stat-item">
@@ -121,7 +136,11 @@ const handleClose = () => emit('close');
       </div>
 
       <div class="form-actions">
-        <button type="button" class="btn-action btn-cancel" @click="handleClose">
+        <button
+          type="button"
+          class="btn-action btn-cancel"
+          @click="handleClose"
+        >
           [CANCEL]
         </button>
         <button
@@ -129,7 +148,10 @@ const handleClose = () => emit('close');
           :disabled="!playerName.trim() || isSubmitting"
           class="btn-action btn-submit"
         >
-          <span v-if="isSubmitting" class="spinner" />
+          <span
+            v-if="isSubmitting"
+            class="spinner"
+          />
           {{ isSubmitting ? 'ADDING...' : '[ADD_PLAYER]' }}
         </button>
       </div>

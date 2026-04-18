@@ -6,7 +6,10 @@
         class="ai-drawer-backdrop"
         @click.self="$emit('update:modelValue', false)"
       >
-        <div class="ai-drawer" @click.stop>
+        <div
+          class="ai-drawer"
+          @click.stop
+        >
           <!-- Terminal Bar -->
           <div class="terminal-bar">
             <div class="terminal-dots">
@@ -28,7 +31,9 @@
           <!-- Header -->
           <div class="drawer-header">
             <div class="drawer-header-row">
-              <h3 class="drawer-title">AI Assistant</h3>
+              <h3 class="drawer-title">
+                AI Assistant
+              </h3>
               <button
                 v-if="messages.length > 0"
                 type="button"
@@ -39,12 +44,20 @@
                 Clear conversation
               </button>
             </div>
-            <p class="drawer-subtitle">// Type @ for players, # for servers</p>
+            <p class="drawer-subtitle">
+              // Type @ for players, # for servers
+            </p>
           </div>
 
           <!-- Messages -->
-          <div ref="messagesContainer" class="messages-container">
-            <div v-if="messages.length === 0" class="welcome-message">
+          <div
+            ref="messagesContainer"
+            class="messages-container"
+          >
+            <div
+              v-if="messages.length === 0"
+              class="welcome-message"
+            >
               <p>Hello! I can help you with:</p>
               <ul>
                 <li>Player statistics and comparisons</li>
@@ -52,7 +65,10 @@
                 <li>Finding when games happen</li>
                 <li>Understanding your performance</li>
               </ul>
-              <p v-if="context.playerName || context.serverGuid" class="context-hint">
+              <p
+                v-if="context.playerName || context.serverGuid"
+                class="context-hint"
+              >
                 <span v-if="context.playerName">Current player: <strong>{{ context.playerName }}</strong></span>
                 <span v-if="context.serverGuid">Current server: <strong>{{ context.serverName || context.serverGuid }}</strong></span>
               </p>
@@ -73,7 +89,10 @@
                 />
               </div>
               <!-- Feedback buttons for assistant messages -->
-              <div v-if="msg.role === 'assistant'" class="feedback-row">
+              <div
+                v-if="msg.role === 'assistant'"
+                class="feedback-row"
+              >
                 <button
                   type="button"
                   class="feedback-btn"
@@ -82,7 +101,17 @@
                   aria-label="Thumbs up"
                   @click="submitFeedback(index, true)"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /></svg>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  ><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /></svg>
                 </button>
                 <button
                   type="button"
@@ -92,13 +121,29 @@
                   aria-label="Thumbs down"
                   @click="submitFeedback(index, false)"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" /></svg>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  ><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" /></svg>
                 </button>
-                <span v-if="feedbackState.get(index)" class="feedback-thanks">thanks for the feedback</span>
+                <span
+                  v-if="feedbackState.get(index)"
+                  class="feedback-thanks"
+                >thanks for the feedback</span>
               </div>
             </div>
 
-            <div v-if="isLoading" class="message assistant loading">
+            <div
+              v-if="isLoading"
+              class="message assistant loading"
+            >
               <div class="message-content">
                 <span class="message-role">$</span>
                 <span
@@ -111,10 +156,16 @@
           </div>
 
           <!-- Autocomplete Dropdown -->
-          <div v-if="showAutocomplete" class="autocomplete-container">
+          <div
+            v-if="showAutocomplete"
+            class="autocomplete-container"
+          >
             <div class="autocomplete-header">
               {{ autocompleteType === 'player' ? 'Players' : 'Servers' }}
-              <span v-if="isSearching" class="searching-indicator">searching...</span>
+              <span
+                v-if="isSearching"
+                class="searching-indicator"
+              >searching...</span>
             </div>
             <div class="autocomplete-list">
               <div
@@ -127,9 +178,15 @@
               >
                 <span class="item-icon">{{ autocompleteType === 'player' ? '@' : '#' }}</span>
                 <span class="item-name">{{ item.name }}</span>
-                <span v-if="item.detail" class="item-detail">{{ item.detail }}</span>
+                <span
+                  v-if="item.detail"
+                  class="item-detail"
+                >{{ item.detail }}</span>
               </div>
-              <div v-if="autocompleteResults.length === 0 && !isSearching" class="autocomplete-empty">
+              <div
+                v-if="autocompleteResults.length === 0 && !isSearching"
+                class="autocomplete-empty"
+              >
                 No results found
               </div>
             </div>
@@ -151,20 +208,38 @@
                   :disabled="isLoading"
                   @keydown="handleKeydown"
                   @input="handleInput"
-                />
+                >
                 <button
                   class="send-button"
                   :disabled="isLoading || !canSend"
                   @click="sendMessage"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <line
+                      x1="22"
+                      y1="2"
+                      x2="11"
+                      y2="13"
+                    />
                     <polygon points="22 2 15 22 11 13 2 9 22 2" />
                   </svg>
                 </button>
               </div>
             </div>
-            <p v-if="error" class="error-message">{{ error }}</p>
+            <p
+              v-if="error"
+              class="error-message"
+            >
+              {{ error }}
+            </p>
           </div>
         </div>
       </div>

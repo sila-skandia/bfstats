@@ -79,28 +79,20 @@ public class StatsCollectionBackgroundService(
                 await playerTrackingService.CloseAllTimedOutSessionsAsync(DateTime.UtcNow);
                 await playerTrackingService.MarkOfflineServersAsync(DateTime.UtcNow);
 
-                // 2. Collect stats from all games
+                // 2. Collect stats (FH2 and BFV retired — no active players)
                 var bf1942Servers = await CollectBf1942ServerStatsAsync(bfListApiService, playerTrackingService, "bf1942", CancellationToken.None);
-                var fh2Servers = await CollectFh2ServerStatsAsync(bfListApiService, playerTrackingService, CancellationToken.None);
-                var bfvietnamServers = await CollectBfvietnamServerStatsAsync(bfListApiService, playerTrackingService, CancellationToken.None);
 
                 // 3. Collect all servers
                 var allServers = new List<IGameServer>();
                 allServers.AddRange(bf1942Servers);
-                allServers.AddRange(fh2Servers);
-                allServers.AddRange(bfvietnamServers);
                 var timestamp = DateTime.UtcNow;
 
                 // 4. Store server online counts to SQLite for analytics
                 var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
                 await UpsertServerOnlineCountsAsync(dbContext, bf1942Servers, "bf1942", timestamp);
-                await UpsertServerOnlineCountsAsync(dbContext, fh2Servers, "fh2", timestamp);
-                await UpsertServerOnlineCountsAsync(dbContext, bfvietnamServers, "bfvietnam", timestamp);
 
                 activity?.SetTag("total_servers_processed", allServers.Count);
                 activity?.SetTag("bf1942_servers_processed", bf1942Servers.Count);
-                activity?.SetTag("fh2_servers_processed", fh2Servers.Count);
-                activity?.SetTag("bfvietnam_servers_processed", bfvietnamServers.Count);
 
                 // Calculate active player count for metrics
                 var activePlayers = allServers.Sum(s => s.Players.Count());
@@ -117,8 +109,8 @@ public class StatsCollectionBackgroundService(
                 if (currentCycle % 10 == 0)
                 {
                     logger.LogInformation(
-                        "Stats collection cycle #{Cycle}: {TotalServers} servers (BF1942={Bf1942}, FH2={Fh2}, BFV={Bfv}), {Players} players in {Duration}ms",
-                        currentCycle, allServers.Count, bf1942Servers.Count, fh2Servers.Count, bfvietnamServers.Count,
+                        "Stats collection cycle #{Cycle}: {TotalServers} servers (BF1942={Bf1942}), {Players} players in {Duration}ms",
+                        currentCycle, allServers.Count, bf1942Servers.Count,
                         activePlayers, cycleStopwatch.ElapsedMilliseconds);
                 }
             }

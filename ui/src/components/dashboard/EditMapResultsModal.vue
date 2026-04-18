@@ -1,16 +1,23 @@
 <template>
-  <div v-if="isOpen" class="modal-mobile-safe fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+  <div
+    v-if="isOpen"
+    class="modal-mobile-safe fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+  >
     <div class="bg-slate-900 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-auto">
       <!-- Header -->
       <div class="sticky top-0 bg-slate-800 border-b border-slate-700 px-6 py-4">
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-lg font-bold text-white">Match Results</h2>
-            <p class="text-xs text-slate-400 mt-1">{{ props.match.maps?.length || 0 }} maps • Enter results for all maps below</p>
+            <h2 class="text-lg font-bold text-white">
+              Match Results
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">
+              {{ props.match.maps?.length || 0 }} maps • Enter results for all maps below
+            </p>
           </div>
           <button
-            @click="$emit('close')"
             class="text-slate-400 hover:text-white transition"
+            @click="$emit('close')"
           >
             ✕
           </button>
@@ -19,27 +26,46 @@
 
       <!-- Content - All Maps -->
       <div class="px-6 py-4 space-y-6">
-        <div v-for="map in props.match.maps || []" :key="map.id" class="border border-slate-700 rounded-lg p-4 bg-slate-800/30">
+        <div
+          v-for="map in props.match.maps || []"
+          :key="map.id"
+          class="border border-slate-700 rounded-lg p-4 bg-slate-800/30"
+        >
           <!-- Map Header -->
           <div class="mb-4 pb-3 border-b border-slate-700">
-            <h3 class="text-sm font-bold text-white">{{ map.mapName }}</h3>
+            <h3 class="text-sm font-bold text-white">
+              {{ map.mapName }}
+            </h3>
           </div>
 
           <!-- Results Table for this Map -->
           <div class="space-y-3">
-
             <!-- Results Table -->
             <div class="overflow-x-auto">
               <table class="w-full text-sm border-collapse">
                 <thead>
                   <tr class="bg-slate-800/50 border-b border-slate-700">
-                    <th class="p-2 text-left text-xs font-semibold text-slate-300">#</th>
-                    <th class="p-2 text-left text-xs font-semibold text-slate-300">Team 1</th>
-                    <th class="p-2 text-center text-xs font-semibold text-slate-300">Score</th>
-                    <th class="p-2 text-left text-xs font-semibold text-slate-300">Team 2</th>
-                    <th class="p-2 text-center text-xs font-semibold text-slate-300">Score</th>
-                    <th class="p-2 text-center text-xs font-semibold text-slate-300">Winner</th>
-                    <th class="p-2 text-center text-xs font-semibold text-slate-300">Actions</th>
+                    <th class="p-2 text-left text-xs font-semibold text-slate-300">
+                      #
+                    </th>
+                    <th class="p-2 text-left text-xs font-semibold text-slate-300">
+                      Team 1
+                    </th>
+                    <th class="p-2 text-center text-xs font-semibold text-slate-300">
+                      Score
+                    </th>
+                    <th class="p-2 text-left text-xs font-semibold text-slate-300">
+                      Team 2
+                    </th>
+                    <th class="p-2 text-center text-xs font-semibold text-slate-300">
+                      Score
+                    </th>
+                    <th class="p-2 text-center text-xs font-semibold text-slate-300">
+                      Winner
+                    </th>
+                    <th class="p-2 text-center text-xs font-semibold text-slate-300">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -51,28 +77,44 @@
                   >
                     <!-- Read-only view -->
                     <template v-if="!editingResult || editingResult.id !== result.id">
-                      <td class="p-2 text-slate-400">{{ index + 1 }}</td>
-                      <td class="p-2 text-white">{{ result.team1Name || '-' }}</td>
-                      <td class="p-2 text-center text-emerald-400 font-medium">{{ result.team1Tickets }}</td>
-                      <td class="p-2 text-white">{{ result.team2Name || '-' }}</td>
-                      <td class="p-2 text-center text-emerald-400 font-medium">{{ result.team2Tickets }}</td>
+                      <td class="p-2 text-slate-400">
+                        {{ index + 1 }}
+                      </td>
+                      <td class="p-2 text-white">
+                        {{ result.team1Name || '-' }}
+                      </td>
+                      <td class="p-2 text-center text-emerald-400 font-medium">
+                        {{ result.team1Tickets }}
+                      </td>
+                      <td class="p-2 text-white">
+                        {{ result.team2Name || '-' }}
+                      </td>
+                      <td class="p-2 text-center text-emerald-400 font-medium">
+                        {{ result.team2Tickets }}
+                      </td>
                       <td class="p-2 text-center">
-                        <span v-if="result.winningTeamName" class="text-yellow-400 font-bold">🏆 {{ result.winningTeamName }}</span>
-                        <span v-else class="text-slate-500 text-xs">-</span>
+                        <span
+                          v-if="result.winningTeamName"
+                          class="text-yellow-400 font-bold"
+                        >🏆 {{ result.winningTeamName }}</span>
+                        <span
+                          v-else
+                          class="text-slate-500 text-xs"
+                        >-</span>
                       </td>
                       <td class="p-2 text-center flex gap-2 justify-center">
                         <button
-                          @click="editResult(map, result)"
                           class="px-3 py-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition text-sm"
                           title="Edit result"
+                          @click="editResult(map, result)"
                         >
                           ✎ Edit
                         </button>
                         <button
-                          @click="deleteResult(map, result.id)"
                           :disabled="isSaving"
                           class="px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 disabled:text-slate-600 disabled:hover:bg-transparent rounded transition text-sm"
                           title="Delete result"
+                          @click="deleteResult(map, result.id)"
                         >
                           🗑️ Delete
                         </button>
@@ -81,7 +123,10 @@
 
                     <!-- Inline edit view -->
                     <template v-else>
-                      <td colspan="7" class="p-3">
+                      <td
+                        colspan="7"
+                        class="p-3"
+                      >
                         <div class="space-y-3 bg-slate-900/50 p-3 rounded border border-slate-600">
                           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <!-- Team 1 Dropdown -->
@@ -91,8 +136,14 @@
                                 v-model.number="formData.team1Id"
                                 class="w-full px-2 py-1.5 bg-slate-900 border border-slate-600 rounded text-white text-sm"
                               >
-                                <option :value="undefined">Select team</option>
-                                <option v-for="team in getMatchTeams()" :key="team.id" :value="team.id">
+                                <option :value="undefined">
+                                  Select team
+                                </option>
+                                <option
+                                  v-for="team in getMatchTeams()"
+                                  :key="team.id"
+                                  :value="team.id"
+                                >
                                   {{ team.name }}
                                 </option>
                               </select>
@@ -107,7 +158,7 @@
                                 min="0"
                                 class="w-full px-1.5 py-1 bg-slate-900 border border-slate-600 rounded text-white text-sm text-center"
                                 placeholder="0"
-                              />
+                              >
                             </div>
 
                             <!-- Team 2 Dropdown -->
@@ -117,8 +168,14 @@
                                 v-model.number="formData.team2Id"
                                 class="w-full px-2 py-1.5 bg-slate-900 border border-slate-600 rounded text-white text-sm"
                               >
-                                <option :value="undefined">Select team</option>
-                                <option v-for="team in getMatchTeams()" :key="team.id" :value="team.id">
+                                <option :value="undefined">
+                                  Select team
+                                </option>
+                                <option
+                                  v-for="team in getMatchTeams()"
+                                  :key="team.id"
+                                  :value="team.id"
+                                >
                                   {{ team.name }}
                                 </option>
                               </select>
@@ -133,34 +190,37 @@
                                 min="0"
                                 class="w-full px-1.5 py-1 bg-slate-900 border border-slate-600 rounded text-white text-sm text-center"
                                 placeholder="0"
-                              />
+                              >
                             </div>
                           </div>
 
                           <!-- Round Linking -->
                           <div class="border-t border-slate-600 pt-3">
-                            <div v-if="formData.roundId" class="flex items-center gap-2">
+                            <div
+                              v-if="formData.roundId"
+                              class="flex items-center gap-2"
+                            >
                               <span class="text-xs text-slate-300">📌 Round: <span class="text-emerald-400 font-medium">{{ formData.roundId }}</span></span>
                               <button
-                                @click="currentMapForRound = map; showLinkRoundModal = true"
                                 :disabled="isSaving"
                                 class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded transition font-medium ml-auto"
+                                @click="currentMapForRound = map; showLinkRoundModal = true"
                               >
                                 Edit
                               </button>
                               <button
-                                @click="unlinkRoundFromResult()"
                                 :disabled="isSaving"
                                 class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 disabled:bg-slate-600 text-white rounded transition font-medium"
+                                @click="unlinkRoundFromResult()"
                               >
                                 Unlink
                               </button>
                             </div>
                             <div v-else>
                               <button
-                                @click="currentMapForRound = map; showLinkRoundModal = true"
                                 :disabled="isSaving"
                                 class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded transition font-medium"
+                                @click="currentMapForRound = map; showLinkRoundModal = true"
                               >
                                 Link Round
                               </button>
@@ -170,15 +230,15 @@
                           <!-- Action Buttons -->
                           <div class="flex gap-2 pt-2 border-t border-slate-600">
                             <button
-                              @click="saveManualResult(map)"
                               :disabled="isSaving || !formData.team1Id || !formData.team2Id"
                               class="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-600 text-white rounded transition font-medium"
+                              @click="saveManualResult(map)"
                             >
                               {{ isSaving ? 'Saving...' : 'Update' }}
                             </button>
                             <button
-                              @click="cancelManualEntry()"
                               class="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded transition"
+                              @click="cancelManualEntry()"
                             >
                               Cancel
                             </button>
@@ -189,23 +249,33 @@
                   </tr>
 
                   <!-- Add New Result Trigger Row -->
-                  <tr v-if="editingMapId !== map.id && !editingResult" class="border-b border-slate-700 bg-slate-800/50">
-                    <td class="p-2 text-slate-400">+</td>
-                    <td colspan="6" class="p-2">
+                  <tr
+                    v-if="editingMapId !== map.id && !editingResult"
+                    class="border-b border-slate-700 bg-slate-800/50"
+                  >
+                    <td class="p-2 text-slate-400">
+                      +
+                    </td>
+                    <td
+                      colspan="6"
+                      class="p-2"
+                    >
                       <div class="flex gap-2 items-center justify-center h-full">
-                        <p class="text-xs text-slate-400 font-semibold">Add New Result:</p>
+                        <p class="text-xs text-slate-400 font-semibold">
+                          Add New Result:
+                        </p>
                         <button
-                          @click="openManualEntry(map)"
                           class="px-3 py-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition text-sm font-medium"
                           title="Enter a manual result"
+                          @click="openManualEntry(map)"
                         >
                           + Manually
                         </button>
                         <span class="text-slate-600">|</span>
                         <button
-                          @click="currentMapForRound = map; showLinkRoundModal = true"
                           class="px-3 py-2 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded transition text-sm font-medium"
                           title="Link a round from the match"
+                          @click="currentMapForRound = map; showLinkRoundModal = true"
                         >
                           + Link
                         </button>
@@ -214,9 +284,17 @@
                   </tr>
 
                   <!-- New Result Form Row (only show when adding new result) -->
-                  <tr v-if="editingMapId === map.id && !editingResult" class="border-b border-slate-700 bg-slate-800/50">
-                    <td class="p-2 text-slate-400">+</td>
-                    <td colspan="6" class="p-2">
+                  <tr
+                    v-if="editingMapId === map.id && !editingResult"
+                    class="border-b border-slate-700 bg-slate-800/50"
+                  >
+                    <td class="p-2 text-slate-400">
+                      +
+                    </td>
+                    <td
+                      colspan="6"
+                      class="p-2"
+                    >
                       <div class="space-y-2 bg-slate-900/50 p-3 rounded border border-slate-600">
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           <!-- Team 1 Dropdown -->
@@ -226,8 +304,14 @@
                               v-model.number="formData.team1Id"
                               class="w-full px-2 py-1.5 bg-slate-900 border border-slate-600 rounded text-white text-sm"
                             >
-                              <option :value="undefined">Select team</option>
-                              <option v-for="team in getMatchTeams()" :key="team.id" :value="team.id">
+                              <option :value="undefined">
+                                Select team
+                              </option>
+                              <option
+                                v-for="team in getMatchTeams()"
+                                :key="team.id"
+                                :value="team.id"
+                              >
                                 {{ team.name }}
                               </option>
                             </select>
@@ -242,7 +326,7 @@
                               min="0"
                               class="w-full px-1.5 py-1 bg-slate-900 border border-slate-600 rounded text-white text-sm text-center"
                               placeholder="0"
-                            />
+                            >
                           </div>
 
                           <!-- Team 2 Dropdown -->
@@ -252,8 +336,14 @@
                               v-model.number="formData.team2Id"
                               class="w-full px-2 py-1.5 bg-slate-900 border border-slate-600 rounded text-white text-sm"
                             >
-                              <option :value="undefined">Select team</option>
-                              <option v-for="team in getMatchTeams()" :key="team.id" :value="team.id">
+                              <option :value="undefined">
+                                Select team
+                              </option>
+                              <option
+                                v-for="team in getMatchTeams()"
+                                :key="team.id"
+                                :value="team.id"
+                              >
                                 {{ team.name }}
                               </option>
                             </select>
@@ -268,34 +358,37 @@
                               min="0"
                               class="w-full px-1.5 py-1 bg-slate-900 border border-slate-600 rounded text-white text-sm text-center"
                               placeholder="0"
-                            />
+                            >
                           </div>
                         </div>
 
                         <!-- Round Linking (when adding new result) -->
                         <div class="border-t border-slate-600 pt-2 mt-2">
-                          <div v-if="formData.roundId" class="flex items-center gap-2">
+                          <div
+                            v-if="formData.roundId"
+                            class="flex items-center gap-2"
+                          >
                             <span class="text-xs text-slate-300">📌 Round: <span class="text-emerald-400 font-medium">{{ formData.roundId }}</span></span>
                             <button
-                              @click="currentMapForRound = map; showLinkRoundModal = true"
                               :disabled="isSaving"
                               class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded transition font-medium ml-auto"
+                              @click="currentMapForRound = map; showLinkRoundModal = true"
                             >
                               Edit
                             </button>
                             <button
-                              @click="unlinkRoundFromResult()"
                               :disabled="isSaving"
                               class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 disabled:bg-slate-600 text-white rounded transition font-medium"
+                              @click="unlinkRoundFromResult()"
                             >
                               Unlink
                             </button>
                           </div>
                           <div v-else>
                             <button
-                              @click="currentMapForRound = map; showLinkRoundModal = true"
                               :disabled="isSaving"
                               class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded transition font-medium"
+                              @click="currentMapForRound = map; showLinkRoundModal = true"
                             >
                               Link Round
                             </button>
@@ -305,15 +398,15 @@
                         <!-- Actions -->
                         <div class="flex gap-2 pt-2">
                           <button
-                            @click="saveManualResult(map)"
                             :disabled="isSaving || !formData.team1Id || !formData.team2Id"
                             class="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-600 text-white rounded transition font-medium"
+                            @click="saveManualResult(map)"
                           >
                             {{ isSaving ? 'Saving...' : 'Add Result' }}
                           </button>
                           <button
-                            @click="cancelManualEntry()"
                             class="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded transition"
+                            @click="cancelManualEntry()"
                           >
                             Cancel
                           </button>
@@ -323,8 +416,14 @@
                   </tr>
 
                   <!-- Empty State Message -->
-                  <tr v-if="map.matchResults.length === 0 && editingMapId !== map.id" class="border-b border-slate-700">
-                    <td colspan="7" class="p-4 text-center text-slate-400 text-sm">
+                  <tr
+                    v-if="map.matchResults.length === 0 && editingMapId !== map.id"
+                    class="border-b border-slate-700"
+                  >
+                    <td
+                      colspan="7"
+                      class="p-4 text-center text-slate-400 text-sm"
+                    >
                       No results yet. Click "Add New Result" below to add one.
                     </td>
                   </tr>
@@ -338,8 +437,8 @@
       <!-- Footer -->
       <div class="sticky bottom-0 bg-slate-800 border-t border-slate-700 px-6 py-3 flex justify-end">
         <button
-          @click="$emit('close')"
           class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm transition"
+          @click="$emit('close')"
         >
           Close
         </button>

@@ -31,10 +31,17 @@ const statusLabel = computed(() => {
     <!-- Header -->
     <div class="community-header">
       <div class="flex-1 min-w-0">
-        <h3 class="community-name">{{ community.name }}</h3>
-        <p class="community-id">{{ community.id }}</p>
+        <h3 class="community-name">
+          {{ community.name }}
+        </h3>
+        <p class="community-id">
+          {{ community.id }}
+        </p>
       </div>
-      <div class="status-badge" :class="statusColor">
+      <div
+        class="status-badge"
+        :class="statusColor"
+      >
         {{ statusLabel }}
       </div>
     </div>
@@ -42,26 +49,44 @@ const statusLabel = computed(() => {
     <!-- Stats Grid -->
     <div class="stats-grid">
       <div class="stat-item">
-        <div class="stat-value">{{ community.memberCount }}</div>
-        <div class="stat-label">Members</div>
+        <div class="stat-value">
+          {{ community.memberCount }}
+        </div>
+        <div class="stat-label">
+          Members
+        </div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">{{ cohesionPercentage }}%</div>
-        <div class="stat-label">Cohesion</div>
+        <div class="stat-value">
+          {{ cohesionPercentage }}%
+        </div>
+        <div class="stat-label">
+          Cohesion
+        </div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">{{ community.avgSessionsPerPair.toFixed(1) }}</div>
-        <div class="stat-label">Avg Sessions</div>
+        <div class="stat-value">
+          {{ community.avgSessionsPerPair.toFixed(1) }}
+        </div>
+        <div class="stat-label">
+          Avg Sessions
+        </div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">{{ (community.memberCount > 0 ? (community.primaryServers.length / community.memberCount * 10).toFixed(1) : 0) }}</div>
-        <div class="stat-label">Servers</div>
+        <div class="stat-value">
+          {{ (community.memberCount > 0 ? (community.primaryServers.length / community.memberCount * 10).toFixed(1) : 0) }}
+        </div>
+        <div class="stat-label">
+          Servers
+        </div>
       </div>
     </div>
 
     <!-- Core Members -->
     <div class="section">
-      <h4 class="section-title">CORE MEMBERS</h4>
+      <h4 class="section-title">
+        CORE MEMBERS
+      </h4>
       <div class="members-list">
         <router-link
           v-for="member in community.coreMembers.slice(0, 5)"
@@ -71,7 +96,10 @@ const statusLabel = computed(() => {
         >
           {{ member }}
         </router-link>
-        <span v-if="community.coreMembers.length > 5" class="member-more">
+        <span
+          v-if="community.coreMembers.length > 5"
+          class="member-more"
+        >
           +{{ community.coreMembers.length - 5 }}
         </span>
       </div>
@@ -79,14 +107,18 @@ const statusLabel = computed(() => {
 
     <!-- Primary Servers -->
     <div class="section">
-      <h4 class="section-title">PRIMARY SERVERS</h4>
+      <h4 class="section-title">
+        PRIMARY SERVERS
+      </h4>
       <div class="servers-list">
         <div
           v-for="(serverName, idx) in community.primaryServers.slice(0, 3)"
           :key="idx"
           class="server-item"
         >
-          <div class="server-name">{{ serverName }}</div>
+          <div class="server-name">
+            {{ serverName }}
+          </div>
         </div>
       </div>
     </div>
@@ -104,7 +136,10 @@ const statusLabel = computed(() => {
     </div>
 
     <!-- View Button -->
-    <router-link :to="`/communities/${encodeURIComponent(community.id)}`" class="view-button">
+    <router-link
+      :to="`/communities/${encodeURIComponent(community.id)}`"
+      class="view-button"
+    >
       View Community →
     </router-link>
   </div>

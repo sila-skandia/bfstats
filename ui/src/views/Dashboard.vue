@@ -5,7 +5,12 @@
 
     <!-- Matrix rain background effect -->
     <div class="matrix-bg">
-      <div v-for="i in 20" :key="i" class="matrix-column" :style="{ left: `${i * 5}%`, animationDelay: `${Math.random() * 5}s` }" />
+      <div
+        v-for="i in 20"
+        :key="i"
+        class="matrix-column"
+        :style="{ left: `${i * 5}%`, animationDelay: `${Math.random() * 5}s` }"
+      />
     </div>
 
     <div class="dashboard-content">
@@ -44,10 +49,16 @@
             </div>
             <p class="header-subtitle">
               <span class="prompt">&gt;</span>
-              <span v-if="isAuthenticated" class="typing-text">
+              <span
+                v-if="isAuthenticated"
+                class="typing-text"
+              >
                 Ready for battle? Here's your tactical overview.
               </span>
-              <span v-else class="typing-text">
+              <span
+                v-else
+                class="typing-text"
+              >
                 Sign in to access your personal battlefield dashboard with player profiles, favorite servers, and squad management.
               </span>
             </p>

@@ -3,11 +3,21 @@
     <table class="leaderboard-preview">
       <thead>
         <tr>
-          <th class="col-rank">#</th>
-          <th class="col-player">Player</th>
-          <th class="col-score">Score</th>
-          <th class="col-kills">Kills</th>
-          <th class="col-kd">K/D</th>
+          <th class="col-rank">
+            #
+          </th>
+          <th class="col-player">
+            Player
+          </th>
+          <th class="col-score">
+            Score
+          </th>
+          <th class="col-kills">
+            Kills
+          </th>
+          <th class="col-kd">
+            K/D
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -26,14 +36,23 @@
               {{ player.playerName }}
             </router-link>
           </td>
-          <td class="col-score">{{ player.totalScore.toLocaleString() }}</td>
-          <td class="col-kills">{{ player.totalKills.toLocaleString() }}</td>
-          <td class="col-kd">{{ player.kdRatio.toFixed(2) }}</td>
+          <td class="col-score">
+            {{ player.totalScore.toLocaleString() }}
+          </td>
+          <td class="col-kills">
+            {{ player.totalKills.toLocaleString() }}
+          </td>
+          <td class="col-kd">
+            {{ player.kdRatio.toFixed(2) }}
+          </td>
         </tr>
       </tbody>
     </table>
 
-    <div v-if="players.length === 0" class="leaderboard-empty">
+    <div
+      v-if="players.length === 0"
+      class="leaderboard-empty"
+    >
       No player data available
     </div>
   </div>

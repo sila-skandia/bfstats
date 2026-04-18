@@ -1,10 +1,15 @@
 <template>
   <div class="tournament-files-tab">
     <!-- Add/Edit File View -->
-    <div v-if="showForm" class="portal-card">
+    <div
+      v-if="showForm"
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ {{ editingFile ? 'EDIT FILE' : 'ADD FILE' }} ]</h2>
+          <h2 class="portal-card-title">
+            [ {{ editingFile ? 'EDIT FILE' : 'ADD FILE' }} ]
+          </h2>
           <p class="portal-card-subtitle">
             {{ editingFile ? 'Update file details' : 'Add a new tournament file' }}
           </p>
@@ -13,8 +18,18 @@
           class="portal-btn portal-btn--ghost"
           @click="closeForm"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
           Cancel
         </button>
@@ -22,7 +37,10 @@
 
       <div class="portal-card-body">
         <!-- Error Message -->
-        <div v-if="formError" class="portal-form-error">
+        <div
+          v-if="formError"
+          class="portal-form-error"
+        >
           {{ formError }}
         </div>
 
@@ -48,7 +66,9 @@
             class="portal-form-input"
             :disabled="formLoading"
           >
-          <p class="portal-form-hint">Direct link to the file (PDF, document, etc.)</p>
+          <p class="portal-form-hint">
+            Direct link to the file (PDF, document, etc.)
+          </p>
         </div>
 
         <!-- Category -->
@@ -61,11 +81,16 @@
             class="portal-form-input"
             :disabled="formLoading"
           >
-          <p class="portal-form-hint">Optional: helps organize files by type</p>
+          <p class="portal-form-hint">
+            Optional: helps organize files by type
+          </p>
         </div>
 
         <!-- Form Actions -->
-        <div class="portal-form-footer" style="margin-top: 1.5rem">
+        <div
+          class="portal-form-footer"
+          style="margin-top: 1.5rem"
+        >
           <button
             class="portal-btn portal-btn--ghost"
             :disabled="formLoading"
@@ -78,7 +103,10 @@
             :disabled="formLoading || !isFormValid"
             @click="submitForm"
           >
-            <span v-if="formLoading" class="portal-btn-pulse">Saving...</span>
+            <span
+              v-if="formLoading"
+              class="portal-btn-pulse"
+            >Saving...</span>
             <span v-else>{{ editingFile ? 'Update File' : 'Add File' }}</span>
           </button>
         </div>
@@ -86,11 +114,18 @@
     </div>
 
     <!-- Files List View -->
-    <div v-else class="portal-card">
+    <div
+      v-else
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ FILES ]</h2>
-          <p class="portal-card-subtitle">Share documents, rules, and resources</p>
+          <h2 class="portal-card-title">
+            [ FILES ]
+          </h2>
+          <p class="portal-card-subtitle">
+            Share documents, rules, and resources
+          </p>
         </div>
         <button
           class="portal-btn portal-btn--primary"
@@ -100,20 +135,31 @@
         </button>
       </div>
 
-      <div class="portal-card-body" style="padding: 0">
+      <div
+        class="portal-card-body"
+        style="padding: 0"
+      >
         <!-- Files Table -->
-        <div v-if="tournament.files && tournament.files.length > 0" class="portal-table-wrap">
+        <div
+          v-if="tournament.files && tournament.files.length > 0"
+          class="portal-table-wrap"
+        >
           <table class="portal-table">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Category</th>
                 <th>Uploaded</th>
-                <th style="text-align: right">Actions</th>
+                <th style="text-align: right">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="file in tournament.files" :key="file.id">
+              <tr
+                v-for="file in tournament.files"
+                :key="file.id"
+              >
                 <td>
                   <a
                     :href="file.url"
@@ -121,35 +167,71 @@
                     rel="noopener noreferrer"
                     class="file-link"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4m-4-6h6m0 0v6m0-6L10 17" />
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4m-4-6h6m0 0v6m0-6L10 17"
+                      />
                     </svg>
                     {{ file.name }}
                   </a>
                 </td>
                 <td>
-                  <span v-if="file.category" class="portal-badge portal-badge--muted">{{ file.category }}</span>
-                  <span v-else class="text-muted">-</span>
+                  <span
+                    v-if="file.category"
+                    class="portal-badge portal-badge--muted"
+                  >{{ file.category }}</span>
+                  <span
+                    v-else
+                    class="text-muted"
+                  >-</span>
                 </td>
                 <td>{{ formatDate(file.uploadedAt) }}</td>
                 <td>
                   <div class="portal-table-actions">
                     <button
                       class="portal-icon-btn"
-                      @click="openEditForm(file)"
                       title="Edit file"
+                      @click="openEditForm(file)"
                     >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      <svg
+                        class="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
                       </svg>
                     </button>
                     <button
                       class="portal-icon-btn portal-icon-btn--danger"
-                      @click="confirmDeleteFile(file.id, file.name)"
                       title="Delete file"
+                      @click="confirmDeleteFile(file.id, file.name)"
                     >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <svg
+                        class="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -160,9 +242,16 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else class="portal-empty">
-          <div class="portal-empty-icon">📄</div>
-          <h3 class="portal-empty-title">No Files Shared</h3>
+        <div
+          v-else
+          class="portal-empty"
+        >
+          <div class="portal-empty-icon">
+            📄
+          </div>
+          <h3 class="portal-empty-title">
+            No Files Shared
+          </h3>
           <p class="portal-empty-desc">
             Add files like rules, schedules, or guides for your tournament
           </p>
@@ -186,8 +275,18 @@
       <div class="portal-modal">
         <div class="flex items-start gap-4 mb-6">
           <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </div>
           <div class="flex-1">
@@ -215,10 +314,24 @@
             :disabled="isProcessing"
             @click="executeDeleteFile"
           >
-            <svg v-if="!isProcessing" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            <svg
+              v-if="!isProcessing"
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
             </svg>
-            <div v-else class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <div
+              v-else
+              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+            />
             <span>{{ isProcessing ? 'Deleting...' : 'Delete File' }}</span>
           </button>
         </div>

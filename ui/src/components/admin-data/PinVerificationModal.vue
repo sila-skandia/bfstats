@@ -29,7 +29,7 @@
             class="w-full px-4 py-3 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50"
             :disabled="loading"
             @keydown.enter="onSubmit"
-          />
+          >
         </div>
 
         <div v-if="mode === 'set'">
@@ -44,10 +44,15 @@
             class="w-full px-4 py-3 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50"
             :disabled="loading"
             @keydown.enter="onSubmit"
-          />
+          >
         </div>
 
-        <p v-if="error" class="text-red-400 text-sm">{{ error }}</p>
+        <p
+          v-if="error"
+          class="text-red-400 text-sm"
+        >
+          {{ error }}
+        </p>
       </div>
 
       <div class="flex justify-end gap-3 px-6 py-4 bg-slate-800/20 border-t border-slate-700/50">

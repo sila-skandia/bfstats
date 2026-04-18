@@ -1,12 +1,20 @@
 <template>
   <div class="tournament-news-feed">
     <!-- Loading State -->
-    <div v-if="loading && items.length === 0" class="flex flex-col items-center justify-center py-16">
+    <div
+      v-if="loading && items.length === 0"
+      class="flex flex-col items-center justify-center py-16"
+    >
       <div
         class="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mb-4"
         :style="{ borderColor: accentColor, borderTopColor: 'transparent' }"
       />
-      <p class="text-sm" :style="{ color: textMutedColor }">Loading news feed...</p>
+      <p
+        class="text-sm"
+        :style="{ color: textMutedColor }"
+      >
+        Loading news feed...
+      </p>
     </div>
 
     <!-- Error State -->
@@ -15,11 +23,21 @@
       class="rounded-xl p-8 text-center border"
       :style="{ backgroundColor: backgroundSoftColor, borderColor: 'transparent' }"
     >
-      <div class="text-4xl mb-4 opacity-50">📰</div>
-      <h3 class="text-lg font-semibold mb-2" :style="{ color: textColor }">
+      <div class="text-4xl mb-4 opacity-50">
+        📰
+      </div>
+      <h3
+        class="text-lg font-semibold mb-2"
+        :style="{ color: textColor }"
+      >
         Unable to Load Feed
       </h3>
-      <p class="text-sm mb-4" :style="{ color: textMutedColor }">{{ error }}</p>
+      <p
+        class="text-sm mb-4"
+        :style="{ color: textMutedColor }"
+      >
+        {{ error }}
+      </p>
       <button
         class="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80"
         :style="{ backgroundColor: accentColor, color: getContrastText(accentColor) }"
@@ -35,19 +53,33 @@
       class="rounded-xl p-8 text-center border"
       :style="{ backgroundColor: backgroundSoftColor, borderColor: 'transparent' }"
     >
-      <div class="text-4xl mb-4 opacity-50">📰</div>
-      <h3 class="text-lg font-semibold mb-2" :style="{ color: textColor }">
+      <div class="text-4xl mb-4 opacity-50">
+        📰
+      </div>
+      <h3
+        class="text-lg font-semibold mb-2"
+        :style="{ color: textColor }"
+      >
         No News Yet
       </h3>
-      <p class="text-sm" :style="{ color: textMutedColor }">
+      <p
+        class="text-sm"
+        :style="{ color: textMutedColor }"
+      >
         Stay tuned for tournament updates, match results, and announcements.
       </p>
     </div>
 
     <!-- Feed Content -->
-    <div v-else class="space-y-6">
+    <div
+      v-else
+      class="space-y-6"
+    >
       <!-- Featured Post (Latest Post) -->
-      <div v-if="featuredPost" class="mb-8">
+      <div
+        v-if="featuredPost"
+        class="mb-8"
+      >
         <TournamentFeedPost
           :post="featuredPost"
           :featured="true"
@@ -59,17 +91,32 @@
       </div>
 
       <!-- Timeline Section Header -->
-      <div v-if="timelineItems.length > 0" class="flex items-center gap-3 mb-4">
-        <div class="h-px flex-grow" :style="{ backgroundColor: getAccentWithOpacity(0.2) }" />
-        <span class="text-xs font-medium uppercase tracking-wider" :style="{ color: textMutedColor }">
+      <div
+        v-if="timelineItems.length > 0"
+        class="flex items-center gap-3 mb-4"
+      >
+        <div
+          class="h-px flex-grow"
+          :style="{ backgroundColor: getAccentWithOpacity(0.2) }"
+        />
+        <span
+          class="text-xs font-medium uppercase tracking-wider"
+          :style="{ color: textMutedColor }"
+        >
           Earlier Updates
         </span>
-        <div class="h-px flex-grow" :style="{ backgroundColor: getAccentWithOpacity(0.2) }" />
+        <div
+          class="h-px flex-grow"
+          :style="{ backgroundColor: getAccentWithOpacity(0.2) }"
+        />
       </div>
 
       <!-- Timeline Items -->
       <div class="space-y-4">
-        <template v-for="item in timelineItems" :key="getItemKey(item)">
+        <template
+          v-for="item in timelineItems"
+          :key="getItemKey(item)"
+        >
           <!-- Post (not featured) -->
           <TournamentFeedPost
             v-if="item.type === 'post' && isPostData(item.data)"
@@ -99,22 +146,43 @@
         class="flex items-center justify-center py-8"
       >
         <!-- Loading indicator while fetching more -->
-        <div v-if="loading" class="flex items-center gap-3">
+        <div
+          v-if="loading"
+          class="flex items-center gap-3"
+        >
           <div
             class="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin"
             :style="{ borderColor: accentColor, borderTopColor: 'transparent' }"
           />
-          <span class="text-sm" :style="{ color: textMutedColor }">Loading more...</span>
+          <span
+            class="text-sm"
+            :style="{ color: textMutedColor }"
+          >Loading more...</span>
         </div>
 
         <!-- End of feed message -->
-        <div v-else-if="!hasMore" class="text-center">
+        <div
+          v-else-if="!hasMore"
+          class="text-center"
+        >
           <div class="flex items-center justify-center gap-4 mb-2">
-            <div class="h-px w-8" :style="{ backgroundColor: getAccentWithOpacity(0.3) }" />
-            <div class="w-2 h-2 rotate-45" :style="{ backgroundColor: accentColor }" />
-            <div class="h-px w-8" :style="{ backgroundColor: getAccentWithOpacity(0.3) }" />
+            <div
+              class="h-px w-8"
+              :style="{ backgroundColor: getAccentWithOpacity(0.3) }"
+            />
+            <div
+              class="w-2 h-2 rotate-45"
+              :style="{ backgroundColor: accentColor }"
+            />
+            <div
+              class="h-px w-8"
+              :style="{ backgroundColor: getAccentWithOpacity(0.3) }"
+            />
           </div>
-          <span class="text-xs" :style="{ color: textMutedColor }">You've reached the beginning</span>
+          <span
+            class="text-xs"
+            :style="{ color: textMutedColor }"
+          >You've reached the beginning</span>
         </div>
       </div>
     </div>

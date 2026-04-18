@@ -13,8 +13,18 @@
         :style="{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}88)` }"
       >
         <div>
-          <h3 class="text-xl font-bold" :style="{ color: accentTextColor }">Create a Team</h3>
-          <p class="text-sm mt-1" :style="{ color: accentTextColor, opacity: 0.8 }">Register your team for the tournament</p>
+          <h3
+            class="text-xl font-bold"
+            :style="{ color: accentTextColor }"
+          >
+            Create a Team
+          </h3>
+          <p
+            class="text-sm mt-1"
+            :style="{ color: accentTextColor, opacity: 0.8 }"
+          >
+            Register your team for the tournament
+          </p>
         </div>
         <button
           class="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white text-xl transition-colors"
@@ -25,17 +35,42 @@
       </div>
 
       <!-- Loading State -->
-      <div v-if="isLoadingPlayerNames" class="p-6 flex items-center justify-center">
-        <svg class="w-8 h-8 animate-spin text-cyan-500" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+      <div
+        v-if="isLoadingPlayerNames"
+        class="p-6 flex items-center justify-center"
+      >
+        <svg
+          class="w-8 h-8 animate-spin text-cyan-500"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          />
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          />
         </svg>
       </div>
 
       <!-- Form -->
-      <form v-else class="p-6 space-y-5" @submit.prevent="handleSubmit">
+      <form
+        v-else
+        class="p-6 space-y-5"
+        @submit.prevent="handleSubmit"
+      >
         <!-- Registration Rules (Collapsible) -->
-        <div v-if="registrationRules" class="border border-slate-700/50 rounded-lg overflow-hidden">
+        <div
+          v-if="registrationRules"
+          class="border border-slate-700/50 rounded-lg overflow-hidden"
+        >
           <button
             type="button"
             class="w-full flex items-center justify-between px-4 py-3 bg-slate-800/40 hover:bg-slate-800/60 transition-colors"
@@ -49,7 +84,12 @@
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 9l-7 7-7-7"
+              />
             </svg>
           </button>
           <div
@@ -82,7 +122,9 @@
             placeholder="Enter team name"
             required
           >
-          <p class="mt-1 text-xs text-slate-400">2-100 characters</p>
+          <p class="mt-1 text-xs text-slate-400">
+            2-100 characters
+          </p>
         </div>
 
         <!-- Tag -->
@@ -97,7 +139,9 @@
             class="w-full px-4 py-3 bg-slate-900/60 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
             placeholder="e.g., [TAG]"
           >
-          <p class="mt-1 text-xs text-slate-400">Up to 20 characters, shown before player names</p>
+          <p class="mt-1 text-xs text-slate-400">
+            Up to 20 characters, shown before player names
+          </p>
         </div>
 
         <!-- Player Name Selection -->
@@ -107,7 +151,10 @@
           </label>
 
           <!-- Existing linked player names -->
-          <div v-if="linkedPlayerNames.length > 0" class="space-y-2 mb-3">
+          <div
+            v-if="linkedPlayerNames.length > 0"
+            class="space-y-2 mb-3"
+          >
             <label
               v-for="player in linkedPlayerNames"
               :key="player.id"
@@ -136,8 +183,14 @@
               </button>
             </div>
 
-            <div v-if="showAddPlayerName || linkedPlayerNames.length === 0" class="space-y-2">
-              <p v-if="linkedPlayerNames.length === 0" class="text-sm text-slate-400 mb-2">
+            <div
+              v-if="showAddPlayerName || linkedPlayerNames.length === 0"
+              class="space-y-2"
+            >
+              <p
+                v-if="linkedPlayerNames.length === 0"
+                class="text-sm text-slate-400 mb-2"
+              >
                 Search for your in-game player name:
               </p>
               <div class="flex gap-2">
@@ -158,7 +211,12 @@
                   {{ isLinkingPlayerName ? '...' : 'Link' }}
                 </button>
               </div>
-              <div v-if="linkPlayerError" class="text-red-400 text-sm">{{ linkPlayerError }}</div>
+              <div
+                v-if="linkPlayerError"
+                class="text-red-400 text-sm"
+              >
+                {{ linkPlayerError }}
+              </div>
             </div>
           </div>
         </div>
@@ -187,10 +245,28 @@
             class="flex-1 px-4 py-3 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             :style="{ backgroundColor: accentColor, color: accentTextColor }"
           >
-            <span v-if="isSubmitting" class="flex items-center justify-center gap-2">
-              <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <span
+              v-if="isSubmitting"
+              class="flex items-center justify-center gap-2"
+            >
+              <svg
+                class="w-5 h-5 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                />
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
               </svg>
               Creating...
             </span>

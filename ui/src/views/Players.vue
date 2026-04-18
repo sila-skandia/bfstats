@@ -1,18 +1,30 @@
 <template>
   <div class="portal-page">
-    <div class="portal-grid" aria-hidden="true" />
+    <div
+      class="portal-grid"
+      aria-hidden="true"
+    />
     <div class="portal-inner">
       <!-- OPERATIVE LOCATOR Hero -->
-      <section class="operative-locator" aria-label="Operative search">
-        <div class="operative-locator__bg" aria-hidden="true" />
-        <div class="operative-locator__scan" aria-hidden="true" />
+      <section
+        class="operative-locator"
+        aria-label="Operative search"
+      >
+        <div
+          class="operative-locator__bg"
+          aria-hidden="true"
+        />
+        <div
+          class="operative-locator__scan"
+          aria-hidden="true"
+        />
         <div class="operative-locator__frame">
           <!-- Terminal chrome -->
           <header class="operative-locator__chrome">
             <span class="operative-locator__led operative-locator__led--red" />
             <span class="operative-locator__led operative-locator__led--amber" />
             <span class="operative-locator__led operative-locator__led--green" />
-            <span class="operative-locator__path">gamefront://operative/locator</span>
+            <span class="operative-locator__path">bfstats://players/search</span>
             <span class="operative-locator__status">
               <span class="operative-locator__status-dot" />
               <span>{{ heroStatusLabel }}</span>
@@ -28,7 +40,10 @@
 
             <!-- Search Input -->
             <div class="operative-locator__search">
-              <span class="operative-locator__caret" aria-hidden="true">&gt;</span>
+              <span
+                class="operative-locator__caret"
+                aria-hidden="true"
+              >&gt;</span>
               <input
                 ref="searchInputRef"
                 v-model="searchQuery"
@@ -53,12 +68,25 @@
                   title="Clear search"
                   @click="clearSearch"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M18 6 6 18"/>
-                    <path d="m6 6 12 12"/>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
                   </svg>
                 </button>
-                <span v-else class="operative-locator__hint">⏎ to run</span>
+                <span
+                  v-else
+                  class="operative-locator__hint"
+                >⏎ to run</span>
               </div>
             </div>
 
@@ -86,9 +114,9 @@
       <!-- Main Content -->
       <div class="w-full max-w-screen-2xl mx-auto px-0 sm:px-4 lg:px-6 pt-2">
         <PlayersPage
-        ref="playersPageRef"
-        :search-query="activeSearchQuery"
-        :manual-search="true"
+          ref="playersPageRef"
+          :search-query="activeSearchQuery"
+          :manual-search="true"
         />
       </div>
     </div>

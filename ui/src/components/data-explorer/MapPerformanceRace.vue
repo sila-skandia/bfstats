@@ -1,28 +1,43 @@
 <template>
   <div class="map-performance-race">
     <!-- Loading state -->
-    <div v-if="loading" class="loading-state">
+    <div
+      v-if="loading"
+      class="loading-state"
+    >
       <div class="explorer-spinner" />
       <span>Loading performance stream...</span>
     </div>
 
     <!-- Error state -->
-    <div v-else-if="error" class="error-state">
+    <div
+      v-else-if="error"
+      class="error-state"
+    >
       {{ error }}
     </div>
 
     <!-- Race chart content -->
-    <div v-else-if="timelineData && timelineData.months.length > 0" class="race-content">
+    <div
+      v-else-if="timelineData && timelineData.months.length > 0"
+      class="race-content"
+    >
       <!-- Compact Toolbar -->
       <div class="race-toolbar">
         <div class="toolbar-left">
           <button
-            @click="togglePlayback"
             :class="['playback-btn', { 'is-playing': isPlaying }]"
             :title="isPlaying ? 'Pause' : 'Play'"
+            @click="togglePlayback"
           >
-            <span v-if="isPlaying" class="icon-pause">||</span>
-            <span v-else class="icon-play">▶</span>
+            <span
+              v-if="isPlaying"
+              class="icon-pause"
+            >||</span>
+            <span
+              v-else
+              class="icon-play"
+            >▶</span>
           </button>
           
           <div class="month-display">
@@ -33,13 +48,13 @@
         <div class="toolbar-center">
           <div class="scrubber-container">
             <input
-              type="range"
               v-model.number="currentMonthIndex"
+              type="range"
               :min="0"
               :max="timelineData.months.length - 1"
               :disabled="isPlaying"
               class="explorer-scrubber"
-            />
+            >
           </div>
         </div>
 
@@ -59,13 +74,21 @@
 
       <!-- Bar chart with animated reordering -->
       <div class="bar-chart">
-        <TransitionGroup name="bar-reorder" tag="div" class="bar-list">
+        <TransitionGroup
+          name="bar-reorder"
+          tag="div"
+          class="bar-list"
+        >
           <div
             v-for="(map, index) in topMaps"
             :key="map.mapName"
             class="bar-row"
           >
-            <div class="bar-label bar-label--clickable" :title="map.mapName" @click.stop="emit('navigateToMap', map.mapName)">
+            <div
+              class="bar-label bar-label--clickable"
+              :title="map.mapName"
+              @click.stop="emit('navigateToMap', map.mapName)"
+            >
               {{ map.mapName }}
             </div>
             <div class="bar-track">
@@ -75,14 +98,19 @@
                 :class="{ 'bar-fill--top': index === 0 }"
               />
             </div>
-            <div class="bar-value">{{ formatValue(map) }}</div>
+            <div class="bar-value">
+              {{ formatValue(map) }}
+            </div>
           </div>
         </TransitionGroup>
       </div>
     </div>
 
     <!-- No data state -->
-    <div v-else class="no-data">
+    <div
+      v-else
+      class="no-data"
+    >
       No performance data stream available
     </div>
   </div>

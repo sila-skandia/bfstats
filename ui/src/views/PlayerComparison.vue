@@ -11,7 +11,6 @@ import HourlyOverlapChart from '../components/HourlyOverlapChart.vue';
 import MapPerformanceTable from '../components/MapPerformanceTable.vue';
 import HeadToHeadTable from '../components/HeadToHeadTable.vue';
 import MilestoneAchievementsSection from '../components/MilestoneAchievementsSection.vue';
-import { formatRelativeTime } from '@/utils/timeUtils';
 import { calculateKDR } from '@/utils/statsUtils';
 
 
@@ -397,270 +396,273 @@ const closeMilestoneAchievementsModal = () => {
 
 <template>
   <div class="portal-page">
-    <div class="portal-grid" aria-hidden="true" />
-    <div class="portal-inner">
-    <!-- Header Section -->
-    <div class="rounded-lg border border-[var(--portal-border)] bg-[var(--portal-surface)] mb-6">
-      <div class="w-full max-w-screen-2xl mx-auto px-0 sm:px-8 lg:px-12 py-6">
-        <div class="text-center mb-8 px-4 sm:px-0">
-          <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">
-            Player Comparison
-          </h1>
-          <p class="text-neutral-400 text-sm">
-            Compare statistics side-by-side
-          </p>
-        </div>
-        
-        <!-- Search Form -->
-        <div 
-          class="flex flex-col lg:flex-row items-center justify-center gap-6 max-w-4xl mx-auto px-4 sm:px-0"
-          @click="hideDropdowns"
-        >
-          <!-- Player 1 Input with Search -->
-          <PlayerSearchInput
-            ref="player1SearchRef"
-            v-model="player1Input"
-            placeholder="Player 1 Name"
-            :player-number="1"
-            @select="(player) => selectPlayer(player, 1)"
-            @enter="handleCompare"
-          />
-
-          <!-- VS Text -->
-          <div class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-400 flex-shrink-0">
-            VS
-          </div>
-
-          <!-- Player 2 Input with Search -->
-          <PlayerSearchInput
-            ref="player2SearchRef"
-            v-model="player2Input"
-            placeholder="Player 2 Name"
-            :player-number="2"
-            :input-ref="player2InputRef"
-            @select="(player) => selectPlayer(player, 2)"
-            @enter="handleCompare"
-          />
-
-          <!-- Compare Button -->
-          <button
-            :disabled="isLoading || !player1Input.trim() || !player2Input.trim()"
-            class="px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:from-neutral-700 disabled:to-neutral-700 text-white font-bold rounded-xl transition-all duration-300 transform hover:scale-105 disabled:scale-100 shadow-lg hover:shadow-purple-500/25 disabled:shadow-none disabled:cursor-not-allowed flex-shrink-0"
-            @click="handleCompare"
-          >
-            <span
-              v-if="isLoading"
-              class="flex items-center gap-2"
-            >
-              <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Comparing...
-            </span>
-            <span
-              v-else
-              class="flex items-center gap-2"
-            >
-              ⚔️ Compare
-            </span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Loading State -->
     <div
-      v-if="isLoading"
-      class="flex items-center justify-center py-20"
-    >
-      <div class="text-center space-y-6">
-        <div class="relative flex items-center justify-center">
-          <div class="w-20 h-20 border-4 border-neutral-700 rounded-full animate-spin" />
-          <div class="absolute w-20 h-20 border-4 border-purple-500 rounded-full border-t-transparent animate-spin" />
-          <div class="absolute w-8 h-8 bg-gradient-to-r from-purple-400 to-blue-500 rounded-full animate-pulse" />
-        </div>
-        <div class="text-lg font-semibold text-white">
-          Fetching player comparison...
-        </div>
-      </div>
-    </div>
-
-    <!-- Error State -->
-    <div
-      v-else-if="error"
-      class="flex items-center justify-center py-20"
-    >
-      <div class="text-center space-y-4">
-        <div class="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/50">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="text-red-400"
-          >
-            <circle
-              cx="12"
-              cy="12"
-              r="10"
-            />
-            <line
-              x1="15"
-              y1="9"
-              x2="9"
-              y2="15"
-            />
-            <line
-              x1="9"
-              y1="9"
-              x2="15"
-              y2="15"
-            />
-          </svg>
-        </div>
-        <div class="text-lg font-semibold text-red-400">
-          {{ error }}
-        </div>
-      </div>
-    </div>
-
-    <!-- Intro State -->
-    <div
-      v-else-if="!comparisonData"
-      class="max-w-4xl mx-auto p-6 text-center py-20"
-    >
-      <div class="space-y-6">
-        <div class="w-16 h-16 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-full flex items-center justify-center border border-purple-500/30 mx-auto">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="32"
-            height="32"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="text-purple-400"
-          >
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle
-              cx="8.5"
-              cy="7"
-              r="4"
-            />
-            <path d="m22 8-5 5" />
-            <path d="m17 8 5 5" />
-          </svg>
-        </div>
-        <div class="text-xl font-medium text-neutral-300">
-          Enter two player names above and click "Compare" to see their stats side-by-side.
-        </div>
-        <div class="text-sm text-neutral-400">
-          Compare performance metrics, activity patterns, and head-to-head encounters between any two players.
-        </div>
-      </div>
-    </div>
-
-    <!-- Comparison Results -->
-    <div
-      v-if="comparisonData"
-      class="w-full max-w-screen-2xl mx-auto px-2 sm:px-8 lg:px-12 py-6 space-y-8"
-    >
-      <!-- Common Servers Selector -->
-      <CommonServersSelector
-        v-if="comparisonData.commonServers && comparisonData.commonServers.length > 0"
-        :common-servers="comparisonData.commonServers"
-        :selected-server-guid="comparisonData.serverDetails?.guid"
-        @select="selectServer"
-        @clear="clearServerFilter"
-      />
-
-      <!-- Summary Panel -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <ComparisonSummary
-          :player-name="comparisonData.player1"
-          :kdr="player1KDR"
-          :player-number="1"
-          :is-winner="parseFloat(player1KDR) > parseFloat(player2KDR)"
-        />
-        <ComparisonSummary
-          :player-name="comparisonData.player2"
-          :kdr="player2KDR"
-          :player-number="2"
-          :is-winner="parseFloat(player2KDR) > parseFloat(player1KDR)"
-        />
-      </div>
-
-      <!-- Core Statistics -->
-      <ComparisonCoreStats
-        :player1-name="comparisonData.player1"
-        :player2-name="comparisonData.player2"
-        :player1-kill-rate="player1KillRate"
-        :player2-kill-rate="player2KillRate"
-        :player1-average-ping="player1AveragePing"
-        :player2-average-ping="player2AveragePing"
-      />
-
-      <!-- Playtime Overlap -->
-      <HourlyOverlapChart
-        v-if="comparisonData.hourlyOverlap && comparisonData.hourlyOverlap.length > 0"
-        :hourly-overlap="comparisonData.hourlyOverlap"
-        :player1-name="comparisonData.player1"
-        :player2-name="comparisonData.player2"
-        :is-dark-mode="isDarkMode"
-        :chart-key="chartKey"
-      />
-
-      <!-- Performance Over Time -->
-      <PerformanceOverTime
-        v-if="comparisonData.bucketTotals && comparisonData.bucketTotals.length > 0"
-        :bucket-totals="comparisonData.bucketTotals"
-        :player1-name="comparisonData.player1"
-        :player2-name="comparisonData.player2"
-      />
-
-      <!-- Map Performance -->
-      <MapPerformanceTable
-        v-if="combinedMapPerformance.length > 0"
-        :map-performance="comparisonData.mapPerformance"
-        :player1-name="comparisonData.player1"
-        :player2-name="comparisonData.player2"
-      />
-        
-      <!-- Head-to-Head Encounters -->
-      <HeadToHeadTable
-        v-if="comparisonData.headToHead && comparisonData.headToHead.length > 0"
-        :head-to-head="comparisonData.headToHead"
-        :player1-name="comparisonData.player1"
-        :player2-name="comparisonData.player2"
-        :player1-input="player1Input"
-        :player2-input="player2Input"
-      />
-
-
-
-      <!-- Milestone Achievements Section -->
-      <MilestoneAchievementsSection
-        v-if="comparisonData && (comparisonData.player1MilestoneAchievements?.length || comparisonData.player2MilestoneAchievements?.length)"
-        :player1-name="comparisonData.player1"
-        :player2-name="comparisonData.player2"
-        :player1-achievements="comparisonData.player1MilestoneAchievements"
-        :player2-achievements="comparisonData.player2MilestoneAchievements"
-        @achievement-click="handleMilestoneAchievementClick"
-      />
-    </div>
-    
-    <!-- Achievement Modal -->
-    <AchievementModal
-      :is-visible="showMilestoneAchievementsModal"
-      :achievement="selectedMilestoneAchievement"
-      :player-name="selectedMilestonePlayer === 1 ? comparisonData?.player1 : selectedMilestonePlayer === 2 ? comparisonData?.player2 : undefined"
-      @close="closeMilestoneAchievementsModal"
+      class="portal-grid"
+      aria-hidden="true"
     />
+    <div class="portal-inner">
+      <!-- Header Section -->
+      <div class="rounded-lg border border-[var(--portal-border)] bg-[var(--portal-surface)] mb-6">
+        <div class="w-full max-w-screen-2xl mx-auto px-0 sm:px-8 lg:px-12 py-6">
+          <div class="text-center mb-8 px-4 sm:px-0">
+            <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">
+              Player Comparison
+            </h1>
+            <p class="text-neutral-400 text-sm">
+              Compare statistics side-by-side
+            </p>
+          </div>
+        
+          <!-- Search Form -->
+          <div 
+            class="flex flex-col lg:flex-row items-center justify-center gap-6 max-w-4xl mx-auto px-4 sm:px-0"
+            @click="hideDropdowns"
+          >
+            <!-- Player 1 Input with Search -->
+            <PlayerSearchInput
+              ref="player1SearchRef"
+              v-model="player1Input"
+              placeholder="Player 1 Name"
+              :player-number="1"
+              @select="(player) => selectPlayer(player, 1)"
+              @enter="handleCompare"
+            />
+
+            <!-- VS Text -->
+            <div class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-400 flex-shrink-0">
+              VS
+            </div>
+
+            <!-- Player 2 Input with Search -->
+            <PlayerSearchInput
+              ref="player2SearchRef"
+              v-model="player2Input"
+              placeholder="Player 2 Name"
+              :player-number="2"
+              :input-ref="player2InputRef"
+              @select="(player) => selectPlayer(player, 2)"
+              @enter="handleCompare"
+            />
+
+            <!-- Compare Button -->
+            <button
+              :disabled="isLoading || !player1Input.trim() || !player2Input.trim()"
+              class="px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:from-neutral-700 disabled:to-neutral-700 text-white font-bold rounded-xl transition-all duration-300 transform hover:scale-105 disabled:scale-100 shadow-lg hover:shadow-purple-500/25 disabled:shadow-none disabled:cursor-not-allowed flex-shrink-0"
+              @click="handleCompare"
+            >
+              <span
+                v-if="isLoading"
+                class="flex items-center gap-2"
+              >
+                <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Comparing...
+              </span>
+              <span
+                v-else
+                class="flex items-center gap-2"
+              >
+                ⚔️ Compare
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div
+        v-if="isLoading"
+        class="flex items-center justify-center py-20"
+      >
+        <div class="text-center space-y-6">
+          <div class="relative flex items-center justify-center">
+            <div class="w-20 h-20 border-4 border-neutral-700 rounded-full animate-spin" />
+            <div class="absolute w-20 h-20 border-4 border-purple-500 rounded-full border-t-transparent animate-spin" />
+            <div class="absolute w-8 h-8 bg-gradient-to-r from-purple-400 to-blue-500 rounded-full animate-pulse" />
+          </div>
+          <div class="text-lg font-semibold text-white">
+            Fetching player comparison...
+          </div>
+        </div>
+      </div>
+
+      <!-- Error State -->
+      <div
+        v-else-if="error"
+        class="flex items-center justify-center py-20"
+      >
+        <div class="text-center space-y-4">
+          <div class="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/50">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="text-red-400"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+              />
+              <line
+                x1="15"
+                y1="9"
+                x2="9"
+                y2="15"
+              />
+              <line
+                x1="9"
+                y1="9"
+                x2="15"
+                y2="15"
+              />
+            </svg>
+          </div>
+          <div class="text-lg font-semibold text-red-400">
+            {{ error }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Intro State -->
+      <div
+        v-else-if="!comparisonData"
+        class="max-w-4xl mx-auto p-6 text-center py-20"
+      >
+        <div class="space-y-6">
+          <div class="w-16 h-16 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-full flex items-center justify-center border border-purple-500/30 mx-auto">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="text-purple-400"
+            >
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle
+                cx="8.5"
+                cy="7"
+                r="4"
+              />
+              <path d="m22 8-5 5" />
+              <path d="m17 8 5 5" />
+            </svg>
+          </div>
+          <div class="text-xl font-medium text-neutral-300">
+            Enter two player names above and click "Compare" to see their stats side-by-side.
+          </div>
+          <div class="text-sm text-neutral-400">
+            Compare performance metrics, activity patterns, and head-to-head encounters between any two players.
+          </div>
+        </div>
+      </div>
+
+      <!-- Comparison Results -->
+      <div
+        v-if="comparisonData"
+        class="w-full max-w-screen-2xl mx-auto px-2 sm:px-8 lg:px-12 py-6 space-y-8"
+      >
+        <!-- Common Servers Selector -->
+        <CommonServersSelector
+          v-if="comparisonData.commonServers && comparisonData.commonServers.length > 0"
+          :common-servers="comparisonData.commonServers"
+          :selected-server-guid="comparisonData.serverDetails?.guid"
+          @select="selectServer"
+          @clear="clearServerFilter"
+        />
+
+        <!-- Summary Panel -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <ComparisonSummary
+            :player-name="comparisonData.player1"
+            :kdr="player1KDR"
+            :player-number="1"
+            :is-winner="parseFloat(player1KDR) > parseFloat(player2KDR)"
+          />
+          <ComparisonSummary
+            :player-name="comparisonData.player2"
+            :kdr="player2KDR"
+            :player-number="2"
+            :is-winner="parseFloat(player2KDR) > parseFloat(player1KDR)"
+          />
+        </div>
+
+        <!-- Core Statistics -->
+        <ComparisonCoreStats
+          :player1-name="comparisonData.player1"
+          :player2-name="comparisonData.player2"
+          :player1-kill-rate="player1KillRate"
+          :player2-kill-rate="player2KillRate"
+          :player1-average-ping="player1AveragePing"
+          :player2-average-ping="player2AveragePing"
+        />
+
+        <!-- Playtime Overlap -->
+        <HourlyOverlapChart
+          v-if="comparisonData.hourlyOverlap && comparisonData.hourlyOverlap.length > 0"
+          :hourly-overlap="comparisonData.hourlyOverlap"
+          :player1-name="comparisonData.player1"
+          :player2-name="comparisonData.player2"
+          :is-dark-mode="isDarkMode"
+          :chart-key="chartKey"
+        />
+
+        <!-- Performance Over Time -->
+        <PerformanceOverTime
+          v-if="comparisonData.bucketTotals && comparisonData.bucketTotals.length > 0"
+          :bucket-totals="comparisonData.bucketTotals"
+          :player1-name="comparisonData.player1"
+          :player2-name="comparisonData.player2"
+        />
+
+        <!-- Map Performance -->
+        <MapPerformanceTable
+          v-if="combinedMapPerformance.length > 0"
+          :map-performance="comparisonData.mapPerformance"
+          :player1-name="comparisonData.player1"
+          :player2-name="comparisonData.player2"
+        />
+        
+        <!-- Head-to-Head Encounters -->
+        <HeadToHeadTable
+          v-if="comparisonData.headToHead && comparisonData.headToHead.length > 0"
+          :head-to-head="comparisonData.headToHead"
+          :player1-name="comparisonData.player1"
+          :player2-name="comparisonData.player2"
+          :player1-input="player1Input"
+          :player2-input="player2Input"
+        />
+
+
+
+        <!-- Milestone Achievements Section -->
+        <MilestoneAchievementsSection
+          v-if="comparisonData && (comparisonData.player1MilestoneAchievements?.length || comparisonData.player2MilestoneAchievements?.length)"
+          :player1-name="comparisonData.player1"
+          :player2-name="comparisonData.player2"
+          :player1-achievements="comparisonData.player1MilestoneAchievements"
+          :player2-achievements="comparisonData.player2MilestoneAchievements"
+          @achievement-click="handleMilestoneAchievementClick"
+        />
+      </div>
+    
+      <!-- Achievement Modal -->
+      <AchievementModal
+        :is-visible="showMilestoneAchievementsModal"
+        :achievement="selectedMilestoneAchievement"
+        :player-name="selectedMilestonePlayer === 1 ? comparisonData?.player1 : selectedMilestonePlayer === 2 ? comparisonData?.player2 : undefined"
+        @close="closeMilestoneAchievementsModal"
+      />
     </div>
   </div>
 </template>
