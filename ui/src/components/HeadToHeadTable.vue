@@ -173,7 +173,10 @@ const sortedHeadToHead = computed(() => {
                     {{ formatTime(encounter.timestamp) }}
                   </div>
                 </router-link>
-                <div v-else class="flex flex-col gap-1 p-2">
+                <div
+                  v-else
+                  class="flex flex-col gap-1 p-2"
+                >
                   <div class="text-slate-200 font-bold text-xs">
                     {{ formatDate(encounter.timestamp) }}
                   </div>

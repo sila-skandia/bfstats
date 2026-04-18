@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatDistanceToNow } from 'date-fns'
 import type { PlayerCommunity } from '@/services/playerRelationshipsApi'
 
 const props = defineProps<{
@@ -70,14 +69,23 @@ const retentionRate = computed(() => {
       <div class="explorer-card-body">
         <div class="flex items-center justify-between mb-4">
           <div>
-            <div class="text-xs text-neutral-500 uppercase tracking-wider mb-1">CURRENT STATUS</div>
-            <div class="text-2xl font-bold text-neutral-200 font-mono">{{ activityLevel }}</div>
+            <div class="text-xs text-neutral-500 uppercase tracking-wider mb-1">
+              CURRENT STATUS
+            </div>
+            <div class="text-2xl font-bold text-neutral-200 font-mono">
+              {{ activityLevel }}
+            </div>
           </div>
-          <div :class="statusColor" class="text-center">
+          <div
+            :class="statusColor"
+            class="text-center"
+          >
             <div class="text-3xl mb-2">
               {{ daysSinceActive === 0 ? '🔴' : daysSinceActive < 7 ? '🟢' : daysSinceActive < 30 ? '🟡' : '⚫' }}
             </div>
-            <div class="text-sm font-mono">{{ activityStatus }}</div>
+            <div class="text-sm font-mono">
+              {{ activityStatus }}
+            </div>
           </div>
         </div>
       </div>
@@ -86,7 +94,9 @@ const retentionRate = computed(() => {
     <!-- Timeline -->
     <div class="explorer-card">
       <div class="explorer-card-header">
-        <h2 class="font-mono font-bold text-cyan-300">ACTIVITY TIMELINE</h2>
+        <h2 class="font-mono font-bold text-cyan-300">
+          ACTIVITY TIMELINE
+        </h2>
       </div>
       <div class="explorer-card-body">
         <div class="space-y-4">
@@ -95,24 +105,39 @@ const retentionRate = computed(() => {
             <div class="absolute left-0 top-1 w-4 h-4 bg-cyan-500 rounded-full" />
             <div class="absolute left-1.5 top-5 w-1 h-12 bg-neutral-700" />
             <div>
-              <div class="text-xs text-neutral-500 uppercase tracking-wider">Community Formed</div>
-              <div class="text-sm text-neutral-300 font-mono">{{ formatDate(props.community.formationDate) }}</div>
-              <div class="text-xs text-neutral-600 mt-1">{{ daysActive }} days ago</div>
+              <div class="text-xs text-neutral-500 uppercase tracking-wider">
+                Community Formed
+              </div>
+              <div class="text-sm text-neutral-300 font-mono">
+                {{ formatDate(props.community.formationDate) }}
+              </div>
+              <div class="text-xs text-neutral-600 mt-1">
+                {{ daysActive }} days ago
+              </div>
             </div>
           </div>
 
           <!-- Last Active -->
           <div class="relative pl-8">
-            <div :class="{
-              'bg-green-500': daysSinceActive === 0,
-              'bg-cyan-500': daysSinceActive < 7,
-              'bg-yellow-500': daysSinceActive < 30,
-              'bg-orange-500': daysSinceActive >= 30
-            }" class="absolute left-0 top-1 w-4 h-4 rounded-full" />
+            <div
+              :class="{
+                'bg-green-500': daysSinceActive === 0,
+                'bg-cyan-500': daysSinceActive < 7,
+                'bg-yellow-500': daysSinceActive < 30,
+                'bg-orange-500': daysSinceActive >= 30
+              }"
+              class="absolute left-0 top-1 w-4 h-4 rounded-full"
+            />
             <div>
-              <div class="text-xs text-neutral-500 uppercase tracking-wider">Last Activity</div>
-              <div class="text-sm text-neutral-300 font-mono">{{ formatDateWithTime(props.community.lastActiveDate) }}</div>
-              <div class="text-xs text-neutral-600 mt-1">{{ activityStatus }}</div>
+              <div class="text-xs text-neutral-500 uppercase tracking-wider">
+                Last Activity
+              </div>
+              <div class="text-sm text-neutral-300 font-mono">
+                {{ formatDateWithTime(props.community.lastActiveDate) }}
+              </div>
+              <div class="text-xs text-neutral-600 mt-1">
+                {{ activityStatus }}
+              </div>
             </div>
           </div>
         </div>
@@ -123,20 +148,32 @@ const retentionRate = computed(() => {
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Days Active</div>
-          <div class="text-2xl font-bold text-cyan-400 font-mono">{{ daysActive }}</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Days Active
+          </div>
+          <div class="text-2xl font-bold text-cyan-400 font-mono">
+            {{ daysActive }}
+          </div>
         </div>
       </div>
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Days Since Active</div>
-          <div class="text-2xl font-bold text-yellow-400 font-mono">{{ daysSinceActive }}</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Days Since Active
+          </div>
+          <div class="text-2xl font-bold text-yellow-400 font-mono">
+            {{ daysSinceActive }}
+          </div>
         </div>
       </div>
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Retention Rate</div>
-          <div class="text-2xl font-bold text-green-400 font-mono">{{ retentionRate }}%</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Retention Rate
+          </div>
+          <div class="text-2xl font-bold text-green-400 font-mono">
+            {{ retentionRate }}%
+          </div>
         </div>
       </div>
     </div>
@@ -144,7 +181,9 @@ const retentionRate = computed(() => {
     <!-- Activity Info -->
     <div class="explorer-card">
       <div class="explorer-card-header">
-        <h2 class="font-mono font-bold text-cyan-300">INSIGHTS</h2>
+        <h2 class="font-mono font-bold text-cyan-300">
+          INSIGHTS
+        </h2>
       </div>
       <div class="explorer-card-body space-y-3 text-sm">
         <div class="p-3 bg-neutral-800/50 rounded">
@@ -171,7 +210,9 @@ const retentionRate = computed(() => {
     <!-- Activity Indicators -->
     <div class="explorer-card">
       <div class="explorer-card-header">
-        <h2 class="font-mono font-bold text-cyan-300">STATUS INDICATORS</h2>
+        <h2 class="font-mono font-bold text-cyan-300">
+          STATUS INDICATORS
+        </h2>
       </div>
       <div class="explorer-card-body space-y-2">
         <div class="flex items-center gap-3 text-sm">

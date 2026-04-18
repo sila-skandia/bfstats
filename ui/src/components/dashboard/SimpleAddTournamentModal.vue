@@ -11,11 +11,21 @@
         </h2>
         <button
           class="portal-modal-close"
-          @click="$emit('close')"
           title="Close"
+          @click="$emit('close')"
         >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
@@ -50,8 +60,8 @@
           <button
             type="button"
             class="portal-btn portal-btn--ghost"
-            @click="$emit('close')"
             :disabled="loading"
+            @click="$emit('close')"
           >
             Cancel
           </button>

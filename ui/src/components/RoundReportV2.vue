@@ -508,32 +508,95 @@ const shouldShowTickets = computed(() => {
   const { tickets1, tickets2 } = roundReport.value.round;
   return tickets1 !== null && tickets1 !== undefined && tickets1 >= 0;
 });
+
+// Highlights filtered to current playback time
+const visibleHighlights = computed(() => {
+  if (!battleHighlights.value.length || !batchUpdateEvents.value.length) return [];
+
+  const currentBatch = batchUpdateEvents.value[visibleEventIndex.value];
+  if (!currentBatch) return [];
+
+  const cutoffTime = new Date(currentBatch.timestamp).getTime();
+  return battleHighlights.value.filter(h => new Date(h.timestamp).getTime() <= cutoffTime);
+});
 </script>
 
 <template>
   <div class="min-h-screen bg-[#0a0a0f] text-slate-300 font-sans selection:bg-cyan-500/30">
     <!-- Fullscreen War Room Overlay -->
     <Transition name="fade">
-      <div v-if="isFullscreen" class="fixed top-0 left-0 bottom-0 right-0 md:right-20 z-[9999] bg-[#05050a]/98 backdrop-blur-2xl flex flex-col p-4 md:p-8">
+      <div
+        v-if="isFullscreen"
+        class="fixed top-0 left-0 bottom-0 right-0 md:right-20 z-[9999] bg-[#05050a]/98 backdrop-blur-2xl flex flex-col p-4 md:p-8"
+      >
         <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 border-b border-white/5 pb-4 gap-4">
           <div class="flex items-center gap-4">
             <div class="hidden md:block w-1 h-6 bg-cyan-500 shadow-[0_0_12px_rgba(0,229,255,0.6)]" />
-            <h2 class="text-xl md:text-2xl font-black text-white uppercase tracking-[0.2em] md:tracking-[0.4em] italic">War Room</h2>
-            <div v-if="roundReport" class="hidden sm:block px-3 py-1 bg-cyan-500/10 border border-cyan-500/30 text-[8px] md:text-[10px] font-mono text-cyan-400 uppercase tracking-widest truncate max-w-[150px] md:max-w-none">{{ roundReport.round.mapName }}</div>
+            <h2 class="text-xl md:text-2xl font-black text-white uppercase tracking-[0.2em] md:tracking-[0.4em] italic">
+              War Room
+            </h2>
+            <div
+              v-if="roundReport"
+              class="hidden sm:block px-3 py-1 bg-cyan-500/10 border border-cyan-500/30 text-[8px] md:text-[10px] font-mono text-cyan-400 uppercase tracking-widest truncate max-w-[150px] md:max-w-none"
+            >
+              {{ roundReport.round.mapName }}
+            </div>
           </div>
           
           <div class="flex items-center justify-between w-full md:w-auto gap-4 md:gap-6">
             <!-- Playback in Fullscreen -->
             <div class="flex items-center gap-1 md:gap-2 bg-black/40 rounded p-1 border border-white/10 flex-1 md:flex-none justify-center">
-              <button @click="resetPlayback" class="p-1 md:p-2 hover:text-white transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/></svg></button>
-              <button @click="togglePlayback" class="px-3 md:px-6 py-1.5 md:py-2 bg-cyan-500 text-black text-[10px] md:text-xs font-black uppercase tracking-widest hover:bg-white transition-all rounded">
+              <button
+                class="p-1 md:p-2 hover:text-white transition-colors"
+                @click="resetPlayback"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                ><path d="m11 17-5-5 5-5M18 17l-5-5 5-5" /></svg>
+              </button>
+              <button
+                class="px-3 md:px-6 py-1.5 md:py-2 bg-cyan-500 text-black text-[10px] md:text-xs font-black uppercase tracking-widest hover:bg-white transition-all rounded"
+                @click="togglePlayback"
+              >
                 {{ isPlaying ? 'PAUSE' : 'RESUME' }}
               </button>
-              <button @click="jumpToEnd" class="p-1 md:p-2 hover:text-white transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 17 5-5-5-5M13 17l5-5-5-5"/></svg></button>
+              <button
+                class="p-1 md:p-2 hover:text-white transition-colors"
+                @click="jumpToEnd"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                ><path d="m6 17 5-5-5-5M13 17l5-5-5-5" /></svg>
+              </button>
             </div>
 
-            <button @click="isFullscreen = false" class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/50 transition-all text-slate-400 hover:text-red-400 shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" md:width="24" md:height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            <button
+              class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/50 transition-all text-slate-400 hover:text-red-400 shrink-0"
+              @click="isFullscreen = false"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                md:width="24"
+                md:height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              ><path d="M18 6 6 18M6 6l12 12" /></svg>
             </button>
           </div>
         </div>
@@ -551,8 +614,12 @@ const shouldShowTickets = computed(() => {
         </div>
 
         <div class="mt-8 flex justify-between items-center px-4 opacity-40">
-           <div class="text-[10px] font-mono tracking-[0.5em] text-slate-500">TACTICAL_STRATEGIC_VIEWPORT_v1.0</div>
-           <div class="text-[10px] font-mono text-slate-500 uppercase">PRESS [ESC] TO DISENGAGE</div>
+          <div class="text-[10px] font-mono tracking-[0.5em] text-slate-500">
+            TACTICAL_STRATEGIC_VIEWPORT_v1.0
+          </div>
+          <div class="text-[10px] font-mono text-slate-500 uppercase">
+            PRESS [ESC] TO DISENGAGE
+          </div>
         </div>
       </div>
     </Transition>
@@ -563,37 +630,83 @@ const shouldShowTickets = computed(() => {
       <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/5 rounded-full blur-[120px]" />
     </div>
 
-    <div v-if="loading" class="flex flex-col items-center justify-center min-h-screen">
+    <div
+      v-if="loading"
+      class="flex flex-col items-center justify-center min-h-screen"
+    >
       <div class="w-16 h-16 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-4" />
-      <div class="font-mono text-cyan-400 animate-pulse tracking-widest uppercase text-sm">Initializing Link...</div>
+      <div class="font-mono text-cyan-400 animate-pulse tracking-widest uppercase text-sm">
+        Initializing Link...
+      </div>
     </div>
 
-    <div v-else-if="error" class="flex flex-col items-center justify-center min-h-screen p-6">
+    <div
+      v-else-if="error"
+      class="flex flex-col items-center justify-center min-h-screen p-6"
+    >
       <div class="rr-card p-12 text-center max-w-lg">
-        <div class="text-6xl mb-6">⚠️</div>
-        <h2 class="text-2xl font-bold text-white mb-2 uppercase tracking-tight">Data Sync Error</h2>
-        <p class="text-slate-400 mb-8 font-mono text-sm">{{ error }}</p>
-        <button @click="goBack" class="px-8 py-3 bg-cyan-500/10 border border-cyan-500/50 text-cyan-400 font-mono text-sm uppercase tracking-widest hover:bg-cyan-500/20 transition-all">
+        <div class="text-6xl mb-6">
+          ⚠️
+        </div>
+        <h2 class="text-2xl font-bold text-white mb-2 uppercase tracking-tight">
+          Data Sync Error
+        </h2>
+        <p class="text-slate-400 mb-8 font-mono text-sm">
+          {{ error }}
+        </p>
+        <button
+          class="px-8 py-3 bg-cyan-500/10 border border-cyan-500/50 text-cyan-400 font-mono text-sm uppercase tracking-widest hover:bg-cyan-500/20 transition-all"
+          @click="goBack"
+        >
           Return to Base
         </button>
       </div>
     </div>
 
-    <div v-else-if="roundReport" class="relative z-10 px-4 py-6 lg:px-8 max-w-[1600px] mx-auto">
+    <div
+      v-else-if="roundReport"
+      class="relative z-10 px-4 py-6 lg:px-8 max-w-[1600px] mx-auto"
+    >
       <!-- Header Section -->
       <header class="rr-header-card mb-8 p-6 lg:p-8 rounded-xl relative overflow-hidden">
         <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
-          <svg width="200" height="200" viewBox="0 0 100 100" class="text-cyan-400">
-            <path d="M0 0 L100 0 L100 10 L0 10 Z" fill="currentColor" />
-            <path d="M0 20 L80 20 L80 30 L0 30 Z" fill="currentColor" />
-            <path d="M0 40 L60 40 L60 50 L0 50 Z" fill="currentColor" />
+          <svg
+            width="200"
+            height="200"
+            viewBox="0 0 100 100"
+            class="text-cyan-400"
+          >
+            <path
+              d="M0 0 L100 0 L100 10 L0 10 Z"
+              fill="currentColor"
+            />
+            <path
+              d="M0 20 L80 20 L80 30 L0 30 Z"
+              fill="currentColor"
+            />
+            <path
+              d="M0 40 L60 40 L60 50 L0 50 Z"
+              fill="currentColor"
+            />
           </svg>
         </div>
 
         <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
           <div class="flex items-center gap-6">
-            <button @click="goBack" class="w-12 h-12 flex items-center justify-center rounded-full border border-slate-700 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all group">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="group-hover:text-cyan-400 transition-colors"><path d="m15 18-6-6 6-6"/></svg>
+            <button
+              class="w-12 h-12 flex items-center justify-center rounded-full border border-slate-700 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all group"
+              @click="goBack"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                class="group-hover:text-cyan-400 transition-colors"
+              ><path d="m15 18-6-6 6-6" /></svg>
             </button>
             <div>
               <div class="flex items-center gap-3 mb-1">
@@ -611,15 +724,26 @@ const shouldShowTickets = computed(() => {
           </div>
 
           <!-- Ticket Counter -->
-          <div v-if="shouldShowTickets" class="flex items-center gap-8 lg:gap-16 bg-black/40 px-8 py-4 rounded-xl border border-white/5 backdrop-blur-md">
+          <div
+            v-if="shouldShowTickets"
+            class="flex items-center gap-8 lg:gap-16 bg-black/40 px-8 py-4 rounded-xl border border-white/5 backdrop-blur-md"
+          >
             <div class="text-center">
-              <div class="text-[10px] font-mono text-blue-400 uppercase mb-1 tracking-widest">{{ roundReport.round.team1Label || 'ALPHA' }}</div>
-              <div class="text-4xl font-black text-white font-mono">{{ roundReport.round.tickets1 }}</div>
+              <div class="text-[10px] font-mono text-blue-400 uppercase mb-1 tracking-widest">
+                {{ roundReport.round.team1Label || 'ALPHA' }}
+              </div>
+              <div class="text-4xl font-black text-white font-mono">
+                {{ roundReport.round.tickets1 }}
+              </div>
             </div>
             <div class="h-12 w-px bg-white/10" />
             <div class="text-center">
-              <div class="text-[10px] font-mono text-red-400 uppercase mb-1 tracking-widest">{{ roundReport.round.team2Label || 'BRAVO' }}</div>
-              <div class="text-4xl font-black text-white font-mono">{{ roundReport.round.tickets2 }}</div>
+              <div class="text-[10px] font-mono text-red-400 uppercase mb-1 tracking-widest">
+                {{ roundReport.round.team2Label || 'BRAVO' }}
+              </div>
+              <div class="text-4xl font-black text-white font-mono">
+                {{ roundReport.round.tickets2 }}
+              </div>
             </div>
           </div>
         </div>
@@ -627,10 +751,8 @@ const shouldShowTickets = computed(() => {
 
       <!-- Main Dashboard Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-        
         <!-- Left Column: Combat Feed (Col 8) -->
         <div class="lg:col-span-8 flex flex-col gap-8 h-[800px]">
-          
           <!-- Summary Stats Row -->
           <div v-if="roundSummary">
             <BattleSummary :summary="roundSummary" />
@@ -638,11 +760,12 @@ const shouldShowTickets = computed(() => {
 
           <!-- Console & Timeline Container -->
           <div class="flex-1 rr-card overflow-hidden flex flex-row">
-            
             <!-- Vertical Time Navigator -->
             <div class="time-navigator custom-scrollbar overflow-y-auto">
               <div class="p-3 border-b border-white/5 text-center">
-                <div class="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Time</div>
+                <div class="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
+                  Time
+                </div>
               </div>
               <div 
                 v-for="(cp, idx) in timeCheckpoints" 
@@ -668,54 +791,117 @@ const shouldShowTickets = computed(() => {
                   <!-- View Mode Toggle -->
                   <div class="flex items-center gap-1 bg-black/60 rounded p-0.5 border border-white/10 ml-2">
                     <button 
-                      @click="showGraphicalView = false" 
-                      class="px-2 py-1 text-[8px] font-mono tracking-tighter uppercase transition-all"
+                      class="px-2 py-1 text-[8px] font-mono tracking-tighter uppercase transition-all" 
                       :class="!showGraphicalView ? 'bg-cyan-500 text-black font-bold' : 'text-slate-500 hover:text-slate-300'"
-                    >LOG</button>
+                      @click="showGraphicalView = false"
+                    >
+                      LOG
+                    </button>
                     <button 
-                      @click="showGraphicalView = true" 
-                      class="px-2 py-1 text-[8px] font-mono tracking-tighter uppercase transition-all"
+                      class="px-2 py-1 text-[8px] font-mono tracking-tighter uppercase transition-all" 
                       :class="showGraphicalView ? 'bg-cyan-500 text-black font-bold' : 'text-slate-500 hover:text-slate-300'"
-                    >GFX</button>
+                      @click="showGraphicalView = true"
+                    >
+                      GFX
+                    </button>
                     <button 
                       v-if="showGraphicalView"
-                      @click="isFullscreen = true" 
-                      class="px-2 py-1 text-[8px] font-mono tracking-tighter uppercase text-slate-500 hover:text-cyan-400 border-l border-white/5"
-                    >MAX</button>
+                      class="px-2 py-1 text-[8px] font-mono tracking-tighter uppercase text-slate-500 hover:text-cyan-400 border-l border-white/5" 
+                      @click="isFullscreen = true"
+                    >
+                      MAX
+                    </button>
                   </div>
 
                   <div class="flex items-center gap-1 bg-black/40 rounded p-0.5 border border-white/5">
-                    <button @click="resetPlayback" class="p-1 hover:text-white transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/></svg></button>
-                    <button @click="togglePlayback" class="px-3 py-1 bg-cyan-500 text-black text-[10px] font-bold uppercase tracking-widest hover:bg-white transition-all">
+                    <button
+                      class="p-1 hover:text-white transition-colors"
+                      @click="resetPlayback"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      ><path d="m11 17-5-5 5-5M18 17l-5-5 5-5" /></svg>
+                    </button>
+                    <button
+                      class="px-3 py-1 bg-cyan-500 text-black text-[10px] font-bold uppercase tracking-widest hover:bg-white transition-all"
+                      @click="togglePlayback"
+                    >
                       {{ isPlaying ? 'PAUSE' : 'PLAY' }}
                     </button>
-                    <button @click="jumpToEnd" class="p-1 hover:text-white transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 17 5-5-5-5M13 17l5-5-5-5"/></svg></button>
+                    <button
+                      class="p-1 hover:text-white transition-colors"
+                      @click="jumpToEnd"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      ><path d="m6 17 5-5-5-5M13 17l5-5-5-5" /></svg>
+                    </button>
                   </div>
-                  <select v-model="playbackSpeed" class="bg-black/40 border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-slate-400 focus:outline-none focus:border-cyan-500/50">
-                    <option :value="1600">0.5X</option>
-                    <option :value="800">1.0X</option>
-                    <option :value="400">2.0X</option>
+                  <select
+                    v-model="playbackSpeed"
+                    class="bg-black/40 border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-slate-400 focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option :value="1600">
+                      0.5X
+                    </option>
+                    <option :value="800">
+                      1.0X
+                    </option>
+                    <option :value="400">
+                      2.0X
+                    </option>
                   </select>
                 </div>
 
                 <div class="hidden md:flex items-center gap-4">
-                  <div v-if="!showGraphicalView" class="flex items-center gap-3">
-                    <label v-for="opt in [
-                      { label: 'JOIN', model: 'showJoinEvents' },
-                      { label: 'DEATH', model: 'showDeathEvents' },
-                      { label: 'CRIT', model: 'highlightsOnly' }
-                    ]" :key="opt.label" class="flex items-center gap-1.5 cursor-pointer group">
-                      <input type="checkbox" v-model="(this as any)[opt.model]" class="sr-only peer">
+                  <div
+                    v-if="!showGraphicalView"
+                    class="flex items-center gap-3"
+                  >
+                    <label
+                      v-for="opt in [
+                        { label: 'JOIN', model: 'showJoinEvents' },
+                        { label: 'DEATH', model: 'showDeathEvents' },
+                        { label: 'CRIT', model: 'highlightsOnly' }
+                      ]"
+                      :key="opt.label"
+                      class="flex items-center gap-1.5 cursor-pointer group"
+                    >
+                      <input
+                        v-model="(this as any)[opt.model]"
+                        type="checkbox"
+                        class="sr-only peer"
+                      >
                       <div class="w-2 h-2 rounded-full border border-slate-600 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-all" />
                       <span class="text-[9px] font-mono text-slate-500 group-hover:text-slate-300 uppercase tracking-widest">{{ opt.label }}</span>
                     </label>
                   </div>
-                  <input v-model="trackedPlayer" type="text" placeholder="TRACK_PLAYER_" class="bg-black/60 border border-white/10 rounded px-3 py-1 text-[10px] font-mono text-cyan-400 placeholder:text-slate-700 w-32 focus:outline-none focus:border-cyan-500/50">
+                  <input
+                    v-model="trackedPlayer"
+                    type="text"
+                    placeholder="TRACK_PLAYER_"
+                    class="bg-black/60 border border-white/10 rounded px-3 py-1 text-[10px] font-mono text-cyan-400 placeholder:text-slate-700 w-32 focus:outline-none focus:border-cyan-500/50"
+                  >
                 </div>
               </div>
 
               <!-- Content Area: Switch between Console and Visualizer -->
-              <div v-if="showGraphicalView" class="flex-1 overflow-hidden">
+              <div
+                v-if="showGraphicalView"
+                class="flex-1 overflow-hidden"
+              >
                 <BattleVisualizer 
                   :round-report="roundReport" 
                   :battle-events="battleEvents" 
@@ -726,13 +912,35 @@ const shouldShowTickets = computed(() => {
               </div>
 
               <!-- Console Lines -->
-              <div v-else ref="consoleElement" class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                <div v-if="visibleEvents.length === 0" class="h-full flex flex-col items-center justify-center opacity-20 pointer-events-none">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" class="mb-4"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-                  <div class="font-mono text-xs uppercase tracking-[0.4em]">Ready for Playback</div>
+              <div
+                v-else
+                ref="consoleElement"
+                class="flex-1 overflow-y-auto p-4 custom-scrollbar"
+              >
+                <div
+                  v-if="visibleEvents.length === 0"
+                  class="h-full flex flex-col items-center justify-center opacity-20 pointer-events-none"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="48"
+                    height="48"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1"
+                    class="mb-4"
+                  ><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
+                  <div class="font-mono text-xs uppercase tracking-[0.4em]">
+                    Ready for Playback
+                  </div>
                 </div>
                 
-                <div v-for="(event, index) in visibleEventsReversed" :key="index" :class="getEventStyling(event, visibleEvents.length - 1 - index)">
+                <div
+                  v-for="(event, index) in visibleEventsReversed"
+                  :key="index"
+                  :class="getEventStyling(event, visibleEvents.length - 1 - index)"
+                >
                   <div class="flex items-start gap-4 animate-slide-in">
                     <span class="text-slate-600 w-12 shrink-0 font-mono text-[10px]">{{ formatTimeOffset(event.timestamp) }}</span>
                     <span class="shrink-0">{{ event.icon }}</span>
@@ -748,16 +956,26 @@ const shouldShowTickets = computed(() => {
         <div class="lg:col-span-4 flex flex-col h-[800px]">
           <div class="rr-card flex-1 overflow-hidden flex flex-col">
             <div class="p-5 border-b border-white/5 flex items-center justify-between bg-white/5">
-              <h3 class="font-black text-white uppercase tracking-widest text-sm italic">Ladder</h3>
+              <h3 class="font-black text-white uppercase tracking-widest text-sm italic">
+                Ladder
+              </h3>
               <label class="flex items-center gap-2 cursor-pointer">
                 <span class="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Live Mode</span>
-                <input type="checkbox" v-model="showLiveLadder" class="sr-only peer">
+                <input
+                  v-model="showLiveLadder"
+                  type="checkbox"
+                  class="sr-only peer"
+                >
                 <div class="w-8 h-4 bg-slate-800 rounded-full relative peer peer-checked:bg-cyan-500 transition-all after:content-[''] after:absolute after:top-1 after:left-1 after:w-2 after:h-2 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-4" />
               </label>
             </div>
 
             <div class="flex-1 overflow-y-auto custom-scrollbar">
-              <div v-for="team in teamGroups" :key="team.teamName" class="mb-2">
+              <div
+                v-for="team in teamGroups"
+                :key="team.teamName"
+                class="mb-2"
+              >
                 <div class="team-header flex items-center justify-between">
                   <span>{{ team.teamName }}</span>
                   <div class="flex items-center gap-4 text-[10px]">
@@ -768,21 +986,36 @@ const shouldShowTickets = computed(() => {
                 <table class="leaderboard-table">
                   <thead>
                     <tr class="font-mono">
-                      <th class="w-10 text-center">#</th>
+                      <th class="w-10 text-center">
+                        #
+                      </th>
                       <th>OPERATIVE</th>
-                      <th class="text-center">PTS</th>
-                      <th class="text-center">K/D</th>
+                      <th class="text-center">
+                        PTS
+                      </th>
+                      <th class="text-center">
+                        K/D
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="player in team.players" :key="player.playerName" @click="navigateToPlayerProfile(player.playerName)" class="leaderboard-row cursor-pointer group">
-                      <td class="text-center font-mono text-slate-500 text-[10px]">{{ player.rank }}</td>
+                    <tr
+                      v-for="player in team.players"
+                      :key="player.playerName"
+                      class="leaderboard-row cursor-pointer group"
+                      @click="navigateToPlayerProfile(player.playerName)"
+                    >
+                      <td class="text-center font-mono text-slate-500 text-[10px]">
+                        {{ player.rank }}
+                      </td>
                       <td>
                         <div class="font-bold text-slate-200 group-hover:text-cyan-400 transition-colors truncate max-w-[120px]">
                           {{ player.playerName }}
                         </div>
                       </td>
-                      <td class="text-center font-mono font-bold text-white">{{ player.score }}</td>
+                      <td class="text-center font-mono font-bold text-white">
+                        {{ player.score }}
+                      </td>
                       <td class="text-center">
                         <div class="flex flex-col items-center">
                           <span :class="[getKDClass(player.kills, player.deaths), 'font-mono font-bold']">{{ player.kills }} / {{ player.deaths }}</span>
@@ -794,31 +1027,49 @@ const shouldShowTickets = computed(() => {
               </div>
             </div>
           </div>
-
         </div>
-
       </div>
 
       <!-- Full Width Tactical Intelligence (Key Events) -->
-      <div v-if="battleHighlights.length > 0" class="mt-8 rr-card p-6 overflow-hidden flex flex-col min-h-[500px]">
+      <div
+        v-if="battleHighlights.length > 0"
+        class="mt-8 rr-card p-6 overflow-hidden flex flex-col min-h-[200px]"
+      >
         <div class="flex items-center justify-between mb-6">
           <h4 class="text-[10px] font-mono text-cyan-400 uppercase tracking-[0.4em] flex items-center gap-2">
             <div class="w-2 h-2 bg-cyan-400 animate-pulse" />
             TACTICAL_HIGHLIGHT_REEL_v4.2
           </h4>
           <div class="text-[9px] font-mono text-slate-500 uppercase tracking-widest">
-            Total Critical Events: {{ battleHighlights.length }}
+            {{ visibleHighlights.length }} / {{ battleHighlights.length }} Critical Events
           </div>
         </div>
         
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 overflow-y-auto custom-scrollbar pr-2">
+        <div
+          v-if="visibleHighlights.length === 0"
+          class="flex-1 flex flex-col items-center justify-center opacity-20 pointer-events-none py-8"
+        >
+          <div class="text-2xl mb-3">
+            📡
+          </div>
+          <div class="font-mono text-xs uppercase tracking-[0.4em] text-slate-500">
+            Awaiting Critical Events
+          </div>
+        </div>
+
+        <TransitionGroup
+          v-else
+          name="highlight"
+          tag="div"
+          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 overflow-y-auto custom-scrollbar pr-2"
+        >
           <BattleHighlightComponent
-            v-for="(h, i) in battleHighlights"
-            :key="i"
+            v-for="(h, i) in visibleHighlights"
+            :key="`${h.type}-${h.timestamp}-${h.playerName}`"
             :highlight="h"
             :format-time-offset="formatTimeOffset"
           />
-        </div>
+        </TransitionGroup>
       </div>
     </div>
   </div>

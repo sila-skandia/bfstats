@@ -1,8 +1,16 @@
 <template>
   <div class="round-ach-panel">
     <div class="round-ach-panel-head">
-      <h3 class="round-ach-panel-title">[ ACHIEVEMENTS IN ROUND ]</h3>
-      <button type="button" class="round-ach-panel-close" @click="$emit('close')">×</button>
+      <h3 class="round-ach-panel-title">
+        [ ACHIEVEMENTS IN ROUND ]
+      </h3>
+      <button
+        type="button"
+        class="round-ach-panel-close"
+        @click="$emit('close')"
+      >
+        ×
+      </button>
     </div>
     <div class="round-ach-panel-body">
       <template v-if="loading">
@@ -29,7 +37,10 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(a, i) in achievements" :key="`${a.playerName}-${a.achievedAt}-${i}`">
+              <tr
+                v-for="(a, i) in achievements"
+                :key="`${a.playerName}-${a.achievedAt}-${i}`"
+              >
                 <td>{{ a.playerName }}</td>
                 <td class="round-ach-cell-achievement">
                   <img
@@ -37,11 +48,15 @@
                     :alt="a.achievementName"
                     class="round-ach-img"
                     @error="(e) => { (e.target as HTMLImageElement).src = getAchievementImage('kill_streak_10'); }"
-                  />
+                  >
                   {{ a.achievementName }}
                 </td>
-                <td class="round-ach-mono round-ach-tier">{{ a.tier || '–' }}</td>
-                <td class="round-ach-mono">{{ formatTime(a.achievedAt) }}</td>
+                <td class="round-ach-mono round-ach-tier">
+                  {{ a.tier || '–' }}
+                </td>
+                <td class="round-ach-mono">
+                  {{ formatTime(a.achievedAt) }}
+                </td>
               </tr>
             </tbody>
           </table>

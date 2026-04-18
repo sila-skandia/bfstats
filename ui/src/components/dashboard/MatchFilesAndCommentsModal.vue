@@ -404,37 +404,69 @@ onMounted(() => {
       <h3 class="modal-title">
         Match Files & Comments
       </h3>
-      <p v-if="match" class="modal-subtitle">
+      <p
+        v-if="match"
+        class="modal-subtitle"
+      >
         {{ match.team1Name }} vs {{ match.team2Name }} • {{ formatMatchDate(match.scheduledDate) }}
       </p>
     </template>
 
     <div class="space-y-6">
       <!-- Loading State -->
-      <div v-if="isLoading" class="flex items-center justify-center py-12">
+      <div
+        v-if="isLoading"
+        class="flex items-center justify-center py-12"
+      >
         <div class="flex flex-col items-center gap-3">
-          <div class="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" style="border-color: #6e7681; border-top-color: #F59E0B;" />
-          <p class="text-sm" style="color: #6e7681;">Loading files and comments...</p>
+          <div
+            class="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin"
+            style="border-color: #6e7681; border-top-color: #F59E0B;"
+          />
+          <p
+            class="text-sm"
+            style="color: #6e7681;"
+          >
+            Loading files and comments...
+          </p>
         </div>
       </div>
 
       <template v-else>
         <!-- Error Message -->
-        <div v-if="error" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-          <p class="text-red-400 text-sm">{{ error }}</p>
+        <div
+          v-if="error"
+          class="bg-red-500/10 border border-red-500/30 rounded-lg p-4"
+        >
+          <p class="text-red-400 text-sm">
+            {{ error }}
+          </p>
         </div>
 
         <!-- Files Section -->
         <div class="space-y-4">
           <div>
-            <h4 class="text-sm font-semibold mb-1" style="color: #e6edf3;">📎 Files & Links</h4>
-            <p class="text-xs" style="color: #6e7681;">Add files, recordings, or links for this match</p>
+            <h4
+              class="text-sm font-semibold mb-1"
+              style="color: #e6edf3;"
+            >
+              📎 Files & Links
+            </h4>
+            <p
+              class="text-xs"
+              style="color: #6e7681;"
+            >
+              Add files, recordings, or links for this match
+            </p>
           </div>
 
           <!-- Add File Form -->
           <div class="space-y-3 bg-slate-800/30 border border-slate-700/30 rounded-lg p-4">
             <div>
-              <label class="block text-xs font-medium mb-1.5" style="color: #8b949e;">
+              <label
+                class="block text-xs font-medium mb-1.5"
+                style="color: #8b949e;"
+              >
                 URL <span class="text-red-400">*</span>
               </label>
               <input
@@ -450,7 +482,10 @@ onMounted(() => {
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label class="block text-xs font-medium mb-1.5" style="color: #8b949e;">
+                <label
+                  class="block text-xs font-medium mb-1.5"
+                  style="color: #8b949e;"
+                >
                   File Name
                 </label>
                 <input
@@ -463,7 +498,10 @@ onMounted(() => {
                 >
               </div>
               <div>
-                <label class="block text-xs font-medium mb-1.5" style="color: #8b949e;">
+                <label
+                  class="block text-xs font-medium mb-1.5"
+                  style="color: #8b949e;"
+                >
                   Category
                 </label>
                 <input
@@ -478,16 +516,19 @@ onMounted(() => {
             </div>
 
             <button
-              @click="addNewFile"
               :disabled="isProcessing || !newFile.url.trim()"
               class="w-full px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm rounded font-medium transition-colors"
+              @click="addNewFile"
             >
               + Add File
             </button>
           </div>
 
           <!-- Files List -->
-          <div v-if="existingFiles.length > 0" class="space-y-2">
+          <div
+            v-if="existingFiles.length > 0"
+            class="space-y-2"
+          >
             <div
               v-for="file in existingFiles"
               :key="file.id"
@@ -495,7 +536,10 @@ onMounted(() => {
               :class="editingFileId === file.id ? 'border-cyan-500' : (file.isNew ? 'border-cyan-500/50' : '')"
             >
               <!-- View Mode -->
-              <div v-if="editingFileId !== file.id" class="flex items-start gap-3">
+              <div
+                v-if="editingFileId !== file.id"
+                class="flex items-start gap-3"
+              >
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-1">
                     <a
@@ -507,28 +551,42 @@ onMounted(() => {
                     >
                       {{ file.name }} ↗️
                     </a>
-                    <span v-if="file.isNew" class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">Unsaved</span>
+                    <span
+                      v-if="file.isNew"
+                      class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                    >Unsaved</span>
                   </div>
-                  <p class="text-xs truncate" style="color: #6e7681;">{{ file.url }}</p>
-                  <p v-if="file.tags" class="text-xs mt-1" style="color: #8b949e;">Category: {{ file.tags }}</p>
+                  <p
+                    class="text-xs truncate"
+                    style="color: #6e7681;"
+                  >
+                    {{ file.url }}
+                  </p>
+                  <p
+                    v-if="file.tags"
+                    class="text-xs mt-1"
+                    style="color: #8b949e;"
+                  >
+                    Category: {{ file.tags }}
+                  </p>
                 </div>
                 <div class="flex-shrink-0 flex gap-2">
                   <button
-                    @click="startEditFile(file)"
                     :disabled="isProcessing"
                     class="px-2 py-1 text-xs transition-colors disabled:opacity-50 opacity-0 group-hover:opacity-100 hover:text-cyan-400"
                     style="color: #8b949e;"
                     title="Edit file"
+                    @click="startEditFile(file)"
                   >
                     ✎
                   </button>
                   <button
-                    @click="deleteExistingFile(file.id)"
                     :disabled="isProcessing"
                     class="px-2 py-1 text-xs transition-colors disabled:opacity-50 hover:text-red-400"
                     :class="file.isNew ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
                     style="color: #8b949e;"
                     title="Delete file"
+                    @click="deleteExistingFile(file.id)"
                   >
                     ✕
                   </button>
@@ -536,9 +594,15 @@ onMounted(() => {
               </div>
 
               <!-- Edit Mode -->
-              <div v-else class="space-y-3">
+              <div
+                v-else
+                class="space-y-3"
+              >
                 <div>
-                  <label class="block text-xs font-medium mb-1.5" style="color: #8b949e;">
+                  <label
+                    class="block text-xs font-medium mb-1.5"
+                    style="color: #8b949e;"
+                  >
                     File Name
                   </label>
                   <input
@@ -547,10 +611,13 @@ onMounted(() => {
                     placeholder="File name"
                     class="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all"
                     :disabled="isProcessing"
-                  />
+                  >
                 </div>
                 <div>
-                  <label class="block text-xs font-medium mb-1.5" style="color: #8b949e;">
+                  <label
+                    class="block text-xs font-medium mb-1.5"
+                    style="color: #8b949e;"
+                  >
                     URL
                   </label>
                   <input
@@ -559,10 +626,13 @@ onMounted(() => {
                     placeholder="https://..."
                     class="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all"
                     :disabled="isProcessing"
-                  />
+                  >
                 </div>
                 <div>
-                  <label class="block text-xs font-medium mb-1.5" style="color: #8b949e;">
+                  <label
+                    class="block text-xs font-medium mb-1.5"
+                    style="color: #8b949e;"
+                  >
                     Category
                   </label>
                   <input
@@ -571,20 +641,20 @@ onMounted(() => {
                     placeholder="gameplay"
                     class="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all"
                     :disabled="isProcessing"
-                  />
+                  >
                 </div>
                 <div class="flex justify-end gap-2">
                   <button
-                    @click="cancelEditFile"
                     :disabled="isProcessing"
                     class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-sm transition-colors"
+                    @click="cancelEditFile"
                   >
                     Cancel
                   </button>
                   <button
-                    @click="saveEditFile(file.id as number)"
                     :disabled="isProcessing"
                     class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-sm font-medium transition-colors"
+                    @click="saveEditFile(file.id as number)"
                   >
                     {{ isProcessing ? 'Saving...' : 'Save' }}
                   </button>
@@ -597,14 +667,27 @@ onMounted(() => {
         <!-- Comments Section -->
         <div class="space-y-4">
           <div>
-            <h4 class="text-sm font-semibold mb-1" style="color: #e6edf3;">💬 Comments</h4>
-            <p class="text-xs" style="color: #6e7681;">Add notes or comments about this match</p>
+            <h4
+              class="text-sm font-semibold mb-1"
+              style="color: #e6edf3;"
+            >
+              💬 Comments
+            </h4>
+            <p
+              class="text-xs"
+              style="color: #6e7681;"
+            >
+              Add notes or comments about this match
+            </p>
           </div>
 
           <!-- Add Comment Form -->
           <div class="space-y-3 bg-slate-800/30 border border-slate-700/30 rounded-lg p-4">
             <div>
-              <label class="block text-xs font-medium mb-1.5" style="color: #8b949e;">
+              <label
+                class="block text-xs font-medium mb-1.5"
+                style="color: #8b949e;"
+              >
                 Comment
               </label>
               <textarea
@@ -618,16 +701,19 @@ onMounted(() => {
             </div>
 
             <button
-              @click="addNewComment"
               :disabled="isProcessing || !newComment.trim()"
               class="w-full px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm rounded font-medium transition-colors"
+              @click="addNewComment"
             >
               + Add Comment
             </button>
           </div>
 
           <!-- Comments List -->
-          <div v-if="existingComments.length > 0" class="space-y-2">
+          <div
+            v-if="existingComments.length > 0"
+            class="space-y-2"
+          >
             <div
               v-for="comment in existingComments"
               :key="comment.id"
@@ -635,29 +721,45 @@ onMounted(() => {
               :class="editingCommentId === comment.id ? 'border-cyan-500' : (comment.isNew ? 'border-cyan-500/50' : '')"
             >
               <!-- View Mode -->
-              <div v-if="editingCommentId !== comment.id" class="flex items-start gap-3">
+              <div
+                v-if="editingCommentId !== comment.id"
+                class="flex items-start gap-3"
+              >
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm break-words whitespace-pre-wrap mb-1" style="color: #e6edf3;">{{ comment.content }}</p>
-                  <p class="text-xs" style="color: #6e7681;">{{ formatCommentDate(comment.createdAt) }}</p>
-                  <span v-if="comment.isNew" class="inline-block mt-2 text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">Unsaved</span>
+                  <p
+                    class="text-sm break-words whitespace-pre-wrap mb-1"
+                    style="color: #e6edf3;"
+                  >
+                    {{ comment.content }}
+                  </p>
+                  <p
+                    class="text-xs"
+                    style="color: #6e7681;"
+                  >
+                    {{ formatCommentDate(comment.createdAt) }}
+                  </p>
+                  <span
+                    v-if="comment.isNew"
+                    class="inline-block mt-2 text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                  >Unsaved</span>
                 </div>
                 <div class="flex-shrink-0 flex gap-2">
                   <button
-                    @click="startEditComment(comment)"
                     :disabled="isProcessing"
                     class="px-2 py-1 text-xs transition-colors disabled:opacity-50 opacity-0 group-hover:opacity-100 hover:text-cyan-400"
                     style="color: #8b949e;"
                     title="Edit comment"
+                    @click="startEditComment(comment)"
                   >
                     ✎
                   </button>
                   <button
-                    @click="deleteExistingComment(comment.id)"
                     :disabled="isProcessing"
                     class="px-2 py-1 text-xs transition-colors disabled:opacity-50 hover:text-red-400"
                     :class="comment.isNew ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
                     style="color: #8b949e;"
                     title="Delete comment"
+                    @click="deleteExistingComment(comment.id)"
                   >
                     ✕
                   </button>
@@ -665,9 +767,15 @@ onMounted(() => {
               </div>
 
               <!-- Edit Mode -->
-              <div v-else class="space-y-3">
+              <div
+                v-else
+                class="space-y-3"
+              >
                 <div>
-                  <label class="block text-xs font-medium mb-1.5" style="color: #8b949e;">
+                  <label
+                    class="block text-xs font-medium mb-1.5"
+                    style="color: #8b949e;"
+                  >
                     Comment
                   </label>
                   <textarea
@@ -680,16 +788,16 @@ onMounted(() => {
                 </div>
                 <div class="flex justify-end gap-2">
                   <button
-                    @click="cancelEditComment"
                     :disabled="isProcessing"
                     class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-sm transition-colors"
+                    @click="cancelEditComment"
                   >
                     Cancel
                   </button>
                   <button
-                    @click="saveEditComment(comment.id as number)"
                     :disabled="isProcessing"
                     class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-sm font-medium transition-colors"
+                    @click="saveEditComment(comment.id as number)"
                   >
                     {{ isProcessing ? 'Saving...' : 'Save' }}
                   </button>
@@ -705,18 +813,21 @@ onMounted(() => {
       <div class="flex items-center justify-end gap-3">
         <button
           class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-sm transition-colors"
-          @click="handleClose"
           :disabled="isProcessing"
+          @click="handleClose"
         >
           {{ hasUnsavedItems ? 'Cancel' : 'Close' }}
         </button>
         <button
           v-if="hasUnsavedItems"
           class="px-6 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          @click="handleSave"
           :disabled="isProcessing"
+          @click="handleSave"
         >
-          <div v-if="isProcessing" class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          <div
+            v-if="isProcessing"
+            class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
+          />
           <span>{{ isProcessing ? 'Saving...' : `Save ${newFiles.length + newComments.length} Item${newFiles.length + newComments.length !== 1 ? 's' : ''}` }}</span>
         </button>
       </div>

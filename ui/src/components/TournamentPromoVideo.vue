@@ -11,7 +11,12 @@
       class="text-lg font-semibold mb-4 flex items-center gap-2"
       :style="{ color: textColor }"
     >
-      <svg class="w-5 h-5" :style="{ color: accentColor }" fill="currentColor" viewBox="0 0 24 24">
+      <svg
+        class="w-5 h-5"
+        :style="{ color: accentColor }"
+        fill="currentColor"
+        viewBox="0 0 24 24"
+      >
         <path d="M8 5v14l11-7z" />
       </svg>
       Promo Video

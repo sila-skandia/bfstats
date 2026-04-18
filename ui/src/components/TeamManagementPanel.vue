@@ -10,13 +10,27 @@
     >
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-full bg-amber-500/20 border-2 border-amber-500/50 flex items-center justify-center">
-          <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <svg
+            class="w-5 h-5 text-amber-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
           </svg>
         </div>
         <div>
-          <p class="font-semibold text-amber-400">Awaiting Approval</p>
-          <p class="text-sm text-amber-200/70">The team leader needs to approve your join request</p>
+          <p class="font-semibold text-amber-400">
+            Awaiting Approval
+          </p>
+          <p class="text-sm text-amber-200/70">
+            The team leader needs to approve your join request
+          </p>
         </div>
       </div>
     </div>
@@ -27,17 +41,35 @@
       :style="{ borderColor: accentColor, background: `linear-gradient(135deg, ${accentColor}22, ${accentColor}11)` }"
     >
       <div>
-        <h3 class="text-lg font-bold" :style="{ color: textColor }">
+        <h3
+          class="text-lg font-bold"
+          :style="{ color: textColor }"
+        >
           {{ teamDetails?.teamName || 'Your Team' }}
-          <span v-if="teamDetails?.tag" class="text-sm font-normal opacity-75 ml-2">{{ teamDetails.tag }}</span>
+          <span
+            v-if="teamDetails?.tag"
+            class="text-sm font-normal opacity-75 ml-2"
+          >{{ teamDetails.tag }}</span>
         </h3>
-        <p class="text-sm mt-1" :style="{ color: textMutedColor }">
-          <span v-if="isAdmin && !isLeader" class="text-cyan-400">Tournament Admin</span>
+        <p
+          class="text-sm mt-1"
+          :style="{ color: textMutedColor }"
+        >
+          <span
+            v-if="isAdmin && !isLeader"
+            class="text-cyan-400"
+          >Tournament Admin</span>
           <span v-else-if="isLeader">Team Leader</span>
-          <span v-else-if="props.membershipStatus === MembershipStatus.Pending" class="text-amber-400">Pending Approval</span>
+          <span
+            v-else-if="props.membershipStatus === MembershipStatus.Pending"
+            class="text-amber-400"
+          >Pending Approval</span>
           <span v-else>Team Member</span>
           &middot; {{ approvedPlayers.length }} player{{ approvedPlayers.length !== 1 ? 's' : '' }}
-          <span v-if="canPerformLeaderActions && pendingPlayers.length > 0" class="ml-2 text-amber-400">
+          <span
+            v-if="canPerformLeaderActions && pendingPlayers.length > 0"
+            class="ml-2 text-amber-400"
+          >
             &middot; {{ pendingPlayers.length }} pending
           </span>
         </p>
@@ -45,14 +77,26 @@
     </div>
 
     <!-- Recruitment Status Selector (Leader or Admin) -->
-    <div v-if="canPerformLeaderActions" class="px-6 py-4 border-b-2" :style="{ borderColor: accentColor + '44' }">
+    <div
+      v-if="canPerformLeaderActions"
+      class="px-6 py-4 border-b-2"
+      :style="{ borderColor: accentColor + '44' }"
+    >
       <div class="mb-2 flex items-center gap-2">
-        <h4 class="text-sm font-semibold" :style="{ color: textColor }">Recruitment Status</h4>
+        <h4
+          class="text-sm font-semibold"
+          :style="{ color: textColor }"
+        >
+          Recruitment Status
+        </h4>
         <span 
           class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
           :style="getRecruitmentStatusStyle(teamDetails?.recruitmentStatus ?? TeamRecruitmentStatus.Open)"
         >
-          <span class="w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getRecruitmentDotColor(teamDetails?.recruitmentStatus ?? TeamRecruitmentStatus.Open) }"></span>
+          <span
+            class="w-1.5 h-1.5 rounded-full"
+            :style="{ backgroundColor: getRecruitmentDotColor(teamDetails?.recruitmentStatus ?? TeamRecruitmentStatus.Open) }"
+          />
           {{ getRecruitmentStatusText(teamDetails?.recruitmentStatus ?? TeamRecruitmentStatus.Open) }}
         </span>
       </div>
@@ -67,20 +111,35 @@
           :style="teamDetails?.recruitmentStatus === status.value ? getStatusButtonActiveStyle(status.value) : {}"
           @click="handleUpdateRecruitmentStatus(status.value)"
         >
-          <span class="text-sm font-medium" :style="{ color: teamDetails?.recruitmentStatus === status.value ? getRecruitmentDotColor(status.value) : textColor }">
+          <span
+            class="text-sm font-medium"
+            :style="{ color: teamDetails?.recruitmentStatus === status.value ? getRecruitmentDotColor(status.value) : textColor }"
+          >
             {{ status.label }}
           </span>
-          <span class="text-xs mt-1" :style="{ color: textMutedColor }">
+          <span
+            class="text-xs mt-1"
+            :style="{ color: textMutedColor }"
+          >
             {{ status.description }}
           </span>
         </button>
       </div>
       
-      <div v-if="recruitmentStatusError" class="text-red-400 text-sm mt-2">{{ recruitmentStatusError }}</div>
+      <div
+        v-if="recruitmentStatusError"
+        class="text-red-400 text-sm mt-2"
+      >
+        {{ recruitmentStatusError }}
+      </div>
     </div>
 
     <!-- Add Player Form (Leader or Admin) -->
-    <div v-if="canPerformLeaderActions" class="px-6 py-4 border-b-2" :style="{ borderColor: accentColor + '44' }">
+    <div
+      v-if="canPerformLeaderActions"
+      class="px-6 py-4 border-b-2"
+      :style="{ borderColor: accentColor + '44' }"
+    >
       <MultiPlayerSelector
         :current-players="teamDetails?.players?.map(p => p.playerName) || []"
         :loading="isAddingPlayer"
@@ -95,13 +154,25 @@
         @remove-player="handleRemovePlayerFromSelector"
         @clear-all-players="handleClearAllPlayers"
       />
-      <div v-if="addPlayerError" class="text-red-400 text-sm mt-2">{{ addPlayerError }}</div>
+      <div
+        v-if="addPlayerError"
+        class="text-red-400 text-sm mt-2"
+      >
+        {{ addPlayerError }}
+      </div>
     </div>
 
     <!-- Pending Approvals Section (Leader or Admin) -->
-    <div v-if="canPerformLeaderActions && pendingPlayers.length > 0" class="px-6 py-4 border-b-2" :style="{ borderColor: accentColor + '44' }">
-      <h4 class="text-sm font-semibold mb-3 flex items-center gap-2" :style="{ color: textColor }">
-        <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+    <div
+      v-if="canPerformLeaderActions && pendingPlayers.length > 0"
+      class="px-6 py-4 border-b-2"
+      :style="{ borderColor: accentColor + '44' }"
+    >
+      <h4
+        class="text-sm font-semibold mb-3 flex items-center gap-2"
+        :style="{ color: textColor }"
+      >
+        <span class="w-2 h-2 rounded-full bg-amber-400" />
         Pending Approvals ({{ pendingPlayers.length }})
       </h4>
       <div class="space-y-2">
@@ -124,7 +195,10 @@
                 <span class="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                   Pending
                 </span>
-                <span class="text-xs" :style="{ color: textMutedColor }">
+                <span
+                  class="text-xs"
+                  :style="{ color: textMutedColor }"
+                >
                   Requested {{ formatDate(player.joinedAt) }}
                 </span>
               </div>
@@ -138,12 +212,39 @@
               :disabled="isApprovingMember === player.playerName"
               @click="handleApproveMember(player.playerName)"
             >
-              <svg v-if="isApprovingMember === player.playerName" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              <svg
+                v-if="isApprovingMember === player.playerName"
+                class="w-5 h-5 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                />
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
               </svg>
-              <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              <svg
+                v-else
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M5 13l4 4L19 7"
+                />
               </svg>
             </button>
             <!-- Reject Button -->
@@ -153,12 +254,39 @@
               :disabled="isRemovingPlayer === player.playerName"
               @click="handleRemovePlayer(player.playerName)"
             >
-              <svg v-if="isRemovingPlayer === player.playerName" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              <svg
+                v-if="isRemovingPlayer === player.playerName"
+                class="w-5 h-5 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                />
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
               </svg>
-              <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              <svg
+                v-else
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -168,16 +296,43 @@
 
     <!-- Players List -->
     <div class="px-6 py-4">
-      <div v-if="isLoading" class="flex items-center justify-center py-8">
-        <svg class="w-6 h-6 animate-spin" :style="{ color: accentColor }" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+      <div
+        v-if="isLoading"
+        class="flex items-center justify-center py-8"
+      >
+        <svg
+          class="w-6 h-6 animate-spin"
+          :style="{ color: accentColor }"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          />
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          />
         </svg>
       </div>
 
-      <div v-else-if="loadError" class="text-red-400 text-sm py-4">{{ loadError }}</div>
+      <div
+        v-else-if="loadError"
+        class="text-red-400 text-sm py-4"
+      >
+        {{ loadError }}
+      </div>
 
-      <div v-else-if="approvedPlayers.length" class="space-y-2">
+      <div
+        v-else-if="approvedPlayers.length"
+        class="space-y-2"
+      >
         <div
           v-for="player in approvedPlayers"
           :key="player.playerName"
@@ -194,10 +349,17 @@
                 {{ player.playerName }}
               </router-link>
               <div class="flex items-center gap-2 mt-0.5">
-                <span v-if="player.isLeader" class="text-xs px-2 py-0.5 rounded" :style="{ backgroundColor: accentColor + '33', color: accentColor }">
+                <span
+                  v-if="player.isLeader"
+                  class="text-xs px-2 py-0.5 rounded"
+                  :style="{ backgroundColor: accentColor + '33', color: accentColor }"
+                >
                   Leader
                 </span>
-                <span class="text-xs" :style="{ color: textMutedColor }">
+                <span
+                  class="text-xs"
+                  :style="{ color: textMutedColor }"
+                >
                   Joined {{ formatDate(player.joinedAt) }}
                 </span>
               </div>
@@ -210,41 +372,88 @@
             :disabled="isRemovingPlayer === player.playerName"
             @click="handleRemovePlayer(player.playerName)"
           >
-            <svg v-if="isRemovingPlayer === player.playerName" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <svg
+              v-if="isRemovingPlayer === player.playerName"
+              class="w-5 h-5 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              />
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
             </svg>
-            <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              v-else
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
       </div>
 
-      <div v-else class="text-center py-8" :style="{ color: textMutedColor }">
+      <div
+        v-else
+        class="text-center py-8"
+        :style="{ color: textMutedColor }"
+      >
         No players in the team yet
       </div>
     </div>
 
     <!-- Leave Team (Non-Leaders who are actually on this team) -->
-    <div v-if="!isLeader && !isAdmin && props.membershipStatus !== undefined" class="px-6 py-4 border-t-2" :style="{ borderColor: accentColor + '44' }">
+    <div
+      v-if="!isLeader && !isAdmin && props.membershipStatus !== undefined"
+      class="px-6 py-4 border-t-2"
+      :style="{ borderColor: accentColor + '44' }"
+    >
       <!-- Warning Message (shown when confirming) -->
-      <div v-if="leaveState === 'confirming'" class="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg animate-fade-in">
+      <div
+        v-if="leaveState === 'confirming'"
+        class="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg animate-fade-in"
+      >
         <div class="flex items-start gap-3">
-          <div class="text-red-400 text-xl">⚠️</div>
+          <div class="text-red-400 text-xl">
+            ⚠️
+          </div>
           <div class="flex-1">
-            <p class="text-sm text-red-200/80 mb-2">Leaving this team will:</p>
+            <p class="text-sm text-red-200/80 mb-2">
+              Leaving this team will:
+            </p>
             <ul class="text-sm text-red-200/80 space-y-1 ml-4">
               <li>• Remove you from the tournament</li>
               <li>• Free up your spot for another player</li>
             </ul>
-            <p class="text-sm text-red-200/80 mt-2">You can rejoin the team or join another team while registration is open.</p>
+            <p class="text-sm text-red-200/80 mt-2">
+              You can rejoin the team or join another team while registration is open.
+            </p>
           </div>
         </div>
       </div>
 
       <!-- Error Message -->
-      <div v-if="leaveState === 'error'" class="mb-4 p-3 bg-red-500/20 border border-red-500/40 rounded-lg">
+      <div
+        v-if="leaveState === 'error'"
+        class="mb-4 p-3 bg-red-500/20 border border-red-500/40 rounded-lg"
+      >
         <div class="flex items-center gap-2 text-red-300 text-sm">
           <span>❌</span>
           <span>{{ leaveError }}</span>
@@ -270,27 +479,48 @@
         </button>
       </div>
 
-      <div v-if="leaveError && leaveState !== 'error'" class="text-red-400 text-sm mt-2 text-center">{{ leaveError }}</div>
+      <div
+        v-if="leaveError && leaveState !== 'error'"
+        class="text-red-400 text-sm mt-2 text-center"
+      >
+        {{ leaveError }}
+      </div>
     </div>
 
     <!-- Delete Team (Leaders or Admins) -->
-    <div v-if="canPerformLeaderActions" class="px-6 py-4 border-t-2" :style="{ borderColor: accentColor + '44' }">
+    <div
+      v-if="canPerformLeaderActions"
+      class="px-6 py-4 border-t-2"
+      :style="{ borderColor: accentColor + '44' }"
+    >
       <!-- Warning Message (shown when confirming) -->
-      <div v-if="deleteState === 'confirming'" class="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg animate-fade-in">
+      <div
+        v-if="deleteState === 'confirming'"
+        class="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg animate-fade-in"
+      >
         <div class="flex items-start gap-3">
-          <div class="text-red-400 text-xl">⚠️</div>
+          <div class="text-red-400 text-xl">
+            ⚠️
+          </div>
           <div class="flex-1">
-            <p class="text-sm text-red-200/80 mb-2">Deleting your team will:</p>
+            <p class="text-sm text-red-200/80 mb-2">
+              Deleting your team will:
+            </p>
             <ul class="text-sm text-red-200/80 space-y-1 ml-4">
               <li>• Remove all team members from the tournament</li>
             </ul>
-            <p class="text-sm text-red-200/80 mt-2">You can re-register your team while registration is open.</p>
+            <p class="text-sm text-red-200/80 mt-2">
+              You can re-register your team while registration is open.
+            </p>
           </div>
         </div>
       </div>
 
       <!-- Error Message -->
-      <div v-if="deleteState === 'error'" class="mb-4 p-3 bg-red-500/20 border border-red-500/40 rounded-lg">
+      <div
+        v-if="deleteState === 'error'"
+        class="mb-4 p-3 bg-red-500/20 border border-red-500/40 rounded-lg"
+      >
         <div class="flex items-center gap-2 text-red-300 text-sm">
           <span>❌</span>
           <span>{{ deleteError }}</span>
@@ -316,7 +546,12 @@
         </button>
       </div>
 
-      <div v-if="deleteError && deleteState !== 'error'" class="text-red-400 text-sm mt-2 text-center">{{ deleteError }}</div>
+      <div
+        v-if="deleteError && deleteState !== 'error'"
+        class="text-red-400 text-sm mt-2 text-center"
+      >
+        {{ deleteError }}
+      </div>
     </div>
   </div>
 </template>

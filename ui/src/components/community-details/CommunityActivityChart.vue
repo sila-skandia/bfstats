@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const chartCanvas = ref<HTMLCanvasElement | null>(null)
-let chart: any = null
+const chart: any = null
 
 // Simulate activity data based on community metadata
 const activityData = computed(() => {
@@ -55,19 +55,29 @@ onMounted(() => {
     <div class="grid grid-cols-3 gap-4">
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Peak Activity</div>
-          <div class="text-2xl font-bold text-cyan-400 font-mono">{{ maxActivity }}%</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Peak Activity
+          </div>
+          <div class="text-2xl font-bold text-cyan-400 font-mono">
+            {{ maxActivity }}%
+          </div>
         </div>
       </div>
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Avg (30d)</div>
-          <div class="text-2xl font-bold text-green-400 font-mono">{{ avgActivity }}%</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Avg (30d)
+          </div>
+          <div class="text-2xl font-bold text-green-400 font-mono">
+            {{ avgActivity }}%
+          </div>
         </div>
       </div>
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Trend</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Trend
+          </div>
           <div class="text-2xl font-bold text-purple-400 font-mono">
             {{ activityData[activityData.length - 1].activity > avgActivity ? '↗' : '↘' }}
           </div>
@@ -78,12 +88,17 @@ onMounted(() => {
     <!-- Activity Chart (Simplified) -->
     <div class="explorer-card">
       <div class="explorer-card-header">
-        <h2 class="font-mono font-bold text-cyan-300">ACTIVITY (LAST 30 DAYS)</h2>
+        <h2 class="font-mono font-bold text-cyan-300">
+          ACTIVITY (LAST 30 DAYS)
+        </h2>
       </div>
       <div class="explorer-card-body">
         <div class="space-y-4">
           <!-- Chart Area -->
-          <div class="bg-neutral-900 rounded border border-neutral-700/50 p-4" style="height: 300px">
+          <div
+            class="bg-neutral-900 rounded border border-neutral-700/50 p-4"
+            style="height: 300px"
+          >
             <div class="h-full flex flex-col justify-between">
               <!-- Y-axis labels -->
               <div class="flex justify-between text-xs text-neutral-500 mb-2">
@@ -111,7 +126,9 @@ onMounted(() => {
               </div>
 
               <!-- X-axis -->
-              <div class="text-xs text-neutral-500 text-center mt-2">30 days ago → Today</div>
+              <div class="text-xs text-neutral-500 text-center mt-2">
+                30 days ago → Today
+              </div>
             </div>
           </div>
 
@@ -133,7 +150,9 @@ onMounted(() => {
     <!-- Activity Timeline -->
     <div class="explorer-card">
       <div class="explorer-card-header">
-        <h2 class="font-mono font-bold text-cyan-300">RECENT ACTIVITY DAYS</h2>
+        <h2 class="font-mono font-bold text-cyan-300">
+          RECENT ACTIVITY DAYS
+        </h2>
       </div>
       <div class="explorer-card-body">
         <div class="space-y-2">
@@ -160,7 +179,9 @@ onMounted(() => {
     <!-- Insights -->
     <div class="explorer-card">
       <div class="explorer-card-header">
-        <h2 class="font-mono font-bold text-cyan-300">ACTIVITY INSIGHTS</h2>
+        <h2 class="font-mono font-bold text-cyan-300">
+          ACTIVITY INSIGHTS
+        </h2>
       </div>
       <div class="explorer-card-body space-y-2 text-sm">
         <div class="p-2 bg-neutral-800/50 rounded text-neutral-300">

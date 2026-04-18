@@ -1,23 +1,37 @@
 <template>
   <div class="detail-content">
     <!-- Loading State -->
-    <div v-if="isLoading" class="detail-loading">
-      <div class="detail-skeleton detail-skeleton--title"></div>
-      <div class="detail-skeleton detail-skeleton--subtitle"></div>
-      <div class="detail-skeleton detail-skeleton--block"></div>
-      <div class="detail-skeleton detail-skeleton--block-lg"></div>
+    <div
+      v-if="isLoading"
+      class="detail-loading"
+    >
+      <div class="detail-skeleton detail-skeleton--title" />
+      <div class="detail-skeleton detail-skeleton--subtitle" />
+      <div class="detail-skeleton detail-skeleton--block" />
+      <div class="detail-skeleton detail-skeleton--block-lg" />
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="detail-error">
-      <div class="detail-error-text">{{ error }}</div>
-      <button @click="loadData" class="detail-retry">
+    <div
+      v-else-if="error"
+      class="detail-error"
+    >
+      <div class="detail-error-text">
+        {{ error }}
+      </div>
+      <button
+        class="detail-retry"
+        @click="loadData"
+      >
         Try again
       </button>
     </div>
 
     <!-- Content -->
-    <div v-else-if="serverDetail" class="detail-body">
+    <div
+      v-else-if="serverDetail"
+      class="detail-body"
+    >
       <!-- Header -->
       <div class="detail-header">
         <div class="detail-header-row">
@@ -30,8 +44,18 @@
             :title="`View server details for ${serverDetail.name}`"
           >
             {{ serverDetail.name }}
-            <svg class="detail-title-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6" />
+            <svg
+              class="detail-title-arrow"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="m9 18 6-6-6-6"
+              />
             </svg>
           </router-link>
         </div>
@@ -43,7 +67,9 @@
 
       <!-- Overall Win Stats -->
       <div class="detail-section">
-        <h3 class="detail-section-title">OVERALL WIN STATISTICS</h3>
+        <h3 class="detail-section-title">
+          OVERALL WIN STATISTICS
+        </h3>
         <div class="detail-card">
           <WinStatsBar :win-stats="serverDetail.overallWinStats" />
         </div>
@@ -52,7 +78,9 @@
       <!-- Map Rotation -->
       <div class="detail-section">
         <div class="flex items-center justify-between">
-          <h3 class="detail-section-title">MAP ROTATION</h3>
+          <h3 class="detail-section-title">
+            MAP ROTATION
+          </h3>
           <router-link
             :to="{ name: 'map-popularity', params: { serverGuid: props.serverGuid } }"
             class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
@@ -76,16 +104,26 @@
       </div>
 
       <!-- Activity Heatmap -->
-      <div v-if="serverDetail.activityPatterns.length > 0" class="detail-section">
-        <h3 class="detail-section-title">ACTIVITY PATTERNS (LOCAL TIME)</h3>
+      <div
+        v-if="serverDetail.activityPatterns.length > 0"
+        class="detail-section"
+      >
+        <h3 class="detail-section-title">
+          ACTIVITY PATTERNS (LOCAL TIME)
+        </h3>
         <div class="detail-card">
           <ActivityHeatmap :patterns="serverDetail.activityPatterns" />
         </div>
       </div>
 
       <!-- Per-Map Stats with Leaderboards -->
-      <div v-if="serverDetail.perMapStats.length > 0" class="detail-section">
-        <h3 class="detail-section-title">TOP PLAYERS BY MAP</h3>
+      <div
+        v-if="serverDetail.perMapStats.length > 0"
+        class="detail-section"
+      >
+        <h3 class="detail-section-title">
+          TOP PLAYERS BY MAP
+        </h3>
         <div class="detail-accordions">
           <details
             v-for="mapStats in serverDetail.perMapStats.slice(0, 5)"
@@ -95,7 +133,10 @@
             <summary class="detail-accordion-header">
               <span class="detail-accordion-title">{{ mapStats.mapName }}</span>
               <div class="detail-accordion-meta">
-                <span v-if="mapStats.topPlayers.length > 0" class="detail-accordion-preview">
+                <span
+                  v-if="mapStats.topPlayers.length > 0"
+                  class="detail-accordion-preview"
+                >
                   <span class="detail-rank-1">#1</span>
                   <router-link
                     :to="getPlayerDetailsRoute(mapStats.topPlayers[0].playerName)"
@@ -104,8 +145,18 @@
                     {{ mapStats.topPlayers[0].playerName }}
                   </router-link>
                 </span>
-                <svg class="detail-accordion-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                <svg
+                  class="detail-accordion-arrow"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 9l-7 7-7-7"
+                  />
                 </svg>
               </div>
             </summary>

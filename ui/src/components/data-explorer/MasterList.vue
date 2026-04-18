@@ -6,7 +6,10 @@
         <span class="master-list-title">
           <span class="title-icon">{{ modeIcon }}</span>
           {{ modeLabel }}
-          <span v-if="mode !== 'players' || players.length > 0" class="master-list-count">
+          <span
+            v-if="mode !== 'players' || players.length > 0"
+            class="master-list-count"
+          >
             [{{ filteredItems.length }}]
           </span>
         </span>
@@ -16,9 +19,9 @@
           <button
             v-for="game in games"
             :key="game.id"
-            @click="handleGameChange(game.id)"
             :class="['master-list-game-btn', selectedGame === game.id && 'master-list-game-btn--active']"
             :title="game.name"
+            @click="handleGameChange(game.id)"
           >
             {{ game.label }}
           </button>
@@ -27,39 +30,75 @@
     </div>
 
     <!-- Loading State -->
-    <div v-if="isLoading" class="master-list-body">
-      <div v-for="i in 8" :key="i" class="master-list-skeleton">
-        <div class="master-list-skeleton-bar"></div>
+    <div
+      v-if="isLoading"
+      class="master-list-body"
+    >
+      <div
+        v-for="i in 8"
+        :key="i"
+        class="master-list-skeleton"
+      >
+        <div class="master-list-skeleton-bar" />
       </div>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="master-list-empty">
-      <div class="master-list-error">// ERROR: Failed to load data</div>
-      <button @click="loadData" class="master-list-retry">
+    <div
+      v-else-if="error"
+      class="master-list-empty"
+    >
+      <div class="master-list-error">
+        // ERROR: Failed to load data
+      </div>
+      <button
+        class="master-list-retry"
+        @click="loadData"
+      >
         $ retry --force
       </button>
     </div>
 
     <!-- Players Empty State (search-only mode) -->
-    <div v-else-if="mode === 'players' && players.length === 0" class="master-list-empty">
-      <div class="master-list-empty-icon">&lt;@&gt;</div>
-      <p v-if="!searchQuery || searchQuery.length < 3" class="master-list-empty-text">
+    <div
+      v-else-if="mode === 'players' && players.length === 0"
+      class="master-list-empty"
+    >
+      <div class="master-list-empty-icon">
+        &lt;@&gt;
+      </div>
+      <p
+        v-if="!searchQuery || searchQuery.length < 3"
+        class="master-list-empty-text"
+      >
         // Enter at least 3 characters to search
       </p>
-      <p v-else class="master-list-empty-text">
+      <p
+        v-else
+        class="master-list-empty-text"
+      >
         // No players found matching "{{ searchQuery }}"
       </p>
     </div>
 
     <!-- Empty State (servers/maps) -->
-    <div v-else-if="filteredItems.length === 0 && mode !== 'players'" class="master-list-empty">
-      <div class="master-list-empty-icon">{{ mode === 'servers' ? '{::}' : '[#]' }}</div>
-      <p class="master-list-empty-text">// No {{ mode }} found</p>
+    <div
+      v-else-if="filteredItems.length === 0 && mode !== 'players'"
+      class="master-list-empty"
+    >
+      <div class="master-list-empty-icon">
+        {{ mode === 'servers' ? '{::}' : '[#]' }}
+      </div>
+      <p class="master-list-empty-text">
+        // No {{ mode }} found
+      </p>
     </div>
 
     <!-- List -->
-    <div v-else class="master-list-scroll">
+    <div
+      v-else
+      class="master-list-scroll"
+    >
       <template v-if="mode === 'servers'">
         <ServerListItem
           v-for="server in filteredServers"
@@ -69,11 +108,14 @@
           @click="emit('select', server.guid)"
         />
         <!-- Load More Button for Servers -->
-        <div v-if="hasMoreServers && !props.searchQuery" class="master-list-load-more">
+        <div
+          v-if="hasMoreServers && !props.searchQuery"
+          class="master-list-load-more"
+        >
           <button
-            @click="loadMoreServers"
             :disabled="isLoadingMore"
             class="master-list-load-more-btn"
+            @click="loadMoreServers"
           >
             <span v-if="isLoadingMore">$ loading...</span>
             <span v-else>$ load-more --count {{ totalServerCount - servers.length }}</span>

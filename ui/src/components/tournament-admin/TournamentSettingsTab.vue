@@ -1,18 +1,35 @@
 <template>
   <div class="tournament-settings-tab">
     <!-- Edit Tournament Details View -->
-    <div v-if="currentView === 'editDetails'" class="portal-card">
+    <div
+      v-if="currentView === 'editDetails'"
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ EDIT TOURNAMENT ]</h2>
-          <p class="portal-card-subtitle">Update tournament details and settings</p>
+          <h2 class="portal-card-title">
+            [ EDIT TOURNAMENT ]
+          </h2>
+          <p class="portal-card-subtitle">
+            Update tournament details and settings
+          </p>
         </div>
         <button
           class="portal-btn portal-btn--ghost"
           @click="closeEditPanel"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
           Cancel
         </button>
@@ -20,7 +37,10 @@
 
       <div class="portal-card-body">
         <!-- Error Message -->
-        <div v-if="formError" class="portal-form-error">
+        <div
+          v-if="formError"
+          class="portal-form-error"
+        >
           {{ formError }}
         </div>
 
@@ -46,7 +66,9 @@
             class="portal-form-input portal-form-input--mono"
             :disabled="formLoading"
           >
-          <p class="portal-form-hint">Short identifier for URLs. Use lowercase letters, numbers, and hyphens only.</p>
+          <p class="portal-form-hint">
+            Short identifier for URLs. Use lowercase letters, numbers, and hyphens only.
+          </p>
         </div>
 
         <!-- Row: Organizer + Game -->
@@ -65,7 +87,10 @@
                 @focus="showPlayerDropdown = true"
                 @blur="onOrganizerBlur"
               >
-              <div v-if="showPlayerDropdown && playerSuggestions.length > 0" class="portal-dropdown">
+              <div
+                v-if="showPlayerDropdown && playerSuggestions.length > 0"
+                class="portal-dropdown"
+              >
                 <div
                   v-for="player in playerSuggestions"
                   :key="player.playerName"
@@ -86,9 +111,15 @@
               class="portal-form-select"
               :disabled="formLoading"
             >
-              <option value="bf1942">Battlefield 1942</option>
-              <option value="fh2">Forgotten Hope 2</option>
-              <option value="bfvietnam">Battlefield Vietnam</option>
+              <option value="bf1942">
+                Battlefield 1942
+              </option>
+              <option value="fh2">
+                Forgotten Hope 2
+              </option>
+              <option value="bfvietnam">
+                Battlefield Vietnam
+              </option>
             </select>
           </div>
         </div>
@@ -114,10 +145,18 @@
               class="portal-form-select"
               :disabled="formLoading"
             >
-              <option value="draft">Draft</option>
-              <option value="registration">Registration</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
+              <option value="draft">
+                Draft
+              </option>
+              <option value="registration">
+                Registration
+              </option>
+              <option value="open">
+                Open
+              </option>
+              <option value="closed">
+                Closed
+              </option>
             </select>
           </div>
         </div>
@@ -130,8 +169,12 @@
             class="portal-form-select"
             :disabled="formLoading"
           >
-            <option value="Conquest">Conquest</option>
-            <option value="CTF">CTF</option>
+            <option value="Conquest">
+              Conquest
+            </option>
+            <option value="CTF">
+              CTF
+            </option>
           </select>
         </div>
 
@@ -192,7 +235,9 @@
             class="portal-form-input"
             :disabled="formLoading"
           >
-          <p class="portal-form-hint">YouTube video URL to embed on tournament page.</p>
+          <p class="portal-form-hint">
+            YouTube video URL to embed on tournament page.
+          </p>
         </div>
 
         <!-- Rules -->
@@ -202,8 +247,8 @@
             <button
               type="button"
               class="markdown-help-btn"
-              @click="showMarkdownHelp = true"
               title="Show markdown syntax help"
+              @click="showMarkdownHelp = true"
             >
               ? Help
             </button>
@@ -224,8 +269,8 @@
             <button
               type="button"
               class="markdown-help-btn"
-              @click="showMarkdownHelp = true"
               title="Show markdown syntax help"
+              @click="showMarkdownHelp = true"
             >
               ? Help
             </button>
@@ -237,11 +282,16 @@
             :disabled="formLoading"
             rows="6"
           />
-          <p class="portal-form-hint">Shown to users when they register for the tournament.</p>
+          <p class="portal-form-hint">
+            Shown to users when they register for the tournament.
+          </p>
         </div>
 
         <!-- Form Actions -->
-        <div class="portal-form-footer" style="margin-top: 1.5rem">
+        <div
+          class="portal-form-footer"
+          style="margin-top: 1.5rem"
+        >
           <button
             class="portal-btn portal-btn--ghost"
             :disabled="formLoading"
@@ -254,7 +304,10 @@
             :disabled="formLoading || !formData.name.trim() || !formData.organizer.trim()"
             @click="submitEditForm"
           >
-            <span v-if="formLoading" class="portal-btn-pulse">Saving...</span>
+            <span
+              v-if="formLoading"
+              class="portal-btn-pulse"
+            >Saving...</span>
             <span v-else>Update Tournament</span>
           </button>
         </div>
@@ -262,18 +315,35 @@
     </div>
 
     <!-- Edit Theme View -->
-    <div v-else-if="currentView === 'editTheme'" class="portal-card">
+    <div
+      v-else-if="currentView === 'editTheme'"
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ EDIT THEME ]</h2>
-          <p class="portal-card-subtitle">Customize colors and images</p>
+          <h2 class="portal-card-title">
+            [ EDIT THEME ]
+          </h2>
+          <p class="portal-card-subtitle">
+            Customize colors and images
+          </p>
         </div>
         <button
           class="portal-btn portal-btn--ghost"
           @click="closeThemePanel"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
           Cancel
         </button>
@@ -281,7 +351,10 @@
 
       <div class="portal-card-body">
         <!-- Error Message -->
-        <div v-if="themeError" class="portal-form-error">
+        <div
+          v-if="themeError"
+          class="portal-form-error"
+        >
           {{ themeError }}
         </div>
 
@@ -289,21 +362,32 @@
         <div class="portal-form-section">
           <label class="portal-form-label">Hero Image</label>
           <div class="image-upload-area">
-            <div v-if="heroImagePreview" class="image-preview image-preview--clickable" @click="triggerHeroUpload">
-              <img :src="heroImagePreview" alt="Hero preview" />
+            <div
+              v-if="heroImagePreview"
+              class="image-preview image-preview--clickable"
+              @click="triggerHeroUpload"
+            >
+              <img
+                :src="heroImagePreview"
+                alt="Hero preview"
+              >
               <div class="image-overlay">
                 <span class="image-overlay-text">Click to replace image</span>
               </div>
               <button
                 type="button"
                 class="image-remove-btn"
-                @click.stop="removeHeroImage"
                 title="Remove image"
+                @click.stop="removeHeroImage"
               >
                 ×
               </button>
             </div>
-            <div v-else class="image-upload-placeholder" @click="triggerHeroUpload">
+            <div
+              v-else
+              class="image-upload-placeholder"
+              @click="triggerHeroUpload"
+            >
               <span class="upload-icon">🖼️</span>
               <span class="upload-text">Click to upload hero image</span>
             </div>
@@ -315,28 +399,41 @@
               @change="handleHeroImageSelect"
             >
           </div>
-          <p class="portal-form-hint">Recommended: 1920x400 pixels, max 4MB</p>
+          <p class="portal-form-hint">
+            Recommended: 1920x400 pixels, max 4MB
+          </p>
         </div>
 
         <!-- Community Logo -->
         <div class="portal-form-section">
           <label class="portal-form-label">Community Logo</label>
           <div class="image-upload-area">
-            <div v-if="logoImagePreview" class="image-preview image-preview--logo image-preview--clickable" @click="triggerLogoUpload">
-              <img :src="logoImagePreview" alt="Logo preview" />
+            <div
+              v-if="logoImagePreview"
+              class="image-preview image-preview--logo image-preview--clickable"
+              @click="triggerLogoUpload"
+            >
+              <img
+                :src="logoImagePreview"
+                alt="Logo preview"
+              >
               <div class="image-overlay">
                 <span class="image-overlay-text">Click to replace image</span>
               </div>
               <button
                 type="button"
                 class="image-remove-btn"
-                @click.stop="removeLogoImage"
                 title="Remove image"
+                @click.stop="removeLogoImage"
               >
                 ×
               </button>
             </div>
-            <div v-else class="image-upload-placeholder" @click="triggerLogoUpload">
+            <div
+              v-else
+              class="image-upload-placeholder"
+              @click="triggerLogoUpload"
+            >
               <span class="upload-icon">🏷️</span>
               <span class="upload-text">Click to upload logo</span>
             </div>
@@ -348,7 +445,9 @@
               @change="handleLogoImageSelect"
             >
           </div>
-          <p class="portal-form-hint">Recommended: Square or horizontal, max 4MB</p>
+          <p class="portal-form-hint">
+            Recommended: Square or horizontal, max 4MB
+          </p>
         </div>
 
         <!-- Background Color -->
@@ -415,15 +514,42 @@
         <div class="portal-form-section">
           <label class="portal-form-label">Quick Presets</label>
           <div class="theme-presets">
-            <button type="button" class="preset-btn" @click="applyPreset('dark')">🌙 Dark</button>
-            <button type="button" class="preset-btn" @click="applyPreset('light')">☀️ Light</button>
-            <button type="button" class="preset-btn" @click="applyPreset('cyberpunk')">⚡ Cyberpunk</button>
-            <button type="button" class="preset-btn" @click="applyPreset('ocean')">🌊 Ocean</button>
+            <button
+              type="button"
+              class="preset-btn"
+              @click="applyPreset('dark')"
+            >
+              🌙 Dark
+            </button>
+            <button
+              type="button"
+              class="preset-btn"
+              @click="applyPreset('light')"
+            >
+              ☀️ Light
+            </button>
+            <button
+              type="button"
+              class="preset-btn"
+              @click="applyPreset('cyberpunk')"
+            >
+              ⚡ Cyberpunk
+            </button>
+            <button
+              type="button"
+              class="preset-btn"
+              @click="applyPreset('ocean')"
+            >
+              🌊 Ocean
+            </button>
           </div>
         </div>
 
         <!-- Form Actions -->
-        <div class="portal-form-footer" style="margin-top: 1.5rem">
+        <div
+          class="portal-form-footer"
+          style="margin-top: 1.5rem"
+        >
           <button
             class="portal-btn portal-btn--ghost"
             :disabled="themeLoading"
@@ -436,7 +562,10 @@
             :disabled="themeLoading"
             @click="submitThemeForm"
           >
-            <span v-if="themeLoading" class="portal-btn-pulse">Saving...</span>
+            <span
+              v-if="themeLoading"
+              class="portal-btn-pulse"
+            >Saving...</span>
             <span v-else>Update Theme</span>
           </button>
         </div>
@@ -449,8 +578,12 @@
       <div class="portal-card">
         <div class="portal-card-header">
           <div>
-            <h2 class="portal-card-title">[ DETAILS ]</h2>
-            <p class="portal-card-subtitle">Edit tournament name, description, and settings</p>
+            <h2 class="portal-card-title">
+              [ DETAILS ]
+            </h2>
+            <p class="portal-card-subtitle">
+              Edit tournament name, description, and settings
+            </p>
           </div>
           <button
             class="portal-btn portal-btn--primary"
@@ -481,7 +614,10 @@
             <div class="setting-item">
               <span class="setting-label">Status</span>
               <span class="setting-value">
-                <span class="portal-badge" :class="tournament.status === 'active' ? 'portal-badge--success' : 'portal-badge--muted'">
+                <span
+                  class="portal-badge"
+                  :class="tournament.status === 'active' ? 'portal-badge--success' : 'portal-badge--muted'"
+                >
                   {{ tournament.status }}
                 </span>
               </span>
@@ -506,8 +642,12 @@
       <div class="portal-card">
         <div class="portal-card-header">
           <div>
-            <h2 class="portal-card-title">[ THEME ]</h2>
-            <p class="portal-card-subtitle">Customize colors, images, and visual style</p>
+            <h2 class="portal-card-title">
+              [ THEME ]
+            </h2>
+            <p class="portal-card-subtitle">
+              Customize colors, images, and visual style
+            </p>
           </div>
           <button
             class="portal-btn portal-btn--primary"
@@ -521,13 +661,25 @@
           <div class="theme-preview">
             <div class="theme-row">
               <span class="setting-label">Hero Image</span>
-              <span v-if="tournament.hasHeroImage" class="portal-badge portal-badge--success">Uploaded</span>
-              <span v-else class="portal-badge portal-badge--muted">Not set</span>
+              <span
+                v-if="tournament.hasHeroImage"
+                class="portal-badge portal-badge--success"
+              >Uploaded</span>
+              <span
+                v-else
+                class="portal-badge portal-badge--muted"
+              >Not set</span>
             </div>
             <div class="theme-row">
               <span class="setting-label">Community Logo</span>
-              <span v-if="tournament.hasCommunityLogo" class="portal-badge portal-badge--success">Uploaded</span>
-              <span v-else class="portal-badge portal-badge--muted">Not set</span>
+              <span
+                v-if="tournament.hasCommunityLogo"
+                class="portal-badge portal-badge--success"
+              >Uploaded</span>
+              <span
+                v-else
+                class="portal-badge portal-badge--muted"
+              >Not set</span>
             </div>
           </div>
         </div>
@@ -537,21 +689,36 @@
       <div class="portal-card">
         <div class="portal-card-header">
           <div>
-            <h2 class="portal-card-title">[ RULES ]</h2>
-            <p class="portal-card-subtitle">Tournament rules and guidelines (supports Markdown)</p>
+            <h2 class="portal-card-title">
+              [ RULES ]
+            </h2>
+            <p class="portal-card-subtitle">
+              Tournament rules and guidelines (supports Markdown)
+            </p>
           </div>
         </div>
 
         <div class="portal-card-body">
-          <div v-if="tournament.rules && tournament.rules.trim()" class="rules-preview">
+          <div
+            v-if="tournament.rules && tournament.rules.trim()"
+            class="rules-preview"
+          >
             <div
-              v-html="renderedRules"
               class="markdown-rules"
+              v-html="renderedRules"
             />
           </div>
-          <div v-else class="portal-empty" style="padding: 2rem">
-            <div class="portal-empty-icon">📋</div>
-            <h3 class="portal-empty-title">No Rules Defined</h3>
+          <div
+            v-else
+            class="portal-empty"
+            style="padding: 2rem"
+          >
+            <div class="portal-empty-icon">
+              📋
+            </div>
+            <h3 class="portal-empty-title">
+              No Rules Defined
+            </h3>
             <p class="portal-empty-desc">
               Add tournament rules in the Edit Tournament panel
             </p>

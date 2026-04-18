@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue';
+import { computed } from 'vue';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -15,7 +15,7 @@ import {
   type ChartData
 } from 'chart.js';
 import { Line, Scatter } from 'vue-chartjs';
-import type { RoundReport, LeaderboardSnapshot } from '../../services/serverDetailsService';
+import type { RoundReport } from '../../services/serverDetailsService';
 import type { BattleEvent, RoundSummary } from '../../utils/battleEventGenerator';
 
 ChartJS.register(
@@ -208,27 +208,40 @@ const currentTimeProgress = computed(() => {
 
 <template>
   <div class="grid grid-cols-1 md:grid-cols-12 gap-6 h-full p-6 custom-scrollbar overflow-y-auto">
-    
     <!-- LEFT COLUMN: MOMENTUM & FLOW -->
     <div class="md:col-span-8 flex flex-col gap-6">
-      
       <!-- Chart 1: The Race -->
       <div class="flex-1 min-h-[340px] flex flex-col bg-black/40 rounded-xl border border-white/5 p-5 relative overflow-hidden group">
         <div class="flex items-center justify-between mb-4 z-10">
           <div class="flex items-center gap-2">
             <div class="w-1 h-3 bg-cyan-500 shadow-[0_0_8px_rgba(0,229,255,0.5)]" />
-            <h4 class="text-[10px] font-mono font-black text-white uppercase tracking-[0.3em]">Operational Lead Flow</h4>
+            <h4 class="text-[10px] font-mono font-black text-white uppercase tracking-[0.3em]">
+              Operational Lead Flow
+            </h4>
           </div>
           <div class="flex flex-wrap gap-2 justify-end">
-            <div v-for="(ds, i) in raceChartData.datasets" :key="i" class="flex items-center gap-1.5 px-2 py-0.5 bg-black/40 border border-white/5 rounded">
-              <div class="w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: ds.borderColor }" />
-              <span class="text-[8px] font-mono uppercase" :class="ds.label.toLowerCase() === trackedPlayer.trim().toLowerCase() ? 'text-cyan-400 font-black' : 'text-slate-500'">{{ ds.label }}</span>
+            <div
+              v-for="(ds, i) in raceChartData.datasets"
+              :key="i"
+              class="flex items-center gap-1.5 px-2 py-0.5 bg-black/40 border border-white/5 rounded"
+            >
+              <div
+                class="w-1.5 h-1.5 rounded-full"
+                :style="{ backgroundColor: ds.borderColor }"
+              />
+              <span
+                class="text-[8px] font-mono uppercase"
+                :class="ds.label.toLowerCase() === trackedPlayer.trim().toLowerCase() ? 'text-cyan-400 font-black' : 'text-slate-500'"
+              >{{ ds.label }}</span>
             </div>
           </div>
         </div>
         
         <div class="flex-1 relative">
-          <Line :data="raceChartData" :options="raceOptions" />
+          <Line
+            :data="raceChartData"
+            :options="raceOptions"
+          />
           <div 
             class="absolute top-0 bottom-0 w-px bg-cyan-500 shadow-[0_0_12px_rgba(0,229,255,0.6)] z-20 pointer-events-none transition-all duration-300"
             :style="{ left: `${currentTimeProgress}%` }"
@@ -242,10 +255,15 @@ const currentTimeProgress = computed(() => {
       <div class="h-[180px] flex flex-col bg-black/40 rounded-xl border border-white/5 p-5 relative group">
         <div class="flex items-center gap-2 mb-4 z-10">
           <div class="w-1 h-3 bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
-          <h4 class="text-[10px] font-mono font-black text-white uppercase tracking-[0.3em]">Instantaneous Combat Velocity</h4>
+          <h4 class="text-[10px] font-mono font-black text-white uppercase tracking-[0.3em]">
+            Instantaneous Combat Velocity
+          </h4>
         </div>
         <div class="flex-1 relative">
-          <Line :data="velocityChartData" :options="baseOptions" />
+          <Line
+            :data="velocityChartData"
+            :options="baseOptions"
+          />
           <div 
             class="absolute top-0 bottom-0 w-px bg-white/20 z-20 pointer-events-none"
             :style="{ left: `${currentTimeProgress}%` }"
@@ -259,17 +277,30 @@ const currentTimeProgress = computed(() => {
       <div class="flex-1 min-h-[300px] flex flex-col bg-black/40 rounded-xl border border-white/5 p-5">
         <div class="flex items-center gap-2 mb-6">
           <div class="w-1 h-3 bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
-          <h4 class="text-[10px] font-mono font-black text-white uppercase tracking-[0.3em]">Efficiency Quadrants</h4>
+          <h4 class="text-[10px] font-mono font-black text-white uppercase tracking-[0.3em]">
+            Efficiency Quadrants
+          </h4>
         </div>
         <div class="flex-1 relative">
-          <Scatter :data="efficiencyChartData" :options="efficiencyOptions" />
+          <Scatter
+            :data="efficiencyChartData"
+            :options="efficiencyOptions"
+          />
           
           <!-- Quadrant Labels -->
           <div class="absolute inset-0 pointer-events-none flex flex-wrap opacity-20 text-[7px] font-mono font-bold text-slate-500 p-8">
-            <div class="w-1/2 h-1/2 flex items-start justify-end pr-2 border-r border-b border-white/5">HUNTERS</div>
-            <div class="w-1/2 h-1/2 flex items-start justify-start pl-2 border-b border-white/5">ELITE</div>
-            <div class="w-1/2 h-1/2 flex items-end justify-end pr-2 border-r border-white/5">RECRUITS</div>
-            <div class="w-1/2 h-1/2 flex items-end justify-start pl-2">GRINDERS</div>
+            <div class="w-1/2 h-1/2 flex items-start justify-end pr-2 border-r border-b border-white/5">
+              HUNTERS
+            </div>
+            <div class="w-1/2 h-1/2 flex items-start justify-start pl-2 border-b border-white/5">
+              ELITE
+            </div>
+            <div class="w-1/2 h-1/2 flex items-end justify-end pr-2 border-r border-white/5">
+              RECRUITS
+            </div>
+            <div class="w-1/2 h-1/2 flex items-end justify-start pl-2">
+              GRINDERS
+            </div>
           </div>
         </div>
         <div class="mt-4 p-2 bg-black/20 rounded border border-white/5">
@@ -281,14 +312,21 @@ const currentTimeProgress = computed(() => {
 
       <!-- Summary Metrics -->
       <div class="bg-cyan-500/5 border border-cyan-500/20 rounded-xl p-6 flex flex-col gap-4">
-        <div v-for="metric in [
-          { label: 'Kill Velocity', val: (roundSummary?.totalKills || 0) / 10, unit: 'KPM', color: 'text-cyan-400' },
-          { label: 'Lead Stability', val: 100 - (roundSummary?.leadChanges || 0) * 10, unit: '%', color: 'text-purple-400' },
-          { label: 'Tactical Spread', val: roundSummary?.avgKD || 0, unit: 'K/D', color: 'text-emerald-400' }
-        ]" :key="metric.label" class="flex justify-between items-end border-b border-white/5 pb-2 last:border-0 last:pb-0">
+        <div
+          v-for="metric in [
+            { label: 'Kill Velocity', val: (roundSummary?.totalKills || 0) / 10, unit: 'KPM', color: 'text-cyan-400' },
+            { label: 'Lead Stability', val: 100 - (roundSummary?.leadChanges || 0) * 10, unit: '%', color: 'text-purple-400' },
+            { label: 'Tactical Spread', val: roundSummary?.avgKD || 0, unit: 'K/D', color: 'text-emerald-400' }
+          ]"
+          :key="metric.label"
+          class="flex justify-between items-end border-b border-white/5 pb-2 last:border-0 last:pb-0"
+        >
           <span class="text-[9px] font-mono text-slate-500 uppercase tracking-widest">{{ metric.label }}</span>
           <div class="text-right">
-            <span class="text-xl font-black font-mono leading-none mr-1" :class="metric.color">{{ metric.val.toFixed(1) }}</span>
+            <span
+              class="text-xl font-black font-mono leading-none mr-1"
+              :class="metric.color"
+            >{{ metric.val.toFixed(1) }}</span>
             <span class="text-[8px] font-mono text-slate-600 uppercase">{{ metric.unit }}</span>
           </div>
         </div>

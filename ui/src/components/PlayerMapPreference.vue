@@ -1,23 +1,37 @@
 <template>
   <div class="player-map-preference">
     <!-- Loading state -->
-    <div v-if="loading" class="loading-state">
+    <div
+      v-if="loading"
+      class="loading-state"
+    >
       <div class="explorer-spinner" />
       <span>Loading map preferences...</span>
     </div>
 
     <!-- Error state -->
-    <div v-else-if="error" class="error-state">
+    <div
+      v-else-if="error"
+      class="error-state"
+    >
       {{ error }}
     </div>
 
     <!-- Map preference data -->
-    <div v-else-if="topMap" class="preference-content">
+    <div
+      v-else-if="topMap"
+      class="preference-content"
+    >
       <!-- Hero card for top map -->
-      <div class="hero-map hero-map--clickable" @click="emit('navigateToMap', topMap.mapName)">
+      <div
+        class="hero-map hero-map--clickable"
+        @click="emit('navigateToMap', topMap.mapName)"
+      >
         <div class="hero-header">
           <span class="hero-label">TOP MAP</span>
-          <h4 class="hero-map-name">{{ topMap.mapName }}</h4>
+          <h4 class="hero-map-name">
+            {{ topMap.mapName }}
+          </h4>
         </div>
         <div class="hero-stats">
           <div class="stat-item">
@@ -36,10 +50,23 @@
       </div>
 
       <!-- Top 5 maps bars -->
-      <div v-if="topMaps.length > 1" class="map-bars">
-        <div class="section-header">RECENT ACTIVITY</div>
-        <div v-for="(map, index) in topMaps.slice(0, 5)" :key="map.mapName" class="bar-row bar-row--clickable" @click="emit('navigateToMap', map.mapName)">
-          <div class="bar-label" :title="map.mapName">
+      <div
+        v-if="topMaps.length > 1"
+        class="map-bars"
+      >
+        <div class="section-header">
+          RECENT ACTIVITY
+        </div>
+        <div
+          v-for="(map, index) in topMaps.slice(0, 5)"
+          :key="map.mapName"
+          class="bar-row bar-row--clickable"
+          @click="emit('navigateToMap', map.mapName)"
+        >
+          <div
+            class="bar-label"
+            :title="map.mapName"
+          >
             <span class="map-position">{{ index + 1 }}</span>
             <span class="map-name">{{ map.mapName }}</span>
           </div>
@@ -48,20 +75,28 @@
               class="bar-fill"
               :style="{ width: getBarWidth(map) + '%' }"
               :class="{ 'bar-fill--top': index === 0 }"
-            ></div>
+            />
           </div>
-          <div class="bar-value">{{ formatPlayTime(map.totalPlayTimeMinutes) }}</div>
+          <div class="bar-value">
+            {{ formatPlayTime(map.totalPlayTimeMinutes) }}
+          </div>
         </div>
       </div>
 
       <!-- No maps fallback -->
-      <div v-else class="no-maps">
+      <div
+        v-else
+        class="no-maps"
+      >
         <p>No recent map activity in the last 30 days</p>
       </div>
     </div>
 
     <!-- No data state -->
-    <div v-else class="no-data">
+    <div
+      v-else
+      class="no-data"
+    >
       No map data available
     </div>
   </div>

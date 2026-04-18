@@ -254,12 +254,14 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
 
         // 1. First run all DbContext queries sequentially
         var sessionStats = await dbContext.PlayerSessions
-            .Where(ps => ps.PlayerName == playerName)
+            .Where(ps => ps.PlayerName == playerName && !ps.IsDeleted)
             .GroupBy(ps => ps.PlayerName)
             .Select(g => new
             {
                 FirstPlayed = g.Min(s => s.StartTime),
-                LastPlayed = g.Max(s => s.LastSeenTime)
+                LastPlayed = g.Max(s => s.LastSeenTime),
+                TotalSessions = g.Count(),
+                HighestScore = g.Max(s => s.TotalScore)
             })
             .FirstOrDefaultAsync();
 
@@ -387,6 +389,8 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         {
             FirstPlayed = sessionStats?.FirstPlayed ?? DateTime.MinValue,
             LastPlayed = sessionStats?.LastPlayed ?? DateTime.MinValue,
+            TotalSessions = sessionStats?.TotalSessions ?? 0,
+            HighestScore = sessionStats?.HighestScore ?? 0,
             TotalKills = lifetimeStats?.TotalKills ?? 0,
             TotalDeaths = lifetimeStats?.TotalDeaths ?? 0,
             TotalPlayTimeMinutes = lifetimeStats != null
@@ -427,6 +431,8 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         var stats = new PlayerTimeStatistics
         {
             TotalPlayTimeMinutes = aggregateStats.TotalPlayTimeMinutes,
+            TotalSessions = aggregateStats.TotalSessions,
+            HighestScore = aggregateStats.HighestScore,
             FirstPlayed = aggregateStats.FirstPlayed,
             LastPlayed = aggregateStats.LastPlayed,
             TotalKills = aggregateStats.TotalKills,

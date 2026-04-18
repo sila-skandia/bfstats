@@ -19,8 +19,18 @@
             class="text-slate-400 hover:text-slate-200 transition-colors"
             @click="$emit('close')"
           >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -29,12 +39,20 @@
       <!-- Content -->
       <div class="flex-1 overflow-y-auto p-6 space-y-6">
         <!-- Error Message -->
-        <div v-if="error" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-          <p class="text-red-400 text-sm">{{ error }}</p>
+        <div
+          v-if="error"
+          class="bg-red-500/10 border border-red-500/30 rounded-lg p-4"
+        >
+          <p class="text-red-400 text-sm">
+            {{ error }}
+          </p>
         </div>
 
         <!-- No Teams Warning -->
-        <div v-if="teams.length < 2" class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+        <div
+          v-if="teams.length < 2"
+          class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4"
+        >
           <p class="text-amber-400 text-sm">
             You need at least 2 teams to schedule a match. Please create teams first.
           </p>
@@ -68,7 +86,9 @@
                 class="w-full px-4 py-3 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
                 :disabled="loading || availableWeeks.length === 0"
               >
-                <option :value="null">No Week (Unscheduled)</option>
+                <option :value="null">
+                  No Week (Unscheduled)
+                </option>
                 <option
                   v-for="week in availableWeeks"
                   :key="week"
@@ -100,7 +120,12 @@
                 class="flex-1 px-4 py-3 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
                 :disabled="loading"
               >
-                <option :value="null" disabled>Team 1...</option>
+                <option
+                  :value="null"
+                  disabled
+                >
+                  Team 1...
+                </option>
                 <option
                   v-for="team in availableTeamsForTeam1"
                   :key="team.id"
@@ -121,7 +146,12 @@
                 class="flex-1 px-4 py-3 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
                 :disabled="loading"
               >
-                <option :value="null" disabled>Team 2...</option>
+                <option
+                  :value="null"
+                  disabled
+                >
+                  Team 2...
+                </option>
                 <option
                   v-for="team in availableTeamsForTeam2"
                   :key="team.id"
@@ -159,30 +189,53 @@
                   <button
                     type="button"
                     class="p-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30 hover:border-purple-500/50 rounded-lg transition-all"
-                    @click="openImageSelector(index)"
                     :disabled="loading"
                     :title="formData.maps[index].imagePath ? 'Change map image' : 'Select map image'"
+                    @click="openImageSelector(index)"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
                     </svg>
                   </button>
                   <button
                     v-if="formData.maps.length > 1"
                     type="button"
                     class="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 hover:border-red-500/50 rounded-lg transition-all"
-                    @click="removeMap(index)"
                     :disabled="loading"
                     title="Remove map"
+                    @click="removeMap(index)"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
                     </svg>
                   </button>
                 </div>
 
                 <!-- Image Preview Row -->
-                <div v-if="formData.maps[index].imagePath" class="flex items-center gap-2 ml-8 mb-2">
+                <div
+                  v-if="formData.maps[index].imagePath"
+                  class="flex items-center gap-2 ml-8 mb-2"
+                >
                   <span class="text-xs text-slate-400 flex-shrink-0">Image:</span>
                   <div class="flex items-center gap-2 flex-1">
                     <div class="flex-1 px-3 py-1.5 bg-slate-700/30 border border-slate-600 rounded-lg text-xs text-slate-300 truncate">
@@ -191,25 +244,37 @@
                     <button
                       type="button"
                       class="p-1.5 bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-lg transition-all"
-                      @click="clearMapImage(index)"
                       :disabled="loading"
                       title="Clear image"
+                      @click="clearMapImage(index)"
                     >
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                      <svg
+                        class="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </button>
                   </div>
                 </div>
 
                 <!-- Team Selection Row -->
-                <div v-if="formData.team1Id && formData.team2Id" class="flex items-center gap-2 ml-8">
+                <div
+                  v-if="formData.team1Id && formData.team2Id"
+                  class="flex items-center gap-2 ml-8"
+                >
                   <span class="text-xs text-slate-400 flex-shrink-0">Selected by:</span>
                   <div class="flex items-center gap-2 flex-1">
                     <button
                       v-for="team in props.teams.filter(t => t.id === formData.team1Id || t.id === formData.team2Id)"
                       :key="team.id"
-                      @click="formData.maps[index].teamId = formData.maps[index].teamId === team.id ? null : team.id"
                       :disabled="loading"
                       :class="[
                         'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
@@ -217,20 +282,30 @@
                           ? 'bg-cyan-600 border-cyan-500 text-white'
                           : 'bg-slate-700/50 border-slate-600 text-slate-300 hover:bg-slate-600/50'
                       ]"
+                      @click="formData.maps[index].teamId = formData.maps[index].teamId === team.id ? null : team.id"
                     >
                       {{ team.name }}
                     </button>
                   </div>
                 </div>
-
               </div>
               <button
                 class="w-full px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600 rounded-lg transition-all text-sm flex items-center justify-center gap-2"
-                @click="addMap"
                 :disabled="loading"
+                @click="addMap"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 4v16m8-8H4"
+                  />
                 </svg>
                 <span>Add Map</span>
               </button>
@@ -240,7 +315,9 @@
           <!-- Server Details -->
           <div class="space-y-3 bg-slate-800/30 border border-slate-700/30 rounded-lg p-4">
             <div>
-              <h3 class="text-sm font-medium text-slate-300">Server (Optional)</h3>
+              <h3 class="text-sm font-medium text-slate-300">
+                Server (Optional)
+              </h3>
               <p class="text-xs text-slate-500 mt-1">
                 Search for an existing server or enter a name manually if it doesn't exist yet.
               </p>
@@ -280,10 +357,23 @@
               </div>
 
               <!-- Selected Server Indicator -->
-              <div v-if="formData.serverGuid" class="absolute right-3 top-1/2 -translate-y-1/2">
+              <div
+                v-if="formData.serverGuid"
+                class="absolute right-3 top-1/2 -translate-y-1/2"
+              >
                 <div class="flex items-center gap-1 text-xs text-green-400">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  <svg
+                    class="w-3.5 h-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M5 13l4 4L19 7"
+                    />
                   </svg>
                   <span>Linked</span>
                 </div>
@@ -298,24 +388,42 @@
           <!-- Files Section -->
           <div class="space-y-3 bg-slate-800/30 border border-slate-700/30 rounded-lg p-4">
             <div>
-              <h3 class="text-sm font-medium text-slate-300">📎 Files & Links (Optional)</h3>
+              <h3 class="text-sm font-medium text-slate-300">
+                📎 Files & Links (Optional)
+              </h3>
               <p class="text-xs text-slate-500 mt-1">
                 Add match recordings, map packs, or other relevant links. You can add multiple links before saving.
               </p>
             </div>
 
             <!-- Files List -->
-            <div v-if="formData.files.length > 0" class="space-y-2 bg-slate-900/40 rounded-lg p-3">
-              <div v-for="(file, idx) in formData.files" :key="idx" class="flex items-start gap-3 p-2 bg-slate-800/50 rounded border border-slate-700/30">
+            <div
+              v-if="formData.files.length > 0"
+              class="space-y-2 bg-slate-900/40 rounded-lg p-3"
+            >
+              <div
+                v-for="(file, idx) in formData.files"
+                :key="idx"
+                class="flex items-start gap-3 p-2 bg-slate-800/50 rounded border border-slate-700/30"
+              >
                 <div class="flex-1 min-w-0">
-                  <p class="text-xs text-slate-400">{{ file.name }}</p>
-                  <p class="text-xs text-slate-500 truncate">{{ file.url }}</p>
-                  <p v-if="file.tags" class="text-xs text-slate-400 mt-1">Tags: {{ file.tags }}</p>
+                  <p class="text-xs text-slate-400">
+                    {{ file.name }}
+                  </p>
+                  <p class="text-xs text-slate-500 truncate">
+                    {{ file.url }}
+                  </p>
+                  <p
+                    v-if="file.tags"
+                    class="text-xs text-slate-400 mt-1"
+                  >
+                    Tags: {{ file.tags }}
+                  </p>
                 </div>
                 <button
-                  @click="removeFile(idx)"
                   :disabled="loading"
                   class="flex-shrink-0 px-2 py-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+                  @click="removeFile(idx)"
                 >
                   ✕
                 </button>
@@ -353,9 +461,9 @@
 
               <!-- Add File Button -->
               <button
-                @click="addFile"
                 :disabled="loading || !newFile.name.trim() || !newFile.url.trim()"
                 class="w-full px-3 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-xs rounded font-medium transition-colors"
+                @click="addFile"
               >
                 + Add File
               </button>
@@ -365,22 +473,33 @@
           <!-- Comments Section -->
           <div class="space-y-3 bg-slate-800/30 border border-slate-700/30 rounded-lg p-4">
             <div>
-              <h3 class="text-sm font-medium text-slate-300">💬 Comments (Optional)</h3>
+              <h3 class="text-sm font-medium text-slate-300">
+                💬 Comments (Optional)
+              </h3>
               <p class="text-xs text-slate-500 mt-1">
                 Add organizer notes or comments about this match.
               </p>
             </div>
 
             <!-- Comments List -->
-            <div v-if="formData.comments.length > 0" class="space-y-2 bg-slate-900/40 rounded-lg p-3">
-              <div v-for="(comment, idx) in formData.comments" :key="idx" class="flex items-start gap-3 p-2 bg-slate-800/50 rounded border border-slate-700/30">
+            <div
+              v-if="formData.comments.length > 0"
+              class="space-y-2 bg-slate-900/40 rounded-lg p-3"
+            >
+              <div
+                v-for="(comment, idx) in formData.comments"
+                :key="idx"
+                class="flex items-start gap-3 p-2 bg-slate-800/50 rounded border border-slate-700/30"
+              >
                 <div class="flex-1 min-w-0">
-                  <p class="text-xs text-slate-300 break-words">{{ comment.content }}</p>
+                  <p class="text-xs text-slate-300 break-words">
+                    {{ comment.content }}
+                  </p>
                 </div>
                 <button
-                  @click="removeComment(idx)"
                   :disabled="loading"
                   class="flex-shrink-0 px-2 py-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+                  @click="removeComment(idx)"
                 >
                   ✕
                 </button>
@@ -400,9 +519,9 @@
 
               <!-- Add Comment Button -->
               <button
-                @click="addComment"
                 :disabled="loading || !newComment.trim()"
                 class="w-full px-3 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-xs rounded font-medium transition-colors"
+                @click="addComment"
               >
                 + Add Comment
               </button>
@@ -414,28 +533,49 @@
       <!-- Footer -->
       <div class="sticky bottom-0 bg-gradient-to-r from-slate-800/95 to-slate-900/95 backdrop-blur-sm border-t border-slate-700/50 p-6">
         <!-- Validation Messages -->
-        <div v-if="!isFormValid && !loading" class="mb-4 space-y-1">
-          <p v-if="!dateTimeString" class="text-xs text-amber-400 flex items-center gap-1">
+        <div
+          v-if="!isFormValid && !loading"
+          class="mb-4 space-y-1"
+        >
+          <p
+            v-if="!dateTimeString"
+            class="text-xs text-amber-400 flex items-center gap-1"
+          >
             <span>⚠</span>
             <span>Please select a scheduled date and time</span>
           </p>
-          <p v-if="formData.team1Id === null" class="text-xs text-amber-400 flex items-center gap-1">
+          <p
+            v-if="formData.team1Id === null"
+            class="text-xs text-amber-400 flex items-center gap-1"
+          >
             <span>⚠</span>
             <span>Please select Team 1</span>
           </p>
-          <p v-if="formData.team2Id === null" class="text-xs text-amber-400 flex items-center gap-1">
+          <p
+            v-if="formData.team2Id === null"
+            class="text-xs text-amber-400 flex items-center gap-1"
+          >
             <span>⚠</span>
             <span>Please select Team 2</span>
           </p>
-          <p v-if="formData.team1Id !== null && formData.team2Id !== null && formData.team1Id === formData.team2Id" class="text-xs text-amber-400 flex items-center gap-1">
+          <p
+            v-if="formData.team1Id !== null && formData.team2Id !== null && formData.team1Id === formData.team2Id"
+            class="text-xs text-amber-400 flex items-center gap-1"
+          >
             <span>⚠</span>
             <span>Team 1 and Team 2 must be different</span>
           </p>
-          <p v-if="formData.maps.length === 0" class="text-xs text-amber-400 flex items-center gap-1">
+          <p
+            v-if="formData.maps.length === 0"
+            class="text-xs text-amber-400 flex items-center gap-1"
+          >
             <span>⚠</span>
             <span>Please add at least one map</span>
           </p>
-          <p v-if="formData.maps.length > 0 && !formData.maps.every(map => map.name.trim().length > 0)" class="text-xs text-amber-400 flex items-center gap-1">
+          <p
+            v-if="formData.maps.length > 0 && !formData.maps.every(map => map.name.trim().length > 0)"
+            class="text-xs text-amber-400 flex items-center gap-1"
+          >
             <span>⚠</span>
             <span>All map names must be filled in (or remove empty maps)</span>
           </p>
@@ -444,18 +584,21 @@
         <div class="flex items-center justify-end gap-3">
           <button
             class="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition-colors"
-            @click="$emit('close')"
             :disabled="loading"
+            @click="$emit('close')"
           >
             Cancel
           </button>
           <button
             class="px-6 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded-lg font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            @click="handleSubmit"
             :disabled="loading || !isFormValid"
             :title="!isFormValid ? 'Please fill in all required fields' : ''"
+            @click="handleSubmit"
           >
-            <div v-if="loading" class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <div
+              v-if="loading"
+              class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
+            />
             <span>{{ editMode ? 'Update Match' : 'Schedule Match' }}</span>
           </button>
         </div>

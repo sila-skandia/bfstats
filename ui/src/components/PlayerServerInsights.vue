@@ -3,7 +3,7 @@
     <!-- Insights Header -->
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2">
-        <div class="w-1 h-6 bg-cyan-400 rounded-full opacity-80"></div>
+        <div class="w-1 h-6 bg-cyan-400 rounded-full opacity-80" />
         <h4 class="text-sm font-bold uppercase tracking-wide text-cyan-400 font-mono">
           Performance Insights
         </h4>
@@ -11,7 +11,10 @@
     </div>
 
     <!-- Loading State -->
-    <div v-if="loading" class="flex items-center justify-center py-6">
+    <div
+      v-if="loading"
+      class="flex items-center justify-center py-6"
+    >
       <div class="flex items-center gap-3 text-neutral-400">
         <div class="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
         <span class="text-xs font-mono">Analyzing performance...</span>
@@ -19,12 +22,18 @@
     </div>
 
     <!-- No Insights State -->
-    <div v-else-if="serversWithInsights.length === 0" class="text-center py-6 text-neutral-500 text-xs">
+    <div
+      v-else-if="serversWithInsights.length === 0"
+      class="text-center py-6 text-neutral-500 text-xs"
+    >
       <p>Keep playing to unlock performance insights.</p>
     </div>
 
     <!-- Servers with Insights -->
-    <div v-else class="space-y-4">
+    <div
+      v-else
+      class="space-y-4"
+    >
       <div
         v-for="serverData in serversWithInsights"
         :key="serverData.server.serverGuid"
@@ -63,13 +72,14 @@
                   class="flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold border"
                   :class="getServerPerformanceIndicator(serverData.server)?.color + ' ' + getServerPerformanceIndicator(serverData.server)?.borderColor"
                 >
-                  <div class="w-1.5 h-1.5 rounded-full"
-                       :class="{
-                         'bg-emerald-400': getServerPerformanceIndicator(serverData.server)?.type === 'excellent',
-                         'bg-cyan-400': getServerPerformanceIndicator(serverData.server)?.type === 'good',
-                         'bg-amber-400': getServerPerformanceIndicator(serverData.server)?.type === 'below'
-                       }">
-                  </div>
+                  <div
+                    class="w-1.5 h-1.5 rounded-full"
+                    :class="{
+                      'bg-emerald-400': getServerPerformanceIndicator(serverData.server)?.type === 'excellent',
+                      'bg-cyan-400': getServerPerformanceIndicator(serverData.server)?.type === 'good',
+                      'bg-amber-400': getServerPerformanceIndicator(serverData.server)?.type === 'below'
+                    }"
+                  />
                   <span class="text-slate-200">{{ getServerPerformanceIndicator(serverData.server)?.label }}</span>
                 </div>
               </div>
@@ -113,9 +123,9 @@
             <!-- Quick Actions -->
             <div class="flex-shrink-0 flex items-center gap-2">
               <button
-                @click="openMapModal(serverData.server.serverGuid)"
                 class="px-2.5 py-1.5 text-xs font-medium bg-neutral-700/50 hover:bg-neutral-600 border border-neutral-600 rounded text-slate-300 hover:text-white transition-colors"
                 title="View map statistics"
+                @click="openMapModal(serverData.server.serverGuid)"
               >
                 Maps
               </button>
@@ -129,9 +139,10 @@
               :key="index"
               class="flex items-start gap-3 p-2.5 rounded-lg bg-neutral-800/60 border border-neutral-700/40"
             >
-              <div class="flex-shrink-0 w-1 h-full min-h-[32px] rounded-full"
-                   :class="getInsightBarColor(insight.type)">
-              </div>
+              <div
+                class="flex-shrink-0 w-1 h-full min-h-[32px] rounded-full"
+                :class="getInsightBarColor(insight.type)"
+              />
               <div class="flex-1 min-w-0">
                 <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-0.5 font-mono">
                   {{ insight.type }}

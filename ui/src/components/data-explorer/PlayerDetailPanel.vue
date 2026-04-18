@@ -1,19 +1,43 @@
 <template>
   <div class="player-detail-panel">
     <!-- Loading State -->
-    <div v-if="isLoading" class="flex flex-col gap-4 p-6">
-      <div class="explorer-skeleton" style="height: 2rem; width: 33%"></div>
-      <div class="explorer-skeleton" style="height: 1rem; width: 25%"></div>
-      <div class="explorer-skeleton" style="height: 12rem"></div>
+    <div
+      v-if="isLoading"
+      class="flex flex-col gap-4 p-6"
+    >
+      <div
+        class="explorer-skeleton"
+        style="height: 2rem; width: 33%"
+      />
+      <div
+        class="explorer-skeleton"
+        style="height: 1rem; width: 25%"
+      />
+      <div
+        class="explorer-skeleton"
+        style="height: 12rem"
+      />
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="explorer-empty">
-      <div class="explorer-empty-icon text-neon-red">!</div>
-      <p class="explorer-empty-title text-neon-red">{{ error }}</p>
-      <p class="explorer-empty-desc">Try selecting a different time period or slice dimension.</p>
+    <div
+      v-else-if="error"
+      class="explorer-empty"
+    >
+      <div class="explorer-empty-icon text-neon-red">
+        !
+      </div>
+      <p class="explorer-empty-title text-neon-red">
+        {{ error }}
+      </p>
+      <p class="explorer-empty-desc">
+        Try selecting a different time period or slice dimension.
+      </p>
       <div class="flex gap-2 justify-center mt-4">
-        <button @click="loadData()" class="explorer-btn explorer-btn--ghost explorer-btn--sm">
+        <button
+          class="explorer-btn explorer-btn--ghost explorer-btn--sm"
+          @click="loadData()"
+        >
           Try again
         </button>
       </div>
@@ -21,27 +45,34 @@
 
     <!-- Content -->
     <div v-else-if="slicedData">
-
       <!-- Integrated Header Area -->
       <div class="explorer-header-integrated mb-6">
         <div class="explorer-header-main">
           <div class="explorer-title-minimal">
-            <h2 class="metric-title-subtle" :data-metric="getMetricTypeForSlice(selectedSliceType)">
+            <h2
+              class="metric-title-subtle"
+              :data-metric="getMetricTypeForSlice(selectedSliceType)"
+            >
               {{ getCurrentSliceName() }}
             </h2>
-            <p class="metric-description-subtle">{{ getCurrentSliceDescription() }}</p>
+            <p class="metric-description-subtle">
+              {{ getCurrentSliceDescription() }}
+            </p>
           </div>
 
           <div class="explorer-header-actions">
             <!-- Metric Selector -->
-            <div class="explorer-toggle-group" :data-metric="getMetricTypeForSlice(selectedSliceType)">
+            <div
+              class="explorer-toggle-group"
+              :data-metric="getMetricTypeForSlice(selectedSliceType)"
+            >
               <button
                 v-for="tab in metricTabs"
                 :key="tab.type"
-                @click="selectMetric(tab.type)"
                 class="explorer-toggle-btn explorer-toggle-btn--compact"
                 :class="{ 'explorer-toggle-btn--active': getMetricTypeForSlice(selectedSliceType) === tab.type }"
                 :data-metric="tab.type"
+                @click="selectMetric(tab.type)"
               >
                 {{ tab.label }}
               </button>
@@ -50,16 +81,16 @@
             <!-- Scope Toggle -->
             <div class="explorer-toggle-group">
               <button
-                @click="toggleScope('map')"
                 class="explorer-toggle-btn explorer-toggle-btn--compact"
                 :class="{ 'explorer-toggle-btn--active': !includeServerInSlice() }"
+                @click="toggleScope('map')"
               >
                 MAP
               </button>
               <button
-                @click="toggleScope('map-server')"
                 class="explorer-toggle-btn explorer-toggle-btn--compact"
                 :class="{ 'explorer-toggle-btn--active': includeServerInSlice() }"
+                @click="toggleScope('map-server')"
               >
                 +SERVER
               </button>
@@ -68,11 +99,15 @@
             <!-- Time Range -->
             <select
               :value="selectedTimeRange"
-              @change="changeTimeRange(parseInt(($event.target as HTMLSelectElement).value))"
               class="explorer-select explorer-select--compact explorer-mono text-xs"
               :disabled="isLoading"
+              @change="changeTimeRange(parseInt(($event.target as HTMLSelectElement).value))"
             >
-              <option v-for="option in timeRangeOptions" :key="option.value" :value="option.value">
+              <option
+                v-for="option in timeRangeOptions"
+                :key="option.value"
+                :value="option.value"
+              >
                 {{ option.label }}
               </option>
             </select>
@@ -81,60 +116,101 @@
       </div>
 
       <!-- Compact Summary Stats -->
-      <div v-if="slicedData.results.length > 0" class="explorer-stats-grid-compact mb-8">
+      <div
+        v-if="slicedData.results.length > 0"
+        class="explorer-stats-grid-compact mb-8"
+      >
         <!-- Card 1: Count -->
         <div class="explorer-stat-minimal">
-          <div class="explorer-stat-label-minimal">{{ getResultTypeLabel() }}</div>
-          <div class="explorer-stat-value-minimal">{{ slicedData.pagination.totalItems }}</div>
+          <div class="explorer-stat-label-minimal">
+            {{ getResultTypeLabel() }}
+          </div>
+          <div class="explorer-stat-value-minimal">
+            {{ slicedData.pagination.totalItems }}
+          </div>
         </div>
 
         <!-- Card 2: Primary Metric -->
         <div class="explorer-stat-minimal">
-          <div class="explorer-stat-label-minimal">{{ getPrimaryMetricLabel() }}</div>
-          <div class="explorer-stat-value-minimal" :class="themeStatClass">{{ getTotalPrimaryValue() }}</div>
+          <div class="explorer-stat-label-minimal">
+            {{ getPrimaryMetricLabel() }}
+          </div>
+          <div
+            class="explorer-stat-value-minimal"
+            :class="themeStatClass"
+          >
+            {{ getTotalPrimaryValue() }}
+          </div>
         </div>
 
         <!-- Card 3: Secondary Metric -->
         <div class="explorer-stat-minimal">
-          <div class="explorer-stat-label-minimal">{{ getSecondaryMetricLabel() }}</div>
-          <div class="explorer-stat-value-minimal">{{ getTotalSecondaryValue() }}</div>
+          <div class="explorer-stat-label-minimal">
+            {{ getSecondaryMetricLabel() }}
+          </div>
+          <div class="explorer-stat-value-minimal">
+            {{ getTotalSecondaryValue() }}
+          </div>
         </div>
 
         <!-- Card 4: Average Primary Per Round -->
         <div class="explorer-stat-minimal">
-          <div class="explorer-stat-label-minimal">{{ getAveragePrimaryLabel() }}</div>
-          <div class="explorer-stat-value-minimal" :class="themeStatClass">{{ getAveragePrimaryPerRound() }}</div>
+          <div class="explorer-stat-label-minimal">
+            {{ getAveragePrimaryLabel() }}
+          </div>
+          <div
+            class="explorer-stat-value-minimal"
+            :class="themeStatClass"
+          >
+            {{ getAveragePrimaryPerRound() }}
+          </div>
         </div>
 
         <!-- Card 5: Average K/D or Win Rate -->
         <div class="explorer-stat-minimal">
-          <div class="explorer-stat-label-minimal">{{ getPercentageLabel() }}</div>
-          <div class="explorer-stat-value-minimal" :class="percentageStatClass">
+          <div class="explorer-stat-label-minimal">
+            {{ getPercentageLabel() }}
+          </div>
+          <div
+            class="explorer-stat-value-minimal"
+            :class="percentageStatClass"
+          >
             {{ getAveragePercentage() }}<span class="text-[10px] ml-0.5 opacity-50">{{ getPercentageUnit() || '' }}</span>
           </div>
         </div>
       </div>
 
       <!-- Results Table -->
-      <div v-if="slicedData.results.length > 0" class="explorer-results-area">
+      <div
+        v-if="slicedData.results.length > 0"
+        class="explorer-results-area"
+      >
         <div class="explorer-section-header flex items-center justify-between">
-          <h3 class="explorer-section-title !mb-0 border-none !pb-0">DETAILED RESULTS</h3>
-          <div v-if="slicedData.pagination.totalPages > 1" class="flex items-center gap-4">
-            <span class="text-[10px] explorer-mono" style="color: var(--text-secondary)">
+          <h3 class="explorer-section-title !mb-0 border-none !pb-0">
+            DETAILED RESULTS
+          </h3>
+          <div
+            v-if="slicedData.pagination.totalPages > 1"
+            class="flex items-center gap-4"
+          >
+            <span
+              class="text-[10px] explorer-mono"
+              style="color: var(--text-secondary)"
+            >
               PAGE <span style="color: var(--text-primary)">{{ slicedData.pagination.page }}</span> / {{ slicedData.pagination.totalPages }}
             </span>
             <div class="explorer-pagination-controls">
               <button
-                @click="changePage(slicedData.pagination.page - 1)"
                 :disabled="!slicedData.pagination.hasPrevious || isLoading"
                 class="explorer-pagination-btn explorer-pagination-btn--compact"
+                @click="changePage(slicedData.pagination.page - 1)"
               >
                 &larr;
               </button>
               <button
-                @click="changePage(slicedData.pagination.page + 1)"
                 :disabled="!slicedData.pagination.hasNext || isLoading"
                 class="explorer-pagination-btn explorer-pagination-btn--compact"
+                @click="changePage(slicedData.pagination.page + 1)"
               >
                 &rarr;
               </button>
@@ -148,12 +224,33 @@
               <!-- Table Header -->
               <thead>
                 <tr>
-                  <th class="w-10 text-center">#</th>
-                  <th class="text-left pl-4">{{ getTableHeaderLabel() }}</th>
-                  <th class="text-right">{{ getSecondaryMetricLabel() }}</th>
-                  <th class="text-right" :class="themeColorClass">{{ getPrimaryMetricLabel() }}</th>
-                  <th class="text-right pr-6" :class="percentageColorClass">{{ getPercentageLabel() }}</th>
-                  <th v-if="hasAdditionalData()" class="text-left pl-4">ADDITIONAL</th>
+                  <th class="w-10 text-center">
+                    #
+                  </th>
+                  <th class="text-left pl-4">
+                    {{ getTableHeaderLabel() }}
+                  </th>
+                  <th class="text-right">
+                    {{ getSecondaryMetricLabel() }}
+                  </th>
+                  <th
+                    class="text-right"
+                    :class="themeColorClass"
+                  >
+                    {{ getPrimaryMetricLabel() }}
+                  </th>
+                  <th
+                    class="text-right pr-6"
+                    :class="percentageColorClass"
+                  >
+                    {{ getPercentageLabel() }}
+                  </th>
+                  <th
+                    v-if="hasAdditionalData()"
+                    class="text-left pl-4"
+                  >
+                    ADDITIONAL
+                  </th>
                 </tr>
               </thead>
 
@@ -173,10 +270,17 @@
                   <!-- Main Label -->
                   <td class="pl-4">
                     <div class="flex items-center">
-                      <span class="font-bold text-[13px]" :class="{ 'text-neon-cyan': isMapSlice() }" style="color: var(--text-primary)">
+                      <span
+                        class="font-bold text-[13px]"
+                        :class="{ 'text-neon-cyan': isMapSlice() }"
+                        style="color: var(--text-primary)"
+                      >
                         {{ result.sliceLabel }}
                       </span>
-                      <span v-if="result.subKey" class="explorer-tag explorer-tag--mini ml-2">
+                      <span
+                        v-if="result.subKey"
+                        class="explorer-tag explorer-tag--mini ml-2"
+                      >
                         {{ result.subKeyLabel || getServerName(result.subKey) }}
                       </span>
                     </div>
@@ -188,27 +292,50 @@
                   </td>
 
                   <!-- Primary Value -->
-                  <td class="text-right explorer-mono font-bold text-[12px]" :class="themeColorClass">
+                  <td
+                    class="text-right explorer-mono font-bold text-[12px]"
+                    :class="themeColorClass"
+                  >
                     {{ result.primaryValue.toLocaleString() }}
                   </td>
 
                   <!-- Percentage -->
-                  <td class="text-right pr-6 explorer-mono text-[11px]" :class="percentageColorClass">
+                  <td
+                    class="text-right pr-6 explorer-mono text-[11px]"
+                    :class="percentageColorClass"
+                  >
                     {{ result.percentage.toFixed(1) }}<span class="text-[10px] ml-0.5 opacity-70">{{ getPercentageUnit() }}</span>
                   </td>
 
                   <!-- Additional Data -->
-                  <td v-if="hasAdditionalData()" class="pl-4 py-1.5">
-                    <div v-if="isTeamWinSlice()" class="w-full max-w-[140px]">
+                  <td
+                    v-if="hasAdditionalData()"
+                    class="pl-4 py-1.5"
+                  >
+                    <div
+                      v-if="isTeamWinSlice()"
+                      class="w-full max-w-[140px]"
+                    >
                       <!-- Visual Win Rate Bar -->
                       <div v-if="getTeamLabel(result.additionalData, 'team1Label') || getTeamLabel(result.additionalData, 'team2Label')">
-                        <WinStatsBar :winStats="getTeamWinStats(result)" />
+                        <WinStatsBar :win-stats="getTeamWinStats(result)" />
                       </div>
                     </div>
-                    <div v-else class="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]" style="color: var(--text-secondary)">
-                      <div v-for="(value, key) in result.additionalData" :key="key" class="flex gap-1">
+                    <div
+                      v-else
+                      class="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]"
+                      style="color: var(--text-secondary)"
+                    >
+                      <div
+                        v-for="(value, key) in result.additionalData"
+                        :key="key"
+                        class="flex gap-1"
+                      >
                         <span class="opacity-50 uppercase tracking-tighter">{{ formatAdditionalKey(key) }}:</span>
-                        <span class="explorer-mono" style="color: var(--text-primary)">{{ formatAdditionalValue(value) }}</span>
+                        <span
+                          class="explorer-mono"
+                          style="color: var(--text-primary)"
+                        >{{ formatAdditionalValue(value) }}</span>
                       </div>
                     </div>
                   </td>
@@ -220,10 +347,19 @@
       </div>
 
       <!-- Empty State -->
-      <div v-else class="explorer-empty">
-        <div class="explorer-empty-icon">{ }</div>
-        <p class="explorer-empty-title">NO DATA AVAILABLE</p>
-        <p class="explorer-empty-desc">No statistics found for this player with the current filters.</p>
+      <div
+        v-else
+        class="explorer-empty"
+      >
+        <div class="explorer-empty-icon">
+          { }
+        </div>
+        <p class="explorer-empty-title">
+          NO DATA AVAILABLE
+        </p>
+        <p class="explorer-empty-desc">
+          No statistics found for this player with the current filters.
+        </p>
       </div>
     </div>
   </div>

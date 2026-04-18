@@ -14,13 +14,23 @@
 
     <!-- Custom bar chart with animated reordering -->
     <div class="bar-chart">
-      <TransitionGroup name="bar-reorder" tag="div" class="bar-list">
+      <TransitionGroup
+        name="bar-reorder"
+        tag="div"
+        class="bar-list"
+      >
         <div
           v-for="(map, index) in topMaps"
           :key="map.mapName"
           class="bar-row"
         >
-          <div class="bar-label bar-label--clickable" :title="map.mapName" @click.stop="emit('navigateToMap', map.mapName)">{{ map.mapName }}</div>
+          <div
+            class="bar-label bar-label--clickable"
+            :title="map.mapName"
+            @click.stop="emit('navigateToMap', map.mapName)"
+          >
+            {{ map.mapName }}
+          </div>
           <div class="bar-track">
             <div
               class="bar-fill"
@@ -28,7 +38,9 @@
               :class="getBarClass(map, index)"
             />
           </div>
-          <div class="bar-value">{{ formatValue(map) }}</div>
+          <div class="bar-value">
+            {{ formatValue(map) }}
+          </div>
         </div>
       </TransitionGroup>
     </div>

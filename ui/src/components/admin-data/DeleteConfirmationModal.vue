@@ -1,9 +1,17 @@
 <template>
-  <div class="delete-modal-backdrop" @click.self="$emit('cancel')">
-    <div class="delete-modal" @click.stop>
+  <div
+    class="delete-modal-backdrop"
+    @click.self="$emit('cancel')"
+  >
+    <div
+      class="delete-modal"
+      @click.stop
+    >
       <div class="delete-modal-head">
         <span class="delete-modal-label">[ CONFIRM DESTRUCTION ]</span>
-        <h2 class="delete-modal-title">Delete Round</h2>
+        <h2 class="delete-modal-title">
+          Delete Round
+        </h2>
         <p class="delete-modal-desc">
           This will permanently delete the round and all related data. This cannot be undone.
         </p>
@@ -14,13 +22,22 @@
           <span class="delete-modal-impact-label">impact</span>
           <ul class="delete-modal-impact-list">
             <li><span class="delete-modal-impact-n">{{ impact.achievementCountToDelete }}</span> achievements</li>
-            <li v-if="impact.observationCountToDelete != null"><span class="delete-modal-impact-n">{{ impact.observationCountToDelete }}</span> observations</li>
-            <li v-if="impact.sessionCountToDelete != null"><span class="delete-modal-impact-n">{{ impact.sessionCountToDelete }}</span> sessions</li>
+            <li v-if="impact.observationCountToDelete != null">
+              <span class="delete-modal-impact-n">{{ impact.observationCountToDelete }}</span> observations
+            </li>
+            <li v-if="impact.sessionCountToDelete != null">
+              <span class="delete-modal-impact-n">{{ impact.sessionCountToDelete }}</span> sessions
+            </li>
             <li><span class="delete-modal-impact-n">{{ impact.playerCount }}</span> players in round</li>
           </ul>
         </div>
 
-        <p v-if="error" class="delete-modal-err">{{ error }}</p>
+        <p
+          v-if="error"
+          class="delete-modal-err"
+        >
+          {{ error }}
+        </p>
       </div>
 
       <div class="delete-modal-foot">

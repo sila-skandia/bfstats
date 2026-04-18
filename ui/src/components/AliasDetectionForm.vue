@@ -5,7 +5,10 @@
       <p>Enter two player names to analyze their activity patterns and relationships</p>
     </div>
 
-    <form @submit.prevent="handleSubmit" class="form-content">
+    <form
+      class="form-content"
+      @submit.prevent="handleSubmit"
+    >
       <div class="input-group">
         <div class="input-field">
           <label>Player 1</label>
@@ -20,9 +23,9 @@
         </div>
 
         <div class="vs-separator">
-          <div class="separator-line"></div>
+          <div class="separator-line" />
           <span class="separator-text">vs</span>
-          <div class="separator-line"></div>
+          <div class="separator-line" />
         </div>
 
         <div class="input-field">
@@ -38,10 +41,20 @@
         </div>
       </div>
 
-      <button type="submit" class="btn-submit" :disabled="loading || !player1 || !player2">
-        <span v-if="!loading" class="btn-text">Analyze</span>
-        <span v-else class="btn-text loading">
-          <span class="spinner"></span>
+      <button
+        type="submit"
+        class="btn-submit"
+        :disabled="loading || !player1 || !player2"
+      >
+        <span
+          v-if="!loading"
+          class="btn-text"
+        >Analyze</span>
+        <span
+          v-else
+          class="btn-text loading"
+        >
+          <span class="spinner" />
           Analyzing...
         </span>
       </button>

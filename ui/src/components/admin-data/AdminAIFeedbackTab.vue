@@ -2,16 +2,28 @@
   <div class="portal-ai-feedback-tab">
     <div class="portal-card portal-audit">
       <div class="portal-audit-head">
-        <h2 class="portal-audit-title">[ AI FEEDBACK ]</h2>
+        <h2 class="portal-audit-title">
+          [ AI FEEDBACK ]
+        </h2>
         <div class="portal-feedback-head-actions">
           <div class="portal-feedback-stats">
             <span class="portal-feedback-stat portal-feedback-stat--positive">{{ positiveCount }}</span>
             <span class="portal-feedback-stat portal-feedback-stat--negative">{{ negativeCount }}</span>
           </div>
-          <select v-model="filterValue" class="portal-cron-select" @change="load(1)">
-            <option value="all">All</option>
-            <option value="positive">Positive only</option>
-            <option value="negative">Negative only</option>
+          <select
+            v-model="filterValue"
+            class="portal-cron-select"
+            @change="load(1)"
+          >
+            <option value="all">
+              All
+            </option>
+            <option value="positive">
+              Positive only
+            </option>
+            <option value="negative">
+              Negative only
+            </option>
           </select>
           <button
             type="button"
@@ -23,15 +35,26 @@
           </button>
         </div>
       </div>
-      <div v-if="error" class="portal-cron-err">{{ error }}</div>
+      <div
+        v-if="error"
+        class="portal-cron-err"
+      >
+        {{ error }}
+      </div>
       <div class="portal-audit-table-wrap">
         <table class="portal-audit-table">
           <thead>
             <tr>
-              <th style="width: 50px">rating</th>
-              <th style="width: 200px">prompt</th>
+              <th style="width: 50px">
+                rating
+              </th>
+              <th style="width: 200px">
+                prompt
+              </th>
               <th>response</th>
-              <th style="width: 140px">date</th>
+              <th style="width: 140px">
+                date
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -50,21 +73,33 @@
                   {{ entry.isPositive ? '+' : '-' }}
                 </span>
               </td>
-              <td class="portal-audit-mono portal-feedback-prompt">{{ truncate(entry.prompt, 120) }}</td>
-              <td class="portal-feedback-response">{{ truncate(entry.response, 180) }}</td>
-              <td class="portal-audit-mono">{{ formatDate(entry.createdAt) }}</td>
+              <td class="portal-audit-mono portal-feedback-prompt">
+                {{ truncate(entry.prompt, 120) }}
+              </td>
+              <td class="portal-feedback-response">
+                {{ truncate(entry.response, 180) }}
+              </td>
+              <td class="portal-audit-mono">
+                {{ formatDate(entry.createdAt) }}
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div v-if="items.length === 0 && !loading" class="portal-empty">
+      <div
+        v-if="items.length === 0 && !loading"
+        class="portal-empty"
+      >
         <span class="portal-empty-dash">&empty;</span>
         <span class="portal-empty-title">No feedback yet</span>
         <span class="portal-empty-desc">Feedback appears when users rate AI responses.</span>
       </div>
 
       <!-- Pagination -->
-      <div v-if="totalCount > pageSize" class="portal-pagination">
+      <div
+        v-if="totalCount > pageSize"
+        class="portal-pagination"
+      >
         <span>{{ totalCount }} total &middot; page {{ currentPage }} of {{ totalPages }}</span>
         <div style="display: flex; gap: 0.5rem">
           <button
@@ -86,12 +121,18 @@
         </div>
       </div>
 
-      <div class="portal-audit-foot">User feedback on AI chat responses. Click a row to view full details.</div>
+      <div class="portal-audit-foot">
+        User feedback on AI chat responses. Click a row to view full details.
+      </div>
     </div>
 
     <!-- Expanded detail modal -->
     <Teleport to="body">
-      <div v-if="expandedEntry" class="portal-feedback-overlay" @click.self="expandedEntry = null">
+      <div
+        v-if="expandedEntry"
+        class="portal-feedback-overlay"
+        @click.self="expandedEntry = null"
+      >
         <div class="portal-feedback-detail">
           <div class="portal-feedback-detail-head">
             <span
@@ -101,22 +142,42 @@
               {{ expandedEntry.isPositive ? 'POSITIVE' : 'NEGATIVE' }}
             </span>
             <span class="portal-feedback-detail-date">{{ formatDate(expandedEntry.createdAt) }}</span>
-            <button type="button" class="portal-btn portal-btn--ghost portal-btn--sm" @click="expandedEntry = null">close</button>
+            <button
+              type="button"
+              class="portal-btn portal-btn--ghost portal-btn--sm"
+              @click="expandedEntry = null"
+            >
+              close
+            </button>
           </div>
           <div class="portal-feedback-detail-section">
-            <h4 class="portal-feedback-detail-label">Prompt</h4>
+            <h4 class="portal-feedback-detail-label">
+              Prompt
+            </h4>
             <pre class="portal-feedback-detail-text">{{ expandedEntry.prompt }}</pre>
           </div>
           <div class="portal-feedback-detail-section">
-            <h4 class="portal-feedback-detail-label">Response</h4>
+            <h4 class="portal-feedback-detail-label">
+              Response
+            </h4>
             <pre class="portal-feedback-detail-text portal-feedback-detail-response">{{ expandedEntry.response }}</pre>
           </div>
-          <div v-if="expandedEntry.comment" class="portal-feedback-detail-section">
-            <h4 class="portal-feedback-detail-label">Comment</h4>
+          <div
+            v-if="expandedEntry.comment"
+            class="portal-feedback-detail-section"
+          >
+            <h4 class="portal-feedback-detail-label">
+              Comment
+            </h4>
             <pre class="portal-feedback-detail-text">{{ expandedEntry.comment }}</pre>
           </div>
-          <div v-if="expandedEntry.pageContext" class="portal-feedback-detail-section">
-            <h4 class="portal-feedback-detail-label">Page Context</h4>
+          <div
+            v-if="expandedEntry.pageContext"
+            class="portal-feedback-detail-section"
+          >
+            <h4 class="portal-feedback-detail-label">
+              Page Context
+            </h4>
             <pre class="portal-feedback-detail-text">{{ formatContext(expandedEntry.pageContext) }}</pre>
           </div>
         </div>

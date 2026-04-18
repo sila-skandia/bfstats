@@ -1,11 +1,25 @@
 <template>
   <section class="portal-card portal-cron">
     <div class="portal-cron-head">
-      <h3 class="portal-cron-title">[ CRON ]</h3>
-      <p class="portal-cron-desc">Trigger background jobs on demand. After deleting a round, run <strong>Daily Aggregate Refresh</strong> to recalc kills/deaths for affected periods.</p>
+      <h3 class="portal-cron-title">
+        [ CRON ]
+      </h3>
+      <p class="portal-cron-desc">
+        Trigger background jobs on demand. After deleting a round, run <strong>Daily Aggregate Refresh</strong> to recalc kills/deaths for affected periods.
+      </p>
     </div>
-    <div v-if="jobError" class="portal-cron-err">{{ jobError }}</div>
-    <div v-if="jobSuccess" class="portal-cron-ok">{{ jobSuccess }}</div>
+    <div
+      v-if="jobError"
+      class="portal-cron-err"
+    >
+      {{ jobError }}
+    </div>
+    <div
+      v-if="jobSuccess"
+      class="portal-cron-ok"
+    >
+      {{ jobSuccess }}
+    </div>
     <div class="portal-cron-list">
       <div class="portal-cron-item portal-cron-item--priority">
         <div class="portal-cron-item-body">
@@ -41,11 +55,22 @@
           <span class="portal-cron-item-desc">Tier 1–4 by recency. Fire-and-forget; check logs.</span>
         </div>
         <div class="portal-cron-item-actions">
-          <select v-model.number="aggregateBackfillTier" class="portal-cron-select">
-            <option :value="1">1</option>
-            <option :value="2">2</option>
-            <option :value="3">3</option>
-            <option :value="4">4</option>
+          <select
+            v-model.number="aggregateBackfillTier"
+            class="portal-cron-select"
+          >
+            <option :value="1">
+              1
+            </option>
+            <option :value="2">
+              2
+            </option>
+            <option :value="3">
+              3
+            </option>
+            <option :value="4">
+              4
+            </option>
           </select>
           <button
             type="button"
@@ -113,22 +138,39 @@
           Run all
         </button>
       </div>
-      <div v-if="neo4jEnabled" class="portal-cron-item portal-cron-item--neo4j">
+      <div
+        v-if="neo4jEnabled"
+        class="portal-cron-item portal-cron-item--neo4j"
+      >
         <div class="portal-cron-item-body">
           <span class="portal-cron-item-name">Neo4j Sync (Player Relationships)</span>
           <span class="portal-cron-item-desc">
             Sync player co-play data to graph database. Last {{ neo4jSyncDays }} days. 
-            <span v-if="neo4jStatus" class="portal-cron-neo4j-status">
+            <span
+              v-if="neo4jStatus"
+              class="portal-cron-neo4j-status"
+            >
               Schema: {{ neo4jStatus.isUpToDate ? '✓ up-to-date' : `⚠ ${neo4jStatus.pendingCount} pending` }}
             </span>
           </span>
         </div>
         <div class="portal-cron-item-actions">
-          <select v-model.number="neo4jSyncDays" class="portal-cron-select">
-            <option :value="1">1 day</option>
-            <option :value="7">7 days</option>
-            <option :value="30">30 days</option>
-            <option :value="90">90 days</option>
+          <select
+            v-model.number="neo4jSyncDays"
+            class="portal-cron-select"
+          >
+            <option :value="1">
+              1 day
+            </option>
+            <option :value="7">
+              7 days
+            </option>
+            <option :value="30">
+              30 days
+            </option>
+            <option :value="90">
+              90 days
+            </option>
           </select>
           <button
             type="button"
@@ -140,13 +182,19 @@
           </button>
         </div>
       </div>
-      <div v-if="!neo4jEnabled && neo4jChecked" class="portal-cron-item portal-cron-item--disabled">
+      <div
+        v-if="!neo4jEnabled && neo4jChecked"
+        class="portal-cron-item portal-cron-item--disabled"
+      >
         <div class="portal-cron-item-body">
           <span class="portal-cron-item-name">Neo4j Sync</span>
           <span class="portal-cron-item-desc">Neo4j is not enabled in API configuration.</span>
         </div>
       </div>
-      <div v-if="neo4jEnabled" class="portal-cron-item portal-cron-item--neo4j">
+      <div
+        v-if="neo4jEnabled"
+        class="portal-cron-item portal-cron-item--neo4j"
+      >
         <div class="portal-cron-item-body">
           <span class="portal-cron-item-name">Detect Player Communities</span>
           <span class="portal-cron-item-desc">

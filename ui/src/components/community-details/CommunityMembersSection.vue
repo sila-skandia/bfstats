@@ -47,7 +47,7 @@ const isCoreHelper = (memberName: string) => coreSet.has(memberName)
               type="text"
               placeholder="Search members..."
               class="w-full px-3 py-2 bg-neutral-800/50 border border-neutral-700 rounded text-sm text-neutral-200 placeholder-neutral-600"
-            />
+            >
           </div>
           <div>
             <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">Sort By</label>
@@ -55,8 +55,12 @@ const isCoreHelper = (memberName: string) => coreSet.has(memberName)
               v-model="sortBy"
               class="w-full px-3 py-2 bg-neutral-800/50 border border-neutral-700 rounded text-sm text-neutral-200"
             >
-              <option value="name">Name (A-Z)</option>
-              <option value="sessions">Core Members First</option>
+              <option value="name">
+                Name (A-Z)
+              </option>
+              <option value="sessions">
+                Core Members First
+              </option>
             </select>
           </div>
         </div>
@@ -84,7 +88,10 @@ const isCoreHelper = (memberName: string) => coreSet.has(memberName)
                 class="flex-shrink-0 w-2 h-2 rounded-full bg-cyan-400"
                 title="Core member"
               />
-              <div v-else class="flex-shrink-0 w-2 h-2" />
+              <div
+                v-else
+                class="flex-shrink-0 w-2 h-2"
+              />
               <span class="text-sm text-neutral-300 group-hover:text-cyan-400 transition-colors truncate">
                 {{ member }}
               </span>
@@ -99,8 +106,13 @@ const isCoreHelper = (memberName: string) => coreSet.has(memberName)
         </div>
 
         <!-- Empty State -->
-        <div v-if="filteredMembers.length === 0" class="text-center py-8">
-          <p class="text-neutral-500 text-sm">No members found matching your search</p>
+        <div
+          v-if="filteredMembers.length === 0"
+          class="text-center py-8"
+        >
+          <p class="text-neutral-500 text-sm">
+            No members found matching your search
+          </p>
         </div>
       </div>
     </div>
@@ -109,13 +121,19 @@ const isCoreHelper = (memberName: string) => coreSet.has(memberName)
     <div class="grid grid-cols-2 gap-4">
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Core Members</div>
-          <div class="text-2xl font-bold text-cyan-400 font-mono">{{ props.community.coreMembers.length }}</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Core Members
+          </div>
+          <div class="text-2xl font-bold text-cyan-400 font-mono">
+            {{ props.community.coreMembers.length }}
+          </div>
         </div>
       </div>
       <div class="explorer-card">
         <div class="explorer-card-body">
-          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">Regular Members</div>
+          <div class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+            Regular Members
+          </div>
           <div class="text-2xl font-bold text-green-400 font-mono">
             {{ props.community.memberCount - props.community.coreMembers.length }}
           </div>

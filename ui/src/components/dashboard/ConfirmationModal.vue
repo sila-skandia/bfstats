@@ -3,7 +3,10 @@
     class="modal-mobile-safe modal-backdrop"
     @click="$emit('cancel')"
   >
-    <div class="modal-container" @click.stop>
+    <div
+      class="modal-container"
+      @click.stop
+    >
       <!-- Terminal Bar -->
       <div class="terminal-bar">
         <div class="terminal-dots">
@@ -16,22 +19,32 @@
 
       <!-- Content -->
       <div class="modal-content">
-        <div class="warning-icon">[!]</div>
+        <div class="warning-icon">
+          [!]
+        </div>
         <div class="terminal-output">
           <div class="output-line">
             <span class="prompt">&gt;</span>
             <span class="command">{{ message }}?</span>
           </div>
         </div>
-        <p class="warning-text">// This action cannot be undone</p>
+        <p class="warning-text">
+          // This action cannot be undone
+        </p>
       </div>
 
       <!-- Actions -->
       <div class="modal-actions">
-        <button class="btn-action btn-cancel" @click="$emit('cancel')">
+        <button
+          class="btn-action btn-cancel"
+          @click="$emit('cancel')"
+        >
           [CANCEL]
         </button>
-        <button class="btn-action btn-confirm" @click="$emit('confirm')">
+        <button
+          class="btn-action btn-confirm"
+          @click="$emit('confirm')"
+        >
           [{{ confirmText.toUpperCase() }}]
         </button>
       </div>

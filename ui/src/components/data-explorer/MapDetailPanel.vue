@@ -1,44 +1,79 @@
 <template>
   <div class="detail-content p-3 sm:p-6">
     <!-- Loading State -->
-    <div v-if="isLoading" class="detail-loading">
-      <div class="detail-skeleton detail-skeleton--title"></div>
-      <div class="detail-skeleton detail-skeleton--subtitle"></div>
-      <div class="detail-skeleton detail-skeleton--block"></div>
-      <div class="detail-skeleton detail-skeleton--block-lg"></div>
+    <div
+      v-if="isLoading"
+      class="detail-loading"
+    >
+      <div class="detail-skeleton detail-skeleton--title" />
+      <div class="detail-skeleton detail-skeleton--subtitle" />
+      <div class="detail-skeleton detail-skeleton--block" />
+      <div class="detail-skeleton detail-skeleton--block-lg" />
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="detail-error">
-      <div class="detail-error-text">{{ error }}</div>
-      <button @click="loadData" class="detail-retry">
+    <div
+      v-else-if="error"
+      class="detail-error"
+    >
+      <div class="detail-error-text">
+        {{ error }}
+      </div>
+      <button
+        class="detail-retry"
+        @click="loadData"
+      >
         Try again
       </button>
     </div>
 
     <!-- No Data State -->
-    <div v-else-if="mapDetail === null" class="detail-empty">
-      <div class="detail-empty-icon">{ }</div>
-      <p class="detail-empty-title">No data available for this map</p>
-      <p class="detail-empty-desc">This map may not have been played recently or data is not yet available.</p>
+    <div
+      v-else-if="mapDetail === null"
+      class="detail-empty"
+    >
+      <div class="detail-empty-icon">
+        { }
+      </div>
+      <p class="detail-empty-title">
+        No data available for this map
+      </p>
+      <p class="detail-empty-desc">
+        This map may not have been played recently or data is not yet available.
+      </p>
     </div>
 
     <!-- Content -->
-    <div v-else-if="mapDetail" class="detail-body">
+    <div
+      v-else-if="mapDetail"
+      class="detail-body"
+    >
       <!-- Header -->
       <div class="detail-header">
         <div class="detail-header-row">
           <button
-            @click="emit('close')"
             class="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors mr-3"
             title="Close"
+            @click="emit('close')"
           >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
           </button>
           <span class="detail-icon">{ }</span>
-          <h2 class="detail-title">{{ mapDetail.mapName }}</h2>
+          <h2 class="detail-title">
+            {{ mapDetail.mapName }}
+          </h2>
         </div>
         <div class="detail-meta ml-11">
           Played on {{ mapDetail.servers.length }} server{{ mapDetail.servers.length !== 1 ? 's' : '' }}
@@ -46,17 +81,26 @@
       </div>
 
       <!-- Activity Heatmap -->
-      <div v-if="activityPatterns && activityPatterns.length > 0" class="detail-section">
-        <h3 class="detail-section-title">WHEN IS THIS MAP PLAYED?</h3>
+      <div
+        v-if="activityPatterns && activityPatterns.length > 0"
+        class="detail-section"
+      >
+        <h3 class="detail-section-title">
+          WHEN IS THIS MAP PLAYED?
+        </h3>
         <div class="detail-card">
-          <p class="detail-hint">Average player count when this map is in rotation (times shown in your local timezone)</p>
+          <p class="detail-hint">
+            Average player count when this map is in rotation (times shown in your local timezone)
+          </p>
           <ActivityHeatmap :patterns="activityPatternsForHeatmap" />
         </div>
       </div>
 
       <!-- Aggregated Win Stats -->
       <div class="detail-section">
-        <h3 class="detail-section-title">OVERALL WIN STATISTICS</h3>
+        <h3 class="detail-section-title">
+          OVERALL WIN STATISTICS
+        </h3>
         <div class="detail-card">
           <WinStatsBar :win-stats="mapDetail.aggregatedWinStats" />
         </div>
@@ -64,7 +108,9 @@
 
       <!-- Server List -->
       <div class="detail-section">
-        <h3 class="detail-section-title">SERVERS PLAYING THIS MAP</h3>
+        <h3 class="detail-section-title">
+          SERVERS PLAYING THIS MAP
+        </h3>
         <div class="detail-card">
           <ServerRotationTable
             :servers="mapDetail.servers"

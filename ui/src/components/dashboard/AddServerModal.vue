@@ -93,7 +93,10 @@ const handleClose = () => emit('close');
     </template>
 
     <div class="form-group">
-      <label for="serverSearch" class="form-label">
+      <label
+        for="serverSearch"
+        class="form-label"
+      >
         &gt; SERVER_SEARCH
       </label>
       <ServerSearch
@@ -108,20 +111,32 @@ const handleClose = () => emit('close');
       </small>
     </div>
 
-    <div v-if="error" class="error-box">
+    <div
+      v-if="error"
+      class="error-box"
+    >
       <span class="error-icon">[!]</span>
       <span>{{ error }}</span>
     </div>
 
-    <div v-if="selectedServer" class="server-preview">
+    <div
+      v-if="selectedServer"
+      class="server-preview"
+    >
       <div class="preview-header">
         <span class="preview-icon">{::}</span>
         <span class="preview-name">{{ selectedServer.serverName }}</span>
       </div>
       <div class="preview-tags">
         <span class="tag tag-game">{{ selectedServer.gameId.toUpperCase() }}</span>
-        <span v-if="selectedServer.hasActivePlayers" class="tag tag-online">ONLINE</span>
-        <span v-else class="tag tag-offline">
+        <span
+          v-if="selectedServer.hasActivePlayers"
+          class="tag tag-online"
+        >ONLINE</span>
+        <span
+          v-else
+          class="tag tag-offline"
+        >
           OFFLINE {{ formatRelativeTime(selectedServer.lastActivity) }}
         </span>
       </div>
@@ -142,7 +157,11 @@ const handleClose = () => emit('close');
     </div>
 
     <div class="form-actions">
-      <button type="button" class="btn-action btn-cancel" @click="handleClose">
+      <button
+        type="button"
+        class="btn-action btn-cancel"
+        @click="handleClose"
+      >
         [CANCEL]
       </button>
       <button
@@ -151,7 +170,10 @@ const handleClose = () => emit('close');
         class="btn-action btn-submit"
         @click="handleAddServer"
       >
-        <span v-if="isSubmitting" class="spinner" />
+        <span
+          v-if="isSubmitting"
+          class="spinner"
+        />
         {{ isSubmitting ? 'ADDING...' : '[ADD_SERVER]' }}
       </button>
     </div>

@@ -1,18 +1,27 @@
 <template>
   <div class="comparison-container">
     <!-- Loading State -->
-    <div v-if="isLoading" class="loading-state">
-      <div class="spinner"></div>
+    <div
+      v-if="isLoading"
+      class="loading-state"
+    >
+      <div class="spinner" />
       <p>Loading comparison data...</p>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="error-state">
+    <div
+      v-else-if="error"
+      class="error-state"
+    >
       <p>{{ error }}</p>
     </div>
 
     <!-- Rich Forensic Comparison -->
-    <div v-else-if="comparisonData" class="comparison-sections">
+    <div
+      v-else-if="comparisonData"
+      class="comparison-sections"
+    >
       <!-- Core Statistics -->
       <div class="section">
         <ComparisonCoreStats
@@ -26,8 +35,13 @@
       </div>
 
       <!-- Activity Timeline -->
-      <div v-if="comparisonData.hourlyOverlap && comparisonData.hourlyOverlap.length > 0" class="section">
-        <h3 class="section-title">Activity Timeline</h3>
+      <div
+        v-if="comparisonData.hourlyOverlap && comparisonData.hourlyOverlap.length > 0"
+        class="section"
+      >
+        <h3 class="section-title">
+          Activity Timeline
+        </h3>
         <ActivityTimelineBar
           :hourly-overlap="comparisonData.hourlyOverlap"
           :player1-name="player1Name"
@@ -36,7 +50,10 @@
       </div>
 
       <!-- Performance Over Time -->
-      <div v-if="comparisonData.bucketTotals && comparisonData.bucketTotals.length > 0" class="section">
+      <div
+        v-if="comparisonData.bucketTotals && comparisonData.bucketTotals.length > 0"
+        class="section"
+      >
         <PerformanceOverTime
           :bucket-totals="comparisonData.bucketTotals"
           :player1-name="player1Name"
@@ -45,7 +62,10 @@
       </div>
 
       <!-- Map Performance -->
-      <div v-if="comparisonData.mapPerformance && comparisonData.mapPerformance.length > 0" class="section">
+      <div
+        v-if="comparisonData.mapPerformance && comparisonData.mapPerformance.length > 0"
+        class="section"
+      >
         <MapPerformanceTable
           :map-performance="comparisonData.mapPerformance"
           :player1-name="player1Name"
@@ -54,7 +74,10 @@
       </div>
 
       <!-- Head-to-Head Encounters -->
-      <div v-if="comparisonData.headToHead && comparisonData.headToHead.length > 0" class="section">
+      <div
+        v-if="comparisonData.headToHead && comparisonData.headToHead.length > 0"
+        class="section"
+      >
         <HeadToHeadTable
           :head-to-head="comparisonData.headToHead"
           :player1-name="player1Name"

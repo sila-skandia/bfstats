@@ -1,10 +1,12 @@
 <template>
   <div class="portal-page">
-    <div class="portal-grid" aria-hidden="true" />
+    <div
+      class="portal-grid"
+      aria-hidden="true"
+    />
     <div class="portal-inner">
       <div class="data-explorer">
         <div class="explorer-inner">
-
           <!-- Header -->
           <div class="mb-6">
             <h1 class="text-2xl sm:text-3xl font-bold text-[var(--portal-text-bright,#e5e7eb)] font-mono mb-2">
@@ -20,36 +22,48 @@
             <div class="explorer-card-body">
               <AliasDetectionForm
                 ref="formRef"
-                @search="onSearch"
                 :loading="isLoading"
                 :initial-player1="player1"
                 :initial-player2="player2"
+                @search="onSearch"
               />
             </div>
           </div>
 
           <!-- Loading State -->
-          <div v-if="isLoading" class="explorer-card">
+          <div
+            v-if="isLoading"
+            class="explorer-card"
+          >
             <div class="explorer-card-body text-center py-12">
               <div class="flex items-center justify-center mb-4">
                 <div class="w-12 h-12 border-4 border-neutral-700 rounded-full animate-spin" />
                 <div class="absolute w-12 h-12 border-4 border-cyan-500 rounded-full border-t-transparent animate-spin" />
               </div>
-              <p class="text-neutral-400">Analyzing players...</p>
+              <p class="text-neutral-400">
+                Analyzing players...
+              </p>
             </div>
           </div>
 
           <!-- Error State -->
-          <div v-else-if="error" class="explorer-card">
+          <div
+            v-else-if="error"
+            class="explorer-card"
+          >
             <div class="explorer-card-body text-center py-8">
               <div class="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/50 mx-auto mb-4">
                 <span class="text-2xl">⚠</span>
               </div>
-              <h3 class="text-lg font-bold text-red-400 mb-2">Investigation Error</h3>
-              <p class="text-neutral-400 mb-6">{{ error }}</p>
+              <h3 class="text-lg font-bold text-red-400 mb-2">
+                Investigation Error
+              </h3>
+              <p class="text-neutral-400 mb-6">
+                {{ error }}
+              </p>
               <button
-                @click="error = null"
                 class="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 text-sm hover:bg-red-500/30 transition-colors"
+                @click="error = null"
               >
                 Dismiss
               </button>
@@ -57,7 +71,10 @@
           </div>
 
           <!-- Results Section -->
-          <div v-else-if="report" class="space-y-6">
+          <div
+            v-else-if="report"
+            class="space-y-6"
+          >
             <div class="explorer-card">
               <div class="explorer-card-body">
                 <AliasDetectionReport :report="report" />
@@ -75,18 +92,24 @@
           </div>
 
           <!-- Empty State -->
-          <div v-else class="explorer-card">
+          <div
+            v-else
+            class="explorer-card"
+          >
             <div class="explorer-card-body text-center py-12">
               <div class="flex flex-col items-center justify-center mb-4">
-                <div class="text-5xl mb-4">⚔️</div>
-                <h3 class="text-lg font-bold text-neutral-300 mb-2">No Investigation Yet</h3>
+                <div class="text-5xl mb-4">
+                  ⚔️
+                </div>
+                <h3 class="text-lg font-bold text-neutral-300 mb-2">
+                  No Investigation Yet
+                </h3>
                 <p class="text-neutral-500 w-full sm:max-w-md px-4 sm:px-0">
                   Enter two player names above to begin analyzing their relationship patterns.
                 </p>
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>

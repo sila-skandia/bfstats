@@ -1,13 +1,25 @@
 <template>
   <div class="space-y-6">
     <!-- Week groups with match cards -->
-    <template v-for="weekGroup in groupedMatches" :key="weekGroup.week || 'no-week'">
+    <template
+      v-for="weekGroup in groupedMatches"
+      :key="weekGroup.week || 'no-week'"
+    >
       <!-- Week Header -->
-      <div v-if="!weekGroup.hideWeekHeader && groupByWeek" class="mt-8 mb-4">
-        <h3 class="text-lg font-bold uppercase tracking-wide" :style="{ color: accentColor }">
+      <div
+        v-if="!weekGroup.hideWeekHeader && groupByWeek"
+        class="mt-8 mb-4"
+      >
+        <h3
+          class="text-lg font-bold uppercase tracking-wide"
+          :style="{ color: accentColor }"
+        >
           {{ weekGroup.week }}
         </h3>
-        <p class="text-sm mt-1" :style="{ color: textMutedColor }">
+        <p
+          class="text-sm mt-1"
+          :style="{ color: textMutedColor }"
+        >
           {{ getWeekDateRange(weekGroup.week, weekGroup.matches) }}
         </p>
       </div>
@@ -26,7 +38,10 @@
               <!-- First row: Date, Teams, Score (if available) -->
               <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <!-- Match Date - wider on desktop -->
-                <div class="text-xs sm:text-sm font-mono min-w-max" :style="{ color: textMutedColor }">
+                <div
+                  class="text-xs sm:text-sm font-mono min-w-max"
+                  :style="{ color: textMutedColor }"
+                >
                   {{ formatMatchDate(match.scheduledDate) }}
                 </div>
 
@@ -39,10 +54,16 @@
                       backgroundColor: getMatchWinner(match) === 'team1' ? accentColor + '15' : 'transparent'
                     }"
                   >
-                    <span v-if="getMatchWinner(match) === 'team1'" class="text-lg">🏆</span>
+                    <span
+                      v-if="getMatchWinner(match) === 'team1'"
+                      class="text-lg"
+                    >🏆</span>
                     {{ match.team1Name }}
                   </div>
-                  <div class="text-xs sm:text-sm font-medium" :style="{ color: textMutedColor }">
+                  <div
+                    class="text-xs sm:text-sm font-medium"
+                    :style="{ color: textMutedColor }"
+                  >
                     vs
                   </div>
                   <div
@@ -52,14 +73,23 @@
                       backgroundColor: getMatchWinner(match) === 'team2' ? accentColor + '15' : 'transparent'
                     }"
                   >
-                    <span v-if="getMatchWinner(match) === 'team2'" class="text-lg">🏆</span>
+                    <span
+                      v-if="getMatchWinner(match) === 'team2'"
+                      class="text-lg"
+                    >🏆</span>
                     {{ match.team2Name }}
                   </div>
                 </div>
 
                 <!-- Score with round count (only if match has results) -->
-                <div v-if="hasMatchResults(match)" class="flex items-center gap-4">
-                  <div class="text-sm sm:text-base font-bold" :style="{ color: accentColor }">
+                <div
+                  v-if="hasMatchResults(match)"
+                  class="flex items-center gap-4"
+                >
+                  <div
+                    class="text-sm sm:text-base font-bold"
+                    :style="{ color: accentColor }"
+                  >
                     {{ getResultsAggregation(match) }}
                   </div>
 
@@ -98,10 +128,23 @@
     </template>
 
     <!-- Empty State -->
-    <div v-if="groupedMatches.length === 0" class="text-center py-20">
-      <div class="text-8xl mb-6 opacity-50">📅</div>
-      <h3 class="text-2xl font-bold" :style="{ color: textColor }">No Matches Yet</h3>
-      <p class="text-lg" :style="{ color: textMutedColor }">
+    <div
+      v-if="groupedMatches.length === 0"
+      class="text-center py-20"
+    >
+      <div class="text-8xl mb-6 opacity-50">
+        📅
+      </div>
+      <h3
+        class="text-2xl font-bold"
+        :style="{ color: textColor }"
+      >
+        No Matches Yet
+      </h3>
+      <p
+        class="text-lg"
+        :style="{ color: textMutedColor }"
+      >
         Check back soon for match announcements!
       </p>
     </div>

@@ -1,7 +1,7 @@
 <template>
   <div
-    @click="emit('click')"
     :class="['list-item', isSelected && 'list-item--selected']"
+    @click="emit('click')"
   >
     <div class="list-item-row">
       <!-- Online Status -->
@@ -19,7 +19,10 @@
           </span>
         </div>
         <div class="list-item-meta">
-          <span v-if="server.country" :title="server.country">
+          <span
+            v-if="server.country"
+            :title="server.country"
+          >
             {{ getCountryFlag(server.country) }}
           </span>
           <span v-if="server.isOnline">
@@ -32,8 +35,18 @@
 
       <!-- Arrow -->
       <div class="list-item-arrow">
-        <svg class="list-item-arrow-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        <svg
+          class="list-item-arrow-icon"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 5l7 7-7 7"
+          />
         </svg>
       </div>
     </div>

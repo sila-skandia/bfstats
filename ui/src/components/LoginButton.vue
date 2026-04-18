@@ -6,7 +6,10 @@
       class="relative inline-block"
       @click="toggleDropdown"
     >
-      <button class="flex items-center justify-center w-9 h-9 bg-slate-800/60 backdrop-blur-sm border border-slate-700/50 rounded-full cursor-pointer transition-all duration-200 hover:bg-slate-700/70 hover:border-slate-600/50" style="box-shadow: 0 0 8px rgba(88, 101, 242, 0.3)">
+      <button
+        class="flex items-center justify-center w-9 h-9 bg-slate-800/60 backdrop-blur-sm border border-slate-700/50 rounded-full cursor-pointer transition-all duration-200 hover:bg-slate-700/70 hover:border-slate-600/50"
+        style="box-shadow: 0 0 8px rgba(88, 101, 242, 0.3)"
+      >
         <svg
           class="text-[#5865F2]"
           viewBox="0 0 24 24"
@@ -45,8 +48,18 @@
           class="flex items-center gap-2 w-full px-4 py-3 bg-slate-800/60 backdrop-blur-sm text-cyan-400 border border-slate-700 border-t-0 rounded-b text-sm font-medium cursor-pointer transition-all duration-200 hover:bg-slate-700/60 hover:text-cyan-300"
           @click="showBenefitsModal"
         >
-          <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <svg
+            class="flex-shrink-0 w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
           </svg>
           Why should I sign in?
         </button>
@@ -106,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watchEffect } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useAuth } from '@/composables/useAuth';
 import LoginBenefitsModal from './LoginBenefitsModal.vue';
 

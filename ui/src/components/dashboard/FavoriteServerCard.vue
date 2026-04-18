@@ -9,8 +9,14 @@
         <!-- Server Icon -->
         <div class="server-icon">
           <span class="icon-text">{::}</span>
-          <div v-if="server.currentMap" class="status-led online" />
-          <div v-else class="status-led offline" />
+          <div
+            v-if="server.currentMap"
+            class="status-led online"
+          />
+          <div
+            v-else
+            class="status-led offline"
+          />
         </div>
 
         <!-- Server Details -->
@@ -24,11 +30,17 @@
           </router-link>
 
           <div class="server-status">
-            <div v-if="server.currentMap" class="status-row">
+            <div
+              v-if="server.currentMap"
+              class="status-row"
+            >
               <span class="map-label">&gt; MAP:</span>
               <span class="map-name">{{ server.currentMap }}</span>
             </div>
-            <div v-else class="status-row offline">
+            <div
+              v-else
+              class="status-row offline"
+            >
               <span class="status-label">// SERVER_OFFLINE</span>
             </div>
           </div>
@@ -38,13 +50,19 @@
       <!-- Player Count & Actions -->
       <div class="card-actions">
         <!-- Player Count Badge -->
-        <div class="player-count" :class="getStatusClass()">
+        <div
+          class="player-count"
+          :class="getStatusClass()"
+        >
           <template v-if="server.currentMap">
             <span class="count-current">{{ server.activeSessions }}</span>
             <span class="count-divider">/</span>
             <span class="count-max">{{ server.maxPlayers }}</span>
           </template>
-          <span v-else class="status-offline-text">OFF</span>
+          <span
+            v-else
+            class="status-offline-text"
+          >OFF</span>
         </div>
 
         <!-- Action Buttons -->

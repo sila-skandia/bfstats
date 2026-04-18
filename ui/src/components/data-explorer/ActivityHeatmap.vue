@@ -2,15 +2,25 @@
   <div class="heatmap">
     <!-- Day labels -->
     <div class="heatmap-header">
-      <div class="heatmap-day-label"></div>
+      <div class="heatmap-day-label" />
       <div class="heatmap-hours">
-        <span v-for="h in 24" :key="h" class="heatmap-hour-label">{{ (h - 1).toString().padStart(2, '0') }}</span>
+        <span
+          v-for="h in 24"
+          :key="h"
+          class="heatmap-hour-label"
+        >{{ (h - 1).toString().padStart(2, '0') }}</span>
       </div>
     </div>
 
     <!-- Heatmap grid -->
-    <div v-for="day in days" :key="day.index" class="heatmap-row">
-      <div class="heatmap-day-label">{{ day.label }}</div>
+    <div
+      v-for="day in days"
+      :key="day.index"
+      class="heatmap-row"
+    >
+      <div class="heatmap-day-label">
+        {{ day.label }}
+      </div>
       <div class="heatmap-cells">
         <div
           v-for="hour in 24"
@@ -26,7 +36,12 @@
     <div class="heatmap-legend">
       <span>Quiet</span>
       <div class="heatmap-legend-colors">
-        <div v-for="(color, i) in legendColors" :key="i" class="heatmap-legend-color" :style="{ backgroundColor: color }" />
+        <div
+          v-for="(color, i) in legendColors"
+          :key="i"
+          class="heatmap-legend-color"
+          :style="{ backgroundColor: color }"
+        />
       </div>
       <span>Busy</span>
     </div>

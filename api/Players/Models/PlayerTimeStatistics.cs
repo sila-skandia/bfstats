@@ -3,6 +3,8 @@ namespace api.Players.Models;
 public class PlayerTimeStatistics
 {
     public int TotalPlayTimeMinutes { get; set; }
+    public int TotalSessions { get; set; }
+    public int HighestScore { get; set; }
     public DateTime FirstPlayed { get; set; }
     public DateTime LastPlayed { get; set; }
     public int TotalKills { get; set; }

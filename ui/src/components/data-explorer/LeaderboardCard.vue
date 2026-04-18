@@ -2,51 +2,91 @@
   <div class="leaderboard-card">
     <h4 class="card-title">
       {{ title }}
-      <span v-if="totalCount > 0" class="card-count">({{ totalCount.toLocaleString() }})</span>
+      <span
+        v-if="totalCount > 0"
+        class="card-count"
+      >({{ totalCount.toLocaleString() }})</span>
     </h4>
 
     <!-- Initial Loading State (no data yet) -->
-    <div v-if="isLoading && rankings.length === 0" class="card-loading">
-      <div class="spinner"></div>
+    <div
+      v-if="isLoading && rankings.length === 0"
+      class="card-loading"
+    >
+      <div class="spinner" />
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error && rankings.length === 0" class="card-error">
-      <div class="error-text">{{ error }}</div>
-      <button @click="emit('retry')" class="error-retry">Try again</button>
+    <div
+      v-else-if="error && rankings.length === 0"
+      class="card-error"
+    >
+      <div class="error-text">
+        {{ error }}
+      </div>
+      <button
+        class="error-retry"
+        @click="emit('retry')"
+      >
+        Try again
+      </button>
     </div>
 
     <!-- Rankings Table (shown even while refreshing) -->
-    <div v-else-if="rankings.length > 0" :class="{ 'card-loading-overlay': isRefreshing }">
+    <div
+      v-else-if="rankings.length > 0"
+      :class="{ 'card-loading-overlay': isRefreshing }"
+    >
       <div class="card-table-wrap">
         <table class="card-table">
           <thead>
             <tr>
-              <th class="col-rank">#</th>
-              <th class="col-player">Player</th>
-              <th class="col-value">{{ primaryColumnHeader }}</th>
-              <th class="col-rounds">Rounds</th>
+              <th class="col-rank">
+                #
+              </th>
+              <th class="col-player">
+                Player
+              </th>
+              <th class="col-value">
+                {{ primaryColumnHeader }}
+              </th>
+              <th class="col-rounds">
+                Rounds
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="entry in rankings" :key="entry.playerName">
+            <tr
+              v-for="entry in rankings"
+              :key="entry.playerName"
+            >
               <td class="col-rank">
                 <span :class="getRankClass(entry.rank)">{{ entry.rank }}</span>
               </td>
               <td class="col-player">
-                <button @click="navigateToPlayer(entry.playerName)" class="player-link">
+                <button
+                  class="player-link"
+                  @click="navigateToPlayer(entry.playerName)"
+                >
                   {{ entry.playerName }}
                 </button>
               </td>
-              <td class="col-value">{{ formatPrimaryValue(entry) }}</td>
-              <td class="col-rounds">{{ entry.totalRounds }}</td>
+              <td class="col-value">
+                {{ formatPrimaryValue(entry) }}
+              </td>
+              <td class="col-rounds">
+                {{ entry.totalRounds }}
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <!-- Pagination -->
-      <div v-if="totalPages > 1" class="pagination">
+      <div
+        v-if="totalPages > 1"
+        class="pagination"
+      >
         <button
           class="pagination-btn"
           :disabled="currentPage === 1 || isRefreshing"
@@ -76,7 +116,12 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else class="card-empty">No player data available</div>
+    <div
+      v-else
+      class="card-empty"
+    >
+      No player data available
+    </div>
   </div>
 </template>
 

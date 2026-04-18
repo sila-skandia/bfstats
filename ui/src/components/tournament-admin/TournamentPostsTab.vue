@@ -1,18 +1,35 @@
 <template>
   <div class="tournament-posts-tab">
     <!-- Edit/Create Form View -->
-    <div v-if="showForm" class="portal-card">
+    <div
+      v-if="showForm"
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ {{ editingPost ? 'EDIT POST' : 'CREATE POST' }} ]</h2>
-          <p class="portal-card-subtitle">{{ editingPost ? 'Update your news post' : 'Create a news post for the tournament feed' }}</p>
+          <h2 class="portal-card-title">
+            [ {{ editingPost ? 'EDIT POST' : 'CREATE POST' }} ]
+          </h2>
+          <p class="portal-card-subtitle">
+            {{ editingPost ? 'Update your news post' : 'Create a news post for the tournament feed' }}
+          </p>
         </div>
         <button
           class="portal-btn portal-btn--ghost"
           @click="closeForm"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
           Cancel
         </button>
@@ -20,7 +37,10 @@
 
       <div class="portal-card-body">
         <!-- Error Message -->
-        <div v-if="formError" class="portal-form-error">
+        <div
+          v-if="formError"
+          class="portal-form-error"
+        >
           {{ formError }}
         </div>
 
@@ -43,8 +63,8 @@
             <button
               type="button"
               class="markdown-help-btn"
-              @click="showMarkdownHelp = true"
               title="Show markdown syntax help"
+              @click="showMarkdownHelp = true"
             >
               ? Help
             </button>
@@ -61,25 +81,46 @@
           <div class="preview-toggle">
             <button
               type="button"
-              @click="showPreview = !showPreview"
               class="portal-btn portal-btn--sm portal-btn--ghost"
+              @click="showPreview = !showPreview"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              <svg
+                class="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
               </svg>
               {{ showPreview ? 'Hide Preview' : 'Show Preview' }}
             </button>
           </div>
 
           <!-- Markdown Preview -->
-          <div v-if="showPreview && formData.content.trim()" class="markdown-preview">
+          <div
+            v-if="showPreview && formData.content.trim()"
+            class="markdown-preview"
+          >
             <div
-              v-html="renderedContent"
               class="markdown-content"
+              v-html="renderedContent"
             />
           </div>
-          <div v-else-if="showPreview" class="markdown-preview markdown-preview--empty">
+          <div
+            v-else-if="showPreview"
+            class="markdown-preview markdown-preview--empty"
+          >
             Enter some content to see the preview
           </div>
         </div>
@@ -94,10 +135,16 @@
               class="portal-form-select"
               :disabled="formLoading"
             >
-              <option value="draft">Draft</option>
-              <option value="published">Published</option>
+              <option value="draft">
+                Draft
+              </option>
+              <option value="published">
+                Published
+              </option>
             </select>
-            <p class="portal-form-hint">Draft posts are only visible to admins</p>
+            <p class="portal-form-hint">
+              Draft posts are only visible to admins
+            </p>
           </div>
 
           <!-- Publish Date -->
@@ -109,12 +156,17 @@
               class="portal-form-input portal-form-input--mono"
               :disabled="formLoading"
             >
-            <p class="portal-form-hint">Optional: schedule when the post appears</p>
+            <p class="portal-form-hint">
+              Optional: schedule when the post appears
+            </p>
           </div>
         </div>
 
         <!-- Form Actions -->
-        <div class="portal-form-footer" style="margin-top: 1.5rem">
+        <div
+          class="portal-form-footer"
+          style="margin-top: 1.5rem"
+        >
           <button
             class="portal-btn portal-btn--ghost"
             :disabled="formLoading"
@@ -127,7 +179,10 @@
             :disabled="formLoading || !isFormValid"
             @click="submitForm"
           >
-            <span v-if="formLoading" class="portal-btn-pulse">Saving...</span>
+            <span
+              v-if="formLoading"
+              class="portal-btn-pulse"
+            >Saving...</span>
             <span v-else>{{ editingPost ? 'Update Post' : 'Create Post' }}</span>
           </button>
         </div>
@@ -135,11 +190,18 @@
     </div>
 
     <!-- Posts List View -->
-    <div v-else class="portal-card">
+    <div
+      v-else
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ POSTS ]</h2>
-          <p class="portal-card-subtitle">Create news posts for the tournament feed</p>
+          <h2 class="portal-card-title">
+            [ POSTS ]
+          </h2>
+          <p class="portal-card-subtitle">
+            Create news posts for the tournament feed
+          </p>
         </div>
         <button
           class="portal-btn portal-btn--primary"
@@ -149,9 +211,15 @@
         </button>
       </div>
 
-      <div class="portal-card-body" style="padding: 0">
+      <div
+        class="portal-card-body"
+        style="padding: 0"
+      >
         <!-- Posts Table -->
-        <div v-if="posts.length > 0" class="portal-table-wrap">
+        <div
+          v-if="posts.length > 0"
+          class="portal-table-wrap"
+        >
           <table class="portal-table">
             <thead>
               <tr>
@@ -159,11 +227,16 @@
                 <th>Status</th>
                 <th>Publish Date</th>
                 <th>Created</th>
-                <th style="text-align: right">Actions</th>
+                <th style="text-align: right">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="post in posts" :key="post.id">
+              <tr
+                v-for="post in posts"
+                :key="post.id"
+              >
                 <td>
                   <span class="post-title">{{ post.title }}</span>
                 </td>
@@ -177,27 +250,50 @@
                 </td>
                 <td>
                   <span v-if="post.publishAt">{{ formatDate(post.publishAt) }}</span>
-                  <span v-else class="text-muted">-</span>
+                  <span
+                    v-else
+                    class="text-muted"
+                  >-</span>
                 </td>
                 <td>{{ formatDate(post.createdAt) }}</td>
                 <td>
                   <div class="portal-table-actions">
                     <button
                       class="portal-icon-btn"
-                      @click="openEditForm(post)"
                       title="Edit post"
+                      @click="openEditForm(post)"
                     >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      <svg
+                        class="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
                       </svg>
                     </button>
                     <button
                       class="portal-icon-btn portal-icon-btn--danger"
-                      @click="confirmDeletePost(post.id, post.title)"
                       title="Delete post"
+                      @click="confirmDeletePost(post.id, post.title)"
                     >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <svg
+                        class="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -208,9 +304,16 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else class="portal-empty">
-          <div class="portal-empty-icon">📰</div>
-          <h3 class="portal-empty-title">No Posts Yet</h3>
+        <div
+          v-else
+          class="portal-empty"
+        >
+          <div class="portal-empty-icon">
+            📰
+          </div>
+          <h3 class="portal-empty-title">
+            No Posts Yet
+          </h3>
           <p class="portal-empty-desc">
             Create news posts to share updates with tournament participants
           </p>
@@ -234,8 +337,18 @@
       <div class="portal-modal">
         <div class="flex items-start gap-4 mb-6">
           <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </div>
           <div class="flex-1">
@@ -263,10 +376,24 @@
             :disabled="isProcessing"
             @click="executeDeletePost"
           >
-            <svg v-if="!isProcessing" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            <svg
+              v-if="!isProcessing"
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
             </svg>
-            <div v-else class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <div
+              v-else
+              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+            />
             <span>{{ isProcessing ? 'Deleting...' : 'Delete Post' }}</span>
           </button>
         </div>

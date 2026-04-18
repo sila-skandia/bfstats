@@ -3,31 +3,57 @@
     <table class="server-table">
       <thead>
         <tr>
-          <th class="col-rank">#</th>
-          <th class="col-server">Server</th>
-          <th class="col-score">Score</th>
-          <th class="col-kills">Kills</th>
-          <th class="col-kd">K/D</th>
+          <th class="col-rank">
+            #
+          </th>
+          <th class="col-server">
+            Server
+          </th>
+          <th class="col-score">
+            Score
+          </th>
+          <th class="col-kills">
+            Kills
+          </th>
+          <th class="col-kd">
+            K/D
+          </th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="server in serverStats" :key="server.serverGuid">
+        <tr
+          v-for="server in serverStats"
+          :key="server.serverGuid"
+        >
           <td class="col-rank">
             <span :class="getRankClass(server.rank)">{{ server.rank }}</span>
           </td>
           <td class="col-server">
-            <button @click="handleServerClick(server.serverGuid)" class="server-link" :title="server.serverName">
+            <button
+              class="server-link"
+              :title="server.serverName"
+              @click="handleServerClick(server.serverGuid)"
+            >
               {{ server.serverName }}
             </button>
           </td>
-          <td class="col-score">{{ server.totalScore.toLocaleString() }}</td>
-          <td class="col-kills">{{ server.totalKills.toLocaleString() }}</td>
-          <td class="col-kd">{{ server.kdRatio.toFixed(2) }}</td>
+          <td class="col-score">
+            {{ server.totalScore.toLocaleString() }}
+          </td>
+          <td class="col-kills">
+            {{ server.totalKills.toLocaleString() }}
+          </td>
+          <td class="col-kd">
+            {{ server.kdRatio.toFixed(2) }}
+          </td>
         </tr>
       </tbody>
     </table>
 
-    <div v-if="serverStats.length === 0" class="server-empty">
+    <div
+      v-if="serverStats.length === 0"
+      class="server-empty"
+    >
       No server data available
     </div>
   </div>

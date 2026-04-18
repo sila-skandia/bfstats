@@ -495,31 +495,64 @@ watch(activeBandIndex, () => {
 </script>
 
 <template>
-  <div ref="containerRef" class="player-network-graph" :class="{
-    'mobile-optimized': isMobile && isFullscreen,
-    'desktop-fullscreen': isFullscreen && !isMobile
-  }">
+  <div
+    ref="containerRef"
+    class="player-network-graph"
+    :class="{
+      'mobile-optimized': isMobile && isFullscreen,
+      'desktop-fullscreen': isFullscreen && !isMobile
+    }"
+  >
     <!-- Loading -->
-    <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10 bg-[var(--portal-bg,#06060a)]/80">
+    <div
+      v-if="loading"
+      class="absolute inset-0 flex items-center justify-center z-10 bg-[var(--portal-bg,#06060a)]/80"
+    >
       <div class="loading-spinner" />
     </div>
 
-    <div v-if="error" class="text-center py-8">
-      <p class="text-red-400">{{ error }}</p>
+    <div
+      v-if="error"
+      class="text-center py-8"
+    >
+      <p class="text-red-400">
+        {{ error }}
+      </p>
     </div>
 
     <!-- Desktop Fullscreen Exit -->
-    <div v-if="isFullscreen && !isMobile" class="fullscreen-exit-hint">
-      <button @click="toggleFullscreen" class="fullscreen-exit-btn" title="Exit fullscreen">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+    <div
+      v-if="isFullscreen && !isMobile"
+      class="fullscreen-exit-hint"
+    >
+      <button
+        class="fullscreen-exit-btn"
+        title="Exit fullscreen"
+        @click="toggleFullscreen"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M6 18L18 6M6 6l12 12"
+          />
         </svg>
       </button>
       <span class="fullscreen-exit-text">ESC to exit</span>
     </div>
 
     <!-- Tier Tabs — the main navigation -->
-    <div v-if="populatedBands.length > 0 && !loading" class="tier-tabs" :class="{ 'tier-tabs--fullscreen': isFullscreen }">
+    <div
+      v-if="populatedBands.length > 0 && !loading"
+      class="tier-tabs"
+      :class="{ 'tier-tabs--fullscreen': isFullscreen }"
+    >
       <button
         v-for="(band, idx) in populatedBands"
         :key="band.index"
@@ -531,7 +564,10 @@ watch(activeBandIndex, () => {
         }"
         @click="selectBand(idx)"
       >
-        <span class="tier-tab-dot" :style="{ background: band.color }"></span>
+        <span
+          class="tier-tab-dot"
+          :style="{ background: band.color }"
+        />
         <span class="tier-tab-label">{{ band.label }}</span>
         <span class="tier-tab-count">{{ band.totalCount }}</span>
       </button>
@@ -544,30 +580,92 @@ watch(activeBandIndex, () => {
             type="text"
             placeholder="Search..."
             class="search-input-inline"
-          />
-          <button v-if="searchQuery" class="search-clear-inline" @click="searchQuery = ''">&times;</button>
+          >
+          <button
+            v-if="searchQuery"
+            class="search-clear-inline"
+            @click="searchQuery = ''"
+          >
+            &times;
+          </button>
         </div>
-        <button class="tab-action-btn" @click="resetZoom" title="Reset zoom">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+        <button
+          class="tab-action-btn"
+          title="Reset zoom"
+          @click="resetZoom"
+        >
+          <svg
+            class="w-3.5 h-3.5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"
+            />
           </svg>
         </button>
-        <button class="tab-action-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'">
-          <svg v-if="!isFullscreen" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+        <button
+          class="tab-action-btn"
+          :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          @click="toggleFullscreen"
+        >
+          <svg
+            v-if="!isFullscreen"
+            class="w-3.5 h-3.5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+            />
           </svg>
-          <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V5m0 0h4M9 5l-5 5m5 5v4m0 0h4m-4 0l-5-5m11-5l5 5m-5-5v4m0-4h4m-9 10l5 5m0 0v-4m0 4h-4" />
+          <svg
+            v-else
+            class="w-3.5 h-3.5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 9V5m0 0h4M9 5l-5 5m5 5v4m0 0h4m-4 0l-5-5m11-5l5 5m-5-5v4m0-4h4m-9 10l5 5m0 0v-4m0 4h-4"
+            />
           </svg>
         </button>
       </div>
     </div>
 
     <!-- Mobile Controls Bar (only in fullscreen) -->
-    <div v-if="isMobile && isFullscreen" class="mobile-controls-bar">
-      <button class="mobile-control-btn" @click="showControls = !showControls">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+    <div
+      v-if="isMobile && isFullscreen"
+      class="mobile-controls-bar"
+    >
+      <button
+        class="mobile-control-btn"
+        @click="showControls = !showControls"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+          />
         </svg>
       </button>
       <div class="mobile-stats">
@@ -575,28 +673,64 @@ watch(activeBandIndex, () => {
         <span class="mx-1 text-neutral-600">&middot;</span>
         <span class="text-[var(--portal-accent,#00e5a0)]">{{ activeNodes.length }}</span> players
       </div>
-      <button class="mobile-control-btn" @click="toggleFullscreen">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      <button
+        class="mobile-control-btn"
+        @click="toggleFullscreen"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M6 18L18 6M6 6l12 12"
+          />
         </svg>
       </button>
     </div>
 
     <!-- Mobile Controls Overlay -->
-    <div v-if="isMobile && isFullscreen && showControls" class="mobile-controls-overlay" @click.self="showControls = false">
+    <div
+      v-if="isMobile && isFullscreen && showControls"
+      class="mobile-controls-overlay"
+      @click.self="showControls = false"
+    >
       <div class="mobile-controls-panel">
         <div class="flex justify-between items-center mb-3">
-          <h3 class="text-sm font-semibold text-neutral-200">Settings</h3>
-          <button @click="showControls = false" class="text-neutral-400 hover:text-neutral-200">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <h3 class="text-sm font-semibold text-neutral-200">
+            Settings
+          </h3>
+          <button
+            class="text-neutral-400 hover:text-neutral-200"
+            @click="showControls = false"
+          >
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
         <div class="space-y-3">
           <label class="block">
             <span class="text-xs text-neutral-400">Network Depth</span>
-            <select v-model.number="depth" class="mobile-select" @change="fetchNetworkData">
+            <select
+              v-model.number="depth"
+              class="mobile-select"
+              @change="fetchNetworkData"
+            >
               <option :value="1">Direct connections only</option>
               <option :value="2">Friends of friends</option>
               <option :value="3">Extended network</option>
@@ -604,7 +738,11 @@ watch(activeBandIndex, () => {
           </label>
           <label class="block">
             <span class="text-xs text-neutral-400">Maximum Nodes</span>
-            <select v-model.number="maxNodes" class="mobile-select" @change="fetchNetworkData">
+            <select
+              v-model.number="maxNodes"
+              class="mobile-select"
+              @change="fetchNetworkData"
+            >
               <option :value="50">50 nodes</option>
               <option :value="100">100 nodes</option>
               <option :value="200">200 nodes</option>
@@ -613,15 +751,26 @@ watch(activeBandIndex, () => {
           </label>
           <label class="block">
             <span class="text-xs text-neutral-400">Search players</span>
-            <input v-model="searchQuery" type="text" placeholder="Name (comma-separated)..." class="mobile-select" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Name (comma-separated)..."
+              class="mobile-select"
+            >
           </label>
         </div>
       </div>
     </div>
 
     <!-- Active band info bar -->
-    <div v-if="activeBand && !loading && activeNodes.length > 0" class="band-info-bar">
-      <span class="band-info-label" :style="{ color: activeBand.color }">
+    <div
+      v-if="activeBand && !loading && activeNodes.length > 0"
+      class="band-info-bar"
+    >
+      <span
+        class="band-info-label"
+        :style="{ color: activeBand.color }"
+      >
         {{ activeBand.label }}
       </span>
       <span class="band-info-detail">
@@ -630,23 +779,45 @@ watch(activeBandIndex, () => {
     </div>
 
     <!-- Empty state for active band -->
-    <div v-if="activeBand && activeNodes.length === 0 && !loading" class="empty-band">
-      <p v-if="searchTerms.length > 0">No players matching "{{ searchQuery }}" in this tier.</p>
-      <p v-else>No players in this tier.</p>
+    <div
+      v-if="activeBand && activeNodes.length === 0 && !loading"
+      class="empty-band"
+    >
+      <p v-if="searchTerms.length > 0">
+        No players matching "{{ searchQuery }}" in this tier.
+      </p>
+      <p v-else>
+        No players in this tier.
+      </p>
     </div>
 
     <!-- Hover tooltip -->
-    <div v-if="hoveredItem" class="orbit-tooltip" :class="{ 'z-52': isFullscreen }">
-      <div class="tooltip-name" :style="{ color: hoveredItem.band.color }">{{ hoveredItem.name }}</div>
+    <div
+      v-if="hoveredItem"
+      class="orbit-tooltip"
+      :class="{ 'z-52': isFullscreen }"
+    >
+      <div
+        class="tooltip-name"
+        :style="{ color: hoveredItem.band.color }"
+      >
+        {{ hoveredItem.name }}
+      </div>
       <div class="tooltip-row">
         <span class="tooltip-label">Sessions</span>
         <span class="tooltip-value">{{ hoveredItem.weight }}</span>
       </div>
       <div class="tooltip-row">
         <span class="tooltip-label">Tier</span>
-        <span class="tooltip-value" :style="{ color: hoveredItem.band.color }">{{ hoveredItem.band.label }}</span>
+        <span
+          class="tooltip-value"
+          :style="{ color: hoveredItem.band.color }"
+        >{{ hoveredItem.band.label }}</span>
       </div>
-      <div v-if="hoveredItem.lastPlayed" class="tooltip-row">
+      <div
+        v-if="hoveredItem.lastPlayed"
+        class="tooltip-row"
+      >
         <span class="tooltip-label">Last played</span>
         <span class="tooltip-value">{{ formatDate(hoveredItem.lastPlayed) }}</span>
       </div>
@@ -664,7 +835,10 @@ watch(activeBandIndex, () => {
     />
 
     <!-- Footer -->
-    <div v-if="!loading && totalNodes > 0" class="graph-footer">
+    <div
+      v-if="!loading && totalNodes > 0"
+      class="graph-footer"
+    >
       {{ totalNodes }} total connections across {{ populatedBands.length }} tiers
     </div>
   </div>

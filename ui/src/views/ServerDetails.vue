@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ServerDetails, ServerInsights, LeaderboardsData, fetchServerDetails, fetchServerInsights, fetchServerLeaderboards, fetchLiveServerData, ServerBusyIndicator, ServerHourlyTimelineEntry, fetchServerBusyIndicators } from '../services/serverDetailsService';
 import { fetchServerMapRotation, type DetectedRotation, type MapRotationItem } from '../services/dataExplorerService';
@@ -14,8 +14,6 @@ import MapRotationTable from '../components/data-explorer/MapRotationTable.vue';
 import ServerMapDetailPanel from '../components/data-explorer/ServerMapDetailPanel.vue';
 import MapRankingsPanel from '../components/MapRankingsPanel.vue';
 import ServerComments from '../components/ServerComments.vue';
-import { formatDate } from '../utils/date';
-import HeroBackButton from '../components/HeroBackButton.vue';
 import ForecastModal from '../components/ForecastModal.vue';
 import discordIcon from '@/assets/discord.webp';
 import { useAIContext } from '@/composables/useAIContext';
@@ -706,26 +704,48 @@ const forecastPeakHour = computed(() => {
 </script>
 
 <template>
-  <div class="portal-page">
-    <div class="portal-grid" aria-hidden="true" />
+  <div class="portal-page sd-v2">
+    <div
+      class="portal-grid"
+      aria-hidden="true"
+    />
+    <div
+      class="sd-v2-fx"
+      aria-hidden="true"
+    >
+      <div class="sd-v2-orb sd-v2-orb--cyan" />
+      <div class="sd-v2-orb sd-v2-orb--purple" />
+    </div>
     <div class="portal-inner">
-      <div class="data-explorer">
+      <div class="data-explorer sd-v2-explorer">
         <div class="explorer-inner">
-          
           <!-- Loading State -->
-          <div v-if="isLoading" class="beacon-loading" role="status" aria-label="Loading server profile">
+          <div
+            v-if="isLoading"
+            class="beacon-loading"
+            role="status"
+            aria-label="Loading server profile"
+          >
             <div class="beacon-loading__card">
               <div class="beacon-loading__header">
                 <span class="beacon-loading__dot" />
                 <span class="beacon-loading__dot" />
                 <span class="beacon-loading__dot" />
-                <span class="beacon-loading__title">gamefront://server/{{ serverName }}</span>
+                <span class="beacon-loading__title">{{ liveServerInfo?.ip ? `${liveServerInfo.ip}:${liveServerInfo.port}` : serverName }}</span>
               </div>
               <div class="beacon-loading__body">
-                <div class="beacon-loading__line"><span class="beacon-loading__prompt">$</span> locate_server --name="{{ serverName }}"</div>
-                <div class="beacon-loading__line beacon-loading__line--muted">Opening encrypted channel...</div>
-                <div class="beacon-loading__line beacon-loading__line--muted">Fetching telemetry, leaderboards, rotation...</div>
-                <div class="beacon-loading__line beacon-loading__line--cursor">Streaming live roster<span class="beacon-loading__caret">▊</span></div>
+                <div class="beacon-loading__line">
+                  <span class="beacon-loading__prompt">$</span> locate_server --name="{{ serverName }}"
+                </div>
+                <div class="beacon-loading__line beacon-loading__line--muted">
+                  Opening encrypted channel...
+                </div>
+                <div class="beacon-loading__line beacon-loading__line--muted">
+                  Fetching telemetry, leaderboards, rotation...
+                </div>
+                <div class="beacon-loading__line beacon-loading__line--cursor">
+                  Streaming live roster<span class="beacon-loading__caret">▊</span>
+                </div>
               </div>
               <div class="beacon-loading__progress">
                 <div class="beacon-loading__progress-fill" />
@@ -734,46 +754,105 @@ const forecastPeakHour = computed(() => {
           </div>
 
           <!-- Error State -->
-          <div v-else-if="error" class="beacon-error" role="alert">
+          <div
+            v-else-if="error"
+            class="beacon-error"
+            role="alert"
+          >
             <div class="beacon-error__card">
-              <div class="beacon-error__glitch" aria-hidden="true">
+              <div
+                class="beacon-error__glitch"
+                aria-hidden="true"
+              >
                 <span>SIGNAL LOST</span>
                 <span>SIGNAL LOST</span>
                 <span>SIGNAL LOST</span>
               </div>
-              <div class="beacon-error__icon" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              <div
+                class="beacon-error__icon"
+                aria-hidden="true"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                ><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
               </div>
-              <div class="beacon-error__title">SERVER UNREACHABLE</div>
-              <div class="beacon-error__msg">{{ error }}</div>
-              <router-link to="/servers" class="beacon-error__retry">
+              <div class="beacon-error__title">
+                SERVER UNREACHABLE
+              </div>
+              <div class="beacon-error__msg">
+                {{ error }}
+              </div>
+              <router-link
+                to="/servers"
+                class="beacon-error__retry"
+              >
                 <span>←</span> BACK TO SERVERS
               </router-link>
             </div>
           </div>
 
           <!-- Content -->
-          <div v-else-if="serverDetails" class="server-details-v2 space-y-6">
-
+          <div
+            v-else-if="serverDetails"
+            class="server-details-v2 space-y-6"
+          >
             <!-- Server Beacon Hero -->
             <section
               class="server-beacon"
               :class="[`server-beacon--${beaconGameAccent}`, `server-beacon--${beaconPulseLevel}`]"
               aria-label="Server status beacon"
             >
-              <div class="server-beacon__bg" aria-hidden="true" />
-              <div class="server-beacon__scan" aria-hidden="true" />
+              <span
+                class="hero-corner hero-corner--tl"
+                aria-hidden="true"
+              />
+              <span
+                class="hero-corner hero-corner--tr"
+                aria-hidden="true"
+              />
+              <span
+                class="hero-corner hero-corner--bl"
+                aria-hidden="true"
+              />
+              <span
+                class="hero-corner hero-corner--br"
+                aria-hidden="true"
+              />
+              <div
+                class="server-beacon__bg"
+                aria-hidden="true"
+              />
+              <div
+                class="server-beacon__scan"
+                aria-hidden="true"
+              />
               <div class="server-beacon__inner">
-
                 <!-- Status row: badge + location meta -->
                 <div class="server-beacon__status-row">
                   <div class="server-beacon__badge">
-                    <span class="server-beacon__dot" aria-hidden="true" />
+                    <span
+                      class="server-beacon__dot"
+                      aria-hidden="true"
+                    />
                     <span>{{ beaconStatusLabel }}</span>
                   </div>
                   <div class="server-beacon__meta">
-                    <span v-if="serverDetails?.region" class="server-beacon__meta-item--accent">{{ serverDetails.region }}</span>
-                    <span v-if="serverDetails?.region && (serverDetails?.country || serverDetails?.countryCode)" class="server-beacon__meta-divider">·</span>
+                    <span
+                      v-if="serverDetails?.region"
+                      class="server-beacon__meta-item--accent"
+                    >{{ serverDetails.region }}</span>
+                    <span
+                      v-if="serverDetails?.region && (serverDetails?.country || serverDetails?.countryCode)"
+                      class="server-beacon__meta-divider"
+                    >·</span>
                     <span v-if="serverDetails?.country || serverDetails?.countryCode">{{ getCountryName(serverDetails?.countryCode, serverDetails?.country) }}</span>
                     <template v-if="getTimezoneDisplay(serverDetails?.timezone)">
                       <span class="server-beacon__meta-divider">·</span>
@@ -787,11 +866,19 @@ const forecastPeakHour = computed(() => {
                 </div>
 
                 <!-- Server name -->
-                <h1 class="server-beacon__name">{{ serverName }}</h1>
+                <h1 class="server-beacon__name">
+                  {{ serverName }}
+                </h1>
 
                 <!-- Now playing -->
-                <div v-if="liveServerInfo?.mapName" class="server-beacon__current">
-                  <span class="server-beacon__current-chev" aria-hidden="true">▸</span>
+                <div
+                  v-if="liveServerInfo?.mapName"
+                  class="server-beacon__current"
+                >
+                  <span
+                    class="server-beacon__current-chev"
+                    aria-hidden="true"
+                  >▸</span>
                   <span class="server-beacon__current-label">Now Playing</span>
                   <span class="server-beacon__map">{{ liveServerInfo.mapName }}</span>
                 </div>
@@ -799,36 +886,60 @@ const forecastPeakHour = computed(() => {
                 <!-- Action deck -->
                 <div class="server-beacon__deck">
                   <!-- Online panel -->
-                  <div v-if="liveServerInfo" class="beacon-online">
+                  <div
+                    v-if="liveServerInfo"
+                    class="beacon-online"
+                  >
                     <div class="beacon-online__head">
                       <div>
-                        <span class="beacon-online__num" :class="{ 'beacon-online__num--empty': liveServerInfo.numPlayers === 0 }">{{ liveServerInfo.numPlayers }}</span>
+                        <span
+                          class="beacon-online__num"
+                          :class="{ 'beacon-online__num--empty': liveServerInfo.numPlayers === 0 }"
+                        >{{ liveServerInfo.numPlayers }}</span>
                         <span class="beacon-online__max">/{{ liveServerInfo.maxPlayers }}</span>
                       </div>
                     </div>
-                    <div class="beacon-online__label">Soldiers Engaged</div>
+                    <div class="beacon-online__label">
+                      Soldiers Engaged
+                    </div>
                     <div class="beacon-online__bar">
-                      <div class="beacon-online__bar-fill" :style="{ width: capacityPercent + '%' }" />
+                      <div
+                        class="beacon-online__bar-fill"
+                        :style="{ width: capacityPercent + '%' }"
+                      />
                     </div>
                   </div>
-                  <div v-else-if="isLiveServerLoading" class="beacon-online">
+                  <div
+                    v-else-if="isLiveServerLoading"
+                    class="beacon-online"
+                  >
                     <div class="beacon-online__head">
                       <div>
                         <span class="beacon-online__num beacon-online__num--empty">—</span>
                       </div>
                     </div>
-                    <div class="beacon-online__label">Connecting...</div>
+                    <div class="beacon-online__label">
+                      Connecting...
+                    </div>
                     <div class="beacon-online__bar">
-                      <div class="beacon-online__bar-fill" style="width: 0%" />
+                      <div
+                        class="beacon-online__bar-fill"
+                        style="width: 0%"
+                      />
                     </div>
                   </div>
-                  <div v-else-if="liveServerError" class="beacon-online">
+                  <div
+                    v-else-if="liveServerError"
+                    class="beacon-online"
+                  >
                     <div class="beacon-online__head">
                       <div>
                         <span class="beacon-online__num beacon-online__num--empty">?</span>
                       </div>
                     </div>
-                    <div class="beacon-online__label">Offline / Unreachable</div>
+                    <div class="beacon-online__label">
+                      Offline / Unreachable
+                    </div>
                   </div>
 
                   <!-- Forecast panel -->
@@ -841,7 +952,10 @@ const forecastPeakHour = computed(() => {
                   >
                     <div class="beacon-forecast__head">
                       <span class="beacon-forecast__label">24H Forecast</span>
-                      <span v-if="beaconTypicalPlayers !== null" class="beacon-forecast__status">
+                      <span
+                        v-if="beaconTypicalPlayers !== null"
+                        class="beacon-forecast__status"
+                      >
                         Typical {{ beaconTypicalPlayers }}
                       </span>
                     </div>
@@ -858,7 +972,9 @@ const forecastPeakHour = computed(() => {
                         :title="formatTimelineTooltip(entry)"
                       />
                     </div>
-                    <div class="beacon-forecast__hint">Tap for details</div>
+                    <div class="beacon-forecast__hint">
+                      Tap for details
+                    </div>
                     <ForecastModal
                       :show-overlay="false"
                       :show-modal="showForecastOverlay"
@@ -868,13 +984,22 @@ const forecastPeakHour = computed(() => {
                       @close="closeForecastOverlay"
                     />
                   </button>
-                  <div v-else-if="isBusyIndicatorLoading" class="beacon-forecast" aria-hidden="true">
+                  <div
+                    v-else-if="isBusyIndicatorLoading"
+                    class="beacon-forecast"
+                    aria-hidden="true"
+                  >
                     <div class="beacon-forecast__head">
                       <span class="beacon-forecast__label">24H Forecast</span>
                       <span class="beacon-forecast__status">Calibrating…</span>
                     </div>
                     <div class="beacon-forecast__bars">
-                      <span v-for="n in 24" :key="n" class="beacon-forecast__bar" :style="{ height: ((n % 6) + 3) + 'px' }" />
+                      <span
+                        v-for="n in 24"
+                        :key="n"
+                        class="beacon-forecast__bar"
+                        :style="{ height: ((n % 6) + 3) + 'px' }"
+                      />
                     </div>
                   </div>
 
@@ -902,7 +1027,10 @@ const forecastPeakHour = computed(() => {
                       title="Join Discord"
                       aria-label="Join Discord"
                     >
-                      <img :src="discordIcon" alt="Discord">
+                      <img
+                        :src="discordIcon"
+                        alt="Discord"
+                      >
                     </a>
 
                     <a
@@ -921,34 +1049,94 @@ const forecastPeakHour = computed(() => {
               </div>
             </section>
 
-            <!-- Tab Navigation (Terminal style) -->
-            <nav class="terminal-tabs" role="tablist" aria-label="Server detail sections">
+            <!-- Tab Navigation (Hero dashboard style) -->
+            <nav
+              class="hero-tabs"
+              role="tablist"
+              aria-label="Server detail sections"
+            >
               <button
                 v-for="tab in tabs"
                 :key="tab.id"
                 type="button"
                 role="tab"
                 :aria-selected="activeTab === tab.id"
-                class="terminal-tab"
-                :class="{ 'terminal-tab--active': activeTab === tab.id }"
+                class="hero-tab"
+                :class="{ 'hero-tab--active': activeTab === tab.id }"
                 @click="activeTab = tab.id"
               >
-                <span class="terminal-tab__bracket" aria-hidden="true">[</span>
+                <svg
+                  v-if="tab.id === 'live'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+                <svg
+                  v-else-if="tab.id === 'leaderboards'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>
+                <svg
+                  v-else-if="tab.id === 'maps'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line
+                  x1="8"
+                  y1="2"
+                  x2="8"
+                  y2="18"
+                /><line
+                  x1="16"
+                  y1="6"
+                  x2="16"
+                  y2="22"
+                /></svg>
+                <svg
+                  v-else
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></svg>
                 <span>{{ tab.label }}</span>
-                <span class="terminal-tab__bracket" aria-hidden="true">]</span>
-                <span class="terminal-tab__underline" aria-hidden="true" />
+                <span
+                  class="hero-tab-underline"
+                  aria-hidden="true"
+                />
               </button>
             </nav>
 
             <!-- Tab Content -->
             <div class="space-y-6">
               <!-- LIVE STATUS TAB -->
-              <div v-if="activeTab === 'live'" class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+              <div
+                v-if="activeTab === 'live'"
+                class="grid grid-cols-1 xl:grid-cols-12 gap-6"
+              >
                 <!-- Online Players -->
                 <div class="xl:col-span-6 space-y-6">
                   <div class="explorer-card">
                     <div class="explorer-card-header flex items-center justify-between">
-                      <h3 class="explorer-card-title">ONLINE PLAYERS</h3>
+                      <h3 class="explorer-card-title">
+                        ONLINE PLAYERS
+                      </h3>
                     </div>
                     <div class="explorer-card-body p-0">
                       <PlayersPanel
@@ -956,9 +1144,20 @@ const forecastPeakHour = computed(() => {
                         :show="true"
                         :server="liveServerInfo"
                         :inline="true"
+                        :embedded="true"
                       />
-                      <div v-else-if="isLiveServerLoading" class="p-8 flex justify-center"><div class="explorer-spinner"></div></div>
-                      <div v-else class="p-8 text-center text-neutral-500 font-mono uppercase">No live server data</div>
+                      <div
+                        v-else-if="isLiveServerLoading"
+                        class="p-8 flex justify-center"
+                      >
+                        <div class="explorer-spinner" />
+                      </div>
+                      <div
+                        v-else
+                        class="p-8 text-center text-neutral-500 font-mono uppercase"
+                      >
+                        No live server data
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -971,15 +1170,36 @@ const forecastPeakHour = computed(() => {
                   <!-- Recent Sessions -->
                   <div class="explorer-card">
                     <div class="explorer-card-header flex items-center justify-between">
-                      <h3 class="explorer-card-title">RECENT SESSIONS</h3>
-                      <router-link :to="`/servers/${encodeURIComponent(serverName)}/sessions`" class="explorer-link text-xs font-mono uppercase">View All &rarr;</router-link>
+                      <h3 class="explorer-card-title">
+                        RECENT SESSIONS
+                      </h3>
+                      <router-link
+                        :to="`/servers/${encodeURIComponent(serverName)}/sessions`"
+                        class="explorer-link text-xs font-mono uppercase"
+                      >
+                        View All &rarr;
+                      </router-link>
                     </div>
                     <div class="explorer-card-body p-0">
                       <div class="flex flex-col gap-2 px-4 py-3 border-b border-[var(--border-color)] bg-black/20">
                         <div class="flex flex-wrap items-center gap-2">
                           <span class="text-[10px] text-neutral-500 font-mono uppercase">Rounds:</span>
-                          <button type="button" class="explorer-toggle-btn text-[10px] px-2 py-1" :class="{ 'explorer-toggle-btn--active': roundFilterMode === 'withPlayers' }" @click="roundFilterMode = 'withPlayers'">With Players</button>
-                          <button type="button" class="explorer-toggle-btn text-[10px] px-2 py-1" :class="{ 'explorer-toggle-btn--active': roundFilterMode === 'all' }" @click="roundFilterMode = 'all'">All</button>
+                          <button
+                            type="button"
+                            class="explorer-toggle-btn text-[10px] px-2 py-1"
+                            :class="{ 'explorer-toggle-btn--active': roundFilterMode === 'withPlayers' }"
+                            @click="roundFilterMode = 'withPlayers'"
+                          >
+                            With Players
+                          </button>
+                          <button
+                            type="button"
+                            class="explorer-toggle-btn text-[10px] px-2 py-1"
+                            :class="{ 'explorer-toggle-btn--active': roundFilterMode === 'all' }"
+                            @click="roundFilterMode = 'all'"
+                          >
+                            All
+                          </button>
                         </div>
                       </div>
                       <RecentSessionsList
@@ -997,9 +1217,14 @@ const forecastPeakHour = computed(() => {
               </div>
 
               <!-- LEADERBOARDS TAB -->
-              <div v-if="activeTab === 'leaderboards'" class="explorer-card">
+              <div
+                v-if="activeTab === 'leaderboards'"
+                class="explorer-card"
+              >
                 <div class="explorer-card-header">
-                  <h3 class="explorer-card-title">SERVER LEADERBOARDS</h3>
+                  <h3 class="explorer-card-title">
+                    SERVER LEADERBOARDS
+                  </h3>
                 </div>
                 <div class="explorer-card-body">
                   <ServerLeaderboards
@@ -1018,15 +1243,28 @@ const forecastPeakHour = computed(() => {
               </div>
 
               <!-- MAPS TAB -->
-              <div v-if="activeTab === 'maps'" class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+              <div
+                v-if="activeTab === 'maps'"
+                class="grid grid-cols-1 xl:grid-cols-12 gap-6"
+              >
                 <div class="xl:col-span-12">
                   <div class="explorer-card">
                     <div class="explorer-card-header flex items-center justify-between">
-                      <h3 class="explorer-card-title">MAP ROTATION & STATISTICS</h3>
+                      <h3 class="explorer-card-title">
+                        MAP ROTATION & STATISTICS
+                      </h3>
                       <div class="flex items-center gap-2">
                         <span class="text-[10px] text-neutral-500 font-mono uppercase">Period:</span>
                         <div class="flex bg-[var(--bg-panel)] border border-[var(--border-color)] rounded overflow-hidden">
-                          <button v-for="days in [30, 60, 90, 365]" :key="days" class="px-2 py-1 text-[10px] font-mono transition-colors border-r border-[var(--border-color)] last:border-r-0" :class="mapRotationDays === days ? 'bg-white/10 text-neon-cyan' : 'text-neutral-400 hover:text-neutral-200'" @click="handleMapRotationDaysChange(days)">{{ days === 365 ? '1Y' : `${days}D` }}</button>
+                          <button
+                            v-for="days in [30, 60, 90, 365]"
+                            :key="days"
+                            class="px-2 py-1 text-[10px] font-mono transition-colors border-r border-[var(--border-color)] last:border-r-0"
+                            :class="mapRotationDays === days ? 'bg-white/10 text-neon-cyan' : 'text-neutral-400 hover:text-neutral-200'"
+                            @click="handleMapRotationDaysChange(days)"
+                          >
+                            {{ days === 365 ? '1Y' : `${days}D` }}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1048,16 +1286,29 @@ const forecastPeakHour = computed(() => {
               </div>
 
               <!-- INSIGHTS TAB -->
-              <div v-if="activeTab === 'insights'" class="space-y-6">
+              <div
+                v-if="activeTab === 'insights'"
+                class="space-y-6"
+              >
                 <!-- Population Trends -->
                 <div class="explorer-card">
                   <div class="explorer-card-header">
-                    <h3 class="explorer-card-title">POPULATION TRENDS</h3>
+                    <h3 class="explorer-card-title">
+                      POPULATION TRENDS
+                    </h3>
                   </div>
                   <div class="explorer-card-body">
                     <div class="flex justify-center mb-6">
                       <div class="explorer-toggle-group">
-                        <button v-for="period in ['1d', '3d', '7d']" :key="period" class="explorer-toggle-btn" :class="{ 'explorer-toggle-btn--active': historyPeriod === period }" @click="handleHistoryPeriodChange(period as '1d' | '3d' | '7d')">{{ period === '1d' ? '24H' : period === '3d' ? '3D' : '7D' }}</button>
+                        <button
+                          v-for="period in ['1d', '3d', '7d']"
+                          :key="period"
+                          class="explorer-toggle-btn"
+                          :class="{ 'explorer-toggle-btn--active': historyPeriod === period }"
+                          @click="handleHistoryPeriodChange(period as '1d' | '3d' | '7d')"
+                        >
+                          {{ period === '1d' ? '24H' : period === '3d' ? '3D' : '7D' }}
+                        </button>
                       </div>
                     </div>
                     <PlayerHistoryChart
@@ -1076,8 +1327,12 @@ const forecastPeakHour = computed(() => {
                 <!-- Ping Proximity -->
                 <div class="explorer-card">
                   <div class="explorer-card-header">
-                    <h3 class="explorer-card-title">PING PROXIMITY</h3>
-                    <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">Nearby players by network latency</p>
+                    <h3 class="explorer-card-title">
+                      PING PROXIMITY
+                    </h3>
+                    <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase">
+                      Nearby players by network latency
+                    </p>
                   </div>
                   <div class="explorer-card-body">
                     <PingProximityOrbit
@@ -1090,30 +1345,64 @@ const forecastPeakHour = computed(() => {
                 </div>
               </div>
             </div>
-
           </div>
 
           <!-- Empty State -->
-          <div v-else class="explorer-empty">
-            <div class="explorer-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-neutral-500"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
-            <p class="explorer-empty-title">No server data available</p>
+          <div
+            v-else
+            class="explorer-empty"
+          >
+            <div class="explorer-empty-icon">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-neutral-500"
+              ><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></svg>
+            </div>
+            <p class="explorer-empty-title">
+              No server data available
+            </p>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Players Modal (Overlay) -->
-    <div v-if="showPlayersModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4" @click="closePlayersModal" @keydown.esc="closePlayersModal" tabindex="-1">
-      <div class="w-full max-w-4xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl" @click.stop>
+    <div
+      v-if="showPlayersModal"
+      class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4"
+      tabindex="-1"
+      @click="closePlayersModal"
+      @keydown.esc="closePlayersModal"
+    >
+      <div
+        class="w-full max-w-4xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl"
+        @click.stop
+      >
         <div class="p-3 sm:p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-panel)]">
-          <h3 class="explorer-card-title text-lg">ONLINE PLAYERS</h3>
-          <button class="explorer-btn explorer-btn--ghost explorer-btn--sm" @click="closePlayersModal">CLOSE</button>
+          <h3 class="explorer-card-title text-lg">
+            ONLINE PLAYERS
+          </h3>
+          <button
+            class="explorer-btn explorer-btn--ghost explorer-btn--sm"
+            @click="closePlayersModal"
+          >
+            CLOSE
+          </button>
         </div>
         <div class="flex-1 overflow-y-auto">
           <PlayersPanel
             :show="true"
             :server="liveServerInfo"
             :inline="true"
+            :embedded="true"
             @close="closePlayersModal"
           />
         </div>
@@ -1121,22 +1410,42 @@ const forecastPeakHour = computed(() => {
     </div>
 
     <!-- Map Detail Panel (Overlay) -->
-    <div v-if="showMapDetailPanel && selectedMapName && serverDetails?.serverGuid" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4" @click="handleCloseMapDetailPanel" @keydown.esc="handleCloseMapDetailPanel" tabindex="-1">
-      <div class="w-full max-w-5xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl" @click.stop>
+    <div
+      v-if="showMapDetailPanel && selectedMapName && serverDetails?.serverGuid"
+      class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4"
+      tabindex="-1"
+      @click="handleCloseMapDetailPanel"
+      @keydown.esc="handleCloseMapDetailPanel"
+    >
+      <div
+        class="w-full max-w-5xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col bg-[var(--bg-panel)] border-x-0 sm:border border-[var(--border-color)] rounded-none sm:rounded-lg shadow-2xl"
+        @click.stop
+      >
         <!-- Header -->
         <div class="p-3 sm:p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-panel)]">
           <div>
             <h2 class="text-base sm:text-lg font-bold text-neon-cyan font-mono">
               {{ showRankingsInPanel ? `RANKINGS: ${rankingsMapNameForPanel}` : selectedMapName }}
             </h2>
-            <p class="text-[10px] sm:text-xs text-neutral-400 font-mono mt-1">ON {{ serverName }}</p>
+            <p class="text-[10px] sm:text-xs text-neutral-400 font-mono mt-1">
+              ON {{ serverName }}
+            </p>
           </div>
-          <button class="explorer-btn explorer-btn--ghost explorer-btn--sm" aria-label="Close map detail panel" @click="handleCloseMapDetailPanel">CLOSE</button>
+          <button
+            class="explorer-btn explorer-btn--ghost explorer-btn--sm"
+            aria-label="Close map detail panel"
+            @click="handleCloseMapDetailPanel"
+          >
+            CLOSE
+          </button>
         </div>
 
         <!-- Content -->
         <div class="flex-1 overflow-y-auto">
-          <div v-if="showRankingsInPanel && rankingsMapNameForPanel" class="p-3 sm:p-4">
+          <div
+            v-if="showRankingsInPanel && rankingsMapNameForPanel"
+            class="p-3 sm:p-4"
+          >
             <button
               class="explorer-btn explorer-btn--ghost explorer-btn--sm mb-4 flex items-center gap-2"
               @click="handleCloseRankingsInPanel"
@@ -1161,7 +1470,6 @@ const forecastPeakHour = computed(() => {
         </div>
       </div>
     </div>
-
   </div>
 </template>
 

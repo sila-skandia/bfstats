@@ -56,9 +56,9 @@ export function generateComplementaryColor(hex: string): string {
   if (!rgb) return '#FFFFFF';
 
   // Convert RGB to HSL
-  let r = rgb.r / 255;
-  let g = rgb.g / 255;
-  let b = rgb.b / 255;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
 
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);

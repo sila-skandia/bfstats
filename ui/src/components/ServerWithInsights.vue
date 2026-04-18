@@ -1,6 +1,8 @@
 <template>
-  <div class="group relative overflow-hidden bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-sm rounded-xl border transition-all duration-300 hover:scale-[1.01]"
-       :class="performanceIndicator?.borderColor || 'border-slate-700/50 hover:border-blue-500/50'">
+  <div
+    class="group relative overflow-hidden bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-sm rounded-xl border transition-all duration-300 hover:scale-[1.01]"
+    :class="performanceIndicator?.borderColor || 'border-slate-700/50 hover:border-blue-500/50'"
+  >
     <!-- Background Effects -->
     <div 
       class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
@@ -40,13 +42,14 @@
               class="flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold backdrop-blur-sm border"
               :class="performanceIndicator.color + ' ' + performanceIndicator.borderColor"
             >
-              <div class="w-1.5 h-1.5 rounded-full"
-                   :class="{
-                     'bg-green-400': performanceIndicator.type === 'excellent',
-                     'bg-blue-400': performanceIndicator.type === 'good',
-                     'bg-amber-400': performanceIndicator.type === 'below'
-                   }">
-              </div>
+              <div
+                class="w-1.5 h-1.5 rounded-full"
+                :class="{
+                  'bg-green-400': performanceIndicator.type === 'excellent',
+                  'bg-blue-400': performanceIndicator.type === 'good',
+                  'bg-amber-400': performanceIndicator.type === 'below'
+                }"
+              />
               <span class="text-white">{{ performanceIndicator.label }}</span>
             </div>
           </div>
@@ -54,7 +57,7 @@
           <!-- Compact Stats Row -->
           <div class="flex items-center gap-4 text-xs">
             <div class="flex items-center gap-1">
-              <div class="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
+              <div class="w-1.5 h-1.5 bg-green-400 rounded-full" />
               <span class="text-green-400 font-semibold">{{ Number(server.kdRatio).toFixed(2) }}</span>
               <span class="text-slate-500">K/D</span>
               <span
@@ -66,17 +69,17 @@
               </span>
             </div>
             <div class="flex items-center gap-1">
-              <div class="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+              <div class="w-1.5 h-1.5 bg-blue-400 rounded-full" />
               <span class="text-blue-400 font-semibold">{{ server.totalRounds }}</span>
               <span class="text-slate-500">rounds</span>
             </div>
             <div class="flex items-center gap-1">
-              <div class="w-1.5 h-1.5 bg-purple-400 rounded-full"></div>
+              <div class="w-1.5 h-1.5 bg-purple-400 rounded-full" />
               <span class="text-purple-400 font-semibold">{{ server.killsPerMinute.toFixed(2) }}</span>
               <span class="text-slate-500">KPM</span>
             </div>
             <div class="flex items-center gap-1">
-              <div class="w-1.5 h-1.5 bg-cyan-400 rounded-full"></div>
+              <div class="w-1.5 h-1.5 bg-cyan-400 rounded-full" />
               <span class="text-cyan-400 font-semibold">{{ formatPlayTime(server.totalMinutes) }}</span>
             </div>
           </div>
@@ -85,9 +88,9 @@
         <!-- Quick Actions -->
         <div class="flex-shrink-0 flex items-center gap-2">
           <button
-            @click="$emit('view-maps', server.serverGuid)"
             class="px-3 py-1.5 text-xs font-medium bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50 hover:border-slate-500/50 rounded-lg transition-colors text-slate-300 hover:text-white"
             title="View map statistics"
+            @click="$emit('view-maps', server.serverGuid)"
           >
             Maps
           </button>
@@ -109,8 +112,13 @@
       </div>
 
       <!-- Server Insights -->
-      <div v-if="serverInsights.length > 0" class="space-y-2 pt-3 border-t border-slate-700/50">
-        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Key Insights</div>
+      <div
+        v-if="serverInsights.length > 0"
+        class="space-y-2 pt-3 border-t border-slate-700/50"
+      >
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+          Key Insights
+        </div>
         <div class="flex flex-wrap gap-2">
           <div
             v-for="(insight, index) in serverInsights"
@@ -118,9 +126,10 @@
             class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border"
             :class="getInsightBadgeClass(insight.type)"
           >
-            <div class="w-1 h-4 rounded-full"
-                 :class="getInsightBarColor(insight.type)">
-            </div>
+            <div
+              class="w-1 h-4 rounded-full"
+              :class="getInsightBarColor(insight.type)"
+            />
             <span class="font-medium text-white">{{ insight.title }}</span>
             <span
               v-if="insight.multiplier"
@@ -142,7 +151,6 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { calculateKDR } from '@/utils/statsUtils';
 
 interface ServerInsight {
   type: string;

@@ -28,7 +28,11 @@ const emit = defineEmits<{
       <!-- Discord Link -->
       <div class="flex items-center gap-3">
         <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center overflow-hidden">
-          <img :src="discordLogo" alt="Discord" class="w-6 h-6 object-contain">
+          <img
+            :src="discordLogo"
+            alt="Discord"
+            class="w-6 h-6 object-contain"
+          >
         </div>
         <input
           :model-value="discordUrl"
@@ -42,7 +46,11 @@ const emit = defineEmits<{
       <!-- YouTube Link -->
       <div class="flex items-center gap-3">
         <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center overflow-hidden">
-          <img :src="youtubeLogo" alt="YouTube" class="w-6 h-6 object-contain">
+          <img
+            :src="youtubeLogo"
+            alt="YouTube"
+            class="w-6 h-6 object-contain"
+          >
         </div>
         <input
           :model-value="youTubeUrl"
@@ -56,7 +64,11 @@ const emit = defineEmits<{
       <!-- Twitch Link -->
       <div class="flex items-center gap-3">
         <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center overflow-hidden">
-          <img :src="twitchLogo" alt="Twitch" class="w-6 h-6 object-contain">
+          <img
+            :src="twitchLogo"
+            alt="Twitch"
+            class="w-6 h-6 object-contain"
+          >
         </div>
         <input
           :model-value="twitchUrl"

@@ -19,8 +19,18 @@
             class="text-slate-400 hover:text-slate-200 transition-colors"
             @click="$emit('close')"
           >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -29,8 +39,13 @@
       <!-- Content -->
       <div class="p-6 space-y-6">
         <!-- Error Message -->
-        <div v-if="error" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-          <p class="text-red-400 text-sm">{{ error }}</p>
+        <div
+          v-if="error"
+          class="bg-red-500/10 border border-red-500/30 rounded-lg p-4"
+        >
+          <p class="text-red-400 text-sm">
+            {{ error }}
+          </p>
         </div>
 
         <!-- Week Name -->
@@ -78,20 +93,34 @@
       <div class="border-t border-slate-700/50 p-6 flex items-center justify-end gap-3">
         <button
           class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition-colors"
-          @click="$emit('close')"
           :disabled="loading"
+          @click="$emit('close')"
         >
           Cancel
         </button>
         <button
           class="px-6 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
-          @click="submit"
           :disabled="loading || !isFormValid"
+          @click="submit"
         >
-          <svg v-if="!loading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          <svg
+            v-if="!loading"
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 4v16m8-8H4"
+            />
           </svg>
-          <div v-else class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          <div
+            v-else
+            class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
+          />
           <span>{{ loading ? 'Saving...' : editMode ? 'Update Week' : 'Create Week' }}</span>
         </button>
       </div>

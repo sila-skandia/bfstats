@@ -1,7 +1,9 @@
 <template>
   <section class="portal-card portal-audit">
     <div class="portal-audit-head">
-      <h3 class="portal-audit-title">[ DELETION LOG ]</h3>
+      <h3 class="portal-audit-title">
+        [ DELETION LOG ]
+      </h3>
       <button
         type="button"
         class="portal-btn portal-btn--ghost portal-btn--sm"
@@ -36,16 +38,26 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="e in items" :key="e.id">
-              <td class="portal-audit-mono">{{ formatDate(e.timestamp) }}</td>
+            <tr
+              v-for="e in items"
+              :key="e.id"
+            >
+              <td class="portal-audit-mono">
+                {{ formatDate(e.timestamp) }}
+              </td>
               <td>{{ e.action }}</td>
-              <td class="portal-audit-mono">{{ e.targetType }} {{ e.targetId ?? '' }}</td>
+              <td class="portal-audit-mono">
+                {{ e.targetType }} {{ e.targetId ?? '' }}
+              </td>
               <td>{{ e.adminEmail }}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div v-if="totalCount > items.length" class="portal-audit-foot">
+      <div
+        v-if="totalCount > items.length"
+        class="portal-audit-foot"
+      >
         showing {{ items.length }} of {{ totalCount }}
       </div>
     </template>

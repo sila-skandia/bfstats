@@ -201,7 +201,10 @@
           active-class="!shadow-xl"
         >
           <!-- Animated rainbow border -->
-          <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-pink-500 via-purple-500 via-blue-500 via-cyan-500 via-green-500 via-yellow-500 to-pink-500 opacity-75 animate-gradient-rotate pointer-events-none" style="padding: 2px; background-size: 200% 200%;">
+          <div
+            class="absolute inset-0 rounded-xl bg-gradient-to-r from-pink-500 via-purple-500 via-blue-500 via-cyan-500 via-green-500 via-yellow-500 to-pink-500 opacity-75 animate-gradient-rotate pointer-events-none"
+            style="padding: 2px; background-size: 200% 200%;"
+          >
             <div class="w-full h-full rounded-[10px] bg-gradient-to-br from-neutral-700/90 to-neutral-800/90" />
           </div>
           
@@ -254,8 +257,12 @@
           >
           <div class="absolute right-full mr-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none">
             <div class="bg-gradient-to-r from-neutral-900/95 to-neutral-950 backdrop-blur-lg rounded-xl border border-neutral-700/50 p-4 shadow-2xl min-w-52">
-              <div class="text-sm font-bold text-cyan-300">Clippy Chat</div>
-              <p class="text-neutral-300 text-xs mt-1">Open the AI assistant</p>
+              <div class="text-sm font-bold text-cyan-300">
+                Clippy Chat
+              </div>
+              <p class="text-neutral-300 text-xs mt-1">
+                Open the AI assistant
+              </p>
             </div>
             <div class="absolute left-full top-1/2 -translate-y-1/2 border-l-8 border-l-neutral-900 border-y-8 border-y-transparent" />
           </div>
@@ -274,8 +281,12 @@
           </div>
           <div class="absolute right-full mr-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none">
             <div class="bg-gradient-to-r from-neutral-900/95 to-neutral-950 backdrop-blur-lg rounded-xl border border-neutral-700/50 p-4 shadow-2xl min-w-52">
-              <div class="text-sm font-bold text-amber-400">Admin Data</div>
-              <p class="text-neutral-300 text-xs mt-1">Manage suspicious sessions</p>
+              <div class="text-sm font-bold text-amber-400">
+                Admin Data
+              </div>
+              <p class="text-neutral-300 text-xs mt-1">
+                Manage suspicious sessions
+              </p>
             </div>
             <div class="absolute left-full top-1/2 -translate-y-1/2 border-l-8 border-l-neutral-900 border-y-8 border-y-transparent" />
           </div>
@@ -370,7 +381,10 @@
           active-class="!shadow-lg"
         >
           <!-- Animated rainbow border -->
-          <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-pink-500 via-purple-500 via-blue-500 via-cyan-500 via-green-500 via-yellow-500 to-pink-500 opacity-75 animate-gradient-rotate" style="padding: 2px; background-size: 200% 200%;">
+          <div
+            class="absolute inset-0 rounded-xl bg-gradient-to-r from-pink-500 via-purple-500 via-blue-500 via-cyan-500 via-green-500 via-yellow-500 to-pink-500 opacity-75 animate-gradient-rotate"
+            style="padding: 2px; background-size: 200% 200%;"
+          >
             <div class="w-full h-full rounded-[10px] bg-gradient-to-br from-neutral-700/90 to-neutral-800/90" />
           </div>
           <div
@@ -406,7 +420,11 @@
     </div>
   </div>
 
-  <AIChatDrawer v-model="isAIChatOpen" :context="aiContext" :key="route.fullPath" />
+  <AIChatDrawer
+    :key="route.fullPath"
+    v-model="isAIChatOpen"
+    :context="aiContext"
+  />
 </template>
 
 <script setup lang="ts">

@@ -26,8 +26,18 @@ const emit = defineEmits<{
           class="portal-modal-close"
           @click="$emit('close')"
         >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
@@ -36,98 +46,134 @@ const emit = defineEmits<{
       <div class="portal-modal-content">
         <!-- Headings -->
         <div class="portal-modal-section">
-          <h3 class="portal-modal-section-title">Headings</h3>
+          <h3 class="portal-modal-section-title">
+            Headings
+          </h3>
           <div class="portal-modal-examples">
             <div class="portal-modal-example">
               <code class="portal-code"># Main Heading</code>
-              <p class="portal-modal-example-desc">Creates the largest heading</p>
+              <p class="portal-modal-example-desc">
+                Creates the largest heading
+              </p>
             </div>
             <div class="portal-modal-example">
               <code class="portal-code">## Subheading</code>
-              <p class="portal-modal-example-desc">Creates a smaller heading</p>
+              <p class="portal-modal-example-desc">
+                Creates a smaller heading
+              </p>
             </div>
             <div class="portal-modal-example">
               <code class="portal-code">### Even Smaller</code>
-              <p class="portal-modal-example-desc">And so on...</p>
+              <p class="portal-modal-example-desc">
+                And so on...
+              </p>
             </div>
           </div>
         </div>
 
         <!-- Text Formatting -->
         <div class="portal-modal-section">
-          <h3 class="portal-modal-section-title">Text Formatting</h3>
+          <h3 class="portal-modal-section-title">
+            Text Formatting
+          </h3>
           <div class="portal-modal-examples">
             <div class="portal-modal-example">
               <code class="portal-code">**bold text**</code>
-              <p class="portal-modal-example-desc">Makes text <strong>bold</strong></p>
+              <p class="portal-modal-example-desc">
+                Makes text <strong>bold</strong>
+              </p>
             </div>
             <div class="portal-modal-example">
               <code class="portal-code">*italic text*</code>
-              <p class="portal-modal-example-desc">Makes text <em>italic</em></p>
+              <p class="portal-modal-example-desc">
+                Makes text <em>italic</em>
+              </p>
             </div>
             <div class="portal-modal-example">
               <code class="portal-code">`code`</code>
-              <p class="portal-modal-example-desc">Highlights inline code</p>
+              <p class="portal-modal-example-desc">
+                Highlights inline code
+              </p>
             </div>
           </div>
         </div>
 
         <!-- Lists -->
         <div class="portal-modal-section">
-          <h3 class="portal-modal-section-title">Lists</h3>
+          <h3 class="portal-modal-section-title">
+            Lists
+          </h3>
           <div class="portal-modal-examples">
             <div class="portal-modal-example">
-              <p class="portal-modal-example-label">Bullet List:</p>
+              <p class="portal-modal-example-label">
+                Bullet List:
+              </p>
               <code class="portal-code portal-code--block">- Item one
-- Item two
-- Item three</code>
+                - Item two
+                - Item three</code>
             </div>
             <div class="portal-modal-example">
-              <p class="portal-modal-example-label">Numbered List:</p>
+              <p class="portal-modal-example-label">
+                Numbered List:
+              </p>
               <code class="portal-code portal-code--block">1. First item
-2. Second item
-3. Third item</code>
+                2. Second item
+                3. Third item</code>
             </div>
           </div>
         </div>
 
         <!-- Links -->
         <div class="portal-modal-section">
-          <h3 class="portal-modal-section-title">Links</h3>
+          <h3 class="portal-modal-section-title">
+            Links
+          </h3>
           <div class="portal-modal-examples">
             <div class="portal-modal-example">
               <code class="portal-code">[link text](https://example.com)</code>
-              <p class="portal-modal-example-desc">Creates a clickable link</p>
+              <p class="portal-modal-example-desc">
+                Creates a clickable link
+              </p>
             </div>
           </div>
         </div>
 
         <!-- Blockquotes -->
         <div class="portal-modal-section">
-          <h3 class="portal-modal-section-title">Blockquotes</h3>
+          <h3 class="portal-modal-section-title">
+            Blockquotes
+          </h3>
           <div class="portal-modal-examples">
             <div class="portal-modal-example">
               <code class="portal-code">> Important note</code>
-              <p class="portal-modal-example-desc">Creates a highlighted blockquote</p>
+              <p class="portal-modal-example-desc">
+                Creates a highlighted blockquote
+              </p>
             </div>
           </div>
         </div>
 
         <!-- Example -->
         <div class="portal-modal-section">
-          <h3 class="portal-modal-section-title">Example</h3>
+          <h3 class="portal-modal-section-title">
+            Example
+          </h3>
           <div class="portal-modal-examples">
-            <p class="portal-modal-example-label">This markdown:</p>
+            <p class="portal-modal-example-label">
+              This markdown:
+            </p>
             <code class="portal-code portal-code--block portal-code--example"># Tournament Rules
 
-## General Rules
-- All players must be registered
-- Respect all referees
-- No cheating allowed
+              ## General Rules
+              - All players must be registered
+              - Respect all referees
+              - No cheating allowed
 
-## Map Selection
-Winners choose first map for next round.</code>
-            <p class="portal-modal-example-desc">Will display nicely formatted rules with sections and lists.</p>
+              ## Map Selection
+              Winners choose first map for next round.</code>
+            <p class="portal-modal-example-desc">
+              Will display nicely formatted rules with sections and lists.
+            </p>
           </div>
         </div>
       </div>
