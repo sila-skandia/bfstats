@@ -2,16 +2,19 @@
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ServerDetails, ServerInsights, LeaderboardsData, fetchServerDetails, fetchServerInsights, fetchServerLeaderboards, fetchLiveServerData, ServerBusyIndicator, ServerHourlyTimelineEntry, fetchServerBusyIndicators } from '../services/serverDetailsService';
-import { fetchServerMapRotation, type DetectedRotation, type MapRotationItem } from '../services/dataExplorerService';
+import { fetchServerMapRotation, type DetectedRotation, type MapRotationItem, fetchServerDetail, type ServerDetail } from '../services/dataExplorerService';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler } from 'chart.js';
 import { countryCodeToName } from '../types/countryCodes';
 import { ServerSummary } from '../types/server';
 import PlayersPanel from '../components/PlayersPanel.vue';
 import PlayerHistoryChart from '../components/PlayerHistoryChart.vue';
 import ServerLeaderboards from '../components/ServerLeaderboards.vue';
-import RecentSessionsList from '../components/data-explorer/RecentSessionsList.vue';
+import ServerRecentSessionsFeed from '../components/ServerRecentSessionsFeed.vue';
 import MapRotationTable from '../components/data-explorer/MapRotationTable.vue';
 import ServerMapDetailPanel from '../components/data-explorer/ServerMapDetailPanel.vue';
+import WinStatsBar from '../components/data-explorer/WinStatsBar.vue';
+import ActivityHeatmap from '../components/data-explorer/ActivityHeatmap.vue';
+import LeaderboardPreview from '../components/data-explorer/LeaderboardPreview.vue';
 import MapRankingsPanel from '../components/MapRankingsPanel.vue';
 import ServerComments from '../components/ServerComments.vue';
 import ForecastModal from '../components/ForecastModal.vue';
@@ -91,13 +94,19 @@ const isBusyIndicatorLoading = ref(false);
 const busyIndicatorError = ref<string | null>(null);
 const showForecastOverlay = ref(false);
 
+// Deep Dive state
+const serverDetailExplorer = ref<ServerDetail | null>(null);
+const isDeepDiveLoading = ref(false);
+const deepDiveError = ref<string | null>(null);
+
 // V2 Tab Navigation
-const activeTab = ref<'live' | 'leaderboards' | 'maps' | 'insights'>('live');
+const activeTab = ref<'live' | 'leaderboards' | 'maps' | 'insights' | 'deep-dive'>('live');
 const tabs = [
   { id: 'live' as const, label: 'LIVE STATUS' },
   { id: 'leaderboards' as const, label: 'LEADERBOARDS' },
   { id: 'maps' as const, label: 'MAPS' },
   { id: 'insights' as const, label: 'INSIGHTS' },
+  { id: 'deep-dive' as const, label: 'DEEP DIVE' },
 ];
 
 // Wide viewport: show slide-out panels side-by-side (lg: 1024px+)
@@ -154,6 +163,23 @@ const fetchBusyIndicatorData = async () => {
   }
 };
 
+// Fetch deep dive analytics for the server
+const fetchDeepDiveAsync = async () => {
+  if (!serverDetails.value?.serverGuid) return;
+
+  isDeepDiveLoading.value = true;
+  deepDiveError.value = null;
+
+  try {
+    serverDetailExplorer.value = await fetchServerDetail(serverDetails.value.serverGuid);
+  } catch (err) {
+    console.error('Error fetching deep dive data:', err);
+    deepDiveError.value = 'Failed to load deep dive analytics.';
+  } finally {
+    isDeepDiveLoading.value = false;
+  }
+};
+
 // Fetch server details, insights, and leaderboards in parallel
 const fetchData = async () => {
   if (!serverName.value) return;
@@ -183,6 +209,7 @@ const fetchData = async () => {
     // Fetch live server data and busy indicator data asynchronously after server details are loaded
     fetchLiveServerDataAsync();
     fetchBusyIndicatorData();
+    fetchDeepDiveAsync();
 
     // Now fetch leaderboards (non-blocking)
     // Player history and maps will be loaded when user expands those sections
@@ -200,6 +227,13 @@ const fetchData = async () => {
     isLoading.value = false;
   }
 };
+
+// Watch activeTab to load deep dive data if selected and not yet loaded
+watch(activeTab, (newTab) => {
+  if (newTab === 'deep-dive' && !serverDetailExplorer.value && !isDeepDiveLoading.value) {
+    fetchDeepDiveAsync();
+  }
+});
 
 // Fetch insights asynchronously (non-blocking)
 const fetchInsightsAsync = async () => {
@@ -572,11 +606,7 @@ const handleNavigateToServerFromMap = () => {
 };
 
 const handleNavigateToMapFromMap = (mapName: string) => {
-  // Navigate to map detail in Data Explorer
-  router.push({
-    name: 'explore-map-detail',
-    params: { mapName }
-  });
+  // Global map detail is deprecated
 };
 
 // Helper functions for mini forecast bars
@@ -700,6 +730,133 @@ const forecastPeakHour = computed(() => {
     if ((e.typicalPlayers || 0) > (peak.typicalPlayers || 0)) peak = e;
   }
   return peak;
+});
+
+// ===== Situation Report (Battle HUD) =====
+
+const axisTeam = computed(() => {
+  const teams = liveServerInfo.value?.teams ?? [];
+  return teams.find(t => t.index === 1) ?? teams[0] ?? null;
+});
+const alliedTeam = computed(() => {
+  const teams = liveServerInfo.value?.teams ?? [];
+  return teams.find(t => t.index === 2) ?? teams[1] ?? null;
+});
+
+const axisTickets = computed(() =>
+  axisTeam.value?.tickets ?? liveServerInfo.value?.tickets1 ?? 0
+);
+const alliedTickets = computed(() =>
+  alliedTeam.value?.tickets ?? liveServerInfo.value?.tickets2 ?? 0
+);
+
+const axisPlayers = computed(() =>
+  (liveServerInfo.value?.players ?? []).filter(p => p.team === 1).length
+);
+const alliedPlayers = computed(() =>
+  (liveServerInfo.value?.players ?? []).filter(p => p.team === 2).length
+);
+
+const totalTickets = computed(() => axisTickets.value + alliedTickets.value);
+const axisPressure = computed(() =>
+  totalTickets.value > 0 ? Math.round((axisTickets.value / totalTickets.value) * 100) : 50
+);
+const alliedPressure = computed(() => 100 - axisPressure.value);
+
+const ticketLeader = computed<'axis' | 'allied' | 'tie' | null>(() => {
+  if (!liveServerInfo.value) return null;
+  if (totalTickets.value === 0) return null;
+  const diff = axisTickets.value - alliedTickets.value;
+  if (Math.abs(diff) < 1) return 'tie';
+  return diff > 0 ? 'axis' : 'allied';
+});
+
+const ticketGap = computed(() => Math.abs(axisTickets.value - alliedTickets.value));
+
+const topLivePlayer = computed(() => {
+  const players = liveServerInfo.value?.players ?? [];
+  if (players.length === 0) return null;
+  return [...players].sort((a, b) => b.score - a.score)[0];
+});
+
+const roundTimeRemainDisplay = computed(() => {
+  const sec = liveServerInfo.value?.roundTimeRemain;
+  if (typeof sec !== 'number' || sec <= 0) return null;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+});
+
+const gameTypeLabel = computed(() => {
+  const raw = (liveServerInfo.value?.gameType || '').toUpperCase().trim();
+  if (!raw) return 'LIVE ROUND';
+  const map: Record<string, string> = {
+    'CONQUEST': 'CONQUEST',
+    'GPM_CQ': 'CONQUEST',
+    'TDM': 'TEAM DEATHMATCH',
+    'CTF': 'CAPTURE THE FLAG',
+    'OBJECTIVE MODE': 'OBJECTIVE',
+    'ROLE MODE': 'ROLE-PLAY',
+    'COOP': 'CO-OP',
+    'SINGLEPLAYER': 'SINGLE-PLAYER',
+  };
+  return map[raw] ?? raw;
+});
+
+const showSituationReport = computed(() => {
+  if (!liveServerInfo.value) return false;
+  return totalTickets.value > 0 || (axisPlayers.value + alliedPlayers.value) > 0;
+});
+
+// ===== Hero stat grid =====
+
+interface HeroTrend {
+  direction: 'increasing' | 'decreasing' | 'stable';
+  percentageChange: number;
+}
+interface HeroStats {
+  peak: number | null;
+  unique: number | null;
+  trend: HeroTrend | null;
+  signatureMap: { name: string; playTimePercentage: number } | null;
+}
+
+const heroStats = computed<HeroStats | null>(() => {
+  const insights = serverInsights.value;
+  const details = serverDetails.value;
+  if (!insights && !details) return null;
+  const history = insights?.playersOnlineHistory;
+  const peakFromHistory = history?.insights?.peakPlayers ?? null;
+  const peak =
+    insights?.playerCountSummary?.peakPlayerCount ??
+    peakFromHistory ??
+    null;
+  const unique = insights?.playerCountSummary?.totalUniquePlayersInPeriod ?? null;
+  const trend: HeroTrend | null = history?.insights
+    ? {
+        direction: history.insights.trendDirection,
+        percentageChange: history.insights.percentageChange ?? 0,
+      }
+    : null;
+  const topMap = details?.popularMaps?.[0];
+  const signatureMap = topMap
+    ? { name: topMap.mapName, playTimePercentage: topMap.playTimePercentage }
+    : null;
+  if (peak === null && unique === null && !trend && !signatureMap) return null;
+  return { peak, unique, trend, signatureMap };
+});
+
+const heroTrendArrow = computed(() => {
+  const dir = heroStats.value?.trend?.direction;
+  if (dir === 'increasing') return '▲';
+  if (dir === 'decreasing') return '▼';
+  return '▬';
+});
+const heroTrendClass = computed(() => {
+  const dir = heroStats.value?.trend?.direction;
+  if (dir === 'increasing') return 'beacon-stat__value--up';
+  if (dir === 'decreasing') return 'beacon-stat__value--down';
+  return 'beacon-stat__value--flat';
 });
 </script>
 
@@ -1046,6 +1203,78 @@ const forecastPeakHour = computed(() => {
                     </a>
                   </div>
                 </div>
+
+                <!-- Hero stat grid: Peak / Unique / Trend / Signature Map -->
+                <div
+                  v-if="heroStats"
+                  class="beacon-stats"
+                  aria-label="Server telemetry summary"
+                >
+                  <div class="beacon-stat">
+                    <div class="beacon-stat__value beacon-stat__value--cyan">
+                      {{ heroStats.peak !== null ? heroStats.peak.toLocaleString() : '—' }}
+                    </div>
+                    <div class="beacon-stat__label">
+                      <span class="beacon-stat__label-main">Peak Population</span>
+                      <span class="beacon-stat__label-sub">90D window</span>
+                    </div>
+                  </div>
+
+                  <div class="beacon-stat">
+                    <div class="beacon-stat__value beacon-stat__value--green">
+                      {{ heroStats.unique !== null ? heroStats.unique.toLocaleString() : '—' }}
+                    </div>
+                    <div class="beacon-stat__label">
+                      <span class="beacon-stat__label-main">Unique Operatives</span>
+                      <span class="beacon-stat__label-sub">90D window</span>
+                    </div>
+                  </div>
+
+                  <div class="beacon-stat">
+                    <div
+                      class="beacon-stat__value"
+                      :class="heroTrendClass"
+                    >
+                      <span
+                        class="beacon-stat__arrow"
+                        aria-hidden="true"
+                      >{{ heroTrendArrow }}</span>
+                      <span v-if="heroStats.trend">{{ Math.abs(heroStats.trend.percentageChange).toFixed(1) }}%</span>
+                      <span v-else>—</span>
+                    </div>
+                    <div class="beacon-stat__label">
+                      <span class="beacon-stat__label-main">Momentum</span>
+                      <span class="beacon-stat__label-sub">{{ heroStats.trend?.direction ?? 'awaiting data' }}</span>
+                    </div>
+                  </div>
+
+                  <div class="beacon-stat">
+                    <div
+                      v-if="heroStats.signatureMap"
+                      class="beacon-stat__value beacon-stat__value--amber beacon-stat__value--map"
+                      :title="heroStats.signatureMap.name"
+                    >
+                      {{ heroStats.signatureMap.name }}
+                    </div>
+                    <div
+                      v-else
+                      class="beacon-stat__value beacon-stat__value--amber"
+                    >
+                      —
+                    </div>
+                    <div class="beacon-stat__label">
+                      <span class="beacon-stat__label-main">Signature Map</span>
+                      <span
+                        v-if="heroStats.signatureMap"
+                        class="beacon-stat__label-sub"
+                      >{{ heroStats.signatureMap.playTimePercentage.toFixed(0) }}% of play time</span>
+                      <span
+                        v-else
+                        class="beacon-stat__label-sub"
+                      >no rotation data</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -1106,7 +1335,7 @@ const forecastPeakHour = computed(() => {
                   y2="22"
                 /></svg>
                 <svg
-                  v-else
+                  v-else-if="tab.id === 'insights'"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -1115,6 +1344,16 @@ const forecastPeakHour = computed(() => {
                   stroke-linejoin="round"
                   class="hero-tab-icon"
                 ><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></svg>
+                <svg
+                  v-else-if="tab.id === 'deep-dive'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><circle cx="12" cy="12" r="10" /><path d="m16 12-4 4-4-4" /><path d="M12 8v8" /></svg>
                 <span>{{ tab.label }}</span>
                 <span
                   class="hero-tab-underline"
@@ -1128,8 +1367,212 @@ const forecastPeakHour = computed(() => {
               <!-- LIVE STATUS TAB -->
               <div
                 v-if="activeTab === 'live'"
-                class="grid grid-cols-1 xl:grid-cols-12 gap-6"
+                class="space-y-6"
               >
+                <!-- Situation Report: Battle HUD banner -->
+                <section
+                  v-if="showSituationReport"
+                  class="situation-report"
+                  :class="[
+                    `situation-report--${beaconGameAccent}`,
+                    ticketLeader ? `situation-report--leader-${ticketLeader}` : ''
+                  ]"
+                  aria-label="Live battle situation report"
+                >
+                  <span class="hero-corner hero-corner--tl" aria-hidden="true" />
+                  <span class="hero-corner hero-corner--tr" aria-hidden="true" />
+                  <span class="hero-corner hero-corner--bl" aria-hidden="true" />
+                  <span class="hero-corner hero-corner--br" aria-hidden="true" />
+                  <div
+                    class="situation-report__scan"
+                    aria-hidden="true"
+                  />
+                  <div
+                    class="situation-report__grid-bg"
+                    aria-hidden="true"
+                  />
+
+                  <div class="situation-report__eyebrow">
+                    <span
+                      class="situation-report__dot"
+                      aria-hidden="true"
+                    />
+                    <span class="situation-report__tag">SITUATION REPORT</span>
+                    <span class="situation-report__sep">//</span>
+                    <span class="situation-report__map">{{ liveServerInfo?.mapName || '—' }}</span>
+                    <span class="situation-report__sep">·</span>
+                    <span class="situation-report__mode">{{ gameTypeLabel }}</span>
+                    <span class="situation-report__spacer" />
+                    <span
+                      v-if="roundTimeRemainDisplay"
+                      class="situation-report__clock"
+                    >
+                      <span
+                        class="situation-report__clock-icon"
+                        aria-hidden="true"
+                      >◴</span>
+                      {{ roundTimeRemainDisplay }}
+                      <span class="situation-report__clock-label">left</span>
+                    </span>
+                  </div>
+
+                  <div class="situation-report__duel">
+                    <!-- AXIS side -->
+                    <div
+                      class="duel-side duel-side--axis"
+                      :class="{ 'duel-side--leading': ticketLeader === 'axis' }"
+                    >
+                      <div class="duel-side__head">
+                        <span
+                          class="duel-side__bullet"
+                          aria-hidden="true"
+                        />
+                        <span class="duel-side__team">{{ axisTeam?.label || 'AXIS' }}</span>
+                        <span class="duel-side__deployed">
+                          <span class="duel-side__deployed-num">{{ axisPlayers }}</span>
+                          <span class="duel-side__deployed-label">deployed</span>
+                        </span>
+                      </div>
+                      <div class="duel-side__body">
+                        <div class="duel-side__tickets">
+                          <span class="duel-side__ticket-num">{{ axisTickets.toLocaleString() }}</span>
+                          <span class="duel-side__ticket-unit">TCKTS</span>
+                        </div>
+                        <div
+                          class="duel-side__meter"
+                          :title="`${axisPressure}% of ticket pool`"
+                        >
+                          <div
+                            class="duel-side__fill duel-side__fill--axis"
+                            :style="{ width: axisPressure + '%' }"
+                          />
+                          <span class="duel-side__pressure">{{ axisPressure }}%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Center VS -->
+                    <div class="duel-center">
+                      <span
+                        class="duel-center__v"
+                        aria-hidden="true"
+                      >V</span>
+                      <span
+                        class="duel-center__divider"
+                        aria-hidden="true"
+                      />
+                      <span
+                        class="duel-center__s"
+                        aria-hidden="true"
+                      >S</span>
+                      <div
+                        v-if="ticketLeader === 'axis' || ticketLeader === 'allied'"
+                        class="duel-center__lead"
+                        :class="`duel-center__lead--${ticketLeader}`"
+                      >
+                        <span
+                          class="duel-center__arrow"
+                          aria-hidden="true"
+                        >{{ ticketLeader === 'axis' ? '◀' : '▶' }}</span>
+                        <span class="duel-center__gap">{{ ticketGap.toLocaleString() }}</span>
+                        <span class="duel-center__gap-label">lead</span>
+                      </div>
+                      <div
+                        v-else-if="ticketLeader === 'tie'"
+                        class="duel-center__lead duel-center__lead--tie"
+                      >
+                        <span class="duel-center__gap-label">DEADLOCK</span>
+                      </div>
+                    </div>
+
+                    <!-- ALLIED side -->
+                    <div
+                      class="duel-side duel-side--allied"
+                      :class="{ 'duel-side--leading': ticketLeader === 'allied' }"
+                    >
+                      <div class="duel-side__head duel-side__head--right">
+                        <span class="duel-side__deployed">
+                          <span class="duel-side__deployed-label">deployed</span>
+                          <span class="duel-side__deployed-num">{{ alliedPlayers }}</span>
+                        </span>
+                        <span class="duel-side__team">{{ alliedTeam?.label || 'ALLIED' }}</span>
+                        <span
+                          class="duel-side__bullet"
+                          aria-hidden="true"
+                        />
+                      </div>
+                      <div class="duel-side__body duel-side__body--right">
+                        <div class="duel-side__meter duel-side__meter--right">
+                          <div
+                            class="duel-side__fill duel-side__fill--allied"
+                            :style="{ width: alliedPressure + '%' }"
+                          />
+                          <span class="duel-side__pressure">{{ alliedPressure }}%</span>
+                        </div>
+                        <div class="duel-side__tickets">
+                          <span class="duel-side__ticket-unit">TCKTS</span>
+                          <span class="duel-side__ticket-num">{{ alliedTickets.toLocaleString() }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Top-of-board callout -->
+                  <div
+                    v-if="topLivePlayer"
+                    class="situation-report__callout"
+                  >
+                    <span class="situation-report__callout-tag">TOP OF THE BOARD</span>
+                    <span
+                      class="situation-report__callout-chev"
+                      aria-hidden="true"
+                    >▸</span>
+                    <router-link
+                      :to="`/players/${encodeURIComponent(topLivePlayer.name)}`"
+                      class="situation-report__callout-name"
+                    >
+                      {{ topLivePlayer.name }}
+                    </router-link>
+                    <span class="situation-report__callout-stat">
+                      <span class="situation-report__callout-num">{{ topLivePlayer.score }}</span>
+                      <span class="situation-report__callout-unit">pts</span>
+                    </span>
+                    <span class="situation-report__callout-stat">
+                      <span class="situation-report__callout-num situation-report__callout-num--k">{{ topLivePlayer.kills }}</span>
+                      <span class="situation-report__callout-unit">K</span>
+                      <span class="situation-report__callout-slash">/</span>
+                      <span class="situation-report__callout-num situation-report__callout-num--d">{{ topLivePlayer.deaths }}</span>
+                      <span class="situation-report__callout-unit">D</span>
+                    </span>
+                    <span
+                      class="situation-report__callout-team"
+                      :class="topLivePlayer.team === 1
+                        ? 'situation-report__callout-team--axis'
+                        : 'situation-report__callout-team--allied'"
+                    >
+                      {{ topLivePlayer.team === 1 ? (axisTeam?.label || 'AXIS') : (alliedTeam?.label || 'ALLIED') }}
+                    </span>
+                  </div>
+                </section>
+
+                <!-- Section 01 · Active Roster -->
+                <div class="section-divider">
+                  <span class="section-num">01</span>
+                  <div class="section-head">
+                    <div class="section-title">
+                      Active Roster
+                    </div>
+                    <div class="section-sub">
+                      Players engaged · intel log · community chatter
+                    </div>
+                  </div>
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
                 <!-- Online Players -->
                 <div class="xl:col-span-6 space-y-6">
                   <div class="explorer-card">
@@ -1202,7 +1645,7 @@ const forecastPeakHour = computed(() => {
                           </button>
                         </div>
                       </div>
-                      <RecentSessionsList
+                      <ServerRecentSessionsFeed
                         v-if="serverDetails?.serverGuid"
                         :server-guid="serverDetails.serverGuid"
                         :server-name="serverName"
@@ -1213,6 +1656,7 @@ const forecastPeakHour = computed(() => {
                       />
                     </div>
                   </div>
+                </div>
                 </div>
               </div>
 
@@ -1290,6 +1734,87 @@ const forecastPeakHour = computed(() => {
                 v-if="activeTab === 'insights'"
                 class="space-y-6"
               >
+                <!-- Section 02 · Telemetry -->
+                <div class="section-divider">
+                  <span class="section-num">02</span>
+                  <div class="section-head">
+                    <div class="section-title">
+                      Telemetry &amp; Intel
+                    </div>
+                    <div class="section-sub">
+                      Population history · trend analysis · proximity map
+                    </div>
+                  </div>
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
+                </div>
+
+                <!-- Telemetry banner (eyebrow + stat strip) -->
+                <div
+                  v-if="heroStats && serverInsights"
+                  class="telemetry-banner"
+                >
+                  <div
+                    class="telemetry-banner__scan"
+                    aria-hidden="true"
+                  />
+                  <div class="telemetry-banner__eyebrow">
+                    <span
+                      class="telemetry-banner__dot"
+                      aria-hidden="true"
+                    />
+                    TELEMETRY //
+                    <span class="text-neon-cyan">90-DAY</span> WINDOW ·
+                    ROLLING AVERAGE <span class="text-neon-cyan">{{ historyRollingWindow }}</span>
+                  </div>
+                  <div class="telemetry-banner__grid">
+                    <div class="telemetry-banner__stat">
+                      <div class="telemetry-banner__value text-neon-cyan">
+                        {{ heroStats.peak !== null ? heroStats.peak.toLocaleString() : '—' }}
+                      </div>
+                      <div class="telemetry-banner__label">
+                        Peak Concurrent
+                      </div>
+                    </div>
+                    <div class="telemetry-banner__stat">
+                      <div class="telemetry-banner__value text-neon-green">
+                        {{ serverInsights.playerCountSummary?.averagePlayerCount
+                          ? Math.round(serverInsights.playerCountSummary.averagePlayerCount).toLocaleString()
+                          : '—' }}
+                      </div>
+                      <div class="telemetry-banner__label">
+                        Average Online
+                      </div>
+                    </div>
+                    <div class="telemetry-banner__stat">
+                      <div class="telemetry-banner__value text-neon-pink">
+                        {{ heroStats.unique !== null ? heroStats.unique.toLocaleString() : '—' }}
+                      </div>
+                      <div class="telemetry-banner__label">
+                        Unique Operatives
+                      </div>
+                    </div>
+                    <div class="telemetry-banner__stat">
+                      <div
+                        class="telemetry-banner__value"
+                        :class="heroTrendClass"
+                      >
+                        <span
+                          class="telemetry-banner__arrow"
+                          aria-hidden="true"
+                        >{{ heroTrendArrow }}</span>
+                        <span v-if="heroStats.trend">{{ Math.abs(heroStats.trend.percentageChange).toFixed(1) }}%</span>
+                        <span v-else>—</span>
+                      </div>
+                      <div class="telemetry-banner__label">
+                        Momentum · {{ heroStats.trend?.direction ?? 'unknown' }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- Population Trends -->
                 <div class="explorer-card">
                   <div class="explorer-card-header">
@@ -1341,6 +1866,147 @@ const forecastPeakHour = computed(() => {
                       :server-name="serverName"
                       @player-click="(name: string) => router.push(`/players/${encodeURIComponent(name)}`)"
                     />
+                  </div>
+                </div>
+              </div>
+
+              <!-- DEEP DIVE TAB -->
+              <div
+                v-if="activeTab === 'deep-dive'"
+                class="space-y-6"
+              >
+                <!-- Loading State -->
+                <div
+                  v-if="isDeepDiveLoading"
+                  class="p-12 flex flex-col items-center justify-center gap-4"
+                >
+                  <div class="explorer-spinner" />
+                  <p class="text-sm font-mono text-neutral-500 uppercase tracking-widest">
+                    Collecting Deep Analytics...
+                  </p>
+                </div>
+
+                <!-- Error State -->
+                <div
+                  v-else-if="deepDiveError"
+                  class="explorer-card p-8 text-center"
+                >
+                  <p class="text-neon-red font-mono">
+                    {{ deepDiveError }}
+                  </p>
+                  <button
+                    class="explorer-btn explorer-btn--ghost explorer-btn--sm mt-4"
+                    @click="fetchDeepDiveAsync"
+                  >
+                    RETRY
+                  </button>
+                </div>
+
+                <!-- Content -->
+                <div
+                  v-else-if="serverDetailExplorer"
+                  class="space-y-6"
+                >
+                  <!-- Section 01 · Win Statistics -->
+                  <div class="section-divider">
+                    <span class="section-num">01</span>
+                    <div class="section-head">
+                      <div class="section-title">
+                        WIN STATISTICS
+                      </div>
+                      <div class="section-sub">
+                        Historical faction performance across all deployments
+                      </div>
+                    </div>
+                    <span
+                      class="section-line"
+                      aria-hidden="true"
+                    />
+                  </div>
+
+                  <div class="explorer-card">
+                    <div class="explorer-card-header">
+                      <h3 class="explorer-card-title uppercase">
+                        Overall Win Records
+                      </h3>
+                    </div>
+                    <div class="explorer-card-body">
+                      <WinStatsBar :win-stats="serverDetailExplorer.overallWinStats" />
+                    </div>
+                  </div>
+
+                  <!-- Section 02 · Activity Patterns -->
+                  <div
+                    v-if="serverDetailExplorer.activityPatterns?.length > 0"
+                    class="section-divider"
+                  >
+                    <span class="section-num">02</span>
+                    <div class="section-head">
+                      <div class="section-title">
+                        ACTIVITY PATTERNS
+                      </div>
+                      <div class="section-sub">
+                        Temporal engagement heatmap (Server Local Time)
+                      </div>
+                    </div>
+                    <span
+                      class="section-line"
+                      aria-hidden="true"
+                    />
+                  </div>
+
+                  <div
+                    v-if="serverDetailExplorer.activityPatterns?.length > 0"
+                    class="explorer-card"
+                  >
+                    <div class="explorer-card-header">
+                      <h3 class="explorer-card-title uppercase">
+                        Weekly Heatmap
+                      </h3>
+                    </div>
+                    <div class="explorer-card-body">
+                      <ActivityHeatmap :patterns="serverDetailExplorer.activityPatterns" />
+                    </div>
+                  </div>
+
+                  <!-- Section 03 · Top Players by Map -->
+                  <div
+                    v-if="serverDetailExplorer.perMapStats?.length > 0"
+                    class="section-divider"
+                  >
+                    <span class="section-num">03</span>
+                    <div class="section-head">
+                      <div class="section-title">
+                        TOP PLAYERS BY MAP
+                      </div>
+                      <div class="section-sub">
+                        Operational leaders on high-frequency rotations
+                      </div>
+                    </div>
+                    <span
+                      class="section-line"
+                      aria-hidden="true"
+                    />
+                  </div>
+
+                  <div
+                    v-if="serverDetailExplorer.perMapStats?.length > 0"
+                    class="grid grid-cols-1 md:grid-cols-2 gap-6"
+                  >
+                    <div
+                      v-for="mapStats in serverDetailExplorer.perMapStats.slice(0, 10)"
+                      :key="mapStats.mapName"
+                      class="explorer-card"
+                    >
+                      <div class="explorer-card-header border-b border-[var(--border-color)]">
+                        <h3 class="explorer-card-title text-neon-cyan">
+                          {{ mapStats.mapName }}
+                        </h3>
+                      </div>
+                      <div class="explorer-card-body p-0">
+                        <LeaderboardPreview :players="mapStats.topPlayers" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1463,7 +2129,6 @@ const forecastPeakHour = computed(() => {
             :server-guid="serverDetails.serverGuid"
             :map-name="selectedMapName"
             @navigate-to-server="handleNavigateToServerFromMap"
-            @navigate-to-map="handleNavigateToMapFromMap"
             @close="handleCloseMapDetailPanel"
             @open-rankings="handleOpenRankingsFromMap"
           />
@@ -1474,5 +2139,5 @@ const forecastPeakHour = computed(() => {
 </template>
 
 <style src="./portal-layout.css"></style>
-<style scoped src="./DataExplorer.vue.css"></style>
+<style scoped src="./ExplorerTheme.css"></style>
 <style scoped src="./ServerDetails.vue.css"></style>

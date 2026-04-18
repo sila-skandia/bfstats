@@ -96,7 +96,7 @@ const formatPlayTime = (minutes: number): string => {
 };
 
 const getPlayerDetailsRoute = (playerName: string) => ({
-  name: 'explore-player-detail',
+  name: 'player-details',
   params: { playerName }
 });
 

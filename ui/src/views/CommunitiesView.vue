@@ -432,4 +432,4 @@ onMounted(() => {
 </style>
 
 <style src="./portal-layout.css"></style>
-<style src="./DataExplorer.vue.css"></style>
+<style src="./ExplorerTheme.css"></style>
