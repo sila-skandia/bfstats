@@ -1,6 +1,7 @@
 using api.PlayerStats;
 using api.PlayerRelationships.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
 
 namespace api.PlayerRelationships;
@@ -10,10 +11,8 @@ namespace api.PlayerRelationships;
 /// Combines statistical, behavioral, network, and temporal analysis.
 /// </summary>
 public class PlayerAliasDetectionService(
-    StatSimilarityCalculator statCalculator,
-    BehavioralPatternAnalyzer behavioralAnalyzer,
+    IServiceProvider serviceProvider,
     Neo4jNetworkAnalyzer networkAnalyzer,
-    ActivityTimelineAnalyzer timelineAnalyzer,
     ILogger<PlayerAliasDetectionService> logger)
 {
     /// <summary>
@@ -35,34 +34,36 @@ public class PlayerAliasDetectionService(
         if (!weights.IsValid())
             weights.Normalize();
 
-        // Calculate all similarity dimensions
+        // Calculate all similarity dimensions in parallel
+        // We use isolated scopes for each SQLite-based analyzer because EF Core 
+        // does not support concurrent operations on the same DbContext instance.
+        using var scope1 = serviceProvider.CreateScope();
+        using var scope2 = serviceProvider.CreateScope();
+        using var scope3 = serviceProvider.CreateScope();
+
+        var statCalculator = scope1.ServiceProvider.GetRequiredService<StatSimilarityCalculator>();
+        var behavioralAnalyzer = scope2.ServiceProvider.GetRequiredService<BehavioralPatternAnalyzer>();
+        var timelineAnalyzer = scope3.ServiceProvider.GetRequiredService<ActivityTimelineAnalyzer>();
+
         var sw = Stopwatch.StartNew();
         
-        // Start Neo4j analysis in parallel as it uses a different driver/connection
+        // Start all analysis tasks concurrently
         var networkTask = networkAnalyzer.AnalyzeNetworkAndTemporalAsync(player1, player2, lookBackDays);
+        var statTask = statCalculator.CalculateSimilarityAsync(player1, player2, lookBackDays);
+        var behavioralTask = behavioralAnalyzer.AnalyzeBehaviorAsync(player1, player2, lookBackDays);
+        var timelineTask = timelineAnalyzer.AnalyzeTimelineAsync(player1, player2, lookBackDays);
 
-        // Run other analyzers sequentially as they share the same SQLite DbContext
-        var statAnalysis = await statCalculator.CalculateSimilarityAsync(player1, player2, lookBackDays);
+        // Wait for all tasks to complete
+        await Task.WhenAll(networkTask, statTask, behavioralTask, timelineTask);
         sw.Stop();
-        logger.LogInformation("Stat analysis completed in {ElapsedMs}ms. Sufficient data: {HasData}", 
-            sw.ElapsedMilliseconds, statAnalysis.HasSufficientData);
-
-        sw.Restart();
-        var behavioralAnalysis = await behavioralAnalyzer.AnalyzeBehaviorAsync(player1, player2, lookBackDays);
-        sw.Stop();
-        logger.LogInformation("Behavioral analysis completed in {ElapsedMs}ms. Sufficient data: {HasData}", 
-            sw.ElapsedMilliseconds, behavioralAnalysis.HasSufficientData);
-
-        // Await the Neo4j task that was running in parallel
+        
         var (networkAnalysis, temporalAnalysis) = await networkTask;
-        logger.LogInformation("Network/Temporal analysis (parallel) completed. Shared teammates: {SharedCount}", 
-            networkAnalysis.SharedTeammateCount);
+        var statAnalysis = await statTask;
+        var behavioralAnalysis = await behavioralTask;
+        var activityTimeline = await timelineTask;
 
-        sw.Restart();
-        var activityTimeline = await timelineAnalyzer.AnalyzeTimelineAsync(player1, player2, lookBackDays);
-        sw.Stop();
-        logger.LogInformation("Timeline analysis completed in {ElapsedMs}ms. P1 Sessions: {P1Count}, P2 Sessions: {P2Count}", 
-            sw.ElapsedMilliseconds, activityTimeline.Player1Activity.TotalSessions, activityTimeline.Player2Activity.TotalSessions);
+        logger.LogInformation("Parallel analysis completed in {ElapsedMs}ms. Results: Stat={StatData}, Behavior={BehData}, Network={NetData}, Timeline={TimeData}", 
+            sw.ElapsedMilliseconds, statAnalysis.HasSufficientData, behavioralAnalysis.HasSufficientData, networkAnalysis.SharedTeammateCount, activityTimeline.Player1Activity.TotalSessions);
 
         // Calculate overall similarity score using only dimensions with sufficient data
         // Dynamically re-weight remaining dimensions
@@ -131,6 +132,8 @@ public class PlayerAliasDetectionService(
         string player2,
         int lookBackDays = 180)
     {
+        using var scope = serviceProvider.CreateScope();
+        var timelineAnalyzer = scope.ServiceProvider.GetRequiredService<ActivityTimelineAnalyzer>();
         return await timelineAnalyzer.AnalyzeTimelineAsync(player1, player2, lookBackDays);
     }
 
