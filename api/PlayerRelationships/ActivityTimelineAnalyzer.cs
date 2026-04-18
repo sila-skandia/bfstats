@@ -1,6 +1,8 @@
 using api.PlayerTracking;
 using api.PlayerRelationships.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace api.PlayerRelationships;
 
@@ -8,7 +10,9 @@ namespace api.PlayerRelationships;
 /// Analyzes player activity timelines to detect account switchover patterns.
 /// Uses raw SQL to aggregate data - does NOT load sessions into memory.
 /// </summary>
-public class ActivityTimelineAnalyzer(PlayerTrackerDbContext dbContext)
+public class ActivityTimelineAnalyzer(
+    PlayerTrackerDbContext dbContext,
+    ILogger<ActivityTimelineAnalyzer> logger)
 {
     /// <summary>
     /// Analyze activity timelines for two players and detect switchover patterns.
@@ -19,9 +23,13 @@ public class ActivityTimelineAnalyzer(PlayerTrackerDbContext dbContext)
         string player2,
         int lookBackDays = 180)
     {
+        var sw = Stopwatch.StartNew();
+
         // Get complete activity periods first (all historical data)
         var period1 = await CalculateActivityPeriodAsync(player1, DateTime.MinValue);
         var period2 = await CalculateActivityPeriodAsync(player2, DateTime.MinValue);
+        logger.LogInformation("Activity periods calculated in {ElapsedMs}ms. P1 Sessions: {S1}, P2 Sessions: {S2}", 
+            sw.ElapsedMilliseconds, period1.TotalSessions, period2.TotalSessions);
 
         if (period1.TotalSessions == 0 || period2.TotalSessions == 0)
         {
@@ -38,6 +46,7 @@ public class ActivityTimelineAnalyzer(PlayerTrackerDbContext dbContext)
             };
         }
 
+        sw.Restart();
         // Analyze the gap (uses complete activity data)
         var gapAnalysis = AnalyzeGap(period1, period2, player1, player2);
 
@@ -45,7 +54,10 @@ public class ActivityTimelineAnalyzer(PlayerTrackerDbContext dbContext)
         var cutoff = DateTime.UtcNow.AddDays(-lookBackDays);
         var timeline1 = await BuildDailyTimelineAsync(player1, cutoff);
         var timeline2 = await BuildDailyTimelineAsync(player2, cutoff);
-
+        logger.LogInformation("Daily timelines built in {ElapsedMs}ms. P1 Daily: {D1}, P2 Daily: {D2}", 
+            sw.ElapsedMilliseconds, timeline1.Count, timeline2.Count);
+        
+        sw.Restart();
         // Generate ASCII visualization
         var asciiTimeline = GenerateAsciiTimeline(period1, period2, gapAnalysis);
 
@@ -54,6 +66,7 @@ public class ActivityTimelineAnalyzer(PlayerTrackerDbContext dbContext)
 
         // Calculate switchover suspicion score
         var switchoverScore = CalculateSwitchoverSuspicionScore(period1, period2, gapAnalysis);
+        logger.LogInformation("Visualizations and scores generated in {ElapsedMs}ms", sw.ElapsedMilliseconds);
 
         // Determine if switchover analysis is meaningful
         // Large gaps (>30 days) indicate dormancy, not active switching - insufficient for alias detection

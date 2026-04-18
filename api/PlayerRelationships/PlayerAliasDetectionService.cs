@@ -1,5 +1,7 @@
 using api.PlayerStats;
 using api.PlayerRelationships.Models;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace api.PlayerRelationships;
 
@@ -8,12 +10,11 @@ namespace api.PlayerRelationships;
 /// Combines statistical, behavioral, network, and temporal analysis.
 /// </summary>
 public class PlayerAliasDetectionService(
-    ISqlitePlayerStatsService statsService,
-    IPlayerRelationshipService relationshipService,
     StatSimilarityCalculator statCalculator,
     BehavioralPatternAnalyzer behavioralAnalyzer,
     Neo4jNetworkAnalyzer networkAnalyzer,
-    ActivityTimelineAnalyzer timelineAnalyzer)
+    ActivityTimelineAnalyzer timelineAnalyzer,
+    ILogger<PlayerAliasDetectionService> logger)
 {
     /// <summary>
     /// Compare two players for alias/similarity patterns.
@@ -25,7 +26,9 @@ public class PlayerAliasDetectionService(
         int lookBackDays = 3650,
         AliasDetectionWeights? customWeights = null)
     {
-        var startTime = DateTime.UtcNow;
+        var totalSw = Stopwatch.StartNew();
+        logger.LogInformation("Starting alias detection analysis for {Player1} vs {Player2} (Lookback: {LookBackDays} days)", 
+            player1, player2, lookBackDays);
 
         // Use custom weights or defaults
         var weights = customWeights ?? AliasDetectionWeights.CreateDefaults();
@@ -33,10 +36,33 @@ public class PlayerAliasDetectionService(
             weights.Normalize();
 
         // Calculate all similarity dimensions
+        var sw = Stopwatch.StartNew();
+        
+        // Start Neo4j analysis in parallel as it uses a different driver/connection
+        var networkTask = networkAnalyzer.AnalyzeNetworkAndTemporalAsync(player1, player2, lookBackDays);
+
+        // Run other analyzers sequentially as they share the same SQLite DbContext
         var statAnalysis = await statCalculator.CalculateSimilarityAsync(player1, player2, lookBackDays);
+        sw.Stop();
+        logger.LogInformation("Stat analysis completed in {ElapsedMs}ms. Sufficient data: {HasData}", 
+            sw.ElapsedMilliseconds, statAnalysis.HasSufficientData);
+
+        sw.Restart();
         var behavioralAnalysis = await behavioralAnalyzer.AnalyzeBehaviorAsync(player1, player2, lookBackDays);
-        var (networkAnalysis, temporalAnalysis) = await networkAnalyzer.AnalyzeNetworkAndTemporalAsync(player1, player2, lookBackDays);
+        sw.Stop();
+        logger.LogInformation("Behavioral analysis completed in {ElapsedMs}ms. Sufficient data: {HasData}", 
+            sw.ElapsedMilliseconds, behavioralAnalysis.HasSufficientData);
+
+        // Await the Neo4j task that was running in parallel
+        var (networkAnalysis, temporalAnalysis) = await networkTask;
+        logger.LogInformation("Network/Temporal analysis (parallel) completed. Shared teammates: {SharedCount}", 
+            networkAnalysis.SharedTeammateCount);
+
+        sw.Restart();
         var activityTimeline = await timelineAnalyzer.AnalyzeTimelineAsync(player1, player2, lookBackDays);
+        sw.Stop();
+        logger.LogInformation("Timeline analysis completed in {ElapsedMs}ms. P1 Sessions: {P1Count}, P2 Sessions: {P2Count}", 
+            sw.ElapsedMilliseconds, activityTimeline.Player1Activity.TotalSessions, activityTimeline.Player2Activity.TotalSessions);
 
         // Calculate overall similarity score using only dimensions with sufficient data
         // Dynamically re-weight remaining dimensions
@@ -89,6 +115,10 @@ public class PlayerAliasDetectionService(
             DaysAnalyzed = lookBackDays,
             AnalysisConfidence = confidence
         };
+
+        totalSw.Stop();
+        logger.LogInformation("Alias detection analysis for {Player1} vs {Player2} completed in {ElapsedMs}ms. Score: {Score:F2}, Level: {Level}", 
+            player1, player2, totalSw.ElapsedMilliseconds, overallScore, suspicionLevel);
 
         return report;
     }
