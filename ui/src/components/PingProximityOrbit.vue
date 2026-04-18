@@ -10,7 +10,11 @@ const BANDS = [
   { label: 'Distant', max: Infinity, color: '#ef4444', bg: 'rgba(239,68,68,0.08)' },
 ] as const
 
-const SAMPLE_PER_BAND = 50
+// Band radial slice: each band claims an equal fraction of the radius so the
+// inner (Close) band gets real room for its dense cluster instead of a tiny ring.
+const BAND_INNER_MARGIN = 0.05
+const BAND_SLICE = (1 - BAND_INNER_MARGIN - 0.02) / 4
+const NODE_FOOTPRINT_PX2 = 280 // approx pixels² each dot needs for comfortable spacing
 
 const getBand = (ping: number) => BANDS.find(b => ping <= b.max)!
 const getBandIndex = (ping: number) => BANDS.findIndex(b => ping <= b.max)
@@ -84,11 +88,23 @@ const isSearchMatch = (name: string) => {
   return searchTerms.value.some(t => lower.includes(t))
 }
 
+// Per-band node capacity derived from current viewport — more screen, more dots.
+const bandCapacity = computed<number[]>(() => {
+  const rxMax = Math.max(80, width.value / 2 - 40)
+  const ryMax = Math.max(80, height.value / 2 - 40)
+  return BANDS.map((_, bi) => {
+    const inner = BAND_INNER_MARGIN + bi * BAND_SLICE
+    const outer = inner + BAND_SLICE
+    // Area of elliptical annulus
+    const area = Math.PI * rxMax * ryMax * (outer * outer - inner * inner)
+    return Math.max(16, Math.floor(area / NODE_FOOTPRINT_PX2))
+  })
+})
+
 const sampledData = computed(() => {
   let data: ServerPlayerCloseness[]
 
   if (isDeltaMode.value) {
-    // Delta mode: show players within ±pingDelta of focus player's ping
     if (focusPlayerPing.value === null) return []
     const fp = focusPlayerPing.value
     data = allData.value.filter(p =>
@@ -96,29 +112,28 @@ const sampledData = computed(() => {
       Math.abs(p.avgPing - fp) <= pingDelta.value
     )
   } else {
-    // Server mode: filter by maxPing and optional band
     data = allData.value.filter(p => p.avgPing <= maxPing.value)
     if (activeBand.value !== null) {
       data = data.filter(p => getBandIndex(p.avgPing) === activeBand.value)
     }
   }
 
-  // When searching, filter to matches only
   if (searchTerms.value.length > 0) {
     return data.filter(p => isSearchMatch(p.playerName))
   }
 
   if (showAll.value || isDeltaMode.value) return data
 
-  // Sample per band
+  const caps = bandCapacity.value
   const buckets: ServerPlayerCloseness[][] = BANDS.map(() => [])
   for (const p of data) {
     buckets[getBandIndex(p.avgPing)].push(p)
   }
   const sampled = new Set<string>()
-  for (const bucket of buckets) {
+  for (let bi = 0; bi < buckets.length; bi++) {
+    const bucket = buckets[bi]
     bucket.sort((a, b) => b.sessionCount - a.sessionCount)
-    for (const p of bucket.slice(0, SAMPLE_PER_BAND)) {
+    for (const p of bucket.slice(0, caps[bi])) {
       sampled.add(p.playerName)
     }
   }
@@ -212,14 +227,25 @@ const renderOrbit = () => {
   }
 
   // Normalized ratio from center (0) to edge (1), then projected to ellipse axes.
-  const ratioScale = d3.scaleLinear()
-    .domain([scaleMin, scaleMax])
-    .range([0, 1])
-    .clamp(true)
+  // Delta/active-band modes use linear. Default server mode gives each band an
+  // equal slice of the radius so the dense Close ring isn't crammed near center.
+  let ratioScale: (ping: number) => number
+  if (isDeltaMode.value || activeBand.value !== null) {
+    const linear = d3.scaleLinear().domain([scaleMin, scaleMax]).range([0, 1]).clamp(true)
+    ratioScale = (ping: number) => linear(ping) as number
+  } else {
+    ratioScale = (ping: number) => {
+      const bi = getBandIndex(ping)
+      if (bi < 0) return 1
+      const lo = bi === 0 ? 0 : BANDS[bi - 1].max
+      const hi = BANDS[bi].max === Infinity ? scaleMax : BANDS[bi].max
+      const span = Math.max(1, hi - lo)
+      const t = Math.max(0, Math.min(1, (ping - lo) / span))
+      return BAND_INNER_MARGIN + (bi + t) * BAND_SLICE
+    }
+  }
   const rxAt = (ping: number) => Math.max(innerR, ratioScale(ping) * rxMax)
   const ryAt = (ping: number) => Math.max(innerR, ratioScale(ping) * ryMax)
-  // Back-compat approx for old callers (used only by label/ring text placement where it's fine).
-  const radiusScale = (ping: number) => Math.max(innerR, ratioScale(ping) * Math.min(rxMax, ryMax))
 
   const maxSessions = d3.max(items, d => d.sessionCount) || 1
   const sizeScale = d3.scaleSqrt()
@@ -783,7 +809,7 @@ const hoveredItem = computed(() => {
         within {{ maxPing }}ms
       </template>
       <template v-if="!isDeltaMode && !showAll && activeBand === null">
-        · top {{ SAMPLE_PER_BAND }}/band
+        · capped to fit
       </template>
       <template v-if="activeBand !== null">
         · {{ BANDS[activeBand].label }} only
