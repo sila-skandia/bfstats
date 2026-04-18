@@ -15,14 +15,14 @@ const SAMPLE_PER_BAND = 50
 const getBand = (ping: number) => BANDS.find(b => ping <= b.max)!
 const getBandIndex = (ping: number) => BANDS.findIndex(b => ping <= b.max)
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   serverGuid: string
   serverName?: string
   /** When set, switches to delta mode: shows players with similar ping to this player */
   playerName?: string
   /** When true, removes the outer container styles for integrated layouts */
   seamless?: boolean
-}>()
+}>(), { seamless: false })
 
 const emit = defineEmits<{
   (e: 'player-click', playerName: string): void
@@ -30,6 +30,7 @@ const emit = defineEmits<{
 
 const svgElement = ref<SVGSVGElement | null>(null)
 const containerRef = ref<HTMLDivElement | null>(null)
+const vizRef = ref<HTMLDivElement | null>(null)
 const width = ref(600)
 const height = ref(600)
 const loading = ref(false)
@@ -43,6 +44,7 @@ const showAll = ref(false)
 const activeBand = ref<number | null>(null)
 const zoomTransform = ref<d3.ZoomTransform>(d3.zoomIdentity)
 const isFullscreen = ref(false)
+let simulation: d3.Simulation<any, undefined> | null = null
 
 const isDeltaMode = computed(() => !!props.playerName)
 
@@ -174,6 +176,10 @@ const hashStr = (s: string) => {
 const renderOrbit = () => {
   if (!svgElement.value) return
 
+  // Stop any running simulation before re-render
+  simulation?.stop()
+  simulation = null
+
   const items = sampledData.value
   if (items.length === 0) {
     d3.select(svgElement.value).selectAll('*').remove()
@@ -184,18 +190,19 @@ const renderOrbit = () => {
   const h = height.value
   const cx = w / 2
   const cy = h / 2
-  const maxRadius = Math.min(cx, cy) - 40
+  // Elliptical orbit so widescreen actually uses the width.
+  const rxMax = Math.max(80, cx - 40)
+  const ryMax = Math.max(80, cy - 40)
+  const innerR = 34 // inner radius floor (clear of center node)
 
   // Determine scale range based on mode
   let scaleMin: number
   let scaleMax: number
 
   if (isDeltaMode.value) {
-    // Delta mode: scale from 0 (exact match) to pingDelta (furthest)
     scaleMin = 0
     scaleMax = pingDelta.value
   } else if (activeBand.value !== null) {
-    // Band filter mode: scale to just that band's range
     const bi = activeBand.value
     scaleMin = bi === 0 ? 0 : BANDS[bi - 1].max
     scaleMax = BANDS[bi].max === Infinity ? maxPing.value : BANDS[bi].max
@@ -204,10 +211,15 @@ const renderOrbit = () => {
     scaleMax = maxPing.value
   }
 
-  const radiusScale = d3.scaleLinear()
+  // Normalized ratio from center (0) to edge (1), then projected to ellipse axes.
+  const ratioScale = d3.scaleLinear()
     .domain([scaleMin, scaleMax])
-    .range([30, maxRadius])
+    .range([0, 1])
     .clamp(true)
+  const rxAt = (ping: number) => Math.max(innerR, ratioScale(ping) * rxMax)
+  const ryAt = (ping: number) => Math.max(innerR, ratioScale(ping) * ryMax)
+  // Back-compat approx for old callers (used only by label/ring text placement where it's fine).
+  const radiusScale = (ping: number) => Math.max(innerR, ratioScale(ping) * Math.min(rxMax, ryMax))
 
   const maxSessions = d3.max(items, d => d.sessionCount) || 1
   const sizeScale = d3.scaleSqrt()
@@ -246,124 +258,76 @@ const renderOrbit = () => {
   // Center glow
   g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', 50).attr('fill', 'url(#center-glow)')
 
-  // Ring guides
+  // Ring guides (ellipses)
+  const drawRing = (ping: number, color: string, label: string, opacity = 0.3, textOpacity = 0.6) => {
+    const rx = rxAt(ping)
+    const ry = ryAt(ping)
+    g.append('ellipse')
+      .attr('cx', cx).attr('cy', cy).attr('rx', rx).attr('ry', ry)
+      .attr('fill', 'none').attr('stroke', color)
+      .attr('stroke-width', 0.5).attr('stroke-dasharray', '6,4').attr('opacity', opacity)
+    g.append('text')
+      .attr('x', cx + 4).attr('y', cy - ry + 12)
+      .attr('fill', color).attr('font-size', '9px')
+      .attr('font-family', 'monospace').attr('opacity', textOpacity)
+      .text(label)
+  }
+
   if (isDeltaMode.value) {
-    // Delta mode: rings at delta intervals (0 = center = exact match)
     for (const delta of [10, 20, 30, 50, 75, 100]) {
       if (delta > pingDelta.value) break
-      const r = radiusScale(delta)
-      if (r > 30 && r < maxRadius) {
-        g.append('circle')
-          .attr('cx', cx).attr('cy', cy).attr('r', r)
-          .attr('fill', 'none').attr('stroke', '#6b7280')
-          .attr('stroke-width', 0.5).attr('stroke-dasharray', '6,4').attr('opacity', 0.2)
-        g.append('text')
-          .attr('x', cx + 4).attr('y', cy - r + 12)
-          .attr('fill', '#6b7280').attr('font-size', '9px')
-          .attr('font-family', 'monospace').attr('opacity', 0.5)
-          .text(`\u00b1${delta}ms`)
-      }
+      if (ratioScale(delta) <= 0 || ratioScale(delta) >= 1) continue
+      drawRing(delta, '#6b7280', `\u00b1${delta}ms`, 0.2, 0.5)
     }
   } else {
-    // Server mode: band rings
     const ringPings = [50, 100, 150].filter(v => v <= scaleMax && v >= scaleMin)
     for (const ping of ringPings) {
-      const r = radiusScale(ping)
       const band = getBand(ping)
-      g.append('circle')
-        .attr('cx', cx).attr('cy', cy).attr('r', r)
-        .attr('fill', 'none').attr('stroke', band.color)
-        .attr('stroke-width', 0.5).attr('stroke-dasharray', '6,4').attr('opacity', 0.3)
-      g.append('text')
-        .attr('x', cx + 4).attr('y', cy - r + 12)
-        .attr('fill', band.color).attr('font-size', '9px')
-        .attr('font-family', 'monospace').attr('opacity', 0.6)
-        .text(`${ping}ms · ${band.label}`)
+      drawRing(ping, band.color, `${ping}ms · ${band.label}`)
     }
   }
 
-  // Build player nodes with spread positioning
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5))
-
+  // Build player nodes with a target point on the elliptical ring; forces settle them.
   type PlayerNode = {
     name: string; ping: number; sessions: number;
-    x: number; y: number; r: number; color: string; matched: boolean;
-  }
-  const playerNodes: PlayerNode[] = []
-
-  if (isDeltaMode.value && focusPlayerPing.value !== null) {
-    // Delta mode: position by absolute delta from focus player's ping
-    const fp = focusPlayerPing.value
-    const sorted = [...items].sort((a, b) =>
-      Math.abs(a.avgPing - fp) - Math.abs(b.avgPing - fp)
-    )
-
-    for (let i = 0; i < sorted.length; i++) {
-      const item = sorted[i]
-      const delta = Math.abs(item.avgPing - fp)
-      const band = getBand(item.avgPing)
-      const matched = isSearchMatch(item.playerName)
-      const angle = i * goldenAngle
-
-      // Radius based on delta: 0 delta = closest to center
-      const baseR = radiusScale(delta)
-      // Add small jitter so same-delta players don't stack
-      const jitter = ((hashStr(item.playerName) & 0xff) / 0xff - 0.5) * 12
-      const r = Math.max(32, baseR + jitter)
-
-      playerNodes.push({
-        name: item.playerName,
-        ping: item.avgPing,
-        sessions: item.sessionCount,
-        x: cx + r * Math.cos(angle),
-        y: cy + r * Math.sin(angle),
-        r: sizeScale(item.sessionCount),
-        color: band.color,
-        matched,
-      })
-    }
-  } else {
-    // Server mode: group by band for spread
-    const bandBuckets: typeof items[] = BANDS.map(() => [])
-    for (const item of items) {
-      bandBuckets[getBandIndex(item.avgPing)].push(item)
-    }
-
-    for (let bi = 0; bi < BANDS.length; bi++) {
-      const bucket = bandBuckets[bi]
-      if (bucket.length === 0) continue
-
-      const bandMin = bi === 0 ? scaleMin : Math.max(BANDS[bi - 1].max, scaleMin)
-      const bandMax = BANDS[bi].max === Infinity ? scaleMax : Math.min(BANDS[bi].max, scaleMax)
-      const rMin = radiusScale(bandMin) + 8
-      const rMax = radiusScale(bandMax) - 4
-
-      const sorted = [...bucket].sort((a, b) => b.sessionCount - a.sessionCount)
-
-      for (let i = 0; i < sorted.length; i++) {
-        const item = sorted[i]
-        const band = getBand(item.avgPing)
-        const matched = isSearchMatch(item.playerName)
-        const angle = (i * goldenAngle) + (bi * 1.2)
-        const radialT = rMax > rMin ? ((hashStr(item.playerName) & 0xffff) / 0xffff) : 0.5
-        const r = rMin + (rMax - rMin) * radialT
-
-        playerNodes.push({
-          name: item.playerName,
-          ping: item.avgPing,
-          sessions: item.sessionCount,
-          x: cx + r * Math.cos(angle),
-          y: cy + r * Math.sin(angle),
-          r: sizeScale(item.sessionCount),
-          color: band.color,
-          matched,
-        })
-      }
-    }
+    targetX: number; targetY: number;
+    r: number; color: string; matched: boolean;
+    x: number; y: number; vx?: number; vy?: number;
   }
 
-  // Connection lines
-  g.selectAll('.connection-line')
+  const fp = focusPlayerPing.value
+  const playerNodes: PlayerNode[] = items.map((item) => {
+    const band = getBand(item.avgPing)
+    const matched = isSearchMatch(item.playerName)
+
+    const ringPing = isDeltaMode.value && fp !== null
+      ? Math.abs(item.avgPing - fp)
+      : item.avgPing
+    const rx = rxAt(ringPing)
+    const ry = ryAt(ringPing)
+
+    // Deterministic angle — hash into [0, 2π) so same player lands the same spot each render.
+    const seed = hashStr(item.playerName)
+    const angle = ((seed & 0xffff) / 0xffff) * Math.PI * 2
+
+    const tx = cx + rx * Math.cos(angle)
+    const ty = cy + ry * Math.sin(angle)
+
+    return {
+      name: item.playerName,
+      ping: item.avgPing,
+      sessions: item.sessionCount,
+      targetX: tx, targetY: ty,
+      r: sizeScale(item.sessionCount),
+      color: band.color,
+      matched,
+      x: tx, y: ty,
+    }
+  })
+
+  // Connection lines from center to each node
+  const connections = g.append('g').attr('class', 'connections')
+    .selectAll('line')
     .data(playerNodes)
     .enter()
     .append('line')
@@ -374,8 +338,9 @@ const renderOrbit = () => {
     .attr('stroke-width', d => d.matched ? 1.5 : 0.5)
     .attr('opacity', d => d.matched ? 0.5 : 0.1)
 
-  // Player nodes
-  const nodes = g.selectAll('.player-node')
+  // Player node groups
+  const nodes = g.append('g').attr('class', 'nodes')
+    .selectAll('g')
     .data(playerNodes)
     .enter()
     .append('g')
@@ -388,7 +353,7 @@ const renderOrbit = () => {
         .transition().duration(200)
         .attr('r', d.r * 1.5)
         .attr('filter', 'url(#glow)')
-      g.selectAll('.connection-line')
+      connections
         .filter((ld: any) => ld.name === d.name)
         .transition().duration(200)
         .attr('opacity', 0.6).attr('stroke-width', 1.5)
@@ -399,7 +364,7 @@ const renderOrbit = () => {
         .transition().duration(200)
         .attr('r', d.r)
         .attr('filter', null)
-      g.selectAll('.connection-line')
+      connections
         .filter((ld: any) => ld.name === d.name)
         .transition().duration(200)
         .attr('opacity', d.matched ? 0.5 : 0.1)
@@ -409,7 +374,6 @@ const renderOrbit = () => {
       emit('player-click', d.name)
     })
 
-  // Node circles
   nodes.append('circle')
     .attr('r', d => d.matched ? d.r * 1.3 : d.r)
     .attr('fill', d => d.color)
@@ -418,7 +382,6 @@ const renderOrbit = () => {
     .attr('stroke-width', d => d.matched ? 2 : 1)
     .attr('stroke-opacity', d => d.matched ? 0.9 : 0.3)
 
-  // Labels
   nodes.append('text')
     .attr('dy', d => -(d.matched ? d.r * 1.3 : d.r) - 4)
     .attr('text-anchor', 'middle')
@@ -431,14 +394,14 @@ const renderOrbit = () => {
     .style('text-shadow', '0 0 4px rgba(0,0,0,0.9)')
     .text(d => d.name.length > 14 ? d.name.substring(0, 13) + '\u2026' : d.name)
 
-  // Center node
-  g.append('circle')
+  // Center node (drawn after nodes so it sits on top)
+  const centerG = g.append('g').attr('class', 'orbit-center')
+  centerG.append('circle')
     .attr('cx', cx).attr('cy', cy).attr('r', 18)
     .attr('fill', '#0d1117')
     .attr('stroke', '#22d3ee').attr('stroke-width', 2)
     .attr('filter', 'url(#glow)')
-
-  g.append('text')
+  centerG.append('text')
     .attr('x', cx).attr('y', cy + 1)
     .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
     .attr('fill', '#22d3ee').attr('font-size', '9px')
@@ -448,19 +411,52 @@ const renderOrbit = () => {
       ? centerLabel.value.substring(0, 9) + '\u2026'
       : centerLabel.value)
 
-  // Animate
+  // Entry animation
   nodes.attr('opacity', 0)
     .transition().duration(400)
-    .delay((_d: PlayerNode, i: number) => i * 8)
+    .delay((_d: PlayerNode, i: number) => Math.min(i * 6, 600))
     .attr('opacity', 1)
+
+  // Force simulation: weak pull to each node's ellipse-point, strong collision so dense
+  // clusters (e.g. the Close band) spread outward along the ring instead of stacking.
+  simulation = d3.forceSimulation<PlayerNode>(playerNodes)
+    .force('x', d3.forceX<PlayerNode>(d => d.targetX).strength(0.12))
+    .force('y', d3.forceY<PlayerNode>(d => d.targetY).strength(0.12))
+    .force('collide', d3.forceCollide<PlayerNode>(d => (d.matched ? d.r * 1.3 : d.r) + 2.5).strength(1).iterations(4))
+    .alpha(1)
+    .alphaDecay(0.025)
+    .velocityDecay(0.4)
+    .on('tick', () => {
+      // Keep nodes clear of the center badge
+      for (const n of playerNodes) {
+        const dx = n.x - cx, dy = n.y - cy
+        const d2 = dx * dx + dy * dy
+        if (d2 < innerR * innerR) {
+          const d = Math.sqrt(d2) || 0.001
+          n.x = cx + (dx / d) * innerR
+          n.y = cy + (dy / d) * innerR
+        }
+      }
+      nodes.attr('transform', (d: PlayerNode) => `translate(${d.x},${d.y})`)
+      connections.attr('x2', (d: PlayerNode) => d.x).attr('y2', (d: PlayerNode) => d.y)
+    })
 }
 
 const handleResize = () => {
   if (!containerRef.value) return
   if (isFullscreen.value) {
-    // In fullscreen, use viewport dimensions minus sidebar and padding
-    width.value = window.innerWidth - 80 - 40
-    height.value = window.innerHeight - 40
+    // Measure the actual viz slot so the SVG fills whatever chrome leaves behind.
+    const viz = vizRef.value
+    if (viz) {
+      const rect = viz.getBoundingClientRect()
+      const availableHeight = window.innerHeight - rect.top - 8 // leave room for footer line
+      width.value = Math.max(320, Math.floor(rect.width))
+      height.value = Math.max(320, Math.floor(availableHeight))
+    } else {
+      const sidebar = window.innerWidth >= 1024 ? 80 : 0
+      width.value = window.innerWidth - sidebar - 32
+      height.value = window.innerHeight - 160
+    }
   } else {
     const rect = containerRef.value.getBoundingClientRect()
     width.value = rect.width
@@ -473,6 +469,8 @@ const toggleFullscreen = () => {
   isFullscreen.value = !isFullscreen.value
   nextTick(() => {
     handleResize()
+    // One more tick after layout settles so vizRef measurements reflect final chrome.
+    requestAnimationFrame(() => handleResize())
   })
 }
 
@@ -496,6 +494,8 @@ onMounted(() => {
 onUnmounted(() => {
   resizeObserver?.disconnect()
   document.removeEventListener('keydown', handleEscape)
+  simulation?.stop()
+  simulation = null
 })
 
 watch(() => props.serverGuid, () => fetchData())
@@ -533,7 +533,7 @@ const hoveredItem = computed(() => {
   <div
     ref="containerRef"
     class="ping-orbit-container"
-    :class="{ 'ping-orbit--fullscreen': isFullscreen, 'ping-orbit--seamless': seamless }"
+    :class="{ 'ping-orbit--fullscreen': isFullscreen, 'ping-orbit--seamless': seamless && !isFullscreen }"
   >
     <div
       v-if="!seamless"
@@ -720,6 +720,7 @@ const hoveredItem = computed(() => {
     <!-- Visualization -->
     <div
       v-show="sampledData.length > 0 && !loading"
+      ref="vizRef"
       class="orbit-viz"
     >
       <svg
@@ -1085,18 +1086,22 @@ const hoveredItem = computed(() => {
   border-radius: 0 !important;
 }
 
-.ping-orbit--fullscreen {
+/* Fullscreen must beat the seamless !important overrides. */
+.ping-orbit--fullscreen,
+.ping-orbit--seamless.ping-orbit--fullscreen {
   position: fixed;
   top: 0;
   left: 0;
   right: 80px; /* Account for desktop sidebar (w-20) */
   bottom: 0;
   z-index: 50;
-  background: var(--bg-panel, #0d1117);
-  padding: 1.25rem;
-  border: none;
-  border-radius: 0;
-  overflow-y: auto;
+  background: var(--bg-panel, #0d1117) !important;
+  padding: 0.75rem 1rem !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   animation: orbit-fade-in 0.2s ease-out;
 }
 
@@ -1111,8 +1116,30 @@ const hoveredItem = computed(() => {
   }
 }
 
+/* Compact chrome in fullscreen so the SVG gets maximum real estate */
+.ping-orbit--fullscreen .orbit-header {
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
+}
+.ping-orbit--fullscreen .orbit-controls {
+  margin-bottom: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+.ping-orbit--fullscreen .orbit-controls .control-row { flex: 1 1 auto; min-width: 180px; }
+.ping-orbit--fullscreen .band-summary { margin-bottom: 0.4rem; }
+.ping-orbit--fullscreen .orbit-viz {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+}
 .ping-orbit--fullscreen .orbit-viz svg {
-  max-width: 100%;
-  max-height: calc(100vh - 200px);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  display: block;
 }
 </style>
