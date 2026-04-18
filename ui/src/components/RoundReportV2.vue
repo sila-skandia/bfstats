@@ -49,9 +49,11 @@ const timeCheckpoints = ref<Array<{
 }>>([]);
 
 // Display filter options
-const showJoinEvents = ref(false);
-const showDeathEvents = ref(true);
-const highlightsOnly = ref(false);
+const displayFilters = ref({
+  showJoinEvents: false,
+  showDeathEvents: true,
+  highlightsOnly: false,
+});
 
 // Generate battle narrative from leaderboard snapshots using the new utility
 const processBattleReport = () => {
@@ -82,9 +84,9 @@ const processBattleReport = () => {
 // Filtered events based on display preferences
 const filteredBattleEvents = computed(() => {
   return filterBattleEvents(battleEvents.value, {
-    showJoinEvents: showJoinEvents.value,
-    showDeathEvents: showDeathEvents.value,
-    highlightsOnly: highlightsOnly.value,
+    showJoinEvents: displayFilters.value.showJoinEvents,
+    showDeathEvents: displayFilters.value.showDeathEvents,
+    highlightsOnly: displayFilters.value.highlightsOnly,
   });
 });
 
@@ -880,7 +882,7 @@ const visibleHighlights = computed(() => {
                       class="flex items-center gap-1.5 cursor-pointer group"
                     >
                       <input
-                        v-model="(this as any)[opt.model]"
+                        v-model="(displayFilters as any)[opt.model]"
                         type="checkbox"
                         class="sr-only peer"
                       >

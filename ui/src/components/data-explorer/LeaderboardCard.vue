@@ -152,7 +152,7 @@ const emit = defineEmits<{
 
 const navigateToPlayer = (playerName: string) => {
   router.push({
-    name: 'explore-player-detail',
+    name: 'player-details',
     params: { playerName }
   });
 };

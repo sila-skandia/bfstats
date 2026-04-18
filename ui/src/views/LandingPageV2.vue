@@ -52,13 +52,6 @@
                     <span class="live-pulse__badge-text">{{ networkPulseLabel }}</span>
                   </div>
                   
-                  <GameFilterButtons
-                    :game-types="gameTypes"
-                    :active-filter="activeFilter"
-                    :get-game-icon="getGameIcon"
-                    @update:active-filter="setActiveFilter"
-                  />
-                  
                   <InstallationLinksDropdown ref="installDropdownRef" />
                 </div>
                 
@@ -860,7 +853,6 @@ import PlayersPanel from '../components/PlayersPanel.vue'
 import { fetchPlayerOnlineHistory } from '../services/playerStatsService'
 import { formatTimeRemaining } from '../utils/timeUtils'
 import PlayerSearch from '../components/PlayerSearch.vue'
-import GameFilterButtons from '../components/GameFilterButtons.vue'
 import InstallationLinksDropdown from '../components/InstallationLinksDropdown.vue'
 import PlayerHistorySection from '../components/PlayerHistorySection.vue'
 
@@ -1256,21 +1248,6 @@ const navigateToPlayer = () => {
 
 const navigateToPlayerProfile = (playerName: string) => {
   router.push(`/players/${encodeURIComponent(playerName)}`)
-}
-
-const setActiveFilter = (filterId: string) => {
-  activeFilter.value = filterId
-
-  const routeMap = {
-    'bf1942': '/servers/bf1942',
-    'fh2': '/servers/fh2',
-    'bfvietnam': '/servers/bfv'
-  }
-
-  const newRoute = routeMap[filterId as keyof typeof routeMap]
-  if (newRoute && router.currentRoute.value.path !== newRoute) {
-    router.push(newRoute)
-  }
 }
 
 const getGameDisplayName = (gameType: string): string => {

@@ -365,7 +365,7 @@ onMounted(() => {
 </template>
 
 <style src="./portal-layout.css"></style>
-<style scoped src="./DataExplorer.vue.css"></style>
+<style scoped src="./ExplorerTheme.css"></style>
 <style scoped>
 /* Mobile optimizations for network view */
 @media (max-width: 767px) {
