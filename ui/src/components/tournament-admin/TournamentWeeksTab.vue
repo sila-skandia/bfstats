@@ -1,10 +1,15 @@
 <template>
   <div class="tournament-weeks-tab">
     <!-- Add/Edit Week View -->
-    <div v-if="showForm" class="portal-card">
+    <div
+      v-if="showForm"
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ {{ editingWeek ? 'EDIT WEEK' : 'CREATE WEEK' }} ]</h2>
+          <h2 class="portal-card-title">
+            [ {{ editingWeek ? 'EDIT WEEK' : 'CREATE WEEK' }} ]
+          </h2>
           <p class="portal-card-subtitle">
             {{ editingWeek ? 'Update week schedule' : 'Add a new tournament week' }}
           </p>
@@ -13,8 +18,18 @@
           class="portal-btn portal-btn--ghost"
           @click="closeForm"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
           Cancel
         </button>
@@ -22,7 +37,10 @@
 
       <div class="portal-card-body">
         <!-- Error Message -->
-        <div v-if="formError" class="portal-form-error">
+        <div
+          v-if="formError"
+          class="portal-form-error"
+        >
           {{ formError }}
         </div>
 
@@ -36,7 +54,9 @@
             class="portal-form-input"
             :disabled="formLoading"
           >
-          <p class="portal-form-hint">Identifier shown in the schedule</p>
+          <p class="portal-form-hint">
+            Identifier shown in the schedule
+          </p>
         </div>
 
         <!-- Start Date -->
@@ -62,7 +82,10 @@
         </div>
 
         <!-- Form Actions -->
-        <div class="portal-form-footer" style="margin-top: 1.5rem">
+        <div
+          class="portal-form-footer"
+          style="margin-top: 1.5rem"
+        >
           <button
             class="portal-btn portal-btn--ghost"
             :disabled="formLoading"
@@ -75,7 +98,10 @@
             :disabled="formLoading || !isFormValid"
             @click="submitForm"
           >
-            <span v-if="formLoading" class="portal-btn-pulse">Saving...</span>
+            <span
+              v-if="formLoading"
+              class="portal-btn-pulse"
+            >Saving...</span>
             <span v-else>{{ editingWeek ? 'Update Week' : 'Create Week' }}</span>
           </button>
         </div>
@@ -83,11 +109,18 @@
     </div>
 
     <!-- Weeks List View -->
-    <div v-else class="portal-card">
+    <div
+      v-else
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ WEEKS ]</h2>
-          <p class="portal-card-subtitle">Define week schedules and date ranges</p>
+          <h2 class="portal-card-title">
+            [ WEEKS ]
+          </h2>
+          <p class="portal-card-subtitle">
+            Define week schedules and date ranges
+          </p>
         </div>
         <button
           class="portal-btn portal-btn--primary"
@@ -97,20 +130,31 @@
         </button>
       </div>
 
-      <div class="portal-card-body" style="padding: 0">
+      <div
+        class="portal-card-body"
+        style="padding: 0"
+      >
         <!-- Weeks Table -->
-        <div v-if="tournament.weekDates && tournament.weekDates.length > 0" class="portal-table-wrap">
+        <div
+          v-if="tournament.weekDates && tournament.weekDates.length > 0"
+          class="portal-table-wrap"
+        >
           <table class="portal-table">
             <thead>
               <tr>
                 <th>Week</th>
                 <th>Start Date</th>
                 <th>End Date</th>
-                <th style="text-align: right">Actions</th>
+                <th style="text-align: right">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="week in tournament.weekDates" :key="week.id">
+              <tr
+                v-for="week in tournament.weekDates"
+                :key="week.id"
+              >
                 <td>
                   <span class="portal-mono">{{ week.week }}</span>
                 </td>
@@ -120,20 +164,40 @@
                   <div class="portal-table-actions">
                     <button
                       class="portal-icon-btn"
-                      @click="openEditForm(week)"
                       title="Edit week"
+                      @click="openEditForm(week)"
                     >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      <svg
+                        class="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
                       </svg>
                     </button>
                     <button
                       class="portal-icon-btn portal-icon-btn--danger"
-                      @click="confirmDeleteWeek(week.id!, week.week)"
                       title="Delete week"
+                      @click="confirmDeleteWeek(week.id!, week.week)"
                     >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <svg
+                        class="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -144,9 +208,16 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else class="portal-empty">
-          <div class="portal-empty-icon">📅</div>
-          <h3 class="portal-empty-title">No Weeks Defined</h3>
+        <div
+          v-else
+          class="portal-empty"
+        >
+          <div class="portal-empty-icon">
+            📅
+          </div>
+          <h3 class="portal-empty-title">
+            No Weeks Defined
+          </h3>
           <p class="portal-empty-desc">
             Create weeks to organize your tournament schedule
           </p>
@@ -170,8 +241,18 @@
       <div class="portal-modal">
         <div class="flex items-start gap-4 mb-6">
           <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </div>
           <div class="flex-1">
@@ -199,10 +280,24 @@
             :disabled="isProcessing"
             @click="executeDeleteWeek"
           >
-            <svg v-if="!isProcessing" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            <svg
+              v-if="!isProcessing"
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
             </svg>
-            <div v-else class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <div
+              v-else
+              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+            />
             <span>{{ isProcessing ? 'Deleting...' : 'Delete Week' }}</span>
           </button>
         </div>

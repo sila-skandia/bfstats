@@ -4,7 +4,10 @@
     :class="{ 'is-online': buddy.player.isOnline }"
   >
     <!-- Online indicator bar -->
-    <div v-if="buddy.player.isOnline" class="online-bar" />
+    <div
+      v-if="buddy.player.isOnline"
+      class="online-bar"
+    />
 
     <div class="card-content">
       <div class="card-main">
@@ -13,7 +16,10 @@
           <div class="avatar">
             <span class="avatar-text">{{ buddy.buddyPlayerName[0].toUpperCase() }}</span>
           </div>
-          <div v-if="buddy.player.isOnline" class="online-indicator">
+          <div
+            v-if="buddy.player.isOnline"
+            class="online-indicator"
+          >
             <div class="online-pulse" />
           </div>
         </div>
@@ -40,22 +46,37 @@
               >
                 {{ truncateServerName(buddy.player.currentServer) }}
               </router-link>
-              <span v-if="buddy.player.currentMap" class="map-name">
+              <span
+                v-if="buddy.player.currentMap"
+                class="map-name"
+              >
                 :: {{ buddy.player.currentMap }}
               </span>
             </div>
-            <div v-else-if="buddy.player.isOnline" class="status-online">
+            <div
+              v-else-if="buddy.player.isOnline"
+              class="status-online"
+            >
               <span class="status-icon">&gt;</span>
               <span class="status-text">CONNECTED</span>
             </div>
-            <div v-else class="status-offline">
+            <div
+              v-else
+              class="status-offline"
+            >
               <span class="status-icon">#</span>
               <span class="status-text">{{ formatLastSeen(buddy.player.lastSeenIso) }}</span>
             </div>
 
             <!-- Session Stats -->
-            <div v-if="buddy.player.isOnline && hasSessionStats" class="session-stats">
-              <span v-if="buddy.player.currentSessionScore !== undefined" class="stat-badge stat-score">
+            <div
+              v-if="buddy.player.isOnline && hasSessionStats"
+              class="session-stats"
+            >
+              <span
+                v-if="buddy.player.currentSessionScore !== undefined"
+                class="stat-badge stat-score"
+              >
                 SCR:{{ formatScore(buddy.player.currentSessionScore) }}
               </span>
               <span

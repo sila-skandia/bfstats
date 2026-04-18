@@ -1,8 +1,14 @@
 <template>
   <div class="hacker-card">
     <!-- Hero Image -->
-    <div v-if="tournament.hasHeroImage" class="hero-section">
-      <div v-if="imageLoading && !heroImageUrl" class="hero-loading">
+    <div
+      v-if="tournament.hasHeroImage"
+      class="hero-section"
+    >
+      <div
+        v-if="imageLoading && !heroImageUrl"
+        class="hero-loading"
+      >
         <div class="loading-spinner" />
       </div>
       <img
@@ -43,7 +49,10 @@
         </span>
         <template v-if="tournament.serverName">
           <span class="meta-divider">//</span>
-          <span class="meta-item server-meta" :title="tournament.serverName">
+          <span
+            class="meta-item server-meta"
+            :title="tournament.serverName"
+          >
             <span class="meta-label">SRV:</span>
             <span class="meta-value truncate">{{ tournament.serverName }}</span>
           </span>
@@ -56,7 +65,10 @@
           <span class="stat-value">{{ tournament.matchCount }}</span>
           <span class="stat-label">MATCHES</span>
         </div>
-        <div v-if="tournament.anticipatedRoundCount" class="stat-block">
+        <div
+          v-if="tournament.anticipatedRoundCount"
+          class="stat-block"
+        >
           <span class="stat-value">{{ tournament.anticipatedRoundCount }}</span>
           <span class="stat-label">ROUNDS</span>
         </div>
@@ -64,11 +76,17 @@
 
       <!-- Status Badge -->
       <div class="status-row">
-        <span v-if="isInProgress" class="status-badge status-active">
+        <span
+          v-if="isInProgress"
+          class="status-badge status-active"
+        >
           <span class="status-dot" />
           <span>IN_PROGRESS</span>
         </span>
-        <span v-else class="status-badge status-pending">
+        <span
+          v-else
+          class="status-badge status-pending"
+        >
           <span class="status-icon">&gt;</span>
           <span>SCHEDULED</span>
         </span>
@@ -76,10 +94,16 @@
 
       <!-- Actions -->
       <div class="actions-row">
-        <button class="btn-action btn-primary" @click="$emit('view-details')">
+        <button
+          class="btn-action btn-primary"
+          @click="$emit('view-details')"
+        >
           [MANAGE]
         </button>
-        <button class="btn-action btn-danger" @click="$emit('remove')">
+        <button
+          class="btn-action btn-danger"
+          @click="$emit('remove')"
+        >
           [DEL]
         </button>
       </div>

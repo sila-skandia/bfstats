@@ -1,35 +1,63 @@
 <template>
-  <div class="portal-page min-h-screen pb-12 text-bf-text" :style="{ ...themeVars, backgroundColor: 'var(--portal-bg)' }">
-    <div class="portal-grid" aria-hidden="true" />
+  <div
+    class="portal-page min-h-screen pb-12 text-bf-text"
+    :style="{ ...themeVars, backgroundColor: 'var(--portal-bg)' }"
+  >
+    <div
+      class="portal-grid"
+      aria-hidden="true"
+    />
     <div class="portal-inner">
-    <div v-if="loading" class="flex items-center justify-center min-h-screen">
-      <div class="w-16 h-16 border-4 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
-    </div>
-
-    <div v-else-if="error" class="min-h-screen flex items-center justify-center">
-      <div class="text-center">
-        <h1 class="text-4xl font-black mb-4" :style="{ color: getAccentColor() }">Error</h1>
-        <p :style="{ color: getTextMutedColor() }">{{ error }}</p>
+      <div
+        v-if="loading"
+        class="flex items-center justify-center min-h-screen"
+      >
+        <div class="w-16 h-16 border-4 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
       </div>
-    </div>
 
-    <div v-else-if="tournament">
-      <TournamentHero
-        :tournament="tournament"
-        :tournament-id="tournamentId"
-        :hero-image-url="heroImageUrl"
-        :logo-image-url="logoImageUrl"
-      />
+      <div
+        v-else-if="error"
+        class="min-h-screen flex items-center justify-center"
+      >
+        <div class="text-center">
+          <h1
+            class="text-4xl font-black mb-4"
+            :style="{ color: getAccentColor() }"
+          >
+            Error
+          </h1>
+          <p :style="{ color: getTextMutedColor() }">
+            {{ error }}
+          </p>
+        </div>
+      </div>
 
-      <div class="w-full max-w-screen-2xl mx-auto px-4 sm:px-8 lg:px-12 mt-8 sm:mt-12">
-        <div class="text-center py-20">
-          <div class="text-6xl mb-6 opacity-50">📊</div>
-          <h3 class="text-2xl font-bold mb-3" :style="{ color: getTextColor() }">Stats Coming Soon</h3>
-          <p :style="{ color: getTextMutedColor() }">This page is currently under development.</p>
+      <div v-else-if="tournament">
+        <TournamentHero
+          :tournament="tournament"
+          :tournament-id="tournamentId"
+          :hero-image-url="heroImageUrl"
+          :logo-image-url="logoImageUrl"
+        />
+
+        <div class="w-full max-w-screen-2xl mx-auto px-4 sm:px-8 lg:px-12 mt-8 sm:mt-12">
+          <div class="text-center py-20">
+            <div class="text-6xl mb-6 opacity-50">
+              📊
+            </div>
+            <h3
+              class="text-2xl font-bold mb-3"
+              :style="{ color: getTextColor() }"
+            >
+              Stats Coming Soon
+            </h3>
+            <p :style="{ color: getTextMutedColor() }">
+              This page is currently under development.
+            </p>
+          </div>
         </div>
       </div>
     </div>
-  </div>
   </div>
 </template>
 

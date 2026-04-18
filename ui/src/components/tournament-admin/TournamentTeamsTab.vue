@@ -1,10 +1,15 @@
 <template>
   <div class="tournament-teams-tab">
     <!-- Add/Edit Team View -->
-    <div v-if="showForm" class="portal-card">
+    <div
+      v-if="showForm"
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ {{ editingTeam ? 'EDIT TEAM' : 'CREATE TEAM' }} ]</h2>
+          <h2 class="portal-card-title">
+            [ {{ editingTeam ? 'EDIT TEAM' : 'CREATE TEAM' }} ]
+          </h2>
           <p class="portal-card-subtitle">
             {{ editingTeam ? 'Update team details and manage players' : 'Add a new team to the tournament' }}
           </p>
@@ -13,8 +18,18 @@
           class="portal-btn portal-btn--ghost"
           @click="closeForm"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
           Cancel
         </button>
@@ -22,7 +37,10 @@
 
       <div class="portal-card-body">
         <!-- Error Message -->
-        <div v-if="formError" class="portal-form-error">
+        <div
+          v-if="formError"
+          class="portal-form-error"
+        >
           {{ formError }}
         </div>
 
@@ -36,7 +54,9 @@
             class="portal-form-input"
             :disabled="formLoading"
           >
-          <p class="portal-form-hint">Usually the clan tag or team name</p>
+          <p class="portal-form-hint">
+            Usually the clan tag or team name
+          </p>
         </div>
 
         <!-- Players Section -->
@@ -56,7 +76,10 @@
         </div>
 
         <!-- Form Actions -->
-        <div class="portal-form-footer" style="margin-top: 1.5rem">
+        <div
+          class="portal-form-footer"
+          style="margin-top: 1.5rem"
+        >
           <button
             class="portal-btn portal-btn--ghost"
             :disabled="formLoading"
@@ -69,7 +92,10 @@
             :disabled="formLoading || !formData.name.trim()"
             @click="submitForm"
           >
-            <span v-if="formLoading" class="portal-btn-pulse">Saving...</span>
+            <span
+              v-if="formLoading"
+              class="portal-btn-pulse"
+            >Saving...</span>
             <span v-else>{{ editingTeam ? 'Update Team' : 'Create Team' }}</span>
           </button>
         </div>
@@ -77,11 +103,18 @@
     </div>
 
     <!-- Teams List View -->
-    <div v-else class="portal-card">
+    <div
+      v-else
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ TEAMS ]</h2>
-          <p class="portal-card-subtitle">Configure tournament teams and their players</p>
+          <h2 class="portal-card-title">
+            [ TEAMS ]
+          </h2>
+          <p class="portal-card-subtitle">
+            Configure tournament teams and their players
+          </p>
         </div>
         <button
           class="portal-btn portal-btn--primary"
@@ -93,7 +126,10 @@
 
       <div class="portal-card-body">
         <!-- Teams Grid -->
-        <div v-if="tournament.teams.length > 0" class="portal-grid-3">
+        <div
+          v-if="tournament.teams.length > 0"
+          class="portal-grid-3"
+        >
           <div
             v-for="team in tournament.teams"
             :key="team.id"
@@ -101,7 +137,9 @@
           >
             <div class="portal-grid-item-header">
               <div>
-                <h3 class="portal-grid-item-title">{{ team.name }}</h3>
+                <h3 class="portal-grid-item-title">
+                  {{ team.name }}
+                </h3>
                 <p class="portal-grid-item-subtitle">
                   {{ team.players.length }} {{ team.players.length === 1 ? 'player' : 'players' }}
                 </p>
@@ -109,20 +147,40 @@
               <div class="portal-grid-item-actions">
                 <button
                   class="portal-icon-btn"
-                  @click="openEditForm(team.id)"
                   title="Edit team"
+                  @click="openEditForm(team.id)"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                    />
                   </svg>
                 </button>
                 <button
                   class="portal-icon-btn portal-icon-btn--danger"
-                  @click="confirmDeleteTeam(team.id, team.name)"
                   title="Delete team"
+                  @click="confirmDeleteTeam(team.id, team.name)"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
                   </svg>
                 </button>
               </div>
@@ -131,9 +189,16 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else class="portal-empty">
-          <div class="portal-empty-icon">👥</div>
-          <h3 class="portal-empty-title">No Teams Yet</h3>
+        <div
+          v-else
+          class="portal-empty"
+        >
+          <div class="portal-empty-icon">
+            👥
+          </div>
+          <h3 class="portal-empty-title">
+            No Teams Yet
+          </h3>
           <p class="portal-empty-desc">
             Create teams to organize players for tournament matches
           </p>
@@ -157,8 +222,18 @@
       <div class="portal-modal">
         <div class="flex items-start gap-4 mb-6">
           <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </div>
           <div class="flex-1">
@@ -186,10 +261,24 @@
             :disabled="isDeleting"
             @click="executeDeleteTeam"
           >
-            <svg v-if="!isDeleting" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            <svg
+              v-if="!isDeleting"
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
             </svg>
-            <div v-else class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <div
+              v-else
+              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+            />
             <span>{{ isDeleting ? 'Deleting...' : 'Delete Team' }}</span>
           </button>
         </div>

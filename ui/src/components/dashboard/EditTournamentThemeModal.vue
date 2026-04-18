@@ -14,8 +14,18 @@
             class="text-slate-400 hover:text-slate-200 transition-colors"
             @click="$emit('close')"
           >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -51,18 +61,28 @@
                   type="text"
                   placeholder="#000000"
                   class="w-24 px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 placeholder-slate-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
-                  @blur="onBgColorChange"
                   title="Paste or type hex color"
+                  @blur="onBgColorChange"
                 >
                 <button
                   v-if="formData.backgroundColour"
                   type="button"
                   class="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
-                  @click="() => { formData.backgroundColour = ''; bgColorInput = '#000000'; }"
                   title="Reset to default"
+                  @click="() => { formData.backgroundColour = ''; bgColorInput = '#000000'; }"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
@@ -93,18 +113,28 @@
                   type="text"
                   placeholder="#FFFFFF"
                   class="w-24 px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 placeholder-slate-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
-                  @blur="onTextColorChange"
                   title="Paste or type hex color"
+                  @blur="onTextColorChange"
                 >
                 <button
                   v-if="formData.textColour"
                   type="button"
                   class="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
-                  @click="() => { formData.textColour = ''; textColorInput = '#FFFFFF'; }"
                   title="Reset to default"
+                  @click="() => { formData.textColour = ''; textColorInput = '#FFFFFF'; }"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
@@ -135,18 +165,28 @@
                   type="text"
                   placeholder="#FFD700"
                   class="w-24 px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 placeholder-slate-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
-                  @blur="onAccentColorChange"
                   title="Paste or type hex color"
+                  @blur="onAccentColorChange"
                 >
                 <button
                   v-if="formData.accentColour"
                   type="button"
                   class="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
-                  @click="() => { formData.accentColour = ''; accentColorInput = '#FFD700'; }"
                   title="Reset to default"
+                  @click="() => { formData.accentColour = ''; accentColorInput = '#FFD700'; }"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
@@ -157,37 +197,39 @@
 
             <!-- Quick Presets -->
             <div class="pt-4 border-t border-slate-700/30">
-              <p class="text-xs text-slate-400 mb-3 font-medium">Quick Presets:</p>
+              <p class="text-xs text-slate-400 mb-3 font-medium">
+                Quick Presets:
+              </p>
               <div class="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   class="text-xs px-3 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded transition-all"
-                  @click="applyPreset('dark')"
                   title="Black background, white text, golden accents"
+                  @click="applyPreset('dark')"
                 >
                   🌙 Dark Mode
                 </button>
                 <button
                   type="button"
                   class="text-xs px-3 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded transition-all"
-                  @click="applyPreset('light')"
                   title="White background, black text, blue accents"
+                  @click="applyPreset('light')"
                 >
                   ☀️ Light Mode
                 </button>
                 <button
                   type="button"
                   class="text-xs px-3 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded transition-all"
-                  @click="applyPreset('cyberpunk')"
                   title="Dark background, white text, neon pink/cyan"
+                  @click="applyPreset('cyberpunk')"
                 >
                   ⚡ Cyberpunk
                 </button>
                 <button
                   type="button"
                   class="text-xs px-3 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 rounded transition-all"
-                  @click="applyPreset('ocean')"
                   title="Dark blue background, white text, cyan accents"
+                  @click="applyPreset('ocean')"
                 >
                   🌊 Ocean
                 </button>
@@ -196,8 +238,13 @@
           </div>
 
           <!-- Live Preview -->
-          <div v-if="showThemePreview" class="lg:sticky lg:top-6 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto">
-            <div class="text-xs text-slate-400 mb-3 font-medium">Live Preview:</div>
+          <div
+            v-if="showThemePreview"
+            class="lg:sticky lg:top-6 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto"
+          >
+            <div class="text-xs text-slate-400 mb-3 font-medium">
+              Live Preview:
+            </div>
             <div
               class="rounded-lg overflow-hidden border-2 shadow-xl"
               :style="{
@@ -212,19 +259,40 @@
                   class="rounded-lg p-4"
                   :style="{ backgroundColor: formData.backgroundColour ? `${formData.backgroundColour}20` : 'rgba(255,215,0,0.1)' }"
                 >
-                  <div :style="{ color: formData.accentColour || '#FFD700' }" class="text-lg font-bold mb-2">Sample Tournament</div>
-                  <div :style="{ color: formData.textColour || '#FFFFFF' }" class="text-xs">Organizer: Demo Player</div>
+                  <div
+                    :style="{ color: formData.accentColour || '#FFD700' }"
+                    class="text-lg font-bold mb-2"
+                  >
+                    Sample Tournament
+                  </div>
+                  <div
+                    :style="{ color: formData.textColour || '#FFFFFF' }"
+                    class="text-xs"
+                  >
+                    Organizer: Demo Player
+                  </div>
                 </div>
 
                 <!-- Match Table -->
-                <div class="border-2 rounded-lg overflow-hidden" :style="{ borderColor: formData.accentColour || '#FFD700' }">
+                <div
+                  class="border-2 rounded-lg overflow-hidden"
+                  :style="{ borderColor: formData.accentColour || '#FFD700' }"
+                >
                   <div
                     class="px-3 py-2"
                     :style="{ backgroundColor: formData.backgroundColour ? `${formData.backgroundColour}40` : 'rgba(255,215,0,0.15)' }"
                   >
-                    <div :style="{ color: formData.textColour || '#FFFFFF' }" class="text-xs font-bold">Matches</div>
+                    <div
+                      :style="{ color: formData.textColour || '#FFFFFF' }"
+                      class="text-xs font-bold"
+                    >
+                      Matches
+                    </div>
                   </div>
-                  <div class="space-y-0 border-t" :style="{ borderColor: formData.accentColour || '#FFD700' }">
+                  <div
+                    class="space-y-0 border-t"
+                    :style="{ borderColor: formData.accentColour || '#FFD700' }"
+                  >
                     <div
                       class="px-3 py-2 border-b text-xs flex justify-between"
                       :style="{
@@ -251,7 +319,12 @@
 
                 <!-- Map List -->
                 <div class="space-y-2">
-                  <div :style="{ color: formData.textColour || '#FFFFFF' }" class="text-xs font-medium">Maps:</div>
+                  <div
+                    :style="{ color: formData.textColour || '#FFFFFF' }"
+                    class="text-xs font-medium"
+                  >
+                    Maps:
+                  </div>
                   <div
                     v-for="i in 2"
                     :key="i"
@@ -275,7 +348,9 @@
           v-if="error"
           class="p-4 bg-red-500/10 border border-red-500/30 rounded-lg"
         >
-          <p class="text-sm text-red-400">{{ error }}</p>
+          <p class="text-sm text-red-400">
+            {{ error }}
+          </p>
         </div>
 
         <!-- Success Message -->
@@ -283,7 +358,9 @@
           v-if="showSuccessMessage"
           class="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg"
         >
-          <p class="text-sm text-emerald-400">✓ Theme saved successfully! Check the public page to see your changes.</p>
+          <p class="text-sm text-emerald-400">
+            ✓ Theme saved successfully! Check the public page to see your changes.
+          </p>
         </div>
       </div>
 
@@ -293,8 +370,8 @@
           v-if="!showThemePreview"
           type="button"
           class="text-xs px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/30 rounded transition-all"
-          @click="showThemePreview = true"
           title="Show live preview"
+          @click="showThemePreview = true"
         >
           👁️ Preview
         </button>
@@ -302,8 +379,8 @@
           v-else
           type="button"
           class="text-xs px-3 py-1.5 bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600 rounded transition-all"
-          @click="showThemePreview = false"
           title="Hide preview"
+          @click="showThemePreview = false"
         >
           ✕ Close Preview
         </button>
@@ -321,9 +398,26 @@
           class="px-4 py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           @click="handleSave"
         >
-          <svg v-if="loading" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          <svg
+            v-if="loading"
+            class="w-4 h-4 animate-spin"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              class="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              stroke-width="4"
+            />
+            <path
+              class="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            />
           </svg>
           <span>{{ loading ? 'Saving...' : 'Save Theme' }}</span>
         </button>

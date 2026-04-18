@@ -530,15 +530,29 @@ const hoveredItem = computed(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="ping-orbit-container" :class="{ 'ping-orbit--fullscreen': isFullscreen, 'ping-orbit--seamless': seamless }">
-    <div v-if="!seamless" class="orbit-header">
-      <h3 class="orbit-title">{{ isDeltaMode ? 'NEARBY PLAYERS' : 'PLAYER PROXIMITY' }}</h3>
+  <div
+    ref="containerRef"
+    class="ping-orbit-container"
+    :class="{ 'ping-orbit--fullscreen': isFullscreen, 'ping-orbit--seamless': seamless }"
+  >
+    <div
+      v-if="!seamless"
+      class="orbit-header"
+    >
+      <h3 class="orbit-title">
+        {{ isDeltaMode ? 'NEARBY PLAYERS' : 'PLAYER PROXIMITY' }}
+      </h3>
       <p class="orbit-subtitle">
         <template v-if="isDeltaMode">
           Players with similar ping to {{ serverName || serverGuid.substring(0, 8) }}
-          <span v-if="focusPlayerPing !== null" class="orbit-focus-ping">({{ Math.round(focusPlayerPing) }}ms)</span>
+          <span
+            v-if="focusPlayerPing !== null"
+            class="orbit-focus-ping"
+          >({{ Math.round(focusPlayerPing) }}ms)</span>
         </template>
-        <template v-else>Players by ping distance to server</template>
+        <template v-else>
+          Players by ping distance to server
+        </template>
       </p>
     </div>
 
@@ -556,7 +570,7 @@ const hoveredItem = computed(() => {
             max="100"
             step="5"
             class="control-range"
-          />
+          >
           <input
             v-else
             v-model.number="maxPing"
@@ -565,7 +579,7 @@ const hoveredItem = computed(() => {
             max="300"
             step="25"
             class="control-range"
-          />
+          >
           <span class="control-value">{{ isDeltaMode ? `±${pingDelta}ms` : `${maxPing}ms` }}</span>
         </label>
       </div>
@@ -576,26 +590,62 @@ const hoveredItem = computed(() => {
             type="text"
             :placeholder="isDeltaMode ? 'Search players (comma-separated)...' : 'Search players (comma-separated)...'"
             class="search-input"
-          />
-          <button v-if="searchQuery" class="search-clear" @click="searchQuery = ''">&times;</button>
+          >
+          <button
+            v-if="searchQuery"
+            class="search-clear"
+            @click="searchQuery = ''"
+          >
+            &times;
+          </button>
         </div>
       </div>
-      <div v-if="!isDeltaMode" class="control-row control-row--between">
+      <div
+        v-if="!isDeltaMode"
+        class="control-row control-row--between"
+      >
         <label class="toggle-label">
-          <input v-model="showAll" type="checkbox" class="toggle-checkbox" />
+          <input
+            v-model="showAll"
+            type="checkbox"
+            class="toggle-checkbox"
+          >
           <span>Show all ({{ totalCount }})</span>
         </label>
         <div class="control-actions">
-          <button class="zoom-reset-btn" title="Reset zoom" @click="resetZoom">Reset zoom</button>
-          <button class="zoom-reset-btn" :title="isFullscreen ? 'Exit fullscreen (ESC)' : 'Fullscreen'" @click="toggleFullscreen">
+          <button
+            class="zoom-reset-btn"
+            title="Reset zoom"
+            @click="resetZoom"
+          >
+            Reset zoom
+          </button>
+          <button
+            class="zoom-reset-btn"
+            :title="isFullscreen ? 'Exit fullscreen (ESC)' : 'Fullscreen'"
+            @click="toggleFullscreen"
+          >
             {{ isFullscreen ? 'Exit' : 'Fullscreen' }}
           </button>
         </div>
       </div>
-      <div v-else class="control-row control-row--end">
+      <div
+        v-else
+        class="control-row control-row--end"
+      >
         <div class="control-actions">
-          <button class="zoom-reset-btn" title="Reset zoom" @click="resetZoom">Reset zoom</button>
-          <button class="zoom-reset-btn" :title="isFullscreen ? 'Exit fullscreen (ESC)' : 'Fullscreen'" @click="toggleFullscreen">
+          <button
+            class="zoom-reset-btn"
+            title="Reset zoom"
+            @click="resetZoom"
+          >
+            Reset zoom
+          </button>
+          <button
+            class="zoom-reset-btn"
+            :title="isFullscreen ? 'Exit fullscreen (ESC)' : 'Fullscreen'"
+            @click="toggleFullscreen"
+          >
             {{ isFullscreen ? 'Exit' : 'Fullscreen' }}
           </button>
         </div>
@@ -603,7 +653,10 @@ const hoveredItem = computed(() => {
     </div>
 
     <!-- Band summary (clickable for filtering in server mode) -->
-    <div v-if="!isDeltaMode" class="band-summary">
+    <div
+      v-if="!isDeltaMode"
+      class="band-summary"
+    >
       <div
         v-for="(band, idx) in bandCounts"
         :key="band.label"
@@ -612,29 +665,51 @@ const hoveredItem = computed(() => {
         :style="{ borderColor: band.color, color: band.color, background: activeBand === idx ? band.bg : undefined }"
         @click="toggleBand(idx)"
       >
-        <span class="band-dot" :style="{ background: band.color }"></span>
+        <span
+          class="band-dot"
+          :style="{ background: band.color }"
+        />
         {{ band.label }}
         <span class="band-count">{{ showAll || activeBand !== null ? band.count : `${band.sampled}/${band.count}` }}</span>
       </div>
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="orbit-loading">
-      <div class="loading-spinner"></div>
+    <div
+      v-if="loading"
+      class="orbit-loading"
+    >
+      <div class="loading-spinner" />
       <span>Scanning proximity...</span>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="orbit-error">{{ error }}</div>
+    <div
+      v-else-if="error"
+      class="orbit-error"
+    >
+      {{ error }}
+    </div>
 
     <!-- Empty -->
-    <div v-else-if="sampledData.length === 0 && !loading" class="orbit-empty">
-      <p v-if="allData.length === 0">No ping proximity data available yet.</p>
-      <p v-else-if="isDeltaMode && focusPlayerPing === null">No ping data found for {{ playerName }}.</p>
+    <div
+      v-else-if="sampledData.length === 0 && !loading"
+      class="orbit-empty"
+    >
+      <p v-if="allData.length === 0">
+        No ping proximity data available yet.
+      </p>
+      <p v-else-if="isDeltaMode && focusPlayerPing === null">
+        No ping data found for {{ playerName }}.
+      </p>
       <p v-else>
         No players
-        <template v-if="isDeltaMode">within ±{{ pingDelta }}ms</template>
-        <template v-else>within {{ maxPing }}ms</template>
+        <template v-if="isDeltaMode">
+          within ±{{ pingDelta }}ms
+        </template>
+        <template v-else>
+          within {{ maxPing }}ms
+        </template>
         {{ searchQuery ? ` matching "${searchQuery}"` : '' }}.
       </p>
       <p class="orbit-empty-hint">
@@ -643,28 +718,45 @@ const hoveredItem = computed(() => {
     </div>
 
     <!-- Visualization -->
-    <div v-show="sampledData.length > 0 && !loading" class="orbit-viz">
+    <div
+      v-show="sampledData.length > 0 && !loading"
+      class="orbit-viz"
+    >
       <svg
         ref="svgElement"
         :width="width"
         :height="height"
         :viewBox="`0 0 ${width} ${height}`"
-      ></svg>
+      />
 
       <!-- Hover tooltip -->
-      <div v-if="hoveredItem" class="orbit-tooltip">
-        <div class="tooltip-name" :style="{ color: hoveredItem.band.color }">{{ hoveredItem.name }}</div>
+      <div
+        v-if="hoveredItem"
+        class="orbit-tooltip"
+      >
+        <div
+          class="tooltip-name"
+          :style="{ color: hoveredItem.band.color }"
+        >
+          {{ hoveredItem.name }}
+        </div>
         <div class="tooltip-row">
           <span class="tooltip-label">Ping</span>
           <span class="tooltip-value">{{ Math.round(hoveredItem.ping) }}ms</span>
         </div>
-        <div v-if="hoveredItem.delta !== null" class="tooltip-row">
+        <div
+          v-if="hoveredItem.delta !== null"
+          class="tooltip-row"
+        >
           <span class="tooltip-label">Delta</span>
           <span class="tooltip-value">±{{ Math.round(hoveredItem.delta) }}ms</span>
         </div>
         <div class="tooltip-row">
           <span class="tooltip-label">Band</span>
-          <span class="tooltip-value" :style="{ color: hoveredItem.band.color }">{{ hoveredItem.band.label }}</span>
+          <span
+            class="tooltip-value"
+            :style="{ color: hoveredItem.band.color }"
+          >{{ hoveredItem.band.label }}</span>
         </div>
         <div class="tooltip-row">
           <span class="tooltip-label">Sessions</span>
@@ -674,15 +766,30 @@ const hoveredItem = computed(() => {
     </div>
 
     <!-- Footer -->
-    <div v-if="sampledData.length > 0 && !loading" class="orbit-footer">
+    <div
+      v-if="sampledData.length > 0 && !loading"
+      class="orbit-footer"
+    >
       {{ sampledData.length }}
-      <template v-if="!isDeltaMode"> of {{ totalCount }}</template>
+      <template v-if="!isDeltaMode">
+        of {{ totalCount }}
+      </template>
       player{{ sampledData.length !== 1 ? 's' : '' }}
-      <template v-if="isDeltaMode">within ±{{ pingDelta }}ms</template>
-      <template v-else>within {{ maxPing }}ms</template>
-      <template v-if="!isDeltaMode && !showAll && activeBand === null"> · top {{ SAMPLE_PER_BAND }}/band</template>
-      <template v-if="activeBand !== null"> · {{ BANDS[activeBand].label }} only</template>
-      <template v-if="zoomTransform.k !== 1"> · {{ Math.round(zoomTransform.k * 100) }}%</template>
+      <template v-if="isDeltaMode">
+        within ±{{ pingDelta }}ms
+      </template>
+      <template v-else>
+        within {{ maxPing }}ms
+      </template>
+      <template v-if="!isDeltaMode && !showAll && activeBand === null">
+        · top {{ SAMPLE_PER_BAND }}/band
+      </template>
+      <template v-if="activeBand !== null">
+        · {{ BANDS[activeBand].label }} only
+      </template>
+      <template v-if="zoomTransform.k !== 1">
+        · {{ Math.round(zoomTransform.k * 100) }}%
+      </template>
     </div>
   </div>
 </template>

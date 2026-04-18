@@ -3,9 +3,14 @@
     <!-- Header with Search -->
     <div class="rankings-header">
       <div class="rankings-header-left">
-        <h3 class="rankings-title">Top Players on This Map</h3>
-        <div v-if="isRefreshing" class="rankings-spinner">
-          <div class="spinner"></div>
+        <h3 class="rankings-title">
+          Top Players on This Map
+        </h3>
+        <div
+          v-if="isRefreshing"
+          class="rankings-spinner"
+        >
+          <div class="spinner" />
         </div>
       </div>
 
@@ -18,7 +23,7 @@
           placeholder="Search players..."
           class="search-input"
           @input="handleSearchInput"
-        />
+        >
       </div>
     </div>
 
@@ -27,9 +32,9 @@
       <button
         v-for="tab in tabs"
         :key="tab.id"
-        @click="selectTab(tab.id)"
         :disabled="isRefreshing"
         :class="['rankings-tab', activeTab === tab.id && 'rankings-tab--active']"
+        @click="selectTab(tab.id)"
       >
         {{ tab.label }}
       </button>

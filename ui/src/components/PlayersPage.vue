@@ -195,7 +195,10 @@ onMounted(() => {
 <template>
   <div class="operatives">
     <!-- Skeleton Loading State -->
-    <div v-if="loading" class="space-y-3">
+    <div
+      v-if="loading"
+      class="space-y-3"
+    >
       <div class="operatives__bar">
         <div class="operatives__bar-skeleton" />
         <div class="operatives__bar-skeleton operatives__bar-skeleton--sm" />
@@ -222,14 +225,35 @@ onMounted(() => {
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="operatives__alert" role="alert">
-      <div class="operatives__alert-corner" aria-hidden="true" />
+    <div
+      v-else-if="error"
+      class="operatives__alert"
+      role="alert"
+    >
+      <div
+        class="operatives__alert-corner"
+        aria-hidden="true"
+      />
       <div class="operatives__alert-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
       </div>
       <div>
-        <div class="operatives__alert-title">SIGNAL DEGRADED</div>
-        <div class="operatives__alert-msg">{{ error }}</div>
+        <div class="operatives__alert-title">
+          SIGNAL DEGRADED
+        </div>
+        <div class="operatives__alert-msg">
+          {{ error }}
+        </div>
       </div>
     </div>
 
@@ -239,15 +263,23 @@ onMounted(() => {
       class="operatives__welcome"
     >
       <div class="operatives__welcome-frame">
-        <div class="operatives__welcome-scan" aria-hidden="true" />
-        <div class="operatives__welcome-ascii" aria-hidden="true">
+        <div
+          class="operatives__welcome-scan"
+          aria-hidden="true"
+        />
+        <div
+          class="operatives__welcome-ascii"
+          aria-hidden="true"
+        >
           <span>╭──────────╮</span>
           <span>│ ▓▓▒▒░░░░ │</span>
           <span>│ OPERATIVE │</span>
           <span>│ ░░░▒▒▓▓ │</span>
           <span>╰──────────╯</span>
         </div>
-        <div class="operatives__welcome-title">STANDING BY</div>
+        <div class="operatives__welcome-title">
+          STANDING BY
+        </div>
         <p class="operatives__welcome-sub">
           Enter a codename above to query the operative archive.
           <br>Partial matches are welcome — spelling is not.
@@ -265,25 +297,40 @@ onMounted(() => {
       v-else-if="hasSearched && players.length === 0"
       class="operatives__empty"
     >
-      <div class="operatives__empty-code">404</div>
-      <p class="operatives__empty-title">NO MATCHING OPERATIVES</p>
+      <div class="operatives__empty-code">
+        404
+      </div>
+      <p class="operatives__empty-title">
+        NO MATCHING OPERATIVES
+      </p>
       <p class="operatives__empty-msg">
         Archive returned zero records for
         <span class="operatives__empty-query">"{{ props.searchQuery }}"</span>.
       </p>
-      <p class="operatives__empty-hint">Try a shorter fragment or a different handle.</p>
+      <p class="operatives__empty-hint">
+        Try a shorter fragment or a different handle.
+      </p>
     </div>
 
     <!-- Results Section -->
-    <div v-else-if="players.length > 0" class="operatives__results">
+    <div
+      v-else-if="players.length > 0"
+      class="operatives__results"
+    >
       <!-- Results Header -->
       <div class="operatives__bar">
         <div class="operatives__bar-lead">
           <span class="operatives__bar-prompt">&gt;</span>
           <span class="operatives__bar-count">{{ totalItems.toLocaleString() }}</span>
           <span class="operatives__bar-label">operative{{ totalItems !== 1 ? 's' : '' }} indexed</span>
-          <span v-if="props.searchQuery" class="operatives__bar-sep">·</span>
-          <span v-if="props.searchQuery" class="operatives__bar-query">
+          <span
+            v-if="props.searchQuery"
+            class="operatives__bar-sep"
+          >·</span>
+          <span
+            v-if="props.searchQuery"
+            class="operatives__bar-query"
+          >
             match "<span>{{ props.searchQuery }}</span>"
           </span>
         </div>
@@ -325,11 +372,21 @@ onMounted(() => {
           @keydown.space.prevent="navigateToPlayer(player.playerName)"
         >
           <!-- Corner marks -->
-          <span class="dossier__corner dossier__corner--tl" aria-hidden="true" />
-          <span class="dossier__corner dossier__corner--br" aria-hidden="true" />
+          <span
+            class="dossier__corner dossier__corner--tl"
+            aria-hidden="true"
+          />
+          <span
+            class="dossier__corner dossier__corner--br"
+            aria-hidden="true"
+          />
 
           <!-- Live ribbon -->
-          <div v-if="player.isActive" class="dossier__ribbon" aria-label="Live now">
+          <div
+            v-if="player.isActive"
+            class="dossier__ribbon"
+            aria-label="Live now"
+          >
             <span class="dossier__ribbon-dot" />
             <span>LIVE</span>
           </div>
@@ -346,7 +403,10 @@ onMounted(() => {
                 v-html="highlightMatch(player.playerName)"
               />
               <div class="dossier__last">
-                <span class="dossier__last-dot" :class="{ 'dossier__last-dot--live': player.isActive }" />
+                <span
+                  class="dossier__last-dot"
+                  :class="{ 'dossier__last-dot--live': player.isActive }"
+                />
                 <span v-if="player.isActive">In combat</span>
                 <span v-else>{{ formatLastSeen(player.lastSeen) }}</span>
               </div>
@@ -355,29 +415,57 @@ onMounted(() => {
 
           <!-- Stats Strip -->
           <dl class="dossier__stats">
-            <div class="dossier__stat" :title="'Total playtime'">
+            <div
+              class="dossier__stat"
+              :title="'Total playtime'"
+            >
               <dt>PLAYTIME</dt>
               <dd>{{ formatPlayTime(player.totalPlayTimeMinutes) }}</dd>
             </div>
-            <div v-if="player.totalKills !== undefined && player.totalKills !== null" class="dossier__stat" title="All-time K/D ratio">
+            <div
+              v-if="player.totalKills !== undefined && player.totalKills !== null"
+              class="dossier__stat"
+              title="All-time K/D ratio"
+            >
               <dt>K/D</dt>
               <dd :class="kdrColorClass(player.totalKills, player.totalDeaths ?? 0)">
                 {{ calculateKDR(player.totalKills, player.totalDeaths ?? 0) }}
               </dd>
             </div>
-            <div v-if="player.totalRounds" class="dossier__stat" title="Total rounds played">
+            <div
+              v-if="player.totalRounds"
+              class="dossier__stat"
+              title="Total rounds played"
+            >
               <dt>ROUNDS</dt>
               <dd>{{ player.totalRounds.toLocaleString() }}</dd>
             </div>
-            <div v-if="player.recentActivity?.roundsThisWeek" class="dossier__stat" title="Rounds played this week">
+            <div
+              v-if="player.recentActivity?.roundsThisWeek"
+              class="dossier__stat"
+              title="Rounds played this week"
+            >
               <dt>WEEK</dt>
-              <dd class="dossier__stat-accent">{{ player.recentActivity.roundsThisWeek }}</dd>
+              <dd class="dossier__stat-accent">
+                {{ player.recentActivity.roundsThisWeek }}
+              </dd>
             </div>
           </dl>
 
           <!-- Favorite server -->
-          <div v-if="player.favoriteServer" class="dossier__fav" :title="`Most played: ${player.favoriteServer}`">
-            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <div
+            v-if="player.favoriteServer"
+            class="dossier__fav"
+            :title="`Most played: ${player.favoriteServer}`"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+            ><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
             <span class="dossier__fav-label">FAV</span>
             <span class="dossier__fav-name">{{ player.favoriteServer }}</span>
           </div>
@@ -388,13 +476,19 @@ onMounted(() => {
             class="dossier__live"
           >
             <div class="dossier__live-head">
-              <span class="dossier__live-scan" aria-hidden="true" />
+              <span
+                class="dossier__live-scan"
+                aria-hidden="true"
+              />
               <span class="dossier__live-server">{{ player.currentServer.serverName }}</span>
             </div>
             <div class="dossier__live-row">
               <span class="dossier__live-map">{{ player.currentServer.mapName }}</span>
               <span class="dossier__live-sep">·</span>
-              <span class="dossier__live-kd" :class="kdrColorClass(player.currentServer.sessionKills, player.currentServer.sessionDeaths)">
+              <span
+                class="dossier__live-kd"
+                :class="kdrColorClass(player.currentServer.sessionKills, player.currentServer.sessionDeaths)"
+              >
                 {{ calculateKDR(player.currentServer.sessionKills, player.currentServer.sessionDeaths) }} K/D
               </span>
               <span class="dossier__live-sep">·</span>
@@ -404,7 +498,10 @@ onMounted(() => {
           </div>
 
           <!-- Open arrow -->
-          <div class="dossier__open" aria-hidden="true">
+          <div
+            class="dossier__open"
+            aria-hidden="true"
+          >
             OPEN <span class="dossier__open-arrow">→</span>
           </div>
         </article>
@@ -421,13 +518,17 @@ onMounted(() => {
           class="operatives__page"
           :disabled="currentPage === 1"
           @click="goToPage(1)"
-        >⏮ FIRST</button>
+        >
+          ⏮ FIRST
+        </button>
         <button
           type="button"
           class="operatives__page"
           :disabled="currentPage === 1"
           @click="goToPage(currentPage - 1)"
-        >◂ PREV</button>
+        >
+          ◂ PREV
+        </button>
 
         <div class="operatives__page-numbers">
           <button
@@ -437,7 +538,9 @@ onMounted(() => {
             class="operatives__page-num"
             :class="{ 'operatives__page-num--active': page === currentPage }"
             @click="goToPage(page)"
-          >{{ String(page).padStart(2, '0') }}</button>
+          >
+            {{ String(page).padStart(2, '0') }}
+          </button>
         </div>
 
         <button
@@ -445,13 +548,17 @@ onMounted(() => {
           class="operatives__page"
           :disabled="currentPage === totalPages"
           @click="goToPage(currentPage + 1)"
-        >NEXT ▸</button>
+        >
+          NEXT ▸
+        </button>
         <button
           type="button"
           class="operatives__page"
           :disabled="currentPage === totalPages"
           @click="goToPage(totalPages)"
-        >LAST ⏭</button>
+        >
+          LAST ⏭
+        </button>
 
         <div class="operatives__page-status">
           PAGE {{ String(currentPage).padStart(2, '0') }} / {{ String(totalPages).padStart(2, '0') }}

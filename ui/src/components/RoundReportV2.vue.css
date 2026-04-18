@@ -226,3 +226,45 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Highlight Reel Transitions ─────────────────────────────────────────── */
+.highlight-enter-active {
+  animation: highlight-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.highlight-leave-active {
+  animation: highlight-out 0.35s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+}
+
+.highlight-move {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes highlight-in {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+    filter: brightness(2.5) blur(4px);
+  }
+  40% {
+    opacity: 1;
+    filter: brightness(1.8) blur(0);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1) blur(0);
+  }
+}
+
+@keyframes highlight-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+    filter: brightness(0.5);
+  }
+}

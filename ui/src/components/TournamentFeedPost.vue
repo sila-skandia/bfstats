@@ -9,7 +9,10 @@
     <!-- Post header -->
     <div class="p-4 sm:p-6">
       <!-- Featured badge for first post -->
-      <div v-if="featured" class="flex items-center gap-2 mb-3">
+      <div
+        v-if="featured"
+        class="flex items-center gap-2 mb-3"
+      >
         <span
           class="px-2 py-1 text-xs font-semibold rounded-full"
           :style="{ backgroundColor: accentColor, color: getContrastText(accentColor) }"
@@ -28,7 +31,10 @@
       </h3>
 
       <!-- Meta info -->
-      <div class="flex flex-wrap items-center gap-2 text-xs mb-4" :style="{ color: textMutedColor }">
+      <div
+        class="flex flex-wrap items-center gap-2 text-xs mb-4"
+        :style="{ color: textMutedColor }"
+      >
         <span>{{ formatDate(post.publishAt || post.createdAt) }}</span>
       </div>
 

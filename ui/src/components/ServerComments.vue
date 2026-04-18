@@ -1,25 +1,40 @@
 <template>
   <div class="pc-card">
     <div class="pc-card-header">
-      <h3 class="pc-card-title">COMMENTS</h3>
-      <p class="pc-card-subtitle">COMMUNITY NOTES ON THIS SERVER</p>
+      <h3 class="pc-card-title">
+        COMMENTS
+      </h3>
+      <p class="pc-card-subtitle">
+        COMMUNITY NOTES ON THIS SERVER
+      </p>
     </div>
     <div class="pc-card-body">
-
       <!-- Comment list -->
-      <div v-if="loading" class="pc-center pc-py">
+      <div
+        v-if="loading"
+        class="pc-center pc-py"
+      >
         <div class="pc-spinner" />
       </div>
 
-      <div v-else-if="error" class="pc-error-text pc-py">
+      <div
+        v-else-if="error"
+        class="pc-error-text pc-py"
+      >
         FAILED TO LOAD COMMENTS.
       </div>
 
-      <div v-else-if="comments.length === 0" class="pc-muted-text pc-py">
+      <div
+        v-else-if="comments.length === 0"
+        class="pc-muted-text pc-py"
+      >
         NO COMMENTS YET. BE THE FIRST.
       </div>
 
-      <div v-else class="pc-comment-list">
+      <div
+        v-else
+        class="pc-comment-list"
+      >
         <div
           v-for="comment in comments"
           :key="comment.id"
@@ -33,33 +48,104 @@
               {{ comment.authorPlayerName }}
             </router-link>
             <div class="pc-comment-meta-right">
-              <span v-if="comment.updatedAt !== comment.createdAt" class="pc-edited-tag">EDITED</span>
+              <span
+                v-if="comment.updatedAt !== comment.createdAt"
+                class="pc-edited-tag"
+              >EDITED</span>
               <span class="pc-timestamp">{{ formatDate(comment.createdAt) }}</span>
               <template v-if="canEdit(comment)">
-                <button class="pc-btn pc-btn-ghost pc-btn-sm" @click="startEdit(comment)">EDIT</button>
-                <button class="pc-btn pc-btn-danger pc-btn-sm" @click="deleteComment(comment.id)">DEL</button>
+                <button
+                  class="pc-btn pc-btn-ghost pc-btn-sm"
+                  @click="startEdit(comment)"
+                >
+                  EDIT
+                </button>
+                <button
+                  class="pc-btn pc-btn-danger pc-btn-sm"
+                  @click="deleteComment(comment.id)"
+                >
+                  DEL
+                </button>
               </template>
             </div>
           </div>
 
           <!-- Inline edit form -->
-          <div v-if="editingId === comment.id" class="pc-edit-form">
+          <div
+            v-if="editingId === comment.id"
+            class="pc-edit-form"
+          >
             <div class="pc-editor-wrapper">
               <div class="pc-toolbar">
-                <button type="button" class="pc-tool" :class="{ active: editEditorTick && editEditor?.isActive('bold') }" @click="editEditor?.chain().focus().toggleBold().run()" title="Bold"><strong>B</strong></button>
-                <button type="button" class="pc-tool" :class="{ active: editEditorTick && editEditor?.isActive('italic') }" @click="editEditor?.chain().focus().toggleItalic().run()" title="Italic"><em>I</em></button>
-                <button type="button" class="pc-tool" :class="{ active: editEditorTick && editEditor?.isActive('underline') }" @click="editEditor?.chain().focus().toggleUnderline().run()" title="Underline"><u>U</u></button>
-                <button type="button" class="pc-tool" :class="{ active: editEditorTick && editEditor?.isActive('link') }" @click="toggleLink(editEditor)" title="Link">🔗</button>
-                <button type="button" class="pc-tool" @click="insertImage(editEditor)" title="Image">🖼</button>
+                <button
+                  type="button"
+                  class="pc-tool"
+                  :class="{ active: editEditorTick && editEditor?.isActive('bold') }"
+                  title="Bold"
+                  @click="editEditor?.chain().focus().toggleBold().run()"
+                >
+                  <strong>B</strong>
+                </button>
+                <button
+                  type="button"
+                  class="pc-tool"
+                  :class="{ active: editEditorTick && editEditor?.isActive('italic') }"
+                  title="Italic"
+                  @click="editEditor?.chain().focus().toggleItalic().run()"
+                >
+                  <em>I</em>
+                </button>
+                <button
+                  type="button"
+                  class="pc-tool"
+                  :class="{ active: editEditorTick && editEditor?.isActive('underline') }"
+                  title="Underline"
+                  @click="editEditor?.chain().focus().toggleUnderline().run()"
+                >
+                  <u>U</u>
+                </button>
+                <button
+                  type="button"
+                  class="pc-tool"
+                  :class="{ active: editEditorTick && editEditor?.isActive('link') }"
+                  title="Link"
+                  @click="toggleLink(editEditor)"
+                >
+                  🔗
+                </button>
+                <button
+                  type="button"
+                  class="pc-tool"
+                  title="Image"
+                  @click="insertImage(editEditor)"
+                >
+                  🖼
+                </button>
               </div>
-              <editor-content :editor="editEditor ?? undefined" class="pc-editor-content" />
+              <editor-content
+                :editor="editEditor ?? undefined"
+                class="pc-editor-content"
+              />
             </div>
             <div class="pc-form-footer">
               <span class="pc-hint">Markdown not used — use toolbar for formatting</span>
               <div class="pc-form-footer-right">
-                <span v-if="editError" class="pc-error-text">{{ editError }}</span>
-                <button class="pc-btn pc-btn-ghost pc-btn-sm" :disabled="editSaving" @click="cancelEdit">CANCEL</button>
-                <button class="pc-btn pc-btn-primary pc-btn-sm" :disabled="editSaving" @click="saveEdit(comment.id)">
+                <span
+                  v-if="editError"
+                  class="pc-error-text"
+                >{{ editError }}</span>
+                <button
+                  class="pc-btn pc-btn-ghost pc-btn-sm"
+                  :disabled="editSaving"
+                  @click="cancelEdit"
+                >
+                  CANCEL
+                </button>
+                <button
+                  class="pc-btn pc-btn-primary pc-btn-sm"
+                  :disabled="editSaving"
+                  @click="saveEdit(comment.id)"
+                >
                   {{ editSaving ? 'SAVING…' : 'SAVE' }}
                 </button>
               </div>
@@ -76,62 +162,154 @@
       </div>
 
       <!-- Pagination -->
-      <div v-if="totalPages > 1" class="pc-pagination">
-        <button class="pc-btn pc-btn-ghost pc-btn-sm" :disabled="currentPage <= 1 || loading" @click="goToPage(currentPage - 1)">&#8249;</button>
+      <div
+        v-if="totalPages > 1"
+        class="pc-pagination"
+      >
+        <button
+          class="pc-btn pc-btn-ghost pc-btn-sm"
+          :disabled="currentPage <= 1 || loading"
+          @click="goToPage(currentPage - 1)"
+        >
+          &#8249;
+        </button>
         <span class="pc-page-label">{{ currentPage }} / {{ totalPages }}</span>
-        <button class="pc-btn pc-btn-ghost pc-btn-sm" :disabled="currentPage >= totalPages || loading" @click="goToPage(currentPage + 1)">&#8250;</button>
+        <button
+          class="pc-btn pc-btn-ghost pc-btn-sm"
+          :disabled="currentPage >= totalPages || loading"
+          @click="goToPage(currentPage + 1)"
+        >
+          &#8250;
+        </button>
       </div>
 
       <!-- Input area -->
       <div class="pc-input-area">
-
         <!-- Not logged in -->
-        <div v-if="!isAuthenticated" class="pc-muted-text">
-          <button class="pc-link" @click="handleSignIn">SIGN IN</button>
+        <div
+          v-if="!isAuthenticated"
+          class="pc-muted-text"
+        >
+          <button
+            class="pc-link"
+            @click="handleSignIn"
+          >
+            SIGN IN
+          </button>
           <span class="ml-1">to leave a comment.</span>
         </div>
 
         <!-- Logged in but no linked player profiles -->
-        <div v-else-if="linkedProfiles.length === 0" class="pc-muted-text">
+        <div
+          v-else-if="linkedProfiles.length === 0"
+          class="pc-muted-text"
+        >
           Link a player profile on your
-          <router-link to="/dashboard" class="pc-link">DASHBOARD</router-link>
+          <router-link
+            to="/dashboard"
+            class="pc-link"
+          >
+            DASHBOARD
+          </router-link>
           to post comments.
         </div>
 
         <!-- Logged in with profiles -->
-        <form v-else @submit.prevent="submitComment" class="pc-form">
+        <form
+          v-else
+          class="pc-form"
+          @submit.prevent="submitComment"
+        >
           <!-- Profile selector -->
           <div class="pc-profile-row">
             <span class="pc-label">POST AS</span>
-            <select v-model="selectedProfile" class="pc-select" :disabled="submitting">
-              <option v-for="p in linkedProfiles" :key="p.id" :value="p.playerName">{{ p.playerName }}</option>
+            <select
+              v-model="selectedProfile"
+              class="pc-select"
+              :disabled="submitting"
+            >
+              <option
+                v-for="p in linkedProfiles"
+                :key="p.id"
+                :value="p.playerName"
+              >
+                {{ p.playerName }}
+              </option>
             </select>
           </div>
 
           <!-- Rich text editor -->
           <div class="pc-editor-wrapper">
             <div class="pc-toolbar">
-              <button type="button" class="pc-tool" :class="{ active: newEditor?.isActive('bold') }" @click="newEditor?.chain().focus().toggleBold().run()" title="Bold"><strong>B</strong></button>
-              <button type="button" class="pc-tool" :class="{ active: newEditor?.isActive('italic') }" @click="newEditor?.chain().focus().toggleItalic().run()" title="Italic"><em>I</em></button>
-              <button type="button" class="pc-tool" :class="{ active: newEditor?.isActive('underline') }" @click="newEditor?.chain().focus().toggleUnderline().run()" title="Underline"><u>U</u></button>
-              <button type="button" class="pc-tool" :class="{ active: newEditor?.isActive('link') }" @click="toggleLink(newEditor)" title="Link">🔗</button>
-              <button type="button" class="pc-tool" @click="insertImage(newEditor)" title="Image">🖼</button>
+              <button
+                type="button"
+                class="pc-tool"
+                :class="{ active: newEditor?.isActive('bold') }"
+                title="Bold"
+                @click="newEditor?.chain().focus().toggleBold().run()"
+              >
+                <strong>B</strong>
+              </button>
+              <button
+                type="button"
+                class="pc-tool"
+                :class="{ active: newEditor?.isActive('italic') }"
+                title="Italic"
+                @click="newEditor?.chain().focus().toggleItalic().run()"
+              >
+                <em>I</em>
+              </button>
+              <button
+                type="button"
+                class="pc-tool"
+                :class="{ active: newEditor?.isActive('underline') }"
+                title="Underline"
+                @click="newEditor?.chain().focus().toggleUnderline().run()"
+              >
+                <u>U</u>
+              </button>
+              <button
+                type="button"
+                class="pc-tool"
+                :class="{ active: newEditor?.isActive('link') }"
+                title="Link"
+                @click="toggleLink(newEditor)"
+              >
+                🔗
+              </button>
+              <button
+                type="button"
+                class="pc-tool"
+                title="Image"
+                @click="insertImage(newEditor)"
+              >
+                🖼
+              </button>
             </div>
-            <editor-content :editor="newEditor" class="pc-editor-content" />
+            <editor-content
+              :editor="newEditor"
+              class="pc-editor-content"
+            />
           </div>
 
           <!-- Footer row -->
           <div class="pc-form-footer">
             <span class="pc-hint">Bold · Italic · Underline · Links · Images</span>
             <div class="pc-form-footer-right">
-              <span v-if="submitError" class="pc-error-text">{{ submitError }}</span>
-              <button type="submit" class="pc-btn pc-btn-primary" :disabled="submitting || isEditorEmpty(newEditor)">
+              <span
+                v-if="submitError"
+                class="pc-error-text"
+              >{{ submitError }}</span>
+              <button
+                type="submit"
+                class="pc-btn pc-btn-primary"
+                :disabled="submitting || isEditorEmpty(newEditor)"
+              >
                 {{ submitting ? 'POSTING…' : 'POST' }}
               </button>
             </div>
           </div>
         </form>
-
       </div>
     </div>
   </div>

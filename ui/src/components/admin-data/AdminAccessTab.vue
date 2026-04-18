@@ -2,7 +2,9 @@
   <div class="portal-access-tab">
     <div class="portal-card portal-audit">
       <div class="portal-audit-head">
-        <h2 class="portal-audit-title">[ ACCESS ]</h2>
+        <h2 class="portal-audit-title">
+          [ ACCESS ]
+        </h2>
         <button
           type="button"
           class="portal-btn portal-btn--ghost portal-btn--sm"
@@ -12,8 +14,15 @@
           {{ loading ? 'loading…' : 'refresh' }}
         </button>
       </div>
-      <p class="portal-access-desc">Assign User or Support. Admin is fixed. Only admins can change roles.</p>
-      <div v-if="error" class="portal-cron-err">{{ error }}</div>
+      <p class="portal-access-desc">
+        Assign User or Support. Admin is fixed. Only admins can change roles.
+      </p>
+      <div
+        v-if="error"
+        class="portal-cron-err"
+      >
+        {{ error }}
+      </div>
       <div class="portal-audit-table-wrap">
         <table class="portal-audit-table">
           <thead>
@@ -24,8 +33,13 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="u in users" :key="u.userId">
-              <td class="portal-audit-mono">{{ u.email }}</td>
+            <tr
+              v-for="u in users"
+              :key="u.userId"
+            >
+              <td class="portal-audit-mono">
+                {{ u.email }}
+              </td>
               <td>
                 <select
                   :value="u.role"
@@ -33,26 +47,49 @@
                   class="portal-cron-select"
                   @change="onRoleChange(u.userId, ($event.target as HTMLSelectElement).value)"
                 >
-                  <option value="User">User</option>
-                  <option value="Support">Support</option>
-                  <option value="Admin" disabled>Admin (fixed)</option>
+                  <option value="User">
+                    User
+                  </option>
+                  <option value="Support">
+                    Support
+                  </option>
+                  <option
+                    value="Admin"
+                    disabled
+                  >
+                    Admin (fixed)
+                  </option>
                 </select>
               </td>
               <td>
-                <span v-if="u.role === 'Admin'" class="portal-access-fixed">—</span>
-                <span v-else-if="savingId === u.userId" class="portal-access-saving">saving…</span>
-                <span v-else-if="saveErrorId === u.userId" class="portal-access-err">{{ saveError }}</span>
+                <span
+                  v-if="u.role === 'Admin'"
+                  class="portal-access-fixed"
+                >—</span>
+                <span
+                  v-else-if="savingId === u.userId"
+                  class="portal-access-saving"
+                >saving…</span>
+                <span
+                  v-else-if="saveErrorId === u.userId"
+                  class="portal-access-err"
+                >{{ saveError }}</span>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div v-if="users.length === 0 && !loading" class="portal-empty">
+      <div
+        v-if="users.length === 0 && !loading"
+        class="portal-empty"
+      >
         <span class="portal-empty-dash">∅</span>
         <span class="portal-empty-title">No users</span>
         <span class="portal-empty-desc">Users appear after they sign in.</span>
       </div>
-      <div class="portal-audit-foot">Users who have signed in. Role takes effect on next login or token refresh.</div>
+      <div class="portal-audit-foot">
+        Users who have signed in. Role takes effect on next login or token refresh.
+      </div>
     </div>
   </div>
 </template>

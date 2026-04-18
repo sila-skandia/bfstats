@@ -20,7 +20,10 @@
       <div class="explorer-header-title-row">
         <div class="explorer-header-left">
           <div class="glitch-wrapper">
-            <h1 class="glitch-text" :data-text="modeTitle">
+            <h1
+              class="glitch-text"
+              :data-text="modeTitle"
+            >
               {{ modeTitle }}
             </h1>
           </div>
@@ -36,22 +39,22 @@
         <!-- Mode Toggle -->
         <div class="explorer-mode-toggle">
           <button
-            @click="emit('update:mode', 'servers')"
             :class="['explorer-mode-btn', mode === 'servers' && 'explorer-mode-btn--active']"
+            @click="emit('update:mode', 'servers')"
           >
             <span class="mode-icon">{::}</span>
             <span class="mode-label">Servers</span>
           </button>
           <button
-            @click="emit('update:mode', 'maps')"
             :class="['explorer-mode-btn', mode === 'maps' && 'explorer-mode-btn--active']"
+            @click="emit('update:mode', 'maps')"
           >
             <span class="mode-icon">[#]</span>
             <span class="mode-label">Maps</span>
           </button>
           <button
-            @click="emit('update:mode', 'players')"
             :class="['explorer-mode-btn', mode === 'players' && 'explorer-mode-btn--active']"
+            @click="emit('update:mode', 'players')"
           >
             <span class="mode-icon">&lt;@&gt;</span>
             <span class="mode-label">Players</span>
@@ -63,10 +66,10 @@
           <span class="explorer-search-icon">$</span>
           <input
             :value="search"
-            @input="emit('update:search', ($event.target as HTMLInputElement).value)"
             type="text"
             :placeholder="searchPlaceholder"
             class="explorer-search-input"
+            @input="emit('update:search', ($event.target as HTMLInputElement).value)"
           >
         </div>
       </div>
