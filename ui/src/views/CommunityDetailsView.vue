@@ -61,12 +61,13 @@ onMounted(() => {
       <div class="data-explorer">
         <div class="explorer-inner">
           <!-- Back Button -->
-          <router-link
-            to="/communities"
+          <button
+            type="button"
             class="back-button"
+            @click="router.back()"
           >
-            ← Back to Communities
-          </router-link>
+            ← Back
+          </button>
 
           <!-- Loading State -->
           <div

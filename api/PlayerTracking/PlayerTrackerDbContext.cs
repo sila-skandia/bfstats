@@ -854,6 +854,10 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerMapStats>()
             .HasIndex(pms => new { pms.ServerGuid, pms.MapName });
 
+        // Optimizes alias detection queries that filter by PlayerName and ServerGuid
+        modelBuilder.Entity<PlayerMapStats>()
+            .HasIndex(pms => new { pms.PlayerName, pms.ServerGuid, pms.Year, pms.Month });
+
         modelBuilder.Entity<PlayerMapStats>()
             .Property(pms => pms.UpdatedAt)
             .HasConversion(
