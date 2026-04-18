@@ -22,7 +22,6 @@ const PublicTournamentTeams = () => import('../views/PublicTournamentTeams.vue')
 const PublicTournamentMatches = () => import('../views/PublicTournamentMatches.vue')
 const PublicTournamentStats = () => import('../views/PublicTournamentStats.vue')
 const PublicTournamentFiles = () => import('../views/PublicTournamentFiles.vue')
-const DataExplorer = () => import('../views/DataExplorer.vue')
 const AdminDataManagement = () => import('../views/AdminDataManagement.vue')
 const CommunitiesView = () => import('../views/CommunitiesView.vue')
 const CommunityDetailsView = () => import('../views/CommunityDetailsView.vue')
@@ -212,81 +211,35 @@ const routes: RouteRecordRaw[] = [
     {
       path: '/explore',
       name: 'explore',
-      component: DataExplorer,
-      redirect: '/explore/servers',
-      meta: {
-        title: 'Data Explorer - Browse Servers & Maps | BF Stats',
-        description: 'Explore Battlefield 1942, FH2, and Battlefield Vietnam servers and maps. View win statistics, activity patterns, and detailed game analytics.'
-      },
-      children: [
-        {
-          path: 'servers',
-          name: 'explore-servers',
-          component: DataExplorer,
-          meta: {
-            title: 'Server Explorer - BF Stats',
-            description: 'Browse all Battlefield servers with detailed statistics, win rates, and activity patterns.'
-          }
-        },
-        {
-          path: 'servers/:serverGuid',
-          name: 'explore-server-detail',
-          component: DataExplorer,
-          props: true,
-          meta: {
-            title: (route: RouteLocationNormalized) => `Server ${route.params.serverGuid} - Data Explorer | BF Stats`,
-            description: 'Detailed server analytics including map rotation, win statistics, and activity heatmap.'
-          }
-        },
-        {
-          path: 'servers/:serverGuid/maps/:mapName',
-          name: 'explore-server-map-detail',
-          component: DataExplorer,
-          props: true,
-          meta: {
-            title: (route: RouteLocationNormalized) => `${decodeURIComponent(route.params.mapName as string)} on Server - Data Explorer | BF Stats`,
-            description: (route: RouteLocationNormalized) => `Detailed statistics for ${decodeURIComponent(route.params.mapName as string)} played on this server, including player leaderboards and win rates.`
-          }
-        },
-        {
-          path: 'maps',
-          name: 'explore-maps',
-          component: DataExplorer,
-          meta: {
-            title: 'Map Explorer - BF Stats',
-            description: 'Browse all Battlefield maps with server counts, play statistics, and win rates.'
-          }
-        },
-        {
-          path: 'maps/:mapName',
-          name: 'explore-map-detail',
-          component: DataExplorer,
-          props: true,
-          meta: {
-            title: (route: RouteLocationNormalized) => `${decodeURIComponent(route.params.mapName as string)} - Map Explorer | BF Stats`,
-            description: (route: RouteLocationNormalized) => `Detailed statistics for ${decodeURIComponent(route.params.mapName as string)} including servers playing this map and win rates.`
-          }
-        },
-        {
-          path: 'players',
-          name: 'explore-players',
-          component: DataExplorer,
-          meta: {
-            title: 'Player Explorer - BF Stats',
-            description: 'Search for Battlefield players and view their rankings across maps and servers.'
-          }
-        },
-        {
-          path: 'players/:playerName',
-          name: 'explore-player-detail',
-          component: DataExplorer,
-          props: true,
-          meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName as string} - Player Explorer | BF Stats`,
-            description: (route: RouteLocationNormalized) => `Map rankings and server statistics for ${route.params.playerName as string}. See where they rank #1 across servers.`
-          }
-        }
-      ]
+      redirect: '/servers'
+    },
+    {
+      path: '/explore/servers',
+      redirect: '/servers'
+    },
+    {
+      path: '/explore/servers/:serverGuid',
+      redirect: '/servers'
+    },
+    {
+      path: '/explore/servers/:serverGuid/maps/:mapName',
+      redirect: '/servers'
+    },
+    {
+      path: '/explore/maps',
+      redirect: '/servers'
+    },
+    {
+      path: '/explore/maps/:mapName',
+      redirect: '/servers'
+    },
+    {
+      path: '/explore/players',
+      redirect: '/players'
+    },
+    {
+      path: '/explore/players/:playerName',
+      redirect: to => `/players/${to.params.playerName}`
     },
     {
       path: '/rounds/:roundId/report',
