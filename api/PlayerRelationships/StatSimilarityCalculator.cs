@@ -2,6 +2,8 @@ using api.Analytics.Models;
 using api.Players.Models;
 using api.PlayerStats;
 using api.PlayerRelationships.Models;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace api.PlayerRelationships;
 
@@ -9,7 +11,9 @@ namespace api.PlayerRelationships;
 /// Calculates statistical similarity between two players.
 /// Compares K/D ratios, kill rates, map performance patterns, and server performance.
 /// </summary>
-public class StatSimilarityCalculator(ISqlitePlayerStatsService statsService)
+public class StatSimilarityCalculator(
+    ISqlitePlayerStatsService statsService,
+    ILogger<StatSimilarityCalculator> logger)
 {
     /// <summary>
     /// Calculate overall stat similarity between two players.
@@ -21,11 +25,17 @@ public class StatSimilarityCalculator(ISqlitePlayerStatsService statsService)
         string player2,
         int lookBackDays = 3650)  // 10 years of history for dormant accounts
     {
+        var sw = Stopwatch.StartNew();
+        
         var stats1 = await statsService.GetPlayerStatsAsync(player1, lookBackDays);
         var stats2 = await statsService.GetPlayerStatsAsync(player2, lookBackDays);
+        logger.LogInformation("Basic stats fetched in {ElapsedMs}ms for {Player1} and {Player2}", 
+            sw.ElapsedMilliseconds, player1, player2);
 
         if (stats1 == null || stats2 == null)
         {
+            logger.LogWarning("Insufficient stats data for comparison: {Player1} found={P1Found}, {Player2} found={P2Found}", 
+                player1, stats1 != null, player2, stats2 != null);
             // Not enough data
             return new StatSimilarityAnalysis(
                 Score: 0.0,
@@ -44,15 +54,21 @@ public class StatSimilarityCalculator(ISqlitePlayerStatsService statsService)
         var killRateDiff = CalculateNormalizedDifference(stats1.KillRate, stats2.KillRate, minThreshold: 0.1, maxThreshold: 2.0);
         var scorePerRoundDiff = CalculateNormalizedDifference(stats1.AvgScorePerRound, stats2.AvgScorePerRound, minThreshold: 100, maxThreshold: 1500);
 
+        sw.Restart();
         // Get map-specific stats (use Last30Days as default, will be filtered by lookBackDays in service)
         var mapStats1 = await statsService.GetPlayerMapStatsAsync(player1, TimePeriod.Last30Days);
         var mapStats2 = await statsService.GetPlayerMapStatsAsync(player2, TimePeriod.Last30Days);
         var mapSimilarity = CalculateMapPerformanceSimilarity(mapStats1, mapStats2);
+        logger.LogInformation("Map stats fetched and analyzed in {ElapsedMs}ms. Maps: {P1} for {Player1}, {P2} for {Player2}", 
+            sw.ElapsedMilliseconds, mapStats1.Count, player1, mapStats2.Count, player2);
 
+        sw.Restart();
         // Get server performance stats
         var serverStats1 = await statsService.GetPlayerServerInsightsAsync(player1, lookBackDays);
         var serverStats2 = await statsService.GetPlayerServerInsightsAsync(player2, lookBackDays);
         var serverSimilarity = CalculateServerPerformanceSimilarity(serverStats1, serverStats2);
+        logger.LogInformation("Server insights fetched and analyzed in {ElapsedMs}ms. Servers: {P1} for {Player1}, {P2} for {Player2}", 
+            sw.ElapsedMilliseconds, serverStats1.Count, player1, serverStats2.Count, player2);
 
         // Calculate overall score: weighted average
         // K/D similarity is most important for identifying alts
