@@ -512,7 +512,7 @@ const gameLabel = computed(() => {
   }
 });
 
-// Theme Logic - classes for neon text utilities (defined in DataExplorer.vue.css)
+// Theme Logic - classes for neon text utilities (defined in ExplorerTheme.css)
 const themeColorClass = computed(() => {
   const type = selectedSliceType.value;
   if (type.includes('Kills')) return 'text-neon-red';

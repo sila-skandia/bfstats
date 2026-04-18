@@ -396,7 +396,12 @@ const hourRangeLabel = computed(() =>
   `${hourStart.value.toString().padStart(2, '0')}:00–${hourEnd.value.toString().padStart(2, '0')}:59 UTC`
 )
 
-const backLink = computed(() => `/explore/servers/${serverGuid.value}`)
+const backLink = computed(() => {
+  if (serverName.value) {
+    return `/servers/${encodeURIComponent(serverName.value)}`;
+  }
+  return '/servers';
+});
 
 // --- Colors ---
 const MAP_COLORS = [

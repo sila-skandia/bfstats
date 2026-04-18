@@ -43,12 +43,13 @@ const achievementGroupsLoading = ref(false);
 const achievementGroupsError = ref<string | null>(null);
 
 // V2 Tab Navigation
-const activeTab = ref<'overview' | 'rankings' | 'network' | 'awards'>('overview');
+const activeTab = ref<'overview' | 'rankings' | 'network' | 'awards' | 'deep-dive'>('overview');
 const tabs = [
   { id: 'overview' as const, label: 'OVERVIEW' },
   { id: 'rankings' as const, label: 'RANKINGS' },
   { id: 'network' as const, label: 'NETWORK' },
   { id: 'awards' as const, label: 'AWARDS' },
+  { id: 'deep-dive' as const, label: 'DEEP DIVE' },
 ];
 
 // State for server map stats view
@@ -348,6 +349,17 @@ const openPlayerServerMapDetail = (mapName: string) => {
       serverGuid: selectedServerGuid.value,
       mapName: mapName
     };
+  }
+};
+
+// Function to open server detail from data explorer breakdown
+const handleNavigateToServer = (serverGuid: string) => {
+  const server = unifiedServerList.value.find(s => s.serverGuid === serverGuid);
+  if (server) {
+    router.push({
+      name: 'server-details',
+      params: { serverName: server.serverName }
+    });
   }
 };
 
@@ -1231,7 +1243,7 @@ onUnmounted(() => {
                   r="2"
                 /><path d="m6.5 6.5 4 4" /><path d="m17.5 6.5-4 4" /><path d="m6.5 17.5 4-4" /><path d="m17.5 17.5-4-4" /></svg>
                 <svg
-                  v-else
+                  v-else-if="tab.id === 'awards'"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -1244,6 +1256,16 @@ onUnmounted(() => {
                   cy="8"
                   r="6"
                 /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg>
+                <svg
+                  v-else-if="tab.id === 'deep-dive'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><circle cx="12" cy="12" r="10" /><path d="m16 12-4 4-4-4" /><path d="M12 8v8" /></svg>
                 <span>{{ tab.label }}</span>
                 <span
                   class="hero-tab-underline"
@@ -1897,7 +1919,7 @@ onUnmounted(() => {
                 </div>
 
                 <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                  <!-- Col 1: Breakdown, All Server Ranks & Map Preference -->
+                  <!-- Col 1: Breakdown & All Server Ranks -->
                   <div class="xl:col-span-5 space-y-6">
                     <!-- Detailed Breakdown -->
                     <div class="explorer-card">
@@ -1905,10 +1927,13 @@ onUnmounted(() => {
                         :player-name="playerName"
                         :game="playerPanelGame"
                         @navigate-to-map="openMapDetail"
+                        @navigate-to-server="handleNavigateToServer"
                       />
                     </div>
+                  </div>
 
-                    <!-- Servers List (paged) -->
+                  <!-- Col 2: Servers List (paged) -->
+                  <div class="xl:col-span-7 space-y-6">
                     <div class="explorer-card">
                       <div class="explorer-card-header flex items-center justify-between">
                         <div>
@@ -1996,8 +2021,82 @@ onUnmounted(() => {
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
 
-                    <!-- Map Preference -->
+              <!-- DEEP DIVE TAB -->
+              <div
+                v-if="activeTab === 'deep-dive'"
+                class="space-y-6"
+              >
+                <!-- Deep Dive Banner -->
+                <div class="combat-banner">
+                  <div class="combat-banner-eyebrow">
+                    <span
+                      class="combat-banner-dot"
+                      aria-hidden="true"
+                    />
+                    ADVANCED ANALYTICS //
+                    <span class="text-neon-cyan">SECTOR PERFORMANCE</span>
+                    deep dive into map specializations
+                  </div>
+                  <div class="combat-banner-grid">
+                    <div class="combat-banner-stat">
+                      <div class="combat-banner-value text-neon-cyan">
+                        {{ rankingsSummary?.best.totalRankedPlayers?.toLocaleString?.() || '—' }}
+                      </div>
+                      <div class="combat-banner-label">
+                        Global Competitors
+                      </div>
+                    </div>
+                    <div class="combat-banner-stat">
+                      <div class="combat-banner-value text-neon-gold">
+                        {{ rankingsSummary?.numOnes || 0 }}
+                      </div>
+                      <div class="combat-banner-label">
+                        #1 Rank Placements
+                      </div>
+                    </div>
+                    <div class="combat-banner-stat">
+                      <div class="combat-banner-value text-neon-green">
+                        {{ rankingsSummary?.numTop10 || 0 }}
+                      </div>
+                      <div class="combat-banner-label">
+                        Top 10 Finishes
+                      </div>
+                    </div>
+                    <div class="combat-banner-stat">
+                      <div class="combat-banner-value text-neon-pink">
+                        {{ rankingsSummary?.totalRanked || 0 }}
+                      </div>
+                      <div class="combat-banner-label">
+                        Theaters Active
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Section 01 -->
+                <div class="section-divider">
+                  <span class="section-num">01</span>
+                  <div class="section-head">
+                    <div class="section-title">
+                      Sector Intelligence
+                    </div>
+                    <div class="section-sub">
+                      Global map standings and preference analysis
+                    </div>
+                  </div>
+                  <span
+                    class="section-line"
+                    aria-hidden="true"
+                  />
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                  <!-- Col 1: Map Preference -->
+                  <div class="xl:col-span-5 space-y-6">
                     <div class="explorer-card">
                       <div class="explorer-card-header">
                         <h3 class="explorer-card-title">
@@ -2524,7 +2623,7 @@ onUnmounted(() => {
 </template>
 
 <style src="./portal-layout.css"></style>
-<style scoped src="./DataExplorer.vue.css"></style>
+<style scoped src="./ExplorerTheme.css"></style>
 
 <style scoped>
 /* ============ V2 WAR-ROOM PALETTE OVERRIDE ============
@@ -2534,7 +2633,7 @@ onUnmounted(() => {
 
    The variable override sits at .pd-v2 (root) AND on the
    .data-explorer.pd-v2-explorer wrapper with higher specificity
-   than DataExplorer.vue.css so child components inherit cyan.
+   than ExplorerTheme.css so child components inherit cyan.
 */
 .pd-v2 {
   --pd-cyan: #00e5ff;
