@@ -19,8 +19,18 @@
             class="text-slate-400 hover:text-slate-200 transition-colors"
             @click="$emit('close')"
           >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -29,8 +39,13 @@
       <!-- Content -->
       <div class="p-6 space-y-6 overflow-y-auto flex-1">
         <!-- Error Message -->
-        <div v-if="error" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-          <p class="text-red-400 text-sm">{{ error }}</p>
+        <div
+          v-if="error"
+          class="bg-red-500/10 border border-red-500/30 rounded-lg p-4"
+        >
+          <p class="text-red-400 text-sm">
+            {{ error }}
+          </p>
         </div>
 
         <!-- Post Title -->
@@ -64,12 +79,27 @@
           <div class="mt-3 flex items-center gap-2">
             <button
               type="button"
-              @click="showPreview = !showPreview"
               class="text-xs px-3 py-1.5 bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-slate-200 rounded transition-colors flex items-center gap-2"
+              @click="showPreview = !showPreview"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              <svg
+                class="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
               </svg>
               {{ showPreview ? 'Hide' : 'Show' }} Preview
             </button>
@@ -79,16 +109,24 @@
           </div>
 
           <!-- Markdown Preview -->
-          <div v-if="showPreview && formData.content.trim()" class="mt-4 bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 overflow-y-auto max-h-72">
+          <div
+            v-if="showPreview && formData.content.trim()"
+            class="mt-4 bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 overflow-y-auto max-h-72"
+          >
             <div class="prose prose-invert prose-sm max-w-none">
               <div
-                v-html="renderedContent"
                 class="text-slate-300 markdown-content"
+                v-html="renderedContent"
               />
             </div>
           </div>
-          <div v-else-if="showPreview" class="mt-4 bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 text-center">
-            <p class="text-slate-500 text-sm">Enter some content to see the preview</p>
+          <div
+            v-else-if="showPreview"
+            class="mt-4 bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 text-center"
+          >
+            <p class="text-slate-500 text-sm">
+              Enter some content to see the preview
+            </p>
           </div>
         </div>
 
@@ -104,8 +142,12 @@
               class="w-full px-4 py-3 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all"
               :disabled="loading"
             >
-              <option value="draft">Draft</option>
-              <option value="published">Published</option>
+              <option value="draft">
+                Draft
+              </option>
+              <option value="published">
+                Published
+              </option>
             </select>
             <p class="mt-2 text-xs text-slate-500">
               Draft posts are only visible to admins
@@ -134,20 +176,34 @@
       <div class="border-t border-slate-700/50 p-6 flex items-center justify-end gap-3 flex-shrink-0">
         <button
           class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition-colors"
-          @click="$emit('close')"
           :disabled="loading"
+          @click="$emit('close')"
         >
           Cancel
         </button>
         <button
           class="px-6 py-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
-          @click="submit"
           :disabled="loading || !isFormValid"
+          @click="submit"
         >
-          <svg v-if="!loading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          <svg
+            v-if="!loading"
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 4v16m8-8H4"
+            />
           </svg>
-          <div v-else class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          <div
+            v-else
+            class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
+          />
           <span>{{ loading ? 'Saving...' : editMode ? 'Update Post' : 'Create Post' }}</span>
         </button>
       </div>

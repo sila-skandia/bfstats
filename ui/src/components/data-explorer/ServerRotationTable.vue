@@ -3,10 +3,18 @@
     <table class="server-table">
       <thead>
         <tr>
-          <th class="col-server">Server</th>
-          <th class="col-status">Status</th>
-          <th class="col-rounds">Rounds</th>
-          <th class="col-win">Win Stats</th>
+          <th class="col-server">
+            Server
+          </th>
+          <th class="col-status">
+            Status
+          </th>
+          <th class="col-rounds">
+            Rounds
+          </th>
+          <th class="col-win">
+            Win Stats
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -23,13 +31,26 @@
             </div>
           </td>
           <td class="col-status">
-            <div :class="['status-dot', server.isOnline ? 'status-dot--online' : 'status-dot--offline']" :title="server.isOnline ? 'Online' : 'Offline'" />
+            <div
+              :class="['status-dot', server.isOnline ? 'status-dot--online' : 'status-dot--offline']"
+              :title="server.isOnline ? 'Online' : 'Offline'"
+            />
           </td>
-          <td class="col-rounds">{{ server.totalRoundsOnMap }}</td>
+          <td class="col-rounds">
+            {{ server.totalRoundsOnMap }}
+          </td>
           <td class="col-win">
             <div class="win-bar">
-              <div class="win-bar-team1" :style="{ width: `${server.winStats.team1WinPercentage}%` }" :title="`${server.winStats.team1Label}: ${server.winStats.team1WinPercentage}%`" />
-              <div class="win-bar-team2" :style="{ width: `${server.winStats.team2WinPercentage}%` }" :title="`${server.winStats.team2Label}: ${server.winStats.team2WinPercentage}%`" />
+              <div
+                class="win-bar-team1"
+                :style="{ width: `${server.winStats.team1WinPercentage}%` }"
+                :title="`${server.winStats.team1Label}: ${server.winStats.team1WinPercentage}%`"
+              />
+              <div
+                class="win-bar-team2"
+                :style="{ width: `${server.winStats.team2WinPercentage}%` }"
+                :title="`${server.winStats.team2Label}: ${server.winStats.team2WinPercentage}%`"
+              />
             </div>
           </td>
         </tr>

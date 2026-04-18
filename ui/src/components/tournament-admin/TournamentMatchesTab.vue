@@ -10,10 +10,15 @@
     />
 
     <!-- Add/Edit Match View -->
-    <div v-else-if="showForm" class="portal-card">
+    <div
+      v-else-if="showForm"
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ {{ editingMatch ? 'EDIT MATCH' : 'SCHEDULE MATCH' }} ]</h2>
+          <h2 class="portal-card-title">
+            [ {{ editingMatch ? 'EDIT MATCH' : 'SCHEDULE MATCH' }} ]
+          </h2>
           <p class="portal-card-subtitle">
             {{ editingMatch ? 'Update match details' : 'Schedule a new match in the tournament calendar' }}
           </p>
@@ -22,8 +27,18 @@
           class="portal-btn portal-btn--ghost"
           @click="closeForm"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
           Cancel
         </button>
@@ -31,13 +46,22 @@
 
       <div class="portal-card-body">
         <!-- Error Message -->
-        <div v-if="formError" class="portal-form-error">
+        <div
+          v-if="formError"
+          class="portal-form-error"
+        >
           {{ formError }}
         </div>
 
         <!-- No Teams Warning -->
-        <div v-if="tournament.teams.length < 2" class="portal-form-error" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3);">
-          <p style="color: #fbbf24;">You need at least 2 teams to schedule a match.</p>
+        <div
+          v-if="tournament.teams.length < 2"
+          class="portal-form-error"
+          style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3);"
+        >
+          <p style="color: #fbbf24;">
+            You need at least 2 teams to schedule a match.
+          </p>
         </div>
 
         <template v-else>
@@ -59,12 +83,20 @@
                 class="portal-form-input"
                 :disabled="formLoading || availableWeeksForForm.length === 0"
               >
-                <option :value="null">No Week (Unscheduled)</option>
-                <option v-for="week in availableWeeksForForm" :key="week" :value="week">
+                <option :value="null">
+                  No Week (Unscheduled)
+                </option>
+                <option
+                  v-for="week in availableWeeksForForm"
+                  :key="week"
+                  :value="week"
+                >
                   {{ week }}
                 </option>
               </select>
-              <p class="portal-form-hint">{{ availableWeeksForForm.length === 0 ? 'No week dates defined' : 'Optional: assign to a week' }}</p>
+              <p class="portal-form-hint">
+                {{ availableWeeksForForm.length === 0 ? 'No week dates defined' : 'Optional: assign to a week' }}
+              </p>
             </div>
           </div>
 
@@ -77,7 +109,12 @@
                 class="portal-form-input"
                 :disabled="formLoading"
               >
-                <option :value="null" disabled>Team 1...</option>
+                <option
+                  :value="null"
+                  disabled
+                >
+                  Team 1...
+                </option>
                 <option
                   v-for="team in tournament.teams"
                   :key="team.id"
@@ -92,7 +129,12 @@
                 class="portal-form-input"
                 :disabled="formLoading"
               >
-                <option :value="null" disabled>Team 2...</option>
+                <option
+                  :value="null"
+                  disabled
+                >
+                  Team 2...
+                </option>
                 <option
                   v-for="team in tournament.teams.filter(t => t.id !== formData.team1Id)"
                   :key="team.id"
@@ -108,7 +150,11 @@
           <div class="portal-form-section">
             <label class="portal-form-label portal-form-label--required">Maps</label>
             <div class="maps-list">
-              <div v-for="(_map, index) in formData.maps" :key="index" class="map-entry">
+              <div
+                v-for="(_map, index) in formData.maps"
+                :key="index"
+                class="map-entry"
+              >
                 <span class="map-number">{{ index + 1 }}.</span>
                 <input
                   v-model="formData.maps[index].name"
@@ -121,20 +167,30 @@
                   v-if="formData.maps.length > 1"
                   type="button"
                   class="portal-icon-btn portal-icon-btn--danger"
-                  @click="removeMap(index)"
                   :disabled="formLoading"
                   title="Remove map"
+                  @click="removeMap(index)"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
               <button
                 type="button"
                 class="portal-btn portal-btn--ghost portal-btn--sm"
-                @click="addMap"
                 :disabled="formLoading"
+                @click="addMap"
               >
                 + Add Map
               </button>
@@ -155,31 +211,56 @@
                 @focus="onServerSearchFocus"
                 @blur="onServerSearchBlur"
               >
-              <div v-if="formData.serverGuid" class="server-linked">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              <div
+                v-if="formData.serverGuid"
+                class="server-linked"
+              >
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M5 13l4 4L19 7"
+                  />
                 </svg>
                 Linked
               </div>
             </div>
             <!-- Server Suggestions -->
-            <div v-if="showServerDropdown && serverSuggestions.length > 0" class="server-suggestions">
+            <div
+              v-if="showServerDropdown && serverSuggestions.length > 0"
+              class="server-suggestions"
+            >
               <div
                 v-for="server in serverSuggestions"
                 :key="server.serverGuid"
                 class="server-suggestion"
                 @mousedown.prevent="selectServer(server)"
               >
-                <div class="server-name">{{ server.serverName }}</div>
-                <div class="server-ip">{{ server.serverIp }}:{{ server.serverPort }}</div>
+                <div class="server-name">
+                  {{ server.serverName }}
+                </div>
+                <div class="server-ip">
+                  {{ server.serverIp }}:{{ server.serverPort }}
+                </div>
               </div>
             </div>
-            <p class="portal-form-hint">{{ formData.serverGuid ? 'Server found and linked' : 'No server linked - name only will be saved' }}</p>
+            <p class="portal-form-hint">
+              {{ formData.serverGuid ? 'Server found and linked' : 'No server linked - name only will be saved' }}
+            </p>
           </div>
         </template>
 
         <!-- Form Actions -->
-        <div class="portal-form-footer" style="margin-top: 1.5rem">
+        <div
+          class="portal-form-footer"
+          style="margin-top: 1.5rem"
+        >
           <button
             class="portal-btn portal-btn--ghost"
             :disabled="formLoading"
@@ -192,7 +273,10 @@
             :disabled="formLoading || !isFormValid"
             @click="submitForm"
           >
-            <span v-if="formLoading" class="portal-btn-pulse">Saving...</span>
+            <span
+              v-if="formLoading"
+              class="portal-btn-pulse"
+            >Saving...</span>
             <span v-else>{{ editingMatch ? 'Update Match' : 'Schedule Match' }}</span>
           </button>
         </div>
@@ -200,44 +284,76 @@
     </div>
 
     <!-- Matches List View -->
-    <div v-else-if="!showResultsView" class="portal-card">
+    <div
+      v-else-if="!showResultsView"
+      class="portal-card"
+    >
       <div class="portal-card-header">
         <div>
-          <h2 class="portal-card-title">[ MATCHES ]</h2>
-          <p class="portal-card-subtitle">Schedule and track matches between teams</p>
+          <h2 class="portal-card-title">
+            [ MATCHES ]
+          </h2>
+          <p class="portal-card-subtitle">
+            Schedule and track matches between teams
+          </p>
         </div>
         <div class="header-actions">
           <button
             class="portal-btn portal-btn--ghost"
-            @click="openRecalculateModal"
             title="Refresh tournament rankings"
+            @click="openRecalculateModal"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
             </svg>
             Rankings
           </button>
           <button
             class="portal-btn portal-btn--primary"
-            @click="openAddForm"
             :disabled="tournament.teams.length < 2"
             :title="tournament.teams.length < 2 ? 'Create at least 2 teams first' : ''"
+            @click="openAddForm"
           >
             + Schedule Match
           </button>
         </div>
       </div>
 
-      <div class="portal-card-body" style="padding: 0">
+      <div
+        class="portal-card-body"
+        style="padding: 0"
+      >
         <!-- Matches Table -->
-        <div v-if="matchesByWeekGroups.length > 0" class="portal-table-wrap">
+        <div
+          v-if="matchesByWeekGroups.length > 0"
+          class="portal-table-wrap"
+        >
           <table class="portal-table matches-table">
             <tbody>
               <!-- Week groups with matches -->
-              <template v-for="weekGroup in matchesByWeekGroups" :key="weekGroup.week || 'no-week'">
+              <template
+                v-for="weekGroup in matchesByWeekGroups"
+                :key="weekGroup.week || 'no-week'"
+              >
                 <!-- Week Header Row -->
-                <tr v-if="!weekGroup.hideWeekHeader" class="week-header-row">
-                  <td colspan="5" class="week-header-cell">
+                <tr
+                  v-if="!weekGroup.hideWeekHeader"
+                  class="week-header-row"
+                >
+                  <td
+                    colspan="5"
+                    class="week-header-cell"
+                  >
                     <div class="week-header-content">
                       <div class="week-header-info">
                         <span class="week-name">{{ weekGroup.week }}</span>
@@ -245,9 +361,9 @@
                       </div>
                       <button
                         class="portal-btn portal-btn--sm portal-btn--ghost"
-                        @click="openAddForm"
                         :disabled="tournament.teams.length < 2"
                         :title="tournament.teams.length < 2 ? 'Create at least 2 teams first' : ''"
+                        @click="openAddForm"
                       >
                         + Match
                       </button>
@@ -256,7 +372,11 @@
                 </tr>
 
                 <!-- Match rows -->
-                <tr v-for="match in weekGroup.matches" :key="match.id" class="match-row">
+                <tr
+                  v-for="match in weekGroup.matches"
+                  :key="match.id"
+                  class="match-row"
+                >
                   <!-- Date -->
                   <td class="match-date">
                     <span class="portal-mono">{{ formatMatchDate(match.scheduledDate) }}</span>
@@ -269,29 +389,52 @@
                       <span class="vs-label">VS</span>
                       <span class="team-name">{{ match.team2Name }}</span>
                     </div>
-                    <div v-if="match.serverName" class="match-server">
+                    <div
+                      v-if="match.serverName"
+                      class="match-server"
+                    >
                       🖥️ {{ match.serverName }}
                     </div>
                   </td>
 
                   <!-- Maps Summary -->
                   <td class="match-maps">
-                    <div v-for="map in (match.maps || []).filter((m: any) => m)" :key="map.id" class="map-row">
+                    <div
+                      v-for="map in (match.maps || []).filter((m: any) => m)"
+                      :key="map.id"
+                      class="map-row"
+                    >
                       <span class="map-order portal-mono">{{ map.mapOrder + 1 }}.</span>
                       <span class="map-name">{{ map.mapName }}</span>
-                      <span v-if="map.matchResults?.length > 0" class="map-result">
+                      <span
+                        v-if="map.matchResults?.length > 0"
+                        class="map-result"
+                      >
                         {{ getResultsAggregation(map) }}
                       </span>
-                      <span v-else class="map-result map-result--empty">—</span>
+                      <span
+                        v-else
+                        class="map-result map-result--empty"
+                      >—</span>
                     </div>
                   </td>
 
                   <!-- Results Count -->
                   <td class="match-status">
                     <div v-if="(match.maps || []).length > 0">
-                      <div v-for="map in (match.maps || []).filter((m: any) => m)" :key="`status-${map.id}`" class="status-row">
-                        <span v-if="!map.matchResults?.length" class="status-empty">No results</span>
-                        <span v-else class="status-complete">
+                      <div
+                        v-for="map in (match.maps || []).filter((m: any) => m)"
+                        :key="`status-${map.id}`"
+                        class="status-row"
+                      >
+                        <span
+                          v-if="!map.matchResults?.length"
+                          class="status-empty"
+                        >No results</span>
+                        <span
+                          v-else
+                          class="status-complete"
+                        >
                           {{ map.matchResults.length }} round<span v-if="map.matchResults.length !== 1">s</span>
                         </span>
                       </div>
@@ -303,36 +446,66 @@
                     <div class="portal-table-actions">
                       <button
                         class="portal-cell-btn"
-                        @click="openResultsView(match)"
                         title="Enter match results for all maps"
+                        @click="openResultsView(match)"
                       >
                         Results
                       </button>
                       <button
                         class="portal-icon-btn"
-                        @click="openMatchFilesAndCommentsModal(match)"
                         title="Add files and comments"
+                        @click="openMatchFilesAndCommentsModal(match)"
                       >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        <svg
+                          class="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                          />
                         </svg>
                       </button>
                       <button
                         class="portal-icon-btn"
-                        @click="editMatch(match.id)"
                         title="Edit match"
+                        @click="editMatch(match.id)"
                       >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        <svg
+                          class="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                          />
                         </svg>
                       </button>
                       <button
                         class="portal-icon-btn portal-icon-btn--danger"
-                        @click="confirmDeleteMatch(match.id)"
                         title="Delete match"
+                        @click="confirmDeleteMatch(match.id)"
                       >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <svg
+                          class="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
                         </svg>
                       </button>
                     </div>
@@ -344,9 +517,16 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else class="portal-empty">
-          <div class="portal-empty-icon">📅</div>
-          <h3 class="portal-empty-title">No Matches Scheduled</h3>
+        <div
+          v-else
+          class="portal-empty"
+        >
+          <div class="portal-empty-icon">
+            📅
+          </div>
+          <h3 class="portal-empty-title">
+            No Matches Scheduled
+          </h3>
           <p class="portal-empty-desc">
             {{ tournament.teams.length < 2 ? 'Create at least 2 teams before scheduling matches' : 'Schedule matches to organize your tournament calendar' }}
           </p>
@@ -380,8 +560,18 @@
       <div class="portal-modal">
         <div class="flex items-start gap-4 mb-6">
           <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </div>
           <div class="flex-1">
@@ -409,10 +599,24 @@
             :disabled="isDeleting"
             @click="executeDeleteMatch"
           >
-            <svg v-if="!isDeleting" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            <svg
+              v-if="!isDeleting"
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
             </svg>
-            <div v-else class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <div
+              v-else
+              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+            />
             <span>{{ isDeleting ? 'Deleting...' : 'Delete Match' }}</span>
           </button>
         </div>
@@ -428,8 +632,18 @@
       <div class="portal-modal portal-modal--large">
         <div class="flex items-start gap-4 mb-6">
           <div class="portal-modal-icon">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
             </svg>
           </div>
           <div class="flex-1">
@@ -443,32 +657,45 @@
         </div>
 
         <!-- Option 1: Recalculate Everything -->
-        <div class="mb-4 p-3 portal-card cursor-pointer" @click="recalculationMode = 'everything'">
+        <div
+          class="mb-4 p-3 portal-card cursor-pointer"
+          @click="recalculationMode = 'everything'"
+        >
           <label class="flex items-start gap-3 cursor-pointer">
             <input
-              type="radio"
               v-model="recalculationMode"
+              type="radio"
               value="everything"
               class="mt-1"
             >
             <div>
-              <div class="font-medium" style="color: var(--portal-text-bright);">Recalculate Everything</div>
+              <div
+                class="font-medium"
+                style="color: var(--portal-text-bright);"
+              >Recalculate Everything</div>
               <div class="portal-modal-hint mt-1">Recalculates all weeks and cumulative leaderboard</div>
             </div>
           </label>
         </div>
 
         <!-- Option 2: Fix a Specific Week (only show if multiple weeks) -->
-        <div v-if="hasMultipleWeeks" class="mb-4 p-3 portal-card cursor-pointer" @click="recalculationMode = 'specific-week'">
+        <div
+          v-if="hasMultipleWeeks"
+          class="mb-4 p-3 portal-card cursor-pointer"
+          @click="recalculationMode = 'specific-week'"
+        >
           <label class="flex items-start gap-3 cursor-pointer">
             <input
-              type="radio"
               v-model="recalculationMode"
+              type="radio"
               value="specific-week"
               class="mt-1"
             >
             <div class="flex-1">
-              <div class="font-medium" style="color: var(--portal-text-bright);">Fix a Specific Week</div>
+              <div
+                class="font-medium"
+                style="color: var(--portal-text-bright);"
+              >Fix a Specific Week</div>
               <div class="portal-modal-hint mt-1">Recalculate only that week</div>
               <select
                 v-if="recalculationMode === 'specific-week'"
@@ -476,7 +703,11 @@
                 class="mt-2 portal-input"
               >
                 <option :value="null">Select a week...</option>
-                <option v-for="week in availableWeeks" :key="week" :value="week">
+                <option
+                  v-for="week in availableWeeks"
+                  :key="week"
+                  :value="week"
+                >
                   {{ week }}
                 </option>
               </select>
@@ -485,16 +716,23 @@
         </div>
 
         <!-- Option 3: Recalculate From Week Onwards (only show if multiple weeks) -->
-        <div v-if="hasMultipleWeeks" class="mb-6 p-3 portal-card cursor-pointer" @click="recalculationMode = 'from-week'">
+        <div
+          v-if="hasMultipleWeeks"
+          class="mb-6 p-3 portal-card cursor-pointer"
+          @click="recalculationMode = 'from-week'"
+        >
           <label class="flex items-start gap-3 cursor-pointer">
             <input
-              type="radio"
               v-model="recalculationMode"
+              type="radio"
               value="from-week"
               class="mt-1"
             >
             <div class="flex-1">
-              <div class="font-medium" style="color: var(--portal-text-bright);">Recalculate From Week Onwards</div>
+              <div
+                class="font-medium"
+                style="color: var(--portal-text-bright);"
+              >Recalculate From Week Onwards</div>
               <div class="portal-modal-hint mt-1">Recalculate from selected week through cumulative</div>
               <select
                 v-if="recalculationMode === 'from-week'"
@@ -502,7 +740,11 @@
                 class="mt-2 portal-input"
               >
                 <option :value="null">Select starting week...</option>
-                <option v-for="week in availableWeeks" :key="week" :value="week">
+                <option
+                  v-for="week in availableWeeks"
+                  :key="week"
+                  :value="week"
+                >
                   {{ week }}
                 </option>
               </select>
@@ -511,7 +753,12 @@
         </div>
 
         <!-- Message Display -->
-        <div v-if="recalculationMessage" class="mb-6 p-3" :class="recalculationMessage.type === 'success' ? 'portal-card' : 'portal-card'" :style="recalculationMessage.type === 'success' ? 'background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); color: rgb(167, 243, 208);' : 'background: var(--portal-danger-glow); border-color: rgba(239, 68, 68, 0.3); color: var(--portal-danger);'">
+        <div
+          v-if="recalculationMessage"
+          class="mb-6 p-3"
+          :class="recalculationMessage.type === 'success' ? 'portal-card' : 'portal-card'"
+          :style="recalculationMessage.type === 'success' ? 'background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); color: rgb(167, 243, 208);' : 'background: var(--portal-danger-glow); border-color: rgba(239, 68, 68, 0.3); color: var(--portal-danger);'"
+        >
           {{ recalculationMessage.text }}
         </div>
 
@@ -519,8 +766,8 @@
         <div class="flex items-center justify-end gap-3">
           <button
             class="portal-btn portal-btn--ghost"
-            @click="closeRecalculateModal"
             :disabled="isRecalculating"
+            @click="closeRecalculateModal"
           >
             Cancel
           </button>
@@ -529,10 +776,24 @@
             :disabled="isRecalculating || (recalculationMode === 'specific-week' && !selectedWeek) || (recalculationMode === 'from-week' && !fromWeek)"
             @click="recalculateLeaderboard"
           >
-            <svg v-if="!isRecalculating" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg
+              v-if="!isRecalculating"
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
             </svg>
-            <div v-else class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <div
+              v-else
+              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+            />
             <span>{{ isRecalculating ? 'Recalculating...' : 'Recalculate' }}</span>
           </button>
         </div>

@@ -1,8 +1,14 @@
 <template>
-  <div class="relative overflow-hidden" :style="{ background: '#1a1a1a' }">
+  <div
+    class="relative overflow-hidden"
+    :style="{ background: '#1a1a1a' }"
+  >
     <!-- Background Hero Image -->
     <Transition name="fade">
-      <div v-if="heroImageUrl" class="absolute inset-0 z-0">
+      <div
+        v-if="heroImageUrl"
+        class="absolute inset-0 z-0"
+      >
         <img
           :src="heroImageUrl"
           :alt="tournament.name"
@@ -38,21 +44,42 @@
 
         <!-- Community Logo Display (below tournament name) -->
         <Transition name="fade">
-          <div v-if="logoImageUrl" class="mb-2 flex justify-center">
-            <img :src="logoImageUrl" alt="Community logo" class="max-h-32 object-contain" loading="lazy" decoding="async">
+          <div
+            v-if="logoImageUrl"
+            class="mb-2 flex justify-center"
+          >
+            <img
+              :src="logoImageUrl"
+              alt="Community logo"
+              class="max-h-32 object-contain"
+              loading="lazy"
+              decoding="async"
+            >
           </div>
         </Transition>
 
         <!-- Organizer Name Display -->
-        <div v-if="tournament.organizer" class="mb-2 text-center">
-          <p class="text-sm font-medium" :style="{ color: getTextMutedColor() }">
+        <div
+          v-if="tournament.organizer"
+          class="mb-2 text-center"
+        >
+          <p
+            class="text-sm font-medium"
+            :style="{ color: getTextMutedColor() }"
+          >
             Organizer: <span :style="{ color: getAccentColor() }">{{ tournament.organizer }}</span>
           </p>
         </div>
 
         <!-- Tournament Status & Game Mode Header -->
-        <div v-if="tournament.status || tournament.gameMode" class="mb-3 text-center">
-          <p class="text-sm font-medium flex items-center justify-center gap-6 flex-wrap" :style="{ color: getTextMutedColor() }">
+        <div
+          v-if="tournament.status || tournament.gameMode"
+          class="mb-3 text-center"
+        >
+          <p
+            class="text-sm font-medium flex items-center justify-center gap-6 flex-wrap"
+            :style="{ color: getTextMutedColor() }"
+          >
             <span v-if="tournament.status">
               Tournament status:
               <span
@@ -83,7 +110,11 @@
             title="Join our Discord server"
             class="p-2 backdrop-blur-sm transition-all flex items-center justify-center"
           >
-            <img :src="discordLogo" alt="Discord" class="w-6 h-6 object-contain">
+            <img
+              :src="discordLogo"
+              alt="Discord"
+              class="w-6 h-6 object-contain"
+            >
           </a>
           <a
             v-if="tournament.youTubeUrl"
@@ -93,7 +124,11 @@
             title="Visit our YouTube channel"
             class="p-2 backdrop-blur-sm transition-all flex items-center justify-center"
           >
-            <img :src="youtubeLogo" alt="YouTube" class="w-6 h-6 object-contain">
+            <img
+              :src="youtubeLogo"
+              alt="YouTube"
+              class="w-6 h-6 object-contain"
+            >
           </a>
           <a
             v-if="tournament.twitchUrl"
@@ -103,7 +138,11 @@
             title="Visit our Twitch channel"
             class="p-2 backdrop-blur-sm transition-all flex items-center justify-center"
           >
-            <img :src="twitchLogo" alt="Twitch" class="w-6 h-6 object-contain">
+            <img
+              :src="twitchLogo"
+              alt="Twitch"
+              class="w-6 h-6 object-contain"
+            >
           </a>
           <a
             v-if="tournament.forumUrl"

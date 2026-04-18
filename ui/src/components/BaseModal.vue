@@ -46,7 +46,10 @@
               <h3 class="modal-title">
                 {{ title }}
               </h3>
-              <p v-if="subtitle" class="modal-subtitle">
+              <p
+                v-if="subtitle"
+                class="modal-subtitle"
+              >
                 // {{ subtitle }}
               </p>
             </slot>
@@ -63,7 +66,10 @@
         </div>
 
         <!-- Footer -->
-        <div v-if="$slots.footer" class="modal-footer">
+        <div
+          v-if="$slots.footer"
+          class="modal-footer"
+        >
           <slot name="footer" />
         </div>
       </div>

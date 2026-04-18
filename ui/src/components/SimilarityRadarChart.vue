@@ -186,22 +186,39 @@ const weakMetrics = computed(() => {
     <!-- Stats Overview -->
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-label">Average Match</div>
-        <div class="stat-value" :class="{ 'high-score': parseFloat(stats.avgScore) > 75 }">
+        <div class="stat-label">
+          Average Match
+        </div>
+        <div
+          class="stat-value"
+          :class="{ 'high-score': parseFloat(stats.avgScore) > 75 }"
+        >
           {{ stats.avgScore }}%
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Highest Match</div>
-        <div class="stat-value high-score">{{ stats.maxScore }}%</div>
+        <div class="stat-label">
+          Highest Match
+        </div>
+        <div class="stat-value high-score">
+          {{ stats.maxScore }}%
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Lowest Match</div>
-        <div class="stat-value low-score">{{ stats.minScore }}%</div>
+        <div class="stat-label">
+          Lowest Match
+        </div>
+        <div class="stat-value low-score">
+          {{ stats.minScore }}%
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Score Variance</div>
-        <div class="stat-value">{{ stats.variance }}</div>
+        <div class="stat-label">
+          Score Variance
+        </div>
+        <div class="stat-value">
+          {{ stats.variance }}
+        </div>
       </div>
     </div>
 
@@ -218,12 +235,21 @@ const weakMetrics = computed(() => {
     <!-- Analysis Summary -->
     <div class="analysis-summary">
       <div class="summary-section">
-        <h4 class="summary-title">Strongest Indicators</h4>
+        <h4 class="summary-title">
+          Strongest Indicators
+        </h4>
         <ul class="metric-list">
-          <li v-for="[metric, score] in topMetrics" :key="metric" class="metric-item">
+          <li
+            v-for="[metric, score] in topMetrics"
+            :key="metric"
+            class="metric-item"
+          >
             <span class="metric-name">{{ metric }}</span>
             <span class="metric-bar-container">
-              <span class="metric-bar" :style="{ width: (score * 100) + '%' }"></span>
+              <span
+                class="metric-bar"
+                :style="{ width: (score * 100) + '%' }"
+              />
             </span>
             <span class="metric-percentage">{{ (score * 100).toFixed(0) }}%</span>
           </li>
@@ -231,12 +257,21 @@ const weakMetrics = computed(() => {
       </div>
 
       <div class="summary-section">
-        <h4 class="summary-title">Areas of Divergence</h4>
+        <h4 class="summary-title">
+          Areas of Divergence
+        </h4>
         <ul class="metric-list">
-          <li v-for="[metric, score] in weakMetrics" :key="metric" class="metric-item">
+          <li
+            v-for="[metric, score] in weakMetrics"
+            :key="metric"
+            class="metric-item"
+          >
             <span class="metric-name">{{ metric }}</span>
             <span class="metric-bar-container">
-              <span class="metric-bar divergence" :style="{ width: (score * 100) + '%' }"></span>
+              <span
+                class="metric-bar divergence"
+                :style="{ width: (score * 100) + '%' }"
+              />
             </span>
             <span class="metric-percentage">{{ (score * 100).toFixed(0) }}%</span>
           </li>

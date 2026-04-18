@@ -11,8 +11,15 @@
             &larr; Back
           </router-link>
           <div>
-            <h1 class="text-lg sm:text-xl font-bold text-neutral-100">Map Popularity</h1>
-            <p v-if="serverName" class="text-sm text-neutral-400">{{ serverName }}</p>
+            <h1 class="text-lg sm:text-xl font-bold text-neutral-100">
+              Map Popularity
+            </h1>
+            <p
+              v-if="serverName"
+              class="text-sm text-neutral-400"
+            >
+              {{ serverName }}
+            </p>
           </div>
         </div>
       </div>
@@ -20,7 +27,10 @@
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
       <!-- Loading -->
-      <div v-if="loading" class="flex items-center justify-center py-20">
+      <div
+        v-if="loading"
+        class="flex items-center justify-center py-20"
+      >
         <div class="flex flex-col items-center gap-3">
           <div class="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
           <span class="text-neutral-400 text-sm">Analysing map data...</span>
@@ -28,16 +38,29 @@
       </div>
 
       <!-- Error -->
-      <div v-else-if="error" class="text-center py-20">
-        <p class="text-red-400">{{ error }}</p>
-        <button @click="loadData" class="mt-4 px-4 py-2 bg-neutral-800 border border-neutral-600 rounded text-sm hover:bg-neutral-700 transition-colors">
+      <div
+        v-else-if="error"
+        class="text-center py-20"
+      >
+        <p class="text-red-400">
+          {{ error }}
+        </p>
+        <button
+          class="mt-4 px-4 py-2 bg-neutral-800 border border-neutral-600 rounded text-sm hover:bg-neutral-700 transition-colors"
+          @click="loadData"
+        >
           Retry
         </button>
       </div>
 
       <!-- Empty -->
-      <div v-else-if="!data || data.rounds.length === 0" class="text-center py-20">
-        <p class="text-neutral-400">No round data available for this server in the selected period.</p>
+      <div
+        v-else-if="!data || data.rounds.length === 0"
+        class="text-center py-20"
+      >
+        <p class="text-neutral-400">
+          No round data available for this server in the selected period.
+        </p>
       </div>
 
       <!-- Content -->
@@ -52,11 +75,11 @@
                 <button
                   v-for="opt in dayOptions"
                   :key="opt"
-                  @click="selectedDays = opt; loadData()"
                   class="px-3 py-1 text-xs font-medium rounded border transition-all"
                   :class="selectedDays === opt
                     ? 'text-white bg-cyan-500/20 border-cyan-500/50'
                     : 'text-neutral-400 bg-neutral-800/50 border-neutral-700/50 hover:border-neutral-600'"
+                  @click="selectedDays = opt; loadData()"
                 >
                   {{ opt }}d
                 </button>
@@ -70,11 +93,11 @@
                 <button
                   v-for="preset in hourPresets"
                   :key="preset.label"
-                  @click="applyHourPreset(preset)"
                   class="px-3 py-1 text-xs font-medium rounded border transition-all"
                   :class="activeHourPreset === preset.label
                     ? 'text-white bg-amber-500/20 border-amber-500/50'
                     : 'text-neutral-400 bg-neutral-800/50 border-neutral-700/50 hover:border-neutral-600'"
+                  @click="applyHourPreset(preset)"
                 >
                   {{ preset.label }}
                 </button>
@@ -82,19 +105,34 @@
             </div>
 
             <!-- Custom hour range -->
-            <div v-if="activeHourPreset === 'Custom'" class="flex items-center gap-1.5">
+            <div
+              v-if="activeHourPreset === 'Custom'"
+              class="flex items-center gap-1.5"
+            >
               <select
                 v-model.number="hourStart"
                 class="bg-neutral-800 border border-neutral-700/50 rounded px-2 py-1 text-xs text-neutral-200 focus:border-amber-500/50 outline-none"
               >
-                <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ (h - 1).toString().padStart(2, '0') }}:00</option>
+                <option
+                  v-for="h in 24"
+                  :key="h - 1"
+                  :value="h - 1"
+                >
+                  {{ (h - 1).toString().padStart(2, '0') }}:00
+                </option>
               </select>
               <span class="text-xs text-neutral-500">to</span>
               <select
                 v-model.number="hourEnd"
                 class="bg-neutral-800 border border-neutral-700/50 rounded px-2 py-1 text-xs text-neutral-200 focus:border-amber-500/50 outline-none"
               >
-                <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ (h - 1).toString().padStart(2, '0') }}:59</option>
+                <option
+                  v-for="h in 24"
+                  :key="h - 1"
+                  :value="h - 1"
+                >
+                  {{ (h - 1).toString().padStart(2, '0') }}:59
+                </option>
               </select>
               <span class="text-xs text-neutral-500">(UTC)</span>
             </div>
@@ -102,38 +140,57 @@
 
           <!-- Map filter toggle -->
           <button
-            @click="showMapFilter = !showMapFilter"
             class="px-3 py-1 text-xs font-medium rounded border border-neutral-700/50 text-neutral-400 hover:border-neutral-600 hover:text-neutral-300 transition-all"
+            @click="showMapFilter = !showMapFilter"
           >
             Filter Maps ({{ selectedMaps.size }}/{{ allMaps.length }})
           </button>
         </div>
 
         <!-- Active hour filter indicator -->
-        <div v-if="activeHourPreset !== 'All'" class="text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
+        <div
+          v-if="activeHourPreset !== 'All'"
+          class="text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2"
+        >
           Showing averages for <strong>{{ hourRangeLabel }}</strong> only.
         </div>
 
         <!-- Map filter panel -->
-        <div v-if="showMapFilter" class="bg-neutral-900/80 border border-neutral-700/50 rounded-xl p-4">
+        <div
+          v-if="showMapFilter"
+          class="bg-neutral-900/80 border border-neutral-700/50 rounded-xl p-4"
+        >
           <div class="flex items-center justify-between mb-3">
             <span class="text-sm font-medium text-neutral-300">Select maps to display</span>
             <div class="flex gap-2">
-              <button @click="selectAllMaps" class="text-xs text-cyan-400 hover:text-cyan-300">Select all</button>
-              <button @click="deselectAllMaps" class="text-xs text-neutral-400 hover:text-neutral-300">Clear</button>
+              <button
+                class="text-xs text-cyan-400 hover:text-cyan-300"
+                @click="selectAllMaps"
+              >
+                Select all
+              </button>
+              <button
+                class="text-xs text-neutral-400 hover:text-neutral-300"
+                @click="deselectAllMaps"
+              >
+                Clear
+              </button>
             </div>
           </div>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="map in allMaps"
               :key="map.mapName"
-              @click="toggleMap(map.mapName)"
               class="px-3 py-1.5 text-xs rounded-lg border transition-all flex items-center gap-2"
               :class="selectedMaps.has(map.mapName)
                 ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-300'
                 : 'border-neutral-700/50 bg-neutral-800/30 text-neutral-500 hover:text-neutral-400'"
+              @click="toggleMap(map.mapName)"
             >
-              <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ backgroundColor: getMapColor(map.mapName) }" />
+              <span
+                class="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                :style="{ backgroundColor: getMapColor(map.mapName) }"
+              />
               {{ map.mapName }}
               <span class="text-neutral-500">{{ map.totalRounds }}r</span>
             </button>
@@ -142,27 +199,52 @@
 
         <!-- Average Players per Map (bar chart) -->
         <div class="bg-neutral-900/80 border border-neutral-700/50 rounded-xl p-4 sm:p-6">
-          <h2 class="text-sm font-semibold text-neutral-200 mb-1">Average Players per Map</h2>
-          <p class="text-xs text-neutral-500 mb-4">Maps in a rotation should track similarly. Low outliers indicate maps that drain the server.</p>
+          <h2 class="text-sm font-semibold text-neutral-200 mb-1">
+            Average Players per Map
+          </h2>
+          <p class="text-xs text-neutral-500 mb-4">
+            Maps in a rotation should track similarly. Low outliers indicate maps that drain the server.
+          </p>
           <div :style="{ height: Math.max(200, filteredSummaries.length * 36) + 'px' }">
-            <Bar :data="avgPlayersChartData" :options="avgPlayersChartOptions" />
+            <Bar
+              :data="avgPlayersChartData"
+              :options="avgPlayersChartOptions"
+            />
           </div>
         </div>
 
         <!-- Time of Day Heatmap -->
         <div class="bg-neutral-900/80 border border-neutral-700/50 rounded-xl p-4 sm:p-6">
-          <h2 class="text-sm font-semibold text-neutral-200 mb-1">Popularity by Time of Day</h2>
-          <p class="text-xs text-neutral-500 mb-4">Average player count by hour (UTC). Brighter = more popular.</p>
+          <h2 class="text-sm font-semibold text-neutral-200 mb-1">
+            Popularity by Time of Day
+          </h2>
+          <p class="text-xs text-neutral-500 mb-4">
+            Average player count by hour (UTC). Brighter = more popular.
+          </p>
           <div class="map-heatmap">
             <div class="heatmap-header">
-              <div class="heatmap-map-label"></div>
+              <div class="heatmap-map-label" />
               <div class="heatmap-hours">
-                <span v-for="h in 24" :key="h - 1" class="heatmap-hour-label">{{ (h - 1).toString().padStart(2, '0') }}</span>
+                <span
+                  v-for="h in 24"
+                  :key="h - 1"
+                  class="heatmap-hour-label"
+                >{{ (h - 1).toString().padStart(2, '0') }}</span>
               </div>
             </div>
-            <div v-for="summary in filteredSummaries" :key="summary.mapName" class="heatmap-row">
-              <div class="heatmap-map-label" :title="summary.mapName">
-                <span class="inline-block w-2 h-2 rounded-full mr-1 flex-shrink-0" :style="{ backgroundColor: getMapColor(summary.mapName) }" />
+            <div
+              v-for="summary in filteredSummaries"
+              :key="summary.mapName"
+              class="heatmap-row"
+            >
+              <div
+                class="heatmap-map-label"
+                :title="summary.mapName"
+              >
+                <span
+                  class="inline-block w-2 h-2 rounded-full mr-1 flex-shrink-0"
+                  :style="{ backgroundColor: getMapColor(summary.mapName) }"
+                />
                 <span class="truncate">{{ summary.mapName }}</span>
               </div>
               <div class="heatmap-cells">
@@ -182,7 +264,12 @@
             <div class="heatmap-legend">
               <span>0</span>
               <div class="heatmap-legend-colors">
-                <div v-for="(c, i) in heatLegendColors" :key="i" class="heatmap-legend-swatch" :style="{ backgroundColor: c }" />
+                <div
+                  v-for="(c, i) in heatLegendColors"
+                  :key="i"
+                  class="heatmap-legend-swatch"
+                  :style="{ backgroundColor: c }"
+                />
               </div>
               <span>{{ maxHourly.toFixed(0) }}</span>
             </div>
@@ -191,14 +278,22 @@
 
         <!-- Summary table -->
         <div class="bg-neutral-900/80 border border-neutral-700/50 rounded-xl p-4 sm:p-6">
-          <h2 class="text-sm font-semibold text-neutral-200 mb-4">Map Summary</h2>
+          <h2 class="text-sm font-semibold text-neutral-200 mb-4">
+            Map Summary
+          </h2>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
                 <tr class="text-left text-neutral-400 text-xs border-b border-neutral-700/50">
-                  <th class="pb-2 pr-4">Map</th>
-                  <th class="pb-2 pr-4 text-right">Rounds</th>
-                  <th class="pb-2 pr-4 text-right">Avg Players</th>
+                  <th class="pb-2 pr-4">
+                    Map
+                  </th>
+                  <th class="pb-2 pr-4 text-right">
+                    Rounds
+                  </th>
+                  <th class="pb-2 pr-4 text-right">
+                    Avg Players
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -208,11 +303,18 @@
                   class="border-b border-neutral-800/50 hover:bg-neutral-800/30 transition-colors"
                 >
                   <td class="py-2 pr-4 flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ backgroundColor: getMapColor(s.mapName) }" />
+                    <span
+                      class="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      :style="{ backgroundColor: getMapColor(s.mapName) }"
+                    />
                     {{ s.mapName }}
                   </td>
-                  <td class="py-2 pr-4 text-right font-mono text-neutral-300">{{ s.totalRounds }}</td>
-                  <td class="py-2 pr-4 text-right font-mono text-neutral-300">{{ s.avgConcurrentPlayers.toFixed(1) }}</td>
+                  <td class="py-2 pr-4 text-right font-mono text-neutral-300">
+                    {{ s.totalRounds }}
+                  </td>
+                  <td class="py-2 pr-4 text-right font-mono text-neutral-300">
+                    {{ s.avgConcurrentPlayers.toFixed(1) }}
+                  </td>
                 </tr>
               </tbody>
             </table>

@@ -158,24 +158,38 @@ watch(
 <template>
   <div>
     <!-- Loading Sessions State -->
-    <div v-if="isLoadingSessions" class="bg-neutral-800/30 rounded-lg p-4 sm:p-6">
+    <div
+      v-if="isLoadingSessions"
+      class="bg-neutral-800/30 rounded-lg p-4 sm:p-6"
+    >
       <div class="flex items-center justify-center py-6 sm:py-8">
         <div class="w-8 h-8 border-4 border-neutral-600 border-t-cyan-400 rounded-full animate-spin" />
       </div>
     </div>
 
     <!-- Sessions Error State -->
-    <div v-else-if="sessionsError" class="bg-neutral-800/30 rounded-lg p-4 sm:p-6">
+    <div
+      v-else-if="sessionsError"
+      class="bg-neutral-800/30 rounded-lg p-4 sm:p-6"
+    >
       <div class="text-center py-4">
-        <div class="text-red-400 mb-2">{{ sessionsError }}</div>
-        <button @click="loadSessions" class="text-cyan-400 hover:text-cyan-300 text-sm">
+        <div class="text-red-400 mb-2">
+          {{ sessionsError }}
+        </div>
+        <button
+          class="text-cyan-400 hover:text-cyan-300 text-sm"
+          @click="loadSessions"
+        >
           Try again
         </button>
       </div>
     </div>
 
     <!-- Sessions List -->
-    <div v-else-if="sessions.length > 0" class="bg-neutral-800/30 rounded-lg overflow-hidden">
+    <div
+      v-else-if="sessions.length > 0"
+      class="bg-neutral-800/30 rounded-lg overflow-hidden"
+    >
       <div class="overflow-x-auto">
         <table class="w-full">
           <thead>
@@ -368,7 +382,7 @@ watch(
               stroke-linejoin="round"
               class="transition-transform group-hover:translate-x-0.5"
             >
-              <path d="m9 18 6-6-6-6"/>
+              <path d="m9 18 6-6-6-6" />
             </svg>
           </router-link>
         </div>
@@ -376,7 +390,10 @@ watch(
     </div>
 
     <!-- Empty Sessions State -->
-    <div v-else class="bg-neutral-800/30 rounded-lg p-4 sm:p-6">
+    <div
+      v-else
+      class="bg-neutral-800/30 rounded-lg p-4 sm:p-6"
+    >
       <div class="text-center py-3 sm:py-4 text-neutral-500">
         {{ emptyMessage || 'No recent sessions found' }}
       </div>

@@ -1,9 +1,14 @@
 <template>
   <div class="rotation-table-wrap">
-    <div v-if="detectedRotation?.rotation?.length" class="rotation-insight">
+    <div
+      v-if="detectedRotation?.rotation?.length"
+      class="rotation-insight"
+    >
       <div class="rotation-insight-header">
         <div>
-          <div class="rotation-insight-title">Detected current rotation</div>
+          <div class="rotation-insight-title">
+            Detected current rotation
+          </div>
           <div class="rotation-insight-meta">
             {{ Math.round(detectedRotation.confidence * 100) }}% confidence ·
             {{ detectedRotation.matchedRecentRounds }}/{{ detectedRotation.sampleSize }} recent rounds matched
@@ -19,7 +24,10 @@
         >
           <span class="rotation-chip-position">{{ item.position }}</span>
           <span class="rotation-chip-map">{{ item.mapName }}</span>
-          <span v-if="item.gameType" class="rotation-chip-mode">{{ item.gameType }}</span>
+          <span
+            v-if="item.gameType"
+            class="rotation-chip-mode"
+          >{{ item.gameType }}</span>
         </div>
       </div>
 
@@ -40,32 +48,64 @@
       <table class="rotation-table">
         <thead>
           <tr>
-            <th class="col-map">Map</th>
+            <th class="col-map">
+              Map
+            </th>
             <th
               class="col-play sortable"
               @click="handleSort('playTimePercentage')"
             >
               <div class="th-content">
                 <span>Play %</span>
-                <svg v-if="sortColumn === 'playTimePercentage'" class="sort-icon" :class="{ 'sort-asc': sortDirection === 'asc' }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                <svg
+                  v-if="sortColumn === 'playTimePercentage'"
+                  class="sort-icon"
+                  :class="{ 'sort-asc': sortDirection === 'asc' }"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 9l-7 7-7-7"
+                  />
                 </svg>
               </div>
             </th>
-            <th class="col-rounds">Rounds</th>
+            <th class="col-rounds">
+              Rounds
+            </th>
             <th
               class="col-avg sortable"
               @click="handleSort('avgConcurrentPlayers')"
             >
               <div class="th-content">
                 <span>Avg</span>
-                <svg v-if="sortColumn === 'avgConcurrentPlayers'" class="sort-icon" :class="{ 'sort-asc': sortDirection === 'asc' }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                <svg
+                  v-if="sortColumn === 'avgConcurrentPlayers'"
+                  class="sort-icon"
+                  :class="{ 'sort-asc': sortDirection === 'asc' }"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 9l-7 7-7-7"
+                  />
                 </svg>
               </div>
             </th>
-            <th class="col-win">Win Stats</th>
-            <th class="col-top">Top Wins</th>
+            <th class="col-win">
+              Win Stats
+            </th>
+            <th class="col-top">
+              Top Wins
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -80,21 +120,41 @@
                 <span class="arrow">-></span>
               </div>
             </td>
-            <td class="col-play">{{ map.playTimePercentage }}%</td>
-            <td class="col-rounds">{{ map.totalRounds }}</td>
-            <td class="col-avg">{{ map.avgConcurrentPlayers }}</td>
+            <td class="col-play">
+              {{ map.playTimePercentage }}%
+            </td>
+            <td class="col-rounds">
+              {{ map.totalRounds }}
+            </td>
+            <td class="col-avg">
+              {{ map.avgConcurrentPlayers }}
+            </td>
             <td class="col-win">
               <div class="win-bar">
-                <div class="win-bar-team1" :style="{ width: `${map.winStats.team1WinPercentage}%` }" :title="`${map.winStats.team1Label}: ${map.winStats.team1WinPercentage}%`" />
-                <div class="win-bar-team2" :style="{ width: `${map.winStats.team2WinPercentage}%` }" :title="`${map.winStats.team2Label}: ${map.winStats.team2WinPercentage}%`" />
+                <div
+                  class="win-bar-team1"
+                  :style="{ width: `${map.winStats.team1WinPercentage}%` }"
+                  :title="`${map.winStats.team1Label}: ${map.winStats.team1WinPercentage}%`"
+                />
+                <div
+                  class="win-bar-team2"
+                  :style="{ width: `${map.winStats.team2WinPercentage}%` }"
+                  :title="`${map.winStats.team2Label}: ${map.winStats.team2WinPercentage}%`"
+                />
               </div>
             </td>
             <td class="col-top">
-              <div v-if="map.topPlayerByWins" class="top-winner">
+              <div
+                v-if="map.topPlayerByWins"
+                class="top-winner"
+              >
                 <span class="top-winner-name">{{ map.topPlayerByWins.playerName }}</span>
                 <span class="top-winner-count">{{ map.topPlayerByWins.wins }}W</span>
               </div>
-              <span v-else class="top-winner-empty">--</span>
+              <span
+                v-else
+                class="top-winner-empty"
+              >--</span>
             </td>
           </tr>
         </tbody>
@@ -102,7 +162,10 @@
     </div>
 
     <!-- Pagination Controls -->
-    <div v-if="totalPages > 1" class="pagination">
+    <div
+      v-if="totalPages > 1"
+      class="pagination"
+    >
       <div class="pagination-info">
         Showing {{ (currentPage - 1) * pageSize + 1 }}-{{ Math.min(currentPage * pageSize, totalCount) }} of {{ totalCount }}
       </div>

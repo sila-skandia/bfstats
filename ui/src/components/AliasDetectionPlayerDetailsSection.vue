@@ -3,12 +3,16 @@
     <!-- Expandable Sections Header -->
     <div class="section-header">
       <h3>Deep Dive Comparison</h3>
-      <p class="section-subtitle">Expand to view detailed player data, servers, maps, recent sessions, and rankings</p>
+      <p class="section-subtitle">
+        Expand to view detailed player data, servers, maps, recent sessions, and rankings
+      </p>
     </div>
 
     <!-- Time Range Control -->
     <div class="time-range-selector">
-      <div class="range-label">Look back:</div>
+      <div class="range-label">
+        Look back:
+      </div>
       <div class="range-buttons">
         <button
           v-for="range in timeRanges"
@@ -26,24 +30,43 @@
     <div class="details-grid">
       <!-- Player 1 Section -->
       <div class="player-section">
-        <button class="section-toggle" @click="expandedPlayer1 = !expandedPlayer1" :aria-expanded="expandedPlayer1">
+        <button
+          class="section-toggle"
+          :aria-expanded="expandedPlayer1"
+          @click="expandedPlayer1 = !expandedPlayer1"
+        >
           <div class="toggle-header">
             <h4>{{ player1Name }}</h4>
-            <span class="toggle-icon" :class="{ expanded: expandedPlayer1 }">▼</span>
+            <span
+              class="toggle-icon"
+              :class="{ expanded: expandedPlayer1 }"
+            >▼</span>
           </div>
         </button>
 
-        <div v-if="expandedPlayer1" class="section-content">
-          <div v-if="loading1" class="loading-state">
-            <div class="spinner"></div>
+        <div
+          v-if="expandedPlayer1"
+          class="section-content"
+        >
+          <div
+            v-if="loading1"
+            class="loading-state"
+          >
+            <div class="spinner" />
             <p>Loading data...</p>
           </div>
 
-          <div v-else-if="error1" class="error-state">
+          <div
+            v-else-if="error1"
+            class="error-state"
+          >
             <p>{{ error1 }}</p>
           </div>
 
-          <div v-else-if="stats1" class="data-sections">
+          <div
+            v-else-if="stats1"
+            class="data-sections"
+          >
             <!-- Summary Stats -->
             <div class="data-block">
               <h5>Overall Stats</h5>
@@ -70,9 +93,18 @@
             <!-- Top Servers -->
             <div class="data-block">
               <h5>Top Servers (by playtime)</h5>
-              <div v-if="stats1.servers?.length" class="data-list">
-                <div v-for="server in stats1.servers.slice(0, 8)" :key="server.serverGuid" class="list-item server-item">
-                  <div class="item-name">{{ server.serverName }}</div>
+              <div
+                v-if="stats1.servers?.length"
+                class="data-list"
+              >
+                <div
+                  v-for="server in stats1.servers.slice(0, 8)"
+                  :key="server.serverGuid"
+                  class="list-item server-item"
+                >
+                  <div class="item-name">
+                    {{ server.serverName }}
+                  </div>
                   <div class="item-stats">
                     <span>{{ formatPlayTime(server.totalMinutes) }}</span>
                     <span class="stat-sep">•</span>
@@ -80,22 +112,45 @@
                   </div>
                 </div>
               </div>
-              <p v-else class="no-data">No server data</p>
+              <p
+                v-else
+                class="no-data"
+              >
+                No server data
+              </p>
             </div>
 
             <!-- Best Scores -->
             <div class="data-block">
               <h5>Best Scores</h5>
-              <div v-if="bestScores1.length" class="data-list">
-                <div v-for="(score, idx) in bestScores1.slice(0, 5)" :key="idx" class="list-item score-item">
-                  <div class="score-rank">{{ idx + 1 }}</div>
+              <div
+                v-if="bestScores1.length"
+                class="data-list"
+              >
+                <div
+                  v-for="(score, idx) in bestScores1.slice(0, 5)"
+                  :key="idx"
+                  class="list-item score-item"
+                >
+                  <div class="score-rank">
+                    {{ idx + 1 }}
+                  </div>
                   <div class="score-details">
-                    <div class="score-points">{{ score.score.toLocaleString() }} PTS</div>
-                    <div class="score-meta">{{ score.mapName }} • {{ score.serverName }}</div>
+                    <div class="score-points">
+                      {{ score.score.toLocaleString() }} PTS
+                    </div>
+                    <div class="score-meta">
+                      {{ score.mapName }} • {{ score.serverName }}
+                    </div>
                   </div>
                 </div>
               </div>
-              <p v-else class="no-data">No scores recorded</p>
+              <p
+                v-else
+                class="no-data"
+              >
+                No scores recorded
+              </p>
             </div>
           </div>
         </div>
@@ -103,24 +158,43 @@
 
       <!-- Player 2 Section -->
       <div class="player-section">
-        <button class="section-toggle" @click="expandedPlayer2 = !expandedPlayer2" :aria-expanded="expandedPlayer2">
+        <button
+          class="section-toggle"
+          :aria-expanded="expandedPlayer2"
+          @click="expandedPlayer2 = !expandedPlayer2"
+        >
           <div class="toggle-header">
             <h4>{{ player2Name }}</h4>
-            <span class="toggle-icon" :class="{ expanded: expandedPlayer2 }">▼</span>
+            <span
+              class="toggle-icon"
+              :class="{ expanded: expandedPlayer2 }"
+            >▼</span>
           </div>
         </button>
 
-        <div v-if="expandedPlayer2" class="section-content">
-          <div v-if="loading2" class="loading-state">
-            <div class="spinner"></div>
+        <div
+          v-if="expandedPlayer2"
+          class="section-content"
+        >
+          <div
+            v-if="loading2"
+            class="loading-state"
+          >
+            <div class="spinner" />
             <p>Loading data...</p>
           </div>
 
-          <div v-else-if="error2" class="error-state">
+          <div
+            v-else-if="error2"
+            class="error-state"
+          >
             <p>{{ error2 }}</p>
           </div>
 
-          <div v-else-if="stats2" class="data-sections">
+          <div
+            v-else-if="stats2"
+            class="data-sections"
+          >
             <!-- Summary Stats -->
             <div class="data-block">
               <h5>Overall Stats</h5>
@@ -147,9 +221,18 @@
             <!-- Top Servers -->
             <div class="data-block">
               <h5>Top Servers (by playtime)</h5>
-              <div v-if="stats2.servers?.length" class="data-list">
-                <div v-for="server in stats2.servers.slice(0, 8)" :key="server.serverGuid" class="list-item server-item">
-                  <div class="item-name">{{ server.serverName }}</div>
+              <div
+                v-if="stats2.servers?.length"
+                class="data-list"
+              >
+                <div
+                  v-for="server in stats2.servers.slice(0, 8)"
+                  :key="server.serverGuid"
+                  class="list-item server-item"
+                >
+                  <div class="item-name">
+                    {{ server.serverName }}
+                  </div>
                   <div class="item-stats">
                     <span>{{ formatPlayTime(server.totalMinutes) }}</span>
                     <span class="stat-sep">•</span>
@@ -157,22 +240,45 @@
                   </div>
                 </div>
               </div>
-              <p v-else class="no-data">No server data</p>
+              <p
+                v-else
+                class="no-data"
+              >
+                No server data
+              </p>
             </div>
 
             <!-- Best Scores -->
             <div class="data-block">
               <h5>Best Scores</h5>
-              <div v-if="bestScores2.length" class="data-list">
-                <div v-for="(score, idx) in bestScores2.slice(0, 5)" :key="idx" class="list-item score-item">
-                  <div class="score-rank">{{ idx + 1 }}</div>
+              <div
+                v-if="bestScores2.length"
+                class="data-list"
+              >
+                <div
+                  v-for="(score, idx) in bestScores2.slice(0, 5)"
+                  :key="idx"
+                  class="list-item score-item"
+                >
+                  <div class="score-rank">
+                    {{ idx + 1 }}
+                  </div>
                   <div class="score-details">
-                    <div class="score-points">{{ score.score.toLocaleString() }} PTS</div>
-                    <div class="score-meta">{{ score.mapName }} • {{ score.serverName }}</div>
+                    <div class="score-points">
+                      {{ score.score.toLocaleString() }} PTS
+                    </div>
+                    <div class="score-meta">
+                      {{ score.mapName }} • {{ score.serverName }}
+                    </div>
                   </div>
                 </div>
               </div>
-              <p v-else class="no-data">No scores recorded</p>
+              <p
+                v-else
+                class="no-data"
+              >
+                No scores recorded
+              </p>
             </div>
           </div>
         </div>

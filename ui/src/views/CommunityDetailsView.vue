@@ -53,34 +53,51 @@ onMounted(() => {
 
 <template>
   <div class="portal-page">
-    <div class="portal-grid" aria-hidden="true" />
+    <div
+      class="portal-grid"
+      aria-hidden="true"
+    />
     <div class="portal-inner">
       <div class="data-explorer">
         <div class="explorer-inner">
-
           <!-- Back Button -->
-          <router-link to="/communities" class="back-button">
+          <router-link
+            to="/communities"
+            class="back-button"
+          >
             ← Back to Communities
           </router-link>
 
           <!-- Loading State -->
-          <div v-if="loading" class="loading-skeleton">
+          <div
+            v-if="loading"
+            class="loading-skeleton"
+          >
             <div class="animate-pulse space-y-4">
               <div class="h-12 bg-neutral-800 rounded w-3/4" />
               <div class="h-6 bg-neutral-800 rounded w-1/2" />
               <div class="grid grid-cols-4 gap-4 mt-6">
-                <div v-for="i in 4" :key="i" class="h-24 bg-neutral-800 rounded" />
+                <div
+                  v-for="i in 4"
+                  :key="i"
+                  class="h-24 bg-neutral-800 rounded"
+                />
               </div>
             </div>
           </div>
 
           <!-- Error State -->
-          <div v-else-if="error" class="explorer-card">
+          <div
+            v-else-if="error"
+            class="explorer-card"
+          >
             <div class="explorer-card-body text-center">
-              <p class="text-red-400 mb-4">{{ error }}</p>
+              <p class="text-red-400 mb-4">
+                {{ error }}
+              </p>
               <button
-                @click="loadCommunity"
                 class="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 text-sm hover:bg-red-500/30 transition-colors"
+                @click="loadCommunity"
               >
                 Try Again
               </button>
@@ -100,7 +117,10 @@ onMounted(() => {
                     {{ community.id }}
                   </p>
                 </div>
-                <div class="status-badge" :class="statusColor">
+                <div
+                  class="status-badge"
+                  :class="statusColor"
+                >
                   {{ statusLabel }}
                 </div>
               </div>
@@ -113,20 +133,36 @@ onMounted(() => {
             <!-- Quick Stats Bar -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
               <div class="explorer-stat-card">
-                <div class="text-xl sm:text-2xl font-bold text-cyan-400 font-mono">{{ community.memberCount }}</div>
-                <div class="text-xs text-neutral-500 uppercase tracking-wider">Members</div>
+                <div class="text-xl sm:text-2xl font-bold text-cyan-400 font-mono">
+                  {{ community.memberCount }}
+                </div>
+                <div class="text-xs text-neutral-500 uppercase tracking-wider">
+                  Members
+                </div>
               </div>
               <div class="explorer-stat-card">
-                <div class="text-xl sm:text-2xl font-bold text-purple-400 font-mono">{{ cohesionPercentage }}%</div>
-                <div class="text-xs text-neutral-500 uppercase tracking-wider">Cohesion</div>
+                <div class="text-xl sm:text-2xl font-bold text-purple-400 font-mono">
+                  {{ cohesionPercentage }}%
+                </div>
+                <div class="text-xs text-neutral-500 uppercase tracking-wider">
+                  Cohesion
+                </div>
               </div>
               <div class="explorer-stat-card">
-                <div class="text-xl sm:text-2xl font-bold text-green-400 font-mono">{{ community.avgSessionsPerPair.toFixed(1) }}</div>
-                <div class="text-xs text-neutral-500 uppercase tracking-wider">Sessions</div>
+                <div class="text-xl sm:text-2xl font-bold text-green-400 font-mono">
+                  {{ community.avgSessionsPerPair.toFixed(1) }}
+                </div>
+                <div class="text-xs text-neutral-500 uppercase tracking-wider">
+                  Sessions
+                </div>
               </div>
               <div class="explorer-stat-card">
-                <div class="text-xl sm:text-2xl font-bold text-yellow-400 font-mono">{{ community.primaryServers.length }}</div>
-                <div class="text-xs text-neutral-500 uppercase tracking-wider">Servers</div>
+                <div class="text-xl sm:text-2xl font-bold text-yellow-400 font-mono">
+                  {{ community.primaryServers.length }}
+                </div>
+                <div class="text-xs text-neutral-500 uppercase tracking-wider">
+                  Servers
+                </div>
               </div>
             </div>
 
@@ -137,11 +173,11 @@ onMounted(() => {
                   <button
                     v-for="tab in ['server-map', 'activity', 'members']"
                     :key="tab"
-                    @click="activeTab = tab as any"
                     class="px-4 py-2 rounded text-sm font-medium transition-colors"
                     :class="activeTab === tab
                       ? 'bg-cyan-500/30 border border-cyan-500 text-cyan-300'
                       : 'bg-neutral-800/50 border border-neutral-700 text-neutral-400 hover:text-neutral-300'"
+                    @click="activeTab = tab as any"
                   >
                     {{ tab === 'server-map' ? 'Server Map' : tab.charAt(0).toUpperCase() + tab.slice(1) }}
                   </button>
@@ -152,17 +188,24 @@ onMounted(() => {
             <!-- Tab Content -->
             <div class="space-y-6">
               <!-- Server Map Tab (Full screen bipartite graph) -->
-              <PlayerServerMap v-if="activeTab === 'server-map'" :community-id="community.id" />
+              <PlayerServerMap
+                v-if="activeTab === 'server-map'"
+                :community-id="community.id"
+              />
 
               <!-- Activity Chart Tab (Full screen chart) -->
-              <CommunityActivityChart v-else-if="activeTab === 'activity'" :community="community" />
+              <CommunityActivityChart
+                v-else-if="activeTab === 'activity'"
+                :community="community"
+              />
 
               <!-- Members Tab -->
-              <CommunityMembersSection v-else-if="activeTab === 'members'" :community="community" />
+              <CommunityMembersSection
+                v-else-if="activeTab === 'members'"
+                :community="community"
+              />
             </div>
-
           </div>
-
         </div>
       </div>
     </div>

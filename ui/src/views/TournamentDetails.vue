@@ -1,17 +1,31 @@
 <template>
   <div class="portal-page tournament-admin-portal">
-    <div class="portal-grid" aria-hidden="true" />
+    <div
+      class="portal-grid"
+      aria-hidden="true"
+    />
     <div class="portal-inner">
       <!-- Loading State -->
-      <div v-if="loading" class="loading-container">
+      <div
+        v-if="loading"
+        class="loading-container"
+      >
         <div class="loading-spinner" />
       </div>
 
       <!-- Error State -->
-      <div v-else-if="error" class="error-container">
+      <div
+        v-else-if="error"
+        class="error-container"
+      >
         <div class="error-card">
-          <p class="error-message">{{ error }}</p>
-          <button class="portal-btn portal-btn--ghost" @click="router.push('/dashboard')">
+          <p class="error-message">
+            {{ error }}
+          </p>
+          <button
+            class="portal-btn portal-btn--ghost"
+            @click="router.push('/dashboard')"
+          >
             Back to Dashboard
           </button>
         </div>
@@ -23,8 +37,15 @@
         <header class="tournament-header">
           <div class="tournament-header-glow" />
           <!-- Hero Image Background -->
-          <div v-if="heroImageUrl" class="tournament-hero">
-            <img :src="heroImageUrl" :alt="tournament.name" class="tournament-hero-img" />
+          <div
+            v-if="heroImageUrl"
+            class="tournament-hero"
+          >
+            <img
+              :src="heroImageUrl"
+              :alt="tournament.name"
+              class="tournament-hero-img"
+            >
             <div class="tournament-hero-overlay" />
           </div>
 
@@ -32,13 +53,32 @@
             <div class="tournament-header-top">
               <div class="tournament-header-left">
                 <div class="tournament-title-row">
-                  <button class="back-btn" @click="router.push('/dashboard')" title="Back to Dashboard">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  <button
+                    class="back-btn"
+                    title="Back to Dashboard"
+                    @click="router.push('/dashboard')"
+                  >
+                    <svg
+                      class="w-6 h-6"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M10 19l-7-7m0 0l7-7m-7 7h18"
+                      />
                     </svg>
                   </button>
-                  <div class="game-icon" :style="{ backgroundImage: getGameIcon() }" />
-                  <h1 class="tournament-title">{{ tournament.name }}</h1>
+                  <div
+                    class="game-icon"
+                    :style="{ backgroundImage: getGameIcon() }"
+                  />
+                  <h1 class="tournament-title">
+                    {{ tournament.name }}
+                  </h1>
                 </div>
 
                 <div class="tournament-meta">
@@ -61,11 +101,21 @@
               <div class="tournament-header-actions">
                 <button
                   class="portal-btn portal-btn--primary view-public-btn"
-                  @click="router.push(`/t/${tournament.slug || tournament.id}`)"
                   title="View public tournament page"
+                  @click="router.push(`/t/${tournament.slug || tournament.id}`)"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                    />
                   </svg>
                   View Public
                 </button>

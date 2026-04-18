@@ -17,28 +17,47 @@
     </div>
 
     <!-- Loading state -->
-    <div v-if="loading" class="loading-state">
+    <div
+      v-if="loading"
+      class="loading-state"
+    >
       Loading activity data...
     </div>
 
     <!-- Error state -->
-    <div v-else-if="error" class="error-state">
+    <div
+      v-else-if="error"
+      class="error-state"
+    >
       {{ error }}
     </div>
 
     <!-- Heatmap view -->
-    <div v-else-if="viewMode === 'heatmap' && heatmapData" class="heatmap-container">
+    <div
+      v-else-if="viewMode === 'heatmap' && heatmapData"
+      class="heatmap-container"
+    >
       <!-- Hour labels -->
       <div class="hour-labels">
-        <div class="day-label"></div>
-        <div v-for="hour in 24" :key="hour" class="hour-label">
+        <div class="day-label" />
+        <div
+          v-for="hour in 24"
+          :key="hour"
+          class="hour-label"
+        >
           {{ hour - 1 }}
         </div>
       </div>
 
       <!-- Heatmap grid -->
-      <div v-for="(dayName, dayIndex) in dayNames" :key="dayIndex" class="heatmap-row">
-        <div class="day-label">{{ dayName }}</div>
+      <div
+        v-for="(dayName, dayIndex) in dayNames"
+        :key="dayIndex"
+        class="heatmap-row"
+      >
+        <div class="day-label">
+          {{ dayName }}
+        </div>
         <div 
           v-for="hour in 24" 
           :key="hour"
@@ -46,13 +65,15 @@
           :style="getCellStyle(dayIndex, hour - 1)"
           @mouseenter="showTooltip($event, dayIndex, hour - 1)"
           @mouseleave="hideTooltip"
-        >
-        </div>
+        />
       </div>
     </div>
 
     <!-- Table view -->
-    <div v-else-if="viewMode === 'table' && heatmapData" class="table-container">
+    <div
+      v-else-if="viewMode === 'table' && heatmapData"
+      class="table-container"
+    >
       <table class="activity-table">
         <thead>
           <tr>
@@ -63,7 +84,10 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="cell in sortedTableData" :key="`${cell.dayOfWeek}-${cell.hour}`">
+          <tr
+            v-for="cell in sortedTableData"
+            :key="`${cell.dayOfWeek}-${cell.hour}`"
+          >
             <td>{{ dayNames[cell.dayOfWeek] }}</td>
             <td>{{ formatHourRange(cell.hour) }}</td>
             <td>{{ cell.minutesActive }}</td>
@@ -82,7 +106,9 @@
       <div class="tooltip-content">
         <strong>{{ tooltip.dayName }}, {{ tooltip.hourRange }}</strong>
         <div>{{ tooltip.minutes }} minutes active</div>
-        <div v-if="tooltip.map">Most played: {{ tooltip.map }}</div>
+        <div v-if="tooltip.map">
+          Most played: {{ tooltip.map }}
+        </div>
       </div>
     </div>
   </div>

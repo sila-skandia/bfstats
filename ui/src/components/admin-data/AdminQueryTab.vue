@@ -14,7 +14,7 @@
               @input="onServerSearchInput"
               @focus="showServerDropdown = true"
               @blur="closeServerDropdown"
-            />
+            >
             <div
               v-if="showServerDropdown"
               class="portal-dropdown"
@@ -27,37 +27,80 @@
               >
                 {{ s.serverName }}
               </div>
-              <div v-if="serverSearchLoading" class="portal-dropdown-ghost">searching...</div>
-              <div v-if="!serverSearchLoading && serverSearchQuery.length >= 2 && serverSuggestions.length === 0" class="portal-dropdown-ghost">no matches</div>
+              <div
+                v-if="serverSearchLoading"
+                class="portal-dropdown-ghost"
+              >
+                searching...
+              </div>
+              <div
+                v-if="!serverSearchLoading && serverSearchQuery.length >= 2 && serverSuggestions.length === 0"
+                class="portal-dropdown-ghost"
+              >
+                no matches
+              </div>
             </div>
           </div>
-          <p v-if="selectedServer" class="portal-hint">‹ {{ selectedServer.serverName }}</p>
+          <p
+            v-if="selectedServer"
+            class="portal-hint"
+          >
+            ‹ {{ selectedServer.serverName }}
+          </p>
         </div>
         <div class="portal-field">
           <label class="portal-label">[ MIN SCORE ]</label>
-          <input v-model.number="filters.minScore" type="number" min="0" placeholder="0" class="portal-input portal-input--mono" />
+          <input
+            v-model.number="filters.minScore"
+            type="number"
+            min="0"
+            placeholder="0"
+            class="portal-input portal-input--mono"
+          >
         </div>
         <div class="portal-field">
           <label class="portal-label">[ MIN K/D ]</label>
-          <input v-model.number="filters.minKd" type="number" min="0" step="0.1" placeholder="0" class="portal-input portal-input--mono" />
+          <input
+            v-model.number="filters.minKd"
+            type="number"
+            min="0"
+            step="0.1"
+            placeholder="0"
+            class="portal-input portal-input--mono"
+          >
         </div>
         <div class="portal-field">
           <label class="portal-label">[ FROM ]</label>
-          <input v-model="filters.dateFrom" type="date" class="portal-input portal-input--mono" />
+          <input
+            v-model="filters.dateFrom"
+            type="date"
+            class="portal-input portal-input--mono"
+          >
         </div>
         <div class="portal-field">
           <label class="portal-label">[ TO ]</label>
-          <input v-model="filters.dateTo" type="date" class="portal-input portal-input--mono" />
+          <input
+            v-model="filters.dateTo"
+            type="date"
+            class="portal-input portal-input--mono"
+          >
         </div>
-        <div class="portal-field portal-field--wide" style="display: flex; align-items: center; gap: 0.5rem;">
+        <div
+          class="portal-field portal-field--wide"
+          style="display: flex; align-items: center; gap: 0.5rem;"
+        >
           <input
             id="include-deleted"
             v-model="includeDeletedRounds"
             type="checkbox"
             class="portal-input"
             style="width: auto;"
-          />
-          <label for="include-deleted" class="portal-label" style="margin: 0; letter-spacing: 0.05em;">Include deleted rounds (to restore)</label>
+          >
+          <label
+            for="include-deleted"
+            class="portal-label"
+            style="margin: 0; letter-spacing: 0.05em;"
+          >Include deleted rounds (to restore)</label>
         </div>
       </div>
       <div class="portal-actions">
@@ -67,16 +110,28 @@
           :disabled="queryLoading"
           @click="runQuery"
         >
-          <span v-if="queryLoading" class="portal-btn-pulse">running</span>
+          <span
+            v-if="queryLoading"
+            class="portal-btn-pulse"
+          >running</span>
           <span v-else>run query</span>
         </button>
-        <button type="button" class="portal-btn portal-btn--ghost" @click="clearQuery">clear</button>
+        <button
+          type="button"
+          class="portal-btn portal-btn--ghost"
+          @click="clearQuery"
+        >
+          clear
+        </button>
       </div>
     </section>
 
     <!-- Results + inspect panel -->
     <div class="portal-query-main">
-      <section v-if="hasQueried" class="portal-card portal-results">
+      <section
+        v-if="hasQueried"
+        class="portal-card portal-results"
+      >
         <template v-if="tableLoading">
           <div class="portal-empty portal-empty--loading">
             <span class="portal-empty-dash">—</span>
@@ -96,7 +151,10 @@
               <table class="portal-sessions-table">
                 <thead>
                   <tr>
-                    <th v-if="canDelete" class="portal-th-select">
+                    <th
+                      v-if="canDelete"
+                      class="portal-th-select"
+                    >
                       <input
                         type="checkbox"
                         :checked="allSelectableSelected"
@@ -104,52 +162,126 @@
                         :disabled="selectableRoundGroups.length === 0"
                         aria-label="Select all rounds"
                         @change="toggleSelectAll"
-                      />
+                      >
                     </th>
-                    <th class="portal-sortable" @click="onSortClick('playerName')">player <span v-if="sortField === 'playerName'" class="portal-sort-icon">{{ sortOrder === -1 ? '↓' : '↑' }}</span></th>
-                    <th class="portal-sortable" @click="onSortClick('serverName')">server <span v-if="sortField === 'serverName'" class="portal-sort-icon">{{ sortOrder === -1 ? '↓' : '↑' }}</span></th>
-                    <th class="portal-sortable" @click="onSortClick('totalScore')">score <span v-if="sortField === 'totalScore'" class="portal-sort-icon">{{ sortOrder === -1 ? '↓' : '↑' }}</span></th>
-                    <th class="portal-sortable" @click="onSortClick('totalKills')">kills <span v-if="sortField === 'totalKills'" class="portal-sort-icon">{{ sortOrder === -1 ? '↓' : '↑' }}</span></th>
-                    <th class="portal-sortable" @click="onSortClick('kdRatio')">k/d <span v-if="sortField === 'kdRatio'" class="portal-sort-icon">{{ sortOrder === -1 ? '↓' : '↑' }}</span></th>
+                    <th
+                      class="portal-sortable"
+                      @click="onSortClick('playerName')"
+                    >
+                      player <span
+                        v-if="sortField === 'playerName'"
+                        class="portal-sort-icon"
+                      >{{ sortOrder === -1 ? '↓' : '↑' }}</span>
+                    </th>
+                    <th
+                      class="portal-sortable"
+                      @click="onSortClick('serverName')"
+                    >
+                      server <span
+                        v-if="sortField === 'serverName'"
+                        class="portal-sort-icon"
+                      >{{ sortOrder === -1 ? '↓' : '↑' }}</span>
+                    </th>
+                    <th
+                      class="portal-sortable"
+                      @click="onSortClick('totalScore')"
+                    >
+                      score <span
+                        v-if="sortField === 'totalScore'"
+                        class="portal-sort-icon"
+                      >{{ sortOrder === -1 ? '↓' : '↑' }}</span>
+                    </th>
+                    <th
+                      class="portal-sortable"
+                      @click="onSortClick('totalKills')"
+                    >
+                      kills <span
+                        v-if="sortField === 'totalKills'"
+                        class="portal-sort-icon"
+                      >{{ sortOrder === -1 ? '↓' : '↑' }}</span>
+                    </th>
+                    <th
+                      class="portal-sortable"
+                      @click="onSortClick('kdRatio')"
+                    >
+                      k/d <span
+                        v-if="sortField === 'kdRatio'"
+                        class="portal-sort-icon"
+                      >{{ sortOrder === -1 ? '↓' : '↑' }}</span>
+                    </th>
                     <th>actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <template v-for="{ roundId, sessions: roundSessions } in roundGroups" :key="roundId">
+                  <template
+                    v-for="{ roundId, sessions: roundSessions } in roundGroups"
+                    :key="roundId"
+                  >
                     <tr>
-                      <td v-if="canDelete" class="portal-round-header portal-td-select">
+                      <td
+                        v-if="canDelete"
+                        class="portal-round-header portal-td-select"
+                      >
                         <input
                           v-if="!roundSessions[0]?.roundIsDeleted"
                           type="checkbox"
                           :checked="selectedRoundIds.has(roundId)"
                           :aria-label="`Select round ${roundId}`"
                           @change="toggleRound(roundId)"
-                        />
+                        >
                       </td>
-                      <td colspan="6" class="portal-round-header">
+                      <td
+                        colspan="6"
+                        class="portal-round-header"
+                      >
                         {{ (roundSessions[0]?.roundStartTime ? formatDate(roundSessions[0].roundStartTime) + ' · ' : '') + roundId }}
-                        <span v-if="roundSessions[0]?.roundIsDeleted" class="portal-round-header-deleted">[deleted]</span>
-                        <span v-if="roundSessions.length > 1" class="portal-round-header-count">{{ roundSessions.length }} exceeding</span>
+                        <span
+                          v-if="roundSessions[0]?.roundIsDeleted"
+                          class="portal-round-header-deleted"
+                        >[deleted]</span>
+                        <span
+                          v-if="roundSessions.length > 1"
+                          class="portal-round-header-count"
+                        >{{ roundSessions.length }} exceeding</span>
                       </td>
                     </tr>
-                    <tr v-for="s in roundSessions" :key="`${s.roundId}-${s.playerName}`">
-                      <td v-if="canDelete" class="portal-td-select" />
+                    <tr
+                      v-for="s in roundSessions"
+                      :key="`${s.roundId}-${s.playerName}`"
+                    >
+                      <td
+                        v-if="canDelete"
+                        class="portal-td-select"
+                      />
                       <td>{{ s.playerName }}</td>
                       <td>{{ s.serverName }}</td>
-                      <td class="portal-mono">{{ s.totalScore }}</td>
-                      <td class="portal-mono">{{ s.totalKills }}</td>
+                      <td class="portal-mono">
+                        {{ s.totalScore }}
+                      </td>
+                      <td class="portal-mono">
+                        {{ s.totalKills }}
+                      </td>
                       <td :class="['portal-mono', (s.kdRatio ?? 0) >= 5 && 'portal-kd--high']">
                         {{ s.kdRatio != null ? s.kdRatio.toFixed(2) : '–' }}
                       </td>
                       <td>
-                        <button type="button" class="portal-cell-btn" @click="viewRound(s.roundId)">inspect</button>
+                        <button
+                          type="button"
+                          class="portal-cell-btn"
+                          @click="viewRound(s.roundId)"
+                        >
+                          inspect
+                        </button>
                       </td>
                     </tr>
                   </template>
                 </tbody>
               </table>
             </div>
-            <div v-if="canDelete && selectedRoundIds.size > 0" class="portal-bulk-actions">
+            <div
+              v-if="canDelete && selectedRoundIds.size > 0"
+              class="portal-bulk-actions"
+            >
               <span class="portal-bulk-info">{{ selectedRoundIds.size }} round{{ selectedRoundIds.size === 1 ? '' : 's' }} selected</span>
               <button
                 type="button"
@@ -166,10 +298,20 @@
                 {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, totalSessions) }} of {{ totalSessions }}
               </div>
               <div class="portal-pagination-controls">
-                <select v-model.number="pageSize" class="portal-pagination-select" @change="onPageSizeChange">
-                  <option :value="25">25</option>
-                  <option :value="50">50</option>
-                  <option :value="100">100</option>
+                <select
+                  v-model.number="pageSize"
+                  class="portal-pagination-select"
+                  @change="onPageSizeChange"
+                >
+                  <option :value="25">
+                    25
+                  </option>
+                  <option :value="50">
+                    50
+                  </option>
+                  <option :value="100">
+                    100
+                  </option>
                 </select>
                 <button
                   type="button"
@@ -194,7 +336,10 @@
         </template>
       </section>
 
-      <div v-if="roundDetail || roundDetailLoading" class="portal-round-wrap">
+      <div
+        v-if="roundDetail || roundDetailLoading"
+        class="portal-round-wrap"
+      >
         <RoundDetailPanel
           v-if="roundDetail"
           :detail="roundDetail"
@@ -205,14 +350,20 @@
           @undelete="onUndelete"
           @view-achievements="onViewAchievements"
         />
-        <div v-else class="portal-round-loading portal-card">
+        <div
+          v-else
+          class="portal-round-loading portal-card"
+        >
           <div class="portal-empty portal-empty--loading">
             <span class="portal-empty-dash">—</span>
             <span class="portal-empty-text">loading...</span>
           </div>
         </div>
       </div>
-      <div v-if="showAchievementsPanel && achievementsRoundId" class="portal-achievements-wrap">
+      <div
+        v-if="showAchievementsPanel && achievementsRoundId"
+        class="portal-achievements-wrap"
+      >
         <RoundAchievementsPanel
           :round-id="achievementsRoundId"
           :achievements="roundAchievements"
@@ -237,17 +388,31 @@
     />
 
     <!-- Bulk delete confirmation -->
-    <div v-if="showBulkDeleteModal" class="delete-modal-backdrop" @click.self="closeBulkDeleteModal">
-      <div class="delete-modal" @click.stop>
+    <div
+      v-if="showBulkDeleteModal"
+      class="delete-modal-backdrop"
+      @click.self="closeBulkDeleteModal"
+    >
+      <div
+        class="delete-modal"
+        @click.stop
+      >
         <div class="delete-modal-head">
           <span class="delete-modal-label">[ BULK DELETE ]</span>
-          <h2 class="delete-modal-title">Delete {{ selectedRoundIds.size }} round{{ selectedRoundIds.size === 1 ? '' : 's' }}</h2>
+          <h2 class="delete-modal-title">
+            Delete {{ selectedRoundIds.size }} round{{ selectedRoundIds.size === 1 ? '' : 's' }}
+          </h2>
           <p class="delete-modal-desc">
             Each round will be soft-deleted (achievements removed; round and sessions kept for recovery). Run Daily Aggregate Refresh in Cron after.
           </p>
         </div>
         <div class="delete-modal-body">
-          <p v-if="bulkDeleteError" class="delete-modal-err">{{ bulkDeleteError }}</p>
+          <p
+            v-if="bulkDeleteError"
+            class="delete-modal-err"
+          >
+            {{ bulkDeleteError }}
+          </p>
         </div>
         <div class="delete-modal-foot">
           <button

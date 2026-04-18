@@ -686,17 +686,38 @@ onUnmounted(() => {
           @click="showFilters = !showFilters"
         >
           <div class="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="text-slate-400"
+            ><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
             <span class="font-medium">Filters</span>
-            <span v-if="activeFilterCount > 0" class="px-1.5 py-0.5 text-[10px] font-bold bg-cyan-500/20 text-cyan-400 rounded">
+            <span
+              v-if="activeFilterCount > 0"
+              class="px-1.5 py-0.5 text-[10px] font-bold bg-cyan-500/20 text-cyan-400 rounded"
+            >
               {{ activeFilterCount }}
             </span>
           </div>
-          <span class="text-xs text-slate-500" :class="{ 'rotate-180': showFilters }">▼</span>
+          <span
+            class="text-xs text-slate-500"
+            :class="{ 'rotate-180': showFilters }"
+          >▼</span>
         </button>
 
         <!-- Filter Controls -->
-        <form v-if="showFilters" class="px-4 py-4 border-t border-slate-700/50 space-y-4" @submit.prevent="applyFilters">
+        <form
+          v-if="showFilters"
+          class="px-4 py-4 border-t border-slate-700/50 space-y-4"
+          @submit.prevent="applyFilters"
+        >
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <!-- Min Participants -->
             <div>
@@ -708,7 +729,7 @@ onUnmounted(() => {
                 step="1"
                 placeholder="e.g. 4"
                 class="w-full px-3 py-2 text-sm bg-slate-900/50 border border-slate-600/50 rounded text-white placeholder-slate-600 focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
-              />
+              >
             </div>
 
             <!-- Map Name -->
@@ -719,7 +740,7 @@ onUnmounted(() => {
                 type="text"
                 placeholder="e.g. Wake Island"
                 class="w-full px-3 py-2 text-sm bg-slate-900/50 border border-slate-600/50 rounded text-white placeholder-slate-600 focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
-              />
+              >
             </div>
 
             <!-- Date From -->
@@ -729,7 +750,7 @@ onUnmounted(() => {
                 v-model="filterDateFrom"
                 type="date"
                 class="w-full px-3 py-2 text-sm bg-slate-900/50 border border-slate-600/50 rounded text-white focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
-              />
+              >
             </div>
 
             <!-- Date To -->
@@ -739,7 +760,7 @@ onUnmounted(() => {
                 v-model="filterDateTo"
                 type="date"
                 class="w-full px-3 py-2 text-sm bg-slate-900/50 border border-slate-600/50 rounded text-white focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
-              />
+              >
             </div>
           </div>
 
@@ -772,7 +793,9 @@ onUnmounted(() => {
         class="flex flex-col items-center justify-center py-20 text-slate-400"
       >
         <div class="w-12 h-12 border-4 border-slate-600 border-t-cyan-400 rounded-full animate-spin mb-4" />
-        <p class="text-lg text-slate-300">Loading sessions...</p>
+        <p class="text-lg text-slate-300">
+          Loading sessions...
+        </p>
       </div>
 
       <!-- Error State -->
@@ -780,8 +803,12 @@ onUnmounted(() => {
         v-else-if="error"
         class="bg-slate-800/70 backdrop-blur-sm border border-red-800/50 rounded-xl p-8 text-center"
       >
-        <div class="text-6xl mb-4">⚠️</div>
-        <p class="text-red-400 text-lg font-medium">{{ error }}</p>
+        <div class="text-6xl mb-4">
+          ⚠️
+        </div>
+        <p class="text-red-400 text-lg font-medium">
+          {{ error }}
+        </p>
       </div>
 
       <!-- Sessions Table -->
@@ -807,10 +834,18 @@ onUnmounted(() => {
               v-model="pageSize"
               class="px-2 py-1 bg-slate-700/50 border border-slate-600/50 rounded text-white text-xs focus:ring-1 focus:ring-cyan-400 focus:border-transparent"
             >
-              <option value="10">10</option>
-              <option value="20">20</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
+              <option value="10">
+                10
+              </option>
+              <option value="20">
+                20
+              </option>
+              <option value="50">
+                50
+              </option>
+              <option value="100">
+                100
+              </option>
             </select>
           </div>
         </div>
@@ -821,42 +856,80 @@ onUnmounted(() => {
           class="grid grid-cols-2 sm:grid-cols-4 gap-3"
         >
           <div class="bg-slate-800/40 border border-slate-700/50 rounded-lg px-4 py-3 text-center">
-            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">Avg Kills</div>
-            <div class="text-xl font-bold text-green-400">{{ playerAggregate.avgKills }}</div>
+            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+              Avg Kills
+            </div>
+            <div class="text-xl font-bold text-green-400">
+              {{ playerAggregate.avgKills }}
+            </div>
           </div>
           <div class="bg-slate-800/40 border border-slate-700/50 rounded-lg px-4 py-3 text-center">
-            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">Overall K/D</div>
-            <div class="text-xl font-bold text-violet-400">{{ playerAggregate.kd }}</div>
+            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+              Overall K/D
+            </div>
+            <div class="text-xl font-bold text-violet-400">
+              {{ playerAggregate.kd }}
+            </div>
           </div>
           <div class="bg-slate-800/40 border border-slate-700/50 rounded-lg px-4 py-3 text-center">
-            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">Best Kills</div>
-            <div class="text-xl font-bold text-cyan-400">{{ playerAggregate.bestKills }}</div>
+            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+              Best Kills
+            </div>
+            <div class="text-xl font-bold text-cyan-400">
+              {{ playerAggregate.bestKills }}
+            </div>
           </div>
           <div class="bg-slate-800/40 border border-slate-700/50 rounded-lg px-4 py-3 text-center">
-            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">Best Score</div>
-            <div class="text-xl font-bold text-amber-400">{{ playerAggregate.bestScore }}</div>
+            <div class="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+              Best Score
+            </div>
+            <div class="text-xl font-bold text-amber-400">
+              {{ playerAggregate.bestScore }}
+            </div>
           </div>
         </div>
 
         <!-- Charts Section -->
-        <div v-if="rounds.length > 1" class="bg-slate-800/30 backdrop-blur-sm rounded-lg border border-slate-700/50 overflow-hidden">
+        <div
+          v-if="rounds.length > 1"
+          class="bg-slate-800/30 backdrop-blur-sm rounded-lg border border-slate-700/50 overflow-hidden"
+        >
           <button
             type="button"
             class="w-full flex items-center justify-between px-4 py-3 text-sm text-slate-300 hover:bg-slate-700/30 transition-colors"
             @click="showCharts = !showCharts"
           >
             <div class="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-slate-400"
+              ><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
               <span class="font-medium">Charts</span>
             </div>
-            <span class="text-xs text-slate-500" :class="{ 'rotate-180': showCharts }">▼</span>
+            <span
+              class="text-xs text-slate-500"
+              :class="{ 'rotate-180': showCharts }"
+            >▼</span>
           </button>
 
-          <div v-if="showCharts" class="border-t border-slate-700/50 p-4 space-y-6">
+          <div
+            v-if="showCharts"
+            class="border-t border-slate-700/50 p-4 space-y-6"
+          >
             <!-- Player Performance Worm (player context only) -->
             <div v-if="props.playerName && playerPerformanceRounds.length > 1">
               <div class="flex items-center gap-2 mb-3">
-                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">My Performance</h4>
+                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">
+                  My Performance
+                </h4>
                 <span class="text-[10px] text-slate-600 font-mono">{{ playerPerformanceRounds.length }} rounds · oldest → newest</span>
               </div>
               <div class="h-52 sm:h-64">
@@ -869,28 +942,52 @@ onUnmounted(() => {
             </div>
 
             <!-- Score Timeline (hidden on mobile) -->
-            <div v-if="roundsWithScores.length > 1" class="hidden sm:block">
-              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Team Scores Over Time</h4>
+            <div
+              v-if="roundsWithScores.length > 1"
+              class="hidden sm:block"
+            >
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">
+                Team Scores Over Time
+              </h4>
               <div class="h-48 sm:h-56">
-                <Line :key="`scores-${roundsWithScores.length}`" :data="scoreLineChartData" :options="scoreLineChartOptions" />
+                <Line
+                  :key="`scores-${roundsWithScores.length}`"
+                  :data="scoreLineChartData"
+                  :options="scoreLineChartOptions"
+                />
               </div>
             </div>
 
             <!-- Team Wins + Player Placements side by side (non-player context) -->
-            <div v-if="!props.playerName" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div
+              v-if="!props.playerName"
+              class="grid grid-cols-1 lg:grid-cols-2 gap-6"
+            >
               <!-- Team Wins -->
               <div v-if="teamWinChartData.labels.length > 0">
-                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Team Wins</h4>
+                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">
+                  Team Wins
+                </h4>
                 <div class="h-32">
-                  <Bar :key="`teamwins-${rounds.length}`" :data="teamWinChartData" :options="teamWinChartOptions" />
+                  <Bar
+                    :key="`teamwins-${rounds.length}`"
+                    :data="teamWinChartData"
+                    :options="teamWinChartOptions"
+                  />
                 </div>
               </div>
 
               <!-- Player Placements -->
               <div v-if="placementChartData.labels.length > 0">
-                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Top Player Placements</h4>
+                <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">
+                  Top Player Placements
+                </h4>
                 <div :style="{ height: Math.max(200, placementChartData.labels.length * 28) + 'px' }">
-                  <Bar :key="`placements-${rounds.length}`" :data="placementChartData" :options="placementChartOptions" />
+                  <Bar
+                    :key="`placements-${rounds.length}`"
+                    :data="placementChartData"
+                    :options="placementChartOptions"
+                  />
                 </div>
               </div>
             </div>
@@ -923,7 +1020,10 @@ onUnmounted(() => {
             >
               {{ page }}
             </button>
-            <span v-if="totalPages > 5" class="text-slate-500">...</span>
+            <span
+              v-if="totalPages > 5"
+              class="text-slate-500"
+            >...</span>
           </div>
           <button
             :disabled="currentPage === totalPages"
@@ -1024,7 +1124,10 @@ onUnmounted(() => {
                 <td class="py-4 px-4">
                   <!-- Player context: show own stats prominently, top 3 below -->
                   <template v-if="props.playerName">
-                    <div v-if="playerStatsData[round.roundId]" class="space-y-2">
+                    <div
+                      v-if="playerStatsData[round.roundId]"
+                      class="space-y-2"
+                    >
                       <!-- Own stats card -->
                       <div class="bg-gradient-to-r from-cyan-500/20 to-blue-500/15 border border-cyan-400/40 rounded-lg px-3 py-2">
                         <div class="flex items-center gap-3 flex-wrap">
@@ -1052,7 +1155,10 @@ onUnmounted(() => {
                         </div>
                       </div>
                       <!-- Top 3 context (subtle) -->
-                      <div v-if="round.topPlayers && round.topPlayers.length > 0" class="space-y-0.5">
+                      <div
+                        v-if="round.topPlayers && round.topPlayers.length > 0"
+                        class="space-y-0.5"
+                      >
                         <div
                           v-for="(player, playerIdx) in round.topPlayers.slice(0, 3)"
                           :key="playerIdx"
@@ -1064,11 +1170,17 @@ onUnmounted(() => {
                             :class="player.playerName === props.playerName ? 'text-cyan-400 font-semibold' : 'text-slate-500'"
                           >{{ player.playerName }}</span>
                           <span class="text-slate-700">/</span>
-                          <span :class="getKDRColor(player.kills, player.deaths)" class="font-mono">{{ calculateKDR(player.kills, player.deaths) }}</span>
+                          <span
+                            :class="getKDRColor(player.kills, player.deaths)"
+                            class="font-mono"
+                          >{{ calculateKDR(player.kills, player.deaths) }}</span>
                         </div>
                       </div>
                     </div>
-                    <span v-else class="text-sm text-slate-500">—</span>
+                    <span
+                      v-else
+                      class="text-sm text-slate-500"
+                    >—</span>
                   </template>
 
                   <!-- Non-player context: original top 3 display -->
@@ -1084,18 +1196,27 @@ onUnmounted(() => {
                       >
                         <div class="flex items-center gap-2">
                           <span class="font-bold tabular-nums text-slate-400">{{ playerIdx + 1 }}.</span>
-                          <span class="font-medium truncate max-w-[100px] text-slate-200" :title="player.playerName">
+                          <span
+                            class="font-medium truncate max-w-[100px] text-slate-200"
+                            :title="player.playerName"
+                          >
                             {{ player.playerName }}
                           </span>
                           <span class="text-slate-600">/</span>
-                          <span class="font-mono font-semibold" :class="getKDRColor(player.kills, player.deaths)">
+                          <span
+                            class="font-mono font-semibold"
+                            :class="getKDRColor(player.kills, player.deaths)"
+                          >
                             {{ calculateKDR(player.kills, player.deaths) }}
                           </span>
                           <span class="text-slate-600">{{ player.score }}</span>
                         </div>
                       </div>
                     </div>
-                    <span v-else class="text-sm text-slate-500">—</span>
+                    <span
+                      v-else
+                      class="text-sm text-slate-500"
+                    >—</span>
                   </template>
                 </td>
 
@@ -1165,9 +1286,15 @@ onUnmounted(() => {
         v-else
         class="flex flex-col items-center justify-center py-12 text-slate-400"
       >
-        <div class="text-5xl mb-3 opacity-50">🎮</div>
-        <p class="text-base font-medium">No sessions found</p>
-        <p class="text-sm text-slate-500 mt-1">Try adjusting your filters or check back later</p>
+        <div class="text-5xl mb-3 opacity-50">
+          🎮
+        </div>
+        <p class="text-base font-medium">
+          No sessions found
+        </p>
+        <p class="text-sm text-slate-500 mt-1">
+          Try adjusting your filters or check back later
+        </p>
       </div>
     </div>
   </div>

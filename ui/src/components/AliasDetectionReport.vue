@@ -4,16 +4,26 @@
     <div class="overall-score-section">
       <div class="score-card">
         <div class="score-visual">
-          <div class="score-circle" :class="`level-${suspicionLevel}`">
-            <div class="score-value">{{ (report.overallSimilarityScore * 100).toFixed(0) }}%</div>
-            <div class="score-label">Similarity</div>
+          <div
+            class="score-circle"
+            :class="`level-${suspicionLevel}`"
+          >
+            <div class="score-value">
+              {{ (report.overallSimilarityScore * 100).toFixed(0) }}%
+            </div>
+            <div class="score-label">
+              Similarity
+            </div>
           </div>
         </div>
 
         <div class="score-info">
           <div class="score-header">
             <h2>{{ report.player1 }} vs {{ report.player2 }}</h2>
-            <div class="suspicion-badge" :class="`level-${suspicionLevel}`">
+            <div
+              class="suspicion-badge"
+              :class="`level-${suspicionLevel}`"
+            >
               {{ suspicionLabel }}
             </div>
           </div>
@@ -21,7 +31,10 @@
           <p class="score-confidence">
             <span class="confidence-label">Analysis Confidence:</span>
             <span class="confidence-bar">
-              <span class="confidence-fill" :style="{ width: (report.analysisConfidence * 100) + '%' }"></span>
+              <span
+                class="confidence-fill"
+                :style="{ width: (report.analysisConfidence * 100) + '%' }"
+              />
             </span>
             <span class="confidence-value">{{ (report.analysisConfidence * 100).toFixed(0) }}%</span>
           </p>
@@ -57,9 +70,14 @@
         </div>
         <div class="card-body">
           <div class="score-bar">
-            <div class="bar-fill" :style="{ width: (report.statAnalysis.score * 100) + '%' }"></div>
+            <div
+              class="bar-fill"
+              :style="{ width: (report.statAnalysis.score * 100) + '%' }"
+            />
           </div>
-          <p class="score-text">{{ (report.statAnalysis.score * 100).toFixed(1) }}% match</p>
+          <p class="score-text">
+            {{ (report.statAnalysis.score * 100).toFixed(1) }}% match
+          </p>
 
           <div class="metrics">
             <div class="metric">
@@ -80,7 +98,9 @@
             </div>
           </div>
 
-          <p class="analysis-text">{{ report.statAnalysis.analysis }}</p>
+          <p class="analysis-text">
+            {{ report.statAnalysis.analysis }}
+          </p>
         </div>
       </div>
 
@@ -94,9 +114,14 @@
         </div>
         <div class="card-body">
           <div class="score-bar">
-            <div class="bar-fill" :style="{ width: (report.behavioralAnalysis.score * 100) + '%' }"></div>
+            <div
+              class="bar-fill"
+              :style="{ width: (report.behavioralAnalysis.score * 100) + '%' }"
+            />
           </div>
-          <p class="score-text">{{ (report.behavioralAnalysis.score * 100).toFixed(1) }}% match</p>
+          <p class="score-text">
+            {{ (report.behavioralAnalysis.score * 100).toFixed(1) }}% match
+          </p>
 
           <div class="metrics">
             <div class="metric">
@@ -117,7 +142,9 @@
             </div>
           </div>
 
-          <p class="analysis-text">{{ report.behavioralAnalysis.analysis }}</p>
+          <p class="analysis-text">
+            {{ report.behavioralAnalysis.analysis }}
+          </p>
         </div>
       </div>
 
@@ -131,9 +158,14 @@
         </div>
         <div class="card-body">
           <div class="score-bar">
-            <div class="bar-fill" :style="{ width: (report.networkAnalysis.score * 100) + '%' }"></div>
+            <div
+              class="bar-fill"
+              :style="{ width: (report.networkAnalysis.score * 100) + '%' }"
+            />
           </div>
-          <p class="score-text">{{ (report.networkAnalysis.score * 100).toFixed(1) }}% match</p>
+          <p class="score-text">
+            {{ (report.networkAnalysis.score * 100).toFixed(1) }}% match
+          </p>
 
           <div class="metrics">
             <div class="metric">
@@ -150,7 +182,9 @@
             </div>
           </div>
 
-          <p class="analysis-text">{{ report.networkAnalysis.analysis }}</p>
+          <p class="analysis-text">
+            {{ report.networkAnalysis.analysis }}
+          </p>
         </div>
       </div>
 
@@ -164,9 +198,14 @@
         </div>
         <div class="card-body">
           <div class="score-bar">
-            <div class="bar-fill" :style="{ width: (report.temporalAnalysis.score * 100) + '%' }"></div>
+            <div
+              class="bar-fill"
+              :style="{ width: (report.temporalAnalysis.score * 100) + '%' }"
+            />
           </div>
-          <p class="score-text">{{ (report.temporalAnalysis.score * 100).toFixed(1) }}% match</p>
+          <p class="score-text">
+            {{ (report.temporalAnalysis.score * 100).toFixed(1) }}% match
+          </p>
 
           <div class="metrics">
             <div class="metric">
@@ -183,7 +222,9 @@
             </div>
           </div>
 
-          <p class="analysis-text">{{ report.temporalAnalysis.analysis }}</p>
+          <p class="analysis-text">
+            {{ report.temporalAnalysis.analysis }}
+          </p>
         </div>
       </div>
     </div>
@@ -192,35 +233,63 @@
     <div class="evidence-section">
       <div class="evidence-grid">
         <!-- Red Flags -->
-        <div v-if="report.redFlags.length" class="evidence-card red-flags">
-          <h3 class="evidence-title">Red Flags</h3>
+        <div
+          v-if="report.redFlags.length"
+          class="evidence-card red-flags"
+        >
+          <h3 class="evidence-title">
+            Red Flags
+          </h3>
           <ul class="evidence-list">
-            <li v-for="(flag, idx) in report.redFlags" :key="idx" class="evidence-item">
+            <li
+              v-for="(flag, idx) in report.redFlags"
+              :key="idx"
+              class="evidence-item"
+            >
               {{ flag }}
             </li>
           </ul>
         </div>
 
         <!-- Green Flags -->
-        <div v-if="report.greenFlags.length" class="evidence-card green-flags">
-          <h3 class="evidence-title">Green Flags</h3>
+        <div
+          v-if="report.greenFlags.length"
+          class="evidence-card green-flags"
+        >
+          <h3 class="evidence-title">
+            Green Flags
+          </h3>
           <ul class="evidence-list">
-            <li v-for="(flag, idx) in report.greenFlags" :key="idx" class="evidence-item">
+            <li
+              v-for="(flag, idx) in report.greenFlags"
+              :key="idx"
+              class="evidence-item"
+            >
               {{ flag }}
             </li>
           </ul>
         </div>
 
         <!-- No Evidence -->
-        <div v-if="!report.redFlags.length && !report.greenFlags.length" class="evidence-card neutral">
-          <h3 class="evidence-title">No Conclusive Evidence</h3>
-          <p class="evidence-text">The analysis did not find strong indicators in either direction.</p>
+        <div
+          v-if="!report.redFlags.length && !report.greenFlags.length"
+          class="evidence-card neutral"
+        >
+          <h3 class="evidence-title">
+            No Conclusive Evidence
+          </h3>
+          <p class="evidence-text">
+            The analysis did not find strong indicators in either direction.
+          </p>
         </div>
       </div>
     </div>
 
     <!-- Timeline Section (if available) -->
-    <div v-if="report.activityTimeline" class="timeline-section">
+    <div
+      v-if="report.activityTimeline"
+      class="timeline-section"
+    >
       <h3>Activity Timeline</h3>
       <div class="timeline-card">
         <div class="timeline-content">
@@ -233,7 +302,10 @@
             <span class="period-sessions">{{ report.activityTimeline.player1Activity.totalSessions }} sessions</span>
           </div>
 
-          <div class="gap-info" :class="`gap-${report.activityTimeline.gap.switchoverWindowDays > 30 ? 'large' : 'tight'}`">
+          <div
+            class="gap-info"
+            :class="`gap-${report.activityTimeline.gap.switchoverWindowDays > 30 ? 'large' : 'tight'}`"
+          >
             <span class="gap-days">{{ report.activityTimeline.gap.switchoverWindowDays }} days</span>
             <span class="gap-description">{{ report.activityTimeline.gap.patternDescription }}</span>
           </div>
@@ -249,7 +321,6 @@
         </div>
       </div>
     </div>
-
   </div>
 </template>
 

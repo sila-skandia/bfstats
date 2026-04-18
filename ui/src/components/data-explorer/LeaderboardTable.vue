@@ -3,10 +3,18 @@
     <table class="leaderboard-table">
       <thead>
         <tr>
-          <th class="col-rank">#</th>
-          <th class="col-player">Player</th>
-          <th class="col-value">{{ primaryColumnHeader }}</th>
-          <th class="col-rounds">Rounds</th>
+          <th class="col-rank">
+            #
+          </th>
+          <th class="col-player">
+            Player
+          </th>
+          <th class="col-value">
+            {{ primaryColumnHeader }}
+          </th>
+          <th class="col-rounds">
+            Rounds
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -35,7 +43,10 @@
       </tbody>
     </table>
 
-    <div v-if="entries.length === 0" class="leaderboard-empty">
+    <div
+      v-if="entries.length === 0"
+      class="leaderboard-empty"
+    >
       No player data available
     </div>
   </div>

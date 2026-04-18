@@ -427,12 +427,22 @@ watch(searchQuery, () => renderGraph())
 </script>
 
 <template>
-  <div ref="containerRef" class="server-orbit-container" :class="{ 'server-orbit--fullscreen': isFullscreen }">
+  <div
+    ref="containerRef"
+    class="server-orbit-container"
+    :class="{ 'server-orbit--fullscreen': isFullscreen }"
+  >
     <div class="orbit-header">
-      <h3 class="orbit-title">SERVER-PLAYER NETWORK</h3>
+      <h3 class="orbit-title">
+        SERVER-PLAYER NETWORK
+      </h3>
       <p class="orbit-subtitle">
-        <template v-if="communityId">How community players connect through servers</template>
-        <template v-else>Your server and player connections</template>
+        <template v-if="communityId">
+          How community players connect through servers
+        </template>
+        <template v-else>
+          Your server and player connections
+        </template>
       </p>
     </div>
 
@@ -445,18 +455,40 @@ watch(searchQuery, () => renderGraph())
             type="text"
             placeholder="Search players or servers..."
             class="search-input"
-          />
-          <button v-if="searchQuery" class="search-clear" @click="searchQuery = ''">&times;</button>
+          >
+          <button
+            v-if="searchQuery"
+            class="search-clear"
+            @click="searchQuery = ''"
+          >
+            &times;
+          </button>
         </div>
       </div>
       <div class="control-row control-row--between">
         <div class="legend">
-          <span class="legend-item"><span class="legend-rect" style="background: #8b5cf6;"></span>Servers</span>
-          <span class="legend-item"><span class="legend-circle" style="background: #22d3ee;"></span>Players</span>
+          <span class="legend-item"><span
+            class="legend-rect"
+            style="background: #8b5cf6;"
+          />Servers</span>
+          <span class="legend-item"><span
+            class="legend-circle"
+            style="background: #22d3ee;"
+          />Players</span>
         </div>
         <div class="control-actions">
-          <button class="zoom-reset-btn" title="Reset zoom" @click="resetZoom">Reset zoom</button>
-          <button class="zoom-reset-btn" :title="isFullscreen ? 'Exit fullscreen (ESC)' : 'Fullscreen'" @click="toggleFullscreen">
+          <button
+            class="zoom-reset-btn"
+            title="Reset zoom"
+            @click="resetZoom"
+          >
+            Reset zoom
+          </button>
+          <button
+            class="zoom-reset-btn"
+            :title="isFullscreen ? 'Exit fullscreen (ESC)' : 'Fullscreen'"
+            @click="toggleFullscreen"
+          >
             {{ isFullscreen ? 'Exit' : 'Fullscreen' }}
           </button>
         </div>
@@ -464,32 +496,54 @@ watch(searchQuery, () => renderGraph())
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="orbit-loading">
-      <div class="loading-spinner"></div>
+    <div
+      v-if="loading"
+      class="orbit-loading"
+    >
+      <div class="loading-spinner" />
       <span>Mapping network...</span>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="orbit-error">{{ error }}</div>
+    <div
+      v-else-if="error"
+      class="orbit-error"
+    >
+      {{ error }}
+    </div>
 
     <!-- Empty -->
-    <div v-else-if="graphNodes.length === 0 && !loading" class="orbit-empty">
+    <div
+      v-else-if="graphNodes.length === 0 && !loading"
+      class="orbit-empty"
+    >
       <p>No network data available yet.</p>
-      <p class="orbit-empty-hint">Data populates after the daily sync runs.</p>
+      <p class="orbit-empty-hint">
+        Data populates after the daily sync runs.
+      </p>
     </div>
 
     <!-- Visualization -->
-    <div v-show="graphNodes.length > 0 && !loading" class="orbit-viz">
+    <div
+      v-show="graphNodes.length > 0 && !loading"
+      class="orbit-viz"
+    >
       <svg
         ref="svgElement"
         :width="width"
         :height="height"
         :viewBox="`0 0 ${width} ${height}`"
-      ></svg>
+      />
 
       <!-- Hover tooltip -->
-      <div v-if="hoveredNode" class="orbit-tooltip">
-        <div class="tooltip-name" :style="{ color: hoveredNode.type === 'server' ? '#8b5cf6' : '#22d3ee' }">
+      <div
+        v-if="hoveredNode"
+        class="orbit-tooltip"
+      >
+        <div
+          class="tooltip-name"
+          :style="{ color: hoveredNode.type === 'server' ? '#8b5cf6' : '#22d3ee' }"
+        >
           {{ hoveredNode.label }}
         </div>
         <div class="tooltip-row">
@@ -508,9 +562,14 @@ watch(searchQuery, () => renderGraph())
     </div>
 
     <!-- Footer -->
-    <div v-if="graphNodes.length > 0 && !loading" class="orbit-footer">
+    <div
+      v-if="graphNodes.length > 0 && !loading"
+      class="orbit-footer"
+    >
       {{ serverCount }} server{{ serverCount !== 1 ? 's' : '' }} · {{ playerCount }} player{{ playerCount !== 1 ? 's' : '' }} · {{ graphEdges.length }} connections
-      <template v-if="zoomTransform.k !== 1"> · {{ Math.round(zoomTransform.k * 100) }}%</template>
+      <template v-if="zoomTransform.k !== 1">
+        · {{ Math.round(zoomTransform.k * 100) }}%
+      </template>
     </div>
   </div>
 </template>
