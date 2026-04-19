@@ -152,6 +152,7 @@ export interface RecentStats {
   analysisPeriodStart: string; // ISO date string
   analysisPeriodEnd: string; // ISO date string
   totalRoundsAnalyzed: number;
+  granularity: 'daily' | 'weekly' | 'monthly';
   kdRatioTrend: TrendDataPoint[];
   killRateTrend: TrendDataPoint[];
 }

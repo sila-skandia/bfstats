@@ -20,6 +20,7 @@ import ServerComments from '../components/ServerComments.vue';
 import ForecastModal from '../components/ForecastModal.vue';
 import discordIcon from '@/assets/discord.webp';
 import { useAIContext } from '@/composables/useAIContext';
+import { useVisitedServers } from '@/composables/useVisitedServers';
 import PingProximityOrbit from '@/components/PingProximityOrbit.vue';
 
 // Register Chart.js components
@@ -30,6 +31,7 @@ const router = useRouter();
 
 // AI Context
 const { setContext, clearContext } = useAIContext();
+const { recordVisit } = useVisitedServers();
 
 // State
 const serverName = ref(route.params.serverName as string);
@@ -205,6 +207,14 @@ const fetchData = async () => {
       serverName: serverName.value,
       game: serverDetails.value?.gameId || 'bf1942'
     });
+
+    if (serverDetails.value?.serverGuid) {
+      recordVisit(
+        serverDetails.value.serverGuid,
+        serverName.value,
+        (serverDetails.value.gameId || 'bf1942').toLowerCase()
+      );
+    }
 
     // Fetch live server data and busy indicator data asynchronously after server details are loaded
     fetchLiveServerDataAsync();

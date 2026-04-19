@@ -4,6 +4,7 @@ import { useAuth } from '../composables/useAuth'
 // Lazy load all route components for optimal code splitting
 const Dashboard = () => import('../views/Dashboard.vue')
 const LandingPageV2 = () => import('../views/LandingPageV2.vue')
+const LandingPageV3 = () => import('../views/LandingPageV3.vue')
 const Players = () => import('../views/Players.vue')
 const PlayerDetails = () => import('../views/PlayerDetails.vue')
 const PlayerAllAchievements = () => import('../views/PlayerAllAchievements.vue')
@@ -115,6 +116,36 @@ const routes: RouteRecordRaw[] = [
       meta: {
         title: 'Battlefield Vietnam Servers - BF Vietnam Server Browser',
         description: 'Find active Battlefield Vietnam servers with jungle warfare action. Live server statistics, player counts, and Vietnam War era battlefield servers.'
+      }
+    },
+    {
+      path: '/servers/bf1942/v3',
+      name: 'servers-bf1942-v3',
+      component: LandingPageV3,
+      props: { initialMode: '42' },
+      meta: {
+        title: 'Command Center (beta) - BF1942 | BF Stats',
+        description: 'Live rounds, recent wins, and network pulse for Battlefield 1942 servers. Beta command-center view.'
+      }
+    },
+    {
+      path: '/servers/fh2/v3',
+      name: 'servers-fh2-v3',
+      component: LandingPageV3,
+      props: { initialMode: 'FH2' },
+      meta: {
+        title: 'Command Center (beta) - FH2 | BF Stats',
+        description: 'Live rounds, recent wins, and network pulse for Forgotten Hope 2 servers. Beta command-center view.'
+      }
+    },
+    {
+      path: '/servers/bfv/v3',
+      name: 'servers-bfv-v3',
+      component: LandingPageV3,
+      props: { initialMode: 'BFV' },
+      meta: {
+        title: 'Command Center (beta) - BF Vietnam | BF Stats',
+        description: 'Live rounds, recent wins, and network pulse for Battlefield Vietnam servers. Beta command-center view.'
       }
     },
     {
