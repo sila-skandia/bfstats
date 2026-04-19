@@ -102,7 +102,25 @@ const isDeepDiveLoading = ref(false);
 const deepDiveError = ref<string | null>(null);
 
 // V2 Tab Navigation
-const activeTab = ref<'live' | 'leaderboards' | 'maps' | 'insights' | 'deep-dive'>('live');
+const tabFromRoute = computed(() => (route.query.tab as string) || 'live');
+const activeTab = ref<'live' | 'leaderboards' | 'maps' | 'insights' | 'deep-dive'>(tabFromRoute.value as any);
+
+// Keep tab in sync with route
+watch(
+  () => route.query.tab,
+  (newTab) => {
+    if (newTab && tabs.some(t => t.id === newTab)) {
+      activeTab.value = newTab as any;
+    }
+  }
+);
+
+// Update route when tab changes
+watch(activeTab, (newTab) => {
+  if (route.query.tab !== newTab) {
+    router.replace({ query: { ...route.query, tab: newTab } });
+  }
+});
 const tabs = [
   { id: 'live' as const, label: 'LIVE STATUS' },
   { id: 'leaderboards' as const, label: 'LEADERBOARDS' },

@@ -157,7 +157,8 @@ public class RoundsController(
     public async Task<ActionResult<List<RecentRoundSummary>>> GetRecentRoundSummaries(
         [FromQuery] string? game = null,
         [FromQuery] int limit = 10,
-        [FromQuery] int hoursBack = 6)
+        [FromQuery] int hoursBack = 6,
+        [FromQuery] int minPlayers = 1)
     {
         if (limit < 1 || limit > 50)
         {
@@ -169,7 +170,12 @@ public class RoundsController(
             return BadRequest("hoursBack must be between 1 and 72");
         }
 
-        var cacheKey = $"landing:rounds:recent:{game ?? "all"}:{limit}:{hoursBack}";
+        if (minPlayers < 0 || minPlayers > 128)
+        {
+            return BadRequest("minPlayers must be between 0 and 128");
+        }
+
+        var cacheKey = $"landing:rounds:recent:{game ?? "all"}:{limit}:{hoursBack}:{minPlayers}";
         var cached = await cacheService.GetAsync<RecentRoundsCacheEnvelope>(cacheKey);
         if (cached != null)
         {
@@ -178,7 +184,7 @@ public class RoundsController(
 
         try
         {
-            var rounds = await roundsService.GetRecentRoundSummaries(game, limit, hoursBack);
+            var rounds = await roundsService.GetRecentRoundSummaries(game, limit, hoursBack, minPlayers);
             await cacheService.SetAsync(cacheKey, new RecentRoundsCacheEnvelope(rounds), TimeSpan.FromSeconds(60));
             return Ok(rounds);
         }

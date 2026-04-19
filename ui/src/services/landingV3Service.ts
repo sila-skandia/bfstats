@@ -90,8 +90,8 @@ export async function fetchLiveRounds(game?: string, limit: number = 12): Promis
   return response.data
 }
 
-export async function fetchRecentRoundSummaries(game?: string, limit: number = 10, hoursBack: number = 6): Promise<RecentRoundSummary[]> {
-  const params: Record<string, string> = { limit: String(limit), hoursBack: String(hoursBack) }
+export async function fetchRecentRoundSummaries(game?: string, limit: number = 10, hoursBack: number = 6, minPlayers: number = 1): Promise<RecentRoundSummary[]> {
+  const params: Record<string, string> = { limit: String(limit), hoursBack: String(hoursBack), minPlayers: String(minPlayers) }
   if (game) params.game = game
   const response = await axios.get<RecentRoundSummary[]>('/stats/rounds/recent-summaries', { params })
   return response.data
