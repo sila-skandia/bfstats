@@ -123,11 +123,33 @@ const changeBestScoresTab = (tabKey: 'allTime' | 'last30Days' | 'thisWeek') => {
 
 
 // Computed properties for trend charts
+const trendLabelFormatter = computed(() => {
+  const granularity = playerStats.value?.recentStats?.granularity ?? 'daily';
+  if (granularity === 'monthly') {
+    return (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  }
+  if (granularity === 'weekly') {
+    return (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+  }
+  return (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+});
+
+const trendsHeaderLabel = computed(() => {
+  const granularity = playerStats.value?.recentStats?.granularity ?? 'daily';
+  const rounds = playerStats.value?.recentStats?.totalRoundsAnalyzed ?? 0;
+  const bucketLabel = granularity === 'monthly'
+    ? 'Career Telemetry · Monthly'
+    : granularity === 'weekly'
+      ? 'Career Telemetry · Weekly'
+      : 'Recent Telemetry · Daily';
+  return `${bucketLabel} · ${rounds} rounds analyzed`;
+});
+
 const killRateTrendChartData = computed(() => {
   if (!playerStats.value?.recentStats?.killRateTrend) return { labels: [], datasets: [] };
 
   const trend = playerStats.value.recentStats.killRateTrend;
-  const labels = trend.map((point: TrendDataPoint) => new Date(point.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+  const labels = trend.map((point: TrendDataPoint) => trendLabelFormatter.value(point.timestamp));
   const data = trend.map((point: TrendDataPoint) => point.value);
 
   return {
@@ -153,7 +175,7 @@ const kdRatioTrendChartData = computed(() => {
   if (!playerStats.value?.recentStats?.kdRatioTrend) return { labels: [], datasets: [] };
 
   const trend = playerStats.value.recentStats.kdRatioTrend;
-  const labels = trend.map((point: TrendDataPoint) => new Date(point.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+  const labels = trend.map((point: TrendDataPoint) => trendLabelFormatter.value(point.timestamp));
   const data = trend.map((point: TrendDataPoint) => point.value);
 
   return {
@@ -1657,7 +1679,7 @@ onUnmounted(() => {
                         PERFORMANCE TRENDS
                       </h3>
                       <p class="text-[10px] text-neutral-500 font-mono mt-1 uppercase tracking-wider">
-                        90-Day Telemetry · {{ playerStats.recentStats.totalRoundsAnalyzed }} rounds analyzed
+                        {{ trendsHeaderLabel }}
                       </p>
                     </div>
                     <div class="hidden sm:flex items-center gap-1 text-[9px] font-mono text-neutral-500 uppercase tracking-widest">

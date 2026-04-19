@@ -597,6 +597,7 @@ try
     builder.Services.AddScoped<ServerStatsService>();
     builder.Services.AddScoped<IServerStatsService>(sp => sp.GetRequiredService<ServerStatsService>());
     builder.Services.AddScoped<RoundsService>();
+    builder.Services.AddScoped<api.Landing.ILandingService, api.Landing.LandingService>();
     // Register the stat collector background services
     builder.Services.AddHostedService<StatsCollectionBackgroundService>();
     builder.Services.AddHostedService<RankingCalculationService>();

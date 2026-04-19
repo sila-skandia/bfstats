@@ -14,6 +14,7 @@
       >
         <!-- Main Server Table -->
         <div class="flex-1 min-w-0 w-full">
+          <BetaV3Banner :game="activeFilter as 'bf1942' | 'fh2' | 'bfvietnam'" />
           <!-- LIVE PULSE BANNER -->
           <section
             v-if="!loading && !error"
@@ -855,6 +856,8 @@ import { formatTimeRemaining } from '../utils/timeUtils'
 import PlayerSearch from '../components/PlayerSearch.vue'
 import InstallationLinksDropdown from '../components/InstallationLinksDropdown.vue'
 import PlayerHistorySection from '../components/PlayerHistorySection.vue'
+
+import BetaV3Banner from '../components/landing-v3/BetaV3Banner.vue'
 
 import bf1942Icon from '@/assets/bf1942.webp'
 import fh2Icon from '@/assets/fh2.webp'

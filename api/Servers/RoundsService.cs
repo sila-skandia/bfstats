@@ -238,6 +238,261 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         };
     }
 
+    public async Task<List<LiveRoundSummary>> GetLiveRounds(string? game, int limit)
+    {
+        var cutoff = DateTime.UtcNow.AddHours(-2);
+        var normalisedGame = game?.ToLowerInvariant();
+
+        var rawQuery = dbContext.Rounds
+            .AsNoTracking()
+            .Where(r => r.IsActive && !r.IsDeleted && r.StartTime >= cutoff)
+            .Join(dbContext.Servers.AsNoTracking(),
+                r => r.ServerGuid,
+                s => s.Guid,
+                (r, s) => new { Round = r, Server = s });
+
+        if (!string.IsNullOrWhiteSpace(normalisedGame))
+        {
+            rawQuery = rawQuery.Where(x => x.Server.Game == normalisedGame);
+        }
+
+        rawQuery = rawQuery.Where(x => x.Server.IsOnline && x.Server.CurrentNumPlayers > 0);
+
+        var candidates = await rawQuery
+            .Select(x => new
+            {
+                x.Round.RoundId,
+                x.Round.ServerGuid,
+                x.Round.ServerName,
+                x.Server.Country,
+                x.Round.MapName,
+                x.Round.GameType,
+                x.Server.Game,
+                x.Round.StartTime,
+                x.Round.RoundTimeRemain,
+                CurrentPlayers = x.Server.CurrentNumPlayers,
+                MaxPlayers = x.Server.MaxPlayers ?? 0,
+                x.Round.Tickets1,
+                x.Round.Tickets2,
+                x.Round.Team1Label,
+                x.Round.Team2Label
+            })
+            .ToListAsync();
+
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var roundIds = candidates.Select(c => c.RoundId).ToList();
+
+        var topPlayersByRound = await dbContext.PlayerSessions
+            .AsNoTracking()
+            .Where(ps => ps.RoundId != null && roundIds.Contains(ps.RoundId) && !ps.IsDeleted && ps.IsActive)
+            .Select(ps => new
+            {
+                ps.RoundId,
+                ps.PlayerName,
+                Score = ps.TotalScore,
+                Kills = ps.TotalKills,
+                Deaths = ps.TotalDeaths,
+                Team = ps.CurrentTeam
+            })
+            .ToListAsync();
+
+        var topPlayersDict = topPlayersByRound
+            .GroupBy(p => p.RoundId!)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(x => x.Score)
+                      .Take(3)
+                      .Select(x => new LiveRoundTopPlayer(x.PlayerName, x.Score, x.Kills, x.Deaths, x.Team))
+                      .ToList());
+
+        var now = DateTime.UtcNow;
+        var result = candidates.Select(c =>
+        {
+            var minutesElapsed = Math.Max(0, (int)(now - c.StartTime).TotalMinutes);
+            var drama = ComputeDramaScore(c.Tickets1, c.Tickets2, c.CurrentPlayers, c.MaxPlayers, c.RoundTimeRemain, minutesElapsed);
+            topPlayersDict.TryGetValue(c.RoundId, out var topPlayers);
+            return new LiveRoundSummary(
+                c.RoundId,
+                c.ServerGuid,
+                c.ServerName,
+                c.Country,
+                c.MapName,
+                c.GameType,
+                c.Game,
+                c.StartTime,
+                minutesElapsed,
+                c.RoundTimeRemain,
+                c.CurrentPlayers,
+                c.MaxPlayers,
+                c.Tickets1,
+                c.Tickets2,
+                c.Team1Label,
+                c.Team2Label,
+                drama,
+                topPlayers ?? []);
+        })
+        .OrderByDescending(r => r.DramaScore)
+        .Take(limit)
+        .ToList();
+
+        return result;
+    }
+
+    public async Task<List<RecentRoundSummary>> GetRecentRoundSummaries(string? game, int limit, int hoursBack)
+    {
+        var cutoff = DateTime.UtcNow.AddHours(-hoursBack);
+        var normalisedGame = game?.ToLowerInvariant();
+
+        var rawQuery = dbContext.Rounds
+            .AsNoTracking()
+            .Where(r => !r.IsActive && !r.IsDeleted && r.EndTime != null && r.EndTime >= cutoff)
+            .Join(dbContext.Servers.AsNoTracking(),
+                r => r.ServerGuid,
+                s => s.Guid,
+                (r, s) => new { Round = r, Server = s });
+
+        if (!string.IsNullOrWhiteSpace(normalisedGame))
+        {
+            rawQuery = rawQuery.Where(x => x.Server.Game == normalisedGame);
+        }
+
+        var candidates = await rawQuery
+            .OrderByDescending(x => x.Round.EndTime)
+            .Take(limit * 2)
+            .Select(x => new
+            {
+                x.Round.RoundId,
+                x.Round.ServerGuid,
+                x.Round.ServerName,
+                x.Round.MapName,
+                x.Round.GameType,
+                x.Server.Game,
+                x.Round.StartTime,
+                x.Round.EndTime,
+                x.Round.DurationMinutes,
+                x.Round.ParticipantCount,
+                x.Round.Tickets1,
+                x.Round.Tickets2,
+                x.Round.Team1Label,
+                x.Round.Team2Label
+            })
+            .ToListAsync();
+
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var roundIds = candidates.Select(c => c.RoundId).ToList();
+
+        var mvpRaw = await dbContext.PlayerSessions
+            .AsNoTracking()
+            .Where(ps => ps.RoundId != null && roundIds.Contains(ps.RoundId) && !ps.IsDeleted)
+            .Select(ps => new
+            {
+                ps.RoundId,
+                ps.PlayerName,
+                Score = ps.TotalScore,
+                Kills = ps.TotalKills,
+                Deaths = ps.TotalDeaths
+            })
+            .ToListAsync();
+
+        var mvpByRound = mvpRaw
+            .GroupBy(p => p.RoundId!)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var top = g.OrderByDescending(x => x.Score).FirstOrDefault();
+                    return top == null ? null : new RecentRoundMvp(top.PlayerName, top.Score, top.Kills, top.Deaths);
+                });
+
+        return candidates
+            .Take(limit)
+            .Select(c =>
+            {
+                string? winner = null;
+                int? margin = null;
+                if (c.Tickets1.HasValue && c.Tickets2.HasValue)
+                {
+                    var diff = c.Tickets1.Value - c.Tickets2.Value;
+                    if (diff > 0)
+                    {
+                        winner = c.Team1Label ?? "Team 1";
+                        margin = diff;
+                    }
+                    else if (diff < 0)
+                    {
+                        winner = c.Team2Label ?? "Team 2";
+                        margin = -diff;
+                    }
+                    else
+                    {
+                        winner = "Draw";
+                        margin = 0;
+                    }
+                }
+
+                mvpByRound.TryGetValue(c.RoundId, out var mvp);
+
+                return new RecentRoundSummary(
+                    c.RoundId,
+                    c.ServerGuid,
+                    c.ServerName,
+                    c.MapName,
+                    c.GameType,
+                    c.Game,
+                    c.StartTime,
+                    c.EndTime ?? DateTime.UtcNow,
+                    c.DurationMinutes ?? 0,
+                    c.ParticipantCount ?? 0,
+                    c.Tickets1,
+                    c.Tickets2,
+                    c.Team1Label,
+                    c.Team2Label,
+                    winner,
+                    margin,
+                    mvp);
+            })
+            .ToList();
+    }
+
+    private static double ComputeDramaScore(int? t1, int? t2, int currentPlayers, int maxPlayers, int? roundTimeRemain, int minutesElapsed)
+    {
+        var fillRate = maxPlayers > 0 ? (double)currentPlayers / maxPlayers : 0.0;
+        var populationWeight = Math.Min(1.0, currentPlayers / 20.0);
+
+        double closenessScore;
+        if (t1.HasValue && t2.HasValue && (t1.Value > 0 || t2.Value > 0))
+        {
+            var total = (double)(t1.Value + t2.Value);
+            var diff = Math.Abs(t1.Value - t2.Value);
+            closenessScore = total > 0 ? 1.0 - Math.Min(1.0, diff / total) : 0.5;
+        }
+        else
+        {
+            closenessScore = 0.3;
+        }
+
+        var urgency = 0.5;
+        if (roundTimeRemain.HasValue && roundTimeRemain.Value > 0)
+        {
+            var remain = roundTimeRemain.Value;
+            urgency = remain < 300 ? 1.0 : remain < 900 ? 0.75 : 0.5;
+        }
+        else if (minutesElapsed > 20)
+        {
+            urgency = 0.85;
+        }
+
+        return Math.Round(closenessScore * 0.5 + fillRate * 0.25 + populationWeight * 0.15 + urgency * 0.10, 4);
+    }
+
     public async Task<SessionRoundReport?> GetRoundReport(string roundId, Gamification.Services.SqliteGamificationService gamificationService)
     {
         // First, get just the round data we need
