@@ -1,13 +1,37 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { formatRelativeTimeShort as formatRelativeTime } from '@/utils/timeUtils'
 import { getMapAccentColor } from '@/utils/statsUtils'
 import type { RecentRoundSummary } from '@/services/landingV3Service'
 
-defineProps<{
+const props = defineProps<{
   rounds: RecentRoundSummary[]
   hoursBack: number
+  minPlayers?: number
 }>()
+
+const emit = defineEmits<{
+  (e: 'update:minPlayers', value: number): void
+}>()
+
+const minPlayersLocal = ref<number>(props.minPlayers ?? 1)
+watch(() => props.minPlayers, (v) => {
+  if (typeof v === 'number' && v !== minPlayersLocal.value) minPlayersLocal.value = v
+})
+
+let commitTimer: number | null = null
+const onMinPlayersInput = (event: Event): void => {
+  const target = event.target as HTMLInputElement
+  const raw = Number(target.value)
+  if (!Number.isFinite(raw)) return
+  const clamped = Math.max(0, Math.min(128, Math.floor(raw)))
+  minPlayersLocal.value = clamped
+  if (commitTimer != null) window.clearTimeout(commitTimer)
+  commitTimer = window.setTimeout(() => {
+    emit('update:minPlayers', clamped)
+  }, 250)
+}
 
 const router = useRouter()
 
@@ -43,16 +67,32 @@ const toPlayer = (name: string, event?: Event): void => {
 
 <template>
   <div
-    v-if="rounds.length > 0"
     class="rsf-root"
     aria-label="Recently completed rounds"
   >
     <header class="rsf-section-head">
       <span class="rsf-section-label">JUST ENDED</span>
       <span class="rsf-section-sub">Last {{ rounds.length }} rounds · past {{ hoursBack }}h</span>
+      <label class="rsf-minplayers" :title="'Filter rounds by minimum player count'">
+        <span class="rsf-minplayers__label">MIN PLAYERS</span>
+        <input
+          type="number"
+          class="rsf-minplayers__input"
+          min="0"
+          max="128"
+          step="1"
+          :value="minPlayersLocal"
+          aria-label="Minimum players"
+          @input="onMinPlayersInput"
+        >
+      </label>
     </header>
 
-    <div class="rsf-feed">
+    <div v-if="rounds.length === 0" class="rsf-empty">
+      <span class="rsf-empty__text">No rounds in the last {{ hoursBack }}h with at least {{ minPlayersLocal }} player{{ minPlayersLocal === 1 ? '' : 's' }}.</span>
+    </div>
+
+    <div v-else class="rsf-feed">
       <div class="rsf-hint" aria-hidden="true">
         <span class="rsf-hint__pulse" />
         <span class="rsf-hint__text">
@@ -219,6 +259,43 @@ const toPlayer = (name: string, event?: Event): void => {
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+.rsf-minplayers {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+.rsf-minplayers__label {
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  color: rgba(139, 148, 158, 0.85);
+  text-transform: uppercase;
+}
+.rsf-minplayers__input {
+  width: 3.25rem;
+  padding: 0.2rem 0.4rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: #00e5ff;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  border-radius: 4px;
+  outline: none;
+  text-align: right;
+}
+.rsf-minplayers__input:focus {
+  border-color: rgba(0, 229, 255, 0.8);
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.15);
+}
+.rsf-empty {
+  padding: 1.5rem 0.5rem;
+  text-align: center;
+  color: rgba(139, 148, 158, 0.75);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
 }
 
 .rsf-feed {

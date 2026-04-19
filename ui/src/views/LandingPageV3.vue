@@ -7,17 +7,17 @@
     </div>
     <div class="portal-inner">
       <div class="data-explorer sd-v2-explorer">
-      <!-- Back to classic -->
-      <div class="v3-topbar">
-        <span class="v3-topbar__badge">
-          <span class="v3-topbar__dot" aria-hidden="true" />
-          COMMAND CENTER · BETA
-        </span>
-        <router-link :to="classicPath" class="v3-topbar__classic">Back to classic browser →</router-link>
-      </div>
+        <!-- Back to classic -->
+        <div class="v3-topbar">
+          <span class="v3-topbar__badge">
+            <span class="v3-topbar__dot" aria-hidden="true" />
+            COMMAND CENTER · BETA
+          </span>
+          <router-link :to="classicPath" class="v3-topbar__classic">Back to classic browser →</router-link>
+        </div>
 
-      <!-- Hero -->
-      <section class="v3-hero" :class="`v3-hero--${networkPulseLevel}`">
+        <!-- Hero -->
+        <section class="v3-hero" :class="`v3-hero--${networkPulseLevel}`">
         <span class="hero-corner hero-corner--tl" aria-hidden="true" />
         <span class="hero-corner hero-corner--tr" aria-hidden="true" />
         <span class="hero-corner hero-corner--bl" aria-hidden="true" />
@@ -64,12 +64,14 @@
         :entries="visitedEntries"
         :live-servers="servers"
         @forget="forget"
+        @show-players="showPlayers"
       />
 
       <!-- Live rounds ribbon -->
       <LiveRoundsRibbon
         v-if="liveRounds.length > 0"
         :rounds="liveRounds"
+        @show-players="showPlayers"
       />
       <div
         v-else-if="!loading"
@@ -79,20 +81,7 @@
         <span class="v3-empty__text">Quiet right now — no rounds in progress yet.</span>
       </div>
 
-      <!-- Two-column: recent rounds + heatmap -->
-      <div class="v3-pair">
-        <RecentRoundsFeed
-          :rounds="recentRounds"
-          :hours-back="6"
-        />
-        <NetworkHeatmap
-          :cells="networkPulse?.weeklyHeatmap ?? []"
-          :recent-trend="networkPulse?.recentTrend ?? []"
-          :peak-today="networkPulse?.peakToday ?? null"
-        />
-      </div>
-
-      <!-- Collapsible classic browser -->
+      <!-- Collapsible classic browser (moved up: swapped with Network Pulse) -->
       <section class="v3-browser">
         <button
           type="button"
@@ -126,9 +115,13 @@
                 :to="`/servers/${encodeURIComponent(server.name)}`"
                 class="v3-browser__name"
               >{{ server.name }}</router-link>
-              <span class="v3-browser__players">
+              <button
+                type="button"
+                class="v3-browser__players"
+                @click="showPlayers(server)"
+              >
                 <strong>{{ server.numPlayers }}</strong>/{{ server.maxPlayers }}
-              </span>
+              </button>
               <span class="v3-browser__map">{{ server.mapName || '—' }}</span>
               <button
                 type="button"
@@ -140,6 +133,21 @@
           </ol>
         </div>
       </section>
+
+      <!-- Two-column: recent rounds + heatmap -->
+      <div class="v3-pair">
+        <RecentRoundsFeed
+          :rounds="recentRounds"
+          :hours-back="6"
+          :min-players="recentRoundsMinPlayers"
+          @update:min-players="onMinPlayersChange"
+        />
+        <NetworkHeatmap
+          :cells="networkPulse?.weeklyHeatmap ?? []"
+          :recent-trend="networkPulse?.recentTrend ?? []"
+          :peak-today="networkPulse?.peakToday ?? null"
+        />
+      </div>
 
       <!-- Feedback CTA -->
       <div class="v3-feedback">
@@ -153,6 +161,13 @@
       </div>
       </div>
     </div>
+    
+    <!-- Players Panel Overlay -->
+    <PlayersPanel
+      :show="showPlayersPanel"
+      :server="selectedServer"
+      @close="closePlayersPanel"
+    />
   </div>
 </template>
 
@@ -164,6 +179,7 @@ import YourFrontStrip from '@/components/landing-v3/YourFrontStrip.vue'
 import LiveRoundsRibbon from '@/components/landing-v3/LiveRoundsRibbon.vue'
 import RecentRoundsFeed from '@/components/landing-v3/RecentRoundsFeed.vue'
 import NetworkHeatmap from '@/components/landing-v3/NetworkHeatmap.vue'
+import PlayersPanel from '@/components/PlayersPanel.vue'
 import { fetchAllServers } from '@/services/serverDetailsService'
 import {
   fetchLiveRounds,
@@ -203,11 +219,16 @@ const loading = ref(true)
 const showBrowser = ref(false)
 const serverFilterQuery = ref('')
 const playerSearchQuery = ref('')
+const recentRoundsMinPlayers = ref(1)
 const refreshTimers = ref<{ servers: number | null; rounds: number | null; pulse: number | null }>({
   servers: null,
   rounds: null,
   pulse: null
 })
+
+// Players panel state
+const showPlayersPanel = ref(false)
+const selectedServer = ref<ServerSummary | null>(null)
 
 const { visited, recordVisit: _unused, forget } = useVisitedServers()
 void _unused
@@ -276,6 +297,12 @@ const loadServers = async (): Promise<void> => {
   try {
     const data = await fetchAllServers(activeGame.value)
     servers.value = data
+
+    // If a server is currently selected in the players panel, update it with fresh data
+    if (selectedServer.value) {
+      const fresh = data.find(s => s.guid === selectedServer.value?.guid)
+      if (fresh) selectedServer.value = fresh
+    }
   } catch (err) {
     console.error('V3: failed to load servers', err)
   }
@@ -291,10 +318,17 @@ const loadLiveRounds = async (): Promise<void> => {
 
 const loadRecentRounds = async (): Promise<void> => {
   try {
-    recentRounds.value = await fetchRecentRoundSummaries(activeGame.value, 10, 6)
+    recentRounds.value = await fetchRecentRoundSummaries(activeGame.value, 10, 6, recentRoundsMinPlayers.value)
   } catch (err) {
     console.error('V3: failed to load recent rounds', err)
   }
+}
+
+const onMinPlayersChange = (value: number): void => {
+  const clamped = Math.max(0, Math.min(128, Math.floor(value)))
+  if (clamped === recentRoundsMinPlayers.value) return
+  recentRoundsMinPlayers.value = clamped
+  loadRecentRounds()
 }
 
 const loadNetworkPulse = async (): Promise<void> => {
@@ -328,6 +362,25 @@ const joinServer = (server: ServerSummary): void => {
     newWindow.blur()
     window.focus()
   }
+}
+
+const showPlayers = (server: ServerSummary | string): void => {
+  if (typeof server === 'string') {
+    // server is a name/guid, find it in the list
+    const found = servers.value.find(s => s.name === server || s.guid === server)
+    if (found) {
+      selectedServer.value = found
+      showPlayersPanel.value = true
+    }
+  } else {
+    selectedServer.value = server
+    showPlayersPanel.value = true
+  }
+}
+
+const closePlayersPanel = (): void => {
+  showPlayersPanel.value = false
+  selectedServer.value = null
 }
 
 watch(() => props.initialMode, (mode) => {
@@ -702,6 +755,15 @@ onUnmounted(() => {
 .v3-browser__players {
   color: var(--portal-text);
   font-variant-numeric: tabular-nums;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.v3-browser__players:hover strong {
+  color: var(--portal-accent);
 }
 .v3-browser__map {
   color: var(--portal-text);
