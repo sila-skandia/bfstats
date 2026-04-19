@@ -735,30 +735,57 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
 
     private async Task<RecentStats> GetRecentStatsTrends(string playerName)
     {
-        // Calculate trends over the last 90 days
         var endDate = DateTime.UtcNow;
-        var startDate = endDate.AddDays(-90);
 
-        // Use raw SQL to aggregate data directly in the database to avoid loading all sessions into memory
-        var sql = @"
+        // Find the player's earliest session so we can trend over their whole career.
+        // For players with no sessions we keep a 90-day fallback window so the payload
+        // shape stays consistent.
+        var firstSeenSql = "SELECT MIN(StartTime) AS Value FROM PlayerSessions WHERE PlayerName = {0}";
+        var firstSeen = await dbContext.Database
+            .SqlQueryRaw<DateTime?>(firstSeenSql, playerName)
+            .FirstOrDefaultAsync();
+
+        var startDate = firstSeen ?? endDate.AddDays(-90);
+        var spanDays = (endDate - startDate).TotalDays;
+
+        // Adaptive granularity keeps the sparkline readable and the payload small
+        // regardless of how long the player has been around.
+        string bucketExpr;
+        string granularity;
+        if (spanDays <= 90)
+        {
+            bucketExpr = "DATE(StartTime)";
+            granularity = "daily";
+        }
+        else if (spanDays <= 730)
+        {
+            bucketExpr = "strftime('%Y-%W', StartTime)";
+            granularity = "weekly";
+        }
+        else
+        {
+            bucketExpr = "strftime('%Y-%m', StartTime)";
+            granularity = "monthly";
+        }
+
+        // bucketExpr is a fixed whitelist of SQL fragments above (never user input),
+        // so it's safe to interpolate into the command text. PlayerName stays a parameter.
+        var sql = $@"
             SELECT
-                DATE(StartTime) as Date,
+                MIN(DATE(StartTime)) as Date,
                 SUM(TotalKills) as TotalKills,
                 SUM(TotalDeaths) as TotalDeaths,
                 CAST(SUM((julianday(LastSeenTime) - julianday(StartTime)) * 1440) AS REAL) as TotalMinutes,
                 COUNT(*) as SessionCount
             FROM PlayerSessions
-            WHERE PlayerName = {0}
-                AND StartTime >= {1}
-                AND LastSeenTime <= {2}
-            GROUP BY DATE(StartTime)
-            ORDER BY DATE(StartTime)";
+            WHERE PlayerName = {{0}}
+            GROUP BY {bucketExpr}
+            ORDER BY MIN(StartTime)";
 
         var dailyStats = await dbContext.Database
-            .SqlQueryRaw<DailyStatsResult>(sql, playerName, startDate, endDate)
+            .SqlQueryRaw<DailyStatsResult>(sql, playerName)
             .ToListAsync();
 
-        // Calculate total rounds analyzed
         var totalRoundsAnalyzed = dailyStats.Sum(d => d.SessionCount);
 
         if (!dailyStats.Any())
@@ -768,12 +795,12 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
                 AnalysisPeriodStart = startDate,
                 AnalysisPeriodEnd = endDate,
                 TotalRoundsAnalyzed = 0,
+                Granularity = granularity,
                 KdRatioTrend = new List<TrendDataPoint>(),
                 KillRateTrend = new List<TrendDataPoint>()
             };
         }
 
-        // Create trend data points with calculations done in memory (only for aggregated daily data)
         var kdRatioTrend = dailyStats
             .Select(d => new TrendDataPoint
             {
@@ -795,6 +822,7 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             AnalysisPeriodStart = startDate,
             AnalysisPeriodEnd = endDate,
             TotalRoundsAnalyzed = totalRoundsAnalyzed,
+            Granularity = granularity,
             KdRatioTrend = kdRatioTrend,
             KillRateTrend = killRateTrend
         };

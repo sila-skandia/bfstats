@@ -1,3 +1,4 @@
+using api.Caching;
 using api.Servers.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -8,6 +9,7 @@ namespace api.Servers;
 [Route("stats/[controller]")]
 public class RoundsController(
     RoundsService roundsService,
+    ICacheService cacheService,
     ILogger<RoundsController> logger) : ControllerBase
 {
 
@@ -118,6 +120,77 @@ public class RoundsController(
             return StatusCode(500, "An internal server error occurred while retrieving rounds");
         }
     }
+
+    [HttpGet("live")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult<List<LiveRoundSummary>>> GetLiveRounds(
+        [FromQuery] string? game = null,
+        [FromQuery] int limit = 12)
+    {
+        if (limit < 1 || limit > 50)
+        {
+            return BadRequest("Limit must be between 1 and 50");
+        }
+
+        var cacheKey = $"landing:rounds:live:{game ?? "all"}:{limit}";
+        var cached = await cacheService.GetAsync<LiveRoundsCacheEnvelope>(cacheKey);
+        if (cached != null)
+        {
+            return Ok(cached.Rounds);
+        }
+
+        try
+        {
+            var rounds = await roundsService.GetLiveRounds(game, limit);
+            await cacheService.SetAsync(cacheKey, new LiveRoundsCacheEnvelope(rounds), TimeSpan.FromSeconds(30));
+            return Ok(rounds);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error fetching live rounds for game {Game}", game ?? "all");
+            return StatusCode(500, "Failed to fetch live rounds");
+        }
+    }
+
+    [HttpGet("recent-summaries")]
+    [ResponseCache(Duration = 60, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult<List<RecentRoundSummary>>> GetRecentRoundSummaries(
+        [FromQuery] string? game = null,
+        [FromQuery] int limit = 10,
+        [FromQuery] int hoursBack = 6)
+    {
+        if (limit < 1 || limit > 50)
+        {
+            return BadRequest("Limit must be between 1 and 50");
+        }
+
+        if (hoursBack < 1 || hoursBack > 72)
+        {
+            return BadRequest("hoursBack must be between 1 and 72");
+        }
+
+        var cacheKey = $"landing:rounds:recent:{game ?? "all"}:{limit}:{hoursBack}";
+        var cached = await cacheService.GetAsync<RecentRoundsCacheEnvelope>(cacheKey);
+        if (cached != null)
+        {
+            return Ok(cached.Rounds);
+        }
+
+        try
+        {
+            var rounds = await roundsService.GetRecentRoundSummaries(game, limit, hoursBack);
+            await cacheService.SetAsync(cacheKey, new RecentRoundsCacheEnvelope(rounds), TimeSpan.FromSeconds(60));
+            return Ok(rounds);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error fetching recent round summaries for game {Game}", game ?? "all");
+            return StatusCode(500, "Failed to fetch recent round summaries");
+        }
+    }
+
+    private sealed record LiveRoundsCacheEnvelope(List<LiveRoundSummary> Rounds);
+    private sealed record RecentRoundsCacheEnvelope(List<RecentRoundSummary> Rounds);
 
     // Get round report by round ID
     [HttpGet("{roundId}/report")]
