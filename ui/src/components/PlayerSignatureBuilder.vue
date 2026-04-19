@@ -159,7 +159,7 @@ function selectedServerLabel(): string {
             :key="server.serverGuid"
             :value="server.serverGuid"
           >
-            {{ server.serverName }} — {{ Math.round(server.totalMinutes / 60).toLocaleString() }}h
+            {{ server.serverName }}
           </option>
         </select>
         <p class="sig-control-hint">
