@@ -99,13 +99,13 @@ public sealed class BannerRenderer(BannerFonts fonts)
             Origin = new PointF(leftEdge, baseline),
             WrappingLength = width * 0.94f
         };
-        // Soft HUD cyan — distinct from the gold name and green stat values, and carries
-        // high contrast across the full range of banner backdrops (snow, sky, map, sand).
+        // Goldenrod — a darker, aged gold that sits one tier below the bright #FFC400 hero
+        // name. Keeps the palette warm/unified while giving the subtitle its own register.
         DrawTextWithShadow(
             ctx,
             stats.ServerName!.ToUpperInvariant(),
             options,
-            Color.FromRgba(120, 215, 255, 255),
+            Color.FromRgba(218, 165, 32, 255),
             size * 0.09f);
     }
 
