@@ -55,9 +55,13 @@
           </div>
         </div>
         <div class="lrr-card__foot">
-          <span class="lrr-card__players">
+          <button
+            type="button"
+            class="lrr-card__players"
+            @click.prevent="$emit('show-players', round.serverName)"
+          >
             <strong>{{ round.currentPlayers }}</strong>/{{ round.maxPlayers }}
-          </span>
+          </button>
           <span class="lrr-card__sep" aria-hidden="true">·</span>
           <span v-if="round.roundTimeRemain && round.roundTimeRemain > 0">{{ formatRemain(round.roundTimeRemain) }} left</span>
           <span v-else>ongoing</span>
@@ -86,6 +90,10 @@
 import type { LiveRoundSummary } from '@/services/landingV3Service'
 
 const props = defineProps<{ rounds: LiveRoundSummary[] }>()
+
+defineEmits<{
+  'show-players': [server: string]
+}>()
 
 const team1Percent = (round: LiveRoundSummary): number => {
   const t1 = round.tickets1 ?? 0
@@ -278,9 +286,21 @@ void props
   font-size: 0.76rem;
   color: var(--portal-text);
 }
+.lrr-card__players {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.76rem;
+  color: var(--portal-text);
+  cursor: pointer;
+}
 .lrr-card__players strong {
   color: var(--portal-text-bright);
   font-weight: 700;
+}
+.lrr-card__players:hover strong {
+  color: var(--portal-accent);
 }
 .lrr-card__sep { opacity: 0.5; }
 .lrr-card__leaders {

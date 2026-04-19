@@ -33,6 +33,7 @@
       <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
       <PackageReference Include="Serilog.Enrichers.Span" Version="3.1.0" />
       <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+      <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.6" />
       <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
       <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
         <PrivateAssets>all</PrivateAssets>
@@ -64,6 +65,11 @@
   <!-- Embed Neo4j migration files as resources -->
   <ItemGroup>
     <EmbeddedResource Include="PlayerRelationships\Migrations\*.cypher" />
+  </ItemGroup>
+
+  <!-- Embed player-banner display fonts as resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="PlayerBanners\Resources\*.ttf" />
   </ItemGroup>
 
 </Project>

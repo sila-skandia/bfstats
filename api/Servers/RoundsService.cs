@@ -342,14 +342,15 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         return result;
     }
 
-    public async Task<List<RecentRoundSummary>> GetRecentRoundSummaries(string? game, int limit, int hoursBack)
+    public async Task<List<RecentRoundSummary>> GetRecentRoundSummaries(string? game, int limit, int hoursBack, int minPlayers = 1)
     {
         var cutoff = DateTime.UtcNow.AddHours(-hoursBack);
         var normalisedGame = game?.ToLowerInvariant();
 
         var rawQuery = dbContext.Rounds
             .AsNoTracking()
-            .Where(r => !r.IsActive && !r.IsDeleted && r.EndTime != null && r.EndTime >= cutoff)
+            .Where(r => !r.IsActive && !r.IsDeleted && r.EndTime != null && r.EndTime >= cutoff
+                && (r.ParticipantCount ?? 0) >= minPlayers)
             .Join(dbContext.Servers.AsNoTracking(),
                 r => r.ServerGuid,
                 s => s.Guid,

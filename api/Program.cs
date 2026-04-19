@@ -717,6 +717,11 @@ try
     builder.Services.AddScoped<api.ImageStorage.IImageIndexingService, api.ImageStorage.ImageIndexingService>();
     builder.Services.AddScoped<api.ImageStorage.IAssetServingService, api.ImageStorage.AssetServingService>();
 
+    // Register PlayerBanners (forum signature) services
+    builder.Services.AddSingleton<api.PlayerBanners.BannerFonts>();
+    builder.Services.AddSingleton<api.PlayerBanners.BannerRenderer>();
+    builder.Services.AddScoped<api.PlayerBanners.IPlayerBannerService, api.PlayerBanners.PlayerBannerService>();
+
     // SQLite-based analytics services
     builder.Services.AddScoped<api.GameTrends.ISqliteGameTrendsService, api.GameTrends.SqliteGameTrendsService>();
     builder.Services.AddScoped<api.PlayerStats.ISqliteLeaderboardService, api.PlayerStats.SqliteLeaderboardService>();

@@ -19,6 +19,7 @@ import PlayerActivityHeatmap from '../components/PlayerActivityHeatmap.vue';
 import PlayerMapPreference from '../components/PlayerMapPreference.vue';
 import PingProximityOrbit from '@/components/PingProximityOrbit.vue';
 import PlayerComments from '../components/PlayerComments.vue';
+import PlayerSignatureBuilder from '../components/PlayerSignatureBuilder.vue';
 import CommunityCard from '@/components/CommunityCard.vue';
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi';
 import { formatRelativeTime } from '@/utils/timeUtils';
@@ -45,9 +46,28 @@ const achievementGroupsLoading = ref(false);
 const achievementGroupsError = ref<string | null>(null);
 
 // V2 Tab Navigation
-const activeTab = ref<'overview' | 'rankings' | 'network' | 'communities' | 'awards' | 'deep-dive'>('overview');
+const tabFromRoute = computed(() => (route.query.tab as string) || 'overview');
+const activeTab = ref<'overview' | 'signature' | 'rankings' | 'network' | 'communities' | 'awards' | 'deep-dive'>(tabFromRoute.value as any);
+
+// Keep tab in sync with route
+watch(
+  () => route.query.tab,
+  (newTab) => {
+    if (newTab && tabs.some(t => t.id === newTab)) {
+      activeTab.value = newTab as any;
+    }
+  }
+);
+
+// Update route when tab changes
+watch(activeTab, (newTab) => {
+  if (route.query.tab !== newTab) {
+    router.replace({ query: { ...route.query, tab: newTab } });
+  }
+});
 const tabs = [
   { id: 'overview' as const, label: 'OVERVIEW' },
+  { id: 'signature' as const, label: 'SIGNATURE' },
   { id: 'rankings' as const, label: 'RANKINGS' },
   { id: 'network' as const, label: 'NETWORK' },
   { id: 'communities' as const, label: 'COMMUNITIES' },
@@ -1225,7 +1245,11 @@ onUnmounted(() => {
                 role="tab"
                 :aria-selected="activeTab === tab.id"
                 class="hero-tab"
-                :class="{ 'hero-tab--active': activeTab === tab.id }"
+                :class="{
+                  'hero-tab--active': activeTab === tab.id,
+                  'hero-tab--feature': tab.id === 'signature',
+                  'hero-tab--feature-active': tab.id === 'signature' && activeTab === tab.id
+                }"
                 @click="activeTab = tab.id"
               >
                 <svg
@@ -1258,6 +1282,16 @@ onUnmounted(() => {
                   width="7"
                   height="5"
                 /></svg>
+                <svg
+                  v-else-if="tab.id === 'signature'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><path d="M3 17.5V21h3.5L19 8.5 15.5 5 3 17.5z" /><path d="M14 6l4 4" /></svg>
                 <svg
                   v-else-if="tab.id === 'rankings'"
                   viewBox="0 0 24 24"
@@ -1337,6 +1371,11 @@ onUnmounted(() => {
                   class="hero-tab-icon"
                 ><circle cx="12" cy="12" r="10" /><path d="m16 12-4 4-4-4" /><path d="M12 8v8" /></svg>
                 <span>{{ tab.label }}</span>
+                <span
+                  v-if="tab.id === 'signature'"
+                  class="hero-tab-new-badge"
+                  aria-label="New feature"
+                >NEW</span>
                 <span
                   class="hero-tab-underline"
                   aria-hidden="true"
@@ -1913,6 +1952,17 @@ onUnmounted(() => {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- SIGNATURE TAB (Forum sig builder) -->
+              <div
+                v-if="activeTab === 'signature'"
+                class="space-y-6"
+              >
+                <PlayerSignatureBuilder
+                  :player-name="playerName"
+                  :servers="unifiedServerList"
+                />
               </div>
 
               <!-- RANKINGS TAB (Swapped Columns) -->
@@ -3300,6 +3350,47 @@ onUnmounted(() => {
 }
 .hero-tab--active .hero-tab-icon { opacity: 1; transform: scale(1.05); }
 .hero-tab--active .hero-tab-underline { transform: scaleX(1); }
+
+/* SIGNATURE — feature-highlighted tab (gold accent + NEW badge) */
+.hero-tab--feature {
+  color: #ffc400;
+  position: relative;
+}
+.hero-tab--feature:hover { color: #ffd84a; }
+.hero-tab--feature .hero-tab-underline {
+  background: #ffc400;
+  box-shadow: 0 0 10px rgba(255, 196, 0, 0.65);
+  transform: scaleX(0.6);
+  opacity: 0.55;
+}
+.hero-tab--feature-active {
+  color: #ffd84a;
+  text-shadow: 0 0 10px rgba(255, 196, 0, 0.45);
+}
+.hero-tab--feature-active .hero-tab-underline { transform: scaleX(1); opacity: 1; }
+.hero-tab--feature-active .hero-tab-icon { opacity: 1; transform: scale(1.05); }
+
+.hero-tab-new-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: #ffc400;
+  color: #161b22;
+  margin-left: 0.35rem;
+  line-height: 1;
+  box-shadow: 0 0 8px rgba(255, 196, 0, 0.55);
+  animation: hero-tab-new-pulse 2.4s ease-in-out infinite;
+}
+@keyframes hero-tab-new-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(255, 196, 0, 0.45); }
+  50% { box-shadow: 0 0 14px rgba(255, 196, 0, 0.85); }
+}
 
 /* ============ PERFORMANCE TRENDS ============ */
 .trend-block {
