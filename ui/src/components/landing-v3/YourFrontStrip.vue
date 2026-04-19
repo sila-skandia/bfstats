@@ -29,9 +29,13 @@
         <div class="yf-card__name">{{ entry.name }}</div>
         <div class="yf-card__meta">
           <template v-if="liveFor(entry.guid)">
-            <span class="yf-card__players">
+            <button
+              type="button"
+              class="yf-card__players"
+              @click.prevent="$emit('show-players', entry.guid)"
+            >
               <strong>{{ liveFor(entry.guid)!.numPlayers }}</strong>/{{ liveFor(entry.guid)!.maxPlayers }}
-            </span>
+            </button>
             <span class="yf-card__sep" aria-hidden="true">·</span>
             <span class="yf-card__map">{{ liveFor(entry.guid)!.mapName || '—' }}</span>
           </template>
@@ -68,7 +72,8 @@ const props = defineProps<{
 }>()
 
 defineEmits<{
-  (e: 'forget', guid: string): void
+  'forget': [guid: string]
+  'show-players': [server: string]
 }>()
 
 const liveByGuid = computed(() => {
@@ -215,9 +220,21 @@ const formatLastVisit = (iso: string): string => {
   color: var(--portal-text);
   min-width: 0;
 }
+.yf-card__players {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.78rem;
+  color: var(--portal-text);
+  cursor: pointer;
+}
 .yf-card__players strong {
   color: var(--portal-text-bright);
   font-weight: 700;
+}
+.yf-card__players:hover strong {
+  color: var(--portal-accent);
 }
 .yf-card__sep {
   opacity: 0.5;
