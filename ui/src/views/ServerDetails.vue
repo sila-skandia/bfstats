@@ -22,6 +22,7 @@ import discordIcon from '@/assets/discord.webp';
 import { useAIContext } from '@/composables/useAIContext';
 import { useVisitedServers } from '@/composables/useVisitedServers';
 import PingProximityOrbit from '@/components/PingProximityOrbit.vue';
+import ServerSignatureBuilder from '../components/ServerSignatureBuilder.vue';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -103,7 +104,7 @@ const deepDiveError = ref<string | null>(null);
 
 // V2 Tab Navigation
 const tabFromRoute = computed(() => (route.query.tab as string) || 'live');
-const activeTab = ref<'live' | 'leaderboards' | 'maps' | 'insights' | 'deep-dive'>(tabFromRoute.value as any);
+const activeTab = ref<'live' | 'leaderboards' | 'maps' | 'insights' | 'deep-dive' | 'signature'>(tabFromRoute.value as any);
 
 // Keep tab in sync with route
 watch(
@@ -127,6 +128,7 @@ const tabs = [
   { id: 'maps' as const, label: 'MAPS' },
   { id: 'insights' as const, label: 'INSIGHTS' },
   { id: 'deep-dive' as const, label: 'DEEP DIVE' },
+  { id: 'signature' as const, label: 'SIGNATURE' },
 ];
 
 // Wide viewport: show slide-out panels side-by-side (lg: 1024px+)
@@ -844,34 +846,25 @@ interface HeroTrend {
 }
 interface HeroStats {
   peak: number | null;
-  unique: number | null;
   trend: HeroTrend | null;
-  signatureMap: { name: string; playTimePercentage: number } | null;
 }
 
 const heroStats = computed<HeroStats | null>(() => {
   const insights = serverInsights.value;
-  const details = serverDetails.value;
-  if (!insights && !details) return null;
-  const history = insights?.playersOnlineHistory;
-  const peakFromHistory = history?.insights?.peakPlayers ?? null;
+  if (!insights) return null;
+  const history = insights.playersOnlineHistory;
   const peak =
-    insights?.playerCountSummary?.peakPlayerCount ??
-    peakFromHistory ??
+    insights.playerCountSummary?.peakPlayerCount ??
+    history?.insights?.peakPlayers ??
     null;
-  const unique = insights?.playerCountSummary?.totalUniquePlayersInPeriod ?? null;
   const trend: HeroTrend | null = history?.insights
     ? {
         direction: history.insights.trendDirection,
         percentageChange: history.insights.percentageChange ?? 0,
       }
     : null;
-  const topMap = details?.popularMaps?.[0];
-  const signatureMap = topMap
-    ? { name: topMap.mapName, playTimePercentage: topMap.playTimePercentage }
-    : null;
-  if (peak === null && unique === null && !trend && !signatureMap) return null;
-  return { peak, unique, trend, signatureMap };
+  if (peak === null && !trend) return null;
+  return { peak, trend };
 });
 
 const heroTrendArrow = computed(() => {
@@ -1232,7 +1225,7 @@ const heroTrendClass = computed(() => {
                   </div>
                 </div>
 
-                <!-- Hero stat grid: Peak / Unique / Trend / Signature Map -->
+                <!-- Hero stat grid: Peak / Trend -->
                 <div
                   v-if="heroStats"
                   class="beacon-stats"
@@ -1244,16 +1237,6 @@ const heroTrendClass = computed(() => {
                     </div>
                     <div class="beacon-stat__label">
                       <span class="beacon-stat__label-main">Peak Population</span>
-                      <span class="beacon-stat__label-sub">90D window</span>
-                    </div>
-                  </div>
-
-                  <div class="beacon-stat">
-                    <div class="beacon-stat__value beacon-stat__value--green">
-                      {{ heroStats.unique !== null ? heroStats.unique.toLocaleString() : '—' }}
-                    </div>
-                    <div class="beacon-stat__label">
-                      <span class="beacon-stat__label-main">Unique Operatives</span>
                       <span class="beacon-stat__label-sub">90D window</span>
                     </div>
                   </div>
@@ -1273,33 +1256,6 @@ const heroTrendClass = computed(() => {
                     <div class="beacon-stat__label">
                       <span class="beacon-stat__label-main">Momentum</span>
                       <span class="beacon-stat__label-sub">{{ heroStats.trend?.direction ?? 'awaiting data' }}</span>
-                    </div>
-                  </div>
-
-                  <div class="beacon-stat">
-                    <div
-                      v-if="heroStats.signatureMap"
-                      class="beacon-stat__value beacon-stat__value--amber beacon-stat__value--map"
-                      :title="heroStats.signatureMap.name"
-                    >
-                      {{ heroStats.signatureMap.name }}
-                    </div>
-                    <div
-                      v-else
-                      class="beacon-stat__value beacon-stat__value--amber"
-                    >
-                      —
-                    </div>
-                    <div class="beacon-stat__label">
-                      <span class="beacon-stat__label-main">Signature Map</span>
-                      <span
-                        v-if="heroStats.signatureMap"
-                        class="beacon-stat__label-sub"
-                      >{{ heroStats.signatureMap.playTimePercentage.toFixed(0) }}% of play time</span>
-                      <span
-                        v-else
-                        class="beacon-stat__label-sub"
-                      >no rotation data</span>
                     </div>
                   </div>
                 </div>
@@ -1382,6 +1338,16 @@ const heroTrendClass = computed(() => {
                   stroke-linejoin="round"
                   class="hero-tab-icon"
                 ><circle cx="12" cy="12" r="10" /><path d="m16 12-4 4-4-4" /><path d="M12 8v8" /></svg>
+                <svg
+                  v-else-if="tab.id === 'signature'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="hero-tab-icon"
+                ><path d="M3 17c2-3 5-3 8-1s6 2 8-1" /><path d="M5 21h14" /></svg>
                 <span>{{ tab.label }}</span>
                 <span
                   class="hero-tab-underline"
@@ -1807,24 +1773,6 @@ const heroTrendClass = computed(() => {
                       </div>
                     </div>
                     <div class="telemetry-banner__stat">
-                      <div class="telemetry-banner__value text-neon-green">
-                        {{ serverInsights.playerCountSummary?.averagePlayerCount
-                          ? Math.round(serverInsights.playerCountSummary.averagePlayerCount).toLocaleString()
-                          : '—' }}
-                      </div>
-                      <div class="telemetry-banner__label">
-                        Average Online
-                      </div>
-                    </div>
-                    <div class="telemetry-banner__stat">
-                      <div class="telemetry-banner__value text-neon-pink">
-                        {{ heroStats.unique !== null ? heroStats.unique.toLocaleString() : '—' }}
-                      </div>
-                      <div class="telemetry-banner__label">
-                        Unique Operatives
-                      </div>
-                    </div>
-                    <div class="telemetry-banner__stat">
                       <div
                         class="telemetry-banner__value"
                         :class="heroTrendClass"
@@ -2037,6 +1985,14 @@ const heroTrendClass = computed(() => {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- SIGNATURE TAB (Live forum sig builder) -->
+              <div
+                v-if="activeTab === 'signature'"
+                class="space-y-6"
+              >
+                <ServerSignatureBuilder :server-name="serverName" />
               </div>
             </div>
           </div>
