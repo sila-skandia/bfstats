@@ -722,6 +722,10 @@ try
     builder.Services.AddSingleton<api.PlayerBanners.BannerRenderer>();
     builder.Services.AddScoped<api.PlayerBanners.IPlayerBannerService, api.PlayerBanners.PlayerBannerService>();
 
+    // Register ServerBanners (live forum signature) services
+    builder.Services.AddSingleton<api.ServerBanners.ServerBannerRenderer>();
+    builder.Services.AddScoped<api.ServerBanners.IServerBannerService, api.ServerBanners.ServerBannerService>();
+
     // SQLite-based analytics services
     builder.Services.AddScoped<api.GameTrends.ISqliteGameTrendsService, api.GameTrends.SqliteGameTrendsService>();
     builder.Services.AddScoped<api.PlayerStats.ISqliteLeaderboardService, api.PlayerStats.SqliteLeaderboardService>();
