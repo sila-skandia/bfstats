@@ -147,21 +147,22 @@ public class RequestTelemetryMiddleware
 
         var path = requestPath.ToLowerInvariant();
 
-        // User-facing routes (main website routes)
-        if (path.StartsWith("/stats/players/") && !path.Contains("/sessions/") && !path.Contains("/server/") && !path.Contains("/compare"))
-            return "player_page";
-        if (path.StartsWith("/stats/servers/"))
-            return "server_page";
-        if (path == "/" || path == "/stats" || path.StartsWith("/stats/") && path.Split('/').Length == 2)
-            return "landing_page";
+        // Page-view beacon from the SPA — counted via the PageView log event, not route_type.
+        if (path.StartsWith("/stats/telemetry/page-view"))
+            return "page_beacon";
 
-        // API routes (internal app calls)
-        if (path.StartsWith("/api/") || path.StartsWith("/stats/players/search") ||
-            path.StartsWith("/stats/players/compare") || path.StartsWith("/stats/players/") &&
-            (path.Contains("/sessions/") || path.Contains("/server/")))
+        if (path.StartsWith("/health"))
+            return "health";
+        if (path.StartsWith("/swagger"))
+            return "swagger";
+        if (path.StartsWith("/hub"))
+            return "signalr";
+
+        // Everything else the API sees is an internal XHR from the SPA or an external API caller.
+        // Page-view classification happens client-side; do not attempt to infer it from the URL here.
+        if (path.StartsWith("/stats/") || path.StartsWith("/api/"))
             return "api_call";
 
-        // Other routes
         return "other";
     }
 }

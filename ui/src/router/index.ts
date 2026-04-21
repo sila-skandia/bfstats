@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw, type RouteLocationNormalized } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
+import { telemetryService } from '../services/telemetryService'
 
 // Lazy load all route components for optimal code splitting
 const Dashboard = () => import('../views/Dashboard.vue')
@@ -470,6 +471,11 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes
+})
+
+// Page-view telemetry beacon — one event per resolved navigation, tied to canonical route name.
+router.afterEach((to) => {
+  telemetryService.recordPageView(to)
 })
 
 // SEO meta tag handler
