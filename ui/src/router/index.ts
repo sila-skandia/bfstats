@@ -59,7 +59,7 @@ const routes: RouteRecordRaw[] = [
       name: 'landing',
       component: LandingPageV2,
       meta: {
-        title: 'BF Stats - Battlefield Game Server Browser & Statistics',
+        title: "bfstats.io | 42' telemetry",
         description: 'Browse active Battlefield 1942, Forgotten Hope 2, and Battlefield Vietnam servers. Real-time player counts, maps, and server information.'
       }
     },
@@ -95,7 +95,7 @@ const routes: RouteRecordRaw[] = [
       component: LandingPageV2,
       props: { initialMode: '42' },
       meta: {
-        title: 'Battlefield 1942 Servers - Live Server Browser & Stats',
+        title: "bfstats.io | 42' telemetry",
         description: 'Find active Battlefield 1942 servers worldwide. Real-time player counts, maps, ping, and detailed server statistics. Join the classic WWII battlefield action.'
       }
     },
@@ -105,7 +105,7 @@ const routes: RouteRecordRaw[] = [
       component: LandingPageV2,
       props: { initialMode: 'FH2' },
       meta: {
-        title: 'Forgotten Hope 2 Servers - FH2 Server Browser & Statistics',
+        title: 'bfstats.io | FH2 telemetry',
         description: 'Discover active Forgotten Hope 2 servers with realistic WWII gameplay. Live server stats, player counts, and detailed FH2 server information.'
       }
     },
@@ -115,7 +115,7 @@ const routes: RouteRecordRaw[] = [
       component: LandingPageV2,
       props: { initialMode: 'BFV' },
       meta: {
-        title: 'Battlefield Vietnam Servers - BF Vietnam Server Browser',
+        title: 'bfstats.io | BFV telemetry',
         description: 'Find active Battlefield Vietnam servers with jungle warfare action. Live server statistics, player counts, and Vietnam War era battlefield servers.'
       }
     },
@@ -125,7 +125,7 @@ const routes: RouteRecordRaw[] = [
       component: LandingPageV3,
       props: { initialMode: '42' },
       meta: {
-        title: 'Command Center (beta) - BF1942 | BF Stats',
+        title: "bfstats.io | 42' telemetry",
         description: 'Live rounds, recent wins, and network pulse for Battlefield 1942 servers. Beta command-center view.'
       }
     },
@@ -135,7 +135,7 @@ const routes: RouteRecordRaw[] = [
       component: LandingPageV3,
       props: { initialMode: 'FH2' },
       meta: {
-        title: 'Command Center (beta) - FH2 | BF Stats',
+        title: 'bfstats.io | FH2 telemetry',
         description: 'Live rounds, recent wins, and network pulse for Forgotten Hope 2 servers. Beta command-center view.'
       }
     },
@@ -145,7 +145,7 @@ const routes: RouteRecordRaw[] = [
       component: LandingPageV3,
       props: { initialMode: 'BFV' },
       meta: {
-        title: 'Command Center (beta) - BF Vietnam | BF Stats',
+        title: 'bfstats.io | BFV telemetry',
         description: 'Live rounds, recent wins, and network pulse for Battlefield Vietnam servers. Beta command-center view.'
       }
     },
@@ -155,7 +155,7 @@ const routes: RouteRecordRaw[] = [
       component: ServerDetails,
       props: true,
       meta: {
-        title: (route: RouteLocationNormalized) => `${route.params.serverName} Server Stats - BF Stats`,
+        title: (route: RouteLocationNormalized) => `${route.params.serverName} Server Stats - bfstats.io`,
         description: (route: RouteLocationNormalized) => `Detailed statistics for ${route.params.serverName} server. View player rankings, server history, performance metrics, and join information.`
       }
     },
