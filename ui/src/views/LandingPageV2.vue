@@ -1204,7 +1204,7 @@ const structuredData = computed(() => {
   return {
     '@context': 'https://schema.org',
     '@type': 'WebApplication',
-    name: `${gameName} Server Browser - BF Stats`,
+    name: `${gameName} Server Browser - bfstats.io`,
     applicationCategory: 'GameApplication',
     description: seoDescription.value,
     url: window.location.href,
