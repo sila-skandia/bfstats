@@ -548,13 +548,19 @@ const getSortedTeamPlayers = (teamIndex: number) => {
 .roster-root--modal {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 200;
   display: flex;
   align-items: stretch;
   justify-content: center;
   background: rgba(0, 0, 0, 0.82);
   backdrop-filter: blur(4px);
   animation: roster-fade-in 0.2s ease-out;
+}
+
+@media (max-width: 639px) {
+  .roster-root--modal {
+    padding-top: var(--mobile-nav-height, 64px);
+  }
 }
 
 @media (min-width: 640px) {
