@@ -26,8 +26,6 @@ public class PlayerRelationshipEtlService(
             string roundId,
             CancellationToken cancellationToken = default)
     {
-        logger.LogDebug("Detecting co-play sessions for round {RoundId}", roundId);
-
         // Query: Find all observations for sessions in this round
         // Note: We materialize the grouped data first, then do the Cartesian product in memory
         // because EF Core can't translate the complex SelectMany to SQL
