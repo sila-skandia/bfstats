@@ -8,8 +8,33 @@ namespace api.PlayerRelationships;
 [Route("stats/relationships")]
 public class PlayerRelationshipsController(
     IPlayerRelationshipService relationshipService,
+    ServerProximityService proximityService,
     ILogger<PlayerRelationshipsController> logger) : ControllerBase
 {
+    /// <summary>
+    /// Top-N regulars on a server with average ping and peak play hour (UTC).
+    /// Feeds the player proximity orbit visualisation.
+    /// </summary>
+    [HttpGet("servers/{serverGuid}/proximity")]
+    public async Task<ActionResult<Models.ServerProximityResponse>> GetServerProximity(
+        string serverGuid,
+        [FromQuery] int minPing = 0,
+        [FromQuery] int maxPing = 250,
+        [FromQuery] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await proximityService.GetAsync(serverGuid, minPing, maxPing, limit, cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting proximity for server {ServerGuid}", serverGuid);
+            return StatusCode(500, "An error occurred while fetching server proximity");
+        }
+    }
+
     /// <summary>
     /// Get a player's most frequent teammates.
     /// </summary>
