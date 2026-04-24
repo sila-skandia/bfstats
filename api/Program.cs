@@ -772,6 +772,7 @@ try
         // Register player alias detection services
         builder.Services.AddScoped<api.PlayerRelationships.StatSimilarityCalculator>();
         builder.Services.AddScoped<api.PlayerRelationships.BehavioralPatternAnalyzer>();
+        builder.Services.AddScoped<api.PlayerRelationships.ServerProximityService>();
         builder.Services.AddScoped<api.PlayerRelationships.Neo4jNetworkAnalyzer>();
         builder.Services.AddScoped<api.PlayerRelationships.ActivityTimelineAnalyzer>();
         builder.Services.AddScoped<api.PlayerRelationships.PlayerAliasDetectionService>();
