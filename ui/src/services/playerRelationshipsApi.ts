@@ -218,6 +218,30 @@ export async function fetchServerPlayerCloseness(
   return response.data;
 }
 
+export interface ServerProximityEntry {
+  playerName: string;
+  avgPing: number;
+  sessionCount: number;
+  peakHourUtc: number;
+  lastPlayed: string;
+}
+
+export interface ServerProximityResponse {
+  players: ServerProximityEntry[];
+  totalRegulars: number;
+}
+
+export async function fetchServerProximity(
+  serverGuid: string,
+  opts: { minPing?: number; maxPing?: number; limit?: number } = {}
+): Promise<ServerProximityResponse> {
+  const response = await axios.get<ServerProximityResponse>(
+    `${BASE}/servers/${encodeURIComponent(serverGuid)}/proximity`,
+    { params: opts }
+  );
+  return response.data;
+}
+
 export async function fetchNearbyPlayers(
   serverGuid: string,
   playerName: string,
