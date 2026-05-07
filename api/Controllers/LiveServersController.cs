@@ -149,63 +149,83 @@ public class LiveServersController(
         // ELIMINATED: PlayerObservations query - no longer needed!
         logger.LogDebug("Step 3 - SKIPPED PlayerObservations query - using denormalized data from PlayerSession!");
 
-        // Get current rounds efficiently
+        // Get current rounds efficiently. Server merges can leave multiple IsActive rounds
+        // per ServerGuid until the next map change closes them, so pick the most recent.
         stepStopwatch.Restart();
-        var currentRounds = await dbContext.Rounds
+        var activeRounds = await dbContext.Rounds
             .Where(r => serverGuids.Contains(r.ServerGuid) && r.IsActive)
-            .ToDictionaryAsync(r => r.ServerGuid, r => r);
+            .ToListAsync();
+        var currentRounds = activeRounds
+            .GroupBy(r => r.ServerGuid)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartTime).First());
         stepStopwatch.Stop();
         logger.LogDebug("Step 4 - Current rounds query completed in {ElapsedMs}ms. Found {RoundCount} active rounds",
             stepStopwatch.ElapsedMilliseconds, currentRounds.Count);
 
-        // Build response by combining the data - NOW MUCH SIMPLER!
+        // Build response by combining the data. Isolate each server: a data quirk on one
+        // server (e.g. post-merge inconsistency) must not 500 the whole list — this endpoint
+        // drives the landing page.
         stepStopwatch.Restart();
-        var serverSummaries = servers.Select(server =>
+        var serverSummaries = new List<ServerSummary>(servers.Count);
+        var skipped = 0;
+        foreach (var server in servers)
         {
-            var serverSessions = activeSessions.Where(ps => ps.ServerGuid == server.Guid).ToList();
-            currentRounds.TryGetValue(server.Guid, out var currentRound);
-
-            return new ServerSummary
+            try
             {
-                Guid = server.Guid,
-                Name = server.Name,
-                Ip = server.Ip,
-                Port = server.Port,
-                NumPlayers = serverSessions.Count,
-                MaxPlayers = server.MaxPlayers ?? 64,
-                MapName = server.MapName ?? "",
-                GameType = currentRound?.GameType ?? "",
-                JoinLink = server.JoinLink ?? "",
-                RoundTimeRemain = currentRound?.RoundTimeRemain ?? 0,
-                Tickets1 = currentRound?.Tickets1 ?? 0,
-                Tickets2 = currentRound?.Tickets2 ?? 0,
-                Players = serverSessions.Select(session => new PlayerInfo
+                var serverSessions = activeSessions.Where(ps => ps.ServerGuid == server.Guid).ToList();
+                currentRounds.TryGetValue(server.Guid, out var currentRound);
+
+                serverSummaries.Add(new ServerSummary
                 {
-                    Name = session.PlayerName,
-                    Score = session.TotalScore,
-                    Kills = session.TotalKills,
-                    Deaths = session.TotalDeaths,
-                    Ping = session.CurrentPing,      // From denormalized field
-                    Team = session.CurrentTeam,      // From denormalized field  
-                    TeamLabel = session.CurrentTeamLabel, // From denormalized field
-                    AiBot = session.Player?.AiBot ?? false
-                }).ToArray(),
-                Teams = BuildTeamsFromRound(currentRound),
-                Country = server.Country,
-                Region = server.Region,
-                City = server.City,
-                Loc = server.Loc,
-                Timezone = server.Timezone,
-                Org = server.Org,
-                Postal = server.Postal,
-                GeoLookupDate = server.GeoLookupDate,
-                IsOnline = server.IsOnline,
-                LastSeenTime = server.LastSeenTime,
-                DiscordUrl = server.DiscordUrl,
-                ForumUrl = server.ForumUrl,
-                GameId = server.GameId
-            };
-        }).ToList();
+                    Guid = server.Guid,
+                    Name = server.Name,
+                    Ip = server.Ip,
+                    Port = server.Port,
+                    NumPlayers = serverSessions.Count,
+                    MaxPlayers = server.MaxPlayers ?? 64,
+                    MapName = server.MapName ?? "",
+                    GameType = currentRound?.GameType ?? "",
+                    JoinLink = server.JoinLink ?? "",
+                    RoundTimeRemain = currentRound?.RoundTimeRemain ?? 0,
+                    Tickets1 = currentRound?.Tickets1 ?? 0,
+                    Tickets2 = currentRound?.Tickets2 ?? 0,
+                    Players = serverSessions.Select(session => new PlayerInfo
+                    {
+                        Name = session.PlayerName,
+                        Score = session.TotalScore,
+                        Kills = session.TotalKills,
+                        Deaths = session.TotalDeaths,
+                        Ping = session.CurrentPing,      // From denormalized field
+                        Team = session.CurrentTeam,      // From denormalized field
+                        TeamLabel = session.CurrentTeamLabel, // From denormalized field
+                        AiBot = session.Player?.AiBot ?? false
+                    }).ToArray(),
+                    Teams = BuildTeamsFromRound(currentRound),
+                    Country = server.Country,
+                    Region = server.Region,
+                    City = server.City,
+                    Loc = server.Loc,
+                    Timezone = server.Timezone,
+                    Org = server.Org,
+                    Postal = server.Postal,
+                    GeoLookupDate = server.GeoLookupDate,
+                    IsOnline = server.IsOnline,
+                    LastSeenTime = server.LastSeenTime,
+                    DiscordUrl = server.DiscordUrl,
+                    ForumUrl = server.ForumUrl,
+                    GameId = server.GameId
+                });
+            }
+            catch (Exception ex)
+            {
+                skipped++;
+                logger.LogError(ex, "Failed to build summary for server {ServerGuid} ({ServerName}); skipping", server.Guid, server.Name);
+            }
+        }
+        if (skipped > 0)
+        {
+            logger.LogWarning("Skipped {SkippedCount} of {TotalCount} servers due to projection errors for game {Game}", skipped, servers.Count, game);
+        }
         stepStopwatch.Stop();
         logger.LogDebug("Step 5 - Response building completed in {ElapsedMs}ms", stepStopwatch.ElapsedMilliseconds);
 
