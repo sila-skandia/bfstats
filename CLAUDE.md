@@ -110,3 +110,13 @@ junie-des-1942stats/
 - Use record types for DTOs and data structures that are primarily data carriers.
 - All timestamp properties use NodaTime Instant type—must configure HasConversion() in OnModelCreating() with InstantPattern.ExtendedIso for EF Core mapping.
 - Confirm every time you run a kubectl command, even if I've approved a kubectl command in the same chat, unless I explicitly say otherwise.
+
+### Player name rendering
+
+Player names are stored as raw mojibake (some clients send cp1251 bytes that BFlist decodes as cp1252). We do **not** migrate the DB — `Player.Name` is the PK. Names are decoded for display only.
+
+- **Vue templates**: use `$pn(name)` (registered globally in `ui/src/main.js`). Example: `{{ $pn(player.playerName) }}`, `:title="$pn(player.playerName)"`, `:aria-label="$pn(player.playerName)"`.
+- **`<script setup>` / TS**: `import { decodePlayerName } from '@/utils/playerName'` and call directly (e.g. for chart `label`, computed display strings, `charAt(0)` initials).
+- **C# server-rendered output** (banner images, Discord embeds, any other path that paints a name for human eyes): `api.Utils.PlayerNameDecoder.Decode(name)`.
+- **Do NOT decode** for: `router.push` / `:to=` URLs, search query strings, dictionary/Set keys, FK joins, `v-for :key`, or anything compared against a stored name. Those paths must keep using the raw name.
+- When adding a new component or template that surfaces a player name, default to `$pn(...)` unless the value is being used as an identifier.
