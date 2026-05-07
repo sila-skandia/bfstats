@@ -167,7 +167,7 @@
                 :value="player.playerName"
                 class="w-4 h-4 text-cyan-500"
               >
-              <span class="text-white">{{ player.playerName }}</span>
+              <span class="text-white">{{ $pn(player.playerName) }}</span>
             </label>
           </div>
 

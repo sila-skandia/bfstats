@@ -107,7 +107,7 @@
               v-for="p in playersByScoreDesc"
               :key="p.playerName"
             >
-              <td>{{ p.playerName }}</td>
+              <td>{{ $pn(p.playerName) }}</td>
               <td class="round-panel-mono">
                 {{ pickScore(p) }}
               </td>

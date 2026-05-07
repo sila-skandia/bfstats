@@ -1012,7 +1012,7 @@ const visibleHighlights = computed(() => {
                       </td>
                       <td>
                         <div class="font-bold text-slate-200 group-hover:text-cyan-400 transition-colors truncate max-w-[120px]">
-                          {{ player.playerName }}
+                          {{ $pn(player.playerName) }}
                         </div>
                       </td>
                       <td class="text-center font-mono font-bold text-white">

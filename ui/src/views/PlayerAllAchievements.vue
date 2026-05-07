@@ -522,7 +522,7 @@ const getTierDotClass = (tier: string): string => {
               <!-- Achievement Info -->
               <div class="flex-grow">
                 <h1 class="text-3xl md:text-4xl lg:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 mb-4">
-                  {{ playerName }}'s Hall of Fame
+                  {{ $pn(playerName) }}'s Hall of Fame
                 </h1>
                 <p class="text-neutral-300 text-lg mb-6">
                   Complete achievement history and legendary moments

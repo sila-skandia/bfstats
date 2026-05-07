@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
+import { decodePlayerName } from '../utils/playerName';
 
 interface Props {
   name: string;
@@ -15,19 +16,22 @@ const props = withDefaults(defineProps<Props>(), {
 
 const router = useRouter();
 
+// Route URLs use the raw stored name so existing deep links and DB lookups keep working.
 const handlePlayerNameClick = () => {
   if (props.linkToPlayerDetails) {
     router.push(`/players/${encodeURIComponent(props.name)}`);
   }
 };
 
+const displayName = computed(() => decodePlayerName(props.name));
+
 const containerClass = computed(() => {
   const classes = ['player-name-container'];
-  
+
   if (props.class) {
     classes.push(props.class);
   }
-  
+
   return classes.join(' ');
 });
 </script>
@@ -41,7 +45,7 @@ const containerClass = computed(() => {
       :class="{ 'clickable-name': linkToPlayerDetails }"
       @click="handlePlayerNameClick"
     >
-      {{ name }}
+      {{ displayName }}
     </span>
   </span>
 </template>

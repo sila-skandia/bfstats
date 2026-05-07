@@ -223,7 +223,7 @@ watch([activeRankingTab, selectedServerGuid], () => { currentPage.value = 1; loa
           <div>
             <div class="flex items-center gap-2 mb-1">
               <span class="px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/30 text-[9px] font-mono text-cyan-400 uppercase tracking-widest tracking-[0.2em]">Map_Directive</span>
-              <span class="text-[10px] text-slate-500 font-mono uppercase tracking-widest">{{ playerName }}</span>
+              <span class="text-[10px] text-slate-500 font-mono uppercase tracking-widest">{{ $pn(playerName) }}</span>
             </div>
             <h2 class="text-3xl md:text-4xl font-black text-white uppercase italic tracking-tighter">
               {{ mapName }}
@@ -363,7 +363,7 @@ watch([activeRankingTab, selectedServerGuid], () => { currentPage.value = 1; loa
                     :to="`/players/${encodeURIComponent(p.playerName)}`"
                     class="text-xs font-bold text-white uppercase group-hover:text-cyan-400 transition-colors"
                   >
-                    {{ p.playerName }}
+                    {{ $pn(p.playerName) }}
                   </router-link>
                 </td>
                 <td class="p-3 text-right">

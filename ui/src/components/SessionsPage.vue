@@ -1168,7 +1168,7 @@ onUnmounted(() => {
                           <span
                             class="truncate max-w-[90px]"
                             :class="player.playerName === props.playerName ? 'text-cyan-400 font-semibold' : 'text-slate-500'"
-                          >{{ player.playerName }}</span>
+                          >{{ $pn(player.playerName) }}</span>
                           <span class="text-slate-700">/</span>
                           <span
                             :class="getKDRColor(player.kills, player.deaths)"
@@ -1198,9 +1198,9 @@ onUnmounted(() => {
                           <span class="font-bold tabular-nums text-slate-400">{{ playerIdx + 1 }}.</span>
                           <span
                             class="font-medium truncate max-w-[100px] text-slate-200"
-                            :title="player.playerName"
+                            :title="$pn(player.playerName)"
                           >
-                            {{ player.playerName }}
+                            {{ $pn(player.playerName) }}
                           </span>
                           <span class="text-slate-600">/</span>
                           <span
