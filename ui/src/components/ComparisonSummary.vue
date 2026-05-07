@@ -50,7 +50,7 @@ const kdrColorClass = computed(() => {
             ? 'from-cyan-400 to-blue-400 group-hover:from-cyan-300 group-hover:to-blue-300' 
             : 'from-orange-400 to-red-400 group-hover:from-orange-300 group-hover:to-red-300'"
         >
-          {{ playerName }}
+          {{ $pn(playerName) }}
         </h2>
       </router-link>
       

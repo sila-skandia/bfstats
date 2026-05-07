@@ -45,7 +45,7 @@
               :to="`/players/${encodeURIComponent(comment.authorPlayerName)}`"
               class="pc-author-link"
             >
-              {{ comment.authorPlayerName }}
+              {{ $pn(comment.authorPlayerName) }}
             </router-link>
             <div class="pc-comment-meta-right">
               <span
@@ -233,7 +233,7 @@
                 :key="p.id"
                 :value="p.playerName"
               >
-                {{ p.playerName }}
+                {{ $pn(p.playerName) }}
               </option>
             </select>
           </div>

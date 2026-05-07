@@ -1,4 +1,5 @@
 using api.PlayerBanners.Models;
+using api.Utils;
 using SixLabors.Fonts;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Drawing;
@@ -70,7 +71,7 @@ public sealed class BannerRenderer(BannerFonts fonts)
         };
         // Rusted-gold hero name ties into the brand accent (#ffc400) and reads as the
         // clear focal point above the server subtitle and stats row below.
-        DrawTextWithShadow(ctx, stats.PlayerName, options, Color.FromRgba(255, 196, 0, 255), nameSize * 0.045f);
+        DrawTextWithShadow(ctx, PlayerNameDecoder.Decode(stats.PlayerName), options, Color.FromRgba(255, 196, 0, 255), nameSize * 0.045f);
     }
 
     /// <summary>

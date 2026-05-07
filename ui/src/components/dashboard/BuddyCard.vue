@@ -30,7 +30,7 @@
             :to="`/players/${buddy.buddyPlayerName}`"
             class="player-name"
           >
-            {{ buddy.buddyPlayerName }}
+            {{ $pn(buddy.buddyPlayerName) }}
           </router-link>
 
           <!-- Status -->

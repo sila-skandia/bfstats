@@ -13,7 +13,7 @@
             :key="playerName"
             class="pinned-player-badge"
           >
-            {{ playerName }}
+            {{ $pn(playerName) }}
           </div>
           <button
             v-if="pinnedPlayers.size > 1"

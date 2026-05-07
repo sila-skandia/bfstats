@@ -15,7 +15,7 @@
         :to="`/players/${encodeURIComponent(playerName)}`"
         class="player-card-name"
       >
-        {{ playerName }}
+        {{ $pn(playerName) }}
       </router-link>
       <div class="player-card-stats">
         <slot name="stats" />

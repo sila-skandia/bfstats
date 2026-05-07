@@ -118,6 +118,45 @@ export interface ServerSearchResult {
   serverPort?: number;
 }
 
+export interface ServerMergeCandidateGuid {
+  serverGuid: string;
+  sessionCount: number;
+  playtimeMinutes: number;
+  firstSession?: string;
+  lastSession?: string;
+  isOnline: boolean;
+  lastSeenTime: string;
+}
+
+export interface ServerMergeCandidate {
+  game: string;
+  ip: string;
+  port: number;
+  name: string;
+  totalSessions: number;
+  totalPlaytimeMinutes: number;
+  firstSeen?: string;
+  lastSeen?: string;
+  guids: ServerMergeCandidateGuid[];
+}
+
+export interface MergeServersRequest {
+  primaryGuid: string;
+  duplicateGuids: string[];
+}
+
+export interface MergeServersResponse {
+  primaryGuid: string;
+  duplicateGuids: string[];
+  affectedPlayers: number;
+  affectedPeriods: number;
+  repointedSessions: number;
+  repointedRounds: number;
+  repointedAchievements: number;
+  repointedOnlineCounts: number;
+  deletedAggregateRows: number;
+}
+
 export interface AIChatFeedbackEntry {
   id: number;
   prompt: string;
@@ -333,6 +372,18 @@ class AdminDataService {
     const res = await fetch(`/stats/ai/feedback?${params}`, { headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
+  }
+
+  async getServerMergeCandidates(game?: string): Promise<ServerMergeCandidate[]> {
+    const qs = game ? `?game=${encodeURIComponent(game)}` : '';
+    return this.request<ServerMergeCandidate[]>(`/servers/merge-candidates${qs}`, { method: 'GET' });
+  }
+
+  async mergeServers(request: MergeServersRequest): Promise<MergeServersResponse> {
+    return this.request<MergeServersResponse>('/servers/merge', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   }
 
   async setUserRole(userId: number, role: string): Promise<void> {

@@ -99,7 +99,7 @@ function selectedServerLabel(): string {
       <div class="sig-preview-frame">
         <img
           :src="previewUrl"
-          :alt="`${playerName} signature preview`"
+          :alt="`${$pn(playerName)} signature preview`"
           class="sig-preview-img"
           :class="{ 'sig-preview-img--loading': isPreviewLoading }"
           @load="isPreviewLoading = false"

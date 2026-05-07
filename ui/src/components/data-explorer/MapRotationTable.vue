@@ -148,7 +148,7 @@
                 v-if="map.topPlayerByWins"
                 class="top-winner"
               >
-                <span class="top-winner-name">{{ map.topPlayerByWins.playerName }}</span>
+                <span class="top-winner-name">{{ $pn(map.topPlayerByWins.playerName) }}</span>
                 <span class="top-winner-count">{{ map.topPlayerByWins.wins }}W</span>
               </div>
               <span

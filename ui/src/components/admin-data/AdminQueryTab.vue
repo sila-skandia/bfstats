@@ -253,7 +253,7 @@
                         v-if="canDelete"
                         class="portal-td-select"
                       />
-                      <td>{{ s.playerName }}</td>
+                      <td>{{ $pn(s.playerName) }}</td>
                       <td>{{ s.serverName }}</td>
                       <td class="portal-mono">
                         {{ s.totalScore }}

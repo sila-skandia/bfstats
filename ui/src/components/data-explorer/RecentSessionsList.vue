@@ -295,10 +295,10 @@ watch(
                       <router-link
                         :to="getPlayerDetailsRoute(player.playerName)"
                         class="font-medium truncate max-w-[100px] text-cyan-400 hover:text-cyan-300 transition-colors"
-                        :title="`View details for ${player.playerName}`"
+                        :title="`View details for ${$pn(player.playerName)}`"
                         @click.stop
                       >
-                        {{ player.playerName }}
+                        {{ $pn(player.playerName) }}
                       </router-link>
                       <span class="text-neutral-600">/</span>
                       <span

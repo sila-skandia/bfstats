@@ -468,7 +468,7 @@
                           class="hover:underline transition-colors flex-1"
                           :style="{ color: player.membershipStatus === MembershipStatus.Pending ? getTextMutedColor() : getTextColor() }"
                         >
-                          {{ player.playerName }}
+                          {{ $pn(player.playerName) }}
                         </router-link>
                         <span
                           v-if="player.isLeader"

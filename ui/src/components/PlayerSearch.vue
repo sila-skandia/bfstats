@@ -171,7 +171,7 @@ watch(() => props.modelValue, (newValue) => {
       >
         <div class="space-y-2">
           <div class="font-bold text-[var(--text-ember-primary)] text-sm group-hover:text-amber-400 transition-colors">
-            {{ player.playerName }}
+            {{ $pn(player.playerName) }}
           </div>
           <div class="flex items-center gap-3 flex-wrap text-xs">
             <span class="text-[var(--text-ember-muted)] font-medium">{{ formatPlayTime(player.totalPlayTimeMinutes) }}</span>

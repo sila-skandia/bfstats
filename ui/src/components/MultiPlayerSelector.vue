@@ -167,7 +167,7 @@
               class="font-medium text-sm truncate"
               :style="{ color: textColor }"
             >
-              {{ player.playerName }}
+              {{ $pn(player.playerName) }}
             </div>
             <div
               class="text-xs mt-0.5"

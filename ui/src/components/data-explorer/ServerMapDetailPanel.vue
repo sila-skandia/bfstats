@@ -133,7 +133,7 @@ watch(() => [props.serverGuid, props.mapName], () => loadData(false));
               v-if="playerName"
               class="mt-2 inline-flex px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono text-emerald-400 uppercase tracking-widest"
             >
-              Active_Target: {{ playerName }}
+              Active_Target: {{ $pn(playerName) }}
             </div>
           </div>
         </div>

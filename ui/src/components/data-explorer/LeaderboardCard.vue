@@ -68,7 +68,7 @@
                   class="player-link"
                   @click="navigateToPlayer(entry.playerName)"
                 >
-                  {{ entry.playerName }}
+                  {{ $pn(entry.playerName) }}
                 </button>
               </td>
               <td class="col-value">

@@ -713,7 +713,7 @@ const formatPeakHour = (hourUtc: number) => {
           class="tooltip-name"
           :style="{ color: getBand(hoveredItem.avgPing).color }"
         >
-          {{ hoveredItem.playerName }}
+          {{ $pn(hoveredItem.playerName) }}
         </div>
         <div class="tooltip-row">
           <span class="tooltip-label">Ping</span>

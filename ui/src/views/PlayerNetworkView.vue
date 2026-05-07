@@ -124,7 +124,7 @@ onMounted(() => {
               &larr; BACK TO PROFILE
             </button>
             <h1 class="text-2xl sm:text-3xl font-bold text-[var(--portal-text-bright,#e5e7eb)] font-mono">
-              NETWORK: {{ playerName }}
+              NETWORK: {{ $pn(playerName) }}
             </h1>
             <p class="text-sm text-neutral-500 mt-1">
               Explore connections and relationships between players
