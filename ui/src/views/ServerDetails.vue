@@ -1525,7 +1525,7 @@ const heroTrendClass = computed(() => {
                       :to="`/players/${encodeURIComponent(topLivePlayer.name)}`"
                       class="situation-report__callout-name"
                     >
-                      {{ topLivePlayer.name }}
+                      {{ $pn(topLivePlayer.name) }}
                     </router-link>
                     <span class="situation-report__callout-stat">
                       <span class="situation-report__callout-num">{{ topLivePlayer.score }}</span>

@@ -77,7 +77,7 @@
             :class="`lrr-card__leader--${pi + 1}`"
           >
             <span class="lrr-card__leader-rank">#{{ pi + 1 }}</span>
-            <span class="lrr-card__leader-name">{{ player.playerName }}</span>
+            <span class="lrr-card__leader-name">{{ $pn(player.playerName) }}</span>
             <span class="lrr-card__leader-score">{{ player.score }}</span>
           </span>
         </div>

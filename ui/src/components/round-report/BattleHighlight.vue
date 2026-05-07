@@ -79,7 +79,7 @@ const typeLabel = computed(() => {
         </span>
       </div>
       <div class="text-xs font-bold text-white uppercase truncate tracking-tight mb-0.5">
-        {{ highlight.playerName }}
+        {{ $pn(highlight.playerName) }}
       </div>
       <div class="text-[10px] text-slate-400 font-mono truncate leading-none">
         {{ highlight.description }}

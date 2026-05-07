@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Line } from 'vue-chartjs';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js';
 import PlayerName from '../PlayerName.vue';
+import { decodePlayerName } from '../../utils/playerName';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
@@ -69,7 +70,8 @@ const pinnedPlayersChartData = computed(() => {
     const pointBorderWidths = data.map((_, idx) => idx === props.selectedSnapshotIndex ? 3 : 2);
     
     return {
-      label: playerName,
+      label: decodePlayerName(playerName),
+      rawPlayerName: playerName,
       backgroundColor: colors[index % colors.length] + '20',
       borderColor: colors[index % colors.length],
       borderWidth: 2,
@@ -183,16 +185,17 @@ const pinnedPlayersChartOptions = computed(() => {
         },
         callbacks: {
           label: function(context: any) {
-            const playerName = context.dataset.label;
+            const rawPlayerName = context.dataset.rawPlayerName ?? context.dataset.label;
+            const displayName = context.dataset.label;
             const snapshotIndex = context.dataIndex;
-            const performance = pinnedPlayersPerformance.value[playerName];
+            const performance = pinnedPlayersPerformance.value[rawPlayerName];
             if (performance) {
               const point = performance.find((p: any) => p.snapshotIndex === snapshotIndex);
               if (point) {
-                return `${playerName}: ${point.score} | ${point.kills} | ${point.deaths}`;
+                return `${displayName}: ${point.score} | ${point.kills} | ${point.deaths}`;
               }
             }
-            return `${playerName}: ${context.parsed.y}`;
+            return `${displayName}: ${context.parsed.y}`;
           }
         }
       }

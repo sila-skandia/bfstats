@@ -133,7 +133,7 @@
                 @mousedown.prevent="selectPlayer(player)"
               >
                 <div class="font-medium text-slate-200 text-sm">
-                  {{ player.playerName }}
+                  {{ $pn(player.playerName) }}
                 </div>
                 <div class="text-xs text-slate-400 mt-1">
                   {{ formatPlayTime(player.totalPlayTimeMinutes) }} playtime

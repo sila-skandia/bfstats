@@ -861,7 +861,7 @@ onUnmounted(() => {
               </div>
               <div class="loading-terminal-body">
                 <div class="terminal-line">
-                  <span class="terminal-prompt">&gt;</span><span>connect --target <span class="text-neon-cyan">{{ playerName }}</span></span>
+                  <span class="terminal-prompt">&gt;</span><span>connect --target <span class="text-neon-cyan">{{ $pn(playerName) }}</span></span>
                 </div>
                 <div class="terminal-line terminal-line--muted">
                   <span class="terminal-prompt">$</span><span>fetching telemetry</span><span class="terminal-dots" />
@@ -1020,7 +1020,7 @@ onUnmounted(() => {
                     </div>
 
                     <h1 class="hero-name">
-                      {{ playerName }}
+                      {{ $pn(playerName) }}
                     </h1>
                     <div class="hero-badges-inline">
                       <PlayerAchievementHeroBadges :player-name="playerName" />
@@ -2458,7 +2458,7 @@ onUnmounted(() => {
                       Communities
                     </h2>
                     <p class="network-banner-sub">
-                      Groups of players <span class="text-neon-cyan">{{ playerName }}</span> frequently plays with, automatically detected from session overlap.
+                      Groups of players <span class="text-neon-cyan">{{ $pn(playerName) }}</span> frequently plays with, automatically detected from session overlap.
                     </p>
                   </div>
                 </div>
@@ -2521,7 +2521,7 @@ onUnmounted(() => {
                         NO COMMUNITIES DETECTED
                       </p>
                       <p class="explorer-empty-desc">
-                        {{ playerName }} is not currently a member of any detected communities. Detection runs automatically once per day from session overlap.
+                        {{ $pn(playerName) }} is not currently a member of any detected communities. Detection runs automatically once per day from session overlap.
                       </p>
                     </div>
                   </div>

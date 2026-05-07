@@ -63,7 +63,7 @@ const mvpKdColor = computed(() => {
           Tactical MVP
         </div>
         <div class="text-lg font-black text-white uppercase truncate tracking-tight">
-          {{ summary.mvp.playerName }}
+          {{ $pn(summary.mvp.playerName) }}
         </div>
         <div class="flex items-center gap-3 text-[10px] font-mono text-slate-400">
           <span>{{ summary.mvp.score }} PTS</span>

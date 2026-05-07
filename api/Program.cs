@@ -17,6 +17,7 @@ using StackExchange.Redis;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using api.Auth;
@@ -36,6 +37,10 @@ using api.Players;
 using api.Servers;
 using api.AI;
 using System.Threading.RateLimiting;
+
+// Make legacy code pages (cp1251/cp1252) available on Linux. Used by PlayerNameDecoder
+// to recover Cyrillic names that arrive via the BFlist API as cp1252-decoded mojibake.
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 // Configure telemetry endpoints
 // Build a minimal config to read user-secrets before the full builder is created
@@ -739,6 +744,7 @@ try
     // Register Admin Data Management service
     builder.Services.AddScoped<api.AdminData.AdminDataService>();
     builder.Services.AddScoped<api.AdminData.IAdminDataService>(sp => sp.GetRequiredService<api.AdminData.AdminDataService>());
+    builder.Services.AddScoped<api.AdminData.IServerMergeService, api.AdminData.ServerMergeService>();
 
     // Register Neo4j Player Relationships services (optional, only if configured)
     var neo4jConfig = builder.Configuration.GetSection("Neo4j").Get<api.PlayerRelationships.Neo4jConfiguration>();

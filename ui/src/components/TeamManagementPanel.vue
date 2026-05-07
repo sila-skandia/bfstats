@@ -189,7 +189,7 @@
                 class="font-medium hover:underline"
                 :style="{ color: textColor }"
               >
-                {{ player.playerName }}
+                {{ $pn(player.playerName) }}
               </router-link>
               <div class="flex items-center gap-2 mt-0.5">
                 <span class="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -346,7 +346,7 @@
                 class="font-medium hover:underline"
                 :style="{ color: textColor }"
               >
-                {{ player.playerName }}
+                {{ $pn(player.playerName) }}
               </router-link>
               <div class="flex items-center gap-2 mt-0.5">
                 <span

@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text;
 using api.DiscordNotifications.Models;
+using api.Utils;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -93,7 +94,7 @@ public class DiscordWebhookService(
     {
         var playerLines = alert.Players
             .OrderByDescending(p => p.Score)
-            .Select(p => $"\u2022 **{p.Name}**: {p.Score} score ({p.Kills} kills, {p.Deaths} deaths)");
+            .Select(p => $"\u2022 **{PlayerNameDecoder.Decode(p.Name)}**: {p.Score} score ({p.Kills} kills, {p.Deaths} deaths)");
 
         var roundUrl = $"https://bfstats.io/rounds/{alert.RoundId}/report";
 

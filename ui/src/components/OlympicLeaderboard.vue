@@ -20,7 +20,7 @@
             </div>
             <div class="player-info">
               <div class="player-name">
-                {{ topThree[1].playerName }}
+                {{ $pn(topThree[1].playerName) }}
               </div>
               <div class="placement-stats">
                 <div class="medal-count">
@@ -56,7 +56,7 @@
             </div>
             <div class="player-info">
               <div class="player-name champion">
-                {{ topThree[0].playerName }}
+                {{ $pn(topThree[0].playerName) }}
               </div>
               <div class="placement-stats">
                 <div class="medal-count">
@@ -89,7 +89,7 @@
             </div>
             <div class="player-info">
               <div class="player-name">
-                {{ topThree[2].playerName }}
+                {{ $pn(topThree[2].playerName) }}
               </div>
               <div class="placement-stats">
                 <div class="medal-count">

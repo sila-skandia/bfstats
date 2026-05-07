@@ -41,7 +41,7 @@
                 v-for="(a, i) in achievements"
                 :key="`${a.playerName}-${a.achievedAt}-${i}`"
               >
-                <td>{{ a.playerName }}</td>
+                <td>{{ $pn(a.playerName) }}</td>
                 <td class="round-ach-cell-achievement">
                   <img
                     :src="getAchievementImage(a.achievementId, a.tier)"

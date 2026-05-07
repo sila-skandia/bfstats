@@ -9,3 +9,11 @@ interface ImportMetaEnv {
 interface ImportMeta {
     readonly env: ImportMetaEnv
 }
+
+declare module 'vue' {
+    interface ComponentCustomProperties {
+        $pn: (name: string | null | undefined) => string
+    }
+}
+
+export {}

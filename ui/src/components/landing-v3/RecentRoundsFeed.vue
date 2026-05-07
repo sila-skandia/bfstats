@@ -186,10 +186,10 @@ const toPlayer = (name: string, event?: Event): void => {
           <button
             type="button"
             class="rsf-card__top-name"
-            :title="`View ${r.mvp.playerName}`"
+            :title="`View ${$pn(r.mvp.playerName)}`"
             @click="toPlayer(r.mvp.playerName, $event)"
           >
-            {{ r.mvp.playerName }}
+            {{ $pn(r.mvp.playerName) }}
           </button>
           <span class="rsf-card__top-stat">
             <span class="rsf-card__top-num">{{ r.mvp.score.toLocaleString() }}</span>

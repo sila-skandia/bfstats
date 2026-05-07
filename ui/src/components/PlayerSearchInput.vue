@@ -196,7 +196,7 @@ watch(() => props.modelValue, (newValue) => {
               class="font-bold text-slate-200 text-sm group-hover:transition-colors"
               :class="playerNumber === 1 ? 'group-hover:text-cyan-400' : 'group-hover:text-orange-400'"
             >
-              {{ player.playerName }}
+              {{ $pn(player.playerName) }}
             </div>
             <div class="flex items-center gap-3 flex-wrap text-xs">
               <span class="text-slate-400 font-medium">{{ formatPlayTime(player.totalPlayTimeMinutes) }}</span>

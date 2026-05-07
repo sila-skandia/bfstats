@@ -12,7 +12,8 @@ namespace api.AdminData;
 [Route("stats/admin/data")]
 [Authorize(Policy = "Support")]
 public class AdminDataController(
-    IAdminDataService adminDataService, 
+    IAdminDataService adminDataService,
+    IServerMergeService serverMergeService,
     PlayerTrackerDbContext dbContext,
     PlayerRelationshipEtlService? relationshipEtlService = null,
     Neo4jMigrationService? neo4jMigrationService = null) : ControllerBase
@@ -192,6 +193,55 @@ public class AdminDataController(
     {
         await adminDataService.DeleteAppDataAsync(key);
         return NoContent();
+    }
+
+    /// <summary>
+    /// List groups of servers that share (Game, Ip, Port, Name) — likely upstream-issued duplicate GUIDs
+    /// for the same physical on-demand server. Each candidate group includes per-GUID playtime so an
+    /// admin can pick a primary.
+    /// </summary>
+    [HttpGet("servers/merge-candidates")]
+    [Authorize(Policy = "Admin")]
+    public async Task<ActionResult<IReadOnlyList<ServerMergeCandidate>>> GetServerMergeCandidates([FromQuery] string? game = null)
+    {
+        var candidates = await serverMergeService.FindDuplicateCandidatesAsync(game);
+        return Ok(candidates);
+    }
+
+    /// <summary>
+    /// Merge duplicate GameServer rows into the chosen primary GUID. Re-points all FKs, deletes the
+    /// duplicate Server rows + affected aggregate rows, and queues background recalc.
+    /// </summary>
+    [HttpPost("servers/merge")]
+    [Authorize(Policy = "Admin")]
+    public async Task<ActionResult<MergeServersResponse>> MergeServers([FromBody] MergeServersRequest? request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.PrimaryGuid)
+            || request.DuplicateGuids == null || request.DuplicateGuids.Count == 0)
+        {
+            return BadRequest("primaryGuid and at least one duplicateGuid are required");
+        }
+
+        var adminEmail = User.Claims
+            .FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Email)?.Value;
+        if (string.IsNullOrEmpty(adminEmail))
+        {
+            return Unauthorized("Admin email not found in token");
+        }
+
+        try
+        {
+            var result = await serverMergeService.MergeServersAsync(request.PrimaryGuid, request.DuplicateGuids, adminEmail);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     /// <summary>

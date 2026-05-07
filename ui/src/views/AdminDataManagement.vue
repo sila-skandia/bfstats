@@ -53,6 +53,13 @@
         </button>
         <button
           v-if="isAdmin"
+          :class="['portal-tab', activeTab === 'merge' && 'portal-tab--active']"
+          @click="activeTab = 'merge'; mergeTabRef?.load?.()"
+        >
+          <span class="portal-tab-icon">⟩</span> Merge
+        </button>
+        <button
+          v-if="isAdmin"
           :class="['portal-tab', activeTab === 'access' && 'portal-tab--active']"
           @click="activeTab = 'access'; accessTabRef?.load?.()"
         >
@@ -152,6 +159,18 @@
         <AdminCronTab />
       </div>
 
+      <!-- Merge tab (admin only) -->
+      <div
+        v-if="isAdmin"
+        v-show="activeTab === 'merge'"
+        class="portal-panel"
+      >
+        <AdminMergeTab
+          ref="mergeTabRef"
+          :game-filter="activeGameFilter"
+        />
+      </div>
+
       <!-- Access tab (admin only) -->
       <div
         v-show="activeTab === 'access'"
@@ -186,6 +205,7 @@ import { ref, onMounted } from 'vue';
 import AdminQueryTab from '@/components/admin-data/AdminQueryTab.vue';
 import AdminAuditTab from '@/components/admin-data/AdminAuditTab.vue';
 import AdminCronTab from '@/components/admin-data/AdminCronTab.vue';
+import AdminMergeTab from '@/components/admin-data/AdminMergeTab.vue';
 import AdminAccessTab from '@/components/admin-data/AdminAccessTab.vue';
 import AdminNoticeTab from '@/components/admin-data/AdminNoticeTab.vue';
 import AdminAIFeedbackTab from '@/components/admin-data/AdminAIFeedbackTab.vue';
@@ -201,7 +221,7 @@ const gameTypes = [
   { id: 'bfvietnam', label: 'BFV' },
 ];
 
-const activeTab = ref<'query' | 'audit' | 'cron' | 'access' | 'notice' | 'ai-feedback'>('query');
+const activeTab = ref<'query' | 'audit' | 'cron' | 'merge' | 'access' | 'notice' | 'ai-feedback'>('query');
 const activeGameFilter = ref<string>('bf1942');
 const showPostDeleteAggregateHint = ref(false);
 const showPostUndeleteAggregateHint = ref(false);
@@ -209,6 +229,7 @@ const auditTabRef = ref<InstanceType<typeof AdminAuditTab> | null>(null);
 const accessTabRef = ref<InstanceType<typeof AdminAccessTab> & { load?: () => void } | null>(null);
 const noticeTabRef = ref<InstanceType<typeof AdminNoticeTab> & { load?: () => void } | null>(null);
 const aiFeedbackTabRef = ref<InstanceType<typeof AdminAIFeedbackTab> & { load?: () => void } | null>(null);
+const mergeTabRef = ref<InstanceType<typeof AdminMergeTab> & { load?: () => void } | null>(null);
 
 function setGameFilter(id: string) {
   if (!gameTypes.some((g) => g.id === id)) return;

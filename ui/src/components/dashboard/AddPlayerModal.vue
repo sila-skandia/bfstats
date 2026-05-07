@@ -107,7 +107,7 @@ const handleClose = () => emit('close');
       >
         <div class="preview-header">
           <span class="preview-icon">&gt;</span>
-          <span class="preview-name">{{ selectedPlayer.playerName }}</span>
+          <span class="preview-name">{{ $pn(selectedPlayer.playerName) }}</span>
           <span
             v-if="selectedPlayer.isActive"
             class="status-badge online"

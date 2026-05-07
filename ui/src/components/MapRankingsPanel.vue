@@ -353,7 +353,7 @@ watch(() => props.days, (newDays) => {
                     <span
                       class="text-xs font-bold text-white uppercase group-hover:text-cyan-400 transition-colors"
                       :class="{ 'text-cyan-400': isHighlighted(entry.playerName) }"
-                    >{{ entry.playerName }}</span>
+                    >{{ $pn(entry.playerName) }}</span>
                   </div>
                 </td>
                 <td class="p-3 text-right">
