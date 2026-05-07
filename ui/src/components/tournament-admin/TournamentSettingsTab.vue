@@ -97,7 +97,7 @@
                   class="portal-dropdown-item"
                   @mousedown.prevent="selectPlayer(player)"
                 >
-                  {{ player.playerName }}
+                  {{ $pn(player.playerName) }}
                 </div>
               </div>
             </div>

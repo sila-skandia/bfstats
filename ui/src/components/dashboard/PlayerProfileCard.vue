@@ -14,7 +14,7 @@
         </div>
         <div class="player-details">
           <h3 class="player-name">
-            {{ profile.playerName }}
+            {{ $pn(profile.playerName) }}
           </h3>
           <div class="player-status">
             <span

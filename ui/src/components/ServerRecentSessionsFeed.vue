@@ -250,10 +250,10 @@ watch(() => [props.serverGuid, filtersKey.value], load);
           <button
             type="button"
             class="rsf-card__top-name"
-            :title="`View ${s.topPlayers[0].playerName}`"
+            :title="`View ${$pn(s.topPlayers[0].playerName)}`"
             @click="goPlayer(s.topPlayers[0].playerName, $event)"
           >
-            {{ s.topPlayers[0].playerName }}
+            {{ $pn(s.topPlayers[0].playerName) }}
           </button>
           <span class="rsf-card__top-stat">
             <span class="rsf-card__top-num">{{ s.topPlayers[0].score.toLocaleString() }}</span>
@@ -269,7 +269,7 @@ watch(() => [props.serverGuid, filtersKey.value], load);
           <span
             v-if="s.topPlayers.length > 1"
             class="rsf-card__top-plus"
-            :title="s.topPlayers.slice(1, 3).map(p => p.playerName).join(', ')"
+            :title="s.topPlayers.slice(1, 3).map(p => $pn(p.playerName)).join(', ')"
           >+{{ Math.min(s.topPlayers.length - 1, 2) }} more</span>
         </div>
 

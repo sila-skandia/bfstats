@@ -33,7 +33,7 @@
               :to="getPlayerDetailsRoute(player.playerName)"
               class="player-link"
             >
-              {{ player.playerName }}
+              {{ $pn(player.playerName) }}
             </router-link>
           </td>
           <td class="col-score">

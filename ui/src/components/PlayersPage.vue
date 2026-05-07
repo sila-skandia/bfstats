@@ -366,7 +366,7 @@ onMounted(() => {
           :class="{ 'dossier--live': player.isActive }"
           tabindex="0"
           role="link"
-          :aria-label="`Open profile for ${player.playerName}`"
+          :aria-label="`Open profile for ${$pn(player.playerName)}`"
           @click="navigateToPlayer(player.playerName)"
           @keydown.enter.prevent="navigateToPlayer(player.playerName)"
           @keydown.space.prevent="navigateToPlayer(player.playerName)"
@@ -394,7 +394,7 @@ onMounted(() => {
           <!-- Header: serial + avatar + name -->
           <div class="dossier__head">
             <div class="dossier__badge">
-              <span class="dossier__initial">{{ player.playerName.charAt(0).toUpperCase() }}</span>
+              <span class="dossier__initial">{{ $pn(player.playerName).charAt(0).toUpperCase() }}</span>
               <span class="dossier__serial">#{{ String(((currentPage - 1) * pageSize) + idx + 1).padStart(4, '0') }}</span>
             </div>
             <div class="dossier__id">

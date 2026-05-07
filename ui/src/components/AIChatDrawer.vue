@@ -69,7 +69,7 @@
                 v-if="context.playerName || context.serverGuid"
                 class="context-hint"
               >
-                <span v-if="context.playerName">Current player: <strong>{{ context.playerName }}</strong></span>
+                <span v-if="context.playerName">Current player: <strong>{{ $pn(context.playerName) }}</strong></span>
                 <span v-if="context.serverGuid">Current server: <strong>{{ context.serverName || context.serverGuid }}</strong></span>
               </p>
             </div>

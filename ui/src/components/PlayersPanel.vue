@@ -290,7 +290,7 @@
                     title="Top scorer"
                     aria-hidden="true"
                   >★</span>
-                  <span class="plrow__name-text">{{ player.name }}</span>
+                  <span class="plrow__name-text">{{ $pn(player.name) }}</span>
                 </span>
                 <div class="plrow__stats">
                   <div class="plrow__stat plrow__stat--score">
