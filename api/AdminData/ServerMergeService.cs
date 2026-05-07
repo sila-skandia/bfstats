@@ -151,6 +151,15 @@ public class ServerMergeService(
             .Where(ps => dupeGuids.Contains(ps.ServerGuid))
             .ExecuteUpdateAsync(s => s.SetProperty(ps => ps.ServerGuid, primaryGuid));
 
+        // Close any still-active rounds on the dupes — only the primary should retain a
+        // live round after merge, otherwise the live-servers query trips on duplicate keys.
+        var nowUtc = DateTime.UtcNow;
+        await dbContext.Rounds
+            .Where(r => dupeGuids.Contains(r.ServerGuid) && r.IsActive)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.IsActive, false)
+                .SetProperty(r => r.EndTime, (DateTime?)nowUtc));
+
         var repointedRounds = await dbContext.Rounds
             .Where(r => dupeGuids.Contains(r.ServerGuid))
             .ExecuteUpdateAsync(s => s.SetProperty(r => r.ServerGuid, primaryGuid));
