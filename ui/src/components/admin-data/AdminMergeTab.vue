@@ -186,6 +186,7 @@
               <th>name</th>
               <th>guid</th>
               <th>ip:port</th>
+              <th>all-time players</th>
             </tr>
           </thead>
           <tbody>
@@ -219,6 +220,9 @@
               </td>
               <td class="portal-merge-mono">
                 {{ r.serverIp }}{{ r.serverPort ? `:${r.serverPort}` : '' }}
+              </td>
+              <td class="portal-merge-mono">
+                {{ r.totalPlayersAllTime?.toLocaleString() ?? '—' }}
               </td>
             </tr>
           </tbody>
@@ -451,7 +455,13 @@ async function doManualSearch() {
   manualSelected.value = new Set();
   manualPrimary.value = '';
   try {
-    manualResults.value = await searchServersForAdmin(manualSearch.value, 30, props.gameFilter || 'bf1942');
+    const results = await searchServersForAdmin(manualSearch.value, 30, props.gameFilter || 'bf1942');
+    manualResults.value = results;
+    // Auto-select all results and set highest-activity server as primary
+    manualSelected.value = new Set(results.map(r => r.serverGuid));
+    const top = results.reduce<typeof results[0] | null>((best, r) =>
+      !best || (r.totalPlayersAllTime ?? 0) > (best.totalPlayersAllTime ?? 0) ? r : best, null);
+    manualPrimary.value = top?.serverGuid ?? '';
   } catch (e) {
     manualSearchError.value = e instanceof Error ? e.message : 'Search failed';
     manualResults.value = [];
@@ -574,5 +584,13 @@ onMounted(load);
   .portal-merge-table td:nth-child(7)::before { content: 'last: '; color: var(--portal-accent); }
   .portal-merge-item-head { flex-direction: column; align-items: flex-start; }
   .portal-merge-item-meta { margin-left: 0; }
+
+  /* Manual table overrides — columns: checkbox, radio, name, guid, ip:port, players */
+  .portal-manual-table td:nth-child(1) { grid-row: span 4; }
+  .portal-manual-table td:nth-child(2)::before { content: 'primary: '; color: var(--portal-accent); font-weight: 400; }
+  .portal-manual-table td:nth-child(3)::before { content: 'name: '; color: var(--portal-accent); }
+  .portal-manual-table td:nth-child(4)::before { content: 'guid: '; color: var(--portal-accent); }
+  .portal-manual-table td:nth-child(5)::before { content: 'ip: '; color: var(--portal-accent); }
+  .portal-manual-table td:nth-child(6)::before { content: 'players: '; color: var(--portal-accent); }
 }
 </style>
