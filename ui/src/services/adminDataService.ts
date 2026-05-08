@@ -116,6 +116,7 @@ export interface ServerSearchResult {
   serverName: string;
   serverIp?: string;
   serverPort?: number;
+  totalPlayersAllTime?: number;
 }
 
 export interface ServerMergeCandidateGuid {
