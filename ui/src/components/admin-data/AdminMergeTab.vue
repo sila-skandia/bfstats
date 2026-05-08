@@ -139,7 +139,105 @@
       </ul>
     </template>
 
-    <!-- Confirm modal -->
+    <!-- Manual Search & Merge -->
+    <div class="portal-manual-section">
+      <div class="portal-merge-head portal-manual-head">
+        <h3 class="portal-merge-title">
+          [ MANUAL MERGE ]
+        </h3>
+        <p class="portal-merge-desc">
+          Search for servers by name and select any combination to merge — useful for servers that changed GUID <em>and</em> name/IP.
+        </p>
+        <div class="portal-merge-head-actions">
+          <input
+            v-model="manualSearch"
+            type="search"
+            class="portal-input portal-input--mono portal-merge-search"
+            placeholder="search server name..."
+            @keydown.enter="doManualSearch"
+          >
+          <button
+            type="button"
+            class="portal-btn portal-btn--ghost portal-btn--sm"
+            :disabled="manualSearching || !manualSearch.trim()"
+            @click="doManualSearch"
+          >
+            {{ manualSearching ? 'searching...' : 'search' }}
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-if="manualSearchError"
+        class="portal-cron-err"
+      >
+        {{ manualSearchError }}
+      </div>
+
+      <template v-if="manualResults.length > 0">
+        <p class="portal-manual-hint">
+          Check servers to include · set primary with the radio · then merge
+        </p>
+        <table class="portal-merge-table portal-manual-table">
+          <thead>
+            <tr>
+              <th>include</th>
+              <th>primary</th>
+              <th>name</th>
+              <th>guid</th>
+              <th>ip:port</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="r in manualResults"
+              :key="r.serverGuid"
+              :class="{ 'portal-manual-row--selected': manualSelected.has(r.serverGuid) }"
+            >
+              <td>
+                <input
+                  type="checkbox"
+                  :checked="manualSelected.has(r.serverGuid)"
+                  @change="toggleManualSelect(r.serverGuid)"
+                >
+              </td>
+              <td>
+                <input
+                  type="radio"
+                  name="manual-primary"
+                  :value="r.serverGuid"
+                  :checked="manualPrimary === r.serverGuid"
+                  :disabled="!manualSelected.has(r.serverGuid)"
+                  @change="manualPrimary = r.serverGuid"
+                >
+              </td>
+              <td class="portal-merge-item-name">
+                {{ r.serverName }}
+              </td>
+              <td class="portal-merge-mono">
+                {{ r.serverGuid }}
+              </td>
+              <td class="portal-merge-mono">
+                {{ r.serverIp }}{{ r.serverPort ? `:${r.serverPort}` : '' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="portal-manual-actions">
+          <span class="portal-manual-hint-sm">{{ manualSelected.size }} selected · primary: {{ manualPrimary || 'none' }}</span>
+          <button
+            type="button"
+            class="portal-btn portal-btn--primary portal-btn--sm"
+            :disabled="manualSelected.size < 2 || !manualPrimary || manualMerging"
+            @click="confirmManualMerge"
+          >
+            {{ manualMerging ? 'merging...' : 'merge selected' }}
+          </button>
+        </div>
+      </template>
+    </div>
+
+    <!-- Confirm modal (auto-detected) -->
     <div
       v-if="confirmIdx !== null"
       class="portal-merge-modal"
@@ -182,12 +280,56 @@
         </div>
       </div>
     </div>
+
+    <!-- Confirm modal (manual) -->
+    <div
+      v-if="manualConfirm !== null"
+      class="portal-merge-modal"
+      role="dialog"
+      aria-modal="true"
+      @click.self="manualConfirm = null"
+    >
+      <div class="portal-merge-modal-card">
+        <h4 class="portal-merge-modal-title">Confirm manual merge</h4>
+        <p class="portal-merge-modal-text">
+          Merge <strong>{{ manualConfirm.duplicateGuids.length }}</strong> GUID(s) into primary
+          <code class="portal-merge-mono">{{ manualConfirm.primaryGuid }}</code>?
+        </p>
+        <ul class="portal-merge-modal-dupes">
+          <li
+            v-for="g in manualConfirm.duplicateGuids"
+            :key="g"
+          >
+            <code class="portal-merge-mono">{{ g }}</code>
+          </li>
+        </ul>
+        <p class="portal-merge-modal-note">
+          Sessions, rounds, achievements, online counts, tournaments, and favorites are re-pointed. Duplicate Server rows are hard-deleted. Aggregates rebuild in the background.
+        </p>
+        <div class="portal-merge-modal-actions">
+          <button
+            type="button"
+            class="portal-btn portal-btn--ghost portal-btn--sm"
+            @click="manualConfirm = null"
+          >
+            cancel
+          </button>
+          <button
+            type="button"
+            class="portal-btn portal-btn--primary portal-btn--sm"
+            @click="performManualMerge"
+          >
+            merge
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { adminDataService, type ServerMergeCandidate } from '@/services/adminDataService';
+import { adminDataService, searchServersForAdmin, type ServerMergeCandidate, type ServerSearchResult } from '@/services/adminDataService';
 import { formatDateTimeShort } from '@/utils/date';
 
 const props = defineProps<{ gameFilter: string }>();
@@ -292,8 +434,80 @@ async function performMerge() {
   }
 }
 
+// ---- Manual search & merge ----
+const manualSearch = ref('');
+const manualResults = ref<ServerSearchResult[]>([]);
+const manualSearching = ref(false);
+const manualSelected = ref<Set<string>>(new Set());
+const manualPrimary = ref('');
+const manualConfirm = ref<{ primaryGuid: string; duplicateGuids: string[] } | null>(null);
+const manualSearchError = ref<string | null>(null);
+const manualMerging = ref(false);
+
+async function doManualSearch() {
+  if (!manualSearch.value.trim()) return;
+  manualSearching.value = true;
+  manualSearchError.value = null;
+  manualSelected.value = new Set();
+  manualPrimary.value = '';
+  try {
+    manualResults.value = await searchServersForAdmin(manualSearch.value, 30, props.gameFilter || 'bf1942');
+  } catch (e) {
+    manualSearchError.value = e instanceof Error ? e.message : 'Search failed';
+    manualResults.value = [];
+  } finally {
+    manualSearching.value = false;
+  }
+}
+
+function toggleManualSelect(guid: string) {
+  const s = new Set(manualSelected.value);
+  if (s.has(guid)) {
+    s.delete(guid);
+    if (manualPrimary.value === guid) manualPrimary.value = '';
+  } else {
+    s.add(guid);
+    if (!manualPrimary.value) manualPrimary.value = guid;
+  }
+  manualSelected.value = s;
+}
+
+function confirmManualMerge() {
+  if (!manualPrimary.value || manualSelected.value.size < 2) return;
+  manualConfirm.value = {
+    primaryGuid: manualPrimary.value,
+    duplicateGuids: [...manualSelected.value].filter(g => g !== manualPrimary.value),
+  };
+}
+
+async function performManualMerge() {
+  if (!manualConfirm.value) return;
+  const { primaryGuid, duplicateGuids } = manualConfirm.value;
+  manualConfirm.value = null;
+  manualMerging.value = true;
+  error.value = null;
+  try {
+    const res = await adminDataService.mergeServers({ primaryGuid, duplicateGuids });
+    successMsg.value =
+      `Merged ${res.duplicateGuids.length} GUID(s) into ${res.primaryGuid}. ` +
+      `Re-pointed ${res.repointedSessions} sessions, ${res.repointedRounds} rounds. ` +
+      `Aggregates recalculating in the background.`;
+    manualResults.value = [];
+    manualSelected.value = new Set();
+    manualPrimary.value = '';
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Merge failed';
+  } finally {
+    manualMerging.value = false;
+  }
+}
+
 watch(() => props.gameFilter, () => {
   load();
+  manualResults.value = [];
+  manualSelected.value = new Set();
+  manualPrimary.value = '';
 });
 
 defineExpose({ load });
@@ -337,6 +551,14 @@ onMounted(load);
 .portal-merge-modal-dupes li { padding: 0.15rem 0; }
 .portal-merge-modal-note { font-size: 0.75rem; color: var(--portal-text); margin: 0 0 1rem; line-height: 1.4; opacity: 0.85; }
 .portal-merge-modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+.portal-manual-section { border-top: 1px solid var(--portal-border); margin-top: 1.5rem; }
+.portal-manual-head { border-top: none; }
+.portal-manual-table { margin: 0 1.25rem; width: calc(100% - 2.5rem); }
+.portal-manual-row--selected td { background: var(--portal-accent-dim, rgba(0, 229, 160, 0.05)); }
+.portal-manual-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; padding: 0.6rem 1.25rem 1rem; }
+.portal-manual-hint { font-size: 0.75rem; color: var(--portal-text); margin: 0.5rem 1.25rem 0; opacity: 0.75; }
+.portal-manual-hint-sm { font-size: 0.72rem; color: var(--portal-text); font-family: ui-monospace, monospace; opacity: 0.8; }
 
 @media (max-width: 640px) {
   .portal-merge-table thead { display: none; }
