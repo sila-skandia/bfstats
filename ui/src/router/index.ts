@@ -29,6 +29,22 @@ const CommunityDetailsView = () => import('../views/CommunityDetailsView.vue')
 const AliasDetectionView = () => import('../views/AliasDetectionView.vue')
 const MapPopularityView = () => import('../views/MapPopularityView.vue')
 
+// v4 — modern-minimal theme (parallel preview, accessible at /v4/*)
+const ModernShell = () => import('../layouts/ModernShell.vue')
+const LandingPageV4 = () => import('../views/v4/LandingPageV4.vue')
+const PlayerDetailsV4 = () => import('../views/v4/PlayerDetailsV4.vue')
+const ServerDetailsV4 = () => import('../views/v4/ServerDetailsV4.vue')
+const PlayersV4 = () => import('../views/v4/PlayersV4.vue')
+const PlayerAllAchievementsV4 = () => import('../views/v4/PlayerAllAchievementsV4.vue')
+const PlayerSessionsV4 = () => import('../views/v4/PlayerSessionsV4.vue')
+const PlayerNetworkV4 = () => import('../views/v4/PlayerNetworkV4.vue')
+const RoundReportV4 = () => import('../views/v4/RoundReportV4.vue')
+const RoundsIndexV4 = () => import('../views/v4/RoundsIndexV4.vue')
+const SystemStatsV4 = () => import('../views/v4/SystemStatsV4.vue')
+const MapPopularityV4 = () => import('../views/v4/MapPopularityV4.vue')
+const ServerSessionsV4 = () => import('../views/v4/ServerSessionsV4.vue')
+const CommunityDetailV4 = () => import('../views/v4/CommunityDetailV4.vue')
+
 const routes: RouteRecordRaw[] = [
     {
       path: '/',
@@ -465,12 +481,171 @@ const routes: RouteRecordRaw[] = [
         title: 'Alias Detection - Player Relationship Analysis | BF Stats',
         description: 'Investigate potential player aliases and alternate accounts. Analyze behavioral patterns, statistics, and activity timelines to identify suspicious accounts.'
       }
+    },
+    {
+      path: '/v4',
+      component: ModernShell,
+      meta: {
+        title: 'bfstats.io · Battlefield 1942 stats',
+        description: 'Live Battlefield 1942 server and player statistics.'
+      },
+      children: [
+        { path: '', redirect: '/v4/servers/bf1942' },
+        { path: 'servers', redirect: '/v4/servers/bf1942' },
+        // Old FH2/BFV deeplinks redirect to BF1942 — those games are no longer tracked here.
+        { path: 'servers/fh2', redirect: '/v4/servers/bf1942' },
+        { path: 'servers/bfv', redirect: '/v4/servers/bf1942' },
+        { path: 'servers/bfvietnam', redirect: '/v4/servers/bf1942' },
+        {
+          path: 'servers/:game(bf1942)',
+          name: 'v4-servers',
+          component: LandingPageV4,
+          props: true,
+          meta: {
+            title: 'Servers · bfstats.io',
+            description: 'Live Battlefield 1942 server list and player counts.'
+          }
+        },
+        {
+          path: 'players/:playerName',
+          name: 'v4-player-details',
+          component: PlayerDetailsV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.playerName} · bfstats.io`,
+            description: 'Player profile, stats, achievements, and recent sessions.'
+          }
+        },
+        {
+          path: 'players/:playerName/achievements',
+          name: 'v4-player-achievements',
+          component: PlayerAllAchievementsV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.playerName} · Achievements · bfstats.io`,
+            description: 'All achievements earned by this player.'
+          }
+        },
+        {
+          path: 'players/:playerName/sessions',
+          name: 'v4-player-sessions',
+          component: PlayerSessionsV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.playerName} · Sessions · bfstats.io`,
+            description: 'Session history for this player.'
+          }
+        },
+        {
+          path: 'players/:playerName/network',
+          name: 'v4-player-network',
+          component: PlayerNetworkV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.playerName} · Network · bfstats.io`,
+            description: 'Player co-play network and proximity.'
+          }
+        },
+        {
+          path: 'servers/detail/:serverName',
+          name: 'v4-server-details',
+          component: ServerDetailsV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.serverName} · bfstats.io`,
+            description: 'Server profile, live roster, and population history.'
+          }
+        },
+        {
+          path: 'rounds/:roundId/report',
+          name: 'v4-round-report',
+          component: RoundReportV4,
+          props: route => ({
+            roundId: route.params.roundId,
+            players: route.query.players,
+          }),
+          meta: {
+            title: (route: RouteLocationNormalized) => `Round ${route.params.roundId} · bfstats.io`,
+            description: 'Round playback, scoreboard, and battle highlights.'
+          }
+        },
+        {
+          path: 'players',
+          name: 'v4-players',
+          component: PlayersV4,
+          meta: {
+            title: 'Players · bfstats.io',
+            description: 'Player registry and leaderboards.'
+          }
+        },
+        {
+          path: 'rounds',
+          name: 'v4-rounds-index',
+          component: RoundsIndexV4,
+          meta: {
+            title: 'Rounds · bfstats.io',
+            description: 'Recent rounds across all tracked servers.'
+          }
+        },
+        {
+          path: 'system-stats',
+          name: 'v4-system-stats',
+          component: SystemStatsV4,
+          meta: {
+            title: 'System · bfstats.io',
+            description: 'Servers and players tracked, plus credits.'
+          }
+        },
+        {
+          path: 'map-popularity/:serverGuid',
+          name: 'v4-map-popularity',
+          component: MapPopularityV4,
+          props: true,
+          meta: {
+            title: 'Map popularity · bfstats.io',
+            description: 'Map rotation popularity and time-of-day heatmap.'
+          }
+        },
+        {
+          path: 'servers/:serverName/sessions',
+          name: 'v4-server-sessions',
+          component: ServerSessionsV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.serverName} · Sessions · bfstats.io`,
+            description: 'Recent rounds played on this server.'
+          }
+        },
+        {
+          path: 'communities/:id',
+          name: 'v4-community-detail',
+          component: CommunityDetailV4,
+          props: true,
+          meta: {
+            title: 'Community · bfstats.io',
+            description: 'Detected play-group, members, and primary servers.'
+          }
+        }
+      ]
     }
 ]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes
+  routes,
+  // Landing position on every navigation:
+  //  - browser back/forward → restore the prior scroll position
+  //  - in-route hash target → smooth scroll to the anchor
+  //  - query-only change (e.g. ?tab=maps → ?tab=ranks) → leave scroll alone;
+  //    these are in-page state syncs, not page changes. Without this guard,
+  //    every tab click was yanking the page to the top.
+  //  - everything else (different path) → top of page
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.hash) return { el: to.hash, behavior: 'smooth' as ScrollBehavior }
+    if (to.path === from.path) return false
+    return { top: 0, behavior: 'auto' as ScrollBehavior }
+  },
 })
 
 // Page-view telemetry beacon — one event per resolved navigation, tied to canonical route name.
