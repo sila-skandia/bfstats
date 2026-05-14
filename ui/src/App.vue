@@ -1,10 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, provide } from 'vue';
+import { ref, onMounted, watch, provide, computed } from 'vue';
+import { useRoute } from 'vue-router';
 import DashboardLayout from './layouts/DashboardLayout.vue';
 import { initializeBadgeDefinitions } from './services/badgeService';
 import { useSignalR } from '@/composables/useSignalR';
 import { useNotifications } from '@/composables/useNotifications';
 import { createAIContext } from '@/composables/useAIContext';
+
+// /v4/* routes use their own ModernShell; skip the legacy dark dashboard chrome.
+const route = useRoute();
+const useStandaloneShell = computed(() => route.path.startsWith('/v4'));
+
+// The legacy dark slate body background bleeds through on overscroll —
+// flip the body class so v4 sits on its own cream backdrop.
+watch(useStandaloneShell, (val) => {
+  document.body.classList.toggle('mm-body', val);
+}, { immediate: false });
 
 // Dark mode state
 const isDarkMode = ref(false);
@@ -54,6 +65,9 @@ onMounted(async () => {
   // Apply initial theme
   updateTheme();
 
+  // Match initial body class to current route on first paint.
+  if (useStandaloneShell.value) document.body.classList.add('mm-body');
+
   // Listen for system preference changes
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
     // Only update if user hasn't set a preference
@@ -76,7 +90,8 @@ provide('toggleDarkMode', toggleDarkMode);
 </script>
 
 <template>
-  <DashboardLayout />
+  <router-view v-if="useStandaloneShell" />
+  <DashboardLayout v-else />
 </template>
 
 <style>
@@ -186,6 +201,12 @@ body {
   background-color: #0f172a;
   color: var(--color-text);
   overflow-x: hidden;
+}
+
+/* Modern-minimal /v4 routes — flip the page chrome to the cream backdrop. */
+body.mm-body {
+  background-color: #f5f1e8;
+  color: #1a1a1a;
 }
 
 #app {
