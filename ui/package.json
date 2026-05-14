@@ -19,6 +19,8 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.8",
+    "@fontsource-variable/geist-mono": "^5.2.7",
     "@google-cloud/local-auth": "^3.0.1",
     "@microsoft/signalr": "^9.0.6",
     "@primeuix/themes": "^2.0.3",
