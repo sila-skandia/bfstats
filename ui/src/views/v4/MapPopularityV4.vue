@@ -14,6 +14,7 @@ import {
 import type { MapPopularityResponse, MapPopularitySummary } from '@/services/mapPopularityService'
 import { fetchMapPopularity } from '@/services/mapPopularityService'
 import { MM_CHART } from '@/views/v4/mmTokens'
+import { utcHourToLocalHour, localHourToUtcHour } from '@/utils/timeUtils'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
@@ -66,7 +67,7 @@ const isHourInRange = (hour: number): boolean => {
 }
 
 const hourRangeLabel = computed(() =>
-  `${hourStart.value.toString().padStart(2, '0')}:00–${hourEnd.value.toString().padStart(2, '0')}:59 UTC`
+  `${hourStart.value.toString().padStart(2, '0')}:00–${hourEnd.value.toString().padStart(2, '0')}:59 (your local time)`
 )
 
 // Neutral Depth dark palette — olive accent + brightened semantic tints,
@@ -180,11 +181,13 @@ const loadData = async () => {
   loading.value = true
   error.value = null
   try {
+    // hourStart/hourEnd are picked in the viewer's local time; translate
+    // to UTC for the API since the backend buckets timestamps by UTC hour.
     const result = await fetchMapPopularity(
       serverGuid.value,
       selectedDays.value,
-      activeHourPreset.value !== 'All' ? hourStart.value : undefined,
-      activeHourPreset.value !== 'All' ? hourEnd.value : undefined,
+      activeHourPreset.value !== 'All' ? localHourToUtcHour(hourStart.value) : undefined,
+      activeHourPreset.value !== 'All' ? localHourToUtcHour(hourEnd.value) : undefined,
     )
     if (!result) {
       error.value = 'Server not found'
@@ -368,7 +371,7 @@ onMounted(() => {
       <section style="margin-top: 16px">
         <div class="mm-eyebrow">Popularity by time of day</div>
         <p class="mm-card__hint" style="margin-top: 4px">
-          Average player count by hour (UTC). Brighter = more popular.
+          Average player count by your local hour. Brighter = more popular.
         </p>
         <div class="mm-mp__heatmap" style="margin-top: 12px">
           <div class="mm-mp__heat-header">
@@ -387,16 +390,18 @@ onMounted(() => {
               <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ summary.mapName }}</span>
             </div>
             <div class="mm-mp__heat-cells">
+              <!-- Axis is the viewer's local hours; backend data is UTC-bucketed,
+                   so each local hour reads from its corresponding UTC bucket. -->
               <div
                 v-for="h in 24"
                 :key="h - 1"
                 class="mm-mp__heat-cell"
                 :style="{
-                  backgroundColor: getHeatColor(summary.hourlyAvgPlayers[h - 1]),
+                  backgroundColor: getHeatColor(summary.hourlyAvgPlayers[localHourToUtcHour(h - 1)]),
                   opacity: isHourInRange(h - 1) ? 1 : 0.25,
                   outline: isHourInRange(h - 1) && activeHourPreset !== 'All' ? '1px solid var(--mm-accent)' : 'none',
                 }"
-                :title="`${summary.mapName} @ ${(h - 1).toString().padStart(2, '0')}:00 — ${summary.hourlyAvgPlayers[h - 1].toFixed(1)} avg players`"
+                :title="`${summary.mapName} @ ${(h - 1).toString().padStart(2, '0')}:00 local — ${summary.hourlyAvgPlayers[localHourToUtcHour(h - 1)].toFixed(1)} avg players`"
               />
             </div>
           </div>

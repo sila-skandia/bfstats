@@ -3,6 +3,35 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { fetchPlayerActivityHeatmap } from '@/services/playerStatsApi'
 import type { ActivityHeatmapResponse, HeatmapCell } from '@/types/playerStatsTypes'
 
+// The API buckets activity by (UTC dayOfWeek, UTC hour). We display the
+// same data on a (local dayOfWeek, local hour) grid so the viewer sees
+// "Saturday 8pm" in their wall-clock time. This helper translates a
+// local grid coordinate back to the UTC coordinate the cellMap is keyed
+// on. Handles the day-wrap that occurs when the local hour straddles
+// midnight UTC (e.g. UTC+10 Saturday 23:00 ≈ Sunday 09:00 UTC).
+function localToUtcDayHour(localDay: number, localHour: number): { utcDay: number; utcHour: number } {
+  const today = new Date()
+  const offsetDays = localDay - today.getDay()
+  const local = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offsetDays, localHour, 0, 0)
+  return { utcDay: local.getUTCDay(), utcHour: local.getUTCHours() }
+}
+
+// Inverse — translate a (UTC dayOfWeek, UTC hour) cell to its local
+// equivalent for the table view.
+function utcCellToLocal(utcDay: number, utcHour: number): { day: number; hour: number } {
+  const today = new Date()
+  const offsetDays = utcDay - today.getUTCDay()
+  const utc = new Date(Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate() + offsetDays,
+    utcHour,
+    0,
+    0,
+  ))
+  return { day: utc.getDay(), hour: utc.getHours() }
+}
+
 const props = defineProps<{
   playerName: string
   game?: string
@@ -45,7 +74,8 @@ const sortedTableData = computed(() => {
 })
 
 function getCellStyle(dayOfWeek: number, hour: number) {
-  const cell = cellMap.value.get(`${dayOfWeek}-${hour}`)
+  const { utcDay, utcHour } = localToUtcDayHour(dayOfWeek, hour)
+  const cell = cellMap.value.get(`${utcDay}-${utcHour}`)
   if (!cell || cell.minutesActive === 0) {
     return { backgroundColor: 'var(--mm-bg-mute)' }
   }
@@ -68,7 +98,8 @@ function formatHourRange(hour: number) {
 }
 
 function showTooltip(event: MouseEvent, dayOfWeek: number, hour: number) {
-  const cell = cellMap.value.get(`${dayOfWeek}-${hour}`)
+  const { utcDay, utcHour } = localToUtcDayHour(dayOfWeek, hour)
+  const cell = cellMap.value.get(`${utcDay}-${utcHour}`)
   if (!cell || cell.minutesActive === 0) {
     hideTooltip()
     return
@@ -112,7 +143,10 @@ watch(() => props.playerName, loadData)
 <template>
   <section class="mm-heat">
     <header class="mm-heat__head">
-      <div class="mm-eyebrow mm-eyebrow--strong">Weekly activity rhythm</div>
+      <div>
+        <div class="mm-eyebrow mm-eyebrow--strong">Weekly activity rhythm</div>
+        <div class="mm-eyebrow" style="color: var(--mm-ink-faint); font-size: 10px; margin-top: 2px">Times shown in your local time</div>
+      </div>
       <div class="mm-subtabs">
         <button
           type="button"
@@ -168,8 +202,8 @@ watch(() => props.playerName, loadData)
       </thead>
       <tbody>
         <tr v-for="cell in sortedTableData" :key="`${cell.dayOfWeek}-${cell.hour}`">
-          <td data-cell-label="Day">{{ dayNames[cell.dayOfWeek] }}</td>
-          <td data-cell-label="Hour">{{ formatHourRange(cell.hour) }}</td>
+          <td data-cell-label="Day">{{ dayNames[utcCellToLocal(cell.dayOfWeek, cell.hour).day] }}</td>
+          <td data-cell-label="Hour">{{ formatHourRange(utcCellToLocal(cell.dayOfWeek, cell.hour).hour) }}</td>
           <td class="is-num" data-cell-label="Minutes">{{ cell.minutesActive }}</td>
           <td class="is-muted" data-cell-label="Map">{{ cell.mostPlayedMap || '—' }}</td>
         </tr>

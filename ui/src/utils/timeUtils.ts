@@ -17,6 +17,34 @@ export function parseUtc(utcTimestamp: string | null | undefined): Date {
 }
 
 /**
+ * Map a UTC hour-of-day (0-23) to the viewer's local hour-of-day.
+ *
+ * Use when the API hands you data pre-bucketed by UTC hour and you want
+ * to display it in the viewer's local time ("busiest at 8pm" should mean
+ * 8pm where they live, not 8pm in Greenwich). Handles fractional-hour
+ * offsets (India, parts of Australia) by flooring to the local hour.
+ */
+export function utcHourToLocalHour(utcHour: number): number {
+  if (!Number.isFinite(utcHour) || utcHour < 0 || utcHour > 23) return 0;
+  const now = new Date();
+  const utcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(utcMidnight + utcHour * 3_600_000).getHours();
+}
+
+/**
+ * Inverse of utcHourToLocalHour — map a local hour (0-23) to the UTC
+ * hour you'd query the API with. Use at the API boundary when the
+ * viewer picked an hour in their local time but the backend buckets
+ * are UTC.
+ */
+export function localHourToUtcHour(localHour: number): number {
+  if (!Number.isFinite(localHour) || localHour < 0 || localHour > 23) return 0;
+  const now = new Date();
+  const localMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return new Date(localMidnight + localHour * 3_600_000).getUTCHours();
+}
+
+/**
  * Absolute local-time tooltip for any relative-time rendering.
  * e.g. "Dec 25, 2024 at 3:45 PM (your local time)"
  *
