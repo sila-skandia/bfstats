@@ -251,7 +251,7 @@ watch(() => props.days, (newDays) => {
       No rankings yet for this map.
     </div>
 
-    <table v-else class="mm-list" :class="{ 'is-refreshing': isRefreshing }">
+    <table v-else class="mm-list mm-list--dense" :class="{ 'is-refreshing': isRefreshing }">
       <thead>
         <tr>
           <th class="mm-list__rank">#</th>

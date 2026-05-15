@@ -6,12 +6,12 @@ import {
   type ServerProximityResponse,
 } from '@/services/playerRelationshipsApi'
 
-// Subdued V4 ping bands — earthy ink-on-paper instead of neon
+// Ping bands — Neutral Depth dark. Olive success / muted ink / olive accent / kill red.
 const BANDS = [
-  { label: 'Close', max: 50, color: '#5a7d3a' },     // success greenish
-  { label: 'Far', max: 100, color: '#8a8579' },      // muted ink
-  { label: 'Remote', max: 150, color: '#c8772b' },   // accent rust
-  { label: 'Distant', max: Infinity, color: '#a83838' }, // kill red
+  { label: 'Close', max: 50, color: '#7da34c' },     // success olive-green
+  { label: 'Far', max: 100, color: '#8a8a8a' },      // muted ink
+  { label: 'Remote', max: 150, color: '#7d8849' },   // accent olive
+  { label: 'Distant', max: Infinity, color: '#d65a5a' }, // brightened kill red
 ] as const
 
 const getBand = (ping: number) => BANDS.find(b => ping <= b.max)!
@@ -179,7 +179,7 @@ const renderOrbit = () => {
     .attr('rx', d => rxAt(d.ping))
     .attr('ry', d => ryAt(d.ping))
     .attr('fill', 'none')
-    .attr('stroke', '#d8d2c0')
+    .attr('stroke', '#2d2d2d')
     .attr('stroke-width', 0.5)
     .attr('stroke-dasharray', '2 4')
 
@@ -187,7 +187,7 @@ const renderOrbit = () => {
   g.append('circle')
     .attr('cx', cx).attr('cy', cy).attr('r', 22)
     .attr('fill', 'none')
-    .attr('stroke', '#1a1a1a')
+    .attr('stroke', '#ffffff')
     .attr('stroke-width', 1)
 
   g.append('text')
@@ -196,7 +196,7 @@ const renderOrbit = () => {
     .attr('font-family', 'var(--mm-font-mono)')
     .attr('font-size', 9)
     .attr('letter-spacing', '0.08em')
-    .attr('fill', '#1a1a1a')
+    .attr('fill', '#ffffff')
     .text(props.serverName ? 'SERVER' : '·')
 
   // Clock-face hour labels
@@ -213,7 +213,7 @@ const renderOrbit = () => {
       .attr('font-family', 'var(--mm-font-mono)')
       .attr('font-size', 9)
       .attr('letter-spacing', '0.06em')
-      .attr('fill', '#8a8579')
+      .attr('fill', '#8a8a8a')
       .text(`${h.toString().padStart(2, '0')}h`)
   }
 
@@ -227,7 +227,7 @@ const renderOrbit = () => {
     .attr('r', d => d.radius)
     .attr('fill', d => d.color)
     .attr('opacity', d => searchTerms.value.length === 0 || d.matched ? 0.85 : 0.18)
-    .attr('stroke', d => d.matched ? '#1a1a1a' : 'none')
+    .attr('stroke', d => d.matched ? '#ffffff' : 'none')
     .attr('stroke-width', d => d.matched ? 1.5 : 0)
     .style('cursor', 'pointer')
 

@@ -19,7 +19,6 @@ import MmBars from '@/components/v4/MmBars.vue'
 import MmPlayerComments from '@/components/v4/MmPlayerComments.vue'
 import MmPlayerSignatureBuilder from '@/components/v4/MmPlayerSignatureBuilder.vue'
 import MmCommunityCard from '@/components/v4/MmCommunityCard.vue'
-import MmMapRankingsPanel from '@/components/v4/MmMapRankingsPanel.vue'
 import MmPlayerActivityHeatmap from '@/components/v4/MmPlayerActivityHeatmap.vue'
 import MmPlayerMapPreference from '@/components/v4/MmPlayerMapPreference.vue'
 import MmPlayerAchievementSummary from '@/components/v4/MmPlayerAchievementSummary.vue'
@@ -30,7 +29,6 @@ import MmPlayerCompetitiveRankings from '@/components/v4/data-explorer/MmPlayerC
 import MmMapPerformanceRace from '@/components/v4/data-explorer/MmMapPerformanceRace.vue'
 import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi'
-import { useDrillIn } from '@/composables/useDrillIn'
 import { kdClass, streakClass } from './mmTokens'
 
 const route = useRoute()
@@ -322,7 +320,7 @@ const formatScoreEntry = (e: BestScoreEntry) =>
   `${e.mapName} · ${truncate(e.serverName, 22)}`
 
 const goCompare = () => {
-  router.push({ path: '/players/compare', query: { player1: rawName.value } })
+  router.push({ path: '/v4/players/compare', query: { player1: rawName.value } })
 }
 const goSessions = () => {
   router.push(`/v4/players/${encodeURIComponent(rawName.value)}/sessions`)
@@ -341,17 +339,14 @@ const goServer = (serverName: string) => {
   router.push(`/v4/servers/detail/${encodeURIComponent(serverName)}`)
 }
 
-const selectedMap = ref<string | null>(null)
-const mapDrillRef = ref<HTMLElement | null>(null)
-const mapDrill = useDrillIn()
-
+// Map detail used to be an in-page drill-in which let the user scroll
+// past it and lose context. Now it's its own route (/v4/players/:name/maps/:map)
+// so navigation handles scroll-to-top and back-button behaviour cleanly.
 const openMapRankings = (mapName: string) => {
-  selectedMap.value = mapName
-  mapDrill.enter(mapDrillRef)
-}
-const closeMapRankings = () => {
-  selectedMap.value = null
-  mapDrill.exit()
+  router.push({
+    path: `/v4/players/${encodeURIComponent(rawName.value)}/maps/${encodeURIComponent(mapName)}`,
+    query: { game: primaryGameId.value },
+  })
 }
 
 const primaryGameId = computed<'bf1942' | 'fh2' | 'bfvietnam'>(() => {
@@ -437,7 +432,7 @@ const signatureServers = computed(() => {
           </template>
         </div>
         <div style="margin-top: 14px">
-          <MmPlayerAchievementHeroBadges :player-name="rawName" />
+          <MmPlayerAchievementHeroBadges :player-name="rawName" :total-count="achievementGroups.length" />
         </div>
       </div>
 
@@ -513,15 +508,12 @@ const signatureServers = computed(() => {
         <!-- row 1: latest sessions + recent achievements -->
         <div class="mm-overview__row mm-overview__row--split">
           <div>
-            <div class="mm-section-bar">
-              <span>Latest sessions</span>
-              <span class="mm-section-bar__meta">Tap for debrief</span>
-            </div>
+            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Latest sessions</div>
             <MmPlayerRecentRoundsCompact :sessions="recentSessions" :player-name="rawName" />
           </div>
 
           <div>
-            <div class="mm-eyebrow" style="margin-bottom: 12px">Recent achievements</div>
+            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Recent achievements</div>
             <div v-if="achievementsLoading" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px">
               <div v-for="i in 4" :key="i" class="mm-skeleton mm-skeleton--lg" />
             </div>
@@ -539,7 +531,7 @@ const signatureServers = computed(() => {
                   loading="lazy"
                   style="width: 56px; height: 56px; object-fit: contain; display: block; margin: 0 auto 8px"
                 />
-                <div class="mm-eyebrow" style="font-size: 9px; line-height: 1.3">
+                <div class="mm-eyebrow mm-eyebrow--strong" style="font-size: 9px; line-height: 1.3">
                   {{ friendlyAchievementName(g) }}
                 </div>
               </div>
@@ -557,7 +549,7 @@ const signatureServers = computed(() => {
         <!-- row 2: insight rail (activity, k/d trend, kill rate trend) -->
         <div class="mm-overview__row mm-overview__row--triple">
           <div class="mm-card">
-            <div class="mm-eyebrow">Activity rhythm</div>
+            <div class="mm-eyebrow mm-eyebrow--strong">Activity rhythm</div>
             <div class="mm-card__hint">UTC hours · last 30d</div>
             <div v-if="activityHours.length > 0" style="margin-top: 12px">
               <MmBars :values="activityHours" :labels="['00', '06', '12', '18', '23']" :height="56" />
@@ -570,7 +562,7 @@ const signatureServers = computed(() => {
           </div>
 
           <div class="mm-card">
-            <div class="mm-eyebrow">K/D trend</div>
+            <div class="mm-eyebrow mm-eyebrow--strong">K/D trend</div>
             <div class="mm-card__hint">{{ stats?.recentStats?.granularity || 'rolling' }} · {{ kdTrend.length || 0 }} pts</div>
             <div v-if="kdTrend.length > 1" style="margin-top: 12px">
               <MmSparkline :values="kdTrend.map(p => p.value)" :height="56" :width="260" />
@@ -585,7 +577,7 @@ const signatureServers = computed(() => {
           </div>
 
           <div class="mm-card">
-            <div class="mm-eyebrow">Kill rate</div>
+            <div class="mm-eyebrow mm-eyebrow--strong">Kill rate</div>
             <div class="mm-card__hint">kills / minute</div>
             <div v-if="killRateTrend.length > 1" style="margin-top: 12px">
               <MmSparkline :values="killRateTrend.map(p => p.value)" :height="56" :width="260" :accent="true" />
@@ -603,7 +595,7 @@ const signatureServers = computed(() => {
         <!-- row 3: favourite maps + server rankings -->
         <div class="mm-overview__row mm-overview__row--split">
           <div>
-            <div class="mm-eyebrow" style="margin-bottom: 12px">
+            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">
               Favourite maps
               <span v-if="bestKillMap" style="text-transform: none; letter-spacing: 0.02em; color: var(--mm-ink-soft); font-family: var(--mm-font-display); margin-left: 8px">
                 — best on
@@ -611,11 +603,12 @@ const signatureServers = computed(() => {
                 ({{ bestKillMap.kdRatio.toFixed(2) }} K/D)
               </span>
             </div>
-            <table class="mm-list">
+            <table class="mm-list mm-list--dense">
               <tbody>
                 <tr
-                  v-for="m in topMaps.slice(0, 6)"
+                  v-for="(m, i) in topMaps.slice(0, 6)"
                   :key="m.mapName"
+                  :class="i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : ''"
                   @click="openMapRankings(m.mapName); activeTab = 'maps'"
                 >
                   <td class="mm-list__name-cell">
@@ -648,15 +641,22 @@ const signatureServers = computed(() => {
           </div>
 
           <div>
-            <div class="mm-eyebrow" style="margin-bottom: 12px">Server rankings</div>
-            <table class="mm-list">
+            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Server rankings</div>
+            <table class="mm-list mm-list--dense">
               <tbody>
                 <tr
                   v-for="r in allServerRankings"
                   :key="r.serverGuid"
                   @click="goServer(r.serverName)"
                 >
-                  <td class="mm-list__rank is-muted">#{{ r.rank }}</td>
+                  <td style="width: 72px; padding-right: 6px">
+                    <span
+                      class="mm-headline-rank"
+                      :class="{ 'mm-headline-rank--podium': r.rank <= 3 }"
+                    >
+                      <span class="mm-headline-rank__hash">#</span>{{ r.rank }}
+                    </span>
+                  </td>
                   <td class="mm-list__name-cell">
                     <div class="mm-list__name">
                       <span class="mm-list__name-primary">{{ truncate(r.serverName, 30) }}</span>
@@ -680,7 +680,7 @@ const signatureServers = computed(() => {
           :class="killMilestones.length > 0 && hasAnyBestScores ? 'mm-overview__row--split' : ''"
         >
           <div v-if="killMilestones.length > 0">
-            <div class="mm-eyebrow" style="margin-bottom: 12px">Kill milestones</div>
+            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Kill milestones</div>
             <ul class="mm-timeline">
               <li v-for="ms in killMilestones.slice(0, 5)" :key="ms.milestone">
                 <span class="mm-timeline__dot" />
@@ -710,12 +710,16 @@ const signatureServers = computed(() => {
                 :class="{ 'mm-bestscores__group--accent': key === 'This week' && group.length > 0 }"
               >
                 <header class="mm-bestscores__group-head">
-                  <span class="mm-bestscores__window">{{ key }}</span>
+                  <span class="mm-eyebrow mm-eyebrow--strong">{{ key }}</span>
                   <span v-if="group.length > 0" class="mm-bestscores__top-score">{{ formatNumber(group[0].score) }}</span>
                 </header>
                 <div v-if="group.length === 0" class="mm-bestscores__empty">— no scores</div>
                 <ul v-else class="mm-bestscores__list">
-                  <li v-for="(s, i) in group.slice(0, 3)" :key="i">
+                  <li
+                    v-for="(s, i) in group.slice(0, 3)"
+                    :key="i"
+                    :class="['mm-rank--' + (['gold', 'silver', 'bronze'][i])]"
+                  >
                     <span class="mm-bestscores__rank">{{ i + 1 }}</span>
                     <span class="mm-bestscores__score">{{ formatNumber(s.score) }}</span>
                     <span class="mm-bestscores__detail">{{ formatScoreEntry(s) }}</span>
@@ -729,7 +733,7 @@ const signatureServers = computed(() => {
 
       <!-- ========== sessions ========== -->
       <div v-else-if="activeTab === 'sessions'" style="margin-top: 8px">
-        <table class="mm-list">
+        <table class="mm-list mm-list--dense">
           <thead>
             <tr>
               <th>Map</th>
@@ -785,55 +789,52 @@ const signatureServers = computed(() => {
 
       <!-- ========== maps ========== -->
       <div v-else-if="activeTab === 'maps'" style="margin-top: 8px">
-        <template v-if="!selectedMap">
-          <table class="mm-list">
-            <thead>
-              <tr>
-                <th>Map</th>
-                <th class="is-num">Time</th>
-                <th class="is-num">Kills</th>
-                <th class="is-num">Deaths</th>
-                <th class="is-num">K/D</th>
-                <th style="width: 100px"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="m in topMaps" :key="m.mapName" @click="openMapRankings(m.mapName)">
-                <td class="mm-list__name-cell">
-                  <div class="mm-list__name">
-                    <span class="mm-list__name-primary">{{ m.mapName }}</span>
-                  </div>
-                </td>
-                <td class="is-num" data-cell-label="Time">{{ formatDuration(m.minutes) }}</td>
-                <td class="is-num mm-num--kill" data-cell-label="Kills">{{ formatNumber(m.kills) }}</td>
-                <td class="is-num mm-num--death" data-cell-label="Deaths">{{ formatNumber(m.deaths) }}</td>
-                <td class="is-num" :class="kdClass(m.kd)" data-cell-label="K/D">{{ m.kd.toFixed(2) }}</td>
-                <td data-cell-label="">
-                  <span class="mm-eyebrow">Rank →</span>
-                </td>
-              </tr>
-              <tr v-if="topMaps.length === 0">
-                <td colspan="6" class="mm-empty" style="border: 0">No map history yet.</td>
-              </tr>
-            </tbody>
-          </table>
-        </template>
-
-        <div v-else ref="mapDrillRef" style="scroll-margin-top: 16px">
-          <button type="button" class="mm-btn mm-btn--inline" style="margin-bottom: 16px" @click="closeMapRankings">← Back to maps</button>
-          <MmMapRankingsPanel
-            :map-name="selectedMap"
-            :highlight-player="rawName"
-            :game="primaryGameId"
-          />
-        </div>
+        <table class="mm-list mm-list--dense">
+          <thead>
+            <tr>
+              <th style="width: 40px"></th>
+              <th>Map</th>
+              <th class="is-num">Time</th>
+              <th class="is-num">Kills</th>
+              <th class="is-num">Deaths</th>
+              <th class="is-num">K/D</th>
+              <th style="width: 100px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(m, i) in topMaps"
+              :key="m.mapName"
+              :class="i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : ''"
+              @click="openMapRankings(m.mapName)"
+            >
+              <td class="mm-list__rank">{{ String(i + 1).padStart(2, '0') }}</td>
+              <td class="mm-list__name-cell">
+                <div class="mm-list__name">
+                  <span class="mm-list__name-primary">{{ m.mapName }}</span>
+                </div>
+              </td>
+              <td class="is-num" data-cell-label="Time">{{ formatDuration(m.minutes) }}</td>
+              <td class="is-num mm-num--kill" data-cell-label="Kills">{{ formatNumber(m.kills) }}</td>
+              <td class="is-num mm-num--death" data-cell-label="Deaths">{{ formatNumber(m.deaths) }}</td>
+              <td class="is-num" :class="kdClass(m.kd)" data-cell-label="K/D">{{ m.kd.toFixed(2) }}</td>
+              <td data-cell-label="">
+                <span class="mm-eyebrow">Rank →</span>
+              </td>
+            </tr>
+            <tr v-if="topMaps.length === 0">
+              <td colspan="7" class="mm-empty" style="border: 0">No map history yet.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <!-- ========== servers ========== -->
       <div v-else-if="activeTab === 'servers'" style="margin-top: 8px">
-        <table class="mm-list">
+        <table class="mm-list mm-list--dense">
           <thead>
             <tr>
+              <th style="width: 40px"></th>
               <th>Server</th>
               <th class="is-num">Time</th>
               <th class="is-num">Rounds</th>
@@ -842,7 +843,13 @@ const signatureServers = computed(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in topServers" :key="s.serverGuid" @click="goServer(s.serverName)">
+            <tr
+              v-for="(s, i) in topServers"
+              :key="s.serverGuid"
+              :class="i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : ''"
+              @click="goServer(s.serverName)"
+            >
+              <td class="mm-list__rank">{{ String(i + 1).padStart(2, '0') }}</td>
               <td class="mm-list__name-cell">
                 <div class="mm-list__name">
                   <span class="mm-list__name-primary">{{ s.serverName }}</span>

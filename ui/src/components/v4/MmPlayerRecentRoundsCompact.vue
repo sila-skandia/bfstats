@@ -49,7 +49,37 @@ const navigateToRoundReport = (session: Session) => {
   <div>
     <div class="mm-eyebrow" style="margin-bottom: 8px">Tap any round for the full debrief — timeline · phase charts · player breakdown</div>
 
-    <table class="mm-list">
+    <!-- Mobile: shared mm-session-row pattern (win/loss chip + map + sub + stats).
+         Desktop: original wide table for at-a-glance scanning. -->
+    <ol class="mm-recent-rounds__cards">
+      <li
+        v-for="(session, index) in compactSessions"
+        :key="`m-${session.roundId}-${session.sessionId}-${index}`"
+        class="mm-session-row"
+        :class="{
+          'mm-session-row--win': session.teamResult === 'win',
+          'mm-session-row--loss': session.teamResult === 'loss',
+        }"
+        @click="navigateToRoundReport(session)"
+      >
+        <span class="mm-session-row__chip">{{ resultLabel(session.teamResult) }}</span>
+        <span class="mm-session-row__map">{{ session.mapName }}</span>
+        <span class="mm-session-row__date">{{ formatDate(session.startTime) }}</span>
+        <span class="mm-session-row__server">{{ session.serverName }}</span>
+        <span class="mm-session-row__stats">
+          {{ session.totalScore.toLocaleString() }}
+          <span class="mm-num__sep">·</span>
+          {{ formatPlacement(session.placement) }}
+          <span class="mm-num__sep">·</span>
+          <span class="mm-num--kill">{{ session.totalKills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ session.totalDeaths }}</span>
+          <span class="mm-num__sep">·</span>
+          <span :class="kdClass(kdValue(session))">{{ kdValue(session).toFixed(2) }}</span>
+        </span>
+      </li>
+      <li v-if="compactSessions.length === 0" class="mm-empty" style="border: 0; padding: 24px 0; list-style: none">No recent rounds.</li>
+    </ol>
+
+    <table class="mm-list mm-recent-rounds__table">
       <thead>
         <tr>
           <th>Result</th>
@@ -63,7 +93,7 @@ const navigateToRoundReport = (session: Session) => {
       <tbody>
         <tr
           v-for="(session, index) in compactSessions"
-          :key="`${session.roundId}-${session.sessionId}-${index}`"
+          :key="`d-${session.roundId}-${session.sessionId}-${index}`"
           @click="navigateToRoundReport(session)"
         >
           <td data-cell-label="Result">
@@ -101,3 +131,12 @@ const navigateToRoundReport = (session: Session) => {
     </table>
   </div>
 </template>
+
+<style scoped>
+.mm-recent-rounds__cards { display: none; list-style: none; margin: 0; padding: 0; }
+@media (max-width: 720px) {
+  .mm-recent-rounds__table { display: none; }
+  .mm-recent-rounds__cards { display: flex; flex-direction: column; }
+  .mm-recent-rounds__cards .mm-session-row { cursor: pointer; }
+}
+</style>

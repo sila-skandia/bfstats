@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import '../styles/modern-minimal.css'
 
 interface NavItem { label: string; to: string; key: string }
@@ -91,7 +91,39 @@ onUnmounted(() => {
   if (timer) window.clearInterval(timer)
 })
 
+const router = useRouter()
 const searchQuery = ref('')
+const searchInputEl = ref<HTMLInputElement | null>(null)
+
+const submitSearch = () => {
+  const q = searchQuery.value.trim()
+  if (!q) return
+  // Route to the players page with the query prefilled — the page does
+  // its own debounced search and won't auto-load without ?q=, so we just
+  // hand it the search string.
+  void router.push({ path: '/v4/players', query: { q } })
+  searchQuery.value = ''
+  searchInputEl.value?.blur()
+}
+
+const onSearchKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    searchQuery.value = ''
+    searchInputEl.value?.blur()
+  }
+}
+
+// Global ⌘K / Ctrl+K focuses the search input.
+const onGlobalKeydown = (e: KeyboardEvent) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    searchInputEl.value?.focus()
+    searchInputEl.value?.select()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 </script>
 
 <template>
@@ -123,11 +155,14 @@ const searchQuery = ref('')
           <path d="m20 20-3.5-3.5" />
         </svg>
         <input
+          ref="searchInputEl"
           v-model="searchQuery"
           class="mm-search__input"
           type="text"
-          placeholder="Find a player or server"
-          aria-label="Search"
+          placeholder="Find a player"
+          aria-label="Search players"
+          @keydown="onSearchKeydown"
+          @keyup.enter="submitSearch"
         />
         <span class="mm-search__hint">⌘K</span>
       </label>

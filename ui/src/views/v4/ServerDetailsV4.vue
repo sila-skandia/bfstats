@@ -409,8 +409,8 @@ const $pn = decodePlayerName
           <!-- row 1: most played maps (top scoring rounds removed — corrupted upstream data) -->
           <div class="mm-overview__row">
             <div>
-              <div class="mm-eyebrow" style="margin-bottom: 12px">Most played maps</div>
-              <table class="mm-list">
+              <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Most played maps</div>
+              <table class="mm-list mm-list--dense">
                 <tbody>
                   <tr
                     v-for="m in popularMaps.slice(0, 8)"
@@ -436,7 +436,7 @@ const $pn = decodePlayerName
           <!-- row 2: sparkline + activity rhythm + ping -->
           <div class="mm-overview__row mm-overview__row--triple">
             <div class="mm-card">
-              <div class="mm-eyebrow">Population history</div>
+              <div class="mm-eyebrow mm-eyebrow--strong">Population history</div>
               <div class="mm-card__hint">last 30 days</div>
               <div v-if="playerCountSeries.length > 1" style="margin-top: 12px">
                 <MmSparkline :values="playerCountSeries" :height="56" :width="320" />
@@ -454,7 +454,7 @@ const $pn = decodePlayerName
             </div>
 
             <div class="mm-card">
-              <div class="mm-eyebrow">Activity rhythm</div>
+              <div class="mm-eyebrow mm-eyebrow--strong">Activity rhythm</div>
               <div class="mm-card__hint">avg players · UTC hour</div>
               <div v-if="activityByHour.length > 0" style="margin-top: 12px">
                 <MmBars :values="activityByHour" :labels="['00', '06', '12', '18', '23']" :height="56" />
@@ -467,7 +467,7 @@ const $pn = decodePlayerName
             </div>
 
             <div class="mm-card">
-              <div class="mm-eyebrow">Ping rhythm</div>
+              <div class="mm-eyebrow mm-eyebrow--strong">Ping rhythm</div>
               <div class="mm-card__hint">median ms · UTC hour</div>
               <div v-if="pingByHourBars.length > 0 && pingByHourBars.some(v => v > 0)" style="margin-top: 12px">
                 <MmBars :values="pingByHourBars" :labels="['00', '06', '12', '18', '23']" :height="56" :accent="true" />
@@ -482,8 +482,8 @@ const $pn = decodePlayerName
           <!-- row 3: most active + top placements -->
           <div class="mm-overview__row mm-overview__row--split">
             <div>
-              <div class="mm-eyebrow" style="margin-bottom: 12px">Most active players · 30d</div>
-              <table class="mm-list">
+              <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Most active players · 30d</div>
+              <table class="mm-list mm-list--dense">
                 <tbody>
                   <tr v-for="(p, i) in playersList.slice(0, 6)" :key="p.playerName" @click="goPlayer(p.playerName)">
                     <td class="mm-list__rank is-muted">{{ String(i + 1).padStart(2, '0') }}</td>
@@ -507,8 +507,8 @@ const $pn = decodePlayerName
             </div>
 
             <div>
-              <div class="mm-eyebrow" style="margin-bottom: 12px">Top podium finishers</div>
-              <table class="mm-list">
+              <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Top podium finishers</div>
+              <table class="mm-list mm-list--dense">
                 <tbody>
                   <tr v-for="(p, i) in topPlacements.slice(0, 6)" :key="p.playerName" @click="goPlayer(p.playerName)">
                     <td class="mm-list__rank is-muted">{{ String(i + 1).padStart(2, '0') }}</td>
@@ -734,7 +734,7 @@ const $pn = decodePlayerName
         <!-- ============ maps ============ -->
         <div v-else-if="activeTab === 'maps'" style="margin-top: 8px">
           <template v-if="!selectedMap">
-            <table class="mm-list">
+            <table class="mm-list mm-list--dense">
               <thead>
                 <tr>
                   <th style="width: 40px"></th>
@@ -755,12 +755,12 @@ const $pn = decodePlayerName
                     </div>
                   </td>
                   <td class="is-num" data-cell-label="Avg players">{{ m.averagePlayerCount.toFixed(1) }}</td>
-                  <td class="is-num" data-cell-label="Peak">{{ m.peakPlayerCount }}</td>
-                  <td class="is-num" data-cell-label="Time played">{{ formatHours(m.totalPlayTime) }}</td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Peak">{{ m.peakPlayerCount }}</td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Time played">{{ formatHours(m.totalPlayTime) }}</td>
                   <td class="is-num" data-cell-label="Share">
                     <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end">
                       <span>{{ formatPercent(m.playTimePercentage) }}</span>
-                      <div class="mm-list__bar" style="width: 80px">
+                      <div class="mm-list__bar mm-list__col--hide-sm" style="width: 80px">
                         <div
                           class="mm-list__bar-fill"
                           :class="{ 'mm-list__bar-fill--accent': m.playTimePercentage >= 20 }"
@@ -769,7 +769,7 @@ const $pn = decodePlayerName
                       </div>
                     </div>
                   </td>
-                  <td data-cell-label=""><span class="mm-eyebrow">Drill →</span></td>
+                  <td data-cell-label="" class="mm-list__col--hide-sm"><span class="mm-eyebrow">Drill →</span></td>
                 </tr>
                 <tr v-if="popularMaps.length === 0">
                   <td colspan="7" class="mm-empty" style="border: 0">No map history yet.</td>
@@ -857,18 +857,18 @@ const $pn = decodePlayerName
 }
 
 .mm-rank :deep(td.mm-rank__kd-bg--good) {
-  background: rgba(241, 222, 117, 0.18);
+  background: rgba(125, 136, 73, 0.18);
 }
 
 .mm-rank :deep(td.mm-rank__kd-bg--poor) {
-  background: rgba(210, 139, 139, 0.22);
+  background: rgba(214, 90, 90, 0.22);
 }
 
 .mm-rank :deep(tbody tr:hover td.mm-rank__kd-bg--good) {
-  background: rgba(241, 222, 117, 0.32);
+  background: rgba(125, 136, 73, 0.32);
 }
 
 .mm-rank :deep(tbody tr:hover td.mm-rank__kd-bg--poor) {
-  background: rgba(210, 139, 139, 0.34);
+  background: rgba(214, 90, 90, 0.34);
 }
 </style>

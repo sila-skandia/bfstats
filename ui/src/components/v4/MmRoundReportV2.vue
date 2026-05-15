@@ -523,7 +523,7 @@ onUnmounted(() => {
                 <span class="mm-meta-row__sep">·</span>
                 <span>{{ team.totalScore }} pts</span>
               </div>
-              <table class="mm-list">
+              <table class="mm-list mm-list--dense">
                 <thead>
                   <tr>
                     <th class="mm-list__rank">#</th>
@@ -721,13 +721,13 @@ onUnmounted(() => {
 
 .mm-rr__line-msg { line-height: 1.45; }
 
-.mm-rr__line--new { background: rgba(241, 222, 117, 0.18); }
+.mm-rr__line--new { background: rgba(125, 136, 73, 0.18); }
 .mm-rr__line--tracked {
-  background: rgba(200, 119, 43, 0.08);
+  background: rgba(125, 136, 73, 0.08);
   border-left: 2px solid var(--mm-accent);
   padding-left: 14px;
 }
-.mm-rr__line--highlight { background: rgba(241, 222, 117, 0.10); }
+.mm-rr__line--highlight { background: rgba(125, 136, 73, 0.10); }
 
 .mm-rr__ladder {
   flex: 1;
