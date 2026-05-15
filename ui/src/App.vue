@@ -7,9 +7,14 @@ import { useSignalR } from '@/composables/useSignalR';
 import { useNotifications } from '@/composables/useNotifications';
 import { createAIContext } from '@/composables/useAIContext';
 
-// /v4/* routes use their own ModernShell; skip the legacy dark dashboard chrome.
+// V4 pages render their own ModernShell; tournament + admin pages still
+// use the legacy DashboardLayout. The Discord OAuth callback is also
+// standalone (its own dark Neutral Depth surface) so it doesn't briefly
+// flash the legacy sidebar mid-handshake.
 const route = useRoute();
-const useStandaloneShell = computed(() => route.path.startsWith('/v4'));
+const useStandaloneShell = computed(() =>
+  route.path.startsWith('/v4') || route.path.startsWith('/auth/'),
+);
 
 // The legacy dark slate body background bleeds through on overscroll —
 // flip the body class so v4 sits on its own cream backdrop.
@@ -203,10 +208,11 @@ body {
   overflow-x: hidden;
 }
 
-/* Modern-minimal /v4 routes — flip the page chrome to the cream backdrop. */
+/* Modern-minimal /v4 routes (and Discord callback) flip the page chrome
+   to the Neutral Depth dark surface. */
 body.mm-body {
-  background-color: #f5f1e8;
-  color: #1a1a1a;
+  background-color: #131313;
+  color: #ffffff;
 }
 
 #app {

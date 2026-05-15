@@ -316,8 +316,36 @@ const hasAnyBestScores = computed(() => {
   if (!b) return false
   return (b.thisWeek?.length ?? 0) > 0 || (b.last30Days?.length ?? 0) > 0 || (b.allTime?.length ?? 0) > 0
 })
-const formatScoreEntry = (e: BestScoreEntry) =>
-  `${e.mapName} · ${truncate(e.serverName, 22)}`
+
+// Best-score window picker. Mirrors the per-map tab/table pattern — a
+// tab row at the top, a sortable table beneath, each row pinned to a
+// gold/silver/bronze tint for the top three.
+type ScoreWindow = 'thisWeek' | 'last30Days' | 'allTime'
+const scoreWindows: { id: ScoreWindow; label: string }[] = [
+  { id: 'thisWeek', label: 'This week' },
+  { id: 'last30Days', label: 'Last 30 days' },
+  { id: 'allTime', label: 'All-time' },
+]
+const activeScoreWindow = ref<ScoreWindow>('thisWeek')
+const currentBestScores = computed<BestScoreEntry[]>(() => bestScores.value?.[activeScoreWindow.value] ?? [])
+
+const scoreKd = (e: BestScoreEntry): number => {
+  if (e.deaths === 0) return e.kills
+  return e.kills / e.deaths
+}
+const formatScoreDate = (iso: string): string => {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+const openScoreRound = (e: BestScoreEntry) => {
+  if (!e.roundId) return
+  router.push({
+    path: `/v4/rounds/${encodeURIComponent(e.roundId)}/report`,
+    query: { players: rawName.value },
+  })
+}
 
 const goCompare = () => {
   router.push({ path: '/v4/players/compare', query: { player1: rawName.value } })
@@ -698,34 +726,49 @@ const signatureServers = computed(() => {
 
           <div v-if="hasAnyBestScores">
             <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 14px">Best scores</div>
-            <div class="mm-bestscores">
-              <section
-                v-for="(group, key) in {
-                  'This week': bestScores?.thisWeek ?? [],
-                  'Last 30 days': bestScores?.last30Days ?? [],
-                  'All-time': bestScores?.allTime ?? [],
-                }"
-                :key="key"
-                class="mm-bestscores__group"
-                :class="{ 'mm-bestscores__group--accent': key === 'This week' && group.length > 0 }"
-              >
-                <header class="mm-bestscores__group-head">
-                  <span class="mm-eyebrow mm-eyebrow--strong">{{ key }}</span>
-                  <span v-if="group.length > 0" class="mm-bestscores__top-score">{{ formatNumber(group[0].score) }}</span>
-                </header>
-                <div v-if="group.length === 0" class="mm-bestscores__empty">— no scores</div>
-                <ul v-else class="mm-bestscores__list">
-                  <li
-                    v-for="(s, i) in group.slice(0, 3)"
-                    :key="i"
-                    :class="['mm-rank--' + (['gold', 'silver', 'bronze'][i])]"
-                  >
-                    <span class="mm-bestscores__rank">{{ i + 1 }}</span>
-                    <span class="mm-bestscores__score">{{ formatNumber(s.score) }}</span>
-                    <span class="mm-bestscores__detail">{{ formatScoreEntry(s) }}</span>
-                  </li>
-                </ul>
-              </section>
+            <div class="mm-subtabs" style="margin-bottom: 12px">
+              <button
+                v-for="w in scoreWindows"
+                :key="w.id"
+                type="button"
+                class="mm-subtab"
+                :class="{ 'mm-subtab--active': activeScoreWindow === w.id }"
+                @click="activeScoreWindow = w.id"
+              >{{ w.label }}</button>
+            </div>
+            <table v-if="currentBestScores.length > 0" class="mm-list mm-list--dense">
+              <thead>
+                <tr>
+                  <th style="width: 40px"></th>
+                  <th class="is-num">Score</th>
+                  <th>Map</th>
+                  <th class="mm-list__col--hide-sm">Server</th>
+                  <th class="is-num">K / D</th>
+                  <th class="is-num mm-list__col--hide-sm">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(s, i) in currentBestScores"
+                  :key="`${s.roundId}-${i}`"
+                  :class="i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : ''"
+                  @click="openScoreRound(s)"
+                >
+                  <td class="mm-list__rank">{{ String(i + 1).padStart(2, '0') }}</td>
+                  <td class="is-num" data-cell-label="Score">{{ formatNumber(s.score) }}</td>
+                  <td data-cell-label="Map">{{ s.mapName }}</td>
+                  <td class="is-muted mm-list__col--hide-sm" data-cell-label="Server">{{ truncate(s.serverName, 28) }}</td>
+                  <td class="is-num" data-cell-label="K/D">
+                    <span class="mm-num--kill">{{ s.kills }}</span>/<span class="mm-num--death">{{ s.deaths }}</span>
+                    <span class="mm-num__sep">·</span>
+                    <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
+                  </td>
+                  <td class="is-num is-muted mm-list__col--hide-sm" data-cell-label="When">{{ formatScoreDate(s.timestamp) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-else class="mm-empty" style="padding: 32px">
+              No scores recorded in this window yet.
             </div>
           </div>
         </div>
