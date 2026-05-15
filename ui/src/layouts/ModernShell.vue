@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import MmHeaderAuth from '@/components/v4/MmHeaderAuth.vue'
 import '../styles/modern-minimal.css'
 
 interface NavItem { label: string; to: string; key: string }
@@ -130,7 +131,11 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   <div class="mm mm-shell">
     <header class="mm-topbar">
       <router-link to="/v4/servers/bf1942" class="mm-brand">
-        <span class="mm-brand__sigil">42</span>
+        <img
+          src="@/assets/clippy_my_boi.webp"
+          alt="bfstats.io"
+          class="mm-brand__sigil"
+        />
         <span class="mm-brand__mark">
           <span class="mm-brand__name">bfstats.io</span>
           <span class="mm-brand__sub">Battlefield 1942 stats</span>
@@ -166,6 +171,8 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         />
         <span class="mm-search__hint">⌘K</span>
       </label>
+
+      <MmHeaderAuth />
     </header>
 
     <div class="mm-substrip">

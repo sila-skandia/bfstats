@@ -173,7 +173,8 @@
 
 .mm-topbar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* brand · nav · search · auth */
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 24px;
   padding: 16px 32px;
@@ -188,16 +189,11 @@
 }
 
 .mm-brand__sigil {
-  width: 28px;
-  height: 28px;
-  background: var(--mm-ink);
-  color: var(--mm-bg);
-  display: grid;
-  place-items: center;
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  width: 36px;
+  height: 36px;
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .mm-brand__mark {
@@ -1044,7 +1040,8 @@
 
 @media (max-width: 880px) {
   .mm-topbar {
-    grid-template-columns: 1fr auto;
+    /* brand on the left, auth on the right; nav + search wrap below */
+    grid-template-columns: 1fr auto auto;
     padding: 14px 18px;
     gap: 14px;
   }
