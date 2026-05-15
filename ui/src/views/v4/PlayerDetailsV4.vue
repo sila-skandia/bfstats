@@ -30,7 +30,7 @@ import MmMapPerformanceRace from '@/components/v4/data-explorer/MmMapPerformance
 import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { kdClass, streakClass } from './mmTokens'
-import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
+import { parseUtc, formatLocalTooltip, utcHourToLocalHour } from '@/utils/timeUtils'
 
 const route = useRoute()
 const router = useRouter()
@@ -280,14 +280,16 @@ const topMaps = computed<MapAgg[]>(() => {
 
 // ---------- richer overview data ----------
 
-// Activity rhythm — 24-hour bars
+// Activity rhythm — 24-hour bars. API delivers UTC-bucketed counts;
+// remap to viewer's local hour so the axis matches their wall clock.
 const activityHours = computed<number[]>(() => {
   const a = stats.value?.insights?.activityByHour ?? []
   if (a.length === 0) return []
   const buckets = Array(24).fill(0)
   for (const slot of a) {
     if (typeof slot.hour === 'number' && slot.hour >= 0 && slot.hour < 24) {
-      buckets[slot.hour] += slot.minutesActive ?? 0
+      const localHour = utcHourToLocalHour(slot.hour)
+      buckets[localHour] += slot.minutesActive ?? 0
     }
   }
   return buckets
@@ -599,13 +601,13 @@ const signatureServers = computed(() => {
         <div class="mm-overview__row mm-overview__row--triple">
           <div class="mm-card">
             <div class="mm-eyebrow mm-eyebrow--strong">Activity rhythm</div>
-            <div class="mm-card__hint">UTC hours · last 30d</div>
+            <div class="mm-card__hint">your local hours · last 30d</div>
             <div v-if="activityHours.length > 0" style="margin-top: 12px">
               <MmBars :values="activityHours" :labels="['00', '06', '12', '18', '23']" :height="56" />
             </div>
             <div v-else class="mm-card__empty">No activity recorded.</div>
             <div v-if="peakHour" class="mm-card__foot">
-              Peak around <span class="mm-meta-row__strong">{{ String(peakHour.hour).padStart(2, '0') }}:00 UTC</span>
+              Peak around <span class="mm-meta-row__strong">{{ String(peakHour.hour).padStart(2, '0') }}:00</span>
               · {{ formatDuration(peakHour.minutes) }}
             </div>
           </div>

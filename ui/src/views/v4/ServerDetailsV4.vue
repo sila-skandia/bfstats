@@ -16,6 +16,7 @@ import {
 } from '@/services/serverDetailsService'
 import type { ServerSummary } from '@/types/server'
 import { decodePlayerName } from '@/utils/playerName'
+import { parseUtc, utcHourToLocalHour } from '@/utils/timeUtils'
 import { countryCodeToName } from '@/types/countryCodes'
 import MmSparkline from '@/components/v4/MmSparkline.vue'
 import MmBars from '@/components/v4/MmBars.vue'
@@ -257,7 +258,8 @@ const playerCountSeries = computed<number[]>(() => {
   return out
 })
 
-// Ping-by-hour bar series (24 bins)
+// Ping-by-hour bar series (24 bins). API delivers UTC-bucketed data;
+// remap to viewer's local hour so the axis matches their wall clock.
 const pingByHourBars = computed<number[]>(() => {
   const data = insights.value?.pingByHour?.data ?? []
   if (data.length === 0) return []
@@ -265,8 +267,9 @@ const pingByHourBars = computed<number[]>(() => {
   const counts = Array(24).fill(0)
   for (const d of data) {
     if (typeof d.hour === 'number' && d.hour >= 0 && d.hour < 24) {
-      buckets[d.hour] += d.medianPing ?? d.averagePing ?? 0
-      counts[d.hour] += 1
+      const localHour = utcHourToLocalHour(d.hour)
+      buckets[localHour] += d.medianPing ?? d.averagePing ?? 0
+      counts[localHour] += 1
     }
   }
   return buckets.map((sum, i) => (counts[i] === 0 ? 0 : sum / counts[i]))
@@ -277,14 +280,18 @@ const avgPing = computed(() => {
   return v.reduce((s, n) => s + n, 0) / v.length
 })
 
-// Activity rhythm — bucket player-count history by UTC hour
+// Activity rhythm — bucket player-count history by the viewer's local
+// hour. The raw timestamps are UTC but we want "busiest at 8pm" to mean
+// 8pm where the viewer lives, not 8pm in Greenwich.
 const activityByHour = computed<number[]>(() => {
   const h = insights.value?.playerCountHistory ?? []
   if (h.length === 0) return []
   const buckets = Array(24).fill(0)
   const counts = Array(24).fill(0)
   for (const p of h) {
-    const hour = new Date(p.timestamp).getUTCHours()
+    const d = parseUtc(p.timestamp)
+    if (isNaN(d.getTime())) continue
+    const hour = d.getHours()
     buckets[hour] += p.playerCount
     counts[hour] += 1
   }
@@ -455,20 +462,20 @@ const $pn = decodePlayerName
 
             <div class="mm-card">
               <div class="mm-eyebrow mm-eyebrow--strong">Activity rhythm</div>
-              <div class="mm-card__hint">avg players · UTC hour</div>
+              <div class="mm-card__hint">avg players · your local hour</div>
               <div v-if="activityByHour.length > 0" style="margin-top: 12px">
                 <MmBars :values="activityByHour" :labels="['00', '06', '12', '18', '23']" :height="56" />
               </div>
               <div v-else class="mm-card__empty">No activity rhythm yet.</div>
               <div v-if="peakHour" class="mm-card__foot">
-                Busiest at <span class="mm-meta-row__strong">{{ String(peakHour.hour).padStart(2, '0') }}:00 UTC</span>
+                Busiest at <span class="mm-meta-row__strong">{{ String(peakHour.hour).padStart(2, '0') }}:00</span>
                 · {{ peakHour.avgPlayers.toFixed(1) }} avg
               </div>
             </div>
 
             <div class="mm-card">
               <div class="mm-eyebrow mm-eyebrow--strong">Ping rhythm</div>
-              <div class="mm-card__hint">median ms · UTC hour</div>
+              <div class="mm-card__hint">median ms · your local hour</div>
               <div v-if="pingByHourBars.length > 0 && pingByHourBars.some(v => v > 0)" style="margin-top: 12px">
                 <MmBars :values="pingByHourBars" :labels="['00', '06', '12', '18', '23']" :height="56" :accent="true" />
               </div>
