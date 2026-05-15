@@ -14,6 +14,65 @@ documented separately in [`MOBILE_PATTERNS.md`](./MOBILE_PATTERNS.md).
 That file is the source of truth for unmocked mobile pages — read it
 before improvising mobile-specific markup.
 
+**Dark mode is the default** as of the Neutral Depth migration. The full
+palette lives in `ui/src/styles/modern-minimal.css` at the top of the
+`.mm` block. Chart series use the centralised palette from
+`ui/src/views/v4/mmTokens.ts` (`MM_CHART.*`, `teamColor()`, `teamFill()`).
+Headline values:
+
+- `--mm-bg`: `#131313` (Neutral Depth surface — never pure black)
+- `--mm-bg-soft`: `#1a1a1a` (slight elevation — tooltips, drill panels)
+- `--mm-ink`: `#ffffff` (primary text), `--mm-ink-soft`: `#c8c8c8` (secondary)
+- `--mm-accent`: `#7d8849` (muted olive — brand, active states, K/D ramp)
+- `--mm-highlight`: `#847d4c` + `--mm-highlight-ink`: `#000` — the **anchor
+  treatment** for `.mm-section-bar` and `.mm-cta-strip`. Reserve for
+  high-hierarchy strips; don't paint half the viewport with it.
+- `--mm-kill`: `#d65a5a` (brightened red — Axis side, loss, danger)
+- `--mm-success`: `#7da34c` (brightened olive-green — Allies, win)
+
+**Chart rule:** every Chart.js / D3 series must source colors from
+`mmTokens.MM_CHART`. Team-coloured lines use `teamColor(label)` /
+`teamFill(label, opacity)` so Axis lines are red, Allied lines are olive,
+and unknown labels fall back to the accent. Never hardcode hex in a
+chart options block — the `feedback-self-audit-before-done` audit script
+scans for this.
+
+**Universal design system — applies to mobile AND desktop equally.**
+Visual identity (colour, type, anchor bars, accent rules) is the *same
+on every viewport*. Don't gate a visual treatment behind `@media
+(max-width: 720px)` — that's how `<thead>` rows ended up with the old
+muted treatment on desktop while the rest of the page moved to the olive
+table anchor. The only thing viewport-aware is **layout density**:
+`.mm-list--dense` vs `.mm-list`, `mm-card-list` swap-in on mobile,
+`mm-list__col--hide-sm` etc. Those are about *how much* content fits
+per row; they're not about *what* the brand looks like.
+
+The brief's olive `#847d4c` table-header anchor applies to:
+- `.mm-list thead th` — every V4 table on every viewport.
+- `.mm-section-bar` — strip above any long list ("Recent rounds · Tap
+  for debrief", "Online now").
+- `.mm-cta-strip` — primary discovery CTA ("Get online ▼").
+
+If a new surface needs an anchor, use these classes — don't invent a
+new tint.
+
+**Headline-rank rule:** numbers that represent a player's **standing or
+achievement** (server rank, leaderboard slot, podium finish) render in
+`.mm-headline-rank` — large display font, olive accent, with a small
+`__hash` `#` prefix. Add `.mm-headline-rank--podium` for top-3 standings
+so they pick up the lifted-olive `--mm-kd-elite` tone.
+
+The inverse — **sequence indexes** like the `01 02 03 …` prefix on every
+row of a sorted table — stay small and muted via `.mm-list__rank`. The
+difference is whether the number *means* something on its own. "Rank #23
+of 1,500" is meaningful. "Row 23 of a sorted list" is not. When in doubt,
+ask: does this number stand alone or is it a row counter?
+
+Canonical example: PlayerDetailsV4 Server rankings preview rows render
+the rank as large olive `.mm-headline-rank`. Don't downgrade these to
+small muted prefixes — they're the answer to "how am I doing?", not a
+row count.
+
 ---
 
 ## 1. CSS variable tokens

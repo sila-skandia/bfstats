@@ -4,38 +4,43 @@
  */
 
 .mm {
-  --mm-bg: #f5f1e8;
-  --mm-bg-soft: #efeadd;
-  --mm-bg-mute: #e7e1d1;
-  --mm-rule: #d8d2c0;
-  --mm-rule-strong: #b8b1a0;
-  --mm-ink: #1a1a1a;
-  --mm-ink-soft: #4d4a42;
-  --mm-ink-muted: #8a8579;
-  --mm-ink-faint: #b6b1a3;
-  --mm-accent: #c8772b;
-  --mm-accent-soft: #e6a35d;
-  --mm-highlight: #f1de75;
-  --mm-success: #5a7d3a;
-  --mm-success-bg: #dbe2c4;
-  --mm-danger: #b3441a;
+  /* Neutral Depth dark mode — surface is a soft #131313 grey rather than
+     pure black. Hierarchy is carried by ink weight + whitespace, not
+     borders or shadows. */
+  --mm-bg: #131313;
+  --mm-bg-soft: #1a1a1a;
+  --mm-bg-mute: #222222;
+  --mm-rule: #2d2d2d;
+  --mm-rule-strong: #3d3d3d;
+  --mm-ink: #ffffff;
+  --mm-ink-soft: #c8c8c8;
+  --mm-ink-muted: #8a8a8a;
+  --mm-ink-faint: #555555;
+  --mm-accent: #7d8849;            /* muted olive — primary brand / active */
+  --mm-accent-soft: #9aa666;       /* lighter olive — hover / soft accent */
+  --mm-highlight: #847d4c;         /* anchor strips (section bar, CTA strip) */
+  --mm-highlight-ink: #000000;     /* text on anchor strips */
+  --mm-success: #7da34c;           /* brightened olive-green for wins */
+  --mm-success-bg: #2b3a1a;        /* dark success surface (win chip) */
+  --mm-danger: #d65a5a;            /* brightened red for loss / danger */
 
-  /* numeric tints — warm sepia-leaning so they read as ink shifts, not UI alerts */
-  --mm-kill: #a83838;         /* lifetime + per-round kill counts */
-  --mm-kill-soft: #d28b8b;    /* mobile or low-emphasis kill numbers */
-  --mm-death: #8a8579;        /* deaths stay muted */
-  --mm-score: #1a1a1a;        /* score reads as ink */
-  --mm-streak: #a83838;       /* big streaks pop in kill-red */
-  --mm-load-busy: #a36421;    /* server players when busy (>=66%) */
-  --mm-load-full: #a83838;    /* server players when at capacity */
-  --mm-load-idle: #b6b1a3;    /* server players when empty */
+  /* Numeric tints — brightened for legibility on dark, but kept restrained */
+  --mm-kill: #d65a5a;              /* per-round kills + lifetime kills */
+  --mm-kill-soft: #8a3838;         /* low-emphasis kill numbers */
+  --mm-death: #8a8a8a;             /* deaths stay muted */
+  --mm-score: #ffffff;             /* score reads as ink */
+  --mm-streak: #d65a5a;            /* streaks pop in kill-red */
+  --mm-load-busy: #c5a23a;         /* server players when busy (>=66%) */
+  --mm-load-full: #d65a5a;         /* server players when at capacity */
+  --mm-load-idle: #555555;         /* server players when empty */
 
-  /* K/D bands — five steps, all earthy */
-  --mm-kd-poor:  #9a8b6e;     /* < 0.5  — dusty olive */
-  --mm-kd-low:   #a87b3e;     /* 0.5–1  — faded amber */
-  --mm-kd-mid:   #1a1a1a;     /* 1–2    — neutral ink */
-  --mm-kd-good:  #c8772b;     /* 2–3    — accent rust */
-  --mm-kd-elite: #8a5a18;     /* 3+     — deep amber/gold */
+  /* K/D bands — five steps. Bottom two stay neutral-warm so good play
+     visibly trends toward the olive accent. */
+  --mm-kd-poor:  #6a6a6a;          /* < 0.5  — dim grey */
+  --mm-kd-low:   #8a8a6a;          /* 0.5–1  — desaturated khaki */
+  --mm-kd-mid:   #ffffff;          /* 1–2    — neutral ink (default) */
+  --mm-kd-good:  #7d8849;          /* 2–3    — olive accent */
+  --mm-kd-elite: #b4c060;          /* 3+     — lifted olive (elite glow) */
 
   --mm-font-display: 'Geist Variable', 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --mm-font-mono: 'Geist Mono Variable', 'Geist Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -67,8 +72,27 @@
   font-weight: 400;
 }
 
+/* Section title — used in-content above a card / list / chart group.
+   Heavier than the tiny meta eyebrow so a "Favourite maps" / "Activity
+   rhythm" heading clearly anchors its block on a busy page. Olive
+   leading bar adds just enough brand emphasis without going loud. */
 .mm-eyebrow--strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   color: var(--mm-ink);
+}
+
+.mm-eyebrow--strong::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  background: var(--mm-accent);
+  border-radius: 1px;
 }
 
 .mm-display {
@@ -350,7 +374,7 @@
 .mm-chip--accent {
   background: var(--mm-highlight);
   border-color: var(--mm-highlight);
-  color: var(--mm-ink);
+  color: var(--mm-highlight-ink);
 }
 
 .mm-chip--live {
@@ -529,7 +553,7 @@
 .mm-btn--strong { color: var(--mm-ink); font-weight: 500; }
 .mm-btn--accent {
   background: var(--mm-highlight);
-  color: var(--mm-ink);
+  color: var(--mm-highlight-ink);
   padding: 6px 12px;
 }
 
@@ -569,22 +593,33 @@
   border-collapse: collapse;
 }
 
+/* Table headers use the same "olive anchor" treatment as the section
+   bar / CTA strip — `--mm-highlight` bg with black ink. The brief calls
+   this the "table-header data anchor" — every list / scoreboard / feed
+   uses it so the data hierarchy reads consistently. This applies on
+   BOTH mobile and desktop. */
 .mm-list thead th {
   font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 11px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--mm-ink-muted);
-  font-weight: 400;
+  color: var(--mm-highlight-ink);
+  font-weight: 600;
   text-align: left;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--mm-rule);
+  padding: 8px 14px;
+  background: var(--mm-highlight);
+  border-bottom: 1px solid var(--mm-highlight);
 }
 
 .mm-list thead th.is-num {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* First / last header cell pick up the table's outer radius so the
+   anchor strip feels like one bar across the top, not detached cells. */
+.mm-list thead th:first-child { border-top-left-radius: 2px; }
+.mm-list thead th:last-child { border-top-right-radius: 2px; }
 
 .mm-list tbody tr {
   border-bottom: 1px solid var(--mm-rule);
@@ -593,6 +628,49 @@
 }
 
 .mm-list tbody tr:hover { background: var(--mm-bg-soft); }
+
+/* Podium tint — apply to any list row that represents a top-3 entry.
+   Mirrors the V3 best-scores treatment but expressed in the Neutral
+   Depth palette (lifted olive for #1, off-white for #2, dusty bronze for
+   #3). Lists opt in by adding the class on the <tr> or <li>. */
+.mm-rank--gold { color: var(--mm-kd-elite); }
+.mm-rank--gold .mm-list__rank,
+.mm-rank--gold .mm-bestscores__rank { color: var(--mm-kd-elite); font-weight: 600; }
+.mm-rank--silver { color: var(--mm-ink); }
+.mm-rank--silver .mm-list__rank,
+.mm-rank--silver .mm-bestscores__rank { color: var(--mm-ink); font-weight: 500; }
+.mm-rank--bronze { color: #c08a4c; }
+.mm-rank--bronze .mm-list__rank,
+.mm-rank--bronze .mm-bestscores__rank { color: #c08a4c; font-weight: 500; }
+
+/* Headline rank — used when a number represents a player's STANDING or
+   an achievement (server rank, leaderboard slot, podium position). It's
+   the inverse of a "running tally" number: a single, important, large,
+   accent-coloured value. Don't use this for in-table sequential rank
+   prefixes (`01 02 03 …`) — those stay small + muted via .mm-list__rank.
+
+   Example: a player's "#23" on a server out of 1,500 players is a
+   standing — show large + olive accent. The "01" prefix on every row of
+   a sorted table is a sequence index — keep small + muted. */
+.mm-headline-rank {
+  font-family: var(--mm-font-display);
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--mm-accent);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-headline-rank__hash {
+  font-size: 0.55em;
+  font-weight: 400;
+  color: var(--mm-accent-soft);
+  margin-right: 2px;
+  vertical-align: 0.15em;
+}
+
+.mm-headline-rank--podium { color: var(--mm-kd-elite); }
 
 .mm-list tbody td {
   padding: 14px 16px;
@@ -987,15 +1065,34 @@
 }
 
 @media (max-width: 640px) {
-  /* Mobile drops the search input entirely — the brand + nav row is enough.
-     A future hamburger-driven search lives in ModernShell. */
-  .mm-search { display: none; }
+  /* Mobile drops the *topbar* search only — the brand + nav row needs
+     the space, and a future hamburger-driven search will replace it.
+     In-page search inputs (e.g. the Players page filter) MUST stay
+     visible, so we scope this hide to .mm-topbar descendants. */
+  .mm-topbar .mm-search { display: none; }
+}
+
+/* ---------- viewport-scoped visibility utilities ----------
+   Use these any time the same logical role is represented by *different
+   markup* on mobile vs desktop (e.g. a card list vs a table, a section
+   bar above a card list vs a `<thead>` on the desktop table). The split
+   is layout density, not visual identity — see MOBILE_PATTERNS.md →
+   "The visual design system is universal".
+
+   Breakpoint: 720px (the same threshold used by `.mm-list--dense` to
+   collapse to mobile rows). */
+@media (max-width: 720px) {
+  .mm-only-desktop { display: none !important; }
+}
+@media (min-width: 721px) {
+  .mm-only-mobile { display: none !important; }
 }
 
 /* ---------- mobile patterns (MOBILE_PATTERNS.md) ---------- */
 
-/* Inverse section bar — "TITLE / META" strip on dark ink, marks the top
-   of a long scrollable list. See pattern #4. */
+/* Anchor strip — "TITLE / META" bar marking the top of a long list.
+   Uses --mm-highlight (olive #847d4c) + --mm-highlight-ink (black) — the
+   "tactical" hierarchy anchor from the design brief. See pattern #4. */
 .mm-section-bar {
   display: flex;
   align-items: center;
@@ -1003,20 +1100,23 @@
   gap: 16px;
   margin: 24px 0 0;
   padding: 10px 14px;
-  background: var(--mm-ink);
-  color: var(--mm-bg);
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
   font-family: var(--mm-font-mono);
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  font-weight: 600;
 }
 
 .mm-section-bar__meta {
-  color: var(--mm-bg-mute);
+  color: var(--mm-highlight-ink);
+  opacity: 0.7;
   letter-spacing: 0.1em;
 }
 
-/* Primary CTA strip — full-width highlight button. See pattern #8. */
+/* Primary CTA strip — full-width highlight button. Same anchor treatment
+   as the section bar so primary actions read as "decision anchors". */
 .mm-cta-strip {
   display: flex;
   align-items: center;
@@ -1031,12 +1131,12 @@
   font-family: var(--mm-font-display);
   font-weight: 600;
   font-size: 15px;
-  color: var(--mm-ink);
+  color: var(--mm-highlight-ink);
   cursor: pointer;
   text-decoration: none;
 }
 
-.mm-cta-strip:hover { filter: brightness(0.95); }
+.mm-cta-strip:hover { background: var(--mm-accent); }
 
 /* Mobile card list — vertical stack of cards for non-tabular feeds
    (rounds, achievement-by-round, anything where each row has its own

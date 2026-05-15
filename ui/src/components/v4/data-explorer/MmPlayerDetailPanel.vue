@@ -264,7 +264,7 @@ watch(() => props.serverGuid, () => loadData())
         </div>
       </div>
 
-      <table class="mm-list" style="margin-top: 18px">
+      <table class="mm-list mm-list--dense" style="margin-top: 18px">
         <thead>
           <tr>
             <th class="mm-list__rank">#</th>

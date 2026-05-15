@@ -80,7 +80,7 @@ const maxPlayers = computed(() => Math.max(...props.patterns.map(p => p.avgPlaye
 
 const legendColor = (idx: number) => {
   const opacities = [0.06, 0.18, 0.35, 0.55, 0.78, 1.0]
-  return `rgba(26, 26, 26, ${opacities[idx] ?? 0.06})`
+  return `rgba(125, 136, 73, ${opacities[idx] ?? 0.06})`
 }
 
 const getCellStyle = (dayOfWeek: number, hourOfDay: number) => {

@@ -88,8 +88,15 @@ const onInput = (query: string) => {
   }, 300) as unknown as number
 }
 
+// Auto-search is deliberately suppressed. The dropdown only opens once
+// the user has *typed* something in this session — we never search just
+// because the value is preloaded from a URL query (`?player1=dylan`) or
+// because the input got focus while already filled.
 const onFocus = () => {
-  if (props.modelValue.length >= 2) searchPlayers(props.modelValue)
+  // Re-show any results the user has already fetched in this session
+  // (typed → results → blurred → came back). Don't issue a new request
+  // just because the field is focused.
+  if (searchResults.value.length > 0) showDropdown.value = true
 }
 
 const onBlur = () => {
@@ -103,9 +110,12 @@ const selectPlayer = (player: PlayerSearchResult) => {
   searchResults.value = []
 }
 
+// Watcher fires both when the user types AND when the parent updates
+// the value programmatically (URL deep link, selection from another
+// input). We only want to *clear* state on programmatic updates, never
+// trigger a new search — that's reserved for the @input handler.
 watch(() => props.modelValue, (newValue) => {
-  if (newValue.length >= 2) onInput(newValue)
-  else {
+  if (newValue.length < 2) {
     searchResults.value = []
     showDropdown.value = false
   }

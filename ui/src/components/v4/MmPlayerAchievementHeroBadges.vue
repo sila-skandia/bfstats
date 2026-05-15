@@ -6,6 +6,7 @@ import { getAchievementImageFromObject } from '@/utils/achievementImageUtils'
 
 const props = defineProps<{
   playerName: string
+  totalCount?: number
 }>()
 
 const router = useRouter()
@@ -93,6 +94,12 @@ watch(() => props.playerName, fetchHeroAchievements)
           loading="lazy"
         />
       </button>
+      <button
+        v-if="totalCount && totalCount > headerBadges.length"
+        type="button"
+        class="mm-hero-badges__more"
+        @click="openAchievement"
+      >+{{ totalCount - headerBadges.length }} <span>see all</span></button>
     </div>
   </div>
 </template>
@@ -139,5 +146,25 @@ watch(() => props.playerName, fetchHeroAchievements)
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.mm-hero-badges__more {
+  background: transparent;
+  border: 0;
+  padding: 0 6px;
+  cursor: pointer;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  color: var(--mm-ink);
+  letter-spacing: 0.04em;
+}
+
+.mm-hero-badges__more span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: var(--mm-ink-soft);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-left: 4px;
 }
 </style>

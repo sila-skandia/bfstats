@@ -18,7 +18,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const stroke = computed(() => (props.accent ? 'var(--mm-accent)' : 'var(--mm-ink)'))
 const fillColor = computed(() =>
-  props.accent ? 'rgba(200, 119, 43, 0.12)' : 'rgba(26, 26, 26, 0.08)',
+  props.accent ? 'rgba(125, 136, 73, 0.12)' : 'rgba(255, 255, 255, 0.08)',
 )
 
 const geometry = computed(() => {

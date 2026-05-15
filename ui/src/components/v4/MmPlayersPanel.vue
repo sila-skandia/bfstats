@@ -251,7 +251,7 @@ const getSortedTeamPlayers = (teamIndex: number) => {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(26, 26, 26, 0.5);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;

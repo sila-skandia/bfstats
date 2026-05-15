@@ -891,25 +891,25 @@ watch(() => props.error, (n) => { if (n !== undefined) error.value = n ?? null }
 
 .mm-ach__card-highlight--gold {
   border-color: var(--mm-kd-elite);
-  background: rgba(138, 90, 24, 0.08);
+  background: rgba(180, 192, 96, 0.08);
 }
 .mm-ach__card-highlight--gold .mm-ach__card-highlight-value { color: var(--mm-kd-elite); }
 
 .mm-ach__card-highlight--accent {
   border-color: var(--mm-accent-soft);
-  background: rgba(200, 119, 43, 0.06);
+  background: rgba(125, 136, 73, 0.10);
 }
 .mm-ach__card-highlight--accent .mm-ach__card-highlight-value { color: var(--mm-accent); }
 
 .mm-ach__card-highlight--success {
   border-color: var(--mm-success);
-  background: rgba(90, 125, 58, 0.08);
+  background: rgba(125, 163, 76, 0.10);
 }
 .mm-ach__card-highlight--success .mm-ach__card-highlight-value { color: var(--mm-success); }
 
 .mm-ach__card-highlight--kill {
   border-color: var(--mm-kill);
-  background: rgba(168, 56, 56, 0.06);
+  background: rgba(214, 90, 90, 0.10);
 }
 .mm-ach__card-highlight--kill .mm-ach__card-highlight-value { color: var(--mm-kill); }
 

@@ -131,7 +131,53 @@ watch(filtersKey, loadSessions)
     </div>
 
     <template v-else>
-      <table class="mm-list">
+      <!-- Mobile card-list: round card with title + sub + nested top-2 (kills/deaths). -->
+      <ol class="mm-card-list mm-rsl__cards">
+        <li
+          v-for="(session, index) in visibleSessions"
+          :key="`m-${session.roundId}`"
+          class="mm-card-list__item"
+          @click="navigateToRoundReport(session)"
+        >
+          <div class="mm-card-list__head">
+            <span class="mm-card-list__title">
+              {{ session.mapName }}
+              <span v-if="session.isActive && index === 0" class="mm-chip" style="margin-left: 6px"><span class="mm-chip__dot" />Live</span>
+            </span>
+            <span class="mm-card-list__time">{{ formatDuration(session.durationMinutes) }}</span>
+          </div>
+          <div class="mm-card-list__sub">
+            <span>{{ session.serverName }}</span>
+            <span class="mm-meta-row__sep">·</span>
+            <span>{{ formatRelativeTime(session.startTime) }} ago</span>
+            <span class="mm-meta-row__sep">·</span>
+            <span>{{ session.participantCount }} players</span>
+          </div>
+          <div
+            v-if="session.team1Label && session.team2Label && session.team1Points !== undefined && session.team2Points !== undefined"
+            class="mm-card-list__sub"
+            style="margin-top: 4px"
+          >
+            {{ session.team1Label }} <strong>{{ session.team1Points }}</strong>
+            – <strong>{{ session.team2Points }}</strong> {{ session.team2Label }}
+          </div>
+          <ol v-if="session.topPlayers && session.topPlayers.length > 0" class="mm-card-list__rows">
+            <li
+              v-for="(p, i) in session.topPlayers.slice(0, 3)"
+              :key="p.playerName"
+              class="mm-card-list__row"
+              :class="i === 0 ? 'mm-card-list__row--rust' : 'mm-card-list__row--ink'"
+            >
+              <span class="mm-card-list__rank">{{ i + 1 }}.</span>
+              <span class="mm-card-list__row-name">{{ $pn(p.playerName) }}</span>
+              <span class="mm-card-list__row-kd"><span class="mm-num--kill">{{ p.kills }}</span>/<span class="mm-num--death">{{ p.deaths }}</span></span>
+              <span class="mm-card-list__row-score">{{ p.score }}</span>
+            </li>
+          </ol>
+        </li>
+      </ol>
+
+      <table class="mm-list mm-rsl__table">
         <thead>
           <tr>
             <th>Map · server</th>
@@ -219,5 +265,12 @@ watch(filtersKey, loadSessions)
   justify-content: flex-end;
   gap: 10px;
   padding: 12px 0 0;
+}
+
+.mm-rsl__cards { display: none; }
+@media (max-width: 720px) {
+  .mm-rsl__table { display: none; }
+  .mm-rsl__cards { display: flex; flex-direction: column; }
+  .mm-rsl__cards .mm-card-list__item { cursor: pointer; }
 }
 </style>

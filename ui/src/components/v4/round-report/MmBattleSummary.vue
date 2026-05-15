@@ -71,7 +71,7 @@ const mvpKd = computed(() => props.summary.mvp?.kd ?? 0)
   gap: 14px;
   padding: 14px 18px;
   border: 1px solid var(--mm-accent);
-  background: rgba(241, 222, 117, 0.12);
+  background: rgba(125, 136, 73, 0.12);
   border-radius: 2px;
 }
 
