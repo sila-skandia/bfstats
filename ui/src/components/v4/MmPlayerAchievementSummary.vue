@@ -3,6 +3,7 @@ import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Achievement, PlayerAchievementGroup } from '@/types/playerStatsTypes'
 import { getAchievementImageFromObject } from '@/utils/achievementImageUtils'
+import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import { getBadgeDescription } from '@/services/badgeService'
 
 const props = defineProps<{
@@ -63,7 +64,7 @@ const displayGroups = computed(() =>
 const milestoneGroups = computed(() =>
   displayGroups.value
     .filter(g => milestoneTypes.has(g.achievementType.toLowerCase()))
-    .sort((a, b) => new Date(b.latestAchievedAt).getTime() - new Date(a.latestAchievedAt).getTime()),
+    .sort((a, b) => parseUtc(b.latestAchievedAt).getTime() - parseUtc(a.latestAchievedAt).getTime()),
 )
 
 const otherGroups = computed(() =>
@@ -95,22 +96,20 @@ const tierClass = (tier: string): string => {
 }
 
 const formatDate = (iso: string): string => {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 const formatDateTime = (iso: string): string => {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 const formatRelative = (iso: string): string => {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return ''
   const diff = Date.now() - d.getTime()
   if (diff < 60_000) return 'just now'
   if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`
@@ -242,7 +241,7 @@ const fetchByRoundPage = async () => {
       if (existing) {
         existing.achievements.push(a)
         // keep earliest achievedAt on the card (round start-ish)
-        if (new Date(a.achievedAt).getTime() < new Date(existing.achievedAt).getTime()) {
+        if (parseUtc(a.achievedAt).getTime() < parseUtc(existing.achievedAt).getTime()) {
           existing.achievedAt = a.achievedAt
         }
       } else {

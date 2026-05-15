@@ -6,6 +6,7 @@ import { fetchDashboardData, type DashboardResponse, type OnlineBuddy, type Favo
 import { statsService } from '@/services/statsService'
 import { kdClass, loadClass } from './mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
+import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import MmAddBuddyModal from '@/components/v4/MmAddBuddyModal.vue'
 import MmAddServerModal from '@/components/v4/MmAddServerModal.vue'
 
@@ -67,9 +68,8 @@ const formatHours = (mins: number): string => {
 }
 
 const formatRelative = (iso: string): string => {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   const ms = Date.now() - d.getTime()
   if (ms < 60_000) return 'just now'
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m ago`
@@ -226,7 +226,7 @@ const handleSignOut = () => {
               <div class="mm-dash__offline-body">
                 <span class="mm-dash__offline-name">{{ $pn(b.playerName) }}</span>
                 <span class="mm-dash__offline-sub">
-                  Last seen {{ formatRelative(b.lastSeen) }} ·
+                  Last seen <span :title="formatLocalTooltip(b.lastSeen)">{{ formatRelative(b.lastSeen) }}</span> ·
                   {{ formatHours(b.totalPlayTimeMinutes) }} total
                 </span>
               </div>

@@ -1,16 +1,41 @@
 /**
- * Time utilities for formatting dates and times in user's locale
+ * Time utilities for formatting dates and times in user's locale.
+ *
+ * The API returns UTC timestamps but doesn't always include the trailing
+ * `Z`. Plain `new Date(s)` on a Z-less string is interpreted as local time
+ * and silently drifts by the user's UTC offset. Always parse via
+ * `parseUtc()` (or one of the formatters below, which use it internally).
  */
+
+/**
+ * Parse a UTC timestamp from the API, defending against missing-Z drift.
+ * Returns an invalid Date for empty/falsy input — caller should isNaN-check.
+ */
+export function parseUtc(utcTimestamp: string | null | undefined): Date {
+  if (!utcTimestamp) return new Date(NaN);
+  return new Date(utcTimestamp.endsWith('Z') ? utcTimestamp : utcTimestamp + 'Z');
+}
+
+/**
+ * Absolute local-time tooltip for any relative-time rendering.
+ * e.g. "Dec 25, 2024 at 3:45 PM (your local time)"
+ *
+ * Use as `:title="formatLocalTooltip(iso)"` next to a relative label so
+ * the viewer can see the precise moment without ambiguity.
+ */
+export function formatLocalTooltip(utcTimestamp: string | null | undefined): string {
+  if (!utcTimestamp) return '';
+  const d = parseUtc(utcTimestamp);
+  if (isNaN(d.getTime())) return '';
+  return `${formatAbsoluteTime(utcTimestamp)} (your local time)`;
+}
 
 /**
  * Format a UTC timestamp as a relative time string (e.g., "5 minutes ago", "2 hours ago")
  * Properly handles UTC timestamps and converts to user's local time
  */
 export function formatLastSeen(utcTimestamp: string): string {
-  // Parse the UTC timestamp and ensure it's treated as UTC by appending 'Z'
-  // If timestamp doesn't end with Z, append it to ensure UTC interpretation
-  const utcString = utcTimestamp.endsWith('Z') ? utcTimestamp : utcTimestamp + 'Z';
-  const lastSeenDate = new Date(utcString);
+  const lastSeenDate = parseUtc(utcTimestamp);
   const now = new Date();
   
   // Calculate the difference in milliseconds
@@ -35,8 +60,8 @@ export function formatLastSeen(utcTimestamp: string): string {
  * e.g., "Dec 25, 2023 at 3:45 PM"
  */
 export function formatAbsoluteTime(utcTimestamp: string): string {
-  const date = new Date(utcTimestamp);
-  
+  const date = parseUtc(utcTimestamp);
+  if (isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat('default', {
     year: 'numeric',
     month: 'short',
@@ -52,8 +77,8 @@ export function formatAbsoluteTime(utcTimestamp: string): string {
  * e.g., "12/25 3:45 PM"
  */
 export function formatShortAbsoluteTime(utcTimestamp: string): string {
-  const date = new Date(utcTimestamp);
-  
+  const date = parseUtc(utcTimestamp);
+  if (isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat('default', {
     month: 'numeric',
     day: 'numeric',
@@ -68,10 +93,8 @@ export function formatShortAbsoluteTime(utcTimestamp: string): string {
  * e.g., "Dec 25, 2023"
  */
 export function formatDate(dateString: string): string {
-  if (!dateString) return '';
-  const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+  const date = parseUtc(dateString);
   if (isNaN(date.getTime())) return '';
-  
   return new Intl.DateTimeFormat('default', {
     year: 'numeric',
     month: 'short',
@@ -100,7 +123,8 @@ export function formatTimeRemaining(timeValue: number): string {
  */
 export function formatRelativeTime(dateString: string): string {
   if (!dateString) return '';
-  const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+  const date = parseUtc(dateString);
+  if (isNaN(date.getTime())) return '';
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSeconds = Math.floor(diffMs / 1000);
@@ -131,7 +155,8 @@ export function formatRelativeTime(dateString: string): string {
  */
 export function formatRelativeTimeShort(dateString: string): string {
   if (!dateString) return '';
-  const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+  const date = parseUtc(dateString);
+  if (isNaN(date.getTime())) return '';
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSeconds = Math.floor(diffMs / 1000);
@@ -161,10 +186,8 @@ export function formatPlayTime(minutes: number): string {
  * Calculate duration between two timestamps in minutes
  */
 export function getDurationMinutes(startTime: string, endTime: string): number {
-  if (!endTime || !startTime) return 0;
-  const start = new Date(startTime.endsWith('Z') ? startTime : startTime + 'Z');
-  const end = new Date(endTime.endsWith('Z') ? endTime : endTime + 'Z');
+  const start = parseUtc(startTime);
+  const end = parseUtc(endTime);
   if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
-  const diffMs = end.getTime() - start.getTime();
-  return Math.max(0, Math.floor(diffMs / 60000));
+  return Math.max(0, Math.floor((end.getTime() - start.getTime()) / 60000));
 }
