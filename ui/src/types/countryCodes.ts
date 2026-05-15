@@ -16,4 +16,16 @@ export const countryCodeToName: Record<string, string> = {
   'BR': 'Brazil',
   'ZA': 'South Africa',
   // ... add more as needed
-}; 
+};
+
+// Render an ISO 3166-1 alpha-2 country code as a flag emoji using the
+// Unicode regional-indicator-symbol trick. Returns an empty string for
+// anything that isn't a two-letter code so callers can render a fallback.
+export const countryCodeToFlag = (countryCode: string | null | undefined): string => {
+  if (!countryCode || countryCode.length !== 2) return ''
+  const codePoints = countryCode
+    .toUpperCase()
+    .split('')
+    .map(ch => 127397 + ch.charCodeAt(0))
+  return String.fromCodePoint(...codePoints)
+}

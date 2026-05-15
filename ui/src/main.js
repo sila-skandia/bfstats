@@ -1,4 +1,6 @@
 import './assets/main.css'
+import '@fontsource-variable/geist'
+import '@fontsource-variable/geist-mono'
 
 import { createApp } from 'vue'
 import App from './App.vue'
