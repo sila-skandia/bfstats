@@ -17,6 +17,7 @@ import {
 import { Line, Scatter } from 'vue-chartjs'
 import type { RoundReport } from '@/services/serverDetailsService'
 import type { BattleEvent, RoundSummary } from '@/utils/battleEventGenerator'
+import { MM_CHART } from '@/views/v4/mmTokens'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler)
 
@@ -31,11 +32,12 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// V4 palette for chart series — earthy ink instead of neon
-const SERIES_COLORS = ['#c8772b', '#a83838', '#5a7d3a', '#8a5a18', '#4d4a42', '#1a1a1a']
-const AXIS_TEXT = '#8a8579'
-const GRID = '#d8d2c0'
-const TRACK_LINE = '#c8772b'
+// Chart palette — Neutral Depth dark. Series colors lean on the olive
+// accent + brightened semantic tints, axis ink reads as faint white.
+const SERIES_COLORS = [MM_CHART.accent, MM_CHART.kill, MM_CHART.success, MM_CHART.elite, MM_CHART.inkSoft, MM_CHART.inkMuted]
+const AXIS_TEXT = MM_CHART.inkMuted
+const GRID = MM_CHART.grid
+const TRACK_LINE = MM_CHART.elite
 
 const velocityChartData = computed<ChartData<'line'>>(() => {
   const snapshots = props.roundReport.leaderboardSnapshots
@@ -48,8 +50,8 @@ const velocityChartData = computed<ChartData<'line'>>(() => {
     datasets: [{
       label: 'Server KPM',
       data: kpmData,
-      borderColor: '#1a1a1a',
-      backgroundColor: 'rgba(26, 26, 26, 0.08)',
+      borderColor: MM_CHART.inkSoft,
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
       fill: true,
       tension: 0.3,
       pointRadius: 0,
@@ -112,7 +114,7 @@ const efficiencyChartData = computed<ChartData<'scatter'>>(() => {
       {
         label: 'Recruits',
         data: recruits.map(e => ({ x: e.deaths, y: e.kills, playerName: e.playerName })),
-        backgroundColor: 'rgba(182, 177, 163, 0.45)',
+        backgroundColor: 'rgba(255, 255, 255, 0.20)',
         pointRadius: 2,
         pointHoverRadius: 4,
       },
@@ -121,16 +123,16 @@ const efficiencyChartData = computed<ChartData<'scatter'>>(() => {
         data: operatives.map(e => ({ x: e.deaths, y: e.kills, playerName: e.playerName })),
         backgroundColor: (context: any) => {
           const p = context.raw
-          if (!p) return '#1a1a1a'
-          if (p.playerName.toLowerCase() === props.trackedPlayer.trim().toLowerCase()) return '#c8772b'
-          return p.y > p.x ? '#5a7d3a' : '#a83838'
+          if (!p) return MM_CHART.inkSoft
+          if (p.playerName.toLowerCase() === props.trackedPlayer.trim().toLowerCase()) return MM_CHART.elite
+          return p.y > p.x ? MM_CHART.success : MM_CHART.kill
         },
         pointRadius: (context: any) => {
           const p = context.raw
           return p?.playerName.toLowerCase() === props.trackedPlayer.trim().toLowerCase() ? 8 : 5
         },
         pointHoverRadius: 10,
-        borderColor: 'rgba(26, 26, 26, 0.15)',
+        borderColor: 'rgba(255, 255, 255, 0.15)',
         borderWidth: 1,
       },
     ],
@@ -143,13 +145,13 @@ const baseOptions: ChartOptions<any> = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: 'rgba(26, 26, 26, 0.95)',
-      titleColor: '#f5f1e8',
-      bodyColor: '#e7e1d1',
+      backgroundColor: MM_CHART.surfaceSoft,
+      titleColor: MM_CHART.ink,
+      bodyColor: MM_CHART.inkSoft,
       titleFont: { family: 'Geist Mono Variable', size: 11 },
       bodyFont: { family: 'Geist Mono Variable', size: 10 },
       padding: 10,
-      borderColor: 'rgba(184, 177, 160, 0.4)',
+      borderColor: MM_CHART.gridStrong,
       borderWidth: 1,
       callbacks: {
         label: (context: any) => {
@@ -209,7 +211,7 @@ const currentTimeProgress = computed(() => {
               class="mm-viz__legend-chip"
               :class="{ 'mm-viz__legend-chip--tracked': (ds.label ?? '').toLowerCase() === trackedPlayer.trim().toLowerCase() }"
             >
-              <span class="mm-viz__legend-dot" :style="{ backgroundColor: String(ds.borderColor ?? '#1a1a1a') }" />
+              <span class="mm-viz__legend-dot" :style="{ backgroundColor: String(ds.borderColor ?? MM_CHART.inkMuted) }" />
               {{ ds.label }}
             </span>
           </div>

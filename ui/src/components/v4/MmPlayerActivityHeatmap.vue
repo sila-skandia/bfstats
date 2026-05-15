@@ -56,7 +56,8 @@ function getCellStyle(dayOfWeek: number, hour: number) {
   else if (intensity <= 0.6) opacity = 0.55
   else if (intensity <= 0.8) opacity = 0.78
   else opacity = 1.0
-  return { backgroundColor: `rgba(26, 26, 26, ${opacity})` }
+  // Olive accent at varying opacity — fades from invisible to full olive on dark surface.
+  return { backgroundColor: `rgba(125, 136, 73, ${opacity})` }
 }
 
 function formatHourRange(hour: number) {
@@ -156,7 +157,7 @@ watch(() => props.playerName, loadData)
       </div>
     </div>
 
-    <table v-else-if="viewMode === 'table' && heatmapData" class="mm-list">
+    <table v-else-if="viewMode === 'table' && heatmapData" class="mm-list mm-list--dense">
       <thead>
         <tr>
           <th>Day</th>

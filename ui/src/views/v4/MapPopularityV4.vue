@@ -13,6 +13,7 @@ import {
 } from 'chart.js'
 import type { MapPopularityResponse, MapPopularitySummary } from '@/services/mapPopularityService'
 import { fetchMapPopularity } from '@/services/mapPopularityService'
+import { MM_CHART } from '@/views/v4/mmTokens'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
@@ -68,27 +69,28 @@ const hourRangeLabel = computed(() =>
   `${hourStart.value.toString().padStart(2, '0')}:00–${hourEnd.value.toString().padStart(2, '0')}:59 UTC`
 )
 
-// Earthy mm palette — repeating distinct hues that stay legible on the cream paper.
+// Neutral Depth dark palette — olive accent + brightened semantic tints,
+// repeated so distinct maps stay visually separable on the dark surface.
 const MAP_COLORS = [
-  '#c8772b', // accent rust
-  '#5a7d3a', // success green
-  '#8a5a18', // deep amber
-  '#a83838', // kill red
-  '#4d4a42', // ink soft
-  '#a87b3e', // faded amber
-  '#a36421', // load busy
-  '#6e8a3e', // moss
-  '#b3441a', // danger
-  '#3a5a4a', // forest
-  '#7a5a3a', // bronze
-  '#a89060', // wheat
+  MM_CHART.accent,     // olive
+  MM_CHART.success,    // brightened olive-green
+  MM_CHART.elite,      // lifted olive
+  MM_CHART.kill,       // brightened red
+  MM_CHART.inkSoft,    // off-white
+  '#b4a060',           // dusty gold
+  '#c5a23a',           // load-busy
+  '#8aa466',           // moss
+  '#a86a4c',           // burnt sienna
+  '#5a8a78',           // sea green
+  '#a89070',           // bronze
+  '#c8c8c8',           // ink-soft repeat
 ]
 
 const mapColorIndex = ref<Record<string, number>>({})
 
 const getMapColor = (mapName: string): string => {
   const i = mapColorIndex.value[mapName]
-  return i !== undefined ? MAP_COLORS[i % MAP_COLORS.length] : '#8a8579'
+  return i !== undefined ? MAP_COLORS[i % MAP_COLORS.length] : MM_CHART.inkMuted
 }
 
 const allMaps = computed<MapPopularitySummary[]>(() => data.value?.mapSummaries ?? [])
@@ -128,23 +130,23 @@ const avgPlayersChartOptions = computed(() => ({
   maintainAspectRatio: false,
   scales: {
     x: {
-      grid: { color: 'rgba(26, 26, 26, 0.06)' },
-      ticks: { color: '#4d4a42', font: { size: 10 } },
-      title: { display: true, text: 'Avg concurrent players', color: '#4d4a42', font: { size: 10 } },
+      grid: { color: MM_CHART.grid },
+      ticks: { color: MM_CHART.inkMuted, font: { size: 10 } },
+      title: { display: true, text: 'Avg concurrent players', color: MM_CHART.inkMuted, font: { size: 10 } },
       beginAtZero: true,
     },
     y: {
       grid: { display: false },
-      ticks: { color: '#1a1a1a', font: { size: 11 } },
+      ticks: { color: MM_CHART.ink, font: { size: 11 } },
     },
   },
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#1a1a1a',
-      titleColor: '#f5f1e8',
-      bodyColor: '#d8d2c0',
-      borderColor: '#4d4a42',
+      backgroundColor: MM_CHART.surfaceSoft,
+      titleColor: MM_CHART.ink,
+      bodyColor: MM_CHART.inkSoft,
+      borderColor: MM_CHART.gridStrong,
       borderWidth: 1,
       callbacks: {
         label: (ctx: any) => `${ctx.parsed.x.toFixed(1)} avg players`,
@@ -163,7 +165,9 @@ const maxHourly = computed(() => {
   return max
 })
 
-const heatLegendColors = ['#efeadd', '#e7d8b6', '#dcb784', '#c8772b', '#a36421', '#6e3a0e']
+// Dark → olive heat scale. Empty cell sits at the surface color and
+// brightens through olive accent to a lifted highlight at peak.
+const heatLegendColors = ['#1a1a1a', '#2d2d2d', '#4a5028', '#7d8849', '#9aa666', '#b4c060']
 
 const getHeatColor = (value: number): string => {
   if (value === 0) return heatLegendColors[0]
@@ -416,7 +420,7 @@ onMounted(() => {
       <!-- Summary table -->
       <section style="margin-top: 16px">
         <div class="mm-eyebrow" style="margin-bottom: 10px">Map summary</div>
-        <table class="mm-list">
+        <table class="mm-list mm-list--dense">
           <thead>
             <tr>
               <th>Map</th>
@@ -512,7 +516,7 @@ onMounted(() => {
   border-radius: 2px;
   font-size: 12px;
   color: var(--mm-accent);
-  background: rgba(200, 119, 43, 0.06);
+  background: rgba(125, 136, 73, 0.06);
 }
 
 .mm-mp__filter-panel {

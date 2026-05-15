@@ -290,7 +290,7 @@ watch(selectedTimelineMap, () => { if (activeTab.value === 'timeline') loadTimel
           />
         </div>
 
-        <table v-else class="mm-list" style="margin-top: 18px">
+        <table v-else class="mm-list mm-list--dense" style="margin-top: 18px">
           <thead>
             <tr>
               <th class="mm-list__rank">#</th>
@@ -361,7 +361,7 @@ watch(selectedTimelineMap, () => { if (activeTab.value === 'timeline') loadTimel
             :height="80"
             :accent="true"
           />
-          <table class="mm-list" style="margin-top: 14px">
+          <table class="mm-list mm-list--dense" style="margin-top: 14px">
             <thead>
               <tr>
                 <th>Month</th>

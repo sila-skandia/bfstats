@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Line } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 import { decodePlayerName } from '@/utils/playerName'
+import { MM_CHART } from '@/views/v4/mmTokens'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
@@ -20,7 +21,7 @@ defineEmits<{
   'unpin-player': [playerName: string]
 }>()
 
-const SERIES_COLORS = ['#c8772b', '#a83838', '#5a7d3a', '#8a5a18', '#4d4a42', '#1a1a1a']
+const SERIES_COLORS = [MM_CHART.accent, MM_CHART.kill, MM_CHART.success, MM_CHART.elite, MM_CHART.inkSoft, MM_CHART.inkMuted]
 
 const pinnedPerformance = computed(() => {
   if (!props.pinnedPlayers.size || !props.roundReport) return {}
@@ -58,8 +59,8 @@ const chartData = computed(() => {
     })
     const color = SERIES_COLORS[index % SERIES_COLORS.length]
     const pointRadii = data.map((_v, idx) => (idx === props.selectedSnapshotIndex ? 8 : 3))
-    const pointBackgroundColors = data.map((_v, idx) => (idx === props.selectedSnapshotIndex ? '#c8772b' : color))
-    const pointBorderColors = data.map((_v, idx) => (idx === props.selectedSnapshotIndex ? '#1a1a1a' : '#f5f1e8'))
+    const pointBackgroundColors = data.map((_v, idx) => (idx === props.selectedSnapshotIndex ? MM_CHART.elite : color))
+    const pointBorderColors = data.map((_v, idx) => (idx === props.selectedSnapshotIndex ? MM_CHART.ink : MM_CHART.surface))
     const pointBorderWidths = data.map((_v, idx) => (idx === props.selectedSnapshotIndex ? 2 : 1))
 
     return {
@@ -89,14 +90,14 @@ const chartOptions = computed(() => ({
   scales: {
     y: {
       beginAtZero: false,
-      grid: { color: '#d8d2c0' },
-      title: { display: true, text: 'Score', color: '#8a8579', font: { family: 'Geist Mono Variable', size: 10 } },
-      ticks: { color: '#8a8579', font: { family: 'Geist Mono Variable', size: 10 } },
+      grid: { color: MM_CHART.grid },
+      title: { display: true, text: 'Score', color: MM_CHART.inkMuted, font: { family: 'Geist Mono Variable', size: 10 } },
+      ticks: { color: MM_CHART.inkMuted, font: { family: 'Geist Mono Variable', size: 10 } },
     },
     x: {
-      grid: { color: '#d8d2c0' },
-      title: { display: true, text: 'Elapsed', color: '#8a8579', font: { family: 'Geist Mono Variable', size: 10 } },
-      ticks: { color: '#8a8579', maxTicksLimit: 8, font: { family: 'Geist Mono Variable', size: 10 } },
+      grid: { color: MM_CHART.grid },
+      title: { display: true, text: 'Elapsed', color: MM_CHART.inkMuted, font: { family: 'Geist Mono Variable', size: 10 } },
+      ticks: { color: MM_CHART.inkMuted, maxTicksLimit: 8, font: { family: 'Geist Mono Variable', size: 10 } },
     },
   },
   plugins: {
@@ -104,17 +105,17 @@ const chartOptions = computed(() => ({
       display: true,
       position: 'top' as const,
       labels: {
-        color: '#1a1a1a',
+        color: MM_CHART.inkSoft,
         usePointStyle: true,
         pointStyle: 'line',
         font: { family: 'Geist Variable', size: 11 },
       },
     },
     tooltip: {
-      backgroundColor: 'rgba(26, 26, 26, 0.95)',
-      titleColor: '#f5f1e8',
-      bodyColor: '#e7e1d1',
-      borderColor: 'rgba(184, 177, 160, 0.4)',
+      backgroundColor: MM_CHART.surfaceSoft,
+      titleColor: MM_CHART.ink,
+      bodyColor: MM_CHART.inkSoft,
+      borderColor: MM_CHART.gridStrong,
       borderWidth: 1,
       titleFont: { family: 'Geist Mono Variable', size: 11 },
       bodyFont: { family: 'Geist Mono Variable', size: 10 },

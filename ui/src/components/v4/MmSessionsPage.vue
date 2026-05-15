@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchSessions, type PlayerContextInfo } from '@/services/playerStatsService'
-import { kdClass } from '@/views/v4/mmTokens'
+import { kdClass, MM_CHART, teamColor, teamFill } from '@/views/v4/mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
 import { Line } from 'vue-chartjs'
 import {
@@ -246,14 +246,9 @@ const ordinal = (n: number): string => {
 
 const showCharts = ref(true)
 
-// Earthy mm palette for charts
-const MM_INK = '#1a1a1a'
-const MM_INK_SOFT = '#4d4a42'
-const MM_INK_MUTED = '#8a8579'
-const MM_RULE = 'rgba(26, 26, 26, 0.08)'
-const MM_ACCENT = '#c8772b'
-const MM_KILL = '#a83838'
-const MM_SUCCESS = '#5a7d3a'
+// Chart palette — sourced from mmTokens so dark-mode + team-aware coloring
+// stay consistent across every V4 chart.
+const { inkSoft: MM_INK_SOFT, inkMuted: MM_INK_MUTED, grid: MM_RULE, accent: MM_ACCENT, kill: MM_KILL } = MM_CHART
 
 // Rounds with team scores, chronological (oldest → newest)
 const roundsWithScores = computed(() =>
@@ -299,8 +294,8 @@ const scoreLineChartData = computed(() => {
       {
         label: team1,
         data: team1Scores,
-        borderColor: MM_ACCENT,
-        backgroundColor: 'rgba(200, 119, 43, 0.12)',
+        borderColor: teamColor(team1),
+        backgroundColor: teamFill(team1, 0.12),
         borderWidth: 2,
         pointRadius: 2,
         pointHoverRadius: 5,
@@ -310,8 +305,8 @@ const scoreLineChartData = computed(() => {
       {
         label: team2,
         data: team2Scores,
-        borderColor: MM_SUCCESS,
-        backgroundColor: 'rgba(90, 125, 58, 0.12)',
+        borderColor: teamColor(team2),
+        backgroundColor: teamFill(team2, 0.12),
         borderWidth: 2,
         pointRadius: 2,
         pointHoverRadius: 5,
@@ -333,10 +328,10 @@ const scoreLineChartOptions = computed(() => ({
       labels: { color: MM_INK_SOFT, font: { size: 11 }, boxWidth: 12, padding: 14 },
     },
     tooltip: {
-      backgroundColor: MM_INK,
-      titleColor: '#f5f1e8',
-      bodyColor: '#d8d2c0',
-      borderColor: MM_INK_SOFT,
+      backgroundColor: MM_CHART.surfaceSoft,
+      titleColor: MM_CHART.ink,
+      bodyColor: MM_CHART.inkSoft,
+      borderColor: MM_CHART.gridStrong,
       borderWidth: 1,
       callbacks: {
         title: (items: any[]) => {
@@ -393,14 +388,14 @@ const playerPerformanceChartData = computed(() => {
         label: 'Your kills',
         data: playerKills,
         borderColor: MM_KILL,
-        backgroundColor: 'rgba(168, 56, 56, 0.12)',
+        backgroundColor: 'rgba(214, 90, 90, 0.16)',
         borderWidth: 2.5,
         fill: true,
         tension: 0.4,
         pointRadius: 3,
         pointHoverRadius: 6,
         pointBackgroundColor: MM_KILL,
-        pointBorderColor: '#f5f1e8',
+        pointBorderColor: MM_CHART.surface,
         pointBorderWidth: 1.5,
         yAxisID: 'yKills',
       },
@@ -421,14 +416,14 @@ const playerPerformanceChartData = computed(() => {
         label: 'Your K/D',
         data: playerKD,
         borderColor: MM_ACCENT,
-        backgroundColor: 'rgba(200, 119, 43, 0.08)',
+        backgroundColor: 'rgba(125, 136, 73, 0.10)',
         borderWidth: 2,
         fill: false,
         tension: 0.4,
         pointRadius: 2,
         pointHoverRadius: 5,
         pointBackgroundColor: MM_ACCENT,
-        pointBorderColor: '#f5f1e8',
+        pointBorderColor: MM_CHART.surface,
         pointBorderWidth: 1,
         yAxisID: 'yKD',
       },
@@ -447,10 +442,10 @@ const playerPerformanceChartOptions = computed(() => ({
       labels: { color: MM_INK_SOFT, font: { size: 11 }, boxWidth: 12, padding: 14 },
     },
     tooltip: {
-      backgroundColor: MM_INK,
-      titleColor: '#f5f1e8',
-      bodyColor: '#d8d2c0',
-      borderColor: MM_INK_SOFT,
+      backgroundColor: MM_CHART.surfaceSoft,
+      titleColor: MM_CHART.ink,
+      bodyColor: MM_CHART.inkSoft,
+      borderColor: MM_CHART.gridStrong,
       borderWidth: 1,
       callbacks: {
         title: (items: any[]) => {
@@ -653,11 +648,6 @@ const paginationRange = computed(() => {
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="mm-section-bar">
-        <span>Recent rounds</span>
-        <span class="mm-section-bar__meta">Tap for debrief</span>
       </div>
 
       <!-- Mobile card-list (≤720px) — matches the round card layout from
@@ -947,7 +937,7 @@ const paginationRange = computed(() => {
   border: 1px solid var(--mm-accent-soft);
   border-radius: 2px;
   color: var(--mm-accent);
-  background: rgba(200, 119, 43, 0.06);
+  background: rgba(125, 136, 73, 0.10);
 }
 
 .mm-sessions__mine-score {

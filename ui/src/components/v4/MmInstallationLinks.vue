@@ -56,7 +56,7 @@ const links = [
       :aria-expanded="showDropdown"
       @click="toggleDropdown"
     >
-      <span class="mm-install__toggle-label">Get online</span>
+      <span class="mm-install__toggle-label">Get Online</span>
       <span v-if="variant === 'inline'" class="mm-install__toggle-label mm-install__toggle-label--mobile">Install</span>
       <svg
         class="mm-install__chevron"
@@ -101,6 +101,21 @@ const links = [
 .mm-install {
   position: relative;
   display: inline-block;
+}
+
+/* CTA-strip variant — the toggle stretches edge-to-edge of the mobile
+   container, so the wrapper must be block-level for `right: 0` (and
+   `left: 0` below) to anchor against the *strip*, not against the
+   inline-block's content width. Otherwise the menu collapses to
+   ~32px wide and floats to the left of the visible area. */
+.mm-install--strip {
+  display: block;
+  width: 100%;
+}
+.mm-install--strip .mm-install__menu {
+  left: 0;
+  right: 0;
+  min-width: 0;
 }
 
 .mm-install__toggle {
@@ -182,9 +197,13 @@ const links = [
 }
 
 @media (max-width: 720px) {
-  .mm-install__toggle-label { display: none; }
-  .mm-install__toggle-label--mobile { display: inline; }
-  .mm-install__menu {
+  /* Inline (desktop top-right) variant collapses "Get Online" → "Install"
+     to save space in the narrow meta row. The CTA-strip variant keeps
+     the full label because the strip has the whole viewport width to
+     work with. */
+  .mm-install:not(.mm-install--strip) .mm-install__toggle-label { display: none; }
+  .mm-install:not(.mm-install--strip) .mm-install__toggle-label--mobile { display: inline; }
+  .mm-install:not(.mm-install--strip) .mm-install__menu {
     min-width: 260px;
     right: 0;
   }

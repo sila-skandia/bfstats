@@ -1,9 +1,21 @@
 # V4 Mobile Patterns
 
+> **The visual design system is universal — same on every viewport.**
+> Colour, type, the olive table-header anchor, accent rules, headline-rank
+> treatment, etc. all apply identically to mobile and desktop. The only
+> thing that's viewport-aware is **layout density**: tables collapse to
+> cards on mobile, secondary numeric columns hide on narrow screens, etc.
+>
+> If you're tempted to gate a *visual treatment* (a colour, a font, an
+> anchor strip) behind a media query — don't. Apply it everywhere; let
+> layout density handle the viewport. The brief's olive table-header
+> anchor (`.mm-list thead th`) is the canonical example: lives on every
+> table on every viewport, not just mobile.
+
 Distilled from the four iPhone mocks (`/01 _ Server Browser.png`,
 `/02 _ Server Detail.png`, `/03 _ Sessions.png`, `/04 _ Player Profile.png`).
 This document is the **single source of truth** for unmocked pages so we
-don't have to ask for a new mock every time. Every mobile pattern here is
+don't have to ask for a new mock every time. Every pattern here is
 already (or will be) backed by a shared class in `modern-minimal.css` — use
 the class names rather than re-rolling local CSS.
 
@@ -172,7 +184,28 @@ background) is the only tab pattern. Sub-tabs (e.g. "MOST ACTIVE / TOP
 K/D / KILL RATE / PLACEMENTS" under Ranks) use the same class but with
 `mm-tabs--sub` modifier (smaller, denser).
 
-### 10. Pagination + range counter
+### 10. Headline rank vs sequence index
+
+A number that represents a player's **standing** (server rank, leaderboard
+slot, podium finish) is content — render it big, in accent. Use
+`.mm-headline-rank` (large display font, olive accent, with a small `#`
+hash prefix via `.mm-headline-rank__hash`). Add
+`.mm-headline-rank--podium` for top-3 standings so they pick up the
+lifted-olive elite tone.
+
+A number that's just a **row counter** in a sorted table (`01`, `02`,
+`03` next to each row) is structure — keep it small and muted via
+`.mm-list__rank`.
+
+Rule of thumb: "does this number stand on its own as a fact?" If yes
+(`#23 of 1,500`), it's a headline rank. If no (just labeling row position
+in a sorted set), it's a sequence index.
+
+Canonical example: PlayerDetailsV4 Server rankings preview — the `#23`
+is rendered as `.mm-headline-rank` because the number itself is the
+point. Don't downgrade these to sequence-style prefixes.
+
+### 11. Pagination + range counter
 
 See [`CROSSWALK.md` → Recipe: Always paginate list endpoints](CROSSWALK.md).
 On mobile the `‹ 1 2 3 ›` row still fits — same component, no override.
@@ -205,6 +238,51 @@ Process:
 3. Build mobile-first. If a desktop variant needs more density, use a
    `@media (min-width: 881px)` override on top of the mobile baseline.
 4. Verify against the closest mock — does the rhythm match?
+
+## Finding lists that need mobile attention
+
+The labeled-stack default (`.mm-list` mobile transform) only fits **sparse
+data**. Anything that's a scoreboard, ranking, roster, session feed,
+member list, or any other tightly-related row of facts needs an opt-in
+variant — `mm-list--dense` for scoreboards/rankings, `mm-card-list` for
+feeds with nested sub-rows. Without that opt-in the rows become tall,
+labeled, ugly, and the page looks unstyled on mobile.
+
+**The audit command** (run this any time you mobilise a page — and after
+any work that adds new tables):
+
+```bash
+# For each V4 file, count *unconverted* tables — tables using bare
+# class="mm-list" with no mobile variant. A "variant present in file"
+# is NOT enough: a file can have ten tables but only one converted.
+for f in $(grep -rln '<table' ui/src/views/v4 ui/src/components/v4 | sort -u); do
+  total=$(grep -c '<table class="mm-list' "$f")
+  unconverted=$(grep -cE '<table class="mm-list"|<table class="mm-list "' "$f")
+  if [ "$unconverted" -gt 0 ]; then
+    printf '%-70s tables=%s unconverted=%s ⚠️\n' "$(basename $f)" "$total" "$unconverted"
+  fi
+done
+```
+
+**Important:** the old version of this script checked "does the file
+contain *any* mobile variant?" — and missed files where 1 of 10 tables
+had been converted. Always count the **unconverted tables** specifically,
+otherwise a partially-converted file looks "done" until a user finds the
+broken one.
+
+**Decision tree — which variant?**
+
+| If a row contains… | Use… |
+| --- | --- |
+| 5+ numeric cells per row (scoreboard, ranking, roster) | `mm-list--dense` + tag low-priority cells with `mm-list__col--hide-sm` |
+| A primary title + a few facts (a "card" per row), no nested sub-rows | Default `.mm-list` (labeled stack on mobile is fine) — but only if rows are visually card-like, not crammed |
+| A header line + nested rows of detail (rounds with top-3, achievement by-round) | `mm-card-list` with `mm-card-list__rows` |
+| A win/loss session line (chip + map + date + stats) | `mm-session-row` |
+| A wide table with too many columns for mobile | Render two markups: `.mm-list` table for desktop, `mm-card-list` or `mm-session-row` for mobile, swap with a `@media (max-width: 720px)` display rule |
+
+**When you're done with the audit pass**, re-run the count — every file
+should have `dense/card/hide > 0` or have a documented justification for
+keeping the default labeled-stack layout.
 
 ## Audit child components, not just the page
 

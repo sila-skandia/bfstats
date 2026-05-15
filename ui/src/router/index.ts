@@ -44,6 +44,8 @@ const SystemStatsV4 = () => import('../views/v4/SystemStatsV4.vue')
 const MapPopularityV4 = () => import('../views/v4/MapPopularityV4.vue')
 const ServerSessionsV4 = () => import('../views/v4/ServerSessionsV4.vue')
 const CommunityDetailV4 = () => import('../views/v4/CommunityDetailV4.vue')
+const PlayerMapDetailV4 = () => import('../views/v4/PlayerMapDetailV4.vue')
+const PlayerComparisonV4 = () => import('../views/v4/PlayerComparisonV4.vue')
 
 const routes: RouteRecordRaw[] = [
     {
@@ -547,6 +549,16 @@ const routes: RouteRecordRaw[] = [
           }
         },
         {
+          path: 'players/:playerName/maps/:mapName',
+          name: 'v4-player-map-detail',
+          component: PlayerMapDetailV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.mapName} · ${route.params.playerName} · bfstats.io`,
+            description: 'Rankings on a single map for this player.'
+          }
+        },
+        {
           path: 'servers/detail/:serverName',
           name: 'v4-server-details',
           component: ServerDetailsV4,
@@ -576,6 +588,15 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: 'Players · bfstats.io',
             description: 'Player registry and leaderboards.'
+          }
+        },
+        {
+          path: 'players/compare',
+          name: 'v4-player-comparison',
+          component: PlayerComparisonV4,
+          meta: {
+            title: 'Compare players · bfstats.io',
+            description: 'Side-by-side comparison of two players.'
           }
         },
         {

@@ -193,7 +193,7 @@ const sortIndicator = (field: SortField) => {
 
     <div v-else-if="error" class="mm-empty">{{ error }}</div>
 
-    <table v-else class="mm-list">
+    <table v-else class="mm-list mm-list--dense">
       <thead>
         <tr>
           <th>

@@ -223,7 +223,7 @@ const barWidth = (weight: number): number => {
         <span class="mm-eyebrow">{{ visibleNodes.length }} / {{ activeBand.nodes.length }} shown</span>
       </div>
 
-      <table class="mm-list" style="margin-top: 12px">
+      <table class="mm-list mm-list--dense" style="margin-top: 12px">
         <thead>
           <tr>
             <th class="mm-list__rank">#</th>

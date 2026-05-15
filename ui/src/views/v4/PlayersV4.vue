@@ -26,7 +26,7 @@ const route = useRoute()
 const router = useRouter()
 
 const players = ref<PlayersV4ListItem[]>([])
-const loading = ref(true)
+const loading = ref(false)
 const error = ref<string | null>(null)
 const totalItems = ref(0)
 const page = ref(Number(route.query.page) || 1)
@@ -38,12 +38,25 @@ const filterName = ref<string>((route.query.q as string) || '')
 
 let searchDebounce: number | undefined
 
+// "Has the user actually searched for anything?" — drives whether the
+// list is rendered at all. The page intentionally does NOT auto-load
+// the full player registry on mount; the API search is exclusively
+// triggered by the user typing in the filter box (or arriving with
+// `?q=...` in the URL).
+const hasSearched = computed(() => filterName.value.trim().length > 0)
+
 const load = async () => {
+  if (!hasSearched.value) {
+    players.value = []
+    totalItems.value = 0
+    loading.value = false
+    return
+  }
   loading.value = true
   error.value = null
   try {
     const filters: Record<string, string> = {}
-    if (filterName.value.trim()) filters.playerName = filterName.value.trim()
+    filters.playerName = filterName.value.trim()
     const r = await fetchPlayersList(page.value, pageSize, sortBy.value, sortOrder.value, filters)
     players.value = r.items as PlayersV4ListItem[]
     totalItems.value = r.totalItems
@@ -55,7 +68,19 @@ const load = async () => {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  // Only load if the URL already has a search query (deep-link).
+  if (hasSearched.value) void load()
+})
+
+// When the route query changes WHILE the component stays mounted (e.g.
+// the global header search submits `?q=…` while the user is already on
+// /v4/players), Vue doesn't re-run setup. Sync the query into
+// filterName here — that fires the debounced search watcher below.
+watch(() => route.query.q, (q) => {
+  const next = (q as string) ?? ''
+  if (next !== filterName.value) filterName.value = next
+})
 
 watch([page, sortBy, sortOrder], () => {
   router.replace({
@@ -66,7 +91,7 @@ watch([page, sortBy, sortOrder], () => {
       sortOrder: sortOrder.value === 'desc' ? undefined : sortOrder.value,
     },
   })
-  void load()
+  if (hasSearched.value) void load()
 })
 
 watch(filterName, (q) => {
@@ -83,8 +108,6 @@ onUnmounted(() => {
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / pageSize)))
-
-const onlineCount = computed(() => players.value.filter(p => p.isActive).length)
 
 const formatNumber = (n: number) => n.toLocaleString()
 const formatHours = (mins: number) => {
@@ -175,17 +198,6 @@ const goPlayer = (name: string) => router.push(`/v4/players/${encodeURIComponent
 
 <template>
   <div class="mm-container mm-section">
-    <div class="mm-meta-row" style="margin-bottom: 18px">
-      <span class="mm-chip">
-        <span class="mm-chip__dot" />
-        Live registry
-      </span>
-      <span class="mm-meta-row__sep">·</span>
-      <span><span class="mm-meta-row__strong">{{ formatNumber(onlineCount) }}</span> online now</span>
-      <span class="mm-meta-row__sep">·</span>
-      <span><span class="mm-meta-row__strong">{{ formatNumber(totalItems) }}</span> tracked players</span>
-    </div>
-
     <h1 class="mm-display">Players</h1>
 
     <hr class="mm-rule" style="margin-top: 24px" />
@@ -206,13 +218,15 @@ const goPlayer = (name: string) => router.push(`/v4/players/${encodeURIComponent
         />
       </label>
 
-      <div class="mm-eyebrow" style="margin-left: auto">
+      <div v-if="hasSearched" class="mm-eyebrow" style="margin-left: auto">
         Page {{ page }} of {{ totalPages }} · {{ formatNumber(totalItems) }} results
       </div>
     </div>
 
     <!-- list -->
-    <div v-if="loading && players.length === 0" style="padding: 32px 0">
+    <div v-if="!hasSearched" />
+
+    <div v-else-if="loading && players.length === 0" style="padding: 32px 0">
       <div v-for="i in 8" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
     </div>
 
@@ -222,7 +236,7 @@ const goPlayer = (name: string) => router.push(`/v4/players/${encodeURIComponent
       No players match that filter.
     </div>
 
-    <table v-else class="mm-list" style="margin-top: 18px">
+    <table v-else class="mm-list mm-list--dense" style="margin-top: 18px">
       <thead>
         <tr>
           <th
