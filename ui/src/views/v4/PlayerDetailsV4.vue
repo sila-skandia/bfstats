@@ -221,6 +221,20 @@ const formatDate = (iso: string) => {
   if (!iso) return '—'
   return new Date(iso).toISOString().slice(0, 10)
 }
+const resultLabel = (result: Session['teamResult']) => {
+  if (result === 'win') return 'Win'
+  if (result === 'loss') return 'Loss'
+  if (result === 'tie') return 'Draw'
+  return '—'
+}
+const sessionDurationMinutes = (s: Session) => {
+  const start = new Date(s.startTime).getTime()
+  const end = new Date(s.lastSeenTime).getTime()
+  return Math.max(0, (end - start) / 60000)
+}
+const sessionKd = (s: Session) => (s.totalDeaths === 0 ? s.totalKills : s.totalKills / s.totalDeaths)
+const rankNum = (i: number) => String(i + 1).padStart(2, '0')
+const rankTintClass = (i: number) => (i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : '')
 const formatTier = (tier: string) => {
   if (!tier) return ''
   return tier.toUpperCase()
@@ -736,38 +750,59 @@ const signatureServers = computed(() => {
                 @click="activeScoreWindow = w.id"
               >{{ w.label }}</button>
             </div>
-            <table v-if="currentBestScores.length > 0" class="mm-list mm-list--dense">
+            <ol v-if="currentBestScores.length > 0" class="mm-tab-cards">
+              <li
+                v-for="(s, i) in currentBestScores"
+                :key="`bsc-${s.roundId}-${i}`"
+                class="mm-session-row mm-session-row--rank"
+                :class="rankTintClass(i)"
+                @click="openScoreRound(s)"
+              >
+                <span class="mm-session-row__chip">{{ rankNum(i) }}</span>
+                <span class="mm-session-row__map">{{ s.mapName }}</span>
+                <span class="mm-session-row__date">{{ formatScoreDate(s.timestamp) }}</span>
+                <span class="mm-session-row__server">{{ truncate(s.serverName, 32) }}</span>
+                <span class="mm-session-row__stats">
+                  {{ formatNumber(s.score) }}
+                  <span class="mm-num__sep">·</span>
+                  <span class="mm-num--kill">{{ s.kills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.deaths }}</span>
+                  <span class="mm-num__sep">·</span>
+                  <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
+                </span>
+              </li>
+            </ol>
+            <table v-if="currentBestScores.length > 0" class="mm-list mm-list--dense mm-tab-table">
               <thead>
                 <tr>
                   <th style="width: 40px"></th>
                   <th class="is-num">Score</th>
                   <th>Map</th>
-                  <th class="mm-list__col--hide-sm">Server</th>
+                  <th>Server</th>
                   <th class="is-num">K / D</th>
-                  <th class="is-num mm-list__col--hide-sm">When</th>
+                  <th class="is-num">When</th>
                 </tr>
               </thead>
               <tbody>
                 <tr
                   v-for="(s, i) in currentBestScores"
                   :key="`${s.roundId}-${i}`"
-                  :class="i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : ''"
+                  :class="rankTintClass(i)"
                   @click="openScoreRound(s)"
                 >
-                  <td class="mm-list__rank">{{ String(i + 1).padStart(2, '0') }}</td>
-                  <td class="is-num" data-cell-label="Score">{{ formatNumber(s.score) }}</td>
-                  <td data-cell-label="Map">{{ s.mapName }}</td>
-                  <td class="is-muted mm-list__col--hide-sm" data-cell-label="Server">{{ truncate(s.serverName, 28) }}</td>
-                  <td class="is-num" data-cell-label="K/D">
+                  <td class="mm-list__rank">{{ rankNum(i) }}</td>
+                  <td class="is-num">{{ formatNumber(s.score) }}</td>
+                  <td>{{ s.mapName }}</td>
+                  <td class="is-muted">{{ truncate(s.serverName, 28) }}</td>
+                  <td class="is-num">
                     <span class="mm-num--kill">{{ s.kills }}</span>/<span class="mm-num--death">{{ s.deaths }}</span>
                     <span class="mm-num__sep">·</span>
                     <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
                   </td>
-                  <td class="is-num is-muted mm-list__col--hide-sm" data-cell-label="When">{{ formatScoreDate(s.timestamp) }}</td>
+                  <td class="is-num is-muted">{{ formatScoreDate(s.timestamp) }}</td>
                 </tr>
               </tbody>
             </table>
-            <div v-else class="mm-empty" style="padding: 32px">
+            <div v-if="currentBestScores.length === 0" class="mm-empty" style="padding: 32px">
               No scores recorded in this window yet.
             </div>
           </div>
@@ -776,7 +811,33 @@ const signatureServers = computed(() => {
 
       <!-- ========== sessions ========== -->
       <div v-else-if="activeTab === 'sessions'" style="margin-top: 8px">
-        <table class="mm-list mm-list--dense">
+        <ol class="mm-tab-cards">
+          <li
+            v-for="s in recentSessions"
+            :key="`mc-${s.sessionId}`"
+            class="mm-session-row"
+            :class="{
+              'mm-session-row--win': s.teamResult === 'win',
+              'mm-session-row--loss': s.teamResult === 'loss',
+            }"
+            @click="goRoundReport(s)"
+          >
+            <span class="mm-session-row__chip">{{ resultLabel(s.teamResult) }}</span>
+            <span class="mm-session-row__map">{{ s.mapName || 'Unknown' }}</span>
+            <span class="mm-session-row__date">{{ formatRelative(s.startTime) }}</span>
+            <span class="mm-session-row__server">{{ truncate(s.serverName, 32) }}</span>
+            <span class="mm-session-row__stats">
+              {{ formatNumber(s.totalScore) }}
+              <span class="mm-num__sep">·</span>
+              <span class="mm-num--kill">{{ s.totalKills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.totalDeaths }}</span>
+              <span class="mm-num__sep">·</span>
+              <span :class="kdClass(sessionKd(s))">{{ sessionKd(s).toFixed(2) }}</span>
+            </span>
+          </li>
+          <li v-if="recentSessions.length === 0" class="mm-empty" style="border: 0; padding: 24px 0; list-style: none">No sessions logged yet.</li>
+        </ol>
+
+        <table class="mm-list mm-list--dense mm-tab-table">
           <thead>
             <tr>
               <th>Map</th>
@@ -797,21 +858,17 @@ const signatureServers = computed(() => {
                   <span class="mm-list__name-sub">{{ s.gameType || '—' }}</span>
                 </div>
               </td>
-              <td class="is-muted" data-cell-label="Server">{{ truncate(s.serverName) }}</td>
-              <td class="is-muted" data-cell-label="When">{{ formatRelative(s.startTime) }}</td>
-              <td class="is-num" data-cell-label="Duration">
-                {{ formatDuration(((new Date(s.lastSeenTime).getTime() - new Date(s.startTime).getTime()) / 60000) || 0) }}
-              </td>
-              <td class="is-num" data-cell-label="K / D">
+              <td class="is-muted">{{ truncate(s.serverName) }}</td>
+              <td class="is-muted">{{ formatRelative(s.startTime) }}</td>
+              <td class="is-num">{{ formatDuration(sessionDurationMinutes(s)) }}</td>
+              <td class="is-num">
                 <span class="mm-num--kill">{{ s.totalKills }}</span>
                 <span class="mm-num__sep">/</span>
                 <span class="mm-num--death">{{ s.totalDeaths }}</span>
               </td>
-              <td class="is-num" data-cell-label="K/D ratio" :class="kdClass(s.totalDeaths === 0 ? s.totalKills : s.totalKills / s.totalDeaths)">
-                {{ (s.totalDeaths === 0 ? s.totalKills : s.totalKills / s.totalDeaths).toFixed(2) }}
-              </td>
-              <td class="is-num" data-cell-label="Score">{{ formatNumber(s.totalScore) }}</td>
-              <td class="is-num" data-cell-label="Result">
+              <td class="is-num" :class="kdClass(sessionKd(s))">{{ sessionKd(s).toFixed(2) }}</td>
+              <td class="is-num">{{ formatNumber(s.totalScore) }}</td>
+              <td class="is-num">
                 <span
                   class="mm-chip"
                   :class="{
@@ -820,7 +877,7 @@ const signatureServers = computed(() => {
                     'mm-chip--off': s.teamResult === 'tie',
                   }"
                   style="text-transform: uppercase"
-                >{{ s.teamResult === 'win' ? 'Win' : s.teamResult === 'loss' ? 'Loss' : s.teamResult === 'tie' ? 'Tie' : '—' }}</span>
+                >{{ resultLabel(s.teamResult) }}</span>
               </td>
             </tr>
             <tr v-if="recentSessions.length === 0">
@@ -832,7 +889,28 @@ const signatureServers = computed(() => {
 
       <!-- ========== maps ========== -->
       <div v-else-if="activeTab === 'maps'" style="margin-top: 8px">
-        <table class="mm-list mm-list--dense">
+        <ol class="mm-tab-cards">
+          <li
+            v-for="(m, i) in topMaps"
+            :key="`mc-${m.mapName}`"
+            class="mm-session-row mm-session-row--rank"
+            :class="rankTintClass(i)"
+            @click="openMapRankings(m.mapName)"
+          >
+            <span class="mm-session-row__chip">{{ rankNum(i) }}</span>
+            <span class="mm-session-row__map">{{ m.mapName }}</span>
+            <span class="mm-session-row__date">{{ formatDuration(m.minutes) }}</span>
+            <span class="mm-session-row__server">Rank →</span>
+            <span class="mm-session-row__stats">
+              <span class="mm-num--kill">{{ formatNumber(m.kills) }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ formatNumber(m.deaths) }}</span>
+              <span class="mm-num__sep">·</span>
+              <span :class="kdClass(m.kd)">{{ m.kd.toFixed(2) }}</span>
+            </span>
+          </li>
+          <li v-if="topMaps.length === 0" class="mm-empty" style="border: 0; padding: 24px 0; list-style: none">No map history yet.</li>
+        </ol>
+
+        <table class="mm-list mm-list--dense mm-tab-table">
           <thead>
             <tr>
               <th style="width: 40px"></th>
@@ -848,22 +926,20 @@ const signatureServers = computed(() => {
             <tr
               v-for="(m, i) in topMaps"
               :key="m.mapName"
-              :class="i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : ''"
+              :class="rankTintClass(i)"
               @click="openMapRankings(m.mapName)"
             >
-              <td class="mm-list__rank">{{ String(i + 1).padStart(2, '0') }}</td>
+              <td class="mm-list__rank">{{ rankNum(i) }}</td>
               <td class="mm-list__name-cell">
                 <div class="mm-list__name">
                   <span class="mm-list__name-primary">{{ m.mapName }}</span>
                 </div>
               </td>
-              <td class="is-num" data-cell-label="Time">{{ formatDuration(m.minutes) }}</td>
-              <td class="is-num mm-num--kill" data-cell-label="Kills">{{ formatNumber(m.kills) }}</td>
-              <td class="is-num mm-num--death" data-cell-label="Deaths">{{ formatNumber(m.deaths) }}</td>
-              <td class="is-num" :class="kdClass(m.kd)" data-cell-label="K/D">{{ m.kd.toFixed(2) }}</td>
-              <td data-cell-label="">
-                <span class="mm-eyebrow">Rank →</span>
-              </td>
+              <td class="is-num">{{ formatDuration(m.minutes) }}</td>
+              <td class="is-num mm-num--kill">{{ formatNumber(m.kills) }}</td>
+              <td class="is-num mm-num--death">{{ formatNumber(m.deaths) }}</td>
+              <td class="is-num" :class="kdClass(m.kd)">{{ m.kd.toFixed(2) }}</td>
+              <td><span class="mm-eyebrow">Rank →</span></td>
             </tr>
             <tr v-if="topMaps.length === 0">
               <td colspan="7" class="mm-empty" style="border: 0">No map history yet.</td>
@@ -874,7 +950,28 @@ const signatureServers = computed(() => {
 
       <!-- ========== servers ========== -->
       <div v-else-if="activeTab === 'servers'" style="margin-top: 8px">
-        <table class="mm-list mm-list--dense">
+        <ol class="mm-tab-cards">
+          <li
+            v-for="(s, i) in topServers"
+            :key="`sc-${s.serverGuid}`"
+            class="mm-session-row mm-session-row--rank"
+            :class="rankTintClass(i)"
+            @click="goServer(s.serverName)"
+          >
+            <span class="mm-session-row__chip">{{ rankNum(i) }}</span>
+            <span class="mm-session-row__map">{{ s.serverName }}</span>
+            <span class="mm-session-row__date">{{ formatDuration(s.totalMinutes) }}</span>
+            <span class="mm-session-row__server">{{ s.gameId.toUpperCase() }} · {{ formatNumber(s.totalRounds) }} rounds</span>
+            <span class="mm-session-row__stats">
+              <span class="mm-num--kill">{{ formatNumber(s.totalKills) }}</span>
+              <span class="mm-num__sep">·</span>
+              <span :class="kdClass(s.kdRatio)">{{ s.kdRatio.toFixed(2) }}</span>
+            </span>
+          </li>
+          <li v-if="topServers.length === 0" class="mm-empty" style="border: 0; padding: 24px 0; list-style: none">No server history yet.</li>
+        </ol>
+
+        <table class="mm-list mm-list--dense mm-tab-table">
           <thead>
             <tr>
               <th style="width: 40px"></th>
@@ -889,20 +986,20 @@ const signatureServers = computed(() => {
             <tr
               v-for="(s, i) in topServers"
               :key="s.serverGuid"
-              :class="i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : ''"
+              :class="rankTintClass(i)"
               @click="goServer(s.serverName)"
             >
-              <td class="mm-list__rank">{{ String(i + 1).padStart(2, '0') }}</td>
+              <td class="mm-list__rank">{{ rankNum(i) }}</td>
               <td class="mm-list__name-cell">
                 <div class="mm-list__name">
                   <span class="mm-list__name-primary">{{ s.serverName }}</span>
                   <span class="mm-list__name-sub">{{ s.gameId.toUpperCase() }}</span>
                 </div>
               </td>
-              <td class="is-num" data-cell-label="Time">{{ formatDuration(s.totalMinutes) }}</td>
-              <td class="is-num" data-cell-label="Rounds">{{ formatNumber(s.totalRounds) }}</td>
-              <td class="is-num mm-num--kill" data-cell-label="Kills">{{ formatNumber(s.totalKills) }}</td>
-              <td class="is-num" :class="kdClass(s.kdRatio)" data-cell-label="K/D">{{ s.kdRatio.toFixed(2) }}</td>
+              <td class="is-num">{{ formatDuration(s.totalMinutes) }}</td>
+              <td class="is-num">{{ formatNumber(s.totalRounds) }}</td>
+              <td class="is-num mm-num--kill">{{ formatNumber(s.totalKills) }}</td>
+              <td class="is-num" :class="kdClass(s.kdRatio)">{{ s.kdRatio.toFixed(2) }}</td>
             </tr>
             <tr v-if="topServers.length === 0">
               <td colspan="5" class="mm-empty" style="border: 0">No server history yet.</td>
@@ -1074,5 +1171,42 @@ const signatureServers = computed(() => {
 
 .mm-bestscores :deep(.mm-bestscores__detail) {
   color: var(--mm-ink-soft);
+}
+
+/* Mobile/desktop split for the per-tab lists (sessions · maps · servers ·
+   best scores). Mobile gets the airy mm-session-row card from the recent-
+   rounds pattern; desktop keeps the wide table. */
+.mm-tab-cards {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+@media (max-width: 720px) {
+  .mm-tab-table { display: none; }
+  .mm-tab-cards { display: flex; flex-direction: column; }
+  .mm-tab-cards .mm-session-row { cursor: pointer; }
+}
+
+/* Rank variant of the session row — the chip slot shows a rank number
+   instead of a win/loss label, picking up the row's gold/silver/bronze
+   tint when applicable. */
+.mm-session-row--rank .mm-session-row__chip {
+  font-family: var(--mm-font-mono);
+  background: transparent;
+  color: var(--mm-ink-muted);
+  border-color: var(--mm-rule);
+}
+.mm-session-row--rank.mm-rank--gold .mm-session-row__chip {
+  color: var(--mm-kd-elite);
+  border-color: var(--mm-kd-elite);
+}
+.mm-session-row--rank.mm-rank--silver .mm-session-row__chip {
+  color: var(--mm-ink);
+  border-color: var(--mm-ink-soft);
+}
+.mm-session-row--rank.mm-rank--bronze .mm-session-row__chip {
+  color: #c08a4c;
+  border-color: #c08a4c;
 }
 </style>
