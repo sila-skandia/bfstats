@@ -1,5 +1,18 @@
 # V4 Theme Migration — Modern-Minimal Replaces Legacy
 
+> **Status: complete.** V4 is now the only design system in the app
+> (Neutral Depth dark, scoped under `.mm`). This folder is kept as the
+> historical record of how we got here. The canonical, living docs have
+> moved:
+>
+> - [`ui/DESIGN_SYSTEM.md`](../../ui/DESIGN_SYSTEM.md) — overview + rules
+> - [`ui/PATTERNS.md`](../../ui/PATTERNS.md) — recipe collection (was `CROSSWALK.md`)
+> - [`ui/MOBILE_PATTERNS.md`](../../ui/MOBILE_PATTERNS.md) — mobile playbook
+> - [`ui/CLAUDE.md`](../../ui/CLAUDE.md) — ship-readiness checklist
+>
+> Refer to those for any new UI work. The notes below describe the
+> migration approach, not the current rules.
+
 ## Thesis
 
 The legacy UI is a dark "command center" theme: gradient-glass cards, neon
