@@ -142,7 +142,7 @@ onMounted(loadCommunity)
       </div>
 
       <div v-if="activeTab === 'members'" style="margin-top: 12px">
-        <table class="mm-list">
+        <table class="mm-list mm-list--dense">
           <thead>
             <tr>
               <th>Player</th>
@@ -173,7 +173,7 @@ onMounted(loadCommunity)
       </div>
 
       <div v-else-if="activeTab === 'servers'" style="margin-top: 12px">
-        <table class="mm-list">
+        <table class="mm-list mm-list--dense">
           <thead>
             <tr>
               <th>Server</th>

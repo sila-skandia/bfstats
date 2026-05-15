@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAllServers } from '@/services/serverDetailsService'
 import type { ServerSummary } from '@/types/server'
-import { countryCodeToName } from '@/types/countryCodes'
+import { countryCodeToName, countryCodeToFlag } from '@/types/countryCodes'
 import { loadClass } from './mmTokens'
 import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
 import MmPlayersPanel from '@/components/v4/MmPlayersPanel.vue'
@@ -154,18 +154,18 @@ const closeRoster = () => {
     </div>
 
     <!-- editorial hero -->
-    <h1 class="mm-display">
+    <h1 class="mm-display mm-landing__hero-only">
       <span :class="loadClass(totalCapacity ? totalPlayers / totalCapacity : 0)">{{ formatNumber(totalPlayers) }}</span>
       <span class="mm-display__muted" style="margin-left: 0.3em">in combat</span>
     </h1>
-    <p class="mm-display" style="font-size: clamp(20px, 2vw, 26px); margin-top: 8px; color: var(--mm-ink-soft)">
+    <p class="mm-display mm-landing__hero-only" style="font-size: clamp(20px, 2vw, 26px); margin-top: 8px; color: var(--mm-ink-soft)">
       across {{ formatNumber(activeCount) }} live {{ GAME_LABEL }} servers tonight.
     </p>
 
-    <hr class="mm-rule" style="margin-top: 32px" />
+    <hr class="mm-rule mm-landing__hero-only" style="margin-top: 32px" />
 
     <!-- stat strip -->
-    <div class="mm-stats" style="border-top: 0; margin-top: 0">
+    <div class="mm-stats mm-landing__hero-only" style="border-top: 0; margin-top: 0">
       <div class="mm-stats__cell">
         <div class="mm-stats__label">Players online</div>
         <div class="mm-stat__value" :class="loadClass(totalCapacity ? totalPlayers / totalCapacity : 0)">
@@ -216,11 +216,52 @@ const closeRoster = () => {
     </div>
 
     <template v-else>
-      <div class="mm-section-bar">
+      <!-- Section bar is the anchor for the mobile card list — on
+           desktop, the table <thead> below already carries the olive
+           header treatment, so showing both produces a stacked strip. -->
+      <div class="mm-section-bar mm-only-mobile">
         <span># SERVER</span>
         <span class="mm-section-bar__meta">PLAYERS · LOAD</span>
       </div>
-      <table class="mm-list mm-list--dense">
+
+      <!-- Mobile rendering — bespoke card matching mock #1: rank +
+           name-stack on the left, players value over load bar on the right. -->
+      <ol class="mm-landing__mobile">
+        <li
+          v-for="(s, idx) in servers"
+          :key="`m-${s.guid}`"
+          class="mm-landing__mcard"
+          @click="goServer(s)"
+        >
+          <span class="mm-landing__mrank">{{ String(idx + 1).padStart(2, '0') }}</span>
+          <div class="mm-landing__mbody">
+            <div class="mm-landing__mtitle">{{ s.name }}</div>
+            <div class="mm-landing__msub">{{ s.ip }}:{{ s.port }}</div>
+            <div v-if="s.mapName || s.country" class="mm-landing__msub mm-landing__msub--alt">
+              <template v-if="s.mapName">{{ s.mapName }}</template>
+              <template v-if="s.mapName && s.country"> · </template>
+              <template v-if="s.country"><span class="mm-landing__flag">{{ countryCodeToFlag(s.country) }}</span> {{ friendlyCountry(s.country) }}</template>
+            </div>
+          </div>
+          <div class="mm-landing__mright">
+            <div class="mm-landing__mplayers">
+              <span :class="loadClass(s.maxPlayers ? s.numPlayers / s.maxPlayers : 0)">{{ s.numPlayers }}</span><span style="color: var(--mm-ink-faint)">/{{ s.maxPlayers }}</span>
+            </div>
+            <div class="mm-list__bar mm-landing__mbar" :title="`${s.maxPlayers ? Math.round((s.numPlayers / s.maxPlayers) * 100) : 0}%`">
+              <div
+                class="mm-list__bar-fill"
+                :class="{
+                  'mm-list__bar-fill--accent': s.maxPlayers && s.numPlayers / s.maxPlayers >= 0.66,
+                  'mm-list__bar-fill--idle': !s.numPlayers,
+                }"
+                :style="{ width: (s.maxPlayers ? Math.min(100, (s.numPlayers / s.maxPlayers) * 100) : 0) + '%' }"
+              />
+            </div>
+          </div>
+        </li>
+      </ol>
+
+      <table class="mm-list mm-list--dense mm-landing__desktop">
       <thead>
         <tr>
           <th style="width: 40px"></th>
@@ -250,7 +291,10 @@ const closeRoster = () => {
             </div>
           </td>
           <td class="is-muted mm-list__col--hide-sm" data-cell-label="Map">{{ s.mapName || '—' }}</td>
-          <td class="is-muted mm-list__col--hide-sm" data-cell-label="Region">{{ friendlyCountry(s.country) }}</td>
+          <td class="is-muted mm-list__col--hide-sm" data-cell-label="Region">
+            <span v-if="s.country" class="mm-landing__flag" :title="friendlyCountry(s.country)">{{ countryCodeToFlag(s.country) }}</span>
+            <span>{{ friendlyCountry(s.country) }}</span>
+          </td>
           <td class="is-num" data-cell-label="Players">
             <span :class="loadClass(s.maxPlayers ? s.numPlayers / s.maxPlayers : 0)">{{ s.numPlayers }}</span>
             <span style="color: var(--mm-ink-faint)"> / {{ s.maxPlayers }}</span>
@@ -330,6 +374,101 @@ const closeRoster = () => {
   /* Inline install dropdown in the top meta row collapses on mobile —
      the CTA strip takes over. */
   .mm-landing__top .mm-install { display: none; }
+  /* Hero text + stat grid hide on mobile — meta row carries enough
+     summary, and the user goes straight to the servers list. */
+  .mm-landing__hero-only { display: none; }
+}
+
+/* Desktop/mobile swap for the servers list. Card layout on mobile matches
+   mock #1: rank · name-stack · players + bar stacked on the right. */
+.mm-landing__mobile {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (max-width: 720px) {
+  .mm-landing__desktop { display: none; }
+  .mm-landing__mobile { display: flex; flex-direction: column; }
+}
+
+.mm-landing__mcard {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--mm-rule);
+  cursor: pointer;
+}
+.mm-landing__mcard:last-child { border-bottom: 0; }
+
+.mm-landing__mrank {
+  grid-row: 1 / span 3;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--mm-ink-muted);
+  align-self: start;
+  padding-top: 2px;
+}
+
+.mm-landing__mbody { min-width: 0; }
+
+.mm-landing__mtitle {
+  font-family: var(--mm-font-display);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--mm-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mm-landing__msub {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--mm-ink-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mm-landing__msub--alt {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.mm-landing__mright {
+  grid-row: 1 / span 3;
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 80px;
+}
+
+.mm-landing__mplayers {
+  font-family: var(--mm-font-mono);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mm-landing__mbar {
+  width: 80px;
+}
+
+/* Flag emoji needs an explicit emoji font stack — otherwise some
+   browsers fall back to the monochrome regional-indicator letters. */
+.mm-landing__flag {
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  font-size: 1.05em;
+  margin-right: 4px;
+  vertical-align: -0.05em;
 }
 
 .mm-refresh-ring {
