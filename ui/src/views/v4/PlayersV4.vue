@@ -6,6 +6,7 @@ import type { PlayerListItem } from '@/types/playerStatsTypes'
 import { decodePlayerName } from '@/utils/playerName'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import { kdClass } from '@/views/v4/mmTokens'
+import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 
 // The /stats/players API returns enhanced aggregate stats (kills, deaths,
 // rounds, favorite server, recent activity) that the canonical
@@ -116,12 +117,14 @@ const formatHours = (mins: number) => {
   return h >= 100 ? `${Math.round(h)}h` : `${h.toFixed(1)}h`
 }
 const formatRelative = (iso: string) => {
-  const ms = Date.now() - new Date(iso).getTime()
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
+  const ms = Date.now() - d.getTime()
   if (ms < 60_000) return 'just now'
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m ago`
   if (ms < 86_400_000) return `${Math.round(ms / 3_600_000)}h ago`
   if (ms < 86_400_000 * 30) return `${Math.round(ms / 86_400_000)}d ago`
-  return new Date(iso).toISOString().slice(0, 10)
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 const headers: { id: string; label: string; sortable?: boolean; align?: 'right' }[] = [
@@ -321,7 +324,7 @@ const goPlayer = (name: string) => router.push(`/v4/players/${encodeURIComponent
             <MmRankCell v-if="p.totalRounds" :value="p.totalRounds" :max="roundsMax" tone="neutral">{{ formatNumber(p.totalRounds) }}</MmRankCell>
             <span v-else class="is-muted">—</span>
           </td>
-          <td class="is-num is-muted" data-cell-label="Last seen">{{ formatRelative(p.lastSeen) }}</td>
+          <td class="is-num is-muted" data-cell-label="Last seen" :title="formatLocalTooltip(p.lastSeen)">{{ formatRelative(p.lastSeen) }}</td>
         </tr>
       </tbody>
     </table>

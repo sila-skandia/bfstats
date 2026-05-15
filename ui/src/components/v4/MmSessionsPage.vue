@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { fetchSessions, type PlayerContextInfo } from '@/services/playerStatsService'
 import { kdClass, MM_CHART, teamColor, teamFill } from '@/views/v4/mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
+import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -187,7 +188,8 @@ const formatDuration = (minutes: number): string => {
 }
 
 const formatTime = (iso: string): string => {
-  const d = new Date(iso)
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -269,7 +271,7 @@ const scoreLineChartData = computed(() => {
   if (!team1 || !team2) return { labels: [], datasets: [] }
 
   const labels = data.map(r => {
-    const d = new Date(r.startTime)
+    const d = parseUtc(r.startTime)
     return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${r.mapName}`
   })
 
@@ -366,7 +368,7 @@ const playerPerformanceChartData = computed(() => {
   if (data.length === 0) return { labels: [], datasets: [] }
 
   const labels = data.map(r => {
-    const d = new Date(r.startTime)
+    const d = parseUtc(r.startTime)
     return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${r.mapName}`
   })
 
@@ -664,7 +666,7 @@ const paginationRange = computed(() => {
               <span v-if="round.team1Label && round.team2Label">{{ round.team1Label }} {{ round.team1Points }} – {{ round.team2Points }} {{ round.team2Label }}</span>
               <span v-else>Round {{ round.roundId.slice(0, 8) }}</span>
             </span>
-            <span class="mm-card-list__time">{{ formatTime(round.startTime) }}</span>
+            <span class="mm-card-list__time" :title="formatLocalTooltip(round.startTime)">{{ formatTime(round.startTime) }}</span>
           </div>
           <div class="mm-card-list__sub">
             <span>{{ round.mapName }}</span>
@@ -771,7 +773,7 @@ const paginationRange = computed(() => {
               <span v-else class="is-muted">—</span>
             </td>
             <td class="is-num is-muted" data-cell-label="Duration">{{ formatDuration(round.durationMinutes) }}</td>
-            <td class="is-num is-muted" data-cell-label="Started">{{ formatTime(round.startTime) }}</td>
+            <td class="is-num is-muted" data-cell-label="Started" :title="formatLocalTooltip(round.startTime)">{{ formatTime(round.startTime) }}</td>
           </tr>
         </tbody>
       </table>

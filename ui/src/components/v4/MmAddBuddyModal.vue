@@ -4,6 +4,7 @@ import MmBaseModal from '@/components/v4/MmBaseModal.vue'
 import { statsService } from '@/services/statsService'
 import { decodePlayerName } from '@/utils/playerName'
 import { kdClass } from '@/views/v4/mmTokens'
+import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 
 interface PlayerSearchResult {
   playerName: string
@@ -63,9 +64,8 @@ const formatHours = (mins: number): string => {
 }
 
 const formatRelative = (iso: string): string => {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   const ms = Date.now() - d.getTime()
   if (ms < 60_000) return 'now'
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m ago`
@@ -194,7 +194,7 @@ const cancel = () => {
             <span v-if="r.isActive" class="mm-success">● ONLINE</span>
             <span v-else>OFFLINE</span>
             <span class="mm-meta-row__sep">·</span>
-            <span>{{ formatRelative(r.lastSeen) }}</span>
+            <span :title="formatLocalTooltip(r.lastSeen)">{{ formatRelative(r.lastSeen) }}</span>
           </span>
           <span class="mm-add-row__stats">
             <span :class="kdClass(kdOf(r))">{{ kdOf(r).toFixed(2) }} K/D</span>

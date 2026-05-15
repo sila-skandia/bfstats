@@ -16,6 +16,7 @@ import MmPlayerSearch from '@/components/v4/MmPlayerSearch.vue'
 import { kdClass, MM_CHART } from '@/views/v4/mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
 import { getAchievementImageFromObject } from '@/utils/achievementImageUtils'
+import { parseUtc } from '@/utils/timeUtils'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
 
@@ -394,8 +395,8 @@ const openH2HRound = (roundId: string) => {
 }
 
 const formatDateShort = (iso: string): string => {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 </script>

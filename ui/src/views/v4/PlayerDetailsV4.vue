@@ -30,6 +30,7 @@ import MmMapPerformanceRace from '@/components/v4/data-explorer/MmMapPerformance
 import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { kdClass, streakClass } from './mmTokens'
+import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 
 const route = useRoute()
 const router = useRouter()
@@ -163,12 +164,15 @@ const recentSessions = computed<Session[]>(() => stats.value?.recentSessions ?? 
 const firstSeen = computed(() => stats.value?.firstPlayed ?? null)
 const firstSeenDate = computed(() => {
   if (!firstSeen.value) return '—'
-  return new Date(firstSeen.value).toISOString().slice(0, 10)
+  const d = parseUtc(firstSeen.value)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 })
 const yearsActive = computed(() => {
   if (!firstSeen.value) return 0
-  const ms = Date.now() - new Date(firstSeen.value).getTime()
-  return ms / (1000 * 60 * 60 * 24 * 365.25)
+  const d = parseUtc(firstSeen.value)
+  if (isNaN(d.getTime())) return 0
+  return (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
 })
 const tierLabel = computed(() => {
   const y = yearsActive.value
@@ -198,7 +202,7 @@ const bestStreak = computed(() => {
 // for the achievements grid — show all groups, ordered by latestAchievedAt desc
 const achievementsForGrid = computed(() => {
   return [...achievementGroups.value]
-    .sort((a, b) => new Date(b.latestAchievedAt).getTime() - new Date(a.latestAchievedAt).getTime())
+    .sort((a, b) => parseUtc(b.latestAchievedAt).getTime() - parseUtc(a.latestAchievedAt).getTime())
 })
 
 // --- session helpers ---
@@ -211,15 +215,18 @@ const formatDuration = (mins: number) => {
   return m ? `${h}h ${m}m` : `${h}h`
 }
 const formatRelative = (iso: string) => {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
+  const diff = (Date.now() - d.getTime()) / 1000
   if (diff < 60) return `${Math.round(diff)}s ago`
   if (diff < 3600) return `${Math.round(diff / 60)}m ago`
   if (diff < 86400) return `${Math.round(diff / 3600)}h ago`
   return `${Math.round(diff / 86400)}d ago`
 }
 const formatDate = (iso: string) => {
-  if (!iso) return '—'
-  return new Date(iso).toISOString().slice(0, 10)
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 const resultLabel = (result: Session['teamResult']) => {
   if (result === 'win') return 'Win'
@@ -228,8 +235,9 @@ const resultLabel = (result: Session['teamResult']) => {
   return '—'
 }
 const sessionDurationMinutes = (s: Session) => {
-  const start = new Date(s.startTime).getTime()
-  const end = new Date(s.lastSeenTime).getTime()
+  const start = parseUtc(s.startTime).getTime()
+  const end = parseUtc(s.lastSeenTime).getTime()
+  if (isNaN(start) || isNaN(end)) return 0
   return Math.max(0, (end - start) / 60000)
 }
 const sessionKd = (s: Session) => (s.totalDeaths === 0 ? s.totalKills : s.totalKills / s.totalDeaths)
@@ -319,7 +327,7 @@ const allServerRankings = computed<ServerRanking[]>(() => {
 const killMilestones = computed<KillMilestone[]>(() => {
   const m = stats.value?.killMilestones ?? []
   return [...m].sort((a, b) =>
-    new Date(b.achievedDate).getTime() - new Date(a.achievedDate).getTime()
+    parseUtc(b.achievedDate).getTime() - parseUtc(a.achievedDate).getTime()
   )
 })
 
@@ -348,9 +356,8 @@ const scoreKd = (e: BestScoreEntry): number => {
   return e.kills / e.deaths
 }
 const formatScoreDate = (iso: string): string => {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 const openScoreRound = (e: BestScoreEntry) => {
@@ -470,7 +477,7 @@ const signatureServers = computed(() => {
             <span v-if="currentServer.mapName">{{ currentServer.mapName }}</span>
           </template>
           <template v-else>
-            last seen <span class="mm-meta-row__strong">{{ stats?.lastPlayed ? formatRelative(stats.lastPlayed) : '—' }}</span>
+            last seen <span class="mm-meta-row__strong" :title="stats?.lastPlayed ? formatLocalTooltip(stats.lastPlayed) : ''">{{ stats?.lastPlayed ? formatRelative(stats.lastPlayed) : '—' }}</span>
           </template>
         </div>
         <div style="margin-top: 14px">
@@ -740,6 +747,7 @@ const signatureServers = computed(() => {
 
           <div v-if="hasAnyBestScores">
             <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 14px">Best scores</div>
+            <div class="mm-eyebrow mm-tz-hint">Times shown in your local time</div>
             <div class="mm-subtabs" style="margin-bottom: 12px">
               <button
                 v-for="w in scoreWindows"
@@ -760,7 +768,7 @@ const signatureServers = computed(() => {
               >
                 <span class="mm-session-row__chip">{{ rankNum(i) }}</span>
                 <span class="mm-session-row__map">{{ s.mapName }}</span>
-                <span class="mm-session-row__date">{{ formatScoreDate(s.timestamp) }}</span>
+                <span class="mm-session-row__date" :title="formatLocalTooltip(s.timestamp)">{{ formatScoreDate(s.timestamp) }}</span>
                 <span class="mm-session-row__server">{{ truncate(s.serverName, 32) }}</span>
                 <span class="mm-session-row__stats">
                   {{ formatNumber(s.score) }}
@@ -798,7 +806,7 @@ const signatureServers = computed(() => {
                     <span class="mm-num__sep">·</span>
                     <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
                   </td>
-                  <td class="is-num is-muted">{{ formatScoreDate(s.timestamp) }}</td>
+                  <td class="is-num is-muted" :title="formatLocalTooltip(s.timestamp)">{{ formatScoreDate(s.timestamp) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -811,6 +819,7 @@ const signatureServers = computed(() => {
 
       <!-- ========== sessions ========== -->
       <div v-else-if="activeTab === 'sessions'" style="margin-top: 8px">
+        <div class="mm-eyebrow mm-tz-hint">Times shown in your local time</div>
         <ol class="mm-tab-cards">
           <li
             v-for="s in recentSessions"
@@ -824,7 +833,7 @@ const signatureServers = computed(() => {
           >
             <span class="mm-session-row__chip">{{ resultLabel(s.teamResult) }}</span>
             <span class="mm-session-row__map">{{ s.mapName || 'Unknown' }}</span>
-            <span class="mm-session-row__date">{{ formatRelative(s.startTime) }}</span>
+            <span class="mm-session-row__date" :title="formatLocalTooltip(s.startTime)">{{ formatRelative(s.startTime) }}</span>
             <span class="mm-session-row__server">{{ truncate(s.serverName, 32) }}</span>
             <span class="mm-session-row__stats">
               {{ formatNumber(s.totalScore) }}
@@ -859,7 +868,7 @@ const signatureServers = computed(() => {
                 </div>
               </td>
               <td class="is-muted">{{ truncate(s.serverName) }}</td>
-              <td class="is-muted">{{ formatRelative(s.startTime) }}</td>
+              <td class="is-muted" :title="formatLocalTooltip(s.startTime)">{{ formatRelative(s.startTime) }}</td>
               <td class="is-num">{{ formatDuration(sessionDurationMinutes(s)) }}</td>
               <td class="is-num">
                 <span class="mm-num--kill">{{ s.totalKills }}</span>
@@ -1208,5 +1217,12 @@ const signatureServers = computed(() => {
 .mm-session-row--rank.mm-rank--bronze .mm-session-row__chip {
   color: #c08a4c;
   border-color: #c08a4c;
+}
+
+/* Subtle "Times shown in your local time" hint above date-heavy clusters. */
+.mm-tz-hint {
+  color: var(--mm-ink-faint);
+  margin-bottom: 8px;
+  font-size: 10px;
 }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import axios from 'axios'
+import { parseUtc } from '@/utils/timeUtils'
 
 interface SystemStats {
   sqliteMetrics: {
@@ -49,7 +50,8 @@ onUnmounted(() => {
 const formatNumber = (n: number) => n.toLocaleString()
 
 const formatTimestamp = (iso: string): string => {
-  const d = new Date(iso)
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
