@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchCommunity, type PlayerCommunity } from '@/services/playerRelationshipsApi'
+import { parseUtc } from '@/utils/timeUtils'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,9 +45,8 @@ const loadCommunity = async () => {
 }
 
 const formatDate = (iso: string): string => {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 

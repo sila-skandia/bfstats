@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchPlayerNetworkGraph, type PlayerNetworkGraph } from '@/services/playerRelationshipsApi'
+import { parseUtc } from '@/utils/timeUtils'
 
 const STRENGTH_BANDS = [
   { label: 'Trenches', min: 100, sub: '100+ co-rounds' },
@@ -125,8 +126,9 @@ const fetchData = async () => {
 }
 
 const formatDate = (iso?: string) => {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString()
+  const d = parseUtc(iso)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString()
 }
 
 const goPlayer = (name: string) => {

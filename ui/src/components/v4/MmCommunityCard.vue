@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { formatDistanceToNow } from 'date-fns'
+import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 
 const props = defineProps<{
   community: PlayerCommunity
@@ -9,7 +10,11 @@ const props = defineProps<{
 
 const cohesionPercentage = computed(() => Math.round(props.community.cohesionScore * 100))
 
-const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString()
+const formatDate = (dateStr: string) => {
+  const d = parseUtc(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString()
+}
 
 const statusLabel = computed(() => {
   if (!props.community.isActive) return 'Inactive'
@@ -93,7 +98,7 @@ const statusChipClass = computed(() => {
       </div>
       <div>
         <div class="mm-eyebrow">Last active</div>
-        <div class="mm-comm__date-value">{{ formatDistanceToNow(new Date(community.lastActiveDate), { addSuffix: true }) }}</div>
+        <div class="mm-comm__date-value" :title="formatLocalTooltip(community.lastActiveDate)">{{ formatDistanceToNow(parseUtc(community.lastActiveDate), { addSuffix: true }) }}</div>
       </div>
     </div>
 
