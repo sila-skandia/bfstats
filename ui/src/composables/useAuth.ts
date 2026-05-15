@@ -24,11 +24,11 @@ export function useAuth() {
     authState.value = event.detail;
     // Setup auto-refresh when authentication succeeds
     authService.setupAutoRefresh();
-    // Redirect to dashboard after successful sign-in
-    router.push('/dashboard');
+    // Redirect to V4 dashboard after successful sign-in.
+    router.push('/v4/dashboard');
   };
 
-  const handleAuthError = (event: CustomEvent) => {
+  const handleAuthError = (_event: CustomEvent) => {
     authState.value = {
       isAuthenticated: false,
       token: null,

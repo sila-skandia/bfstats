@@ -193,6 +193,36 @@ export async function fetchServerDetails(
   }
 }
 
+export interface ServerMapsInsightsResponse {
+  serverGuid?: string;
+  serverName: string;
+  startPeriod: string;
+  endPeriod: string;
+  maps: PopularMap[];
+}
+
+/**
+ * Fetches aggregated map popularity for a server over the given window.
+ * Backed by the SQLite `ServerMapStats` table, summed across months within
+ * the period. Sorted by total playtime descending.
+ *
+ * Note: `ServerDetails.popularMaps` is a dead field — the backend never
+ * populated it. Use this endpoint instead.
+ */
+export async function fetchServerMapsInsights(
+  serverName: string,
+  days: number = 30,
+): Promise<ServerMapsInsightsResponse> {
+  try {
+    const url = `/stats/servers/${encodeURIComponent(serverName)}/maps-insights`;
+    const response = await axios.get<ServerMapsInsightsResponse>(url, { params: { days } });
+    return response.data;
+  } catch (err) {
+    console.error('Error fetching server maps insights:', err);
+    throw new Error('Failed to get server maps insights');
+  }
+}
+
 /**
  * Fetches server leaderboards from the API
  * @param serverName The name of the server to fetch leaderboards for

@@ -350,7 +350,10 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         PlayerLifetimeStats? lifetimeStats = null;
         try
         {
-            lifetimeStats = await sqlitePlayerStatsService.GetPlayerStatsAsync(playerName);
+            // lookBackDays: 0 → true lifetime aggregate. The default of 30 days
+            // made "Lifetime kills" silently time-boxed: any player not seen
+            // in the last 30 days reported 0 across the board.
+            lifetimeStats = await sqlitePlayerStatsService.GetPlayerStatsAsync(playerName, lookBackDays: 0);
         }
         catch (Exception ex)
         {
@@ -361,7 +364,10 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         List<ServerInsight> serverInsights;
         try
         {
-            serverInsights = await sqlitePlayerStatsService.GetPlayerServerInsightsAsync(playerName);
+            // lookBackDays: 0 → all-time per-server breakdown for the Servers
+            // tab on PlayerDetailsV4. Default of 30 days plus a 10-hour
+            // min-playtime filter made the tab empty for most players.
+            serverInsights = await sqlitePlayerStatsService.GetPlayerServerInsightsAsync(playerName, lookBackDays: 0);
         }
         catch (Exception ex)
         {

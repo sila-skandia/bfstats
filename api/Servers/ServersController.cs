@@ -87,6 +87,39 @@ public class ServersController(
         }
     }
 
+    // Popular maps for a server — aggregated from ServerMapStats over the period.
+    // Backs the V4 server detail Maps tab. (Previously only callable from the AI
+    // plugin via the service method; no HTTP route existed, so the V4 page's
+    // `popularMaps` field came back undefined and the tab rendered empty.)
+    [HttpGet("{serverName}/maps-insights")]
+    public async Task<ActionResult<ServerMapsInsights>> GetServerMapsInsightsRoute(
+        string serverName,
+        [FromQuery] int? days)
+    {
+        if (string.IsNullOrWhiteSpace(serverName))
+            return BadRequest(ApiConstants.ValidationMessages.ServerNameEmpty);
+
+        serverName = Uri.UnescapeDataString(serverName);
+
+        try
+        {
+            var insights = await serverStatsService.GetServerMapsInsights(
+                serverName,
+                days ?? ApiConstants.TimePeriods.DefaultDays);
+
+            if (string.IsNullOrEmpty(insights.ServerGuid))
+            {
+                return NotFound($"Server '{serverName}' not found");
+            }
+
+            return Ok(insights);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
     [HttpGet("{serverName}/insights")]
     public async Task<ActionResult<ServerInsights>> GetServerInsights(
         string serverName,
