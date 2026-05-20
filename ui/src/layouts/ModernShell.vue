@@ -196,8 +196,8 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
     <footer class="mm-foot">
       <span>bfstats.io · Battlefield 1942 stats</span>
-      <router-link to="/servers/bf1942" title="Switch to the legacy command-center theme">
-        ← back to classic
+      <router-link to="/system-stats" title="System Statistics">
+        System Stats
       </router-link>
     </footer>
   </div>
