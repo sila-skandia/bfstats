@@ -84,18 +84,26 @@ const onSignIn = async () => {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 1px solid var(--mm-accent);
+  border: 2px solid var(--mm-accent-soft);
   background: var(--mm-bg-soft);
-  color: var(--mm-accent);
+  color: var(--mm-accent-soft);
   cursor: pointer;
   display: grid;
   place-items: center;
   padding: 0;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  box-shadow:
+    0 0 0 1px rgba(125, 136, 73, 0.35),
+    0 0 10px rgba(125, 136, 73, 0.28);
+  transition: border-color 0.15s ease, background-color 0.15s ease,
+              box-shadow 0.15s ease, color 0.15s ease;
 }
 .mm-header-auth__avatar:hover {
-  border-color: var(--mm-accent-soft);
+  border-color: #b4c060;
   background: var(--mm-bg-mute);
+  color: #b4c060;
+  box-shadow:
+    0 0 0 1px rgba(180, 192, 96, 0.55),
+    0 0 14px rgba(180, 192, 96, 0.45);
 }
 
 .mm-header-auth__monogram {

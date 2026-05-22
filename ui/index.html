@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BF Stats - Battlefield Server Statistics & Player Tracking</title>
+    <title>bfstats.io | Battlefield 1942 player and server stats</title>
     <meta name="description" content="Real-time Battlefield 1942, Forgotten Hope 2, and Battlefield Vietnam server monitoring. Track player statistics, server rankings, and game analytics.">
 
     <!-- SEO & Crawling -->
@@ -13,30 +13,109 @@
     <meta name="language" content="English">
     <meta name="revisit-after" content="1 days">
     <meta name="rating" content="General">
-    
+
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="BF Stats - Battlefield Server Statistics">
+    <meta property="og:title" content="bfstats.io | Battlefield 1942 player and server stats">
     <meta property="og:description" content="Real-time Battlefield server monitoring and player statistics for BF1942, FH2, and BF Vietnam.">
-    <meta property="og:site_name" content="BF Stats">
+    <meta property="og:site_name" content="bfstats.io">
     <meta property="og:locale" content="en_US">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="BF Stats - Battlefield Server Statistics">
+    <meta name="twitter:title" content="bfstats.io | Battlefield 1942 player and server stats">
     <meta name="twitter:description" content="Real-time Battlefield server monitoring and player statistics for BF1942, FH2, and BF Vietnam.">
 
     <!-- Additional SEO tags -->
     <meta name="keywords" content="Battlefield 1942, BF1942, Forgotten Hope 2, FH2, Battlefield Vietnam, BFV, server browser, player statistics, gaming stats, server monitoring, game server browser, multiplayer servers, online gaming, WWII games, Vietnam War games, retro gaming, classic battlefield, tournaments, competitive gaming, esports, tournament tracker, match results, team competition">
     <meta name="author" content="BF Stats">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#131313">
     <link rel="canonical" href="https://bfstats.io">
 
     <!-- PrimeIcons via CDN for performance -->
     <link rel="stylesheet" href="https://unpkg.com/primeicons@7.0.0/primeicons.css">
+
+    <!-- Pre-mount paint: matches the V4 (Neutral Depth) shell so first
+         paint doesn't flash the legacy slate background / sidebar before
+         Vue mounts and the lazy ModernShell chunk loads. Replaced once
+         #app is mounted. -->
+    <style>
+      body.mm-body {
+        margin: 0;
+        background: #131313;
+        color: #ffffff;
+        font-family: 'Geist Variable', 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      .mm-preload { min-height: 100vh; background: #131313; }
+      .mm-preload-topbar {
+        display: grid;
+        grid-template-columns: auto 1fr auto auto;
+        align-items: center;
+        gap: 24px;
+        padding: 16px 32px;
+        border-bottom: 1px solid #2d2d2d;
+      }
+      .mm-preload-brand { display: flex; align-items: center; gap: 12px; }
+      .mm-preload-sigil {
+        width: 36px; height: 36px;
+        background: #1a1a1a;
+        border-radius: 6px;
+        flex-shrink: 0;
+      }
+      .mm-preload-brand-text { display: flex; flex-direction: column; line-height: 1; }
+      .mm-preload-brand-name { font-size: 14px; font-weight: 500; color: #ffffff; letter-spacing: -0.005em; }
+      .mm-preload-brand-sub {
+        font-family: 'Geist Mono Variable', 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
+        font-size: 9px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #8a8a8a;
+        margin-top: 3px;
+      }
+      .mm-preload-search {
+        width: 220px; height: 30px;
+        border: 1px solid #2d2d2d;
+        border-radius: 999px;
+      }
+      .mm-preload-auth { width: 72px; height: 28px; }
+      .mm-preload-substrip {
+        height: 30px;
+        background: #1a1a1a;
+        border-bottom: 1px solid #2d2d2d;
+      }
+      @media (max-width: 880px) {
+        .mm-preload-topbar {
+          grid-template-columns: 1fr auto auto;
+          padding: 14px 18px;
+          gap: 14px;
+        }
+        .mm-preload-substrip { height: 28px; padding: 0 18px; }
+      }
+      @media (max-width: 640px) {
+        .mm-preload-search { display: none; }
+      }
+    </style>
   </head>
-  <body>
-    <div id="app"></div>
+  <body class="mm-body">
+    <div id="app">
+      <div class="mm-preload" aria-hidden="true">
+        <header class="mm-preload-topbar">
+          <div class="mm-preload-brand">
+            <div class="mm-preload-sigil"></div>
+            <div class="mm-preload-brand-text">
+              <span class="mm-preload-brand-name">bfstats.io</span>
+              <span class="mm-preload-brand-sub">Battlefield 1942 stats</span>
+            </div>
+          </div>
+          <div></div>
+          <div class="mm-preload-search"></div>
+          <div class="mm-preload-auth"></div>
+        </header>
+        <div class="mm-preload-substrip"></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
