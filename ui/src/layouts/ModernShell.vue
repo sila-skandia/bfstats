@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MmHeaderAuth from '@/components/v4/MmHeaderAuth.vue'
+import MmSiteNoticeBanner from '@/components/v4/MmSiteNoticeBanner.vue'
 import { useAuth } from '@/composables/useAuth'
 import '../styles/modern-minimal.css'
 
@@ -140,6 +141,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 <template>
   <div class="mm mm-shell">
+    <MmSiteNoticeBanner />
     <header class="mm-topbar">
       <router-link to="/v4/servers/bf1942" class="mm-brand">
         <img
