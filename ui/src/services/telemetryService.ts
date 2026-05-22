@@ -40,7 +40,7 @@ const ROUTE_TO_PAGE_TYPE: Record<string, string> = {
   'public-tournament-stats': 'tournament_stats',
   'public-tournament-files': 'tournament_files',
   'admin-tournament-details-tab': 'admin_tournament',
-  'admin-data': 'admin_data',
+  'v4-admin-data': 'admin_data',
   'system-stats': 'system_stats',
   'discord-callback': 'discord_callback',
   'community-details': 'community_details',

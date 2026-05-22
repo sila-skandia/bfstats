@@ -249,6 +249,26 @@
   background: var(--mm-ink);
 }
 
+/* Admin link — coloured in danger red so it reads as a separate,
+   privileged section. The small leading dot reinforces it without
+   needing a different typeface or background. */
+.mm-nav__link--admin {
+  color: var(--mm-danger);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mm-nav__link--admin::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mm-danger);
+}
+.mm-nav__link--admin:hover { color: var(--mm-danger); opacity: 0.8; }
+.mm-nav__link--admin.mm-nav__link--active { color: var(--mm-danger); }
+.mm-nav__link--admin.mm-nav__link--active::after { background: var(--mm-danger); }
+
 .mm-search {
   display: flex;
   align-items: center;

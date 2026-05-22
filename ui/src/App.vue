@@ -7,17 +7,17 @@ import { useSignalR } from '@/composables/useSignalR';
 import { useNotifications } from '@/composables/useNotifications';
 import { createAIContext } from '@/composables/useAIContext';
 
-// V4 pages render their own ModernShell; only the public tournament,
-// admin, and alias-detection pages still use the legacy DashboardLayout.
-// Default everything else (including '/' while its redirect to /v4 is
-// still resolving) to standalone so we don't briefly flash the legacy
-// sidebar before the V4 shell takes over.
+// V4 pages render their own ModernShell. Only the public tournament,
+// tournament-admin, and alias-detection pages still use the legacy
+// DashboardLayout. /admin/data was migrated to V4 (see
+// features/admin-v4-migration/) so /admin/ alone no longer implies
+// legacy — we narrow the prefix to /admin/tournaments/.
 const route = useRoute();
 const useStandaloneShell = computed(() => {
   const path = route.path;
   if (path.startsWith('/t/')) return false;
   if (path.startsWith('/tournaments/')) return false;
-  if (path.startsWith('/admin/')) return false;
+  if (path.startsWith('/admin/tournaments/')) return false;
   if (path === '/alias-detection') return false;
   return true;
 });
