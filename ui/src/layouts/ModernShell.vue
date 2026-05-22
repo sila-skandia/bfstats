@@ -2,18 +2,29 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MmHeaderAuth from '@/components/v4/MmHeaderAuth.vue'
+import { useAuth } from '@/composables/useAuth'
 import '../styles/modern-minimal.css'
 
-interface NavItem { label: string; to: string; key: string }
-const navItems: NavItem[] = [
+interface NavItem { label: string; to: string; key: string; admin?: boolean }
+const baseNavItems: NavItem[] = [
   { label: 'Servers', to: '/v4/servers/bf1942', key: 'servers' },
   { label: 'Players', to: '/v4/players', key: 'players' },
   { label: 'Rounds', to: '/v4/rounds', key: 'rounds' },
 ]
 
+const { isSupport } = useAuth()
+const navItems = computed<NavItem[]>(() => {
+  const items = [...baseNavItems]
+  if (isSupport.value) {
+    items.push({ label: 'Admin', to: '/v4/admin/data', key: 'admin', admin: true })
+  }
+  return items
+})
+
 const route = useRoute()
 const activeKey = computed(() => {
   const path = route.path
+  if (path.startsWith('/admin') || path.startsWith('/v4/admin')) return 'admin'
   if (path.startsWith('/v4/servers')) return 'servers'
   if (path.startsWith('/v4/players')) return 'players'
   if (path.startsWith('/v4/rounds')) return 'rounds'
@@ -148,7 +159,10 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           :key="item.key"
           :to="item.to"
           class="mm-nav__link"
-          :class="{ 'mm-nav__link--active': activeKey === item.key }"
+          :class="{
+            'mm-nav__link--active': activeKey === item.key,
+            'mm-nav__link--admin': item.admin,
+          }"
         >
           {{ item.label }}
         </router-link>

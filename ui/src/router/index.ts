@@ -14,7 +14,7 @@ const PublicTournamentTeams = () => import('../views/PublicTournamentTeams.vue')
 const PublicTournamentMatches = () => import('../views/PublicTournamentMatches.vue')
 const PublicTournamentStats = () => import('../views/PublicTournamentStats.vue')
 const PublicTournamentFiles = () => import('../views/PublicTournamentFiles.vue')
-const AdminDataManagement = () => import('../views/AdminDataManagement.vue')
+const AdminDataManagementV4 = () => import('../views/v4/AdminDataManagementV4.vue')
 const AliasDetectionView = () => import('../views/AliasDetectionView.vue')
 
 // v4 — modern-minimal theme (parallel preview, accessible at /v4/*)
@@ -232,23 +232,7 @@ const routes: RouteRecordRaw[] = [
         }
       }
     },
-    {
-      path: '/admin/data',
-      name: 'admin-data',
-      component: AdminDataManagement,
-      meta: {
-        title: 'Admin Data Management - BF Stats',
-        description: 'Investigate and delete suspicious player sessions.'
-      },
-      beforeEnter: (_to, _from, next) => {
-        const { isAuthenticated, isSupport } = useAuth()
-        if (!isAuthenticated.value || !isSupport.value) {
-          next('/dashboard')
-        } else {
-          next()
-        }
-      }
-    },
+    { path: '/admin/data', redirect: '/v4/admin/data' },
     {
       path: '/auth/discord/callback',
       name: 'discord-callback',
@@ -287,7 +271,7 @@ const routes: RouteRecordRaw[] = [
           component: LandingPageV4,
           props: true,
           meta: {
-            title: 'Servers · bfstats.io',
+            title: 'bfstats.io | Battlefield 1942 player and server stats',
             description: 'Live Battlefield 1942 server list and player counts.'
           }
         },
@@ -437,6 +421,23 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: 'Community · bfstats.io',
             description: 'Detected play-group, members, and primary servers.'
+          }
+        },
+        {
+          path: 'admin/data',
+          name: 'v4-admin-data',
+          component: AdminDataManagementV4,
+          meta: {
+            title: 'Admin · Data intel · bfstats.io',
+            description: 'Investigate and delete suspicious player sessions.'
+          },
+          beforeEnter: (_to, _from, next) => {
+            const { isAuthenticated, isSupport } = useAuth()
+            if (!isAuthenticated.value || !isSupport.value) {
+              next('/v4/servers/bf1942')
+            } else {
+              next()
+            }
           }
         }
       ]

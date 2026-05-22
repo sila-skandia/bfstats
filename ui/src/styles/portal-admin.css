@@ -1,5 +1,6 @@
 /* Shared portal admin styles for tabbed admin interfaces.
- * Used by AdminDataManagement.vue and TournamentDetails.vue */
+ * Used by TournamentDetails.vue (tournament admin). AdminDataManagement
+ * was migrated to V4 — see features/admin-v4-migration/. */
 
 /* Base portal wrapper - apply to root element */
 .portal-admin {
