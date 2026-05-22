@@ -7,14 +7,20 @@ import { useSignalR } from '@/composables/useSignalR';
 import { useNotifications } from '@/composables/useNotifications';
 import { createAIContext } from '@/composables/useAIContext';
 
-// V4 pages render their own ModernShell; tournament + admin pages still
-// use the legacy DashboardLayout. The Discord OAuth callback is also
-// standalone (its own dark Neutral Depth surface) so it doesn't briefly
-// flash the legacy sidebar mid-handshake.
+// V4 pages render their own ModernShell; only the public tournament,
+// admin, and alias-detection pages still use the legacy DashboardLayout.
+// Default everything else (including '/' while its redirect to /v4 is
+// still resolving) to standalone so we don't briefly flash the legacy
+// sidebar before the V4 shell takes over.
 const route = useRoute();
-const useStandaloneShell = computed(() =>
-  route.path.startsWith('/v4') || route.path.startsWith('/auth/'),
-);
+const useStandaloneShell = computed(() => {
+  const path = route.path;
+  if (path.startsWith('/t/')) return false;
+  if (path.startsWith('/tournaments/')) return false;
+  if (path.startsWith('/admin/')) return false;
+  if (path === '/alias-detection') return false;
+  return true;
+});
 
 // The legacy dark slate body background bleeds through on overscroll —
 // flip the body class so v4 sits on its own cream backdrop.
@@ -70,8 +76,10 @@ onMounted(async () => {
   // Apply initial theme
   updateTheme();
 
-  // Match initial body class to current route on first paint.
-  if (useStandaloneShell.value) document.body.classList.add('mm-body');
+  // Match initial body class to current route. index.html pre-paints with
+  // mm-body so V4/standalone routes have no flash; here we strip it for
+  // the legacy DashboardLayout paths.
+  document.body.classList.toggle('mm-body', useStandaloneShell.value);
 
   // Listen for system preference changes
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
