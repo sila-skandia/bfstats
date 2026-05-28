@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import MmHeaderAuth from '@/components/v4/MmHeaderAuth.vue'
 import MmSiteNoticeBanner from '@/components/v4/MmSiteNoticeBanner.vue'
 import { useAuth } from '@/composables/useAuth'
+import { isNavigating } from '@/composables/useNavProgress'
 import '../styles/modern-minimal.css'
 
 interface NavItem { label: string; to: string; key: string; admin?: boolean }
@@ -141,6 +142,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 <template>
   <div class="mm mm-shell">
+    <div class="mm-nav-progress" :class="{ 'mm-nav-progress--active': isNavigating }" aria-hidden="true" />
     <MmSiteNoticeBanner />
     <header class="mm-topbar">
       <router-link to="/v4/servers/bf1942" class="mm-brand">

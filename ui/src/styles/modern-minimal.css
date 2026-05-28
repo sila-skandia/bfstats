@@ -1036,6 +1036,32 @@
   padding: 4px 0;
 }
 
+/* ---------- nav progress bar ---------- */
+
+.mm-nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--mm-accent);
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.mm-nav-progress--active {
+  opacity: 1;
+  animation: mm-progress-run 1.8s ease-in-out infinite;
+}
+
+@keyframes mm-progress-run {
+  0%   { width: 0;    opacity: 1; }
+  60%  { width: 75%;  opacity: 1; }
+  100% { width: 92%;  opacity: 1; }
+}
+
 /* ---------- footer strip ---------- */
 
 .mm-foot {
