@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw, type RouteLocationNormalized } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { telemetryService } from '../services/telemetryService'
+import { isNavigating } from '../composables/useNavProgress'
 
 // Legacy routes have been migrated to V4 — only views that are kept (Discord
 // callback, tournaments, admin) are still imported here. All public stats
@@ -461,6 +462,10 @@ const router = createRouter({
     return { top: 0, behavior: 'auto' as ScrollBehavior }
   },
 })
+
+// Navigation progress indicator
+router.beforeEach(() => { isNavigating.value = true })
+router.afterEach(() => { isNavigating.value = false })
 
 // Page-view telemetry beacon — one event per resolved navigation, tied to canonical route name.
 router.afterEach((to) => {
