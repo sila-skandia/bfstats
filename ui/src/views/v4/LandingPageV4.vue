@@ -109,6 +109,8 @@ const openRoster = (s: ServerSummary) => {
 const closeRoster = () => {
   showRoster.value = false
 }
+
+const isInitialLoad = computed(() => loading.value && servers.value.length === 0)
 </script>
 
 <template>
@@ -121,11 +123,20 @@ const closeRoster = () => {
           {{ networkStatus.label }}
         </span>
         <span class="mm-meta-row__sep">·</span>
-        <span class="mm-meta-row__strong">{{ formatNumber(activeCount) }}</span> active hosts
+        <span class="mm-meta-row__strong">
+          <span v-if="isInitialLoad" class="mm-skeleton" style="width: 16px; height: 1em; display: inline-block; vertical-align: middle"></span>
+          <template v-else>{{ formatNumber(activeCount) }}</template>
+        </span> active hosts
         <span class="mm-meta-row__sep">·</span>
-        <span class="mm-meta-row__strong">{{ formatNumber(servers.length) }}</span> tracked
+        <span class="mm-meta-row__strong">
+          <span v-if="isInitialLoad" class="mm-skeleton" style="width: 24px; height: 1em; display: inline-block; vertical-align: middle"></span>
+          <template v-else>{{ formatNumber(servers.length) }}</template>
+        </span> tracked
         <span class="mm-meta-row__sep">·</span>
-        Network load <span class="mm-meta-row__strong">{{ loadPercent }}%</span>
+        Network load <span class="mm-meta-row__strong">
+          <span v-if="isInitialLoad" class="mm-skeleton" style="width: 28px; height: 1em; display: inline-block; vertical-align: middle"></span>
+          <template v-else>{{ loadPercent }}%</template>
+        </span>
         <span class="mm-meta-row__sep">·</span>
         <span
           class="mm-refresh-ring"
@@ -155,11 +166,15 @@ const closeRoster = () => {
 
     <!-- editorial hero -->
     <h1 class="mm-display mm-landing__hero-only">
-      <span :class="loadClass(totalCapacity ? totalPlayers / totalCapacity : 0)">{{ formatNumber(totalPlayers) }}</span>
+      <span v-if="isInitialLoad" class="mm-skeleton" style="width: 80px; height: 1em; display: inline-block; vertical-align: middle"></span>
+      <span v-else :class="loadClass(totalCapacity ? totalPlayers / totalCapacity : 0)">{{ formatNumber(totalPlayers) }}</span>
       <span class="mm-display__muted" style="margin-left: 0.3em">in combat</span>
     </h1>
     <p class="mm-display mm-landing__hero-only" style="font-size: clamp(20px, 2vw, 26px); margin-top: 8px; color: var(--mm-ink-soft)">
-      across {{ formatNumber(activeCount) }} live {{ GAME_LABEL }} servers tonight.
+      across
+      <span v-if="isInitialLoad" class="mm-skeleton" style="width: 30px; height: 1em; display: inline-block; vertical-align: middle"></span>
+      <template v-else>{{ formatNumber(activeCount) }}</template>
+      live {{ GAME_LABEL }} servers tonight.
     </p>
 
     <hr class="mm-rule mm-landing__hero-only" style="margin-top: 32px" />
@@ -169,31 +184,49 @@ const closeRoster = () => {
       <div class="mm-stats__cell">
         <div class="mm-stats__label">Players online</div>
         <div class="mm-stat__value" :class="loadClass(totalCapacity ? totalPlayers / totalCapacity : 0)">
-          {{ formatNumber(totalPlayers) }}
+          <div v-if="isInitialLoad" class="mm-skeleton" style="width: 60px; height: 1em; display: inline-block; vertical-align: middle"></div>
+          <template v-else>{{ formatNumber(totalPlayers) }}</template>
         </div>
-        <div class="mm-stat__delta">of {{ formatNumber(totalCapacity) }} capacity</div>
+        <div class="mm-stat__delta">
+          <div v-if="isInitialLoad" class="mm-skeleton" style="width: 100px; height: 1em; display: inline-block; vertical-align: middle"></div>
+          <template v-else>of {{ formatNumber(totalCapacity) }} capacity</template>
+        </div>
       </div>
       <div class="mm-stats__cell">
         <div class="mm-stats__label">Active servers</div>
-        <div class="mm-stat__value">{{ formatNumber(activeCount) }}</div>
-        <div class="mm-stat__delta">of {{ formatNumber(servers.length) }} tracked</div>
+        <div class="mm-stat__value">
+          <div v-if="isInitialLoad" class="mm-skeleton" style="width: 40px; height: 1em; display: inline-block; vertical-align: middle"></div>
+          <template v-else>{{ formatNumber(activeCount) }}</template>
+        </div>
+        <div class="mm-stat__delta">
+          <div v-if="isInitialLoad" class="mm-skeleton" style="width: 80px; height: 1em; display: inline-block; vertical-align: middle"></div>
+          <template v-else>of {{ formatNumber(servers.length) }} tracked</template>
+        </div>
       </div>
       <div class="mm-stats__cell">
         <div class="mm-stats__label">Network load</div>
         <div class="mm-stat__value" :class="loadClass(loadPercent / 100)">
-          {{ loadPercent }}<span class="mm-stat__suffix">%</span>
+          <div v-if="isInitialLoad" class="mm-skeleton" style="width: 60px; height: 1em; display: inline-block; vertical-align: middle"></div>
+          <template v-else>{{ loadPercent }}<span class="mm-stat__suffix">%</span></template>
         </div>
-        <div class="mm-stat__delta">across all hosts</div>
+        <div class="mm-stat__delta">
+          <div v-if="isInitialLoad" class="mm-skeleton" style="width: 80px; height: 1em; display: inline-block; vertical-align: middle"></div>
+          <template v-else>across all hosts</template>
+        </div>
       </div>
       <div class="mm-stats__cell">
         <div class="mm-stats__label">Top server</div>
-        <div v-if="topServer" class="mm-stat__value mm-stat__value--small" :title="topServer.name">
+        <div v-if="isInitialLoad" class="mm-stat__value mm-stat__value--small">
+          <div class="mm-skeleton" style="width: 60px; height: 1em; display: inline-block; vertical-align: middle"></div>
+        </div>
+        <div v-else-if="topServer" class="mm-stat__value mm-stat__value--small" :title="topServer.name">
           <span :class="loadClass(topServer.maxPlayers ? topServer.numPlayers / topServer.maxPlayers : 0)">
             {{ topServer.numPlayers }}</span><span class="mm-stat__suffix">/{{ topServer.maxPlayers }}</span>
         </div>
         <div v-else class="mm-stat__value mm-stat__value--small">—</div>
         <div class="mm-stat__delta" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">
-          {{ topServer ? topServer.name : 'awaiting feed' }}
+          <div v-if="isInitialLoad" class="mm-skeleton" style="width: 120px; height: 1em; display: inline-block; vertical-align: middle"></div>
+          <template v-else>{{ topServer ? topServer.name : 'awaiting feed' }}</template>
         </div>
       </div>
     </div>
