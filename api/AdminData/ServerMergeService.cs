@@ -153,12 +153,21 @@ public class ServerMergeService(
 
         // Close any still-active rounds on the dupes — only the primary should retain a
         // live round after merge, otherwise the live-servers query trips on duplicate keys.
+        // Recent rounds close at merge time; anything older gets a bounded duration —
+        // EndTime = now on a months-old orphan would leave a round "lasting" months,
+        // which the round report renders as one snapshot per minute of that span.
         var nowUtc = DateTime.UtcNow;
+        var recentCutoff = nowUtc.AddHours(-24);
+        await dbContext.Rounds
+            .Where(r => dupeGuids.Contains(r.ServerGuid) && r.IsActive && r.StartTime >= recentCutoff)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.IsActive, false)
+                .SetProperty(r => r.EndTime, (DateTime?)nowUtc));
         await dbContext.Rounds
             .Where(r => dupeGuids.Contains(r.ServerGuid) && r.IsActive)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(r => r.IsActive, false)
-                .SetProperty(r => r.EndTime, (DateTime?)nowUtc));
+                .SetProperty(r => r.EndTime, r => (DateTime?)r.StartTime.AddMinutes(60)));
 
         var repointedRounds = await dbContext.Rounds
             .Where(r => dupeGuids.Contains(r.ServerGuid))
