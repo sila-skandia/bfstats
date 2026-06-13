@@ -350,8 +350,10 @@ try
                 tracing.AddSource(ActivitySources.SqliteAnalytics.Name);
                 tracing.AddSource(ActivitySources.Backfill.Name);
                 tracing.AddSource(ActivitySources.AIChat.Name);
+                // StatsCollection cycles are traced so slow/skipped cycles (which blank
+                // out live player counts) are visible in Seq.
+                tracing.AddSource(ActivitySources.StatsCollection.Name);
                 // Background service sources intentionally excluded:
-                // tracing.AddSource(ActivitySources.StatsCollection.Name);
                 // tracing.AddSource(ActivitySources.Gamification.Name);
             }
         );

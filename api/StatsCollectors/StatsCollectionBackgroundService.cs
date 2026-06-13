@@ -43,7 +43,10 @@ public class StatsCollectionBackgroundService(
     {
         if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0)
         {
-            return; // Previous collection still running
+            // A skipped cycle widens the LastSeenTime gap past the live-servers
+            // 1-minute freshness window, making every server show 0 players.
+            logger.LogWarning("Skipping stats collection cycle #{Cycle}: previous cycle still running", _cycleCount);
+            return;
         }
 
         // Clear any inherited activity context to prevent Timer callbacks from
