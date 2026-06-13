@@ -202,19 +202,25 @@ public class RoundsController(
     [HttpGet("{roundId}/report")]
     public async Task<ActionResult<SessionRoundReport>> GetRoundReport(
         string roundId,
-        [FromServices] Gamification.Services.SqliteGamificationService gamificationService)
+        [FromServices] Gamification.Services.SqliteGamificationService gamificationService,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(roundId))
             return BadRequest("Round ID is required");
 
         try
         {
-            var roundReport = await roundsService.GetRoundReport(roundId, gamificationService);
+            var roundReport = await roundsService.GetRoundReport(roundId, gamificationService, cancellationToken);
 
             if (roundReport == null)
                 return NotFound($"Round '{roundId}' not found");
 
             return Ok(roundReport);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Client gave up — stop the work instead of grinding to completion for nobody.
+            return new EmptyResult();
         }
         catch (Exception ex)
         {

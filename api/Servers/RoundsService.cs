@@ -494,7 +494,25 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         return Math.Round(closenessScore * 0.5 + fillRate * 0.25 + populationWeight * 0.15 + urgency * 0.10, 4);
     }
 
-    public async Task<SessionRoundReport?> GetRoundReport(string roundId, Gamification.Services.SqliteGamificationService gamificationService)
+    // Hard ceiling on the per-round snapshot timeline. A round left IsActive with no
+    // EndTime (e.g. a pre-merge orphan) would otherwise make the minute loop span
+    // months and pin a core for the whole request (the June 2026 zombie-loop incident).
+    internal const int MaxSnapshotMinutes = 360;
+
+    internal sealed record SnapshotObservation(
+        DateTime Timestamp,
+        int Score,
+        int Kills,
+        int Deaths,
+        int Ping,
+        int Team,
+        string TeamLabel,
+        string PlayerName);
+
+    public async Task<SessionRoundReport?> GetRoundReport(
+        string roundId,
+        Gamification.Services.SqliteGamificationService gamificationService,
+        CancellationToken ct = default)
     {
         // First, get just the round data we need
         var roundData = await dbContext.Rounds
@@ -516,7 +534,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 r.Team2Label,
                 SessionIds = r.Sessions.Select(s => s.SessionId).ToList()
             })
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(ct);
 
         if (roundData == null)
             return null;
@@ -526,8 +544,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             .Include(o => o.Session)
             .Where(o => roundData.SessionIds.Contains(o.SessionId))
             .OrderBy(o => o.Timestamp)
-            .Select(o => new
-            {
+            .Select(o => new SnapshotObservation(
                 o.Timestamp,
                 o.Score,
                 o.Kills,
@@ -535,64 +552,18 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 o.Ping,
                 o.Team,
                 o.TeamLabel,
-                PlayerName = o.Session.PlayerName
-            })
-            .ToListAsync();
+                o.Session.PlayerName))
+            .ToListAsync(ct);
 
-        // Create leaderboard snapshots starting from round start
-        var leaderboardSnapshots = new List<LeaderboardSnapshot>();
-        var currentTime = roundData.StartTime;
-        var endTime = roundData.EndTime ?? DateTime.UtcNow;
-
-        while (currentTime <= endTime)
+        var roundEnd = roundData.EndTime ?? DateTime.UtcNow;
+        if (roundEnd > roundData.StartTime.AddMinutes(MaxSnapshotMinutes))
         {
-            // Get the latest score for each player at this time
-            var playerScores = roundObservations
-                .Where(o => o.Timestamp <= currentTime)
-                .GroupBy(o => o.PlayerName)
-                .Select(g =>
-                {
-                    var obs = g.OrderByDescending(x => x.Timestamp).First();
-                    return new
-                    {
-                        PlayerName = g.Key,
-                        Score = obs.Score,
-                        Kills = obs.Kills,
-                        Deaths = obs.Deaths,
-                        Ping = obs.Ping,
-                        Team = obs.Team,
-                        TeamLabel = obs.TeamLabel,
-                        LastSeen = obs.Timestamp
-                    };
-                })
-                .Where(x => x.LastSeen >= currentTime.AddMinutes(-1)) // Only include players seen in last minute
-                .OrderByDescending(x => x.Score)
-                .Select((x, i) => new LeaderboardEntry
-                {
-                    Rank = i + 1,
-                    PlayerName = x.PlayerName,
-                    Score = x.Score,
-                    Kills = x.Kills,
-                    Deaths = x.Deaths,
-                    Ping = x.Ping,
-                    Team = x.Team,
-                    TeamLabel = x.TeamLabel
-                })
-                .ToList();
-
-            leaderboardSnapshots.Add(new LeaderboardSnapshot
-            {
-                Timestamp = currentTime,
-                Entries = playerScores
-            });
-
-            currentTime = currentTime.AddMinutes(1);
+            logger.LogWarning(
+                "Round {RoundId} spans {Minutes:F0} minutes — capping leaderboard snapshots at {Cap} minutes",
+                roundId, (roundEnd - roundData.StartTime).TotalMinutes, MaxSnapshotMinutes);
         }
 
-        // Filter out empty snapshots
-        leaderboardSnapshots = leaderboardSnapshots
-            .Where(snapshot => snapshot.Entries.Any())
-            .ToList();
+        var leaderboardSnapshots = BuildLeaderboardSnapshots(roundData.StartTime, roundEnd, roundObservations, ct);
 
         // Get achievements for this round using the dedicated method
         List<Gamification.Models.Achievement> achievements = new();
@@ -625,6 +596,62 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             LeaderboardSnapshots = leaderboardSnapshots,
             Achievements = achievements
         };
+    }
+
+    /// <summary>
+    /// One pass over the observations (already ordered by timestamp): keep each player's
+    /// latest observation in a dictionary and emit a snapshot at each minute boundary.
+    /// Replaces the previous per-minute re-filter/re-group of the entire observation
+    /// list, which was O(minutes × observations). The timeline is capped at
+    /// <see cref="MaxSnapshotMinutes"/> so no data state can make it unbounded.
+    /// </summary>
+    internal static List<LeaderboardSnapshot> BuildLeaderboardSnapshots(
+        DateTime roundStart,
+        DateTime roundEnd,
+        IReadOnlyList<SnapshotObservation> observations,
+        CancellationToken ct = default)
+    {
+        var cappedEnd = roundStart.AddMinutes(MaxSnapshotMinutes);
+        if (roundEnd < cappedEnd) cappedEnd = roundEnd;
+
+        var snapshots = new List<LeaderboardSnapshot>();
+        var latestByPlayer = new Dictionary<string, SnapshotObservation>();
+        var next = 0;
+
+        for (var t = roundStart; t <= cappedEnd; t = t.AddMinutes(1))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            while (next < observations.Count && observations[next].Timestamp <= t)
+            {
+                var o = observations[next++];
+                latestByPlayer[o.PlayerName] = o;
+            }
+
+            var seenSince = t.AddMinutes(-1); // only include players seen in the last minute
+            var entries = latestByPlayer.Values
+                .Where(o => o.Timestamp >= seenSince)
+                .OrderByDescending(o => o.Score)
+                .Select((o, i) => new LeaderboardEntry
+                {
+                    Rank = i + 1,
+                    PlayerName = o.PlayerName,
+                    Score = o.Score,
+                    Kills = o.Kills,
+                    Deaths = o.Deaths,
+                    Ping = o.Ping,
+                    Team = o.Team,
+                    TeamLabel = o.TeamLabel
+                })
+                .ToList();
+
+            if (entries.Count > 0)
+            {
+                snapshots.Add(new LeaderboardSnapshot { Timestamp = t, Entries = entries });
+            }
+        }
+
+        return snapshots;
     }
 }
 
