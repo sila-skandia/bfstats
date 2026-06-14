@@ -237,6 +237,18 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
       <MmInstallationLinks variant="cta-strip" />
     </div>
 
+    <!-- search-all entry — the list below is live servers only; this finds
+         every tracked server (offline / historical) by name. -->
+    <div class="mm-landing__search-all">
+      <router-link to="/v4/servers/search" class="mm-landing__search-link">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+        Search all servers
+      </router-link>
+    </div>
+
     <!-- list -->
     <div v-if="loading && servers.length === 0" style="padding: 40px 0">
       <div v-for="i in 6" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
@@ -397,6 +409,38 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   color: var(--mm-ink-faint);
   border-color: var(--mm-rule);
   cursor: not-allowed;
+}
+
+.mm-landing__search-all {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.mm-landing__search-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mm-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+  text-decoration: none;
+  padding: 7px 12px;
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.mm-landing__search-link:hover {
+  color: var(--mm-accent);
+  border-color: var(--mm-accent);
+}
+
+@media (max-width: 640px) {
+  .mm-landing__search-all { justify-content: stretch; }
+  .mm-landing__search-link { flex: 1; justify-content: center; }
 }
 
 /* CTA strip only shows on mobile — desktop keeps the inline install button
