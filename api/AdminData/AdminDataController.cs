@@ -231,7 +231,8 @@ public class AdminDataController(
 
         try
         {
-            var result = await serverMergeService.MergeServersAsync(request.PrimaryGuid, request.DuplicateGuids, adminEmail);
+            var result = await serverMergeService.MergeServersAsync(
+                request.PrimaryGuid, request.DuplicateGuids, adminEmail, request.Force);
             return Ok(result);
         }
         catch (ArgumentException ex)
