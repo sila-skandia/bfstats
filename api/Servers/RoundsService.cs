@@ -497,9 +497,9 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
     // Hard ceiling on the per-round snapshot timeline. A round left IsActive with no
     // EndTime (e.g. a pre-merge orphan) would otherwise make the minute loop span
     // months and pin a core for the whole request (the June 2026 zombie-loop incident).
-    internal const int MaxSnapshotMinutes = 360;
+    public const int MaxSnapshotMinutes = 360;
 
-    internal sealed record SnapshotObservation(
+    public sealed record SnapshotObservation(
         DateTime Timestamp,
         int Score,
         int Kills,
@@ -605,7 +605,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
     /// list, which was O(minutes × observations). The timeline is capped at
     /// <see cref="MaxSnapshotMinutes"/> so no data state can make it unbounded.
     /// </summary>
-    internal static List<LeaderboardSnapshot> BuildLeaderboardSnapshots(
+    public static List<LeaderboardSnapshot> BuildLeaderboardSnapshots(
         DateTime roundStart,
         DateTime roundEnd,
         IReadOnlyList<SnapshotObservation> observations,

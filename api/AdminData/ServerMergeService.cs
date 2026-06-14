@@ -184,45 +184,39 @@ public class ServerMergeService(
             .ExecuteUpdateAsync(s => s.SetProperty(pa => pa.ServerGuid, primaryGuid));
 
         // ServerOnlineCount has unique (ServerGuid, HourTimestamp). Sessions don't overlap in time
-        // but a mid-hour bounce can leave both GUIDs with a row at the same hour bucket. Merge
-        // overlapping hours into the primary (sample-weighted average, max peak, summed sample
-        // count), drop the duplicate's overlapping rows, then re-point the rest.
-        var inListPlaceholders = string.Join(",", dupeGuids.Select((_, i) => $"{{{i + 1}}}"));
+        // but a mid-hour bounce can leave both GUIDs with a row at the same hour bucket.
+        // We aggregate allparticipating servers into a temp table, then replace the original
+        // records with the aggregated ones for the primary server.
         var sqlParams = new List<object> { primaryGuid };
         sqlParams.AddRange(dupeGuids);
         var sqlParamsArray = sqlParams.ToArray();
+        var allGuidsPlaceholders = string.Join(",", sqlParams.Select((_, i) => $"{{{i}}}"));
+
+        await dbContext.Database.ExecuteSqlRawAsync("CREATE TEMP TABLE TempServerMerge (HourTimestamp TEXT, Game TEXT, AvgPlayers REAL, PeakPlayers INTEGER, SampleCount INTEGER)");
 
         await dbContext.Database.ExecuteSqlRawAsync($@"
-            UPDATE ServerOnlineCounts
-            SET AvgPlayers = CASE WHEN (SampleCount + d.TotalSamples) > 0
-                    THEN (AvgPlayers * SampleCount + d.WeightedSum) * 1.0 / (SampleCount + d.TotalSamples)
-                    ELSE 0 END,
-                PeakPlayers = MAX(PeakPlayers, d.MaxPeak),
-                SampleCount = SampleCount + d.TotalSamples
-            FROM (
-                SELECT HourTimestamp,
-                       SUM(AvgPlayers * SampleCount) AS WeightedSum,
-                       MAX(PeakPlayers) AS MaxPeak,
-                       SUM(SampleCount) AS TotalSamples
-                FROM ServerOnlineCounts
-                WHERE ServerGuid IN ({inListPlaceholders})
-                GROUP BY HourTimestamp
-            ) AS d
-            WHERE ServerOnlineCounts.ServerGuid = {{0}}
-              AND ServerOnlineCounts.HourTimestamp = d.HourTimestamp",
+            INSERT INTO TempServerMerge (HourTimestamp, Game, AvgPlayers, PeakPlayers, SampleCount)
+            SELECT HourTimestamp, Game,
+                   CASE WHEN SUM(SampleCount) > 0 THEN SUM(AvgPlayers * SampleCount) * 1.0 / SUM(SampleCount) ELSE 0 END,
+                   MAX(PeakPlayers),
+                   SUM(SampleCount)
+            FROM ServerOnlineCounts
+            WHERE ServerGuid IN ({allGuidsPlaceholders})
+            GROUP BY HourTimestamp, Game",
             sqlParamsArray);
 
         await dbContext.Database.ExecuteSqlRawAsync($@"
             DELETE FROM ServerOnlineCounts
-            WHERE ServerGuid IN ({inListPlaceholders})
-              AND HourTimestamp IN (
-                  SELECT HourTimestamp FROM ServerOnlineCounts WHERE ServerGuid = {{0}}
-              )",
+            WHERE ServerGuid IN ({allGuidsPlaceholders})",
             sqlParamsArray);
 
-        var repointedOnlineCounts = await dbContext.ServerOnlineCounts
-            .Where(soc => dupeGuids.Contains(soc.ServerGuid))
-            .ExecuteUpdateAsync(s => s.SetProperty(soc => soc.ServerGuid, primaryGuid));
+        var repointedOnlineCounts = await dbContext.Database.ExecuteSqlRawAsync($@"
+            INSERT INTO ServerOnlineCounts (ServerGuid, HourTimestamp, Game, AvgPlayers, PeakPlayers, SampleCount)
+            SELECT {{0}}, HourTimestamp, Game, AvgPlayers, PeakPlayers, SampleCount
+            FROM TempServerMerge",
+            sqlParamsArray);
+
+        await dbContext.Database.ExecuteSqlRawAsync("DROP TABLE TempServerMerge");
 
         await dbContext.Tournaments
             .Where(t => t.ServerGuid != null && dupeGuids.Contains(t.ServerGuid))
