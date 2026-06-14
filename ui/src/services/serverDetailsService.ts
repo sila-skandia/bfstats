@@ -369,6 +369,50 @@ export async function fetchAllServers(
   }
 }
 
+// A single server row from /stats/servers/search (ServerBasicInfo). Covers
+// every tracked server (online or not), unlike the live-only fetchAllServers.
+export interface ServerSearchItem {
+  serverGuid: string;
+  serverName: string;
+  gameId: string;
+  serverIp: string;
+  serverPort: number;
+  country?: string | null;
+  region?: string | null;
+  city?: string | null;
+  timezone?: string | null;
+  totalActivePlayersLast24h: number;
+  totalPlayersAllTime: number;
+  currentMap?: string | null;
+  hasActivePlayers: boolean;
+  lastActivity?: string | null;
+}
+
+export interface PagedServers {
+  items: ServerSearchItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+/**
+ * Search all tracked servers by name (paginated). Backs the /v4/servers/search
+ * page — mirrors the players search but over the server registry, so it finds
+ * offline / historical servers too.
+ */
+export async function searchServers(
+  query: string,
+  page = 1,
+  pageSize = 25,
+  game: 'bf1942' | 'fh2' | 'bfvietnam' = 'bf1942'
+): Promise<PagedServers> {
+  const response = await axios.get<PagedServers>('/stats/servers/search', {
+    params: { query: query.trim(), game, page, pageSize },
+  });
+  return response.data;
+}
+
 /**
  * Fetches live server data from backend API using cached endpoint
  * @param gameId The game ID ('fh2' for Forgotten Hope 2, 'bf1942' for BF1942, 'bfvietnam' for Battlefield Vietnam)

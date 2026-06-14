@@ -24,6 +24,7 @@ const LandingPageV4 = () => import('../views/v4/LandingPageV4.vue')
 const PlayerDetailsV4 = () => import('../views/v4/PlayerDetailsV4.vue')
 const ServerDetailsV4 = () => import('../views/v4/ServerDetailsV4.vue')
 const PlayersV4 = () => import('../views/v4/PlayersV4.vue')
+const ServersV4 = () => import('../views/v4/ServersV4.vue')
 const PlayerAllAchievementsV4 = () => import('../views/v4/PlayerAllAchievementsV4.vue')
 const PlayerSessionsV4 = () => import('../views/v4/PlayerSessionsV4.vue')
 const PlayerNetworkV4 = () => import('../views/v4/PlayerNetworkV4.vue')
@@ -324,6 +325,15 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: (route: RouteLocationNormalized) => `${route.params.mapName} · ${route.params.playerName} · bfstats.io`,
             description: 'Rankings on a single map for this player.'
+          }
+        },
+        {
+          path: 'servers/search',
+          name: 'v4-servers-search',
+          component: ServersV4,
+          meta: {
+            title: 'Search servers · bfstats.io',
+            description: 'Search every tracked Battlefield 1942 server by name.'
           }
         },
         {

@@ -80,7 +80,8 @@ public class ServerMergeService(
     public async Task<MergeServersResponse> MergeServersAsync(
         string primaryGuid,
         IReadOnlyList<string> duplicateGuids,
-        string adminEmail)
+        string adminEmail,
+        bool allowMismatchedIdentity = false)
     {
         if (string.IsNullOrWhiteSpace(primaryGuid))
             throw new ArgumentException("primaryGuid is required", nameof(primaryGuid));
@@ -107,22 +108,27 @@ public class ServerMergeService(
         if (missing.Count > 0)
             throw new InvalidOperationException($"Server(s) not found: {string.Join(", ", missing)}");
 
-        // Identity check: every duplicate must share Game/Ip/Port/Name with primary
-        foreach (var dup in servers.Where(s => s.Guid != primaryGuid))
+        // Identity check: every duplicate must share Game/Ip/Port/Name with primary.
+        // Skipped for admin-forced manual merges (a server that changed its name/IP over
+        // time but is the same physical host), where the admin asserts the identity.
+        if (!allowMismatchedIdentity)
         {
-            if (!string.Equals(dup.Game, primary.Game, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(dup.Ip, primary.Ip, StringComparison.OrdinalIgnoreCase)
-                || dup.Port != primary.Port
-                || !string.Equals(dup.Name, primary.Name, StringComparison.Ordinal))
+            foreach (var dup in servers.Where(s => s.Guid != primaryGuid))
             {
-                throw new InvalidOperationException(
-                    $"Server {dup.Guid} differs from primary on Game/Ip/Port/Name. Refusing to merge.");
+                if (!string.Equals(dup.Game, primary.Game, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(dup.Ip, primary.Ip, StringComparison.OrdinalIgnoreCase)
+                    || dup.Port != primary.Port
+                    || !string.Equals(dup.Name, primary.Name, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Server {dup.Guid} differs from primary on Game/Ip/Port/Name. Refusing to merge.");
+                }
             }
         }
 
         logger.LogInformation(
-            "Starting server merge: primary={PrimaryGuid} duplicates=[{DupeGuids}] requested by {AdminEmail}",
-            primaryGuid, string.Join(",", dupeGuids), adminEmail);
+            "Starting server merge: primary={PrimaryGuid} duplicates=[{DupeGuids}] forced={Forced} requested by {AdminEmail}",
+            primaryGuid, string.Join(",", dupeGuids), allowMismatchedIdentity, adminEmail);
 
         // Snapshot impact (before re-pointing) for recalc and audit
         var affectedPlayers = await dbContext.PlayerSessions
@@ -286,6 +292,7 @@ public class ServerMergeService(
         var auditDetails = JsonSerializer.Serialize(new
         {
             DuplicateGuids = dupeGuids,
+            Forced = allowMismatchedIdentity,
             PrimaryName = primary.Name,
             Game = primary.Game,
             Ip = primary.Ip,

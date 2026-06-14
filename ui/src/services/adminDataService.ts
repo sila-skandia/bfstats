@@ -144,6 +144,9 @@ export interface ServerMergeCandidate {
 export interface MergeServersRequest {
   primaryGuid: string;
   duplicateGuids: string[];
+  // Skip the Game/Ip/Port/Name identity check on the backend — for the manual
+  // basket where the admin merges servers that changed name/IP over time.
+  force?: boolean;
 }
 
 export interface MergeServersResponse {

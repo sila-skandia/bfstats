@@ -16,5 +16,13 @@ public interface IServerMergeService
     /// hard-deletes the duplicate Server rows, removes affected aggregate rows so they get rebuilt,
     /// writes an audit log entry, and queues background recalculation.
     /// </summary>
-    Task<MergeServersResponse> MergeServersAsync(string primaryGuid, IReadOnlyList<string> duplicateGuids, string adminEmail);
+    /// <param name="allowMismatchedIdentity">
+    /// When true, skip the Game/Ip/Port/Name equality check. Used for admin-forced manual merges of
+    /// servers that changed their name (and/or GUID/IP) over time but are the same physical server.
+    /// </param>
+    Task<MergeServersResponse> MergeServersAsync(
+        string primaryGuid,
+        IReadOnlyList<string> duplicateGuids,
+        string adminEmail,
+        bool allowMismatchedIdentity = false);
 }

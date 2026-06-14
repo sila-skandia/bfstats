@@ -131,8 +131,11 @@
           Manual merge
         </h3>
         <p class="mm-admin-card__desc">
-          Search for servers by name and select any combination to merge —
-          useful for servers that changed GUID <em>and</em> name/IP.
+          For a server that changed GUID <em>and</em> name/IP over time. Search by
+          each name it used and <strong>add</strong> the matching rows to the basket
+          below — the basket persists across searches. When you've collected every
+          variant, pick the primary and merge them all. Identity checks are
+          <em>skipped</em> for this merge, so double-check the basket.
         </p>
         <div class="mm-admin-merge__head-actions">
           <input
@@ -157,16 +160,26 @@
         {{ manualSearchError }}
       </div>
 
-      <template v-if="manualResults.length > 0">
-        <p class="mm-admin-merge__manual-hint">
-          Check servers to include · set primary with the radio · then merge
-        </p>
+      <!-- Search results pool — replaced on each search, add rows to the basket -->
+      <template v-if="searchResults.length > 0">
+        <div class="mm-admin-merge__manual-subhead">
+          <span class="mm-admin-merge__manual-hint">
+            {{ searchResults.length }} result(s) for "{{ lastSearched }}"
+          </span>
+          <button
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+            :disabled="allResultsInBasket"
+            @click="addAllResults"
+          >
+            Add all
+          </button>
+        </div>
         <div class="mm-admin-table-wrap mm-admin-merge__manual-table-wrap">
           <table class="mm-admin-table mm-admin-merge__table">
             <thead>
               <tr>
-                <th>Include</th>
-                <th>Primary</th>
+                <th>Add</th>
                 <th>Name</th>
                 <th>GUID</th>
                 <th>IP:port</th>
@@ -175,26 +188,19 @@
             </thead>
             <tbody>
               <tr
-                v-for="r in manualResults"
+                v-for="r in searchResults"
                 :key="r.serverGuid"
-                :class="{ 'mm-admin-merge__manual-row--selected': manualSelected.has(r.serverGuid) }"
+                :class="{ 'mm-admin-merge__manual-row--selected': inBasket(r.serverGuid) }"
               >
                 <td>
-                  <input
-                    type="checkbox"
-                    :checked="manualSelected.has(r.serverGuid)"
-                    @change="toggleManualSelect(r.serverGuid)"
+                  <button
+                    type="button"
+                    class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--xs"
+                    :disabled="inBasket(r.serverGuid)"
+                    @click="addToBasket(r)"
                   >
-                </td>
-                <td>
-                  <input
-                    type="radio"
-                    name="manual-primary"
-                    :value="r.serverGuid"
-                    :checked="manualPrimary === r.serverGuid"
-                    :disabled="!manualSelected.has(r.serverGuid)"
-                    @change="manualPrimary = r.serverGuid"
-                  >
+                    {{ inBasket(r.serverGuid) ? 'Added' : 'Add' }}
+                  </button>
                 </td>
                 <td class="mm-admin-merge__item-name">{{ r.serverName }}</td>
                 <td class="mm-admin-mono">{{ r.serverGuid }}</td>
@@ -204,20 +210,86 @@
             </tbody>
           </table>
         </div>
+      </template>
+      <p
+        v-else-if="!manualSearching && lastSearched"
+        class="mm-admin-merge__manual-hint"
+      >
+        No servers found for "{{ lastSearched }}".
+      </p>
+
+      <!-- Merge basket — accumulated across searches -->
+      <div v-if="basket.length > 0" class="mm-admin-merge__basket">
+        <div class="mm-admin-merge__manual-subhead">
+          <span class="mm-admin-merge__manual-hint">
+            Merge basket · {{ basket.length }} server(s)
+          </span>
+          <button
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+            @click="clearBasket"
+          >
+            Clear
+          </button>
+        </div>
+        <div class="mm-admin-table-wrap mm-admin-merge__manual-table-wrap">
+          <table class="mm-admin-table mm-admin-merge__table">
+            <thead>
+              <tr>
+                <th>Primary</th>
+                <th>Name</th>
+                <th>GUID</th>
+                <th>IP:port</th>
+                <th class="is-num">All-time players</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="r in basket"
+                :key="r.serverGuid"
+                :class="{ 'mm-admin-merge__manual-row--primary': manualPrimary === r.serverGuid }"
+              >
+                <td>
+                  <input
+                    type="radio"
+                    name="basket-primary"
+                    :value="r.serverGuid"
+                    :checked="manualPrimary === r.serverGuid"
+                    @change="manualPrimary = r.serverGuid"
+                  >
+                </td>
+                <td class="mm-admin-merge__item-name">{{ r.serverName }}</td>
+                <td class="mm-admin-mono">{{ r.serverGuid }}</td>
+                <td class="mm-admin-mono">{{ r.serverIp }}{{ r.serverPort ? `:${r.serverPort}` : '' }}</td>
+                <td class="is-num">{{ r.totalPlayersAllTime?.toLocaleString() ?? '—' }}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--xs"
+                    @click="removeFromBasket(r.serverGuid)"
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <div class="mm-admin-merge__manual-actions">
           <span class="mm-admin-merge__manual-hint-sm">
-            {{ manualSelected.size }} selected · primary: {{ manualPrimary || 'none' }}
+            primary: {{ manualPrimary || 'none' }}
           </span>
           <button
             type="button"
             class="mm-admin-btn mm-admin-btn--primary mm-admin-btn--sm"
-            :disabled="manualSelected.size < 2 || !manualPrimary || manualMerging"
+            :disabled="basket.length < 2 || !manualPrimary || manualMerging"
             @click="confirmManualMerge"
           >
-            {{ manualMerging ? 'Merging…' : 'Merge selected' }}
+            {{ manualMerging ? 'Merging…' : `Merge ${basket.length} servers` }}
           </button>
         </div>
-      </template>
+      </div>
     </div>
 
     <!-- Confirm modal (auto-detected) -->
@@ -264,6 +336,11 @@
             <code class="mm-admin-mono">{{ g }}</code>
           </li>
         </ul>
+        <p class="mm-admin-merge__modal-warn">
+          ⚠ Forced merge — the Game / IP / Port / Name identity check is skipped.
+          These servers may have different names. Make sure they really are the
+          same physical server; this cannot be undone.
+        </p>
         <p class="mm-admin-merge__modal-note">
           Sessions, rounds, achievements, online counts, tournaments, and favorites
           are re-pointed. Duplicate Server rows are hard-deleted. Aggregates rebuild
@@ -386,54 +463,70 @@ async function performMerge() {
   }
 }
 
-// ---- Manual search & merge ----
+// ---- Manual search & merge basket ----
+// The basket accumulates servers across multiple searches (a server that
+// changed name over time won't all surface under one query), then merges the
+// whole set with force=true to bypass the Game/Ip/Port/Name identity check.
 const manualSearch = ref('')
-const manualResults = ref<ServerSearchResult[]>([])
+const lastSearched = ref('')
+const searchResults = ref<ServerSearchResult[]>([])
 const manualSearching = ref(false)
-const manualSelected = ref<Set<string>>(new Set())
+const basket = ref<ServerSearchResult[]>([])
 const manualPrimary = ref('')
 const manualConfirm = ref<{ primaryGuid: string; duplicateGuids: string[] } | null>(null)
 const manualSearchError = ref<string | null>(null)
 const manualMerging = ref(false)
 
+const basketGuids = computed(() => new Set(basket.value.map(b => b.serverGuid)))
+const inBasket = (guid: string) => basketGuids.value.has(guid)
+const allResultsInBasket = computed(() =>
+  searchResults.value.length > 0 && searchResults.value.every(r => inBasket(r.serverGuid)))
+
 async function doManualSearch() {
   if (!manualSearch.value.trim()) return
   manualSearching.value = true
   manualSearchError.value = null
-  manualSelected.value = new Set()
-  manualPrimary.value = ''
   try {
     const results = await searchServersForAdmin(manualSearch.value, 30, props.gameFilter || 'bf1942')
-    manualResults.value = results
-    manualSelected.value = new Set(results.map(r => r.serverGuid))
-    const top = results.reduce<typeof results[0] | null>((best, r) =>
-      !best || (r.totalPlayersAllTime ?? 0) > (best.totalPlayersAllTime ?? 0) ? r : best, null)
-    manualPrimary.value = top?.serverGuid ?? ''
+    searchResults.value = results
+    lastSearched.value = manualSearch.value.trim()
   } catch (e) {
     manualSearchError.value = e instanceof Error ? e.message : 'Search failed'
-    manualResults.value = []
+    searchResults.value = []
   } finally {
     manualSearching.value = false
   }
 }
 
-function toggleManualSelect(guid: string) {
-  const s = new Set(manualSelected.value)
-  if (s.has(guid)) {
-    s.delete(guid)
-    if (manualPrimary.value === guid) manualPrimary.value = ''
-  } else {
-    s.add(guid)
-    if (!manualPrimary.value) manualPrimary.value = guid
+function addToBasket(r: ServerSearchResult) {
+  if (inBasket(r.serverGuid)) return
+  basket.value = [...basket.value, r]
+  // Default primary to the most-played server in the basket so far.
+  if (!manualPrimary.value
+    || (r.totalPlayersAllTime ?? 0) > (basket.value.find(b => b.serverGuid === manualPrimary.value)?.totalPlayersAllTime ?? 0)) {
+    manualPrimary.value = r.serverGuid
   }
-  manualSelected.value = s
+}
+
+function addAllResults() {
+  searchResults.value.forEach(addToBasket)
+}
+
+function removeFromBasket(guid: string) {
+  basket.value = basket.value.filter(b => b.serverGuid !== guid)
+  if (manualPrimary.value === guid) manualPrimary.value = basket.value[0]?.serverGuid ?? ''
+}
+
+function clearBasket() {
+  basket.value = []
+  manualPrimary.value = ''
 }
 
 function confirmManualMerge() {
-  if (!manualPrimary.value || manualSelected.value.size < 2) return
+  if (!manualPrimary.value || basket.value.length < 2) return
   manualConfirm.value = {
     primaryGuid: manualPrimary.value,
-    duplicateGuids: [...manualSelected.value].filter(g => g !== manualPrimary.value),
+    duplicateGuids: basket.value.map(b => b.serverGuid).filter(g => g !== manualPrimary.value),
   }
 }
 
@@ -444,14 +537,16 @@ async function performManualMerge() {
   manualMerging.value = true
   error.value = null
   try {
-    const res = await adminDataService.mergeServers({ primaryGuid, duplicateGuids })
+    const res = await adminDataService.mergeServers({ primaryGuid, duplicateGuids, force: true })
     successMsg.value =
       `Merged ${res.duplicateGuids.length} GUID(s) into ${res.primaryGuid}. ` +
       `Re-pointed ${res.repointedSessions} sessions, ${res.repointedRounds} rounds. ` +
       `Aggregates recalculating in the background.`
-    manualResults.value = []
-    manualSelected.value = new Set()
+    searchResults.value = []
+    basket.value = []
     manualPrimary.value = ''
+    manualSearch.value = ''
+    lastSearched.value = ''
     await load()
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Merge failed'
@@ -462,9 +557,10 @@ async function performManualMerge() {
 
 watch(() => props.gameFilter, () => {
   load()
-  manualResults.value = []
-  manualSelected.value = new Set()
+  searchResults.value = []
+  basket.value = []
   manualPrimary.value = ''
+  lastSearched.value = ''
 })
 
 defineExpose({ load })
@@ -661,6 +757,42 @@ onMounted(load)
   color: var(--mm-ink-muted);
   margin: 0;
   line-height: 1.5;
+}
+
+.mm-admin-merge__modal-warn {
+  font-size: 12.5px;
+  color: var(--mm-danger);
+  background: rgba(214, 90, 90, 0.08);
+  border: 1px solid rgba(214, 90, 90, 0.35);
+  border-radius: 2px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.mm-admin-btn--xs {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.mm-admin-merge__manual-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 18px 0;
+}
+
+.mm-admin-merge__manual-subhead .mm-admin-merge__manual-hint { margin: 0; }
+
+.mm-admin-merge__basket {
+  margin-top: 14px;
+  border-top: 1px solid var(--mm-rule);
+  padding-top: 6px;
+}
+
+.mm-admin-merge__manual-row--primary td {
+  background: rgba(125, 163, 76, 0.10);
 }
 
 @media (max-width: 640px) {
