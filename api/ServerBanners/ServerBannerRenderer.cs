@@ -11,37 +11,56 @@ using SixLabors.ImageSharp.Processing;
 namespace api.ServerBanners;
 
 /// <summary>
-/// Generates the server signature banner entirely from code — no base image. A
-/// neon/futuristic backdrop (deep-black diagonal gradient + accent glow + variant-specific
-/// geometric overlay) carries the bfstats.io aesthetic; the hero server name, IP,
-/// live stats row, LIVE pill, and BFSTATS.IO watermark sit on top.
+/// Generates the server signature banner entirely from code — no base image. The
+/// "Neutral Depth" (v4) layout: a near-black card split into a left art panel (one of
+/// four futuristic treatments — Reticle / Hologram / Waveform / Console) and a right
+/// data column carrying the server name, live player count, current map, IP, and the
+/// live Axis-vs-Allies ticket scoreboard. Reticle is full-bleed (no separate panel).
 /// </summary>
 public sealed class ServerBannerRenderer(BannerFonts fonts)
 {
     private const int Width = 960;
     private const int Height = 200;
+    private const int ArtWidth = 312;
 
-    private static readonly Color BaseBlack = Color.FromRgba(13, 17, 23, 255);
-    private static readonly Color DeepBlack = Color.FromRgba(5, 7, 9, 255);
-    private static readonly Color Goldenrod = Color.FromRgba(218, 165, 32, 255);
+    // ---- Neutral Depth palette (mirrors --mm-* tokens) --------------------
+    private static readonly Color CardBg     = Color.FromRgba(14, 14, 14, 255);   // banner base (#0e0e0e)
+    private static readonly Color Ink        = Color.FromRgba(255, 255, 255, 255);
+    private static readonly Color InkSoft    = Color.FromRgba(200, 200, 200, 255);
+    private static readonly Color InkMuted   = Color.FromRgba(138, 138, 138, 255);
+    private static readonly Color InkFaint   = Color.FromRgba(85, 85, 85, 255);
+    private static readonly Color Olive      = Color.FromRgba(154, 166, 102, 255); // --mm-accent-soft
+    private static readonly Color OliveDeep  = Color.FromRgba(125, 136, 73, 255);  // --mm-accent
+    private static readonly Color Allies     = Color.FromRgba(125, 163, 76, 255);  // --mm-success
+    private static readonly Color Axis       = Color.FromRgba(214, 90, 90, 255);   // --mm-kill
+    private static readonly Color LoadBusy   = Color.FromRgba(197, 162, 58, 255);  // --mm-load-busy
+    private static readonly Color Rule       = Color.FromRgba(45, 45, 45, 255);    // --mm-rule
+    private static readonly Color RuleStrong = Color.FromRgba(61, 61, 61, 255);    // --mm-rule-strong
 
     public async Task<byte[]> RenderAsync(ServerBannerStats stats, ServerBannerStyle style, CancellationToken ct = default)
     {
-        using var image = new Image<Rgba32>(Width, Height, BaseBlack.ToPixel<Rgba32>());
+        using var image = new Image<Rgba32>(Width, Height, CardBg.ToPixel<Rgba32>());
         var palette = style.Palette();
 
         image.Mutate(ctx =>
         {
-            DrawBackground(ctx, palette);
-            DrawVariantOverlay(ctx, style, palette);
-            DrawCornerBrackets(ctx, palette);
-            DrawSideRail(ctx, palette);
-            DrawStatsScrim(ctx);
-            DrawServerName(ctx, stats, palette);
-            DrawIpPortLine(ctx, stats);
-            DrawStatsLine(ctx, stats, palette);
-            DrawLiveDot(ctx, stats);
-            DrawWatermark(ctx, palette);
+            DrawBackdrop(ctx, palette);
+
+            var fullBleed = style == ServerBannerStyle.Reticle;
+            var dataX0 = fullBleed ? 0f : ArtWidth;
+
+            if (fullBleed)
+            {
+                DrawReticle(ctx);
+            }
+            else
+            {
+                DrawArt(ctx, style, stats);
+                ctx.DrawLine(Rule, 1f, new PointF(ArtWidth, 0), new PointF(ArtWidth, Height));
+            }
+
+            DrawData(ctx, stats, dataX0, fullBleed);
+            DrawFrame(ctx);
         });
 
         var ms = new MemoryStream();
@@ -53,403 +72,473 @@ public sealed class ServerBannerRenderer(BannerFonts fonts)
         return ms.ToArray();
     }
 
-    // ---- backdrop ---------------------------------------------------------
+    // ---- backdrop + frame -------------------------------------------------
 
-    private static void DrawBackground(IImageProcessingContext ctx, ServerBannerPalette palette)
+    private static void DrawBackdrop(IImageProcessingContext ctx, ServerBannerPalette palette)
     {
-        // Diagonal gradient: deep near-black top-left → base black mid → subtle accent-tinted
-        // black bottom-right. Gives depth without competing with foreground text.
+        // Diagonal gradient toward a dim olive-tinted black, plus a soft olive glow
+        // anchored top-right — keeps the data column (left) clean and dark.
         var bg = new LinearGradientBrush(
             new PointF(0, 0),
             new PointF(Width, Height),
             GradientRepetitionMode.None,
-            new ColorStop(0f, DeepBlack),
-            new ColorStop(0.6f, BaseBlack),
+            new ColorStop(0f, CardBg),
+            new ColorStop(0.65f, CardBg),
             new ColorStop(1f, palette.Tint));
         ctx.Fill(bg, new RectangularPolygon(0, 0, Width, Height));
 
-        // Accent glow anchored at the right edge — radial feel via a tall elliptical
-        // gradient brush. Keeps the hero-name side (left) clean and darker.
         var (r, g, b) = Rgb(palette.Accent);
         var glow = new RadialGradientBrush(
-            new PointF(Width * 0.92f, Height * 0.5f),
-            Height * 0.85f,
+            new PointF(Width * 0.86f, Height * 0.32f),
+            Height * 0.95f,
             GradientRepetitionMode.None,
-            new ColorStop(0f, Color.FromRgba(r, g, b, 34)),
-            new ColorStop(0.55f, Color.FromRgba(r, g, b, 14)),
+            new ColorStop(0f, Color.FromRgba(r, g, b, 26)),
+            new ColorStop(0.6f, Color.FromRgba(r, g, b, 10)),
             new ColorStop(1f, Color.FromRgba(0, 0, 0, 0)));
         ctx.Fill(glow, new RectangularPolygon(0, 0, Width, Height));
     }
 
-    private static void DrawVariantOverlay(IImageProcessingContext ctx, ServerBannerStyle style, ServerBannerPalette palette)
+    private static void DrawFrame(IImageProcessingContext ctx)
+    {
+        // 1px hairline border + small olive corner ticks for the "device readout" feel.
+        ctx.Draw(RuleStrong, 1f, new RectangularPolygon(0.5f, 0.5f, Width - 1, Height - 1));
+
+        var tick = WithAlpha(Olive, 200);
+        const float arm = 13f, inset = 6f;
+        // top-left
+        ctx.DrawLine(tick, 1.5f, new PointF(inset, inset), new PointF(inset + arm, inset));
+        ctx.DrawLine(tick, 1.5f, new PointF(inset, inset), new PointF(inset, inset + arm));
+        // bottom-right
+        ctx.DrawLine(tick, 1.5f, new PointF(Width - inset - arm, Height - inset), new PointF(Width - inset, Height - inset));
+        ctx.DrawLine(tick, 1.5f, new PointF(Width - inset, Height - inset), new PointF(Width - inset, Height - inset - arm));
+    }
+
+    // ---- art panels -------------------------------------------------------
+
+    private void DrawArt(IImageProcessingContext ctx, ServerBannerStyle style, ServerBannerStats stats)
     {
         switch (style)
         {
-            case ServerBannerStyle.Grid:     DrawGridOverlay(ctx, palette); break;
-            case ServerBannerStyle.Hud:      DrawHudOverlay(ctx, palette); break;
-            case ServerBannerStyle.Scanline: DrawScanlineOverlay(ctx, palette); break;
-            case ServerBannerStyle.Circuit:  DrawCircuitOverlay(ctx, palette); break;
+            case ServerBannerStyle.Hologram: DrawHologram(ctx); break;
+            case ServerBannerStyle.Waveform: DrawWaveform(ctx, stats); break;
+            case ServerBannerStyle.Console:  DrawConsole(ctx, stats); break;
         }
     }
 
-    private static void DrawGridOverlay(IImageProcessingContext ctx, ServerBannerPalette palette)
+    private static void DrawReticle(IImageProcessingContext ctx)
     {
-        // Blueprint grid — faint accent lines with every 4th line brightened for emphasis,
-        // evoking CAD/schematic aesthetics without drowning the text.
-        var faint = WithAlpha(palette.Accent, 16);
-        var major = WithAlpha(palette.Accent, 40);
-        const float step = 24f;
+        // Full-bleed targeting HUD: faint vertical scan grid, corner brackets, a centre
+        // top tick, and decorative telemetry coordinates tucked into the top-right.
+        var faint = WithAlpha(Olive, 10);
+        for (var x = 40f; x < Width; x += 40f)
+        {
+            ctx.DrawLine(faint, 1f, new PointF(x, 0), new PointF(x, Height));
+        }
 
-        for (var i = 1; i * step < Width; i++)
-        {
-            var x = i * step;
-            var pen = i % 4 == 0 ? major : faint;
-            ctx.DrawLine(pen, 1f, new PointF(x, 0), new PointF(x, Height));
-        }
-        for (var i = 1; i * step < Height; i++)
-        {
-            var y = i * step;
-            var pen = i % 4 == 0 ? major : faint;
-            ctx.DrawLine(pen, 1f, new PointF(0, y), new PointF(Width, y));
-        }
+        var bracket = WithAlpha(Olive, 165);
+        const float arm = 18f, inset = 14f;
+        // four L brackets framing the canvas
+        ctx.DrawLine(bracket, 1.5f, new PointF(inset, inset), new PointF(inset + arm, inset));
+        ctx.DrawLine(bracket, 1.5f, new PointF(inset, inset), new PointF(inset, inset + arm));
+        ctx.DrawLine(bracket, 1.5f, new PointF(Width - inset - arm, inset), new PointF(Width - inset, inset));
+        ctx.DrawLine(bracket, 1.5f, new PointF(Width - inset, inset), new PointF(Width - inset, inset + arm));
+        ctx.DrawLine(bracket, 1.5f, new PointF(inset, Height - inset - arm), new PointF(inset, Height - inset));
+        ctx.DrawLine(bracket, 1.5f, new PointF(inset, Height - inset), new PointF(inset + arm, Height - inset));
+        ctx.DrawLine(bracket, 1.5f, new PointF(Width - inset - arm, Height - inset), new PointF(Width - inset, Height - inset));
+        ctx.DrawLine(bracket, 1.5f, new PointF(Width - inset, Height - inset), new PointF(Width - inset, Height - inset - arm));
+
+        // centre top tick
+        ctx.DrawLine(WithAlpha(Olive, 130), 1f, new PointF(Width / 2f, 10), new PointF(Width / 2f, 20));
     }
 
-    private static void DrawHudOverlay(IImageProcessingContext ctx, ServerBannerPalette palette)
+    private void DrawHologram(IImageProcessingContext ctx)
     {
-        // Altimeter-style tick rails on both edges plus a faint reticle circle mid-right.
-        // Reticle sits between the stats scrim top and the LIVE pill so it doesn't clash.
-        var accent = WithAlpha(palette.Accent, 55);
-        var faint = WithAlpha(palette.Accent, 28);
-
-        // Left altimeter rail
-        const float railX = 10f;
-        ctx.DrawLine(accent, 1f, new PointF(railX, Height * 0.12f), new PointF(railX, Height * 0.88f));
-        for (var i = 0; i < 12; i++)
-        {
-            var y = Height * 0.12f + i * (Height * 0.76f / 11f);
-            var len = i % 3 == 0 ? 8f : 4f;
-            ctx.DrawLine(accent, 1f, new PointF(railX, y), new PointF(railX + len, y));
-        }
-
-        // Right altimeter rail (mirrored)
-        const float rightRailX = Width - 10f;
-        ctx.DrawLine(accent, 1f, new PointF(rightRailX, Height * 0.12f), new PointF(rightRailX, Height * 0.88f));
-        for (var i = 0; i < 12; i++)
-        {
-            var y = Height * 0.12f + i * (Height * 0.76f / 11f);
-            var len = i % 3 == 0 ? 8f : 4f;
-            ctx.DrawLine(accent, 1f, new PointF(rightRailX, y), new PointF(rightRailX - len, y));
-        }
-
-        // Reticle — offset to keep it clear of hero name, IP line, and LIVE pill.
-        const float cx = Width * 0.74f;
-        const float cy = Height * 0.44f;
-        const float r = 26f;
-        ctx.Draw(faint, 1f, new EllipsePolygon(cx, cy, r));
-        ctx.Draw(faint, 1f, new EllipsePolygon(cx, cy, r * 0.45f));
-        ctx.DrawLine(faint, 1f, new PointF(cx - r - 6, cy), new PointF(cx + r + 6, cy));
-        ctx.DrawLine(faint, 1f, new PointF(cx, cy - r - 6), new PointF(cx, cy + r + 6));
-    }
-
-    private static void DrawScanlineOverlay(IImageProcessingContext ctx, ServerBannerPalette palette)
-    {
-        // CRT scanlines — very thin horizontals every 3px. Low alpha so they read as
-        // texture rather than stripes. A subtle accent-tinted vignette on the corners
-        // finishes the old-terminal feel.
-        var line = WithAlpha(palette.Accent, 14);
-        for (var y = 0; y < Height; y += 3)
-        {
-            ctx.DrawLine(line, 1f, new PointF(0, y), new PointF(Width, y));
-        }
-
-        // Corner vignette — darkens edges slightly for a tube-monitor curve hint.
-        var vignette = new RadialGradientBrush(
-            new PointF(Width * 0.5f, Height * 0.5f),
-            Width * 0.6f,
+        // Projected wireframe terrain: a radial-lit panel with a perspective grid that
+        // converges to a vanishing point near the top, an olive "peak" glow, scanlines.
+        var bg = new RadialGradientBrush(
+            new PointF(ArtWidth / 2f, Height * 1.15f),
+            Height * 1.1f,
             GradientRepetitionMode.None,
-            new ColorStop(0f, Color.FromRgba(0, 0, 0, 0)),
-            new ColorStop(0.7f, Color.FromRgba(0, 0, 0, 0)),
-            new ColorStop(1f, Color.FromRgba(0, 0, 0, 90)));
-        ctx.Fill(vignette, new RectangularPolygon(0, 0, Width, Height));
-    }
+            new ColorStop(0f, Color.FromRgba(26, 31, 16, 255)),
+            new ColorStop(0.7f, Color.FromRgba(10, 11, 7, 255)));
+        ctx.Fill(bg, new RectangularPolygon(0, 0, ArtWidth, Height));
 
-    private static void DrawCircuitOverlay(IImageProcessingContext ctx, ServerBannerPalette palette)
-    {
-        // Sparse PCB-style traces — right-angle paths with small filled via-dots at
-        // corners/endpoints. Kept sparse so the eye lands on text, not the circuit.
-        var trace = WithAlpha(palette.Accent, 50);
-        var via = WithAlpha(palette.Accent, 110);
+        var line = WithAlpha(Olive, 70);
+        var vp = new PointF(ArtWidth / 2f, 44f);
 
-        (PointF a, PointF b)[] segments =
-        [
-            (new(0, 20),               new(120, 20)),
-            (new(120, 20),             new(120, 72)),
-            (new(120, 72),             new(210, 72)),
-            (new(Width - 0, 38),       new(Width - 160, 38)),
-            (new(Width - 160, 38),     new(Width - 160, 96)),
-            (new(Width - 160, 96),     new(Width - 240, 96)),
-            (new(60, Height - 22),     new(240, Height - 22)),
-            (new(240, Height - 22),    new(240, Height - 60)),
-            (new(Width - 40, Height - 44), new(Width - 180, Height - 44)),
-        ];
-        foreach (var (a, b) in segments)
+        // Perspective horizontals — denser toward the top (the horizon).
+        for (var i = 0; i <= 7; i++)
         {
-            ctx.DrawLine(trace, 1.2f, a, b);
+            var t = i / 7f;
+            var y = 78f + (Height - 78f) * (t * t);
+            ctx.DrawLine(WithAlpha(Olive, (byte)(40 + 35 * t)), 1f, new PointF(8, y), new PointF(ArtWidth - 8, y));
+        }
+        // Converging verticals from the bottom edge to the vanishing point.
+        for (var k = -3; k <= 3; k++)
+        {
+            var bottomX = ArtWidth / 2f + k * 46f;
+            ctx.DrawLine(line, 1f, new PointF(bottomX, Height - 4), vp);
         }
 
-        // Vias at each endpoint.
-        PointF[] vias =
-        [
-            new(120, 20), new(120, 72), new(210, 72),
-            new(Width - 160, 38), new(Width - 160, 96), new(Width - 240, 96),
-            new(240, Height - 22), new(240, Height - 60),
-            new(Width - 40, Height - 44), new(Width - 180, Height - 44)
-        ];
-        foreach (var p in vias)
+        // Peak glow — soft olive cone above the horizon.
+        var peak = new PathBuilder();
+        peak.AddLines(new PointF(ArtWidth / 2f, 30f), new PointF(ArtWidth / 2f - 34f, 86f), new PointF(ArtWidth / 2f + 34f, 86f));
+        peak.CloseFigure();
+        ctx.Fill(WithAlpha(Color.FromRgba(180, 192, 96, 255), 36), peak.Build());
+        ctx.DrawLine(WithAlpha(Color.FromRgba(180, 192, 96, 255), 130), 1f,
+            new PointF(ArtWidth / 2f - 34f, 86f), new PointF(ArtWidth / 2f + 34f, 86f));
+
+        DrawScanlines(ctx, ArtWidth);
+    }
+
+    private void DrawWaveform(IImageProcessingContext ctx, ServerBannerStats stats)
+    {
+        // Population timeline as an equalizer: past hours (solid olive), the live current
+        // hour (amber), and the forecast for the coming hours (dim olive). Falls back to a
+        // static demo signal when no activity history is available.
+        ctx.Fill(Color.FromRgba(17, 19, 8, 255), new RectangularPolygon(0, 0, ArtWidth, Height));
+
+        var (players, isCurrent, isFuture) = ActivitySeries(stats);
+        var realActivity = stats.Activity is { Bars.Count: > 0 };
+
+        const float padX = 16f;
+        const float baselineY = 150f;
+        const float maxBarH = 104f;
+        const float gap = 4f;
+        var count = players.Length;
+        var innerW = ArtWidth - padX * 2;
+        var barW = (innerW - gap * (count - 1)) / count;
+        var max = Math.Max(1.0, players.Max());
+
+        // header so the panel reads as a chart, not decoration (real timeline only)
+        if (realActivity)
         {
-            ctx.Fill(via, new EllipsePolygon(p.X, p.Y, 2.2f));
+            DrawText(ctx, fonts.Label(9.5f), "ACTIVITY · ±4H", new PointF(padX, 28f), WithAlpha(Olive, 200));
+        }
+
+        var currentCenterX = padX + barW / 2f;
+        for (var i = 0; i < count; i++)
+        {
+            var h = (float)(players[i] / max) * maxBarH;
+            if (h < 2f && players[i] > 0)
+            {
+                h = 2f; // keep tiny non-zero hours visible
+            }
+            var x = padX + i * (barW + gap);
+
+            if (isCurrent[i])
+            {
+                currentCenterX = x + barW / 2f;
+                ctx.Fill(WithAlpha(LoadBusy, 60), new RectangularPolygon(x - 2, baselineY - h - 2, barW + 4, h + 4));
+                ctx.Fill(WithAlpha(LoadBusy, 255), new RectangularPolygon(x, baselineY - h, barW, h));
+            }
+            else if (isFuture[i])
+            {
+                // forecast — dim, hollow-ish
+                ctx.Fill(WithAlpha(Olive, 80), new RectangularPolygon(x, baselineY - h, barW, h));
+                ctx.DrawLine(WithAlpha(Olive, 150), 1f, new PointF(x, baselineY - h), new PointF(x + barW, baselineY - h));
+            }
+            else
+            {
+                ctx.Fill(WithAlpha(Olive, 205), new RectangularPolygon(x, baselineY - h, barW, h));
+            }
+        }
+
+        ctx.DrawLine(WithAlpha(Olive, 100), 1f, new PointF(padX, baselineY), new PointF(ArtWidth - padX, baselineY));
+
+        // timeline captions (real ±4h window only)
+        if (realActivity)
+        {
+            var capFont = fonts.Label(8.5f);
+            DrawText(ctx, capFont, "−4H", new PointF(padX, 170f), InkMuted);
+            DrawText(ctx, capFont, "NOW", new PointF(currentCenterX, 170f), WithAlpha(LoadBusy, 235), HorizontalAlignment.Center);
+            DrawText(ctx, capFont, "+4H", new PointF(ArtWidth - padX, 170f), InkMuted, HorizontalAlignment.Right);
         }
     }
 
-    private static void DrawCornerBrackets(IImageProcessingContext ctx, ServerBannerPalette palette)
+    /// <summary>
+    /// Resolves the equalizer series — real activity timeline if present, else a static
+    /// demo signal (all past, last bar "current").
+    /// </summary>
+    private static (double[] players, bool[] isCurrent, bool[] isFuture) ActivitySeries(ServerBannerStats stats)
     {
-        // Four L-shaped HUD brackets frame the canvas. Brightens the accent just enough
-        // that the eye registers the "device readout" framing without distraction.
-        var pen = WithAlpha(palette.Accent, 200);
-        const float arm = 14f;
-        const float inset = 6f;
-
-        // Top-left
-        ctx.DrawLine(pen, 1.5f, new PointF(inset, inset), new PointF(inset + arm, inset));
-        ctx.DrawLine(pen, 1.5f, new PointF(inset, inset), new PointF(inset, inset + arm));
-        // Top-right
-        ctx.DrawLine(pen, 1.5f, new PointF(Width - inset - arm, inset), new PointF(Width - inset, inset));
-        ctx.DrawLine(pen, 1.5f, new PointF(Width - inset, inset), new PointF(Width - inset, inset + arm));
-        // Bottom-left
-        ctx.DrawLine(pen, 1.5f, new PointF(inset, Height - inset - arm), new PointF(inset, Height - inset));
-        ctx.DrawLine(pen, 1.5f, new PointF(inset, Height - inset), new PointF(inset + arm, Height - inset));
-        // Bottom-right
-        ctx.DrawLine(pen, 1.5f, new PointF(Width - inset - arm, Height - inset), new PointF(Width - inset, Height - inset));
-        ctx.DrawLine(pen, 1.5f, new PointF(Width - inset, Height - inset), new PointF(Width - inset, Height - inset - arm));
-    }
-
-    private static void DrawSideRail(IImageProcessingContext ctx, ServerBannerPalette palette)
-    {
-        // Thin accent rail flush with the left text edge — acts as a visual spine tying
-        // the hero name, IP, and stats row together.
-        var pen = WithAlpha(palette.Accent, 220);
-        const float x = Width * 0.025f;
-        ctx.DrawLine(pen, 2f, new PointF(x, Height * 0.14f), new PointF(x, Height * 0.86f));
-    }
-
-    // ---- foreground text --------------------------------------------------
-
-    private static void DrawStatsScrim(IImageProcessingContext ctx)
-    {
-        // Soft bottom-up scrim under the stats row for contrast against any overlay.
-        var scrimTop = Height * 0.55f;
-        var gradient = new LinearGradientBrush(
-            new PointF(0, scrimTop),
-            new PointF(0, Height),
-            GradientRepetitionMode.None,
-            new ColorStop(0f, Color.FromRgba(0, 0, 0, 0)),
-            new ColorStop(1f, Color.FromRgba(0, 0, 0, 160)));
-        ctx.Fill(gradient, new RectangularPolygon(0, scrimTop, Width, Height - scrimTop));
-    }
-
-    private void DrawServerName(IImageProcessingContext ctx, ServerBannerStats stats, ServerBannerPalette palette)
-    {
-        var nameSize = Height * 0.24f;
-        var leftEdge = Width * 0.05f;
-        var font = fonts.Display(nameSize);
-        var options = new RichTextOptions(font)
+        if (stats.Activity is { Bars.Count: > 0 } activity)
         {
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
-            Origin = new PointF(leftEdge, Height * 0.10f),
-            WrappingLength = Width * 0.82f
-        };
-        DrawGlowText(ctx, stats.ServerName, options, palette.Accent, nameSize * 0.08f);
+            var n = activity.Bars.Count;
+            var players = new double[n];
+            var isCurrent = new bool[n];
+            var isFuture = new bool[n];
+            for (var i = 0; i < n; i++)
+            {
+                players[i] = activity.Bars[i].Players;
+                isCurrent[i] = activity.Bars[i].IsCurrent;
+                isFuture[i] = activity.Bars[i].IsFuture;
+            }
+            return (players, isCurrent, isFuture);
+        }
+
+        double[] demo = [22, 30, 26, 34, 40, 33, 44, 52, 48, 58, 66, 60, 72, 80, 76, 88, 94, 86, 98, 90, 82, 70, 64, 78];
+        var cur = new bool[demo.Length];
+        cur[^1] = true;
+        return (demo, cur, new bool[demo.Length]);
     }
 
-    private void DrawIpPortLine(IImageProcessingContext ctx, ServerBannerStats stats)
+    private void DrawConsole(IImageProcessingContext ctx, ServerBannerStats stats)
+    {
+        // Command-ops readout: REC live-feed header, segment meters, two log lines.
+        ctx.Fill(Color.FromRgba(12, 14, 8, 255), new RectangularPolygon(0, 0, ArtWidth, Height));
+        const float padX = 18f;
+        var mono = fonts.Label(11f);
+
+        // REC header
+        var recY = 30f;
+        ctx.Fill(Axis, new EllipsePolygon(padX + 4, recY - 4, 4f));
+        ctx.Fill(WithAlpha(Axis, 70), new EllipsePolygon(padX + 4, recY - 4, 7f));
+        DrawText(ctx, mono, "LIVE FEED", new PointF(padX + 16, recY), InkMuted);
+
+        // segment meter row 1 (mostly on, one hot)
+        DrawSegments(ctx, padX, 52f, ArtWidth - padX, [true, true, true, true, false, false], hotIndex: 4);
+
+        // log lines
+        var line1 = stats.Tickets is { } tk
+            ? $"> {tk.Team1Label.ToLowerInvariant()} {tk.Team1Tickets} · {tk.Team2Label.ToLowerInvariant()} {tk.Team2Tickets}"
+            : "> tickets OK · ping 24ms";
+        var mapLine = string.IsNullOrWhiteSpace(stats.Map) ? "—" : stats.Map!.ToUpperInvariant();
+        DrawText(ctx, mono, Truncate(line1, 30), new PointF(padX, 92f), WithAlpha(Olive, 200));
+        DrawText(ctx, mono, Truncate($"> map {mapLine}", 30), new PointF(padX, 116f), WithAlpha(Olive, 200));
+
+        // segment meter row 2
+        DrawSegments(ctx, padX, 150f, ArtWidth - padX, [true, true, false, false, false, false], hotIndex: 2);
+    }
+
+    private static void DrawSegments(IImageProcessingContext ctx, float x0, float y, float x1, bool[] on, int hotIndex)
+    {
+        const float gap = 4f, h = 7f;
+        var segW = (x1 - x0 - gap * (on.Length - 1)) / on.Length;
+        for (var i = 0; i < on.Length; i++)
+        {
+            var x = x0 + i * (segW + gap);
+            Color c = i == hotIndex ? LoadBusy : on[i] ? Olive : WithAlpha(OliveDeep, 64);
+            ctx.Fill(c, new RectangularPolygon(x, y, segW, h));
+        }
+    }
+
+    private static void DrawScanlines(IImageProcessingContext ctx, float width)
+    {
+        var line = WithAlpha(Color.FromRgba(0, 0, 0, 255), 70);
+        for (var y = 0; y < Height; y += 4)
+        {
+            ctx.DrawLine(line, 1f, new PointF(0, y), new PointF(width, y));
+        }
+    }
+
+    // ---- data column ------------------------------------------------------
+
+    private void DrawData(IImageProcessingContext ctx, ServerBannerStats stats, float x0, bool fullBleed)
+    {
+        var padL = fullBleed ? x0 + 34f : x0 + 24f;
+        var padR = Width - 26f;
+
+        // soft scrim so text stays legible over the art glow on the full-bleed reticle
+        if (fullBleed)
+        {
+            var scrim = new LinearGradientBrush(
+                new PointF(0, 0), new PointF(Width * 0.6f, 0), GradientRepetitionMode.None,
+                new ColorStop(0f, Color.FromRgba(0, 0, 0, 150)),
+                new ColorStop(1f, Color.FromRgba(0, 0, 0, 0)));
+            ctx.Fill(scrim, new RectangularPolygon(0, 0, Width, Height));
+        }
+
+        DrawStatusDot(ctx, stats, padL);
+        DrawServerName(ctx, stats, padL + 16f, padR);
+        DrawIpLine(ctx, stats, padL + 16f);
+        DrawCount(ctx, stats, padL);
+        DrawMapBlock(ctx, stats, padR, fullBleed);
+        DrawBottomRow(ctx, stats, padL, padR);
+        DrawCoords(ctx, fullBleed, padR);
+    }
+
+    private static void DrawStatusDot(IImageProcessingContext ctx, ServerBannerStats stats, float x)
+    {
+        var live = stats.IsOnline && stats.NumPlayers > 0;
+        var color = live ? Allies : InkFaint;
+        var cy = 30f;
+        if (live)
+        {
+            var (r, g, b) = Rgb(color);
+            ctx.Fill(Color.FromRgba(r, g, b, 60), new EllipsePolygon(x + 4, cy, 8f));
+            ctx.Fill(Color.FromRgba(r, g, b, 120), new EllipsePolygon(x + 4, cy, 5.5f));
+        }
+        ctx.Fill(color, new EllipsePolygon(x + 4, cy, 4f));
+    }
+
+    private void DrawServerName(IImageProcessingContext ctx, ServerBannerStats stats, float x, float right)
+    {
+        var font = fonts.Label(15f);
+        var name = (stats.ServerName ?? "").ToUpperInvariant();
+        var maxW = right - x - 70f; // leave room so the coords/watermark area stays clear
+        name = TruncateToWidth(font, name, maxW);
+        DrawText(ctx, font, name, new PointF(x, 36f), InkSoft);
+    }
+
+    private void DrawIpLine(IImageProcessingContext ctx, ServerBannerStats stats, float x)
     {
         if (string.IsNullOrWhiteSpace(stats.IpPort))
         {
             return;
         }
-
-        var size = Height * 0.1f;
-        var leftEdge = Width * 0.05f;
-        var baseline = Height * 0.62f;
-        var font = fonts.Label(size);
-        var options = new RichTextOptions(font)
-        {
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Origin = new PointF(leftEdge, baseline)
-        };
-        DrawShadowText(ctx, stats.IpPort, options, Goldenrod, size * 0.08f);
+        var font = fonts.Label(12f);
+        DrawText(ctx, font, stats.IpPort, new PointF(x, 58f), Olive);
     }
 
-    private void DrawStatsLine(IImageProcessingContext ctx, ServerBannerStats stats, ServerBannerPalette palette)
+    private void DrawCount(IImageProcessingContext ctx, ServerBannerStats stats, float x)
     {
-        var size = Height * 0.145f;
-        var leftEdge = Width * 0.05f;
-        var baseline = Height * 0.93f;
-        var font = fonts.Label(size);
+        var frac = stats.MaxPlayers > 0 ? (float)stats.NumPlayers / stats.MaxPlayers : 0f;
+        var countColor = frac <= 0 ? InkFaint
+            : frac >= 0.95f ? Axis
+            : frac >= 0.6f ? LoadBusy
+            : Ink;
 
-        var playerValue = stats.MaxPlayers > 0
-            ? $"{stats.NumPlayers}/{stats.MaxPlayers}"
-            : stats.NumPlayers.ToString();
+        var countFont = fonts.Display(58f);
+        var baseline = 138f;
+        var countStr = stats.NumPlayers.ToString();
+        DrawText(ctx, countFont, countStr, new PointF(x, baseline), countColor);
 
-        var blocks = new List<(string value, string label)>
+        if (stats.MaxPlayers > 0)
         {
-            (playerValue, "PLAYERS")
-        };
-        if (!string.IsNullOrWhiteSpace(stats.Map))
-        {
-            blocks.Add(("MAP", stats.Map!.ToUpperInvariant()));
-        }
-        var modeLabel = NormalizeGameMode(stats.GameMode);
-        if (!string.IsNullOrWhiteSpace(modeLabel))
-        {
-            blocks.Add(("MODE", modeLabel));
-        }
-
-        var blockGap = size * 0.9f;
-        var inBlockGap = size * 0.35f;
-        var x = leftEdge;
-        var maxRight = Width - Width * 0.04f;
-        var textOpts = new TextOptions(font);
-
-        for (var i = 0; i < blocks.Count; i++)
-        {
-            var (value, label) = blocks[i];
-            var first = i == 0;
-
-            var firstColor = first ? palette.Secondary : palette.Accent;
-            var firstWidth = TextMeasurer.MeasureSize(value, textOpts).Width;
-            var secondWidth = TextMeasurer.MeasureSize(label, textOpts).Width;
-            if (x + firstWidth + inBlockGap + secondWidth > maxRight)
-            {
-                break;
-            }
-
-            DrawShadowText(ctx, value, WithOrigin(textOpts, new PointF(x, baseline)), firstColor, size * 0.06f);
-            x += firstWidth + inBlockGap;
-            DrawShadowText(ctx, label, WithOrigin(textOpts, new PointF(x, baseline)), Color.White, size * 0.06f);
-            x += secondWidth + blockGap;
+            var w = MeasureWidth(countFont, countStr);
+            var capFont = fonts.Label(18f);
+            DrawText(ctx, capFont, $"/{stats.MaxPlayers}", new PointF(x + w + 6f, baseline), InkFaint);
         }
     }
 
-    private static void DrawLiveDot(IImageProcessingContext ctx, ServerBannerStats stats)
+    private void DrawMapBlock(IImageProcessingContext ctx, ServerBannerStats stats, float right, bool fullBleed)
     {
-        // Small glowing status dot in the top-right corner. Soft outer halo simulates
-        // the Vue UI's box-shadow glow, then a crisp solid dot on top.
-        var dotColor = stats.IsOnline
-            ? Color.FromRgba(61, 220, 132, 255)
-            : Color.FromRgba(220, 80, 80, 245);
-        var cx = Width - Width * 0.025f;
-        var cy = Height * 0.14f;
-        const float coreRadius = 5.5f;
+        var label = fullBleed ? "TARGET" : "CURRENT MAP";
+        var labelFont = fonts.Label(10f);
+        var mapFont = fonts.Label(15f);
+        var map = string.IsNullOrWhiteSpace(stats.Map) ? "UNKNOWN" : stats.Map!.ToUpperInvariant();
 
-        var (r, g, b) = Rgb(dotColor);
-        ctx.Fill(Color.FromRgba(r, g, b, 60), new EllipsePolygon(cx, cy, coreRadius * 2.4f));
-        ctx.Fill(Color.FromRgba(r, g, b, 120), new EllipsePolygon(cx, cy, coreRadius * 1.6f));
-        ctx.Fill(dotColor, new EllipsePolygon(cx, cy, coreRadius));
+        DrawText(ctx, labelFont, label, new PointF(right, 112f), InkMuted, HorizontalAlignment.Right);
+        DrawText(ctx, mapFont, map, new PointF(right, 134f), Ink, HorizontalAlignment.Right);
     }
 
-    private void DrawWatermark(IImageProcessingContext ctx, ServerBannerPalette palette)
+    private void DrawBottomRow(IImageProcessingContext ctx, ServerBannerStats stats, float left, float right)
     {
-        var size = Height * 0.07f;
-        var font = fonts.Label(size);
-        const string text = "BFSTATS.IO";
-        // Watermark sits a touch left of the status dot so both live-state and brand
-        // share the top-right corner without collision.
-        var rightEdge = Width - Width * 0.045f;
-        var topEdge = Height * 0.105f;
-        var options = new RichTextOptions(font)
+        var baseline = 182f;
+
+        // brand wordmark, bottom-right
+        var brandFont = fonts.Label(12.5f);
+        const string brand = "bfstats.io";
+        DrawText(ctx, brandFont, brand, new PointF(right, baseline), Olive, HorizontalAlignment.Right);
+        var brandLeft = right - MeasureWidth(brandFont, brand) - 18f;
+
+        if (stats.Tickets is { } tk)
         {
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Top,
-            Origin = new PointF(rightEdge, topEdge)
-        };
-        DrawShadowText(ctx, text, options, palette.Accent, size * 0.07f, Color.FromRgba(42, 20, 0, 220));
+            DrawTickets(ctx, tk, left, brandLeft, baseline);
+        }
+        else if (!string.IsNullOrWhiteSpace(stats.GameMode))
+        {
+            var modeFont = fonts.Label(11f);
+            DrawText(ctx, modeFont, NormalizeGameMode(stats.GameMode), new PointF(left, baseline), InkMuted);
+        }
+    }
+
+    private void DrawTickets(IImageProcessingContext ctx, ServerBannerTickets tk, float left, float right, float baseline)
+    {
+        var labelFont = fonts.Label(11f);
+        var numFont = fonts.Label(16f);
+        var t1 = tk.Team1Tickets;
+        var t2 = tk.Team2Tickets;
+        var total = Math.Max(1, t1 + t2);
+
+        // left cluster: AXIS 142
+        var x = left;
+        DrawText(ctx, labelFont, tk.Team1Label, new PointF(x, baseline), Axis);
+        x += MeasureWidth(labelFont, tk.Team1Label) + 7f;
+        var t1Str = t1.ToString();
+        DrawText(ctx, numFont, t1Str, new PointF(x, baseline), Axis);
+        var leftEnd = x + MeasureWidth(numFont, t1Str) + 12f;
+
+        // right cluster: 69 ALLIES (measured back from the right edge)
+        var t2Str = t2.ToString();
+        var alliesW = MeasureWidth(labelFont, tk.Team2Label);
+        var t2W = MeasureWidth(numFont, t2Str);
+        var rightStart = right - alliesW - t2W - 7f - 12f;
+        DrawText(ctx, numFont, t2Str, new PointF(rightStart + 12f, baseline), Allies);
+        DrawText(ctx, labelFont, tk.Team2Label, new PointF(right, baseline), Allies, HorizontalAlignment.Right);
+
+        // proportional split track between the clusters
+        var trackX = leftEnd;
+        var trackW = rightStart - leftEnd;
+        if (trackW > 20f)
+        {
+            var trackY = baseline - 8f;
+            const float trackH = 4f;
+            var aW = trackW * (t1 / (float)total);
+            ctx.Fill(WithAlpha(Axis, 235), new RectangularPolygon(trackX, trackY, aW, trackH));
+            ctx.Fill(WithAlpha(Allies, 235), new RectangularPolygon(trackX + aW, trackY, trackW - aW, trackH));
+        }
+    }
+
+    private void DrawCoords(IImageProcessingContext ctx, bool fullBleed, float right)
+    {
+        if (!fullBleed)
+        {
+            return;
+        }
+        // decorative HUD telemetry, top-right corner (clear of the left-aligned name)
+        var font = fonts.Label(10f);
+        DrawText(ctx, font, "N 51·07 / E 1·19", new PointF(right, 26f), WithAlpha(Olive, 180), HorizontalAlignment.Right);
+        DrawText(ctx, font, "ALT 0420 · HDG 270", new PointF(right, 44f), WithAlpha(Olive, 130), HorizontalAlignment.Right);
     }
 
     // ---- text helpers -----------------------------------------------------
 
-    private static RichTextOptions WithOrigin(TextOptions baseOptions, PointF origin) => new(baseOptions.Font)
-    {
-        HorizontalAlignment = HorizontalAlignment.Left,
-        VerticalAlignment = VerticalAlignment.Bottom,
-        Origin = origin
-    };
-
-    private static void DrawShadowText(
+    private static void DrawText(
         IImageProcessingContext ctx,
+        Font font,
         string text,
-        RichTextOptions options,
+        PointF origin,
         Color fill,
-        float shadowOffset,
-        Color? shadowColor = null)
+        HorizontalAlignment hAlign = HorizontalAlignment.Left)
     {
-        var shadow = shadowColor ?? Color.FromRgba(0, 0, 0, 200);
-        var shadowOptions = new RichTextOptions(options.Font)
+        var options = new RichTextOptions(font)
         {
-            HorizontalAlignment = options.HorizontalAlignment,
-            VerticalAlignment = options.VerticalAlignment,
-            Origin = new PointF(options.Origin.X + shadowOffset, options.Origin.Y + shadowOffset),
-            WrappingLength = options.WrappingLength
+            HorizontalAlignment = hAlign,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Origin = origin
         };
-        ctx.DrawText(shadowOptions, text, Brushes.Solid(shadow));
+        // subtle drop shadow for legibility over art
+        var shadow = new RichTextOptions(font)
+        {
+            HorizontalAlignment = hAlign,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Origin = new PointF(origin.X + 1f, origin.Y + 1f)
+        };
+        ctx.DrawText(shadow, text, Brushes.Solid(Color.FromRgba(0, 0, 0, 170)));
         ctx.DrawText(options, text, Brushes.Solid(fill));
     }
 
-    /// <summary>
-    /// Cheap glow: draw the text at eight angular offsets around its origin in a
-    /// translucent accent colour, then stamp the solid fill on top. Approximates a
-    /// neon halo without needing a separate blur/compose pass.
-    /// </summary>
-    private static void DrawGlowText(
-        IImageProcessingContext ctx,
-        string text,
-        RichTextOptions options,
-        Color fill,
-        float glowRadius)
-    {
-        var (r, g, b) = Rgb(fill);
-        var outer = Color.FromRgba(r, g, b, 45);
-        var inner = Color.FromRgba(r, g, b, 90);
-        var shadow = Color.FromRgba(0, 0, 0, 180);
+    private static float MeasureWidth(Font font, string text) =>
+        TextMeasurer.MeasureSize(text, new TextOptions(font)).Width;
 
-        for (var i = 0; i < 8; i++)
+    private static string TruncateToWidth(Font font, string text, float maxWidth)
+    {
+        if (MeasureWidth(font, text) <= maxWidth)
         {
-            var angle = i * MathF.PI / 4f;
-            var dx = MathF.Cos(angle) * glowRadius;
-            var dy = MathF.Sin(angle) * glowRadius;
-            ctx.DrawText(OffsetOptions(options, dx, dy), text, Brushes.Solid(outer));
+            return text;
         }
-        for (var i = 0; i < 8; i++)
+        var ellipsis = "…";
+        while (text.Length > 1 && MeasureWidth(font, text + ellipsis) > maxWidth)
         {
-            var angle = i * MathF.PI / 4f + MathF.PI / 8f;
-            var dx = MathF.Cos(angle) * glowRadius * 0.5f;
-            var dy = MathF.Sin(angle) * glowRadius * 0.5f;
-            ctx.DrawText(OffsetOptions(options, dx, dy), text, Brushes.Solid(inner));
+            text = text[..^1];
         }
-        // Dark offset drop shadow for edge bite against lighter overlay regions.
-        ctx.DrawText(OffsetOptions(options, glowRadius * 0.6f, glowRadius * 0.6f), text, Brushes.Solid(shadow));
-        ctx.DrawText(options, text, Brushes.Solid(fill));
+        return text + ellipsis;
     }
 
-    private static RichTextOptions OffsetOptions(RichTextOptions options, float dx, float dy) => new(options.Font)
-    {
-        HorizontalAlignment = options.HorizontalAlignment,
-        VerticalAlignment = options.VerticalAlignment,
-        Origin = new PointF(options.Origin.X + dx, options.Origin.Y + dy),
-        WrappingLength = options.WrappingLength
-    };
+    private static string Truncate(string text, int max) =>
+        text.Length <= max ? text : text[..(max - 1)] + "…";
 
     // ---- colour helpers ---------------------------------------------------
 

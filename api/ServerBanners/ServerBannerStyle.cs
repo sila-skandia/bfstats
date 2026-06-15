@@ -2,12 +2,17 @@ using SixLabors.ImageSharp;
 
 namespace api.ServerBanners;
 
+/// <summary>
+/// The four futuristic server-signature art treatments, all rendered on the shared
+/// Neutral Depth (v4) palette. Each differs only in the left art panel; the data
+/// column (name, count, map, IP, live tickets) is identical across styles.
+/// </summary>
 public enum ServerBannerStyle
 {
-    Grid,
-    Hud,
-    Scanline,
-    Circuit
+    Reticle,
+    Hologram,
+    Waveform,
+    Console
 }
 
 public static class ServerBannerStyleExtensions
@@ -19,24 +24,36 @@ public static class ServerBannerStyleExtensions
             style = parsed;
             return true;
         }
-        style = ServerBannerStyle.Grid;
+        style = ServerBannerStyle.Reticle;
         return false;
     }
 
-    public static ServerBannerPalette Palette(this ServerBannerStyle style) => style switch
+    /// <summary>
+    /// All four styles share the Neutral Depth palette (muted olive accent, amber busy
+    /// tint). Only <see cref="ServerBannerPalette.Tint"/> shifts slightly per style to
+    /// colour the backdrop glow toward each art treatment's mood.
+    /// </summary>
+    public static ServerBannerPalette Palette(this ServerBannerStyle style)
     {
-        ServerBannerStyle.Grid     => new(Accent: Color.FromRgba(255, 196, 0, 255),  Secondary: Color.FromRgba(61, 220, 132, 255), Tint: Color.FromRgba(18, 14, 2, 255)),
-        ServerBannerStyle.Hud      => new(Accent: Color.FromRgba(61, 220, 132, 255), Secondary: Color.FromRgba(255, 196, 0, 255),  Tint: Color.FromRgba(6, 18, 12, 255)),
-        ServerBannerStyle.Scanline => new(Accent: Color.FromRgba(120, 220, 255, 255),Secondary: Color.FromRgba(255, 196, 0, 255),  Tint: Color.FromRgba(6, 12, 22, 255)),
-        ServerBannerStyle.Circuit  => new(Accent: Color.FromRgba(215, 120, 255, 255),Secondary: Color.FromRgba(61, 220, 132, 255), Tint: Color.FromRgba(14, 6, 22, 255)),
-        _                          => new(Accent: Color.FromRgba(255, 196, 0, 255),  Secondary: Color.FromRgba(61, 220, 132, 255), Tint: Color.FromRgba(18, 14, 2, 255))
-    };
+        var tint = style switch
+        {
+            ServerBannerStyle.Reticle  => Color.FromRgba(14, 16, 9, 255),
+            ServerBannerStyle.Hologram => Color.FromRgba(12, 17, 7, 255),
+            ServerBannerStyle.Waveform => Color.FromRgba(13, 14, 8, 255),
+            ServerBannerStyle.Console  => Color.FromRgba(12, 14, 8, 255),
+            _                          => Color.FromRgba(14, 16, 9, 255)
+        };
+
+        return new ServerBannerPalette(
+            Accent: Color.FromRgba(154, 166, 102, 255),   // --mm-accent-soft (olive)
+            Secondary: Color.FromRgba(125, 163, 76, 255), // --mm-success (allies green)
+            Tint: tint);
+    }
 }
 
 /// <summary>
-/// Per-style colour triad. Accent drives the hero name + overlay linework; Secondary
-/// is the stats-row value colour (kept neon-green by default on most styles for the
-/// "HUD readout" feel); Tint is the darkest gradient stop — a very dim accent-biased
-/// black that subtly colours the backdrop without washing out the text.
+/// Per-style colour triad. Accent drives the art linework + brand wordmark; Secondary
+/// is the allies/team-2 green; Tint is the darkest gradient stop — a dim olive-biased
+/// black that subtly colours the backdrop without washing out the foreground text.
 /// </summary>
 public readonly record struct ServerBannerPalette(Color Accent, Color Secondary, Color Tint);
