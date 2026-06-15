@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
 
-type BannerStyle = 'grid' | 'hud' | 'scanline' | 'circuit'
+type BannerStyle = 'reticle' | 'hologram' | 'waveform' | 'console'
 
 interface Props {
   serverName: string
@@ -10,13 +10,14 @@ interface Props {
 const props = defineProps<Props>()
 
 const styles: { id: BannerStyle; label: string; sub: string }[] = [
-  { id: 'grid', label: 'Grid', sub: 'Blueprint schematic' },
-  { id: 'hud', label: 'HUD', sub: 'Aircraft instrument readout' },
-  { id: 'scanline', label: 'Scanline', sub: 'CRT terminal glow' },
-  { id: 'circuit', label: 'Circuit', sub: 'PCB trace pathways' },
+  { id: 'reticle', label: 'Reticle', sub: 'Targeting HUD overlay' },
+  { id: 'hologram', label: 'Hologram', sub: 'Projected terrain grid' },
+  { id: 'waveform', label: 'Waveform', sub: '24h population signal' },
+  { id: 'console', label: 'Console', sub: 'Command ops readout' },
 ]
 
-const selectedStyle = ref<BannerStyle>('grid')
+const selectedStyle = ref<BannerStyle>('reticle')
+const showTickets = ref(true)
 const copyState = ref<Record<string, boolean>>({})
 const isPreviewLoading = ref(true)
 const previewVersion = ref(Date.now())
@@ -39,6 +40,7 @@ const markdownImg = computed(() => `![${props.serverName}](${shareUrl.value})`)
 function buildUrl(relative: boolean, cacheBust?: number): string {
   const params = new URLSearchParams()
   params.set('style', selectedStyle.value)
+  if (!showTickets.value) params.set('tickets', 'false')
   if (cacheBust !== undefined) params.set('_t', String(cacheBust))
   const path = `/stats/servers/${encodeURIComponent(props.serverName)}/banner.png?${params.toString()}`
   if (relative) return path
@@ -73,7 +75,7 @@ const shareRows = computed(() => [
       <h2 class="mm-h2 mm-sig__title">Mint a live status banner</h2>
       <p class="mm-sig__sub">
         A self-updating PNG for forum signatures and embeds — shows current player
-        count, map, and map rotation. Refreshes on every load.
+        count, map, server IP, and the live team ticket score. Refreshes on every load.
       </p>
     </header>
 
@@ -115,6 +117,18 @@ const shareRows = computed(() => [
             <span class="mm-sig__style-sub">{{ style.sub }}</span>
           </button>
         </div>
+        <button
+          type="button"
+          class="mm-sig__toggle"
+          role="switch"
+          :aria-checked="showTickets"
+          @click="showTickets = !showTickets"
+        >
+          <span class="mm-sig__toggle-track" :class="{ 'is-on': showTickets }">
+            <span class="mm-sig__toggle-thumb" />
+          </span>
+          <span class="mm-sig__toggle-label">Show live team tickets</span>
+        </button>
       </div>
 
       <div class="mm-sig__block">
@@ -251,6 +265,52 @@ const shareRows = computed(() => [
 }
 
 .mm-sig__style.is-active .mm-sig__style-sub { color: var(--mm-bg-mute); }
+
+.mm-sig__toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.mm-sig__toggle-track {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--mm-bg-mute);
+  border: 1px solid var(--mm-rule);
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+  flex-shrink: 0;
+}
+
+.mm-sig__toggle-track.is-on {
+  background: var(--mm-accent);
+  border-color: var(--mm-accent);
+}
+
+.mm-sig__toggle-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--mm-ink);
+  transition: transform 0.14s ease;
+}
+
+.mm-sig__toggle-track.is-on .mm-sig__toggle-thumb { transform: translateX(16px); }
+
+.mm-sig__toggle-label {
+  font-family: var(--mm-font-display);
+  font-size: 13px;
+  color: var(--mm-ink-soft);
+}
 
 .mm-sig__share-row {
   display: grid;
