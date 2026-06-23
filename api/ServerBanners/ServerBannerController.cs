@@ -16,6 +16,7 @@ public class ServerBannerController(IServerBannerService bannerService) : Contro
         string serverName,
         [FromQuery] string? style,
         [FromQuery] bool tickets = true,
+        [FromQuery] int w = ServerBannerRenderer.DefaultWidth,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(serverName))
@@ -26,7 +27,7 @@ public class ServerBannerController(IServerBannerService bannerService) : Contro
         serverName = Uri.UnescapeDataString(serverName);
         ServerBannerStyleExtensions.TryParse(style, out var bannerStyle);
 
-        var bytes = await bannerService.RenderAsync(serverName, bannerStyle, tickets, cancellationToken);
+        var bytes = await bannerService.RenderAsync(serverName, bannerStyle, tickets, ServerBannerRenderer.ClampWidth(w), cancellationToken);
         if (bytes is null)
         {
             return NotFound(new { error = "Server not found" });

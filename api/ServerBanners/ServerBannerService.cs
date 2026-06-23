@@ -25,6 +25,7 @@ public sealed class ServerBannerService(
         string serverName,
         ServerBannerStyle style,
         bool showTickets = true,
+        int width = ServerBannerRenderer.DefaultWidth,
         CancellationToken cancellationToken = default)
     {
         var stats = await ResolveStatsAsync(serverName, style, showTickets, cancellationToken);
@@ -33,7 +34,7 @@ public sealed class ServerBannerService(
             return null;
         }
 
-        return await renderer.RenderAsync(stats, style, cancellationToken);
+        return await renderer.RenderAsync(stats, style, width, cancellationToken);
     }
 
     private async Task<ServerBannerStats?> ResolveStatsAsync(

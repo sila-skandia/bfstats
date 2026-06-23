@@ -16,8 +16,19 @@ const styles: { id: BannerStyle; label: string; sub: string }[] = [
   { id: 'console', label: 'Console', sub: 'Command ops readout' },
 ]
 
+// Output sizes (aspect locked to the renderer's 960×200). Width is what forums key off —
+// smaller fits sites that cap signature dimensions, larger reads big and stays crisp on 4K.
+const sizes: { width: number; height: number; label: string; sub: string }[] = [
+  { width: 640, height: 133, label: 'Small', sub: '640×133' },
+  { width: 960, height: 200, label: 'Medium', sub: '960×200' },
+  { width: 1280, height: 267, label: 'Large', sub: '1280×267' },
+]
+
 const selectedStyle = ref<BannerStyle>('reticle')
+const selectedWidth = ref(960)
 const showTickets = ref(true)
+
+const selectedSize = computed(() => sizes.find((s) => s.width === selectedWidth.value) ?? sizes[1])
 const copyState = ref<Record<string, boolean>>({})
 const isPreviewLoading = ref(true)
 const previewVersion = ref(Date.now())
@@ -34,12 +45,13 @@ const shareUrl = computed(() => buildUrl(false))
 watch(previewUrl, () => { isPreviewLoading.value = true })
 
 const bbCode = computed(() => `[img]${shareUrl.value}[/img]`)
-const htmlImg = computed(() => `<img src="${shareUrl.value}" alt="${props.serverName} live server status" />`)
+const htmlImg = computed(() => `<img src="${shareUrl.value}" alt="${props.serverName} live server status" width="${selectedSize.value.width}" height="${selectedSize.value.height}" />`)
 const markdownImg = computed(() => `![${props.serverName}](${shareUrl.value})`)
 
 function buildUrl(relative: boolean, cacheBust?: number): string {
   const params = new URLSearchParams()
   params.set('style', selectedStyle.value)
+  params.set('w', String(selectedWidth.value))
   if (!showTickets.value) params.set('tickets', 'false')
   if (cacheBust !== undefined) params.set('_t', String(cacheBust))
   const path = `/stats/servers/${encodeURIComponent(props.serverName)}/banner.png?${params.toString()}`
@@ -129,6 +141,24 @@ const shareRows = computed(() => [
           </span>
           <span class="mm-sig__toggle-label">Show live team tickets</span>
         </button>
+
+        <div class="mm-sig__res">
+          <span class="mm-sig__res-label">Size</span>
+          <div class="mm-sig__res-opts">
+            <button
+              v-for="size in sizes"
+              :key="size.width"
+              type="button"
+              class="mm-sig__res-opt"
+              :class="{ 'is-active': selectedWidth === size.width }"
+              :title="`${size.sub} px`"
+              @click="selectedWidth = size.width"
+            >
+              <span class="mm-sig__res-opt-label">{{ size.label }}</span>
+              <span class="mm-sig__res-opt-sub">{{ size.sub }}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="mm-sig__block">
@@ -311,6 +341,63 @@ const shareRows = computed(() => [
   font-size: 13px;
   color: var(--mm-ink-soft);
 }
+
+.mm-sig__res {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.mm-sig__res-label {
+  font-family: var(--mm-font-display);
+  font-size: 13px;
+  color: var(--mm-ink-soft);
+}
+
+.mm-sig__res-opts { display: flex; gap: 8px; }
+
+.mm-sig__res-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  background: transparent;
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  padding: 6px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.mm-sig__res-opt:hover {
+  border-color: var(--mm-ink);
+  background: var(--mm-bg-soft);
+}
+
+.mm-sig__res-opt.is-active {
+  border-color: var(--mm-ink);
+  background: var(--mm-ink);
+  color: var(--mm-bg);
+}
+
+.mm-sig__res-opt-label {
+  font-family: var(--mm-font-display);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.mm-sig__res-opt-sub {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+
+.mm-sig__res-opt.is-active .mm-sig__res-opt-sub { color: var(--mm-bg-mute); }
 
 .mm-sig__share-row {
   display: grid;
