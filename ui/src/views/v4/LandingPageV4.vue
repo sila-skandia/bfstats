@@ -171,10 +171,9 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
       <span class="mm-display__muted" style="margin-left: 0.3em">in combat</span>
     </h1>
     <p class="mm-display mm-landing__hero-only" style="font-size: clamp(20px, 2vw, 26px); margin-top: 8px; color: var(--mm-ink-soft)">
-      across
       <span v-if="isInitialLoad" class="mm-skeleton" style="width: 30px; height: 1em; display: inline-block; vertical-align: middle"></span>
       <template v-else>{{ formatNumber(activeCount) }}</template>
-      live {{ GAME_LABEL }} servers tonight.
+      live servers
     </p>
 
     <hr class="mm-rule mm-landing__hero-only" style="margin-top: 32px" />
