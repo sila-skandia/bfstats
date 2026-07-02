@@ -9,7 +9,6 @@ import type {
   PlayerMapStatEntry,
   Session,
   ServerRanking,
-  KillMilestone,
   BestScoreEntry,
 } from '@/types/playerStatsTypes'
 import { decodePlayerName } from '@/utils/playerName'
@@ -21,9 +20,9 @@ import MmPlayerSignatureBuilder from '@/components/v4/MmPlayerSignatureBuilder.v
 import MmCommunityCard from '@/components/v4/MmCommunityCard.vue'
 import MmPlayerActivityHeatmap from '@/components/v4/MmPlayerActivityHeatmap.vue'
 import MmPlayerMapPreference from '@/components/v4/MmPlayerMapPreference.vue'
-import MmPlayerAchievementSummary from '@/components/v4/MmPlayerAchievementSummary.vue'
 import MmPlayerAchievementHeroBadges from '@/components/v4/MmPlayerAchievementHeroBadges.vue'
 import MmPlayerRecentRoundsCompact from '@/components/v4/MmPlayerRecentRoundsCompact.vue'
+import MmPlayerAchievementSummary from '@/components/v4/MmPlayerAchievementSummary.vue'
 import MmPlayerServerMapStats from '@/components/v4/MmPlayerServerMapStats.vue'
 import MmPlayerCompetitiveRankings from '@/components/v4/data-explorer/MmPlayerCompetitiveRankings.vue'
 import MmMapPerformanceRace from '@/components/v4/data-explorer/MmMapPerformanceRace.vue'
@@ -65,30 +64,6 @@ const loadCommunities = async () => {
   }
 }
 
-type Tab = 'overview' | 'sessions' | 'maps' | 'servers' | 'achievements'
-const tabs: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'sessions', label: 'Recent sessions' },
-  { id: 'maps', label: 'Maps' },
-  { id: 'servers', label: 'Servers' },
-  { id: 'achievements', label: 'Achievements' },
-]
-
-const activeTab = ref<Tab>((route.query.tab as Tab) || 'overview')
-
-// Sync the active tab into the URL via the native History API instead of
-// router.replace — going through vue-router triggers scrollBehavior, which
-// on the first navigation has `from` pointing at the initial entry and so
-// the path-equality guard doesn't match. History.replaceState updates the
-// URL without invoking the router pipeline.
-watch(activeTab, (t) => {
-  if (route.query.tab === t) return
-  const url = new URL(window.location.href)
-  if (t === 'overview') url.searchParams.delete('tab')
-  else url.searchParams.set('tab', t)
-  window.history.replaceState(window.history.state, '', url.toString())
-})
-
 const loadStats = async () => {
   loading.value = true
   error.value = null
@@ -124,13 +99,10 @@ const loadAchievements = async () => {
   }
 }
 
-watch(activeTab, (t) => {
-  if (t === 'achievements' || t === 'overview') void loadAchievements()
-}, { immediate: true })
-
 onMounted(() => {
   void loadStats()
   void loadCommunities()
+  void loadAchievements()
 })
 
 watch(rawName, () => {
@@ -140,7 +112,27 @@ watch(rawName, () => {
   playerCommunities.value = []
   void loadStats()
   void loadCommunities()
-  if (activeTab.value === 'achievements' || activeTab.value === 'overview') void loadAchievements()
+  void loadAchievements()
+})
+
+// --- tabs ---
+type Tab = 'overview' | 'sessions' | 'maps' | 'servers' | 'achievements'
+const tabs: { id: Tab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'sessions', label: 'Recent sessions' },
+  { id: 'maps', label: 'Maps' },
+  { id: 'servers', label: 'Servers' },
+  { id: 'achievements', label: 'Achievements' },
+]
+const activeTab = ref<Tab>((route.query.tab as Tab) || 'overview')
+// Sync active tab into the URL via the native History API (see server view
+// for why we bypass router.replace here).
+watch(activeTab, (t) => {
+  if (route.query.tab === t) return
+  const url = new URL(window.location.href)
+  if (t === 'overview') url.searchParams.delete('tab')
+  else url.searchParams.set('tab', t)
+  window.history.replaceState(window.history.state, '', url.toString())
 })
 
 // ---------- derived ----------
@@ -223,11 +215,6 @@ const formatRelative = (iso: string) => {
   if (diff < 86400) return `${Math.round(diff / 3600)}h ago`
   return `${Math.round(diff / 86400)}d ago`
 }
-const formatDate = (iso: string) => {
-  const d = parseUtc(iso)
-  if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
 const resultLabel = (result: Session['teamResult']) => {
   if (result === 'win') return 'Win'
   if (result === 'loss') return 'Loss'
@@ -252,7 +239,7 @@ const friendlyAchievementName = (g: PlayerAchievementGroup) => {
   return t ? `${g.achievementName} — ${t}` : g.achievementName
 }
 
-// servers + maps aggregations
+// Servers tab — aggregate per-server stats, most-played first.
 const topServers = computed(() => {
   const s = stats.value?.servers ?? []
   return [...s].sort((a, b) => b.totalMinutes - a.totalMinutes).slice(0, 12)
@@ -316,21 +303,10 @@ const trendDelta = (series: { value: number }[]) => {
 const kdTrendDelta = computed(() => trendDelta(kdTrend.value))
 const killRateTrendDelta = computed(() => trendDelta(killRateTrend.value))
 
-// Best kill map
-const bestKillMap = computed(() => stats.value?.insights?.bestKillMap ?? null)
-
 // Server rankings (top 4)
 const allServerRankings = computed<ServerRanking[]>(() => {
   const r = stats.value?.insights?.serverRankings ?? []
   return [...r].sort((a, b) => a.rank - b.rank).slice(0, 4)
-})
-
-// Kill milestones — sort newest first
-const killMilestones = computed<KillMilestone[]>(() => {
-  const m = stats.value?.killMilestones ?? []
-  return [...m].sort((a, b) =>
-    parseUtc(b.achievedDate).getTime() - parseUtc(a.achievedDate).getTime()
-  )
 })
 
 // Best scores — show top 3 for each window
@@ -357,11 +333,6 @@ const scoreKd = (e: BestScoreEntry): number => {
   if (e.deaths === 0) return e.kills
   return e.kills / e.deaths
 }
-const formatScoreDate = (iso: string): string => {
-  const d = parseUtc(iso)
-  if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
 const openScoreRound = (e: BestScoreEntry) => {
   if (!e.roundId) return
   router.push({
@@ -375,9 +346,6 @@ const goCompare = () => {
 }
 const goSessions = () => {
   router.push(`/v4/players/${encodeURIComponent(rawName.value)}/sessions`)
-}
-const goAchievements = () => {
-  router.push(`/v4/players/${encodeURIComponent(rawName.value)}/achievements`)
 }
 const goNetwork = () => {
   router.push(`/v4/players/${encodeURIComponent(rawName.value)}/network`)
@@ -434,116 +402,9 @@ const signatureServers = computed(() => {
 </script>
 
 <template>
-  <div class="mm-container mm-section">
+  <div class="mm-container mm-container--wide mm-section">
     <!-- back link to players index -->
-    <div class="mm-meta-row" style="margin-bottom: 10px">
-      <router-link
-        to="/v4/players"
-        class="mm-meta-row__strong"
-        style="text-decoration: underline; text-underline-offset: 3px"
-      >‹ PLAYERS</router-link>
-    </div>
-
-    <!-- meta row -->
-    <div class="mm-meta-row" style="margin-bottom: 18px">
-      <span class="mm-chip" :class="{ 'mm-chip--off': !isOnline }">
-        <span class="mm-chip__dot" />
-        {{ isOnline ? 'Online' : 'Offline' }}
-      </span>
-      <span v-if="isOnline">in combat</span>
-      <span class="mm-meta-row__sep">·</span>
-      <span v-if="bestRank">
-        Rank <span class="mm-meta-row__strong">#{{ bestRank.rank }}</span> of {{ formatNumber(bestRank.of) }}
-      </span>
-      <span v-else>Unranked</span>
-      <span class="mm-meta-row__sep">·</span>
-      <span>First seen <span class="mm-meta-row__strong">{{ firstSeenDate }}</span></span>
-    </div>
-
-    <!-- hero name + actions -->
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap">
-      <div style="min-width: 0">
-        <h1 class="mm-display">
-          {{ displayName }}
-          <span v-if="tierLabel" class="mm-display__muted">{{ tierLabel }}</span>
-        </h1>
-        <div class="mm-meta-row" style="margin-top: 12px; text-transform: none; letter-spacing: 0.02em; font-family: var(--mm-font-display); font-size: 13.5px; color: var(--mm-ink-soft)">
-          <template v-if="currentServer">
-            currently on
-            <a
-              class="mm-meta-row__strong"
-              style="text-decoration: underline; text-underline-offset: 3px; cursor: pointer"
-              @click="goServer(currentServer.serverName)"
-            >{{ currentServer.serverName }}</a>
-            <span v-if="currentServer.mapName" class="mm-meta-row__sep">·</span>
-            <span v-if="currentServer.mapName">{{ currentServer.mapName }}</span>
-          </template>
-          <template v-else>
-            last seen <span class="mm-meta-row__strong" :title="stats?.lastPlayed ? formatLocalTooltip(stats.lastPlayed) : ''">{{ stats?.lastPlayed ? formatRelative(stats.lastPlayed) : '—' }}</span>
-          </template>
-        </div>
-        <div style="margin-top: 14px">
-          <MmPlayerAchievementHeroBadges :player-name="rawName" :total-count="achievementGroups.length" />
-        </div>
-      </div>
-
-      <div class="mm-btn-row">
-        <button class="mm-btn" type="button" @click="goCompare">Compare</button>
-        <button class="mm-btn" type="button" @click="goAchievements">Achievements</button>
-        <button class="mm-btn" type="button" @click="goNetwork">Network</button>
-        <button class="mm-btn mm-btn--strong" type="button" @click="goSessions">Sessions →</button>
-      </div>
-    </div>
-
-    <!-- stat strip -->
-    <div class="mm-stats" style="margin-top: 28px">
-      <div class="mm-stats__cell">
-        <div class="mm-stats__label">Lifetime kills</div>
-        <div class="mm-stat__value mm-num--kill">{{ formatNumber(totalKills) }}</div>
-        <div class="mm-stat__delta">
-          <span class="mm-num--death">{{ formatNumber(totalDeaths) }}</span> deaths
-        </div>
-      </div>
-      <div class="mm-stats__cell">
-        <div class="mm-stats__label">K/D ratio</div>
-        <div class="mm-stat__value" :class="kdClass(kd)">{{ kd.toFixed(2) }}</div>
-        <div class="mm-stat__delta">
-          <template v-if="totalKills > 0">
-            <span class="mm-num--kill">{{ formatNumber(totalKills) }} k</span>
-            <span class="mm-num__sep">/</span>
-            <span class="mm-num--death">{{ formatNumber(totalDeaths) }} d</span>
-          </template>
-          <template v-else>no rounds yet</template>
-        </div>
-      </div>
-      <div class="mm-stats__cell">
-        <div class="mm-stats__label">Playtime</div>
-        <div class="mm-stat__value">{{ formatNumber(playtimeHours) }}<span class="mm-stat__suffix">h</span></div>
-        <div class="mm-stat__delta">{{ formatNumber(sessionsCount) }} sessions</div>
-      </div>
-      <div class="mm-stats__cell">
-        <div class="mm-stats__label">Best streak</div>
-        <div
-          class="mm-stat__value"
-          :class="streakClass(bestStreak?.latestValue)"
-        >{{ bestStreak ? bestStreak.latestValue : '—' }}</div>
-        <div class="mm-stat__delta">
-          {{ bestStreak ? `${bestStreak.count}× recorded` : 'no streaks logged' }}
-        </div>
-      </div>
-    </div>
-
-    <!-- tabs -->
-    <div class="mm-tabs" style="margin-top: 32px">
-      <button
-        v-for="t in tabs"
-        :key="t.id"
-        type="button"
-        class="mm-tab"
-        :class="{ 'mm-tab--active': activeTab === t.id }"
-        @click="activeTab = t.id"
-      >{{ t.label }}</button>
-    </div>
+    <router-link to="/v4/players" class="mm-player__back">‹ Players</router-link>
 
     <!-- loading / error overlay (shared) -->
     <div v-if="loading" style="padding: 40px 0">
@@ -552,275 +413,330 @@ const signatureServers = computed(() => {
 
     <div v-else-if="error" class="mm-empty">{{ error }}</div>
 
-    <!-- panels -->
-    <section v-else class="mm-section--tight">
-      <!-- ========== overview ========== -->
-      <div v-if="activeTab === 'overview'" class="mm-overview">
-        <!-- row 1: latest sessions + recent achievements -->
-        <div class="mm-overview__row mm-overview__row--split">
-          <div>
-            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Latest sessions</div>
-            <MmPlayerRecentRoundsCompact :sessions="recentSessions" :player-name="rawName" />
+    <template v-else>
+      <!-- hero -->
+      <div class="mm-player-hero">
+        <div class="mm-player-hero__avatar">{{ (displayName[0] || '?').toUpperCase() }}</div>
+
+        <div class="mm-player-hero__main">
+          <div class="mm-meta-row" style="margin-bottom: 8px">
+            <span class="mm-chip" :class="isOnline ? 'mm-chip--live' : 'mm-chip--off'">
+              <span class="mm-chip__dot" />{{ isOnline ? 'Online' : 'Offline' }}
+            </span>
+            <span class="mm-meta-row__sep">·</span>
+            <span v-if="bestRank">Rank <span class="mm-meta-row__strong">#{{ bestRank.rank }}</span> of {{ formatNumber(bestRank.of) }}</span>
+            <span v-else>Unranked</span>
+            <span class="mm-meta-row__sep">·</span>
+            <span>First seen {{ firstSeenDate }}</span>
           </div>
 
-          <div>
-            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Recent achievements</div>
-            <div v-if="achievementsLoading" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px">
-              <div v-for="i in 4" :key="i" class="mm-skeleton mm-skeleton--lg" />
-            </div>
-            <div v-else-if="achievementsError" class="mm-empty" style="padding: 24px">{{ achievementsError }}</div>
-            <div v-else-if="achievementsForGrid.length === 0" class="mm-empty" style="padding: 24px">No achievements yet.</div>
-            <div v-else style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 12px">
-              <div
-                v-for="g in achievementsForGrid.slice(0, 8)"
-                :key="g.achievementId"
-                style="text-align: center"
-              >
-                <img
-                  :src="getAchievementImage(g.achievementId, g.tier)"
-                  :alt="friendlyAchievementName(g)"
-                  loading="lazy"
-                  style="width: 56px; height: 56px; object-fit: contain; display: block; margin: 0 auto 8px"
-                />
-                <div class="mm-eyebrow mm-eyebrow--strong" style="font-size: 9px; line-height: 1.3">
-                  {{ friendlyAchievementName(g) }}
-                </div>
-              </div>
-            </div>
-            <button
-              v-if="achievementsForGrid.length > 8"
-              type="button"
-              class="mm-btn"
-              style="margin-top: 16px"
-              @click="activeTab = 'achievements'"
-            >View all →</button>
+          <h1 class="mm-display mm-player__name">
+            {{ displayName }}
+            <span v-if="tierLabel" class="mm-display__muted">{{ tierLabel }}</span>
+          </h1>
+
+          <div class="mm-meta-row mm-player__where">
+            <template v-if="currentServer">
+              currently on
+              <a
+                class="mm-meta-row__strong"
+                style="text-decoration: underline; text-underline-offset: 3px; cursor: pointer"
+                @click="goServer(currentServer.serverName)"
+              >{{ currentServer.serverName }}</a>
+              <template v-if="currentServer.mapName">
+                <span class="mm-meta-row__sep">·</span><span>{{ currentServer.mapName }}</span>
+              </template>
+            </template>
+            <template v-else>
+              last seen <span class="mm-meta-row__strong" :title="stats?.lastPlayed ? formatLocalTooltip(stats.lastPlayed) : ''">{{ stats?.lastPlayed ? formatRelative(stats.lastPlayed) : '—' }}</span>
+            </template>
+          </div>
+
+          <div style="margin-top: 16px">
+            <MmPlayerAchievementHeroBadges :player-name="rawName" :total-count="achievementGroups.length" />
           </div>
         </div>
 
-        <!-- row 2: insight rail (activity, k/d trend, kill rate trend) -->
-        <div class="mm-overview__row mm-overview__row--triple">
-          <div class="mm-card">
-            <div class="mm-eyebrow mm-eyebrow--strong">Activity rhythm</div>
-            <div class="mm-card__hint">your local hours · last 30d</div>
-            <div v-if="activityHours.length > 0" style="margin-top: 12px">
-              <MmBars :values="activityHours" :labels="['00', '06', '12', '18', '23']" :height="56" />
-            </div>
-            <div v-else class="mm-card__empty">No activity recorded.</div>
-            <div v-if="peakHour" class="mm-card__foot">
-              Peak around <span class="mm-meta-row__strong">{{ String(peakHour.hour).padStart(2, '0') }}:00</span>
-              · {{ formatDuration(peakHour.minutes) }}
-            </div>
-          </div>
-
-          <div class="mm-card">
-            <div class="mm-eyebrow mm-eyebrow--strong">K/D trend</div>
-            <div class="mm-card__hint">{{ stats?.recentStats?.granularity || 'rolling' }} · {{ kdTrend.length || 0 }} pts</div>
-            <div v-if="kdTrend.length > 1" style="margin-top: 12px">
-              <MmSparkline :values="kdTrend.map(p => p.value)" :height="56" :width="260" />
-            </div>
-            <div v-else class="mm-card__empty">Not enough rounds yet.</div>
-            <div v-if="kdTrendDelta != null" class="mm-card__foot">
-              <span :class="kdTrendDelta >= 0 ? 'mm-stat__delta--up' : 'mm-stat__delta--down'">
-                {{ kdTrendDelta >= 0 ? '+' : '' }}{{ kdTrendDelta.toFixed(1) }}%
-              </span>
-              vs first sample · last {{ kdTrend[kdTrend.length - 1]?.value.toFixed(2) }}
-            </div>
-          </div>
-
-          <div class="mm-card">
-            <div class="mm-eyebrow mm-eyebrow--strong">Kill rate</div>
-            <div class="mm-card__hint">kills / minute</div>
-            <div v-if="killRateTrend.length > 1" style="margin-top: 12px">
-              <MmSparkline :values="killRateTrend.map(p => p.value)" :height="56" :width="260" :accent="true" />
-            </div>
-            <div v-else class="mm-card__empty">Not enough rounds yet.</div>
-            <div v-if="killRateTrendDelta != null" class="mm-card__foot">
-              <span :class="killRateTrendDelta >= 0 ? 'mm-stat__delta--up' : 'mm-stat__delta--down'">
-                {{ killRateTrendDelta >= 0 ? '+' : '' }}{{ killRateTrendDelta.toFixed(1) }}%
-              </span>
-              vs first sample · last {{ killRateTrend[killRateTrend.length - 1]?.value.toFixed(2) }}
-            </div>
-          </div>
-        </div>
-
-        <!-- row 3: favourite maps + server rankings -->
-        <div class="mm-overview__row mm-overview__row--split">
-          <div>
-            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">
-              Favourite maps
-              <span v-if="bestKillMap" style="text-transform: none; letter-spacing: 0.02em; color: var(--mm-ink-soft); font-family: var(--mm-font-display); margin-left: 8px">
-                — best on
-                <span class="mm-meta-row__strong">{{ bestKillMap.mapName }}</span>
-                ({{ bestKillMap.kdRatio.toFixed(2) }} K/D)
-              </span>
-            </div>
-            <table class="mm-list mm-list--dense">
-              <tbody>
-                <tr
-                  v-for="(m, i) in topMaps.slice(0, 6)"
-                  :key="m.mapName"
-                  :class="i < 3 ? `mm-rank--${['gold', 'silver', 'bronze'][i]}` : ''"
-                  @click="openMapRankings(m.mapName); activeTab = 'maps'"
-                >
-                  <td class="mm-list__name-cell">
-                    <div class="mm-list__name">
-                      <span class="mm-list__name-primary">{{ m.mapName }}</span>
-                      <span class="mm-list__name-sub">
-                        {{ formatDuration(m.minutes) }} ·
-                        <span class="mm-num--kill">{{ formatNumber(m.kills) }}</span> kills
-                      </span>
-                    </div>
-                  </td>
-                  <td class="is-num" data-cell-label="K/D" style="width: 100px">
-                    <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end">
-                      <span :class="kdClass(m.kd)">{{ m.kd.toFixed(2) }}</span>
-                      <div class="mm-list__bar" style="width: 64px">
-                        <div
-                          class="mm-list__bar-fill"
-                          :class="{ 'mm-list__bar-fill--accent': m.kd >= kd }"
-                          :style="{ width: Math.min(100, (m.kd / Math.max(1, kd * 1.6)) * 100) + '%' }"
-                        />
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="topMaps.length === 0">
-                  <td colspan="2" class="mm-empty" style="border: 0">No map history yet.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div>
-            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Server rankings</div>
-            <table class="mm-list mm-list--dense">
-              <tbody>
-                <tr
-                  v-for="r in allServerRankings"
-                  :key="r.serverGuid"
-                  @click="goServer(r.serverName)"
-                >
-                  <td style="width: 72px; padding-right: 6px">
-                    <span
-                      class="mm-headline-rank"
-                      :class="{ 'mm-headline-rank--podium': r.rank <= 3 }"
-                    >
-                      <span class="mm-headline-rank__hash">#</span>{{ r.rank }}
-                    </span>
-                  </td>
-                  <td class="mm-list__name-cell">
-                    <div class="mm-list__name">
-                      <span class="mm-list__name-primary">{{ truncate(r.serverName, 30) }}</span>
-                      <span class="mm-list__name-sub">of {{ formatNumber(r.totalRankedPlayers) }} players</span>
-                    </div>
-                  </td>
-                  <td class="is-num" data-cell-label="Ping">{{ r.averagePing }}<span style="color: var(--mm-ink-faint)">ms</span></td>
-                </tr>
-                <tr v-if="allServerRankings.length === 0">
-                  <td colspan="3" class="mm-empty" style="border: 0">No competitive rankings yet.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- row 4: kill milestones (if any) + best scores -->
-        <div
-          v-if="killMilestones.length > 0 || hasAnyBestScores"
-          class="mm-overview__row"
-          :class="killMilestones.length > 0 && hasAnyBestScores ? 'mm-overview__row--split' : ''"
-        >
-          <div v-if="killMilestones.length > 0">
-            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Kill milestones</div>
-            <ul class="mm-timeline">
-              <li v-for="ms in killMilestones.slice(0, 5)" :key="ms.milestone">
-                <span class="mm-timeline__dot" />
-                <div>
-                  <div class="mm-timeline__primary">
-                    {{ formatNumber(ms.milestone) }} kills
-                  </div>
-                  <div class="mm-timeline__sub">
-                    {{ formatDate(ms.achievedDate) }} · {{ formatNumber(ms.daysToAchieve) }} days to reach
-                  </div>
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <div v-if="hasAnyBestScores">
-            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 14px">Best scores</div>
-            <div class="mm-eyebrow mm-tz-hint">Times shown in your local time</div>
-            <div class="mm-subtabs" style="margin-bottom: 12px">
-              <button
-                v-for="w in scoreWindows"
-                :key="w.id"
-                type="button"
-                class="mm-subtab"
-                :class="{ 'mm-subtab--active': activeScoreWindow === w.id }"
-                @click="activeScoreWindow = w.id"
-              >{{ w.label }}</button>
-            </div>
-            <ol v-if="currentBestScores.length > 0" class="mm-tab-cards">
-              <li
-                v-for="(s, i) in currentBestScores"
-                :key="`bsc-${s.roundId}-${i}`"
-                class="mm-session-row mm-session-row--rank"
-                :class="rankTintClass(i)"
-                @click="openScoreRound(s)"
-              >
-                <span class="mm-session-row__chip">{{ rankNum(i) }}</span>
-                <span class="mm-session-row__map">{{ s.mapName }}</span>
-                <span class="mm-session-row__date" :title="formatLocalTooltip(s.timestamp)">{{ formatScoreDate(s.timestamp) }}</span>
-                <span class="mm-session-row__server">{{ truncate(s.serverName, 32) }}</span>
-                <span class="mm-session-row__stats">
-                  {{ formatNumber(s.score) }}
-                  <span class="mm-num__sep">·</span>
-                  <span class="mm-num--kill">{{ s.kills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.deaths }}</span>
-                  <span class="mm-num__sep">·</span>
-                  <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
-                </span>
-              </li>
-            </ol>
-            <table v-if="currentBestScores.length > 0" class="mm-list mm-list--dense mm-tab-table">
-              <thead>
-                <tr>
-                  <th style="width: 40px"></th>
-                  <th class="is-num">Score</th>
-                  <th>Map</th>
-                  <th>Server</th>
-                  <th class="is-num">K / D</th>
-                  <th class="is-num">When</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="(s, i) in currentBestScores"
-                  :key="`${s.roundId}-${i}`"
-                  :class="rankTintClass(i)"
-                  @click="openScoreRound(s)"
-                >
-                  <td class="mm-list__rank">{{ rankNum(i) }}</td>
-                  <td class="is-num">{{ formatNumber(s.score) }}</td>
-                  <td>{{ s.mapName }}</td>
-                  <td class="is-muted">{{ truncate(s.serverName, 28) }}</td>
-                  <td class="is-num">
-                    <span class="mm-num--kill">{{ s.kills }}</span>/<span class="mm-num--death">{{ s.deaths }}</span>
-                    <span class="mm-num__sep">·</span>
-                    <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
-                  </td>
-                  <td class="is-num is-muted" :title="formatLocalTooltip(s.timestamp)">{{ formatScoreDate(s.timestamp) }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <div v-if="currentBestScores.length === 0" class="mm-empty" style="padding: 32px">
-              No scores recorded in this window yet.
-            </div>
-          </div>
+        <div class="mm-player-hero__nav">
+          <button class="mm-player__navlink" type="button" @click="goCompare">Compare</button>
+          <button class="mm-player__navlink" type="button" @click="goNetwork">Network</button>
+          <button class="mm-player__navlink mm-player__navlink--strong" type="button" @click="goSessions">Sessions →</button>
         </div>
       </div>
 
-      <!-- ========== sessions ========== -->
-      <div v-else-if="activeTab === 'sessions'" style="margin-top: 8px">
+      <!-- KPI strip -->
+      <div class="mm-stats" style="margin-top: 24px">
+        <div class="mm-stats__cell">
+          <div class="mm-stats__label">Lifetime kills</div>
+          <div class="mm-stat__value mm-num--kill">{{ formatNumber(totalKills) }}</div>
+          <div class="mm-stat__delta"><span class="mm-num--death">{{ formatNumber(totalDeaths) }}</span> deaths</div>
+        </div>
+        <div class="mm-stats__cell">
+          <div class="mm-stats__label">K/D ratio</div>
+          <div class="mm-stat__value" :class="kdClass(kd)">{{ kd.toFixed(2) }}</div>
+          <div class="mm-stat__delta">
+            <template v-if="totalKills > 0">
+              <span class="mm-num--kill">{{ formatNumber(totalKills) }} k</span>
+              <span class="mm-num__sep">/</span>
+              <span class="mm-num--death">{{ formatNumber(totalDeaths) }} d</span>
+            </template>
+            <template v-else>no rounds yet</template>
+          </div>
+        </div>
+        <div class="mm-stats__cell">
+          <div class="mm-stats__label">Playtime</div>
+          <div class="mm-stat__value">{{ formatNumber(playtimeHours) }}<span class="mm-stat__suffix">h</span></div>
+          <div class="mm-stat__delta">{{ formatNumber(sessionsCount) }} sessions</div>
+        </div>
+        <div class="mm-stats__cell">
+          <div class="mm-stats__label">Best streak</div>
+          <div class="mm-stat__value" :class="streakClass(bestStreak?.latestValue)">{{ bestStreak ? bestStreak.latestValue : '—' }}</div>
+          <div class="mm-stat__delta">{{ bestStreak ? `${bestStreak.count}× recorded` : 'no streaks logged' }}</div>
+        </div>
+      </div>
+
+      <!-- tabs -->
+      <div class="mm-tabs" style="margin-top: 30px">
+        <button
+          v-for="t in tabs"
+          :key="t.id"
+          type="button"
+          class="mm-tab"
+          :class="{ 'mm-tab--active': activeTab === t.id }"
+          @click="activeTab = t.id"
+        >{{ t.label }}</button>
+      </div>
+
+      <!-- ===================== OVERVIEW ===================== -->
+      <div v-if="activeTab === 'overview'" style="margin-top: 22px">
+        <!-- main grid: sessions | charts | achievements + rankings -->
+        <div class="mm-dash-grid" style="grid-template-columns: 1.5fr 0.85fr 1fr">
+          <section class="mm-panel">
+            <div class="mm-pbar">
+              <span class="mm-pbar__t"># Latest sessions</span>
+              <span class="mm-pbar__m">tap for full debrief</span>
+            </div>
+            <div class="mm-panel__body">
+              <MmPlayerRecentRoundsCompact :sessions="recentSessions" :player-name="rawName" />
+            </div>
+          </section>
+
+          <div class="mm-dash-col">
+            <section class="mm-panel"><div class="mm-panel__body">
+              <span class="mm-eyebrow mm-eyebrow--strong">Activity rhythm</span>
+              <div class="mm-card__hint">your local hours · last 30d</div>
+              <div v-if="activityHours.length > 0" style="margin-top: 10px">
+                <MmBars :values="activityHours" :labels="['00', '06', '12', '18', '23']" :height="56" />
+              </div>
+              <div v-else class="mm-card__empty">No activity recorded.</div>
+              <div v-if="peakHour" class="mm-card__foot">
+                Peak around <span class="mm-meta-row__strong">{{ String(peakHour.hour).padStart(2, '0') }}:00</span>
+                · {{ formatDuration(peakHour.minutes) }}
+              </div>
+            </div></section>
+
+            <section class="mm-panel"><div class="mm-panel__body">
+              <span class="mm-eyebrow mm-eyebrow--strong">K/D trend</span>
+              <div class="mm-card__hint">{{ stats?.recentStats?.granularity || 'rolling' }} · {{ kdTrend.length || 0 }} pts</div>
+              <div v-if="kdTrend.length > 1" style="margin-top: 10px">
+                <MmSparkline :values="kdTrend.map(p => p.value)" :height="56" :width="260" />
+              </div>
+              <div v-else class="mm-card__empty">Not enough rounds yet.</div>
+              <div v-if="kdTrendDelta != null" class="mm-card__foot">
+                <span :class="kdTrendDelta >= 0 ? 'mm-stat__delta--up' : 'mm-stat__delta--down'">
+                  {{ kdTrendDelta >= 0 ? '+' : '' }}{{ kdTrendDelta.toFixed(1) }}%
+                </span>
+                vs first · last {{ kdTrend[kdTrend.length - 1]?.value.toFixed(2) }}
+              </div>
+            </div></section>
+
+            <section class="mm-panel"><div class="mm-panel__body">
+              <span class="mm-eyebrow mm-eyebrow--strong">Kill rate</span>
+              <div class="mm-card__hint">kills / minute</div>
+              <div v-if="killRateTrend.length > 1" style="margin-top: 10px">
+                <MmSparkline :values="killRateTrend.map(p => p.value)" :height="56" :width="260" :accent="true" />
+              </div>
+              <div v-else class="mm-card__empty">Not enough rounds yet.</div>
+              <div v-if="killRateTrendDelta != null" class="mm-card__foot">
+                <span :class="killRateTrendDelta >= 0 ? 'mm-stat__delta--up' : 'mm-stat__delta--down'">
+                  {{ killRateTrendDelta >= 0 ? '+' : '' }}{{ killRateTrendDelta.toFixed(1) }}%
+                </span>
+                vs first · last {{ killRateTrend[killRateTrend.length - 1]?.value.toFixed(2) }}
+              </div>
+            </div></section>
+          </div>
+
+          <div class="mm-dash-col">
+            <section class="mm-panel">
+              <div class="mm-pbar"><span class="mm-pbar__t"># Recent achievements</span></div>
+              <div class="mm-panel__body">
+                <div v-if="achievementsLoading" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px">
+                  <div v-for="i in 4" :key="i" class="mm-skeleton mm-skeleton--lg" />
+                </div>
+                <div v-else-if="achievementsError" class="mm-empty" style="border: 0; padding: 12px 0">{{ achievementsError }}</div>
+                <div v-else-if="achievementsForGrid.length === 0" class="mm-empty" style="border: 0; padding: 12px 0">No achievements yet.</div>
+                <div v-else class="mm-ach-mini">
+                  <div v-for="g in achievementsForGrid.slice(0, 6)" :key="g.achievementId" class="mm-ach-mini__item">
+                    <img
+                      :src="getAchievementImage(g.achievementId, g.tier)"
+                      :alt="friendlyAchievementName(g)"
+                      loading="lazy"
+                      class="mm-ach-mini__img"
+                    />
+                    <span class="mm-ach-mini__label">{{ friendlyAchievementName(g) }}</span>
+                  </div>
+                </div>
+                <button
+                  v-if="achievementsForGrid.length > 6"
+                  type="button"
+                  class="mm-btn"
+                  style="margin-top: 14px"
+                  @click="activeTab = 'achievements'"
+                >View all →</button>
+              </div>
+            </section>
+
+            <section class="mm-panel">
+              <div class="mm-pbar"><span class="mm-pbar__t"># Server rankings</span></div>
+              <div style="padding: 4px 6px 6px">
+                <div
+                  v-for="r in allServerRankings"
+                  :key="r.serverGuid"
+                  class="mm-rrow mm-srank"
+                  @click="goServer(r.serverName)"
+                >
+                  <span class="mm-srank__rank">#{{ r.rank }}</span>
+                  <span class="mm-srank__body">
+                    <span class="mm-srank__name">{{ truncate(r.serverName, 30) }}</span>
+                    <span class="mm-srank__sub">of {{ formatNumber(r.totalRankedPlayers) }} players</span>
+                  </span>
+                  <span class="mm-srank__ping">{{ r.averagePing }}ms</span>
+                </div>
+                <div v-if="allServerRankings.length === 0" class="mm-empty" style="border: 0; padding: 12px">No competitive rankings yet.</div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- favourite maps + per-map statistics -->
+        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1.4fr; margin-top: 20px">
+          <section class="mm-panel">
+            <div class="mm-pbar">
+              <span class="mm-pbar__t"># Favourite maps</span>
+              <span class="mm-pbar__m">by K/D</span>
+            </div>
+            <div class="mm-panel__body mm-favmaps">
+              <div
+                v-for="m in topMaps.slice(0, 6)"
+                :key="m.mapName"
+                class="mm-favmaps__row"
+                @click="openMapRankings(m.mapName)"
+              >
+                <span class="mm-favmaps__name">{{ m.mapName }}</span>
+                <span class="mm-favmaps__bar">
+                  <span class="mm-track" style="width: 120px; height: 5px"><span class="mm-track__f" :class="{ 'mm-track__f--accent': m.kd >= kd }" :style="{ width: Math.min(100, (m.kd / Math.max(1, kd * 1.6)) * 100) + '%' }" /></span>
+                  <span class="mm-favmaps__kd" :class="kdClass(m.kd)">{{ m.kd.toFixed(2) }}</span>
+                </span>
+                <span class="mm-favmaps__meta">{{ formatDuration(m.minutes) }} · <span class="mm-num--kill">{{ formatNumber(m.kills) }}</span> kills</span>
+              </div>
+              <div v-if="topMaps.length === 0" class="mm-empty" style="border: 0; padding: 12px 0">No map history yet.</div>
+            </div>
+          </section>
+
+          <MmPlayerServerMapStats
+            :player-name="rawName"
+            :game="primaryGameId"
+            @open-rankings="openMapRankings"
+            @open-map-detail="openMapRankings"
+          />
+        </div>
+
+        <!-- competitive rankings -->
+        <div class="mm-section-bar" style="margin-top: 24px">
+          <span>Competitive rankings</span>
+          <span class="mm-section-bar__meta">map-level K/D vs population</span>
+        </div>
+        <div style="margin-top: 16px">
+          <MmPlayerCompetitiveRankings
+            :player-name="rawName"
+            :game="primaryGameId"
+            @navigate-to-map="openMapRankings"
+          />
+        </div>
+
+        <!-- weekly heatmap + best scores -->
+        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1.3fr 1fr; margin-top: 24px">
+          <MmPlayerActivityHeatmap :player-name="rawName" :game="primaryGameId" />
+
+          <section v-if="hasAnyBestScores" class="mm-panel">
+            <div class="mm-pbar">
+              <span class="mm-pbar__t"># Best scores</span>
+              <span class="mm-pbar__m">your local time</span>
+            </div>
+            <div style="padding: 12px 14px 6px">
+              <div class="mm-subtabs" style="margin-bottom: 10px">
+                <button
+                  v-for="w in scoreWindows"
+                  :key="w.id"
+                  type="button"
+                  class="mm-subtab"
+                  :class="{ 'mm-subtab--active': activeScoreWindow === w.id }"
+                  @click="activeScoreWindow = w.id"
+                >{{ w.label }}</button>
+              </div>
+              <div v-if="currentBestScores.length > 0" class="mm-bestrail">
+                <div
+                  v-for="(s, i) in currentBestScores"
+                  :key="`bsc-${s.roundId}-${i}`"
+                  class="mm-rrow mm-bestrail__row"
+                  :class="rankTintClass(i)"
+                  @click="openScoreRound(s)"
+                >
+                  <span class="mm-bestrail__idx">{{ rankNum(i) }}</span>
+                  <span class="mm-bestrail__score">{{ formatNumber(s.score) }}</span>
+                  <span class="mm-bestrail__body">
+                    <span class="mm-bestrail__map">{{ s.mapName }}</span>
+                    <span class="mm-bestrail__server">{{ truncate(s.serverName, 32) }}</span>
+                  </span>
+                  <span class="mm-bestrail__stats">
+                    <span class="mm-num--kill">{{ s.kills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.deaths }}</span>
+                    · <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
+                  </span>
+                </div>
+              </div>
+              <div v-else class="mm-empty" style="border: 0; padding: 24px 0">No scores in this window yet.</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- proximity orbit + communities (retained, columnar) -->
+        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1fr; margin-top: 24px">
+          <section v-if="primaryServer" class="mm-panel">
+            <div class="mm-pbar">
+              <span class="mm-pbar__t"># Proximity orbit</span>
+              <span class="mm-pbar__m">{{ truncate(primaryServer.serverName, 22) }}</span>
+            </div>
+            <div class="mm-panel__body">
+              <MmPingProximityOrbit
+                seamless
+                :server-guid="primaryServer.serverGuid"
+                :server-name="primaryServer.serverName"
+                @player-click="goPlayerFromOrbit"
+              />
+            </div>
+          </section>
+
+          <section v-if="playerCommunities.length > 0" class="mm-panel">
+            <div class="mm-pbar"><span class="mm-pbar__t"># Communities</span></div>
+            <div class="mm-panel__body mm-comm-col">
+              <MmCommunityCard v-for="c in playerCommunities" :key="c.id" :community="c" />
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- ===================== SESSIONS ===================== -->
+      <div v-else-if="activeTab === 'sessions'" style="margin-top: 20px">
         <div class="mm-eyebrow mm-tz-hint">Times shown in your local time</div>
         <ol class="mm-tab-cards">
           <li
@@ -898,8 +814,8 @@ const signatureServers = computed(() => {
         </table>
       </div>
 
-      <!-- ========== maps ========== -->
-      <div v-else-if="activeTab === 'maps'" style="margin-top: 8px">
+      <!-- ===================== MAPS ===================== -->
+      <div v-else-if="activeTab === 'maps'" style="margin-top: 20px">
         <ol class="mm-tab-cards">
           <li
             v-for="(m, i) in topMaps"
@@ -957,10 +873,27 @@ const signatureServers = computed(() => {
             </tr>
           </tbody>
         </table>
+
+        <!-- map performance + map preference (retained, columnar) -->
+        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1fr; margin-top: 24px">
+          <div>
+            <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 14px">Map performance over time</div>
+            <MmMapPerformanceRace
+              :player-name="rawName"
+              :game="primaryGameId"
+              @navigate-to-map="openMapRankings"
+            />
+          </div>
+          <MmPlayerMapPreference
+            :player-name="rawName"
+            :game="primaryGameId"
+            @navigate-to-map="openMapRankings"
+          />
+        </div>
       </div>
 
-      <!-- ========== servers ========== -->
-      <div v-else-if="activeTab === 'servers'" style="margin-top: 8px">
+      <!-- ===================== SERVERS ===================== -->
+      <div v-else-if="activeTab === 'servers'" style="margin-top: 20px">
         <ol class="mm-tab-cards">
           <li
             v-for="(s, i) in topServers"
@@ -1013,14 +946,14 @@ const signatureServers = computed(() => {
               <td class="is-num" :class="kdClass(s.kdRatio)">{{ s.kdRatio.toFixed(2) }}</td>
             </tr>
             <tr v-if="topServers.length === 0">
-              <td colspan="5" class="mm-empty" style="border: 0">No server history yet.</td>
+              <td colspan="6" class="mm-empty" style="border: 0">No server history yet.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- ========== achievements ========== -->
-      <div v-else-if="activeTab === 'achievements'" style="margin-top: 8px">
+      <!-- ===================== ACHIEVEMENTS ===================== -->
+      <div v-else-if="activeTab === 'achievements'" style="margin-top: 20px">
         <MmPlayerAchievementSummary
           :player-name="rawName"
           :achievement-groups="achievementGroups"
@@ -1028,84 +961,233 @@ const signatureServers = computed(() => {
           :error="achievementsError"
         />
       </div>
-    </section>
 
-    <section class="mm-section--tight" style="margin-top: 8px">
-      <MmPlayerServerMapStats
-        :player-name="rawName"
-        :game="primaryGameId"
-        @open-rankings="openMapRankings($event); activeTab = 'maps'"
-        @open-map-detail="openMapRankings($event); activeTab = 'maps'"
-      />
-    </section>
-
-    <section class="mm-section--tight">
-      <MmPlayerCompetitiveRankings
-        :player-name="rawName"
-        :game="primaryGameId"
-        @navigate-to-map="openMapRankings($event); activeTab = 'maps'"
-      />
-    </section>
-
-    <section class="mm-section--tight">
-      <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 14px">Map performance over time</div>
-      <MmMapPerformanceRace
-        :player-name="rawName"
-        :game="primaryGameId"
-        @navigate-to-map="openMapRankings($event); activeTab = 'maps'"
-      />
-    </section>
-
-    <section v-if="primaryServer" class="mm-section--tight">
-      <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 14px">
-        Proximity orbit — {{ primaryServer.serverName }}
-      </div>
-      <MmPingProximityOrbit
-        seamless
-        :server-guid="primaryServer.serverGuid"
-        :server-name="primaryServer.serverName"
-        @player-click="goPlayerFromOrbit"
-      />
-    </section>
-
-    <section class="mm-section--tight" style="margin-top: 8px">
-      <MmPlayerActivityHeatmap :player-name="rawName" :game="primaryGameId" />
-    </section>
-
-    <section class="mm-section--tight">
-      <MmPlayerMapPreference
-        :player-name="rawName"
-        :game="primaryGameId"
-        @navigate-to-map="openMapRankings($event); activeTab = 'maps'"
-      />
-    </section>
-
-    <section v-if="playerCommunities.length > 0" class="mm-section--tight">
-      <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 14px">Communities</div>
-      <div class="mm-player-communities">
-        <MmCommunityCard
-          v-for="c in playerCommunities"
-          :key="c.id"
-          :community="c"
+      <!-- always-visible: signature + comments (retained, columnar) -->
+      <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1fr; margin-top: 24px">
+        <MmPlayerSignatureBuilder
+          v-if="signatureServers.length > 0"
+          :player-name="rawName"
+          :servers="signatureServers"
         />
+        <MmPlayerComments :player-name="rawName" />
       </div>
-    </section>
-
-    <MmPlayerSignatureBuilder
-      v-if="signatureServers.length > 0"
-      :player-name="rawName"
-      :servers="signatureServers"
-    />
-
-    <MmPlayerComments :player-name="rawName" />
+    </template>
   </div>
 </template>
 
 <style scoped>
+/* back link above the hero */
+.mm-player__back {
+  display: inline-block;
+  margin-bottom: 14px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  text-decoration: none;
+}
+.mm-player__back:hover { color: var(--mm-ink); }
+
+/* hero */
+.mm-player-hero {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 24px;
+  align-items: start;
+}
+.mm-player-hero__avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 4px;
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule-strong);
+  color: var(--mm-ink);
+  font-family: var(--mm-font-mono);
+  font-weight: 600;
+  font-size: 40px;
+  display: grid;
+  place-items: center;
+}
+.mm-player-hero__main { min-width: 0; }
+.mm-player__name {
+  margin: 0;
+  font-size: clamp(30px, 3.6vw, 52px);
+}
+.mm-player__where {
+  margin-top: 8px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-family: var(--mm-font-display);
+  font-size: 13.5px;
+  color: var(--mm-ink-soft);
+}
+.mm-player-hero__nav {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  padding-top: 6px;
+}
+.mm-player__navlink {
+  font-family: var(--mm-font-display);
+  font-size: 13px;
+  color: var(--mm-ink-soft);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.mm-player__navlink:hover { color: var(--mm-ink); }
+.mm-player__navlink--strong { color: var(--mm-ink); font-weight: 500; }
+
+@media (max-width: 720px) {
+  .mm-player-hero { grid-template-columns: auto 1fr; }
+  .mm-player-hero__avatar { width: 64px; height: 64px; font-size: 30px; }
+  /* nav drops to a full-width wrapping row beneath the identity block */
+  .mm-player-hero__nav {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    gap: 16px 22px;
+    padding-top: 4px;
+  }
+}
+
+/* recent-achievements mini grid inside the rankings column */
+.mm-ach-mini {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 10px;
+}
+.mm-ach-mini__item {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+}
+.mm-ach-mini__img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  flex: none;
+}
+.mm-ach-mini__label {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+  line-height: 1.35;
+}
+
+/* server-rankings rail rows */
+.mm-srank {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border-top: 1px solid var(--mm-rule);
+  cursor: pointer;
+}
+.mm-srank__rank {
+  font-family: var(--mm-font-display);
+  font-weight: 300;
+  font-size: 24px;
+  color: var(--mm-accent-soft);
+  line-height: 1;
+}
+.mm-srank__body { min-width: 0; display: flex; flex-direction: column; }
+.mm-srank__name {
+  font-family: var(--mm-font-display);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mm-srank__sub {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+.mm-srank__ping {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  color: var(--mm-ink-muted);
+}
+
+/* favourite-maps rows */
+.mm-favmaps { display: flex; flex-direction: column; gap: 14px; }
+.mm-favmaps__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+  cursor: pointer;
+}
+.mm-favmaps__name { font-family: var(--mm-font-display); font-size: 14px; }
+.mm-favmaps__bar { display: flex; align-items: center; gap: 10px; }
+.mm-favmaps__kd {
+  font-family: var(--mm-font-mono);
+  font-size: 12px;
+  width: 34px;
+  text-align: right;
+}
+.mm-favmaps__meta {
+  grid-column: 1;
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+.mm-track__f--accent { background: var(--mm-accent); }
+
+/* best-scores rail */
+.mm-bestrail { display: flex; flex-direction: column; }
+.mm-bestrail__row {
+  display: grid;
+  grid-template-columns: 24px 52px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border-top: 1px solid var(--mm-rule);
+  cursor: pointer;
+}
+.mm-bestrail__idx { font-family: var(--mm-font-mono); font-size: 10px; color: var(--mm-ink-muted); }
+.mm-bestrail__score { font-family: var(--mm-font-mono); font-size: 16px; color: var(--mm-ink); }
+.mm-bestrail__body { min-width: 0; display: flex; flex-direction: column; }
+.mm-bestrail__map { font-family: var(--mm-font-display); font-size: 13px; }
+.mm-bestrail__server {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mm-bestrail__stats {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+.mm-bestrail__row.mm-rank--gold .mm-bestrail__idx { color: var(--mm-kd-elite); }
+
 .mm-player-communities {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 18px;
+}
+
+/* communities stacked inside a dashboard panel column */
+.mm-comm-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 /* Local best-scores override — the modern-minimal default is too washed out for
