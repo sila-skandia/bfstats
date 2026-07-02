@@ -1357,3 +1357,97 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* ---------- wide-screen dashboard ----------
+   Detail pages (server / player) lay their panels out across a wider,
+   denser grid so wide viewports aren't wasted. Primitives here mirror the
+   "Detail Dashboards" mock: framed panels with an olive title bar, inline
+   magnitude tracks, and hover-highlight rows. */
+
+.mm-container--wide {
+  max-width: 1600px;
+}
+
+.mm-panel {
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  background: var(--mm-bg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mm-panel__body {
+  padding: 16px 18px;
+}
+
+/* Panel title bar — olive anchor strip, same treatment as .mm-section-bar. */
+.mm-pbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  background: var(--mm-highlight);
+  border-radius: 2px 2px 0 0;
+}
+
+.mm-pbar__t {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mm-highlight-ink);
+  font-weight: 600;
+}
+
+.mm-pbar__m {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-highlight-ink);
+  opacity: 0.7;
+}
+
+/* Inline magnitude track for in-row bars. */
+.mm-track {
+  height: 3px;
+  background: var(--mm-bg-mute);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 36px;
+}
+
+.mm-track__f {
+  height: 100%;
+  background: var(--mm-ink-faint);
+}
+
+/* Hover-highlight grid row (links + static rows inside panels). */
+.mm-rrow { transition: background 0.12s ease; }
+.mm-rrow:hover { background: var(--mm-bg-soft); }
+
+/* Dashboard column grids. Inline `grid-template-columns` set the ratios;
+   these media queries collapse to a single column on narrow viewports.
+   `!important` is required to beat the inline template. */
+.mm-dash-grid {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+
+.mm-dash-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+@media (max-width: 1180px) {
+  .mm-dash-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 820px) {
+  .mm-dash-grid--early { grid-template-columns: 1fr !important; }
+}
