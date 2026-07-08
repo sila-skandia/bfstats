@@ -119,6 +119,10 @@ const goServer = (s: ServerSummary) => {
   router.push(`/v4/servers/detail/${encodeURIComponent(s.name)}`)
 }
 
+const navigateToPlayerProfile = (playerName: string) => {
+  router.push(`/v4/players/${encodeURIComponent(playerName)}`)
+}
+
 // Group active and quiet servers
 const activeServers = computed(() => servers.value.filter(s => (s.numPlayers || 0) > 0))
 const quietServers = computed(() => servers.value.filter(s => (s.numPlayers || 0) === 0))
@@ -541,6 +545,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
                     v-for="(player, pidx) in getSortedTeamPlayers(selectedServer, team.index)"
                     :key="player.name"
                     :class="getPlayerRowClass(team, pidx)"
+                    @click="navigateToPlayerProfile(player.name)"
                   >
                     <td class="mm-list__rank" style="width: 30px;">
                       {{ String(pidx + 1).padStart(2, '0') }}
@@ -830,8 +835,13 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   box-shadow: inset 2px 0 0 var(--mm-accent);
 }
 
-.mm-landing__desktop tbody tr {
+.mm-landing__desktop tbody tr,
+.mm-landing__aside tbody tr {
   cursor: pointer;
+}
+
+.mm-landing__aside tbody tr:hover {
+  background: #1d1d1d;
 }
 
 /* Sticky selected server aside panel */
