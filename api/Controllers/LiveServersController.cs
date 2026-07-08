@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using api.PlayerTracking;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace api.Controllers;
 
@@ -12,7 +13,8 @@ namespace api.Controllers;
 public class LiveServersController(
     IBfListApiService bfListApiService,
     ILogger<LiveServersController> logger,
-    PlayerTrackerDbContext dbContext) : ControllerBase
+    PlayerTrackerDbContext dbContext,
+    IConfiguration configuration) : ControllerBase
 {
 
     private static readonly string[] ValidGames = ["bf1942", "fh2", "bfvietnam"];
@@ -106,7 +108,8 @@ public class LiveServersController(
         var totalStopwatch = System.Diagnostics.Stopwatch.StartNew();
         var stepStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-        var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
+        var intervalSeconds = configuration.GetValue<int?>("STATS_COLLECTION_INTERVAL_SECONDS") ?? 30;
+        var activeThreshold = DateTime.UtcNow.AddSeconds(-Math.Max(60, intervalSeconds * 2));
 
         // Get servers filtering only by online status
         stepStopwatch.Restart();
@@ -138,7 +141,7 @@ public class LiveServersController(
         var activeSessions = await dbContext.PlayerSessions
             .Where(ps => serverGuids.Contains(ps.ServerGuid)
                          && ps.IsActive
-                         && ps.LastSeenTime >= oneMinuteAgo
+                         && ps.LastSeenTime >= activeThreshold
                          && (!ps.Player.AiBot))
             .Include(ps => ps.Player)
             .ToListAsync();
