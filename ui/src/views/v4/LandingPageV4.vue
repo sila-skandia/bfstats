@@ -656,6 +656,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   /* Hero text + stat grid hide on mobile — meta row carries enough
      summary, and the user goes straight to the servers list. */
   .mm-landing__hero-only { display: none; }
+  .mm-landing__hero-band { display: none; }
 }
 
 /* Desktop/mobile swap for the servers list. Card layout on mobile matches
