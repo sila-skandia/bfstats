@@ -114,6 +114,9 @@ export interface ServerWrappedData {
     mostPodiumFinishes: PlayerVolume;
     milestonesCrossed: number;
     prestigiousMilestone: PrestigiousMilestone | null;
+    eliteWarriorGold: PlayerVolume | null;
+    eliteWarriorLegend: PlayerVolume | null;
+    mostLegendAchievements: PlayerVolume | null;
   };
   dishonours: {
     cannonFodder: PlayerVolume;

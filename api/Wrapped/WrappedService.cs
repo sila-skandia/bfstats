@@ -433,9 +433,160 @@ public class WrappedService(
             );
         }
 
+        // Calculate Elite Warrior moving window streaks for this server in the given year
+        var sessions = await dbContext.PlayerSessions
+            .AsNoTracking()
+            .Where(ps => ps.ServerGuid == serverGuid && ps.StartTime >= startYear && ps.StartTime < endYear && !ps.IsDeleted)
+            .OrderBy(ps => ps.PlayerName)
+            .ThenBy(ps => ps.StartTime)
+            .Select(ps => new { ps.PlayerName, ps.TotalKills, ps.TotalDeaths })
+            .ToListAsync();
+
+        PlayerVolumeDto? eliteWarriorGold = null;
+        PlayerVolumeDto? eliteWarriorLegend = null;
+
+        var playerGroups = sessions.GroupBy(ps => ps.PlayerName);
+        var goldStreaksList = new List<(string PlayerName, int Streak)>();
+        var legendStreaksList = new List<(string PlayerName, int Streak)>();
+
+        foreach (var group in playerGroups)
+        {
+            var pName = group.Key;
+            var sessList = group.ToList();
+
+            // Gold: KD >= 4.0 over last 100 rounds
+            var windowGoldK = new int[100];
+            var windowGoldD = new int[100];
+            int windowGoldIndex = 0;
+            int windowGoldCount = 0;
+            int currentStreakGold = 0;
+            int maxStreakGold = 0;
+
+            // Legend: KD >= 5.0 over last 200 rounds
+            var windowLegendK = new int[200];
+            var windowLegendD = new int[200];
+            int windowLegendIndex = 0;
+            int windowLegendCount = 0;
+            int currentStreakLegend = 0;
+            int maxStreakLegend = 0;
+
+            foreach (var s in sessList)
+            {
+                // Gold Update
+                if (windowGoldCount < 100)
+                {
+                    windowGoldK[windowGoldCount] = s.TotalKills;
+                    windowGoldD[windowGoldCount] = s.TotalDeaths;
+                    windowGoldCount++;
+                }
+                else
+                {
+                    windowGoldK[windowGoldIndex] = s.TotalKills;
+                    windowGoldD[windowGoldIndex] = s.TotalDeaths;
+                    windowGoldIndex = (windowGoldIndex + 1) % 100;
+                }
+
+                // Legend Update
+                if (windowLegendCount < 200)
+                {
+                    windowLegendK[windowLegendCount] = s.TotalKills;
+                    windowLegendD[windowLegendCount] = s.TotalDeaths;
+                    windowLegendCount++;
+                }
+                else
+                {
+                    windowLegendK[windowLegendIndex] = s.TotalKills;
+                    windowLegendD[windowLegendIndex] = s.TotalDeaths;
+                    windowLegendIndex = (windowLegendIndex + 1) % 200;
+                }
+
+                // Gold Evaluation
+                if (windowGoldCount == 100)
+                {
+                    int totK = 0, totD = 0;
+                    for (int i = 0; i < 100; i++)
+                    {
+                        totK += windowGoldK[i];
+                        totD += windowGoldD[i];
+                    }
+                    double kd = (double)totK / Math.Max(1, totD);
+                    if (kd >= 4.0)
+                    {
+                        currentStreakGold++;
+                        if (currentStreakGold > maxStreakGold) maxStreakGold = currentStreakGold;
+                    }
+                    else
+                    {
+                        currentStreakGold = 0;
+                    }
+                }
+
+                // Legend Evaluation
+                if (windowLegendCount == 200)
+                {
+                    int totK = 0, totD = 0;
+                    for (int i = 0; i < 200; i++)
+                    {
+                        totK += windowLegendK[i];
+                        totD += windowLegendD[i];
+                    }
+                    double kd = (double)totK / Math.Max(1, totD);
+                    if (kd >= 5.0)
+                    {
+                        currentStreakLegend++;
+                        if (currentStreakLegend > maxStreakLegend) maxStreakLegend = currentStreakLegend;
+                    }
+                    else
+                    {
+                        currentStreakLegend = 0;
+                    }
+                }
+            }
+
+            if (maxStreakGold > 0) goldStreaksList.Add((pName, maxStreakGold));
+            if (maxStreakLegend > 0) legendStreaksList.Add((pName, maxStreakLegend));
+        }
+
+        var topGold = goldStreaksList.OrderByDescending(x => x.Streak).FirstOrDefault();
+        if (topGold.PlayerName != null)
+        {
+            eliteWarriorGold = new PlayerVolumeDto(PlayerNameDecoder.Decode(topGold.PlayerName), topGold.Streak);
+        }
+
+        var topLegend = legendStreaksList.OrderByDescending(x => x.Streak).FirstOrDefault();
+        if (topLegend.PlayerName != null)
+        {
+            eliteWarriorLegend = new PlayerVolumeDto(PlayerNameDecoder.Decode(topLegend.PlayerName), topLegend.Streak);
+        }
+
+        // Calculate player with the most Legend tier achievements (excluding team_victory and kill_streak_50)
+        var topLegendAchievementsRecord = await dbContext.PlayerAchievements
+            .AsNoTracking()
+            .Where(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
+                && pa.Tier == "legend" && pa.AchievementId != "team_victory" && pa.AchievementId != "kill_streak_50")
+            .GroupBy(pa => pa.PlayerName)
+            .Select(g => new { PlayerName = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .FirstOrDefaultAsync();
+
+        PlayerVolumeDto? mostLegendAchievements = null;
+        if (topLegendAchievementsRecord != null)
+        {
+            mostLegendAchievements = new PlayerVolumeDto(PlayerNameDecoder.Decode(topLegendAchievementsRecord.PlayerName), topLegendAchievementsRecord.Count);
+        }
+
         var milestones = allMilestones.Count;
 
-        var decorations = new DecorationsDto(streaksDto, streakOfTheYear, podiumsDto, milestones, prestigiousDto);
+        var decorations = new DecorationsDto(
+            streaksDto, 
+            streakOfTheYear, 
+            podiumsDto, 
+            milestones, 
+            prestigiousDto, 
+            eliteWarriorGold, 
+            eliteWarriorLegend, 
+            mostLegendAchievements
+        );
 
         // 6. Dishonours
         var cannonFodderPlayer = playerStats.OrderByDescending(p => p.Deaths).FirstOrDefault();

@@ -103,7 +103,10 @@ public record DecorationsDto(
     StreakOfTheYearDto? StreakOfTheYear, // Nullable if no streaks recorded
     PlayerVolumeDto MostPodiumFinishes,
     int MilestonesCrossed,
-    PrestigiousMilestoneDto? PrestigiousMilestone
+    PrestigiousMilestoneDto? PrestigiousMilestone,
+    PlayerVolumeDto? EliteWarriorGold,
+    PlayerVolumeDto? EliteWarriorLegend,
+    PlayerVolumeDto? MostLegendAchievements
 );
 
 public record StreakOfTheYearDto(
