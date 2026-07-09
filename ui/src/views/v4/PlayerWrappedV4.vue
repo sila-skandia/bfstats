@@ -157,8 +157,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchPlayerWrapped, type PlayerWrappedData } from '@/services/wrappedService'
+import { useAuth } from '@/composables/useAuth'
 
 import PlayerIntroSlide from '@/components/v4/wrapped/PlayerIntroSlide.vue'
 import PlayerNumbersSlide from '@/components/v4/wrapped/PlayerNumbersSlide.vue'
@@ -180,7 +181,9 @@ const slideComponents = [
   PlayerShareSlide
 ]
 
+const { isSupport } = useAuth()
 const route = useRoute()
+const router = useRouter()
 
 const playerName = ref(route.params.playerName as string)
 const serverGuid = ref((route.params.serverGuid as string) || 'global')
@@ -211,6 +214,12 @@ const activeThemeColor = 'var(--mm-accent)'
 const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
 
 onMounted(async () => {
+  // Redirection guard if not Support
+  if (!isSupport.value) {
+    router.replace({ name: 'v4-player-details', params: { playerName: playerName.value } })
+    return
+  }
+
   try {
     data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, 2026)
     loading.value = false

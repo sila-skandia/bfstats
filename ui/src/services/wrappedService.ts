@@ -6,11 +6,17 @@ export interface HeatmapCell {
   avgPlayers: number;
 }
 
+export interface MapTopPlacement {
+  playerName: string;
+  firstPlaceCount: number;
+}
+
 export interface MapRotation {
   mapName: string;
   roundsPlayed: number;
   playTimeMinutes: number;
   playTimePercentage: number;
+  topPlacements: MapTopPlacement[];
 }
 
 export interface PlayerKDRatio {

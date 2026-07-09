@@ -367,8 +367,8 @@ const routes: RouteRecordRaw[] = [
             requiresAuth: true
           },
           beforeEnter: (to, _from, next) => {
-            const { isAdmin } = useAuth()
-            if (isAdmin.value) {
+            const { isSupport } = useAuth()
+            if (isSupport.value) {
               next()
             } else {
               next({ name: 'v4-server-details', params: { serverName: to.params.serverName } })
@@ -382,7 +382,16 @@ const routes: RouteRecordRaw[] = [
           props: true,
           meta: {
             title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped · bfstats.io`,
-            description: 'Year in Review Wrapped stories for this player.'
+            description: 'Year in Review Wrapped stories for this player.',
+            requiresAuth: true
+          },
+          beforeEnter: (to, _from, next) => {
+            const { isSupport } = useAuth()
+            if (isSupport.value) {
+              next()
+            } else {
+              next({ name: 'v4-player-details', params: { playerName: to.params.playerName } })
+            }
           }
         },
         {
@@ -392,7 +401,16 @@ const routes: RouteRecordRaw[] = [
           props: true,
           meta: {
             title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped · bfstats.io`,
-            description: 'Year in Review Wrapped stories for this player on this server.'
+            description: 'Year in Review Wrapped stories for this player on this server.',
+            requiresAuth: true
+          },
+          beforeEnter: (to, _from, next) => {
+            const { isSupport } = useAuth()
+            if (isSupport.value) {
+              next()
+            } else {
+              next({ name: 'v4-player-details', params: { playerName: to.params.playerName } })
+            }
           }
         },
         {

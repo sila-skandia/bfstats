@@ -43,11 +43,17 @@ public record RotationDto(
     double MostPlayedPercentage
 );
 
+public record MapTopPlacementDto(
+    string PlayerName,
+    int FirstPlaceCount
+);
+
 public record MapRotationDto(
     string MapName,
     int RoundsPlayed,
     int PlayTimeMinutes,
-    double PlayTimePercentage
+    double PlayTimePercentage,
+    List<MapTopPlacementDto> TopPlacements
 );
 
 public record HonoursDto(

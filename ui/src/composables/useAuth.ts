@@ -3,11 +3,7 @@ import { useRouter } from 'vue-router';
 import { authService, type AuthState } from '@/services/authService';
 import { ROLE_ADMIN, ROLE_SUPPORT, ADMIN_EMAIL } from '@/constants/roles';
 
-const authState = ref<AuthState>({
-  isAuthenticated: false,
-  token: null,
-  user: null,
-});
+const authState = ref<AuthState>(authService.getStoredAuthState());
 
 export function useAuth() {
   const router = useRouter();
