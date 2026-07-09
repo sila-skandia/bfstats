@@ -1,15 +1,15 @@
 <template>
-  <div class="wrapped-slide decorations-slide">
+  <div class="wrapped-slide decorations-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge">05 — DECORATIONS</span>
-      <h2 class="slide-title">Four stood out.</h2>
-      <span class="mm-chip">MILESTONES & PODIUMS</span>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">05 — DECORATIONS</span>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Four stood out.</h2>
+      <span class="mm-chip animate-rise-up" style="animation-delay: 0.15s">MILESTONES & PODIUMS</span>
     </div>
 
     <div class="decorations-content">
       <div class="decorations-grid">
         <!-- Card 1: 25+ Streaks -->
-        <div class="deco-card">
+        <div class="deco-card animate-rise-up" style="animation-delay: 0.15s">
           <img 
             :src="getAchievementImage('kill_streak_25')" 
             alt="Kill streak 25 medal" 
@@ -23,7 +23,7 @@
         </div>
 
         <!-- Card 2: Streak of the Year -->
-        <div class="deco-card">
+        <div class="deco-card animate-rise-up" style="animation-delay: 0.23s">
           <img 
             :src="getAchievementImage('kill_streak_50')" 
             alt="Kill streak 50 medal" 
@@ -37,7 +37,7 @@
         </div>
 
         <!-- Card 3: Podium Finishes -->
-        <div class="deco-card">
+        <div class="deco-card animate-rise-up" style="animation-delay: 0.31s">
           <img 
             :src="getAchievementImage('round_placement_1')" 
             alt="First place medal" 
@@ -50,8 +50,8 @@
           </div>
         </div>
 
-        <!-- Card 4: Prestigious Milestones / Milestones Crossed -->
-        <div class="deco-card">
+        <!-- Card 4: Prestigious Milestones -->
+        <div class="deco-card animate-rise-up" style="animation-delay: 0.39s">
           <img 
             :src="getAchievementImage(data.decorations.prestigiousMilestone?.achievementId || 'elite_warrior_legend')" 
             :alt="data.decorations.prestigiousMilestone?.achievementName || 'Milestone medal'" 
@@ -77,7 +77,7 @@
         </div>
       </div>
 
-      <div class="decorations-footer">
+      <div class="decorations-footer animate-rise-up" style="animation-delay: 0.5s">
         MILESTONES CROSSED IN 2026: TOTAL LIFETIME ACHIEVEMENTS EARNED ON THIS SERVER.
       </div>
     </div>

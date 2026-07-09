@@ -153,9 +153,9 @@ export interface PlayerYearInNumbers {
 }
 
 export interface PlayerMapRank {
-  rank: number;
+  metricName: string;
   mapName: string;
-  totalRounds: number;
+  metricValue: string;
 }
 
 export interface PlayerTrend {

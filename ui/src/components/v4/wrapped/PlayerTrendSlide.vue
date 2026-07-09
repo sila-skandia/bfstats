@@ -1,44 +1,49 @@
 <template>
-  <div class="wrapped-slide trend-slide" @click="$emit('next')">
-    <div class="mm-eyebrow">02 — RANK &amp; K/D TREND</div>
+  <div class="wrapped-slide trend-slide animate-line-in" @click="$emit('next')">
+    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">02 — RANK &amp; K/D TREND</div>
     
-    <div class="trend-heading">
+    <div class="trend-heading animate-rise-up" style="animation-delay: 0.1s">
       K/D climbed to {{ maxKD.toFixed(2) }} this year.
     </div>
 
     <div class="trend-charts">
-      <div class="chart-box">
+      <div class="chart-box animate-rise-up" style="animation-delay: 0.15s">
         <div class="chart-header">
           <span class="mm-eyebrow-small">K/D TREND</span>
           <span class="chart-value text-accent">{{ startKD.toFixed(2) }} → {{ endKD.toFixed(2) }}</span>
         </div>
         <div class="chart-container">
           <svg viewBox="0 0 100 32" preserveAspectRatio="none">
-            <polyline :points="kdPoints" fill="none" stroke="var(--mm-kd-elite)" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
+            <polyline :points="kdPoints" fill="none" stroke="var(--mm-kd-elite)" stroke-width="1.6" vector-effect="non-scaling-stroke" pathLength="1" class="animate-draw-line" style="animation-delay: 0.25s"></polyline>
           </svg>
         </div>
       </div>
 
-      <div class="chart-box">
+      <div class="chart-box animate-rise-up" style="animation-delay: 0.25s">
         <div class="chart-header">
           <span class="mm-eyebrow-small">KILL RATE TREND</span>
           <span class="chart-value text-muted">{{ startKillRate.toFixed(1) }} → {{ endKillRate.toFixed(1) }} KILLS/RD</span>
         </div>
         <div class="chart-container">
           <svg viewBox="0 0 100 32" preserveAspectRatio="none">
-            <polyline :points="killRatePoints" fill="none" stroke="var(--mm-accent)" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
+            <polyline :points="killRatePoints" fill="none" stroke="var(--mm-accent)" stroke-width="1.6" vector-effect="non-scaling-stroke" pathLength="1" class="animate-draw-line" style="animation-delay: 0.35s"></polyline>
           </svg>
         </div>
       </div>
     </div>
 
     <div class="top-maps-section">
-      <div class="mm-eyebrow-small map-section-title">TOP RANKED MAPS</div>
+      <div class="mm-eyebrow-small map-section-title animate-rise-up" style="animation-delay: 0.35s">TOP PERFORMING MAPS</div>
       <div class="maps-grid">
-        <div v-for="map in data.trend.topMaps" :key="map.mapName" class="map-card">
-          <div class="map-rank">#{{ map.rank }}</div>
+        <div 
+          v-for="(map, idx) in data.trend.topMaps" 
+          :key="map.metricName" 
+          class="map-card animate-rise-up"
+          :style="{ animationDelay: ((idx * 0.08) + 0.4) + 's' }"
+        >
+          <div class="map-rank">{{ map.metricName }}</div>
           <div class="map-name">{{ map.mapName }}</div>
-          <div class="map-meta">OF {{ map.totalRounds }} ROUNDS</div>
+          <div class="map-meta">{{ map.metricValue }}</div>
         </div>
       </div>
     </div>
@@ -187,30 +192,38 @@ const killRatePoints = computed(() => toSparkPoints(props.data.trend.monthlyKill
   border-radius: 2px;
   padding: 12px;
   background-color: var(--surface-raised);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
 }
 
 .map-rank {
-  font-family: var(--mm-font-display);
-  font-weight: 300;
-  font-size: clamp(18px, 2.5vw, 26px);
+  font-family: var(--mm-font-mono);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.1em;
   color: var(--mm-accent-soft);
+  text-transform: uppercase;
 }
 
 .map-name {
   font-family: var(--mm-font-display);
-  font-size: 13.5px;
+  font-weight: 300;
+  font-size: clamp(14px, 2vw, 18px);
   color: var(--mm-ink);
-  margin-top: 4px;
+  margin-top: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  width: 100%;
 }
 
 .map-meta {
   font-family: var(--mm-font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--mm-ink-muted);
-  margin-top: 3px;
+  margin-top: 4px;
 }
 </style>
