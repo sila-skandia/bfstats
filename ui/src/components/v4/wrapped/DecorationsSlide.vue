@@ -81,7 +81,8 @@
               <div class="mm-eyebrow filled-label">{{ slot.label }}</div>
             </div>
             <div class="filled-meta">
-              {{ slot.player }} · {{ slot.tile }}
+              <div class="filled-player">{{ slot.player }}</div>
+              <div class="filled-tile">{{ slot.tile }}</div>
             </div>
           </div>
           <div v-else class="empty-card"></div>
@@ -484,7 +485,7 @@ onUnmounted(() => {
 }
 
 .shelf-slot {
-  height: 80px;
+  height: 105px;
   min-width: 0;
 }
 
@@ -502,8 +503,9 @@ onUnmounted(() => {
 
 .filled-header {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -516,17 +518,34 @@ onUnmounted(() => {
 }
 
 .filled-label {
-  font-size: 7.5px;
+  font-size: 7px;
   line-height: 1.2;
   letter-spacing: 0.05em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  width: 100%;
 }
 
 .filled-meta {
-  font-family: var(--mm-font-mono);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.filled-player {
   font-size: 8px;
+  font-weight: 500;
+  color: var(--mm-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filled-tile {
+  font-family: var(--mm-font-mono);
+  font-size: 7.5px;
   letter-spacing: 0.04em;
   color: var(--mm-ink-muted);
   white-space: nowrap;
