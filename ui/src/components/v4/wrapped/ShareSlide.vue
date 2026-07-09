@@ -137,61 +137,73 @@ function mockDownload() {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 20px;
+  gap: 24px;
 }
 
 .share-card-box {
   width: 100%;
-  max-width: 460px;
+  max-width: 800px;
   border: 1px solid var(--mm-rule-strong);
   border-radius: var(--mm-radius-sm, 2px);
-  padding: 16px;
+  padding: 40px;
   background-color: var(--mm-bg);
   box-sizing: border-box;
+  aspect-ratio: 1200 / 630;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: border-color 0.3s ease;
+}
+
+.share-card-box:hover {
+  border-color: var(--mm-accent-soft);
 }
 
 .card-header-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 9px;
+  width: 100%;
 }
 
 .mm-eyebrow {
   font-family: var(--mm-font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
+  font-size: 10px;
+  letter-spacing: 0.15em;
   color: var(--mm-ink-muted);
   text-transform: uppercase;
 }
 
 .card-badge-mono {
   font-family: var(--mm-font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--mm-accent-soft);
   text-transform: uppercase;
+  border: 1px solid var(--mm-accent-soft);
+  padding: 2px 8px;
+  border-radius: 2px;
 }
 
 .server-title-text {
   font-family: var(--mm-font-display);
-  font-size: 21px;
+  font-size: clamp(24px, 4vw, 42px);
   color: var(--mm-ink);
-  margin: 0 0 8px 0;
+  margin: 24px 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   width: 100%;
-  font-weight: 500;
+  font-weight: 300;
   text-align: left;
 }
 
 .card-metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 20px;
   border-top: 1px solid var(--mm-rule);
-  padding-top: 14px;
+  padding-top: 24px;
   width: 100%;
 }
 
@@ -205,14 +217,14 @@ function mockDownload() {
 .grid-metric-val {
   font-family: var(--mm-font-display);
   font-weight: 300;
-  font-size: 22px;
+  font-size: clamp(26px, 3.5vw, 44px);
   color: var(--mm-ink);
   line-height: 1.1;
-  margin-bottom: 3px;
+  margin-bottom: 6px;
 }
 
 .grid-metric-col .mm-eyebrow {
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.08em;
   margin-top: 0;
 }
@@ -222,21 +234,21 @@ function mockDownload() {
 }
 
 .card-footer-mono {
-  margin-top: 14px;
-  padding-top: 11px;
+  padding-top: 16px;
   border-top: 1px solid var(--mm-rule);
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
+  font-size: 10px;
+  letter-spacing: 0.18em;
   color: var(--mm-ink-muted);
   text-align: left;
+  width: 100%;
 }
 
 .actions-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
 }
 
@@ -245,9 +257,9 @@ function mockDownload() {
   border: none;
   color: #000;
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   letter-spacing: 0.1em;
-  padding: 8px 16px;
+  padding: 10px 20px;
   border-radius: var(--mm-radius-sm, 2px);
   cursor: pointer;
   transition: all 0.2s;
@@ -263,9 +275,9 @@ function mockDownload() {
   border: 1px solid var(--mm-rule);
   color: var(--mm-ink-soft);
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   letter-spacing: 0.1em;
-  padding: 8px 16px;
+  padding: 10px 20px;
   border-radius: var(--mm-radius-sm, 2px);
   cursor: pointer;
   transition: all 0.2s;
@@ -278,8 +290,22 @@ function mockDownload() {
 
 .export-note {
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   color: var(--mm-ink-faint);
+}
+
+@media (max-width: 768px) {
+  .share-card-box {
+    aspect-ratio: auto;
+    padding: 24px;
+  }
+  .server-title-text {
+    margin: 16px 0;
+  }
+  .card-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
 }
 </style>

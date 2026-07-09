@@ -1,5 +1,10 @@
 <template>
   <div class="wrapped-slide share-slide animate-line-in">
+    <div class="slide-header">
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">09 — THE SUMMARY</span>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Your combat record.</h2>
+    </div>
+
     <div class="share-container">
       <!-- The Card itself -->
       <div class="share-card animate-wrapped-in" style="animation-delay: 0.15s">
@@ -58,33 +63,71 @@ function mockShare() {
 <style scoped>
 .wrapped-slide {
   width: 100%;
-  height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   box-sizing: border-box;
+}
+
+.slide-header {
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.slide-badge {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--mm-ink-muted);
+  text-transform: uppercase;
+}
+
+.slide-title {
+  font-family: var(--mm-font-display);
+  font-size: 38px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--mm-ink);
+  margin: 0;
 }
 
 .share-container {
   width: 100%;
-  max-width: 460px;
+  margin-top: auto;
+  margin-bottom: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  align-items: flex-start;
+  gap: 24px;
 }
 
 .share-card {
+  width: 100%;
+  max-width: 800px;
   border: 1px solid var(--border-strong);
   border-radius: var(--mm-radius-sm, 2px);
-  padding: 22px;
+  padding: 40px;
   background-color: var(--surface-page);
   text-align: left;
+  aspect-ratio: 1200 / 630;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  transition: border-color 0.3s ease;
+}
+
+.share-card:hover {
+  border-color: var(--mm-accent-soft);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  width: 100%;
 }
 
 .mm-eyebrow {
@@ -97,11 +140,14 @@ function mockShare() {
 
 .card-badge {
   font-family: var(--mm-font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--mm-accent-soft);
   text-transform: uppercase;
-  max-width: 200px;
+  border: 1px solid var(--mm-accent-soft);
+  padding: 2px 8px;
+  border-radius: 2px;
+  max-width: 250px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -109,18 +155,19 @@ function mockShare() {
 
 .player-name {
   font-family: var(--mm-font-display);
-  font-size: clamp(20px, 3.5vw, 28px);
+  font-size: clamp(24px, 4.5vw, 46px);
   color: var(--mm-ink);
-  margin: 12px 0 16px 0;
+  margin: 24px 0;
   font-weight: 400;
 }
 
 .card-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 20px;
   border-top: 1px solid var(--border-hairline);
-  padding-top: 14px;
+  padding-top: 24px;
+  width: 100%;
 }
 
 .stat-box {
@@ -131,7 +178,7 @@ function mockShare() {
 .stat-num {
   font-family: var(--mm-font-display);
   font-weight: 300;
-  font-size: clamp(18px, 2.5vw, 24px);
+  font-size: clamp(26px, 3.5vw, 44px);
   color: var(--mm-ink);
   line-height: 1.1;
 }
@@ -146,41 +193,43 @@ function mockShare() {
 
 .mm-eyebrow-small {
   font-family: var(--mm-font-mono);
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.08em;
   color: var(--mm-ink-muted);
-  margin-top: 5px;
+  margin-top: 6px;
   text-transform: uppercase;
 }
 
 .card-footer {
-  margin-top: 18px;
-  padding-top: 11px;
+  padding-top: 16px;
   border-top: 1px solid var(--border-hairline);
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
+  font-size: 10px;
+  letter-spacing: 0.18em;
   color: var(--mm-ink-muted);
+  width: 100%;
 }
 
 .share-actions {
   display: flex;
   gap: 12px;
   align-items: center;
+  width: 100%;
 }
 
 .mm-btn {
   font-family: var(--mm-font-mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  padding: 8px 16px;
+  letter-spacing: 0.15em;
+  padding: 10px 20px;
   border-radius: var(--mm-radius-sm, 2px);
   cursor: pointer;
   border: none;
   background-color: var(--mm-accent);
   color: var(--mm-highlight-ink);
   transition: background-color 0.2s ease;
+  text-transform: uppercase;
 }
 
 .mm-btn:hover {
@@ -189,8 +238,22 @@ function mockShare() {
 
 .actions-meta {
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   color: var(--mm-ink-faint);
+}
+
+@media (max-width: 768px) {
+  .share-card {
+    aspect-ratio: auto;
+    padding: 24px;
+  }
+  .player-name {
+    margin: 16px 0;
+  }
+  .card-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
 }
 </style>
