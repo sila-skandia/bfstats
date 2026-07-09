@@ -1,29 +1,32 @@
 <template>
-  <div class="wrapped-slide squad-slide" @click="$emit('next')">
-    <div class="mm-eyebrow">06 — SQUAD</div>
+  <div class="wrapped-slide squad-slide animate-line-in" @click="$emit('next')">
+    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">06 — SQUAD</div>
     
     <div v-if="data.squad && data.squad.length > 0" class="squad-layout-active">
-      <div class="squad-heading">
+      <div class="squad-heading animate-rise-up" style="animation-delay: 0.1s">
         Rode with these soldiers all year.
       </div>
 
       <div class="squad-container">
-        <div class="squad-table-header">
+        <div class="squad-table-header animate-rise-up" style="animation-delay: 0.15s">
           <span>BUDDY</span>
-          <span>SHARED ROUNDS</span>
         </div>
 
         <div class="squad-list">
-          <div v-for="(buddy, index) in data.squad" :key="buddy.name" class="squad-row">
+          <div 
+            v-for="(buddy, index) in data.squad" 
+            :key="buddy.name" 
+            class="squad-row animate-rise-up"
+            :style="{ animationDelay: ((index * 0.08) + 0.2) + 's' }"
+          >
             <span class="row-num">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="row-name">{{ buddy.name }}</span>
-            <span class="row-rounds">{{ buddy.sharedRounds }} RDS</span>
           </div>
         </div>
       </div>
     </div>
     
-    <div v-else class="lone-wolf-container">
+    <div v-else class="lone-wolf-container animate-rise-up" style="animation-delay: 0.15s">
       <div class="squad-heading">
         Fought this war as a lone wolf.
       </div>

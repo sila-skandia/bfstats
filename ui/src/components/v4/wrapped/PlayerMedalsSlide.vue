@@ -1,13 +1,13 @@
 <template>
-  <div class="wrapped-slide medals-slide" @click="$emit('next')">
-    <div class="mm-eyebrow">04 — MEDALS &amp; DECORATIONS</div>
-    <div class="medals-heading">
+  <div class="wrapped-slide medals-slide animate-line-in" @click="$emit('next')">
+    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">04 — MEDALS &amp; DECORATIONS</div>
+    <div class="medals-heading animate-rise-up" style="animation-delay: 0.1s">
       {{ data.medals.killStreaks25 }} kill streaks. One {{ data.medals.eliteWarriorTier.toLowerCase() }}.
     </div>
     
     <div class="medals-grid">
       <!-- Card 1: Total Kill Streaks -->
-      <div class="deco-card">
+      <div class="deco-card animate-rise-up" style="animation-delay: 0.15s">
         <img 
           :src="getAchievementImage('kill_streak_25')" 
           alt="Kill streak medal" 
@@ -18,7 +18,7 @@
       </div>
 
       <!-- Card 2: Podium Finishes -->
-      <div class="deco-card">
+      <div class="deco-card animate-rise-up" style="animation-delay: 0.23s">
         <img 
           :src="getAchievementImage('round_placement_1')" 
           alt="First place medal" 
@@ -29,7 +29,7 @@
       </div>
 
       <!-- Card 3: Elite Warrior Tier -->
-      <div class="deco-card">
+      <div class="deco-card animate-rise-up" style="animation-delay: 0.31s">
         <img 
           :src="getAchievementImage('elite_warrior_legend')" 
           alt="Elite warrior legend medal" 
@@ -40,7 +40,7 @@
       </div>
 
       <!-- Card 4: Best Streak -->
-      <div class="deco-card">
+      <div class="deco-card animate-rise-up" style="animation-delay: 0.39s">
         <img 
           :src="getAchievementImage('kill_streak_50')" 
           alt="Best streak medal" 
@@ -52,7 +52,7 @@
     </div>
 
     <!-- Achievement Breakdowns Section -->
-    <div class="breakdown-section" v-if="data.medals.achievementTypes && data.medals.achievementTypes.length > 0">
+    <div class="breakdown-section animate-rise-up" v-if="data.medals.achievementTypes && data.medals.achievementTypes.length > 0" style="animation-delay: 0.45s">
       <div class="breakdown-title">ACHIEVEMENT BREAKDOWN</div>
       <div class="breakdown-grid">
         <div v-for="t in data.medals.achievementTypes" :key="t.type" class="breakdown-pill">
@@ -62,7 +62,7 @@
       </div>
     </div>
 
-    <div class="breakdown-section" v-if="data.medals.achievementsBreakdown && data.medals.achievementsBreakdown.length > 0" style="margin-top: 14px;">
+    <div class="breakdown-section animate-rise-up" v-if="data.medals.achievementsBreakdown && data.medals.achievementsBreakdown.length > 0" style="margin-top: 14px; animation-delay: 0.52s">
       <div class="breakdown-title">UNIQUE EARNED HONOURS</div>
       <div class="achievements-scroll">
         <div v-for="ach in data.medals.achievementsBreakdown" :key="ach.achievementId" class="ach-card">
@@ -72,7 +72,7 @@
       </div>
     </div>
 
-    <div class="medals-footer">
+    <div class="medals-footer animate-rise-up" style="animation-delay: 0.6s">
       {{ data.medals.lifetimeMilestoneText }}
     </div>
   </div>
@@ -177,7 +177,7 @@ defineEmits<{
 
 .breakdown-title {
   font-family: var(--mm-font-mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   color: var(--mm-ink-muted);
   text-transform: uppercase;
@@ -193,12 +193,12 @@ defineEmits<{
   background-color: var(--mm-bg-soft);
   border: 1px solid var(--mm-rule);
   border-radius: var(--mm-radius-sm, 2px);
-  padding: 4px 8px;
+  padding: 5px 10px;
   display: flex;
   align-items: center;
   gap: 6px;
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
+  font-size: 11.5px;
 }
 
 .pill-label {
@@ -223,7 +223,7 @@ defineEmits<{
   background-color: var(--mm-bg);
   border: 1px solid var(--mm-rule);
   border-radius: var(--mm-radius-sm, 2px);
-  padding: 6px 10px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -231,13 +231,13 @@ defineEmits<{
 
 .ach-card-name {
   font-family: var(--mm-font-display);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
 }
 
 .ach-card-count {
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   background-color: var(--mm-bg-soft);
   border-radius: 2px;
   padding: 1px 4px;
