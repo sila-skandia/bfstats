@@ -519,6 +519,30 @@ namespace api.Migrations
                     b.ToTable("PlayerStatsMonthly");
                 });
 
+            modelBuilder.Entity("api.Data.Entities.PlayerWrappedCache", b =>
+                {
+                    b.Property<string>("PlayerName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ServerGuid")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CalculatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("JsonData")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("PlayerName", "ServerGuid", "Year");
+
+                    b.ToTable("PlayerWrappedCaches");
+                });
+
             modelBuilder.Entity("api.Data.Entities.ServerHourlyPattern", b =>
                 {
                     b.Property<string>("ServerGuid")
@@ -642,6 +666,27 @@ namespace api.Migrations
                     b.HasIndex("Game", "HourTimestamp");
 
                     b.ToTable("ServerOnlineCounts");
+                });
+
+            modelBuilder.Entity("api.Data.Entities.ServerWrappedCache", b =>
+                {
+                    b.Property<string>("ServerGuid")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CalculatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("JsonData")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ServerGuid", "Year");
+
+                    b.ToTable("ServerWrappedCaches");
                 });
 
             modelBuilder.Entity("api.ImageStorage.Models.TournamentImageIndex", b =>
