@@ -1,8 +1,8 @@
 <template>
-  <div class="wrapped-slide rotation-slide">
+  <div class="wrapped-slide rotation-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge">03 — THE ROTATION</span>
-      <h2 class="slide-title">Theatre of operations.</h2>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">03 — THE ROTATION</span>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Theatre of operations.</h2>
     </div>
 
     <div class="rotation-content">
@@ -10,9 +10,10 @@
         <!-- Left Side: Top Maps List with Bars -->
         <div class="maps-list">
           <div 
-            v-for="map in topMaps" 
+            v-for="(map, idx) in topMaps" 
             :key="map.mapName" 
-            class="map-row"
+            class="map-row animate-rise-up"
+            :style="{ animationDelay: (idx * 0.08) + 's' }"
           >
             <div class="map-labels">
               <span class="map-name">{{ map.mapName }}</span>
@@ -20,8 +21,8 @@
             </div>
             <div class="map-bar-container">
               <div 
-                class="map-bar" 
-                :style="{ width: getBarWidth(map.roundsPlayed), backgroundColor: 'var(--mm-accent)' }"
+                class="map-bar animate-grow-x" 
+                :style="{ width: getBarWidth(map.roundsPlayed), backgroundColor: 'var(--mm-accent)', animationDelay: (idx * 0.08) + 's' }"
               ></div>
             </div>
             <!-- Top placement details under map -->
@@ -39,7 +40,7 @@
         </div>
 
         <!-- Right Side: Most Played Highlight -->
-        <div class="most-played-hero">
+        <div class="most-played-hero animate-rise-up" style="animation-delay: 0.4s">
           <div class="mm-eyebrow">MOST PLAYED</div>
           <h3 class="hero-map-name">{{ data.rotation.mostPlayedMapName || 'None' }}</h3>
           <div class="hero-stats-mono">

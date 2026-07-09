@@ -1,17 +1,17 @@
 <template>
-  <div class="wrapped-slide dishonours-slide">
+  <div class="wrapped-slide dishonours-slide animate-line-in">
     <div class="slide-header">
-      <div class="header-badge-row">
+      <div class="header-badge-row animate-rise-up" style="animation-delay: 0.05s">
         <span class="slide-badge">06 — DISHONOURS</span>
         <span class="mm-chip-love">WITH LOVE</span>
       </div>
-      <h2 class="slide-title">Someone had to.</h2>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Someone had to.</h2>
     </div>
 
     <div class="dishonours-content">
       <div class="dishonours-grid">
         <!-- Cannon Fodder -->
-        <div class="dishonour-card">
+        <div class="dishonour-card animate-rise-up" style="animation-delay: 0.15s">
           <div class="mm-eyebrow color-kill">CANNON FODDER</div>
           <div class="card-body-row">
             <span class="card-name">{{ data.dishonours.cannonFodder.playerName }}</span>
@@ -21,7 +21,7 @@
         </div>
 
         <!-- Hard Luck Division -->
-        <div class="dishonour-card">
+        <div class="dishonour-card animate-rise-up" style="animation-delay: 0.23s">
           <div class="mm-eyebrow color-kill">HARD LUCK DIVISION</div>
           <div v-if="data.dishonours.hardLuck" class="card-body-row">
             <span class="card-name">{{ data.dishonours.hardLuck.playerName }}</span>
@@ -35,7 +35,7 @@
         </div>
 
         <!-- Dial-up Warrior -->
-        <div class="dishonour-card">
+        <div class="dishonour-card animate-rise-up" style="animation-delay: 0.31s">
           <div class="mm-eyebrow color-kill">DIAL-UP WARRIOR</div>
           <div v-if="data.dishonours.dialUp" class="card-body-row">
             <span class="card-name">{{ data.dishonours.dialUp.playerName }}</span>
@@ -49,7 +49,7 @@
         </div>
 
         <!-- Stat Tourist -->
-        <div class="dishonour-card">
+        <div class="dishonour-card animate-rise-up" style="animation-delay: 0.39s">
           <div class="mm-eyebrow color-kill">STAT TOURIST</div>
           <div v-if="data.dishonours.statTourist" class="card-body-row">
             <span class="card-name text-strikethrough">{{ data.dishonours.statTourist.playerName }}</span>

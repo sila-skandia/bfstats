@@ -1,9 +1,9 @@
 <template>
-  <div class="wrapped-slide hours-slide">
+  <div class="wrapped-slide hours-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge">02 — BUSIEST HOURS</span>
-      <h2 class="slide-title">{{ peakDayName }}, {{ peakHourFormatted }}. Always.</h2>
-      <span class="mm-chip">LOCAL TIMEZONE</span>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">02 — BUSIEST HOURS</span>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">{{ peakDayName }}, {{ peakHourFormatted }}. Always.</h2>
+      <span class="mm-chip animate-rise-up" style="animation-delay: 0.15s">LOCAL TIMEZONE</span>
     </div>
 
     <div class="hours-content">
@@ -11,25 +11,25 @@
       <div v-if="isDesktop" class="desktop-chart-container">
         <div class="bars-wrapper">
           <div 
-            v-for="hb in hourBars" 
+            v-for="(hb, idx) in hourBars" 
             :key="hb.hour" 
             class="bar-item"
             :title="`Hour ${hb.hour}:00`"
           >
             <div 
               class="bar-fill"
-              :style="{ height: hb.height, backgroundColor: hb.bg }"
+              :style="{ height: hb.height, backgroundColor: hb.bg, transformOrigin: 'bottom', animation: 'growY 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) both', animationDelay: (idx * 0.02) + 's' }"
             ></div>
           </div>
         </div>
-        <div class="bars-labels">
+        <div class="bars-labels animate-rise-up" style="animation-delay: 0.5s">
           <span>00:00</span>
           <span>06:00</span>
           <span>12:00</span>
           <span>18:00</span>
           <span>23:00</span>
         </div>
-        <p class="chart-desc">
+        <p class="chart-desc animate-rise-up" style="animation-delay: 0.55s">
           Average population by hour of day all year. Peak times ran heavy — weekends averaged 30% busier than weekdays.
         </p>
       </div>
@@ -47,7 +47,7 @@
               v-for="hIdx in 24"
               :key="hIdx"
               class="grid-cell"
-              :style="{ backgroundColor: getCellColor(dIdx, hIdx - 1) }"
+              :style="{ backgroundColor: getCellColor(dIdx, hIdx - 1), animation: 'cellIn 0.4s ease both', animationDelay: ((dIdx * 24 + hIdx) * 0.003) + 's' }"
               :title="getCellTooltip(dIdx, hIdx - 1)"
             ></div>
           </div>

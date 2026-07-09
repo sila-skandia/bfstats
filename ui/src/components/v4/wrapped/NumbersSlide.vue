@@ -1,30 +1,36 @@
 <template>
-  <div class="wrapped-slide numbers-slide">
+  <div class="wrapped-slide numbers-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge">01 — THE YEAR IN NUMBERS</span>
-      <h2 class="slide-title">The front never slept.</h2>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">01 — THE YEAR IN NUMBERS</span>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">The front never slept.</h2>
     </div>
 
     <div class="numbers-content">
       <div class="metrics-row">
         <!-- Column 1: Rounds Fought -->
-        <div class="metric-column">
-          <div class="metric-val">{{ data.yearInNumbers.roundsFought.toLocaleString() }}</div>
+        <div class="metric-column animate-rise-up" style="animation-delay: 0.15s">
+          <div class="metric-val">
+            <num-count :data-to="data.yearInNumbers.roundsFought" data-dur="1200" data-delay="120"></num-count>
+          </div>
           <div class="mm-eyebrow">ROUNDS FOUGHT</div>
         </div>
         <!-- Column 2: Unique Soldiers -->
-        <div class="metric-column">
-          <div class="metric-val">{{ data.yearInNumbers.uniqueSoldiers.toLocaleString() }}</div>
+        <div class="metric-column animate-rise-up" style="animation-delay: 0.25s">
+          <div class="metric-val">
+            <num-count :data-to="data.yearInNumbers.uniqueSoldiers" data-dur="1200" data-delay="240"></num-count>
+          </div>
           <div class="mm-eyebrow">UNIQUE SOLDIERS</div>
         </div>
         <!-- Column 3: Combat Hours -->
-        <div class="metric-column last">
-          <div class="metric-val">{{ Math.round(data.yearInNumbers.hoursInCombat).toLocaleString() }}</div>
+        <div class="metric-column last animate-rise-up" style="animation-delay: 0.35s">
+          <div class="metric-val">
+            <num-count :data-to="Math.round(data.yearInNumbers.hoursInCombat)" data-dur="1250" data-delay="360"></num-count>
+          </div>
           <div class="mm-eyebrow">HOURS IN COMBAT</div>
         </div>
       </div>
 
-      <div class="metrics-footer">
+      <div class="metrics-footer animate-rise-up" style="animation-delay: 0.45s">
         PEAK POPULATION <span class="text-ink">{{ data.yearInNumbers.peakPopulation }}</span> · {{ formattedPeakDate }} · <span class="text-ink">{{ data.yearInNumbers.totalDecorations.toLocaleString() }}</span> DECORATIONS AWARDED
       </div>
     </div>

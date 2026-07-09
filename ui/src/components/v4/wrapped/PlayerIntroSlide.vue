@@ -1,23 +1,23 @@
 <template>
-  <div class="wrapped-slide intro-slide" @click="$emit('next')">
+  <div class="wrapped-slide intro-slide animate-line-in" @click="$emit('next')">
     <div class="intro-content">
-      <div class="mm-eyebrow">BFSTATS · PLAYER AFTER-ACTION REPORT</div>
-      <h1 class="intro-title">
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">BFSTATS · PLAYER AFTER-ACTION REPORT</div>
+      <h1 class="intro-title animate-rise-up" style="animation-delay: 0.16s">
         Player Wrapped <span class="text-italic">2026</span>
       </h1>
-      <div class="accent-line"></div>
+      <div class="accent-line animate-rise-up" style="animation-delay: 0.22s"></div>
       
-      <div class="intro-meta">
+      <div class="intro-meta animate-rise-up" style="animation-delay: 0.28s">
         <span class="text-accent">{{ data.playerName }}</span>
         <span class="divider">·</span>
         <span>BATTLEFIELD 1942</span>
         <span class="divider">·</span>
         <span>JAN 01 — DEC 31</span>
         <span class="divider">·</span>
-        <span v-if="data.yearInNumbers.serverRank > 0" class="text-accent">TOP RANK #{{ data.yearInNumbers.serverRank }}</span>
+        <span class="text-accent" v-if="data.yearInNumbers.serverRank > 0">TOP RANK #{{ data.yearInNumbers.serverRank }}</span>
       </div>
 
-      <div class="click-prompt">
+      <div class="click-prompt animate-rise-up" style="animation-delay: 0.4s">
         <span>TAP / CLICK TO BEGIN BRIEFING</span>
         <span class="cursor">_</span>
       </div>

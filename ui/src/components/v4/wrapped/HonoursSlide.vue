@@ -1,9 +1,9 @@
 <template>
-  <div class="wrapped-slide honours-slide">
+  <div class="wrapped-slide honours-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge">04 — HONOURS · QUALIFIED BOARDS</span>
-      <h2 class="slide-title">Skill, not hours.</h2>
-      <span class="mm-chip">MIN 100 ROUNDS</span>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">04 — HONOURS · QUALIFIED BOARDS</span>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Skill, not hours.</h2>
+      <span class="mm-chip animate-rise-up" style="animation-delay: 0.15s">MIN 100 ROUNDS</span>
     </div>
 
     <!-- Toggles: visible only on mobile/tablet viewports -->
@@ -36,14 +36,15 @@
       <div class="boards-grid">
         <!-- 1. K/D Ratio Board -->
         <div v-if="activeTab === 'kd' || isDesktop" class="board-card">
-          <div class="board-header-row">
+          <div class="board-header-row animate-rise-up" style="animation-delay: 0.15s">
             <span>K/D RATIO</span>
             <span>RDS</span>
           </div>
           <div 
             v-for="(p, i) in data.honours.topKDRatios.slice(0, 3)" 
             :key="p.playerName" 
-            class="board-row"
+            class="board-row animate-rise-up"
+            :style="{ animationDelay: ((i * 0.08) + 0.2) + 's' }"
           >
             <span class="col-rank">{{ String(i + 1).padStart(2, '0') }}</span>
             <span class="col-name">{{ p.playerName }}</span>
@@ -57,14 +58,15 @@
 
         <!-- 2. Kill Rate Board -->
         <div v-if="activeTab === 'killrate' || isDesktop" class="board-card">
-          <div class="board-header-row">
+          <div class="board-header-row animate-rise-up" style="animation-delay: 0.25s">
             <span>KILL RATE · KILLS/MIN</span>
             <span>RDS</span>
           </div>
           <div 
             v-for="(p, i) in data.honours.topKillRates.slice(0, 3)" 
             :key="p.playerName" 
-            class="board-row"
+            class="board-row animate-rise-up"
+            :style="{ animationDelay: ((i * 0.08) + 0.3) + 's' }"
           >
             <span class="col-rank">{{ String(i + 1).padStart(2, '0') }}</span>
             <span class="col-name">{{ p.playerName }}</span>
@@ -78,7 +80,7 @@
       </div>
 
       <!-- Volume Board Footer -->
-      <div v-if="activeTab === 'volume' || isDesktop" class="volume-footer">
+      <div v-if="activeTab === 'volume' || isDesktop" class="volume-footer animate-rise-up" style="animation-delay: 0.5s">
         <span class="volume-title">VOLUME BOARDS (THEY TRACK HOURS, NOT SKILL) — </span>
         <span class="volume-item">
           SCORE <strong class="text-highlight">{{ data.honours.volumeBoards.topScore.playerName || 'None' }} {{ data.honours.volumeBoards.topScore.value.toLocaleString() }}</strong>

@@ -795,15 +795,50 @@ public class WrappedService(
             .GroupBy(pms => pms.MapName)
             .Select(g => new {
                 MapName = g.Key,
-                TotalRounds = g.Sum(pms => pms.TotalRounds)
+                TotalRounds = g.Sum(pms => pms.TotalRounds),
+                TotalKills = g.Sum(pms => pms.TotalKills),
+                TotalDeaths = g.Sum(pms => pms.TotalDeaths)
             })
-            .OrderByDescending(x => x.TotalRounds)
-            .Take(3)
             .ToListAsync();
 
-        var topMaps = mapStats
-            .Select((m, idx) => new PlayerMapRankDto(idx + 1, m.MapName, m.TotalRounds))
-            .ToList();
+        var topMaps = new List<PlayerMapRankDto>();
+
+        // 1. Most Kills Map
+        var mostKillsMap = mapStats.OrderByDescending(x => x.TotalKills).FirstOrDefault();
+        if (mostKillsMap != null && mostKillsMap.TotalKills > 0)
+        {
+            topMaps.Add(new PlayerMapRankDto("MOST KILLS", mostKillsMap.MapName, $"{mostKillsMap.TotalKills:N0} Kills"));
+        }
+
+        // 2. Highest K/D Map (min 3 rounds if any map has >=3 rounds, else >=1 round)
+        var kdEligible = mapStats.Where(x => x.TotalRounds >= 3).ToList();
+        if (!kdEligible.Any()) kdEligible = mapStats;
+        var highestKDMap = kdEligible
+            .Select(x => new {
+                x.MapName,
+                KD = x.TotalDeaths > 0 ? (double)x.TotalKills / x.TotalDeaths : x.TotalKills
+            })
+            .OrderByDescending(x => x.KD)
+            .FirstOrDefault();
+        if (highestKDMap != null && highestKDMap.KD > 0)
+        {
+            topMaps.Add(new PlayerMapRankDto("HIGHEST K/D", highestKDMap.MapName, $"{highestKDMap.KD:F2} K/D"));
+        }
+
+        // 3. Highest Kill Rate Map (min 3 rounds if any map has >=3 rounds, else >=1 round)
+        var krEligible = mapStats.Where(x => x.TotalRounds >= 3).ToList();
+        if (!krEligible.Any()) krEligible = mapStats;
+        var highestKRMap = krEligible
+            .Select(x => new {
+                x.MapName,
+                KR = x.TotalRounds > 0 ? (double)x.TotalKills / x.TotalRounds : 0
+            })
+            .OrderByDescending(x => x.KR)
+            .FirstOrDefault();
+        if (highestKRMap != null && highestKRMap.KR > 0)
+        {
+            topMaps.Add(new PlayerMapRankDto("HIGHEST KILL RATE", highestKRMap.MapName, $"{highestKRMap.KR:F1} Kills/Rd"));
+        }
 
         var trend = new PlayerTrendDto(monthlyKDs, monthlyKillRates, topMaps);
 
@@ -1037,7 +1072,7 @@ public class WrappedService(
         {
             try
             {
-                var coPlayers = await _relationshipService.GetMostFrequentCoPlayersAsync(playerName, limit: 4);
+                var coPlayers = await _relationshipService.GetMostFrequentCoPlayersAsync(playerName, limit: 10);
                 foreach (var p in coPlayers)
                 {
                     squad.Add(new PlayerTeammateDto(PlayerNameDecoder.Decode(p.Player2Name), p.SessionCount));
