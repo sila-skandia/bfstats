@@ -1,0 +1,216 @@
+<template>
+  <div class="wrapped-slide trend-slide" @click="$emit('next')">
+    <div class="mm-eyebrow">02 — RANK &amp; K/D TREND</div>
+    
+    <div class="trend-heading">
+      K/D climbed to {{ maxKD.toFixed(2) }} this year.
+    </div>
+
+    <div class="trend-charts">
+      <div class="chart-box">
+        <div class="chart-header">
+          <span class="mm-eyebrow-small">K/D TREND</span>
+          <span class="chart-value text-accent">{{ startKD.toFixed(2) }} → {{ endKD.toFixed(2) }}</span>
+        </div>
+        <div class="chart-container">
+          <svg viewBox="0 0 100 32" preserveAspectRatio="none">
+            <polyline :points="kdPoints" fill="none" stroke="var(--mm-kd-elite)" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
+          </svg>
+        </div>
+      </div>
+
+      <div class="chart-box">
+        <div class="chart-header">
+          <span class="mm-eyebrow-small">KILL RATE TREND</span>
+          <span class="chart-value text-muted">{{ startKillRate.toFixed(1) }} → {{ endKillRate.toFixed(1) }} KILLS/RD</span>
+        </div>
+        <div class="chart-container">
+          <svg viewBox="0 0 100 32" preserveAspectRatio="none">
+            <polyline :points="killRatePoints" fill="none" stroke="var(--mm-accent)" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="top-maps-section">
+      <div class="mm-eyebrow-small map-section-title">TOP RANKED MAPS</div>
+      <div class="maps-grid">
+        <div v-for="map in data.trend.topMaps" :key="map.mapName" class="map-card">
+          <div class="map-rank">#{{ map.rank }}</div>
+          <div class="map-name">{{ map.mapName }}</div>
+          <div class="map-meta">OF {{ map.totalRounds }} ROUNDS</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import type { PlayerWrappedData } from '@/services/wrappedService'
+
+const props = defineProps<{
+  data: PlayerWrappedData
+}>()
+
+defineEmits<{
+  (e: 'next'): void
+}>()
+
+// Find start/end/max values
+const activeMonthlyKDs = computed(() => props.data.trend.monthlyKDs.filter(v => v > 0) || [0])
+const activeMonthlyKRs = computed(() => props.data.trend.monthlyKillRates.filter(v => v > 0) || [0])
+
+const startKD = computed(() => activeMonthlyKDs.value[0] || 0)
+const endKD = computed(() => activeMonthlyKDs.value[activeMonthlyKDs.value.length - 1] || 0)
+const maxKD = computed(() => Math.max(...props.data.trend.monthlyKDs, 0))
+
+const startKillRate = computed(() => activeMonthlyKRs.value[0] || 0)
+const endKillRate = computed(() => activeMonthlyKRs.value[activeMonthlyKRs.value.length - 1] || 0)
+
+const toSparkPoints = (series: number[]) => {
+  if (series.length === 0) return '0,15'
+  if (series.length === 1) return '0,15 100,15'
+  const max = Math.max(...series)
+  const min = Math.min(...series)
+  const range = max - min || 1
+  return series.map((v, i) => {
+    const x = (i / (series.length - 1)) * 100
+    const y = 31 - ((v - min) / range) * 30
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+}
+
+const kdPoints = computed(() => toSparkPoints(props.data.trend.monthlyKDs))
+const killRatePoints = computed(() => toSparkPoints(props.data.trend.monthlyKillRates))
+</script>
+
+<style scoped>
+.wrapped-slide {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  cursor: pointer;
+  padding: 40px;
+}
+
+.mm-eyebrow {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--mm-ink-muted);
+}
+
+.trend-heading {
+  font-family: var(--mm-font-display);
+  font-weight: 300;
+  font-size: clamp(20px, 3vw, 32px);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--mm-ink);
+  margin: 14px 0 20px 0;
+}
+
+.trend-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.chart-box {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.mm-eyebrow-small {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--mm-ink-muted);
+  text-transform: uppercase;
+}
+
+.chart-value {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+}
+
+.text-accent {
+  color: var(--mm-kd-elite);
+}
+
+.text-muted {
+  color: var(--mm-ink-soft);
+}
+
+.chart-container {
+  border: 1px solid var(--border-hairline);
+  border-radius: 2px;
+  padding: 8px;
+  background-color: var(--surface-raised);
+}
+
+.chart-container svg {
+  width: 100%;
+  height: 38px;
+  display: block;
+}
+
+.top-maps-section {
+  margin-top: auto;
+}
+
+.map-section-title {
+  margin-bottom: 8px;
+}
+
+.maps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.map-card {
+  border: 1px solid var(--border-hairline);
+  border-radius: 2px;
+  padding: 12px;
+  background-color: var(--surface-raised);
+}
+
+.map-rank {
+  font-family: var(--mm-font-display);
+  font-weight: 300;
+  font-size: clamp(18px, 2.5vw, 26px);
+  color: var(--mm-accent-soft);
+}
+
+.map-name {
+  font-family: var(--mm-font-display);
+  font-size: 13.5px;
+  color: var(--mm-ink);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-meta {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--mm-ink-muted);
+  margin-top: 3px;
+}
+</style>

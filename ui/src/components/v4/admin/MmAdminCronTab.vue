@@ -136,6 +136,36 @@
           </button>
         </li>
 
+        <li class="mm-admin-cron__item">
+          <div class="mm-admin-cron__body-text">
+            <span class="mm-admin-cron__name">Crunch Server Wrapped</span>
+            <span class="mm-admin-cron__desc">Pre-computes and caches 2026 statistics for all servers. Fire-and-forget.</span>
+          </div>
+          <button
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+            :disabled="jobRunning !== null"
+            @click="runJob('server-wrapped-crunch', false)"
+          >
+            Start
+          </button>
+        </li>
+
+        <li class="mm-admin-cron__item">
+          <div class="mm-admin-cron__body-text">
+            <span class="mm-admin-cron__name">Crunch Player Wrapped</span>
+            <span class="mm-admin-cron__desc">Pre-computes and caches 2026 statistics for whitelisted players on allowed servers.</span>
+          </div>
+          <button
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+            :disabled="jobRunning !== null"
+            @click="runJob('player-wrapped-crunch', false)"
+          >
+            Start
+          </button>
+        </li>
+
         <li
           v-if="neo4jEnabled"
           class="mm-admin-cron__item mm-admin-cron__item--neo4j"
@@ -278,6 +308,12 @@ async function runJob(jobKey: string, _isBlocking: boolean) {
       break
     case 'run-all':
       fn = adminJobsService.triggerRunAll
+      break
+    case 'server-wrapped-crunch':
+      fn = adminJobsService.triggerServerWrappedCrunch
+      break
+    case 'player-wrapped-crunch':
+      fn = adminJobsService.triggerPlayerWrappedCrunch
       break
     case 'community-detection':
       fn = adminJobsService.triggerCommunityDetection

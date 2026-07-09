@@ -625,6 +625,7 @@ try
     // Register background jobs for scheduled execution
     builder.Services.AddHostedService<DailyAggregateRefreshBackgroundService>();
     builder.Services.AddHostedService<WeeklyCleanupJob>();
+    builder.Services.AddHostedService<ServerWrappedCrunchBackgroundService>();
 
 
     // Configure Redis caching with short timeouts
@@ -747,6 +748,7 @@ try
     builder.Services.AddScoped<api.AdminData.AdminDataService>();
     builder.Services.AddScoped<api.AdminData.IAdminDataService>(sp => sp.GetRequiredService<api.AdminData.AdminDataService>());
     builder.Services.AddScoped<api.AdminData.IServerMergeService, api.AdminData.ServerMergeService>();
+    builder.Services.AddScoped<api.Wrapped.IWrappedService, api.Wrapped.WrappedService>();
 
     // Register Neo4j Player Relationships services (optional, only if configured)
     var neo4jConfig = builder.Configuration.GetSection("Neo4j").Get<api.PlayerRelationships.Neo4jConfiguration>();
