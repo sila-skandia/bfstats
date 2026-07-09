@@ -1,9 +1,23 @@
+// Mock localStorage to prevent vue-devtools-kit crash in Node.js environments
+const mockLocalStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+  clear: () => {}
+}
+globalThis.localStorage = mockLocalStorage
+if (typeof global !== 'undefined') {
+  global.localStorage = mockLocalStorage
+}
+
 import { fileURLToPath, URL } from 'node:url'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import vueDevTools from 'vite-plugin-vue-devtools'
 import { visualizer } from 'rollup-plugin-visualizer'
+
+// Dynamic import to ensure global localStorage mock is defined before devtools loads
+const { default: vueDevTools } = await import('vite-plugin-vue-devtools')
 
 // https://vite.dev/config/
 export default defineConfig({

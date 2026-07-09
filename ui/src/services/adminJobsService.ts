@@ -203,3 +203,14 @@ export function getNeo4jMigrationStatus(): Promise<{
     return res.json();
   });
 }
+
+/** Fire-and-forget. Pre-computes Server Wrapped data for all servers. Returns 202 Accepted. */
+export function triggerServerWrappedCrunch(): Promise<{ message?: string; error?: string }> {
+  return request('/server-wrapped-crunch');
+}
+
+/** Fire-and-forget. Pre-computes Player Wrapped data for whitelisted players. Returns 202 Accepted. */
+export function triggerPlayerWrappedCrunch(): Promise<{ message?: string; error?: string }> {
+  return request('/player-wrapped-crunch');
+}
+
