@@ -241,7 +241,7 @@ public class WrappedService(
             .ToListAsync();
 
         var topPlacementsByMap = goldAchievements
-            .GroupBy(pa => pa.MapName)
+            .GroupBy(pa => pa.MapName, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 g => g.Key,
                 g => g.GroupBy(pa => pa.PlayerName)
