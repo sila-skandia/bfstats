@@ -77,6 +77,15 @@ export interface PrestigiousMilestone {
   description: string;
 }
 
+export interface LegendAchievement {
+  achievementId: string;
+  playerName: string;
+  achievementName: string;
+  description: string;
+  value: number;
+  tier: string;
+}
+
 export interface ServerWrappedData {
   serverGuid: string;
   serverName: string;
@@ -116,7 +125,7 @@ export interface ServerWrappedData {
     prestigiousMilestone: PrestigiousMilestone | null;
     eliteWarriorGold: PlayerVolume | null;
     eliteWarriorLegend: PlayerVolume | null;
-    mostLegendAchievements: PlayerVolume | null;
+    mostLegendAchievements: LegendAchievement | null;
   };
   dishonours: {
     cannonFodder: PlayerVolume;

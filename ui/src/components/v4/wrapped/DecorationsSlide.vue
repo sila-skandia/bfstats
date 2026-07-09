@@ -100,6 +100,11 @@ const props = defineProps<{
   data: ServerWrappedData
 }>()
 
+const emit = defineEmits<{
+  (e: 'pause'): void
+  (e: 'next'): void
+}>()
+
 // Animation states
 const dCur = ref(-1)
 const dShelf = ref<number[]>([])
@@ -107,6 +112,7 @@ const dPhase = ref<'in' | 'out'>('in')
 const dDone = ref(false)
 
 let dtTimeout: ReturnType<typeof setTimeout> | null = null
+let nextTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Define the 7 decorations matching the mock
 const DECO = computed(() => {
@@ -148,13 +154,19 @@ const DECO = computed(() => {
       desc: `${props.data.decorations.prestigiousMilestone?.playerName || 'No one'} unlocked the prestigious '${props.data.decorations.prestigiousMilestone?.achievementName || 'Legend'}' milestone (out of ${props.data.decorations.milestonesCrossed} milestones crossed in total).`
     },
     {
-      img: getAchievementImage('team_victory_legendary'),
-      label: 'MOST LEGEND MILESTONES',
+      img: getAchievementImage(props.data.decorations.mostLegendAchievements?.achievementId || 'team_victory_legendary'),
+      label: props.data.decorations.mostLegendAchievements 
+        ? `MOST ${(props.data.decorations.mostLegendAchievements.tier || 'legend').toUpperCase()} MILESTONES` 
+        : 'MOST LEGEND MILESTONES',
       player: props.data.decorations.mostLegendAchievements?.playerName || 'None',
       stat: (props.data.decorations.mostLegendAchievements?.value || 0).toString(),
-      unit: 'LIFETIME LEGENDS',
-      tile: `${props.data.decorations.mostLegendAchievements?.value || 0} LEGENDS`,
-      desc: `Unlocked ${props.data.decorations.mostLegendAchievements?.value || 0} different legendary achievements (kills, playtime, score) on this server.`
+      unit: props.data.decorations.mostLegendAchievements 
+        ? `LIFETIME ${(props.data.decorations.mostLegendAchievements.tier || 'legend').toUpperCase()}S` 
+        : 'LIFETIME LEGENDS',
+      tile: props.data.decorations.mostLegendAchievements 
+        ? `${props.data.decorations.mostLegendAchievements.value} ${props.data.decorations.mostLegendAchievements.achievementName || 'LEGENDS'}` 
+        : '0 LEGENDS',
+      desc: props.data.decorations.mostLegendAchievements?.description || 'Unlocked different achievements on this server.'
     },
     {
       img: getAchievementImage('elite_warrior_gold'),
@@ -210,6 +222,7 @@ const dDots = computed(() => {
 // Control functions
 function startDeco() {
   if (dtTimeout) clearTimeout(dtTimeout)
+  if (nextTimeout) clearTimeout(nextTimeout)
   
   // Check prefers-reduced-motion
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches
@@ -245,15 +258,21 @@ function decoCollect() {
   
   if (!done) {
     dtTimeout = setTimeout(() => decoOut(), 2800)
+  } else {
+    nextTimeout = setTimeout(() => {
+      emit('next')
+    }, 1000)
   }
 }
 
 onMounted(() => {
+  emit('pause')
   dtTimeout = setTimeout(() => startDeco(), 500)
 })
 
 onUnmounted(() => {
   if (dtTimeout) clearTimeout(dtTimeout)
+  if (nextTimeout) clearTimeout(nextTimeout)
 })
 </script>
 

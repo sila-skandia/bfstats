@@ -559,20 +559,56 @@ public class WrappedService(
             eliteWarriorLegend = new PlayerVolumeDto(PlayerNameDecoder.Decode(topLegend.PlayerName), topLegend.Streak);
         }
 
-        // Calculate player with the most Legend tier achievements (excluding team_victory and kill_streak_50)
-        var topLegendAchievementsRecord = await dbContext.PlayerAchievements
-            .AsNoTracking()
-            .Where(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
-                && pa.Tier == "legend" && pa.AchievementId != "team_victory" && pa.AchievementId != "kill_streak_50")
-            .GroupBy(pa => pa.PlayerName)
-            .Select(g => new { PlayerName = g.Key, Count = g.Count() })
-            .OrderByDescending(x => x.Count)
-            .FirstOrDefaultAsync();
-
-        PlayerVolumeDto? mostLegendAchievements = null;
-        if (topLegendAchievementsRecord != null)
+        // Calculate player with the most Legend (or fallback tiers) achievements (excluding team_victory and kill_streak_50)
+        var tiersToCheck = new[] { "legend", "gold", "silver", "bronze" };
+        string? activeTier = null;
+        foreach (var tier in tiersToCheck)
         {
-            mostLegendAchievements = new PlayerVolumeDto(PlayerNameDecoder.Decode(topLegendAchievementsRecord.PlayerName), topLegendAchievementsRecord.Count);
+            var exists = await dbContext.PlayerAchievements
+                .AnyAsync(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
+                    && pa.Tier == tier && pa.AchievementId != "team_victory" && pa.AchievementId != "kill_streak_50");
+            if (exists)
+            {
+                activeTier = tier;
+                break;
+            }
+        }
+
+        LegendAchievementDto? mostLegendAchievements = null;
+        if (activeTier != null)
+        {
+            var topRecord = await dbContext.PlayerAchievements
+                .AsNoTracking()
+                .Where(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
+                    && pa.Tier == activeTier && pa.AchievementId != "team_victory" && pa.AchievementId != "kill_streak_50")
+                .GroupBy(pa => pa.PlayerName)
+                .Select(g => new { PlayerName = g.Key, Count = g.Count() })
+                .OrderByDescending(x => x.Count)
+                .FirstOrDefaultAsync();
+
+            if (topRecord != null)
+            {
+                var repAchievement = (await dbContext.PlayerAchievements
+                    .AsNoTracking()
+                    .Where(pa => pa.ServerGuid == serverGuid && pa.PlayerName == topRecord.PlayerName && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
+                        && pa.Tier == activeTier && pa.AchievementId != "team_victory" && pa.AchievementId != "kill_streak_50")
+                    .ToListAsync())
+                    .OrderByDescending(pa => GetPrestigeWeight(pa.AchievementId))
+                    .FirstOrDefault();
+
+                if (repAchievement != null)
+                {
+                    var (repName, repDesc) = GetAchievementInfo(repAchievement.AchievementId);
+                    mostLegendAchievements = new LegendAchievementDto(
+                        repAchievement.AchievementId,
+                        PlayerNameDecoder.Decode(topRecord.PlayerName),
+                        repName,
+                        repDesc,
+                        topRecord.Count,
+                        activeTier
+                    );
+                }
+            }
         }
 
         var milestones = allMilestones.Count;
