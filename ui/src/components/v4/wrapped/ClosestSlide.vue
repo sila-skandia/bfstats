@@ -1,8 +1,8 @@
 <template>
-  <div class="wrapped-slide closest-slide">
+  <div class="wrapped-slide closest-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge">07 — CLOSEST BATTLES · 50+ SOLDIERS</span>
-      <h2 class="slide-title">Decided by {{ lowestMargin }} {{ lowestMargin === 1 ? 'ticket' : 'tickets' }}.</h2>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">07 — CLOSEST BATTLES · 50+ SOLDIERS</span>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Decided by {{ lowestMargin }} {{ lowestMargin === 1 ? 'ticket' : 'tickets' }}.</h2>
     </div>
 
     <div class="closest-content">
@@ -10,7 +10,8 @@
         <div 
           v-for="(battle, idx) in data.closestBattles.slice(0, 3)" 
           :key="idx" 
-          class="battle-card-item"
+          class="battle-card-item animate-rise-up"
+          :style="{ animationDelay: ((idx * 0.08) + 0.15) + 's' }"
         >
           <div class="battle-date-mono">{{ formatDate(battle.date) }}</div>
           <div class="battle-map-name">{{ battle.mapName }}</div>

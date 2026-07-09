@@ -1,8 +1,8 @@
 <template>
-  <div class="wrapped-slide share-slide">
+  <div class="wrapped-slide share-slide animate-line-in">
     <div class="share-container">
       <!-- The Card itself -->
-      <div class="share-card">
+      <div class="share-card animate-wrapped-in" style="animation-delay: 0.15s">
         <div class="card-header">
           <div class="mm-eyebrow">PLAYER WRAPPED · 2026</div>
           <span class="card-badge">#{{ data.yearInNumbers.serverRank }} · {{ data.serverName }}</span>
@@ -35,7 +35,7 @@
       </div>
 
       <!-- Action Button -->
-      <div class="share-actions">
+      <div class="share-actions animate-rise-up" style="animation-delay: 0.35s">
         <button class="mm-btn mm-btn--accent" @click="mockShare">Share card ↗</button>
         <span class="actions-meta">EXPORTS 1200×630 PNG</span>
       </div>

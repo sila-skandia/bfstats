@@ -32,9 +32,9 @@ public record PlayerTrendDto(
 );
 
 public record PlayerMapRankDto(
-    int Rank,
+    string MetricName,
     string MapName,
-    int TotalRounds
+    string MetricValue
 );
 
 public record PlayerFavouriteMapDto(

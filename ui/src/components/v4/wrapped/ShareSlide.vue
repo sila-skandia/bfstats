@@ -1,13 +1,13 @@
 <template>
-  <div class="wrapped-slide share-slide">
+  <div class="wrapped-slide share-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge">08 — THE BRIEFING OVERVIEW</span>
-      <h2 class="slide-title">Share the report.</h2>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">08 — THE BRIEFING OVERVIEW</span>
+      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Share the report.</h2>
     </div>
 
     <div class="share-content">
       <!-- Minimalist Share Card Box -->
-      <div class="share-card-box">
+      <div class="share-card-box animate-wrapped-in" style="animation-delay: 0.15s">
         <div class="card-header-row">
           <div class="mm-eyebrow">SERVER WRAPPED · 2026</div>
           <span class="card-badge-mono">#1 MOST ACTIVE</span>
@@ -40,7 +40,7 @@
       </div>
 
       <!-- Action buttons -->
-      <div class="actions-row">
+      <div class="actions-row animate-rise-up" style="animation-delay: 0.35s">
         <button class="action-btn-primary" @click="copyShareMessage">
           {{ copied ? 'Copied summary!' : 'Copy Summary Text ↗' }}
         </button>

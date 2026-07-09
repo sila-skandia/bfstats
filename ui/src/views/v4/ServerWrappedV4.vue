@@ -83,10 +83,10 @@
               </div>
             </div>
 
-            <div class="slide-container" :key="currentSlide">
+            <div class="slide-container">
               <transition name="slide-fade" mode="out-in">
                 <!-- Slide rendering -->
-                <div class="slide-content-wrapper">
+                <div class="slide-content-wrapper" :key="currentSlide">
                   <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" />
                 </div>
               </transition>
@@ -139,8 +139,10 @@
         </div>
 
         <!-- Mobile Content Container -->
-        <div class="mobile-content-container" :key="currentSlide">
-          <component :is="activeSlideComponent" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" />
+        <div class="mobile-content-container">
+          <transition name="slide-fade" mode="out-in">
+            <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" />
+          </transition>
         </div>
       </div>
     </div>
@@ -305,7 +307,7 @@ function endHold() {
   background-color: var(--mm-bg);
   color: var(--mm-ink);
   font-family: var(--mm-font-display);
-  min-height: 100vh;
+  height: calc(100vh - 150px);
   width: 100%;
   display: flex;
   overflow: hidden;
@@ -364,11 +366,10 @@ function endHold() {
   color: var(--mm-accent);
 }
 
-/* Layout System */
 .wrapped-layout {
   display: flex;
   width: 100%;
-  height: 100vh;
+  height: 100%;
   position: relative;
 }
 
@@ -386,7 +387,7 @@ function endHold() {
 }
 
 .wrapped-sidebar {
-  width: 240px;
+  width: 270px;
   background-color: var(--mm-bg);
   border-right: 1px solid var(--mm-rule);
   display: flex;
@@ -405,7 +406,7 @@ function endHold() {
 
 .logo-text {
   font-family: var(--mm-font-display);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.5px;
 }
@@ -414,7 +415,7 @@ function endHold() {
   background-color: var(--mm-accent);
   color: #000;
   font-family: var(--mm-font-mono);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   padding: 2px 5px;
   border-radius: var(--mm-radius-sm, 2px);
@@ -427,7 +428,7 @@ function endHold() {
 }
 
 .server-info h4 {
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 600;
   margin: 0 0 4px;
   white-space: nowrap;
@@ -438,14 +439,14 @@ function endHold() {
 
 .server-info p {
   color: var(--mm-ink-muted);
-  font-size: 11px;
+  font-size: 13px;
   margin: 0;
 }
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   flex-grow: 1;
 }
 
@@ -455,7 +456,7 @@ function endHold() {
   display: flex;
   align-items: center;
   text-align: left;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-radius: var(--mm-radius-sm, 2px);
   cursor: pointer;
   position: relative;
@@ -471,7 +472,7 @@ function endHold() {
 
 .nav-num {
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   color: var(--mm-ink-faint);
   margin-right: 12px;
   width: 16px;
@@ -479,7 +480,7 @@ function endHold() {
 
 .nav-label {
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   letter-spacing: 0.08em;
 }
 
@@ -511,7 +512,7 @@ function endHold() {
   border-radius: var(--mm-radius-sm, 2px);
   text-decoration: none;
   font-family: var(--mm-font-mono);
-  font-size: 11px;
+  font-size: 13px;
   transition: all 0.2s;
 }
 
@@ -530,6 +531,92 @@ function endHold() {
   padding: 20px 32px;
   box-sizing: border-box;
   position: relative;
+}
+
+/* Deep selector overrides for inner slide typography */
+:deep(.slide-container .mm-eyebrow),
+:deep(.mobile-content-container .mm-eyebrow) {
+  font-size: 13.5px !important;
+}
+
+:deep(.slide-container .mm-eyebrow-small),
+:deep(.mobile-content-container .mm-eyebrow-small),
+:deep(.slide-container .slide-badge),
+:deep(.mobile-content-container .slide-badge) {
+  font-size: 11.5px !important;
+}
+
+:deep(.slide-container .intro-meta),
+:deep(.mobile-content-container .intro-meta) {
+  font-size: 13.5px !important;
+}
+
+:deep(.slide-container .click-prompt),
+:deep(.mobile-content-container .click-prompt) {
+  font-size: 12.5px !important;
+}
+
+:deep(.slide-container .rounds-text),
+:deep(.mobile-content-container .rounds-text) {
+  font-size: 13.5px !important;
+}
+
+:deep(.slide-container .numbers-footer),
+:deep(.slide-container .map-footer),
+:deep(.slide-container .trend-footer),
+:deep(.slide-container .rotation-footer),
+:deep(.slide-container .hours-footer),
+:deep(.slide-container .honours-footer),
+:deep(.slide-container .decorations-footer),
+:deep(.slide-container .dishonours-footer),
+:deep(.slide-container .closest-footer),
+:deep(.slide-container .share-footer),
+:deep(.mobile-content-container .numbers-footer),
+:deep(.mobile-content-container .map-footer),
+:deep(.mobile-content-container .trend-footer),
+:deep(.mobile-content-container .rotation-footer),
+:deep(.mobile-content-container .hours-footer),
+:deep(.mobile-content-container .honours-footer),
+:deep(.mobile-content-container .decorations-footer),
+:deep(.mobile-content-container .dishonours-footer),
+:deep(.mobile-content-container .closest-footer),
+:deep(.mobile-content-container .share-footer) {
+  font-size: 13px !important;
+}
+
+:deep(.slide-container .card-desc),
+:deep(.mobile-content-container .card-desc) {
+  font-size: 14.5px !important;
+}
+
+:deep(.slide-container .card-val),
+:deep(.mobile-content-container .card-val) {
+  font-size: 15px !important;
+}
+
+:deep(.slide-container .map-rounds),
+:deep(.mobile-content-container .map-rounds) {
+  font-size: 12.5px !important;
+}
+
+:deep(.slide-container .map-label),
+:deep(.mobile-content-container .map-label) {
+  font-size: 16.5px !important;
+}
+
+:deep(.slide-container .item-header),
+:deep(.mobile-content-container .item-header) {
+  font-size: 17px !important;
+}
+
+:deep(.slide-container .stat-label),
+:deep(.mobile-content-container .stat-label) {
+  font-size: 12.5px !important;
+}
+
+:deep(.slide-container .mm-chip-love),
+:deep(.mobile-content-container .mm-chip-love) {
+  font-size: 11px !important;
 }
 
 .stage-container {

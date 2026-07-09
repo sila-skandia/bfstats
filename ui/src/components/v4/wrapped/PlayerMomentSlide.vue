@@ -1,13 +1,15 @@
 <template>
-  <div class="wrapped-slide moment-slide" @click="$emit('next')">
-    <div class="mm-eyebrow">05 — BEST MOMENT</div>
-    <div class="moment-heading">
+  <div class="wrapped-slide moment-slide animate-line-in" @click="$emit('next')">
+    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">05 — BEST MOMENT</div>
+    <div class="moment-heading animate-rise-up" style="animation-delay: 0.1s">
       {{ data.bestMoment.streak }}-kill streak on {{ data.bestMoment.mapName }}.
     </div>
 
     <div class="moment-content">
-      <div class="moment-stat">{{ data.bestMoment.streak }}</div>
-      <div class="moment-details">
+      <div class="moment-stat animate-rise-up" style="animation-delay: 0.15s">
+        <num-count :data-to="data.bestMoment.streak" data-dur="1200" data-delay="200"></num-count>
+      </div>
+      <div class="moment-details animate-rise-up" style="animation-delay: 0.25s">
         <div class="mm-eyebrow-small">KILL STREAK · PERSONAL BEST</div>
         <div class="details-title">{{ data.bestMoment.mapName }} · {{ formattedDate }}</div>
         <div class="details-desc">
@@ -16,7 +18,7 @@
       </div>
     </div>
 
-    <div class="moment-footer">
+    <div class="moment-footer animate-rise-up" style="animation-delay: 0.45s">
       RANKS <span class="text-strong">#{{ data.bestMoment.serverStreakRank }}</span> AMONG ALL STREAKS RECORDED ON THIS SERVER IN {{ data.year }}
     </div>
   </div>

@@ -1,32 +1,40 @@
 <template>
-  <div class="wrapped-slide numbers-slide" @click="$emit('next')">
-    <div class="mm-eyebrow">01 — THE YEAR IN NUMBERS</div>
+  <div class="wrapped-slide numbers-slide animate-line-in" @click="$emit('next')">
+    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">01 — THE YEAR IN NUMBERS</div>
     
-    <div class="numbers-heading">
+    <div class="numbers-heading animate-rise-up" style="animation-delay: 0.1s">
       <div class="rounds-text">{{ data.yearInNumbers.roundsPlayed.toLocaleString() }} ROUNDS PLAYED BY</div>
       <div class="player-name-large">{{ data.playerName }}</div>
     </div>
 
     <div class="numbers-grid">
-      <div class="grid-item">
-        <div class="stat-value">{{ data.yearInNumbers.roundsPlayed.toLocaleString() }}</div>
+      <div class="grid-item animate-rise-up" style="animation-delay: 0.15s">
+        <div class="stat-value">
+          <num-count :data-to="data.yearInNumbers.roundsPlayed" data-dur="1000" data-delay="120"></num-count>
+        </div>
         <div class="mm-eyebrow-small">ROUNDS PLAYED</div>
       </div>
-      <div class="grid-item text-k">
-        <div class="stat-value">{{ data.yearInNumbers.totalKills.toLocaleString() }}</div>
+      <div class="grid-item text-k animate-rise-up" style="animation-delay: 0.25s">
+        <div class="stat-value">
+          <num-count :data-to="data.yearInNumbers.totalKills" data-dur="1150" data-delay="240"></num-count>
+        </div>
         <div class="mm-eyebrow-small">KILLS</div>
       </div>
-      <div class="grid-item text-d">
-        <div class="stat-value">{{ data.yearInNumbers.totalDeaths.toLocaleString() }}</div>
+      <div class="grid-item text-d animate-rise-up" style="animation-delay: 0.35s">
+        <div class="stat-value">
+          <num-count :data-to="data.yearInNumbers.totalDeaths" data-dur="1150" data-delay="360"></num-count>
+        </div>
         <div class="mm-eyebrow-small">DEATHS</div>
       </div>
-      <div class="grid-item">
-        <div class="stat-value">{{ Math.round(data.yearInNumbers.hoursInCombat).toLocaleString() }}</div>
+      <div class="grid-item animate-rise-up" style="animation-delay: 0.45s">
+        <div class="stat-value">
+          <num-count :data-to="Math.round(data.yearInNumbers.hoursInCombat)" data-dur="1150" data-delay="480"></num-count>
+        </div>
         <div class="mm-eyebrow-small">HOURS IN COMBAT</div>
       </div>
     </div>
 
-    <div class="numbers-footer">
+    <div class="numbers-footer animate-rise-up" style="animation-delay: 0.55s">
       K/D RATIO <span class="text-k">{{ data.yearInNumbers.kdRatio.toFixed(2) }}</span>
       <span class="divider">·</span>
       RANK <span class="text-accent">#{{ data.yearInNumbers.serverRank }}</span> ON <span class="text-strong">{{ data.serverName }}</span>
