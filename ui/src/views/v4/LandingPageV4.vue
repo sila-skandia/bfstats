@@ -240,7 +240,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
     </div>
 
     <!-- compact hero band: headline + stat strip merged -->
-    <div class="mm-landing__hero-only mm-landing__hero-band">
+    <div class="mm-landing__hero-only mm-landing__hero-band mm-only-desktop">
       <div>
         <div class="mm-meta-row" style="margin-bottom: 12px;">
           <span class="mm-chip" :class="{ 'mm-chip--off': networkStatus.tone === 'off' }">
