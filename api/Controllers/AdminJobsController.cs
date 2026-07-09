@@ -2,6 +2,7 @@ using api.Services.BackgroundJobs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace api.Controllers;
 
@@ -16,6 +17,7 @@ public class AdminJobsController(
     IDailyAggregateRefreshBackgroundService dailyAggregateRunner,
     IWeeklyCleanupBackgroundService weeklyCleanupRunner,
     IAggregateBackfillBackgroundService aggregateBackfillRunner,
+    IServiceScopeFactory scopeFactory,
     ILogger<AdminJobsController> logger
 ) : ControllerBase
 {
@@ -208,5 +210,57 @@ public class AdminJobsController(
         });
 
         return Accepted(new { message = "All jobs started in background. Check logs for progress." });
+    }
+
+    /// <summary>
+    /// Trigger manual Server Wrapped aggregate crunching for 2026 (fire-and-forget).
+    /// </summary>
+    [HttpPost("server-wrapped-crunch")]
+    public IActionResult TriggerServerWrappedCrunch()
+    {
+        logger.LogInformation("Manual trigger: ServerWrappedCrunch (fire-and-forget)");
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = scopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<api.Wrapped.IWrappedService>();
+            try
+            {
+                await service.CrunchAllServersWrappedAsync(2026, System.Threading.CancellationToken.None);
+                logger.LogInformation("ServerWrappedCrunch completed successfully");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "ServerWrappedCrunch failed");
+            }
+        });
+
+        return Accepted(new { message = "Server Wrapped crunching job started in the background." });
+    }
+
+    /// <summary>
+    /// Trigger manual Player Wrapped aggregate crunching for 2026 (fire-and-forget).
+    /// </summary>
+    [HttpPost("player-wrapped-crunch")]
+    public IActionResult TriggerPlayerWrappedCrunch()
+    {
+        logger.LogInformation("Manual trigger: PlayerWrappedCrunch (fire-and-forget)");
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = scopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<api.Wrapped.IWrappedService>();
+            try
+            {
+                await service.CrunchAllPlayersWrappedAsync(2026, System.Threading.CancellationToken.None);
+                logger.LogInformation("PlayerWrappedCrunch completed successfully");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "PlayerWrappedCrunch failed");
+            }
+        });
+
+        return Accepted(new { message = "Player Wrapped crunching job started in the background." });
     }
 }

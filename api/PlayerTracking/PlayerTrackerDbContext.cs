@@ -49,6 +49,8 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<ServerMapStats> ServerMapStats { get; set; }
     public DbSet<MapServerHourlyPattern> MapServerHourlyPatterns { get; set; }
     public DbSet<PlayerAchievement> PlayerAchievements { get; set; }
+    public DbSet<ServerWrappedCache> ServerWrappedCaches { get; set; }
+    public DbSet<PlayerWrappedCache> PlayerWrappedCaches { get; set; }
 
     // Admin data management
     public DbSet<AdminPin> AdminPins { get; set; }
@@ -999,6 +1001,26 @@ public class PlayerTrackerDbContext : DbContext
 
         modelBuilder.Entity<PlayerAchievement>()
             .Property(pa => pa.Version)
+            .HasConversion(
+                instant => FormatInstant(instant),
+                str => ParseInstant(str));
+
+        // Configure ServerWrappedCache entity
+        modelBuilder.Entity<ServerWrappedCache>()
+            .HasKey(c => new { c.ServerGuid, c.Year });
+
+        modelBuilder.Entity<ServerWrappedCache>()
+            .Property(c => c.CalculatedAt)
+            .HasConversion(
+                instant => FormatInstant(instant),
+                str => ParseInstant(str));
+
+        // Configure PlayerWrappedCache entity
+        modelBuilder.Entity<PlayerWrappedCache>()
+            .HasKey(c => new { c.PlayerName, c.ServerGuid, c.Year });
+
+        modelBuilder.Entity<PlayerWrappedCache>()
+            .Property(c => c.CalculatedAt)
             .HasConversion(
                 instant => FormatInstant(instant),
                 str => ParseInstant(str));

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using api.PlayerTracking;
 
@@ -10,9 +11,11 @@ using api.PlayerTracking;
 namespace api.Migrations
 {
     [DbContext(typeof(PlayerTrackerDbContext))]
-    partial class PlayerTrackerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260709020926_AddServerWrappedCache")]
+    partial class AddServerWrappedCache
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
@@ -517,30 +520,6 @@ namespace api.Migrations
                     b.HasIndex("Year", "Month");
 
                     b.ToTable("PlayerStatsMonthly");
-                });
-
-            modelBuilder.Entity("api.Data.Entities.PlayerWrappedCache", b =>
-                {
-                    b.Property<string>("PlayerName")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ServerGuid")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Year")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CalculatedAt")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("JsonData")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("PlayerName", "ServerGuid", "Year");
-
-                    b.ToTable("PlayerWrappedCaches");
                 });
 
             modelBuilder.Entity("api.Data.Entities.ServerHourlyPattern", b =>

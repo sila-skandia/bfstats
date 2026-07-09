@@ -37,6 +37,8 @@ const CommunityDetailV4 = () => import('../views/v4/CommunityDetailV4.vue')
 const PlayerMapDetailV4 = () => import('../views/v4/PlayerMapDetailV4.vue')
 const PlayerComparisonV4 = () => import('../views/v4/PlayerComparisonV4.vue')
 const DashboardV4 = () => import('../views/v4/DashboardV4.vue')
+const ServerWrappedV4 = () => import('../views/v4/ServerWrappedV4.vue')
+const PlayerWrappedV4 = () => import('../views/v4/PlayerWrappedV4.vue')
 
 const routes: RouteRecordRaw[] = [
     // -------- Root + V3 → V4 redirects --------
@@ -74,6 +76,14 @@ const routes: RouteRecordRaw[] = [
     },
     { path: '/players', redirect: '/v4/players' },
     { path: '/players/compare', redirect: to => ({ path: '/v4/players/compare', query: to.query }) },
+    {
+      path: '/wrapped/player/:playerName',
+      redirect: to => `/v4/wrapped/player/${encodeURIComponent(String(to.params.playerName))}`,
+    },
+    {
+      path: '/wrapped/player/:playerName/:serverGuid',
+      redirect: to => `/v4/wrapped/player/${encodeURIComponent(String(to.params.playerName))}/${encodeURIComponent(String(to.params.serverGuid))}`,
+    },
     {
       path: '/players/:playerName',
       redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}`,
@@ -344,6 +354,45 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: (route: RouteLocationNormalized) => `${route.params.serverName} · bfstats.io`,
             description: 'Server profile, live roster, and population history.'
+          }
+        },
+        {
+          path: 'servers/detail/:serverName/wrapped',
+          name: 'v4-server-wrapped',
+          component: ServerWrappedV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.serverName} Wrapped · bfstats.io`,
+            description: 'Year in Review Wrapped stories for this server.',
+            requiresAuth: true
+          },
+          beforeEnter: (to, _from, next) => {
+            const { isAdmin } = useAuth()
+            if (isAdmin.value) {
+              next()
+            } else {
+              next({ name: 'v4-server-details', params: { serverName: to.params.serverName } })
+            }
+          }
+        },
+        {
+          path: 'wrapped/player/:playerName',
+          name: 'v4-player-wrapped-global',
+          component: PlayerWrappedV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped · bfstats.io`,
+            description: 'Year in Review Wrapped stories for this player.'
+          }
+        },
+        {
+          path: 'wrapped/player/:playerName/:serverGuid',
+          name: 'v4-player-wrapped-server',
+          component: PlayerWrappedV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped · bfstats.io`,
+            description: 'Year in Review Wrapped stories for this player on this server.'
           }
         },
         {
