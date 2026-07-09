@@ -178,7 +178,7 @@ const slideComponents = [
   ShareSlide
 ]
 
-const { isAdmin } = useAuth()
+const { isSupport } = useAuth()
 const route = useRoute()
 const router = useRouter()
 
@@ -210,8 +210,8 @@ const activeThemeColor = 'var(--mm-accent)'
 const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
 
 onMounted(async () => {
-  // Redirection guard if not Admin
-  if (!isAdmin.value) {
+  // Redirection guard if not Support
+  if (!isSupport.value) {
     router.replace({ name: 'v4-server-details', params: { serverName: serverName.value } })
     return
   }

@@ -16,13 +16,24 @@
           >
             <div class="map-labels">
               <span class="map-name">{{ map.mapName }}</span>
-              <span class="map-rounds">{{ map.roundsPlayed.toLocaleString() }}</span>
+              <span class="map-rounds">{{ map.roundsPlayed.toLocaleString() }} rounds</span>
             </div>
             <div class="map-bar-container">
               <div 
                 class="map-bar" 
                 :style="{ width: getBarWidth(map.roundsPlayed), backgroundColor: 'var(--mm-accent)' }"
               ></div>
+            </div>
+            <!-- Top placement details under map -->
+            <div class="map-placements" v-if="map.topPlacements && map.topPlacements.length > 0">
+              <span class="placements-title">🏆 Top Wins:</span>
+              <span 
+                v-for="(placement, pIdx) in map.topPlacements" 
+                :key="placement.playerName"
+                class="placement-badge"
+              >
+                {{ pIdx + 1 }}. {{ placement.playerName }} ({{ placement.firstPlaceCount }})
+              </span>
             </div>
           </div>
         </div>
@@ -34,6 +45,14 @@
           <div class="hero-stats-mono">
             <span class="text-accent">{{ data.rotation.mostPlayedRounds.toLocaleString() }} ROUNDS</span> 
             · {{ data.rotation.mostPlayedPercentage }}% OF THE YEAR
+          </div>
+          
+          <div v-if="topPlayerOnMostPlayed" class="hero-top-placement">
+            <div class="mm-eyebrow" style="margin-top: 20px; margin-bottom: 8px;">TOP PERFORMER</div>
+            <div class="hero-player-name">{{ topPlayerOnMostPlayed.playerName }}</div>
+            <div class="hero-stats-mono">
+              <span class="text-accent">{{ topPlayerOnMostPlayed.firstPlaceCount }} #1 FINISHES</span> ON THIS MAP
+            </div>
           </div>
         </div>
       </div>
@@ -63,6 +82,17 @@ const maxRounds = computed(() => {
 function getBarWidth(rounds: number): string {
   return `${Math.max(8, (rounds / maxRounds.value) * 100)}%`
 }
+
+const mostPlayedMap = computed(() => {
+  const name = props.data.rotation.mostPlayedMapName
+  return props.data.rotation.maps.find(m => m.mapName === name)
+})
+
+const topPlayerOnMostPlayed = computed(() => {
+  const map = mostPlayedMap.value
+  if (!map || !map.topPlacements || map.topPlacements.length === 0) return null
+  return map.topPlacements[0]
+})
 </script>
 
 <style scoped>
@@ -208,5 +238,46 @@ function getBarWidth(rounds: number): string {
 .text-accent {
   color: var(--mm-accent-soft);
   font-weight: 600;
+}
+
+.map-placements {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: var(--mm-font-sans);
+  font-size: 11px;
+}
+
+.placements-title {
+  color: var(--mm-ink-muted);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.placement-badge {
+  color: var(--mm-ink);
+  background-color: var(--mm-bg-mute);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--mm-rule);
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+}
+
+.hero-top-placement {
+  border-top: 1px dashed var(--mm-rule);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+
+.hero-player-name {
+  font-family: var(--mm-font-display);
+  font-size: 24px;
+  font-weight: 300;
+  color: var(--mm-ink);
+  margin-bottom: 4px;
+  line-height: 1.1;
 }
 </style>

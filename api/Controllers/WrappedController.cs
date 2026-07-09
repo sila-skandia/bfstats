@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 
 namespace api.Controllers;
 
+[Authorize(Policy = "Support")]
 [ApiController]
 [Route("stats/[controller]")]
 public class WrappedController(
@@ -17,9 +18,8 @@ public class WrappedController(
 {
     /// <summary>
     /// Retrieves the Server Wrapped 2026 statistics for a given server.
-    /// Access is restricted to users with the Admin role.
+    /// Access is restricted to users with the Support policy (Admin & Support).
     /// </summary>
-    [Authorize(Policy = "Admin")]
     [HttpGet("server/{serverGuid}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

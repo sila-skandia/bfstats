@@ -230,12 +230,39 @@ public class WrappedService(
             .OrderByDescending(m => m.RoundsPlayed)
             .ToListAsync();
 
-        var mapStats = mapStatsData.Select(m => new MapRotationDto(
-            m.MapName,
-            m.RoundsPlayed,
-            m.PlayTimeMinutes,
-            0.0
-        )).ToList();
+        // Fetch top 3 users with the most 1st place finishes per map
+        var goldAchievements = await dbContext.PlayerAchievements
+            .AsNoTracking()
+            .Where(pa => pa.ServerGuid == serverGuid 
+                && pa.AchievementType == "round_placement" 
+                && pa.Tier == "gold" 
+                && pa.AchievedAt >= startInstant 
+                && pa.AchievedAt < endInstant)
+            .ToListAsync();
+
+        var topPlacementsByMap = goldAchievements
+            .GroupBy(pa => pa.MapName)
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(pa => pa.PlayerName)
+                    .Select(pg => new MapTopPlacementDto(pg.Key, pg.Count()))
+                    .OrderByDescending(tp => tp.FirstPlaceCount)
+                    .ThenBy(tp => tp.PlayerName)
+                    .Take(3)
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase
+            );
+
+        var mapStats = mapStatsData.Select(m => {
+            topPlacementsByMap.TryGetValue(m.MapName, out var placements);
+            return new MapRotationDto(
+                m.MapName,
+                m.RoundsPlayed,
+                m.PlayTimeMinutes,
+                0.0,
+                placements ?? new List<MapTopPlacementDto>()
+            );
+        }).ToList();
 
         var totalMapPlayTime = mapStats.Sum(m => m.PlayTimeMinutes);
         mapStats = mapStats.Select(m => m with { PlayTimePercentage = totalMapPlayTime > 0 ? Math.Round(m.PlayTimeMinutes * 100.0 / totalMapPlayTime, 2) : 0 }).ToList();
