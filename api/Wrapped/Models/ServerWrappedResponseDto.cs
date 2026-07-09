@@ -98,6 +98,15 @@ public record PrestigiousMilestoneDto(
     string Description
 );
 
+public record LegendAchievementDto(
+    string AchievementId,
+    string PlayerName,
+    string AchievementName,
+    string Description,
+    double Value,
+    string Tier
+);
+
 public record DecorationsDto(
     PlayerVolumeDto MostStreaksOf25,
     StreakOfTheYearDto? StreakOfTheYear, // Nullable if no streaks recorded
@@ -106,7 +115,7 @@ public record DecorationsDto(
     PrestigiousMilestoneDto? PrestigiousMilestone,
     PlayerVolumeDto? EliteWarriorGold,
     PlayerVolumeDto? EliteWarriorLegend,
-    PlayerVolumeDto? MostLegendAchievements
+    LegendAchievementDto? MostLegendAchievements
 );
 
 public record StreakOfTheYearDto(

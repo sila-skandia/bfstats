@@ -159,7 +159,6 @@ import { useAuth } from '@/composables/useAuth'
 // Slide Sub-components declared inline to keep file clean
 import IntroSlide from '@/components/v4/wrapped/IntroSlide.vue'
 import NumbersSlide from '@/components/v4/wrapped/NumbersSlide.vue'
-import HoursSlide from '@/components/v4/wrapped/HoursSlide.vue'
 import RotationSlide from '@/components/v4/wrapped/RotationSlide.vue'
 import HonoursSlide from '@/components/v4/wrapped/HonoursSlide.vue'
 import DecorationsSlide from '@/components/v4/wrapped/DecorationsSlide.vue'
@@ -171,7 +170,6 @@ import ShareSlide from '@/components/v4/wrapped/ShareSlide.vue'
 const slideComponents = [
   IntroSlide,
   NumbersSlide,
-  HoursSlide,
   RotationSlide,
   HonoursSlide,
   DecorationsSlide,
@@ -192,7 +190,6 @@ const data = ref<ServerWrappedData | null>(null)
 const chapters = [
   'INTRO',
   'THE YEAR IN NUMBERS',
-  'BUSIEST HOURS',
   'THE ROTATION',
   'HONOURS',
   'DECORATIONS',
@@ -271,6 +268,9 @@ function nextSlide(manual = false) {
   if (currentSlide.value < chapters.length - 1) {
     currentSlide.value++
     mobileProgress.value = 0
+    if (!manual) {
+      startPlayback()
+    }
   } else {
     // Loop back to share slide or stop
     mobileProgress.value = 0

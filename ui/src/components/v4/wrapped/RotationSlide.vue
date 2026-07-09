@@ -158,11 +158,11 @@ const topPlayerOnMostPlayed = computed(() => {
 }
 
 .map-row {
-  padding: 6px 0;
+  padding: 12px 0;
   border-top: 1px solid var(--mm-rule);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .map-labels {

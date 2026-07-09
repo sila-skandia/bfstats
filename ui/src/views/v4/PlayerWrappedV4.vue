@@ -267,6 +267,9 @@ function nextSlide(manual = false) {
   if (currentSlide.value < chapters.length - 1) {
     currentSlide.value++
     mobileProgress.value = 0
+    if (!manual) {
+      startPlayback()
+    }
   } else {
     mobileProgress.value = 0
   }
