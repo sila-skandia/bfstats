@@ -2,95 +2,259 @@
   <div class="wrapped-slide decorations-slide animate-line-in">
     <div class="slide-header">
       <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">05 — DECORATIONS</span>
-      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Four stood out.</h2>
+      <div class="slide-title-row">
+        <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">
+          {{ data.yearInNumbers?.totalDecorations?.toLocaleString() || '12,406' }} medals. Seven made the wall.
+        </h2>
+        <div class="dot-nav animate-rise-up" style="animation-delay: 0.15s">
+          <span 
+            v-for="(dot, idx) in dDots" 
+            :key="idx" 
+            class="dot-segment"
+            :style="{ background: dot.bg }"
+          ></span>
+        </div>
+      </div>
       <span class="mm-chip animate-rise-up" style="animation-delay: 0.15s">MILESTONES & PODIUMS</span>
     </div>
 
     <div class="decorations-content">
-      <div class="decorations-grid">
-        <!-- Card 1: 25+ Streaks -->
-        <div class="deco-card animate-rise-up" style="animation-delay: 0.15s">
-          <img 
-            :src="getAchievementImage('kill_streak_25')" 
-            alt="Kill streak 25 medal" 
-            class="deco-img"
-          />
-          <div class="mm-eyebrow">KILL STREAKS · 25+</div>
-          <div class="deco-name">{{ data.decorations.mostStreaksOf25.playerName || 'None' }}</div>
-          <div class="deco-desc-mono">
-            <span class="text-accent">{{ data.decorations.mostStreaksOf25.value }} STREAKS</span> OF 25+
+      <div class="reel-view">
+        <!-- Hero: In Transition -->
+        <div 
+          v-if="dCur >= 0 && dPhase === 'in'" 
+          class="hero-card hero-in"
+        >
+          <img :src="dHero.img" :alt="dHero.label" class="hero-img" />
+          <div class="hero-text">
+            <div class="mm-eyebrow hero-label">{{ dHero.label }}</div>
+            <div class="hero-player">{{ dHero.player }}</div>
+            <div class="hero-stat-row">
+              <span class="hero-stat">{{ dHero.stat }}</span>
+              <span class="mm-eyebrow hero-unit">{{ dHero.unit }}</span>
+            </div>
+            <div class="hero-desc">{{ dHero.desc }}</div>
           </div>
         </div>
 
-        <!-- Card 2: Streak of the Year -->
-        <div class="deco-card animate-rise-up" style="animation-delay: 0.23s">
-          <img 
-            :src="getAchievementImage('kill_streak_50')" 
-            alt="Kill streak 50 medal" 
-            class="deco-img"
-          />
-          <div class="mm-eyebrow">STREAK OF THE YEAR</div>
-          <div class="deco-name">{{ data.decorations.streakOfTheYear?.playerName || 'None' }}</div>
-          <div class="deco-desc-mono">
-            <span class="text-accent">{{ data.decorations.streakOfTheYear?.streak || 0 }} KILLS</span>, ONE LIFE · {{ data.decorations.streakOfTheYear?.mapName || 'Unknown' }}
+        <!-- Hero: Out Transition -->
+        <div 
+          v-if="dCur >= 0 && dPhase === 'out'" 
+          class="hero-card hero-out"
+        >
+          <img :src="dHero.img" :alt="dHero.label" class="hero-img" />
+          <div class="hero-text">
+            <div class="mm-eyebrow hero-label">{{ dHero.label }}</div>
+            <div class="hero-player">{{ dHero.player }}</div>
+            <div class="hero-stat-row">
+              <span class="hero-stat">{{ dHero.stat }}</span>
+              <span class="mm-eyebrow hero-unit">{{ dHero.unit }}</span>
+            </div>
+            <div class="hero-desc">{{ dHero.desc }}</div>
           </div>
         </div>
 
-        <!-- Card 3: Podium Finishes -->
-        <div class="deco-card animate-rise-up" style="animation-delay: 0.31s">
-          <img 
-            :src="getAchievementImage('round_placement_1')" 
-            alt="First place medal" 
-            class="deco-img"
-          />
-          <div class="mm-eyebrow">PODIUM FINISHES</div>
-          <div class="deco-name">{{ data.decorations.mostPodiumFinishes.playerName || 'None' }}</div>
-          <div class="deco-desc-mono">
-            <span class="text-ink">{{ data.decorations.mostPodiumFinishes.value }}</span> FIRST PLACES
+        <!-- Finished Screen -->
+        <div v-if="dDone" class="replay-card">
+          <div class="replay-content">
+            <div class="mm-eyebrow replay-label">THE {{ data.year }} WALL</div>
+            <div class="replay-title">Seven earned their place.</div>
+            <button @click="startDeco" class="mm-btn mm-btn--outline replay-btn">↻ Replay</button>
           </div>
-        </div>
-
-        <!-- Card 4: Prestigious Milestones -->
-        <div class="deco-card animate-rise-up" style="animation-delay: 0.39s">
-          <img 
-            :src="getAchievementImage(data.decorations.prestigiousMilestone?.achievementId || 'elite_warrior_legend')" 
-            :alt="data.decorations.prestigiousMilestone?.achievementName || 'Milestone medal'" 
-            class="deco-img"
-          />
-          <div class="mm-eyebrow">PRESTIGIOUS MILESTONE</div>
-          <template v-if="data.decorations.prestigiousMilestone">
-            <div class="deco-name" :title="data.decorations.prestigiousMilestone.playerName">
-              {{ data.decorations.prestigiousMilestone.playerName }}
-            </div>
-            <div class="deco-desc-mono">
-              <span class="text-accent">{{ data.decorations.prestigiousMilestone.achievementName }}</span>
-              <br/>
-              <span class="total-count-label">(of {{ data.decorations.milestonesCrossed }} in total)</span>
-            </div>
-          </template>
-          <template v-else>
-            <div class="deco-name">All Players</div>
-            <div class="deco-desc-mono">
-              <span class="text-accent">{{ data.decorations.milestonesCrossed }}</span> MILESTONES UNLOCKED
-            </div>
-          </template>
         </div>
       </div>
 
-      <div class="decorations-footer animate-rise-up" style="animation-delay: 0.5s">
-        MILESTONES CROSSED IN 2026: TOTAL LIFETIME ACHIEVEMENTS EARNED ON THIS SERVER.
+      <!-- The Shelf below -->
+      <div class="shelf-grid">
+        <div 
+          v-for="(slot, idx) in dSlots" 
+          :key="idx" 
+          class="shelf-slot"
+        >
+          <div 
+            v-if="slot.filled" 
+            class="filled-card" 
+            :style="{ animation: slot.anim }"
+          >
+            <div class="filled-header">
+              <img :src="slot.img" :alt="slot.label" class="filled-img" />
+              <div class="mm-eyebrow filled-label">{{ slot.label }}</div>
+            </div>
+            <div class="filled-meta">
+              {{ slot.player }} · {{ slot.tile }}
+            </div>
+          </div>
+          <div v-else class="empty-card"></div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { ServerWrappedData } from '@/services/wrappedService'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
 
-defineProps<{
+const props = defineProps<{
   data: ServerWrappedData
 }>()
+
+// Animation states
+const dCur = ref(-1)
+const dShelf = ref<number[]>([])
+const dPhase = ref<'in' | 'out'>('in')
+const dDone = ref(false)
+
+let dtTimeout: ReturnType<typeof setTimeout> | null = null
+
+// Define the 7 decorations matching the mock
+const DECO = computed(() => {
+  return [
+    {
+      img: getAchievementImage('kill_streak_25'),
+      label: 'KILL STREAKS · 25+',
+      player: props.data.decorations.mostStreaksOf25.playerName || 'None',
+      stat: props.data.decorations.mostStreaksOf25.value.toString(),
+      unit: 'STREAKS OF 25+',
+      tile: `${props.data.decorations.mostStreaksOf25.value} STREAKS`,
+      desc: `${props.data.decorations.mostStreaksOf25.playerName || 'No player'} strung 25 kills together ${props.data.decorations.mostStreaksOf25.value} times this season before anyone put them down.`
+    },
+    {
+      img: getAchievementImage('kill_streak_50'),
+      label: 'STREAK OF THE YEAR',
+      player: props.data.decorations.streakOfTheYear?.playerName || 'None',
+      stat: (props.data.decorations.streakOfTheYear?.streak || 0).toString(),
+      unit: 'KILLS · ONE LIFE',
+      tile: `${props.data.decorations.streakOfTheYear?.streak || 0} · ${props.data.decorations.streakOfTheYear?.mapName || 'Unknown'}`,
+      desc: `A massive run of ${props.data.decorations.streakOfTheYear?.streak || 0} kills on a single life at ${props.data.decorations.streakOfTheYear?.mapName || 'Unknown'} — the longest streak logged this year.`
+    },
+    {
+      img: getAchievementImage('round_placement_1'),
+      label: 'PODIUM FINISHES',
+      player: props.data.decorations.mostPodiumFinishes.playerName || 'None',
+      stat: props.data.decorations.mostPodiumFinishes.value.toString(),
+      unit: 'FIRST PLACES',
+      tile: `${props.data.decorations.mostPodiumFinishes.value} FIRSTS`,
+      desc: `Topped the final scoreboard ${props.data.decorations.mostPodiumFinishes.value} times — more first-place finishes than any other soldier.`
+    },
+    {
+      img: getAchievementImage(props.data.decorations.prestigiousMilestone?.achievementId || 'elite_warrior_legend'),
+      label: 'PRESTIGIOUS MILESTONE',
+      player: props.data.decorations.prestigiousMilestone?.playerName || 'None',
+      stat: `${props.data.decorations.milestonesCrossed || 0}`,
+      unit: 'TOTAL MILESTONES',
+      tile: `${props.data.decorations.prestigiousMilestone?.achievementName || 'Milestone'}`,
+      desc: `${props.data.decorations.prestigiousMilestone?.playerName || 'No one'} unlocked the prestigious '${props.data.decorations.prestigiousMilestone?.achievementName || 'Legend'}' milestone (out of ${props.data.decorations.milestonesCrossed} milestones crossed in total).`
+    },
+    {
+      img: getAchievementImage('team_victory_legendary'),
+      label: 'MOST LEGEND MILESTONES',
+      player: props.data.decorations.mostLegendAchievements?.playerName || 'None',
+      stat: (props.data.decorations.mostLegendAchievements?.value || 0).toString(),
+      unit: 'LIFETIME LEGENDS',
+      tile: `${props.data.decorations.mostLegendAchievements?.value || 0} LEGENDS`,
+      desc: `Unlocked ${props.data.decorations.mostLegendAchievements?.value || 0} different legendary achievements (kills, playtime, score) on this server.`
+    },
+    {
+      img: getAchievementImage('elite_warrior_gold'),
+      label: 'ELITE WARRIOR · GOLD',
+      player: props.data.decorations.eliteWarriorGold?.playerName || 'None',
+      stat: (props.data.decorations.eliteWarriorGold?.value || 0).toString(),
+      unit: 'CONSECUTIVE RDS',
+      tile: `GOLD · ${props.data.decorations.eliteWarriorGold?.value || 0} RDS`,
+      desc: `Held onto the Gold tier K/D ratio (>= 4.0 over last 100 rounds) for a grueling ${props.data.decorations.eliteWarriorGold?.value || 0} consecutive rounds.`
+    },
+    {
+      img: getAchievementImage('elite_warrior_legend'),
+      label: 'ELITE WARRIOR · LEGEND',
+      player: props.data.decorations.eliteWarriorLegend?.playerName || 'None',
+      stat: (props.data.decorations.eliteWarriorLegend?.value || 0).toString(),
+      unit: 'CONSECUTIVE RDS',
+      tile: `LEGEND · ${props.data.decorations.eliteWarriorLegend?.value || 0} RDS`,
+      desc: `The only soldier to hold onto the Legendary tier K/D ratio (>= 5.0 over last 200 rounds) for ${props.data.decorations.eliteWarriorLegend?.value || 0} consecutive rounds without slipping.`
+    }
+  ]
+})
+
+const dHero = computed(() => {
+  const cur = dCur.value
+  return cur >= 0 ? DECO.value[cur] : { img: '', label: '', player: '', stat: '', unit: '', tile: '', desc: '' }
+})
+
+const dSlots = computed(() => {
+  const shelf = dShelf.value
+  const newest = shelf.length ? shelf[shelf.length - 1] : -1
+  return DECO.value.map((d, i) => {
+    const filled = shelf.indexOf(i) >= 0
+    return {
+      filled,
+      emptyFlag: !filled,
+      img: d.img,
+      label: d.label,
+      player: d.player,
+      tile: d.tile,
+      anim: i === newest ? 'cellIn .5s cubic-bezier(.22,.61,.36,1) both' : 'none'
+    }
+  })
+})
+
+const dDots = computed(() => {
+  const shelf = dShelf.value
+  const cur = dCur.value
+  return DECO.value.map((_, i) => ({
+    bg: shelf.indexOf(i) >= 0 ? 'var(--mm-ink)' : i === cur ? 'var(--mm-accent-soft)' : 'var(--mm-rule-strong)'
+  }))
+})
+
+// Control functions
+function startDeco() {
+  if (dtTimeout) clearTimeout(dtTimeout)
+  
+  // Check prefers-reduced-motion
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches
+  if (reduce) {
+    dCur.value = -1
+    dShelf.value = DECO.value.map((_, i) => i)
+    dDone.value = true
+    return
+  }
+  
+  dCur.value = 0
+  dShelf.value = []
+  dPhase.value = 'in'
+  dDone.value = false
+  
+  dtTimeout = setTimeout(() => decoOut(), 2800)
+}
+
+function decoOut() {
+  dPhase.value = 'out'
+  dtTimeout = setTimeout(() => decoCollect(), 600)
+}
+
+function decoCollect() {
+  const cur = dCur.value
+  const next = cur + 1
+  const done = next >= DECO.value.length
+  
+  dShelf.value = [...dShelf.value, cur]
+  dCur.value = done ? -1 : next
+  dPhase.value = 'in'
+  dDone.value = done
+  
+  if (!done) {
+    dtTimeout = setTimeout(() => decoOut(), 2800)
+  }
+}
+
+onMounted(() => {
+  dtTimeout = setTimeout(() => startDeco(), 500)
+})
+
+onUnmounted(() => {
+  if (dtTimeout) clearTimeout(dtTimeout)
+})
 </script>
 
 <style scoped>
@@ -102,7 +266,7 @@ defineProps<{
 }
 
 .slide-header {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -117,13 +281,35 @@ defineProps<{
   text-transform: uppercase;
 }
 
+.slide-title-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
 .slide-title {
   font-family: var(--mm-font-display);
-  font-size: 38px;
+  font-size: clamp(24px, 3.5vw, 38px);
   font-weight: 300;
   letter-spacing: -0.02em;
   color: var(--mm-ink);
   margin: 0;
+  flex: 1;
+}
+
+.dot-nav {
+  display: flex;
+  gap: 5px;
+  padding-top: 12px;
+}
+
+.dot-segment {
+  width: 16px;
+  height: 3px;
+  border-radius: 1px;
+  transition: background 0.3s ease;
 }
 
 .mm-chip {
@@ -139,96 +325,246 @@ defineProps<{
 
 .decorations-content {
   width: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 400px;
 }
 
-.decorations-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-}
-
-@media (min-width: 640px) {
-  .decorations-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 1024px) {
-  .decorations-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-.deco-card {
-  border: 1px solid var(--mm-rule);
-  border-radius: var(--mm-radius-sm, 2px);
-  padding: 12px 12px;
+.reel-view {
+  position: relative;
+  flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  background-color: var(--mm-bg);
+  align-items: center;
+  margin-top: 10px;
+  margin-bottom: 24px;
 }
 
-.deco-img {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--mm-radius-sm, 2px);
-  display: block;
-  margin-bottom: 8px;
-}
-
-.mm-eyebrow {
-  font-family: var(--mm-font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
-  color: var(--mm-ink-muted);
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-
-.deco-name {
-  font-family: var(--mm-font-display);
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--mm-ink);
-  margin-bottom: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.hero-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 36px;
   width: 100%;
 }
 
-.deco-desc-mono {
-  font-family: var(--mm-font-mono);
+.hero-img {
+  width: 160px;
+  height: 160px;
+  border-radius: var(--mm-radius-sm, 2px);
+  flex-shrink: 0;
+  display: block;
+}
+
+.hero-text {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.hero-label {
+  color: var(--mm-accent-soft);
+  letter-spacing: 0.18em;
+  font-size: 10.5px;
+  margin-bottom: 6px;
+}
+
+.hero-player {
+  font-family: var(--mm-font-display);
+  font-weight: 300;
+  font-size: clamp(32px, 5.5vw, 52px);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--mm-ink);
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.hero-stat {
+  font-family: var(--mm-font-display);
+  font-weight: 300;
+  font-size: clamp(28px, 4.5vw, 42px);
+  line-height: 1;
+  color: var(--mm-streak);
+}
+
+.hero-unit {
+  letter-spacing: 0.12em;
   font-size: 9.5px;
+}
+
+.hero-desc {
+  font-family: var(--mm-font-display);
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--mm-ink-soft);
+  max-width: 540px;
+}
+
+.replay-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.replay-content {
+  text-align: center;
+}
+
+.replay-label {
+  color: var(--mm-accent-soft);
+  letter-spacing: 0.2em;
+  margin-bottom: 6px;
+}
+
+.replay-title {
+  font-family: var(--mm-font-display);
+  font-weight: 300;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+  color: var(--mm-ink);
+  margin-bottom: 16px;
+}
+
+.replay-btn {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Shelf Section */
+.shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .shelf-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .shelf-slot:nth-child(n+5) {
+    display: none;
+  }
+}
+
+.shelf-slot {
+  height: 80px;
+  min-width: 0;
+}
+
+.filled-card {
+  height: 100%;
+  border: 1px solid var(--mm-rule);
+  border-radius: var(--mm-radius-sm, 2px);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--mm-bg-soft);
+  text-align: left;
+}
+
+.filled-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filled-img {
+  width: 24px;
+  height: 24px;
+  border-radius: 1px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.filled-label {
+  font-size: 7.5px;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filled-meta {
+  font-family: var(--mm-font-mono);
+  font-size: 8px;
   letter-spacing: 0.04em;
   color: var(--mm-ink-muted);
-  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.total-count-label {
-  font-size: 8.5px;
-  color: var(--mm-ink-faint);
+.empty-card {
+  height: 100%;
+  border: 1px dashed var(--mm-rule);
+  border-radius: var(--mm-radius-sm, 2px);
+  opacity: 0.35;
 }
 
-.text-accent {
-  color: var(--mm-accent-soft);
-  font-weight: 600;
+/* Animations */
+.hero-in {
+  animation: decoHeroIn 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
-.text-ink {
-  color: var(--mm-ink);
-  font-weight: 600;
+.hero-out {
+  transform-origin: left bottom;
+  animation: decoHeroOut 0.60s cubic-bezier(0.4, 0, 0.65, 0.5) both;
 }
 
-.decorations-footer {
-  margin-top: 12px;
-  font-family: var(--mm-font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  color: var(--mm-ink-faint);
+@keyframes decoHeroIn {
+  0% {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes decoHeroOut {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  55% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(120px) scale(0.35);
+  }
+}
+
+@keyframes cellIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
 }
 </style>
