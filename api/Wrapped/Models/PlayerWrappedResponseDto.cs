@@ -12,7 +12,7 @@ public record PlayerWrappedResponseDto(
     PlayerTrendDto Trend,
     PlayerFavouriteMapDto FavouriteMap,
     PlayerMedalsDto Medals,
-    PlayerBestMomentDto BestMoment,
+    List<PlayerBestMomentDto> BestMoments,
     List<PlayerTeammateDto> Squad
 );
 
@@ -78,7 +78,8 @@ public record PlayerAchievementCountDto(
 );
 
 public record PlayerBestMomentDto(
-    int Streak,
+    string Type,
+    int Value,
     string MapName,
     Instant Date,
     int EstimatedDurationMinutes,

@@ -1130,10 +1130,11 @@ public class WrappedService(
         var streakAchievements = playerAchievements.Where(pa => pa.AchievementId.StartsWith("kill_streak_")).ToList();
         int bestStreak = 0;
         StreakInstanceDto? bestStreakInfo = null;
+        var resolvedStreaks = new List<StreakInstanceDto>();
 
         if (streakAchievements.Count > 0)
         {
-            var resolvedStreaks = streakAchievements
+            resolvedStreaks = streakAchievements
                 .Select(s => {
                     var actual = GetStreakValueFromId(s.AchievementId);
                     if (!string.IsNullOrEmpty(s.Metadata)) {
@@ -1223,19 +1224,16 @@ public class WrappedService(
             achievementsBreakdown
         );
 
-        // 5. Best Moment
-        int estDuration = 0;
-        int serverStreakRank = 1;
-        Instant bestStreakDate = Instant.MinValue;
-        string bestStreakMap = "";
+        // 5. Best Moments (Streak, Score, Kills)
+        var bestMoments = new List<PlayerBestMomentDto>();
 
-        if (bestStreakInfo != null)
+        // (1) Best Streak
+        if (resolvedStreaks.Count > 0)
         {
-            bestStreakDate = bestStreakInfo.Date;
-            bestStreakMap = bestStreakInfo.MapName;
-
+            var streakInfo = resolvedStreaks.First();
+            int estDuration = 0;
             var observations = await dbContext.PlayerObservations
-                .Where(po => po.Session.PlayerName == playerName && po.Session.RoundId == bestStreakInfo.RoundId)
+                .Where(po => po.Session.PlayerName == playerName && po.Session.RoundId == streakInfo.RoundId)
                 .OrderBy(po => po.Timestamp)
                 .Select(po => po.Timestamp)
                 .ToListAsync();
@@ -1266,17 +1264,62 @@ public class WrappedService(
                 .OrderByDescending(x => x.Streak)
                 .ToList();
 
-            var playerIndex = sortedStreaks.FindIndex(x => x.PlayerName == playerName && x.Streak == bestStreak);
-            serverStreakRank = playerIndex >= 0 ? playerIndex + 1 : 1;
+            var playerIndex = sortedStreaks.FindIndex(x => x.PlayerName == playerName && x.Streak == streakInfo.Streak);
+            int serverStreakRank = playerIndex >= 0 ? playerIndex + 1 : 1;
+
+            bestMoments.Add(new PlayerBestMomentDto(
+                "streak",
+                streakInfo.Streak,
+                streakInfo.MapName,
+                streakInfo.Date,
+                estDuration,
+                serverStreakRank
+            ));
         }
 
-        var bestMoment = new PlayerBestMomentDto(
-            bestStreak,
-            bestStreakMap,
-            bestStreakDate,
-            estDuration,
-            serverStreakRank
-        );
+        // Fetch player sessions in 2026
+        var sessionsQuery = dbContext.PlayerSessions
+            .Where(ps => ps.PlayerName == playerName && ps.StartTime >= startYear && ps.StartTime < endYear && !ps.IsDeleted);
+
+        if (serverGuid != "global")
+        {
+            sessionsQuery = sessionsQuery.Where(ps => ps.ServerGuid == serverGuid);
+        }
+
+        var sessionsList = await sessionsQuery.ToListAsync();
+
+        if (sessionsList.Count > 0)
+        {
+            // (2) Highest Score
+            var highestScoreSession = sessionsList.OrderByDescending(s => s.TotalScore).First();
+            var highestScoreDate = Instant.FromDateTimeUtc(DateTime.SpecifyKind(highestScoreSession.StartTime, DateTimeKind.Utc));
+            var highestScoreDuration = (int)(highestScoreSession.LastSeenTime - highestScoreSession.StartTime).TotalMinutes;
+            if (highestScoreDuration <= 0) highestScoreDuration = 15;
+
+            bestMoments.Add(new PlayerBestMomentDto(
+                "score",
+                highestScoreSession.TotalScore,
+                highestScoreSession.MapName,
+                highestScoreDate,
+                highestScoreDuration,
+                0
+            ));
+
+            // (3) Round with Most Kills
+            var mostKillsSession = sessionsList.OrderByDescending(s => s.TotalKills).First();
+            var mostKillsDate = Instant.FromDateTimeUtc(DateTime.SpecifyKind(mostKillsSession.StartTime, DateTimeKind.Utc));
+            var mostKillsDuration = (int)(mostKillsSession.LastSeenTime - mostKillsSession.StartTime).TotalMinutes;
+            if (mostKillsDuration <= 0) mostKillsDuration = 15;
+
+            bestMoments.Add(new PlayerBestMomentDto(
+                "kills",
+                mostKillsSession.TotalKills,
+                mostKillsSession.MapName,
+                mostKillsDate,
+                mostKillsDuration,
+                0
+            ));
+        }
 
         // 6. Squad
         var squad = new List<PlayerTeammateDto>();
@@ -1307,7 +1350,7 @@ public class WrappedService(
             trend,
             favouriteMap,
             medals,
-            bestMoment,
+            bestMoments,
             squad
         );
     }

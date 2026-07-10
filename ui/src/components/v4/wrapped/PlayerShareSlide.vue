@@ -31,7 +31,7 @@
               </div>
               <div class="meta-row">
                 <span class="meta-label">Best Moment</span>
-                <span class="meta-val">{{ data.bestMoment.streak }} Kills · {{ data.bestMoment.mapName }}</span>
+                <span class="meta-val">{{ bestMoment.streak }} Kills · {{ bestMoment.mapName }}</span>
               </div>
               <div class="meta-row" v-if="topTeammate !== 'None'">
                 <span class="meta-label">Wingman</span>
@@ -117,6 +117,30 @@ const topTeammate = computed(() => {
   return squad && squad.length > 0 ? squad[0].name : 'None'
 })
 
+const bestMoment = computed(() => {
+  if (!props.data.bestMoments || props.data.bestMoments.length === 0) {
+    return { streak: 0, mapName: 'None', date: '', estimatedDurationMinutes: 0, serverStreakRank: 0 }
+  }
+  const streak = props.data.bestMoments.find(m => m.type === 'streak')
+  if (streak) {
+    return {
+      streak: streak.value,
+      mapName: streak.mapName,
+      date: streak.date,
+      estimatedDurationMinutes: streak.estimatedDurationMinutes,
+      serverStreakRank: streak.serverStreakRank
+    }
+  }
+  const first = props.data.bestMoments[0]
+  return {
+    streak: first.value,
+    mapName: first.mapName,
+    date: first.date,
+    estimatedDurationMinutes: first.estimatedDurationMinutes,
+    serverStreakRank: first.serverStreakRank
+  }
+})
+
 const copyLabel = computed(() => copied.value ? 'Copied summary!' : 'Copy Summary Text ↗')
 const copyBg = computed(() => copied.value ? 'var(--mm-accent)' : 'transparent')
 const copyInk = computed(() => copied.value ? '#000' : 'var(--mm-ink)')
@@ -127,7 +151,7 @@ function copyShareMessage() {
               `• Total Kills: ${props.data.yearInNumbers.totalKills.toLocaleString()}\n` +
               `• K/D Ratio: ${props.data.yearInNumbers.kdRatio.toFixed(2)}\n` +
               `• Favorite Map: ${props.data.favouriteMap.mapName} (${Math.round(props.data.favouriteMap.winRate * 100)}% Win)\n` +
-              `• Best Moment: ${props.data.bestMoment.streak} Kill Streak on ${props.data.bestMoment.mapName}\n` +
+              `• Best Moment: ${bestMoment.value.streak} Kill Streak on ${bestMoment.value.mapName}\n` +
               `Check the full year in review stats at bfstats.io! #PlayerWrapped`
 
   navigator.clipboard.writeText(msg).then(() => {
