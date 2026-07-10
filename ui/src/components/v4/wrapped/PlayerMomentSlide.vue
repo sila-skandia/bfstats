@@ -1,25 +1,51 @@
 <template>
   <div class="wrapped-slide moment-slide animate-line-in" @click="$emit('next')">
-    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">05 — BEST MOMENT</div>
-    <div class="moment-heading animate-rise-up" style="animation-delay: 0.1s">
-      {{ data.bestMoment.streak }}-kill streak on {{ data.bestMoment.mapName }}.
-    </div>
-
-    <div class="moment-content">
-      <div class="moment-stat animate-rise-up" style="animation-delay: 0.15s">
-        <num-count :data-to="data.bestMoment.streak" data-dur="1200" data-delay="200"></num-count>
+    <div class="moment-left-container">
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">05 — BEST MOMENT</div>
+      <div class="moment-heading animate-rise-up" style="animation-delay: 0.1s">
+        {{ data.bestMoment.streak }}-kill streak on {{ data.bestMoment.mapName }}.
       </div>
-      <div class="moment-details animate-rise-up" style="animation-delay: 0.25s">
-        <div class="mm-eyebrow-small">KILL STREAK · PERSONAL BEST</div>
-        <div class="details-title">{{ data.bestMoment.mapName }} · {{ formattedDate }}</div>
-        <div class="details-desc">
-          {{ data.bestMoment.streak }} kills without a death, over {{ data.bestMoment.estimatedDurationMinutes }} minutes.
+
+      <div class="moment-content">
+        <div class="moment-stat animate-rise-up" style="animation-delay: 0.15s">
+          <num-count :data-to="data.bestMoment.streak" data-dur="1200" data-delay="200"></num-count>
+        </div>
+        <div class="moment-details animate-rise-up" style="animation-delay: 0.25s">
+          <div class="mm-eyebrow-small">KILL STREAK · PERSONAL BEST</div>
+          <div class="details-title">{{ data.bestMoment.mapName }} · {{ formattedDate }}</div>
+          <div class="details-desc">
+            {{ data.bestMoment.streak }} kills without a death, over {{ data.bestMoment.estimatedDurationMinutes }} minutes.
+          </div>
         </div>
       </div>
+
+      <div class="moment-footer animate-rise-up" style="animation-delay: 0.45s">
+        RANKS <span class="text-strong">#{{ data.bestMoment.serverStreakRank }}</span> AMONG ALL STREAKS RECORDED ON THIS SERVER IN {{ data.year }}
+      </div>
     </div>
 
-    <div class="moment-footer animate-rise-up" style="animation-delay: 0.45s">
-      RANKS <span class="text-strong">#{{ data.bestMoment.serverStreakRank }}</span> AMONG ALL STREAKS RECORDED ON THIS SERVER IN {{ data.year }}
+    <!-- Right Column: Hero Image Card -->
+    <div class="hero-image-container">
+      <div class="hero-image-card">
+        <div class="hero-placeholder">
+          <div class="hero-title">HERO 06</div>
+          <div class="hero-sub">MARKET GARDEN<br>DROP: ch6p.webp</div>
+        </div>
+        <div class="hero-img-wrapper">
+          <img :src="ch6p" alt="Market Garden" class="hero-img">
+        </div>
+        <div class="hero-overlay-smoke" style="background: radial-gradient(ellipse at 28% 22%, rgba(214,90,90,0.10), transparent 55%), radial-gradient(ellipse at 75% 82%, rgba(0,0,0,0.55), transparent 62%);"></div>
+        <div class="hero-overlay-grad"></div>
+        <div class="hero-border-inset"></div>
+        <div class="hero-corner hero-corner-tl"></div>
+        <div class="hero-corner hero-corner-tr"></div>
+        <div class="hero-corner hero-corner-bl"></div>
+        <div class="hero-corner hero-corner-br"></div>
+        <div class="hero-caption">
+          <span class="hero-caption-dot"></span>
+          Fig. 06 — Market Garden
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -27,6 +53,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PlayerWrappedData } from '@/services/wrappedService'
+import ch6p from '@/assets/wrapped/ch6p.webp'
 
 const props = defineProps<{
   data: PlayerWrappedData
@@ -59,6 +86,15 @@ const formattedDate = computed(() => {
   box-sizing: border-box;
   cursor: pointer;
   padding: 40px;
+}
+
+@media (min-width: 1024px) {
+  .wrapped-slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 46px;
+    align-items: stretch;
+  }
 }
 
 .mm-eyebrow {
