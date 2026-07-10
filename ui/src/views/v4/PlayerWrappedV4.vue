@@ -162,6 +162,18 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchPlayerWrapped, type PlayerWrappedData } from '@/services/wrappedService'
 import { useAuth } from '@/composables/useAuth'
+import clippyLogo from '@/assets/clippy_my_boi.webp'
+import { getAchievementImage } from '@/utils/achievementImageUtils'
+
+// Slide chapter WebP images
+import ch1p from '@/assets/wrapped/ch1p.webp'
+import ch2p from '@/assets/wrapped/ch2p.webp'
+import ch3p from '@/assets/wrapped/ch3p.webp'
+import ch4p from '@/assets/wrapped/ch4p.webp'
+import ch5p from '@/assets/wrapped/ch5p.webp'
+import ch6p from '@/assets/wrapped/ch6p.webp'
+import ch7p from '@/assets/wrapped/ch7p.webp'
+import ch8p from '@/assets/wrapped/ch8p.webp'
 
 import PlayerIntroSlide from '@/components/v4/wrapped/PlayerIntroSlide.vue'
 import PlayerNumbersSlide from '@/components/v4/wrapped/PlayerNumbersSlide.vue'
@@ -171,6 +183,26 @@ import PlayerMedalsSlide from '@/components/v4/wrapped/PlayerMedalsSlide.vue'
 import PlayerMomentSlide from '@/components/v4/wrapped/PlayerMomentSlide.vue'
 import PlayerSquadSlide from '@/components/v4/wrapped/PlayerSquadSlide.vue'
 import PlayerShareSlide from '@/components/v4/wrapped/PlayerShareSlide.vue'
+
+// Programmatic Image Preloader helper
+function preloadImages(urls: string[]) {
+  urls.forEach(url => {
+    if (!url) return
+    const img = new Image()
+    img.src = url
+  })
+}
+
+// Preload static player assets immediately on script evaluation
+const staticImagesToPreload = [
+  ch1p, ch2p, ch3p, ch4p, ch5p, ch6p, ch7p, ch8p,
+  clippyLogo,
+  getAchievementImage('kill_streak_25'),
+  getAchievementImage('round_placement_1'),
+  getAchievementImage('elite_warrior_legend'),
+  getAchievementImage('kill_streak_50')
+]
+preloadImages(staticImagesToPreload)
 
 const slideComponents = [
   PlayerIntroSlide,
@@ -235,6 +267,20 @@ onMounted(async () => {
 
   try {
     data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, 2026)
+    
+    // Preload dynamic achievements from the player's medals/achievements breakdown
+    const dynamicImages: string[] = []
+    if (data.value?.medals?.achievementsBreakdown) {
+      data.value.medals.achievementsBreakdown.forEach(ach => {
+        if (ach.achievementId) {
+          dynamicImages.push(getAchievementImage(ach.achievementId, ach.tier))
+        }
+      })
+    }
+    if (dynamicImages.length > 0) {
+      preloadImages(dynamicImages)
+    }
+
     loading.value = false
     startPlayback()
   } catch (err: any) {

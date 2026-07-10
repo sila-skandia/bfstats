@@ -84,15 +84,15 @@
             </div>
 
             <div class="slide-container">
-              <!-- background splashes and props -->
-              <div aria-hidden="true" class="sw-splash-container">
-                <div class="sw-splash sw-splash-1" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 68%)` }"></div>
-                <div class="sw-splash sw-splash-2" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 70%)` }"></div>
-                <img class="sw-prop" :src="chapterImages[currentSlide]" :style="chapterProps[currentSlide]" alt="">
-              </div>
               <transition name="slide-fade" mode="out-in">
                 <!-- Slide rendering -->
                 <div class="slide-content-wrapper" :key="currentSlide">
+                  <!-- background splashes and props inside transition container -->
+                  <div aria-hidden="true" class="sw-splash-container">
+                    <div class="sw-splash sw-splash-1" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 68%)` }"></div>
+                    <div class="sw-splash sw-splash-2" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 70%)` }"></div>
+                    <img class="sw-prop" :src="chapterImages[currentSlide]" :style="chapterProps[currentSlide]" alt="">
+                  </div>
                   <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
                 </div>
               </transition>
@@ -146,17 +146,17 @@
 
         <!-- Mobile Content Container -->
         <div class="mobile-content-container">
-          <!-- background splashes and props -->
-          <div aria-hidden="true" class="sw-splash-container">
-            <div class="sw-splash sw-splash-1" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 68%)` }"></div>
-            <div class="sw-splash sw-splash-2" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 70%)` }"></div>
-            <img class="sw-prop" :src="chapterImages[currentSlide]" :style="chapterProps[currentSlide]" alt="">
-          </div>
-          <div class="mobile-slide-wrapper">
-            <transition name="slide-fade" mode="out-in">
-              <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
-            </transition>
-          </div>
+          <transition name="slide-fade" mode="out-in">
+            <div class="mobile-slide-wrapper" :key="currentSlide">
+              <!-- background splashes and props inside transition container -->
+              <div aria-hidden="true" class="sw-splash-container">
+                <div class="sw-splash sw-splash-1" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 68%)` }"></div>
+                <div class="sw-splash sw-splash-2" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 70%)` }"></div>
+                <img class="sw-prop" :src="chapterImages[currentSlide]" :style="chapterProps[currentSlide]" alt="">
+              </div>
+              <component :is="activeSlideComponent" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
+            </div>
+          </transition>
         </div>
       </div>
     </div>
@@ -169,6 +169,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { fetchServerDetails } from '@/services/serverDetailsService'
 import { fetchServerWrapped, type ServerWrappedData } from '@/services/wrappedService'
 import { useAuth } from '@/composables/useAuth'
+import clippyLogo from '@/assets/clippy_my_boi.webp'
+import { getAchievementImage } from '@/utils/achievementImageUtils'
 
 // Chapter WebP Images
 import ch1 from '@/assets/wrapped/ch1.webp'
@@ -181,6 +183,27 @@ import ch7 from '@/assets/wrapped/ch7.webp'
 import ch8 from '@/assets/wrapped/ch8.webp'
 
 const chapterImages = [ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8]
+
+// Programmatic Image Preloader helper
+function preloadImages(urls: string[]) {
+  urls.forEach(url => {
+    if (!url) return
+    const img = new Image()
+    img.src = url
+  })
+}
+
+// Preload static assets immediately on script evaluation to hit cache early
+const staticImagesToPreload = [
+  ...chapterImages,
+  clippyLogo,
+  getAchievementImage('kill_streak_25'),
+  getAchievementImage('kill_streak_50'),
+  getAchievementImage('round_placement_1'),
+  getAchievementImage('elite_warrior_gold'),
+  getAchievementImage('elite_warrior_legend')
+]
+preloadImages(staticImagesToPreload)
 
 const chapterColors = [
   '#7d8849', // INTRO
@@ -269,6 +292,19 @@ onMounted(async () => {
       throw new Error(`Could not resolve Server GUID for: ${serverName.value}`)
     }
     data.value = await fetchServerWrapped(details.serverGuid, 2026)
+    
+    // Preload dynamic achievements once data is resolved
+    const dynamicImages: string[] = []
+    if (data.value?.decorations?.prestigiousMilestone?.achievementId) {
+      dynamicImages.push(getAchievementImage(data.value.decorations.prestigiousMilestone.achievementId))
+    }
+    if (data.value?.decorations?.mostLegendAchievements?.achievementId) {
+      dynamicImages.push(getAchievementImage(data.value.decorations.mostLegendAchievements.achievementId))
+    }
+    if (dynamicImages.length > 0) {
+      preloadImages(dynamicImages)
+    }
+
     loading.value = false
     startPlayback()
   } catch (err: any) {
@@ -770,6 +806,7 @@ function endHold() {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
 /* MOBILE VIEWPORT */

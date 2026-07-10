@@ -217,7 +217,8 @@ export interface PlayerMedals {
 }
 
 export interface PlayerBestMoment {
-  streak: number;
+  type: string;
+  value: number;
   mapName: string;
   date: string;
   estimatedDurationMinutes: number;
@@ -238,7 +239,7 @@ export interface PlayerWrappedData {
   trend: PlayerTrend;
   favouriteMap: PlayerFavouriteMap;
   medals: PlayerMedals;
-  bestMoment: PlayerBestMoment;
+  bestMoments: PlayerBestMoment[];
   squad: PlayerTeammate[];
 }
 
