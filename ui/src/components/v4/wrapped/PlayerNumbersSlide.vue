@@ -1,49 +1,76 @@
 <template>
   <div class="wrapped-slide numbers-slide animate-line-in" @click="$emit('next')">
-    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">01 — THE YEAR IN NUMBERS</div>
-    
-    <div class="numbers-heading animate-rise-up" style="animation-delay: 0.1s">
-      <div class="rounds-text">{{ data.yearInNumbers.roundsPlayed.toLocaleString() }} ROUNDS PLAYED BY</div>
-      <div class="player-name-large">{{ data.playerName }}</div>
+    <div class="numbers-content">
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">01 — THE YEAR IN NUMBERS</div>
+      
+      <div class="numbers-heading animate-rise-up" style="animation-delay: 0.1s">
+        <div class="rounds-text">{{ data.yearInNumbers.roundsPlayed.toLocaleString() }} ROUNDS PLAYED BY</div>
+        <div class="player-name-large">{{ data.playerName }}</div>
+      </div>
+
+      <div class="numbers-grid">
+        <div class="grid-item animate-rise-up" style="animation-delay: 0.15s">
+          <div class="stat-value">
+            <num-count :data-to="data.yearInNumbers.roundsPlayed" data-dur="1000" data-delay="120"></num-count>
+          </div>
+          <div class="mm-eyebrow-small">ROUNDS PLAYED</div>
+        </div>
+        <div class="grid-item text-k animate-rise-up" style="animation-delay: 0.25s">
+          <div class="stat-value">
+            <num-count :data-to="data.yearInNumbers.totalKills" data-dur="1150" data-delay="240"></num-count>
+          </div>
+          <div class="mm-eyebrow-small">KILLS</div>
+        </div>
+        <div class="grid-item text-d animate-rise-up" style="animation-delay: 0.35s">
+          <div class="stat-value">
+            <num-count :data-to="data.yearInNumbers.totalDeaths" data-dur="1150" data-delay="360"></num-count>
+          </div>
+          <div class="mm-eyebrow-small">DEATHS</div>
+        </div>
+        <div class="grid-item animate-rise-up" style="animation-delay: 0.45s">
+          <div class="stat-value">
+            <num-count :data-to="Math.round(data.yearInNumbers.hoursInCombat)" data-dur="1150" data-delay="480"></num-count>
+          </div>
+          <div class="mm-eyebrow-small">HOURS IN COMBAT</div>
+        </div>
+      </div>
+
+      <div class="numbers-footer animate-rise-up" style="animation-delay: 0.55s">
+        K/D RATIO <span class="text-k">{{ data.yearInNumbers.kdRatio.toFixed(2) }}</span>
+        <span class="divider">·</span>
+        RANK <span class="text-accent">#{{ data.yearInNumbers.serverRank }}</span> ON <span class="text-strong">{{ data.serverName }}</span>
+      </div>
     </div>
 
-    <div class="numbers-grid">
-      <div class="grid-item animate-rise-up" style="animation-delay: 0.15s">
-        <div class="stat-value">
-          <num-count :data-to="data.yearInNumbers.roundsPlayed" data-dur="1000" data-delay="120"></num-count>
+    <!-- Right Column: Hero Image Card -->
+    <div class="hero-image-container">
+      <div class="hero-image-card">
+        <div class="hero-placeholder">
+          <div class="hero-title">HERO 02</div>
+          <div class="hero-sub">THE CAMPAIGN<br>DROP: ch2p.webp</div>
         </div>
-        <div class="mm-eyebrow-small">ROUNDS PLAYED</div>
-      </div>
-      <div class="grid-item text-k animate-rise-up" style="animation-delay: 0.25s">
-        <div class="stat-value">
-          <num-count :data-to="data.yearInNumbers.totalKills" data-dur="1150" data-delay="240"></num-count>
+        <div class="hero-img-wrapper">
+          <img :src="ch2p" alt="The Campaign" class="hero-img">
         </div>
-        <div class="mm-eyebrow-small">KILLS</div>
-      </div>
-      <div class="grid-item text-d animate-rise-up" style="animation-delay: 0.35s">
-        <div class="stat-value">
-          <num-count :data-to="data.yearInNumbers.totalDeaths" data-dur="1150" data-delay="360"></num-count>
+        <div class="hero-overlay-smoke"></div>
+        <div class="hero-overlay-grad"></div>
+        <div class="hero-border-inset"></div>
+        <div class="hero-corner hero-corner-tl"></div>
+        <div class="hero-corner hero-corner-tr"></div>
+        <div class="hero-corner hero-corner-bl"></div>
+        <div class="hero-corner hero-corner-br"></div>
+        <div class="hero-caption">
+          <span class="hero-caption-dot"></span>
+          Fig. 02 — The Campaign
         </div>
-        <div class="mm-eyebrow-small">DEATHS</div>
       </div>
-      <div class="grid-item animate-rise-up" style="animation-delay: 0.45s">
-        <div class="stat-value">
-          <num-count :data-to="Math.round(data.yearInNumbers.hoursInCombat)" data-dur="1150" data-delay="480"></num-count>
-        </div>
-        <div class="mm-eyebrow-small">HOURS IN COMBAT</div>
-      </div>
-    </div>
-
-    <div class="numbers-footer animate-rise-up" style="animation-delay: 0.55s">
-      K/D RATIO <span class="text-k">{{ data.yearInNumbers.kdRatio.toFixed(2) }}</span>
-      <span class="divider">·</span>
-      RANK <span class="text-accent">#{{ data.yearInNumbers.serverRank }}</span> ON <span class="text-strong">{{ data.serverName }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { PlayerWrappedData } from '@/services/wrappedService'
+import ch2p from '@/assets/wrapped/ch2p.webp'
 
 defineProps<{
   data: PlayerWrappedData
@@ -63,6 +90,15 @@ defineEmits<{
   box-sizing: border-box;
   cursor: pointer;
   padding: 40px;
+}
+
+@media (min-width: 1024px) {
+  .wrapped-slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 46px;
+    align-items: stretch;
+  }
 }
 
 .mm-eyebrow {
@@ -109,7 +145,7 @@ defineEmits<{
   margin: auto 0;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 768px) and (max-width: 1023px) {
   .numbers-grid {
     grid-template-columns: repeat(4, 1fr);
   }

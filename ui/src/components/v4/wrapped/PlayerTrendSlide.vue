@@ -1,49 +1,75 @@
 <template>
   <div class="wrapped-slide trend-slide animate-line-in" @click="$emit('next')">
-    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">02 — RANK &amp; K/D TREND</div>
-    
-    <div class="trend-heading animate-rise-up" style="animation-delay: 0.1s">
-      K/D climbed to {{ maxKD.toFixed(2) }} this year.
-    </div>
+    <div class="trend-content">
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">02 — RANK &amp; K/D TREND</div>
+      
+      <div class="trend-heading animate-rise-up" style="animation-delay: 0.1s">
+        K/D climbed to {{ maxKD.toFixed(2) }} this year.
+      </div>
 
-    <div class="trend-charts">
-      <div class="chart-box animate-rise-up" style="animation-delay: 0.15s">
-        <div class="chart-header">
-          <span class="mm-eyebrow-small">K/D TREND</span>
-          <span class="chart-value text-accent">{{ startKD.toFixed(2) }} → {{ endKD.toFixed(2) }}</span>
+      <div class="trend-charts">
+        <div class="chart-box animate-rise-up" style="animation-delay: 0.15s">
+          <div class="chart-header">
+            <span class="mm-eyebrow-small">K/D TREND</span>
+            <span class="chart-value text-accent">{{ startKD.toFixed(2) }} → {{ endKD.toFixed(2) }}</span>
+          </div>
+          <div class="chart-container">
+            <svg viewBox="0 0 100 32" preserveAspectRatio="none">
+              <polyline :points="kdPoints" fill="none" stroke="var(--mm-kd-elite)" stroke-width="1.6" vector-effect="non-scaling-stroke" pathLength="1" class="animate-draw-line" style="animation-delay: 0.25s"></polyline>
+            </svg>
+          </div>
         </div>
-        <div class="chart-container">
-          <svg viewBox="0 0 100 32" preserveAspectRatio="none">
-            <polyline :points="kdPoints" fill="none" stroke="var(--mm-kd-elite)" stroke-width="1.6" vector-effect="non-scaling-stroke" pathLength="1" class="animate-draw-line" style="animation-delay: 0.25s"></polyline>
-          </svg>
+
+        <div class="chart-box animate-rise-up" style="animation-delay: 0.25s">
+          <div class="chart-header">
+            <span class="mm-eyebrow-small">KILL RATE TREND</span>
+            <span class="chart-value text-muted">{{ startKillRate.toFixed(1) }} → {{ endKillRate.toFixed(1) }} KILLS/RD</span>
+          </div>
+          <div class="chart-container">
+            <svg viewBox="0 0 100 32" preserveAspectRatio="none">
+              <polyline :points="killRatePoints" fill="none" stroke="var(--mm-accent)" stroke-width="1.6" vector-effect="non-scaling-stroke" pathLength="1" class="animate-draw-line" style="animation-delay: 0.35s"></polyline>
+            </svg>
+          </div>
         </div>
       </div>
 
-      <div class="chart-box animate-rise-up" style="animation-delay: 0.25s">
-        <div class="chart-header">
-          <span class="mm-eyebrow-small">KILL RATE TREND</span>
-          <span class="chart-value text-muted">{{ startKillRate.toFixed(1) }} → {{ endKillRate.toFixed(1) }} KILLS/RD</span>
-        </div>
-        <div class="chart-container">
-          <svg viewBox="0 0 100 32" preserveAspectRatio="none">
-            <polyline :points="killRatePoints" fill="none" stroke="var(--mm-accent)" stroke-width="1.6" vector-effect="non-scaling-stroke" pathLength="1" class="animate-draw-line" style="animation-delay: 0.35s"></polyline>
-          </svg>
+      <div class="top-maps-section">
+        <div class="mm-eyebrow-small map-section-title animate-rise-up" style="animation-delay: 0.35s">TOP PERFORMING MAPS</div>
+        <div class="maps-grid">
+          <div 
+            v-for="(map, idx) in data.trend.topMaps" 
+            :key="map.metricName" 
+            class="map-card animate-rise-up"
+            :style="{ animationDelay: ((idx * 0.08) + 0.4) + 's' }"
+          >
+            <div class="map-rank">{{ map.metricName }}</div>
+            <div class="map-name">{{ map.mapName }}</div>
+            <div class="map-meta">{{ map.metricValue }}</div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="top-maps-section">
-      <div class="mm-eyebrow-small map-section-title animate-rise-up" style="animation-delay: 0.35s">TOP PERFORMING MAPS</div>
-      <div class="maps-grid">
-        <div 
-          v-for="(map, idx) in data.trend.topMaps" 
-          :key="map.metricName" 
-          class="map-card animate-rise-up"
-          :style="{ animationDelay: ((idx * 0.08) + 0.4) + 's' }"
-        >
-          <div class="map-rank">{{ map.metricName }}</div>
-          <div class="map-name">{{ map.mapName }}</div>
-          <div class="map-meta">{{ map.metricValue }}</div>
+    <!-- Right Column: Hero Image Card -->
+    <div class="hero-image-container">
+      <div class="hero-image-card">
+        <div class="hero-placeholder">
+          <div class="hero-title">HERO 03</div>
+          <div class="hero-sub">THE ASCENT<br>DROP: ch3p.webp</div>
+        </div>
+        <div class="hero-img-wrapper">
+          <img :src="ch3p" alt="The Ascent" class="hero-img">
+        </div>
+        <div class="hero-overlay-smoke"></div>
+        <div class="hero-overlay-grad"></div>
+        <div class="hero-border-inset"></div>
+        <div class="hero-corner hero-corner-tl"></div>
+        <div class="hero-corner hero-corner-tr"></div>
+        <div class="hero-corner hero-corner-bl"></div>
+        <div class="hero-corner hero-corner-br"></div>
+        <div class="hero-caption">
+          <span class="hero-caption-dot"></span>
+          Fig. 03 — The Ascent
         </div>
       </div>
     </div>
@@ -53,6 +79,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PlayerWrappedData } from '@/services/wrappedService'
+import ch3p from '@/assets/wrapped/ch3p.webp'
 
 const props = defineProps<{
   data: PlayerWrappedData
@@ -99,6 +126,15 @@ const killRatePoints = computed(() => toSparkPoints(props.data.trend.monthlyKill
   box-sizing: border-box;
   cursor: pointer;
   padding: 40px;
+}
+
+@media (min-width: 1024px) {
+  .wrapped-slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 46px;
+    align-items: stretch;
+  }
 }
 
 .mm-eyebrow {
