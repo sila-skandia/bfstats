@@ -41,7 +41,7 @@
             <span>RDS</span>
           </div>
           <div 
-            v-for="(p, i) in data.honours.topKDRatios.slice(0, 3)" 
+            v-for="(p, i) in data.honours.topKDRatios.slice(0, 10)" 
             :key="p.playerName" 
             class="board-row animate-rise-up"
             :style="{ animationDelay: ((i * 0.08) + 0.2) + 's' }"
@@ -63,7 +63,7 @@
             <span>RDS</span>
           </div>
           <div 
-            v-for="(p, i) in data.honours.topKillRates.slice(0, 3)" 
+            v-for="(p, i) in data.honours.topKillRates.slice(0, 10)" 
             :key="p.playerName" 
             class="board-row animate-rise-up"
             :style="{ animationDelay: ((i * 0.08) + 0.3) + 's' }"

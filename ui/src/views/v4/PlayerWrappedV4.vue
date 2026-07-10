@@ -92,7 +92,7 @@
             <div class="slide-container">
               <transition name="slide-fade" mode="out-in">
                 <div class="slide-content-wrapper" :key="currentSlide">
-                  <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" />
+                  <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
                 </div>
               </transition>
             </div>
@@ -149,7 +149,7 @@
         <!-- Mobile Content Container -->
         <div class="mobile-content-container">
           <transition name="slide-fade" mode="out-in">
-            <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" />
+            <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
           </transition>
         </div>
       </div>

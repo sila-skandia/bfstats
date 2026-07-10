@@ -1,15 +1,21 @@
 <template>
   <div class="wrapped-slide intro-slide animate-line-in" @click="$emit('next')">
     <div class="intro-content">
-      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">BFSTATS · PLAYER AFTER-ACTION REPORT</div>
-      <h1 class="intro-title animate-rise-up" style="animation-delay: 0.16s">
-        Player Wrapped <span class="text-italic">2026</span>
-      </h1>
-      <div class="accent-line animate-rise-up" style="animation-delay: 0.22s"></div>
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">BFSTATS · 2026 WRAPPED</div>
       
-      <div class="intro-meta animate-rise-up" style="animation-delay: 0.28s">
-        <span class="text-accent">{{ data.playerName }}</span>
-        <span class="divider">·</span>
+      <div class="name-container animate-elegant-reveal" style="animation-delay: 0.16s">
+        <h1 class="name-display">
+          {{ data.playerName }}<span class="name-dot">.</span>
+        </h1>
+      </div>
+
+      <div class="spotify-subtitle animate-rise-up" style="animation-delay: 0.26s">
+        Player Wrapped <span class="text-italic">2026</span>
+      </div>
+
+      <div class="accent-line animate-rise-up" style="animation-delay: 0.32s"></div>
+      
+      <div class="intro-meta animate-rise-up" style="animation-delay: 0.38s">
         <span>BATTLEFIELD 1942</span>
         <span class="divider">·</span>
         <span>JAN 01 — DEC 31</span>
@@ -17,7 +23,7 @@
         <span class="text-accent" v-if="data.yearInNumbers.serverRank > 0">TOP RANK #{{ data.yearInNumbers.serverRank }}</span>
       </div>
 
-      <div class="click-prompt animate-rise-up" style="animation-delay: 0.4s">
+      <div class="click-prompt animate-rise-up" style="animation-delay: 0.5s">
         <span>TAP / CLICK TO BEGIN BRIEFING</span>
         <span class="cursor">_</span>
       </div>
@@ -55,6 +61,7 @@ defineEmits<{
   align-items: flex-start;
   text-align: left;
   max-width: 800px;
+  width: 100%;
 }
 
 .mm-eyebrow {
@@ -65,14 +72,37 @@ defineEmits<{
   text-transform: uppercase;
 }
 
-.intro-title {
+.name-container {
+  margin: 18px 0 22px 0;
+  width: 100%;
+}
+
+.name-display {
   font-family: var(--mm-font-display);
-  font-weight: 300;
-  font-size: clamp(36px, 6.5vw, 66px);
-  line-height: 1.02;
-  letter-spacing: -0.03em;
+  font-size: clamp(38px, 8.5vw, 76px);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.04em;
   color: var(--mm-ink);
-  margin: 14px 0 18px 0;
+  text-transform: uppercase;
+  margin: 0;
+  word-break: break-word;
+}
+
+.name-dot {
+  color: var(--theme-color, var(--mm-accent));
+}
+
+.animate-elegant-reveal {
+  animation: elegantReveal 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.spotify-subtitle {
+  font-family: var(--mm-font-display);
+  font-size: clamp(18px, 3.5vw, 24px);
+  font-weight: 300;
+  color: var(--mm-ink-soft);
+  margin-bottom: 12px;
 }
 
 .text-italic {
@@ -83,7 +113,7 @@ defineEmits<{
 .accent-line {
   width: 56px;
   height: 2px;
-  background-color: var(--mm-accent);
+  background-color: var(--theme-color, var(--mm-accent));
   margin-bottom: 18px;
 }
 
@@ -104,7 +134,7 @@ defineEmits<{
 }
 
 .text-accent {
-  color: var(--mm-accent-soft);
+  color: var(--theme-color, var(--mm-accent-soft));
   font-weight: 600;
 }
 
@@ -126,5 +156,18 @@ defineEmits<{
 @keyframes blink {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
+}
+
+@keyframes elegantReveal {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+    letter-spacing: -0.06em;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: -0.04em;
+  }
 }
 </style>

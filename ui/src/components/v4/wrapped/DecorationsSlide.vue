@@ -12,6 +12,8 @@
             :key="idx" 
             class="dot-segment"
             :style="{ background: dot.bg }"
+            @click="selectDeco(idx)"
+            :title="'View ' + DECO[idx].label"
           ></span>
         </div>
       </div>

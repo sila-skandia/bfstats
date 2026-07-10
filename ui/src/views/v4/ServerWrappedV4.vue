@@ -84,10 +84,16 @@
             </div>
 
             <div class="slide-container">
+              <!-- background splashes and props -->
+              <div aria-hidden="true" class="sw-splash-container">
+                <div class="sw-splash sw-splash-1" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 68%)` }"></div>
+                <div class="sw-splash sw-splash-2" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 70%)` }"></div>
+                <img class="sw-prop" :src="chapterImages[currentSlide]" :style="chapterProps[currentSlide]" alt="">
+              </div>
               <transition name="slide-fade" mode="out-in">
                 <!-- Slide rendering -->
                 <div class="slide-content-wrapper" :key="currentSlide">
-                  <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" />
+                  <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
                 </div>
               </transition>
             </div>
@@ -140,9 +146,17 @@
 
         <!-- Mobile Content Container -->
         <div class="mobile-content-container">
-          <transition name="slide-fade" mode="out-in">
-            <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" />
-          </transition>
+          <!-- background splashes and props -->
+          <div aria-hidden="true" class="sw-splash-container">
+            <div class="sw-splash sw-splash-1" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 68%)` }"></div>
+            <div class="sw-splash sw-splash-2" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 70%)` }"></div>
+            <img class="sw-prop" :src="chapterImages[currentSlide]" :style="chapterProps[currentSlide]" alt="">
+          </div>
+          <div class="mobile-slide-wrapper">
+            <transition name="slide-fade" mode="out-in">
+              <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
+            </transition>
+          </div>
         </div>
       </div>
     </div>
@@ -155,6 +169,40 @@ import { useRoute, useRouter } from 'vue-router'
 import { fetchServerDetails } from '@/services/serverDetailsService'
 import { fetchServerWrapped, type ServerWrappedData } from '@/services/wrappedService'
 import { useAuth } from '@/composables/useAuth'
+
+// Chapter WebP Images
+import ch1 from '@/assets/wrapped/ch1.webp'
+import ch2 from '@/assets/wrapped/ch2.webp'
+import ch3 from '@/assets/wrapped/ch3.webp'
+import ch4 from '@/assets/wrapped/ch4.webp'
+import ch5 from '@/assets/wrapped/ch5.webp'
+import ch6 from '@/assets/wrapped/ch6.webp'
+import ch7 from '@/assets/wrapped/ch7.webp'
+import ch8 from '@/assets/wrapped/ch8.webp'
+
+const chapterImages = [ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8]
+
+const chapterColors = [
+  '#7d8849', // INTRO
+  '#b4c060', // NUMBERS
+  '#c5a23a', // ROTATION
+  '#7da34c', // HONOURS
+  '#c08a4c', // DECORATIONS
+  '#d65a5a', // DISHONOURS
+  '#c5a23a', // CLOSEST BATTLES
+  '#7d8849'  // SHARE CARD
+]
+
+const chapterProps = [
+  'width:clamp(220px,26vw,360px); right:-20px; bottom:-28px;',   // 1 helmet
+  'width:clamp(150px,17vw,230px); right:-6px; top:-6px;',         // 2 counter
+  'width:clamp(150px,17vw,215px); right:-30px; bottom:-24px;',    // 3 map
+  'width:clamp(180px,21vw,290px); right:-12px; top:-4px;',        // 4 rifles
+  'width:clamp(175px,20vw,275px); right:-6px; top:-4px;',         // 5 medal case
+  'width:clamp(150px,17vw,215px); right:-14px; top:-8px;',        // 6 dented helmet
+  'width:clamp(150px,17vw,210px); right:-8px; top:-8px;',         // 7 shell & watch
+  'width:clamp(200px,23vw,320px); right:-18px; bottom:-16px;',    // 8 scroll
+]
 
 // Slide Sub-components declared inline to keep file clean
 import IntroSlide from '@/components/v4/wrapped/IntroSlide.vue'
@@ -205,7 +253,7 @@ let autoAdvanceTimer: any = null
 let progressTimer: any = null
 const SLIDE_DURATION = 7000 // 7 seconds per slide
 
-const activeThemeColor = 'var(--mm-accent)'
+const activeThemeColor = computed(() => chapterColors[currentSlide.value])
 const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
 
 onMounted(async () => {
@@ -712,6 +760,8 @@ function endHold() {
   padding: 24px 32px;
   box-sizing: border-box;
   min-height: 400px;
+  position: relative;
+  overflow: hidden;
 }
 
 .slide-content-wrapper {
@@ -819,6 +869,8 @@ function endHold() {
   justify-content: center;
   padding: 24px;
   box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
 }
 
 /* Transitions */
@@ -838,5 +890,76 @@ function endHold() {
 .slide-fade-leave-to {
   opacity: 0;
   transform: scale(1.01) translateY(-8px);
+}
+/* Animated colour splashes (Wrapped pop, tinted per chapter) */
+.sw-splash-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.sw-splash {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  transition: background 0.5s ease;
+  will-change: transform, opacity;
+}
+
+.sw-splash-1 {
+  width: 540px;
+  height: 540px;
+  right: -140px;
+  top: -160px;
+  animation: sw-splash 6.5s ease-in-out infinite;
+}
+
+.sw-splash-2 {
+  width: 360px;
+  height: 360px;
+  left: -130px;
+  bottom: -130px;
+  animation: sw-splash 7.8s ease-in-out infinite reverse;
+}
+
+.sw-prop {
+  position: absolute;
+  height: auto;
+  opacity: 0.5;
+  pointer-events: none;
+  animation: sw-float 9s ease-in-out infinite;
+  filter: drop-shadow(0 24px 60px rgba(0,0,0,0.5));
+  transition: all 0.5s ease-in-out;
+}
+
+.mobile-slide-wrapper {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes sw-splash {
+  0%, 100% { transform: scale(0.9); opacity: 0.12; }
+  50% { transform: scale(1.14); opacity: 0.26; }
+}
+
+@keyframes sw-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sw-splash, .sw-prop {
+    animation: none !important;
+  }
+  .sw-splash {
+    opacity: 0.12 !important;
+  }
 }
 </style>
