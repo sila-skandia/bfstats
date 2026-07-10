@@ -1,47 +1,74 @@
 <template>
   <div class="wrapped-slide map-slide animate-line-in" @click="$emit('next')">
-    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">03 — FAVOURITE MAP &amp; SERVER</div>
-    
-    <div class="map-body">
-      <div class="map-feature animate-rise-up" style="animation-delay: 0.15s">
-        <div class="mm-eyebrow-small">MOST PLAYED MAP</div>
-        <div class="feature-name">{{ data.favouriteMap.mapName }}</div>
-        <div class="feature-meta">
-          <span class="text-accent">{{ data.favouriteMap.rounds }} ROUNDS</span>
-          <span class="divider">·</span>
-          <span class="text-victory">{{ Math.round(data.favouriteMap.winRate * 100) }}% WIN RATE</span>
+    <div class="map-content">
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">03 — FAVOURITE MAP &amp; SERVER</div>
+      
+      <div class="map-body">
+        <div class="map-feature animate-rise-up" style="animation-delay: 0.15s">
+          <div class="mm-eyebrow-small">MOST PLAYED MAP</div>
+          <div class="feature-name">{{ data.favouriteMap.mapName }}</div>
+          <div class="feature-meta">
+            <span class="text-accent">{{ data.favouriteMap.rounds }} ROUNDS</span>
+            <span class="divider">·</span>
+            <span class="text-victory">{{ Math.round(data.favouriteMap.winRate * 100) }}% WIN RATE</span>
+          </div>
+        </div>
+        
+        <div class="maps-list">
+          <div 
+            v-for="(map, idx) in data.favouriteMap.topMaps5" 
+            :key="map.mapName" 
+            class="list-item animate-rise-up"
+            :style="{ animationDelay: ((idx * 0.08) + 0.25) + 's' }"
+          >
+            <div class="item-header">
+              <span class="map-label">{{ map.mapName }}</span>
+              <span class="map-rounds">{{ map.rounds }}</span>
+            </div>
+            <div class="progress-bar-track">
+              <div 
+                class="progress-bar-fill animate-grow-x" 
+                :style="{ width: `${map.playTimePercentage}%`, backgroundColor: map.barColor, animationDelay: ((idx * 0.08) + 0.25) + 's' }"
+              ></div>
+            </div>
+          </div>
         </div>
       </div>
-      
-      <div class="maps-list">
-        <div 
-          v-for="(map, idx) in data.favouriteMap.topMaps5" 
-          :key="map.mapName" 
-          class="list-item animate-rise-up"
-          :style="{ animationDelay: ((idx * 0.08) + 0.25) + 's' }"
-        >
-          <div class="item-header">
-            <span class="map-label">{{ map.mapName }}</span>
-            <span class="map-rounds">{{ map.rounds }}</span>
-          </div>
-          <div class="progress-bar-track">
-            <div 
-              class="progress-bar-fill animate-grow-x" 
-              :style="{ width: `${map.playTimePercentage}%`, backgroundColor: map.barColor, animationDelay: ((idx * 0.08) + 0.25) + 's' }"
-            ></div>
-          </div>
-        </div>
+
+      <div class="map-footer animate-rise-up" style="animation-delay: 0.6s">
+        HOME SERVER <span class="text-strong">{{ data.favouriteMap.homeServerName }}</span> · <span class="text-accent">{{ data.favouriteMap.homeServerLocation }}</span>
       </div>
     </div>
 
-    <div class="map-footer animate-rise-up" style="animation-delay: 0.6s">
-      HOME SERVER <span class="text-strong">{{ data.favouriteMap.homeServerName }}</span> · <span class="text-accent">{{ data.favouriteMap.homeServerLocation }}</span>
+    <!-- Right Column: Hero Image Card -->
+    <div class="hero-image-container">
+      <div class="hero-image-card">
+        <div class="hero-placeholder">
+          <div class="hero-title">HERO 04</div>
+          <div class="hero-sub">LIBERATION OF CAEN<br>DROP: ch4p.webp</div>
+        </div>
+        <div class="hero-img-wrapper">
+          <img :src="ch4p" alt="Liberation of Caen" class="hero-img">
+        </div>
+        <div class="hero-overlay-smoke"></div>
+        <div class="hero-overlay-grad"></div>
+        <div class="hero-border-inset"></div>
+        <div class="hero-corner hero-corner-tl"></div>
+        <div class="hero-corner hero-corner-tr"></div>
+        <div class="hero-corner hero-corner-bl"></div>
+        <div class="hero-corner hero-corner-br"></div>
+        <div class="hero-caption">
+          <span class="hero-caption-dot"></span>
+          Fig. 04 — Liberation of Caen
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { PlayerWrappedData } from '@/services/wrappedService'
+import ch4p from '@/assets/wrapped/ch4p.webp'
 
 defineProps<{
   data: PlayerWrappedData
@@ -63,6 +90,15 @@ defineEmits<{
   padding: 40px;
 }
 
+@media (min-width: 1024px) {
+  .wrapped-slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 46px;
+    align-items: stretch;
+  }
+}
+
 .mm-eyebrow {
   font-family: var(--mm-font-mono);
   font-size: 11px;
@@ -77,7 +113,7 @@ defineEmits<{
   margin: auto 0;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 768px) and (max-width: 1023px) {
   .map-body {
     flex-direction: row;
     gap: 40px;
