@@ -1,37 +1,63 @@
 <template>
   <div class="wrapped-slide squad-slide animate-line-in" @click="$emit('next')">
-    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">06 — SQUAD</div>
-    
-    <div v-if="data.squad && data.squad.length > 0" class="squad-layout-active">
-      <div class="squad-heading animate-rise-up" style="animation-delay: 0.1s">
-        Rode with these soldiers all year.
-      </div>
-
-      <div class="squad-container">
-        <div class="squad-table-header animate-rise-up" style="animation-delay: 0.15s">
-          <span>BUDDY</span>
+    <div class="squad-left-container">
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">06 — SQUAD</div>
+      
+      <div v-if="data.squad && data.squad.length > 0" class="squad-layout-active">
+        <div class="squad-heading animate-rise-up" style="animation-delay: 0.1s">
+          Rode with these soldiers all year.
         </div>
 
-        <div class="squad-list">
-          <div 
-            v-for="(buddy, index) in data.squad" 
-            :key="buddy.name" 
-            class="squad-row animate-rise-up"
-            :style="{ animationDelay: ((index * 0.08) + 0.2) + 's' }"
-          >
-            <span class="row-num">{{ String(index + 1).padStart(2, '0') }}</span>
-            <span class="row-name">{{ buddy.name }}</span>
+        <div class="squad-container">
+          <div class="squad-table-header animate-rise-up" style="animation-delay: 0.15s">
+            <span>BUDDY</span>
+          </div>
+
+          <div class="squad-list">
+            <div 
+              v-for="(buddy, index) in data.squad" 
+              :key="buddy.name" 
+              class="squad-row animate-rise-up"
+              :style="{ animationDelay: ((index * 0.08) + 0.2) + 's' }"
+            >
+              <span class="row-num">{{ String(index + 1).padStart(2, '0') }}</span>
+              <span class="row-name">{{ buddy.name }}</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-    
-    <div v-else class="lone-wolf-container animate-rise-up" style="animation-delay: 0.15s">
-      <div class="squad-heading">
-        Fought this war as a lone wolf.
+      
+      <div v-else class="lone-wolf-container animate-rise-up" style="animation-delay: 0.15s">
+        <div class="squad-heading">
+          Fought this war as a lone wolf.
+        </div>
+        <div class="lone-wolf-body">
+          No frequent squad mates or co-players were recorded in your company this year. You relied entirely on your own combat instincts.
+        </div>
       </div>
-      <div class="lone-wolf-body">
-        No frequent squad mates or co-players were recorded in your company this year. You relied entirely on your own combat instincts.
+    </div>
+
+    <!-- Right Column: Hero Image Card -->
+    <div class="hero-image-container">
+      <div class="hero-image-card">
+        <div class="hero-placeholder">
+          <div class="hero-title">HERO 07</div>
+          <div class="hero-sub">THE SQUAD<br>DROP: ch7p.webp</div>
+        </div>
+        <div class="hero-img-wrapper">
+          <img :src="ch7p" alt="The Squad" class="hero-img">
+        </div>
+        <div class="hero-overlay-smoke"></div>
+        <div class="hero-overlay-grad"></div>
+        <div class="hero-border-inset"></div>
+        <div class="hero-corner hero-corner-tl"></div>
+        <div class="hero-corner hero-corner-tr"></div>
+        <div class="hero-corner hero-corner-bl"></div>
+        <div class="hero-corner hero-corner-br"></div>
+        <div class="hero-caption">
+          <span class="hero-caption-dot"></span>
+          Fig. 07 — The Squad
+        </div>
       </div>
     </div>
   </div>
@@ -39,6 +65,7 @@
 
 <script setup lang="ts">
 import type { PlayerWrappedData } from '@/services/wrappedService'
+import ch7p from '@/assets/wrapped/ch7p.webp'
 
 defineProps<{
   data: PlayerWrappedData
@@ -58,6 +85,15 @@ defineEmits<{
   box-sizing: border-box;
   cursor: pointer;
   padding: 40px;
+}
+
+@media (min-width: 1024px) {
+  .wrapped-slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 46px;
+    align-items: stretch;
+  }
 }
 
 .mm-eyebrow {

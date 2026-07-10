@@ -212,7 +212,18 @@ let autoAdvanceTimer: any = null
 let progressTimer: any = null
 const SLIDE_DURATION = 7000 
 
-const activeThemeColor = 'var(--mm-accent)'
+const chapterColors = [
+  '#7d8849', // INTRO
+  '#b4c060', // THE YEAR IN NUMBERS
+  '#c5a23a', // RANK & K/D TREND
+  '#7da34c', // FAVOURITE MAP
+  '#c08a4c', // MEDALS & DECORATIONS
+  '#d65a5a', // BEST MOMENT
+  '#c5a23a', // SQUAD
+  '#7d8849'  // SHARE CARD
+]
+
+const activeThemeColor = computed(() => chapterColors[currentSlide.value])
 const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
 
 onMounted(async () => {
@@ -839,3 +850,202 @@ function endHold() {
   transform: scale(1.01) translateY(-8px);
 }
 </style>
+
+<style>
+/* ===== Player Wrapped Global Animations & Hero Image Card Styles ===== */
+.player-wrapped .hero-image-container {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .player-wrapped .hero-image-container {
+    display: block;
+    animation: wrapFade 0.8s ease both;
+    height: 100%;
+    min-height: 100%;
+  }
+}
+
+.player-wrapped .hero-image-card {
+  position: relative;
+  height: 100%;
+  min-height: 100%;
+  border: 1px solid #0a0a0a;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #0d0d0d;
+  box-shadow: inset 0 0 0 1px rgba(125,136,73,0.14), 0 18px 40px -18px rgba(0,0,0,0.9);
+}
+
+.player-wrapped .hero-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 38%, #1b1c14, #0d0d0d 70%);
+}
+
+.player-wrapped .hero-title {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--mm-accent);
+}
+
+.player-wrapped .hero-sub {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--mm-ink-faint);
+  line-height: 1.8;
+}
+
+.player-wrapped .hero-img-wrapper {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.player-wrapped .hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.14);
+  animation: heroReveal 1.1s ease both, kenBurns 36s ease-in-out 1.1s infinite;
+}
+
+.player-wrapped .hero-overlay-smoke {
+  position: absolute;
+  inset: -15%;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 28% 22%, rgba(210,200,160,0.10), transparent 55%), radial-gradient(ellipse at 75% 82%, rgba(0,0,0,0.55), transparent 62%);
+  mix-blend-mode: screen;
+  filter: blur(10px);
+  transform: scale(1.4);
+  animation: smokeDrift 26s ease-in-out infinite;
+}
+
+.player-wrapped .hero-overlay-grad {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(13,13,13,0.35) 0%, transparent 26%, transparent 52%, rgba(8,8,8,0.88) 100%);
+}
+
+.player-wrapped .hero-border-inset {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: 2px;
+  box-shadow: inset 0 0 130px 18px rgba(0,0,0,0.92), inset 0 0 46px rgba(0,0,0,0.6);
+}
+
+.player-wrapped .hero-corner {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  z-index: 6;
+  pointer-events: none;
+  border-color: var(--mm-accent);
+  animation: cornerFade 1.4s ease 0.6s both;
+}
+
+.player-wrapped .hero-corner-tl {
+  top: 9px;
+  left: 9px;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+.player-wrapped .hero-corner-tr {
+  top: 9px;
+  right: 9px;
+  border-top: 1.5px solid;
+  border-right: 1.5px solid;
+}
+
+.player-wrapped .hero-corner-bl {
+  bottom: 9px;
+  left: 9px;
+  border-bottom: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+.player-wrapped .hero-corner-br {
+  bottom: 9px;
+  right: 9px;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+}
+
+.player-wrapped .hero-caption {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+  background: rgba(10,10,10,0.55);
+  border: 1px solid var(--mm-rule-strong);
+  padding: 4px 8px;
+  border-radius: 2px;
+}
+
+.player-wrapped .hero-caption-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mm-accent);
+  display: inline-block;
+}
+
+@keyframes wrapUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes wrapFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes smokeDrift {
+  0%, 100% { transform: scale(1.4) translate(0, 0); }
+  50% { transform: scale(1.5) translate(2.5%, -2.5%); }
+}
+
+@keyframes kenBurns {
+  0% { transform: scale(1.14) translate(0, 0); }
+  50% { transform: scale(1.0) translate(0, 0); }
+  100% { transform: scale(1.14) translate(0, 0); }
+}
+
+@keyframes heroReveal {
+  0% { opacity: 0; transform: scale(1.26); filter: brightness(0.4) contrast(1.1); }
+  100% { opacity: 1; transform: scale(1.14); filter: none; }
+}
+
+@keyframes cornerFade {
+  from { opacity: 0; }
+  to { opacity: 0.75; }
+}
+</style>
+

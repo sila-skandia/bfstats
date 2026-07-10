@@ -1,79 +1,105 @@
 <template>
   <div class="wrapped-slide medals-slide animate-line-in" @click="$emit('next')">
-    <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">04 — MEDALS &amp; DECORATIONS</div>
-    <div class="medals-heading animate-rise-up" style="animation-delay: 0.1s">
-      {{ data.medals.killStreaks25 }} kill streaks. One {{ data.medals.eliteWarriorTier.toLowerCase() }}.
-    </div>
-    
-    <div class="medals-grid">
-      <!-- Card 1: Total Kill Streaks -->
-      <div class="deco-card animate-rise-up" style="animation-delay: 0.15s">
-        <img 
-          :src="getAchievementImage('kill_streak_25')" 
-          alt="Kill streak medal" 
-          class="deco-img"
-        />
-        <div class="mm-eyebrow-small">KILL STREAKS</div>
-        <div class="deco-value">{{ data.medals.killStreaks25 }} EARNED</div>
+    <div class="medals-content">
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">04 — MEDALS &amp; DECORATIONS</div>
+      <div class="medals-heading animate-rise-up" style="animation-delay: 0.1s">
+        {{ data.medals.killStreaks25 }} kill streaks. One {{ data.medals.eliteWarriorTier.toLowerCase() }}.
       </div>
+      
+      <div class="medals-grid">
+        <!-- Card 1: Total Kill Streaks -->
+        <div class="deco-card animate-rise-up" style="animation-delay: 0.15s">
+          <img 
+            :src="getAchievementImage('kill_streak_25')" 
+            alt="Kill streak medal" 
+            class="deco-img"
+          />
+          <div class="mm-eyebrow-small">KILL STREAKS</div>
+          <div class="deco-value">{{ data.medals.killStreaks25 }} EARNED</div>
+        </div>
 
-      <!-- Card 2: Podium Finishes -->
-      <div class="deco-card animate-rise-up" style="animation-delay: 0.23s">
-        <img 
-          :src="getAchievementImage('round_placement_1')" 
-          alt="First place medal" 
-          class="deco-img"
-        />
-        <div class="mm-eyebrow-small">PODIUM FINISHES</div>
-        <div class="deco-value">{{ data.medals.podiumFinishes }} FIRSTS</div>
-      </div>
+        <!-- Card 2: Podium Finishes -->
+        <div class="deco-card animate-rise-up" style="animation-delay: 0.23s">
+          <img 
+            :src="getAchievementImage('round_placement_1')" 
+            alt="First place medal" 
+            class="deco-img"
+          />
+          <div class="mm-eyebrow-small">PODIUM FINISHES</div>
+          <div class="deco-value">{{ data.medals.podiumFinishes }} FIRSTS</div>
+        </div>
 
-      <!-- Card 3: Elite Warrior Tier -->
-      <div class="deco-card animate-rise-up" style="animation-delay: 0.31s">
-        <img 
-          :src="getAchievementImage('elite_warrior_legend')" 
-          alt="Elite warrior legend medal" 
-          class="deco-img"
-        />
-        <div class="mm-eyebrow-small">{{ data.medals.eliteWarriorBadgeName }}</div>
-        <div class="deco-value">{{ data.medals.eliteWarriorTier }}</div>
-      </div>
+        <!-- Card 3: Elite Warrior Tier -->
+        <div class="deco-card animate-rise-up" style="animation-delay: 0.31s">
+          <img 
+            :src="getAchievementImage('elite_warrior_legend')" 
+            alt="Elite warrior legend medal" 
+            class="deco-img"
+          />
+          <div class="mm-eyebrow-small">{{ data.medals.eliteWarriorBadgeName }}</div>
+          <div class="deco-value">{{ data.medals.eliteWarriorTier }}</div>
+        </div>
 
-      <!-- Card 4: Best Streak -->
-      <div class="deco-card animate-rise-up" style="animation-delay: 0.39s">
-        <img 
-          :src="getAchievementImage('kill_streak_50')" 
-          alt="Best streak medal" 
-          class="deco-img"
-        />
-        <div class="mm-eyebrow-small">BEST STREAK</div>
-        <div class="deco-value">{{ data.medals.bestStreak }} KILLS</div>
-      </div>
-    </div>
-
-    <!-- Achievement Breakdowns Section -->
-    <div class="breakdown-section animate-rise-up" v-if="data.medals.achievementTypes && data.medals.achievementTypes.length > 0" style="animation-delay: 0.45s">
-      <div class="breakdown-title">ACHIEVEMENT BREAKDOWN</div>
-      <div class="breakdown-grid">
-        <div v-for="t in data.medals.achievementTypes" :key="t.type" class="breakdown-pill">
-          <span class="pill-label">{{ t.type.toUpperCase() }}</span>
-          <span class="pill-value">{{ t.count }}</span>
+        <!-- Card 4: Best Streak -->
+        <div class="deco-card animate-rise-up" style="animation-delay: 0.39s">
+          <img 
+            :src="getAchievementImage('kill_streak_50')" 
+            alt="Best streak medal" 
+            class="deco-img"
+          />
+          <div class="mm-eyebrow-small">BEST STREAK</div>
+          <div class="deco-value">{{ data.medals.bestStreak }} KILLS</div>
         </div>
       </div>
-    </div>
 
-    <div class="breakdown-section animate-rise-up" v-if="data.medals.achievementsBreakdown && data.medals.achievementsBreakdown.length > 0" style="margin-top: 14px; animation-delay: 0.52s">
-      <div class="breakdown-title">UNIQUE EARNED HONOURS</div>
-      <div class="achievements-scroll">
-        <div v-for="ach in data.medals.achievementsBreakdown" :key="ach.achievementId" class="ach-card">
-          <span class="ach-card-name" :class="'tier-' + ach.tier.toLowerCase()">{{ ach.name.toUpperCase() }}</span>
-          <span class="ach-card-count">×{{ ach.count }}</span>
+      <!-- Achievement Breakdowns Section -->
+      <div class="breakdown-section animate-rise-up" v-if="data.medals.achievementTypes && data.medals.achievementTypes.length > 0" style="animation-delay: 0.45s">
+        <div class="breakdown-title">ACHIEVEMENT BREAKDOWN</div>
+        <div class="breakdown-grid">
+          <div v-for="t in data.medals.achievementTypes" :key="t.type" class="breakdown-pill">
+            <span class="pill-label">{{ t.type.toUpperCase() }}</span>
+            <span class="pill-value">{{ t.count }}</span>
+          </div>
         </div>
+      </div>
+
+      <div class="breakdown-section animate-rise-up" v-if="data.medals.achievementsBreakdown && data.medals.achievementsBreakdown.length > 0" style="margin-top: 14px; animation-delay: 0.52s">
+        <div class="breakdown-title">UNIQUE EARNED HONOURS</div>
+        <div class="achievements-scroll">
+          <div v-for="ach in data.medals.achievementsBreakdown" :key="ach.achievementId" class="ach-card">
+            <span class="ach-card-name" :class="'tier-' + ach.tier.toLowerCase()">{{ ach.name.toUpperCase() }}</span>
+            <span class="ach-card-count">×{{ ach.count }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="medals-footer animate-rise-up" style="animation-delay: 0.6s">
+        {{ data.medals.lifetimeMilestoneText }}
       </div>
     </div>
 
-    <div class="medals-footer animate-rise-up" style="animation-delay: 0.6s">
-      {{ data.medals.lifetimeMilestoneText }}
+    <!-- Right Column: Hero Image Card -->
+    <div class="hero-image-container">
+      <div class="hero-image-card">
+        <div class="hero-placeholder">
+          <div class="hero-title">HERO 05</div>
+          <div class="hero-sub">DECORATIONS<br>DROP: ch5p.webp</div>
+        </div>
+        <div class="hero-img-wrapper">
+          <img :src="ch5p" alt="Decorations" class="hero-img">
+        </div>
+        <div class="hero-overlay-smoke"></div>
+        <div class="hero-overlay-grad"></div>
+        <div class="hero-border-inset"></div>
+        <div class="hero-corner hero-corner-tl"></div>
+        <div class="hero-corner hero-corner-tr"></div>
+        <div class="hero-corner hero-corner-bl"></div>
+        <div class="hero-corner hero-corner-br"></div>
+        <div class="hero-caption">
+          <span class="hero-caption-dot"></span>
+          Fig. 05 — Decorations
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -81,6 +107,7 @@
 <script setup lang="ts">
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
+import ch5p from '@/assets/wrapped/ch5p.webp'
 
 defineProps<{
   data: PlayerWrappedData
@@ -100,6 +127,30 @@ defineEmits<{
   box-sizing: border-box;
   cursor: pointer;
   padding: 40px;
+}
+
+@media (min-width: 1024px) {
+  .wrapped-slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 46px;
+    align-items: stretch;
+  }
+}
+
+.medals-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  /* Hide scrollbar for cleaner look, but keep functionality */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+}
+
+.medals-content::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
 }
 
 .mm-eyebrow {
@@ -122,11 +173,11 @@ defineEmits<{
 .medals-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
+  gap: 12px;
   margin: auto 0;
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1023px) {
   .medals-grid {
     grid-template-columns: repeat(4, 1fr);
   }
@@ -135,7 +186,7 @@ defineEmits<{
 .deco-card {
   border: 1px solid var(--mm-rule);
   border-radius: var(--mm-radius-sm, 2px);
-  padding: 16px 14px;
+  padding: 12px 10px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -144,11 +195,11 @@ defineEmits<{
 }
 
 .deco-img {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--mm-radius-sm, 2px);
   display: block;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .mm-eyebrow-small {

@@ -566,7 +566,7 @@ public class WrappedService(
         {
             var exists = await dbContext.PlayerAchievements
                 .AnyAsync(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
-                    && pa.Tier == tier && pa.AchievementId != "team_victory" && pa.AchievementId != "kill_streak_50");
+                    && pa.Tier == tier && pa.AchievementId != "team_victory" && pa.AchievementId != "team_victory_switched" && pa.AchievementId != "kill_streak_50");
             if (exists)
             {
                 activeTier = tier;
@@ -580,7 +580,7 @@ public class WrappedService(
             var topRecord = await dbContext.PlayerAchievements
                 .AsNoTracking()
                 .Where(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
-                    && pa.Tier == activeTier && pa.AchievementId != "team_victory" && pa.AchievementId != "kill_streak_50")
+                    && pa.Tier == activeTier && pa.AchievementId != "team_victory" && pa.AchievementId != "team_victory_switched" && pa.AchievementId != "kill_streak_50")
                 .GroupBy(pa => pa.PlayerName)
                 .Select(g => new { PlayerName = g.Key, Count = g.Count() })
                 .OrderByDescending(x => x.Count)
@@ -591,7 +591,7 @@ public class WrappedService(
                 var repAchievement = (await dbContext.PlayerAchievements
                     .AsNoTracking()
                     .Where(pa => pa.ServerGuid == serverGuid && pa.PlayerName == topRecord.PlayerName && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
-                        && pa.Tier == activeTier && pa.AchievementId != "team_victory" && pa.AchievementId != "kill_streak_50")
+                        && pa.Tier == activeTier && pa.AchievementId != "team_victory" && pa.AchievementId != "team_victory_switched" && pa.AchievementId != "kill_streak_50")
                     .ToListAsync())
                     .OrderByDescending(pa => GetPrestigeWeight(pa.AchievementId))
                     .FirstOrDefault();
@@ -629,7 +629,8 @@ public class WrappedService(
         var cannonFodder = new PlayerVolumeDto(PlayerNameDecoder.Decode(cannonFodderPlayer?.PlayerName ?? ""), cannonFodderPlayer?.Deaths ?? 0);
 
         var winAchievements = await dbContext.PlayerAchievements
-            .Where(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant && pa.AchievementId == "team_victory")
+            .Where(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant 
+                && (pa.AchievementId == "team_victory" || pa.AchievementId == "team_victory_switched"))
             .GroupBy(pa => pa.PlayerName)
             .Select(g => new { PlayerName = g.Key, Wins = g.Count() })
             .ToDictionaryAsync(x => x.PlayerName, x => x.Wins);
@@ -1054,7 +1055,7 @@ public class WrappedService(
         if (favMap != null)
         {
             var winsQuery = dbContext.PlayerAchievements
-                .Where(pa => pa.PlayerName == playerName && pa.AchievementId == "team_victory" && pa.MapName == favMap.MapName && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
+                .Where(pa => pa.PlayerName == playerName && (pa.AchievementId == "team_victory" || pa.AchievementId == "team_victory_switched") && pa.MapName == favMap.MapName && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
 
             if (serverGuid != "global")
             {
@@ -1176,6 +1177,30 @@ public class WrappedService(
             .ToList();
 
         var achievementsBreakdown = playerAchievements
+            .Select(pa => {
+                if (pa.AchievementId == "team_victory_switched")
+                {
+                    return new PlayerAchievement
+                    {
+                        Id = pa.Id,
+                        PlayerName = pa.PlayerName,
+                        AchievementType = pa.AchievementType,
+                        AchievementId = "team_victory",
+                        AchievementName = "Team Victory",
+                        Tier = pa.Tier,
+                        Value = pa.Value,
+                        AchievedAt = pa.AchievedAt,
+                        ProcessedAt = pa.ProcessedAt,
+                        ServerGuid = pa.ServerGuid,
+                        MapName = pa.MapName,
+                        RoundId = pa.RoundId,
+                        Metadata = pa.Metadata,
+                        Game = pa.Game,
+                        Version = pa.Version
+                    };
+                }
+                return pa;
+            })
             .GroupBy(pa => new { pa.AchievementId, pa.AchievementName, pa.AchievementType, pa.Tier })
             .Select(g => new PlayerAchievementCountDto(
                 g.Key.AchievementId,

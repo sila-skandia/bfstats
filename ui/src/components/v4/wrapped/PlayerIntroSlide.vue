@@ -28,11 +28,36 @@
         <span class="cursor">_</span>
       </div>
     </div>
+
+    <!-- Right Column: Hero Image Card -->
+    <div class="hero-image-container">
+      <div class="hero-image-card">
+        <div class="hero-placeholder">
+          <div class="hero-title">HERO 01</div>
+          <div class="hero-sub">DEPLOYMENT<br>DROP: ch1p.webp</div>
+        </div>
+        <div class="hero-img-wrapper">
+          <img :src="ch1p" alt="Deployment" class="hero-img">
+        </div>
+        <div class="hero-overlay-smoke"></div>
+        <div class="hero-overlay-grad"></div>
+        <div class="hero-border-inset"></div>
+        <div class="hero-corner hero-corner-tl"></div>
+        <div class="hero-corner hero-corner-tr"></div>
+        <div class="hero-corner hero-corner-bl"></div>
+        <div class="hero-corner hero-corner-br"></div>
+        <div class="hero-caption">
+          <span class="hero-caption-dot"></span>
+          Fig. 01 — Deployment
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { PlayerWrappedData } from '@/services/wrappedService'
+import ch1p from '@/assets/wrapped/ch1p.webp'
 
 defineProps<{
   data: PlayerWrappedData
@@ -53,6 +78,15 @@ defineEmits<{
   align-items: flex-start;
   box-sizing: border-box;
   cursor: pointer;
+}
+
+@media (min-width: 1024px) {
+  .wrapped-slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 46px;
+    align-items: stretch;
+  }
 }
 
 .intro-content {
