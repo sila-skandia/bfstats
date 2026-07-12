@@ -119,6 +119,8 @@ spec:
               value: "Betman"
             - name: PlayerWrapped__AllowedPlayerNames__7
               value: "RONIN"
+            - name: PlayerWrapped__AllowedPlayerNames__8
+              value: "pada"
             # Refresh token cookie configuration (Secret provided via external secret manager)
             - name: RefreshToken__CookieName
               value: "rt"
