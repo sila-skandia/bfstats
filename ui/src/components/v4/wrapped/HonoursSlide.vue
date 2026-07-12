@@ -1,41 +1,16 @@
 <template>
   <div class="wrapped-slide honours-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">04 — HONOURS · QUALIFIED BOARDS</span>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">04 — HONOURS</span>
       <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Skill, not hours.</h2>
-      <span class="mm-chip animate-rise-up" style="animation-delay: 0.15s">MIN 100 ROUNDS</span>
-    </div>
-
-    <!-- Toggles: visible only on mobile/tablet viewports -->
-    <div class="tabs-container mobile-only">
-      <button 
-        class="tab-btn" 
-        :class="{ active: activeTab === 'kd' }"
-        @click="selectTab('kd')"
-      >
-        K/D Ratio
-      </button>
-      <button 
-        class="tab-btn" 
-        :class="{ active: activeTab === 'killrate' }"
-        @click="selectTab('killrate')"
-      >
-        Kill Rate
-      </button>
-      <button 
-        class="tab-btn" 
-        :class="{ active: activeTab === 'volume' }"
-        @click="selectTab('volume')"
-      >
-        Volume
-      </button>
+      <span class="mm-chip mm-chip--accent animate-rise-up" style="animation-delay: 0.15s">MIN 100 ROUNDS</span>
     </div>
 
     <div class="honours-content">
-      <!-- Widescreen side-by-side grid (or stacked on mobile based on activeTab) -->
+      <!-- Stacked on mobile, side-by-side on desktop -->
       <div class="boards-grid">
         <!-- 1. K/D Ratio Board -->
-        <div v-if="activeTab === 'kd' || isDesktop" class="board-card">
+        <div class="board-card">
           <div class="board-header-row animate-rise-up" style="animation-delay: 0.15s">
             <span>K/D RATIO</span>
             <span>RDS</span>
@@ -57,7 +32,7 @@
         </div>
 
         <!-- 2. Kill Rate Board -->
-        <div v-if="activeTab === 'killrate' || isDesktop" class="board-card">
+        <div class="board-card">
           <div class="board-header-row animate-rise-up" style="animation-delay: 0.25s">
             <span>KILL RATE · KILLS/MIN</span>
             <span>RDS</span>
@@ -80,8 +55,9 @@
       </div>
 
       <!-- Volume Board Footer -->
-      <div v-if="activeTab === 'volume' || isDesktop" class="volume-footer animate-rise-up" style="animation-delay: 0.5s">
+      <div class="volume-footer animate-rise-up" style="animation-delay: 0.5s">
         <span class="volume-title">VOLUME BOARDS (THEY TRACK HOURS, NOT SKILL) — </span>
+        <span class="volume-mobile-prefix">VOLUME BOARDS — </span>
         <span class="volume-item">
           SCORE <strong class="text-highlight">{{ data.honours.volumeBoards.topScore.playerName || 'None' }} {{ data.honours.volumeBoards.topScore.value.toLocaleString() }}</strong>
         </span>
@@ -99,37 +75,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
 import type { ServerWrappedData } from '@/services/wrappedService'
 
 defineProps<{
   data: ServerWrappedData
 }>()
-
-const emit = defineEmits<{
-  (e: 'pause'): void
-}>()
-
-const activeTab = ref<'kd' | 'killrate' | 'volume'>('kd')
-const isDesktop = ref(true)
-
-function checkViewport() {
-  isDesktop.value = window.innerWidth > 768
-}
-
-function selectTab(tab: 'kd' | 'killrate' | 'volume') {
-  activeTab.value = tab
-  emit('pause')
-}
-
-onMounted(() => {
-  checkViewport()
-  window.addEventListener('resize', checkViewport)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', checkViewport)
-})
 </script>
 
 <style scoped>
@@ -141,7 +91,7 @@ onUnmounted(() => {
 }
 
 .slide-header {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -165,7 +115,7 @@ onUnmounted(() => {
   margin: 0;
 }
 
-.mm-chip {
+.mm-chip--accent {
   font-family: var(--mm-font-mono);
   font-size: 9px;
   color: var(--mm-accent-soft);
@@ -174,45 +124,7 @@ onUnmounted(() => {
   border-radius: var(--mm-radius-sm, 2px);
   text-transform: uppercase;
   display: inline-block;
-}
-
-.tabs-container {
-  display: none;
-  background-color: var(--mm-bg-soft);
-  border: 1px solid var(--mm-rule);
-  padding: 3px;
-  border-radius: var(--mm-radius-sm, 2px);
-  margin-bottom: 20px;
-  gap: 4px;
-}
-
-@media (max-width: 768px) {
-  .tabs-container.mobile-only {
-    display: flex;
-  }
-}
-
-.tab-btn {
-  flex: 1;
-  background: none;
-  border: none;
-  color: var(--mm-ink-muted);
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  padding: 6px 12px;
-  border-radius: var(--mm-radius-sm, 2px);
-  cursor: pointer;
-  transition: all 0.2s;
-  text-transform: uppercase;
-}
-
-.tab-btn:hover {
-  color: var(--mm-ink);
-}
-
-.tab-btn.active {
-  background-color: var(--mm-highlight);
-  color: #000;
+  margin-top: 4px;
 }
 
 .honours-content {
@@ -227,9 +139,10 @@ onUnmounted(() => {
   gap: 20px;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1024px) {
   .boards-grid {
     grid-template-columns: 1fr 1fr;
+    gap: 40px;
   }
 }
 
@@ -255,8 +168,14 @@ onUnmounted(() => {
 .board-row {
   display: flex;
   align-items: baseline;
-  padding: 7px 12px;
+  padding: 12px 12px;
   border-bottom: 1px solid var(--mm-rule);
+}
+
+@media (min-width: 1024px) {
+  .board-row {
+    padding: 7px 12px;
+  }
 }
 
 .col-rank {
@@ -276,6 +195,7 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-right: 12px;
+  text-align: left;
 }
 
 .col-stat {
@@ -289,7 +209,7 @@ onUnmounted(() => {
 }
 
 .col-rounds {
-  width: 60px;
+  width: 44px;
   text-align: right;
   font-family: var(--mm-font-mono);
   font-size: 10px;
@@ -313,6 +233,11 @@ onUnmounted(() => {
   letter-spacing: 0.08em;
   color: var(--mm-ink-muted);
   line-height: 1.6;
+  text-align: left;
+}
+
+.volume-mobile-prefix {
+  display: none;
 }
 
 .volume-title {
@@ -327,5 +252,25 @@ onUnmounted(() => {
 .divider {
   margin: 0 8px;
   color: var(--mm-ink-faint);
+}
+
+@media (max-width: 1023px) {
+  .board-card .board-row:nth-child(n+5) {
+    display: none !important;
+  }
+  
+  .volume-title {
+    display: none;
+  }
+  
+  .volume-mobile-prefix {
+    display: inline;
+    color: var(--mm-ink-muted);
+  }
+  
+  .volume-footer {
+    margin-top: 20px;
+    line-height: 1.8;
+  }
 }
 </style>

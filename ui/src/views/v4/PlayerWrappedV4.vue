@@ -102,36 +102,39 @@
 
       <!-- Mobile Portrait Stories Layout -->
       <div class="mobile-layout" :style="{ '--theme-color': activeThemeColor }">
-        <!-- Top Progress Bars -->
-        <div class="mobile-progress-bars">
-          <div
-            v-for="idx in chapters.length"
-            :key="idx"
-            class="progress-segment-bg"
-          >
+        <!-- Top Sticky Header -->
+        <div class="mobile-sticky-header">
+          <!-- Top Progress Bars -->
+          <div class="mobile-progress-bars">
             <div
-              class="progress-segment-fill"
-              :style="{
-                width: idx - 1 < currentSlide ? '100%' : idx - 1 === currentSlide ? `${mobileProgress}%` : '0%',
-                transition: idx - 1 === currentSlide && isHolding ? 'none' : 'width 100ms linear'
-              }"
-            ></div>
+              v-for="idx in chapters.length"
+              :key="idx"
+              class="progress-segment-bg"
+            >
+              <div
+                class="progress-segment-fill"
+                :style="{
+                  width: idx - 1 < currentSlide ? '100%' : idx - 1 === currentSlide ? `${mobileProgress}%` : '0%',
+                  transition: idx - 1 === currentSlide && isHolding ? 'none' : 'width 100ms linear'
+                }"
+              ></div>
+            </div>
           </div>
-        </div>
 
-        <!-- Mobile Header -->
-        <header class="mobile-header">
-          <div class="header-left">
-            <span class="logo-small">BFStats</span>
-            <span class="badge-small">'26</span>
-          </div>
-          <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="close-mobile">
-            ✕
-          </router-link>
-          <router-link v-else to="/v4/" class="close-mobile">
-            ✕
-          </router-link>
-        </header>
+          <!-- Mobile Header -->
+          <header class="mobile-header">
+            <div class="header-left">
+              <span class="logo-small">BFStats</span>
+              <span class="badge-small">'26</span>
+            </div>
+            <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="close-mobile">
+              ✕
+            </router-link>
+            <router-link v-else to="/v4/" class="close-mobile">
+              ✕
+            </router-link>
+          </header>
+        </div>
 
         <!-- Tap Zones -->
         <div class="mobile-tap-zones">
@@ -144,6 +147,30 @@
             @touchstart="startHold"
             @touchend="endHold"
           ></div>
+        </div>
+
+        <!-- Mobile Hero Image Card -->
+        <div v-if="activeHero" class="mobile-hero-container animate-fade-in">
+          <div class="hero-image-card">
+            <div class="hero-placeholder">
+              <div class="hero-title">HERO {{ activeHero.no }}</div>
+              <div class="hero-sub">{{ activeHero.drop }}<br>DROP: ch{{ activeHero.no }}p.webp</div>
+            </div>
+            <div class="hero-img-wrapper">
+              <img :src="activeHero.img" :alt="activeHero.drop" class="hero-img" :key="currentSlide" />
+            </div>
+            <div class="hero-overlay-smoke"></div>
+            <div class="hero-overlay-grad"></div>
+            <div class="hero-border-inset"></div>
+            <div class="hero-corner hero-corner-tl"></div>
+            <div class="hero-corner hero-corner-tr"></div>
+            <div class="hero-corner hero-corner-bl"></div>
+            <div class="hero-corner hero-corner-br"></div>
+            <div class="hero-caption">
+              <span class="hero-caption-dot" :style="{ backgroundColor: activeHero.dot }"></span>
+              {{ activeHero.fig }}
+            </div>
+          </div>
         </div>
 
         <!-- Mobile Content Container -->
@@ -257,6 +284,25 @@ const chapterColors = [
 
 const activeThemeColor = computed(() => chapterColors[currentSlide.value])
 const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
+
+const heroes = computed(() => {
+  if (!data.value) return []
+  return [
+    { no: '01', drop: 'DEPLOYMENT', fig: 'Fig. 01 — Deployment', img: ch1p, dot: 'var(--mm-accent)' },
+    { no: '02', drop: 'THE CAMPAIGN', fig: 'Fig. 02 — The Campaign', img: ch2p, dot: 'var(--mm-accent)' },
+    { no: '03', drop: 'THE ASCENT', fig: 'Fig. 03 — The Ascent', img: ch3p, dot: 'var(--mm-accent)' },
+    { no: '04', drop: data.value.favoriteMap?.mapName?.toUpperCase() || 'FAVOURITE MAP', fig: `Fig. 04 — ${data.value.favoriteMap?.mapName || 'Favourite Map'}`, img: ch4p, dot: 'var(--mm-accent)' },
+    { no: '05', drop: 'DECORATIONS', fig: 'Fig. 05 — Decorations', img: ch5p, dot: 'var(--mm-accent)' },
+    { no: '06', drop: data.value.bestMoment?.mapName?.toUpperCase() || 'BEST MOMENT', fig: `Fig. 06 — ${data.value.bestMoment?.mapName || 'Best Moment'}`, img: ch6p, dot: 'var(--mm-danger)' },
+    { no: '07', drop: 'THE SQUAD', fig: 'Fig. 07 — The Squad', img: ch7p, dot: 'var(--mm-accent)' },
+    { no: '08', drop: 'KEEPSAKE', fig: 'Fig. 08 — Keepsake', img: ch8p, dot: 'var(--mm-accent)' }
+  ]
+})
+
+const activeHero = computed(() => {
+  if (heroes.value.length === 0) return null
+  return heroes.value[currentSlide.value]
+})
 
 onMounted(async () => {
   // Redirection guard if not Support
@@ -794,14 +840,23 @@ function endHold() {
   }
 }
 
+.mobile-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  padding: 14px 16px 12px;
+  background: linear-gradient(180deg, var(--mm-bg) 78%, rgba(19,19,19,0));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .mobile-progress-bars {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
   display: flex;
   gap: 4px;
-  z-index: 100;
+  width: 100%;
 }
 
 .progress-segment-bg {
@@ -819,14 +874,10 @@ function endHold() {
 }
 
 .mobile-header {
-  position: absolute;
-  top: 28px;
-  left: 16px;
-  right: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  z-index: 90;
+  width: 100%;
 }
 
 .logo-small {
@@ -868,13 +919,35 @@ function endHold() {
   height: 100%;
 }
 
+.mobile-hero-container {
+  padding: 2px 16px 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.mobile-hero-container .hero-image-card {
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-height: auto;
+  aspect-ratio: 5 / 4;
+}
+
 .mobile-content-container {
   flex-grow: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 22px 18px 26px;
   box-sizing: border-box;
+}
+
+@media (max-width: 1023px) {
+  .player-wrapped {
+    height: auto !important;
+    min-height: 100vh;
+    overflow-y: auto !important;
+  }
 }
 
 /* Transitions */
