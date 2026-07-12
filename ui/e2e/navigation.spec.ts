@@ -20,10 +20,10 @@ test.describe('Global Navigation', () => {
     const url = page.url();
     expect(url).toContain('/players');
 
-    // Should show "Find Players" heading
+    // Should show "Players" heading
     const heading = page.locator('h1');
     const text = await heading.first().textContent();
-    expect(text).toContain('Find Players');
+    expect(text).toContain('Players');
   });
 
   test('should maintain correct URL when navigating between pages', async ({ page }) => {

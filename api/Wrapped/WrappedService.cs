@@ -1185,7 +1185,7 @@ public class WrappedService(
                     {
                         Id = pa.Id,
                         PlayerName = pa.PlayerName,
-                        AchievementType = pa.AchievementType,
+                        AchievementType = "team_victory",
                         AchievementId = "team_victory",
                         AchievementName = "Team Victory",
                         Tier = pa.Tier,
@@ -1202,14 +1202,21 @@ public class WrappedService(
                 }
                 return pa;
             })
-            .GroupBy(pa => new { pa.AchievementId, pa.AchievementName, pa.AchievementType, pa.Tier })
-            .Select(g => new PlayerAchievementCountDto(
-                g.Key.AchievementId,
-                g.Key.AchievementName ?? g.Key.AchievementId,
-                string.IsNullOrEmpty(g.Key.AchievementType) ? "Other" : g.Key.AchievementType,
-                string.IsNullOrEmpty(g.Key.Tier) ? "Bronze" : g.Key.Tier,
-                g.Count()
-            ))
+            .GroupBy(pa => new { pa.AchievementId, pa.AchievementName, pa.AchievementType })
+            .Select(g => {
+                var highestTier = g
+                    .Select(pa => pa.Tier)
+                    .OrderByDescending(t => GetTierWeight(t))
+                    .FirstOrDefault();
+
+                return new PlayerAchievementCountDto(
+                    g.Key.AchievementId,
+                    g.Key.AchievementName ?? g.Key.AchievementId,
+                    string.IsNullOrEmpty(g.Key.AchievementType) ? "Other" : g.Key.AchievementType,
+                    string.IsNullOrEmpty(highestTier) ? "Bronze" : highestTier,
+                    g.Count()
+                );
+            })
             .OrderByDescending(x => x.Count)
             .ToList();
 
@@ -1397,6 +1404,18 @@ public class WrappedService(
         if (achievementId.Contains("gold")) return 5000;
         if (achievementId.Contains("silver")) return 1000;
         return 100;
+    }
+
+    private static int GetTierWeight(string tier)
+    {
+        return (tier?.ToLower()) switch
+        {
+            "legend" => 4,
+            "gold" => 3,
+            "silver" => 2,
+            "bronze" => 1,
+            _ => 0
+        };
     }
 
     private static (string Name, string Description) GetAchievementInfo(string achievementId)

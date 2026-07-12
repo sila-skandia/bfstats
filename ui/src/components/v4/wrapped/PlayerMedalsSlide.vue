@@ -281,6 +281,21 @@ defineEmits<{
   gap: 8px;
 }
 
+@media (max-width: 767px) {
+  .achievements-scroll {
+    flex-direction: column;
+    overflow-x: visible;
+    gap: 8px;
+    padding-bottom: 0;
+  }
+  .ach-card {
+    flex-shrink: 1;
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: space-between;
+  }
+}
+
 .ach-card-name {
   font-family: var(--mm-font-display);
   font-size: 13px;

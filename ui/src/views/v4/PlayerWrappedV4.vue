@@ -911,12 +911,15 @@ function endHold() {
   position: absolute;
   inset: 0;
   display: flex;
+  justify-content: space-between;
   z-index: 40;
+  pointer-events: none;
 }
 
 .tap-zone {
-  width: 50%;
+  width: 20%;
   height: 100%;
+  pointer-events: auto;
 }
 
 .mobile-hero-container {

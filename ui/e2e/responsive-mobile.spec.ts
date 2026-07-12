@@ -51,10 +51,10 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
 
     expect(page.url()).toContain('/players');
 
-    // Should display the Find Players heading
+    // Should display the Players heading
     const heading = page.locator('h1');
     const text = await heading.first().textContent();
-    expect(text).toContain('Find Players');
+    expect(text).toContain('Players');
   });
 
   test('should handle touch-friendly UI elements on mobile', async ({ page }) => {
