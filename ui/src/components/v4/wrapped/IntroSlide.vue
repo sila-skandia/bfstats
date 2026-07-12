@@ -1,6 +1,7 @@
 <template>
   <div class="wrapped-slide intro-slide animate-line-in" @click="$emit('next')">
-    <div class="intro-content">
+    <!-- Desktop Layout -->
+    <div class="intro-content desktop-only-block">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">BFSTATS · 2026 WRAPPED</div>
       
       <div class="name-container animate-elegant-reveal" style="animation-delay: 0.16s">
@@ -20,11 +21,29 @@
         <span class="divider">·</span>
         <span>JAN 01 — DEC 31</span>
         <span class="divider">·</span>
-        <span class="text-accent">9 CHAPTERS</span>
+        <span class="text-accent">8 CHAPTERS</span>
       </div>
 
       <div class="click-prompt animate-rise-up" style="animation-delay: 0.5s">
         <span>TAP / CLICK TO BEGIN BRIEFING</span>
+        <span class="cursor">_</span>
+      </div>
+    </div>
+
+    <!-- Mobile Layout -->
+    <div class="intro-content mobile-only-block">
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">After-Action Report</div>
+      <h1 class="name-display animate-rise-up" style="animation-delay: 0.16s; font-size: 52px; font-weight: 300; line-height: 1.1; letter-spacing: -0.02em;">
+        Server<br>Wrapped <span class="text-italic">2026</span>
+      </h1>
+      <div class="accent-line animate-rise-up" style="animation-delay: 0.26s; margin: 22px 0 18px;"></div>
+      <div class="intro-meta animate-rise-up" style="animation-delay: 0.32s; font-family: var(--mm-font-mono); font-size: 11px; line-height: 1.7; flex-direction: column; align-items: flex-start; gap: 0;">
+        <div>BATTLEFIELD 1942</div>
+        <div>{{ data.serverName }}</div>
+        <div>JAN 01 — DEC 31 · <span class="text-accent">8 CHAPTERS</span></div>
+      </div>
+      <div class="click-prompt animate-rise-up" style="animation-delay: 0.45s; margin-top: 34px;">
+        <span>Tap to begin briefing</span>
         <span class="cursor">_</span>
       </div>
     </div>
@@ -56,12 +75,29 @@ defineEmits<{
 }
 
 .intro-content {
-  display: flex;
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
   max-width: 800px;
   width: 100%;
+}
+
+.desktop-only-block {
+  display: flex;
+}
+
+.mobile-only-block {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .desktop-only-block {
+    display: none !important;
+  }
+  .mobile-only-block {
+    display: flex !important;
+    flex-direction: column;
+  }
 }
 
 .mm-eyebrow {

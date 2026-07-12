@@ -103,12 +103,20 @@
 
       <!-- Layout 1B: Mobile Portrait Stories Layout -->
       <div class="mobile-layout" :style="{ '--theme-color': activeThemeColor }">
+        <!-- animated colour splash layer (fixed behind content) -->
+        <div aria-hidden="true" class="swm-splash-container">
+          <div class="swm-splash swm-splash-1" :style="{ background: `radial-gradient(circle, ${activeThemeColor} 0%, transparent 68%)` }"></div>
+          <div class="swm-splash swm-splash-2" :style="{ background: `radial-gradient(circle, ${activeThemeColor} 0%, transparent 70%)` }"></div>
+          <img class="swm-prop" :src="chapterImages[currentSlide]" :style="chapterPropsMobile[currentSlide]" alt="">
+        </div>
+
         <!-- Top Progress Bars -->
         <div class="mobile-progress-bars">
-          <div
+          <button
             v-for="idx in chapters.length"
             :key="idx"
-            class="progress-segment-bg"
+            @click="goToSlide(idx - 1)"
+            class="progress-segment-btn"
           >
             <div
               class="progress-segment-fill"
@@ -117,18 +125,19 @@
                 transition: idx - 1 === currentSlide && isHolding ? 'none' : 'width 100ms linear'
               }"
             ></div>
-          </div>
+          </button>
         </div>
 
         <!-- Mobile Header -->
         <header class="mobile-header">
           <div class="header-left">
-            <span class="logo-small">BFStats</span>
-            <span class="badge-small">'26</span>
+            <img :src="clippyLogo" alt="" class="logo-img">
+            <div class="logo-text-wrapper">
+              <div class="logo-title">Server Wrapped</div>
+              <div class="logo-subtitle">bfstats.io · 2026</div>
+            </div>
           </div>
-          <router-link :to="`/v4/servers/detail/${encodeURIComponent(serverName)}`" class="close-mobile">
-            ✕
-          </router-link>
+          <span class="mm-chip mm-chip--accent">CH {{ String(currentSlide + 1).padStart(2, '0') }}/08</span>
         </header>
 
         <!-- Tap Zones -->
@@ -144,19 +153,31 @@
           ></div>
         </div>
 
-        <!-- Mobile Content Container -->
-        <div class="mobile-content-container">
-          <transition name="slide-fade" mode="out-in">
-            <div class="mobile-slide-wrapper" :key="currentSlide">
-              <!-- background splashes and props inside transition container -->
-              <div aria-hidden="true" class="sw-splash-container">
-                <div class="sw-splash sw-splash-1" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 68%)` }"></div>
-                <div class="sw-splash sw-splash-2" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 70%)` }"></div>
-                <img class="sw-prop" :src="chapterImages[currentSlide]" :style="chapterProps[currentSlide]" alt="">
-              </div>
-              <component :is="activeSlideComponent" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
-            </div>
-          </transition>
+        <!-- Mobile Content Container (scrollable) -->
+        <main class="swm-scroll">
+          <div class="mobile-slide-wrapper">
+            <transition name="slide-fade" mode="out-in">
+              <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
+            </transition>
+          </div>
+        </main>
+
+        <!-- Bottom Navigation Bar -->
+        <div class="mobile-bottom-nav">
+          <button @click="prevSlide(true)" class="nav-btn prev-btn" :style="{ color: currentSlide === 0 ? 'var(--mm-ink-faint)' : 'var(--mm-ink-soft)' }">← Prev</button>
+
+          <button @click="togglePlayback" class="toggle-play-btn" title="Play / pause (P)">
+            <svg width="52" height="52" viewBox="0 0 52 52" style="display:block;">
+              <circle cx="26" cy="26" r="22" fill="none" stroke="var(--mm-rule-strong)" stroke-width="2.5"></circle>
+              <circle cx="26" cy="26" r="22" fill="none" :stroke="activeThemeColor" stroke-width="3" stroke-linecap="round" :stroke-dasharray="ringCirc" :stroke-dashoffset="ringOffset" transform="rotate(-90 26 26)" style="transition:stroke-dashoffset .12s linear, stroke .4s ease;"></circle>
+            </svg>
+            <span class="toggle-icon-wrapper">
+              <svg v-if="!isPaused" width="13" height="14" viewBox="0 0 13 14" :fill="activeThemeColor"><rect x="1" y="0" width="3.6" height="14" rx="0.6"></rect><rect x="8.4" y="0" width="3.6" height="14" rx="0.6"></rect></svg>
+              <svg v-else width="13" height="15" viewBox="0 0 13 15" :fill="activeThemeColor"><path d="M1.5 0.9 L12 7.5 L1.5 14.1 Z"></path></svg>
+            </span>
+          </button>
+
+          <button @click="nextSlide(true)" class="nav-btn next-btn">{{ currentSlide === chapters.length - 1 ? 'Replay' : 'Next' }} →</button>
         </div>
       </div>
     </div>
@@ -227,6 +248,17 @@ const chapterProps = [
   'width:clamp(200px,23vw,320px); right:-18px; bottom:-16px;',    // 8 scroll
 ]
 
+const chapterPropsMobile = [
+  'width:180px; right:-30px; bottom:20px;',    // 1 helmet
+  'width:110px; right:-14px; top:0;',          // 2 counter
+  'width:120px; right:-30px; bottom:24px;',    // 3 map
+  'width:130px; right:-18px; top:-4px;',       // 4 rifles
+  'width:120px; right:-14px; top:-4px;',       // 5 medal case
+  'width:110px; right:-16px; top:-6px;',       // 6 dented helmet
+  'width:110px; right:-14px; bottom:30px;',    // 7 shell & watch
+  'width:150px; right:-24px; bottom:8px;',     // 8 scroll
+]
+
 // Slide Sub-components declared inline to keep file clean
 import IntroSlide from '@/components/v4/wrapped/IntroSlide.vue'
 import NumbersSlide from '@/components/v4/wrapped/NumbersSlide.vue'
@@ -272,6 +304,14 @@ const chapters = [
 const currentSlide = ref(0)
 const mobileProgress = ref(0)
 const isHolding = ref(false)
+const isPlaying = ref(false)
+const isPaused = computed(() => !isPlaying.value)
+
+const ringCirc = 138.2
+const ringOffset = computed(() => {
+  return (ringCirc * (1 - mobileProgress.value / 100)).toFixed(1)
+})
+
 let autoAdvanceTimer: any = null
 let progressTimer: any = null
 const SLIDE_DURATION = 7000 // 7 seconds per slide
@@ -322,9 +362,9 @@ function loggerError(e: any) {
   console.error('[Wrapped]', e)
 }
 
-function startPlayback() {
+function resumePlayback() {
   stopPlayback()
-  mobileProgress.value = 0
+  isPlaying.value = true
   
   const step = 100 // update every 100ms
   const increment = (step / SLIDE_DURATION) * 100
@@ -340,9 +380,35 @@ function startPlayback() {
   }, step)
 }
 
+function startPlayback() {
+  mobileProgress.value = 0
+  resumePlayback()
+}
+
 function stopPlayback() {
+  isPlaying.value = false
   if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer)
   if (progressTimer) clearInterval(progressTimer)
+}
+
+function togglePlayback() {
+  if (currentSlide.value === 0) {
+    isPlaying.value = true
+    goToSlide(1)
+    startPlayback()
+    return
+  }
+  if (currentSlide.value === chapters.length - 1) {
+    isPlaying.value = true
+    goToSlide(0)
+    startPlayback()
+    return
+  }
+  if (isPlaying.value) {
+    stopPlayback()
+  } else {
+    resumePlayback()
+  }
 }
 
 function nextSlide(manual = false) {
@@ -814,9 +880,10 @@ function endHold() {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100vh;
+  height: 100%;
   background-color: var(--mm-bg);
   position: relative;
+  overflow: hidden;
 }
 
 @media (min-width: 1024px) {
@@ -825,111 +892,10 @@ function endHold() {
   }
 }
 
-.mobile-progress-bars {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
-  display: flex;
-  gap: 4px;
-  z-index: 100;
-}
+.swm-scroll::-webkit-scrollbar { width: 0; height: 0; }
+.swm-scroll { -ms-overflow-style: none; scrollbar-width: none; }
 
-.progress-segment-bg {
-  flex-grow: 1;
-  height: 3px;
-  background-color: var(--mm-bg-mute);
-  border-radius: 1px;
-  overflow: hidden;
-}
-
-.progress-segment-fill {
-  height: 100%;
-  background-color: var(--theme-color, var(--mm-accent));
-  width: 0%;
-}
-
-.mobile-header {
-  position: absolute;
-  top: 28px;
-  left: 16px;
-  right: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  z-index: 90;
-}
-
-.logo-small {
-  font-family: var(--mm-font-display);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-}
-
-.badge-small {
-  background-color: var(--theme-color, var(--mm-accent));
-  color: #000;
-  font-family: var(--mm-font-mono);
-  font-size: 8px;
-  font-weight: 700;
-  padding: 1px 4px;
-  border-radius: var(--mm-radius-sm, 2px);
-  margin-left: 6px;
-}
-
-.close-mobile {
-  background: none;
-  border: none;
-  color: var(--mm-ink-muted);
-  font-size: 18px;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.mobile-tap-zones {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  z-index: 40;
-}
-
-.tap-zone {
-  width: 50%;
-  height: 100%;
-}
-
-.mobile-content-container {
-  flex-grow: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  box-sizing: border-box;
-  position: relative;
-  overflow: hidden;
-}
-
-/* Transitions */
-.slide-fade-enter-active {
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.slide-fade-leave-active {
-  transition: all 0.25s cubic-bezier(0.7, 0, 0.84, 0);
-}
-
-.slide-fade-enter-from {
-  opacity: 0;
-  transform: scale(0.98) translateY(8px);
-}
-
-.slide-fade-leave-to {
-  opacity: 0;
-  transform: scale(1.01) translateY(-8px);
-}
-/* Animated colour splashes (Wrapped pop, tinted per chapter) */
-.sw-splash-container {
+.swm-splash-container {
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -937,66 +903,242 @@ function endHold() {
   z-index: 0;
 }
 
-.sw-splash {
+.swm-splash {
   position: absolute;
   border-radius: 50%;
-  filter: blur(48px);
-  transition: background 0.5s ease;
+  filter: blur(46px);
+  transition: background .5s ease;
   will-change: transform, opacity;
 }
 
-.sw-splash-1 {
-  width: 540px;
-  height: 540px;
-  right: -140px;
-  top: -160px;
-  animation: sw-splash 6.5s ease-in-out infinite;
-}
-
-.sw-splash-2 {
-  width: 360px;
-  height: 360px;
-  left: -130px;
-  bottom: -130px;
-  animation: sw-splash 7.8s ease-in-out infinite reverse;
-}
-
-.sw-prop {
+.swm-prop {
   position: absolute;
   height: auto;
-  opacity: 0.5;
+  opacity: .4;
   pointer-events: none;
-  animation: sw-float 9s ease-in-out infinite;
-  filter: drop-shadow(0 24px 60px rgba(0,0,0,0.5));
+  animation: sw-float-mobile 9s ease-in-out infinite;
+  filter: drop-shadow(0 20px 44px rgba(0,0,0,.55));
   transition: all 0.5s ease-in-out;
 }
 
-.mobile-slide-wrapper {
+.mobile-progress-bars {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  padding: 12px 16px 0;
+  flex-shrink: 0;
+}
+
+.progress-segment-btn {
+  flex: 1;
+  height: 3px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: var(--mm-rule-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-segment-fill {
+  height: 100%;
+  background-color: var(--theme-color, var(--mm-accent));
+  border-radius: 2px;
+  transition: width .12s linear, background .4s ease;
+}
+
+.mobile-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.logo-img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.logo-text-wrapper {
+  min-width: 0;
+  text-align: left;
+}
+
+.logo-title {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logo-subtitle {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+
+.mm-chip--accent {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  color: var(--mm-accent-soft);
+  border: 1px solid var(--mm-rule);
+  padding: 2px 6px;
+  border-radius: var(--mm-radius-sm, 2px);
+  text-transform: uppercase;
+}
+
+.mobile-tap-zones {
+  position: absolute;
+  inset: 64px 0 78px;
+  display: flex;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.tap-zone {
+  width: 50%;
+  height: 100%;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.swm-scroll {
   position: relative;
   z-index: 1;
-  width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-slide-wrapper {
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 8px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.mobile-bottom-nav {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--mm-rule);
+  background: var(--mm-bg-soft);
+  flex-shrink: 0;
+}
+
+.nav-btn {
+  background: 0;
+  border: 0;
+  cursor: pointer;
+  padding: 8px 4px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+}
+
+.toggle-play-btn {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  background: 0;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.toggle-icon-wrapper {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-@keyframes sw-splash {
-  0%, 100% { transform: scale(0.9); opacity: 0.12; }
-  50% { transform: scale(1.14); opacity: 0.26; }
+@keyframes sw-blink-mobile {
+  0%, 55% { opacity: 1; }
+  56%, 100% { opacity: 0; }
 }
 
-@keyframes sw-float {
+@keyframes sw-grow-mobile {
+  from { transform: scaleY(0.15); }
+  to { transform: scaleY(1); }
+}
+
+@keyframes sw-splash-mobile {
+  0%, 100% { transform: scale(0.92); opacity: .14; }
+  50% { transform: scale(1.12); opacity: .30; }
+}
+
+@keyframes sw-float-mobile {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
+  50% { transform: translateY(-10px); }
+}
+
+.swm-splash-1 {
+  width: 380px;
+  height: 380px;
+  right: -120px;
+  top: -90px;
+  animation: sw-splash-mobile 6.5s ease-in-out infinite;
+}
+
+.swm-splash-2 {
+  width: 300px;
+  height: 300px;
+  left: -120px;
+  bottom: 60px;
+  animation: sw-splash-mobile 7.8s ease-in-out infinite reverse;
+}
+
+@media (max-width: 1023px) {
+  .server-wrapped {
+    height: 100vh !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+  
+  :deep(.wrapped-slide) {
+    padding: 0 !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sw-splash, .sw-prop {
+  .swm-splash, .swm-prop {
     animation: none !important;
   }
-  .sw-splash {
-    opacity: 0.12 !important;
+  .swm-splash {
+    opacity: .14 !important;
   }
 }
 </style>
