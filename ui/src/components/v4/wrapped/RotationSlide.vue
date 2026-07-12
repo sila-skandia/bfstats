@@ -7,6 +7,20 @@
 
     <div class="rotation-content">
       <div class="rotation-layout">
+        <!-- Mobile Highlights (visible only on mobile) -->
+        <div class="mobile-highlights-row mobile-only-flex">
+          <div class="highlight-card">
+            <div class="mm-eyebrow">Most Played</div>
+            <div class="highlight-title">{{ data.rotation.mostPlayedMapName || 'None' }}</div>
+            <div class="highlight-sub"><span class="text-accent">{{ data.rotation.mostPlayedRounds.toLocaleString() }} rds</span> · {{ data.rotation.mostPlayedPercentage }}%</div>
+          </div>
+          <div v-if="topPlayerOnMostPlayed" class="highlight-card">
+            <div class="mm-eyebrow">Top Performer</div>
+            <div class="highlight-title">{{ topPlayerOnMostPlayed.playerName }}</div>
+            <div class="highlight-sub"><span class="text-accent">{{ topPlayerOnMostPlayed.firstPlaceCount }} #1 finishes</span></div>
+          </div>
+        </div>
+
         <!-- Left Side: Top Maps List with Bars -->
         <div class="maps-list">
           <div 
@@ -17,7 +31,7 @@
           >
             <div class="map-labels">
               <span class="map-name">{{ map.mapName }}</span>
-              <span class="map-rounds">{{ map.roundsPlayed.toLocaleString() }} rounds</span>
+              <span class="map-rounds">{{ map.roundsPlayed.toLocaleString() }} rds</span>
             </div>
             <div class="map-bar-container">
               <div 
@@ -25,8 +39,8 @@
                 :style="{ width: getBarWidth(map.roundsPlayed), backgroundColor: 'var(--mm-accent)', animationDelay: (idx * 0.08) + 's' }"
               ></div>
             </div>
-            <!-- Top placement details under map -->
-            <div class="map-placements" v-if="map.topPlacements && map.topPlacements.length > 0">
+            <!-- Top placement details under map: Desktop version -->
+            <div class="map-placements desktop-only-flex" v-if="map.topPlacements && map.topPlacements.length > 0">
               <span class="placements-title">🏆 Top Wins:</span>
               <span 
                 v-for="(placement, pIdx) in map.topPlacements" 
@@ -36,11 +50,15 @@
                 {{ pIdx + 1 }}. {{ placement.playerName }} ({{ placement.firstPlaceCount }})
               </span>
             </div>
+            <!-- Top placement details under map: Mobile version -->
+            <div class="map-placements-mobile mobile-only-block" v-if="map.topPlacements && map.topPlacements.length > 0">
+              Top: {{ map.topPlacements[0].playerName }} ({{ map.topPlacements[0].firstPlaceCount }})
+            </div>
           </div>
         </div>
 
-        <!-- Right Side: Most Played Highlight -->
-        <div class="most-played-hero animate-rise-up" style="animation-delay: 0.4s">
+        <!-- Right Side: Most Played Highlight (desktop only) -->
+        <div class="most-played-hero animate-rise-up desktop-only-block" style="animation-delay: 0.4s">
           <div class="mm-eyebrow">MOST PLAYED</div>
           <h3 class="hero-map-name">{{ data.rotation.mostPlayedMapName || 'None' }}</h3>
           <div class="hero-stats-mono">
@@ -280,5 +298,88 @@ const topPlayerOnMostPlayed = computed(() => {
   color: var(--mm-ink);
   margin-bottom: 4px;
   line-height: 1.1;
+}
+
+.desktop-only-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.desktop-only-flex {
+  display: flex;
+}
+
+.mobile-only-block,
+.mobile-only-flex {
+  display: none !important;
+}
+
+@media (max-width: 1023px) {
+  .desktop-only-block,
+  .desktop-only-flex {
+    display: none !important;
+  }
+  .mobile-only-block {
+    display: block !important;
+  }
+  .mobile-only-flex {
+    display: flex !important;
+  }
+  
+  .rotation-layout {
+    flex-direction: column !important;
+    gap: 22px !important;
+  }
+  
+  .mobile-highlights-row {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+  }
+  
+  .highlight-card {
+    flex: 1;
+    border: 1px solid var(--mm-rule);
+    border-radius: var(--mm-radius-sm, 2px);
+    padding: 14px;
+    background: var(--mm-bg);
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .highlight-card .mm-eyebrow {
+    font-size: 9px !important;
+    margin-bottom: 6px;
+  }
+  
+  .highlight-title {
+    font-family: var(--mm-font-display);
+    font-size: 17px;
+    line-height: 1.1;
+    color: var(--mm-ink);
+    margin-bottom: 8px;
+  }
+  
+  .highlight-sub {
+    font-family: var(--mm-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--mm-ink-muted);
+    text-transform: uppercase;
+  }
+  
+  .map-row {
+    padding: 16px 0 !important;
+  }
+  
+  .map-placements-mobile {
+    font-family: var(--mm-font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.04em;
+    color: var(--mm-ink-muted);
+    margin-top: 8px;
+    text-align: left;
+  }
 }
 </style>

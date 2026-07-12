@@ -6,7 +6,7 @@
         <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">
           {{ data.yearInNumbers?.totalDecorations?.toLocaleString() || '12,406' }} medals. Seven made the wall.
         </h2>
-        <div class="dot-nav animate-rise-up" style="animation-delay: 0.15s">
+        <div class="dot-nav animate-rise-up desktop-only-flex" style="animation-delay: 0.15s">
           <span 
             v-for="(dot, idx) in dDots" 
             :key="idx" 
@@ -17,77 +17,107 @@
           ></span>
         </div>
       </div>
-      <span class="mm-chip animate-rise-up" style="animation-delay: 0.15s">MILESTONES & PODIUMS</span>
+      <span class="mm-chip mm-chip--accent animate-rise-up" style="animation-delay: 0.15s">MILESTONES & PODIUMS</span>
     </div>
 
     <div class="decorations-content">
-      <div class="reel-view">
-        <!-- Hero: In Transition -->
-        <div 
-          v-if="dCur >= 0 && dPhase === 'in'" 
-          class="hero-card hero-in"
-        >
-          <img :src="dHero.img" :alt="dHero.label" class="hero-img" />
-          <div class="hero-text">
-            <div class="mm-eyebrow hero-label">{{ dHero.label }}</div>
-            <div class="hero-player">{{ dHero.player }}</div>
-            <div class="hero-stat-row">
-              <span class="hero-stat">{{ dHero.stat }}</span>
-              <span class="mm-eyebrow hero-unit">{{ dHero.unit }}</span>
+      <!-- Desktop Layout Wrapper -->
+      <div class="desktop-layout-wrapper desktop-only-flex">
+        <div class="reel-view">
+          <!-- Hero: In Transition -->
+          <div 
+            v-if="dCur >= 0 && dPhase === 'in'" 
+            class="hero-card hero-in"
+          >
+            <img :src="dHero.img" :alt="dHero.label" class="hero-img" />
+            <div class="hero-text">
+              <div class="mm-eyebrow hero-label">{{ dHero.label }}</div>
+              <div class="hero-player">{{ dHero.player }}</div>
+              <div class="hero-stat-row">
+                <span class="hero-stat">{{ dHero.stat }}</span>
+                <span class="mm-eyebrow hero-unit">{{ dHero.unit }}</span>
+              </div>
+              <div class="hero-desc">{{ dHero.desc }}</div>
             </div>
-            <div class="hero-desc">{{ dHero.desc }}</div>
+          </div>
+
+          <!-- Hero: Out Transition -->
+          <div 
+            v-if="dCur >= 0 && dPhase === 'out'" 
+            class="hero-card hero-out"
+          >
+            <img :src="dHero.img" :alt="dHero.label" class="hero-img" />
+            <div class="hero-text">
+              <div class="mm-eyebrow hero-label">{{ dHero.label }}</div>
+              <div class="hero-player">{{ dHero.player }}</div>
+              <div class="hero-stat-row">
+                <span class="hero-stat">{{ dHero.stat }}</span>
+                <span class="mm-eyebrow hero-unit">{{ dHero.unit }}</span>
+              </div>
+              <div class="hero-desc">{{ dHero.desc }}</div>
+            </div>
+          </div>
+
+          <!-- Finished Screen -->
+          <div v-if="dDone" class="replay-card">
+            <div class="replay-content">
+              <div class="mm-eyebrow replay-label">THE {{ data.year }} WALL</div>
+              <div class="replay-title">Seven earned their place.</div>
+              <button @click="startDeco" class="mm-btn mm-btn--outline replay-btn">↻ Replay</button>
+            </div>
           </div>
         </div>
 
-        <!-- Hero: Out Transition -->
-        <div 
-          v-if="dCur >= 0 && dPhase === 'out'" 
-          class="hero-card hero-out"
-        >
-          <img :src="dHero.img" :alt="dHero.label" class="hero-img" />
-          <div class="hero-text">
-            <div class="mm-eyebrow hero-label">{{ dHero.label }}</div>
-            <div class="hero-player">{{ dHero.player }}</div>
-            <div class="hero-stat-row">
-              <span class="hero-stat">{{ dHero.stat }}</span>
-              <span class="mm-eyebrow hero-unit">{{ dHero.unit }}</span>
+        <!-- The Shelf below -->
+        <div class="shelf-grid">
+          <div 
+            v-for="(slot, idx) in dSlots" 
+            :key="idx" 
+            class="shelf-slot"
+          >
+            <div 
+              v-if="slot.filled" 
+              class="filled-card" 
+              :style="{ animation: slot.anim }"
+            >
+              <div class="filled-header">
+                <img :src="slot.img" :alt="slot.label" class="filled-img" />
+                <div class="mm-eyebrow filled-label">{{ slot.label }}</div>
+              </div>
+              <div class="filled-meta">
+                <div class="filled-player">{{ slot.player }}</div>
+                <div class="filled-tile">{{ slot.tile }}</div>
+              </div>
             </div>
-            <div class="hero-desc">{{ dHero.desc }}</div>
-          </div>
-        </div>
-
-        <!-- Finished Screen -->
-        <div v-if="dDone" class="replay-card">
-          <div class="replay-content">
-            <div class="mm-eyebrow replay-label">THE {{ data.year }} WALL</div>
-            <div class="replay-title">Seven earned their place.</div>
-            <button @click="startDeco" class="mm-btn mm-btn--outline replay-btn">↻ Replay</button>
+            <div v-else class="empty-card"></div>
           </div>
         </div>
       </div>
 
-      <!-- The Shelf below -->
-      <div class="shelf-grid">
-        <div 
-          v-for="(slot, idx) in dSlots" 
-          :key="idx" 
-          class="shelf-slot"
-        >
-          <div 
-            v-if="slot.filled" 
-            class="filled-card" 
-            :style="{ animation: slot.anim }"
-          >
-            <div class="filled-header">
-              <img :src="slot.img" :alt="slot.label" class="filled-img" />
-              <div class="mm-eyebrow filled-label">{{ slot.label }}</div>
-            </div>
-            <div class="filled-meta">
-              <div class="filled-player">{{ slot.player }}</div>
-              <div class="filled-tile">{{ slot.tile }}</div>
+      <!-- Mobile Layout Wrapper -->
+      <div class="mobile-layout-wrapper mobile-only-flex">
+        <!-- Hero section (Elite Warrior · Legend) -->
+        <div class="mobile-legend-hero">
+          <img :src="DECO[6].img" alt="" class="mobile-hero-img" />
+          <div class="mobile-hero-details">
+            <div class="mm-eyebrow">Elite Warrior · Legend</div>
+            <div class="mobile-hero-player">{{ DECO[6].player }}</div>
+            <div class="mobile-hero-rounds">
+              <span class="text-danger">{{ DECO[6].stat }}</span> Consecutive Rds
             </div>
           </div>
-          <div v-else class="empty-card"></div>
+        </div>
+        <p class="mobile-legend-desc">{{ mobileLegendDesc }}</p>
+
+        <!-- 2x3 Grid of remaining 6 decorations -->
+        <div class="mobile-medals-grid">
+          <div v-for="(md, idx) in mobileMedals" :key="idx" class="mobile-medal-card">
+            <div class="mobile-medal-header">
+              <img :src="md.img" alt="" class="mobile-medal-img" />
+              <span class="mobile-medal-label">{{ md.label }}</span>
+            </div>
+            <div class="mobile-medal-who">{{ md.who }}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -222,14 +252,73 @@ const dDots = computed(() => {
   }))
 })
 
+// Mobile specific computed helpers
+const mobileLegendDesc = computed(() => {
+  const val = props.data.decorations.eliteWarriorLegend?.value || 0
+  if (val > 0) {
+    return `${props.data.decorations.eliteWarriorLegend?.playerName} held the Legendary K/D tier (≥ 5.0 over 200 rounds) for ${val} consecutive rounds.`
+  } else {
+    return 'Nobody held the Legendary K/D tier (≥ 5.0 over 200 rounds) for a single consecutive round. The wall stays honest.'
+  }
+})
+
+const mobileMedals = computed(() => {
+  const d = props.data.decorations
+  return [
+    {
+      img: getAchievementImage('kill_streak_25'),
+      label: 'Kill Streak',
+      who: `${d.mostStreaksOf25.playerName || 'None'} · ${d.mostStreaksOf25.value}`
+    },
+    {
+      img: getAchievementImage('kill_streak_50'),
+      label: 'Streak',
+      who: `${d.streakOfTheYear?.playerName || 'None'} · ${d.streakOfTheYear?.streak || 0}`
+    },
+    {
+      img: getAchievementImage('round_placement_1'),
+      label: 'Podium',
+      who: `${d.mostPodiumFinishes.playerName || 'None'} · ${d.mostPodiumFinishes.value}`
+    },
+    {
+      img: getAchievementImage(d.prestigiousMilestone?.achievementId || 'elite_warrior_legend'),
+      label: 'Prestige',
+      who: `${d.prestigiousMilestone?.playerName || 'None'} · ${d.prestigiousMilestone?.achievementName || 'Milestone'}`
+    },
+    {
+      img: getAchievementImage(d.mostLegendAchievements?.achievementId || 'team_victory_legendary'),
+      label: 'Most Legend',
+      who: `${d.mostLegendAchievements?.playerName || 'None'} · ${d.mostLegendAchievements?.value || 0}`
+    },
+    {
+      img: getAchievementImage('elite_warrior_gold'),
+      label: 'Elite W.',
+      who: `${d.eliteWarriorGold?.playerName || 'None'} · Gold`
+    }
+  ]
+})
+
 // Control functions
+function selectDeco(idx: number) {
+  dCur.value = idx
+  dShelf.value = Array.from({ length: idx }, (_, i) => i)
+  dPhase.value = 'in'
+  dDone.value = false
+  emit('pause')
+  
+  if (dtTimeout) clearTimeout(dtTimeout)
+  if (nextTimeout) clearTimeout(nextTimeout)
+}
+
 function startDeco() {
   if (dtTimeout) clearTimeout(dtTimeout)
   if (nextTimeout) clearTimeout(nextTimeout)
   
-  // Check prefers-reduced-motion
+  // Check prefers-reduced-motion or if viewport is mobile
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches
-  if (reduce) {
+  const isMobileViewport = window.innerWidth <= 1023
+  
+  if (reduce || isMobileViewport) {
     dCur.value = -1
     dShelf.value = DECO.value.map((_, i) => i)
     dDone.value = true
@@ -319,6 +408,7 @@ onUnmounted(() => {
   color: var(--mm-ink);
   margin: 0;
   flex: 1;
+  text-align: left;
 }
 
 .dot-nav {
@@ -332,6 +422,7 @@ onUnmounted(() => {
   height: 3px;
   border-radius: 1px;
   transition: background 0.3s ease;
+  cursor: pointer;
 }
 
 .mm-chip {
@@ -343,6 +434,7 @@ onUnmounted(() => {
   border-radius: var(--mm-radius-sm, 2px);
   text-transform: uppercase;
   display: inline-block;
+  margin-top: 4px;
 }
 
 .decorations-content {
@@ -351,6 +443,17 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 400px;
+}
+
+.desktop-layout-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex: 1;
+}
+
+.mobile-layout-wrapper {
+  display: none !important;
 }
 
 .reel-view {
@@ -477,15 +580,6 @@ onUnmounted(() => {
   width: 100%;
 }
 
-@media (max-width: 768px) {
-  .shelf-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-  .shelf-slot:nth-child(n+5) {
-    display: none;
-  }
-}
-
 .shelf-slot {
   height: 105px;
   min-width: 0;
@@ -605,6 +699,140 @@ onUnmounted(() => {
   100% {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Mobile CSS overrides */
+@media (max-width: 1023px) {
+  .desktop-layout-wrapper {
+    display: none !important;
+  }
+  
+  .mobile-layout-wrapper {
+    display: flex !important;
+    flex-direction: column;
+    width: 100%;
+    margin-top: 10px;
+  }
+  
+  .mobile-legend-hero {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-top: 10px;
+    text-align: left;
+  }
+  
+  .mobile-hero-img {
+    width: 88px;
+    height: 88px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  
+  .mobile-hero-details {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .mobile-hero-details .mm-eyebrow {
+    font-size: 11px !important;
+    letter-spacing: 0.13em;
+    color: var(--mm-accent);
+    text-transform: uppercase;
+  }
+  
+  .mobile-hero-player {
+    font-family: var(--mm-font-display);
+    font-weight: 300;
+    font-size: 40px;
+    line-height: 1;
+    color: var(--mm-ink);
+    margin: 5px 0 0;
+  }
+  
+  .mobile-hero-rounds {
+    margin-top: 8px;
+    font-family: var(--mm-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mm-ink-muted);
+  }
+  
+  .mobile-hero-rounds .text-danger {
+    color: var(--mm-danger);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  
+  .mobile-legend-desc {
+    margin: 16px 0 0;
+    font-family: var(--mm-font-display);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--mm-ink-soft);
+    text-align: left;
+  }
+  
+  .mobile-medals-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 24px;
+    width: 100%;
+  }
+  
+  .mobile-medal-card {
+    border: 1px solid var(--mm-rule);
+    border-radius: var(--mm-radius-sm, 2px);
+    padding: 11px;
+    background: var(--mm-bg);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+  }
+  
+  .mobile-medal-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+  
+  .mobile-medal-img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  
+  .mobile-medal-label {
+    font-family: var(--mm-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mm-ink-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+  
+  .mobile-medal-who {
+    margin-top: 10px;
+    font-family: var(--mm-font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.02em;
+    color: var(--mm-ink-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+    text-align: left;
   }
 }
 </style>

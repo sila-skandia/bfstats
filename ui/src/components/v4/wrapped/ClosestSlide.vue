@@ -13,13 +13,30 @@
           class="battle-card-item animate-rise-up"
           :style="{ animationDelay: ((idx * 0.08) + 0.15) + 's' }"
         >
-          <div class="battle-date-mono">{{ formatDate(battle.date) }}</div>
-          <div class="battle-map-name">{{ battle.mapName }}</div>
-          <div class="battle-margin-val">{{ battle.ticketsMargin }}</div>
-          <div class="mm-eyebrow">TICKET MARGIN</div>
-          <div class="battle-details-row">
-            <span><strong class="text-ink">{{ battle.playersCount }}</strong> SOLDIERS</span>
-            <span>{{ Math.round(battle.durationMinutes) }} MINS</span>
+          <!-- Desktop Card Layout -->
+          <div class="desktop-card-layout desktop-only-flex">
+            <div class="battle-date-mono">{{ formatDate(battle.date) }}</div>
+            <div class="battle-map-name">{{ battle.mapName }}</div>
+            <div class="battle-margin-val">{{ battle.ticketsMargin }}</div>
+            <div class="mm-eyebrow">TICKET MARGIN</div>
+            <div class="battle-details-row">
+              <span><strong class="text-ink">{{ battle.playersCount }}</strong> SOLDIERS</span>
+              <span>{{ Math.round(battle.durationMinutes) }} MINS</span>
+            </div>
+          </div>
+
+          <!-- Mobile Card Layout -->
+          <div class="mobile-card-layout mobile-only-flex">
+            <div class="battle-margin-val">{{ battle.ticketsMargin }}</div>
+            <div class="battle-right-details">
+              <div class="battle-date-mono">{{ formatDate(battle.date) }} · TICKET MARGIN</div>
+              <div class="battle-map-name">{{ battle.mapName }}</div>
+              <div class="battle-details-row">
+                <span><strong class="text-ink">{{ battle.playersCount }}</strong> soldiers</span>
+                <span class="divider">·</span>
+                <span>{{ Math.round(battle.durationMinutes) }} mins</span>
+              </div>
+            </div>
           </div>
         </div>
         <div v-if="data.closestBattles.length === 0" class="empty-state">
@@ -179,5 +196,67 @@ function formatDate(dateStr: string): string {
   font-family: var(--mm-font-mono);
   font-size: 11px;
   width: 100%;
+}
+
+.desktop-only-flex {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.mobile-only-flex {
+  display: none !important;
+}
+
+@media (max-width: 1023px) {
+  .desktop-only-flex {
+    display: none !important;
+  }
+  .mobile-only-flex {
+    display: flex !important;
+  }
+  
+  .battle-card-item {
+    padding: 18px 20px !important;
+  }
+  
+  .mobile-card-layout {
+    display: flex !important;
+    align-items: center;
+    gap: 18px;
+    width: 100%;
+    text-align: left;
+  }
+  
+  .mobile-card-layout .battle-margin-val {
+    font-size: 52px !important;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  
+  .battle-right-details {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .battle-right-details .battle-map-name {
+    margin: 4px 0 6px 0 !important;
+    font-size: 19px !important;
+  }
+  
+  .battle-right-details .battle-details-row {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    border-top: none !important;
+    font-size: 10px !important;
+    gap: 6px !important;
+  }
+  
+  .divider {
+    color: var(--mm-ink-faint);
+  }
 }
 </style>
