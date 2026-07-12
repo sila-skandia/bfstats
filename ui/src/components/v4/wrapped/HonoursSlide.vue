@@ -255,10 +255,6 @@ defineProps<{
 }
 
 @media (max-width: 1023px) {
-  .board-card .board-row:nth-child(n+5) {
-    display: none !important;
-  }
-  
   .volume-title {
     display: none;
   }

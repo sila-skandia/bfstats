@@ -684,6 +684,11 @@ function endHold() {
 }
 
 /* Deep selector overrides for inner slide typography */
+:deep(.wrapped-slide) {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
 :deep(.slide-container .mm-eyebrow),
 :deep(.mobile-content-container .mm-eyebrow) {
   font-size: 13.5px !important;
@@ -1012,12 +1017,13 @@ function endHold() {
   position: absolute;
   inset: 64px 0 78px;
   display: flex;
+  justify-content: space-between;
   z-index: 40;
   pointer-events: none;
 }
 
 .tap-zone {
-  width: 50%;
+  width: 20%;
   height: 100%;
   pointer-events: auto;
   cursor: pointer;
@@ -1038,7 +1044,6 @@ function endHold() {
   padding: 8px 20px 28px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
 }
 
 .mobile-bottom-nav {
