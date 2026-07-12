@@ -89,7 +89,7 @@ defineEmits<{
   flex-direction: column;
   box-sizing: border-box;
   cursor: pointer;
-  padding: 40px;
+  padding: 0;
 }
 
 @media (min-width: 1024px) {
@@ -98,6 +98,7 @@ defineEmits<{
     grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
     gap: 46px;
     align-items: stretch;
+    padding: 40px;
   }
 }
 

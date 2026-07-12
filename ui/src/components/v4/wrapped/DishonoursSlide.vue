@@ -148,10 +148,16 @@ defineProps<{
 .dishonour-card {
   border: 1px solid var(--mm-rule);
   border-radius: var(--mm-radius-sm, 2px);
-  padding: 12px 14px;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
   background-color: var(--mm-bg);
+}
+
+@media (min-width: 1024px) {
+  .dishonour-card {
+    padding: 12px 14px;
+  }
 }
 
 .mm-eyebrow {

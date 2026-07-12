@@ -360,9 +360,32 @@ function copyShareMessage() {
   color: var(--mm-ink-faint);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1023px) {
   .share-layout {
     gap: 24px;
+  }
+  
+  .actions-desc,
+  .actions-note {
+    display: none !important;
+  }
+  
+  .share-actions {
+    padding-top: 0;
+    width: 100%;
+  }
+  
+  .buttons-row {
+    display: flex;
+    width: 100%;
+    gap: 10px;
+  }
+  
+  .action-btn {
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+    padding: 10px 8px !important;
   }
 }
 </style>
