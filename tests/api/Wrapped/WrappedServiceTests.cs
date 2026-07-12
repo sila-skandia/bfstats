@@ -379,4 +379,115 @@ public class WrappedServiceTests : IDisposable
         Assert.Equal("TestPlayer", result.PlayerName);
         Assert.Equal(99, result.YearInNumbers.RoundsPlayed);
     }
+
+    [Fact]
+    public async Task GetPlayerWrappedAsync_ConsolidatesTeamVictoryAchievementsAndDeterminesHighestTier()
+    {
+        // Arrange
+        var playerName = "GroupedTestPlayer";
+        var serverGuid = "test-server-guid";
+        
+        var server = new GameServer
+        {
+            Guid = serverGuid,
+            Name = "Test Server",
+            Ip = "127.0.0.1",
+            Port = 14567,
+            GameId = "bf1942",
+            Timezone = "UTC"
+        };
+        _dbContext.Servers.Add(server);
+
+        var player = new Player
+        {
+            Name = playerName,
+            FirstSeen = new DateTime(2025, 1, 1),
+            LastSeen = new DateTime(2026, 12, 31)
+        };
+        _dbContext.Players.Add(player);
+
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = serverGuid,
+            PlayerName = playerName,
+            Year = 2026,
+            Week = 23,
+            TotalRounds = 5,
+            TotalKills = 120,
+            TotalDeaths = 30,
+            TotalPlayTimeMinutes = 150
+        });
+
+        // Add 3 team victories with different tiers
+        var startInstant = Instant.FromUtc(2026, 6, 1, 12, 0, 0);
+        _dbContext.PlayerAchievements.Add(new PlayerAchievement
+        {
+            PlayerName = playerName,
+            AchievementId = "team_victory",
+            AchievementName = "Team Victory",
+            AchievementType = "team_victory",
+            Tier = "bronze",
+            AchievedAt = startInstant,
+            ServerGuid = serverGuid,
+            Game = "bf1942"
+        });
+        _dbContext.PlayerAchievements.Add(new PlayerAchievement
+        {
+            PlayerName = playerName,
+            AchievementId = "team_victory",
+            AchievementName = "Team Victory",
+            AchievementType = "team_victory",
+            Tier = "gold",
+            AchievedAt = startInstant + Duration.FromDays(1),
+            ServerGuid = serverGuid,
+            Game = "bf1942"
+        });
+        _dbContext.PlayerAchievements.Add(new PlayerAchievement
+        {
+            PlayerName = playerName,
+            AchievementId = "team_victory_switched",
+            AchievementName = "Team Victory (Team Switched)",
+            AchievementType = "team_victory_switched",
+            Tier = "silver",
+            AchievedAt = startInstant + Duration.FromDays(2),
+            ServerGuid = serverGuid,
+            Game = "bf1942"
+        });
+
+        // Add a different achievement
+        _dbContext.PlayerAchievements.Add(new PlayerAchievement
+        {
+            PlayerName = playerName,
+            AchievementId = "kill_streak_5",
+            AchievementName = "First Blood",
+            AchievementType = "kill_streak",
+            Tier = "bronze",
+            AchievedAt = startInstant + Duration.FromDays(3),
+            ServerGuid = serverGuid,
+            Game = "bf1942"
+        });
+
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetPlayerWrappedAsync(playerName, serverGuid, 2026);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.NotNull(result.Medals.AchievementsBreakdown);
+        
+
+        // Should have exactly 2 unique types of achievements: team_victory and kill_streak_5
+        Assert.Equal(2, result.Medals.AchievementsBreakdown.Count);
+
+        var teamVictoryGroup = result.Medals.AchievementsBreakdown.Find(a => a.AchievementId == "team_victory");
+        Assert.NotNull(teamVictoryGroup);
+        Assert.Equal(3, teamVictoryGroup.Count); // 1 bronze + 1 gold + 1 silver switched
+        Assert.Equal("gold", teamVictoryGroup.Tier); // gold is highest weight
+
+        var killStreakGroup = result.Medals.AchievementsBreakdown.Find(a => a.AchievementId == "kill_streak_5");
+        Assert.NotNull(killStreakGroup);
+        Assert.Equal(1, killStreakGroup.Count);
+        Assert.Equal("bronze", killStreakGroup.Tier);
+    }
 }

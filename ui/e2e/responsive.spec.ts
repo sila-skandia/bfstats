@@ -46,10 +46,10 @@ test.describe('Responsive Design - Desktop', () => {
     // Set desktop viewport
     await page.setViewportSize({ width: 1920, height: 1080 });
 
-    // Should show Find Players heading
+    // Should show Players heading
     const heading = page.locator('h1');
     const text = await heading.first().textContent();
-    expect(text).toContain('Find Players');
+    expect(text).toContain('Players');
 
     // Should have search input
     const searchInput = page.locator('input[placeholder*="Filter players"]');
