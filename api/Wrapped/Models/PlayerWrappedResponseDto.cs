@@ -13,7 +13,8 @@ public record PlayerWrappedResponseDto(
     PlayerFavouriteMapDto FavouriteMap,
     PlayerMedalsDto Medals,
     List<PlayerBestMomentDto> BestMoments,
-    List<PlayerTeammateDto> Squad
+    List<PlayerTeammateDto> Squad,
+    List<PlayerServerRankingDto> ServerRankings
 );
 
 public record PlayerYearInNumbersDto(
@@ -22,7 +23,18 @@ public record PlayerYearInNumbersDto(
     int TotalDeaths,
     double HoursInCombat,
     double KdRatio,
-    int ServerRank
+    int ServerRank,
+    int KillsRank,
+    int PlacementsRank
+);
+
+public record PlayerServerRankingDto(
+    string ServerGuid,
+    string ServerName,
+    int Rank,
+    int TotalScore,
+    int TotalRankedPlayers,
+    double AveragePing
 );
 
 public record PlayerTrendDto(
