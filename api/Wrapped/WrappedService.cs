@@ -3,6 +3,7 @@ using api.PlayerTracking;
 using api.Wrapped.Models;
 using api.Utils;
 using api.PlayerRelationships;
+using api.Players;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NodaTime;
@@ -916,7 +917,59 @@ public class WrappedService(
                 serverRank = higherScoreCount + 1;
             }
         }
-        var yearInNumbers = new PlayerYearInNumbersDto(roundsPlayed, totalKills, totalDeaths, Math.Round(hoursInCombat, 1), kdRatio, serverRank);
+
+        int killsRank = 1;
+        if (totalKills > 0)
+        {
+            if (serverGuid != "global")
+            {
+                var higherKillsCount = await dbContext.PlayerServerStats
+                    .Where(pss => pss.ServerGuid == serverGuid && pss.Year == year)
+                    .GroupBy(pss => pss.PlayerName)
+                    .Select(g => new { PlayerName = g.Key, Kills = g.Sum(pss => pss.TotalKills) })
+                    .CountAsync(x => x.Kills > totalKills);
+                killsRank = higherKillsCount + 1;
+            }
+            else
+            {
+                var higherKillsCount = await dbContext.PlayerStatsMonthly
+                    .Where(psm => psm.Year == year)
+                    .GroupBy(psm => psm.PlayerName)
+                    .Select(g => new { PlayerName = g.Key, Kills = g.Sum(psm => psm.TotalKills) })
+                    .CountAsync(x => x.Kills > totalKills);
+                killsRank = higherKillsCount + 1;
+            }
+        }
+
+        var playerPlacementsQuery = dbContext.PlayerAchievements
+            .Where(pa => pa.PlayerName == playerName && pa.AchievementType == "round_placement" && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
+
+        if (serverGuid != "global")
+        {
+            playerPlacementsQuery = playerPlacementsQuery.Where(pa => pa.ServerGuid == serverGuid);
+        }
+
+        int playerPlacements = await playerPlacementsQuery.CountAsync();
+
+        int placementsRank = 1;
+        if (playerPlacements > 0)
+        {
+            var higherPlacementsQuery = dbContext.PlayerAchievements
+                .Where(pa => pa.AchievementType == "round_placement" && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
+
+            if (serverGuid != "global")
+            {
+                higherPlacementsQuery = higherPlacementsQuery.Where(pa => pa.ServerGuid == serverGuid);
+            }
+
+            var higherPlacementsCount = await higherPlacementsQuery
+                .GroupBy(pa => pa.PlayerName)
+                .Select(g => new { PlayerName = g.Key, Count = g.Count() })
+                .CountAsync(x => x.Count > playerPlacements);
+            placementsRank = higherPlacementsCount + 1;
+        }
+
+        var yearInNumbers = new PlayerYearInNumbersDto(roundsPlayed, totalKills, totalDeaths, Math.Round(hoursInCombat, 1), kdRatio, serverRank, killsRank, placementsRank);
 
         // 2. Trend
         List<double> monthlyKDs = new();
@@ -1346,6 +1399,35 @@ public class WrappedService(
             }
         }
 
+        // 7. Server Rankings (Top 2)
+        var serverRankings = new List<PlayerServerRankingDto>();
+        try
+        {
+            var statsService = (IPlayerStatsService?)serviceProvider.GetService(typeof(IPlayerStatsService));
+            if (statsService != null)
+            {
+                var insights = await statsService.GetPlayerInsights(playerName, daysToAnalyze: 1);
+                if (insights?.ServerRankings != null)
+                {
+                    serverRankings = insights.ServerRankings
+                        .OrderBy(r => r.Rank)
+                        .Take(2)
+                        .Select(r => new PlayerServerRankingDto(
+                            r.ServerGuid,
+                            r.ServerName,
+                            r.Rank,
+                            r.TotalScore,
+                            r.TotalRankedPlayers,
+                            r.AveragePing
+                        ))
+                        .ToList();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to calculate server rankings for player wrapped of {PlayerName}", playerName);
+        }
 
 
         return new PlayerWrappedResponseDto(
@@ -1358,7 +1440,8 @@ public class WrappedService(
             favouriteMap,
             medals,
             bestMoments,
-            squad
+            squad,
+            serverRankings
         );
     }
 
