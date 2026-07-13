@@ -11,30 +11,33 @@
           v-for="(battle, idx) in data.closestBattles.slice(0, 3)" 
           :key="idx" 
           class="battle-card-item animate-rise-up"
-          :style="{ animationDelay: ((idx * 0.08) + 0.15) + 's' }"
+          :style="{ animationDelay: ((idx * 0.08) + 0.15) + 's', cursor: 'pointer' }"
+          @click="selectedRoundId = battle.roundId"
         >
           <!-- Desktop Card Layout -->
           <div class="desktop-card-layout desktop-only-flex">
             <div class="battle-date-mono">{{ formatDate(battle.date) }}</div>
             <div class="battle-map-name">{{ battle.mapName }}</div>
-            <div class="battle-margin-val">{{ battle.ticketsMargin }}</div>
-            <div class="mm-eyebrow">TICKET MARGIN</div>
+            <div class="battle-margin-val">{{ (battle.winningTeam || 'Allies').toUpperCase() }} BY {{ battle.ticketsMargin }}</div>
             <div class="battle-details-row">
               <span><strong class="text-ink">{{ battle.playersCount }}</strong> SOLDIERS</span>
               <span>{{ Math.round(battle.durationMinutes) }} MINS</span>
+              <span class="report-link" style="margin-left: auto; color: var(--mm-kd-elite); font-weight: 600;">REPORT &rarr;</span>
             </div>
           </div>
 
           <!-- Mobile Card Layout -->
           <div class="mobile-card-layout mobile-only-flex">
-            <div class="battle-margin-val">{{ battle.ticketsMargin }}</div>
             <div class="battle-right-details">
-              <div class="battle-date-mono">{{ formatDate(battle.date) }} · TICKET MARGIN</div>
+              <div class="battle-date-mono">{{ formatDate(battle.date) }}</div>
               <div class="battle-map-name">{{ battle.mapName }}</div>
+              <div class="battle-margin-val" style="font-size: 22px !important; margin: 4px 0 8px; font-weight: 500; color: var(--mm-danger);">{{ (battle.winningTeam || 'Allies').toUpperCase() }} BY {{ battle.ticketsMargin }}</div>
               <div class="battle-details-row">
                 <span><strong class="text-ink">{{ battle.playersCount }}</strong> soldiers</span>
                 <span class="divider">·</span>
                 <span>{{ Math.round(battle.durationMinutes) }} mins</span>
+                <span class="divider">·</span>
+                <span style="color: var(--mm-kd-elite); font-weight: 600;">report &rarr;</span>
               </div>
             </div>
           </div>
@@ -44,16 +47,39 @@
         </div>
       </div>
     </div>
+
+    <!-- Slideover for inline Round Report -->
+    <Teleport to="body">
+      <div 
+        v-if="selectedRoundId" 
+        class="mm round-report-slideover"
+        @click.self="selectedRoundId = null"
+      >
+        <div class="slideover-content">
+          <div class="slideover-header">
+            <button class="close-btn" @click="selectedRoundId = null">
+              <span>&larr; CLOSE REPORT</span>
+            </button>
+          </div>
+          <div class="slideover-body">
+            <MmRoundReportV2 :round-id="selectedRoundId" />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import type { ServerWrappedData } from '@/services/wrappedService'
+import MmRoundReportV2 from '@/components/v4/MmRoundReportV2.vue'
 
 const props = defineProps<{
   data: ServerWrappedData
 }>()
+
+const selectedRoundId = ref<string | null>(null)
 
 const lowestMargin = computed(() => {
   if (!props.data.closestBattles || props.data.closestBattles.length === 0) return 3
@@ -135,6 +161,12 @@ function formatDate(dateStr: string): string {
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.battle-card-item:hover {
+  border-color: var(--mm-kd-elite);
+  transform: translateY(-2px);
 }
 
 .battle-date-mono {
@@ -148,7 +180,7 @@ function formatDate(dateStr: string): string {
   font-family: var(--mm-font-display);
   font-size: 17px;
   color: var(--mm-ink);
-  margin: 7px 0 12px 0;
+  margin: 7px 0 10px 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -157,19 +189,12 @@ function formatDate(dateStr: string): string {
 
 .battle-margin-val {
   font-family: var(--mm-font-display);
-  font-weight: 300;
-  font-size: 40px;
-  line-height: 1;
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 1.2;
   color: var(--mm-danger);
-}
-
-.mm-eyebrow {
-  font-family: var(--mm-font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
-  color: var(--mm-ink-muted);
+  margin-top: auto;
   text-transform: uppercase;
-  margin-top: 5px;
 }
 
 .battle-details-row {
@@ -228,12 +253,6 @@ function formatDate(dateStr: string): string {
     text-align: left;
   }
   
-  .mobile-card-layout .battle-margin-val {
-    font-size: 52px !important;
-    flex-shrink: 0;
-    line-height: 1;
-  }
-  
   .battle-right-details {
     flex: 1;
     min-width: 0;
@@ -258,5 +277,76 @@ function formatDate(dateStr: string): string {
   .divider {
     color: var(--mm-ink-faint);
   }
+}
+
+/* Slideover Styles */
+.round-report-slideover {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  justify-content: flex-end;
+  animation: fadeIn 0.3s ease;
+}
+
+.slideover-content {
+  width: 95vw;
+  max-width: 1600px;
+  height: 100%;
+  background-color: var(--mm-bg);
+  border-left: 1px solid var(--mm-rule);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.slideover-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--mm-rule);
+  background-color: var(--mm-bg-soft);
+  display: flex;
+  align-items: center;
+}
+
+.close-btn {
+  background: none;
+  border: 1px solid var(--mm-rule);
+  color: var(--mm-ink-muted);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  color: var(--mm-ink);
+  border-color: var(--mm-ink-soft);
+  background-color: var(--mm-bg-mute);
+}
+
+.slideover-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 </style>

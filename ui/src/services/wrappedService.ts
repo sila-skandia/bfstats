@@ -68,6 +68,8 @@ export interface ClosestBattle {
   playersCount: number;
   ticketsMargin: number;
   durationMinutes: number;
+  roundId: string;
+  winningTeam: string;
 }
 
 export interface PrestigiousMilestone {

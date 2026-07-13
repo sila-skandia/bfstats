@@ -61,7 +61,7 @@
             >
               <div class="ranking-badge">RANK #{{ rank.rank }}</div>
               <div class="server-name" :title="rank.serverName">{{ rank.serverName }}</div>
-              <div class="ranking-meta">of {{ rank.totalRankedPlayers.toLocaleString() }} players · {{ Math.round(rank.averagePing) }}ms</div>
+              <div class="ranking-meta">of {{ rank.totalRankedPlayers.toLocaleString() }} players</div>
             </div>
           </div>
         </div>
@@ -195,7 +195,7 @@ const killRatePoints = computed(() => toSparkPoints(props.data.trend.monthlyKill
 
 .mm-eyebrow-small {
   font-family: var(--mm-font-mono);
-  font-size: 9px;
+  font-size: 10.5px;
   letter-spacing: 0.12em;
   color: var(--mm-ink-muted);
   text-transform: uppercase;
@@ -231,16 +231,8 @@ const killRatePoints = computed(() => toSparkPoints(props.data.trend.monthlyKill
 .bottom-grid {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   margin-top: auto;
-}
-
-@media (min-width: 768px) {
-  .bottom-grid {
-    display: grid;
-    grid-template-columns: 1.2fr 0.8fr;
-    gap: 24px;
-  }
 }
 
 .section-title {
@@ -259,7 +251,10 @@ const killRatePoints = computed(() => toSparkPoints(props.data.trend.monthlyKill
   gap: 10px;
 }
 
-@media (min-width: 768px) {
+@media (max-width: 600px) {
+  .maps-grid {
+    grid-template-columns: 1fr;
+  }
   .rankings-grid {
     grid-template-columns: 1fr;
   }
@@ -280,9 +275,9 @@ const killRatePoints = computed(() => toSparkPoints(props.data.trend.monthlyKill
 .map-rank, .ranking-badge {
   font-family: var(--mm-font-mono);
   font-weight: 600;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.1em;
-  color: var(--mm-accent-soft);
+  color: var(--mm-kd-elite);
   text-transform: uppercase;
 }
 

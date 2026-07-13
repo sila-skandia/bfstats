@@ -150,5 +150,7 @@ public record ClosestBattleDto(
     Instant Date,
     int PlayersCount,
     int TicketsMargin,
-    int DurationMinutes
+    int DurationMinutes,
+    string RoundId,
+    string WinningTeam
 );
