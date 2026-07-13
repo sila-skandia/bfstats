@@ -737,7 +737,9 @@ public class WrappedService(
                 Instant.FromDateTimeUtc(DateTime.SpecifyKind(r.StartTime, DateTimeKind.Utc)),
                 r.ParticipantCount ?? 0,
                 Math.Abs(r.Tickets1!.Value - r.Tickets2!.Value),
-                r.DurationMinutes ?? 0
+                r.DurationMinutes ?? 0,
+                r.RoundId,
+                r.Tickets1.Value > r.Tickets2.Value ? (r.Team1Label ?? "Allies") : (r.Team2Label ?? "Axis")
             ))
             .ToListAsync();
 

@@ -2,7 +2,6 @@
   <div class="wrapped-slide share-slide animate-line-in">
     <div class="slide-header">
       <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">08 — Share Card</span>
-      <h2 class="slide-title animate-rise-up" style="animation-delay: 0.1s">Take it with you.</h2>
     </div>
 
     <div class="share-layout">

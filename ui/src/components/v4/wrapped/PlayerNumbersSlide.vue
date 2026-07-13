@@ -35,15 +35,26 @@
         </div>
       </div>
 
-      <div class="numbers-footer animate-rise-up" style="animation-delay: 0.55s">
-        K/D RATIO <span class="text-k">{{ data.yearInNumbers.kdRatio.toFixed(2) }}</span>
-        <span class="divider">·</span>
-        SCORE RANK <span class="text-accent">#{{ data.yearInNumbers.serverRank }}</span>
-        <span class="divider">·</span>
-        KILLS RANK <span class="text-accent">#{{ data.yearInNumbers.killsRank }}</span>
-        <span class="divider">·</span>
-        PLACEMENTS RANK <span class="text-accent">#{{ data.yearInNumbers.placementsRank }}</span>
-        ON <span class="text-strong">{{ data.serverName }}</span>
+      <div class="numbers-footer">
+        <div class="footer-row animate-rise-up" style="animation-delay: 0.55s">
+          K/D RATIO <span class="text-k highlight">{{ data.yearInNumbers.kdRatio.toFixed(2) }}</span>
+          <span class="divider">·</span>
+          PLAYED ON <span class="text-strong highlight">{{ data.serverName }}</span>
+        </div>
+        <div class="footer-row footer-ranks animate-rise-up" style="animation-delay: 0.65s">
+          <div class="rank-item">
+            <span class="rank-label">SCORE RANK</span>
+            <span class="rank-val">#{{ data.yearInNumbers.serverRank }}</span>
+          </div>
+          <div class="rank-item">
+            <span class="rank-label">KILLS RANK</span>
+            <span class="rank-val">#{{ data.yearInNumbers.killsRank }}</span>
+          </div>
+          <div class="rank-item">
+            <span class="rank-label">PLACEMENTS RANK</span>
+            <span class="rank-val">#{{ data.yearInNumbers.placementsRank }}</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -175,7 +186,7 @@ defineEmits<{
 
 .mm-eyebrow-small {
   font-family: var(--mm-font-mono);
-  font-size: 9px;
+  font-size: 10.5px;
   letter-spacing: 0.12em;
   color: var(--mm-ink-muted);
   margin-top: 8px;
@@ -191,7 +202,7 @@ defineEmits<{
 }
 
 .text-accent {
-  color: var(--mm-accent-soft);
+  color: var(--mm-kd-elite);
   font-weight: 600;
 }
 
@@ -200,16 +211,57 @@ defineEmits<{
 }
 
 .numbers-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 20px;
+}
+
+.footer-row {
   font-family: var(--mm-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--mm-ink-muted);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.footer-row .highlight {
+  font-size: 13px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+.footer-ranks {
+  display: flex;
+  gap: 28px;
+}
+
+.rank-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.rank-label {
   font-size: 10px;
   letter-spacing: 0.1em;
-  color: var(--mm-ink-muted);
-  margin-top: 20px;
-  line-height: 1.5;
+  color: var(--mm-ink-soft);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.rank-val {
+  font-family: var(--mm-font-display);
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--mm-kd-elite);
 }
 
 .divider {
   color: var(--mm-ink-faint);
-  margin: 0 8px;
+  margin: 0 10px;
 }
 </style>
