@@ -38,7 +38,12 @@
       <div class="numbers-footer animate-rise-up" style="animation-delay: 0.55s">
         K/D RATIO <span class="text-k">{{ data.yearInNumbers.kdRatio.toFixed(2) }}</span>
         <span class="divider">·</span>
-        RANK <span class="text-accent">#{{ data.yearInNumbers.serverRank }}</span> ON <span class="text-strong">{{ data.serverName }}</span>
+        SCORE RANK <span class="text-accent">#{{ data.yearInNumbers.serverRank }}</span>
+        <span class="divider">·</span>
+        KILLS RANK <span class="text-accent">#{{ data.yearInNumbers.killsRank }}</span>
+        <span class="divider">·</span>
+        PLACEMENTS RANK <span class="text-accent">#{{ data.yearInNumbers.placementsRank }}</span>
+        ON <span class="text-strong">{{ data.serverName }}</span>
       </div>
     </div>
 

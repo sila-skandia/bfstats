@@ -162,6 +162,8 @@ export interface PlayerYearInNumbers {
   hoursInCombat: number;
   kdRatio: number;
   serverRank: number;
+  killsRank: number;
+  placementsRank: number;
 }
 
 export interface PlayerMapRank {
@@ -230,6 +232,15 @@ export interface PlayerTeammate {
   sharedRounds: number;
 }
 
+export interface PlayerServerRanking {
+  serverGuid: string;
+  serverName: string;
+  rank: number;
+  totalScore: number;
+  totalRankedPlayers: number;
+  averagePing: number;
+}
+
 export interface PlayerWrappedData {
   playerName: string;
   serverGuid: string;
@@ -241,6 +252,7 @@ export interface PlayerWrappedData {
   medals: PlayerMedals;
   bestMoments: PlayerBestMoment[];
   squad: PlayerTeammate[];
+  serverRankings: PlayerServerRanking[];
 }
 
 /**
