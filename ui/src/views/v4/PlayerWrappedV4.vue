@@ -73,7 +73,7 @@
                   ></div>
                 </div>
               </div>
-              
+
               <div class="stage-toolbar">
                 <span class="stage-chapter-info">
                   CHAPTER {{ String(currentSlide + 1).padStart(2, '0') }} / {{ String(chapters.length).padStart(2, '0') }}
@@ -152,9 +152,9 @@
         <!-- Tap Zones -->
         <div class="mobile-tap-zones">
           <div class="tap-zone tap-left" @click="prevSlide(true)"></div>
-          <div 
-            class="tap-zone tap-right" 
-            @click="nextSlide(true)" 
+          <div
+            class="tap-zone tap-right"
+            @click="nextSlide(true)"
             @mousedown="startHold"
             @mouseup="endHold"
             @touchstart="startHold"
@@ -220,9 +220,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { fetchPlayerWrapped, type PlayerWrappedData } from '@/services/wrappedService'
-import { useAuth } from '@/composables/useAuth'
 import clippyLogo from '@/assets/clippy_my_boi.webp'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
 
@@ -284,9 +283,7 @@ const slideComponents = [
 const fxSmokeBg = { backgroundImage: `url(${fxSmoke})` }
 const fxEmbersBg = { backgroundImage: `url(${fxEmbers})` }
 
-const { isSupport } = useAuth()
 const route = useRoute()
-const router = useRouter()
 
 // Mouse parallax — drives --par-x / --par-y CSS vars consumed by the hero layers
 const rootEl = ref<HTMLElement | null>(null)
@@ -341,7 +338,7 @@ const ringOffset = computed(() => {
 
 let autoAdvanceTimer: any = null
 let progressTimer: any = null
-const SLIDE_DURATION = 7000 
+const SLIDE_DURATION = 7000
 
 const chapterColors = [
   '#7d8849', // INTRO
@@ -381,15 +378,9 @@ onMounted(async () => {
     window.addEventListener('mousemove', onParallaxMove)
   }
 
-  // Redirection guard if not Support
-  if (!isSupport.value) {
-    router.replace({ name: 'v4-player-details', params: { playerName: playerName.value } })
-    return
-  }
-
   try {
     data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, 2026)
-    
+
     // Preload dynamic achievements from the player's medals/achievements breakdown
     const dynamicImages: string[] = []
     if (data.value?.medals?.achievementsBreakdown) {
