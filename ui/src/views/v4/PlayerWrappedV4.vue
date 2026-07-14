@@ -1,5 +1,6 @@
 <template>
-  <div class="player-wrapped">
+  <div ref="rootEl" class="player-wrapped">
+    <div class="wrapped-grain" aria-hidden="true"></div>
     <div v-if="loading" class="wrapped-loading">
       <div class="spinner"></div>
       <p>Retrieving Wrapped 2026 aggregates...</p>
@@ -89,12 +90,19 @@
               </div>
             </div>
 
-            <div class="slide-container">
-              <transition name="slide-fade" mode="out-in">
-                <div class="slide-content-wrapper" :key="currentSlide">
-                  <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
-                </div>
-              </transition>
+            <div class="slide-card">
+              <div class="wrapped-fx" aria-hidden="true">
+                <div class="fx-smoke" :style="fxSmokeBg"></div>
+                <div class="fx-embers-far" :style="fxEmbersBg"></div>
+                <div class="fx-embers-near" :style="fxEmbersBg"></div>
+              </div>
+              <div class="slide-container">
+                <transition name="slide-fade" mode="out-in">
+                  <div class="slide-content-wrapper" :key="currentSlide">
+                    <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
+                  </div>
+                </transition>
+              </div>
             </div>
           </div>
         </main>
@@ -102,6 +110,11 @@
 
       <!-- Mobile Portrait Stories Layout -->
       <div class="mobile-layout" :style="{ '--theme-color': activeThemeColor }">
+        <div class="wrapped-fx wrapped-fx--mobile" aria-hidden="true">
+          <div class="fx-smoke" :style="fxSmokeBg"></div>
+          <div class="fx-embers-far" :style="fxEmbersBg"></div>
+          <div class="fx-embers-near" :style="fxEmbersBg"></div>
+        </div>
         <!-- Top Sticky Header -->
         <div class="mobile-sticky-header">
           <!-- Top Progress Bars -->
@@ -202,6 +215,10 @@ import ch6p from '@/assets/wrapped/ch6p.webp'
 import ch7p from '@/assets/wrapped/ch7p.webp'
 import ch8p from '@/assets/wrapped/ch8p.webp'
 
+// Animated FX tiles (smoke drift + rising embers)
+import fxSmoke from '@/assets/wrapped/fx-smoke.webp'
+import fxEmbers from '@/assets/wrapped/fx-embers.webp'
+
 import PlayerIntroSlide from '@/components/v4/wrapped/PlayerIntroSlide.vue'
 import PlayerNumbersSlide from '@/components/v4/wrapped/PlayerNumbersSlide.vue'
 import PlayerTrendSlide from '@/components/v4/wrapped/PlayerTrendSlide.vue'
@@ -223,6 +240,7 @@ function preloadImages(urls: string[]) {
 // Preload static player assets immediately on script evaluation
 const staticImagesToPreload = [
   ch1p, ch2p, ch3p, ch4p, ch5p, ch6p, ch7p, ch8p,
+  fxSmoke, fxEmbers,
   clippyLogo,
   getAchievementImage('kill_streak_25'),
   getAchievementImage('round_placement_1'),
@@ -242,9 +260,30 @@ const slideComponents = [
   PlayerShareSlide
 ]
 
+const fxSmokeBg = { backgroundImage: `url(${fxSmoke})` }
+const fxEmbersBg = { backgroundImage: `url(${fxEmbers})` }
+
 const { isSupport } = useAuth()
 const route = useRoute()
 const router = useRouter()
+
+// Mouse parallax — drives --par-x / --par-y CSS vars consumed by the hero layers
+const rootEl = ref<HTMLElement | null>(null)
+const prefersReducedMotion = typeof window !== 'undefined'
+  && window.matchMedia
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+let parallaxRaf = 0
+
+function onParallaxMove(e: MouseEvent) {
+  if (parallaxRaf) return
+  const x = e.clientX / window.innerWidth - 0.5
+  const y = e.clientY / window.innerHeight - 0.5
+  parallaxRaf = requestAnimationFrame(() => {
+    parallaxRaf = 0
+    rootEl.value?.style.setProperty('--par-x', x.toFixed(3))
+    rootEl.value?.style.setProperty('--par-y', y.toFixed(3))
+  })
+}
 
 const playerName = ref(route.params.playerName as string)
 const serverGuid = ref((route.params.serverGuid as string) || 'global')
@@ -291,9 +330,9 @@ const heroes = computed(() => {
     { no: '01', drop: 'DEPLOYMENT', fig: 'Fig. 01 — Deployment', img: ch1p, dot: 'var(--mm-accent)' },
     { no: '02', drop: 'THE CAMPAIGN', fig: 'Fig. 02 — The Campaign', img: ch2p, dot: 'var(--mm-accent)' },
     { no: '03', drop: 'THE ASCENT', fig: 'Fig. 03 — The Ascent', img: ch3p, dot: 'var(--mm-accent)' },
-    { no: '04', drop: data.value.favoriteMap?.mapName?.toUpperCase() || 'FAVOURITE MAP', fig: `Fig. 04 — ${data.value.favoriteMap?.mapName || 'Favourite Map'}`, img: ch4p, dot: 'var(--mm-accent)' },
+    { no: '04', drop: data.value.favouriteMap?.mapName?.toUpperCase() || 'FAVOURITE MAP', fig: `Fig. 04 — ${data.value.favouriteMap?.mapName || 'Favourite Map'}`, img: ch4p, dot: 'var(--mm-accent)' },
     { no: '05', drop: 'DECORATIONS', fig: 'Fig. 05 — Decorations', img: ch5p, dot: 'var(--mm-accent)' },
-    { no: '06', drop: data.value.bestMoment?.mapName?.toUpperCase() || 'BEST MOMENT', fig: `Fig. 06 — ${data.value.bestMoment?.mapName || 'Best Moment'}`, img: ch6p, dot: 'var(--mm-danger)' },
+    { no: '06', drop: data.value.bestMoments?.[0]?.mapName?.toUpperCase() || 'BEST MOMENT', fig: `Fig. 06 — ${data.value.bestMoments?.[0]?.mapName || 'Best Moment'}`, img: ch6p, dot: 'var(--mm-danger)' },
     { no: '07', drop: 'THE SQUAD', fig: 'Fig. 07 — The Squad', img: ch7p, dot: 'var(--mm-accent)' },
     { no: '08', drop: 'KEEPSAKE', fig: 'Fig. 08 — Keepsake', img: ch8p, dot: 'var(--mm-accent)' }
   ]
@@ -305,6 +344,10 @@ const activeHero = computed(() => {
 })
 
 onMounted(async () => {
+  if (!prefersReducedMotion) {
+    window.addEventListener('mousemove', onParallaxMove)
+  }
+
   // Redirection guard if not Support
   if (!isSupport.value) {
     router.replace({ name: 'v4-player-details', params: { playerName: playerName.value } })
@@ -338,6 +381,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopPlayback()
+  window.removeEventListener('mousemove', onParallaxMove)
+  if (parallaxRaf) cancelAnimationFrame(parallaxRaf)
 })
 
 function startPlayback() {
@@ -405,6 +450,8 @@ function endHold() {
 
 <style scoped>
 .player-wrapped {
+  --par-x: 0;
+  --par-y: 0;
   background-color: var(--mm-bg);
   color: var(--mm-ink);
   font-family: var(--mm-font-display);
@@ -803,18 +850,103 @@ function endHold() {
   color: var(--mm-ink-faint);
 }
 
+.slide-card {
+  flex-grow: 1;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--mm-rule);
+  background-color: var(--mm-bg);
+  border-radius: var(--mm-radius-sm, 2px);
+  min-height: 400px;
+  overflow: hidden;
+}
+
 .slide-container {
   flex-grow: 1;
   display: flex;
   align-items: stretch;
   justify-content: center;
-  border: 1px solid var(--mm-rule);
-  background-color: var(--mm-bg);
-  border-radius: var(--mm-radius-sm, 2px);
   padding: 24px 32px;
   box-sizing: border-box;
-  min-height: 400px;
+  min-width: 0;
   overflow-y: auto;
+}
+
+/* Animated smoke + embers behind the slide content */
+.wrapped-fx {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.wrapped-fx > div {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+  /* tiles are painted on solid black — screen keeps the dark bg and lets the light pixels through */
+  mix-blend-mode: screen;
+}
+
+.fx-smoke {
+  /* static backdrop — drifting the tile made the seam/repeat visible */
+  background-size: 2200px 2200px;
+  opacity: 0.5;
+}
+
+.fx-embers-far {
+  background-size: 1800px 1800px;
+  opacity: 0.65;
+  animation: fxRiseFar 60s linear infinite, fxSway 47s ease-in-out infinite alternate;
+}
+
+.fx-embers-near {
+  background-size: 1040px 1040px;
+  opacity: 0.35;
+  animation: fxRiseNear 39s linear infinite, fxSway 31s ease-in-out infinite alternate, fxBreathe 9s ease-in-out infinite;
+}
+
+/* rise distances are exact tile multiples so the loop restart is invisible;
+   horizontal sway ping-pongs (alternate) so it never jumps either */
+@keyframes fxRiseFar {
+  0% { background-position-y: 0px; }
+  100% { background-position-y: -1800px; }
+}
+
+@keyframes fxRiseNear {
+  0% { background-position-y: 0px; }
+  100% { background-position-y: -2080px; }
+}
+
+@keyframes fxSway {
+  0% { background-position-x: 0px; }
+  100% { background-position-x: -70px; }
+}
+
+@keyframes fxBreathe {
+  0%, 100% { opacity: 0.14; }
+  50% { opacity: 0.3; }
+}
+
+/* Film grain over the whole wrapped experience */
+.wrapped-grain {
+  position: absolute;
+  inset: -10%;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.055;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  animation: grainShift 0.9s steps(3) infinite;
+}
+
+@keyframes grainShift {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-4%, 3%); }
 }
 
 .slide-content-wrapper {
@@ -838,6 +970,7 @@ function endHold() {
   height: 100%;
   background-color: var(--mm-bg);
   position: relative;
+  isolation: isolate;
 }
 
 @media (min-width: 1024px) {
@@ -1039,6 +1172,8 @@ function endHold() {
   inset: 0;
   z-index: 1;
   overflow: hidden;
+  /* mouse parallax — vars set on .player-wrapped by the view */
+  transform: translate(calc(var(--par-x, 0) * 22px), calc(var(--par-y, 0) * 22px));
 }
 
 .player-wrapped .hero-img {
@@ -1123,6 +1258,7 @@ function endHold() {
   left: 14px;
   bottom: 14px;
   z-index: 5;
+  transform: translate(calc(var(--par-x, 0) * -9px), calc(var(--par-y, 0) * -9px));
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1174,6 +1310,14 @@ function endHold() {
 @keyframes cornerFade {
   from { opacity: 0; }
   to { opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-wrapped *,
+  .player-wrapped *::before,
+  .player-wrapped *::after {
+    animation: none !important;
+  }
 }
 </style>
 
