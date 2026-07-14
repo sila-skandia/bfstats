@@ -103,27 +103,15 @@ spec:
             - name: ServerWrapped__AllowedGuids__1
               value: "42b98b-61f0b93-183a06c-49be6b0"
             # Player Wrapped Configuration
-            - name: PlayerWrapped__AllowedPlayerNames__0
-              value: "KeLeZzZ"
             - name: PlayerWrapped__AllowedPlayerNames__1
-              value: "papi"
-            - name: PlayerWrapped__AllowedPlayerNames__2
-              value: "ZBOJNIK (cz)"
-            - name: PlayerWrapped__AllowedPlayerNames__3
               value: "skandia"
-            - name: PlayerWrapped__AllowedPlayerNames__4
+            - name: PlayerWrapped__AllowedPlayerNames__2
               value: "Lang7788"
-            - name: PlayerWrapped__AllowedPlayerNames__5
-              value: "SlapThatMuffin"
-            - name: PlayerWrapped__AllowedPlayerNames__6
-              value: "Betman"
-            - name: PlayerWrapped__AllowedPlayerNames__7
-              value: "RONIN"
-            - name: PlayerWrapped__AllowedPlayerNames__8
+            - name: PlayerWrapped__AllowedPlayerNames__3
               value: "pada"
-            - name: PlayerWrapped__AllowedPlayerNames__9
+            - name: PlayerWrapped__AllowedPlayerNames__4
               value: "Capn Cackler®"
-            - name: PlayerWrapped__AllowedPlayerNames__10
+            - name: PlayerWrapped__AllowedPlayerNames__5
               value: "TheCalmingClam"
             # Refresh token cookie configuration (Secret provided via external secret manager)
             - name: RefreshToken__CookieName
