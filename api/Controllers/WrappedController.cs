@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace api.Controllers;
 
-[Authorize(Policy = "Support")]
+//[Authorize(Policy = "Support")]
 [ApiController]
 [Route("stats/[controller]")]
 public class WrappedController(
@@ -28,7 +28,7 @@ public class WrappedController(
     public async Task<ActionResult<ServerWrappedResponseDto>> GetServerWrapped(string serverGuid, [FromQuery] int year = 2026)
     {
         logger.LogInformation("Retrieving Server Wrapped statistics for GUID: {ServerGuid}, Year: {Year} (Admin Only)", serverGuid, year);
-        
+
         try
         {
             var response = await wrappedService.GetServerWrappedAsync(serverGuid, year);
@@ -56,7 +56,7 @@ public class WrappedController(
     public async Task<ActionResult<PlayerWrappedResponseDto>> GetGlobalPlayerWrapped(string playerName, [FromQuery] int year = 2026)
     {
         logger.LogInformation("Retrieving Global Player Wrapped statistics for {PlayerName}, Year: {Year}", playerName, year);
-        
+
         try
         {
             var response = await wrappedService.GetPlayerWrappedAsync(playerName, "global", year);
@@ -84,7 +84,7 @@ public class WrappedController(
     public async Task<ActionResult<PlayerWrappedResponseDto>> GetServerPlayerWrapped(string playerName, string serverGuid, [FromQuery] int year = 2026)
     {
         logger.LogInformation("Retrieving Server-Specific Player Wrapped statistics for {PlayerName}, Server: {ServerGuid}, Year: {Year}", playerName, serverGuid, year);
-        
+
         try
         {
             var response = await wrappedService.GetPlayerWrappedAsync(playerName, serverGuid, year);
