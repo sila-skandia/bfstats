@@ -166,6 +166,10 @@ export interface PlayerYearInNumbers {
   serverRank: number;
   killsRank: number;
   placementsRank: number;
+  roundsPercentile: number;
+  killsPercentile: number;
+  playTimePercentile: number;
+  kdPercentile: number;
 }
 
 export interface PlayerMapRank {
@@ -194,6 +198,14 @@ export interface PlayerFavouriteMap {
   topMaps5: PlayerMapProgress[];
   homeServerName: string;
   homeServerLocation: string;
+  playerKPM: number;
+  globalKPM: number;
+  kpmMultiplier: number;
+  totalKills: number;
+  totalDeaths: number;
+  kdRatio: number;
+  totalScore: number;
+  playTimeMinutes: number;
 }
 
 export interface PlayerAchievementTypeCount {
@@ -243,6 +255,16 @@ export interface PlayerServerRanking {
   averagePing: number;
 }
 
+export interface PlayerRelations {
+  luckyCharmName: string | null;
+  luckyCharmWins: number | null;
+  archNemesisName: string | null;
+  archNemesisLosses: number | null;
+  twoFaceName: string | null;
+  twoFaceWins: number | null;
+  twoFaceLosses: number | null;
+}
+
 export interface PlayerWrappedData {
   playerName: string;
   serverGuid: string;
@@ -255,6 +277,7 @@ export interface PlayerWrappedData {
   bestMoments: PlayerBestMoment[];
   squad: PlayerTeammate[];
   serverRankings: PlayerServerRanking[];
+  relations: PlayerRelations;
 }
 
 /**

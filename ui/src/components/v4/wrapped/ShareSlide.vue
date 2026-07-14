@@ -46,7 +46,6 @@
 
       <!-- Actions -->
       <div class="share-actions animate-rise-up" style="animation-delay: 0.35s">
-        <p class="actions-desc">One card, the whole year. Post it, pin it, or send it to the squad who never showed up to the closest battles.</p>
         <div class="buttons-row">
           <button 
             class="action-btn" 
