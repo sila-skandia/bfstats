@@ -66,7 +66,7 @@
                   ></div>
                 </div>
               </div>
-              
+
               <div class="stage-toolbar">
                 <span class="stage-chapter-info">
                   CHAPTER {{ String(currentSlide + 1).padStart(2, '0') }} / {{ String(chapters.length).padStart(2, '0') }}
@@ -143,9 +143,9 @@
         <!-- Tap Zones -->
         <div class="mobile-tap-zones">
           <div class="tap-zone tap-left" @click="prevSlide(true)"></div>
-          <div 
-            class="tap-zone tap-right" 
-            @click="nextSlide(true)" 
+          <div
+            class="tap-zone tap-right"
+            @click="nextSlide(true)"
             @mousedown="startHold"
             @mouseup="endHold"
             @touchstart="startHold"
@@ -186,10 +186,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { fetchServerDetails } from '@/services/serverDetailsService'
 import { fetchServerWrapped, type ServerWrappedData } from '@/services/wrappedService'
-import { useAuth } from '@/composables/useAuth'
 import clippyLogo from '@/assets/clippy_my_boi.webp'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
 
@@ -281,9 +280,7 @@ const slideComponents = [
   ShareSlide
 ]
 
-const { isSupport } = useAuth()
 const route = useRoute()
-const router = useRouter()
 
 const serverName = ref(route.params.serverName as string)
 const loading = ref(true)
@@ -320,19 +317,13 @@ const activeThemeColor = computed(() => chapterColors[currentSlide.value])
 const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
 
 onMounted(async () => {
-  // Redirection guard if not Support
-  if (!isSupport.value) {
-    router.replace({ name: 'v4-server-details', params: { serverName: serverName.value } })
-    return
-  }
-
   try {
     const details = await fetchServerDetails(serverName.value)
     if (!details || !details.serverGuid) {
       throw new Error(`Could not resolve Server GUID for: ${serverName.value}`)
     }
     data.value = await fetchServerWrapped(details.serverGuid, 2026)
-    
+
     // Preload dynamic achievements once data is resolved
     const dynamicImages: string[] = []
     if (data.value?.decorations?.prestigiousMilestone?.achievementId) {
@@ -365,13 +356,13 @@ function loggerError(e: any) {
 function resumePlayback() {
   stopPlayback()
   isPlaying.value = true
-  
+
   const step = 100 // update every 100ms
   const increment = (step / SLIDE_DURATION) * 100
-  
+
   progressTimer = setInterval(() => {
     if (isHolding.value) return
-    
+
     mobileProgress.value += increment
     if (mobileProgress.value >= 100) {
       mobileProgress.value = 0
@@ -1132,7 +1123,7 @@ function endHold() {
     height: 100dvh !important;
     overflow: hidden !important;
   }
-  
+
   :deep(.wrapped-slide) {
     padding: 0 !important;
   }
