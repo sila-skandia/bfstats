@@ -162,6 +162,8 @@
           ></div>
         </div>
 
+        <!-- Scrollable slide area (hero + content) -->
+        <main ref="mobileScrollEl" class="pwm-scroll">
         <!-- Mobile Hero Image Card -->
         <div v-if="activeHero" class="mobile-hero-container animate-fade-in">
           <div class="hero-image-card">
@@ -192,13 +194,32 @@
             <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
           </transition>
         </div>
+        </main>
+
+        <!-- Bottom Navigation Bar -->
+        <div class="mobile-bottom-nav">
+          <button @click="prevSlide(true)" class="nav-btn prev-btn" :disabled="currentSlide === 0" :style="{ color: currentSlide === 0 ? 'var(--mm-ink-faint)' : 'var(--mm-ink-soft)' }">← Prev</button>
+
+          <button @click="togglePlayback" class="toggle-play-btn" title="Play / pause">
+            <svg width="52" height="52" viewBox="0 0 52 52" style="display:block;">
+              <circle cx="26" cy="26" r="22" fill="none" stroke="var(--mm-rule-strong)" stroke-width="2.5"></circle>
+              <circle cx="26" cy="26" r="22" fill="none" :stroke="activeThemeColor" stroke-width="3" stroke-linecap="round" :stroke-dasharray="ringCirc" :stroke-dashoffset="ringOffset" transform="rotate(-90 26 26)" style="transition:stroke-dashoffset .12s linear, stroke .4s ease;"></circle>
+            </svg>
+            <span class="toggle-icon-wrapper">
+              <svg v-if="!isPaused" width="13" height="14" viewBox="0 0 13 14" :fill="activeThemeColor"><rect x="1" y="0" width="3.6" height="14" rx="0.6"></rect><rect x="8.4" y="0" width="3.6" height="14" rx="0.6"></rect></svg>
+              <svg v-else width="13" height="15" viewBox="0 0 13 15" :fill="activeThemeColor"><path d="M1.5 0.9 L12 7.5 L1.5 14.1 Z"></path></svg>
+            </span>
+          </button>
+
+          <button @click="currentSlide === chapters.length - 1 ? goToSlide(0) : nextSlide(true)" class="nav-btn next-btn">{{ currentSlide === chapters.length - 1 ? 'Replay' : 'Next' }} →</button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchPlayerWrapped, type PlayerWrappedData } from '@/services/wrappedService'
 import { useAuth } from '@/composables/useAuth'
@@ -304,8 +325,20 @@ const chapters = [
 ]
 
 const currentSlide = ref(0)
+const mobileScrollEl = ref<HTMLElement | null>(null)
+watch(currentSlide, () => {
+  mobileScrollEl.value?.scrollTo({ top: 0 })
+})
 const mobileProgress = ref(0)
 const isHolding = ref(false)
+const isPlaying = ref(false)
+const isPaused = computed(() => !isPlaying.value)
+
+const ringCirc = 138.2
+const ringOffset = computed(() => {
+  return (ringCirc * (1 - mobileProgress.value / 100)).toFixed(1)
+})
+
 let autoAdvanceTimer: any = null
 let progressTimer: any = null
 const SLIDE_DURATION = 7000 
@@ -385,16 +418,16 @@ onUnmounted(() => {
   if (parallaxRaf) cancelAnimationFrame(parallaxRaf)
 })
 
-function startPlayback() {
+function resumePlayback() {
   stopPlayback()
-  mobileProgress.value = 0
-  
-  const step = 100 
+  isPlaying.value = true
+
+  const step = 100
   const increment = (step / SLIDE_DURATION) * 100
-  
+
   progressTimer = setInterval(() => {
     if (isHolding.value) return
-    
+
     mobileProgress.value += increment
     if (mobileProgress.value >= 100) {
       mobileProgress.value = 0
@@ -403,9 +436,28 @@ function startPlayback() {
   }, step)
 }
 
+function startPlayback() {
+  mobileProgress.value = 0
+  resumePlayback()
+}
+
 function stopPlayback() {
+  isPlaying.value = false
   if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer)
   if (progressTimer) clearInterval(progressTimer)
+}
+
+function togglePlayback() {
+  if (currentSlide.value === chapters.length - 1) {
+    goToSlide(0)
+    startPlayback()
+    return
+  }
+  if (isPlaying.value) {
+    stopPlayback()
+  } else {
+    resumePlayback()
+  }
 }
 
 function nextSlide(manual = false) {
@@ -971,6 +1023,7 @@ function endHold() {
   background-color: var(--mm-bg);
   position: relative;
   isolation: isolate;
+  overflow: hidden;
 }
 
 @media (min-width: 1024px) {
@@ -1048,7 +1101,7 @@ function endHold() {
 
 .mobile-tap-zones {
   position: absolute;
-  inset: 0;
+  inset: 64px 0 78px;
   display: flex;
   justify-content: space-between;
   z-index: 40;
@@ -1059,6 +1112,23 @@ function endHold() {
   width: 20%;
   height: 100%;
   pointer-events: auto;
+  cursor: pointer;
+}
+
+.pwm-scroll {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.pwm-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .mobile-hero-container {
@@ -1084,11 +1154,62 @@ function endHold() {
   box-sizing: border-box;
 }
 
+.mobile-bottom-nav {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--mm-rule);
+  background: var(--mm-bg-soft);
+  flex-shrink: 0;
+}
+
+.nav-btn {
+  background: 0;
+  border: 0;
+  cursor: pointer;
+  padding: 8px 4px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+}
+
+.nav-btn:disabled {
+  cursor: default;
+}
+
+.toggle-play-btn {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  background: 0;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.toggle-icon-wrapper {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 @media (max-width: 1023px) {
+  /* Fixed-height shell with an internal scroller (.pwm-scroll) — scrolling
+     the whole document repaints the full-page fx/grain overlays and feels
+     clunky; mirrors the ServerWrappedV4 mobile architecture. */
   .player-wrapped {
-    height: auto !important;
-    min-height: 100vh;
-    overflow-y: auto !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
   }
 }
 
