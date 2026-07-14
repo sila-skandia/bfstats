@@ -14,7 +14,8 @@ public record PlayerWrappedResponseDto(
     PlayerMedalsDto Medals,
     List<PlayerBestMomentDto> BestMoments,
     List<PlayerTeammateDto> Squad,
-    List<PlayerServerRankingDto> ServerRankings
+    List<PlayerServerRankingDto> ServerRankings,
+    PlayerRelationsDto Relations
 );
 
 public record PlayerYearInNumbersDto(
@@ -25,7 +26,11 @@ public record PlayerYearInNumbersDto(
     double KdRatio,
     int ServerRank,
     int KillsRank,
-    int PlacementsRank
+    int PlacementsRank,
+    double RoundsPercentile,
+    double KillsPercentile,
+    double PlayTimePercentile,
+    double KdPercentile
 );
 
 public record PlayerServerRankingDto(
@@ -55,7 +60,15 @@ public record PlayerFavouriteMapDto(
     double WinRate,
     List<PlayerMapProgressDto> TopMaps5,
     string HomeServerName,
-    string HomeServerLocation
+    string HomeServerLocation,
+    double PlayerKPM,
+    double GlobalKPM,
+    double KpmMultiplier,
+    int TotalKills,
+    int TotalDeaths,
+    double KdRatio,
+    int TotalScore,
+    double PlayTimeMinutes
 );
 
 public record PlayerMapProgressDto(
@@ -101,4 +114,14 @@ public record PlayerBestMomentDto(
 public record PlayerTeammateDto(
     string Name,
     int SharedRounds
+);
+
+public record PlayerRelationsDto(
+    string? LuckyCharmName,
+    int? LuckyCharmWins,
+    string? ArchNemesisName,
+    int? ArchNemesisLosses,
+    string? TwoFaceName,
+    int? TwoFaceWins,
+    int? TwoFaceLosses
 );
