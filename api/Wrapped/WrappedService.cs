@@ -971,7 +971,160 @@ public class WrappedService(
             placementsRank = higherPlacementsCount + 1;
         }
 
-        var yearInNumbers = new PlayerYearInNumbersDto(roundsPlayed, totalKills, totalDeaths, Math.Round(hoursInCombat, 1), kdRatio, serverRank, killsRank, placementsRank);
+        double roundsPercentile = 0.0;
+        double killsPercentile = 0.0;
+        double playtimePercentile = 0.0;
+        double kdPercentile = 0.0;
+
+        if (roundsPlayed > 0)
+        {
+            var connection = dbContext.Database.GetDbConnection();
+            bool wasClosed = connection.State == System.Data.ConnectionState.Closed;
+            if (wasClosed) await connection.OpenAsync();
+
+            try
+            {
+                double SafeConvertDouble(object? obj) => (obj == null || obj == DBNull.Value) ? 0.0 : Convert.ToDouble(obj);
+
+                // Rounds Percentile
+                await using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT 
+                            (COUNT(*) * 100.0) / (
+                                SELECT COUNT(*) 
+                                FROM (
+                                    SELECT SUM(TotalRounds) as r 
+                                    FROM PlayerStatsMonthly 
+                                    WHERE Year = $year 
+                                    GROUP BY PlayerName 
+                                    HAVING r >= 5
+                                )
+                            ) 
+                        FROM (
+                            SELECT SUM(TotalRounds) as r 
+                            FROM PlayerStatsMonthly 
+                            WHERE Year = $year 
+                            GROUP BY PlayerName 
+                            HAVING r >= 5
+                        ) 
+                        WHERE r < $val";
+                    
+                    var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
+                    var pVal = cmd.CreateParameter(); pVal.ParameterName = "$val"; pVal.Value = roundsPlayed; cmd.Parameters.Add(pVal);
+                    roundsPercentile = SafeConvertDouble(await cmd.ExecuteScalarAsync());
+                }
+
+                // Kills Percentile
+                await using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT 
+                            (COUNT(*) * 100.0) / (
+                                SELECT COUNT(*) 
+                                FROM (
+                                    SELECT SUM(TotalRounds) as r 
+                                    FROM PlayerStatsMonthly 
+                                    WHERE Year = $year 
+                                    GROUP BY PlayerName 
+                                    HAVING r >= 5
+                                )
+                            ) 
+                        FROM (
+                            SELECT SUM(TotalKills) as k, SUM(TotalRounds) as r 
+                            FROM PlayerStatsMonthly 
+                            WHERE Year = $year 
+                            GROUP BY PlayerName 
+                            HAVING r >= 5
+                        ) 
+                        WHERE k < $val";
+                    
+                    var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
+                    var pVal = cmd.CreateParameter(); pVal.ParameterName = "$val"; pVal.Value = totalKills; cmd.Parameters.Add(pVal);
+                    killsPercentile = SafeConvertDouble(await cmd.ExecuteScalarAsync());
+                }
+
+                // Playtime Percentile
+                await using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT 
+                            (COUNT(*) * 100.0) / (
+                                SELECT COUNT(*) 
+                                FROM (
+                                    SELECT SUM(TotalRounds) as r 
+                                    FROM PlayerStatsMonthly 
+                                    WHERE Year = $year 
+                                    GROUP BY PlayerName 
+                                    HAVING r >= 5
+                                )
+                            ) 
+                        FROM (
+                            SELECT SUM(TotalPlayTimeMinutes) as pt, SUM(TotalRounds) as r 
+                            FROM PlayerStatsMonthly 
+                            WHERE Year = $year 
+                            GROUP BY PlayerName 
+                            HAVING r >= 5
+                        ) 
+                        WHERE pt < $val";
+                    
+                    var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
+                    var pVal = cmd.CreateParameter(); pVal.ParameterName = "$val"; pVal.Value = hoursInCombat * 60.0; cmd.Parameters.Add(pVal);
+                    playtimePercentile = SafeConvertDouble(await cmd.ExecuteScalarAsync());
+                }
+
+                // K/D Percentile
+                if (totalKills >= 20)
+                {
+                    await using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT 
+                                (COUNT(*) * 100.0) / (
+                                    SELECT COUNT(*) 
+                                    FROM (
+                                        SELECT SUM(TotalKills) as k 
+                                        FROM PlayerStatsMonthly 
+                                        WHERE Year = $year 
+                                        GROUP BY PlayerName 
+                                        HAVING SUM(TotalRounds) >= 5 AND k >= 20
+                                    )
+                                ) 
+                            FROM (
+                                SELECT SUM(TotalKills) as k, (CAST(SUM(TotalKills) AS REAL) / MAX(1, SUM(TotalDeaths))) as kd 
+                                FROM PlayerStatsMonthly 
+                                WHERE Year = $year 
+                                GROUP BY PlayerName 
+                                HAVING SUM(TotalRounds) >= 5 AND k >= 20
+                            ) 
+                            WHERE kd < $val";
+                        
+                        var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
+                        var pVal = cmd.CreateParameter(); pVal.ParameterName = "$val"; pVal.Value = kdRatio; cmd.Parameters.Add(pVal);
+                        kdPercentile = SafeConvertDouble(await cmd.ExecuteScalarAsync());
+                    }
+                }
+            }
+            finally
+            {
+                if (wasClosed) await connection.CloseAsync();
+            }
+        }
+
+        var yearInNumbers = new PlayerYearInNumbersDto(
+            roundsPlayed, 
+            totalKills, 
+            totalDeaths, 
+            Math.Round(hoursInCombat, 1), 
+            kdRatio, 
+            serverRank, 
+            killsRank, 
+            placementsRank,
+            Math.Round(roundsPercentile, 2),
+            Math.Round(killsPercentile, 2),
+            Math.Round(playtimePercentile, 2),
+            Math.Round(kdPercentile, 2)
+        );
 
         // 2. Trend
         List<double> monthlyKDs = new();
@@ -1091,7 +1244,10 @@ public class WrappedService(
             .Select(g => new {
                 MapName = g.Key,
                 Rounds = g.Sum(pms => pms.TotalRounds),
-                PlayTime = g.Sum(pms => pms.TotalPlayTimeMinutes)
+                PlayTime = g.Sum(pms => pms.TotalPlayTimeMinutes),
+                Kills = g.Sum(pms => pms.TotalKills),
+                Deaths = g.Sum(pms => pms.TotalDeaths),
+                Score = g.Sum(pms => pms.TotalScore)
             })
             .OrderByDescending(x => x.Rounds)
             .Take(5)
@@ -1142,13 +1298,79 @@ public class WrappedService(
             }
         }
 
+        double playerKPM = 0.0;
+        double globalKPM = 0.0;
+        double kpmMultiplier = 0.0;
+
+        string favMapName = favMap?.MapName ?? "";
+        if (!string.IsNullOrEmpty(favMapName))
+        {
+            var connection = dbContext.Database.GetDbConnection();
+            bool wasClosed = connection.State == System.Data.ConnectionState.Closed;
+            if (wasClosed) await connection.OpenAsync();
+
+            try
+            {
+                await using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT 
+                            (CAST(SUM(pms.TotalKills) AS REAL) / SUM(pms.TotalPlayTimeMinutes)) as PlayerKPM,
+                            COALESCE(mga.AvgKillRate, 0.0) as GlobalKPM
+                        FROM PlayerMapStats pms
+                        LEFT JOIN MapGlobalAverages mga ON pms.MapName = mga.MapName
+                        WHERE pms.PlayerName = $playerName 
+                          AND pms.MapName = $mapName 
+                          AND pms.Year = $year
+                          AND pms.TotalPlayTimeMinutes > 0
+                        GROUP BY pms.MapName, mga.AvgKillRate";
+                    
+                    var pPlayer = cmd.CreateParameter(); pPlayer.ParameterName = "$playerName"; pPlayer.Value = playerName; cmd.Parameters.Add(pPlayer);
+                    var pMap = cmd.CreateParameter(); pMap.ParameterName = "$mapName"; pMap.Value = favMapName; cmd.Parameters.Add(pMap);
+                    var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
+
+                    await using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            playerKPM = reader.IsDBNull(0) ? 0.0 : reader.GetDouble(0);
+                            globalKPM = reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1);
+                            if (globalKPM > 0.0)
+                            {
+                                kpmMultiplier = playerKPM / globalKPM;
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (wasClosed) await connection.CloseAsync();
+            }
+        }
+
+        var favMapData = top5MapsData.FirstOrDefault();
+        int favMapKills = favMapData?.Kills ?? 0;
+        int favMapDeaths = favMapData?.Deaths ?? 0;
+        double favMapKdRatio = favMapDeaths > 0 ? Math.Round((double)favMapKills / favMapDeaths, 2) : favMapKills;
+        int favMapScore = favMapData?.Score ?? 0;
+        double favMapPlayTime = favMapData?.PlayTime ?? 0.0;
+
         var favouriteMap = new PlayerFavouriteMapDto(
             favMap?.MapName ?? "",
             favMap?.Rounds ?? 0,
             winRate,
             topMaps5,
             homeServerName,
-            homeServerLocation
+            homeServerLocation,
+            Math.Round(playerKPM, 3),
+            Math.Round(globalKPM, 3),
+            Math.Round(kpmMultiplier, 2),
+            favMapKills,
+            favMapDeaths,
+            favMapKdRatio,
+            favMapScore,
+            favMapPlayTime
         );
 
         // 4. Medals
@@ -1432,6 +1654,161 @@ public class WrappedService(
         }
 
 
+        string? luckyCharmName = null;
+        int? luckyCharmWins = null;
+        string? archNemesisName = null;
+        int? archNemesisLosses = null;
+        string? twoFaceName = null;
+        int? twoFaceWins = null;
+        int? twoFaceLosses = null;
+
+        if (roundsPlayed > 0)
+        {
+            var connection = dbContext.Database.GetDbConnection();
+            bool wasClosed = connection.State == System.Data.ConnectionState.Closed;
+            if (wasClosed) await connection.OpenAsync();
+
+            try
+            {
+                var winsDict = new Dictionary<string, int>();
+                var lossesDict = new Dictionary<string, int>();
+
+                await using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT 
+                            ps.RoundId, 
+                            ps.CurrentTeam, 
+                            (SELECT 1 FROM PlayerAchievements pa 
+                             WHERE pa.PlayerName = ps.PlayerName AND pa.RoundId = ps.RoundId 
+                               AND pa.AchievementId IN ('team_victory', 'team_victory_switched') LIMIT 1) as IsWin
+                        FROM PlayerSessions ps
+                        WHERE ps.PlayerName = $playerName 
+                          AND ps.StartTime >= $start 
+                          AND ps.StartTime < $end 
+                          AND ps.IsDeleted = 0 
+                          AND ps.RoundId IS NOT NULL";
+                    
+                    var pPlayer = cmd.CreateParameter(); pPlayer.ParameterName = "$playerName"; pPlayer.Value = playerName; cmd.Parameters.Add(pPlayer);
+                    var pStart = cmd.CreateParameter(); pStart.ParameterName = "$start"; pStart.Value = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc); cmd.Parameters.Add(pStart);
+                    var pEnd = cmd.CreateParameter(); pEnd.ParameterName = "$end"; pEnd.Value = new DateTime(year + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc); cmd.Parameters.Add(pEnd);
+
+                    await using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var rId = reader.GetString(0);
+                            var team = reader.GetInt32(1);
+                            var isWin = reader.IsDBNull(2) ? 0 : reader.GetInt32(2);
+                            if (isWin == 1)
+                            {
+                                winsDict[rId] = team;
+                            }
+                            else
+                            {
+                                lossesDict[rId] = team;
+                            }
+                        }
+                    }
+                }
+
+                var teammateWins = new Dictionary<string, int>();
+                foreach (var kvp in winsDict)
+                {
+                    await using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT PlayerName 
+                            FROM PlayerSessions 
+                            WHERE RoundId = $roundId 
+                              AND CurrentTeam = $team 
+                              AND PlayerName != $playerName 
+                              AND IsDeleted = 0";
+                        
+                        var pRound = cmd.CreateParameter(); pRound.ParameterName = "$roundId"; pRound.Value = kvp.Key; cmd.Parameters.Add(pRound);
+                        var pTeam = cmd.CreateParameter(); pTeam.ParameterName = "$team"; pTeam.Value = kvp.Value; cmd.Parameters.Add(pTeam);
+                        var pPlayer = cmd.CreateParameter(); pPlayer.ParameterName = "$playerName"; pPlayer.Value = playerName; cmd.Parameters.Add(pPlayer);
+
+                        await using (var reader = await cmd.ExecuteReaderAsync())
+                        {
+                            while (await reader.ReadAsync())
+                            {
+                                var name = reader.GetString(0);
+                                teammateWins[name] = teammateWins.GetValueOrDefault(name, 0) + 1;
+                            }
+                        }
+                    }
+                }
+
+                var nemesisLosses = new Dictionary<string, int>();
+                foreach (var kvp in lossesDict)
+                {
+                    await using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT ps.PlayerName 
+                            FROM PlayerSessions ps
+                            INNER JOIN PlayerAchievements pa ON ps.PlayerName = pa.PlayerName AND ps.RoundId = pa.RoundId
+                            WHERE ps.RoundId = $roundId 
+                              AND ps.CurrentTeam != $team 
+                              AND ps.PlayerName != $playerName 
+                              AND ps.IsDeleted = 0
+                              AND pa.AchievementId IN ('team_victory', 'team_victory_switched')";
+                        
+                        var pRound = cmd.CreateParameter(); pRound.ParameterName = "$roundId"; pRound.Value = kvp.Key; cmd.Parameters.Add(pRound);
+                        var pTeam = cmd.CreateParameter(); pTeam.ParameterName = "$team"; pTeam.Value = kvp.Value; cmd.Parameters.Add(pTeam);
+                        var pPlayer = cmd.CreateParameter(); pPlayer.ParameterName = "$playerName"; pPlayer.Value = playerName; cmd.Parameters.Add(pPlayer);
+
+                        await using (var reader = await cmd.ExecuteReaderAsync())
+                        {
+                            while (await reader.ReadAsync())
+                            {
+                                var name = reader.GetString(0);
+                                nemesisLosses[name] = nemesisLosses.GetValueOrDefault(name, 0) + 1;
+                            }
+                        }
+                    }
+                }
+
+                var topCharm = teammateWins.OrderByDescending(x => x.Value).FirstOrDefault();
+                var topNemesis = nemesisLosses.OrderByDescending(x => x.Value).FirstOrDefault();
+
+                if (topCharm.Key != null && topNemesis.Key != null && topCharm.Key == topNemesis.Key && topCharm.Value >= 3 && topNemesis.Value >= 3)
+                {
+                    twoFaceName = PlayerNameDecoder.Decode(topCharm.Key);
+                    twoFaceWins = topCharm.Value;
+                    twoFaceLosses = topNemesis.Value;
+                }
+                else
+                {
+                    if (topCharm.Key != null && topCharm.Value >= 2)
+                    {
+                        luckyCharmName = PlayerNameDecoder.Decode(topCharm.Key);
+                        luckyCharmWins = topCharm.Value;
+                    }
+                    if (topNemesis.Key != null && topNemesis.Value >= 2)
+                    {
+                        archNemesisName = PlayerNameDecoder.Decode(topNemesis.Key);
+                        archNemesisLosses = topNemesis.Value;
+                    }
+                }
+            }
+            finally
+            {
+                if (wasClosed) await connection.CloseAsync();
+            }
+        }
+
+        var relations = new PlayerRelationsDto(
+            luckyCharmName,
+            luckyCharmWins,
+            archNemesisName,
+            archNemesisLosses,
+            twoFaceName,
+            twoFaceWins,
+            twoFaceLosses
+        );
+
         return new PlayerWrappedResponseDto(
             PlayerNameDecoder.Decode(playerName),
             serverGuid,
@@ -1443,7 +1820,8 @@ public class WrappedService(
             medals,
             bestMoments,
             squad,
-            serverRankings
+            serverRankings,
+            relations
         );
     }
 

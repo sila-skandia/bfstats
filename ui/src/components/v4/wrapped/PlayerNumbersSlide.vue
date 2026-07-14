@@ -14,12 +14,18 @@
             <num-count :data-to="data.yearInNumbers.roundsPlayed" data-dur="1000" data-delay="120"></num-count>
           </div>
           <div class="mm-eyebrow-small">ROUNDS PLAYED</div>
+          <div v-if="data.yearInNumbers.roundsPercentile >= 50" class="stat-percentile animate-rise-up" style="animation-delay: 0.2s">
+            TOP {{ Math.max(0.1, (100 - data.yearInNumbers.roundsPercentile)).toFixed(1) }}%
+          </div>
         </div>
         <div class="grid-item text-k animate-rise-up" style="animation-delay: 0.25s">
           <div class="stat-value">
             <num-count :data-to="data.yearInNumbers.totalKills" data-dur="1150" data-delay="240"></num-count>
           </div>
           <div class="mm-eyebrow-small">KILLS</div>
+          <div v-if="data.yearInNumbers.killsPercentile >= 50" class="stat-percentile text-k animate-rise-up" style="animation-delay: 0.3s">
+            TOP {{ Math.max(0.1, (100 - data.yearInNumbers.killsPercentile)).toFixed(1) }}%
+          </div>
         </div>
         <div class="grid-item text-d animate-rise-up" style="animation-delay: 0.35s">
           <div class="stat-value">
@@ -32,12 +38,16 @@
             <num-count :data-to="Math.round(data.yearInNumbers.hoursInCombat)" data-dur="1150" data-delay="480"></num-count>
           </div>
           <div class="mm-eyebrow-small">HOURS IN COMBAT</div>
+          <div v-if="data.yearInNumbers.playTimePercentile >= 50" class="stat-percentile animate-rise-up" style="animation-delay: 0.5s">
+            TOP {{ Math.max(0.1, (100 - data.yearInNumbers.playTimePercentile)).toFixed(1) }}%
+          </div>
         </div>
       </div>
 
       <div class="numbers-footer">
         <div class="footer-row animate-rise-up" style="animation-delay: 0.55s">
           K/D RATIO <span class="text-k highlight">{{ data.yearInNumbers.kdRatio.toFixed(2) }}</span>
+          <span v-if="data.yearInNumbers.kdPercentile >= 50" class="percentile-mini"> (TOP {{ Math.max(0.1, (100 - data.yearInNumbers.kdPercentile)).toFixed(1) }}%)</span>
           <span class="divider">·</span>
           PLAYED ON <span class="text-strong highlight">{{ data.serverName }}</span>
         </div>
@@ -191,6 +201,24 @@ defineEmits<{
   color: var(--mm-ink-muted);
   margin-top: 8px;
   text-transform: uppercase;
+}
+
+.stat-percentile {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--mm-accent);
+  margin-top: 5px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.percentile-mini {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  color: var(--mm-accent);
+  font-weight: 600;
+  margin-left: 4px;
 }
 
 .text-k {

@@ -15,13 +15,54 @@
 
           <div class="squad-list">
             <div 
-              v-for="(buddy, index) in data.squad" 
+              v-for="(buddy, index) in data.squad.slice(0, 5)" 
               :key="buddy.name" 
               class="squad-row animate-rise-up"
               :style="{ animationDelay: ((index * 0.08) + 0.2) + 's' }"
             >
               <span class="row-num">{{ String(index + 1).padStart(2, '0') }}</span>
               <span class="row-name">{{ buddy.name }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="data.relations && (data.relations.luckyCharmName || data.relations.archNemesisName || data.relations.twoFaceName)" class="relations-container animate-rise-up" style="animation-delay: 0.5s">
+          <div class="relations-heading">Combat Ties</div>
+          
+          <!-- Two Face Card -->
+          <div v-if="data.relations.twoFaceName" class="relation-card card-twoface animate-rise-up" style="animation-delay: 0.55s">
+            <div class="card-icon">🎭</div>
+            <div class="card-body">
+              <div class="card-role">Two Face</div>
+              <div class="card-name">{{ data.relations.twoFaceName }}</div>
+              <div class="card-desc">
+                Your closest ally and fiercest rival. You shared <span class="highlight">{{ data.relations.twoFaceWins }} victories</span> on the same team, but they were also on the winning side in <span class="highlight">{{ data.relations.twoFaceLosses }} of your losses</span> when they opposed you.
+              </div>
+            </div>
+          </div>
+
+          <!-- Lucky Charm & Arch Nemesis Split Cards -->
+          <div v-else class="relations-split">
+            <div v-if="data.relations.luckyCharmName" class="relation-card card-charm animate-rise-up" style="animation-delay: 0.55s">
+              <div class="card-icon">🍀</div>
+              <div class="card-body">
+                <div class="card-role">Lucky Charm</div>
+                <div class="card-name">{{ data.relations.luckyCharmName }}</div>
+                <div class="card-desc">
+                  Shared <span class="highlight">{{ data.relations.luckyCharmWins }} victories</span> on your team. Win rate increases in their presence.
+                </div>
+              </div>
+            </div>
+
+            <div v-if="data.relations.archNemesisName" class="relation-card card-nemesis animate-rise-up" style="animation-delay: 0.6s">
+              <div class="card-icon">🗡️</div>
+              <div class="card-body">
+                <div class="card-role">Arch Nemesis</div>
+                <div class="card-name">{{ data.relations.archNemesisName }}</div>
+                <div class="card-desc">
+                  Opposed you and won in <span class="highlight">{{ data.relations.archNemesisLosses }} of your losses</span>. Always on the other winning team.
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -172,6 +213,106 @@ defineEmits<{
   font-family: var(--mm-font-mono);
   font-size: 13px;
   color: var(--mm-ink-muted);
+}
+
+.relations-container {
+  margin-top: 24px;
+  text-align: left;
+  width: 100%;
+}
+
+.relations-heading {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  border-bottom: 1px solid var(--mm-rule-strong);
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+}
+
+.relations-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .relations-split {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.relation-card {
+  display: flex;
+  gap: 12px;
+  background-color: var(--surface-sunken);
+  border: 1px solid var(--border-hairline);
+  border-radius: 2px;
+  padding: 12px;
+  transition: all 0.25s ease;
+}
+
+.relation-card:hover {
+  border-color: var(--mm-rule-strong);
+}
+
+.card-icon {
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.card-role {
+  font-family: var(--mm-font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+
+.card-name {
+  font-family: var(--mm-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--mm-ink);
+  margin: 2px 0 4px 0;
+}
+
+.card-desc {
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--mm-ink-muted);
+  text-transform: uppercase;
+}
+
+.card-desc .highlight {
+  font-weight: 700;
+  color: var(--mm-accent);
+}
+
+.card-charm {
+  border-left: 3px solid var(--mm-success);
+}
+
+.card-nemesis {
+  border-left: 3px solid var(--mm-accent);
+}
+
+.card-twoface {
+  border-left: 3px solid var(--mm-kd-elite);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .lone-wolf-container {
