@@ -121,6 +121,10 @@ spec:
               value: "RONIN"
             - name: PlayerWrapped__AllowedPlayerNames__8
               value: "pada"
+            - name: PlayerWrapped__AllowedPlayerNames__9
+              value: "Capn Cackler®"
+            - name: PlayerWrapped__AllowedPlayerNames__10
+              value: "TheCalmingClam"
             # Refresh token cookie configuration (Secret provided via external secret manager)
             - name: RefreshToken__CookieName
               value: "rt"
