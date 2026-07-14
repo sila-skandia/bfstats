@@ -39,6 +39,8 @@
                 "PlayerWrapped:AllowedPlayerNames:6": "Betman",
                 "PlayerWrapped:AllowedPlayerNames:7": "RONIN",
                 "PlayerWrapped:AllowedPlayerNames:8": "pada",
+                "PlayerWrapped:AllowedPlayerNames:9": "Capn Cackler®",
+                "PlayerWrapped:AllowedPlayerNames:10": "TheCalmingClam",
                 "AzureOpenAI:Endpoint": "https://bfstats-ai.openai.azure.com/openai/v1/",
                 "AzureOpenAI:DeploymentName": "gpt-4o-mini",
                 "AzureOpenAI:MaxTokens": "4096",
