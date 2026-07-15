@@ -3,20 +3,22 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { fetchDashboardData, type DashboardResponse, type OnlineBuddy, type FavoriteServer } from '@/services/dashboardService'
-import { statsService } from '@/services/statsService'
+import { statsService, type UserPlayerNameEntry } from '@/services/statsService'
 import { kdClass, loadClass } from './mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import MmAddBuddyModal from '@/components/v4/MmAddBuddyModal.vue'
 import MmAddServerModal from '@/components/v4/MmAddServerModal.vue'
+import MmAddAliasModal from '@/components/v4/MmAddAliasModal.vue'
 
 const router = useRouter()
 const { user, isAuthenticated, logout } = useAuth()
 
-type Tab = 'squad' | 'servers' | 'tournaments'
+type Tab = 'squad' | 'aliases' | 'servers' | 'tournaments'
 const activeTab = ref<Tab>('squad')
 const tabs: { id: Tab; label: string }[] = [
   { id: 'squad', label: 'Squad' },
+  { id: 'aliases', label: 'Aliases' },
   { id: 'servers', label: 'Servers' },
   { id: 'tournaments', label: 'Tournaments' },
 ]
@@ -26,6 +28,10 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const showAddBuddy = ref(false)
 const showAddServer = ref(false)
+const showAddAlias = ref(false)
+
+const aliases = ref<UserPlayerNameEntry[]>([])
+const aliasesLoading = ref(false)
 
 const load = async () => {
   if (!isAuthenticated.value) return
@@ -40,7 +46,22 @@ const load = async () => {
   }
 }
 
-onMounted(load)
+const loadAliases = async () => {
+  if (!isAuthenticated.value) return
+  aliasesLoading.value = true
+  try {
+    aliases.value = await statsService.getPlayerNames()
+  } catch (e) {
+    console.error('Failed to load aliases', e)
+  } finally {
+    aliasesLoading.value = false
+  }
+}
+
+onMounted(() => {
+  void load()
+  void loadAliases()
+})
 
 const onlineBuddies = computed<OnlineBuddy[]>(() => data.value?.onlineBuddies ?? [])
 const favouriteServers = computed<FavoriteServer[]>(() => data.value?.favoriteServers ?? [])
@@ -104,6 +125,17 @@ const onServerAdded = async () => {
   showAddServer.value = false
   await load()
 }
+const onAliasAdded = async () => {
+  await loadAliases()
+}
+const removeAlias = async (id: number) => {
+  try {
+    await statsService.removePlayerName(id)
+    await loadAliases()
+  } catch (e) {
+    console.error('Failed to remove alias', e)
+  }
+}
 
 const handleSignOut = () => {
   logout()
@@ -152,6 +184,7 @@ const handleSignOut = () => {
         >
           {{ t.label }}
           <span v-if="t.id === 'squad'" class="mm-tab__badge">{{ onlineBuddies.length }}</span>
+          <span v-else-if="t.id === 'aliases'" class="mm-tab__badge">{{ aliases.length }}</span>
           <span v-else-if="t.id === 'servers'" class="mm-tab__badge">{{ favouriteServers.length }}</span>
         </button>
       </div>
@@ -232,6 +265,51 @@ const handleSignOut = () => {
               </div>
             </li>
           </ol>
+        </div>
+      </section>
+
+      <!-- Aliases tab -->
+      <section v-if="activeTab === 'aliases'" style="margin-top: 24px">
+        <header class="mm-dash__section-head">
+          <div class="mm-eyebrow mm-eyebrow--strong">Aliases · your accounts</div>
+          <div class="mm-dash__section-meta">
+            <span><span class="mm-meta-row__strong">{{ aliases.length }}</span> linked</span>
+            <button type="button" class="mm-btn mm-btn--inline" @click="showAddAlias = true">+ Add</button>
+          </div>
+        </header>
+
+        <div v-if="aliasesLoading" style="padding: 12px 0">
+          <div v-for="i in 3" :key="i" class="mm-skeleton mm-skeleton--lg" style="margin-bottom: 10px" />
+        </div>
+
+        <ol v-else-if="aliases.length > 0" class="mm-dash__alias-list">
+          <li
+            v-for="alias in aliases"
+            :key="alias.id"
+            class="mm-dash__alias-row"
+          >
+            <span class="mm-dash__monogram">{{ monogram(alias.playerName) }}</span>
+            <div class="mm-dash__alias-body">
+              <button
+                type="button"
+                class="mm-dash__squad-name"
+                @click="goPlayer(alias.playerName)"
+              >{{ $pn(alias.playerName) }}</button>
+              <span class="mm-dash__offline-sub">
+                Linked <span :title="formatLocalTooltip(alias.createdAt)">{{ formatRelative(alias.createdAt) }}</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              class="mm-btn mm-btn--inline mm-dash__remove"
+              @click="removeAlias(alias.id)"
+              title="Remove alias"
+            >×</button>
+          </li>
+        </ol>
+
+        <div v-else class="mm-empty" style="padding: 28px">
+          No aliases linked yet — add your in-game names so we know it's you.
         </div>
       </section>
 
@@ -326,6 +404,7 @@ const handleSignOut = () => {
 
     <MmAddBuddyModal v-if="showAddBuddy" @close="showAddBuddy = false" @added="onBuddyAdded" />
     <MmAddServerModal v-if="showAddServer" @close="showAddServer = false" @added="onServerAdded" />
+    <MmAddAliasModal v-if="showAddAlias" @close="showAddAlias = false" @added="onAliasAdded" />
   </div>
 </template>
 
@@ -535,6 +614,26 @@ const handleSignOut = () => {
   padding-top: 18px;
   border-top: 1px dashed var(--mm-rule);
 }
+
+.mm-dash__alias-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mm-dash__alias-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--mm-rule);
+}
+.mm-dash__alias-row:last-child { border-bottom: 0; }
+
+.mm-dash__alias-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 
 .mm-dash__offline-list {
   list-style: none;

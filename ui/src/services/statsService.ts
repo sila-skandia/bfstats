@@ -44,6 +44,23 @@ interface DashboardProfile {
   buddies: Buddy[];
 }
 
+export interface UserPlayerNameEntry {
+  id: number;
+  playerName: string;
+  createdAt: string;
+  player?: Player | null;
+}
+
+export interface BulkPlayerNameWarning {
+  playerName: string;
+  reason: string;
+}
+
+export interface BulkAddPlayerNamesResponse {
+  added: UserPlayerNameEntry[];
+  warnings: BulkPlayerNameWarning[];
+}
+
 class StatsService {
   private baseUrl = '/stats';
 
@@ -123,10 +140,21 @@ class StatsService {
     return this.request<DashboardProfile>('/auth/profile');
   }
 
+  async getPlayerNames(): Promise<UserPlayerNameEntry[]> {
+    return this.request<UserPlayerNameEntry[]>('/auth/player-names');
+  }
+
   async addPlayerName(playerName: string): Promise<void> {
     await this.request('/auth/player-names', {
       method: 'POST',
       body: JSON.stringify({ playerName: playerName }),
+    });
+  }
+
+  async addPlayerNamesBulk(playerNames: string[], replaceExisting = false): Promise<BulkAddPlayerNamesResponse> {
+    return this.request<BulkAddPlayerNamesResponse>('/auth/player-names/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ playerNames, replaceExisting }),
     });
   }
 
