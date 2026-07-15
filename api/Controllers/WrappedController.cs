@@ -76,6 +76,34 @@ public class WrappedController(
     }
 
     /// <summary>
+    /// Retrieves the combined "Your Year in Review" Wrapped statistics across all of a user's registered aliases.
+    /// </summary>
+    [HttpGet("profile/{userId:int}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ProfileWrappedResponseDto>> GetProfileWrapped(int userId, [FromQuery] int year = 2026)
+    {
+        logger.LogInformation("Retrieving Profile Wrapped statistics for UserId: {UserId}, Year: {Year}", userId, year);
+
+        try
+        {
+            var response = await wrappedService.GetProfileWrappedAsync(userId, year);
+            if (response == null)
+            {
+                logger.LogWarning("Profile Wrapped data for UserId {UserId} not found", userId);
+                return NotFound(new { error = $"Profile Wrapped data for user {userId} could not be found." });
+            }
+
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to retrieve Profile Wrapped statistics for UserId {UserId}", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Retrieves the Server-Specific Player Wrapped statistics for a given player.
     /// </summary>
     [HttpGet("player/{playerName}/{serverGuid}")]

@@ -836,6 +836,303 @@ public class WrappedService(
         logger.LogInformation("Player Wrapped pre-computation completed successfully.");
     }
 
+    public async Task<ProfileWrappedResponseDto?> GetProfileWrappedAsync(int userId, int year = 2026, bool bypassCache = false)
+    {
+        var aliases = await dbContext.UserPlayerNames
+            .Where(x => x.UserId == userId)
+            .Select(x => x.PlayerName)
+            .ToListAsync();
+
+        if (aliases.Count == 0) return null;
+
+        // Each alias reuses the existing (already cached) single-player computation as-is —
+        // aliases with no activity this year are dropped rather than diluting the aggregate.
+        var aliasResults = new List<PlayerWrappedResponseDto>();
+        foreach (var alias in aliases)
+        {
+            var result = await GetPlayerWrappedAsync(alias, "global", year, bypassCache);
+            if (result != null && result.YearInNumbers.RoundsPlayed > 0)
+            {
+                aliasResults.Add(result);
+            }
+        }
+
+        if (aliasResults.Count == 0) return null;
+
+        return MergeProfileWrapped(userId, year, aliasResults);
+    }
+
+    private static ProfileWrappedResponseDto MergeProfileWrapped(int userId, int year, List<PlayerWrappedResponseDto> aliasResults)
+    {
+        var mostActive = aliasResults.OrderByDescending(a => a.YearInNumbers.RoundsPlayed).First();
+
+        var yearInNumbers = MergeYearInNumbers(aliasResults);
+        var trend = MergeTrend(aliasResults, mostActive);
+        var favouriteMap = MergeFavouriteMap(aliasResults, mostActive);
+        var medals = MergeMedals(aliasResults, year);
+        var bestMoments = aliasResults
+            .SelectMany(a => a.BestMoments)
+            .OrderByDescending(m => m.Value)
+            .Take(3)
+            .ToList();
+        var squad = aliasResults
+            .SelectMany(a => a.Squad)
+            .GroupBy(t => t.Name)
+            .Select(g => new PlayerTeammateDto(g.Key, g.Sum(t => t.SharedRounds)))
+            .OrderByDescending(t => t.SharedRounds)
+            .Take(10)
+            .ToList();
+        var serverRankings = aliasResults
+            .SelectMany(a => a.ServerRankings)
+            .GroupBy(r => r.ServerGuid)
+            .Select(g => g.OrderBy(r => r.Rank).First())
+            .OrderBy(r => r.Rank)
+            .Take(2)
+            .ToList();
+        var relations = MergeRelations(aliasResults);
+        var bestAliases = MergeBestAliases(aliasResults);
+        var aliasCredits = aliasResults
+            .Select(a => new ProfileAliasCreditDto(
+                a.PlayerName,
+                a.YearInNumbers.RoundsPlayed,
+                a.YearInNumbers.TotalKills,
+                a.YearInNumbers.TotalDeaths,
+                a.YearInNumbers.HoursInCombat,
+                a.YearInNumbers.KdRatio
+            ))
+            .OrderByDescending(c => c.RoundsPlayed)
+            .ToList();
+
+        return new ProfileWrappedResponseDto(
+            userId,
+            year,
+            yearInNumbers,
+            trend,
+            favouriteMap,
+            medals,
+            bestMoments,
+            squad,
+            serverRankings,
+            relations,
+            bestAliases,
+            aliasCredits
+        );
+    }
+
+    private static PlayerYearInNumbersDto MergeYearInNumbers(List<PlayerWrappedResponseDto> aliasResults)
+    {
+        int roundsPlayed = aliasResults.Sum(a => a.YearInNumbers.RoundsPlayed);
+        int totalKills = aliasResults.Sum(a => a.YearInNumbers.TotalKills);
+        int totalDeaths = aliasResults.Sum(a => a.YearInNumbers.TotalDeaths);
+        double hoursInCombat = aliasResults.Sum(a => a.YearInNumbers.HoursInCombat);
+        double kdRatio = totalDeaths > 0 ? Math.Round((double)totalKills / totalDeaths, 2) : totalKills;
+
+        return new PlayerYearInNumbersDto(
+            roundsPlayed,
+            totalKills,
+            totalDeaths,
+            Math.Round(hoursInCombat, 1),
+            kdRatio,
+            aliasResults.Min(a => a.YearInNumbers.ServerRank),
+            aliasResults.Min(a => a.YearInNumbers.KillsRank),
+            aliasResults.Min(a => a.YearInNumbers.PlacementsRank),
+            aliasResults.Max(a => a.YearInNumbers.RoundsPercentile),
+            aliasResults.Max(a => a.YearInNumbers.KillsPercentile),
+            aliasResults.Max(a => a.YearInNumbers.PlayTimePercentile),
+            aliasResults.Max(a => a.YearInNumbers.KdPercentile)
+        );
+    }
+
+    private static PlayerTrendDto MergeTrend(List<PlayerWrappedResponseDto> aliasResults, PlayerWrappedResponseDto mostActive)
+    {
+        // Monthly KD/kill-rate are pre-computed ratios per alias (no raw monthly kill/death
+        // counts survive in the DTO), so the closest we can get without re-querying is a
+        // kills-weighted average across aliases for each month.
+        var monthlyKDs = new List<double>();
+        var monthlyKillRates = new List<double>();
+        for (int m = 0; m < 12; m++)
+        {
+            double weight = aliasResults.Sum(a => (double)a.YearInNumbers.TotalKills);
+            if (weight > 0)
+            {
+                monthlyKDs.Add(Math.Round(aliasResults.Sum(a => a.Trend.MonthlyKDs[m] * a.YearInNumbers.TotalKills) / weight, 2));
+                monthlyKillRates.Add(Math.Round(aliasResults.Sum(a => a.Trend.MonthlyKillRates[m] * a.YearInNumbers.TotalKills) / weight, 2));
+            }
+            else
+            {
+                monthlyKDs.Add(0.0);
+                monthlyKillRates.Add(0.0);
+            }
+        }
+
+        return new PlayerTrendDto(monthlyKDs, monthlyKillRates, mostActive.Trend.TopMaps);
+    }
+
+    private static PlayerFavouriteMapDto MergeFavouriteMap(List<PlayerWrappedResponseDto> aliasResults, PlayerWrappedResponseDto mostActive)
+    {
+        var mapRounds = aliasResults
+            .SelectMany(a => a.FavouriteMap.TopMaps5)
+            .GroupBy(m => m.MapName)
+            .Select(g => new { MapName = g.Key, Rounds = g.Sum(m => m.Rounds) })
+            .OrderByDescending(x => x.Rounds)
+            .ToList();
+
+        var totalRounds = mapRounds.Take(5).Sum(x => x.Rounds);
+        var topMaps5 = mapRounds.Take(5).Select((m, idx) => new PlayerMapProgressDto(
+            m.MapName,
+            m.Rounds,
+            totalRounds > 0 ? Math.Round(m.Rounds * 100.0 / totalRounds, 1) : 0.0,
+            idx == 0 ? "var(--mm-kd-elite)" : "var(--mm-accent)"
+        )).ToList();
+
+        var topMap = mapRounds.FirstOrDefault();
+        var topMapName = topMap?.MapName ?? "";
+
+        // Per-map kills/deaths/score are only available on the alias(es) for which this map
+        // was already their own favourite map — sum across those, since finer per-map
+        // breakdowns for every alias aren't exposed by the per-alias DTO.
+        var contributing = aliasResults.Where(a => a.FavouriteMap.MapName == topMapName).ToList();
+        if (contributing.Count == 0) contributing = new List<PlayerWrappedResponseDto> { mostActive };
+
+        int kills = contributing.Sum(a => a.FavouriteMap.TotalKills);
+        int deaths = contributing.Sum(a => a.FavouriteMap.TotalDeaths);
+        int score = contributing.Sum(a => a.FavouriteMap.TotalScore);
+        double playTimeMinutes = contributing.Sum(a => a.FavouriteMap.PlayTimeMinutes);
+        double kdRatio = deaths > 0 ? Math.Round((double)kills / deaths, 2) : kills;
+
+        var roundsForWinRate = contributing.Sum(a => a.FavouriteMap.Rounds);
+        double winRate = roundsForWinRate > 0
+            ? Math.Round(contributing.Sum(a => a.FavouriteMap.WinRate * a.FavouriteMap.Rounds) / roundsForWinRate, 2)
+            : 0.0;
+
+        double playerKPM = playTimeMinutes > 0 ? kills / playTimeMinutes : 0.0;
+        double globalKPM = mostActive.FavouriteMap.GlobalKPM;
+        double kpmMultiplier = globalKPM > 0 ? playerKPM / globalKPM : 0.0;
+
+        return new PlayerFavouriteMapDto(
+            topMapName,
+            topMap?.Rounds ?? 0,
+            winRate,
+            topMaps5,
+            mostActive.FavouriteMap.HomeServerName,
+            mostActive.FavouriteMap.HomeServerLocation,
+            Math.Round(playerKPM, 3),
+            Math.Round(globalKPM, 3),
+            Math.Round(kpmMultiplier, 2),
+            kills,
+            deaths,
+            kdRatio,
+            score,
+            playTimeMinutes
+        );
+    }
+
+    private static PlayerMedalsDto MergeMedals(List<PlayerWrappedResponseDto> aliasResults, int year)
+    {
+        int killStreaks25 = aliasResults.Sum(a => a.Medals.KillStreaks25);
+        int podiumFinishes = aliasResults.Sum(a => a.Medals.PodiumFinishes);
+        int bestStreak = aliasResults.Max(a => a.Medals.BestStreak);
+
+        var bestBadgeAlias = aliasResults
+            .OrderByDescending(a => GetTierWeight(a.Medals.EliteWarriorTier.Replace(" TIER", "")))
+            .First();
+
+        int totalMilestones = aliasResults.Sum(a =>
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(a.Medals.LifetimeMilestoneText, @"\d+");
+            return match.Success ? int.Parse(match.Value) : 0;
+        });
+        string lifetimeMilestoneText = $"CROSSED {totalMilestones} GLOBAL LIFETIME MILESTONES IN {year}";
+
+        var achievementTypes = aliasResults
+            .SelectMany(a => a.Medals.AchievementTypes)
+            .GroupBy(t => t.Type)
+            .Select(g => new PlayerAchievementTypeCountDto(g.Key, g.Sum(t => t.Count)))
+            .OrderByDescending(t => t.Count)
+            .ToList();
+
+        var achievementsBreakdown = aliasResults
+            .SelectMany(a => a.Medals.AchievementsBreakdown)
+            .GroupBy(a => a.AchievementId)
+            .Select(g =>
+            {
+                var best = g.OrderByDescending(a => GetTierWeight(a.Tier)).First();
+                return new PlayerAchievementCountDto(best.AchievementId, best.Name, best.Type, best.Tier, g.Sum(a => a.Count));
+            })
+            .OrderByDescending(a => a.Count)
+            .ToList();
+
+        return new PlayerMedalsDto(
+            killStreaks25,
+            podiumFinishes,
+            bestBadgeAlias.Medals.EliteWarriorBadgeName,
+            bestBadgeAlias.Medals.EliteWarriorTier,
+            bestStreak,
+            lifetimeMilestoneText,
+            achievementTypes,
+            achievementsBreakdown
+        );
+    }
+
+    private static PlayerRelationsDto MergeRelations(List<PlayerWrappedResponseDto> aliasResults)
+    {
+        var wins = new Dictionary<string, int>();
+        var losses = new Dictionary<string, int>();
+
+        foreach (var a in aliasResults)
+        {
+            var r = a.Relations;
+            if (r.LuckyCharmName != null) wins[r.LuckyCharmName] = wins.GetValueOrDefault(r.LuckyCharmName) + (r.LuckyCharmWins ?? 0);
+            if (r.TwoFaceName != null) wins[r.TwoFaceName] = wins.GetValueOrDefault(r.TwoFaceName) + (r.TwoFaceWins ?? 0);
+            if (r.ArchNemesisName != null) losses[r.ArchNemesisName] = losses.GetValueOrDefault(r.ArchNemesisName) + (r.ArchNemesisLosses ?? 0);
+            if (r.TwoFaceName != null) losses[r.TwoFaceName] = losses.GetValueOrDefault(r.TwoFaceName) + (r.TwoFaceLosses ?? 0);
+        }
+
+        var topCharm = wins.OrderByDescending(x => x.Value).FirstOrDefault();
+        var topNemesis = losses.OrderByDescending(x => x.Value).FirstOrDefault();
+
+        if (topCharm.Key != null && topNemesis.Key != null && topCharm.Key == topNemesis.Key && topCharm.Value >= 3 && topNemesis.Value >= 3)
+        {
+            return new PlayerRelationsDto(null, null, null, null, topCharm.Key, topCharm.Value, topNemesis.Value);
+        }
+
+        string? luckyCharmName = null;
+        int? luckyCharmWins = null;
+        string? archNemesisName = null;
+        int? archNemesisLosses = null;
+
+        if (topCharm.Key != null && topCharm.Value >= 2)
+        {
+            luckyCharmName = topCharm.Key;
+            luckyCharmWins = topCharm.Value;
+        }
+        if (topNemesis.Key != null && topNemesis.Value >= 2)
+        {
+            archNemesisName = topNemesis.Key;
+            archNemesisLosses = topNemesis.Value;
+        }
+
+        return new PlayerRelationsDto(luckyCharmName, luckyCharmWins, archNemesisName, archNemesisLosses, null, null, null);
+    }
+
+    private static ProfileBestAliasesDto MergeBestAliases(List<PlayerWrappedResponseDto> aliasResults)
+    {
+        var bestKd = aliasResults.OrderByDescending(a => a.YearInNumbers.KdRatio).First();
+        var bestKillRate = aliasResults
+            .OrderByDescending(a => a.YearInNumbers.HoursInCombat > 0 ? a.YearInNumbers.TotalKills / (a.YearInNumbers.HoursInCombat * 60.0) : 0.0)
+            .First();
+        double bestKillRateValue = bestKillRate.YearInNumbers.HoursInCombat > 0
+            ? Math.Round(bestKillRate.YearInNumbers.TotalKills / (bestKillRate.YearInNumbers.HoursInCombat * 60.0), 2)
+            : 0.0;
+
+        return new ProfileBestAliasesDto(
+            bestKd.PlayerName,
+            bestKd.YearInNumbers.KdRatio,
+            bestKillRate.PlayerName,
+            bestKillRateValue
+        );
+    }
+
     private async Task SavePlayerToCacheAsync(string playerName, string serverGuid, int year, PlayerWrappedResponseDto dto)
     {
         var jsonData = JsonSerializer.Serialize(dto, JsonOptions);

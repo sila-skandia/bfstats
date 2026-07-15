@@ -490,4 +490,68 @@ public class WrappedServiceTests : IDisposable
         Assert.Equal(1, killStreakGroup.Count);
         Assert.Equal("bronze", killStreakGroup.Tier);
     }
+
+    [Fact]
+    public async Task GetProfileWrappedAsync_ReturnsNull_WhenUserHasNoAliases()
+    {
+        // Arrange
+        _dbContext.Users.Add(new User { Id = 1, Email = "nobody@example.com" });
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetProfileWrappedAsync(1, 2026);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetProfileWrappedAsync_MergesStatsAcrossAliases_AndExcludesEmptyAlias()
+    {
+        // Arrange
+        _dbContext.Users.Add(new User { Id = 2, Email = "player@example.com" });
+        _dbContext.UserPlayerNames.AddRange(
+            new UserPlayerName { UserId = 2, PlayerName = "AliasOne", CreatedAt = DateTime.UtcNow },
+            new UserPlayerName { UserId = 2, PlayerName = "AliasTwo", CreatedAt = DateTime.UtcNow },
+            new UserPlayerName { UserId = 2, PlayerName = "AliasWithNoActivity", CreatedAt = DateTime.UtcNow }
+        );
+
+        // AliasOne: high volume, modest K/D
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = "test-server-guid", PlayerName = "AliasOne", Year = 2026, Week = 23,
+            TotalRounds = 10, TotalKills = 100, TotalDeaths = 50, TotalPlayTimeMinutes = 300
+        });
+
+        // AliasTwo: low volume, elite K/D and kill rate
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = "test-server-guid", PlayerName = "AliasTwo", Year = 2026, Week = 23,
+            TotalRounds = 2, TotalKills = 40, TotalDeaths = 5, TotalPlayTimeMinutes = 60
+        });
+
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetProfileWrappedAsync(2, 2026);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(2, result.UserId);
+
+        // Totals are exact sums across the two active aliases; the empty alias contributes nothing.
+        Assert.Equal(12, result.YearInNumbers.RoundsPlayed);
+        Assert.Equal(140, result.YearInNumbers.TotalKills);
+        Assert.Equal(55, result.YearInNumbers.TotalDeaths);
+        Assert.Equal(2.55, result.YearInNumbers.KdRatio); // 140 / 55
+
+        // Only the two active aliases should appear in the credits list.
+        Assert.Equal(2, result.AliasCredits.Count);
+        Assert.DoesNotContain(result.AliasCredits, c => c.PlayerName == "AliasWithNoActivity");
+
+        // AliasTwo has both the best K/D (8.0) and the best kill rate.
+        Assert.Equal("AliasTwo", result.BestAliases.BestKdAliasName);
+        Assert.Equal(8.0, result.BestAliases.BestKdValue);
+        Assert.Equal("AliasTwo", result.BestAliases.BestKillRateAliasName);
+    }
 }
