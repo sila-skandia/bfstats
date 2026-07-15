@@ -1910,8 +1910,6 @@ namespace api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PlayerName");
-
                     b.HasIndex("UserId", "PlayerName")
                         .IsUnique();
 
@@ -2363,19 +2361,11 @@ namespace api.Migrations
 
             modelBuilder.Entity("api.PlayerTracking.UserPlayerName", b =>
                 {
-                    b.HasOne("api.PlayerTracking.Player", "Player")
-                        .WithMany()
-                        .HasForeignKey("PlayerName")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("api.PlayerTracking.User", "User")
                         .WithMany("PlayerNames")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Player");
 
                     b.Navigation("User");
                 });
