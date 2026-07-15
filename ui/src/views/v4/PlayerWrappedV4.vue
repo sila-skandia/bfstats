@@ -28,7 +28,7 @@
           </div>
           <div class="server-info">
             <h4>{{ data.playerName }}</h4>
-            <p>Year in Review</p>
+            <p>{{ isProfileMode ? 'All Aliases Combined' : 'Year in Review' }}</p>
           </div>
           <nav class="sidebar-nav">
             <button
@@ -221,7 +221,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchPlayerWrapped, type PlayerWrappedData } from '@/services/wrappedService'
+import { fetchPlayerWrapped, fetchProfileWrapped, type WrappedViewData } from '@/services/wrappedService'
 import clippyLogo from '@/assets/clippy_my_boi.webp'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
 
@@ -247,6 +247,7 @@ import PlayerMedalsSlide from '@/components/v4/wrapped/PlayerMedalsSlide.vue'
 import PlayerMomentSlide from '@/components/v4/wrapped/PlayerMomentSlide.vue'
 import PlayerSquadSlide from '@/components/v4/wrapped/PlayerSquadSlide.vue'
 import PlayerShareSlide from '@/components/v4/wrapped/PlayerShareSlide.vue'
+import ProfileCreditsSlide from '@/components/v4/wrapped/ProfileCreditsSlide.vue'
 
 // Programmatic Image Preloader helper
 function preloadImages(urls: string[]) {
@@ -269,7 +270,7 @@ const staticImagesToPreload = [
 ]
 preloadImages(staticImagesToPreload)
 
-const slideComponents = [
+const baseSlideComponents = [
   PlayerIntroSlide,
   PlayerNumbersSlide,
   PlayerTrendSlide,
@@ -303,23 +304,30 @@ function onParallaxMove(e: MouseEvent) {
   })
 }
 
+const isProfileMode = computed(() => route.name === 'v4-profile-wrapped')
 const playerName = ref(route.params.playerName as string)
 const serverGuid = ref((route.params.serverGuid as string) || 'global')
+const userId = computed(() => Number(route.params.userId))
 
 const loading = ref(true)
 const error = ref<string | null>(null)
-const data = ref<PlayerWrappedData | null>(null)
+const data = ref<WrappedViewData | null>(null)
 
-const chapters = [
-  'INTRO',
-  'THE YEAR IN NUMBERS',
-  'RANK & K/D TREND',
-  'FAVOURITE MAP',
-  'MEDALS & DECORATIONS',
-  'BEST MOMENT',
-  'SQUAD',
-  'SHARE CARD'
-]
+const slideComponents = computed(() => isProfileMode.value ? [...baseSlideComponents, ProfileCreditsSlide] : baseSlideComponents)
+
+const chapters = computed(() => {
+  const base = [
+    'INTRO',
+    'THE YEAR IN NUMBERS',
+    'RANK & K/D TREND',
+    'FAVOURITE MAP',
+    'MEDALS & DECORATIONS',
+    'BEST MOMENT',
+    'SQUAD',
+    'SHARE CARD'
+  ]
+  return isProfileMode.value ? [...base, 'CREDITS'] : base
+})
 
 const currentSlide = ref(0)
 const mobileScrollEl = ref<HTMLElement | null>(null)
@@ -340,23 +348,26 @@ let autoAdvanceTimer: any = null
 let progressTimer: any = null
 const SLIDE_DURATION = 7000
 
-const chapterColors = [
-  '#7d8849', // INTRO
-  '#b4c060', // THE YEAR IN NUMBERS
-  '#c5a23a', // RANK & K/D TREND
-  '#7da34c', // FAVOURITE MAP
-  '#c08a4c', // MEDALS & DECORATIONS
-  '#d65a5a', // BEST MOMENT
-  '#c5a23a', // SQUAD
-  '#7d8849'  // SHARE CARD
-]
+const chapterColors = computed(() => {
+  const base = [
+    '#7d8849', // INTRO
+    '#b4c060', // THE YEAR IN NUMBERS
+    '#c5a23a', // RANK & K/D TREND
+    '#7da34c', // FAVOURITE MAP
+    '#c08a4c', // MEDALS & DECORATIONS
+    '#d65a5a', // BEST MOMENT
+    '#c5a23a', // SQUAD
+    '#7d8849'  // SHARE CARD
+  ]
+  return isProfileMode.value ? [...base, '#b4c060'] : base
+})
 
-const activeThemeColor = computed(() => chapterColors[currentSlide.value])
-const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
+const activeThemeColor = computed(() => chapterColors.value[currentSlide.value])
+const activeSlideComponent = computed(() => slideComponents.value[currentSlide.value])
 
 const heroes = computed(() => {
   if (!data.value) return []
-  return [
+  const base = [
     { no: '01', drop: 'DEPLOYMENT', fig: 'Fig. 01 — Deployment', img: ch1p, dot: 'var(--mm-accent)' },
     { no: '02', drop: 'THE CAMPAIGN', fig: 'Fig. 02 — The Campaign', img: ch2p, dot: 'var(--mm-accent)' },
     { no: '03', drop: 'THE ASCENT', fig: 'Fig. 03 — The Ascent', img: ch3p, dot: 'var(--mm-accent)' },
@@ -366,6 +377,7 @@ const heroes = computed(() => {
     { no: '07', drop: 'THE SQUAD', fig: 'Fig. 07 — The Squad', img: ch7p, dot: 'var(--mm-accent)' },
     { no: '08', drop: 'KEEPSAKE', fig: 'Fig. 08 — Keepsake', img: ch8p, dot: 'var(--mm-accent)' }
   ]
+  return isProfileMode.value ? [...base, { no: '09', drop: 'CREDITS', fig: 'Fig. 09 — Credits', img: ch7p, dot: 'var(--mm-accent)' }] : base
 })
 
 const activeHero = computed(() => {
@@ -379,7 +391,12 @@ onMounted(async () => {
   }
 
   try {
-    data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, 2026)
+    if (isProfileMode.value) {
+      const profileData = await fetchProfileWrapped(userId.value, 2026)
+      data.value = { ...profileData, playerName: 'Your Year in Review', serverGuid: 'global', serverName: 'All Aliases' }
+    } else {
+      data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, 2026)
+    }
 
     // Preload dynamic achievements from the player's medals/achievements breakdown
     const dynamicImages: string[] = []
@@ -439,7 +456,7 @@ function stopPlayback() {
 }
 
 function togglePlayback() {
-  if (currentSlide.value === chapters.length - 1) {
+  if (currentSlide.value === chapters.value.length - 1) {
     goToSlide(0)
     startPlayback()
     return
@@ -455,7 +472,7 @@ function nextSlide(manual = false) {
   if (manual) {
     stopPlayback()
   }
-  if (currentSlide.value < chapters.length - 1) {
+  if (currentSlide.value < chapters.value.length - 1) {
     currentSlide.value++
     mobileProgress.value = 0
     if (!manual) {
