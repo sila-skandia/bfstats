@@ -836,6 +836,36 @@ public class WrappedService(
         logger.LogInformation("Player Wrapped pre-computation completed successfully.");
     }
 
+    public async Task CrunchAllProfilesWrappedAsync(int year, CancellationToken ct)
+    {
+        var aliasNames = await dbContext.UserPlayerNames
+            .Select(x => x.PlayerName)
+            .Distinct()
+            .ToListAsync(ct);
+
+        logger.LogInformation("Starting pre-computation of Profile Wrapped alias data for {Count} aliases for year {Year}", aliasNames.Count, year);
+
+        foreach (var alias in aliasNames)
+        {
+            if (ct.IsCancellationRequested) break;
+            logger.LogDebug("Crunching profile wrapped alias: {Alias}", alias);
+
+            try
+            {
+                var globalData = await CalculatePlayerWrappedInternalAsync(alias, "global", year);
+                if (globalData != null)
+                {
+                    await SavePlayerToCacheAsync(alias, "global", year, globalData);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to pre-compute Profile Wrapped data for alias: {Alias}", alias);
+            }
+        }
+        logger.LogInformation("Profile Wrapped alias pre-computation completed successfully.");
+    }
+
     public async Task<ProfileWrappedResponseDto?> GetProfileWrappedAsync(int userId, int year = 2026, bool bypassCache = false)
     {
         var aliases = await dbContext.UserPlayerNames
