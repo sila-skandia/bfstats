@@ -99,7 +99,7 @@
               <div class="slide-container">
                 <transition name="slide-fade" mode="out-in">
                   <div class="slide-content-wrapper" :key="currentSlide">
-                    <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
+                    <component :is="activeSlideComponent" :data="data" :chapter-number="isProfileMode ? '09' : '08'" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
                   </div>
                 </transition>
               </div>
@@ -191,7 +191,7 @@
         <!-- Mobile Content Container -->
         <div class="mobile-content-container">
           <transition name="slide-fade" mode="out-in">
-            <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
+            <component :is="activeSlideComponent" :key="currentSlide" :data="data" :chapter-number="isProfileMode ? '09' : '08'" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
           </transition>
         </div>
         </main>
@@ -233,6 +233,7 @@ import ch4p from '@/assets/wrapped/ch4p.webp'
 import ch5p from '@/assets/wrapped/ch5p.webp'
 import ch6p from '@/assets/wrapped/ch6p.webp'
 import ch7p from '@/assets/wrapped/ch7p.webp'
+import pwSquad from '@/assets/wrapped/pw_squad.webp'
 import ch8p from '@/assets/wrapped/ch8p.webp'
 
 // Animated FX tiles (smoke drift + rising embers)
@@ -260,7 +261,7 @@ function preloadImages(urls: string[]) {
 
 // Preload static player assets immediately on script evaluation
 const staticImagesToPreload = [
-  ch1p, ch2p, ch3p, ch4p, ch5p, ch6p, ch7p, ch8p,
+  ch1p, ch2p, ch3p, ch4p, ch5p, ch6p, ch7p, ch8p, pwSquad,
   fxSmoke, fxEmbers,
   clippyLogo,
   getAchievementImage('kill_streak_25'),
@@ -313,7 +314,10 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const data = ref<WrappedViewData | null>(null)
 
-const slideComponents = computed(() => isProfileMode.value ? [...baseSlideComponents, ProfileCreditsSlide] : baseSlideComponents)
+const slideComponents = computed(() => {
+  if (!isProfileMode.value) return baseSlideComponents
+  return [...baseSlideComponents.slice(0, 7), ProfileCreditsSlide, baseSlideComponents[7]]
+})
 
 const chapters = computed(() => {
   const base = [
@@ -326,7 +330,7 @@ const chapters = computed(() => {
     'SQUAD',
     'SHARE CARD'
   ]
-  return isProfileMode.value ? [...base, 'CREDITS'] : base
+  return isProfileMode.value ? [...base.slice(0, 7), 'PROFILE WRAPPED', base[7]] : base
 })
 
 const currentSlide = ref(0)
@@ -359,7 +363,7 @@ const chapterColors = computed(() => {
     '#c5a23a', // SQUAD
     '#7d8849'  // SHARE CARD
   ]
-  return isProfileMode.value ? [...base, '#b4c060'] : base
+  return isProfileMode.value ? [...base.slice(0, 7), '#b4c060', base[7]] : base
 })
 
 const activeThemeColor = computed(() => chapterColors.value[currentSlide.value])
@@ -377,7 +381,12 @@ const heroes = computed(() => {
     { no: '07', drop: 'THE SQUAD', fig: 'Fig. 07 — The Squad', img: ch7p, dot: 'var(--mm-accent)' },
     { no: '08', drop: 'KEEPSAKE', fig: 'Fig. 08 — Keepsake', img: ch8p, dot: 'var(--mm-accent)' }
   ]
-  return isProfileMode.value ? [...base, { no: '09', drop: 'CREDITS', fig: 'Fig. 09 — Credits', img: ch7p, dot: 'var(--mm-accent)' }] : base
+  if (!isProfileMode.value) return base
+  return [
+    ...base.slice(0, 7),
+    { no: '08', drop: 'ALL FRONTS', fig: 'Fig. 08 — All Fronts', img: pwSquad, dot: 'var(--mm-accent)' },
+    { ...base[7], no: '09', fig: 'Fig. 09 — Keepsake' }
+  ]
 })
 
 const activeHero = computed(() => {

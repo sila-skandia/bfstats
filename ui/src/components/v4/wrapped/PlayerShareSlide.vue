@@ -1,7 +1,7 @@
 <template>
   <div class="wrapped-slide share-slide animate-line-in">
     <div class="slide-header">
-      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">08 — Share Card</span>
+      <span class="slide-badge animate-rise-up" style="animation-delay: 0.05s">{{ chapterNumber }} — Share Card</span>
     </div>
 
     <div class="share-layout">
@@ -67,9 +67,12 @@ import { ref, computed } from 'vue'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import clippyLogo from '@/assets/clippy_my_boi.webp'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   data: PlayerWrappedData
-}>()
+  chapterNumber?: string
+}>(), {
+  chapterNumber: '08'
+})
 
 defineEmits<{
   (e: 'restart'): void

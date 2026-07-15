@@ -439,6 +439,38 @@ public class AuthController(
         }
     }
 
+    [HttpPost("player-names/bulk-delete")]
+    [Authorize]
+    public async Task<IActionResult> RemovePlayerNamesBulk([FromBody] BulkDeletePlayerNamesRequest request)
+    {
+        try
+        {
+            var user = await GetCurrentUserAsync();
+            if (user == null)
+                return StatusCode(500, new { message = "User not found" });
+
+            if (request.Ids == null || request.Ids.Count == 0)
+                return BadRequest(new { message = "At least one id is required" });
+
+            var toRemove = await context.UserPlayerNames
+                .Where(upn => upn.UserId == user.Id && request.Ids.Contains(upn.Id))
+                .ToListAsync();
+
+            if (toRemove.Count > 0)
+            {
+                context.UserPlayerNames.RemoveRange(toRemove);
+                await context.SaveChangesAsync();
+            }
+
+            return Ok(new { deletedCount = toRemove.Count });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error bulk removing player names");
+            return StatusCode(500, new { message = "Error bulk removing player names" });
+        }
+    }
+
     [HttpPost("favorite-servers")]
     [Authorize]
     public async Task<IActionResult> AddFavoriteServer([FromBody] AddFavoriteServerRequest request)
