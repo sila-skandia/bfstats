@@ -164,6 +164,13 @@ class StatsService {
     });
   }
 
+  async removePlayerNamesBulk(ids: number[]): Promise<{ deletedCount: number }> {
+    return this.request<{ deletedCount: number }>('/auth/player-names/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+
   async addFavoriteServer(serverGuid: string): Promise<void> {
     await this.request('/auth/favorite-servers', {
       method: 'POST',

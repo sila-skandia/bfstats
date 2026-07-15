@@ -308,6 +308,8 @@ export interface ProfileBestAliases {
   bestKdValue: number;
   bestKillRateAliasName: string;
   bestKillRateValue: number;
+  bestMapKdMapName: string;
+  bestMapKdValue: number;
 }
 
 export interface ProfileAliasCredit {

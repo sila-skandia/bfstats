@@ -1148,18 +1148,25 @@ public class WrappedService(
     private static ProfileBestAliasesDto MergeBestAliases(List<PlayerWrappedResponseDto> aliasResults)
     {
         var bestKd = aliasResults.OrderByDescending(a => a.YearInNumbers.KdRatio).First();
+
+        // Kills per round — matches this feature's own "Kills/Rd" convention (see the
+        // HIGHEST KILL RATE map stat above), not the kills-per-minute metric used elsewhere.
         var bestKillRate = aliasResults
-            .OrderByDescending(a => a.YearInNumbers.HoursInCombat > 0 ? a.YearInNumbers.TotalKills / (a.YearInNumbers.HoursInCombat * 60.0) : 0.0)
+            .OrderByDescending(a => a.YearInNumbers.RoundsPlayed > 0 ? (double)a.YearInNumbers.TotalKills / a.YearInNumbers.RoundsPlayed : 0.0)
             .First();
-        double bestKillRateValue = bestKillRate.YearInNumbers.HoursInCombat > 0
-            ? Math.Round(bestKillRate.YearInNumbers.TotalKills / (bestKillRate.YearInNumbers.HoursInCombat * 60.0), 2)
+        double bestKillRateValue = bestKillRate.YearInNumbers.RoundsPlayed > 0
+            ? Math.Round((double)bestKillRate.YearInNumbers.TotalKills / bestKillRate.YearInNumbers.RoundsPlayed, 2)
             : 0.0;
+
+        var bestMapKd = aliasResults.OrderByDescending(a => a.FavouriteMap.KdRatio).First();
 
         return new ProfileBestAliasesDto(
             bestKd.PlayerName,
             bestKd.YearInNumbers.KdRatio,
             bestKillRate.PlayerName,
-            bestKillRateValue
+            bestKillRateValue,
+            bestMapKd.FavouriteMap.MapName,
+            bestMapKd.FavouriteMap.KdRatio
         );
     }
 

@@ -530,6 +530,18 @@ public class WrappedServiceTests : IDisposable
             TotalRounds = 2, TotalKills = 40, TotalDeaths = 5, TotalPlayTimeMinutes = 60
         });
 
+        // Each alias's own favourite map, so the merge can pick the best map K/D across aliases.
+        _dbContext.PlayerMapStats.Add(new PlayerMapStats
+        {
+            ServerGuid = api.Data.Entities.PlayerMapStats.GlobalServerGuid, PlayerName = "AliasOne", MapName = "Iwo Jima",
+            Year = 2026, Month = 6, TotalRounds = 10, TotalKills = 100, TotalDeaths = 50, TotalPlayTimeMinutes = 300
+        });
+        _dbContext.PlayerMapStats.Add(new PlayerMapStats
+        {
+            ServerGuid = api.Data.Entities.PlayerMapStats.GlobalServerGuid, PlayerName = "AliasTwo", MapName = "Battle of Britain",
+            Year = 2026, Month = 6, TotalRounds = 2, TotalKills = 40, TotalDeaths = 5, TotalPlayTimeMinutes = 60
+        });
+
         await _dbContext.SaveChangesAsync();
 
         // Act
@@ -549,10 +561,15 @@ public class WrappedServiceTests : IDisposable
         Assert.Equal(2, result.AliasCredits.Count);
         Assert.DoesNotContain(result.AliasCredits, c => c.PlayerName == "AliasWithNoActivity");
 
-        // AliasTwo has both the best K/D (8.0) and the best kill rate.
+        // AliasTwo has both the best K/D (8.0) and the best kill rate (20 kills/round).
         Assert.Equal("AliasTwo", result.BestAliases.BestKdAliasName);
         Assert.Equal(8.0, result.BestAliases.BestKdValue);
         Assert.Equal("AliasTwo", result.BestAliases.BestKillRateAliasName);
+        Assert.Equal(20.0, result.BestAliases.BestKillRateValue);
+
+        // AliasTwo's map (Battle of Britain, 8.0 K/D) beats AliasOne's map (Iwo Jima, 2.0 K/D).
+        Assert.Equal("Battle of Britain", result.BestAliases.BestMapKdMapName);
+        Assert.Equal(8.0, result.BestAliases.BestMapKdValue);
     }
 
     [Fact]

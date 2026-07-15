@@ -251,4 +251,53 @@ public class AuthControllerTests
         Assert.IsType<OkObjectResult>(result);
         Assert.Equal(2, await _dbContext.UserPlayerNames.CountAsync(upn => upn.UserId == _user.Id));
     }
+
+    [Fact]
+    public async Task RemovePlayerNamesBulk_RemovesOnlyRequestedIds()
+    {
+        var keep = new UserPlayerName { UserId = _user.Id, PlayerName = "Keep", CreatedAt = DateTime.UtcNow };
+        var removeA = new UserPlayerName { UserId = _user.Id, PlayerName = "RemoveA", CreatedAt = DateTime.UtcNow };
+        var removeB = new UserPlayerName { UserId = _user.Id, PlayerName = "RemoveB", CreatedAt = DateTime.UtcNow };
+        _dbContext.UserPlayerNames.AddRange(keep, removeA, removeB);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.RemovePlayerNamesBulk(new BulkDeletePlayerNamesRequest
+        {
+            Ids = [removeA.Id, removeB.Id]
+        });
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(2, (int)okResult.Value!.GetType().GetProperty("deletedCount")!.GetValue(okResult.Value)!);
+
+        var remaining = await _dbContext.UserPlayerNames.Where(upn => upn.UserId == _user.Id).ToListAsync();
+        Assert.Single(remaining);
+        Assert.Equal("Keep", remaining[0].PlayerName);
+    }
+
+    [Fact]
+    public async Task RemovePlayerNamesBulk_IgnoresIdsBelongingToAnotherUser()
+    {
+        var otherUser = new User { Id = 2, Email = "other@example.com", CreatedAt = DateTime.UtcNow, LastLoggedIn = DateTime.UtcNow, IsActive = true };
+        _dbContext.Users.Add(otherUser);
+        var othersAlias = new UserPlayerName { UserId = otherUser.Id, PlayerName = "NotYours", CreatedAt = DateTime.UtcNow };
+        _dbContext.UserPlayerNames.Add(othersAlias);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.RemovePlayerNamesBulk(new BulkDeletePlayerNamesRequest
+        {
+            Ids = [othersAlias.Id]
+        });
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(0, (int)okResult.Value!.GetType().GetProperty("deletedCount")!.GetValue(okResult.Value)!);
+        Assert.True(await _dbContext.UserPlayerNames.AnyAsync(upn => upn.Id == othersAlias.Id));
+    }
+
+    [Fact]
+    public async Task RemovePlayerNamesBulk_ReturnsBadRequest_WhenIdsIsEmpty()
+    {
+        var result = await _controller.RemovePlayerNamesBulk(new BulkDeletePlayerNamesRequest { Ids = [] });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
 }
