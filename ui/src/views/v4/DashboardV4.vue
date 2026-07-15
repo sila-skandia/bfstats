@@ -32,6 +32,8 @@ const showAddAlias = ref(false)
 
 const aliases = ref<UserPlayerNameEntry[]>([])
 const aliasesLoading = ref(false)
+const selectedAliasIds = ref<Set<number>>(new Set())
+const deletingAliases = ref(false)
 
 const load = async () => {
   if (!isAuthenticated.value) return
@@ -135,6 +137,47 @@ const removeAlias = async (id: number) => {
   } catch (e) {
     console.error('Failed to remove alias', e)
   }
+}
+
+const invalidAliases = computed(() => aliases.value.filter(a => !a.player))
+
+const toggleAliasSelect = (id: number) => {
+  const next = new Set(selectedAliasIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedAliasIds.value = next
+}
+
+const clearAliasSelection = () => {
+  selectedAliasIds.value = new Set()
+}
+
+const deleteAliasIds = async (ids: number[]) => {
+  if (ids.length === 0) return
+  deletingAliases.value = true
+  try {
+    await statsService.removePlayerNamesBulk(ids)
+    clearAliasSelection()
+    await loadAliases()
+  } catch (e) {
+    console.error('Failed to bulk remove aliases', e)
+  } finally {
+    deletingAliases.value = false
+  }
+}
+
+const deleteSelectedAliases = async () => {
+  const ids = [...selectedAliasIds.value]
+  if (ids.length === 0) return
+  if (!window.confirm(`Remove ${ids.length} selected alias${ids.length === 1 ? '' : 'es'}?`)) return
+  await deleteAliasIds(ids)
+}
+
+const deleteInvalidAliases = async () => {
+  const ids = invalidAliases.value.map(a => a.id)
+  if (ids.length === 0) return
+  if (!window.confirm(`Remove ${ids.length} alias${ids.length === 1 ? '' : 'es'} with no matching player?`)) return
+  await deleteAliasIds(ids)
 }
 
 const handleSignOut = () => {
@@ -273,8 +316,27 @@ const handleSignOut = () => {
         <header class="mm-dash__section-head">
           <div class="mm-eyebrow mm-eyebrow--strong">Aliases · your accounts</div>
           <div class="mm-dash__section-meta">
-            <span><span class="mm-meta-row__strong">{{ aliases.length }}</span> linked</span>
-            <button type="button" class="mm-btn mm-btn--inline" @click="showAddAlias = true">+ Add</button>
+            <template v-if="selectedAliasIds.size > 0">
+              <span><span class="mm-meta-row__strong">{{ selectedAliasIds.size }}</span> selected</span>
+              <button type="button" class="mm-btn mm-btn--inline" @click="clearAliasSelection">Cancel</button>
+              <button
+                type="button"
+                class="mm-btn mm-btn--inline mm-dash__delete-selected"
+                :disabled="deletingAliases"
+                @click="deleteSelectedAliases"
+              >Delete selected</button>
+            </template>
+            <template v-else>
+              <span><span class="mm-meta-row__strong">{{ aliases.length }}</span> linked</span>
+              <button
+                v-if="invalidAliases.length > 0"
+                type="button"
+                class="mm-dash__quick-delete"
+                :disabled="deletingAliases"
+                @click="deleteInvalidAliases"
+              >Remove {{ invalidAliases.length }} not found</button>
+              <button type="button" class="mm-btn mm-btn--inline" @click="showAddAlias = true">+ Add</button>
+            </template>
           </div>
         </header>
 
@@ -287,8 +349,19 @@ const handleSignOut = () => {
             v-for="alias in aliases"
             :key="alias.id"
             class="mm-dash__alias-row"
+            :class="{ 'mm-dash__alias-row--selected': selectedAliasIds.has(alias.id) }"
           >
-            <span class="mm-dash__monogram">{{ monogram(alias.playerName) }}</span>
+            <button
+              type="button"
+              class="mm-dash__monogram mm-dash__monogram--check"
+              :class="{ 'mm-dash__monogram--selected': selectedAliasIds.has(alias.id) }"
+              :aria-pressed="selectedAliasIds.has(alias.id)"
+              :title="selectedAliasIds.has(alias.id) ? 'Deselect alias' : 'Select alias'"
+              @click="toggleAliasSelect(alias.id)"
+            >
+              <span v-if="selectedAliasIds.has(alias.id)" class="mm-dash__monogram-tick">✓</span>
+              <span v-else>{{ monogram(alias.playerName) }}</span>
+            </button>
             <div class="mm-dash__alias-body">
               <button
                 type="button"
@@ -296,7 +369,7 @@ const handleSignOut = () => {
                 @click="goPlayer(alias.playerName)"
               >{{ $pn(alias.playerName) }}</button>
               <span class="mm-dash__offline-sub">
-                Linked <span :title="formatLocalTooltip(alias.createdAt)">{{ formatRelative(alias.createdAt) }}</span>
+                <template v-if="!alias.player">Not found · </template>Linked <span :title="formatLocalTooltip(alias.createdAt)">{{ formatRelative(alias.createdAt) }}</span>
               </span>
             </div>
             <button
@@ -464,6 +537,40 @@ const handleSignOut = () => {
   display: grid;
   place-items: center;
 }
+
+.mm-dash__monogram--check {
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.mm-dash__monogram--check:hover { border-color: var(--mm-accent); }
+.mm-dash__monogram--selected {
+  background: var(--mm-accent);
+  border-color: var(--mm-accent);
+  color: var(--mm-bg);
+}
+.mm-dash__monogram-tick { font-size: 18px; font-weight: 700; }
+
+.mm-dash__alias-row--selected { background: var(--mm-bg-soft); border-radius: 4px; }
+
+.mm-dash__quick-delete {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--mm-kill);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mm-dash__quick-delete:hover { color: var(--mm-accent); }
+.mm-dash__quick-delete:disabled { opacity: 0.5; cursor: default; }
+
+.mm-dash__delete-selected { color: var(--mm-kill); }
+.mm-dash__delete-selected:hover { color: var(--mm-bg); background: var(--mm-kill); }
+.mm-dash__delete-selected:disabled { opacity: 0.5; cursor: default; }
 
 .mm-dash__squad-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 
