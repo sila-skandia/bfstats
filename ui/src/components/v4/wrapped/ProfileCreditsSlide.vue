@@ -1,42 +1,22 @@
 <template>
   <div class="wrapped-slide credits-slide animate-line-in" @click="$emit('next')">
     <div class="credits-left-container">
-      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">09 — CREDITS</div>
+      <div class="credits-eyebrow-row animate-rise-up" style="animation-delay: 0.05s">
+        <span class="mm-eyebrow">08 — PROFILE WRAPPED</span>
+        <span class="new-badge">NEW</span>
+      </div>
 
       <div class="credits-heading animate-rise-up" style="animation-delay: 0.1s">
-        Every alias behind this year.
+        Your Squad
       </div>
 
-      <div v-if="data.bestAliases" class="best-alias-split animate-rise-up" style="animation-delay: 0.15s">
-        <div class="relation-card card-kd">
-          <div class="card-icon">🎯</div>
-          <div class="card-body">
-            <div class="card-role">Best K/D</div>
-            <div class="card-name">{{ $pn(data.bestAliases.bestKdAliasName) }}</div>
-            <div class="card-desc">
-              Posted a <span class="highlight">{{ data.bestAliases.bestKdValue.toFixed(2) }} K/D</span> this year — your sharpest alias.
-            </div>
-          </div>
-        </div>
-
-        <div class="relation-card card-rate">
-          <div class="card-icon">⚡</div>
-          <div class="card-body">
-            <div class="card-role">Best Kill Rate</div>
-            <div class="card-name">{{ $pn(data.bestAliases.bestKillRateAliasName) }}</div>
-            <div class="card-desc">
-              Averaged <span class="highlight">{{ data.bestAliases.bestKillRateValue.toFixed(2) }} kills/min</span> — your fastest trigger.
-            </div>
-          </div>
-        </div>
-      </div>
+      <p class="credits-subtext animate-rise-up" style="animation-delay: 0.12s">
+        All your player names that contributed to this wrap.
+      </p>
 
       <div class="credits-container">
-        <div class="credits-table-header animate-rise-up" style="animation-delay: 0.2s">
-          <span>ALIAS</span>
-          <span>ROUNDS</span>
-          <span>KILLS</span>
-          <span>K/D</span>
+        <div class="credits-table-header animate-rise-up" style="animation-delay: 0.15s">
+          <span>LINKED NAMES</span>
         </div>
 
         <div class="credits-list">
@@ -44,12 +24,35 @@
             v-for="(alias, index) in data.aliasCredits"
             :key="alias.playerName"
             class="credits-row animate-rise-up"
-            :style="{ animationDelay: (Math.min(index * 0.04, 0.6) + 0.25) + 's' }"
+            :style="{ animationDelay: (Math.min(index * 0.04, 0.6) + 0.2) + 's' }"
           >
+            <span class="row-num">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="row-name">{{ $pn(alias.playerName) }}</span>
-            <span class="row-stat">{{ alias.roundsPlayed.toLocaleString() }}</span>
-            <span class="row-stat">{{ alias.totalKills.toLocaleString() }}</span>
-            <span class="row-stat kd-accent">{{ alias.kdRatio.toFixed(2) }}</span>
+            <span class="row-stat">
+              {{ alias.roundsPlayed.toLocaleString() }} Rounds ·
+              <span :class="{ 'kd-accent': index === 0 }">{{ alias.kdRatio.toFixed(2) }} K/D</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="data.bestAliases" class="best-alias-container animate-rise-up" style="animation-delay: 0.3s">
+        <div class="best-alias-heading">Across All Names</div>
+        <div class="best-alias-grid">
+          <div class="best-alias-stat">
+            <div class="best-alias-label">Top Kill Rate</div>
+            <div class="best-alias-value">{{ $pn(data.bestAliases.bestKillRateAliasName) }}</div>
+            <div class="best-alias-metric">{{ data.bestAliases.bestKillRateValue.toFixed(1) }} Kills/Rd</div>
+          </div>
+          <div class="best-alias-stat">
+            <div class="best-alias-label">Top K/D</div>
+            <div class="best-alias-value">{{ $pn(data.bestAliases.bestKdAliasName) }}</div>
+            <div class="best-alias-metric kd-accent">{{ data.bestAliases.bestKdValue.toFixed(2) }} K/D</div>
+          </div>
+          <div class="best-alias-stat">
+            <div class="best-alias-label">Best Map K/D</div>
+            <div class="best-alias-value">{{ data.bestAliases.bestMapKdMapName }}</div>
+            <div class="best-alias-metric">{{ data.bestAliases.bestMapKdValue.toFixed(2) }} K/D</div>
           </div>
         </div>
       </div>
@@ -59,11 +62,11 @@
     <div class="hero-image-container">
       <div class="hero-image-card">
         <div class="hero-placeholder">
-          <div class="hero-title">HERO 09</div>
-          <div class="hero-sub">CREDITS<br>DROP: ch7p.webp</div>
+          <div class="hero-title">HERO 08</div>
+          <div class="hero-sub">ALL FRONTS<br>DROP: pw_squad.webp</div>
         </div>
         <div class="hero-img-wrapper">
-          <img :src="ch7p" alt="Credits" class="hero-img">
+          <img :src="pwSquad" alt="All Fronts" class="hero-img">
         </div>
         <div class="hero-overlay-smoke"></div>
         <div class="hero-overlay-grad"></div>
@@ -74,7 +77,7 @@
         <div class="hero-corner hero-corner-br"></div>
         <div class="hero-caption">
           <span class="hero-caption-dot"></span>
-          Fig. 09 — Credits
+          Fig. 08 — All Fronts
         </div>
       </div>
     </div>
@@ -83,7 +86,7 @@
 
 <script setup lang="ts">
 import type { WrappedViewData } from '@/services/wrappedService'
-import ch7p from '@/assets/wrapped/ch7p.webp'
+import pwSquad from '@/assets/wrapped/pw_squad.webp'
 
 defineProps<{
   data: WrappedViewData
@@ -121,11 +124,28 @@ defineEmits<{
   min-height: 0;
 }
 
+.credits-eyebrow-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .mm-eyebrow {
   font-family: var(--mm-font-mono);
   font-size: 11px;
   letter-spacing: 0.22em;
   color: var(--mm-ink-muted);
+}
+
+.new-badge {
+  background-color: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: var(--mm-radius-sm, 2px);
 }
 
 .credits-heading {
@@ -135,85 +155,16 @@ defineEmits<{
   line-height: 1.2;
   letter-spacing: -0.02em;
   color: var(--mm-ink);
-  margin: 14px 0 20px 0;
+  margin: 14px 0 8px 0;
 }
 
-.best-alias-split {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-@media (min-width: 640px) {
-  .best-alias-split {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.relation-card {
-  display: flex;
-  gap: 12px;
-  background-color: var(--surface-sunken);
-  border: 1px solid var(--border-hairline);
-  border-radius: 2px;
-  padding: 12px;
-  transition: all 0.25s ease;
-}
-
-.relation-card:hover {
-  border-color: var(--mm-rule-strong);
-}
-
-.card-icon {
-  font-size: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.card-body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-}
-
-.card-role {
-  font-family: var(--mm-font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-}
-
-.card-name {
+.credits-subtext {
   font-family: var(--mm-font-display);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--mm-ink);
-  margin: 2px 0 4px 0;
-}
-
-.card-desc {
-  font-family: var(--mm-font-mono);
-  font-size: 9.5px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--mm-ink-muted);
-  text-transform: uppercase;
-}
-
-.card-desc .highlight {
-  font-weight: 700;
-  color: var(--mm-accent);
-}
-
-.card-kd {
-  border-left: 3px solid var(--mm-kd-elite);
-}
-
-.card-rate {
-  border-left: 3px solid var(--mm-success);
+  max-width: 46ch;
+  margin: 0 0 20px 0;
 }
 
 .credits-container {
@@ -224,9 +175,6 @@ defineEmits<{
 }
 
 .credits-table-header {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto;
-  gap: 16px;
   background-color: var(--mm-highlight);
   color: var(--mm-highlight-ink);
   border-radius: 2px;
@@ -235,11 +183,6 @@ defineEmits<{
   font-size: 9.5px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  text-align: right;
-}
-
-.credits-table-header span:first-child {
-  text-align: left;
 }
 
 .credits-list {
@@ -249,18 +192,27 @@ defineEmits<{
 }
 
 .credits-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto;
-  gap: 16px;
+  display: flex;
   align-items: baseline;
-  padding: 9px 12px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
   border-bottom: 1px solid var(--mm-rule);
 }
 
+.row-num {
+  width: 28px;
+  flex-shrink: 0;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  color: var(--mm-ink-faint);
+}
+
 .row-name {
+  flex: 1;
   font-family: var(--mm-font-display);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 14.5px;
+  font-weight: 700;
   color: var(--mm-ink);
   text-align: left;
   overflow: hidden;
@@ -269,14 +221,64 @@ defineEmits<{
 }
 
 .row-stat {
+  flex-shrink: 0;
   font-family: var(--mm-font-mono);
   font-size: 12.5px;
   color: var(--mm-ink-muted);
   text-align: right;
+  white-space: nowrap;
 }
 
-.row-stat.kd-accent {
+.kd-accent {
   color: var(--mm-accent);
   font-weight: 700;
+}
+
+.best-alias-container {
+  margin-top: 24px;
+  text-align: left;
+}
+
+.best-alias-heading {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  border-bottom: 1px solid var(--mm-rule-strong);
+  padding-bottom: 6px;
+  margin-bottom: 14px;
+}
+
+.best-alias-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.best-alias-label {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-faint);
+  margin-bottom: 6px;
+}
+
+.best-alias-value {
+  font-family: var(--mm-font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--mm-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.best-alias-metric {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  color: var(--mm-ink-muted);
+  margin-top: 2px;
 }
 </style>

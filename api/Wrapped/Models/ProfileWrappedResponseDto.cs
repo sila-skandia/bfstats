@@ -19,7 +19,9 @@ public record ProfileBestAliasesDto(
     string BestKdAliasName,
     double BestKdValue,
     string BestKillRateAliasName,
-    double BestKillRateValue
+    double BestKillRateValue,
+    string BestMapKdMapName,
+    double BestMapKdValue
 );
 
 public record ProfileAliasCreditDto(
