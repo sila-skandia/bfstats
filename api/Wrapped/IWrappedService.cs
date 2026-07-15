@@ -31,4 +31,10 @@ public interface IWrappedService
     /// merging each alias's own (cached) Player Wrapped into one aggregate.
     /// </summary>
     Task<ProfileWrappedResponseDto?> GetProfileWrappedAsync(int userId, int year = 2026, bool bypassCache = false);
+
+    /// <summary>
+    /// Background job method to pre-compute and cache Player Wrapped data (global, per-alias)
+    /// for every alias registered across all users, so Profile Wrapped reads are served from cache.
+    /// </summary>
+    Task CrunchAllProfilesWrappedAsync(int year, CancellationToken ct);
 }

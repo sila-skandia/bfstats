@@ -214,3 +214,8 @@ export function triggerPlayerWrappedCrunch(): Promise<{ message?: string; error?
   return request('/player-wrapped-crunch');
 }
 
+/** Fire-and-forget. Pre-computes and caches Player Wrapped data for every registered alias. Returns 202 Accepted. */
+export function triggerProfileWrappedCrunch(): Promise<{ message?: string; error?: string }> {
+  return request('/profile-wrapped-crunch');
+}
+
