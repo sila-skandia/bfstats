@@ -100,9 +100,6 @@ const formatRelative = (iso: string): string => {
 }
 
 const goPlayer = (name: string) => router.push(`/v4/players/${encodeURIComponent(name)}`)
-const goProfileWrapped = () => {
-  if (user.value?.id) router.push(`/v4/wrapped/profile/${user.value.id}`)
-}
 const goServer = (name: string) => router.push(`/v4/servers/detail/${encodeURIComponent(name)}`)
 
 const joinServer = (joinLink: string) => {
@@ -280,10 +277,6 @@ const handleSignOut = () => {
             <button type="button" class="mm-btn mm-btn--inline" @click="showAddAlias = true">+ Add</button>
           </div>
         </header>
-
-        <div v-if="aliases.length > 0" style="margin-bottom: 16px">
-          <button type="button" class="mm-btn mm-btn--accent" @click="goProfileWrapped">View Your Wrapped →</button>
-        </div>
 
         <div v-if="aliasesLoading" style="padding: 12px 0">
           <div v-for="i in 3" :key="i" class="mm-skeleton mm-skeleton--lg" style="margin-bottom: 10px" />
