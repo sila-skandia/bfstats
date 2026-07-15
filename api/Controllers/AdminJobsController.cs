@@ -263,4 +263,32 @@ public class AdminJobsController(
 
         return Accepted(new { message = "Player Wrapped crunching job started in the background." });
     }
+
+    /// <summary>
+    /// Trigger manual Profile Wrapped alias-cache crunching for 2026 (fire-and-forget).
+    /// Pre-computes and caches Player Wrapped data for every registered alias so
+    /// "Your Year in Review" reads are served from cache.
+    /// </summary>
+    [HttpPost("profile-wrapped-crunch")]
+    public IActionResult TriggerProfileWrappedCrunch()
+    {
+        logger.LogInformation("Manual trigger: ProfileWrappedCrunch (fire-and-forget)");
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = scopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<api.Wrapped.IWrappedService>();
+            try
+            {
+                await service.CrunchAllProfilesWrappedAsync(2026, System.Threading.CancellationToken.None);
+                logger.LogInformation("ProfileWrappedCrunch completed successfully");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "ProfileWrappedCrunch failed");
+            }
+        });
+
+        return Accepted(new { message = "Profile Wrapped crunching job started in the background." });
+    }
 }
