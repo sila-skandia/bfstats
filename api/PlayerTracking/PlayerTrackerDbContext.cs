@@ -260,10 +260,10 @@ public class PlayerTrackerDbContext : DbContext
             .WithMany(u => u.PlayerNames)
             .HasForeignKey(upn => upn.UserId);
 
-        modelBuilder.Entity<UserPlayerName>()
-            .HasOne(upn => upn.Player)
-            .WithMany()
-            .HasForeignKey(upn => upn.PlayerName);
+        // Deliberately no FK relationship from UserPlayerName.PlayerName to
+        // Players.Name: aliases can be linked (e.g. via bulk buddy-list
+        // upload) for names that don't correspond to any tracked Player yet,
+        // or ever. Enrichment looks the Player up manually where needed.
 
         modelBuilder.Entity<UserFavoriteServer>()
             .HasOne(ufs => ufs.User)
@@ -1358,7 +1358,8 @@ public class UserPlayerName
 
     // Navigation properties
     public User User { get; set; } = null!;
-    public Player Player { get; set; } = null!;
+    // No Player navigation: PlayerName may not match any tracked Player row
+    // (see OnModelCreating). Look Player rows up manually where needed.
 }
 
 public class UserFavoriteServer

@@ -19,6 +19,7 @@ public class AuthController(
     IRefreshTokenService refreshTokenService,
     IConfiguration configuration) : ControllerBase
 {
+    private const int MaxBulkPlayerNames = 1000;
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
@@ -156,7 +157,6 @@ public class AuthController(
 
             var userWithData = await context.Users
                 .Include(u => u.PlayerNames)
-                    .ThenInclude(pn => pn.Player)
                 .Include(u => u.FavoriteServers)
                     .ThenInclude(fs => fs.Server)
                 .Include(u => u.Buddies)
@@ -165,6 +165,11 @@ public class AuthController(
 
             if (userWithData == null)
                 return NotFound(new { message = "User not found" });
+
+            var linkedNames = userWithData.PlayerNames.Select(pn => pn.PlayerName).ToList();
+            var linkedPlayers = linkedNames.Count > 0
+                ? await context.Players.Where(p => linkedNames.Contains(p.Name)).ToDictionaryAsync(p => p.Name)
+                : new Dictionary<string, Player>();
 
             return Ok(new UserProfileResponse
             {
@@ -180,7 +185,7 @@ public class AuthController(
                         Id = pn.Id,
                         PlayerName = pn.PlayerName,
                         CreatedAt = pn.CreatedAt,
-                        Player = pn.Player != null ? await EnrichPlayerInfoAsync(pn.Player) : null
+                        Player = linkedPlayers.TryGetValue(pn.PlayerName, out var linkedPlayer) ? await EnrichPlayerInfoAsync(linkedPlayer) : null
                     }))).ToList(),
                 FavoriteServers = (await Task.WhenAll(userWithData.FavoriteServers
                     .OrderBy(fs => fs.CreatedAt)
@@ -215,17 +220,21 @@ public class AuthController(
                 return StatusCode(500, new { message = "User not found" });
 
             var userPlayerNames = await context.UserPlayerNames
-                .Include(upn => upn.Player)
                 .Where(upn => upn.UserId == user.Id)
                 .OrderBy(upn => upn.CreatedAt)
                 .ToListAsync();
+
+            var names = userPlayerNames.Select(upn => upn.PlayerName).ToList();
+            var players = names.Count > 0
+                ? await context.Players.Where(p => names.Contains(p.Name)).ToDictionaryAsync(p => p.Name)
+                : new Dictionary<string, Player>();
 
             var playerNames = (await Task.WhenAll(userPlayerNames.Select(async upn => new UserPlayerNameResponse
             {
                 Id = upn.Id,
                 PlayerName = upn.PlayerName,
                 CreatedAt = upn.CreatedAt,
-                Player = upn.Player != null ? await EnrichPlayerInfoAsync(upn.Player) : null
+                Player = players.TryGetValue(upn.PlayerName, out var player) ? await EnrichPlayerInfoAsync(player) : null
             }))).ToList();
 
             return Ok(playerNames);
@@ -284,6 +293,121 @@ public class AuthController(
         {
             logger.LogError(ex, "Error adding player name");
             return StatusCode(500, new { message = "Error adding player name" });
+        }
+    }
+
+    [HttpPost("player-names/bulk")]
+    [Authorize]
+    public async Task<IActionResult> AddPlayerNamesBulk([FromBody] BulkAddPlayerNamesRequest request)
+    {
+        try
+        {
+            var user = await GetCurrentUserAsync();
+            if (user == null)
+                return StatusCode(500, new { message = "User not found" });
+
+            if (request.PlayerNames == null || request.PlayerNames.Count == 0)
+                return BadRequest(new { message = "At least one player name is required" });
+
+            if (request.PlayerNames.Count > MaxBulkPlayerNames)
+                return BadRequest(new { message = $"Too many player names — maximum is {MaxBulkPlayerNames} per request" });
+
+            // Trim, drop blanks, de-dup while keeping the caller's ordering.
+            var candidateNames = request.PlayerNames
+                .Select(n => n?.Trim() ?? "")
+                .Where(n => n.Length > 0)
+                .Distinct()
+                .ToList();
+
+            var added = new List<UserPlayerNameResponse>();
+            var warnings = new List<BulkPlayerNameWarning>();
+
+            if (candidateNames.Count == 0)
+                return Ok(new BulkAddPlayerNamesResponse { Added = added, Warnings = warnings });
+
+            if (request.ReplaceExisting)
+            {
+                var toRemove = await context.UserPlayerNames
+                    .Where(upn => upn.UserId == user.Id)
+                    .ToListAsync();
+                if (toRemove.Count > 0)
+                {
+                    context.UserPlayerNames.RemoveRange(toRemove);
+                    await context.SaveChangesAsync();
+                }
+            }
+
+            // Names already linked to this user are a soft success, not re-inserted.
+            var existingUserPlayerNames = await context.UserPlayerNames
+                .Where(upn => upn.UserId == user.Id && candidateNames.Contains(upn.PlayerName))
+                .ToListAsync();
+            var existingUserPlayerNameSet = existingUserPlayerNames
+                .Select(upn => upn.PlayerName)
+                .ToHashSet();
+
+            // Batch-check which remaining candidates are real Player rows. A
+            // miss no longer blocks the add — it's linked anyway (the name may
+            // belong to a player who hasn't been tracked yet, or a typo the
+            // user can fix later) — just flagged as a warning.
+            var namesNeedingLookup = candidateNames
+                .Where(n => !existingUserPlayerNameSet.Contains(n))
+                .ToList();
+            var realPlayerNames = namesNeedingLookup.Count > 0
+                ? (await context.Players
+                    .Where(p => namesNeedingLookup.Contains(p.Name))
+                    .Select(p => p.Name)
+                    .ToListAsync()).ToHashSet()
+                : [];
+
+            var now = DateTime.UtcNow;
+            var toInsert = new List<UserPlayerName>();
+
+            foreach (var name in candidateNames)
+            {
+                if (existingUserPlayerNameSet.Contains(name))
+                {
+                    var existing = existingUserPlayerNames.First(upn => upn.PlayerName == name);
+                    added.Add(new UserPlayerNameResponse
+                    {
+                        Id = existing.Id,
+                        PlayerName = existing.PlayerName,
+                        CreatedAt = existing.CreatedAt
+                    });
+                    continue;
+                }
+
+                if (!realPlayerNames.Contains(name))
+                {
+                    warnings.Add(new BulkPlayerNameWarning { PlayerName = name, Reason = "No matching player found — added anyway" });
+                }
+
+                var userPlayerName = new UserPlayerName
+                {
+                    UserId = user.Id,
+                    PlayerName = name,
+                    CreatedAt = now
+                };
+                toInsert.Add(userPlayerName);
+                context.UserPlayerNames.Add(userPlayerName);
+            }
+
+            if (toInsert.Count > 0)
+            {
+                await context.SaveChangesAsync();
+                added.AddRange(toInsert.Select(upn => new UserPlayerNameResponse
+                {
+                    Id = upn.Id,
+                    PlayerName = upn.PlayerName,
+                    CreatedAt = upn.CreatedAt
+                }));
+            }
+
+            return Ok(new BulkAddPlayerNamesResponse { Added = added, Warnings = warnings });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error bulk adding player names");
+            return StatusCode(500, new { message = "Error bulk adding player names" });
         }
     }
 
