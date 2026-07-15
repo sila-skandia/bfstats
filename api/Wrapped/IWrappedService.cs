@@ -25,4 +25,10 @@ public interface IWrappedService
     /// Background job method to compute and store Player Wrapped aggregates in the database cache.
     /// </summary>
     Task CrunchAllPlayersWrappedAsync(int year, CancellationToken ct);
+
+    /// <summary>
+    /// Gets a combined "Your Year in Review" Wrapped for all of a user's registered aliases,
+    /// merging each alias's own (cached) Player Wrapped into one aggregate.
+    /// </summary>
+    Task<ProfileWrappedResponseDto?> GetProfileWrappedAsync(int userId, int year = 2026, bool bypassCache = false);
 }

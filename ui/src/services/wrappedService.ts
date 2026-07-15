@@ -302,3 +302,58 @@ export async function fetchPlayerWrapped(playerName: string, serverGuid = 'globa
   });
   return response.data;
 }
+
+export interface ProfileBestAliases {
+  bestKdAliasName: string;
+  bestKdValue: number;
+  bestKillRateAliasName: string;
+  bestKillRateValue: number;
+}
+
+export interface ProfileAliasCredit {
+  playerName: string;
+  roundsPlayed: number;
+  totalKills: number;
+  totalDeaths: number;
+  hoursInCombat: number;
+  kdRatio: number;
+}
+
+export interface ProfileWrappedData {
+  userId: number;
+  year: number;
+  yearInNumbers: PlayerYearInNumbers;
+  trend: PlayerTrend;
+  favouriteMap: PlayerFavouriteMap;
+  medals: PlayerMedals;
+  bestMoments: PlayerBestMoment[];
+  squad: PlayerTeammate[];
+  serverRankings: PlayerServerRanking[];
+  relations: PlayerRelations;
+  bestAliases: ProfileBestAliases;
+  aliasCredits: ProfileAliasCredit[];
+}
+
+/**
+ * Fetch the combined "Your Year in Review" Wrapped across all of a user's registered aliases.
+ */
+/**
+ * Shape used by the shared PlayerWrappedV4 view/slides — a normal Player Wrapped response,
+ * optionally carrying the profile-only fields (populated only in "Your Year in Review" mode).
+ */
+export type WrappedViewData = PlayerWrappedData & Partial<Pick<ProfileWrappedData, 'bestAliases' | 'aliasCredits'>>
+
+export async function fetchProfileWrapped(userId: number, year = 2026): Promise<ProfileWrappedData> {
+  const API_URL = import.meta.env.VITE_API_URL || '';
+  const token = localStorage.getItem('authToken');
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await axios.get(`${API_URL}/stats/wrapped/profile/${userId}`, {
+    params: { year },
+    headers
+  });
+  return response.data;
+}

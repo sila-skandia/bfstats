@@ -387,6 +387,16 @@ const routes: RouteRecordRaw[] = [
           }
         },
         {
+          path: 'wrapped/profile/:userId',
+          name: 'v4-profile-wrapped',
+          component: PlayerWrappedV4,
+          props: true,
+          meta: {
+            title: () => 'Your Year in Review · bfstats.io',
+            description: 'Your Year in Review across all your registered aliases.'
+          }
+        },
+        {
           path: 'rounds/:roundId/report',
           name: 'v4-round-report',
           component: RoundReportV4,
