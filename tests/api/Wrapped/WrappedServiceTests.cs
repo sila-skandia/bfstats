@@ -554,4 +554,26 @@ public class WrappedServiceTests : IDisposable
         Assert.Equal(8.0, result.BestAliases.BestKdValue);
         Assert.Equal("AliasTwo", result.BestAliases.BestKillRateAliasName);
     }
+
+    [Fact]
+    public async Task CrunchAllProfilesWrappedAsync_CachesEveryRegisteredAlias()
+    {
+        // Arrange
+        _dbContext.Users.Add(new User { Id = 3, Email = "cruncher@example.com" });
+        _dbContext.UserPlayerNames.Add(new UserPlayerName { UserId = 3, PlayerName = "CrunchAlias", CreatedAt = DateTime.UtcNow });
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = "test-server-guid", PlayerName = "CrunchAlias", Year = 2026, Week = 23,
+            TotalRounds = 3, TotalKills = 30, TotalDeaths = 10, TotalPlayTimeMinutes = 90
+        });
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        await _service.CrunchAllProfilesWrappedAsync(2026, CancellationToken.None);
+
+        // Assert
+        var cached = await _dbContext.PlayerWrappedCaches
+            .FirstOrDefaultAsync(c => c.PlayerName == "CrunchAlias" && c.ServerGuid == "global" && c.Year == 2026);
+        Assert.NotNull(cached);
+    }
 }
