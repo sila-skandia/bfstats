@@ -166,6 +166,21 @@
           </button>
         </li>
 
+        <li class="mm-admin-cron__item">
+          <div class="mm-admin-cron__body-text">
+            <span class="mm-admin-cron__name">Crunch Profile Wrapped</span>
+            <span class="mm-admin-cron__desc">Pre-computes and caches 2026 statistics for every registered alias, so "Your Year in Review" reads are served from cache.</span>
+          </div>
+          <button
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+            :disabled="jobRunning !== null"
+            @click="runJob('profile-wrapped-crunch', false)"
+          >
+            Start
+          </button>
+        </li>
+
         <li
           v-if="neo4jEnabled"
           class="mm-admin-cron__item mm-admin-cron__item--neo4j"
@@ -314,6 +329,9 @@ async function runJob(jobKey: string, _isBlocking: boolean) {
       break
     case 'player-wrapped-crunch':
       fn = adminJobsService.triggerPlayerWrappedCrunch
+      break
+    case 'profile-wrapped-crunch':
+      fn = adminJobsService.triggerProfileWrappedCrunch
       break
     case 'community-detection':
       fn = adminJobsService.triggerCommunityDetection
