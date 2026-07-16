@@ -353,6 +353,10 @@ try
                 // StatsCollection cycles are traced so slow/skipped cycles (which blank
                 // out live player counts) are visible in Seq.
                 tracing.AddSource(ActivitySources.StatsCollection.Name);
+                // Wrapped crunch jobs run infrequently (daily/on-demand) over a small,
+                // whitelisted set of servers/players, so full DB-level span detail is kept
+                // (no bulk_operation tag) to make profiling individual queries possible.
+                tracing.AddSource(ActivitySources.Wrapped.Name);
                 // Background service sources intentionally excluded:
                 // tracing.AddSource(ActivitySources.Gamification.Name);
             }
