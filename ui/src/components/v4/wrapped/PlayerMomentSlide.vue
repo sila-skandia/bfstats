@@ -1,7 +1,7 @@
 <template>
   <div class="wrapped-slide moment-slide animate-line-in" @click="$emit('next')">
     <div class="moment-left-container">
-      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">05 — BEST MOMENTS</div>
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">06 — BEST MOMENTS</div>
       <div class="moment-heading animate-rise-up" style="animation-delay: 0.1s">
         Your finest round performances.
       </div>

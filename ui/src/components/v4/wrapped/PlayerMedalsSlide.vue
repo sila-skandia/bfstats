@@ -1,7 +1,7 @@
 <template>
   <div class="wrapped-slide medals-slide animate-line-in" @click="$emit('next')">
     <div class="medals-content">
-      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">04 — MEDALS &amp; DECORATIONS</div>
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">05 — MEDALS &amp; DECORATIONS</div>
       <div class="medals-heading animate-rise-up" style="animation-delay: 0.1s">
         {{ data.medals.killStreaks25 }} kill streaks. One {{ data.medals.eliteWarriorTier.toLowerCase() }}.
       </div>

@@ -10,6 +10,7 @@ using NodaTime;
 using NSubstitute;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -573,6 +574,183 @@ public class WrappedServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPlayerWrappedAsync_DerivesLuckyCharmAndArchNemesis_FromBatchedRelationsQueries()
+    {
+        // Regression test for the Relations section, which was rewritten from N+1
+        // per-round queries to batched bulk queries. Exercises both the "teammate on
+        // wins" and "opponent on losses" paths, including a player who switches teams
+        // between rounds, to make sure the in-memory (RoundId, Team) matching that
+        // replaced the per-round SQL filter still lines up correctly.
+        var serverGuid = "test-server-guid";
+        var server = new GameServer { Guid = serverGuid, Name = "Test Server", GameId = "bf1942", Timezone = "UTC" };
+        _dbContext.Servers.Add(server);
+
+        const string hero = "Hero";
+        const string buddy = "Buddy";
+        const string villain = "Villain";
+
+        foreach (var name in new[] { hero, buddy, villain })
+        {
+            _dbContext.Players.Add(new Player { Name = name, FirstSeen = new DateTime(2025, 1, 1), LastSeen = new DateTime(2026, 12, 31) });
+        }
+
+        // Give the player enough recorded activity for the Relations block to run at all.
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = serverGuid, PlayerName = hero, Year = 2026, Week = 23,
+            TotalRounds = 5, TotalKills = 50, TotalDeaths = 25, TotalPlayTimeMinutes = 150
+        });
+
+        var start = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        // Hero wins rounds 1-3 on team 1. Buddy is his teammate (team 1) in rounds 1-2 only.
+        for (int i = 1; i <= 3; i++)
+        {
+            var roundId = $"win-round-{i}";
+            _dbContext.Rounds.Add(new Round
+            {
+                RoundId = roundId, ServerGuid = serverGuid, ServerName = "Test Server", MapName = "Map",
+                GameType = "Conquest", StartTime = start.AddHours(i), EndTime = start.AddHours(i).AddMinutes(20),
+                ParticipantCount = 2, IsDeleted = false
+            });
+            _dbContext.PlayerSessions.Add(new PlayerSession
+            {
+                SessionId = i, PlayerName = hero, ServerGuid = serverGuid, RoundId = roundId,
+                CurrentTeam = 1, StartTime = start.AddHours(i), LastSeenTime = start.AddHours(i).AddMinutes(20), IsDeleted = false
+            });
+            _dbContext.PlayerAchievements.Add(new PlayerAchievement
+            {
+                PlayerName = hero, ServerGuid = serverGuid, RoundId = roundId, AchievementId = "team_victory",
+                AchievementName = "Team Victory", AchievementType = "team_victory", Tier = "bronze",
+                AchievedAt = Instant.FromDateTimeUtc(start.AddHours(i)), Game = "bf1942"
+            });
+
+            if (i <= 2)
+            {
+                _dbContext.PlayerSessions.Add(new PlayerSession
+                {
+                    SessionId = 100 + i, PlayerName = buddy, ServerGuid = serverGuid, RoundId = roundId,
+                    CurrentTeam = 1, StartTime = start.AddHours(i), LastSeenTime = start.AddHours(i).AddMinutes(20), IsDeleted = false
+                });
+            }
+        }
+
+        // Hero loses rounds 4-5 on team 2 (a team switch relative to the wins above).
+        // Villain is on the winning team (team 1) both times.
+        for (int i = 4; i <= 5; i++)
+        {
+            var roundId = $"loss-round-{i}";
+            _dbContext.Rounds.Add(new Round
+            {
+                RoundId = roundId, ServerGuid = serverGuid, ServerName = "Test Server", MapName = "Map",
+                GameType = "Conquest", StartTime = start.AddHours(i), EndTime = start.AddHours(i).AddMinutes(20),
+                ParticipantCount = 2, IsDeleted = false
+            });
+            _dbContext.PlayerSessions.Add(new PlayerSession
+            {
+                SessionId = i, PlayerName = hero, ServerGuid = serverGuid, RoundId = roundId,
+                CurrentTeam = 2, StartTime = start.AddHours(i), LastSeenTime = start.AddHours(i).AddMinutes(20), IsDeleted = false
+            });
+            _dbContext.PlayerSessions.Add(new PlayerSession
+            {
+                SessionId = 200 + i, PlayerName = villain, ServerGuid = serverGuid, RoundId = roundId,
+                CurrentTeam = 1, StartTime = start.AddHours(i), LastSeenTime = start.AddHours(i).AddMinutes(20), IsDeleted = false
+            });
+            _dbContext.PlayerAchievements.Add(new PlayerAchievement
+            {
+                PlayerName = villain, ServerGuid = serverGuid, RoundId = roundId, AchievementId = "team_victory",
+                AchievementName = "Team Victory", AchievementType = "team_victory", Tier = "bronze",
+                AchievedAt = Instant.FromDateTimeUtc(start.AddHours(i)), Game = "bf1942"
+            });
+        }
+
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetPlayerWrappedAsync(hero, serverGuid, 2026);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(buddy, result.Relations.LuckyCharmName);
+        Assert.Equal(2, result.Relations.LuckyCharmWins);
+        Assert.Equal(villain, result.Relations.ArchNemesisName);
+        Assert.Equal(2, result.Relations.ArchNemesisLosses);
+        Assert.Null(result.Relations.TwoFaceName);
+    }
+
+    [Fact]
+    public async Task GetPlayerWrappedAsync_Relations_EmitsNestedBuildExecuteReadSpans()
+    {
+        // Guards the tracing *structure* itself: Build/Execute/Read must be real child
+        // Activities under each batch span (not just tags on the batch span), otherwise a
+        // slow batch shows up in traces as one opaque line with nothing underneath it to
+        // say whether the time went into query building, the DB call, or row processing.
+        var serverGuid = "test-server-guid";
+        _dbContext.Servers.Add(new GameServer { Guid = serverGuid, Name = "Test Server", GameId = "bf1942", Timezone = "UTC" });
+
+        const string hero = "Hero";
+        const string villain = "Villain";
+        foreach (var name in new[] { hero, villain })
+        {
+            _dbContext.Players.Add(new Player { Name = name, FirstSeen = new DateTime(2025, 1, 1), LastSeen = new DateTime(2026, 12, 31) });
+        }
+
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = serverGuid, PlayerName = hero, Year = 2026, Week = 23,
+            TotalRounds = 1, TotalKills = 5, TotalDeaths = 5, TotalPlayTimeMinutes = 20
+        });
+
+        var start = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        _dbContext.Rounds.Add(new Round
+        {
+            RoundId = "loss-round-1", ServerGuid = serverGuid, ServerName = "Test Server", MapName = "Map",
+            GameType = "Conquest", StartTime = start, EndTime = start.AddMinutes(20), ParticipantCount = 2, IsDeleted = false
+        });
+        // Hero loses this round (team 2); Villain is on the winning team (team 1).
+        _dbContext.PlayerSessions.Add(new PlayerSession
+        {
+            SessionId = 1, PlayerName = hero, ServerGuid = serverGuid, RoundId = "loss-round-1",
+            CurrentTeam = 2, StartTime = start, LastSeenTime = start.AddMinutes(20), IsDeleted = false
+        });
+        _dbContext.PlayerSessions.Add(new PlayerSession
+        {
+            SessionId = 2, PlayerName = villain, ServerGuid = serverGuid, RoundId = "loss-round-1",
+            CurrentTeam = 1, StartTime = start, LastSeenTime = start.AddMinutes(20), IsDeleted = false
+        });
+        _dbContext.PlayerAchievements.Add(new PlayerAchievement
+        {
+            PlayerName = villain, ServerGuid = serverGuid, RoundId = "loss-round-1", AchievementId = "team_victory",
+            AchievementName = "Team Victory", AchievementType = "team_victory", Tier = "bronze",
+            AchievedAt = Instant.FromDateTimeUtc(start), Game = "bf1942"
+        });
+
+        await _dbContext.SaveChangesAsync();
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "BfStats.Wrapped",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activity => activities.Add(activity)
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        // Act
+        await _service.GetPlayerWrappedAsync(hero, serverGuid, 2026);
+
+        // Assert: the batch span exists, and Build/Execute/Read are its direct children.
+        var nemesisBatch = Assert.Single(activities, a => a.OperationName == "Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch");
+        var build = Assert.Single(activities, a => a.OperationName == "Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Build");
+        var execute = Assert.Single(activities, a => a.OperationName == "Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Execute");
+        var read = Assert.Single(activities, a => a.OperationName == "Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Read");
+
+        Assert.Equal(nemesisBatch.Id, build.ParentId);
+        Assert.Equal(nemesisBatch.Id, execute.ParentId);
+        Assert.Equal(nemesisBatch.Id, read.ParentId);
+    }
+
+    [Fact]
     public async Task CrunchAllProfilesWrappedAsync_CachesEveryRegisteredAlias()
     {
         // Arrange
@@ -592,5 +770,86 @@ public class WrappedServiceTests : IDisposable
         var cached = await _dbContext.PlayerWrappedCaches
             .FirstOrDefaultAsync(c => c.PlayerName == "CrunchAlias" && c.ServerGuid == "global" && c.Year == 2026);
         Assert.NotNull(cached);
+    }
+
+    [Fact]
+    public async Task GetPlayerWrappedAsync_CalculatesPlayerDishonours_OnCacheMiss()
+    {
+        // Arrange
+        var serverGuid = "test-server-guid";
+        var server = new GameServer { Guid = serverGuid, Name = "Test Server", GameId = "bf1942", Timezone = "UTC" };
+        _dbContext.Servers.Add(server);
+
+        var playerName = "UnhappySoldier";
+        _dbContext.Players.Add(new Player { Name = playerName, FirstSeen = new DateTime(2025, 1, 1), LastSeen = new DateTime(2026, 12, 31) });
+
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = serverGuid, PlayerName = playerName, Year = 2026, Week = 23,
+            TotalRounds = 9, TotalKills = 16, TotalDeaths = 17, TotalPlayTimeMinutes = 100
+        });
+
+        // Seed Map stats: Map A, Map B, Map C
+        _dbContext.PlayerMapStats.AddRange(
+            new PlayerMapStats { ServerGuid = serverGuid, PlayerName = playerName, MapName = "Map A", Year = 2026, Month = 6, TotalRounds = 5, TotalKills = 5, TotalDeaths = 10, TotalScore = 100 },
+            new PlayerMapStats { ServerGuid = serverGuid, PlayerName = playerName, MapName = "Map B", Year = 2026, Month = 6, TotalRounds = 3, TotalKills = 10, TotalDeaths = 2, TotalScore = 300 },
+            new PlayerMapStats { ServerGuid = serverGuid, PlayerName = playerName, MapName = "Map C", Year = 2026, Month = 6, TotalRounds = 1, TotalKills = 1, TotalDeaths = 5, TotalScore = 10 }
+        );
+
+        // Add 2 victories achievements for Map B
+        var startInstant = Instant.FromUtc(2026, 6, 1, 12, 0, 0);
+        _dbContext.PlayerAchievements.AddRange(
+            new PlayerAchievement { ServerGuid = serverGuid, PlayerName = playerName, MapName = "Map B", AchievementId = "team_victory", AchievementType = "team_victory", Tier = "bronze", AchievedAt = startInstant },
+            new PlayerAchievement { ServerGuid = serverGuid, PlayerName = playerName, MapName = "Map B", AchievementId = "team_victory", AchievementType = "team_victory", Tier = "bronze", AchievedAt = startInstant + Duration.FromHours(1) }
+        );
+
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetPlayerWrappedAsync(playerName, serverGuid, 2026);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.NotNull(result.Dishonours);
+        
+        // Least Favorite Map by KD should be Map A (KD = 0.5 vs Map B = 5.0, Map C excluded because rounds < average rounds of 3.0)
+        Assert.NotNull(result.Dishonours.LeastFavoriteMapByKd);
+        Assert.Equal("Map A", result.Dishonours.LeastFavoriteMapByKd.MapName);
+        Assert.Equal(0.5, result.Dishonours.LeastFavoriteMapByKd.Value);
+        Assert.Equal(0.94, result.Dishonours.LeastFavoriteMapByKd.PlayerAvg);
+        Assert.Equal(5.0, result.Dishonours.LeastFavoriteMapByKd.PlayerBest);
+        Assert.Equal(-0.44, result.Dishonours.LeastFavoriteMapByKd.Delta);
+
+        // Lowest Kill Rate should be Map A (1.0 vs Map B = 3.3)
+        Assert.NotNull(result.Dishonours.LowestKillRateMap);
+        Assert.Equal("Map A", result.Dishonours.LowestKillRateMap.MapName);
+        Assert.Equal(1.0, result.Dishonours.LowestKillRateMap.Value);
+        Assert.Equal(1.8, result.Dishonours.LowestKillRateMap.PlayerAvg);
+        Assert.Equal(3.3, result.Dishonours.LowestKillRateMap.PlayerBest);
+        Assert.Equal(-0.8, result.Dishonours.LowestKillRateMap.Delta);
+
+        // Lowest Score Rate should be Map A (20.0 vs Map B = 100.0)
+        Assert.NotNull(result.Dishonours.LowestScoreRateMap);
+        Assert.Equal("Map A", result.Dishonours.LowestScoreRateMap.MapName);
+        Assert.Equal(20.0, result.Dishonours.LowestScoreRateMap.Value);
+        Assert.Equal(45.6, result.Dishonours.LowestScoreRateMap.PlayerAvg);
+        Assert.Equal(100.0, result.Dishonours.LowestScoreRateMap.PlayerBest);
+        Assert.Equal(-25.6, result.Dishonours.LowestScoreRateMap.Delta);
+
+        // Max Deaths should be Map A (DeathRate = 2.0 vs Map B = 0.67)
+        Assert.NotNull(result.Dishonours.MaxDeathsMap);
+        Assert.Equal("Map A", result.Dishonours.MaxDeathsMap.MapName);
+        Assert.Equal(2.0, result.Dishonours.MaxDeathsMap.Value);
+        Assert.Equal(1.9, result.Dishonours.MaxDeathsMap.PlayerAvg);
+        Assert.Equal(0.7, result.Dishonours.MaxDeathsMap.PlayerBest);
+        Assert.Equal(0.1, result.Dishonours.MaxDeathsMap.Delta);
+
+        // Most Losses should be Map A (LossRate = 1.0 vs Map B = 0.33)
+        Assert.NotNull(result.Dishonours.MostLossesMap);
+        Assert.Equal("Map A", result.Dishonours.MostLossesMap.MapName);
+        Assert.Equal(1.0, result.Dishonours.MostLossesMap.Value);
+        Assert.Equal(0.78, result.Dishonours.MostLossesMap.PlayerAvg);
+        Assert.Equal(0.33, result.Dishonours.MostLossesMap.PlayerBest);
+        Assert.Equal(0.22, result.Dishonours.MostLossesMap.Delta);
     }
 }

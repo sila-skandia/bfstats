@@ -12,7 +12,8 @@ public record ProfileWrappedResponseDto(
     List<PlayerServerRankingDto> ServerRankings,
     PlayerRelationsDto Relations,
     ProfileBestAliasesDto BestAliases,
-    List<ProfileAliasCreditDto> AliasCredits
+    List<ProfileAliasCreditDto> AliasCredits,
+    PlayerDishonoursDto? Dishonours = null
 );
 
 public record ProfileBestAliasesDto(

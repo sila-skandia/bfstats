@@ -15,7 +15,26 @@ public record PlayerWrappedResponseDto(
     List<PlayerBestMomentDto> BestMoments,
     List<PlayerTeammateDto> Squad,
     List<PlayerServerRankingDto> ServerRankings,
-    PlayerRelationsDto Relations
+    PlayerRelationsDto Relations,
+    PlayerDishonoursDto? Dishonours = null
+);
+
+public record PlayerDishonoursDto(
+    DishonourMapDto? LeastFavoriteMapByKd,
+    DishonourMapDto? LowestKillRateMap,
+    DishonourMapDto? MostLossesMap,
+    DishonourMapDto? LowestScoreRateMap,
+    DishonourMapDto? MaxDeathsMap
+);
+
+public record DishonourMapDto(
+    string MapName,
+    int Rounds,
+    double Value,
+    double PlayerAvg,
+    double PlayerBest,
+    double Delta,
+    string MetricLabel
 );
 
 public record PlayerYearInNumbersDto(
