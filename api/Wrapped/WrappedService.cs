@@ -1026,7 +1026,8 @@ public class WrappedService(
             .SelectMany(a => a.ServerRankings)
             .GroupBy(r => r.ServerGuid)
             .Select(g => g.OrderBy(r => r.Rank).First())
-            .OrderBy(r => r.Rank)
+            .OrderByDescending(r => r.TotalRankedPlayers > 100)
+            .ThenBy(r => r.Rank)
             .Take(2)
             .ToList();
         var relations = MergeRelations(aliasResults);
@@ -2149,7 +2150,8 @@ public class WrappedService(
                 if (insights?.ServerRankings != null)
                 {
                     serverRankings = insights.ServerRankings
-                        .OrderBy(r => r.Rank)
+                        .OrderByDescending(r => r.TotalRankedPlayers > 100)
+                        .ThenBy(r => r.Rank)
                         .Take(2)
                         .Select(r => new PlayerServerRankingDto(
                             r.ServerGuid,
@@ -2574,10 +2576,14 @@ public class WrappedService(
             {
                 winsQuery = winsQuery.Where(pa => pa.ServerGuid == serverGuid);
             }
-            var mapWins = await winsQuery
-                .GroupBy(pa => pa.MapName)
-                .Select(g => new { MapName = g.Key, Wins = g.Count() })
-                .ToDictionaryAsync(x => x.MapName, x => x.Wins, StringComparer.OrdinalIgnoreCase);
+            // GroupBy(MapName) above is translated to SQL and is case-sensitive, but map
+            // names have inconsistent casing in the source data (e.g. "aberdeen" vs
+            // "Aberdeen"). Group again in memory with OrdinalIgnoreCase so two casings of
+            // the same map merge into one key instead of colliding on ToDictionary.
+            var mapWinNames = await winsQuery.Select(pa => pa.MapName).ToListAsync();
+            var mapWins = mapWinNames
+                .GroupBy(m => m, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 
             var eligibleLosses = eligibleMaps
                 .Select(x => {
