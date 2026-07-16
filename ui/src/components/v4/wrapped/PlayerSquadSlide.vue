@@ -1,7 +1,7 @@
 <template>
   <div class="wrapped-slide squad-slide animate-line-in" @click="$emit('next')">
     <div class="squad-left-container">
-      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">06 — SQUAD</div>
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">07 — SQUAD</div>
       
       <div v-if="data.squad && data.squad.length > 0" class="squad-layout-active">
         <div class="squad-heading animate-rise-up" style="animation-delay: 0.1s">

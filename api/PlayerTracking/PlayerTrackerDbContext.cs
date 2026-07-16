@@ -987,6 +987,12 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerAchievement>()
             .HasIndex(pa => pa.AchievedAt);
 
+        // Supports the Wrapped "Relations" lookup (WrappedService), which joins/filters
+        // PlayerAchievements by (RoundId, PlayerName) to find who won a given round. Without
+        // this, that join falls back to a full table scan since no other index covers RoundId.
+        modelBuilder.Entity<PlayerAchievement>()
+            .HasIndex(pa => new { pa.RoundId, pa.PlayerName });
+
         modelBuilder.Entity<PlayerAchievement>()
             .Property(pa => pa.AchievedAt)
             .HasConversion(
