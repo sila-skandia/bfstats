@@ -113,6 +113,8 @@ spec:
               value: "Capn Cackler®"
             - name: PlayerWrapped__AllowedPlayerNames__5
               value: "TheCalmingClam"
+            - name: PlayerWrapped__AllowedPlayerNames__6
+              value: "OWLCAT"
             # Refresh token cookie configuration (Secret provided via external secret manager)
             - name: RefreshToken__CookieName
               value: "rt"

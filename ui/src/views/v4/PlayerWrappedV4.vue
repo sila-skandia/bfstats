@@ -99,7 +99,7 @@
               <div class="slide-container">
                 <transition name="slide-fade" mode="out-in">
                   <div class="slide-content-wrapper" :key="currentSlide">
-                    <component :is="activeSlideComponent" :data="data" :chapter-number="isProfileMode ? '09' : '08'" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
+                    <component :is="activeSlideComponent" :data="data" :chapter-number="isProfileMode ? '10' : '09'" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
                   </div>
                 </transition>
               </div>
@@ -191,7 +191,7 @@
         <!-- Mobile Content Container -->
         <div class="mobile-content-container">
           <transition name="slide-fade" mode="out-in">
-            <component :is="activeSlideComponent" :key="currentSlide" :data="data" :chapter-number="isProfileMode ? '09' : '08'" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
+            <component :is="activeSlideComponent" :key="currentSlide" :data="data" :chapter-number="isProfileMode ? '10' : '09'" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
           </transition>
         </div>
         </main>
@@ -235,6 +235,7 @@ import ch6p from '@/assets/wrapped/ch6p.webp'
 import ch7p from '@/assets/wrapped/ch7p.webp'
 import pwSquad from '@/assets/wrapped/pw_squad.webp'
 import ch8p from '@/assets/wrapped/ch8p.webp'
+import pwDishonours from '@/assets/wrapped/pw_dishonours.webp'
 
 // Animated FX tiles (smoke drift + rising embers)
 import fxSmoke from '@/assets/wrapped/fx-smoke.webp'
@@ -244,6 +245,7 @@ import PlayerIntroSlide from '@/components/v4/wrapped/PlayerIntroSlide.vue'
 import PlayerNumbersSlide from '@/components/v4/wrapped/PlayerNumbersSlide.vue'
 import PlayerTrendSlide from '@/components/v4/wrapped/PlayerTrendSlide.vue'
 import PlayerMapSlide from '@/components/v4/wrapped/PlayerMapSlide.vue'
+import PlayerDishonoursSlide from '@/components/v4/wrapped/PlayerDishonoursSlide.vue'
 import PlayerMedalsSlide from '@/components/v4/wrapped/PlayerMedalsSlide.vue'
 import PlayerMomentSlide from '@/components/v4/wrapped/PlayerMomentSlide.vue'
 import PlayerSquadSlide from '@/components/v4/wrapped/PlayerSquadSlide.vue'
@@ -261,7 +263,7 @@ function preloadImages(urls: string[]) {
 
 // Preload static player assets immediately on script evaluation
 const staticImagesToPreload = [
-  ch1p, ch2p, ch3p, ch4p, ch5p, ch6p, ch7p, ch8p, pwSquad,
+  ch1p, ch2p, ch3p, ch4p, ch5p, ch6p, ch7p, ch8p, pwSquad, pwDishonours,
   fxSmoke, fxEmbers,
   clippyLogo,
   getAchievementImage('kill_streak_25'),
@@ -276,6 +278,7 @@ const baseSlideComponents = [
   PlayerNumbersSlide,
   PlayerTrendSlide,
   PlayerMapSlide,
+  PlayerDishonoursSlide,
   PlayerMedalsSlide,
   PlayerMomentSlide,
   PlayerSquadSlide,
@@ -316,7 +319,7 @@ const data = ref<WrappedViewData | null>(null)
 
 const slideComponents = computed(() => {
   if (!isProfileMode.value) return baseSlideComponents
-  return [...baseSlideComponents.slice(0, 7), ProfileCreditsSlide, baseSlideComponents[7]]
+  return [...baseSlideComponents.slice(0, 8), ProfileCreditsSlide, baseSlideComponents[8]]
 })
 
 const chapters = computed(() => {
@@ -325,12 +328,13 @@ const chapters = computed(() => {
     'THE YEAR IN NUMBERS',
     'RANK & K/D TREND',
     'FAVOURITE MAP',
+    'DISHONOURS',
     'MEDALS & DECORATIONS',
     'BEST MOMENT',
     'SQUAD',
     'SHARE CARD'
   ]
-  return isProfileMode.value ? [...base.slice(0, 7), 'PROFILE WRAPPED', base[7]] : base
+  return isProfileMode.value ? [...base.slice(0, 8), 'PROFILE WRAPPED', base[8]] : base
 })
 
 const currentSlide = ref(0)
@@ -358,12 +362,13 @@ const chapterColors = computed(() => {
     '#b4c060', // THE YEAR IN NUMBERS
     '#c5a23a', // RANK & K/D TREND
     '#7da34c', // FAVOURITE MAP
+    '#b26666', // DISHONOURS (reddish)
     '#c08a4c', // MEDALS & DECORATIONS
     '#d65a5a', // BEST MOMENT
     '#c5a23a', // SQUAD
     '#7d8849'  // SHARE CARD
   ]
-  return isProfileMode.value ? [...base.slice(0, 7), '#b4c060', base[7]] : base
+  return isProfileMode.value ? [...base.slice(0, 8), '#b4c060', base[8]] : base
 })
 
 const activeThemeColor = computed(() => chapterColors.value[currentSlide.value])
@@ -376,16 +381,17 @@ const heroes = computed(() => {
     { no: '02', drop: 'THE CAMPAIGN', fig: 'Fig. 02 — The Campaign', img: ch2p, dot: 'var(--mm-accent)' },
     { no: '03', drop: 'THE ASCENT', fig: 'Fig. 03 — The Ascent', img: ch3p, dot: 'var(--mm-accent)' },
     { no: '04', drop: data.value.favouriteMap?.mapName?.toUpperCase() || 'FAVOURITE MAP', fig: `Fig. 04 — ${data.value.favouriteMap?.mapName || 'Favourite Map'}`, img: ch4p, dot: 'var(--mm-accent)' },
-    { no: '05', drop: 'DECORATIONS', fig: 'Fig. 05 — Decorations', img: ch5p, dot: 'var(--mm-accent)' },
-    { no: '06', drop: data.value.bestMoments?.[0]?.mapName?.toUpperCase() || 'BEST MOMENT', fig: `Fig. 06 — ${data.value.bestMoments?.[0]?.mapName || 'Best Moment'}`, img: ch6p, dot: 'var(--mm-danger)' },
-    { no: '07', drop: 'THE SQUAD', fig: 'Fig. 07 — The Squad', img: ch7p, dot: 'var(--mm-accent)' },
-    { no: '08', drop: 'KEEPSAKE', fig: 'Fig. 08 — Keepsake', img: ch8p, dot: 'var(--mm-accent)' }
+    { no: '05', drop: 'DISHONOURS', fig: 'Fig. 05 — Dishonours', img: pwDishonours, dot: 'var(--mm-danger)' },
+    { no: '06', drop: 'DECORATIONS', fig: 'Fig. 06 — Decorations', img: ch5p, dot: 'var(--mm-accent)' },
+    { no: '07', drop: data.value.bestMoments?.[0]?.mapName?.toUpperCase() || 'BEST MOMENT', fig: `Fig. 07 — ${data.value.bestMoments?.[0]?.mapName || 'Best Moment'}`, img: ch6p, dot: 'var(--mm-danger)' },
+    { no: '08', drop: 'THE SQUAD', fig: 'Fig. 08 — The Squad', img: ch7p, dot: 'var(--mm-accent)' },
+    { no: '09', drop: 'KEEPSAKE', fig: 'Fig. 09 — Keepsake', img: ch8p, dot: 'var(--mm-accent)' }
   ]
   if (!isProfileMode.value) return base
   return [
-    ...base.slice(0, 7),
-    { no: '08', drop: 'ALL FRONTS', fig: 'Fig. 08 — All Fronts', img: pwSquad, dot: 'var(--mm-accent)' },
-    { ...base[7], no: '09', fig: 'Fig. 09 — Keepsake' }
+    ...base.slice(0, 8),
+    { no: '09', drop: 'ALL FRONTS', fig: 'Fig. 09 — All Fronts', img: pwSquad, dot: 'var(--mm-accent)' },
+    { ...base[8], no: '10', fig: 'Fig. 10 — Keepsake' }
   ]
 })
 

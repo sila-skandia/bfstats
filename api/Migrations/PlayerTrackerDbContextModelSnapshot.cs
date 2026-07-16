@@ -325,6 +325,8 @@ namespace api.Migrations
 
                     b.HasIndex("PlayerName", "AchievedAt");
 
+                    b.HasIndex("RoundId", "PlayerName");
+
                     b.HasIndex("PlayerName", "AchievementId", "AchievedAt")
                         .IsUnique();
 

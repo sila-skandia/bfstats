@@ -2,7 +2,7 @@
   <div class="wrapped-slide credits-slide animate-line-in" @click="$emit('next')">
     <div class="credits-left-container">
       <div class="credits-eyebrow-row animate-rise-up" style="animation-delay: 0.05s">
-        <span class="mm-eyebrow">08 — PROFILE WRAPPED</span>
+        <span class="mm-eyebrow">09 — PROFILE WRAPPED</span>
         <span class="new-badge">NEW</span>
       </div>
 

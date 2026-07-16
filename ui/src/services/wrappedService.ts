@@ -265,6 +265,24 @@ export interface PlayerRelations {
   twoFaceLosses: number | null;
 }
 
+export interface DishonourMap {
+  mapName: string;
+  rounds: number;
+  value: number;
+  playerAvg: number;
+  playerBest: number;
+  delta: number;
+  metricLabel: string;
+}
+
+export interface PlayerDishonours {
+  leastFavoriteMapByKd: DishonourMap | null;
+  lowestKillRateMap: DishonourMap | null;
+  mostLossesMap: DishonourMap | null;
+  lowestScoreRateMap: DishonourMap | null;
+  maxDeathsMap: DishonourMap | null;
+}
+
 export interface PlayerWrappedData {
   playerName: string;
   serverGuid: string;
@@ -278,6 +296,7 @@ export interface PlayerWrappedData {
   squad: PlayerTeammate[];
   serverRankings: PlayerServerRanking[];
   relations: PlayerRelations;
+  dishonours: PlayerDishonours | null;
 }
 
 /**
@@ -334,6 +353,7 @@ export interface ProfileWrappedData {
   relations: PlayerRelations;
   bestAliases: ProfileBestAliases;
   aliasCredits: ProfileAliasCredit[];
+  dishonours: PlayerDishonours | null;
 }
 
 /**
