@@ -145,7 +145,7 @@ defineEmits<{
 
 .rounds-text {
   font-family: var(--mm-font-mono);
-  font-size: 11px;
+  font-size: 13.5px; /* increased from 11px */
   letter-spacing: 0.15em;
   color: var(--mm-ink-muted);
   text-transform: uppercase;
@@ -196,7 +196,7 @@ defineEmits<{
 
 .mm-eyebrow-small {
   font-family: var(--mm-font-mono);
-  font-size: 10.5px;
+  font-size: 13px; /* increased from 10.5px */
   letter-spacing: 0.12em;
   color: var(--mm-ink-muted);
   margin-top: 8px;
@@ -205,7 +205,7 @@ defineEmits<{
 
 .stat-percentile {
   font-family: var(--mm-font-mono);
-  font-size: 10px;
+  font-size: 12px; /* increased from 10px */
   letter-spacing: 0.05em;
   color: var(--mm-accent);
   margin-top: 5px;
@@ -215,7 +215,7 @@ defineEmits<{
 
 .percentile-mini {
   font-family: var(--mm-font-mono);
-  font-size: 10.5px;
+  font-size: 13px; /* increased from 10.5px */
   color: var(--mm-accent);
   font-weight: 600;
   margin-left: 4px;
@@ -248,7 +248,7 @@ defineEmits<{
 
 .footer-row {
   font-family: var(--mm-font-mono);
-  font-size: 11.5px;
+  font-size: 14px; /* increased from 11.5px */
   letter-spacing: 0.08em;
   color: var(--mm-ink-muted);
   display: flex;
@@ -257,7 +257,7 @@ defineEmits<{
 }
 
 .footer-row .highlight {
-  font-size: 13px;
+  font-size: 16px; /* increased from 13px */
   font-weight: 600;
   margin-left: 6px;
 }
@@ -274,7 +274,7 @@ defineEmits<{
 }
 
 .rank-label {
-  font-size: 10px;
+  font-size: 12px; /* increased from 10px */
   letter-spacing: 0.1em;
   color: var(--mm-ink-soft);
   text-transform: uppercase;
@@ -283,7 +283,7 @@ defineEmits<{
 
 .rank-val {
   font-family: var(--mm-font-display);
-  font-size: 19px;
+  font-size: 22px; /* increased from 19px */
   font-weight: 500;
   color: var(--mm-kd-elite);
 }

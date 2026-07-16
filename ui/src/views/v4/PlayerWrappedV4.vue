@@ -760,29 +760,29 @@ function endHold() {
 /* Deep selector overrides for inner slide typography */
 :deep(.slide-container .mm-eyebrow),
 :deep(.mobile-content-container .mm-eyebrow) {
-  font-size: 13.5px !important;
+  font-size: 15px !important;
 }
 
 :deep(.slide-container .mm-eyebrow-small),
 :deep(.mobile-content-container .mm-eyebrow-small),
 :deep(.slide-container .slide-badge),
 :deep(.mobile-content-container .slide-badge) {
-  font-size: 11.5px !important;
+  font-size: 13.5px !important;
 }
 
 :deep(.slide-container .intro-meta),
 :deep(.mobile-content-container .intro-meta) {
-  font-size: 13.5px !important;
+  font-size: 15px !important;
 }
 
 :deep(.slide-container .click-prompt),
 :deep(.mobile-content-container .click-prompt) {
-  font-size: 12.5px !important;
+  font-size: 14px !important;
 }
 
 :deep(.slide-container .rounds-text),
 :deep(.mobile-content-container .rounds-text) {
-  font-size: 13.5px !important;
+  font-size: 15px !important;
 }
 
 :deep(.slide-container .numbers-footer),
@@ -805,51 +805,58 @@ function endHold() {
 :deep(.mobile-content-container .dishonours-footer),
 :deep(.mobile-content-container .closest-footer),
 :deep(.mobile-content-container .share-footer) {
-  font-size: 13px !important;
+  font-size: 14.5px !important;
 }
 
 :deep(.slide-container .card-desc),
 :deep(.mobile-content-container .card-desc) {
-  font-size: 14.5px !important;
+  font-size: 16px !important;
 }
 
 :deep(.slide-container .card-val),
 :deep(.mobile-content-container .card-val) {
-  font-size: 15px !important;
+  font-size: 17px !important;
 }
 
 :deep(.slide-container .map-rounds),
 :deep(.mobile-content-container .map-rounds) {
-  font-size: 12.5px !important;
+  font-size: 14px !important;
 }
 
 :deep(.slide-container .map-label),
 :deep(.mobile-content-container .map-label) {
-  font-size: 16.5px !important;
+  font-size: 18.5px !important;
 }
 
 :deep(.slide-container .item-header),
 :deep(.mobile-content-container .item-header) {
-  font-size: 17px !important;
+  font-size: 19px !important;
 }
 
 :deep(.slide-container .stat-label),
 :deep(.mobile-content-container .stat-label) {
-  font-size: 12.5px !important;
+  font-size: 14.5px !important;
 }
 
 :deep(.slide-container .mm-chip-love),
 :deep(.mobile-content-container .mm-chip-love) {
-  font-size: 11px !important;
+  font-size: 13px !important;
 }
 
 .stage-container {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 980px;
+  max-width: 1366px; /* increased default width from 980px */
   height: 100%;
   justify-content: flex-start;
+  transition: max-width 0.25s ease;
+}
+
+@media (min-width: 1024px) and (max-width: 1920px) {
+  .stage-container {
+    width: 92%;
+  }
 }
 
 .stage-header {
