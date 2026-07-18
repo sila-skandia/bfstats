@@ -44,6 +44,7 @@
             </button>
           </nav>
           <div class="sidebar-footer">
+            <WrappedMusicControl class="sidebar-music" />
             <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="exit-btn">
               Exit Wrapped
             </router-link>
@@ -140,12 +141,15 @@
               <span class="logo-small">BFStats</span>
               <span class="badge-small">'26</span>
             </div>
-            <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="close-mobile">
-              ✕
-            </router-link>
-            <router-link v-else to="/v4/" class="close-mobile">
-              ✕
-            </router-link>
+            <div class="header-right">
+              <WrappedMusicControl />
+              <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="close-mobile">
+                ✕
+              </router-link>
+              <router-link v-else to="/v4/" class="close-mobile">
+                ✕
+              </router-link>
+            </div>
           </header>
         </div>
 
@@ -251,6 +255,8 @@ import PlayerMomentSlide from '@/components/v4/wrapped/PlayerMomentSlide.vue'
 import PlayerSquadSlide from '@/components/v4/wrapped/PlayerSquadSlide.vue'
 import PlayerShareSlide from '@/components/v4/wrapped/PlayerShareSlide.vue'
 import ProfileCreditsSlide from '@/components/v4/wrapped/ProfileCreditsSlide.vue'
+import WrappedMusicControl from '@/components/v4/wrapped/WrappedMusicControl.vue'
+import { useWrappedMusic } from '@/composables/useWrappedMusic'
 
 // Programmatic Image Preloader helper
 function preloadImages(urls: string[]) {
@@ -289,6 +295,7 @@ const fxSmokeBg = { backgroundImage: `url(${fxSmoke})` }
 const fxEmbersBg = { backgroundImage: `url(${fxEmbers})` }
 
 const route = useRoute()
+const music = useWrappedMusic()
 
 // Mouse parallax — drives --par-x / --par-y CSS vars consumed by the hero layers
 const rootEl = ref<HTMLElement | null>(null)
@@ -428,6 +435,7 @@ onMounted(async () => {
 
     loading.value = false
     startPlayback()
+    music.startSession()
   } catch (err: any) {
     console.error('[PlayerWrapped]', err)
     error.value = err.response?.data?.error || err.message || 'An unexpected error occurred while loading Wrapped statistics.'
@@ -437,6 +445,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopPlayback()
+  music.endSession()
   window.removeEventListener('mousemove', onParallaxMove)
   if (parallaxRaf) cancelAnimationFrame(parallaxRaf)
 })
@@ -725,6 +734,12 @@ function endHold() {
   width: 3px;
   height: 12px;
   border-radius: 0 1px 1px 0;
+}
+
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .exit-btn {
@@ -1118,6 +1133,12 @@ function endHold() {
   padding: 1px 4px;
   border-radius: var(--mm-radius-sm, 2px);
   margin-left: 6px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .close-mobile {
