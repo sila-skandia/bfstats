@@ -44,7 +44,6 @@
             </button>
           </nav>
           <div class="sidebar-footer">
-            <WrappedMusicControl class="sidebar-music" />
             <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="exit-btn">
               Exit Wrapped
             </router-link>
@@ -80,6 +79,29 @@
                   CHAPTER {{ String(currentSlide + 1).padStart(2, '0') }} / {{ String(chapters.length).padStart(2, '0') }}
                 </span>
                 <div class="stage-controls">
+                  <button class="stage-control-btn stage-song-btn" title="Change wrapped song" @click="music.openDialog('change')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M9 18V5l12-2v13" />
+                      <circle cx="6" cy="18" r="3" />
+                      <circle cx="18" cy="16" r="3" />
+                    </svg>
+                    {{ nowPlayingShort }}
+                  </button>
+                  <span class="control-divider">·</span>
+                  <button
+                    class="stage-control-btn stage-mute-btn"
+                    :class="{ 'stage-mute-btn--muted': !music.enabled.value }"
+                    :title="music.enabled.value ? 'Mute the wrapped song' : 'Unmute the wrapped song'"
+                    :aria-pressed="!music.enabled.value"
+                    @click="music.setEnabled(!music.enabled.value)"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M11 5 6 9H3v6h3l5 4z" />
+                      <path :d="music.enabled.value ? 'M15.5 8.5a5 5 0 0 1 0 7' : 'M16 9L22 15M22 9L16 15'" />
+                    </svg>
+                    {{ music.enabled.value ? 'Sound' : 'Muted' }}
+                  </button>
+                  <span class="control-divider">·</span>
                   <button class="stage-control-btn" :disabled="currentSlide === 0" @click="prevSlide(true)">
                     ← Prev
                   </button>
@@ -218,6 +240,13 @@
           <button @click="currentSlide === chapters.length - 1 ? goToSlide(0) : nextSlide(true)" class="nav-btn next-btn">{{ currentSlide === chapters.length - 1 ? 'Replay' : 'Next' }} →</button>
         </div>
       </div>
+
+      <WrappedSongDialog
+        v-if="dialogMode"
+        :mode="dialogMode"
+        @close="onSongDialogClose"
+        @begin="onSongDialogBegin"
+      />
     </div>
   </div>
 </template>
@@ -256,6 +285,7 @@ import PlayerSquadSlide from '@/components/v4/wrapped/PlayerSquadSlide.vue'
 import PlayerShareSlide from '@/components/v4/wrapped/PlayerShareSlide.vue'
 import ProfileCreditsSlide from '@/components/v4/wrapped/ProfileCreditsSlide.vue'
 import WrappedMusicControl from '@/components/v4/wrapped/WrappedMusicControl.vue'
+import WrappedSongDialog from '@/components/v4/wrapped/WrappedSongDialog.vue'
 import { useWrappedMusic } from '@/composables/useWrappedMusic'
 
 // Programmatic Image Preloader helper
@@ -296,6 +326,37 @@ const fxEmbersBg = { backgroundImage: `url(${fxEmbers})` }
 
 const route = useRoute()
 const music = useWrappedMusic()
+const { dialogMode } = music
+
+const nowPlayingShort = computed(() =>
+  music.enabled.value ? music.selectedTrack.value.label : 'No music'
+)
+
+// Opening the change dialog pauses the story; closing it resumes only if
+// it was auto-advancing before.
+let wasPlayingBeforeDialog = false
+
+function onSongDialogBegin(withMusic: boolean) {
+  music.setEnabled(withMusic)
+  music.closeDialog()
+  music.startSession()
+  startPlayback()
+}
+
+function onSongDialogClose() {
+  music.closeDialog()
+  if (wasPlayingBeforeDialog) {
+    wasPlayingBeforeDialog = false
+    resumePlayback()
+  }
+}
+
+watch(dialogMode, (mode) => {
+  if (mode === 'change') {
+    wasPlayingBeforeDialog = isPlaying.value
+    stopPlayback()
+  }
+})
 
 // Mouse parallax — drives --par-x / --par-y CSS vars consumed by the hero layers
 const rootEl = ref<HTMLElement | null>(null)
@@ -434,8 +495,9 @@ onMounted(async () => {
     }
 
     loading.value = false
-    startPlayback()
-    music.startSession()
+    // The story and the music both wait for the intro song dialog —
+    // "Begin the briefing" is the user gesture that lets audio autoplay.
+    music.openDialog('intro')
   } catch (err: any) {
     console.error('[PlayerWrapped]', err)
     error.value = err.response?.data?.error || err.message || 'An unexpected error occurred while loading Wrapped statistics.'
@@ -445,6 +507,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopPlayback()
+  music.closeDialog()
   music.endSession()
   window.removeEventListener('mousemove', onParallaxMove)
   if (parallaxRaf) cancelAnimationFrame(parallaxRaf)
@@ -941,6 +1004,28 @@ function endHold() {
   cursor: not-allowed;
 }
 
+.stage-song-btn,
+.stage-mute-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.stage-song-btn svg,
+.stage-mute-btn svg {
+  display: block;
+}
+
+.stage-mute-btn {
+  color: var(--mm-accent);
+}
+
+.stage-mute-btn--muted {
+  color: var(--mm-ink-faint);
+}
+
 .control-divider {
   font-family: var(--mm-font-mono);
   font-size: 10px;
@@ -1168,7 +1253,6 @@ function endHold() {
 
 .pwm-scroll {
   position: relative;
-  z-index: 1;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
