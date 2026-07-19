@@ -239,6 +239,7 @@ export interface PlayerBestMoment {
   date: string;
   estimatedDurationMinutes: number;
   serverStreakRank: number;
+  roundId?: string | null;
 }
 
 export interface PlayerTeammate {

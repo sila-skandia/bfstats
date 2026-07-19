@@ -127,7 +127,8 @@ public record PlayerBestMomentDto(
     string MapName,
     Instant Date,
     int EstimatedDurationMinutes,
-    int ServerStreakRank
+    int ServerStreakRank,
+    string? RoundId
 );
 
 public record PlayerTeammateDto(
