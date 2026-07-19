@@ -23,41 +23,19 @@
         <span class="text-accent" v-if="data.yearInNumbers.serverRank > 0">TOP RANK #{{ data.yearInNumbers.serverRank }}</span>
       </div>
 
-      <div class="song-panel animate-rise-up" style="animation-delay: 0.44s" @click.stop>
-        <div class="song-panel-title">Select your wrapped tune</div>
-        <div class="song-mods">
-          <button
-            v-for="mod in mods"
-            :key="mod.name"
-            type="button"
-            class="song-mod"
-            :class="{ active: mod.name === selectedTrack.mod }"
-            :title="mod.name"
-            @click="selectMod(mod)"
-          >
-            <span class="song-mod-img" :style="{ backgroundImage: `url(${mod.icon})` }"></span>
-          </button>
-        </div>
-        <div class="song-mod-name">
-          {{ selectedMod.name }}
-          <span class="song-mod-count">· {{ selectedMod.tracks.length }} {{ selectedMod.tracks.length === 1 ? 'track' : 'tracks' }}</span>
-        </div>
-        <div class="song-tracks">
-          <button
-            v-for="track in selectedMod.tracks"
-            :key="track.id"
-            type="button"
-            class="song-track"
-            :class="{ active: track.id === selectedTrackId }"
-            @click="selectTrack(track.id)"
-          >
-            <span v-if="track.id === selectedTrackId" class="song-track-dot"></span>
-            {{ track.label }}
-          </button>
-        </div>
-        <div class="song-panel-foot">
-          Selected — <span class="song-panel-sel">{{ selectedTrack.mod }} · {{ selectedTrack.label }}</span>
-        </div>
+      <div
+        class="song-row animate-rise-up"
+        style="animation-delay: 0.44s"
+        role="button"
+        title="Change wrapped song"
+        @click.stop="openDialog('change')"
+      >
+        <span class="song-row-thumb" :class="{ muted: !hasMusic }" :style="{ backgroundImage: `url(${selectedMod.icon})` }"></span>
+        <span class="song-row-text">
+          <span class="song-row-eyebrow">Wrapped song</span>
+          <span class="song-row-label">{{ nowPlayingLabel }}</span>
+        </span>
+        <span class="song-row-change">Change</span>
       </div>
 
       <div class="click-prompt animate-rise-up" style="animation-delay: 0.5s">
@@ -96,7 +74,7 @@
 import { computed } from 'vue'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import ch1p from '@/assets/wrapped/ch1p.webp'
-import { useWrappedMusic, MOD_ICONS, WRAPPED_TRACKS, type WrappedTrack } from '@/composables/useWrappedMusic'
+import { useWrappedMusic } from '@/composables/useWrappedMusic'
 
 defineProps<{
   data: PlayerWrappedData
@@ -106,29 +84,12 @@ defineEmits<{
   (e: 'next'): void
 }>()
 
-const { selectedTrackId, selectedTrack, selectTrack } = useWrappedMusic()
+const { selectedTrackId, selectedTrack, selectedMod, enabled, openDialog } = useWrappedMusic()
 
-interface SongMod {
-  name: string
-  icon: string
-  tracks: WrappedTrack[]
-}
-
-const mods: SongMod[] = (() => {
-  const byMod = new Map<string, WrappedTrack[]>()
-  for (const track of WRAPPED_TRACKS) {
-    if (!byMod.has(track.mod)) byMod.set(track.mod, [])
-    byMod.get(track.mod)!.push(track)
-  }
-  return [...byMod.entries()].map(([name, tracks]) => ({ name, icon: MOD_ICONS[name], tracks }))
-})()
-
-const selectedMod = computed(() => mods.find(m => m.name === selectedTrack.value.mod) ?? mods[0])
-
-function selectMod(mod: SongMod) {
-  const theme = mod.tracks.find(t => t.label === 'Theme') ?? mod.tracks[0]
-  selectTrack(theme.id)
-}
+const hasMusic = computed(() => enabled.value && !!selectedTrackId.value)
+const nowPlayingLabel = computed(() =>
+  hasMusic.value ? `${selectedTrack.value.mod} · ${selectedTrack.value.label}` : 'No music'
+)
 </script>
 
 <style scoped>
@@ -235,178 +196,94 @@ function selectMod(mod: SongMod) {
   font-weight: 600;
 }
 
-/* ---- Wrapped tune chooser (mobile-first per the mobile mock; tighter on desktop) ---- */
-.song-panel {
+/* ---- Now-playing row — opens the song dialog ---- */
+.song-row {
   position: relative;
   z-index: 50;
-  cursor: default;
+  cursor: pointer;
   margin-top: 24px;
   width: 100%;
   box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   border: 1px solid var(--mm-rule);
   border-radius: 2px;
   background: rgba(13, 13, 13, 0.55);
-  padding: 14px 14px 13px;
+  padding: 12px 14px;
+  transition: border-color 0.12s ease;
 }
 
 @media (min-width: 1024px) {
-  .song-panel {
+  .song-row {
     margin-top: 30px;
     max-width: 470px;
-    padding: 16px 18px 15px;
+    gap: 14px;
+    padding: 13px 16px;
   }
 }
 
-.song-panel-title {
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-}
-
-.song-mods {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 12px;
-}
-
-.song-mod {
-  width: 44px;
-  height: 44px;
-  padding: 3px;
-  cursor: pointer;
-  border-radius: 2px;
-  background: transparent;
-  border: 1px solid var(--mm-rule);
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
-}
-
-@media (min-width: 1024px) {
-  .song-mod {
-    width: 38px;
-    height: 38px;
-  }
-}
-
-.song-mod:hover {
+.song-row:hover {
   border-color: var(--mm-ink-muted);
 }
 
-.song-mod.active {
-  background: var(--mm-bg-soft);
-  border-color: var(--mm-accent);
-  box-shadow: 0 0 0 1px rgba(125, 136, 73, 0.35);
-}
-
-.song-mod-img {
-  width: 100%;
-  height: 100%;
-  border-radius: 1px;
+.song-row-thumb {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 2px;
   display: block;
+  border: 1px solid var(--mm-rule-strong);
   background-size: cover;
   background-position: center;
-  filter: grayscale(0.75) brightness(0.75);
-  opacity: 0.75;
-  transition: filter 0.12s ease, opacity 0.12s ease;
-}
-
-.song-mod.active .song-mod-img {
-  filter: none;
-  opacity: 1;
-}
-
-.song-mod-name {
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mm-ink-soft);
-  margin-top: 14px;
-}
-
-.song-mod-count {
-  color: var(--mm-ink-faint);
-}
-
-.song-tracks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.song-track {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 9px 12px;
-  border-radius: 2px;
-  background: transparent;
-  border: 1px solid var(--mm-rule);
-  color: var(--mm-ink-muted);
-  transition: border-color 0.12s ease, color 0.12s ease;
+  transition: filter 0.12s ease;
 }
 
 @media (min-width: 1024px) {
-  .song-track {
-    padding: 5px 10px;
+  .song-row-thumb {
+    width: 36px;
+    height: 36px;
   }
 }
 
-.song-track:hover {
-  border-color: var(--mm-ink-muted);
+.song-row-thumb.muted {
+  filter: grayscale(1) brightness(0.6);
+}
+
+.song-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.song-row-eyebrow {
+  display: block;
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+
+.song-row-label {
+  display: block;
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--mm-ink);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.song-track.active {
-  background: rgba(125, 136, 73, 0.1);
-  border-color: var(--mm-accent);
-  color: var(--mm-accent);
-}
-
-.song-track-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--mm-accent);
-  animation: mm-pulse 1.6s ease-in-out infinite;
-}
-
-.song-panel-foot {
+.song-row-change {
   font-family: var(--mm-font-mono);
   font-size: 9.5px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--mm-ink-faint);
-  margin-top: 12px;
-  border-top: 1px solid var(--mm-rule);
-  padding-top: 10px;
-}
-
-.song-panel-sel {
   color: var(--mm-accent);
-}
-
-.song-panel-foot {
-  font-family: var(--mm-font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--mm-ink-faint);
-  margin-top: 13px;
-  border-top: 1px solid var(--mm-rule);
-  padding-top: 11px;
-}
-
-.song-panel-sel {
-  color: var(--mm-accent);
+  white-space: nowrap;
 }
 
 .click-prompt {
