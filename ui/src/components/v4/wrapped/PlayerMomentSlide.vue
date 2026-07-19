@@ -9,7 +9,9 @@
       <div class="moments-list">
         <div v-for="(moment, index) in data.bestMoments" :key="index"
              class="moment-item animate-rise-up"
-             :style="{ 'animation-delay': (0.15 + index * 0.1) + 's' }">
+             :class="{ 'moment-item--clickable': moment.roundId }"
+             :style="{ 'animation-delay': (0.15 + index * 0.1) + 's' }"
+             @click.stop="moment.roundId ? handleMomentClick(moment.roundId) : null">
           
           <!-- Rank Badge -->
           <div class="moment-rank" :class="getMomentProps(moment).colorClass">
@@ -34,6 +36,11 @@
               {{ getMomentProps(moment).desc }} · {{ moment.estimatedDurationMinutes }} mins
             </div>
           </div>
+
+          <!-- Report Link -->
+          <div v-if="moment.roundId" class="moment-report-link">
+            REPORT &rarr;
+          </div>
         </div>
         
         <div v-if="!data.bestMoments || data.bestMoments.length === 0" class="no-moments animate-rise-up" style="animation-delay: 0.15s">
@@ -41,6 +48,26 @@
         </div>
       </div>
     </div>
+
+    <!-- Slideover for inline Round Report -->
+    <Teleport to="body">
+      <div 
+        v-if="selectedRoundId" 
+        class="mm round-report-slideover"
+        @click.self="selectedRoundId = null"
+      >
+        <div class="slideover-content">
+          <div class="slideover-header">
+            <button class="close-btn" @click="selectedRoundId = null">
+              <span>&larr; CLOSE REPORT</span>
+            </button>
+          </div>
+          <div class="slideover-body">
+            <MmRoundReportV2 :round-id="selectedRoundId" />
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Right Column: Hero Image Card -->
     <div class="hero-image-container">
@@ -69,17 +96,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import type { PlayerWrappedData, PlayerBestMoment } from '@/services/wrappedService'
 import ch6p from '@/assets/wrapped/ch6p.webp'
+import MmRoundReportV2 from '@/components/v4/MmRoundReportV2.vue'
 
 const props = defineProps<{
   data: PlayerWrappedData
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'next'): void
+  (e: 'pause'): void
 }>()
+
+const selectedRoundId = ref<string | null>(null)
+
+function handleMomentClick(roundId: string) {
+  selectedRoundId.value = roundId
+  emit('pause')
+}
 
 const topMomentMapName = computed(() => {
   return props.data.bestMoments && props.data.bestMoments.length > 0
@@ -273,5 +309,96 @@ function formatDate(dateStr: string) {
   text-align: center;
   border: 1px dashed var(--mm-rule);
   border-radius: 4px;
+}
+
+.moment-item--clickable {
+  cursor: pointer;
+}
+
+.moment-report-link {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--mm-kd-elite);
+  font-weight: 600;
+  margin-left: auto;
+  opacity: 0.5;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.moment-item:hover .moment-report-link {
+  opacity: 1;
+  transform: translateX(4px);
+}
+
+/* Slideover Styles */
+.round-report-slideover {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  justify-content: flex-end;
+  animation: fadeIn 0.3s ease;
+}
+
+.slideover-content {
+  width: 95vw;
+  max-width: 1600px;
+  height: 100%;
+  background-color: var(--mm-bg);
+  border-left: 1px solid var(--mm-rule);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.slideover-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--mm-rule);
+  background-color: var(--mm-bg-soft);
+  display: flex;
+  align-items: center;
+}
+
+.close-btn {
+  background: none;
+  border: 1px solid var(--mm-rule);
+  color: var(--mm-ink-muted);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  color: var(--mm-ink);
+  border-color: var(--mm-ink-soft);
+  background-color: var(--mm-bg-mute);
+}
+
+.slideover-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 </style>

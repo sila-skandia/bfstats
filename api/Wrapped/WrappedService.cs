@@ -2060,7 +2060,8 @@ public class WrappedService(
                 streakInfo.MapName,
                 streakInfo.Date,
                 estDuration,
-                serverStreakRank
+                serverStreakRank,
+                streakInfo.RoundId
             ));
         }
 
@@ -2089,7 +2090,8 @@ public class WrappedService(
                 highestScoreSession.MapName,
                 highestScoreDate,
                 highestScoreDuration,
-                0
+                0,
+                highestScoreSession.RoundId
             ));
 
             // (3) Round with Most Kills
@@ -2104,7 +2106,8 @@ public class WrappedService(
                 mostKillsSession.MapName,
                 mostKillsDate,
                 mostKillsDuration,
-                0
+                0,
+                mostKillsSession.RoundId
             ));
         }
         bestMomentsActivity?.Dispose();
