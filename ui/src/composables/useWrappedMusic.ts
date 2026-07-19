@@ -33,27 +33,44 @@ function modIconUrl(id: string): string {
   return `${import.meta.env.BASE_URL}wrapped-music/icons/${id}.png`
 }
 
-const DEFAULT_TRACK_ID = 'vanilla-vehicle4'
+export interface WrappedMod {
+  name: string
+  icon: string
+  tracks: WrappedTrack[]
+}
+
+export const WRAPPED_MODS: WrappedMod[] = (() => {
+  const byMod = new Map<string, WrappedTrack[]>()
+  for (const track of WRAPPED_TRACKS) {
+    if (!byMod.has(track.mod)) byMod.set(track.mod, [])
+    byMod.get(track.mod)!.push(track)
+  }
+  return [...byMod.entries()].map(([name, tracks]) => ({ name, icon: MOD_ICONS[name], tracks }))
+})()
+
+
+
 const TRACK_STORAGE_KEY = 'wrapped-music-track'
 const ENABLED_STORAGE_KEY = 'wrapped-music-enabled'
 const VOLUME = 0.45
 
-function storedTrackId(): string {
-  const stored = localStorage.getItem(TRACK_STORAGE_KEY)
-  return WRAPPED_TRACKS.some(t => t.id === stored) ? stored! : DEFAULT_TRACK_ID
-}
-
 // Module-level singleton — the desktop and mobile layouts both render a
 // control and must share one audio element / one state.
-const selectedTrackId = ref(storedTrackId())
+const selectedTrackId = ref('') // Start with empty selection to force explicit click
 const enabled = ref(localStorage.getItem(ENABLED_STORAGE_KEY) !== 'false')
 const isPlaying = ref(false)
+
+// Song dialog — 'intro' is the pre-briefing chooser shown on load,
+// 'change' is the on-the-fly variant opened from the sound controls.
+export type SongDialogMode = 'intro' | 'change' | null
+const dialogMode = ref<SongDialogMode>(null)
 
 let audio: HTMLAudioElement | null = null
 let sessionActive = false
 let gestureListenerAttached = false
 
-const selectedTrack = computed(() => WRAPPED_TRACKS.find(t => t.id === selectedTrackId.value)!)
+const selectedTrack = computed(() => WRAPPED_TRACKS.find(t => t.id === selectedTrackId.value) || { id: '', label: 'None', mod: 'None' })
+const selectedMod = computed(() => WRAPPED_MODS.find(m => m.name === selectedTrack.value.mod) ?? WRAPPED_MODS[0])
 
 function trackUrl(id: string): string {
   return `${import.meta.env.BASE_URL}wrapped-music/${id}.mp3`
@@ -90,6 +107,7 @@ function retryOnFirstGesture() {
 }
 
 async function play() {
+  if (!selectedTrackId.value) return
   const el = ensureAudio()
   const url = trackUrl(selectedTrackId.value)
   if (!el.src.endsWith(url)) {
@@ -118,11 +136,9 @@ export function useWrappedMusic() {
   function selectTrack(id: string) {
     selectedTrackId.value = id
     localStorage.setItem(TRACK_STORAGE_KEY, id)
-    if (!enabled.value) {
-      setEnabled(true)
-    } else if (sessionActive) {
-      void play()
-    }
+    enabled.value = true
+    localStorage.setItem(ENABLED_STORAGE_KEY, 'true')
+    void play()
   }
 
   function setEnabled(value: boolean) {
@@ -135,15 +151,34 @@ export function useWrappedMusic() {
     }
   }
 
+  function selectMod(mod: WrappedMod) {
+    const theme = mod.tracks.find(t => t.label === 'Theme') ?? mod.tracks[0]
+    selectTrack(theme.id)
+  }
+
+  function openDialog(mode: Exclude<SongDialogMode, null>) {
+    dialogMode.value = mode
+  }
+
+  function closeDialog() {
+    dialogMode.value = null
+  }
+
   return {
     tracks: WRAPPED_TRACKS,
+    mods: WRAPPED_MODS,
     selectedTrackId,
     selectedTrack,
+    selectedMod,
     enabled,
     isPlaying,
+    dialogMode,
     startSession,
     endSession,
     selectTrack,
-    setEnabled
+    selectMod,
+    setEnabled,
+    openDialog,
+    closeDialog
   }
 }
