@@ -164,7 +164,6 @@
               <span class="badge-small">'26</span>
             </div>
             <div class="header-right">
-              <WrappedMusicControl />
               <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="close-mobile">
                 ✕
               </router-link>
@@ -226,16 +225,19 @@
         <div class="mobile-bottom-nav">
           <button @click="prevSlide(true)" class="nav-btn prev-btn" :disabled="currentSlide === 0" :style="{ color: currentSlide === 0 ? 'var(--mm-ink-faint)' : 'var(--mm-ink-soft)' }">← Prev</button>
 
-          <button @click="togglePlayback" class="toggle-play-btn" title="Play / pause">
-            <svg width="52" height="52" viewBox="0 0 52 52" style="display:block;">
-              <circle cx="26" cy="26" r="22" fill="none" stroke="var(--mm-rule-strong)" stroke-width="2.5"></circle>
-              <circle cx="26" cy="26" r="22" fill="none" :stroke="activeThemeColor" stroke-width="3" stroke-linecap="round" :stroke-dasharray="ringCirc" :stroke-dashoffset="ringOffset" transform="rotate(-90 26 26)" style="transition:stroke-dashoffset .12s linear, stroke .4s ease;"></circle>
-            </svg>
-            <span class="toggle-icon-wrapper">
-              <svg v-if="!isPaused" width="13" height="14" viewBox="0 0 13 14" :fill="activeThemeColor"><rect x="1" y="0" width="3.6" height="14" rx="0.6"></rect><rect x="8.4" y="0" width="3.6" height="14" rx="0.6"></rect></svg>
-              <svg v-else width="13" height="15" viewBox="0 0 13 15" :fill="activeThemeColor"><path d="M1.5 0.9 L12 7.5 L1.5 14.1 Z"></path></svg>
-            </span>
-          </button>
+          <span class="nav-center">
+            <button @click="togglePlayback" class="toggle-play-btn" title="Play / pause">
+              <svg width="52" height="52" viewBox="0 0 52 52" style="display:block;">
+                <circle cx="26" cy="26" r="22" fill="none" stroke="var(--mm-rule-strong)" stroke-width="2.5"></circle>
+                <circle cx="26" cy="26" r="22" fill="none" :stroke="activeThemeColor" stroke-width="3" stroke-linecap="round" :stroke-dasharray="ringCirc" :stroke-dashoffset="ringOffset" transform="rotate(-90 26 26)" style="transition:stroke-dashoffset .12s linear, stroke .4s ease;"></circle>
+              </svg>
+              <span class="toggle-icon-wrapper">
+                <svg v-if="!isPaused" width="13" height="14" viewBox="0 0 13 14" :fill="activeThemeColor"><rect x="1" y="0" width="3.6" height="14" rx="0.6"></rect><rect x="8.4" y="0" width="3.6" height="14" rx="0.6"></rect></svg>
+                <svg v-else width="13" height="15" viewBox="0 0 13 15" :fill="activeThemeColor"><path d="M1.5 0.9 L12 7.5 L1.5 14.1 Z"></path></svg>
+              </span>
+            </button>
+            <WrappedMusicControl />
+          </span>
 
           <button @click="currentSlide === chapters.length - 1 ? goToSlide(0) : nextSlide(true)" class="nav-btn next-btn">{{ currentSlide === chapters.length - 1 ? 'Replay' : 'Next' }} →</button>
         </div>
@@ -329,7 +331,7 @@ const music = useWrappedMusic()
 const { dialogMode } = music
 
 const nowPlayingShort = computed(() =>
-  music.enabled.value ? music.selectedTrack.value.label : 'No music'
+  music.enabled.value && music.selectedTrackId.value ? music.selectedTrack.value.label : 'No music'
 )
 
 // Opening the change dialog pauses the story; closing it resumes only if
@@ -1316,6 +1318,12 @@ function endHold() {
 
 .nav-btn:disabled {
   cursor: default;
+}
+
+.nav-center {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .toggle-play-btn {

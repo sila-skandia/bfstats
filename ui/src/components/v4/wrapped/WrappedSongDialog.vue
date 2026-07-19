@@ -364,8 +364,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
   .dialog-footer--intro {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     gap: 14px;
+  }
+
+  /* Keep the nudge on its own line so the buttons don't get squeezed */
+  .dialog-footer--intro .select-prompt-msg {
+    flex: 1 1 100%;
+    margin-bottom: 0;
   }
 }
 
@@ -373,6 +380,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   font-family: var(--mm-font-display);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   background: var(--mm-highlight);
   color: var(--mm-highlight-ink);
   border: 0;
