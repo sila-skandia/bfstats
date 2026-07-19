@@ -237,6 +237,8 @@ function selectMod(mod: SongMod) {
 
 /* ---- Wrapped tune chooser (mobile-first per the mobile mock; tighter on desktop) ---- */
 .song-panel {
+  position: relative;
+  z-index: 50;
   cursor: default;
   margin-top: 24px;
   width: 100%;

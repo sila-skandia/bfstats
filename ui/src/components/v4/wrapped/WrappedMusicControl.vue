@@ -3,10 +3,9 @@
     type="button"
     class="mute-btn"
     :class="{ 'mute-btn--muted': !enabled }"
-    :title="enabled ? `Mute — ${selectedTrack.mod} · ${selectedTrack.label}` : 'Unmute the wrapped song'"
-    :aria-label="enabled ? 'Mute the wrapped song' : 'Unmute the wrapped song'"
-    :aria-pressed="!enabled"
-    @click="setEnabled(!enabled)"
+    :title="enabled ? `Change wrapped song — ${selectedTrack.mod} · ${selectedTrack.label}` : 'Change wrapped song'"
+    aria-label="Change wrapped song"
+    @click="openDialog('change')"
   >
     <svg
       width="15"
@@ -28,7 +27,7 @@
 <script setup lang="ts">
 import { useWrappedMusic } from '@/composables/useWrappedMusic'
 
-const { selectedTrack, enabled, setEnabled } = useWrappedMusic()
+const { selectedTrack, enabled, openDialog } = useWrappedMusic()
 </script>
 
 <style scoped>
