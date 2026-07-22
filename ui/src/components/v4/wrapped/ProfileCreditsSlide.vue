@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide credits-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide credits-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="credits-left-container">
       <div class="credits-eyebrow-row animate-rise-up" style="animation-delay: 0.05s">
         <span class="mm-eyebrow">09 — PROFILE WRAPPED</span>
@@ -85,6 +85,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import type { WrappedViewData } from '@/services/wrappedService'
 import pwSquad from '@/assets/wrapped/pw_squad.webp'
 

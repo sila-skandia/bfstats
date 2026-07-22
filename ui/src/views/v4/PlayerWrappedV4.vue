@@ -174,21 +174,17 @@
           </header>
         </div>
 
-        <!-- Tap Zones -->
-        <div class="mobile-tap-zones">
-          <div class="tap-zone tap-left" @click="prevSlide(true)"></div>
-          <div
-            class="tap-zone tap-right"
-            @click="nextSlide(true)"
-            @mousedown="startHold"
-            @mouseup="endHold"
-            @touchstart="startHold"
-            @touchend="endHold"
-          ></div>
-        </div>
-
-        <!-- Scrollable slide area (hero + content) -->
-        <main ref="mobileScrollEl" class="pwm-scroll">
+        <!-- Scrollable slide area (hero + content). Edge taps navigate, any
+             touch pauses the timer while held — handlers live on the scroller
+             itself so every swipe scrolls natively (no overlay tap zones). -->
+        <main
+          ref="mobileScrollEl"
+          class="pwm-scroll"
+          @click="onStoryNavTap"
+          @touchstart.passive="startHold"
+          @touchend.passive="endHold"
+          @touchcancel.passive="endHold"
+        >
         <!-- Mobile Hero Image Card -->
         <div v-if="activeHero" class="mobile-hero-container animate-fade-in">
           <div class="hero-image-card">
@@ -471,6 +467,7 @@ const activeHero = computed(() => {
 })
 
 onMounted(async () => {
+  document.documentElement.classList.add('mm-wrapped-lock')
   if (!prefersReducedMotion) {
     window.addEventListener('mousemove', onParallaxMove)
   }
@@ -508,6 +505,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  document.documentElement.classList.remove('mm-wrapped-lock')
   stopPlayback()
   music.closeDialog()
   music.endSession()
@@ -594,6 +592,20 @@ function startHold() {
 
 function endHold() {
   isHolding.value = false
+}
+
+// Edge-tap navigation on the mobile scroller. The browser only fires click
+// when the gesture wasn't a scroll, so drags always scroll the content and
+// only true taps in the outer 20% bands change slides.
+function onStoryNavTap(e: MouseEvent) {
+  const target = e.target as HTMLElement | null
+  if (target?.closest('a, button, input, select, textarea, [role="button"]')) return
+  const x = e.clientX / window.innerWidth
+  if (x < 0.2) {
+    prevSlide(true)
+  } else if (x > 0.8) {
+    nextSlide(true)
+  }
 }
 </script>
 
@@ -1263,22 +1275,6 @@ function endHold() {
   text-decoration: none;
 }
 
-.mobile-tap-zones {
-  position: absolute;
-  inset: 64px 0 78px;
-  display: flex;
-  justify-content: space-between;
-  z-index: 40;
-  pointer-events: none;
-}
-
-.tap-zone {
-  width: 20%;
-  height: 100%;
-  pointer-events: auto;
-  cursor: pointer;
-}
-
 .pwm-scroll {
   position: relative;
   flex: 1;
@@ -1287,6 +1283,13 @@ function endHold() {
   -webkit-overflow-scrolling: touch;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  /* Reaching the top of the slide must never chain into the document /
+     pull-to-refresh — the scroller owns every vertical gesture. */
+  overscroll-behavior-y: contain;
+  /* Hold-anywhere pauses the story; without this iOS long-press pops the
+     text-selection callout instead. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .pwm-scroll::-webkit-scrollbar {
@@ -1372,13 +1375,18 @@ function endHold() {
 }
 
 @media (max-width: 1023px) {
-  /* Fixed-height shell with an internal scroller (.pwm-scroll) — scrolling
-     the whole document repaints the full-page fx/grain overlays and feels
-     clunky; mirrors the ServerWrappedV4 mobile architecture. */
+  /* Fullscreen fixed overlay with an internal scroller (.pwm-scroll).
+     In-flow 100dvh left the shell topbar above us, so the document kept
+     ~100px of scroll slack and edge swipes moved the page instead of the
+     slides; fixed + the html.mm-wrapped-lock scroll lock means the slide
+     scroller is the only thing that can scroll. */
   .player-wrapped {
+    position: fixed !important;
+    inset: 0 !important;
     height: 100vh !important;
     height: 100dvh !important;
     overflow: hidden !important;
+    z-index: 200;
   }
 }
 

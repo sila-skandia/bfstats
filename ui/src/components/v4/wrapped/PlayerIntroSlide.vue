@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide intro-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide intro-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="intro-content">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">BFSTATS · 2026 WRAPPED</div>
       
@@ -38,7 +38,7 @@
         <span class="song-row-change">Change</span>
       </div>
 
-      <div class="click-prompt animate-rise-up" style="animation-delay: 0.5s">
+      <div class="click-prompt animate-rise-up" style="animation-delay: 0.5s" role="button" @click.stop="$emit('next')">
         <span>TAP / CLICK TO BEGIN BRIEFING</span>
         <span class="cursor">_</span>
       </div>
@@ -71,6 +71,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import { computed } from 'vue'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import ch1p from '@/assets/wrapped/ch1p.webp'

@@ -1452,6 +1452,19 @@
   .mm-dash-grid--early { grid-template-columns: 1fr !important; }
 }
 
+/* ---------- wrapped stories scroll lock ----------
+   Toggled on <html> while a Wrapped view is mounted. On mobile the wrapped
+   shell is a fixed fullscreen overlay; locking the document removes the
+   residual page scroll behind it and disables Chrome's pull-to-refresh so
+   every vertical gesture goes to the slide scroller. Desktop is untouched. */
+@media (max-width: 1023px) {
+  html.mm-wrapped-lock,
+  html.mm-wrapped-lock body {
+    overflow: hidden;
+    overscroll-behavior-y: none;
+  }
+}
+
 /* ---------- wrapped animations ---------- */
 @keyframes wrappedIn {
   from { opacity: 0; transform: translateY(14px); }
