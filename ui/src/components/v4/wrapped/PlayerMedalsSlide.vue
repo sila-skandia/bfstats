@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide medals-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide medals-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="medals-content">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">05 — MEDALS &amp; DECORATIONS</div>
       <div class="medals-heading animate-rise-up" style="animation-delay: 0.1s">
@@ -105,6 +105,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
 import ch5p from '@/assets/wrapped/ch5p.webp'

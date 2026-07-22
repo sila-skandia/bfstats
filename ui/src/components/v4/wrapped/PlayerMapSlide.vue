@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide map-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide map-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="map-content">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">03 — FAVOURITE MAP &amp; SERVER</div>
       
@@ -102,6 +102,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import ch4p from '@/assets/wrapped/ch4p.webp'
 

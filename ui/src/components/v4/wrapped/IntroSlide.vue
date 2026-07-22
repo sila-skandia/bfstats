@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide intro-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide intro-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <!-- Desktop Layout -->
     <div class="intro-content desktop-only-block">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">BFSTATS · 2026 WRAPPED</div>
@@ -24,7 +24,7 @@
         <span class="text-accent">8 CHAPTERS</span>
       </div>
 
-      <div class="click-prompt animate-rise-up" style="animation-delay: 0.5s">
+      <div class="click-prompt animate-rise-up" style="animation-delay: 0.5s" role="button" @click.stop="$emit('next')">
         <span>TAP / CLICK TO BEGIN BRIEFING</span>
         <span class="cursor">_</span>
       </div>
@@ -42,7 +42,7 @@
         <div>{{ data.serverName }}</div>
         <div>JAN 01 — DEC 31 · <span class="text-accent">8 CHAPTERS</span></div>
       </div>
-      <div class="click-prompt animate-rise-up" style="animation-delay: 0.45s; margin-top: 34px;">
+      <div class="click-prompt animate-rise-up" style="animation-delay: 0.45s; margin-top: 34px;" role="button" @click.stop="$emit('next')">
         <span>Tap to begin briefing</span>
         <span class="cursor">_</span>
       </div>
@@ -51,6 +51,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import type { ServerWrappedData } from '@/services/wrappedService'
 
 defineProps<{

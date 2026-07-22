@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide dishonours-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide dishonours-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="dishonours-left-container">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">04 — DISHONOURS</div>
       
@@ -84,6 +84,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import { computed } from 'vue'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import pwDishonours from '@/assets/wrapped/pw_dishonours.webp'
