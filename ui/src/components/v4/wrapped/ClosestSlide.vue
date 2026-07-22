@@ -12,7 +12,7 @@
           :key="idx" 
           class="battle-card-item animate-rise-up"
           :style="{ animationDelay: ((idx * 0.08) + 0.15) + 's', cursor: 'pointer' }"
-          @click="selectedRoundId = battle.roundId"
+          @click.stop="selectedRoundId = battle.roundId"
         >
           <!-- Desktop Card Layout -->
           <div class="desktop-card-layout desktop-only-flex">

@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide squad-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide squad-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="squad-left-container">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">07 — SQUAD</div>
       
@@ -105,6 +105,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import ch7p from '@/assets/wrapped/ch7p.webp'
 

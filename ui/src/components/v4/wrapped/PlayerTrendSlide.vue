@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide trend-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide trend-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="trend-content">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">02 — RANK &amp; K/D TREND</div>
       
@@ -95,6 +95,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import { computed } from 'vue'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import ch3p from '@/assets/wrapped/ch3p.webp'

@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapped-slide numbers-slide animate-line-in" @click="$emit('next')">
+  <div class="wrapped-slide numbers-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="numbers-content">
       <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.05s">01 — THE YEAR IN NUMBERS</div>
       
@@ -95,6 +95,7 @@
 </template>
 
 <script setup lang="ts">
+import { clickAdvancesSlide } from './slideTap'
 import type { PlayerWrappedData } from '@/services/wrappedService'
 import ch2p from '@/assets/wrapped/ch2p.webp'
 
