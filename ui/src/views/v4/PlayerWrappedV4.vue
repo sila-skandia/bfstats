@@ -888,6 +888,32 @@ function endHold() {
   font-size: 14.5px !important;
 }
 
+/* Footers are the last thing in a slide's content flow and can otherwise
+   end up flush against the card/viewport edge — force a fixed gap below
+   them so the slide never reads as cut off. */
+:deep(.slide-container .numbers-footer),
+:deep(.slide-container .map-footer),
+:deep(.slide-container .trend-footer),
+:deep(.slide-container .rotation-footer),
+:deep(.slide-container .hours-footer),
+:deep(.slide-container .honours-footer),
+:deep(.slide-container .decorations-footer),
+:deep(.slide-container .dishonours-footer),
+:deep(.slide-container .closest-footer),
+:deep(.slide-container .share-footer),
+:deep(.mobile-content-container .numbers-footer),
+:deep(.mobile-content-container .map-footer),
+:deep(.mobile-content-container .trend-footer),
+:deep(.mobile-content-container .rotation-footer),
+:deep(.mobile-content-container .hours-footer),
+:deep(.mobile-content-container .honours-footer),
+:deep(.mobile-content-container .decorations-footer),
+:deep(.mobile-content-container .dishonours-footer),
+:deep(.mobile-content-container .closest-footer),
+:deep(.mobile-content-container .share-footer) {
+  margin-bottom: 24px !important;
+}
+
 :deep(.slide-container .card-desc),
 :deep(.mobile-content-container .card-desc) {
   font-size: 16px !important;
@@ -1052,7 +1078,7 @@ function endHold() {
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 24px 32px;
+  padding: 24px 32px 64px;
   box-sizing: border-box;
   min-width: 0;
   overflow-y: auto;
@@ -1287,7 +1313,7 @@ function endHold() {
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
-  padding: 22px 18px 26px;
+  padding: 22px 18px 48px;
   box-sizing: border-box;
 }
 
