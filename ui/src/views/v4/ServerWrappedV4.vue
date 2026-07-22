@@ -140,21 +140,17 @@
           <span class="mm-chip mm-chip--accent">CH {{ String(currentSlide + 1).padStart(2, '0') }}/08</span>
         </header>
 
-        <!-- Tap Zones -->
-        <div class="mobile-tap-zones">
-          <div class="tap-zone tap-left" @click="prevSlide(true)"></div>
-          <div
-            class="tap-zone tap-right"
-            @click="nextSlide(true)"
-            @mousedown="startHold"
-            @mouseup="endHold"
-            @touchstart="startHold"
-            @touchend="endHold"
-          ></div>
-        </div>
-
-        <!-- Mobile Content Container (scrollable) -->
-        <main class="swm-scroll">
+        <!-- Mobile Content Container (scrollable). Edge taps navigate, any
+             touch pauses the timer while held — handlers live on the scroller
+             itself so every swipe scrolls natively (no overlay tap zones). -->
+        <main
+          ref="mobileScrollEl"
+          class="swm-scroll"
+          @click="onStoryNavTap"
+          @touchstart.passive="startHold"
+          @touchend.passive="endHold"
+          @touchcancel.passive="endHold"
+        >
           <div class="mobile-slide-wrapper">
             <transition name="slide-fade" mode="out-in">
               <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
@@ -185,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchServerDetails } from '@/services/serverDetailsService'
 import { fetchServerWrapped, type ServerWrappedData } from '@/services/wrappedService'
@@ -299,6 +295,10 @@ const chapters = [
 ]
 
 const currentSlide = ref(0)
+const mobileScrollEl = ref<HTMLElement | null>(null)
+watch(currentSlide, () => {
+  mobileScrollEl.value?.scrollTo({ top: 0 })
+})
 const mobileProgress = ref(0)
 const isHolding = ref(false)
 const isPlaying = ref(false)
@@ -317,6 +317,7 @@ const activeThemeColor = computed(() => chapterColors[currentSlide.value])
 const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
 
 onMounted(async () => {
+  document.documentElement.classList.add('mm-wrapped-lock')
   try {
     const details = await fetchServerDetails(serverName.value)
     if (!details || !details.serverGuid) {
@@ -346,6 +347,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  document.documentElement.classList.remove('mm-wrapped-lock')
   stopPlayback()
 })
 
@@ -440,6 +442,20 @@ function startHold() {
 
 function endHold() {
   isHolding.value = false
+}
+
+// Edge-tap navigation on the mobile scroller. The browser only fires click
+// when the gesture wasn't a scroll, so drags always scroll the content and
+// only true taps in the outer 20% bands change slides.
+function onStoryNavTap(e: MouseEvent) {
+  const target = e.target as HTMLElement | null
+  if (target?.closest('a, button, input, select, textarea, [role="button"]')) return
+  const x = e.clientX / window.innerWidth
+  if (x < 0.2) {
+    prevSlide(true)
+  } else if (x > 0.8) {
+    nextSlide(true)
+  }
 }
 </script>
 
@@ -1004,28 +1020,19 @@ function endHold() {
   text-transform: uppercase;
 }
 
-.mobile-tap-zones {
-  position: absolute;
-  inset: 64px 0 78px;
-  display: flex;
-  justify-content: space-between;
-  z-index: 40;
-  pointer-events: none;
-}
-
-.tap-zone {
-  width: 20%;
-  height: 100%;
-  pointer-events: auto;
-  cursor: pointer;
-}
-
 .swm-scroll {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  /* Reaching the top of the slide must never chain into the document /
+     pull-to-refresh — the scroller owns every vertical gesture. */
+  overscroll-behavior-y: contain;
+  /* Hold-anywhere pauses the story; without this iOS long-press pops the
+     text-selection callout instead. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .mobile-slide-wrapper {
@@ -1117,10 +1124,18 @@ function endHold() {
 }
 
 @media (max-width: 1023px) {
+  /* Fullscreen fixed overlay with an internal scroller (.swm-scroll).
+     In-flow 100dvh left the shell topbar above us, so the document kept
+     ~100px of scroll slack and edge swipes moved the page instead of the
+     slides; fixed + the html.mm-wrapped-lock scroll lock means the slide
+     scroller is the only thing that can scroll. */
   .server-wrapped {
+    position: fixed !important;
+    inset: 0 !important;
     height: 100vh !important;
     height: 100dvh !important;
     overflow: hidden !important;
+    z-index: 200;
   }
 
   :deep(.wrapped-slide) {
