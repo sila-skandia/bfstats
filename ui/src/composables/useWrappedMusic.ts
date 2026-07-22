@@ -11,7 +11,7 @@ export const WRAPPED_TRACKS: WrappedTrack[] = [
   { id: 'vanilla-slaughter4', label: "Gettin' Kicked", mod: 'Battlefield 1942' },
   { id: 'vanilla-vehicle4', label: 'Theme', mod: 'Battlefield 1942' },
   { id: 'dc-vehicle4', label: 'Theme', mod: 'Desert Combat' },
-  { id: 'fh-vehicle4', label: 'Theme', mod: 'Forgotten Hope' },
+  { id: 'fh-slaughter4', label: 'Theme', mod: 'Forgotten Hope' },
   { id: 'gc-theme2', label: 'Theme', mod: 'Galactic Conquest' },
   { id: 'gc-vehicle3', label: 'Map Loading', mod: 'Galactic Conquest' },
   { id: 'interstate-slaughter4', label: 'Theme', mod: "Interstate '82" },
