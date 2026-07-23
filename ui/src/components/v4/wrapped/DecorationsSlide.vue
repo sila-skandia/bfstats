@@ -29,7 +29,6 @@
             v-if="dCur >= 0 && dPhase === 'in'" 
             class="hero-card hero-in"
           >
-            <img :src="dHero.img" :alt="dHero.label" class="hero-img" />
             <div class="hero-text">
               <div class="mm-eyebrow hero-label">{{ dHero.label }}</div>
               <div class="hero-player">{{ dHero.player }}</div>
@@ -46,7 +45,6 @@
             v-if="dCur >= 0 && dPhase === 'out'" 
             class="hero-card hero-out"
           >
-            <img :src="dHero.img" :alt="dHero.label" class="hero-img" />
             <div class="hero-text">
               <div class="mm-eyebrow hero-label">{{ dHero.label }}</div>
               <div class="hero-player">{{ dHero.player }}</div>
@@ -81,7 +79,6 @@
               :style="{ animation: slot.anim }"
             >
               <div class="filled-header">
-                <img :src="slot.img" :alt="slot.label" class="filled-img" />
                 <div class="mm-eyebrow filled-label">{{ slot.label }}</div>
               </div>
               <div class="filled-meta">
@@ -98,7 +95,6 @@
       <div class="mobile-layout-wrapper mobile-only-flex">
         <!-- Hero section (Elite Warrior · Legend) -->
         <div class="mobile-legend-hero">
-          <img :src="DECO[6].img" alt="" class="mobile-hero-img" />
           <div class="mobile-hero-details">
             <div class="mm-eyebrow">Elite Warrior · Legend</div>
             <div class="mobile-hero-player">{{ DECO[6].player }}</div>
@@ -113,7 +109,6 @@
         <div class="mobile-medals-grid">
           <div v-for="(md, idx) in mobileMedals" :key="idx" class="mobile-medal-card">
             <div class="mobile-medal-header">
-              <img :src="md.img" alt="" class="mobile-medal-img" />
               <span class="mobile-medal-label">{{ md.label }}</span>
             </div>
             <div class="mobile-medal-who">{{ md.who }}</div>
@@ -127,7 +122,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { ServerWrappedData } from '@/services/wrappedService'
-import { getAchievementImage } from '@/utils/achievementImageUtils'
 
 const props = defineProps<{
   data: ServerWrappedData
@@ -147,11 +141,10 @@ const dDone = ref(false)
 let dtTimeout: ReturnType<typeof setTimeout> | null = null
 let nextTimeout: ReturnType<typeof setTimeout> | null = null
 
-// Define the 7 decorations matching the mock
+// Define the 7 decorations matching the text descriptions
 const DECO = computed(() => {
   return [
     {
-      img: getAchievementImage('kill_streak_25'),
       label: 'KILL STREAKS · 25+',
       player: props.data.decorations.mostStreaksOf25.playerName || 'None',
       stat: props.data.decorations.mostStreaksOf25.value.toString(),
@@ -160,7 +153,6 @@ const DECO = computed(() => {
       desc: `${props.data.decorations.mostStreaksOf25.playerName || 'No player'} strung 25 kills together ${props.data.decorations.mostStreaksOf25.value} times this season before anyone put them down.`
     },
     {
-      img: getAchievementImage('kill_streak_50'),
       label: 'STREAK OF THE YEAR',
       player: props.data.decorations.streakOfTheYear?.playerName || 'None',
       stat: (props.data.decorations.streakOfTheYear?.streak || 0).toString(),
@@ -169,7 +161,6 @@ const DECO = computed(() => {
       desc: `A massive run of ${props.data.decorations.streakOfTheYear?.streak || 0} kills on a single life at ${props.data.decorations.streakOfTheYear?.mapName || 'Unknown'} — the longest streak logged this year.`
     },
     {
-      img: getAchievementImage('round_placement_1'),
       label: 'PODIUM FINISHES',
       player: props.data.decorations.mostPodiumFinishes.playerName || 'None',
       stat: props.data.decorations.mostPodiumFinishes.value.toString(),
@@ -178,7 +169,6 @@ const DECO = computed(() => {
       desc: `Topped the final scoreboard ${props.data.decorations.mostPodiumFinishes.value} times — more first-place finishes than any other soldier.`
     },
     {
-      img: getAchievementImage(props.data.decorations.prestigiousMilestone?.achievementId || 'elite_warrior_legend'),
       label: 'PRESTIGIOUS MILESTONE',
       player: props.data.decorations.prestigiousMilestone?.playerName || 'None',
       stat: `${props.data.decorations.milestonesCrossed || 0}`,
@@ -187,7 +177,6 @@ const DECO = computed(() => {
       desc: `${props.data.decorations.prestigiousMilestone?.playerName || 'No one'} unlocked the prestigious '${props.data.decorations.prestigiousMilestone?.achievementName || 'Legend'}' milestone (out of ${props.data.decorations.milestonesCrossed} milestones crossed in total).`
     },
     {
-      img: getAchievementImage(props.data.decorations.mostLegendAchievements?.achievementId || 'team_victory_legendary'),
       label: props.data.decorations.mostLegendAchievements 
         ? `MOST ${(props.data.decorations.mostLegendAchievements.tier || 'legend').toUpperCase()} MILESTONES` 
         : 'MOST LEGEND MILESTONES',
@@ -202,7 +191,6 @@ const DECO = computed(() => {
       desc: props.data.decorations.mostLegendAchievements?.description || 'Unlocked different achievements on this server.'
     },
     {
-      img: getAchievementImage('elite_warrior_gold'),
       label: 'ELITE WARRIOR · GOLD',
       player: props.data.decorations.eliteWarriorGold?.playerName || 'None',
       stat: (props.data.decorations.eliteWarriorGold?.value || 0).toString(),
@@ -211,7 +199,6 @@ const DECO = computed(() => {
       desc: `Held onto the Gold tier K/D ratio (>= 4.0 over last 100 rounds) for a grueling ${props.data.decorations.eliteWarriorGold?.value || 0} consecutive rounds.`
     },
     {
-      img: getAchievementImage('elite_warrior_legend'),
       label: 'ELITE WARRIOR · LEGEND',
       player: props.data.decorations.eliteWarriorLegend?.playerName || 'None',
       stat: (props.data.decorations.eliteWarriorLegend?.value || 0).toString(),
@@ -224,7 +211,7 @@ const DECO = computed(() => {
 
 const dHero = computed(() => {
   const cur = dCur.value
-  return cur >= 0 ? DECO.value[cur] : { img: '', label: '', player: '', stat: '', unit: '', tile: '', desc: '' }
+  return cur >= 0 ? DECO.value[cur] : { label: '', player: '', stat: '', unit: '', tile: '', desc: '' }
 })
 
 const dSlots = computed(() => {
@@ -235,7 +222,6 @@ const dSlots = computed(() => {
     return {
       filled,
       emptyFlag: !filled,
-      img: d.img,
       label: d.label,
       player: d.player,
       tile: d.tile,
@@ -266,32 +252,26 @@ const mobileMedals = computed(() => {
   const d = props.data.decorations
   return [
     {
-      img: getAchievementImage('kill_streak_25'),
       label: 'Kill Streak',
       who: `${d.mostStreaksOf25.playerName || 'None'} · ${d.mostStreaksOf25.value}`
     },
     {
-      img: getAchievementImage('kill_streak_50'),
       label: 'Streak',
       who: `${d.streakOfTheYear?.playerName || 'None'} · ${d.streakOfTheYear?.streak || 0}`
     },
     {
-      img: getAchievementImage('round_placement_1'),
       label: 'Podium',
       who: `${d.mostPodiumFinishes.playerName || 'None'} · ${d.mostPodiumFinishes.value}`
     },
     {
-      img: getAchievementImage(d.prestigiousMilestone?.achievementId || 'elite_warrior_legend'),
       label: 'Prestige',
       who: `${d.prestigiousMilestone?.playerName || 'None'} · ${d.prestigiousMilestone?.achievementName || 'Milestone'}`
     },
     {
-      img: getAchievementImage(d.mostLegendAchievements?.achievementId || 'team_victory_legendary'),
       label: 'Most Legend',
       who: `${d.mostLegendAchievements?.playerName || 'None'} · ${d.mostLegendAchievements?.value || 0}`
     },
     {
-      img: getAchievementImage('elite_warrior_gold'),
       label: 'Elite W.',
       who: `${d.eliteWarriorGold?.playerName || 'None'} · Gold`
     }
@@ -475,14 +455,6 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.hero-img {
-  width: 160px;
-  height: 160px;
-  border-radius: var(--mm-radius-sm, 2px);
-  flex-shrink: 0;
-  display: block;
-}
-
 .hero-text {
   flex: 1;
   min-width: 0;
@@ -589,7 +561,7 @@ onUnmounted(() => {
   height: 100%;
   border: 1px solid var(--mm-rule);
   border-radius: var(--mm-radius-sm, 2px);
-  padding: 6px 8px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -605,33 +577,26 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.filled-img {
-  width: 24px;
-  height: 24px;
-  border-radius: 1px;
-  flex-shrink: 0;
-  display: block;
-}
-
 .filled-label {
-  font-size: 7px;
+  font-size: 8px;
   line-height: 1.2;
   letter-spacing: 0.05em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
+  color: var(--mm-accent-soft);
 }
 
 .filled-meta {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
 .filled-player {
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 500;
   color: var(--mm-ink);
   overflow: hidden;
@@ -641,7 +606,7 @@ onUnmounted(() => {
 
 .filled-tile {
   font-family: var(--mm-font-mono);
-  font-size: 7.5px;
+  font-size: 8px;
   letter-spacing: 0.04em;
   color: var(--mm-ink-muted);
   white-space: nowrap;
@@ -653,186 +618,141 @@ onUnmounted(() => {
   height: 100%;
   border: 1px dashed var(--mm-rule);
   border-radius: var(--mm-radius-sm, 2px);
-  opacity: 0.35;
+  background: transparent;
 }
 
-/* Animations */
+/* Keyframe animations */
+@keyframes cellIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .hero-in {
-  animation: decoHeroIn 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: heroIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .hero-out {
-  transform-origin: left bottom;
-  animation: decoHeroOut 0.60s cubic-bezier(0.4, 0, 0.65, 0.5) both;
+  animation: heroOut 0.5s cubic-bezier(0.7, 0, 0.84, 0) both;
 }
 
-@keyframes decoHeroIn {
-  0% {
+@keyframes heroIn {
+  from {
     opacity: 0;
-    transform: translateY(22px);
+    transform: translateY(14px);
   }
-  100% {
+  to {
     opacity: 1;
-    transform: none;
+    transform: translateY(0);
   }
 }
 
-@keyframes decoHeroOut {
-  0% {
+@keyframes heroOut {
+  from {
     opacity: 1;
-    transform: none;
+    transform: translateY(0);
   }
-  55% {
-    opacity: 0.45;
-  }
-  100% {
+  to {
     opacity: 0;
-    transform: translateY(120px) scale(0.35);
+    transform: translateY(-14px);
   }
 }
 
-@keyframes cellIn {
-  0% {
-    opacity: 0;
-    transform: scale(0.72);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* Mobile CSS overrides */
 @media (max-width: 1023px) {
   .desktop-layout-wrapper {
     display: none !important;
   }
-  
+
   .mobile-layout-wrapper {
     display: flex !important;
     flex-direction: column;
     width: 100%;
-    margin-top: 10px;
+    gap: 16px;
   }
-  
+
   .mobile-legend-hero {
     display: flex;
     align-items: center;
-    gap: 20px;
-    margin-top: 10px;
-    text-align: left;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: var(--mm-radius-sm, 2px);
+    background: var(--mm-bg-soft);
   }
-  
-  .mobile-hero-img {
-    width: 88px;
-    height: 88px;
-    object-fit: contain;
-    flex-shrink: 0;
-  }
-  
+
   .mobile-hero-details {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+    gap: 2px;
   }
-  
-  .mobile-hero-details .mm-eyebrow {
-    font-size: 11px !important;
-    letter-spacing: 0.13em;
-    color: var(--mm-accent);
-    text-transform: uppercase;
-  }
-  
+
   .mobile-hero-player {
     font-family: var(--mm-font-display);
-    font-weight: 300;
-    font-size: 40px;
-    line-height: 1;
+    font-size: 22px;
+    font-weight: 400;
     color: var(--mm-ink);
-    margin: 5px 0 0;
   }
-  
+
   .mobile-hero-rounds {
-    margin-top: 8px;
     font-family: var(--mm-font-mono);
     font-size: 11px;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
     color: var(--mm-ink-muted);
+    text-transform: uppercase;
   }
-  
-  .mobile-hero-rounds .text-danger {
-    color: var(--mm-danger);
-    font-size: 14px;
-    font-weight: 600;
-  }
-  
+
   .mobile-legend-desc {
-    margin: 16px 0 0;
-    font-family: var(--mm-font-display);
-    font-size: 14px;
+    font-size: 13.5px;
     line-height: 1.5;
     color: var(--mm-ink-soft);
-    text-align: left;
+    margin: 0;
   }
-  
+
   .mobile-medals-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: 10px;
-    margin-top: 24px;
     width: 100%;
   }
-  
+
   .mobile-medal-card {
     border: 1px solid var(--mm-rule);
     border-radius: var(--mm-radius-sm, 2px);
-    padding: 11px;
-    background: var(--mm-bg);
+    padding: 10px 12px;
+    background: var(--mm-bg-soft);
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    min-width: 0;
+    gap: 6px;
+    text-align: left;
   }
-  
+
   .mobile-medal-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    width: 100%;
-    min-width: 0;
+    gap: 6px;
   }
-  
-  .mobile-medal-img {
-    width: 24px;
-    height: 24px;
-    object-fit: contain;
-    flex-shrink: 0;
-  }
-  
+
   .mobile-medal-label {
     font-family: var(--mm-font-mono);
     font-size: 9px;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--mm-ink-soft);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: left;
+    color: var(--mm-accent-soft);
   }
-  
+
   .mobile-medal-who {
-    margin-top: 10px;
-    font-family: var(--mm-font-mono);
-    font-size: 9.5px;
-    letter-spacing: 0.02em;
-    color: var(--mm-ink-muted);
+    font-size: 12px;
+    color: var(--mm-ink);
+    font-weight: 500;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    width: 100%;
-    text-align: left;
   }
 }
 </style>

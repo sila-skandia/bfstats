@@ -48,15 +48,13 @@ export const WRAPPED_MODS: WrappedMod[] = (() => {
   return [...byMod.entries()].map(([name, tracks]) => ({ name, icon: MOD_ICONS[name], tracks }))
 })()
 
-
-
 const TRACK_STORAGE_KEY = 'wrapped-music-track'
 const ENABLED_STORAGE_KEY = 'wrapped-music-enabled'
 const VOLUME = 0.45
 
-// Module-level singleton — the desktop and mobile layouts both render a
-// control and must share one audio element / one state.
-const selectedTrackId = ref('') // Start with empty selection to force explicit click
+// Module-level singleton — start with empty selection so user must explicitly select a song
+const selectedTrackId = ref('')
+const activeModName = ref('Battlefield 1942')
 const enabled = ref(localStorage.getItem(ENABLED_STORAGE_KEY) !== 'false')
 const isPlaying = ref(false)
 
@@ -70,7 +68,7 @@ let sessionActive = false
 let gestureListenerAttached = false
 
 const selectedTrack = computed(() => WRAPPED_TRACKS.find(t => t.id === selectedTrackId.value) || { id: '', label: 'None', mod: 'None' })
-const selectedMod = computed(() => WRAPPED_MODS.find(m => m.name === selectedTrack.value.mod) ?? WRAPPED_MODS[0])
+const selectedMod = computed(() => WRAPPED_MODS.find(m => m.name === activeModName.value) ?? WRAPPED_MODS[0])
 
 function trackUrl(id: string): string {
   return `${import.meta.env.BASE_URL}wrapped-music/${id}.mp3`
@@ -88,9 +86,6 @@ function ensureAudio(): HTMLAudioElement {
   return audio
 }
 
-// The wrapped auto-starts on mount without a user gesture, so the first
-// play() can be rejected by the browser's autoplay policy. Retry on the
-// first interaction instead.
 function retryOnFirstGesture() {
   if (gestureListenerAttached) return
   gestureListenerAttached = true
@@ -98,7 +93,7 @@ function retryOnFirstGesture() {
     gestureListenerAttached = false
     window.removeEventListener('pointerdown', retry)
     window.removeEventListener('keydown', retry)
-    if (sessionActive && enabled.value) {
+    if (sessionActive && enabled.value && selectedTrackId.value) {
       void play()
     }
   }
@@ -123,7 +118,7 @@ async function play() {
 export function useWrappedMusic() {
   function startSession() {
     sessionActive = true
-    if (enabled.value) {
+    if (enabled.value && selectedTrackId.value) {
       void play()
     }
   }
@@ -135,6 +130,10 @@ export function useWrappedMusic() {
 
   function selectTrack(id: string) {
     selectedTrackId.value = id
+    const trk = WRAPPED_TRACKS.find(t => t.id === id)
+    if (trk) {
+      activeModName.value = trk.mod
+    }
     localStorage.setItem(TRACK_STORAGE_KEY, id)
     enabled.value = true
     localStorage.setItem(ENABLED_STORAGE_KEY, 'true')
@@ -144,7 +143,7 @@ export function useWrappedMusic() {
   function setEnabled(value: boolean) {
     enabled.value = value
     localStorage.setItem(ENABLED_STORAGE_KEY, String(value))
-    if (value && sessionActive) {
+    if (value && sessionActive && selectedTrackId.value) {
       void play()
     } else if (!value) {
       audio?.pause()
@@ -152,8 +151,8 @@ export function useWrappedMusic() {
   }
 
   function selectMod(mod: WrappedMod) {
-    const theme = mod.tracks.find(t => t.label === 'Theme') ?? mod.tracks[0]
-    selectTrack(theme.id)
+    // Only switch active mod view in dialog — do NOT default or auto-play theme track
+    activeModName.value = mod.name
   }
 
   function openDialog(mode: Exclude<SongDialogMode, null>) {
