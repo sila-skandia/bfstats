@@ -1,5 +1,6 @@
 <template>
-  <div class="server-wrapped">
+  <div ref="rootEl" class="server-wrapped">
+    <div class="wrapped-grain" aria-hidden="true"></div>
     <div v-if="loading" class="wrapped-loading">
       <div class="spinner"></div>
       <p>Retrieving Wrapped 2026 aggregates...</p>
@@ -15,7 +16,7 @@
     </div>
 
     <div v-else-if="data" class="wrapped-layout">
-      <!-- Layout 2A: Desktop Widescreen Sidebar Layout -->
+      <!-- Desktop Widescreen Sidebar Layout -->
       <div class="desktop-layout">
         <aside class="wrapped-sidebar">
           <div class="sidebar-header">
@@ -48,7 +49,7 @@
 
         <main class="wrapped-stage" :style="{ '--theme-color': activeThemeColor }">
           <div class="stage-container">
-            <!-- Stage Header: Progress bars & controls moved to the top -->
+            <!-- Stage Header -->
             <div class="stage-header">
               <div class="desktop-progress-bars">
                 <div
@@ -72,6 +73,29 @@
                   CHAPTER {{ String(currentSlide + 1).padStart(2, '0') }} / {{ String(chapters.length).padStart(2, '0') }}
                 </span>
                 <div class="stage-controls">
+                  <button class="stage-control-btn stage-song-btn" title="Change wrapped song" @click="music.openDialog('change')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M9 18V5l12-2v13" />
+                      <circle cx="6" cy="18" r="3" />
+                      <circle cx="18" cy="16" r="3" />
+                    </svg>
+                    {{ nowPlayingShort }}
+                  </button>
+                  <span class="control-divider">·</span>
+                  <button
+                    class="stage-control-btn stage-mute-btn"
+                    :class="{ 'stage-mute-btn--muted': !music.enabled.value }"
+                    :title="music.enabled.value ? 'Mute the wrapped song' : 'Unmute the wrapped song'"
+                    :aria-pressed="!music.enabled.value"
+                    @click="music.setEnabled(!music.enabled.value)"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M11 5 6 9H3v6h3l5 4z" />
+                      <path :d="music.enabled.value ? 'M15.5 8.5a5 5 0 0 1 0 7' : 'M16 9L22 15M22 9L16 15'" />
+                    </svg>
+                    {{ music.enabled.value ? 'Sound' : 'Muted' }}
+                  </button>
+                  <span class="control-divider">·</span>
                   <button class="stage-control-btn" :disabled="currentSlide === 0" @click="prevSlide(true)">
                     ← Prev
                   </button>
@@ -83,66 +107,103 @@
               </div>
             </div>
 
-            <div class="slide-container">
-              <transition name="slide-fade" mode="out-in">
-                <!-- Slide rendering -->
-                <div class="slide-content-wrapper" :key="currentSlide">
-                  <!-- background splashes and props inside transition container -->
-                  <div aria-hidden="true" class="sw-splash-container">
-                    <div class="sw-splash sw-splash-1" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 68%)` }"></div>
-                    <div class="sw-splash sw-splash-2" :style="{ background: `radial-gradient(circle, ${chapterColors[currentSlide]} 0%, transparent 70%)` }"></div>
-                    <img class="sw-prop" :src="chapterImages[currentSlide]" :style="chapterProps[currentSlide]" alt="">
+            <!-- Stage Card -->
+            <div class="slide-card">
+              <div class="wrapped-fx" aria-hidden="true">
+                <div class="fx-smoke" :style="fxSmokeBg"></div>
+                <div class="fx-embers-far" :style="fxEmbersBg"></div>
+                <div class="fx-embers-near" :style="fxEmbersBg"></div>
+              </div>
+              <div class="slide-card-layout">
+                <!-- Desktop Hero Image Card Column -->
+                <div v-if="activeHero" class="hero-card-col">
+                  <div class="hero-image-card">
+                    <div class="hero-placeholder">
+                      <div class="hero-title">HERO {{ activeHero.no }}</div>
+                      <div class="hero-sub">{{ activeHero.drop }}</div>
+                    </div>
+                    <div class="hero-img-wrapper">
+                      <img :src="activeHero.img" :alt="activeHero.drop" class="hero-img" :key="currentSlide" />
+                    </div>
+                    <div class="hero-overlay-smoke"></div>
+                    <div class="hero-overlay-grad"></div>
+                    <div class="hero-border-inset"></div>
+                    <div class="hero-corner hero-corner-tl"></div>
+                    <div class="hero-corner hero-corner-tr"></div>
+                    <div class="hero-corner hero-corner-bl"></div>
+                    <div class="hero-corner hero-corner-br"></div>
+                    <div class="hero-caption">
+                      <span class="hero-caption-dot" :style="{ backgroundColor: activeHero.dot }"></span>
+                      {{ activeHero.fig }}
+                    </div>
                   </div>
-                  <component :is="activeSlideComponent" :data="data" @next="nextSlide(false)" @prev="prevSlide(false)" @pause="stopPlayback" @restart="goToSlide(0)" />
                 </div>
-              </transition>
+
+                <!-- Slide Content Column -->
+                <div class="slide-container">
+                  <transition name="slide-fade" mode="out-in">
+                    <div class="slide-content-wrapper" :key="currentSlide">
+                      <component
+                        :is="activeSlideComponent"
+                        :data="data"
+                        :chapter-number="'08'"
+                        @next="nextSlide(false)"
+                        @prev="prevSlide(false)"
+                        @pause="stopPlayback"
+                        @restart="goToSlide(0)"
+                      />
+                    </div>
+                  </transition>
+                </div>
+              </div>
             </div>
           </div>
         </main>
       </div>
 
-      <!-- Layout 1B: Mobile Portrait Stories Layout -->
+      <!-- Mobile Portrait Stories Layout -->
       <div class="mobile-layout" :style="{ '--theme-color': activeThemeColor }">
-        <!-- animated colour splash layer (fixed behind content) -->
-        <div aria-hidden="true" class="swm-splash-container">
-          <div class="swm-splash swm-splash-1" :style="{ background: `radial-gradient(circle, ${activeThemeColor} 0%, transparent 68%)` }"></div>
-          <div class="swm-splash swm-splash-2" :style="{ background: `radial-gradient(circle, ${activeThemeColor} 0%, transparent 70%)` }"></div>
-          <img class="swm-prop" :src="chapterImages[currentSlide]" :style="chapterPropsMobile[currentSlide]" alt="">
+        <div class="wrapped-fx wrapped-fx--mobile" aria-hidden="true">
+          <div class="fx-smoke" :style="fxSmokeBg"></div>
+          <div class="fx-embers-far" :style="fxEmbersBg"></div>
+          <div class="fx-embers-near" :style="fxEmbersBg"></div>
         </div>
 
-        <!-- Top Progress Bars -->
-        <div class="mobile-progress-bars">
-          <button
-            v-for="idx in chapters.length"
-            :key="idx"
-            @click="goToSlide(idx - 1)"
-            class="progress-segment-btn"
-          >
+        <!-- Top Sticky Header -->
+        <div class="mobile-sticky-header">
+          <!-- Top Progress Bars -->
+          <div class="mobile-progress-bars">
             <div
-              class="progress-segment-fill"
-              :style="{
-                width: idx - 1 < currentSlide ? '100%' : idx - 1 === currentSlide ? `${mobileProgress}%` : '0%',
-                transition: idx - 1 === currentSlide && isHolding ? 'none' : 'width 100ms linear'
-              }"
-            ></div>
-          </button>
-        </div>
-
-        <!-- Mobile Header -->
-        <header class="mobile-header">
-          <div class="header-left">
-            <img :src="clippyLogo" alt="" class="logo-img">
-            <div class="logo-text-wrapper">
-              <div class="logo-title">Server Wrapped</div>
-              <div class="logo-subtitle">bfstats.io · 2026</div>
+              v-for="idx in chapters.length"
+              :key="idx"
+              class="progress-segment-bg"
+              @click="goToSlide(idx - 1)"
+            >
+              <div
+                class="progress-segment-fill"
+                :style="{
+                  width: idx - 1 < currentSlide ? '100%' : idx - 1 === currentSlide ? `${mobileProgress}%` : '0%',
+                  transition: idx - 1 === currentSlide && isHolding ? 'none' : 'width 100ms linear'
+                }"
+              ></div>
             </div>
           </div>
-          <span class="mm-chip mm-chip--accent">CH {{ String(currentSlide + 1).padStart(2, '0') }}/08</span>
-        </header>
 
-        <!-- Mobile Content Container (scrollable). Edge taps navigate, any
-             touch pauses the timer while held — handlers live on the scroller
-             itself so every swipe scrolls natively (no overlay tap zones). -->
+          <!-- Mobile Header -->
+          <header class="mobile-header">
+            <div class="header-left">
+              <span class="logo-small">BFStats</span>
+              <span class="badge-small">'26</span>
+            </div>
+            <div class="header-right">
+              <router-link :to="`/v4/servers/detail/${encodeURIComponent(serverName)}`" class="close-mobile">
+                ✕
+              </router-link>
+            </div>
+          </header>
+        </div>
+
+        <!-- Scrollable slide area (hero + content) -->
         <main
           ref="mobileScrollEl"
           class="swm-scroll"
@@ -151,31 +212,75 @@
           @touchend.passive="endHold"
           @touchcancel.passive="endHold"
         >
-          <div class="mobile-slide-wrapper">
+          <!-- Mobile Hero Image Card -->
+          <div v-if="activeHero" class="mobile-hero-container animate-fade-in">
+            <div class="hero-image-card">
+              <div class="hero-placeholder">
+                <div class="hero-title">HERO {{ activeHero.no }}</div>
+                <div class="hero-sub">{{ activeHero.drop }}</div>
+              </div>
+              <div class="hero-img-wrapper">
+                <img :src="activeHero.img" :alt="activeHero.drop" class="hero-img" :key="currentSlide" />
+              </div>
+              <div class="hero-overlay-smoke"></div>
+              <div class="hero-overlay-grad"></div>
+              <div class="hero-border-inset"></div>
+              <div class="hero-corner hero-corner-tl"></div>
+              <div class="hero-corner hero-corner-tr"></div>
+              <div class="hero-corner hero-corner-bl"></div>
+              <div class="hero-corner hero-corner-br"></div>
+              <div class="hero-caption">
+                <span class="hero-caption-dot" :style="{ backgroundColor: activeHero.dot }"></span>
+                {{ activeHero.fig }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Mobile Content Container -->
+          <div class="mobile-content-container">
             <transition name="slide-fade" mode="out-in">
-              <component :is="activeSlideComponent" :key="currentSlide" :data="data" @next="nextSlide(true)" @prev="prevSlide(true)" @pause="stopPlayback" @restart="goToSlide(0)" />
+              <component
+                :is="activeSlideComponent"
+                :key="currentSlide"
+                :data="data"
+                :chapter-number="'08'"
+                @next="nextSlide(true)"
+                @prev="prevSlide(true)"
+                @pause="stopPlayback"
+                @restart="goToSlide(0)"
+              />
             </transition>
           </div>
         </main>
 
         <!-- Bottom Navigation Bar -->
         <div class="mobile-bottom-nav">
-          <button @click="prevSlide(true)" class="nav-btn prev-btn" :style="{ color: currentSlide === 0 ? 'var(--mm-ink-faint)' : 'var(--mm-ink-soft)' }">← Prev</button>
+          <button @click="prevSlide(true)" class="nav-btn prev-btn" :disabled="currentSlide === 0" :style="{ color: currentSlide === 0 ? 'var(--mm-ink-faint)' : 'var(--mm-ink-soft)' }">← Prev</button>
 
-          <button @click="togglePlayback" class="toggle-play-btn" title="Play / pause (P)">
-            <svg width="52" height="52" viewBox="0 0 52 52" style="display:block;">
-              <circle cx="26" cy="26" r="22" fill="none" stroke="var(--mm-rule-strong)" stroke-width="2.5"></circle>
-              <circle cx="26" cy="26" r="22" fill="none" :stroke="activeThemeColor" stroke-width="3" stroke-linecap="round" :stroke-dasharray="ringCirc" :stroke-dashoffset="ringOffset" transform="rotate(-90 26 26)" style="transition:stroke-dashoffset .12s linear, stroke .4s ease;"></circle>
-            </svg>
-            <span class="toggle-icon-wrapper">
-              <svg v-if="!isPaused" width="13" height="14" viewBox="0 0 13 14" :fill="activeThemeColor"><rect x="1" y="0" width="3.6" height="14" rx="0.6"></rect><rect x="8.4" y="0" width="3.6" height="14" rx="0.6"></rect></svg>
-              <svg v-else width="13" height="15" viewBox="0 0 13 15" :fill="activeThemeColor"><path d="M1.5 0.9 L12 7.5 L1.5 14.1 Z"></path></svg>
-            </span>
-          </button>
+          <span class="nav-center">
+            <button @click="togglePlayback" class="toggle-play-btn" title="Play / pause">
+              <svg width="52" height="52" viewBox="0 0 52 52" style="display:block;">
+                <circle cx="26" cy="26" r="22" fill="none" stroke="var(--mm-rule-strong)" stroke-width="2.5"></circle>
+                <circle cx="26" cy="26" r="22" fill="none" :stroke="activeThemeColor" stroke-width="3" stroke-linecap="round" :stroke-dasharray="ringCirc" :stroke-dashoffset="ringOffset" transform="rotate(-90 26 26)" style="transition:stroke-dashoffset .12s linear, stroke .4s ease;"></circle>
+              </svg>
+              <span class="toggle-icon-wrapper">
+                <svg v-if="!isPaused" width="13" height="14" viewBox="0 0 13 14" :fill="activeThemeColor"><rect x="1" y="0" width="3.6" height="14" rx="0.6"></rect><rect x="8.4" y="0" width="3.6" height="14" rx="0.6"></rect></svg>
+                <svg v-else width="13" height="15" viewBox="0 0 13 15" :fill="activeThemeColor"><path d="M1.5 0.9 L12 7.5 L1.5 14.1 Z"></path></svg>
+              </span>
+            </button>
+            <WrappedMusicControl />
+          </span>
 
-          <button @click="nextSlide(true)" class="nav-btn next-btn">{{ currentSlide === chapters.length - 1 ? 'Replay' : 'Next' }} →</button>
+          <button @click="currentSlide === chapters.length - 1 ? goToSlide(0) : nextSlide(true)" class="nav-btn next-btn">{{ currentSlide === chapters.length - 1 ? 'Replay' : 'Next' }} →</button>
         </div>
       </div>
+
+      <WrappedSongDialog
+        v-if="dialogMode"
+        :mode="dialogMode"
+        @close="onSongDialogClose"
+        @begin="onSongDialogBegin"
+      />
     </div>
   </div>
 </template>
@@ -198,7 +303,21 @@ import ch6 from '@/assets/wrapped/ch6.webp'
 import ch7 from '@/assets/wrapped/ch7.webp'
 import ch8 from '@/assets/wrapped/ch8.webp'
 
-const chapterImages = [ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8]
+// Animated FX tiles (smoke drift + rising embers)
+import fxSmoke from '@/assets/wrapped/fx-smoke.webp'
+import fxEmbers from '@/assets/wrapped/fx-embers.webp'
+
+import IntroSlide from '@/components/v4/wrapped/IntroSlide.vue'
+import NumbersSlide from '@/components/v4/wrapped/NumbersSlide.vue'
+import RotationSlide from '@/components/v4/wrapped/RotationSlide.vue'
+import HonoursSlide from '@/components/v4/wrapped/HonoursSlide.vue'
+import DecorationsSlide from '@/components/v4/wrapped/DecorationsSlide.vue'
+import DishonoursSlide from '@/components/v4/wrapped/DishonoursSlide.vue'
+import ClosestSlide from '@/components/v4/wrapped/ClosestSlide.vue'
+import ShareSlide from '@/components/v4/wrapped/ShareSlide.vue'
+import WrappedMusicControl from '@/components/v4/wrapped/WrappedMusicControl.vue'
+import WrappedSongDialog from '@/components/v4/wrapped/WrappedSongDialog.vue'
+import { useWrappedMusic } from '@/composables/useWrappedMusic'
 
 // Programmatic Image Preloader helper
 function preloadImages(urls: string[]) {
@@ -211,7 +330,8 @@ function preloadImages(urls: string[]) {
 
 // Preload static assets immediately on script evaluation to hit cache early
 const staticImagesToPreload = [
-  ...chapterImages,
+  ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8,
+  fxSmoke, fxEmbers,
   clippyLogo,
   getAchievementImage('kill_streak_25'),
   getAchievementImage('kill_streak_50'),
@@ -221,62 +341,58 @@ const staticImagesToPreload = [
 ]
 preloadImages(staticImagesToPreload)
 
-const chapterColors = [
-  '#7d8849', // INTRO
-  '#b4c060', // NUMBERS
-  '#c5a23a', // ROTATION
-  '#7da34c', // HONOURS
-  '#c08a4c', // DECORATIONS
-  '#d65a5a', // DISHONOURS
-  '#c5a23a', // CLOSEST BATTLES
-  '#7d8849'  // SHARE CARD
-]
-
-const chapterProps = [
-  'width:clamp(220px,26vw,360px); right:-20px; bottom:-28px;',   // 1 helmet
-  'width:clamp(150px,17vw,230px); right:-6px; top:-6px;',         // 2 counter
-  'width:clamp(150px,17vw,215px); right:-30px; bottom:-24px;',    // 3 map
-  'width:clamp(180px,21vw,290px); right:-12px; top:-4px;',        // 4 rifles
-  'width:clamp(175px,20vw,275px); right:-6px; top:-4px;',         // 5 medal case
-  'width:clamp(150px,17vw,215px); right:-14px; top:-8px;',        // 6 dented helmet
-  'width:clamp(150px,17vw,210px); right:-8px; top:-8px;',         // 7 shell & watch
-  'width:clamp(200px,23vw,320px); right:-18px; bottom:-16px;',    // 8 scroll
-]
-
-const chapterPropsMobile = [
-  'width:180px; right:-30px; bottom:20px;',    // 1 helmet
-  'width:110px; right:-14px; top:0;',          // 2 counter
-  'width:120px; right:-30px; bottom:24px;',    // 3 map
-  'width:130px; right:-18px; top:-4px;',       // 4 rifles
-  'width:120px; right:-14px; top:-4px;',       // 5 medal case
-  'width:110px; right:-16px; top:-6px;',       // 6 dented helmet
-  'width:110px; right:-14px; bottom:30px;',    // 7 shell & watch
-  'width:150px; right:-24px; bottom:8px;',     // 8 scroll
-]
-
-// Slide Sub-components declared inline to keep file clean
-import IntroSlide from '@/components/v4/wrapped/IntroSlide.vue'
-import NumbersSlide from '@/components/v4/wrapped/NumbersSlide.vue'
-import RotationSlide from '@/components/v4/wrapped/RotationSlide.vue'
-import HonoursSlide from '@/components/v4/wrapped/HonoursSlide.vue'
-import DecorationsSlide from '@/components/v4/wrapped/DecorationsSlide.vue'
-import DishonoursSlide from '@/components/v4/wrapped/DishonoursSlide.vue'
-import ClosestSlide from '@/components/v4/wrapped/ClosestSlide.vue'
-import ShareSlide from '@/components/v4/wrapped/ShareSlide.vue'
-
-// Import components registry
-const slideComponents = [
-  IntroSlide,
-  NumbersSlide,
-  RotationSlide,
-  HonoursSlide,
-  DecorationsSlide,
-  DishonoursSlide,
-  ClosestSlide,
-  ShareSlide
-]
+const fxSmokeBg = { backgroundImage: `url(${fxSmoke})` }
+const fxEmbersBg = { backgroundImage: `url(${fxEmbers})` }
 
 const route = useRoute()
+const music = useWrappedMusic()
+const { dialogMode } = music
+
+const nowPlayingShort = computed(() =>
+  music.enabled.value && music.selectedTrackId.value ? music.selectedTrack.value.label : 'No music'
+)
+
+let wasPlayingBeforeDialog = false
+
+function onSongDialogBegin(withMusic: boolean) {
+  music.setEnabled(withMusic)
+  music.closeDialog()
+  music.startSession()
+  startPlayback()
+}
+
+function onSongDialogClose() {
+  music.closeDialog()
+  if (wasPlayingBeforeDialog) {
+    wasPlayingBeforeDialog = false
+    resumePlayback()
+  }
+}
+
+watch(dialogMode, (mode) => {
+  if (mode === 'change') {
+    wasPlayingBeforeDialog = isPlaying.value
+    stopPlayback()
+  }
+})
+
+// Mouse parallax — drives --par-x / --par-y CSS vars consumed by the hero layers
+const rootEl = ref<HTMLElement | null>(null)
+const prefersReducedMotion = typeof window !== 'undefined'
+  && window.matchMedia
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+let parallaxRaf = 0
+
+function onParallaxMove(e: MouseEvent) {
+  if (parallaxRaf) return
+  const x = e.clientX / window.innerWidth - 0.5
+  const y = e.clientY / window.innerHeight - 0.5
+  parallaxRaf = requestAnimationFrame(() => {
+    parallaxRaf = 0
+    rootEl.value?.style.setProperty('--par-x', x.toFixed(3))
+    rootEl.value?.style.setProperty('--par-y', y.toFixed(3))
+  })
+}
 
 const serverName = ref(route.params.serverName as string)
 const loading = ref(true)
@@ -292,6 +408,17 @@ const chapters = [
   'DISHONOURS',
   'CLOSEST BATTLES',
   'SHARE CARD'
+]
+
+const slideComponents = [
+  IntroSlide,
+  NumbersSlide,
+  RotationSlide,
+  HonoursSlide,
+  DecorationsSlide,
+  DishonoursSlide,
+  ClosestSlide,
+  ShareSlide
 ]
 
 const currentSlide = ref(0)
@@ -311,13 +438,47 @@ const ringOffset = computed(() => {
 
 let autoAdvanceTimer: any = null
 let progressTimer: any = null
-const SLIDE_DURATION = 7000 // 7 seconds per slide
+const SLIDE_DURATION = 7000
+
+const chapterColors = [
+  '#7d8849', // INTRO
+  '#b4c060', // NUMBERS
+  '#c5a23a', // ROTATION
+  '#7da34c', // HONOURS
+  '#c08a4c', // DECORATIONS
+  '#d65a5a', // DISHONOURS
+  '#c5a23a', // CLOSEST BATTLES
+  '#7d8849'  // SHARE CARD
+]
 
 const activeThemeColor = computed(() => chapterColors[currentSlide.value])
 const activeSlideComponent = computed(() => slideComponents[currentSlide.value])
 
+const heroes = computed(() => {
+  if (!data.value) return []
+  return [
+    { no: '01', drop: 'SERVER COMMAND', fig: 'Fig. 01 — Server Command', img: ch1, dot: 'var(--mm-accent)' },
+    { no: '02', drop: 'SERVER ACTIVITY', fig: 'Fig. 02 — Server Activity', img: ch2, dot: 'var(--mm-accent)' },
+    { no: '03', drop: 'THE ROTATION', fig: 'Fig. 03 — The Rotation', img: ch3, dot: 'var(--mm-accent)' },
+    { no: '04', drop: 'HONOURS', fig: 'Fig. 04 — Honours', img: ch4, dot: 'var(--mm-accent)' },
+    { no: '05', drop: 'DECORATIONS', fig: 'Fig. 05 — Decorations', img: ch5, dot: 'var(--mm-accent)' },
+    { no: '06', drop: 'DISHONOURS', fig: 'Fig. 06 — Dishonours', img: ch6, dot: 'var(--mm-danger)' },
+    { no: '07', drop: 'CLOSEST BATTLES', fig: 'Fig. 07 — Closest Battles', img: ch7, dot: 'var(--mm-danger)' },
+    { no: '08', drop: 'KEEPSAKE', fig: 'Fig. 08 — Keepsake', img: ch8, dot: 'var(--mm-accent)' }
+  ]
+})
+
+const activeHero = computed(() => {
+  if (heroes.value.length === 0) return null
+  return heroes.value[currentSlide.value]
+})
+
 onMounted(async () => {
   document.documentElement.classList.add('mm-wrapped-lock')
+  if (!prefersReducedMotion) {
+    window.addEventListener('mousemove', onParallaxMove)
+  }
+
   try {
     const details = await fetchServerDetails(serverName.value)
     if (!details || !details.serverGuid) {
@@ -338,7 +499,7 @@ onMounted(async () => {
     }
 
     loading.value = false
-    startPlayback()
+    music.openDialog('intro')
   } catch (err: any) {
     loggerError(err)
     error.value = err.message || 'An unexpected error occurred while loading Wrapped statistics.'
@@ -349,6 +510,10 @@ onMounted(async () => {
 onUnmounted(() => {
   document.documentElement.classList.remove('mm-wrapped-lock')
   stopPlayback()
+  music.closeDialog()
+  music.endSession()
+  window.removeEventListener('mousemove', onParallaxMove)
+  if (parallaxRaf) cancelAnimationFrame(parallaxRaf)
 })
 
 function loggerError(e: any) {
@@ -359,7 +524,7 @@ function resumePlayback() {
   stopPlayback()
   isPlaying.value = true
 
-  const step = 100 // update every 100ms
+  const step = 100
   const increment = (step / SLIDE_DURATION) * 100
 
   progressTimer = setInterval(() => {
@@ -385,14 +550,7 @@ function stopPlayback() {
 }
 
 function togglePlayback() {
-  if (currentSlide.value === 0) {
-    isPlaying.value = true
-    goToSlide(1)
-    startPlayback()
-    return
-  }
   if (currentSlide.value === chapters.length - 1) {
-    isPlaying.value = true
     goToSlide(0)
     startPlayback()
     return
@@ -415,7 +573,6 @@ function nextSlide(manual = false) {
       startPlayback()
     }
   } else {
-    // Loop back to share slide or stop
     mobileProgress.value = 0
   }
 }
@@ -444,9 +601,7 @@ function endHold() {
   isHolding.value = false
 }
 
-// Edge-tap navigation on the mobile scroller. The browser only fires click
-// when the gesture wasn't a scroll, so drags always scroll the content and
-// only true taps in the outer 20% bands change slides.
+// Edge-tap navigation on the mobile scroller.
 function onStoryNavTap(e: MouseEvent) {
   const target = e.target as HTMLElement | null
   if (target?.closest('a, button, input, select, textarea, [role="button"]')) return
@@ -461,6 +616,8 @@ function onStoryNavTap(e: MouseEvent) {
 
 <style scoped>
 .server-wrapped {
+  --par-x: 0;
+  --par-y: 0;
   background-color: var(--mm-bg);
   color: var(--mm-ink);
   font-family: var(--mm-font-display);
@@ -523,6 +680,7 @@ function onStoryNavTap(e: MouseEvent) {
   color: var(--mm-accent);
 }
 
+/* Layout System */
 .wrapped-layout {
   display: flex;
   width: 100%;
@@ -660,6 +818,12 @@ function onStoryNavTap(e: MouseEvent) {
   border-radius: 0 1px 1px 0;
 }
 
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .exit-btn {
   background: none;
   border: 1px solid var(--mm-rule);
@@ -691,36 +855,31 @@ function onStoryNavTap(e: MouseEvent) {
 }
 
 /* Deep selector overrides for inner slide typography */
-:deep(.wrapped-slide) {
-  margin-top: auto;
-  margin-bottom: auto;
-}
-
 :deep(.slide-container .mm-eyebrow),
 :deep(.mobile-content-container .mm-eyebrow) {
-  font-size: 13.5px !important;
+  font-size: 15px !important;
 }
 
 :deep(.slide-container .mm-eyebrow-small),
 :deep(.mobile-content-container .mm-eyebrow-small),
 :deep(.slide-container .slide-badge),
 :deep(.mobile-content-container .slide-badge) {
-  font-size: 11.5px !important;
+  font-size: 13.5px !important;
 }
 
 :deep(.slide-container .intro-meta),
 :deep(.mobile-content-container .intro-meta) {
-  font-size: 13.5px !important;
+  font-size: 15px !important;
 }
 
 :deep(.slide-container .click-prompt),
 :deep(.mobile-content-container .click-prompt) {
-  font-size: 12.5px !important;
+  font-size: 14px !important;
 }
 
 :deep(.slide-container .rounds-text),
 :deep(.mobile-content-container .rounds-text) {
-  font-size: 13.5px !important;
+  font-size: 15px !important;
 }
 
 :deep(.slide-container .numbers-footer),
@@ -743,51 +902,34 @@ function onStoryNavTap(e: MouseEvent) {
 :deep(.mobile-content-container .dishonours-footer),
 :deep(.mobile-content-container .closest-footer),
 :deep(.mobile-content-container .share-footer) {
-  font-size: 13px !important;
+  font-size: 14.5px !important;
+  margin-bottom: 24px !important;
 }
 
 :deep(.slide-container .card-desc),
 :deep(.mobile-content-container .card-desc) {
-  font-size: 14.5px !important;
+  font-size: 16px !important;
 }
 
 :deep(.slide-container .card-val),
 :deep(.mobile-content-container .card-val) {
-  font-size: 15px !important;
-}
-
-:deep(.slide-container .map-rounds),
-:deep(.mobile-content-container .map-rounds) {
-  font-size: 12.5px !important;
-}
-
-:deep(.slide-container .map-label),
-:deep(.mobile-content-container .map-label) {
-  font-size: 16.5px !important;
-}
-
-:deep(.slide-container .item-header),
-:deep(.mobile-content-container .item-header) {
   font-size: 17px !important;
-}
-
-:deep(.slide-container .stat-label),
-:deep(.mobile-content-container .stat-label) {
-  font-size: 12.5px !important;
-}
-
-:deep(.slide-container .mm-chip-love),
-:deep(.mobile-content-container .mm-chip-love) {
-  font-size: 11px !important;
 }
 
 .stage-container {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 980px;
+  max-width: 1366px;
   height: 100%;
   justify-content: flex-start;
+  transition: max-width 0.25s ease;
+}
+
+@media (min-width: 1024px) and (max-width: 1920px) {
+  .stage-container {
+    width: 92%;
+  }
 }
 
 .stage-header {
@@ -809,11 +951,12 @@ function onStoryNavTap(e: MouseEvent) {
   background-color: var(--mm-bg-mute);
   border-radius: 1px;
   overflow: hidden;
+  cursor: pointer;
 }
 
 .desktop-progress-bars .progress-segment-fill {
   height: 100%;
-  background-color: var(--mm-accent);
+  background-color: var(--theme-color, var(--mm-accent));
   width: 0%;
 }
 
@@ -857,34 +1000,155 @@ function onStoryNavTap(e: MouseEvent) {
   cursor: not-allowed;
 }
 
+.stage-song-btn,
+.stage-mute-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.stage-song-btn svg,
+.stage-mute-btn svg {
+  display: block;
+}
+
+.stage-mute-btn {
+  color: var(--mm-accent);
+}
+
+.stage-mute-btn--muted {
+  color: var(--mm-ink-faint);
+}
+
 .control-divider {
   font-family: var(--mm-font-mono);
   font-size: 10px;
   color: var(--mm-ink-faint);
 }
 
-.slide-container {
+.slide-card {
   flex-grow: 1;
+  position: relative;
+  isolation: isolate;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
   border: 1px solid var(--mm-rule);
   background-color: var(--mm-bg);
   border-radius: var(--mm-radius-sm, 2px);
-  padding: 24px 32px;
-  box-sizing: border-box;
   min-height: 400px;
-  position: relative;
   overflow: hidden;
+}
+
+.slide-card-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+  gap: 28px;
+  padding: 24px 28px;
+  box-sizing: border-box;
+}
+
+.hero-card-col {
+  flex: 1;
+  max-width: 420px;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.slide-container {
+  flex: 1.35;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+/* Animated smoke + embers behind the slide content */
+.wrapped-fx {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.wrapped-fx > div {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+  mix-blend-mode: screen;
+}
+
+.fx-smoke {
+  background-size: 2200px 2200px;
+  opacity: 0.5;
+}
+
+.fx-embers-far {
+  background-size: 1800px 1800px;
+  opacity: 0.65;
+  animation: fxRiseFar 60s linear infinite, fxSway 47s ease-in-out infinite alternate;
+}
+
+.fx-embers-near {
+  background-size: 1040px 1040px;
+  opacity: 0.35;
+  animation: fxRiseNear 39s linear infinite, fxSway 31s ease-in-out infinite alternate, fxBreathe 9s ease-in-out infinite;
+}
+
+@keyframes fxRiseFar {
+  0% { background-position-y: 0px; }
+  100% { background-position-y: -1800px; }
+}
+
+@keyframes fxRiseNear {
+  0% { background-position-y: 0px; }
+  100% { background-position-y: -2080px; }
+}
+
+@keyframes fxSway {
+  0% { background-position-x: 0px; }
+  100% { background-position-x: -70px; }
+}
+
+@keyframes fxBreathe {
+  0%, 100% { opacity: 0.14; }
+  50% { opacity: 0.3; }
+}
+
+/* Film grain over the whole wrapped experience */
+.wrapped-grain {
+  position: absolute;
+  inset: -10%;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.055;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  animation: grainShift 0.9s steps(3) infinite;
+}
+
+@keyframes grainShift {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-4%, 3%); }
 }
 
 .slide-content-wrapper {
   width: 100%;
-  height: 100%;
+  min-height: 100%;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
-  position: relative;
+}
+
+:deep(.slide-container .wrapped-slide) {
+  height: auto !important;
+  min-height: 100% !important;
 }
 
 /* MOBILE VIEWPORT */
@@ -895,6 +1159,7 @@ function onStoryNavTap(e: MouseEvent) {
   height: 100%;
   background-color: var(--mm-bg);
   position: relative;
+  isolation: isolate;
   overflow: hidden;
 }
 
@@ -904,120 +1169,78 @@ function onStoryNavTap(e: MouseEvent) {
   }
 }
 
-.swm-scroll::-webkit-scrollbar { width: 0; height: 0; }
-.swm-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-
-.swm-splash-container {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.swm-splash {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(46px);
-  transition: background .5s ease;
-  will-change: transform, opacity;
-}
-
-.swm-prop {
-  position: absolute;
-  height: auto;
-  opacity: .4;
-  pointer-events: none;
-  animation: sw-float-mobile 9s ease-in-out infinite;
-  filter: drop-shadow(0 20px 44px rgba(0,0,0,.55));
-  transition: all 0.5s ease-in-out;
+.mobile-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  padding: 14px 16px 12px;
+  background: linear-gradient(180deg, var(--mm-bg) 78%, rgba(19,19,19,0));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .mobile-progress-bars {
-  position: relative;
-  z-index: 2;
   display: flex;
   gap: 4px;
-  padding: 12px 16px 0;
-  flex-shrink: 0;
+  width: 100%;
 }
 
-.progress-segment-btn {
-  flex: 1;
+.progress-segment-bg {
+  flex-grow: 1;
   height: 3px;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  background: var(--mm-rule-strong);
-  border-radius: 2px;
+  background-color: var(--mm-bg-mute);
+  border-radius: 1px;
   overflow: hidden;
+  cursor: pointer;
 }
 
 .progress-segment-fill {
   height: 100%;
   background-color: var(--theme-color, var(--mm-accent));
-  border-radius: 2px;
-  transition: width .12s linear, background .4s ease;
+  width: 0%;
 }
 
 .mobile-header {
-  position: relative;
-  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 14px 16px 12px;
-  flex-shrink: 0;
+  width: 100%;
 }
 
-.header-left {
+.logo-small {
+  font-family: var(--mm-font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.badge-small {
+  background-color: var(--theme-color, var(--mm-accent));
+  color: #000;
+  font-family: var(--mm-font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: var(--mm-radius-sm, 2px);
+  margin-left: 6px;
+}
+
+.header-right {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-width: 0;
+  gap: 10px;
 }
 
-.logo-img {
-  width: 26px;
-  height: 26px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-
-.logo-text-wrapper {
-  min-width: 0;
-  text-align: left;
-}
-
-.logo-title {
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--mm-ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.logo-subtitle {
-  font-family: var(--mm-font-mono);
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+.close-mobile {
+  background: none;
+  border: none;
   color: var(--mm-ink-muted);
-}
-
-.mm-chip--accent {
-  font-family: var(--mm-font-mono);
-  font-size: 9px;
-  color: var(--mm-accent-soft);
-  border: 1px solid var(--mm-rule);
-  padding: 2px 6px;
-  border-radius: var(--mm-radius-sm, 2px);
-  text-transform: uppercase;
+  font-size: 18px;
+  cursor: pointer;
+  text-decoration: none;
 }
 
 .swm-scroll {
@@ -1026,21 +1249,39 @@ function onStoryNavTap(e: MouseEvent) {
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  /* Reaching the top of the slide must never chain into the document /
-     pull-to-refresh — the scroller owns every vertical gesture. */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
   overscroll-behavior-y: contain;
-  /* Hold-anywhere pauses the story; without this iOS long-press pops the
-     text-selection callout instead. */
   user-select: none;
   -webkit-user-select: none;
 }
 
-.mobile-slide-wrapper {
-  min-height: 100%;
+.swm-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.mobile-hero-container {
+  padding: 2px 16px 0;
+  width: 100%;
   box-sizing: border-box;
-  padding: 8px 20px 28px;
+}
+
+.mobile-hero-container .hero-image-card {
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-height: auto;
+  aspect-ratio: 5 / 4;
+}
+
+.mobile-content-container {
+  flex-grow: 1;
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 22px 18px 48px;
+  box-sizing: border-box;
 }
 
 .mobile-bottom-nav {
@@ -1068,6 +1309,16 @@ function onStoryNavTap(e: MouseEvent) {
   color: var(--mm-ink-soft);
 }
 
+.nav-btn:disabled {
+  cursor: default;
+}
+
+.nav-center {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .toggle-play-btn {
   position: relative;
   width: 52px;
@@ -1087,48 +1338,7 @@ function onStoryNavTap(e: MouseEvent) {
   justify-content: center;
 }
 
-@keyframes sw-blink-mobile {
-  0%, 55% { opacity: 1; }
-  56%, 100% { opacity: 0; }
-}
-
-@keyframes sw-grow-mobile {
-  from { transform: scaleY(0.15); }
-  to { transform: scaleY(1); }
-}
-
-@keyframes sw-splash-mobile {
-  0%, 100% { transform: scale(0.92); opacity: .14; }
-  50% { transform: scale(1.12); opacity: .30; }
-}
-
-@keyframes sw-float-mobile {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-
-.swm-splash-1 {
-  width: 380px;
-  height: 380px;
-  right: -120px;
-  top: -90px;
-  animation: sw-splash-mobile 6.5s ease-in-out infinite;
-}
-
-.swm-splash-2 {
-  width: 300px;
-  height: 300px;
-  left: -120px;
-  bottom: 60px;
-  animation: sw-splash-mobile 7.8s ease-in-out infinite reverse;
-}
-
 @media (max-width: 1023px) {
-  /* Fullscreen fixed overlay with an internal scroller (.swm-scroll).
-     In-flow 100dvh left the shell topbar above us, so the document kept
-     ~100px of scroll slack and edge swipes moved the page instead of the
-     slides; fixed + the html.mm-wrapped-lock scroll lock means the slide
-     scroller is the only thing that can scroll. */
   .server-wrapped {
     position: fixed !important;
     inset: 0 !important;
@@ -1137,18 +1347,232 @@ function onStoryNavTap(e: MouseEvent) {
     overflow: hidden !important;
     z-index: 200;
   }
+}
 
-  :deep(.wrapped-slide) {
-    padding: 0 !important;
+/* Transitions */
+.slide-fade-enter-active {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slide-fade-leave-active {
+  transition: all 0.25s cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+.slide-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.98) translateY(8px);
+}
+
+.slide-fade-leave-to {
+  opacity: 0;
+  transform: scale(1.01) translateY(-8px);
+}
+</style>
+
+<style>
+/* ===== Server Wrapped Global Animations & Hero Image Card Styles ===== */
+.server-wrapped .hero-card-col {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .server-wrapped .hero-card-col {
+    display: block;
+    animation: wrapFade 0.8s ease both;
+    height: 100%;
+    min-height: 100%;
   }
 }
 
+.server-wrapped .hero-image-card {
+  position: relative;
+  height: 100%;
+  min-height: 100%;
+  border: 1px solid #0a0a0a;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #0d0d0d;
+  box-shadow: inset 0 0 0 1px rgba(125,136,73,0.14), 0 18px 40px -18px rgba(0,0,0,0.9);
+}
+
+.server-wrapped .hero-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 38%, #1b1c14, #0d0d0d 70%);
+}
+
+.server-wrapped .hero-title {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--mm-accent);
+}
+
+.server-wrapped .hero-sub {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--mm-ink-faint);
+  line-height: 1.8;
+}
+
+.server-wrapped .hero-img-wrapper {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  transform: translate(calc(var(--par-x, 0) * 22px), calc(var(--par-y, 0) * 22px));
+}
+
+.server-wrapped .hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.14);
+  animation: heroReveal 1.1s ease both, kenBurns 36s ease-in-out 1.1s infinite;
+}
+
+.server-wrapped .hero-overlay-smoke {
+  position: absolute;
+  inset: -15%;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 28% 22%, rgba(210,200,160,0.10), transparent 55%), radial-gradient(ellipse at 75% 82%, rgba(0,0,0,0.55), transparent 62%);
+  mix-blend-mode: screen;
+  filter: blur(10px);
+  transform: scale(1.4);
+  animation: smokeDrift 26s ease-in-out infinite;
+}
+
+.server-wrapped .hero-overlay-grad {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(13,13,13,0.35) 0%, transparent 26%, transparent 52%, rgba(8,8,8,0.88) 100%);
+}
+
+.server-wrapped .hero-border-inset {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: 2px;
+  box-shadow: inset 0 0 130px 18px rgba(0,0,0,0.92), inset 0 0 46px rgba(0,0,0,0.6);
+}
+
+.server-wrapped .hero-corner {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  z-index: 6;
+  pointer-events: none;
+  border-color: var(--mm-accent);
+  animation: cornerFade 1.4s ease 0.6s both;
+}
+
+.server-wrapped .hero-corner-tl {
+  top: 9px;
+  left: 9px;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+.server-wrapped .hero-corner-tr {
+  top: 9px;
+  right: 9px;
+  border-top: 1.5px solid;
+  border-right: 1.5px solid;
+}
+
+.server-wrapped .hero-corner-bl {
+  bottom: 9px;
+  left: 9px;
+  border-bottom: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+.server-wrapped .hero-corner-br {
+  bottom: 9px;
+  right: 9px;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+}
+
+.server-wrapped .hero-caption {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 5;
+  transform: translate(calc(var(--par-x, 0) * -9px), calc(var(--par-y, 0) * -9px));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+  background: rgba(10,10,10,0.55);
+  border: 1px solid var(--mm-rule-strong);
+  padding: 4px 8px;
+  border-radius: 2px;
+}
+
+.server-wrapped .hero-caption-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mm-accent);
+  display: inline-block;
+}
+
+@keyframes wrapUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes wrapFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes smokeDrift {
+  0%, 100% { transform: scale(1.4) translate(0, 0); }
+  50% { transform: scale(1.5) translate(2.5%, -2.5%); }
+}
+
+@keyframes kenBurns {
+  0% { transform: scale(1.14) translate(0, 0); }
+  50% { transform: scale(1.0) translate(0, 0); }
+  100% { transform: scale(1.14) translate(0, 0); }
+}
+
+@keyframes heroReveal {
+  0% { opacity: 0; transform: scale(1.26); filter: brightness(0.4) contrast(1.1); }
+  100% { opacity: 1; transform: scale(1.14); filter: none; }
+}
+
+@keyframes cornerFade {
+  from { opacity: 0; }
+  to { opacity: 0.75; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .swm-splash, .swm-prop {
+  .server-wrapped *,
+  .server-wrapped *::before,
+  .server-wrapped *::after {
     animation: none !important;
-  }
-  .swm-splash {
-    opacity: .14 !important;
   }
 }
 </style>
