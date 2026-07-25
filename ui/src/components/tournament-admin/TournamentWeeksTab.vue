@@ -1,108 +1,89 @@
 <template>
-  <div class="tournament-weeks-tab">
+  <div class="tournament-weeks-tab mm-admin">
     <!-- Add/Edit Week View -->
     <div
       v-if="showForm"
-      class="portal-card"
+      class="mm-admin-card"
     >
-      <div class="portal-card-header">
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 class="portal-card-title">
-            [ {{ editingWeek ? 'EDIT WEEK' : 'CREATE WEEK' }} ]
+          <span class="mm-admin-label" style="margin-bottom: 2px;">Schedule Boundary</span>
+          <h2 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 18px;">
+            {{ editingWeek ? 'Edit Week' : 'Create Week' }}
           </h2>
-          <p class="portal-card-subtitle">
-            {{ editingWeek ? 'Update week schedule' : 'Add a new tournament week' }}
-          </p>
         </div>
         <button
-          class="portal-btn portal-btn--ghost"
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
           @click="closeForm"
         >
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
           Cancel
         </button>
       </div>
 
-      <div class="portal-card-body">
+      <div class="mm-admin-card__body">
         <!-- Error Message -->
         <div
           v-if="formError"
-          class="portal-form-error"
+          class="mm-admin-alert mm-admin-alert--err"
+          style="margin-bottom: 14px;"
         >
           {{ formError }}
         </div>
 
-        <!-- Week Name -->
-        <div class="portal-form-section">
-          <label class="portal-form-label portal-form-label--required">Week Name</label>
-          <input
-            v-model="formData.week"
-            type="text"
-            placeholder="e.g., Week 1, Round 1"
-            class="portal-form-input"
-            :disabled="formLoading"
-          >
-          <p class="portal-form-hint">
-            Identifier shown in the schedule
-          </p>
-        </div>
+        <div class="mm-admin-form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+          <!-- Week Name -->
+          <div>
+            <label class="mm-admin-label">Week Name</label>
+            <input
+              v-model="formData.week"
+              type="text"
+              placeholder="e.g., Week 1 · Omaha Beach"
+              class="mm-admin-input"
+              :disabled="formLoading"
+            >
+          </div>
 
-        <!-- Start Date -->
-        <div class="portal-form-section">
-          <label class="portal-form-label portal-form-label--required">Start Date</label>
-          <input
-            v-model="formData.startDate"
-            type="date"
-            class="portal-form-input portal-form-input--mono"
-            :disabled="formLoading"
-          >
-        </div>
+          <!-- Start Date -->
+          <div>
+            <label class="mm-admin-label">Start Date</label>
+            <input
+              v-model="formData.startDate"
+              type="date"
+              class="mm-admin-input mm-admin-input--mono"
+              :disabled="formLoading"
+            >
+          </div>
 
-        <!-- End Date -->
-        <div class="portal-form-section">
-          <label class="portal-form-label portal-form-label--required">End Date</label>
-          <input
-            v-model="formData.endDate"
-            type="date"
-            class="portal-form-input portal-form-input--mono"
-            :disabled="formLoading"
-          >
+          <!-- End Date -->
+          <div>
+            <label class="mm-admin-label">End Date</label>
+            <input
+              v-model="formData.endDate"
+              type="date"
+              class="mm-admin-input mm-admin-input--mono"
+              :disabled="formLoading"
+            >
+          </div>
         </div>
 
         <!-- Form Actions -->
-        <div
-          class="portal-form-footer"
-          style="margin-top: 1.5rem"
-        >
+        <div class="mm-admin-actions" style="margin-top: 20px;">
           <button
-            class="portal-btn portal-btn--ghost"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--primary"
+            :disabled="formLoading || !isFormValid"
+            @click="submitForm"
+          >
+            {{ formLoading ? 'Saving...' : (editingWeek ? 'Update Week' : 'Create Week') }}
+          </button>
+          <button
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost"
             :disabled="formLoading"
             @click="closeForm"
           >
             Cancel
-          </button>
-          <button
-            class="portal-btn portal-btn--primary"
-            :disabled="formLoading || !isFormValid"
-            @click="submitForm"
-          >
-            <span
-              v-if="formLoading"
-              class="portal-btn-pulse"
-            >Saving...</span>
-            <span v-else>{{ editingWeek ? 'Update Week' : 'Create Week' }}</span>
           </button>
         </div>
       </div>
@@ -111,96 +92,74 @@
     <!-- Weeks List View -->
     <div
       v-else
-      class="portal-card"
+      class="mm-admin-card"
     >
-      <div class="portal-card-header">
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
-          <h2 class="portal-card-title">
-            [ WEEKS ]
+          <span class="mm-admin-label" style="margin-bottom: 2px;">{{ (tournament.weekDates || []).length }} scheduled weeks</span>
+          <h2 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 16px;">
+            Tournament Schedule Weeks
           </h2>
-          <p class="portal-card-subtitle">
-            Define week schedules and date ranges
-          </p>
         </div>
         <button
-          class="portal-btn portal-btn--primary"
+          type="button"
+          class="mm-admin-btn mm-admin-btn--primary"
           @click="openAddForm"
         >
           + Add Week
         </button>
       </div>
 
-      <div
-        class="portal-card-body"
-        style="padding: 0"
-      >
+      <div class="mm-admin-card__body" style="padding: 0;">
         <!-- Weeks Table -->
         <div
           v-if="tournament.weekDates && tournament.weekDates.length > 0"
-          class="portal-table-wrap"
+          class="mm-admin-table-wrap"
         >
-          <table class="portal-table">
+          <table class="mm-admin-table">
             <thead>
               <tr>
-                <th>Week</th>
+                <th>Week Name</th>
                 <th>Start Date</th>
                 <th>End Date</th>
-                <th style="text-align: right">
-                  Actions
-                </th>
+                <th class="is-num">Matches</th>
+                <th style="text-align: right;">Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="week in tournament.weekDates"
-                :key="week.id"
+                v-for="w in tournament.weekDates"
+                :key="w.id"
               >
-                <td>
-                  <span class="portal-mono">{{ week.week }}</span>
+                <td style="font-weight: 500;">
+                  {{ w.week }}
                 </td>
-                <td>{{ formatDate(week.startDate) }}</td>
-                <td>{{ formatDate(week.endDate) }}</td>
-                <td>
-                  <div class="portal-table-actions">
-                    <button
-                      class="portal-icon-btn"
-                      title="Edit week"
-                      @click="openEditForm(week)"
-                    >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      class="portal-icon-btn portal-icon-btn--danger"
-                      title="Delete week"
-                      @click="confirmDeleteWeek(week.id!, week.week)"
-                    >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+                <td class="mm-admin-mono" style="font-size: 11px;">
+                  {{ formatDateOnly(w.startDate) }}
+                </td>
+                <td class="mm-admin-mono" style="font-size: 11px;">
+                  {{ formatDateOnly(w.endDate) }}
+                </td>
+                <td class="is-num">
+                  {{ getMatchCountForWeek(w.week) }}
+                </td>
+                <td style="text-align: right;">
+                  <button
+                    type="button"
+                    class="mm-admin-cell-btn"
+                    style="margin-right: 6px;"
+                    @click="openEditForm(w)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="mm-admin-cell-btn"
+                    style="color: var(--mm-danger); border-color: var(--mm-danger);"
+                    @click="confirmDeleteWeek(w.id, w.week)"
+                  >
+                    Delete
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -210,99 +169,50 @@
         <!-- Empty State -->
         <div
           v-else
-          class="portal-empty"
+          class="mm-admin-empty"
         >
-          <div class="portal-empty-icon">
-            📅
-          </div>
-          <h3 class="portal-empty-title">
-            No Weeks Defined
-          </h3>
-          <p class="portal-empty-desc">
-            Create weeks to organize your tournament schedule
+          <div class="mm-admin-empty__title">No Scheduled Weeks</div>
+          <p class="mm-admin-empty__desc">
+            Define week boundaries to organize match scheduling and weekly leaderboards.
           </p>
-          <button
-            class="portal-btn portal-btn--primary"
-            style="margin-top: 1rem"
-            @click="openAddForm"
-          >
-            Add First Week
-          </button>
         </div>
       </div>
     </div>
 
     <!-- Delete Week Confirmation Modal -->
-    <div
-      v-if="deleteWeekConfirmation"
-      class="modal-mobile-safe fixed inset-0 z-50 flex items-center justify-center p-4 portal-modal-overlay"
-      @click.self="cancelDeleteWeek"
+    <MmBaseModal
+      :model-value="!!deleteWeekConfirmation"
+      title="Delete Week?"
+      subtitle="Destructive Action"
+      size="sm"
+      @close="cancelDeleteWeek"
     >
-      <div class="portal-modal">
-        <div class="flex items-start gap-4 mb-6">
-          <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg
-              class="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </div>
-          <div class="flex-1">
-            <h3 class="portal-modal-title">
-              Delete Week?
-            </h3>
-            <p class="portal-modal-text">
-              Delete week <span class="portal-modal-highlight">{{ deleteWeekConfirmation.name }}</span>?
-            </p>
-            <p class="portal-modal-hint">
-              This action cannot be undone.
-            </p>
-          </div>
-        </div>
+      <p style="margin: 0 0 12px; font-size: 13px; color: var(--mm-ink-soft); line-height: 1.5;">
+        Are you sure you want to delete week <strong style="color: var(--mm-ink);">{{ deleteWeekConfirmation?.name }}</strong>?
+      </p>
+      <p style="margin: 0; font-size: 12px; color: var(--mm-ink-muted); line-height: 1.4;">
+        This action cannot be undone.
+      </p>
 
-        <div class="flex items-center justify-end gap-3">
-          <button
-            class="portal-btn portal-btn--ghost"
-            @click="cancelDeleteWeek"
-          >
-            Cancel
-          </button>
-          <button
-            class="portal-btn portal-btn--danger flex items-center gap-2"
-            :disabled="isProcessing"
-            @click="executeDeleteWeek"
-          >
-            <svg
-              v-if="!isProcessing"
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-            <div
-              v-else
-              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
-            />
-            <span>{{ isProcessing ? 'Deleting...' : 'Delete Week' }}</span>
-          </button>
-        </div>
-      </div>
-    </div>
+      <template #footer>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
+          :disabled="isProcessing"
+          @click="cancelDeleteWeek"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--danger"
+          :disabled="isProcessing"
+          @click="executeDeleteWeek"
+        >
+          {{ isProcessing ? 'Deleting...' : 'Delete Week' }}
+        </button>
+      </template>
+    </MmBaseModal>
   </div>
 </template>
 
@@ -313,6 +223,7 @@ import {
   type TournamentDetail,
   type TournamentWeekDate
 } from '@/services/adminTournamentService';
+import MmBaseModal from '@/components/v4/MmBaseModal.vue';
 
 const props = defineProps<{
   tournament: TournamentDetail;
@@ -342,10 +253,22 @@ const isFormValid = computed(() => {
 const deleteWeekConfirmation = ref<{ id: number; name: string } | null>(null);
 const isProcessing = ref(false);
 
-// Formatting
+// Formatting & Helpers
 const formatDate = (dateString: string): string => {
+  if (!dateString) return '—';
   const date = new Date(dateString);
   return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+};
+
+const formatDateOnly = (dateString: string): string => {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const getMatchCountForWeek = (weekName: string): number => {
+  if (!props.tournament?.matches) return 0;
+  return props.tournament.matches.filter(m => m.week === weekName).length;
 };
 
 // Form handlers
@@ -441,33 +364,4 @@ defineExpose({ load });
 </script>
 
 <style scoped>
-.portal-card-subtitle {
-  font-size: 0.75rem;
-  color: var(--portal-text);
-  margin-top: 0.25rem;
-}
-
-.w-4 {
-  width: 1rem;
-}
-
-.h-4 {
-  height: 1rem;
-}
-
-.w-6 {
-  width: 1.5rem;
-}
-
-.h-6 {
-  height: 1.5rem;
-}
-
-.w-12 {
-  width: 3rem;
-}
-
-.h-12 {
-  height: 3rem;
-}
 </style>

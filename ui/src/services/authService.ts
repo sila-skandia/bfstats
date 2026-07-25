@@ -40,6 +40,43 @@ class AuthService {
     }
   }
 
+  async devLogin(): Promise<void> {
+    try {
+      const loginResponse = await fetch('/stats/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ devBypass: true })
+      });
+
+      if (loginResponse.ok) {
+        const loginData = await loginResponse.json();
+        const userProfile: UserProfile = {
+          id: loginData.user.id,
+          name: loginData.user.name,
+          email: loginData.user.email,
+          roles: ['Admin', 'Support', 'User']
+        };
+
+        const authState: AuthState = {
+          isAuthenticated: true,
+          token: loginData.accessToken,
+          user: userProfile
+        };
+
+        localStorage.setItem('authToken', loginData.accessToken);
+        localStorage.setItem('userProfile', JSON.stringify(userProfile));
+        localStorage.setItem('dev_admin', 'true');
+
+        window.dispatchEvent(new CustomEvent('discord-auth-success', { detail: authState }));
+      } else {
+        throw new Error('Dev login failed');
+      }
+    } catch (error) {
+      console.error('Dev login failed:', error);
+      throw error;
+    }
+  }
+
   // Discord OAuth Methods
   async initiateDiscordLogin(): Promise<void> {
     if (!this.discordClientId) {

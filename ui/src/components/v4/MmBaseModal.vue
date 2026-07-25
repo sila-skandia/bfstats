@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div
       v-if="modelValue"
-      class="mm mm-modal__backdrop"
+      class="mm mm-admin mm-modal__backdrop"
       :class="backdropClass"
       :style="{ zIndex }"
       @click="handleOverlayClick"

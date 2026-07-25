@@ -29,8 +29,8 @@
         ref="currentPlayersListRef"
         class="max-h-32 overflow-y-auto rounded-lg p-2 current-players-list" 
         :style="{ 
-          backgroundColor: backgroundMuteColor + '80',
-          '--current-players-bg': backgroundMuteColor + '80'
+          backgroundColor: 'var(--mm-bg-mute, #222222)',
+          '--current-players-bg': 'var(--mm-bg-mute, #222222)'
         }"
       >
         <div class="flex flex-wrap gap-2">
@@ -38,7 +38,7 @@
             v-for="(player, index) in currentPlayers"
             :key="index"
             class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm"
-            :style="{ backgroundColor: props.accentColor + '33', borderColor: props.accentColor + '50', borderWidth: '1px', borderStyle: 'solid' }"
+            :style="{ backgroundColor: 'var(--mm-bg-soft, #1c1c1c)', borderColor: 'var(--mm-rule-strong, #3d3d3d)', borderWidth: '1px', borderStyle: 'solid' }"
           >
             <span :style="{ color: props.accentColor }">👤</span>
             <span
@@ -82,12 +82,12 @@
           :placeholder="placeholder"
           class="w-full px-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 transition-all"
           :style="{
-            backgroundColor: backgroundColor + '95',
-            borderColor: accentColor + '30',
+            backgroundColor: 'var(--mm-bg-soft, #1c1c1c)',
+            borderColor: 'var(--mm-rule-strong, #3d3d3d)',
             borderWidth: '1px',
             borderStyle: 'solid',
             color: textColor,
-            '--tw-ring-color': accentColor + '50'
+            '--tw-ring-color': 'var(--mm-accent, #7d8849)'
           }"
           :class="{ 'focus:ring-2': true }"
           :disabled="loading"
@@ -100,19 +100,17 @@
       <div
         v-if="showPlayerDropdown && playerSearchResults.length > 0"
         class="rounded-lg max-h-64 overflow-y-auto"
-        :style="{ backgroundColor: backgroundColor + '95', borderColor: accentColor + '30', borderWidth: '1px', borderStyle: 'solid' }"
+        :style="{ backgroundColor: 'var(--mm-bg-soft, #1c1c1c)', borderColor: 'var(--mm-rule-strong, #3d3d3d)', borderWidth: '1px', borderStyle: 'solid' }"
       >
         <div
           class="p-2 flex items-center justify-between text-xs"
-          :style="{ borderColor: accentColor + '20', borderBottomWidth: '1px', borderBottomStyle: 'solid', color: textMutedColor }"
+          :style="{ borderColor: 'var(--mm-rule, #2d2d2d)', borderBottomWidth: '1px', borderBottomStyle: 'solid', color: textMutedColor }"
         >
           <span>{{ selectedPlayerNames.length }} selected</span>
           <div class="flex gap-2">
             <button
               class="px-2 py-1 rounded transition-colors"
               :style="{ color: accentColor }"
-              @mouseenter="$el.style.color = accentColor; $el.style.backgroundColor = accentColor + '1a'"
-              @mouseleave="$el.style.color = accentColor; $el.style.backgroundColor = 'transparent'"
               @click="selectAllVisiblePlayers"
             >
               Select All
@@ -121,8 +119,6 @@
               v-if="selectedPlayerNames.length > 0"
               class="px-2 py-1 rounded transition-colors"
               :style="{ color: textMutedColor }"
-              @mouseenter="$el.style.color = textColor; $el.style.backgroundColor = backgroundMuteColor + '80'"
-              @mouseleave="$el.style.color = textMutedColor; $el.style.backgroundColor = 'transparent'"
               @click="selectedPlayerNames = []"
             >
               Clear
@@ -133,18 +129,14 @@
           v-for="player in playerSearchResults"
           :key="player.playerName"
           class="p-3 cursor-pointer transition-all last:border-b-0 flex items-center gap-3"
-          :style="{ borderColor: accentColor + '20', borderBottomWidth: '1px', borderBottomStyle: 'solid' }"
-          @mouseenter="$el.style.backgroundColor = backgroundMuteColor + '80'"
-          @mouseleave="$el.style.backgroundColor = 'transparent'"
+          :style="{ borderColor: 'var(--mm-rule, #2d2d2d)', borderBottomWidth: '1px', borderBottomStyle: 'solid' }"
           @click="togglePlayerSelection(player.playerName)"
         >
           <div
             class="w-5 h-5 rounded border-2 flex items-center justify-center transition-all flex-shrink-0"
             :style="isPlayerSelected(player.playerName)
-              ? { borderColor: accentColor, backgroundColor: accentColor }
-              : { borderColor: textMutedColor, backgroundColor: 'transparent' }"
-            @mouseenter="!isPlayerSelected(player.playerName) && ($el.style.borderColor = accentColor)"
-            @mouseleave="!isPlayerSelected(player.playerName) && ($el.style.borderColor = textMutedColor)"
+              ? { borderColor: 'var(--mm-accent, #7d8849)', backgroundColor: 'var(--mm-accent, #7d8849)' }
+              : { borderColor: 'var(--mm-rule-strong, #3d3d3d)', backgroundColor: 'transparent' }"
           >
             <svg
               v-if="isPlayerSelected(player.playerName)"
@@ -186,7 +178,7 @@
       >
         <div
           class="w-6 h-6 border-4 rounded-full animate-spin mx-auto"
-          :style="{ borderColor: accentColor + '30', borderTopColor: accentColor }"
+          :style="{ borderColor: 'var(--mm-rule, #2d2d2d)', borderTopColor: accentColor }"
         />
         <p
           class="text-xs mt-2"
@@ -200,7 +192,7 @@
       <div
         v-if="showPlayerDropdown && !searchingPlayers && playerSearchQuery.length >= 2 && playerSearchResults.length === 0"
         class="text-center py-8 rounded-lg"
-        :style="{ backgroundColor: backgroundMuteColor + '80', borderColor: accentColor + '30', borderWidth: '1px', borderStyle: 'solid' }"
+        :style="{ backgroundColor: 'var(--mm-bg-soft, #1c1c1c)', borderColor: 'var(--mm-rule-strong, #3d3d3d)', borderWidth: '1px', borderStyle: 'solid' }"
       >
         <span class="text-4xl mb-2 block">🔍</span>
         <p
