@@ -235,10 +235,16 @@ public class AdminTournamentController(
                 {
                     Id = tt.Id,
                     Name = tt.Name,
+                    Tag = tt.Tag,
+                    LeaderPlayerName = tt.TeamPlayers.FirstOrDefault(ttp => ttp.IsTeamLeader) != null
+                        ? tt.TeamPlayers.FirstOrDefault(ttp => ttp.IsTeamLeader)!.PlayerName
+                        : null,
                     CreatedAt = tt.CreatedAt,
                     Players = tt.TeamPlayers.Select(ttp => new TournamentTeamPlayerResponse
                     {
-                        PlayerName = ttp.PlayerName
+                        Id = ttp.Id,
+                        PlayerName = ttp.PlayerName,
+                        IsLeader = ttp.IsTeamLeader
                     }).ToList()
                 })
                 .ToListAsync();
@@ -1819,6 +1825,7 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var team = await context.TournamentTeams
+                .Include(tt => tt.TeamPlayers)
                 .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId && tt.Tournament.CreatedByUserEmail == userEmail)
                 .FirstOrDefaultAsync();
 
@@ -1838,6 +1845,20 @@ public class AdminTournamentController(
                 team.Name = request.Name;
             }
 
+            if (request.Tag != null)
+            {
+                team.Tag = request.Tag;
+            }
+
+            if (request.LeaderPlayerName != null)
+            {
+                var target = request.LeaderPlayerName.Trim().ToLower();
+                foreach (var tp in team.TeamPlayers)
+                {
+                    tp.IsTeamLeader = (!string.IsNullOrEmpty(target) && tp.PlayerName.Trim().ToLower() == target);
+                }
+            }
+
             await context.SaveChangesAsync();
 
             // Return updated team with players
@@ -1847,10 +1868,16 @@ public class AdminTournamentController(
                 {
                     Id = tt.Id,
                     Name = tt.Name,
+                    Tag = tt.Tag,
+                    LeaderPlayerName = tt.TeamPlayers.FirstOrDefault(ttp => ttp.IsTeamLeader) != null
+                        ? tt.TeamPlayers.FirstOrDefault(ttp => ttp.IsTeamLeader)!.PlayerName
+                        : null,
                     CreatedAt = tt.CreatedAt,
                     Players = tt.TeamPlayers.Select(ttp => new TournamentTeamPlayerResponse
                     {
-                        PlayerName = ttp.PlayerName
+                        Id = ttp.Id,
+                        PlayerName = ttp.PlayerName,
+                        IsLeader = ttp.IsTeamLeader
                     }).ToList()
                 })
                 .FirstAsync();
@@ -3673,6 +3700,8 @@ public class CreateTournamentTeamRequest
 public class UpdateTournamentTeamRequest
 {
     public string? Name { get; set; }
+    public string? Tag { get; set; }
+    public string? LeaderPlayerName { get; set; }
 }
 
 public class AddPlayerToTeamRequest
@@ -3779,13 +3808,17 @@ public class TournamentTeamResponse
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
+    public string? Tag { get; set; }
+    public string? LeaderPlayerName { get; set; }
     public Instant CreatedAt { get; set; }
     public List<TournamentTeamPlayerResponse> Players { get; set; } = [];
 }
 
 public class TournamentTeamPlayerResponse
 {
+    public int Id { get; set; }
     public string PlayerName { get; set; } = "";
+    public bool IsLeader { get; set; }
 }
 
 public class TournamentMatchResponse

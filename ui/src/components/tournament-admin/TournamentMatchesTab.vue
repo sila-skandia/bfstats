@@ -12,43 +12,32 @@
     <!-- Add/Edit Match View -->
     <div
       v-else-if="showForm"
-      class="portal-card"
+      class="mm-admin-card"
     >
-      <div class="portal-card-header">
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
-          <h2 class="portal-card-title">
-            [ {{ editingMatch ? 'EDIT MATCH' : 'SCHEDULE MATCH' }} ]
+          <h2 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 14px;">
+            {{ editingMatch ? 'EDIT MATCH' : 'SCHEDULE MATCH' }}
           </h2>
-          <p class="portal-card-subtitle">
+          <p class="mm-admin-card__desc">
             {{ editingMatch ? 'Update match details' : 'Schedule a new match in the tournament calendar' }}
           </p>
         </div>
         <button
-          class="portal-btn portal-btn--ghost"
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
           @click="closeForm"
         >
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
           Cancel
         </button>
       </div>
 
-      <div class="portal-card-body">
+      <div class="mm-admin-card__body">
         <!-- Error Message -->
         <div
           v-if="formError"
-          class="portal-form-error"
+          class="mm-admin-alert mm-admin-alert--err"
+          style="margin-bottom: 16px;"
         >
           {{ formError }}
         </div>
@@ -56,31 +45,29 @@
         <!-- No Teams Warning -->
         <div
           v-if="tournament.teams.length < 2"
-          class="portal-form-error"
-          style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3);"
+          class="mm-admin-alert mm-admin-alert--warn"
+          style="margin-bottom: 16px;"
         >
-          <p style="color: #fbbf24;">
-            You need at least 2 teams to schedule a match.
-          </p>
+          You need at least 2 teams to schedule a match.
         </div>
 
         <template v-else>
           <!-- Date & Week Row -->
-          <div class="portal-form-row">
-            <div class="portal-form-section portal-form-section--half">
-              <label class="portal-form-label portal-form-label--required">Scheduled Date & Time</label>
+          <div class="mm-admin-form-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 16px;">
+            <div>
+              <label class="mm-admin-label">Scheduled Date & Time *</label>
               <input
                 v-model="formData.scheduledDate"
                 type="datetime-local"
-                class="portal-form-input portal-form-input--mono"
+                class="mm-admin-input mm-admin-input--mono"
                 :disabled="formLoading"
               >
             </div>
-            <div class="portal-form-section portal-form-section--half">
-              <label class="portal-form-label">Week</label>
+            <div>
+              <label class="mm-admin-label">Week</label>
               <select
                 v-model="formData.week"
-                class="portal-form-input"
+                class="mm-admin-select"
                 :disabled="formLoading || availableWeeksForForm.length === 0"
               >
                 <option :value="null">
@@ -94,19 +81,19 @@
                   {{ week }}
                 </option>
               </select>
-              <p class="portal-form-hint">
+              <p class="mm-admin-hint">
                 {{ availableWeeksForForm.length === 0 ? 'No week dates defined' : 'Optional: assign to a week' }}
               </p>
             </div>
           </div>
 
           <!-- Teams Section -->
-          <div class="portal-form-section">
-            <label class="portal-form-label portal-form-label--required">Match Teams</label>
+          <div style="margin-bottom: 16px;">
+            <label class="mm-admin-label">Match Teams *</label>
             <div class="teams-selector">
               <select
                 v-model="formData.team1Id"
-                class="portal-form-input"
+                class="mm-admin-select"
                 :disabled="formLoading"
               >
                 <option
@@ -126,7 +113,7 @@
               <span class="vs-divider">VS</span>
               <select
                 v-model="formData.team2Id"
-                class="portal-form-input"
+                class="mm-admin-select"
                 :disabled="formLoading"
               >
                 <option
@@ -147,48 +134,37 @@
           </div>
 
           <!-- Maps Section -->
-          <div class="portal-form-section">
-            <label class="portal-form-label portal-form-label--required">Maps</label>
+          <div style="margin-bottom: 16px;">
+            <label class="mm-admin-label">Maps *</label>
             <div class="maps-list">
               <div
                 v-for="(_map, index) in formData.maps"
                 :key="index"
                 class="map-entry"
               >
-                <span class="map-number">{{ index + 1 }}.</span>
+                <span class="map-number mm-admin-mono">{{ index + 1 }}.</span>
                 <input
                   v-model="formData.maps[index].name"
                   type="text"
                   placeholder="e.g., Wake Island, El Alamein"
-                  class="portal-form-input"
+                  class="mm-admin-input"
                   :disabled="formLoading"
                 >
                 <button
                   v-if="formData.maps.length > 1"
                   type="button"
-                  class="portal-icon-btn portal-icon-btn--danger"
+                  class="mm-admin-btn mm-admin-btn--danger mm-admin-btn--sm"
                   :disabled="formLoading"
                   title="Remove map"
                   @click="removeMap(index)"
                 >
-                  <svg
-                    class="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
+                  Remove
                 </button>
               </div>
               <button
                 type="button"
-                class="portal-btn portal-btn--ghost portal-btn--sm"
+                class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+                style="align-self: flex-start; margin-top: 6px;"
                 :disabled="formLoading"
                 @click="addMap"
               >
@@ -198,14 +174,14 @@
           </div>
 
           <!-- Server Section -->
-          <div class="portal-form-section">
-            <label class="portal-form-label">Server (Optional)</label>
+          <div style="margin-bottom: 16px;">
+            <label class="mm-admin-label">Server (Optional)</label>
             <div class="server-search">
               <input
                 v-model="serverSearchQuery"
                 type="text"
                 placeholder="Search or enter server name..."
-                class="portal-form-input"
+                class="mm-admin-input"
                 :disabled="formLoading"
                 @input="onServerSearchInput"
                 @focus="onServerSearchFocus"
@@ -215,42 +191,29 @@
                 v-if="formData.serverGuid"
                 class="server-linked"
               >
-                <svg
-                  class="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                Linked
+                ✓ Linked
               </div>
             </div>
             <!-- Server Suggestions -->
             <div
               v-if="showServerDropdown && serverSuggestions.length > 0"
-              class="server-suggestions"
+              class="mm-admin-dropdown"
             >
               <div
                 v-for="server in serverSuggestions"
                 :key="server.serverGuid"
-                class="server-suggestion"
+                class="mm-admin-dropdown__item"
                 @mousedown.prevent="selectServer(server)"
               >
-                <div class="server-name">
+                <div style="font-weight: 500;">
                   {{ server.serverName }}
                 </div>
-                <div class="server-ip">
+                <div style="font-family: var(--mm-font-mono); font-size: 10.5px; color: var(--mm-ink-muted);">
                   {{ server.serverIp }}:{{ server.serverPort }}
                 </div>
               </div>
             </div>
-            <p class="portal-form-hint">
+            <p class="mm-admin-hint">
               {{ formData.serverGuid ? 'Server found and linked' : 'No server linked - name only will be saved' }}
             </p>
           </div>
@@ -258,25 +221,24 @@
 
         <!-- Form Actions -->
         <div
-          class="portal-form-footer"
-          style="margin-top: 1.5rem"
+          class="mm-admin-actions"
+          style="margin-top: 20px; justify-content: flex-end;"
         >
           <button
-            class="portal-btn portal-btn--ghost"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost"
             :disabled="formLoading"
             @click="closeForm"
           >
             Cancel
           </button>
           <button
-            class="portal-btn portal-btn--primary"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--primary"
             :disabled="formLoading || !isFormValid"
             @click="submitForm"
           >
-            <span
-              v-if="formLoading"
-              class="portal-btn-pulse"
-            >Saving...</span>
+            <span v-if="formLoading">Saving...</span>
             <span v-else>{{ editingMatch ? 'Update Match' : 'Schedule Match' }}</span>
           </button>
         </div>
@@ -286,40 +248,27 @@
     <!-- Matches List View -->
     <div
       v-else-if="!showResultsView"
-      class="portal-card"
+      class="mm-admin-card"
     >
-      <div class="portal-card-header">
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
-          <h2 class="portal-card-title">
-            [ MATCHES ]
+          <span class="mm-admin-card__title">Match Calendar</span>
+          <h2 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 16px; margin-top: 2px;">
+            Matches & Results
           </h2>
-          <p class="portal-card-subtitle">
-            Schedule and track matches between teams
-          </p>
         </div>
-        <div class="header-actions">
+        <div class="mm-admin-actions" style="margin-top: 0;">
           <button
-            class="portal-btn portal-btn--ghost"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost"
             title="Refresh tournament rankings"
             @click="openRecalculateModal"
           >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            Rankings
+            ↻ Recalculate Rankings
           </button>
           <button
-            class="portal-btn portal-btn--primary"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--primary"
             :disabled="tournament.teams.length < 2"
             :title="tournament.teams.length < 2 ? 'Create at least 2 teams first' : ''"
             @click="openAddForm"
@@ -329,16 +278,22 @@
         </div>
       </div>
 
-      <div
-        class="portal-card-body"
-        style="padding: 0"
-      >
+      <div class="mm-admin-card__body" style="padding: 0;">
         <!-- Matches Table -->
         <div
           v-if="matchesByWeekGroups.length > 0"
-          class="portal-table-wrap"
+          class="mm-admin-table-wrap"
         >
-          <table class="portal-table matches-table">
+          <table class="mm-admin-table matches-table">
+            <thead>
+              <tr>
+                <th style="width: 140px;">Date & Time</th>
+                <th>Matchup & Server</th>
+                <th>Maps & Scores</th>
+                <th style="width: 110px;">Status</th>
+                <th style="width: 140px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
             <tbody>
               <!-- Week groups with matches -->
               <template
@@ -348,19 +303,19 @@
                 <!-- Week Header Row -->
                 <tr
                   v-if="!weekGroup.hideWeekHeader"
-                  class="week-header-row"
                 >
                   <td
                     colspan="5"
-                    class="week-header-cell"
+                    class="mm-admin-table__group"
                   >
-                    <div class="week-header-content">
-                      <div class="week-header-info">
-                        <span class="week-name">{{ weekGroup.week }}</span>
-                        <span class="week-dates">{{ getWeekDateRange(weekGroup.week, weekGroup.matches) }}</span>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                      <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-family: var(--mm-font-mono); font-size: 11px; font-weight: 600; color: var(--mm-ink);">{{ weekGroup.week }}</span>
+                        <span style="font-family: var(--mm-font-mono); font-size: 10px; color: var(--mm-ink-muted); text-transform: none;">{{ getWeekDateRange(weekGroup.week, weekGroup.matches) }}</span>
                       </div>
                       <button
-                        class="portal-btn portal-btn--sm portal-btn--ghost"
+                        type="button"
+                        class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
                         :disabled="tournament.teams.length < 2"
                         :title="tournament.teams.length < 2 ? 'Create at least 2 teams first' : ''"
                         @click="openAddForm"
@@ -378,62 +333,64 @@
                   class="match-row"
                 >
                   <!-- Date -->
-                  <td class="match-date">
-                    <span class="portal-mono">{{ formatMatchDate(match.scheduledDate) }}</span>
+                  <td class="mm-admin-mono" style="font-size: 11.5px; color: var(--mm-ink-muted);">
+                    {{ formatMatchDate(match.scheduledDate) }}
                   </td>
 
                   <!-- Team Matchup -->
-                  <td class="match-teams">
-                    <div class="team-matchup">
-                      <span class="team-name">{{ match.team1Name }}</span>
-                      <span class="vs-label">VS</span>
-                      <span class="team-name">{{ match.team2Name }}</span>
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                      <strong style="color: var(--mm-ink); font-size: 13px;">{{ match.team1Name }}</strong>
+                      <span style="font-family: var(--mm-font-mono); font-size: 10px; color: var(--mm-ink-muted);">VS</span>
+                      <strong style="color: var(--mm-ink); font-size: 13px;">{{ match.team2Name }}</strong>
                     </div>
                     <div
                       v-if="match.serverName"
-                      class="match-server"
+                      style="font-family: var(--mm-font-mono); font-size: 10.5px; color: var(--mm-ink-muted); margin-top: 4px; display: flex; align-items: center; gap: 4px;"
                     >
-                      🖥️ {{ match.serverName }}
+                      <span>🖥️</span> {{ match.serverName }}
                     </div>
                   </td>
 
                   <!-- Maps Summary -->
-                  <td class="match-maps">
+                  <td>
                     <div
                       v-for="map in (match.maps || []).filter((m: any) => m)"
                       :key="map.id"
-                      class="map-row"
+                      style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;"
                     >
-                      <span class="map-order portal-mono">{{ map.mapOrder + 1 }}.</span>
-                      <span class="map-name">{{ map.mapName }}</span>
+                      <span class="mm-admin-mono" style="font-size: 10.5px; color: var(--mm-ink-muted);">{{ map.mapOrder + 1 }}.</span>
+                      <span style="font-size: 12.5px; color: var(--mm-ink); font-weight: 500;">{{ map.mapName }}</span>
                       <span
                         v-if="map.matchResults?.length > 0"
-                        class="map-result"
+                        class="mm-admin-mono"
+                        style="font-size: 11px; color: var(--mm-accent); font-weight: 600;"
                       >
                         {{ getResultsAggregation(map) }}
                       </span>
                       <span
                         v-else
-                        class="map-result map-result--empty"
+                        class="mm-admin-mono"
+                        style="font-size: 11px; color: var(--mm-ink-faint);"
                       >—</span>
                     </div>
                   </td>
 
                   <!-- Results Count -->
-                  <td class="match-status">
+                  <td>
                     <div v-if="(match.maps || []).length > 0">
                       <div
                         v-for="map in (match.maps || []).filter((m: any) => m)"
                         :key="`status-${map.id}`"
-                        class="status-row"
+                        style="margin-bottom: 4px;"
                       >
                         <span
                           v-if="!map.matchResults?.length"
-                          class="status-empty"
+                          style="font-size: 11px; color: var(--mm-ink-muted);"
                         >No results</span>
                         <span
                           v-else
-                          class="status-complete"
+                          style="font-size: 11px; color: var(--mm-load-ok); font-weight: 500;"
                         >
                           {{ map.matchResults.length }} round<span v-if="map.matchResults.length !== 1">s</span>
                         </span>
@@ -442,71 +399,40 @@
                   </td>
 
                   <!-- Actions -->
-                  <td class="match-actions">
-                    <div class="portal-table-actions">
+                  <td style="text-align: right;">
+                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;">
                       <button
-                        class="portal-cell-btn"
+                        type="button"
+                        class="mm-admin-cell-btn"
                         title="Enter match results for all maps"
                         @click="openResultsView(match)"
                       >
                         Results
                       </button>
                       <button
-                        class="portal-icon-btn"
+                        type="button"
+                        class="mm-admin-cell-btn"
                         title="Add files and comments"
                         @click="openMatchFilesAndCommentsModal(match)"
                       >
-                        <svg
-                          class="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                          />
-                        </svg>
+                        Files
                       </button>
                       <button
-                        class="portal-icon-btn"
+                        type="button"
+                        class="mm-admin-cell-btn"
                         title="Edit match"
                         @click="editMatch(match.id)"
                       >
-                        <svg
-                          class="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                          />
-                        </svg>
+                        Edit
                       </button>
                       <button
-                        class="portal-icon-btn portal-icon-btn--danger"
+                        type="button"
+                        class="mm-admin-cell-btn"
+                        style="color: var(--mm-danger); border-color: rgba(231, 76, 60, 0.4);"
                         title="Delete match"
                         @click="confirmDeleteMatch(match.id)"
                       >
-                        <svg
-                          class="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                          />
-                        </svg>
+                        Del
                       </button>
                     </div>
                   </td>
@@ -519,21 +445,22 @@
         <!-- Empty State -->
         <div
           v-else
-          class="portal-empty"
+          class="mm-admin-empty"
         >
-          <div class="portal-empty-icon">
+          <div style="font-size: 32px; margin-bottom: 8px;">
             📅
           </div>
-          <h3 class="portal-empty-title">
+          <h3 class="mm-admin-empty__title">
             No Matches Scheduled
           </h3>
-          <p class="portal-empty-desc">
+          <p class="mm-admin-empty__desc">
             {{ tournament.teams.length < 2 ? 'Create at least 2 teams before scheduling matches' : 'Schedule matches to organize your tournament calendar' }}
           </p>
           <button
             v-if="tournament.teams.length >= 2"
-            class="portal-btn portal-btn--primary"
-            style="margin-top: 1rem"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--primary"
+            style="margin-top: 16px"
             @click="openAddForm"
           >
             Schedule First Match
@@ -554,71 +481,40 @@
     <!-- Delete Match Confirmation Modal -->
     <div
       v-if="deleteMatchConfirmation"
-      class="modal-mobile-safe fixed inset-0 z-50 flex items-center justify-center p-4 portal-modal-overlay"
+      style="position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 16px;"
       @click.self="cancelDeleteMatch"
     >
-      <div class="portal-modal">
-        <div class="flex items-start gap-4 mb-6">
-          <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg
-              class="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </div>
-          <div class="flex-1">
-            <h3 class="portal-modal-title">
-              Delete Match?
-            </h3>
-            <p class="portal-modal-text">
-              Delete this scheduled match?
-            </p>
-            <p class="portal-modal-hint">
-              This action cannot be undone.
-            </p>
-          </div>
+      <div class="mm-admin-card" style="width: 100%; max-width: 440px;">
+        <div class="mm-admin-card__head">
+          <h3 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 14px; color: var(--mm-danger);">
+            Delete Match?
+          </h3>
         </div>
+        <div class="mm-admin-card__body">
+          <p style="font-size: 13px; color: var(--mm-ink); margin: 0 0 8px;">
+            Are you sure you want to delete this scheduled match?
+          </p>
+          <p style="font-size: 12px; color: var(--mm-ink-muted); margin: 0;">
+            This action cannot be undone and will remove associated map results.
+          </p>
 
-        <div class="flex items-center justify-end gap-3">
-          <button
-            class="portal-btn portal-btn--ghost"
-            @click="cancelDeleteMatch"
-          >
-            Cancel
-          </button>
-          <button
-            class="portal-btn portal-btn--danger flex items-center gap-2"
-            :disabled="isDeleting"
-            @click="executeDeleteMatch"
-          >
-            <svg
-              v-if="!isDeleting"
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <div class="mm-admin-actions" style="margin-top: 20px; justify-content: flex-end;">
+            <button
+              type="button"
+              class="mm-admin-btn mm-admin-btn--ghost"
+              @click="cancelDeleteMatch"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-            <div
-              v-else
-              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
-            />
-            <span>{{ isDeleting ? 'Deleting...' : 'Delete Match' }}</span>
-          </button>
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="mm-admin-btn mm-admin-btn--danger"
+              :disabled="isDeleting"
+              @click="executeDeleteMatch"
+            >
+              <span>{{ isDeleting ? 'Deleting...' : 'Delete Match' }}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -626,81 +522,54 @@
     <!-- Recalculate Leaderboard Modal -->
     <div
       v-if="showRecalculateModal"
-      class="modal-mobile-safe fixed inset-0 z-50 flex items-center justify-center p-4 portal-modal-overlay"
+      style="position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 16px;"
       @click.self="closeRecalculateModal"
     >
-      <div class="portal-modal portal-modal--large">
-        <div class="flex items-start gap-4 mb-6">
-          <div class="portal-modal-icon">
-            <svg
-              class="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-          </div>
-          <div class="flex-1">
-            <h3 class="portal-modal-title">
-              Recalculate Leaderboard
-            </h3>
-            <p class="portal-modal-text">
-              Choose how you want to recalculate tournament rankings
-            </p>
-          </div>
+      <div class="mm-admin-card" style="width: 100%; max-width: 520px;">
+        <div class="mm-admin-card__head">
+          <h3 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 14px;">
+            Recalculate Leaderboard
+          </h3>
+          <p class="mm-admin-card__desc">
+            Choose how you want to recalculate tournament rankings
+          </p>
         </div>
 
-        <!-- Option 1: Recalculate Everything -->
-        <div
-          class="mb-4 p-3 portal-card cursor-pointer"
-          @click="recalculationMode = 'everything'"
-        >
-          <label class="flex items-start gap-3 cursor-pointer">
+        <div class="mm-admin-card__body" style="display: flex; flex-direction: column; gap: 14px;">
+          <!-- Option 1: Recalculate Everything -->
+          <label class="mm-admin-card" style="padding: 12px; cursor: pointer; display: flex; gap: 12px; align-items: flex-start;">
             <input
               v-model="recalculationMode"
               type="radio"
               value="everything"
-              class="mt-1"
+              style="margin-top: 3px;"
             >
             <div>
-              <div
-                class="font-medium"
-                style="color: var(--portal-text-bright);"
-              >Recalculate Everything</div>
-              <div class="portal-modal-hint mt-1">Recalculates all weeks and cumulative leaderboard</div>
+              <div style="font-size: 13px; font-weight: 500; color: var(--mm-ink);">Recalculate Everything</div>
+              <div style="font-size: 11.5px; color: var(--mm-ink-muted); margin-top: 2px;">Recalculates all weeks and cumulative leaderboard</div>
             </div>
           </label>
-        </div>
 
-        <!-- Option 2: Fix a Specific Week (only show if multiple weeks) -->
-        <div
-          v-if="hasMultipleWeeks"
-          class="mb-4 p-3 portal-card cursor-pointer"
-          @click="recalculationMode = 'specific-week'"
-        >
-          <label class="flex items-start gap-3 cursor-pointer">
+          <!-- Option 2: Fix a Specific Week (only show if multiple weeks) -->
+          <label
+            v-if="hasMultipleWeeks"
+            class="mm-admin-card"
+            style="padding: 12px; cursor: pointer; display: flex; gap: 12px; align-items: flex-start;"
+          >
             <input
               v-model="recalculationMode"
               type="radio"
               value="specific-week"
-              class="mt-1"
+              style="margin-top: 3px;"
             >
-            <div class="flex-1">
-              <div
-                class="font-medium"
-                style="color: var(--portal-text-bright);"
-              >Fix a Specific Week</div>
-              <div class="portal-modal-hint mt-1">Recalculate only that week</div>
+            <div style="flex: 1;">
+              <div style="font-size: 13px; font-weight: 500; color: var(--mm-ink);">Fix a Specific Week</div>
+              <div style="font-size: 11.5px; color: var(--mm-ink-muted); margin-top: 2px;">Recalculate only that week</div>
               <select
                 v-if="recalculationMode === 'specific-week'"
                 v-model="selectedWeek"
-                class="mt-2 portal-input"
+                class="mm-admin-select"
+                style="margin-top: 8px;"
               >
                 <option :value="null">Select a week...</option>
                 <option
@@ -713,31 +582,27 @@
               </select>
             </div>
           </label>
-        </div>
 
-        <!-- Option 3: Recalculate From Week Onwards (only show if multiple weeks) -->
-        <div
-          v-if="hasMultipleWeeks"
-          class="mb-6 p-3 portal-card cursor-pointer"
-          @click="recalculationMode = 'from-week'"
-        >
-          <label class="flex items-start gap-3 cursor-pointer">
+          <!-- Option 3: Recalculate From Week Onwards (only show if multiple weeks) -->
+          <label
+            v-if="hasMultipleWeeks"
+            class="mm-admin-card"
+            style="padding: 12px; cursor: pointer; display: flex; gap: 12px; align-items: flex-start;"
+          >
             <input
               v-model="recalculationMode"
               type="radio"
               value="from-week"
-              class="mt-1"
+              style="margin-top: 3px;"
             >
-            <div class="flex-1">
-              <div
-                class="font-medium"
-                style="color: var(--portal-text-bright);"
-              >Recalculate From Week Onwards</div>
-              <div class="portal-modal-hint mt-1">Recalculate from selected week through cumulative</div>
+            <div style="flex: 1;">
+              <div style="font-size: 13px; font-weight: 500; color: var(--mm-ink);">Recalculate From Week Onwards</div>
+              <div style="font-size: 11.5px; color: var(--mm-ink-muted); margin-top: 2px;">Recalculate from selected week through cumulative</div>
               <select
                 v-if="recalculationMode === 'from-week'"
                 v-model="fromWeek"
-                class="mt-2 portal-input"
+                class="mm-admin-select"
+                style="margin-top: 8px;"
               >
                 <option :value="null">Select starting week...</option>
                 <option
@@ -750,52 +615,34 @@
               </select>
             </div>
           </label>
-        </div>
 
-        <!-- Message Display -->
-        <div
-          v-if="recalculationMessage"
-          class="mb-6 p-3"
-          :class="recalculationMessage.type === 'success' ? 'portal-card' : 'portal-card'"
-          :style="recalculationMessage.type === 'success' ? 'background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); color: rgb(167, 243, 208);' : 'background: var(--portal-danger-glow); border-color: rgba(239, 68, 68, 0.3); color: var(--portal-danger);'"
-        >
-          {{ recalculationMessage.text }}
-        </div>
+          <!-- Message Display -->
+          <div
+            v-if="recalculationMessage"
+            :class="['mm-admin-alert', recalculationMessage.type === 'success' ? 'mm-admin-alert--ok' : 'mm-admin-alert--err']"
+          >
+            {{ recalculationMessage.text }}
+          </div>
 
-        <!-- Action Buttons -->
-        <div class="flex items-center justify-end gap-3">
-          <button
-            class="portal-btn portal-btn--ghost"
-            :disabled="isRecalculating"
-            @click="closeRecalculateModal"
-          >
-            Cancel
-          </button>
-          <button
-            class="portal-btn portal-btn--primary flex items-center gap-2"
-            :disabled="isRecalculating || (recalculationMode === 'specific-week' && !selectedWeek) || (recalculationMode === 'from-week' && !fromWeek)"
-            @click="recalculateLeaderboard"
-          >
-            <svg
-              v-if="!isRecalculating"
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <!-- Action Buttons -->
+          <div class="mm-admin-actions" style="margin-top: 10px; justify-content: flex-end;">
+            <button
+              type="button"
+              class="mm-admin-btn mm-admin-btn--ghost"
+              :disabled="isRecalculating"
+              @click="closeRecalculateModal"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            <div
-              v-else
-              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
-            />
-            <span>{{ isRecalculating ? 'Recalculating...' : 'Recalculate' }}</span>
-          </button>
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="mm-admin-btn mm-admin-btn--primary"
+              :disabled="isRecalculating || (recalculationMode === 'specific-week' && !selectedWeek) || (recalculationMode === 'from-week' && !fromWeek)"
+              @click="recalculateLeaderboard"
+            >
+              <span>{{ isRecalculating ? 'Recalculating...' : 'Recalculate' }}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -812,7 +659,7 @@ import {
   type TournamentMatchMap
 } from '@/services/adminTournamentService';
 import TournamentResultsForm from './TournamentResultsForm.vue';
-import MatchFilesAndCommentsModal from '@/components/dashboard/MatchFilesAndCommentsModal.vue';
+import MatchFilesAndCommentsModal from '@/components/tournament-admin/MatchFilesAndCommentsModal.vue';
 
 interface ServerSearchResult {
   serverGuid: string;
@@ -1329,248 +1176,48 @@ defineExpose({ load });
 </script>
 
 <style scoped>
-.portal-card-subtitle {
-  font-size: 0.75rem;
-  color: var(--portal-text);
-  margin-top: 0.25rem;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .matches-table {
   width: 100%;
-}
-
-.week-header-row {
-  background: rgba(0, 229, 160, 0.08);
-}
-
-.week-header-cell {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid rgba(0, 229, 160, 0.2);
-}
-
-.week-header-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.week-header-info {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.week-name {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--portal-accent);
-  letter-spacing: 0.05em;
-}
-
-.week-dates {
-  font-size: 0.75rem;
-  color: var(--portal-text);
-}
-
-.match-row td {
-  padding: 0.75rem 1rem;
-  vertical-align: top;
-}
-
-.match-date {
-  font-size: 0.75rem;
-  color: var(--portal-text);
-  white-space: nowrap;
-}
-
-.match-teams {
-  min-width: 180px;
-}
-
-.team-matchup {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.team-name {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--portal-accent);
-}
-
-.vs-label {
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: var(--portal-text);
-  opacity: 0.6;
-}
-
-.match-server {
-  font-size: 0.7rem;
-  color: var(--portal-text);
-  margin-top: 0.25rem;
-}
-
-.match-maps {
-  font-size: 0.75rem;
-}
-
-.map-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.25rem;
-}
-
-.map-row:last-child {
-  margin-bottom: 0;
-}
-
-.map-order {
-  color: var(--portal-text);
-  opacity: 0.6;
-  font-size: 0.7rem;
-}
-
-.map-name {
-  color: var(--portal-warn);
-  font-weight: 500;
-}
-
-.map-result {
-  color: var(--portal-accent);
-  font-weight: 500;
-}
-
-.map-result--empty {
-  color: var(--portal-text);
-  opacity: 0.5;
-}
-
-.match-status {
-  font-size: 0.7rem;
-}
-
-.status-row {
-  margin-bottom: 0.25rem;
-}
-
-.status-row:last-child {
-  margin-bottom: 0;
-}
-
-.status-empty {
-  color: var(--portal-text);
-  opacity: 0.6;
-}
-
-.status-complete {
-  color: var(--portal-accent);
-}
-
-.match-actions {
-  white-space: nowrap;
-}
-
-.w-4 {
-  width: 1rem;
-}
-
-.h-4 {
-  height: 1rem;
-}
-
-.w-6 {
-  width: 1.5rem;
-}
-
-.h-6 {
-  height: 1.5rem;
-}
-
-.w-12 {
-  width: 3rem;
-}
-
-.h-12 {
-  height: 3rem;
-}
-
-@media (max-width: 768px) {
-  .header-actions {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
-  }
-
-  .match-row td {
-    padding: 0.5rem 0.75rem;
-  }
-
-  .team-matchup {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
-  }
-}
-
-/* Form styles */
-.portal-form-row {
-  display: flex;
-  gap: 1rem;
-}
-
-.portal-form-section--half {
-  flex: 1;
 }
 
 .teams-selector {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 12px;
 }
 
-.teams-selector .portal-form-input {
+.teams-selector .mm-admin-select {
   flex: 1;
 }
 
 .vs-divider {
-  font-size: 0.875rem;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
   font-weight: 700;
-  color: var(--portal-accent);
+  color: var(--mm-accent);
   flex-shrink: 0;
 }
 
 .maps-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .map-entry {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
-.map-entry .portal-form-input {
+.map-entry .mm-admin-input {
   flex: 1;
 }
 
 .map-number {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--portal-text);
-  width: 1.5rem;
+  font-size: 11px;
+  color: var(--mm-ink-muted);
+  width: 18px;
   flex-shrink: 0;
 }
 
@@ -1578,68 +1225,28 @@ defineExpose({ load });
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
-.server-search .portal-form-input {
+.server-search .mm-admin-input {
   flex: 1;
 }
 
 .server-linked {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--portal-accent);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mm-load-ok);
   flex-shrink: 0;
 }
 
-.server-suggestions {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 0.25rem;
-  background: var(--portal-surface-elevated, #111118);
-  border: 1px solid var(--portal-border, #1a1a24);
-  border-radius: 4px;
-  max-height: 200px;
-  overflow-y: auto;
-  z-index: 100;
-}
-
-.server-suggestion {
-  padding: 0.5rem 0.75rem;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.server-suggestion:hover {
-  background: var(--portal-accent-dim, rgba(0, 229, 160, 0.12));
-}
-
-.server-name {
-  font-size: 0.875rem;
-  color: var(--portal-text-bright, #e5e7eb);
-}
-
-.server-ip {
-  font-size: 0.7rem;
-  color: var(--portal-text, #9ca3af);
-  margin-top: 0.125rem;
-}
-
 @media (max-width: 640px) {
-  .portal-form-row {
-    flex-direction: column;
-  }
-
   .teams-selector {
     flex-direction: column;
   }
 
   .vs-divider {
-    margin: 0.25rem 0;
+    margin: 4px 0;
   }
 }
 </style>

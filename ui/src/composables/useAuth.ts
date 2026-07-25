@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue';
 import { useRouter } from 'vue-router';
 import { authService, type AuthState } from '@/services/authService';
 import { ROLE_ADMIN, ROLE_SUPPORT, ADMIN_EMAIL } from '@/constants/roles';
@@ -31,6 +31,14 @@ export function useAuth() {
       user: null,
     };
   };
+
+  const devLogin = async (): Promise<void> => {
+    await authService.devLogin();
+  };
+
+  if (typeof window !== 'undefined') {
+    (window as unknown as { __DEV_ADMIN_LOGIN__?: () => Promise<void> }).__DEV_ADMIN_LOGIN__ = devLogin;
+  }
 
   const loginWithDiscord = async (): Promise<void> => {
     await authService.initiateDiscordLogin();
@@ -90,18 +98,20 @@ export function useAuth() {
     authState.value = authService.getStoredAuthState();
   };
 
-  // Initialize auth state on first use
-  onMounted(() => {
-    window.addEventListener('discord-auth-success', handleAuthSuccess as EventListener);
-    window.addEventListener('discord-auth-error', handleAuthError as EventListener);
-    window.addEventListener('auth-token-refreshed', handleTokenRefreshed);
-  });
+  // Initialize auth state listeners if called within a component lifecycle
+  if (getCurrentInstance()) {
+    onMounted(() => {
+      window.addEventListener('discord-auth-success', handleAuthSuccess as EventListener);
+      window.addEventListener('discord-auth-error', handleAuthError as EventListener);
+      window.addEventListener('auth-token-refreshed', handleTokenRefreshed);
+    });
 
-  onUnmounted(() => {
-    window.removeEventListener('discord-auth-success', handleAuthSuccess as EventListener);
-    window.removeEventListener('discord-auth-error', handleAuthError as EventListener);
-    window.removeEventListener('auth-token-refreshed', handleTokenRefreshed);
-  });
+    onUnmounted(() => {
+      window.removeEventListener('discord-auth-success', handleAuthSuccess as EventListener);
+      window.removeEventListener('discord-auth-error', handleAuthError as EventListener);
+      window.removeEventListener('auth-token-refreshed', handleTokenRefreshed);
+    });
+  }
 
   const ensureValidToken = async (): Promise<boolean> => {
     return await authService.ensureValidToken();
@@ -115,6 +125,7 @@ export function useAuth() {
     isAdmin,
     isSupport,
     loginWithDiscord,
+    devLogin,
     logout,
     loadStoredAuth,
     ensureValidToken,

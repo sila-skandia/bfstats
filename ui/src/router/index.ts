@@ -16,6 +16,7 @@ const PublicTournamentMatches = () => import('../views/PublicTournamentMatches.v
 const PublicTournamentStats = () => import('../views/PublicTournamentStats.vue')
 const PublicTournamentFiles = () => import('../views/PublicTournamentFiles.vue')
 const AdminDataManagementV4 = () => import('../views/v4/AdminDataManagementV4.vue')
+const AdminTournamentsV4 = () => import('../views/v4/AdminTournamentsV4.vue')
 const AliasDetectionView = () => import('../views/AliasDetectionView.vue')
 
 // v4 — modern-minimal theme (parallel preview, accessible at /v4/*)
@@ -197,7 +198,11 @@ const routes: RouteRecordRaw[] = [
         description: 'Tournament files, maps, and resources.'
       }
     },
-    // Legacy route redirects for backwards compatibility
+    // Legacy & alternative route redirects for backwards compatibility
+    { path: '/tournaments', redirect: '/v4/manage/tournaments' },
+    { path: '/admin/tournaments', redirect: '/v4/manage/tournaments' },
+    { path: '/manage/tournaments', redirect: '/v4/manage/tournaments' },
+    { path: '/manage/tournament', redirect: '/v4/manage/tournaments' },
     {
       path: '/tournaments/:id',
       redirect: to => `/t/${to.params.id}`
@@ -208,41 +213,27 @@ const routes: RouteRecordRaw[] = [
     },
     {
       path: '/admin/tournaments/:id',
-      name: 'admin-tournament-details',
-      redirect: to => `/admin/tournaments/${to.params.id}/matches`,
-      beforeEnter: (_to, _from, next) => {
-        const { isAuthenticated } = useAuth()
-        if (!isAuthenticated.value) {
-          next('/servers/bf1942')
-        } else {
-          next()
-        }
-      }
+      redirect: to => `/v4/manage/tournaments/${to.params.id}/matches`
     },
     {
       path: '/admin/tournaments/:id/:tab',
-      name: 'admin-tournament-details-tab',
-      component: TournamentDetails,
-      props: true,
-      meta: {
-        title: (route: RouteLocationNormalized) => `Tournament ${route.params.id} - BF Stats Tournament Manager`,
-        description: 'Manage your Battlefield tournament rounds, track results, and view the overall winner.'
-      },
-      beforeEnter: (to, _from, next) => {
-        const { isAuthenticated } = useAuth()
-        if (!isAuthenticated.value) {
-          next('/servers/bf1942')
-        } else {
-          // Validate tab parameter
-          const validTabs = ['matches', 'teams', 'weeks', 'files', 'posts', 'settings']
-          const tab = to.params.tab as string
-          if (!validTabs.includes(tab)) {
-            next(`/admin/tournaments/${to.params.id}/matches`)
-          } else {
-            next()
-          }
-        }
-      }
+      redirect: to => `/v4/manage/tournaments/${to.params.id}/${to.params.tab}`
+    },
+    {
+      path: '/manage/tournaments/:id',
+      redirect: to => `/v4/manage/tournaments/${to.params.id}/matches`
+    },
+    {
+      path: '/manage/tournaments/:id/:tab',
+      redirect: to => `/v4/manage/tournaments/${to.params.id}/${to.params.tab}`
+    },
+    {
+      path: '/manage/tournament/:id',
+      redirect: to => `/v4/manage/tournaments/${to.params.id}/matches`
+    },
+    {
+      path: '/manage/tournament/:id/:tab',
+      redirect: to => `/v4/manage/tournaments/${to.params.id}/${to.params.tab}`
     },
     { path: '/admin/data', redirect: '/v4/admin/data' },
     {
@@ -500,6 +491,76 @@ const routes: RouteRecordRaw[] = [
               next()
             }
           }
+        },
+        {
+          path: 'manage/tournaments',
+          name: 'v4-manage-tournaments',
+          component: AdminTournamentsV4,
+          meta: {
+            title: 'Manage Tournaments · bfstats.io',
+            description: 'Create and manage Battlefield tournaments, matches, brackets, and team rosters.'
+          },
+          beforeEnter: (_to, _from, next) => {
+            const { isAuthenticated } = useAuth()
+            if (!isAuthenticated.value) {
+              next('/v4/servers/bf1942')
+            } else {
+              next()
+            }
+          }
+        },
+        {
+          path: 'manage/tournaments/:id',
+          name: 'v4-manage-tournament-details',
+          redirect: to => `/v4/manage/tournaments/${to.params.id}/matches`
+        },
+        {
+          path: 'manage/tournaments/:id/:tab',
+          name: 'v4-manage-tournament-details-tab',
+          component: TournamentDetails,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `Tournament ${route.params.id} · Manage · bfstats.io`,
+            description: 'Manage your Battlefield tournament rounds, track results, and view the overall winner.'
+          },
+          beforeEnter: (to, _from, next) => {
+            const { isAuthenticated } = useAuth()
+            if (!isAuthenticated.value) {
+              next('/v4/servers/bf1942')
+            } else {
+              const validTabs = ['matches', 'teams', 'weeks', 'files', 'posts', 'settings']
+              const tab = to.params.tab as string
+              if (!validTabs.includes(tab)) {
+                next(`/v4/manage/tournaments/${to.params.id}/matches`)
+              } else {
+                next()
+              }
+            }
+          }
+        },
+        {
+          path: 'manage/tournament',
+          redirect: '/v4/manage/tournaments'
+        },
+        {
+          path: 'manage/tournament/:id',
+          redirect: to => `/v4/manage/tournaments/${to.params.id}/matches`
+        },
+        {
+          path: 'manage/tournament/:id/:tab',
+          redirect: to => `/v4/manage/tournaments/${to.params.id}/${to.params.tab}`
+        },
+        {
+          path: 'admin/tournaments',
+          redirect: '/v4/manage/tournaments'
+        },
+        {
+          path: 'admin/tournaments/:id',
+          redirect: to => `/v4/manage/tournaments/${to.params.id}/matches`
+        },
+        {
+          path: 'admin/tournaments/:id/:tab',
+          redirect: to => `/v4/manage/tournaments/${to.params.id}/${to.params.tab}`
         }
       ]
     }

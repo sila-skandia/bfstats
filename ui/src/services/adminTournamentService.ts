@@ -239,6 +239,8 @@ export interface CreateTeamRequest {
 
 export interface UpdateTeamRequest {
   name?: string;
+  tag?: string;
+  leaderPlayerName?: string;
 }
 
 export interface AddPlayerRequest {
@@ -443,9 +445,17 @@ class AdminTournamentService {
     return `${this.baseUrl}/${id}/image`;
   }
 
+  getHeroImageUrl(id: number): string {
+    return this.getTournamentImageUrl(id);
+  }
+
   // Get tournament community logo URL (owned by current user only)
   getTournamentLogoUrl(id: number): string {
     return `${this.baseUrl}/${id}/logo`;
+  }
+
+  getCommunityLogoUrl(id: number): string {
+    return this.getTournamentLogoUrl(id);
   }
 
   // Create tournament
@@ -592,6 +602,11 @@ class AdminTournamentService {
       method: 'POST',
       body: JSON.stringify(request),
     });
+  }
+
+  // Set team leader
+  async setTeamLeader(tournamentId: number, teamId: number, leaderPlayerName: string): Promise<TournamentTeam> {
+    return this.updateTeam(tournamentId, teamId, { leaderPlayerName });
   }
 
   // Remove player from team

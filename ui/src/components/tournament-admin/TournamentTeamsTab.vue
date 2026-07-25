@@ -1,102 +1,97 @@
 <template>
-  <div class="tournament-teams-tab">
-    <!-- Add/Edit Team View -->
+  <div class="tournament-teams-tab mm-admin">
+    <!-- Add/Edit Team View / Modal -->
     <div
       v-if="showForm"
-      class="portal-card"
+      key="team-form-card"
+      class="mm-admin-card"
     >
-      <div class="portal-card-header">
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 class="portal-card-title">
-            [ {{ editingTeam ? 'EDIT TEAM' : 'CREATE TEAM' }} ]
+          <span class="mm-admin-label" style="margin-bottom: 2px;">Roster Management</span>
+          <h2 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 18px;">
+            {{ editingTeam ? 'Edit Team' : 'Add Team' }}
           </h2>
-          <p class="portal-card-subtitle">
-            {{ editingTeam ? 'Update team details and manage players' : 'Add a new team to the tournament' }}
-          </p>
         </div>
         <button
-          class="portal-btn portal-btn--ghost"
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
           @click="closeForm"
         >
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
           Cancel
         </button>
       </div>
 
-      <div class="portal-card-body">
+      <div class="mm-admin-card__body">
         <!-- Error Message -->
         <div
           v-if="formError"
-          class="portal-form-error"
+          class="mm-admin-alert mm-admin-alert--err"
+          style="margin-bottom: 14px;"
         >
           {{ formError }}
         </div>
 
-        <!-- Team Name -->
-        <div class="portal-form-section">
-          <label class="portal-form-label portal-form-label--required">Team Name</label>
-          <input
-            v-model="formData.name"
-            type="text"
-            placeholder="e.g., [ABC] Clan or Team Alpha"
-            class="portal-form-input"
-            :disabled="formLoading"
-          >
-          <p class="portal-form-hint">
-            Usually the clan tag or team name
-          </p>
-        </div>
+        <div class="mm-admin-form-grid" style="grid-template-columns: 2fr 1fr;">
+          <!-- Team Name -->
+          <div>
+            <label class="mm-admin-label">Team Name</label>
+            <input
+              v-model="formData.name"
+              type="text"
+              placeholder="e.g., Skandia or Black Knights"
+              class="mm-admin-input"
+              :disabled="formLoading"
+            >
+          </div>
 
-        <!-- Players Section -->
-        <div class="portal-form-section">
-          <MultiPlayerSelector
-            :current-players="formData.players"
-            :loading="formLoading"
-            accent-color="#00e5a0"
-            text-color="#e5e7eb"
-            text-muted-color="#9ca3af"
-            background-color="#0c0c12"
-            background-mute-color="#111118"
-            @add-players="handleAddPlayers"
-            @remove-player="removePlayer"
-            @clear-all-players="clearAllPlayers"
-          />
+          <!-- Tag -->
+          <div>
+            <label class="mm-admin-label">Tag</label>
+            <input
+              v-model="formData.tag"
+              type="text"
+              placeholder="e.g. [sK]"
+              class="mm-admin-input mm-admin-input--mono"
+              :disabled="formLoading"
+            >
+          </div>
+
+          <!-- Players Section -->
+          <div class="mm-admin-field--wide">
+            <label class="mm-admin-label">Add Players</label>
+            <MultiPlayerSelector
+              :current-players="formData.players"
+              :loading="formLoading"
+              accent-color="var(--mm-accent)"
+              text-color="var(--mm-ink)"
+              text-muted-color="var(--mm-ink-muted)"
+              background-color="var(--mm-bg)"
+              background-mute-color="var(--mm-bg-mute)"
+              @add-players="handleAddPlayers"
+              @remove-player="removePlayer"
+              @clear-all-players="clearAllPlayers"
+            />
+          </div>
         </div>
 
         <!-- Form Actions -->
-        <div
-          class="portal-form-footer"
-          style="margin-top: 1.5rem"
-        >
+        <div class="mm-admin-actions" style="margin-top: 20px;">
           <button
-            class="portal-btn portal-btn--ghost"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--primary"
+            :disabled="formLoading || !formData.name.trim()"
+            @click="submitForm"
+          >
+            {{ formLoading ? 'Saving...' : (editingTeam ? 'Update Team' : 'Save Team') }}
+          </button>
+          <button
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost"
             :disabled="formLoading"
             @click="closeForm"
           >
             Cancel
-          </button>
-          <button
-            class="portal-btn portal-btn--primary"
-            :disabled="formLoading || !formData.name.trim()"
-            @click="submitForm"
-          >
-            <span
-              v-if="formLoading"
-              class="portal-btn-pulse"
-            >Saving...</span>
-            <span v-else>{{ editingTeam ? 'Update Team' : 'Create Team' }}</span>
           </button>
         </div>
       </div>
@@ -105,85 +100,154 @@
     <!-- Teams List View -->
     <div
       v-else
-      class="portal-card"
+      key="teams-list-card"
+      class="mm-admin-card"
     >
-      <div class="portal-card-header">
-        <div>
-          <h2 class="portal-card-title">
-            [ TEAMS ]
-          </h2>
-          <p class="portal-card-subtitle">
-            Configure tournament teams and their players
-          </p>
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+          <div class="mm-admin-input-wrap" style="min-width: 240px; max-width: 360px; width: 100%;">
+            <input
+              v-model="teamFilterQuery"
+              class="mm-admin-input"
+              placeholder="Filter teams…"
+            >
+          </div>
         </div>
+
         <button
-          class="portal-btn portal-btn--primary"
+          type="button"
+          class="mm-admin-btn mm-admin-btn--primary"
           @click="openAddForm"
         >
           + Add Team
         </button>
       </div>
 
-      <div class="portal-card-body">
-        <!-- Teams Grid -->
+      <div class="mm-admin-card__body">
+        <!-- Teams List / Cards -->
         <div
-          v-if="tournament.teams.length > 0"
-          class="portal-grid-3"
+          v-if="filteredTeams.length > 0"
+          style="display: flex; flex-direction: column; gap: 14px;"
         >
           <div
-            v-for="team in tournament.teams"
+            v-for="team in filteredTeams"
             :key="team.id"
-            class="portal-grid-item"
+            class="mm-admin-card"
           >
-            <div class="portal-grid-item-header">
-              <div>
-                <h3 class="portal-grid-item-title">
-                  {{ team.name }}
-                </h3>
-                <p class="portal-grid-item-subtitle">
-                  {{ team.players.length }} {{ team.players.length === 1 ? 'player' : 'players' }}
-                </p>
-              </div>
-              <div class="portal-grid-item-actions">
+            <div class="mm-admin-card__head" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <span
+                v-if="team.tag || getTeamTag(team.name)"
+                class="mm-admin-mono"
+                style="font-size: 11px; color: var(--mm-accent); border: 1px solid var(--mm-rule-strong); border-radius: 2px; padding: 2px 8px; font-weight: 500;"
+              >
+                {{ team.tag || getTeamTag(team.name) }}
+              </span>
+              <span style="font-family: var(--mm-font-display); font-size: 15px; font-weight: 500; color: var(--mm-ink);">
+                {{ team.name }}
+              </span>
+              <span class="mm-admin-hint" style="margin: 0;">
+                {{ team.players.length }} {{ team.players.length === 1 ? 'player' : 'players' }}
+              </span>
+
+              <div class="mm-admin-actions" style="margin-left: auto; margin-top: 0;">
                 <button
-                  class="portal-icon-btn"
-                  title="Edit team"
+                  type="button"
+                  class="mm-admin-cell-btn"
                   @click="openEditForm(team.id)"
                 >
-                  <svg
-                    class="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                    />
-                  </svg>
+                  Edit Team
                 </button>
                 <button
-                  class="portal-icon-btn portal-icon-btn--danger"
-                  title="Delete team"
+                  type="button"
+                  class="mm-admin-cell-btn"
+                  style="color: var(--mm-danger); border-color: var(--mm-danger);"
                   @click="confirmDeleteTeam(team.id, team.name)"
                 >
-                  <svg
-                    class="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
+                  Delete
                 </button>
               </div>
+            </div>
+
+            <!-- Roster Table -->
+            <!-- Roster Table -->
+            <div v-if="team.players.length > 0" class="mm-admin-table-wrap">
+              <div v-if="getSelectedPlayerCount(team.id) > 0" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: var(--mm-bg-mute); border-bottom: 1px solid var(--mm-rule);">
+                <span class="mm-admin-mono" style="font-size: 11px; color: var(--mm-ink);">
+                  {{ getSelectedPlayerCount(team.id) }} {{ getSelectedPlayerCount(team.id) === 1 ? 'player' : 'players' }} selected
+                </span>
+                <button
+                  type="button"
+                  class="mm-admin-cell-btn"
+                  style="color: var(--mm-danger); border-color: var(--mm-danger);"
+                  @click="confirmRemoveSelectedPlayers(team.id, team.name)"
+                >
+                  Remove Selected ({{ getSelectedPlayerCount(team.id) }})
+                </button>
+              </div>
+
+              <table class="mm-admin-table" style="table-layout: fixed; width: 100%;">
+                <thead>
+                  <tr>
+                    <th style="width: 36px; text-align: center; vertical-align: middle;">
+                      <input
+                        type="checkbox"
+                        :checked="isAllPlayersSelected(team)"
+                        style="cursor: pointer;"
+                        @change="toggleSelectAllPlayers(team)"
+                      >
+                    </th>
+                    <th style="vertical-align: middle;">Player</th>
+                    <th style="width: 100px; text-align: right; vertical-align: middle;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="player in team.players" :key="player.playerName">
+                    <td style="text-align: center; vertical-align: middle;">
+                      <input
+                        type="checkbox"
+                        :checked="isPlayerSelected(team.id, player.playerName)"
+                        style="cursor: pointer;"
+                        @change="toggleSelectPlayer(team.id, player.playerName)"
+                      >
+                    </td>
+                    <td style="font-weight: 500; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span>{{ $pn(player.playerName) }}</span>
+                        <button
+                          v-if="isTeamLeader(team, player)"
+                          type="button"
+                          class="mm-admin-chip"
+                          title="Click to remove leader status"
+                          style="color: var(--mm-accent); border-color: var(--mm-accent); font-size: 10px; padding: 1px 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;"
+                          @click="toggleLeader(team, player)"
+                        >
+                          👑 Leader
+                        </button>
+                        <button
+                          v-else
+                          type="button"
+                          class="mm-admin-cell-btn"
+                          title="Set as Team Leader"
+                          style="font-size: 10px; padding: 1px 6px; opacity: 0.65; border-style: dashed;"
+                          @click="toggleLeader(team, player)"
+                        >
+                          👑 Set Leader
+                        </button>
+                      </div>
+                    </td>
+                    <td style="text-align: right; vertical-align: middle;">
+                      <button
+                        type="button"
+                        class="mm-admin-cell-btn"
+                        style="color: var(--mm-danger);"
+                        @click="confirmRemoveSinglePlayer(team.id, team.name, player.playerName)"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -191,110 +255,107 @@
         <!-- Empty State -->
         <div
           v-else
-          class="portal-empty"
+          class="mm-admin-empty"
         >
-          <div class="portal-empty-icon">
-            👥
-          </div>
-          <h3 class="portal-empty-title">
-            No Teams Yet
-          </h3>
-          <p class="portal-empty-desc">
-            Create teams to organize players for tournament matches
+          <div class="mm-admin-empty__title">No Teams Found</div>
+          <p class="mm-admin-empty__desc">
+            Create teams to organize players for tournament matches.
           </p>
           <button
-            class="portal-btn portal-btn--primary"
-            style="margin-top: 1rem"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--primary"
+            style="margin-top: 16px;"
             @click="openAddForm"
           >
-            Add First Team
+            + Add First Team
           </button>
         </div>
       </div>
     </div>
 
     <!-- Delete Team Confirmation Modal -->
-    <div
-      v-if="deleteTeamConfirmation"
-      class="modal-mobile-safe fixed inset-0 z-50 flex items-center justify-center p-4 portal-modal-overlay"
-      @click.self="cancelDeleteTeam"
+    <MmBaseModal
+      :model-value="!!deleteTeamConfirmation"
+      title="Delete Team?"
+      subtitle="Destructive Action"
+      size="sm"
+      @close="cancelDeleteTeam"
     >
-      <div class="portal-modal">
-        <div class="flex items-start gap-4 mb-6">
-          <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg
-              class="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </div>
-          <div class="flex-1">
-            <h3 class="portal-modal-title">
-              Delete Team?
-            </h3>
-            <p class="portal-modal-text">
-              Delete team <span class="portal-modal-highlight">{{ deleteTeamConfirmation.name }}</span>?
-            </p>
-            <p class="portal-modal-hint">
-              This will remove the team and all its players from the tournament.
-            </p>
-          </div>
-        </div>
+      <p style="margin: 0 0 12px; font-size: 13px; color: var(--mm-ink-soft); line-height: 1.5;">
+        Are you sure you want to delete team <strong style="color: var(--mm-ink);">{{ deleteTeamConfirmation?.name }}</strong>?
+      </p>
+      <p style="margin: 0; font-size: 12px; color: var(--mm-ink-muted); line-height: 1.4;">
+        This will remove the team and all its roster player assignments from the tournament.
+      </p>
 
-        <div class="flex items-center justify-end gap-3">
-          <button
-            class="portal-btn portal-btn--ghost"
-            @click="cancelDeleteTeam"
-          >
-            Cancel
-          </button>
-          <button
-            class="portal-btn portal-btn--danger flex items-center gap-2"
-            :disabled="isDeleting"
-            @click="executeDeleteTeam"
-          >
-            <svg
-              v-if="!isDeleting"
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-            <div
-              v-else
-              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
-            />
-            <span>{{ isDeleting ? 'Deleting...' : 'Delete Team' }}</span>
-          </button>
-        </div>
-      </div>
-    </div>
+      <template #footer>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
+          :disabled="isDeleting"
+          @click="cancelDeleteTeam"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--danger"
+          :disabled="isDeleting"
+          @click="executeDeleteTeam"
+        >
+          {{ isDeleting ? 'Deleting...' : 'Delete Team' }}
+        </button>
+      </template>
+    </MmBaseModal>
+
+    <!-- Remove Player Confirmation Modal -->
+    <MmBaseModal
+      :model-value="!!deletePlayerConfirmation"
+      title="Remove Player?"
+      subtitle="Roster Action"
+      size="sm"
+      @close="cancelDeletePlayer"
+    >
+      <p style="margin: 0 0 12px; font-size: 13px; color: var(--mm-ink-soft); line-height: 1.5;">
+        <template v-if="deletePlayerConfirmation?.playerNames.length === 1">
+          Are you sure you want to remove <strong style="color: var(--mm-ink);">{{ deletePlayerConfirmation?.playerNames[0] }}</strong> from team <strong style="color: var(--mm-ink);">{{ deletePlayerConfirmation?.teamName }}</strong>?
+        </template>
+        <template v-else>
+          Are you sure you want to remove <strong style="color: var(--mm-ink);">{{ deletePlayerConfirmation?.playerNames.length }} players</strong> from team <strong style="color: var(--mm-ink);">{{ deletePlayerConfirmation?.teamName }}</strong>?
+        </template>
+      </p>
+
+      <template #footer>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
+          :disabled="isRemovingPlayer"
+          @click="cancelDeletePlayer"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--danger"
+          :disabled="isRemovingPlayer"
+          @click="executeDeletePlayers"
+        >
+          {{ isRemovingPlayer ? 'Removing...' : 'Remove' }}
+        </button>
+      </template>
+    </MmBaseModal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import {
   adminTournamentService,
   type TournamentDetail,
   type TournamentTeam
 } from '@/services/adminTournamentService';
 import MultiPlayerSelector from '@/components/MultiPlayerSelector.vue';
+import MmBaseModal from '@/components/v4/MmBaseModal.vue';
 
 const props = defineProps<{
   tournament: TournamentDetail;
@@ -304,6 +365,135 @@ const emit = defineEmits<{
   (e: 'refresh'): void;
 }>();
 
+// Filter state
+const teamFilterQuery = ref('');
+
+const filteredTeams = computed(() => {
+  const teams = props.tournament?.teams || [];
+  if (!teamFilterQuery.value.trim()) return teams;
+  const q = teamFilterQuery.value.toLowerCase().trim();
+  return teams.filter(t => t.name.toLowerCase().includes(q) || (t.tag && t.tag.toLowerCase().includes(q)));
+});
+
+// Helpers
+const getTeamTag = (teamName: string): string => {
+  if (!teamName) return '';
+  const match = teamName.match(/\[(.*?)\]|\((.*?)\)/);
+  if (match) return match[1] || match[2];
+  return teamName.substring(0, 3).toUpperCase();
+};
+
+// Selection state per team
+const selectedPlayerNames = ref<Record<number, Set<string>>>({});
+
+function getSelectedPlayerSet(teamId: number): Set<string> {
+  if (!selectedPlayerNames.value[teamId]) {
+    selectedPlayerNames.value[teamId] = new Set<string>();
+  }
+  return selectedPlayerNames.value[teamId];
+}
+
+function isPlayerSelected(teamId: number, playerName: string): boolean {
+  return getSelectedPlayerSet(teamId).has(playerName);
+}
+
+function toggleSelectPlayer(teamId: number, playerName: string) {
+  const set = getSelectedPlayerSet(teamId);
+  if (set.has(playerName)) {
+    set.delete(playerName);
+  } else {
+    set.add(playerName);
+  }
+}
+
+function isAllPlayersSelected(team: TournamentTeam): boolean {
+  if (!team?.players || team.players.length === 0) return false;
+  const set = getSelectedPlayerSet(team.id);
+  return team.players.every(p => set.has(p.playerName));
+}
+
+function toggleSelectAllPlayers(team: TournamentTeam) {
+  const set = getSelectedPlayerSet(team.id);
+  if (isAllPlayersSelected(team)) {
+    set.clear();
+  } else {
+    team.players.forEach(p => set.add(p.playerName));
+  }
+}
+
+function getSelectedPlayerCount(teamId: number): number {
+  return getSelectedPlayerSet(teamId)?.size || 0;
+}
+
+function isTeamLeader(team: TournamentTeam, player: { playerName: string; isLeader?: boolean }): boolean {
+  if (player.isLeader) return true;
+  if (team.leaderPlayerName && team.leaderPlayerName.toLowerCase() === player.playerName.toLowerCase()) return true;
+  return false;
+}
+
+// Leader Toggle
+async function toggleLeader(team: TournamentTeam, player: { playerName: string; isLeader?: boolean }) {
+  try {
+    const currentlyLeader = isTeamLeader(team, player);
+    const newLeaderName = currentlyLeader ? '' : player.playerName;
+    
+    // Optimistic local update
+    team.leaderPlayerName = newLeaderName;
+    team.players.forEach(p => {
+      p.isLeader = (p.playerName.toLowerCase() === newLeaderName.toLowerCase());
+    });
+
+    await adminTournamentService.setTeamLeader(props.tournament.id, team.id, newLeaderName);
+    emit('refresh');
+  } catch (err) {
+    console.error('Error setting team leader:', err);
+  }
+}
+
+// Remove Player Confirmation & Execution
+const deletePlayerConfirmation = ref<{ teamId: number; teamName: string; playerNames: string[] } | null>(null);
+const isRemovingPlayer = ref(false);
+
+const confirmRemoveSinglePlayer = (teamId: number, teamName: string, playerName: string) => {
+  deletePlayerConfirmation.value = {
+    teamId,
+    teamName,
+    playerNames: [playerName]
+  };
+};
+
+const confirmRemoveSelectedPlayers = (teamId: number, teamName: string) => {
+  const selected = Array.from(getSelectedPlayerSet(teamId));
+  if (selected.length === 0) return;
+  deletePlayerConfirmation.value = {
+    teamId,
+    teamName,
+    playerNames: selected
+  };
+};
+
+const cancelDeletePlayer = () => {
+  deletePlayerConfirmation.value = null;
+};
+
+const executeDeletePlayers = async () => {
+  if (!deletePlayerConfirmation.value) return;
+  const { teamId, playerNames } = deletePlayerConfirmation.value;
+  isRemovingPlayer.value = true;
+  try {
+    for (const name of playerNames) {
+      await adminTournamentService.removePlayerFromTeam(props.tournament.id, teamId, name);
+    }
+    getSelectedPlayerSet(teamId).clear();
+    cancelDeletePlayer();
+    emit('refresh');
+  } catch (err) {
+    console.error('Error removing player(s) from team:', err);
+  } finally {
+    isRemovingPlayer.value = false;
+  }
+};
+
 // Form state
 const showForm = ref(false);
 const editingTeam = ref<TournamentTeam | null>(null);
@@ -312,6 +502,7 @@ const formError = ref<string | null>(null);
 
 const formData = ref({
   name: '',
+  tag: '',
   players: [] as string[]
 });
 
@@ -322,7 +513,7 @@ const isDeleting = ref(false);
 // Form handlers
 const openAddForm = () => {
   editingTeam.value = null;
-  formData.value = { name: '', players: [] };
+  formData.value = { name: '', tag: '', players: [] };
   formError.value = null;
   showForm.value = true;
 };
@@ -333,6 +524,7 @@ const openEditForm = async (teamId: number) => {
     editingTeam.value = team;
     formData.value = {
       name: team.name,
+      tag: team.tag || '',
       players: team.players.map(p => p.playerName)
     };
     formError.value = null;
@@ -374,8 +566,8 @@ const submitForm = async () => {
 
   try {
     if (editingTeam.value) {
-      // Update team name if changed
-      if (formData.value.name !== editingTeam.value.name) {
+      // Update team name/tag if changed
+      if (formData.value.name !== editingTeam.value.name || formData.value.tag !== (editingTeam.value.tag || '')) {
         await adminTournamentService.updateTeam(props.tournament.id, editingTeam.value.id, {
           name: formData.value.name,
         });
@@ -456,33 +648,4 @@ defineExpose({ load });
 </script>
 
 <style scoped>
-.portal-card-subtitle {
-  font-size: 0.75rem;
-  color: var(--portal-text);
-  margin-top: 0.25rem;
-}
-
-.w-4 {
-  width: 1rem;
-}
-
-.h-4 {
-  height: 1rem;
-}
-
-.w-6 {
-  width: 1.5rem;
-}
-
-.h-6 {
-  height: 1.5rem;
-}
-
-.w-12 {
-  width: 3rem;
-}
-
-.h-12 {
-  height: 3rem;
-}
 </style>

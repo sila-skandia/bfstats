@@ -1,50 +1,37 @@
 <template>
-  <div class="tournament-results-form">
-    <div class="portal-card">
-      <div class="portal-card-header">
+  <div class="tournament-results-form mm-admin">
+    <div class="mm-admin-card">
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
-          <h2 class="portal-card-title">
-            [ MATCH RESULTS ]
+          <span class="mm-admin-card__title" style="display: block; margin-bottom: 2px;">Match Results & Scores</span>
+          <h2 class="mm-admin-header__title" style="font-size: 20px; margin-top: 2px;">
+            {{ match.team1Name }} vs {{ match.team2Name }}
           </h2>
-          <p class="portal-card-subtitle">
-            {{ match.team1Name }} vs {{ match.team2Name }} - {{ formatMatchDate(match.scheduledDate) }}
-          </p>
+          <div class="mm-admin-hint" style="margin-top: 2px;">
+            {{ formatMatchDate(match.scheduledDate) }}
+          </div>
         </div>
         <button
-          class="portal-btn portal-btn--ghost"
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
           @click="$emit('close')"
         >
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-          Back to Matches
+          ← Back to Matches
         </button>
       </div>
 
-      <div class="portal-card-body">
+      <div class="mm-admin-card__body">
         <!-- Error Message Banner -->
         <div
           v-if="saveError"
-          class="portal-form-error error-banner"
+          class="mm-admin-alert mm-admin-alert--err"
+          style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;"
         >
-          <div class="error-banner-content">
-            <span class="error-icon">⚠️</span>
-            <span>{{ saveError }}</span>
-          </div>
+          <span>{{ saveError }}</span>
           <button
-            class="error-banner-close"
             type="button"
-            aria-label="Close error"
+            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+            style="border: 0; padding: 2px 6px;"
             @click="saveError = null"
           >
             ✕
@@ -54,16 +41,14 @@
         <!-- Link Warning Banner -->
         <div
           v-if="linkWarning"
-          class="portal-form-error warning-banner"
+          class="mm-admin-alert mm-admin-alert--warn"
+          style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;"
         >
-          <div class="error-banner-content">
-            <span class="warning-icon">⚠️</span>
-            <span>{{ linkWarning }}</span>
-          </div>
+          <span>{{ linkWarning }}</span>
           <button
-            class="error-banner-close"
             type="button"
-            aria-label="Close warning"
+            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+            style="border: 0; padding: 2px 6px;"
             @click="linkWarning = null"
           >
             ✕
@@ -87,8 +72,8 @@
           </div>
 
           <!-- Results Table -->
-          <div class="portal-table-wrap">
-            <table class="portal-table results-table">
+          <div class="mm-admin-table-wrap">
+            <table class="mm-admin-table results-table">
               <thead>
                 <tr>
                   <th style="width: 2rem;">
@@ -145,16 +130,16 @@
                       >-</span>
                     </td>
                     <td>
-                      <div class="portal-table-actions">
+                      <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
                         <button
-                          class="portal-cell-btn"
+                          class="mm-admin-cell-btn"
                           title="Edit result"
                           @click="editResult(map, result)"
                         >
                           Edit
                         </button>
                         <button
-                          class="portal-icon-btn portal-icon-btn--danger"
+                          class="mm-admin-btn mm-admin-btn--danger mm-admin-btn--sm"
                           :disabled="isSaving"
                           title="Delete result"
                           @click="deleteResult(map, result.id)"
@@ -186,11 +171,11 @@
                       <div class="edit-form">
                         <div class="edit-form-grid">
                           <!-- Team 1 -->
-                          <div class="portal-form-section">
-                            <label class="portal-form-label">Team 1</label>
+                          <div>
+                            <label class="mm-admin-label">Team 1</label>
                             <select
                               v-model.number="formData.team1Id"
-                              class="portal-form-input"
+                              class="mm-admin-select"
                             >
                               <option :value="undefined">
                                 Select team
@@ -206,23 +191,23 @@
                           </div>
 
                           <!-- Team 1 Score -->
-                          <div class="portal-form-section">
-                            <label class="portal-form-label">Score</label>
+                          <div>
+                            <label class="mm-admin-label">Score</label>
                             <input
                               v-model.number="formData.team1Tickets"
                               type="number"
                               min="0"
-                              class="portal-form-input portal-form-input--mono"
+                              class="mm-admin-input mm-admin-input--mono"
                               placeholder="0"
                             >
                           </div>
 
                           <!-- Team 2 -->
-                          <div class="portal-form-section">
-                            <label class="portal-form-label">Team 2</label>
+                          <div>
+                            <label class="mm-admin-label">Team 2</label>
                             <select
                               v-model.number="formData.team2Id"
-                              class="portal-form-input"
+                              class="mm-admin-select"
                             >
                               <option :value="undefined">
                                 Select team
@@ -238,13 +223,13 @@
                           </div>
 
                           <!-- Team 2 Score -->
-                          <div class="portal-form-section">
-                            <label class="portal-form-label">Score</label>
+                          <div>
+                            <label class="mm-admin-label">Score</label>
                             <input
                               v-model.number="formData.team2Tickets"
                               type="number"
                               min="0"
-                              class="portal-form-input portal-form-input--mono"
+                              class="mm-admin-input mm-admin-input--mono"
                               placeholder="0"
                             >
                           </div>
@@ -257,16 +242,16 @@
                             class="linked-round"
                           >
                             <span class="linked-round-label">Linked Round:</span>
-                            <span class="linked-round-id portal-mono">{{ formData.roundId }}</span>
+                            <span class="linked-round-id mm-admin-mono">{{ formData.roundId }}</span>
                             <button
-                              class="portal-btn portal-btn--ghost portal-btn--sm"
+                              class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
                               :disabled="isSaving"
                               @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                             >
                               Change
                             </button>
                             <button
-                              class="portal-btn portal-btn--danger portal-btn--sm"
+                              class="mm-admin-btn mm-admin-btn--danger mm-admin-btn--sm"
                               :disabled="isSaving"
                               @click="unlinkRoundFromResult()"
                             >
@@ -275,7 +260,7 @@
                           </div>
                           <div v-else>
                             <button
-                              class="portal-btn portal-btn--ghost portal-btn--sm"
+                              class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
                               :disabled="isSaving"
                               @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                             >
@@ -287,13 +272,13 @@
                         <!-- Actions -->
                         <div class="edit-form-actions">
                           <button
-                            class="portal-btn portal-btn--ghost"
+                            class="mm-admin-btn mm-admin-btn--ghost"
                             @click="cancelEdit()"
                           >
                             Cancel
                           </button>
                           <button
-                            class="portal-btn portal-btn--primary"
+                            class="mm-admin-btn mm-admin-btn--primary"
                             :disabled="isSaving || !formData.team1Id || !formData.team2Id"
                             @click="saveResult(map)"
                           >
@@ -317,7 +302,7 @@
                     <div class="add-result-actions">
                       <span class="add-result-label">Add New Result:</span>
                       <button
-                        class="portal-cell-btn"
+                        class="mm-admin-cell-btn"
                         title="Enter a manual result"
                         @click="openManualEntry(map)"
                       >
@@ -325,7 +310,7 @@
                       </button>
                       <span class="add-divider">|</span>
                       <button
-                        class="portal-cell-btn portal-cell-btn--link"
+                        class="mm-admin-cell-btn mm-admin-cell-btn--link"
                         title="Link a round from the server"
                         @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                       >
@@ -344,11 +329,11 @@
                     <div class="edit-form">
                       <div class="edit-form-grid">
                         <!-- Team 1 -->
-                        <div class="portal-form-section">
-                          <label class="portal-form-label">Team 1</label>
+                        <div>
+                          <label class="mm-admin-label">Team 1</label>
                           <select
                             v-model.number="formData.team1Id"
-                            class="portal-form-input"
+                            class="mm-admin-select"
                           >
                             <option :value="undefined">
                               Select team
@@ -364,23 +349,23 @@
                         </div>
 
                         <!-- Team 1 Score -->
-                        <div class="portal-form-section">
-                          <label class="portal-form-label">Tickets</label>
+                        <div>
+                          <label class="mm-admin-label">Tickets</label>
                           <input
                             v-model.number="formData.team1Tickets"
                             type="number"
                             min="0"
-                            class="portal-form-input portal-form-input--mono"
+                            class="mm-admin-input mm-admin-input--mono"
                             placeholder="0"
                           >
                         </div>
 
                         <!-- Team 2 -->
-                        <div class="portal-form-section">
-                          <label class="portal-form-label">Team 2</label>
+                        <div>
+                          <label class="mm-admin-label">Team 2</label>
                           <select
                             v-model.number="formData.team2Id"
-                            class="portal-form-input"
+                            class="mm-admin-select"
                           >
                             <option :value="undefined">
                               Select team
@@ -396,13 +381,13 @@
                         </div>
 
                         <!-- Team 2 Score -->
-                        <div class="portal-form-section">
-                          <label class="portal-form-label">Tickets</label>
+                        <div>
+                          <label class="mm-admin-label">Tickets</label>
                           <input
                             v-model.number="formData.team2Tickets"
                             type="number"
                             min="0"
-                            class="portal-form-input portal-form-input--mono"
+                            class="mm-admin-input mm-admin-input--mono"
                             placeholder="0"
                           >
                         </div>
@@ -415,16 +400,16 @@
                           class="linked-round"
                         >
                           <span class="linked-round-label">Linked Round:</span>
-                          <span class="linked-round-id portal-mono">{{ formData.roundId }}</span>
+                          <span class="linked-round-id mm-admin-mono">{{ formData.roundId }}</span>
                           <button
-                            class="portal-btn portal-btn--ghost portal-btn--sm"
+                            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
                             :disabled="isSaving"
                             @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                           >
                             Change
                           </button>
                           <button
-                            class="portal-btn portal-btn--danger portal-btn--sm"
+                            class="mm-admin-btn mm-admin-btn--danger mm-admin-btn--sm"
                             :disabled="isSaving"
                             @click="formData.roundId = undefined"
                           >
@@ -433,7 +418,7 @@
                         </div>
                         <div v-else>
                           <button
-                            class="portal-btn portal-btn--ghost portal-btn--sm"
+                            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
                             :disabled="isSaving"
                             @click="currentMapForRound = map; router.push({ query: { ...route.query, linkingRound: 'true' } })"
                           >
@@ -445,13 +430,13 @@
                       <!-- Actions -->
                       <div class="edit-form-actions">
                         <button
-                          class="portal-btn portal-btn--ghost"
+                          class="mm-admin-btn mm-admin-btn--ghost"
                           @click="cancelEdit()"
                         >
                           Cancel
                         </button>
                         <button
-                          class="portal-btn portal-btn--primary"
+                          class="mm-admin-btn mm-admin-btn--primary"
                           :disabled="isSaving || !formData.team1Id || !formData.team2Id"
                           @click="saveResult(map)"
                         >
@@ -976,16 +961,10 @@ async function unlinkRoundFromResult(): Promise<void> {
   gap: 1rem;
 }
 
-.portal-card-subtitle {
-  font-size: 0.75rem;
-  color: var(--portal-text);
-  margin-top: 0.25rem;
-}
-
 .map-section {
   margin-bottom: 1.5rem;
   padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--portal-border);
+  border-bottom: 1px solid var(--mm-rule);
 }
 
 .map-section:last-child {
@@ -1004,21 +983,17 @@ async function unlinkRoundFromResult(): Promise<void> {
 .map-title {
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--portal-warn);
+  color: var(--mm-ink);
   margin: 0;
 }
 
 .map-results-count {
   font-size: 0.7rem;
-  color: var(--portal-text);
+  color: var(--mm-ink-muted);
 }
 
 .results-table {
   font-size: 0.8rem;
-}
-
-.results-table th {
-  font-size: 0.65rem;
 }
 
 .result-row td {
@@ -1026,16 +1001,15 @@ async function unlinkRoundFromResult(): Promise<void> {
 }
 
 .result-index {
-  color: var(--portal-text);
-  opacity: 0.6;
-  font-family: ui-monospace, monospace;
+  color: var(--mm-ink-muted);
+  font-family: var(--mm-font-mono);
 }
 
 .result-score {
   text-align: center;
   font-weight: 600;
-  color: var(--portal-accent);
-  font-family: ui-monospace, monospace;
+  color: var(--mm-ink);
+  font-family: var(--mm-font-mono);
 }
 
 .result-winner {
@@ -1045,21 +1019,20 @@ async function unlinkRoundFromResult(): Promise<void> {
 .winner-badge {
   display: inline-block;
   padding: 0.2rem 0.5rem;
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(46, 204, 113, 0.12);
+  border: 1px solid #2ecc71;
   border-radius: 2px;
-  color: var(--portal-warn);
+  color: #2ecc71;
   font-size: 0.7rem;
   font-weight: 600;
 }
 
 .no-winner {
-  color: var(--portal-text);
-  opacity: 0.5;
+  color: var(--mm-ink-muted);
 }
 
 .add-row {
-  background: var(--portal-surface-elevated);
+  background: var(--mm-bg-soft);
 }
 
 .add-row td {
@@ -1076,26 +1049,25 @@ async function unlinkRoundFromResult(): Promise<void> {
 .add-result-label {
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--portal-text);
+  color: var(--mm-ink-muted);
 }
 
 .add-divider {
-  color: var(--portal-border);
+  color: var(--mm-rule);
 }
 
-.portal-cell-btn--link {
-  background: rgba(245, 158, 11, 0.12);
-  color: var(--portal-warn);
-  border-color: rgba(245, 158, 11, 0.3);
+.mm-admin-cell-btn--link {
+  background: rgba(96, 165, 250, 0.12);
+  color: var(--mm-accent-soft);
+  border-color: var(--mm-accent);
 }
 
-.portal-cell-btn--link:hover {
-  background: rgba(245, 158, 11, 0.2);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+.mm-admin-cell-btn--link:hover {
+  background: rgba(96, 165, 250, 0.2);
 }
 
 .edit-row {
-  background: var(--portal-surface-elevated);
+  background: var(--mm-bg-soft);
 }
 
 .edit-row td {
@@ -1104,10 +1076,10 @@ async function unlinkRoundFromResult(): Promise<void> {
 
 .edit-form {
   padding: 1rem;
-  border: 1px solid var(--portal-border);
+  border: 1px solid var(--mm-rule);
   margin: 0.5rem;
   border-radius: 2px;
-  background: var(--portal-surface);
+  background: var(--mm-bg);
 }
 
 .edit-form-grid {
@@ -1122,14 +1094,10 @@ async function unlinkRoundFromResult(): Promise<void> {
   }
 }
 
-.edit-form .portal-form-section {
-  margin-bottom: 0;
-}
-
 .round-link-section {
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--portal-border);
+  border-top: 1px solid var(--mm-rule);
 }
 
 .linked-round {
@@ -1141,13 +1109,13 @@ async function unlinkRoundFromResult(): Promise<void> {
 
 .linked-round-label {
   font-size: 0.75rem;
-  color: var(--portal-text);
+  color: var(--mm-ink-muted);
 }
 
 .linked-round-id {
   font-size: 0.75rem;
-  color: var(--portal-accent);
-  background: var(--portal-accent-dim);
+  color: var(--mm-accent-soft);
+  background: var(--mm-bg-mute);
   padding: 0.25rem 0.5rem;
   border-radius: 2px;
 }
@@ -1159,7 +1127,7 @@ async function unlinkRoundFromResult(): Promise<void> {
   gap: 0.75rem;
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--portal-border);
+  border-top: 1px solid var(--mm-rule);
 }
 
 .empty-row td {
@@ -1169,7 +1137,7 @@ async function unlinkRoundFromResult(): Promise<void> {
 .empty-message {
   text-align: center;
   font-size: 0.8rem;
-  color: var(--portal-text);
+  color: var(--mm-ink-muted);
 }
 
 .w-4 {
@@ -1178,81 +1146,6 @@ async function unlinkRoundFromResult(): Promise<void> {
 
 .h-4 {
   height: 1rem;
-}
-
-.error-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  background: var(--portal-danger-glow);
-  border: 1px solid var(--portal-danger);
-  border-radius: 2px;
-  margin-bottom: 1rem;
-}
-
-.error-banner-content {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex: 1;
-  font-size: 0.875rem;
-  color: var(--portal-danger);
-}
-
-.error-icon {
-  flex-shrink: 0;
-  font-size: 1rem;
-}
-
-.warning-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: 2px;
-  margin-bottom: 1rem;
-}
-
-.warning-banner .error-banner-content {
-  color: var(--portal-warn);
-}
-
-.warning-icon {
-  flex-shrink: 0;
-  font-size: 1rem;
-}
-
-.error-banner-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: var(--portal-danger);
-  cursor: pointer;
-  border-radius: 2px;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-
-.error-banner-close:hover {
-  background: rgba(239, 68, 68, 0.2);
-}
-
-.warning-banner .error-banner-close {
-  color: var(--portal-warn);
-}
-
-.warning-banner .error-banner-close:hover {
-  background: rgba(245, 158, 11, 0.2);
 }
 
 @media (max-width: 640px) {
@@ -1278,3 +1171,4 @@ async function unlinkRoundFromResult(): Promise<void> {
   }
 }
 </style>
+
