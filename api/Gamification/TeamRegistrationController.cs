@@ -44,7 +44,9 @@ public class TeamRegistrationController(
                 return NotFound(new { message = "Tournament not found" });
 
             var isRegistrationOpen = tournament.Status == "registration";
-            var isTournamentAdmin = tournament.CreatedByUserEmail == userEmail;
+            var isTournamentAdmin = tournament.CreatedByUserEmail == userEmail ||
+                                    User.IsInRole(api.Authorization.AppRoles.Admin) ||
+                                    string.Equals(userEmail, api.Authorization.AppRoles.AdminEmail, StringComparison.OrdinalIgnoreCase);
 
             // Get user's linked player names
             var linkedPlayerNames = await context.UserPlayerNames

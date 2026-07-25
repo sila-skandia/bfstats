@@ -100,6 +100,7 @@ export interface TournamentDetail {
   anticipatedRoundCount?: number;
   status?: 'draft' | 'registration' | 'open' | 'closed';
   gameMode?: string;
+  layoutVersion?: 1 | 2; // 1 = legacy public layout, 2 = league layout
   teams: TournamentTeam[];
   matches: TournamentMatch[];
   matchesByWeek?: TournamentMatchesByWeek[];
@@ -132,6 +133,7 @@ export interface CreateTournamentRequest {
   anticipatedRoundCount?: number;
   status?: 'draft' | 'registration' | 'open' | 'closed';
   gameMode?: string;
+  layoutVersion?: 1 | 2; // omitted → server defaults new tournaments to 2 (league layout)
   heroImageBase64?: string;
   heroImageContentType?: string;
   communityLogoBase64?: string;
@@ -157,6 +159,7 @@ export interface UpdateTournamentRequest {
   anticipatedRoundCount?: number;
   status?: 'draft' | 'registration' | 'open' | 'closed';
   gameMode?: string;
+  layoutVersion?: 1 | 2; // 1 = legacy public layout, 2 = league layout
   heroImageBase64?: string;
   heroImageContentType?: string;
   communityLogoBase64?: string;
@@ -172,6 +175,13 @@ export interface UpdateTournamentRequest {
   weekDates?: TournamentWeekDate[];
   files?: CreateTournamentFileRequest[];
   theme?: TournamentTheme;
+}
+
+export interface CopyTournamentRequest {
+  name?: string;
+  copyTeams?: boolean;
+  copyWeeks?: boolean;
+  copyMatches?: boolean;
 }
 
 // File management interfaces
@@ -478,6 +488,14 @@ class AdminTournamentService {
   async deleteTournament(id: number): Promise<void> {
     await this.request(`/${id}`, {
       method: 'DELETE',
+    });
+  }
+
+  // Copy tournament
+  async copyTournament(id: number, request: CopyTournamentRequest): Promise<TournamentDetail> {
+    return this.request<TournamentDetail>(`/${id}/copy`, {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
   }
 
