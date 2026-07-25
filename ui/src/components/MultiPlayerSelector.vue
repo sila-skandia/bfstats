@@ -324,15 +324,15 @@ const debouncedPlayerSearch = () => {
 };
 
 const isPlayerSelected = (playerName: string): boolean => {
-  return selectedPlayerNames.value.includes(playerName);
+  return props.currentPlayers.includes(playerName) || selectedPlayerNames.value.includes(playerName);
 };
 
 const togglePlayerSelection = (playerName: string) => {
-  const index = selectedPlayerNames.value.indexOf(playerName);
-  if (index > -1) {
-    selectedPlayerNames.value.splice(index, 1);
-  } else {
-    selectedPlayerNames.value.push(playerName);
+  if (!props.currentPlayers.includes(playerName)) {
+    emit('addPlayers', [playerName]);
+    if (!selectedPlayerNames.value.includes(playerName)) {
+      selectedPlayerNames.value.push(playerName);
+    }
   }
 };
 
