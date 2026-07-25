@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { fetchDashboardData, type DashboardResponse, type OnlineBuddy, type FavoriteServer } from '@/services/dashboardService'
 import { statsService, type UserPlayerNameEntry } from '@/services/statsService'
+import { adminTournamentService, type TournamentListItem } from '@/services/adminTournamentService'
 import { kdClass, loadClass } from './mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
@@ -60,9 +61,25 @@ const loadAliases = async () => {
   }
 }
 
+const userTournaments = ref<TournamentListItem[]>([])
+const tournamentsLoading = ref(false)
+
+const loadTournaments = async () => {
+  if (!isAuthenticated.value) return
+  tournamentsLoading.value = true
+  try {
+    userTournaments.value = await adminTournamentService.getAllTournaments()
+  } catch (e) {
+    console.error('Failed to load tournaments', e)
+  } finally {
+    tournamentsLoading.value = false
+  }
+}
+
 onMounted(() => {
   void load()
   void loadAliases()
+  void loadTournaments()
 })
 
 const onlineBuddies = computed<OnlineBuddy[]>(() => data.value?.onlineBuddies ?? [])
@@ -445,21 +462,45 @@ const handleSignOut = () => {
         </div>
       </section>
 
-      <!-- Tournaments tab — shortcut into the legacy tournament admin
-           surface. Tournament views retain their current layout for now,
-           so this is just a wayfinding panel rather than a port. -->
+      <!-- Tournaments tab -->
       <section v-if="activeTab === 'tournaments'" style="margin-top: 24px">
         <header class="mm-dash__section-head">
-          <div class="mm-eyebrow mm-eyebrow--strong">Tournaments</div>
+          <div>
+            <div class="mm-eyebrow mm-eyebrow--strong">Tournaments</div>
+            <p class="mm-card__hint" style="margin-top: 4px; max-width: 540px">
+              Manage competitive brackets, match schedules, and team rosters.
+            </p>
+          </div>
+          <router-link to="/v4/manage/tournaments" class="mm-btn mm-btn--accent">Manage all tournaments →</router-link>
         </header>
-        <p class="mm-card__hint" style="margin-top: 8px; max-width: 540px">
-          Create or manage competitive brackets across multiple rounds.
-          Tournament pages keep their existing layout — open them to
-          continue.
-        </p>
-        <p style="margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap">
-          <router-link to="/tournaments" class="mm-btn mm-btn--accent">Open tournaments →</router-link>
-        </p>
+
+        <div v-if="tournamentsLoading" class="mm-empty" style="padding: 28px">
+          Loading tournaments...
+        </div>
+
+        <div v-else-if="userTournaments.length > 0" class="mm-dash__servers-grid" style="margin-top: 16px">
+          <article v-for="t in userTournaments" :key="t.id" class="mm-card mm-dash__server-card">
+            <div class="mm-dash__server-card-body">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+                <span class="mm-tab__badge" style="margin-left: 0; text-transform: uppercase">{{ t.game }}</span>
+                <span class="mm-dash__section-meta" style="font-size: 10px">{{ t.matchCount }} matches</span>
+              </div>
+              <div class="mm-dash__server-name" style="margin-top: 6px; font-weight: 600">{{ t.name }}</div>
+              <div class="mm-dash__server-map">By {{ t.organizer }}</div>
+              <div class="mm-dash__server-actions" style="margin-top: 14px">
+                <router-link :to="`/v4/manage/tournaments/${t.id}/matches`" class="mm-btn mm-btn--inline mm-btn--accent">Manage</router-link>
+                <router-link :to="`/t/${t.slug || t.id}`" class="mm-btn mm-btn--inline">View Public ↗</router-link>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="mm-empty" style="padding: 28px; margin-top: 16px">
+          <p>No tournaments created yet.</p>
+          <router-link to="/v4/manage/tournaments" class="mm-btn mm-btn--accent" style="margin-top: 12px; display: inline-block">
+            + Create your first tournament
+          </router-link>
+        </div>
       </section>
 
       <!-- Account footer (sign out) -->
