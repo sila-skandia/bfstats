@@ -170,7 +170,7 @@
           <TournamentMatchesTab
             ref="matchesTabRef"
             :tournament="tournament"
-            @refresh="loadTournament"
+            @refresh="handleRefresh"
           />
         </div>
 
@@ -178,7 +178,7 @@
           <TournamentTeamsTab
             ref="teamsTabRef"
             :tournament="tournament"
-            @refresh="loadTournament"
+            @refresh="handleRefresh"
           />
         </div>
 
@@ -186,7 +186,7 @@
           <TournamentWeeksTab
             ref="weeksTabRef"
             :tournament="tournament"
-            @refresh="loadTournament"
+            @refresh="handleRefresh"
           />
         </div>
 
@@ -194,7 +194,7 @@
           <TournamentFilesTab
             ref="filesTabRef"
             :tournament="tournament"
-            @refresh="loadTournament"
+            @refresh="handleRefresh"
           />
         </div>
 
@@ -202,7 +202,7 @@
           <TournamentPostsTab
             ref="postsTabRef"
             :tournament="tournament"
-            @refresh="loadTournament"
+            @refresh="handleRefresh"
           />
         </div>
 
@@ -210,7 +210,7 @@
           <TournamentSettingsTab
             ref="settingsTabRef"
             :tournament="tournament"
-            @refresh="loadTournament"
+            @refresh="handleRefresh"
           />
         </div>
       </div>
@@ -305,8 +305,10 @@ const setTab = (tab: TabName) => {
 };
 
 // Data loading
-const loadTournament = async () => {
-  loading.value = true;
+const loadTournament = async (showLoadingSpinner = true) => {
+  if (showLoadingSpinner || !tournament.value) {
+    loading.value = true;
+  }
   error.value = null;
 
   try {
@@ -341,6 +343,8 @@ const loadTournament = async () => {
     loading.value = false;
   }
 };
+
+const handleRefresh = () => loadTournament(false);
 
 const loadHeroImage = async () => {
   try {
