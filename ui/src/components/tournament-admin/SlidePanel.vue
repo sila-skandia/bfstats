@@ -3,7 +3,7 @@
     <Transition name="slide-panel">
       <div
         v-if="open"
-        class="slide-panel-overlay"
+        class="mm mm-admin slide-panel-overlay"
         @click.self="$emit('close')"
       >
         <div
@@ -13,6 +13,7 @@
           <!-- Header -->
           <header class="slide-panel-header">
             <div>
+              <span v-if="eyebrow" class="mm-eyebrow" style="margin-bottom: 4px; display: block;">{{ eyebrow }}</span>
               <h2 class="slide-panel-title">
                 {{ title }}
               </h2>
@@ -24,23 +25,12 @@
               </p>
             </div>
             <button
+              type="button"
               class="slide-panel-close"
               title="Close"
               @click="$emit('close')"
             >
-              <svg
-                class="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <i class="pi pi-times" style="font-size: 12px;" />
             </button>
           </header>
 
@@ -68,6 +58,7 @@ import { computed } from 'vue';
 interface Props {
   open: boolean;
   title: string;
+  eyebrow?: string;
   subtitle?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
@@ -92,44 +83,29 @@ const sizeClass = computed(() => {
 </script>
 
 <style scoped>
-/* Portal CSS variables - must be defined here since content is teleported to body */
 .slide-panel-overlay {
-  --portal-bg: #06060a;
-  --portal-surface: #0c0c12;
-  --portal-surface-elevated: #111118;
-  --portal-border: #1a1a24;
-  --portal-border-focus: #2a2a38;
-  --portal-accent: #00e5a0;
-  --portal-accent-dim: rgba(0, 229, 160, 0.12);
-  --portal-accent-glow: rgba(0, 229, 160, 0.25);
-  --portal-warn: #f59e0b;
-  --portal-danger: #ef4444;
-  --portal-danger-glow: rgba(239, 68, 68, 0.2);
-  --portal-text: #9ca3af;
-  --portal-text-bright: #e5e7eb;
-
   position: fixed;
   inset: 0;
-  z-index: 50;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(2px);
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   justify-content: flex-end;
 }
 
 .slide-panel {
   height: 100%;
-  background: var(--portal-surface, #0c0c12);
-  border-left: 1px solid var(--portal-border, #1a1a24);
+  background: var(--mm-bg-soft, #1c1c1c);
+  border-left: 1px solid var(--mm-rule-strong, #3d3d3d);
   display: flex;
   flex-direction: column;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  color: var(--mm-ink, #ffffff);
 }
 
 .slide-panel--sm { width: 100%; max-width: 400px; }
 .slide-panel--md { width: 100%; max-width: 500px; }
-.slide-panel--lg { width: 100%; max-width: 640px; }
+.slide-panel--lg { width: 100%; max-width: 560px; }
 .slide-panel--xl { width: 100%; max-width: 800px; }
 
 @media (max-width: 640px) {
@@ -143,57 +119,58 @@ const sizeClass = computed(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--portal-border, #1a1a24);
-  background: var(--portal-surface-elevated, #111118);
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--mm-rule, #2d2d2d);
+  background: var(--mm-bg-soft, #1c1c1c);
 }
 
 .slide-panel-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--portal-accent, #00e5a0);
+  font-family: var(--mm-font-display);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--mm-ink);
   margin: 0;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
 }
 
 .slide-panel-subtitle {
-  font-size: 0.75rem;
-  color: var(--portal-text, #9ca3af);
-  margin: 0.25rem 0 0;
+  font-size: 12.5px;
+  color: var(--mm-ink-muted);
+  margin: 4px 0 0;
 }
 
 .slide-panel-close {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 28px;
+  height: 28px;
   padding: 0;
   background: transparent;
-  border: 1px solid var(--portal-border, #1a1a24);
+  border: 1px solid var(--mm-rule);
   border-radius: 2px;
-  color: var(--portal-text, #9ca3af);
+  color: var(--mm-ink-muted);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.15s ease, border-color 0.15s ease;
   flex-shrink: 0;
 }
 
 .slide-panel-close:hover {
-  background: var(--portal-accent-dim, rgba(0, 229, 160, 0.12));
-  border-color: var(--portal-accent, #00e5a0);
-  color: var(--portal-accent, #00e5a0);
+  background: var(--mm-bg-mute);
+  border-color: var(--mm-rule-strong);
+  color: var(--mm-ink);
 }
 
 .slide-panel-content {
   flex: 1;
   overflow-y: auto;
-  padding: 1.5rem;
+  padding: 20px;
 }
 
 .slide-panel-footer {
-  padding: 1rem 1.5rem;
-  border-top: 1px solid var(--portal-border, #1a1a24);
-  background: var(--portal-surface-elevated, #111118);
+  padding: 14px 20px;
+  border-top: 1px solid var(--mm-rule);
+  background: var(--mm-bg-soft);
 }
 
 /* Transition animations */
@@ -216,8 +193,4 @@ const sizeClass = computed(() => {
 .slide-panel-leave-to .slide-panel {
   transform: translateX(100%);
 }
-
-/* Size utilities */
-.w-5 { width: 1.25rem; }
-.h-5 { height: 1.25rem; }
 </style>

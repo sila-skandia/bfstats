@@ -71,7 +71,7 @@ export default defineConfig({
       },
       // Proxy player stats requests to the backend during development
       '/stats': {
-        target: 'http://localhost:9222',
+        target: 'http://127.0.0.1:9222',
         changeOrigin: true
       },
       // Proxy SignalR hub requests during development

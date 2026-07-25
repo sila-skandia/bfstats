@@ -1,113 +1,95 @@
 <template>
-  <div class="tournament-files-tab">
+  <div class="tournament-files-tab mm-admin">
     <!-- Add/Edit File View -->
     <div
       v-if="showForm"
-      class="portal-card"
+      class="mm-admin-card"
     >
-      <div class="portal-card-header">
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 class="portal-card-title">
-            [ {{ editingFile ? 'EDIT FILE' : 'ADD FILE' }} ]
+          <span class="mm-eyebrow">Tournament Resources</span>
+          <h2 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 18px; margin-top: 2px;">
+            {{ editingFile ? 'Edit File' : 'Upload File' }}
           </h2>
-          <p class="portal-card-subtitle">
-            {{ editingFile ? 'Update file details' : 'Add a new tournament file' }}
-          </p>
         </div>
         <button
-          class="portal-btn portal-btn--ghost"
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
           @click="closeForm"
         >
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
           Cancel
         </button>
       </div>
 
-      <div class="portal-card-body">
+      <div class="mm-admin-card__body">
         <!-- Error Message -->
         <div
           v-if="formError"
-          class="portal-form-error"
+          class="mm-admin-alert mm-admin-alert--err"
+          style="margin-bottom: 14px;"
         >
           {{ formError }}
         </div>
 
-        <!-- File Name -->
-        <div class="portal-form-section">
-          <label class="portal-form-label portal-form-label--required">File Name</label>
-          <input
-            v-model="formData.name"
-            type="text"
-            placeholder="e.g., Tournament Rules, Schedule"
-            class="portal-form-input"
-            :disabled="formLoading"
-          >
-        </div>
+        <div class="mm-admin-form-grid" style="grid-template-columns: 2fr 1fr;">
+          <!-- File Name -->
+          <div>
+            <label class="mm-admin-label">File Name</label>
+            <input
+              v-model="formData.name"
+              type="text"
+              placeholder="e.g., skandia-mappack-v3.zip"
+              class="mm-admin-input"
+              :disabled="formLoading"
+            >
+          </div>
 
-        <!-- File URL -->
-        <div class="portal-form-section">
-          <label class="portal-form-label portal-form-label--required">File URL</label>
-          <input
-            v-model="formData.url"
-            type="url"
-            placeholder="https://example.com/file.pdf"
-            class="portal-form-input"
-            :disabled="formLoading"
-          >
-          <p class="portal-form-hint">
-            Direct link to the file (PDF, document, etc.)
-          </p>
-        </div>
+          <!-- Category -->
+          <div>
+            <label class="mm-admin-label">Category</label>
+            <select
+              v-model="formData.category"
+              class="mm-admin-select"
+              :disabled="formLoading"
+            >
+              <option value="Map Pack">Map Pack</option>
+              <option value="Rulebook">Rulebook</option>
+              <option value="Server Config">Server Config</option>
+              <option value="Replays & Demos">Replays & Demos</option>
+              <option value="General">General</option>
+            </select>
+          </div>
 
-        <!-- Category -->
-        <div class="portal-form-section">
-          <label class="portal-form-label">Category</label>
-          <input
-            v-model="formData.category"
-            type="text"
-            placeholder="e.g., rules, schedule, guide"
-            class="portal-form-input"
-            :disabled="formLoading"
-          >
-          <p class="portal-form-hint">
-            Optional: helps organize files by type
-          </p>
+          <!-- File URL -->
+          <div class="mm-admin-field--wide">
+            <label class="mm-admin-label">Direct URL</label>
+            <input
+              v-model="formData.url"
+              type="url"
+              placeholder="https://cdn.bfstats.io/f/…"
+              class="mm-admin-input mm-admin-input--mono"
+              :disabled="formLoading"
+            >
+          </div>
         </div>
 
         <!-- Form Actions -->
-        <div
-          class="portal-form-footer"
-          style="margin-top: 1.5rem"
-        >
+        <div class="mm-admin-actions" style="margin-top: 20px;">
           <button
-            class="portal-btn portal-btn--ghost"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--primary"
+            :disabled="formLoading || !isFormValid"
+            @click="submitForm"
+          >
+            {{ formLoading ? 'Saving...' : (editingFile ? 'Update File' : 'Upload File') }}
+          </button>
+          <button
+            type="button"
+            class="mm-admin-btn mm-admin-btn--ghost"
             :disabled="formLoading"
             @click="closeForm"
           >
             Cancel
-          </button>
-          <button
-            class="portal-btn portal-btn--primary"
-            :disabled="formLoading || !isFormValid"
-            @click="submitForm"
-          >
-            <span
-              v-if="formLoading"
-              class="portal-btn-pulse"
-            >Saving...</span>
-            <span v-else>{{ editingFile ? 'Update File' : 'Add File' }}</span>
           </button>
         </div>
       </div>
@@ -116,43 +98,37 @@
     <!-- Files List View -->
     <div
       v-else
-      class="portal-card"
+      class="mm-admin-card"
     >
-      <div class="portal-card-header">
+      <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
-          <h2 class="portal-card-title">
-            [ FILES ]
+          <span class="mm-eyebrow">{{ (tournament.files || []).length }} files</span>
+          <h2 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 16px; margin-top: 2px;">
+            Resource Downloads & Files
           </h2>
-          <p class="portal-card-subtitle">
-            Share documents, rules, and resources
-          </p>
         </div>
         <button
-          class="portal-btn portal-btn--primary"
+          type="button"
+          class="mm-admin-btn mm-admin-btn--primary"
           @click="openAddForm"
         >
-          + Add File
+          + Upload File
         </button>
       </div>
 
-      <div
-        class="portal-card-body"
-        style="padding: 0"
-      >
+      <div class="mm-admin-card__body" style="padding: 0;">
         <!-- Files Table -->
         <div
           v-if="tournament.files && tournament.files.length > 0"
-          class="portal-table-wrap"
+          class="mm-admin-table-wrap"
         >
-          <table class="portal-table">
+          <table class="mm-admin-table">
             <thead>
               <tr>
-                <th>Name</th>
+                <th>File</th>
                 <th>Category</th>
-                <th>Uploaded</th>
-                <th style="text-align: right">
-                  Actions
-                </th>
+                <th>URL</th>
+                <th style="text-align: right;">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -160,81 +136,42 @@
                 v-for="file in tournament.files"
                 :key="file.id"
               >
+                <td style="font-weight: 500;">
+                  {{ file.name }}
+                </td>
                 <td>
-                  <a
-                    :href="file.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="file-link"
+                  <span class="mm-admin-chip" style="font-size: 9px; padding: 2px 6px;">
+                    {{ file.category || 'General' }}
+                  </span>
+                </td>
+                <td class="mm-admin-mono" style="font-size: 11px; color: var(--mm-ink-muted);">
+                  {{ file.url }}
+                </td>
+                <td style="text-align: right;">
+                  <button
+                    type="button"
+                    class="mm-admin-cell-btn"
+                    style="margin-right: 6px;"
+                    @click="copyUrl(file.url)"
                   >
-                    <svg
-                      class="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4m-4-6h6m0 0v6m0-6L10 17"
-                      />
-                    </svg>
-                    {{ file.name }}
-                  </a>
-                </td>
-                <td>
-                  <span
-                    v-if="file.category"
-                    class="portal-badge portal-badge--muted"
-                  >{{ file.category }}</span>
-                  <span
-                    v-else
-                    class="text-muted"
-                  >-</span>
-                </td>
-                <td>{{ formatDate(file.uploadedAt) }}</td>
-                <td>
-                  <div class="portal-table-actions">
-                    <button
-                      class="portal-icon-btn"
-                      title="Edit file"
-                      @click="openEditForm(file)"
-                    >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      class="portal-icon-btn portal-icon-btn--danger"
-                      title="Delete file"
-                      @click="confirmDeleteFile(file.id, file.name)"
-                    >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+                    Copy URL
+                  </button>
+                  <button
+                    type="button"
+                    class="mm-admin-cell-btn"
+                    style="margin-right: 6px;"
+                    @click="openEditForm(file)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="mm-admin-cell-btn"
+                    style="color: var(--mm-danger); border-color: var(--mm-danger);"
+                    @click="confirmDeleteFile(file.id, file.name)"
+                  >
+                    Delete
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -244,99 +181,59 @@
         <!-- Empty State -->
         <div
           v-else
-          class="portal-empty"
+          class="mm-admin-empty"
         >
-          <div class="portal-empty-icon">
-            📄
-          </div>
-          <h3 class="portal-empty-title">
-            No Files Shared
-          </h3>
-          <p class="portal-empty-desc">
-            Add files like rules, schedules, or guides for your tournament
+          <div class="mm-admin-empty__title">No Files Uploaded</div>
+          <p class="mm-admin-empty__desc">
+            Upload map packs, rulebooks, server configs, and custom mods for players.
           </p>
           <button
-            class="portal-btn portal-btn--primary"
-            style="margin-top: 1rem"
+            type="button"
+            class="mm-admin-btn mm-admin-btn--primary"
+            style="margin-top: 16px;"
             @click="openAddForm"
           >
-            Add First File
+            + Upload First File
           </button>
         </div>
       </div>
     </div>
 
     <!-- Delete File Confirmation Modal -->
-    <div
-      v-if="deleteFileConfirmation"
-      class="modal-mobile-safe fixed inset-0 z-50 flex items-center justify-center p-4 portal-modal-overlay"
-      @click.self="cancelDeleteFile"
+    <MmBaseModal
+      :model-value="deleteFileConfirmation !== null"
+      title="Delete File?"
+      subtitle="Confirmation"
+      size="sm"
+      @close="cancelDeleteFile"
     >
-      <div class="portal-modal">
-        <div class="flex items-start gap-4 mb-6">
-          <div class="portal-modal-icon portal-modal-icon--danger">
-            <svg
-              class="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </div>
-          <div class="flex-1">
-            <h3 class="portal-modal-title">
-              Delete File?
-            </h3>
-            <p class="portal-modal-text">
-              Delete file <span class="portal-modal-highlight">{{ deleteFileConfirmation.name }}</span>?
-            </p>
-            <p class="portal-modal-hint">
-              This action cannot be undone.
-            </p>
-          </div>
-        </div>
-
-        <div class="flex items-center justify-end gap-3">
-          <button
-            class="portal-btn portal-btn--ghost"
-            @click="cancelDeleteFile"
-          >
-            Cancel
-          </button>
-          <button
-            class="portal-btn portal-btn--danger flex items-center gap-2"
-            :disabled="isProcessing"
-            @click="executeDeleteFile"
-          >
-            <svg
-              v-if="!isProcessing"
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-            <div
-              v-else
-              class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
-            />
-            <span>{{ isProcessing ? 'Deleting...' : 'Delete File' }}</span>
-          </button>
-        </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <p style="margin: 0; font-size: 13px; color: var(--mm-ink-soft);">
+          Are you sure you want to delete file <strong style="color: var(--mm-ink);">{{ deleteFileConfirmation?.name }}</strong>?
+        </p>
+        <p style="margin: 0; font-size: 11.5px; color: var(--mm-danger);">
+          This action cannot be undone.
+        </p>
       </div>
-    </div>
+
+      <template #footer>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
+          @click="cancelDeleteFile"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--danger"
+          :disabled="isProcessing"
+          @click="executeDeleteFile"
+        >
+          <span>{{ isProcessing ? 'Deleting...' : 'Delete File' }}</span>
+        </button>
+      </template>
+    </MmBaseModal>
   </div>
 </template>
 
@@ -347,6 +244,7 @@ import {
   type TournamentDetail,
   type TournamentFile
 } from '@/services/adminTournamentService';
+import MmBaseModal from '@/components/v4/MmBaseModal.vue';
 
 const props = defineProps<{
   tournament: TournamentDetail;
@@ -376,10 +274,17 @@ const isFormValid = computed(() => {
 const deleteFileConfirmation = ref<{ id: number; name: string } | null>(null);
 const isProcessing = ref(false);
 
-// Formatting
+// Formatting & Helpers
 const formatDate = (dateString: string): string => {
+  if (!dateString) return '—';
   const date = new Date(dateString);
   return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+};
+
+const copyUrl = (url: string) => {
+  if (navigator?.clipboard?.writeText) {
+    void navigator.clipboard.writeText(url);
+  }
 };
 
 // Form handlers
@@ -477,52 +382,3 @@ const load = () => {
 defineExpose({ load });
 </script>
 
-<style scoped>
-.portal-card-subtitle {
-  font-size: 0.75rem;
-  color: var(--portal-text);
-  margin-top: 0.25rem;
-}
-
-.file-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--portal-accent);
-  text-decoration: none;
-  transition: color 0.2s;
-}
-
-.file-link:hover {
-  color: #00f5a8;
-}
-
-.text-muted {
-  color: var(--portal-text);
-  opacity: 0.6;
-}
-
-.w-4 {
-  width: 1rem;
-}
-
-.h-4 {
-  height: 1rem;
-}
-
-.w-6 {
-  width: 1.5rem;
-}
-
-.h-6 {
-  height: 1.5rem;
-}
-
-.w-12 {
-  width: 3rem;
-}
-
-.h-12 {
-  height: 3rem;
-}
-</style>

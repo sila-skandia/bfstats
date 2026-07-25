@@ -4,4 +4,5 @@ public class LoginRequest
 {
     public string? DiscordCode { get; set; }
     public string? RedirectUri { get; set; }
+    public bool? DevBypass { get; set; }
 }

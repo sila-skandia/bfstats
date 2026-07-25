@@ -1,218 +1,217 @@
 <template>
-  <div class="portal-page tournament-admin-portal">
+  <div class="mm mm-admin">
+    <!-- Substrip / Breadcrumb -->
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; flex-wrap: wrap;">
+      <button
+        type="button"
+        class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+        style="font-family: var(--mm-font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;"
+        @click="router.push('/v4/admin/tournaments')"
+      >
+        ← Tournaments
+      </button>
+
+      <button
+        v-if="tournament"
+        type="button"
+        class="mm-admin-btn mm-admin-btn--primary mm-admin-btn--sm"
+        style="font-family: var(--mm-font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;"
+        @click="router.push(`/t/${tournament.slug || tournament.id}`)"
+      >
+        View Public ↗
+      </button>
+    </div>
+
+    <!-- Loading State -->
     <div
-      class="portal-grid"
-      aria-hidden="true"
-    />
-    <div class="portal-inner">
-      <!-- Loading State -->
-      <div
-        v-if="loading"
-        class="loading-container"
-      >
-        <div class="loading-spinner" />
-      </div>
+      v-if="loading"
+      class="mm-admin-empty mm-admin-empty--loading"
+    >
+      <div class="mm-admin-spinner" />
+      <span class="mm-admin-empty__desc" style="margin-top: 12px">Loading tournament details...</span>
+    </div>
 
-      <!-- Error State -->
-      <div
-        v-else-if="error"
-        class="error-container"
-      >
-        <div class="error-card">
-          <p class="error-message">
-            {{ error }}
-          </p>
-          <button
-            class="portal-btn portal-btn--ghost"
-            @click="router.push('/dashboard')"
-          >
-            Back to Dashboard
-          </button>
+    <!-- Error State -->
+    <div
+      v-else-if="error"
+      class="mm-admin-card"
+    >
+      <div class="mm-admin-empty">
+        <div class="mm-admin-alert mm-admin-alert--err">
+          {{ error }}
         </div>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
+          style="margin-top: 16px"
+          @click="router.push('/v4/admin/tournaments')"
+        >
+          ← Back to Tournaments
+        </button>
       </div>
+    </div>
 
-      <!-- Tournament Content -->
-      <div v-else-if="tournament">
-        <!-- Header Section -->
-        <header class="tournament-header">
-          <div class="tournament-header-glow" />
-          <!-- Hero Image Background -->
-          <div
-            v-if="heroImageUrl"
-            class="tournament-hero"
-          >
-            <img
-              :src="heroImageUrl"
-              :alt="tournament.name"
-              class="tournament-hero-img"
-            >
-            <div class="tournament-hero-overlay" />
-          </div>
+    <!-- Tournament Content -->
+    <div v-else-if="tournament" style="display: flex; flex-direction: column; gap: 20px">
+      <!-- Header Hero Section -->
+      <header class="mm-admin-card" style="position: relative;">
+        <!-- Hero Banner Layer -->
+        <div
+          class="tournament-hero-banner"
+          :style="heroImageUrl ? { backgroundImage: `url(${heroImageUrl})` } : {}"
+        >
+          <div class="tournament-hero-overlay" />
+          <span v-if="!heroImageUrl" class="tournament-hero-placeholder">
+            Hero banner · 1280 × 220
+          </span>
+        </div>
 
-          <div class="tournament-header-content">
-            <div class="tournament-header-top">
-              <div class="tournament-header-left">
-                <div class="tournament-title-row">
-                  <button
-                    class="back-btn"
-                    title="Back to Dashboard"
-                    @click="router.push('/dashboard')"
-                  >
-                    <svg
-                      class="w-6 h-6"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M10 19l-7-7m0 0l7-7m-7 7h18"
-                      />
-                    </svg>
-                  </button>
-                  <div
-                    class="game-icon"
-                    :style="{ backgroundImage: getGameIcon() }"
-                  />
-                  <h1 class="tournament-title">
-                    {{ tournament.name }}
-                  </h1>
+        <div class="mm-admin-card__body" style="padding: 18px 22px;">
+          <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <!-- Logo / Game Badge -->
+              <div
+                v-if="logoImageUrl"
+                class="tournament-logo-wrap"
+                :style="{ backgroundImage: `url(${logoImageUrl})` }"
+              />
+              <div
+                v-else
+                class="game-icon"
+                :style="{ backgroundImage: getGameIcon() }"
+              />
+
+              <div>
+                <h1 class="mm-admin-header__title" style="font-size: 24px; margin: 0;">
+                  {{ tournament.name }}
+                </h1>
+                <div style="font-family: var(--mm-font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mm-ink-muted); margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                  <span>ORGANIZER · <strong style="color: var(--mm-ink)">{{ tournament.organizer }}</strong></span>
+                  <span style="color: var(--mm-ink-faint)">•</span>
+                  <span>CREATED {{ formatDate(tournament.createdAt) }}</span>
                 </div>
-
-                <div class="tournament-meta">
-                  <span class="meta-item">
-                    <span class="meta-icon">👤</span>
-                    <span class="meta-value">{{ tournament.organizer }}</span>
-                  </span>
-                  <span class="meta-sep">•</span>
-                  <span class="meta-item">{{ formatDate(tournament.createdAt) }}</span>
-                  <template v-if="tournament.anticipatedRoundCount">
-                    <span class="meta-sep">•</span>
-                    <span class="meta-item">
-                      <span class="meta-icon">🎯</span>
-                      <span>{{ (tournament.matches?.length ?? 0) }}/{{ tournament.anticipatedRoundCount }} matches</span>
-                    </span>
-                  </template>
-                </div>
-              </div>
-
-              <div class="tournament-header-actions">
-                <button
-                  class="portal-btn portal-btn--primary view-public-btn"
-                  title="View public tournament page"
-                  @click="router.push(`/t/${tournament.slug || tournament.id}`)"
-                >
-                  <svg
-                    class="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                    />
-                  </svg>
-                  View Public
-                </button>
               </div>
             </div>
-          </div>
-        </header>
 
-        <!-- Tab Navigation -->
-        <nav class="portal-tabs">
-          <button
-            :class="['portal-tab', activeTab === 'matches' && 'portal-tab--active']"
-            @click="setTab('matches')"
-          >
-            <span class="portal-tab-icon">⟩</span> Matches
-          </button>
-          <button
-            :class="['portal-tab', activeTab === 'teams' && 'portal-tab--active']"
-            @click="setTab('teams')"
-          >
-            <span class="portal-tab-icon">⟩</span> Teams
-          </button>
-          <button
-            :class="['portal-tab', activeTab === 'weeks' && 'portal-tab--active']"
-            @click="setTab('weeks')"
-          >
-            <span class="portal-tab-icon">⟩</span> Weeks
-          </button>
-          <button
-            :class="['portal-tab', activeTab === 'files' && 'portal-tab--active']"
-            @click="setTab('files')"
-          >
-            <span class="portal-tab-icon">⟩</span> Files
-          </button>
-          <button
-            :class="['portal-tab', activeTab === 'posts' && 'portal-tab--active']"
-            @click="setTab('posts')"
-          >
-            <span class="portal-tab-icon">⟩</span> Posts
-          </button>
-          <button
-            :class="['portal-tab', activeTab === 'settings' && 'portal-tab--active']"
-            @click="setTab('settings')"
-          >
-            <span class="portal-tab-icon">⟩</span> Settings
-          </button>
-        </nav>
+            <!-- Stats & Status Pill -->
+            <div style="display: flex; align-items: center; gap: 20px;">
+              <div style="text-align: right;">
+                <div style="font-family: var(--mm-font-mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted);">
+                  Progress
+                </div>
+                <div style="font-family: var(--mm-font-display); font-size: 24px; font-weight: 500; color: var(--mm-ink); font-variant-numeric: tabular-nums; margin-top: 2px;">
+                  {{ (tournament.matches?.length ?? 0) }}
+                  <span style="color: var(--mm-ink-faint); font-size: 16px;">/ {{ tournament.anticipatedRoundCount || '—' }}</span>
+                </div>
+              </div>
 
-        <!-- Tab Panels -->
-        <div class="portal-panel">
-          <div v-show="activeTab === 'matches'">
-            <TournamentMatchesTab
-              ref="matchesTabRef"
-              :tournament="tournament"
-              @refresh="loadTournament"
-            />
+              <!-- Status Badge -->
+              <span
+                class="mm-status-pill"
+                :class="`mm-status-pill--${(tournament.status || 'draft').toLowerCase()}`"
+              >
+                <span class="mm-status-pill__dot" />
+                {{ (tournament.status || 'Draft').toUpperCase() }}
+              </span>
+            </div>
           </div>
+        </div>
+      </header>
 
-          <div v-show="activeTab === 'teams'">
-            <TournamentTeamsTab
-              ref="teamsTabRef"
-              :tournament="tournament"
-              @refresh="loadTournament"
-            />
-          </div>
+      <!-- Tab Navigation -->
+      <nav class="mm-admin-tabs" aria-label="Tournament management tabs">
+        <button
+          type="button"
+          :class="['mm-admin-tab', activeTab === 'matches' && 'mm-admin-tab--active']"
+          @click="setTab('matches')"
+        >
+          Matches <span v-if="tournament.matches?.length" class="mm-tab-badge">{{ tournament.matches.length }}</span>
+        </button>
+        <button
+          type="button"
+          :class="['mm-admin-tab', activeTab === 'teams' && 'mm-admin-tab--active']"
+          @click="setTab('teams')"
+        >
+          Teams <span v-if="tournament.teams?.length" class="mm-tab-badge">{{ tournament.teams.length }}</span>
+        </button>
+        <button
+          type="button"
+          :class="['mm-admin-tab', activeTab === 'weeks' && 'mm-admin-tab--active']"
+          @click="setTab('weeks')"
+        >
+          Weeks <span v-if="(tournament as any).weeks?.length" class="mm-tab-badge">{{ (tournament as any).weeks.length }}</span>
+        </button>
+        <button
+          type="button"
+          :class="['mm-admin-tab', activeTab === 'files' && 'mm-admin-tab--active']"
+          @click="setTab('files')"
+        >
+          Files <span v-if="tournament.files?.length" class="mm-tab-badge">{{ tournament.files.length }}</span>
+        </button>
+        <button
+          type="button"
+          :class="['mm-admin-tab', activeTab === 'posts' && 'mm-admin-tab--active']"
+          @click="setTab('posts')"
+        >
+          Posts <span v-if="(tournament as any).posts?.length" class="mm-tab-badge">{{ (tournament as any).posts.length }}</span>
+        </button>
+        <button
+          type="button"
+          :class="['mm-admin-tab', activeTab === 'settings' && 'mm-admin-tab--active']"
+          @click="setTab('settings')"
+        >
+          Settings
+        </button>
+      </nav>
 
-          <div v-show="activeTab === 'weeks'">
-            <TournamentWeeksTab
-              ref="weeksTabRef"
-              :tournament="tournament"
-              @refresh="loadTournament"
-            />
-          </div>
+      <!-- Tab Panels -->
+      <div class="mm-admin-panel">
+        <div v-if="activeTab === 'matches'">
+          <TournamentMatchesTab
+            ref="matchesTabRef"
+            :tournament="tournament"
+            @refresh="loadTournament"
+          />
+        </div>
 
-          <div v-show="activeTab === 'files'">
-            <TournamentFilesTab
-              ref="filesTabRef"
-              :tournament="tournament"
-              @refresh="loadTournament"
-            />
-          </div>
+        <div v-if="activeTab === 'teams'">
+          <TournamentTeamsTab
+            ref="teamsTabRef"
+            :tournament="tournament"
+            @refresh="loadTournament"
+          />
+        </div>
 
-          <div v-show="activeTab === 'posts'">
-            <TournamentPostsTab
-              ref="postsTabRef"
-              :tournament="tournament"
-              @refresh="loadTournament"
-            />
-          </div>
+        <div v-if="activeTab === 'weeks'">
+          <TournamentWeeksTab
+            ref="weeksTabRef"
+            :tournament="tournament"
+            @refresh="loadTournament"
+          />
+        </div>
 
-          <div v-show="activeTab === 'settings'">
-            <TournamentSettingsTab
-              ref="settingsTabRef"
-              :tournament="tournament"
-              @refresh="loadTournament"
-            />
-          </div>
+        <div v-if="activeTab === 'files'">
+          <TournamentFilesTab
+            ref="filesTabRef"
+            :tournament="tournament"
+            @refresh="loadTournament"
+          />
+        </div>
+
+        <div v-if="activeTab === 'posts'">
+          <TournamentPostsTab
+            ref="postsTabRef"
+            :tournament="tournament"
+            @refresh="loadTournament"
+          />
+        </div>
+
+        <div v-if="activeTab === 'settings'">
+          <TournamentSettingsTab
+            ref="settingsTabRef"
+            :tournament="tournament"
+            @refresh="loadTournament"
+          />
         </div>
       </div>
     </div>
@@ -292,7 +291,7 @@ const tournamentId = parseInt(route.params.id as string);
 // Tab switching
 const setTab = (tab: TabName) => {
   // Update route instead of just local state
-  router.push(`/admin/tournaments/${tournamentId}/${tab}`);
+  router.push(`/v4/admin/tournaments/${tournamentId}/${tab}`);
   // Trigger load on the tab component when it becomes active
   const tabRefs: Record<TabName, { value: { load?: () => void } | null }> = {
     matches: matchesTabRef,
@@ -417,216 +416,121 @@ onUnmounted(() => {
 });
 </script>
 
-<style src="./portal-layout.css"></style>
-<style src="@/styles/portal-admin.css"></style>
+<style src="@/styles/mm-admin.css"></style>
 <style scoped src="./TournamentDetails.vue.css"></style>
 
 <style scoped>
-/* Tournament-specific header styles */
-.tournament-admin-portal {
-  --portal-accent: #00e5a0;
-}
-
-.tournament-header {
+.tournament-hero-banner {
   position: relative;
-  background: var(--portal-surface);
-  border: 1px solid var(--portal-border);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-bottom: 1.5rem;
-}
-
-.tournament-header-glow {
-  position: absolute;
-  top: -40px;
-  left: -20px;
-  width: 200px;
-  height: 120px;
-  background: radial-gradient(ellipse, var(--portal-accent-glow) 0%, transparent 70%);
-  filter: blur(24px);
-  opacity: 0.6;
-  z-index: 1;
-}
-
-.tournament-hero {
-  position: absolute;
-  inset: 0;
-  opacity: 0.15;
-  z-index: 0;
-}
-
-.tournament-hero-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: 140px;
+  background-size: cover;
+  background-position: center;
+  background-image: linear-gradient(180deg, var(--mm-bg-mute), var(--mm-bg-soft));
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid var(--mm-rule);
 }
 
 .tournament-hero-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, transparent 0%, var(--portal-surface) 100%);
+  background: linear-gradient(to bottom, rgba(19, 19, 19, 0.2) 0%, rgba(19, 19, 19, 0.85) 100%);
 }
 
-.tournament-header-content {
+.tournament-hero-placeholder {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mm-ink-faint);
   position: relative;
-  z-index: 2;
-  padding: 1rem 1.5rem;
+  z-index: 1;
 }
 
-@media (min-width: 640px) {
-  .tournament-header-content {
-    padding: 1rem 2rem;
-  }
-}
-
-.tournament-header-top {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: flex-start;
-}
-
-@media (min-width: 768px) {
-  .tournament-header-top {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-}
-
-.tournament-header-left {
-  flex: 1;
-}
-
-.tournament-title-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem;
-  background: transparent;
-  border: none;
-  color: var(--portal-text);
-  cursor: pointer;
-  transition: color 0.2s;
-}
-
-.back-btn:hover {
-  color: var(--portal-text-bright);
-}
-
-.game-icon {
-  width: 2rem;
-  height: 2rem;
+.tournament-logo-wrap {
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
   background-size: cover;
   background-position: center;
-  border-radius: 2px;
   flex-shrink: 0;
 }
 
-.tournament-title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--portal-accent);
-  margin: 0;
-  letter-spacing: 0.02em;
-}
-
-@media (min-width: 640px) {
-  .tournament-title {
-    font-size: 2rem;
-  }
-}
-
-.tournament-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--portal-text);
-  margin-top: 0.25rem;
-}
-
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.meta-icon {
-  font-size: 0.9rem;
-}
-
-.meta-value {
-  font-weight: 500;
-  color: var(--portal-text-bright);
-}
-
-.meta-sep {
-  opacity: 0.5;
-}
-
-.tournament-header-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.view-public-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-
-/* Loading and error states */
-.loading-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-}
-
-.loading-spinner {
-  width: 3rem;
-  height: 3rem;
-  border: 3px solid var(--portal-border);
-  border-top-color: var(--portal-accent);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.error-container {
-  padding: 1.5rem;
-}
-
-.error-card {
-  background: var(--portal-danger-glow);
-  border: 1px solid var(--portal-danger);
+.game-icon {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--mm-rule);
   border-radius: 2px;
-  padding: 1.5rem;
-  text-align: center;
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
 }
 
-.error-message {
-  color: var(--portal-danger);
-  margin-bottom: 1rem;
+.mm-tab-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  border-radius: 999px;
+  background: var(--mm-bg-mute);
+  color: var(--mm-ink-muted);
+  border: 1px solid var(--mm-rule);
 }
 
-/* Size utilities */
-.w-4 { width: 1rem; }
-.h-4 { height: 1rem; }
-.w-6 { width: 1.5rem; }
-.h-6 { height: 1.5rem; }
+.mm-admin-tab--active .mm-tab-badge {
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  border-color: var(--mm-highlight);
+}
+
+/* Status Pills */
+.mm-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 2px;
+  line-height: 1;
+}
+
+.mm-status-pill__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.mm-status-pill--draft {
+  border: 1px solid var(--mm-rule-strong);
+  color: var(--mm-ink-muted);
+  background: rgba(142, 142, 142, 0.1);
+}
+.mm-status-pill--draft .mm-status-pill__dot { background: var(--mm-ink-muted); }
+
+.mm-status-pill--registration {
+  border: 1px solid #3498db;
+  color: #60a5fa;
+  background: rgba(52, 152, 219, 0.12);
+}
+.mm-status-pill--registration .mm-status-pill__dot { background: #60a5fa; }
+
+.mm-status-pill--open {
+  border: 1px solid #2ecc71;
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.12);
+}
+.mm-status-pill--open .mm-status-pill__dot { background: #2ecc71; }
+
+.mm-status-pill--closed {
+  border: 1px solid #e74c3c;
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.12);
+}
+.mm-status-pill--closed .mm-status-pill__dot { background: #e74c3c; }
 </style>

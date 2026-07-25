@@ -15,9 +15,7 @@ import { createAIContext } from '@/composables/useAIContext';
 const route = useRoute();
 const useStandaloneShell = computed(() => {
   const path = route.path;
-  if (path.startsWith('/t/')) return false;
   if (path.startsWith('/tournaments/')) return false;
-  if (path.startsWith('/admin/tournaments/')) return false;
   if (path === '/alias-detection') return false;
   return true;
 });
