@@ -67,6 +67,17 @@
               </select>
             </div>
             <div>
+              <label class="mm-admin-label">Public Page Layout</label>
+              <select
+                v-model.number="formData.layoutVersion"
+                class="mm-admin-select"
+                :disabled="formLoading"
+              >
+                <option :value="1">Legacy (v1)</option>
+                <option :value="2">League (v2)</option>
+              </select>
+            </div>
+            <div>
               <label class="mm-admin-label">Anticipated Matches</label>
               <input
                 v-model.number="formData.anticipatedRoundCount"
@@ -186,25 +197,30 @@
             Public Theme & Accent Palette
           </div>
           <div class="mm-admin-form-grid" style="grid-template-columns: 1fr 1fr 1fr;">
-            <div>
-              <label class="mm-admin-label">Background</label>
-              <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--mm-rule); border-radius: 2px; padding: 6px 8px; background: var(--mm-bg-mute);">
-                <input v-model="themeData.backgroundColour" type="color" style="width: 20px; height: 20px; border: 0; background: transparent; cursor: pointer;">
-                <span class="mm-admin-mono" style="font-size: 11px;">{{ themeData.backgroundColour || '#131313' }}</span>
-              </div>
-            </div>
-            <div>
-              <label class="mm-admin-label">Text Color</label>
-              <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--mm-rule); border-radius: 2px; padding: 6px 8px; background: var(--mm-bg-mute);">
-                <input v-model="themeData.textColour" type="color" style="width: 20px; height: 20px; border: 0; background: transparent; cursor: pointer;">
-                <span class="mm-admin-mono" style="font-size: 11px;">{{ themeData.textColour || '#FFFFFF' }}</span>
-              </div>
-            </div>
-            <div>
-              <label class="mm-admin-label">Accent Color</label>
-              <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--mm-rule); border-radius: 2px; padding: 6px 8px; background: var(--mm-bg-mute);">
-                <input v-model="themeData.accentColour" type="color" style="width: 20px; height: 20px; border: 0; background: transparent; cursor: pointer;">
-                <span class="mm-admin-mono" style="font-size: 11px;">{{ themeData.accentColour || '#7D8849' }}</span>
+            <div v-for="swatch in colourSwatches" :key="swatch.key">
+              <label class="mm-admin-label">{{ swatch.label }}</label>
+              <div class="tv-colour-field">
+                <input
+                  v-model="themeData[swatch.key]"
+                  type="color"
+                  class="tv-colour-swatch"
+                  :aria-label="`${swatch.label} swatch`"
+                  @input="hexDrafts[swatch.key] = null"
+                >
+                <input
+                  :value="hexDisplay(swatch.key, swatch.fallback)"
+                  type="text"
+                  inputmode="text"
+                  spellcheck="false"
+                  autocomplete="off"
+                  class="mm-admin-mono tv-colour-hex"
+                  :class="{ 'tv-colour-hex--invalid': hexDrafts[swatch.key] !== null && !normaliseHex(hexDrafts[swatch.key] || '') }"
+                  :placeholder="swatch.fallback"
+                  :aria-label="`${swatch.label} hex value`"
+                  @input="onHexInput(swatch.key, ($event.target as HTMLInputElement).value)"
+                  @blur="onHexBlur(swatch.key)"
+                  @keyup.enter="onHexBlur(swatch.key)"
+                >
               </div>
             </div>
           </div>
@@ -340,6 +356,7 @@ const formData = ref({
   anticipatedRoundCount: undefined as number | undefined,
   status: 'draft' as 'draft' | 'registration' | 'open' | 'closed',
   gameMode: 'Conquest',
+  layoutVersion: 1 as 1 | 2,
   discordUrl: '',
   youTubeUrl: '',
   twitchUrl: '',
@@ -357,6 +374,50 @@ const themeData = ref({
   textColour: '#FFFFFF',
   accentColour: '#FFD700',
 });
+
+type ThemeColourKey = 'backgroundColour' | 'textColour' | 'accentColour';
+
+const colourSwatches: { key: ThemeColourKey; label: string; fallback: string }[] = [
+  { key: 'backgroundColour', label: 'Background', fallback: '#131313' },
+  { key: 'textColour', label: 'Text Color', fallback: '#FFFFFF' },
+  { key: 'accentColour', label: 'Accent Color', fallback: '#7D8849' },
+];
+
+// While the hex box is being typed/pasted into we hold the raw text here so a
+// half-finished value ("#7D8") never gets pushed at the native colour input.
+const hexDrafts = ref<Record<ThemeColourKey, string | null>>({
+  backgroundColour: null,
+  textColour: null,
+  accentColour: null,
+});
+
+function normaliseHex(raw: string): string | null {
+  const v = raw.trim().replace(/^#/, '');
+  if (/^[0-9a-fA-F]{6}$/.test(v)) return `#${v.toUpperCase()}`;
+  if (/^[0-9a-fA-F]{3}$/.test(v)) return `#${[...v].map(c => c + c).join('').toUpperCase()}`;
+  return null;
+}
+
+function hexDisplay(key: ThemeColourKey, fallback: string): string {
+  return hexDrafts.value[key] ?? (themeData.value[key] || fallback);
+}
+
+function onHexInput(key: ThemeColourKey, raw: string) {
+  hexDrafts.value[key] = raw;
+  const parsed = normaliseHex(raw);
+  if (parsed) themeData.value[key] = parsed;
+}
+
+function resetHexDrafts() {
+  hexDrafts.value = { backgroundColour: null, textColour: null, accentColour: null };
+}
+
+function onHexBlur(key: ThemeColourKey) {
+  const parsed = normaliseHex(hexDrafts.value[key] ?? '');
+  if (parsed) themeData.value[key] = parsed;
+  // Drop the draft so the field snaps back to the canonical value.
+  hexDrafts.value[key] = null;
+}
 
 // Image upload state
 const heroImageInput = ref<HTMLInputElement | null>(null);
@@ -430,6 +491,7 @@ const populateForm = () => {
     anticipatedRoundCount: props.tournament.anticipatedRoundCount,
     status: props.tournament.status || 'draft',
     gameMode: props.tournament.gameMode || 'Conquest',
+    layoutVersion: props.tournament.layoutVersion === 2 ? 2 : 1,
     discordUrl: props.tournament.discordUrl || '',
     youTubeUrl: props.tournament.youTubeUrl || '',
     twitchUrl: props.tournament.twitchUrl || '',
@@ -444,6 +506,7 @@ const populateForm = () => {
       textColour: props.tournament.theme.textColour || '#FFFFFF',
       accentColour: props.tournament.theme.accentColour || '#FFD700',
     };
+    resetHexDrafts();
   }
 
   if (props.tournament.hasHeroImage && !heroImageFile.value && !removeHeroImageFlag.value) {
@@ -509,6 +572,7 @@ const openEditPanel = () => {
     anticipatedRoundCount: props.tournament.anticipatedRoundCount,
     status: props.tournament.status || 'draft',
     gameMode: props.tournament.gameMode || 'Conquest',
+    layoutVersion: props.tournament.layoutVersion === 2 ? 2 : 1,
     discordUrl: props.tournament.discordUrl || '',
     youTubeUrl: props.tournament.youTubeUrl || '',
     twitchUrl: props.tournament.twitchUrl || '',
@@ -558,6 +622,7 @@ const submitForm = async () => {
       anticipatedRoundCount: formData.value.anticipatedRoundCount || undefined,
       status: formData.value.status,
       gameMode: formData.value.gameMode || undefined,
+      layoutVersion: formData.value.layoutVersion,
       discordUrl: formData.value.discordUrl.trim() || undefined,
       youTubeUrl: formData.value.youTubeUrl.trim() || undefined,
       twitchUrl: formData.value.twitchUrl.trim() || undefined,
@@ -650,6 +715,7 @@ const openThemePanel = async () => {
     textColour: props.tournament.theme?.textColour || '#FFFFFF',
     accentColour: props.tournament.theme?.accentColour || '#FFD700',
   };
+  resetHexDrafts();
   themeError.value = null;
   heroImageFile.value = null;
   logoImageFile.value = null;
@@ -744,7 +810,10 @@ const applyPreset = (preset: string) => {
     ocean: { backgroundColour: '#0f2c5c', textColour: '#FFFFFF', accentColour: '#00FFFF' },
   };
   const p = presets[preset];
-  if (p) themeData.value = { ...p };
+  if (p) {
+    themeData.value = { ...p };
+    resetHexDrafts();
+  }
 };
 
 const submitThemeForm = async () => {
@@ -812,6 +881,46 @@ defineExpose({ load });
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.tv-colour-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  padding: 6px 8px;
+  background: var(--mm-bg-mute);
+}
+
+.tv-colour-swatch {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tv-colour-hex {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mm-ink);
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 0;
+}
+
+.tv-colour-hex:focus {
+  outline: none;
+  color: var(--mm-accent);
+}
+
+.tv-colour-hex--invalid {
+  color: var(--mm-danger);
 }
 
 .markdown-rules :deep(h1),
