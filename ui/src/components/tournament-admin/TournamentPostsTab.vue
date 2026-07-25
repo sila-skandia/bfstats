@@ -111,7 +111,7 @@
     >
       <div class="mm-admin-card__head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
-          <span class="mm-eyebrow">{{ (tournament.posts || []).length }} announcements</span>
+          <span class="mm-eyebrow">{{ displayPosts.length }} announcements</span>
           <h2 class="mm-admin-card__title mm-admin-card__title--strong" style="font-size: 16px; margin-top: 2px;">
             Announcements & News Feed
           </h2>
@@ -127,11 +127,11 @@
 
       <div class="mm-admin-card__body">
         <div
-          v-if="tournament.posts && tournament.posts.length > 0"
+          v-if="displayPosts.length > 0"
           style="display: flex; flex-direction: column; gap: 14px;"
         >
           <div
-            v-for="post in tournament.posts"
+            v-for="post in displayPosts"
             :key="post.id"
             class="mm-admin-card"
             style="padding: 18px 20px;"
@@ -279,6 +279,10 @@ const isFormValid = computed(() => {
   return formData.value.title.trim() && formData.value.content.trim();
 });
 
+const displayPosts = computed(() => {
+  return posts.value.length > 0 ? posts.value : (props.tournament?.posts || []);
+});
+
 const renderMarkdown = (content: string): string => {
   if (!content || !content.trim()) return '';
   try {
@@ -397,6 +401,7 @@ const submitForm = async () => {
     }
     closeForm();
     await loadPosts();
+    emit('refresh');
   } catch (err) {
     formError.value = err instanceof Error ? err.message : 'Failed to save post';
     console.error('Error saving post:', err);
@@ -423,6 +428,7 @@ const executeDeletePost = async () => {
     await adminTournamentService.deletePost(props.tournament.id, deletePostConfirmation.value.id);
     deletePostConfirmation.value = null;
     await loadPosts();
+    emit('refresh');
   } catch (err) {
     console.error('Error deleting post:', err);
   } finally {

@@ -300,4 +300,49 @@ public class AuthControllerTests
 
         Assert.IsType<BadRequestObjectResult>(result);
     }
+
+    [Fact]
+    public async Task Login_DevBypass_RejectsInProduction()
+    {
+        var config = Substitute.For<IConfiguration>();
+        config["ASPNETCORE_ENVIRONMENT"].Returns("Production");
+        var tokenService = Substitute.For<ITokenService>();
+        var refreshTokenService = Substitute.For<IRefreshTokenService>();
+        var logger = Substitute.For<ILogger<AuthController>>();
+        var discordAuth = Substitute.For<IDiscordAuthService>();
+
+        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, config)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var result = await controller.Login(new LoginRequest { DevBypass = true });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Login_DevBypass_AllowsInDevelopment()
+    {
+        var config = Substitute.For<IConfiguration>();
+        config["ASPNETCORE_ENVIRONMENT"].Returns("Development");
+        var tokenService = Substitute.For<ITokenService>();
+        tokenService.CreateAccessToken(Arg.Any<User>()).Returns(("test-token", DateTime.UtcNow.AddHours(1)));
+        var refreshTokenService = Substitute.For<IRefreshTokenService>();
+        refreshTokenService.CreateAsync(Arg.Any<User>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Task.FromResult(("raw-refresh", new RefreshToken { ExpiresAt = DateTime.UtcNow.AddDays(7) })));
+        var logger = Substitute.For<ILogger<AuthController>>();
+        var discordAuth = Substitute.For<IDiscordAuthService>();
+
+        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, config)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var result = await controller.Login(new LoginRequest { DevBypass = true });
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<LoginResponse>(okResult.Value);
+        Assert.Equal("admin@bfstats.io", response.User.Email);
+    }
 }

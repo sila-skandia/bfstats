@@ -8,6 +8,8 @@ using api.Utils;
 using Microsoft.Extensions.Logging;
 using NodaTime;
 
+using api.Authorization;
+
 namespace api.Controllers;
 
 [ApiController]
@@ -20,6 +22,16 @@ public class AdminTournamentController(
     ITournamentMatchResultService matchResultService,
     ITeamRankingCalculator rankingCalculator) : ControllerBase
 {
+    private bool IsAdminUser(string userEmail)
+    {
+        return User.IsInRole(AppRoles.Admin) ||
+               string.Equals(userEmail, AppRoles.AdminEmail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool HasAccessToTournament(Tournament tournament, string userEmail)
+    {
+        return tournament.CreatedByUserEmail == userEmail || IsAdminUser(userEmail);
+    }
     /// <summary>
     /// Get the 2 most recent completed matches for a tournament
     /// A match is "completed" when all its maps have at least one match result
@@ -141,11 +153,18 @@ public class AdminTournamentController(
             if (string.IsNullOrEmpty(userEmail))
                 return Unauthorized(new { message = "User email not found in token" });
 
-            var tournaments = await context.Tournaments
+            var query = context.Tournaments
                 .Include(t => t.OrganizerPlayer)
                 .Include(t => t.Server)
                 .Include(t => t.Theme)
-                .Where(t => t.CreatedByUserEmail == userEmail)
+                .AsQueryable();
+
+            if (!IsAdminUser(userEmail))
+            {
+                query = query.Where(t => t.CreatedByUserEmail == userEmail);
+            }
+
+            var tournaments = await query
                 .OrderByDescending(t => t.CreatedAt)
                 .ToListAsync();
 
@@ -221,11 +240,13 @@ public class AdminTournamentController(
                 .Include(t => t.OrganizerPlayer)
                 .Include(t => t.Server)
                 .Include(t => t.Theme)
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Load teams and their players separately to avoid cartesian product
             var teams = await context.TournamentTeams
@@ -361,6 +382,7 @@ public class AdminTournamentController(
                 AnticipatedRoundCount = tournament.AnticipatedRoundCount,
                 Status = tournament.Status,
                 GameMode = tournament.GameMode,
+                LayoutVersion = tournament.LayoutVersion,
                 Teams = teams,
                 MatchesByWeek = matchesByWeek,
                 LatestMatches = latestMatches,
@@ -519,6 +541,7 @@ public class AdminTournamentController(
                 Slug = normalizedSlug,
                 Organizer = request.Organizer,
                 Game = request.Game.ToLower(),
+                LayoutVersion = request.LayoutVersion is 1 or 2 ? request.LayoutVersion.Value : 2, // new tournaments default to the v2 league layout
                 CreatedAt = SystemClock.Instance.GetCurrentInstant(),
                 CreatedByUserId = user.Id,
                 CreatedByUserEmail = userEmail,
@@ -598,6 +621,236 @@ public class AdminTournamentController(
     }
 
     /// <summary>
+    /// Copy an existing tournament (settings, images, theme, files always copied; optional teams, weeks, match schedules)
+    /// </summary>
+    [HttpPost("{id}/copy")]
+    [Authorize]
+    public async Task<ActionResult<TournamentDetailResponse>> CopyTournament(int id, [FromBody] CopyTournamentRequest request)
+    {
+        try
+        {
+            var user = await GetCurrentUserAsync();
+            if (user == null)
+                return StatusCode(500, new { message = "User not found" });
+
+            var userEmail = User.FindFirstValue(ClaimTypes.Email);
+            if (string.IsNullOrEmpty(userEmail))
+                return Unauthorized(new { message = "User email not found in token" });
+
+            var source = await context.Tournaments
+                .Include(t => t.Theme)
+                .Include(t => t.Files)
+                .Include(t => t.WeekDates)
+                .Include(t => t.TournamentTeams)
+                    .ThenInclude(tt => tt.TeamPlayers)
+                .Include(t => t.TournamentMatches)
+                    .ThenInclude(tm => tm.Maps)
+                .FirstOrDefaultAsync(t => t.Id == id);
+
+            if (source == null)
+                return NotFound(new { message = "Source tournament not found" });
+
+            if (!HasAccessToTournament(source, userEmail))
+                return Forbid();
+
+            string newName = !string.IsNullOrWhiteSpace(request.Name) 
+                ? request.Name.Trim() 
+                : $"{source.Name} (Copy)";
+
+            // Auto-generate slug if needed
+            string? normalizedSlug = null;
+            var (suggestedSlug, _) = ValidateAndNormalizeSlug(newName);
+            if (!string.IsNullOrEmpty(suggestedSlug))
+            {
+                string candidate = suggestedSlug;
+                int suffix = 1;
+                while (await context.Tournaments.AnyAsync(t => t.Slug == candidate))
+                {
+                    candidate = $"{suggestedSlug}-{suffix++}";
+                }
+                normalizedSlug = candidate;
+            }
+
+            var now = SystemClock.Instance.GetCurrentInstant();
+
+            var newTournament = new Tournament
+            {
+                Name = newName,
+                Slug = normalizedSlug,
+                Organizer = source.Organizer,
+                Game = source.Game,
+                LayoutVersion = 2, // Always upgrade copied tournaments to the latest layout version (v2)
+                Status = "draft",
+                CreatedAt = now,
+                CreatedByUserId = user.Id,
+                CreatedByUserEmail = userEmail,
+                AnticipatedRoundCount = source.AnticipatedRoundCount,
+                HeroImage = source.HeroImage != null ? (byte[])source.HeroImage.Clone() : null,
+                HeroImageContentType = source.HeroImageContentType,
+                CommunityLogo = source.CommunityLogo != null ? (byte[])source.CommunityLogo.Clone() : null,
+                CommunityLogoContentType = source.CommunityLogoContentType,
+                Rules = source.Rules,
+                RegistrationRules = source.RegistrationRules,
+                ServerGuid = source.ServerGuid,
+                GameMode = source.GameMode,
+                DiscordUrl = source.DiscordUrl,
+                ForumUrl = source.ForumUrl,
+                YouTubeUrl = source.YouTubeUrl,
+                TwitchUrl = source.TwitchUrl,
+                PromoVideoUrl = source.PromoVideoUrl
+            };
+
+            context.Tournaments.Add(newTournament);
+
+            // Copy Theme if present
+            if (source.Theme != null)
+            {
+                var theme = new TournamentTheme
+                {
+                    BackgroundColour = source.Theme.BackgroundColour,
+                    TextColour = source.Theme.TextColour,
+                    AccentColour = source.Theme.AccentColour,
+                    Tournament = newTournament
+                };
+                context.Add(theme);
+            }
+
+            // Copy Files
+            if (source.Files != null && source.Files.Count > 0)
+            {
+                foreach (var file in source.Files)
+                {
+                    context.TournamentFiles.Add(new TournamentFile
+                    {
+                        Tournament = newTournament,
+                        Name = file.Name,
+                        Url = file.Url,
+                        Category = file.Category,
+                        UploadedAt = now
+                    });
+                }
+            }
+
+            // Dictionary to map source team IDs -> new team IDs
+            var teamIdMap = new Dictionary<int, int>();
+
+            // Copy Teams if requested
+            if (request.CopyTeams && source.TournamentTeams != null && source.TournamentTeams.Count > 0)
+            {
+                foreach (var oldTeam in source.TournamentTeams)
+                {
+                    var newTeam = new TournamentTeam
+                    {
+                        Tournament = newTournament,
+                        Name = oldTeam.Name,
+                        Tag = oldTeam.Tag,
+                        LeaderUserId = oldTeam.LeaderUserId,
+                        RecruitmentStatus = oldTeam.RecruitmentStatus,
+                        CreatedAt = now
+                    };
+                    context.TournamentTeams.Add(newTeam);
+
+                    foreach (var oldPlayer in oldTeam.TeamPlayers)
+                    {
+                        newTeam.TeamPlayers.Add(new TournamentTeamPlayer
+                        {
+                            PlayerName = oldPlayer.PlayerName,
+                            UserId = oldPlayer.UserId,
+                            IsTeamLeader = oldPlayer.IsTeamLeader,
+                            RulesAcknowledged = oldPlayer.RulesAcknowledged,
+                            RulesAcknowledgedAt = oldPlayer.RulesAcknowledgedAt,
+                            JoinedAt = now,
+                            MembershipStatus = oldPlayer.MembershipStatus
+                        });
+                    }
+                }
+
+                // Save so newTeam IDs are generated
+                await context.SaveChangesAsync();
+
+                var newTeamsList = await context.TournamentTeams
+                    .Where(tt => tt.TournamentId == newTournament.Id)
+                    .ToListAsync();
+
+                foreach (var oldTeam in source.TournamentTeams)
+                {
+                    var matchedNewTeam = newTeamsList.FirstOrDefault(nt => nt.Name == oldTeam.Name && nt.Tag == oldTeam.Tag);
+                    if (matchedNewTeam != null)
+                    {
+                        teamIdMap[oldTeam.Id] = matchedNewTeam.Id;
+                    }
+                }
+            }
+
+            // Copy Weeks if requested
+            if (request.CopyWeeks && source.WeekDates != null && source.WeekDates.Count > 0)
+            {
+                foreach (var week in source.WeekDates)
+                {
+                    context.TournamentWeekDates.Add(new TournamentWeekDate
+                    {
+                        Tournament = newTournament,
+                        Week = week.Week,
+                        StartDate = week.StartDate,
+                        EndDate = week.EndDate
+                    });
+                }
+            }
+
+            // Copy Matches (Match Schedule) if requested
+            if (request.CopyMatches && source.TournamentMatches != null && source.TournamentMatches.Count > 0)
+            {
+                foreach (var oldMatch in source.TournamentMatches)
+                {
+                    int newTeam1Id = teamIdMap.TryGetValue(oldMatch.Team1Id, out var mapped1) ? mapped1 : oldMatch.Team1Id;
+                    int newTeam2Id = teamIdMap.TryGetValue(oldMatch.Team2Id, out var mapped2) ? mapped2 : oldMatch.Team2Id;
+
+                    var newMatch = new TournamentMatch
+                    {
+                        Tournament = newTournament,
+                        ScheduledDate = oldMatch.ScheduledDate,
+                        Team1Id = newTeam1Id,
+                        Team2Id = newTeam2Id,
+                        ServerGuid = oldMatch.ServerGuid,
+                        ServerName = oldMatch.ServerName,
+                        Week = oldMatch.Week,
+                        CreatedAt = now
+                    };
+
+                    if (oldMatch.Maps != null && oldMatch.Maps.Count > 0)
+                    {
+                        foreach (var oldMap in oldMatch.Maps.OrderBy(m => m.MapOrder))
+                        {
+                            int? newMapTeamId = (oldMap.TeamId.HasValue && teamIdMap.TryGetValue(oldMap.TeamId.Value, out var mappedMapTeam))
+                                ? mappedMapTeam
+                                : oldMap.TeamId;
+
+                            newMatch.Maps.Add(new TournamentMatchMap
+                            {
+                                MapName = oldMap.MapName,
+                                MapOrder = oldMap.MapOrder,
+                                TeamId = newMapTeamId,
+                                ImagePath = oldMap.ImagePath
+                            });
+                        }
+                    }
+
+                    context.TournamentMatches.Add(newMatch);
+                }
+            }
+
+            await context.SaveChangesAsync();
+
+            return await GetTournamentDetailOptimizedAsync(newTournament.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error copying tournament {TournamentId}", id);
+            return StatusCode(500, new { message = "Error copying tournament" });
+        }
+    }
+
+    /// <summary>
     /// Update a tournament (authenticated users only)
     /// </summary>
     [HttpPut("{id}")]
@@ -616,11 +869,13 @@ public class AdminTournamentController(
 
             var tournament = await context.Tournaments
                 .Include(t => t.Theme)
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             if (!string.IsNullOrWhiteSpace(request.Name))
                 tournament.Name = request.Name;
@@ -820,6 +1075,14 @@ public class AdminTournamentController(
                 tournament.GameMode = string.IsNullOrWhiteSpace(request.GameMode) ? null : request.GameMode;
             }
 
+            if (request.LayoutVersion.HasValue)
+            {
+                if (request.LayoutVersion.Value is not (1 or 2))
+                    return BadRequest(new { message = "Invalid layout version. Allowed values: 1, 2" });
+
+                tournament.LayoutVersion = request.LayoutVersion.Value;
+            }
+
             // Handle week dates updates (replace all strategy)
             if (request.WeekDates != null)
             {
@@ -875,11 +1138,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             if (string.IsNullOrWhiteSpace(request.Name))
                 return BadRequest(new { message = "File name is required" });
@@ -935,11 +1200,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             var file = await context.TournamentFiles
                 .Where(f => f.TournamentId == id && f.Id == fileId)
@@ -989,11 +1256,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             var file = await context.TournamentFiles
                 .Where(f => f.TournamentId == id && f.Id == fileId)
@@ -1030,11 +1299,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             var posts = await context.TournamentPosts
                 .Where(p => p.TournamentId == id)
@@ -1077,11 +1348,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User not found" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             if (string.IsNullOrWhiteSpace(request.Title))
                 return BadRequest(new { message = "Post title is required" });
@@ -1149,11 +1422,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             var post = await context.TournamentPosts
                 .Where(p => p.TournamentId == id && p.Id == postId)
@@ -1215,11 +1490,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             var post = await context.TournamentPosts
                 .Where(p => p.TournamentId == id && p.Id == postId)
@@ -1254,11 +1531,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             if (request.StartDate >= request.EndDate)
                 return BadRequest(new { message = $"Week '{request.Week}': Start date must be before end date" });
@@ -1309,11 +1588,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             var weekDate = await context.TournamentWeekDates
                 .Where(w => w.TournamentId == id && w.Id == weekId)
@@ -1360,11 +1641,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             var weekDate = await context.TournamentWeekDates
                 .Where(w => w.TournamentId == id && w.Id == weekId)
@@ -1403,11 +1686,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             context.Tournaments.Remove(tournament);
             await context.SaveChangesAsync();
@@ -1435,12 +1720,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.Id == id && t.CreatedByUserEmail == userEmail)
-                .Select(t => new { t.HeroImage, t.HeroImageContentType })
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             if (tournament.HeroImage == null)
                 return NotFound(new { message = "Tournament has no hero image" });
@@ -1468,12 +1754,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.Id == id && t.CreatedByUserEmail == userEmail)
-                .Select(t => new { t.CommunityLogo, t.CommunityLogoContentType })
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == id);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             if (tournament.CommunityLogo == null)
                 return NotFound(new { message = "Tournament has no community logo" });
@@ -1692,6 +1979,7 @@ public class AdminTournamentController(
             Game = tournament.Game,
             CreatedAt = tournament.CreatedAt,
             AnticipatedRoundCount = tournament.AnticipatedRoundCount,
+            LayoutVersion = tournament.LayoutVersion,
             Teams = teams,
             MatchesByWeek = matchesByWeek,
             HasHeroImage = tournament.HeroImage != null,
@@ -1725,11 +2013,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             if (string.IsNullOrWhiteSpace(request.Name))
                 return BadRequest(new { message = "Team name is required" });
@@ -1786,23 +2076,30 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var team = await context.TournamentTeams
-                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId && tt.Tournament.CreatedByUserEmail == userEmail)
-                .Select(tt => new TournamentTeamResponse
-                {
-                    Id = tt.Id,
-                    Name = tt.Name,
-                    CreatedAt = tt.CreatedAt,
-                    Players = tt.TeamPlayers.Select(ttp => new TournamentTeamPlayerResponse
+                .Include(tt => tt.Tournament)
+                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId)
+                .Select(tt => new {
+                    Team = new TournamentTeamResponse
                     {
-                        PlayerName = ttp.PlayerName
-                    }).ToList()
+                        Id = tt.Id,
+                        Name = tt.Name,
+                        CreatedAt = tt.CreatedAt,
+                        Players = tt.TeamPlayers.Select(ttp => new TournamentTeamPlayerResponse
+                        {
+                            PlayerName = ttp.PlayerName
+                        }).ToList()
+                    },
+                    tt.Tournament
                 })
                 .FirstOrDefaultAsync();
 
             if (team == null)
                 return NotFound(new { message = "Team not found" });
 
-            return Ok(team);
+            if (!HasAccessToTournament(team.Tournament, userEmail))
+                return Forbid();
+
+            return Ok(team.Team);
         }
         catch (Exception ex)
         {
@@ -1825,12 +2122,16 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var team = await context.TournamentTeams
+                .Include(tt => tt.Tournament)
                 .Include(tt => tt.TeamPlayers)
-                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId && tt.Tournament.CreatedByUserEmail == userEmail)
+                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId)
                 .FirstOrDefaultAsync();
 
             if (team == null)
                 return NotFound(new { message = "Team not found" });
+
+            if (!HasAccessToTournament(team.Tournament, userEmail))
+                return Forbid();
 
             if (!string.IsNullOrWhiteSpace(request.Name))
             {
@@ -1905,11 +2206,15 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var team = await context.TournamentTeams
-                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId && tt.Tournament.CreatedByUserEmail == userEmail)
+                .Include(tt => tt.Tournament)
+                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId)
                 .FirstOrDefaultAsync();
 
             if (team == null)
                 return NotFound(new { message = "Team not found" });
+
+            if (!HasAccessToTournament(team.Tournament, userEmail))
+                return Forbid();
 
             var matchesUsingTeam = await context.TournamentMatches
                 .Where(tm => tm.Team1Id == teamId || tm.Team2Id == teamId)
@@ -1943,12 +2248,16 @@ public class AdminTournamentController(
             if (string.IsNullOrEmpty(userEmail))
                 return Unauthorized(new { message = "User email not found in token" });
 
-            var teamExists = await context.TournamentTeams
-                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId && tt.Tournament.CreatedByUserEmail == userEmail)
-                .AnyAsync();
+            var team = await context.TournamentTeams
+                .Include(tt => tt.Tournament)
+                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId)
+                .FirstOrDefaultAsync();
 
-            if (!teamExists)
+            if (team == null)
                 return NotFound(new { message = "Team not found" });
+
+            if (!HasAccessToTournament(team.Tournament, userEmail))
+                return Forbid();
 
             if (string.IsNullOrWhiteSpace(request.PlayerName))
                 return BadRequest(new { message = "Player name is required" });
@@ -2018,12 +2327,16 @@ public class AdminTournamentController(
             if (string.IsNullOrEmpty(userEmail))
                 return Unauthorized(new { message = "User email not found in token" });
 
-            var teamExists = await context.TournamentTeams
-                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId && tt.Tournament.CreatedByUserEmail == userEmail)
-                .AnyAsync();
+            var team = await context.TournamentTeams
+                .Include(tt => tt.Tournament)
+                .Where(tt => tt.Id == teamId && tt.TournamentId == tournamentId)
+                .FirstOrDefaultAsync();
 
-            if (!teamExists)
+            if (team == null)
                 return NotFound(new { message = "Team not found" });
+
+            if (!HasAccessToTournament(team.Tournament, userEmail))
+                return Forbid();
 
             var teamPlayer = await context.TournamentTeamPlayers
                 .Where(ttp => ttp.TournamentTeamId == teamId && ttp.PlayerName == playerName)
@@ -2074,11 +2387,13 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             if (request.Team1Id <= 0 || request.Team2Id <= 0)
                 return BadRequest(new { message = "Both Team 1 and Team 2 are required" });
@@ -2206,47 +2521,54 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var match = await context.TournamentMatches
-                .Where(tm => tm.Id == matchId && tm.TournamentId == tournamentId && tm.Tournament.CreatedByUserEmail == userEmail)
-                .Select(tm => new TournamentMatchResponse
-                {
-                    Id = tm.Id,
-                    ScheduledDate = tm.ScheduledDate,
-                    Team1Id = tm.Team1Id,
-                    Team1Name = tm.Team1.Name,
-                    Team2Id = tm.Team2Id,
-                    Team2Name = tm.Team2.Name,
-                    ServerGuid = tm.ServerGuid,
-                    ServerName = tm.ServerName,
-                    Week = tm.Week,
-                    CreatedAt = tm.CreatedAt,
-                    Maps = tm.Maps.OrderBy(m => m.MapOrder).Select(m => new TournamentMatchMapResponse
+                .Include(tm => tm.Tournament)
+                .Where(tm => tm.Id == matchId && tm.TournamentId == tournamentId)
+                .Select(tm => new {
+                    Response = new TournamentMatchResponse
                     {
-                        Id = m.Id,
-                        MapName = m.MapName,
-                        MapOrder = m.MapOrder,
-                        TeamId = m.TeamId,
-                        TeamName = m.Team != null ? m.Team.Name : null,
-                        ImagePath = m.ImagePath,
-                        MatchResults = m.MatchResults.Select(mr => new TournamentMatchResultResponse
+                        Id = tm.Id,
+                        ScheduledDate = tm.ScheduledDate,
+                        Team1Id = tm.Team1Id,
+                        Team1Name = tm.Team1.Name,
+                        Team2Id = tm.Team2Id,
+                        Team2Name = tm.Team2.Name,
+                        ServerGuid = tm.ServerGuid,
+                        ServerName = tm.ServerName,
+                        Week = tm.Week,
+                        CreatedAt = tm.CreatedAt,
+                        Maps = tm.Maps.OrderBy(m => m.MapOrder).Select(m => new TournamentMatchMapResponse
                         {
-                            Id = mr.Id,
-                            Team1Id = mr.Team1Id,
-                            Team1Name = mr.Team1 != null ? mr.Team1.Name : null,
-                            Team2Id = mr.Team2Id,
-                            Team2Name = mr.Team2 != null ? mr.Team2.Name : null,
-                            WinningTeamId = mr.WinningTeamId,
-                            WinningTeamName = mr.WinningTeam != null ? mr.WinningTeam.Name : null,
-                            Team1Tickets = mr.Team1Tickets,
-                            Team2Tickets = mr.Team2Tickets
+                            Id = m.Id,
+                            MapName = m.MapName,
+                            MapOrder = m.MapOrder,
+                            TeamId = m.TeamId,
+                            TeamName = m.Team != null ? m.Team.Name : null,
+                            ImagePath = m.ImagePath,
+                            MatchResults = m.MatchResults.Select(mr => new TournamentMatchResultResponse
+                            {
+                                Id = mr.Id,
+                                Team1Id = mr.Team1Id,
+                                Team1Name = mr.Team1 != null ? mr.Team1.Name : null,
+                                Team2Id = mr.Team2Id,
+                                Team2Name = mr.Team2 != null ? mr.Team2.Name : null,
+                                WinningTeamId = mr.WinningTeamId,
+                                WinningTeamName = mr.WinningTeam != null ? mr.WinningTeam.Name : null,
+                                Team1Tickets = mr.Team1Tickets,
+                                Team2Tickets = mr.Team2Tickets
+                            }).ToList()
                         }).ToList()
-                    }).ToList()
+                    },
+                    tm.Tournament
                 })
                 .FirstOrDefaultAsync();
 
             if (match == null)
                 return NotFound(new { message = "Match not found" });
 
-            return Ok(match);
+            if (!HasAccessToTournament(match.Tournament, userEmail))
+                return Forbid();
+
+            return Ok(match.Response);
         }
         catch (Exception ex)
         {
@@ -2269,11 +2591,15 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var match = await context.TournamentMatches
-                .Where(tm => tm.Id == matchId && tm.TournamentId == tournamentId && tm.Tournament.CreatedByUserEmail == userEmail)
+                .Include(tm => tm.Tournament)
+                .Where(tm => tm.Id == matchId && tm.TournamentId == tournamentId)
                 .FirstOrDefaultAsync();
 
             if (match == null)
                 return NotFound(new { message = "Match not found" });
+
+            if (!HasAccessToTournament(match.Tournament, userEmail))
+                return Forbid();
 
             if (request.ScheduledDate.HasValue)
                 match.ScheduledDate = request.ScheduledDate.Value;
@@ -2501,11 +2827,15 @@ public class AdminTournamentController(
 
             // Verify the match belongs to this tournament and user owns it
             var match = await context.TournamentMatches
-                .Where(tm => tm.Id == matchId && tm.TournamentId == tournamentId && tm.Tournament.CreatedByUserEmail == userEmail)
+                .Include(tm => tm.Tournament)
+                .Where(tm => tm.Id == matchId && tm.TournamentId == tournamentId)
                 .FirstOrDefaultAsync();
 
             if (match == null)
                 return NotFound(new { message = "Match not found" });
+
+            if (!HasAccessToTournament(match.Tournament, userEmail))
+                return Forbid();
 
             var map = await context.TournamentMatchMaps
                 .Where(tmm => tmm.Id == mapId && tmm.MatchId == matchId)
@@ -2586,11 +2916,15 @@ public class AdminTournamentController(
                 return Unauthorized(new { message = "User email not found in token" });
 
             var match = await context.TournamentMatches
-                .Where(tm => tm.Id == matchId && tm.TournamentId == tournamentId && tm.Tournament.CreatedByUserEmail == userEmail)
+                .Include(tm => tm.Tournament)
+                .Where(tm => tm.Id == matchId && tm.TournamentId == tournamentId)
                 .FirstOrDefaultAsync();
 
             if (match == null)
                 return NotFound(new { message = "Match not found" });
+
+            if (!HasAccessToTournament(match.Tournament, userEmail))
+                return Forbid();
 
             context.TournamentMatches.Remove(match);
             await context.SaveChangesAsync();
@@ -2626,11 +2960,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Verify match belongs to tournament
             var match = await context.TournamentMatches
@@ -2762,11 +3098,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Get result and verify it belongs to the tournament
             var result = await context.TournamentMatchResults
@@ -2866,11 +3204,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Get result and verify it belongs to the tournament
             var result = await context.TournamentMatchResults
@@ -2962,12 +3302,18 @@ public class AdminTournamentController(
         try
         {
             // Verify tournament belongs to user
+            var userEmail = User.FindFirstValue(ClaimTypes.Email);
+            if (string.IsNullOrEmpty(userEmail))
+                return Unauthorized(new { message = "User email not found in token" });
+
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == User.FindFirstValue(ClaimTypes.Email) && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Get result and verify it belongs to the tournament
             var result = await context.TournamentMatchResults
@@ -3030,11 +3376,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Verify match belongs to tournament
             var match = await context.TournamentMatches
@@ -3091,11 +3439,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Get the file and verify it belongs to the match
             var file = await context.TournamentMatchFiles
@@ -3145,11 +3495,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Get the file and verify it belongs to the match
             var file = await context.TournamentMatchFiles
@@ -3193,11 +3545,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Verify match belongs to tournament
             var match = await context.TournamentMatches
@@ -3257,11 +3611,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user (organizer only)
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Get the comment and verify it belongs to the match
             var comment = await context.TournamentMatchComments
@@ -3317,11 +3673,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user (organizer only)
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Get the comment and verify it belongs to the match
             var comment = await context.TournamentMatchComments
@@ -3365,11 +3723,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             // Verify match belongs to tournament
             var match = await context.TournamentMatches
@@ -3446,11 +3806,13 @@ public class AdminTournamentController(
 
             // Verify tournament belongs to user
             var tournament = await context.Tournaments
-                .Where(t => t.CreatedByUserEmail == userEmail && t.Id == tournamentId)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
+
+            if (!HasAccessToTournament(tournament, userEmail))
+                return Forbid();
 
             request ??= new RecalculateRankingsAdvancedRequest();
 
@@ -3638,6 +4000,14 @@ public class TournamentThemeResponse
     public string? AccentColour { get; set; } // Hex color
 }
 
+public class CopyTournamentRequest
+{
+    public string? Name { get; set; }
+    public bool CopyTeams { get; set; } = false;
+    public bool CopyWeeks { get; set; } = false;
+    public bool CopyMatches { get; set; } = false;
+}
+
 public class CreateTournamentRequest
 {
     public string Name { get; set; } = "";
@@ -3658,6 +4028,7 @@ public class CreateTournamentRequest
 
     public string? PromoVideoUrl { get; set; }
     public string? TwitchUrl { get; set; }
+    public int? LayoutVersion { get; set; } // 1 = legacy, 2 = league layout; defaults to 2 when omitted
     public TournamentThemeRequest? Theme { get; set; }
     public List<WeekDateRequest>? WeekDates { get; set; }
     public List<CreateTournamentFileRequest>? Files { get; set; }
@@ -3687,6 +4058,7 @@ public class UpdateTournamentRequest
 
     public string? PromoVideoUrl { get; set; }
     public string? TwitchUrl { get; set; }
+    public int? LayoutVersion { get; set; } // 1 = legacy, 2 = league layout
     public TournamentThemeRequest? Theme { get; set; }
     public List<WeekDateRequest>? WeekDates { get; set; } // Replace all week dates
 }
@@ -3784,6 +4156,7 @@ public class TournamentDetailResponse
     public int? AnticipatedRoundCount { get; set; }
     public string Status { get; set; } = ""; // draft, registration, open, closed
     public string? GameMode { get; set; } // Conquest, CTF, etc.
+    public int LayoutVersion { get; set; } = 1; // 1 = legacy, 2 = league layout
     public List<TournamentTeamResponse> Teams { get; set; } = [];
     public List<MatchWeekGroup> MatchesByWeek { get; set; } = [];
     public List<TournamentMatchResponse> LatestMatches { get; set; } = []; // 2 most recent completed matches
