@@ -1,7 +1,7 @@
 namespace api.Gamification.Models;
 
 public record TournamentFeedItem(
-    string Type, // "post", "match_result", "team_created", "match_scheduled"
+    string Type, // "post", "match_result", "team_created", "match_scheduled", "tournament_comment"
     string Timestamp,
     object Data
 );
@@ -45,5 +45,14 @@ public record FeedMatchScheduledData(
     string ScheduledDate,
     string? Week,
     List<string> Maps,
+    string CreatedAt
+);
+
+public record FeedCommentData(
+    int CommentId,
+    int? MatchId,
+    string? MatchLabel, // e.g. "Team A vs Team B" when MatchId is set
+    string Content,
+    string AuthorPlayerName,
     string CreatedAt
 );

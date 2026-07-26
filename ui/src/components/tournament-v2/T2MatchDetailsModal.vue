@@ -196,6 +196,13 @@
             </template>
           </div>
 
+          <!-- Public discussion -->
+          <T2CommentThread
+            :tournament-id="tournamentId"
+            :match-id="match.id"
+            title="Discussion"
+          />
+
           <!-- Compare players -->
           <div
             v-if="getTeamRoster(match.team1Name).length > 0 || getTeamRoster(match.team2Name).length > 0"
@@ -306,6 +313,7 @@ import type { PublicTournamentMatch, MatchFile, MatchComment, PublicTournamentDe
 import { publicTournamentService } from '@/services/publicTournamentService'
 import { resolveT2Theme } from './t2Theme'
 import { formatAbsoluteTime, formatLocalTooltip } from '@/utils/timeUtils'
+import T2CommentThread from './T2CommentThread.vue'
 
 interface Team {
   id: number

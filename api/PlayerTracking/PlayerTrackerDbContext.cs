@@ -63,6 +63,7 @@ public class PlayerTrackerDbContext : DbContext
     // Social comments
     public DbSet<PlayerComment> PlayerComments { get; set; }
     public DbSet<ServerComment> ServerComments { get; set; }
+    public DbSet<TournamentComment> TournamentComments { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -1141,6 +1142,49 @@ public class PlayerTrackerDbContext : DbContext
             .HasOne(c => c.Author)
             .WithMany()
             .HasForeignKey(c => c.AuthorUserId);
+
+        // Configure TournamentComment entity
+        modelBuilder.Entity<TournamentComment>()
+            .HasKey(c => c.Id);
+
+        modelBuilder.Entity<TournamentComment>()
+            .HasIndex(c => new { c.TournamentId, c.MatchId, c.CreatedAt });
+
+        modelBuilder.Entity<TournamentComment>()
+            .Property(c => c.CreatedAt)
+            .HasConversion(
+                v => FormatInstant(v),
+                v => ParseInstant(v));
+
+        modelBuilder.Entity<TournamentComment>()
+            .Property(c => c.UpdatedAt)
+            .HasConversion(
+                v => FormatInstant(v),
+                v => ParseInstant(v));
+
+        modelBuilder.Entity<TournamentComment>()
+            .HasOne(c => c.Tournament)
+            .WithMany()
+            .HasForeignKey(c => c.TournamentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<TournamentComment>()
+            .HasOne(c => c.Match)
+            .WithMany()
+            .HasForeignKey(c => c.MatchId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<TournamentComment>()
+            .HasOne(c => c.Author)
+            .WithMany()
+            .HasForeignKey(c => c.AuthorUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<TournamentComment>()
+            .HasOne(c => c.ParentComment)
+            .WithMany()
+            .HasForeignKey(c => c.ParentCommentId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private static string FormatInstant(Instant instant) => InstantExtendedIsoPattern.Format(instant);
@@ -1694,6 +1738,25 @@ public class TournamentMatchComment
     // Navigation properties
     public TournamentMatch Match { get; set; } = null!;
     public User CreatedByUser { get; set; } = null!;
+}
+
+public class TournamentComment
+{
+    public int Id { get; set; }
+    public int TournamentId { get; set; }
+    public int? MatchId { get; set; } // null = tournament-level, set = match-level
+    public int? ParentCommentId { get; set; } // reserved for future threaded replies
+    public string Content { get; set; } = ""; // Sanitized HTML comment text
+    public int AuthorUserId { get; set; }
+    public string AuthorPlayerName { get; set; } = ""; // Linked player profile name chosen at post time
+    public Instant CreatedAt { get; set; }
+    public Instant UpdatedAt { get; set; }
+
+    // Navigation properties
+    public Tournament Tournament { get; set; } = null!;
+    public TournamentMatch? Match { get; set; }
+    public User Author { get; set; } = null!;
+    public TournamentComment? ParentComment { get; set; }
 }
 
 public class PlayerComment
