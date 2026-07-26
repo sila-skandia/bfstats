@@ -185,6 +185,47 @@ public class TournamentFeedService(PlayerTrackerDbContext dbContext)
             )));
         }
 
+        // 5. Query public comments (tournament-level and match-level) by CreatedAt
+        var commentsQuery = dbContext.TournamentComments
+            .Where(c => c.TournamentId == tournamentId);
+
+        if (cursor.HasValue)
+        {
+            commentsQuery = commentsQuery.Where(c => c.CreatedAt < cursor.Value);
+        }
+
+        var comments = await commentsQuery
+            .OrderByDescending(c => c.CreatedAt)
+            .Take(limit + 1)
+            .Include(c => c.Match).ThenInclude(m => m!.Team1)
+            .Include(c => c.Match).ThenInclude(m => m!.Team2)
+            .Select(c => new
+            {
+                CommentId = c.Id,
+                c.MatchId,
+                MatchLabel = c.Match != null ? c.Match.Team1.Name + " vs " + c.Match.Team2.Name : null,
+                c.Content,
+                c.AuthorPlayerName,
+                c.CreatedAt
+            })
+            .ToListAsync();
+
+        foreach (var comment in comments)
+        {
+            feedItems.Add((comment.CreatedAt, new TournamentFeedItem(
+                "tournament_comment",
+                FormatInstant(comment.CreatedAt),
+                new FeedCommentData(
+                    comment.CommentId,
+                    comment.MatchId,
+                    comment.MatchLabel,
+                    comment.Content,
+                    comment.AuthorPlayerName,
+                    FormatInstant(comment.CreatedAt)
+                )
+            )));
+        }
+
         // Merge all items by timestamp (descending) and apply pagination
         var sortedItems = feedItems
             .OrderByDescending(x => x.Timestamp)

@@ -117,6 +117,17 @@
                   {{ formatAbsoluteTime(item.data.scheduledDate) }}<template v-if="item.data.week"> · {{ item.data.week }}</template><template v-if="item.data.maps.length"> · {{ item.data.maps.join(' + ') }}</template>
                 </div>
               </template>
+
+              <!-- Public comment -->
+              <template v-else-if="item.type === 'tournament_comment' && isCommentData(item.data)">
+                <div class="t2-feed__title">
+                  {{ $pn(item.data.authorPlayerName) }}<template v-if="item.data.matchLabel"> commented on {{ item.data.matchLabel }}</template><template v-else> commented</template>
+                </div>
+                <div
+                  class="t2-feed__body"
+                  v-html="sanitizeCommentPreview(item.data.content)"
+                />
+              </template>
             </li>
           </ul>
 
@@ -137,8 +148,15 @@
         </template>
       </div>
 
-      <!-- Sidebar: standings + promo -->
+      <!-- Sidebar: discussion rail + standings + promo -->
       <div>
+        <T2CommentThread
+          :tournament-id="tournamentId"
+          title="Discussion"
+          variant="rail"
+          style="margin-bottom: 32px"
+        />
+
         <template v-if="topTeams.length">
           <div class="t2-section-head">
             <span class="t2-section-head__mark">//</span>
@@ -188,14 +206,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import type { PublicTournamentDetail } from '@/services/publicTournamentService'
 import { publicTournamentService } from '@/services/publicTournamentService'
+import T2CommentThread from './T2CommentThread.vue'
 import {
   tournamentFeedService,
   isPostData,
   isMatchResultData,
   isTeamCreatedData,
   isMatchScheduledData,
+  isCommentData,
   type FeedItem,
   type FeedMatchResultData,
 } from '@/services/tournamentFeedService'
@@ -234,6 +255,7 @@ const feedKey = (item: FeedItem): string => {
   if (item.type === 'match_result') return `result-${d.resultId}`
   if (item.type === 'team_created') return `team-${d.teamId}`
   if (item.type === 'match_scheduled') return `sched-${d.matchId}`
+  if (item.type === 'tournament_comment') return `comment-${d.commentId}`
   return `${item.type}-${item.timestamp}`
 }
 
@@ -242,9 +264,19 @@ const KIND_LABELS: Record<FeedItem['type'], string> = {
   match_result: 'Match result',
   team_created: 'Team registered',
   match_scheduled: 'Match scheduled',
+  tournament_comment: 'Comment',
 }
 const kindLabel = (item: FeedItem) => KIND_LABELS[item.type] ?? item.type
 const isAccentKind = (item: FeedItem) => item.type === 'post' || item.type === 'match_scheduled'
+
+const COMMENT_ALLOWED_TAGS = ['p', 'strong', 'em', 'u', 'a', 'img', 'ul', 'ol', 'li', 'br', 'blockquote']
+const COMMENT_ALLOWED_ATTR = ['href', 'src', 'alt', 'target', 'rel']
+const sanitizeCommentPreview = (html: string): string => DOMPurify.sanitize(html, {
+  ALLOWED_TAGS: COMMENT_ALLOWED_TAGS,
+  ALLOWED_ATTR: COMMENT_ALLOWED_ATTR,
+  ALLOW_DATA_ATTR: false,
+  FORCE_BODY: false,
+})
 
 const resultHeadline = (data: FeedMatchResultData): string => {
   if (!data.winningTeamName) return `${data.team1Name} tie ${data.team2Name}`
