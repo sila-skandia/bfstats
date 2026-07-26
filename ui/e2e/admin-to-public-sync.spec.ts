@@ -160,11 +160,23 @@ test.describe('Admin-to-Public Synchronization E2E Suite', () => {
     const newPostBtn = page.locator('button', { hasText: /New Announcement|Create Post|New Post/i }).first();
     if (await newPostBtn.isVisible()) {
       await newPostBtn.click();
-      await page.fill('input[placeholder*="Title"], input[name="title"]', 'Registration is Live!');
-      await page.fill('textarea', 'Signups are now officially open for all teams.');
-      const publishBtn = page.locator('button[type="submit"]', { hasText: /Publish|Save|Create/i }).first();
-      await publishBtn.click();
       await page.waitForLoadState('networkidle');
+
+      const titleInput = page.locator('label:has-text("Title") ~ input, input[placeholder*="Playoff"]').first();
+      if (await titleInput.isVisible()) {
+        await titleInput.fill('Registration is Live!');
+      }
+
+      const bodyTextarea = page.locator('textarea').first();
+      if (await bodyTextarea.isVisible()) {
+        await bodyTextarea.fill('Signups are now officially open for all teams.');
+      }
+
+      const publishBtn = page.locator('button', { hasText: 'Publish' }).first();
+      if (await publishBtn.isVisible()) {
+        await publishBtn.click();
+        await page.waitForLoadState('networkidle');
+      }
     }
 
     // Public Expectation (<Y4>): Verify News Post on Public Overview

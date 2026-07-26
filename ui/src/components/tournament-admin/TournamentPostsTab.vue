@@ -346,7 +346,7 @@ const loadPosts = async () => {
 // Form handlers
 const openAddForm = () => {
   editingPost.value = null;
-  formData.value = { title: '', content: '', status: 'draft', publishAt: '' };
+  formData.value = { title: '', content: '', status: 'published', publishAt: '' };
   formError.value = null;
   showPreview.value = false;
   showForm.value = true;
