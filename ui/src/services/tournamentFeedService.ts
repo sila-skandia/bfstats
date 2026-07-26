@@ -35,10 +35,19 @@ export interface FeedMatchScheduledData {
   createdAt: string;
 }
 
-export type FeedItemData = FeedPostData | FeedMatchResultData | FeedTeamCreatedData | FeedMatchScheduledData;
+export interface FeedCommentData {
+  commentId: number;
+  matchId: number | null;
+  matchLabel: string | null;
+  content: string;
+  authorPlayerName: string;
+  createdAt: string;
+}
+
+export type FeedItemData = FeedPostData | FeedMatchResultData | FeedTeamCreatedData | FeedMatchScheduledData | FeedCommentData;
 
 export interface FeedItem {
-  type: 'post' | 'match_result' | 'team_created' | 'match_scheduled';
+  type: 'post' | 'match_result' | 'team_created' | 'match_scheduled' | 'tournament_comment';
   timestamp: string;
   data: FeedItemData;
 }
@@ -64,6 +73,10 @@ export function isTeamCreatedData(data: FeedItemData): data is FeedTeamCreatedDa
 
 export function isMatchScheduledData(data: FeedItemData): data is FeedMatchScheduledData {
   return 'scheduledDate' in data && 'maps' in data;
+}
+
+export function isCommentData(data: FeedItemData): data is FeedCommentData {
+  return 'commentId' in data && 'authorPlayerName' in data;
 }
 
 class TournamentFeedService {
