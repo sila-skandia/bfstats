@@ -35,12 +35,29 @@
           <div class="t2-spinner" />
         </div>
 
-        <div
+        <!-- Fallback: no real activity yet — show the tournament creation event -->
+        <ul
           v-else-if="feedItems.length === 0"
-          class="t2-empty"
+          class="t2-feed"
         >
-          No updates posted yet.
-        </div>
+          <li class="t2-feed__item">
+            <span class="t2-feed__dot t2-feed__dot--accent" />
+            <div class="t2-feed__kicker">
+              <span class="t2-feed__kind t2-feed__kind--accent">Tournament created</span>
+              <span class="t2-feed__sep">·</span>
+              <span
+                class="t2-feed__time"
+                :title="formatLocalTooltip(tournament.createdAt)"
+              >{{ formatRelativeTime(tournament.createdAt) }}</span>
+            </div>
+            <div class="t2-feed__title">
+              {{ tournament.organizer ? `${tournament.organizer} created ${tournament.name}` : `${tournament.name} was created` }}
+            </div>
+            <div class="t2-feed__body">
+              Updates, match results and team registrations will appear here as the tournament unfolds.
+            </div>
+          </li>
+        </ul>
 
         <template v-else>
           <ul class="t2-feed">
