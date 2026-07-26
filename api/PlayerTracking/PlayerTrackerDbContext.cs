@@ -331,6 +331,11 @@ public class PlayerTrackerDbContext : DbContext
             .Property(t => t.Slug)
             .HasMaxLength(100);
 
+        // Existing tournaments stay on the legacy public layout (1); new ones are created with 2
+        modelBuilder.Entity<Tournament>()
+            .Property(t => t.LayoutVersion)
+            .HasDefaultValue(1);
+
         // Configure relationship: Tournament -> User (CreatedBy)
         modelBuilder.Entity<Tournament>()
             .HasOne(t => t.CreatedByUser)
@@ -1425,6 +1430,10 @@ public class Tournament
     // Tournament status and configuration
     public string Status { get; set; } = "draft"; // draft, registration, open, closed
     public string? GameMode { get; set; } // Conquest, CTF, TDM, Coop, etc.
+
+    // Public page layout version: 1 = legacy layout, 2 = league (v2) layout.
+    // Existing tournaments stay on 1; new tournaments default to 2 at creation.
+    public int LayoutVersion { get; set; } = 1;
 
     // Theme customisation
     public int? ThemeId { get; set; }

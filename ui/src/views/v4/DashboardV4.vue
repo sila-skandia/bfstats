@@ -4,13 +4,14 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { fetchDashboardData, type DashboardResponse, type OnlineBuddy, type FavoriteServer } from '@/services/dashboardService'
 import { statsService, type UserPlayerNameEntry } from '@/services/statsService'
-import { adminTournamentService, type TournamentListItem } from '@/services/adminTournamentService'
+import { adminTournamentService, type TournamentListItem, type CopyTournamentRequest } from '@/services/adminTournamentService'
 import { kdClass, loadClass } from './mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import MmAddBuddyModal from '@/components/v4/MmAddBuddyModal.vue'
 import MmAddServerModal from '@/components/v4/MmAddServerModal.vue'
 import MmAddAliasModal from '@/components/v4/MmAddAliasModal.vue'
+import MmBaseModal from '@/components/v4/MmBaseModal.vue'
 
 const router = useRouter()
 const { user, isAuthenticated, logout } = useAuth()
@@ -73,6 +74,70 @@ const loadTournaments = async () => {
     console.error('Failed to load tournaments', e)
   } finally {
     tournamentsLoading.value = false
+  }
+}
+
+const gameLabel = (game: TournamentListItem['game']) => {
+  switch (game) {
+    case 'bf1942': return 'BF1942'
+    case 'fh2': return 'FH2'
+    case 'bfvietnam': return 'BFV'
+    default: return game
+  }
+}
+
+// Copy tournament (the copy endpoint authorizes the tournament's own creator)
+const showCopyModal = ref(false)
+const copySourceTournament = ref<TournamentListItem | null>(null)
+const submittingCopy = ref(false)
+const copyError = ref<string | null>(null)
+const copyForm = ref<{ name: string; copyTeams: boolean; copyWeeks: boolean; copyMatches: boolean }>({
+  name: '',
+  copyTeams: false,
+  copyWeeks: false,
+  copyMatches: false
+})
+
+const promptCopy = (t: TournamentListItem) => {
+  copySourceTournament.value = t
+  copyForm.value = { name: `${t.name} (Copy)`, copyTeams: false, copyWeeks: false, copyMatches: false }
+  copyError.value = null
+  showCopyModal.value = true
+}
+
+// Matches depend on teams; keep the two checkboxes consistent
+const onCopyMatchesChange = () => {
+  if (copyForm.value.copyMatches) copyForm.value.copyTeams = true
+}
+const onCopyTeamsChange = () => {
+  if (!copyForm.value.copyTeams) copyForm.value.copyMatches = false
+}
+
+const handleCopySubmit = async () => {
+  if (!copySourceTournament.value) return
+  if (!copyForm.value.name.trim()) {
+    copyError.value = 'Tournament name is required.'
+    return
+  }
+
+  submittingCopy.value = true
+  copyError.value = null
+  try {
+    const requestData: CopyTournamentRequest = {
+      name: copyForm.value.name.trim(),
+      copyTeams: copyForm.value.copyTeams,
+      copyWeeks: copyForm.value.copyWeeks,
+      copyMatches: copyForm.value.copyMatches
+    }
+    const newTournament = await adminTournamentService.copyTournament(copySourceTournament.value.id, requestData)
+    showCopyModal.value = false
+    await loadTournaments()
+    void router.push(`/v4/manage/tournaments/${newTournament.id}/settings`)
+  } catch (err) {
+    console.error('Error copying tournament:', err)
+    copyError.value = err instanceof Error ? err.message : 'Failed to copy tournament.'
+  } finally {
+    submittingCopy.value = false
   }
 }
 
@@ -478,19 +543,20 @@ const handleSignOut = () => {
           Loading tournaments...
         </div>
 
-        <div v-else-if="userTournaments.length > 0" class="mm-dash__servers-grid" style="margin-top: 16px">
-          <article v-for="t in userTournaments" :key="t.id" class="mm-card mm-dash__server-card">
-            <div class="mm-dash__server-card-body">
-              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
-                <span class="mm-tab__badge" style="margin-left: 0; text-transform: uppercase">{{ t.game }}</span>
-                <span class="mm-dash__section-meta" style="font-size: 10px">{{ t.matchCount }} matches</span>
-              </div>
-              <div class="mm-dash__server-name" style="margin-top: 6px; font-weight: 600">{{ t.name }}</div>
-              <div class="mm-dash__server-map">By {{ t.organizer }}</div>
-              <div class="mm-dash__server-actions" style="margin-top: 14px">
-                <router-link :to="`/v4/manage/tournaments/${t.id}/matches`" class="mm-btn mm-btn--inline mm-btn--accent">Manage</router-link>
-                <router-link :to="`/t/${t.slug || t.id}`" class="mm-btn mm-btn--inline">View Public ↗</router-link>
-              </div>
+        <div v-else-if="userTournaments.length > 0" class="mm-dash__servers mm-dash__tournaments">
+          <article v-for="t in userTournaments" :key="t.id" class="mm-dash__server mm-dash__server--static">
+            <header class="mm-dash__server-head">
+              <span class="mm-chip">{{ gameLabel(t.game) }}</span>
+              <span class="mm-dash__tournament-counts">
+                {{ t.matchCount }} {{ t.matchCount === 1 ? 'match' : 'matches' }} · {{ t.teamCount }} {{ t.teamCount === 1 ? 'team' : 'teams' }}
+              </span>
+            </header>
+            <div class="mm-dash__server-name" :title="t.name">{{ t.name }}</div>
+            <div class="mm-dash__server-map">By {{ t.organizer }}</div>
+            <div class="mm-dash__server-actions mm-dash__server-actions--footer">
+              <router-link :to="`/v4/manage/tournaments/${t.id}/matches`" class="mm-btn mm-btn--inline mm-btn--accent">Manage</router-link>
+              <button type="button" class="mm-btn mm-btn--inline" @click="promptCopy(t)">Copy</button>
+              <router-link :to="`/t/${t.slug || t.id}`" class="mm-btn mm-btn--inline">View Public ↗</router-link>
             </div>
           </article>
         </div>
@@ -519,6 +585,69 @@ const handleSignOut = () => {
     <MmAddBuddyModal v-if="showAddBuddy" @close="showAddBuddy = false" @added="onBuddyAdded" />
     <MmAddServerModal v-if="showAddServer" @close="showAddServer = false" @added="onServerAdded" />
     <MmAddAliasModal v-if="showAddAlias" @close="showAddAlias = false" @added="onAliasAdded" />
+
+    <!-- Copy Tournament Modal -->
+    <MmBaseModal
+      v-model="showCopyModal"
+      title="Copy Tournament"
+      subtitle="Your Tournaments"
+      size="md"
+      @close="showCopyModal = false"
+    >
+      <form id="dash-copy-tournament-form" class="mm-admin-modal-grid" @submit.prevent="handleCopySubmit">
+        <div v-if="copyError" class="mm-admin-alert mm-admin-alert--err mm-admin-modal-field--full">
+          {{ copyError }}
+        </div>
+
+        <div class="mm-admin-modal-field--full">
+          <label class="mm-admin-label">New Tournament Name *</label>
+          <input
+            v-model="copyForm.name"
+            type="text"
+            class="mm-admin-input"
+            placeholder="e.g. BF1942 Summer Cup 2026 (Copy)"
+            required
+          />
+        </div>
+
+        <div class="mm-admin-modal-field--full" style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px;">
+          <label class="mm-admin-label">Additional Elements to Copy</label>
+
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mm-ink); cursor: pointer;">
+            <input v-model="copyForm.copyTeams" type="checkbox" @change="onCopyTeamsChange" />
+            <span>Copy Teams &amp; Rosters</span>
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mm-ink); cursor: pointer;">
+            <input v-model="copyForm.copyWeeks" type="checkbox" />
+            <span>Copy Week Date Ranges</span>
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mm-ink); cursor: pointer;">
+            <input v-model="copyForm.copyMatches" type="checkbox" @change="onCopyMatchesChange" />
+            <span>Copy Match Schedule &amp; Maps (excluding match results)</span>
+          </label>
+        </div>
+
+        <p class="mm-admin-modal-field--full" style="font-size: 12px; color: var(--mm-ink-muted); line-height: 1.4; margin: 0;">
+          <em>Note: Tournament settings, theme, images (hero &amp; logo), rules, links, and uploaded files will always be copied by default.</em>
+        </p>
+      </form>
+
+      <template #footer>
+        <button type="button" class="mm-admin-btn mm-admin-btn--ghost" @click="showCopyModal = false">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="dash-copy-tournament-form"
+          class="mm-admin-btn mm-admin-btn--primary"
+          :disabled="submittingCopy"
+        >
+          {{ submittingCopy ? 'Copying...' : 'Copy Tournament' }}
+        </button>
+      </template>
+    </MmBaseModal>
   </div>
 </template>
 
@@ -721,6 +850,30 @@ const handleSignOut = () => {
   align-items: center;
   gap: 8px;
   margin-top: 6px;
+}
+
+/* Tournament cards reuse the server-card shell but aren't click-through. */
+.mm-dash__tournaments { margin-top: 16px; }
+
+.mm-dash__server--static { cursor: default; }
+.mm-dash__server--static:hover {
+  border-color: var(--mm-rule-strong);
+  background: transparent;
+}
+
+.mm-dash__tournament-counts {
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  white-space: nowrap;
+}
+
+.mm-dash__server-actions--footer {
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 12px;
 }
 
 .mm-dash__remove {

@@ -8,13 +8,9 @@ import { isNavigating } from '../composables/useNavProgress'
 // pages live under /v4/* now.
 const DiscordCallback = () => import('../views/DiscordCallback.vue')
 const TournamentDetails = () => import('../views/TournamentDetails.vue')
-const PublicTournament = () => import('../views/PublicTournament.vue')
-const PublicTournamentRankings = () => import('../views/PublicTournamentRankings.vue')
-const PublicTournamentRules = () => import('../views/PublicTournamentRules.vue')
-const PublicTournamentTeams = () => import('../views/PublicTournamentTeams.vue')
-const PublicTournamentMatches = () => import('../views/PublicTournamentMatches.vue')
-const PublicTournamentStats = () => import('../views/PublicTournamentStats.vue')
-const PublicTournamentFiles = () => import('../views/PublicTournamentFiles.vue')
+// Public tournament pages route through a gate that renders the legacy layout
+// (LayoutVersion 1) or the V2 league layout (LayoutVersion 2) per tournament.
+const PublicTournamentGate = () => import('../views/tournament-v2/PublicTournamentGate.vue')
 const AdminDataManagementV4 = () => import('../views/v4/AdminDataManagementV4.vue')
 const AdminTournamentsV4 = () => import('../views/v4/AdminTournamentsV4.vue')
 const AliasDetectionView = () => import('../views/AliasDetectionView.vue')
@@ -131,8 +127,8 @@ const routes: RouteRecordRaw[] = [
     {
       path: '/t/:id',
       name: 'public-tournament',
-      component: PublicTournament,
-      props: true,
+      component: PublicTournamentGate,
+      props: { section: 'overview' },
       meta: {
         title: (route: RouteLocationNormalized) => `Tournament ${route.params.id} - BF Stats`,
         description: 'View tournament schedule, matches, and results for Battlefield competitions.'
@@ -141,8 +137,8 @@ const routes: RouteRecordRaw[] = [
     {
       path: '/t/:id/rankings',
       name: 'public-tournament-rankings',
-      component: PublicTournamentRankings,
-      props: true,
+      component: PublicTournamentGate,
+      props: { section: 'rankings' },
       meta: {
         title: (route: RouteLocationNormalized) => `Rankings - Tournament ${route.params.id} - BF Stats`,
         description: 'Tournament team rankings and leaderboard.'
@@ -151,8 +147,8 @@ const routes: RouteRecordRaw[] = [
     {
       path: '/t/:id/rules',
       name: 'public-tournament-rules',
-      component: PublicTournamentRules,
-      props: true,
+      component: PublicTournamentGate,
+      props: { section: 'rules' },
       meta: {
         title: (route: RouteLocationNormalized) => `Tournament Rules - ${route.params.id} - BF Stats`,
         description: 'Tournament rules and guidelines.'
@@ -161,8 +157,8 @@ const routes: RouteRecordRaw[] = [
     {
       path: '/t/:id/teams',
       name: 'public-tournament-teams',
-      component: PublicTournamentTeams,
-      props: true,
+      component: PublicTournamentGate,
+      props: { section: 'teams' },
       meta: {
         title: (route: RouteLocationNormalized) => `Teams - Tournament ${route.params.id} - BF Stats`,
         description: 'Registered teams and rosters.'
@@ -171,8 +167,8 @@ const routes: RouteRecordRaw[] = [
     {
       path: '/t/:id/matches',
       name: 'public-tournament-matches',
-      component: PublicTournamentMatches,
-      props: true,
+      component: PublicTournamentGate,
+      props: { section: 'matches' },
       meta: {
         title: (route: RouteLocationNormalized) => `Matches - Tournament ${route.params.id} - BF Stats`,
         description: 'Tournament matches and results.'
@@ -181,8 +177,8 @@ const routes: RouteRecordRaw[] = [
     {
       path: '/t/:id/stats',
       name: 'public-tournament-stats',
-      component: PublicTournamentStats,
-      props: true,
+      component: PublicTournamentGate,
+      props: { section: 'stats' },
       meta: {
         title: (route: RouteLocationNormalized) => `Player Stats - Tournament ${route.params.id} - BF Stats`,
         description: 'Player statistics for the tournament.'
@@ -191,8 +187,8 @@ const routes: RouteRecordRaw[] = [
     {
       path: '/t/:id/files',
       name: 'public-tournament-files',
-      component: PublicTournamentFiles,
-      props: true,
+      component: PublicTournamentGate,
+      props: { section: 'files' },
       meta: {
         title: (route: RouteLocationNormalized) => `Files - Tournament ${route.params.id} - BF Stats`,
         description: 'Tournament files, maps, and resources.'
