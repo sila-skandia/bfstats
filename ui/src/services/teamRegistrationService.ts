@@ -13,6 +13,25 @@ export enum MembershipStatus {
   Approved = 1
 }
 
+// The API serializes enums as strings (global JsonStringEnumConverter), but these
+// TS enums are numeric. Normalize an incoming value (string name or number) to the
+// numeric enum before comparing/switching on it.
+export const normalizeRecruitmentStatus = (
+  status: TeamRecruitmentStatus | string | number | null | undefined
+): TeamRecruitmentStatus => {
+  if (typeof status === 'number') return status as TeamRecruitmentStatus;
+  switch (status) {
+    case 'Closed':
+    case '1':
+      return TeamRecruitmentStatus.Closed;
+    case 'LookingForBTeam':
+    case '2':
+      return TeamRecruitmentStatus.LookingForBTeam;
+    default:
+      return TeamRecruitmentStatus.Open;
+  }
+};
+
 // Helper to get display text for recruitment status
 export const getRecruitmentStatusText = (status: TeamRecruitmentStatus): string => {
   switch (status) {

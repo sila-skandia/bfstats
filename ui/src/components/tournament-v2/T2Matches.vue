@@ -133,16 +133,11 @@
       </section>
     </template>
 
-    <MatchDetailsModal
+    <T2MatchDetailsModal
       :match="selectedMatch"
       :teams="tournament.teams || []"
       :tournament-id="tournamentId"
-      :accent-color="theme.accent"
-      :text-color="theme.text"
-      :text-muted-color="theme.muted"
-      :background-color="theme.bg"
-      :background-soft-color="theme.surface"
-      :background-mute-color="theme.card"
+      :tournament="tournament"
       @close="selectedMatch = null"
       @compare-players="comparePlayers"
     />
@@ -152,10 +147,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { PublicTournamentDetail, PublicTournamentMatch, PublicTournamentMatchMap } from '@/services/publicTournamentService'
-import MatchDetailsModal from '@/components/MatchDetailsModal.vue'
+import T2MatchDetailsModal from './T2MatchDetailsModal.vue'
 import { usePlayerComparison } from '@/composables/usePlayerComparison'
 import { formatAbsoluteTime, formatLocalTooltip } from '@/utils/timeUtils'
-import { resolveT2Theme } from './t2Theme'
 
 const props = defineProps<{
   tournament: PublicTournamentDetail
@@ -164,7 +158,6 @@ const props = defineProps<{
 
 const { comparePlayers } = usePlayerComparison()
 
-const theme = computed(() => resolveT2Theme(props.tournament))
 const selectedMatch = ref<PublicTournamentMatch | null>(null)
 const openMatch = (match: PublicTournamentMatch) => { selectedMatch.value = match }
 
