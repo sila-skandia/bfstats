@@ -80,8 +80,8 @@
           </div>
           <span
             class="t2-chip"
-            :class="{ 't2-chip--accent': normalizeRecruitment(team.recruitmentStatus) !== TeamRecruitmentStatus.Closed }"
-          >{{ getRecruitmentStatusText(normalizeRecruitment(team.recruitmentStatus)) }}</span>
+            :class="{ 't2-chip--accent': normalizeRecruitmentStatus(team.recruitmentStatus) !== TeamRecruitmentStatus.Closed }"
+          >{{ getRecruitmentStatusText(normalizeRecruitmentStatus(team.recruitmentStatus)) }}</span>
         </div>
 
         <div class="t2-team-card__roster">
@@ -126,74 +126,49 @@
       </div>
     </div>
 
-    <!-- Registration workflow modals (shared components, themed via props + .t2 var bridge) -->
-    <CreateTeamModal
+    <!-- Registration workflow modals (V2-native) -->
+    <T2CreateTeamModal
       v-if="tournament.id"
       :is-visible="showCreateTeamModal"
       :tournament-id="tournament.id"
       :registration-rules="tournament.registrationRules"
-      :accent-color="theme.accent"
+      :tournament="tournament"
       @close="showCreateTeamModal = false"
       @success="handleTeamCreated"
     />
 
-    <JoinTeamModal
+    <T2JoinTeamModal
       v-if="tournament.id"
       :is-visible="showJoinTeamModal"
       :tournament-id="tournament.id"
       :registration-rules="tournament.registrationRules"
-      :accent-color="theme.accent"
+      :tournament="tournament"
       @close="showJoinTeamModal = false"
       @success="handleTeamJoined"
     />
 
-    <Teleport to="body">
-      <div
-        v-if="showManageTeamModal && managingTeamId"
-        class="t2"
-        :style="{ '--t-bg': theme.bg, '--t-text': theme.text, '--t-accent': theme.accent, position: 'fixed', inset: '0', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', minHeight: '0', background: 'transparent' }"
-      >
-        <div
-          style="position: absolute; inset: 0; background: rgba(0, 0, 0, 0.7)"
-          @click="closeManageTeamModal"
-        />
-        <div style="position: relative; width: 100%; max-width: 42rem; max-height: 90vh; overflow-y: auto">
-          <button
-            class="t2-btn t2-btn--hero-icon"
-            style="position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0, 0, 0, 0.5)"
-            aria-label="Close"
-            @click="closeManageTeamModal"
-          >
-            <i class="pi pi-times" />
-          </button>
-          <TeamManagementPanel
-            v-if="tournament.id"
-            :tournament-id="tournament.id"
-            :team-id="managingTeamId"
-            :is-leader="isManagingOwnTeamAsLeader"
-            :is-admin="registrationStatus?.isTournamentAdmin ?? false"
-            :membership-status="isManagingOwnTeam ? registrationStatus?.teamMembership?.membershipStatus : undefined"
-            :accent-color="theme.accent"
-            :text-color="theme.text"
-            :text-muted-color="theme.muted"
-            :background-color="theme.surface"
-            :background-mute-color="theme.card"
-            @team-updated="handleTeamUpdated"
-            @left-team="handleLeftTeam"
-            @deleted-team="handleDeletedTeam"
-          />
-        </div>
-      </div>
-    </Teleport>
+    <T2TeamManagementPanel
+      v-if="tournament.id && showManageTeamModal && managingTeamId"
+      :tournament-id="tournament.id"
+      :team-id="managingTeamId"
+      :is-leader="isManagingOwnTeamAsLeader"
+      :is-admin="registrationStatus?.isTournamentAdmin ?? false"
+      :membership-status="isManagingOwnTeam ? registrationStatus?.teamMembership?.membershipStatus : undefined"
+      :tournament="tournament"
+      @close="closeManageTeamModal"
+      @team-updated="handleTeamUpdated"
+      @left-team="handleLeftTeam"
+      @deleted-team="handleDeletedTeam"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import type { PublicTournamentDetail, PublicTournamentTeam } from '@/services/publicTournamentService'
-import CreateTeamModal from '@/components/CreateTeamModal.vue'
-import JoinTeamModal from '@/components/JoinTeamModal.vue'
-import TeamManagementPanel from '@/components/TeamManagementPanel.vue'
+import T2CreateTeamModal from './T2CreateTeamModal.vue'
+import T2JoinTeamModal from './T2JoinTeamModal.vue'
+import T2TeamManagementPanel from './T2TeamManagementPanel.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTournamentCache } from '@/composables/useTournamentCache'
 import {
@@ -201,11 +176,11 @@ import {
   TeamRecruitmentStatus,
   MembershipStatus,
   getRecruitmentStatusText,
+  normalizeRecruitmentStatus,
   type RegistrationStatusResponse,
 } from '@/services/teamRegistrationService'
 import { notificationService } from '@/services/notificationService'
 import { formatDate } from '@/utils/timeUtils'
-import { resolveT2Theme } from './t2Theme'
 
 const props = defineProps<{
   tournament: PublicTournamentDetail
@@ -214,7 +189,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{ refresh: [] }>()
 
-const theme = computed(() => resolveT2Theme(props.tournament))
 const { isAuthenticated, loginWithDiscord } = useAuth()
 const { clearCache } = useTournamentCache()
 
@@ -230,16 +204,6 @@ const isLoginLoading = ref(false)
 const leaderTeamDetails = ref<{ players: { playerName: string; isLeader: boolean; membershipStatus?: MembershipStatus | null }[] } | null>(null)
 
 const isRegistrationPhase = computed(() => props.tournament.status?.toLowerCase() === 'registration')
-
-// The API serializes the enum as a string ("Open") while the TS enum is numeric
-const normalizeRecruitment = (status: TeamRecruitmentStatus | string): TeamRecruitmentStatus => {
-  if (typeof status !== 'string') return status
-  switch (status) {
-    case 'Closed': return TeamRecruitmentStatus.Closed
-    case 'LookingForBTeam': return TeamRecruitmentStatus.LookingForBTeam
-    default: return TeamRecruitmentStatus.Open
-  }
-}
 
 const showRegistrationActions = computed(() =>
   isAuthenticated.value &&
