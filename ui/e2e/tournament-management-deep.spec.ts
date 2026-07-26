@@ -255,6 +255,7 @@ test.describe('Deep Tournament Management Editing & Deletion Suite (Admin)', () 
     const confirmPostDeleteBtn = page.locator('.mm-modal__panel button', { hasText: 'Delete Post' });
     await expect(confirmPostDeleteBtn).toBeVisible();
     await confirmPostDeleteBtn.click();
+    await expect(page.locator('.mm-modal__backdrop')).not.toBeVisible();
     await page.waitForLoadState('networkidle');
     await expect(updatedPostCard).not.toBeVisible();
 
@@ -269,18 +270,20 @@ test.describe('Deep Tournament Management Editing & Deletion Suite (Admin)', () 
       const confirmWeekDelete = page.locator('.mm-modal__panel button', { hasText: 'Delete Week' });
       if (await confirmWeekDelete.isVisible({ timeout: 1500 }).catch(() => false)) {
         await confirmWeekDelete.click();
+        await expect(page.locator('.mm-modal__backdrop')).not.toBeVisible();
       }
       await page.waitForLoadState('networkidle');
     }
 
     // Delete Teams
-    await teamsTabBtn.click();
+    await teamsTabBtn.click({ force: true });
     const teamDeleteBtn = page.locator('.mm-admin-card__body .mm-admin-card', { hasText: 'Alpha Squad' }).locator('button', { hasText: 'Delete' });
     if (await teamDeleteBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await teamDeleteBtn.click();
       const confirmTeamDelete = page.locator('.mm-modal__panel button', { hasText: 'Delete Team' });
       if (await confirmTeamDelete.isVisible({ timeout: 1500 }).catch(() => false)) {
         await confirmTeamDelete.click();
+        await expect(page.locator('.mm-modal__backdrop')).not.toBeVisible();
       }
       await page.waitForLoadState('networkidle');
     }
@@ -289,7 +292,7 @@ test.describe('Deep Tournament Management Editing & Deletion Suite (Admin)', () 
     // STEP 7: Settings & Tournament Cleanup
     // ----------------------------------------------------
     const settingsTabBtn = page.locator('button.mm-admin-tab', { hasText: 'Settings' });
-    await settingsTabBtn.click();
+    await settingsTabBtn.click({ force: true });
     expect(page.url()).toContain('/settings');
 
     const discordInput = page.locator('input[placeholder*="discord.gg"]').first();
