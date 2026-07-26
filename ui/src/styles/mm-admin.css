@@ -185,6 +185,21 @@
 .mm-admin-field--wide { grid-column: 1 / -1; }
 @media (min-width: 1024px) { .mm-admin-field--wide { grid-column: span 2; } }
 
+.mm-admin-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 540px) {
+  .mm-admin-modal-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.mm-admin-modal-field--full {
+  grid-column: 1 / -1;
+}
+
 .mm-admin-label {
   display: block;
   font-family: var(--mm-font-mono);

@@ -36,7 +36,7 @@ public class AuthController(
                 email = discordPayload.Email;
                 name = discordPayload.Username;
             }
-            else if (request.DevBypass == true || configuration.GetValue<bool>("Auth:AllowDevLogin") || configuration["ASPNETCORE_ENVIRONMENT"] == "Development")
+            else if ((configuration["ASPNETCORE_ENVIRONMENT"] == "Development" || string.Equals(configuration["Auth:AllowDevLogin"], "true", StringComparison.OrdinalIgnoreCase)) && request.DevBypass == true)
             {
                 email = "admin@bfstats.io";
                 name = "Admin";

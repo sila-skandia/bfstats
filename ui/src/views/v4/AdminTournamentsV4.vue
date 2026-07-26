@@ -107,6 +107,14 @@
 
             <button
               type="button"
+              class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+              @click="promptCopy(t)"
+            >
+              Copy
+            </button>
+
+            <button
+              type="button"
               class="mm-admin-btn mm-admin-btn--danger mm-admin-btn--sm"
               style="margin-left: auto"
               @click="promptDelete(t)"
@@ -120,12 +128,14 @@
 
     <!-- Create Tournament Modal -->
     <MmBaseModal
-      v-if="showCreateModal"
+      v-model="showCreateModal"
       title="Create Tournament"
+      subtitle="Admin Tournaments"
+      size="lg"
       @close="showCreateModal = false"
     >
-      <form @submit.prevent="handleCreateSubmit" class="mm-admin-form-grid" style="gap: 16px">
-        <div class="mm-admin-field--wide">
+      <form id="create-tournament-form" @submit.prevent="handleCreateSubmit" class="mm-admin-modal-grid">
+        <div class="mm-admin-modal-field--full">
           <label class="mm-admin-label">Tournament Name *</label>
           <input
             v-model="createForm.name"
@@ -197,7 +207,7 @@
           />
         </div>
 
-        <div class="mm-admin-field--wide">
+        <div class="mm-admin-modal-field--full">
           <label class="mm-admin-label">Rules / Info (Markdown Supported)</label>
           <textarea
             v-model="createForm.rules"
@@ -207,7 +217,7 @@
           />
         </div>
 
-        <div class="mm-admin-field--wide">
+        <div class="mm-admin-modal-field--full">
           <label class="mm-admin-label">Discord / Community Link</label>
           <input
             v-model="createForm.discordUrl"
@@ -217,40 +227,44 @@
           />
         </div>
 
-        <div v-if="createError" class="mm-admin-field--wide mm-admin-alert mm-admin-alert--err">
+        <div v-if="createError" class="mm-admin-modal-field--full mm-admin-alert mm-admin-alert--err">
           {{ createError }}
         </div>
-
-        <div class="mm-admin-field--wide mm-admin-actions" style="justify-content: flex-end">
-          <button
-            type="button"
-            class="mm-admin-btn mm-admin-btn--ghost"
-            @click="showCreateModal = false"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            class="mm-admin-btn mm-admin-btn--primary"
-            :disabled="submitting"
-          >
-            {{ submitting ? 'Creating...' : 'Create Tournament' }}
-          </button>
-        </div>
       </form>
+
+      <template #footer>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
+          @click="showCreateModal = false"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="create-tournament-form"
+          class="mm-admin-btn mm-admin-btn--primary"
+          :disabled="submitting"
+        >
+          {{ submitting ? 'Creating...' : 'Create Tournament' }}
+        </button>
+      </template>
     </MmBaseModal>
 
     <!-- Delete Confirmation Modal -->
     <MmBaseModal
-      v-if="showDeleteModal"
+      v-model="showDeleteModal"
       title="Confirm Delete Tournament"
+      subtitle="Destructive Action"
+      size="sm"
       @close="showDeleteModal = false"
     >
-      <p style="font-size: 13px; color: var(--mm-ink); line-height: 1.5">
+      <p style="font-size: 13px; color: var(--mm-ink); line-height: 1.5; margin: 0;">
         Are you sure you want to delete tournament <strong>"{{ targetTournament?.name }}"</strong>?
         This will remove all associated matches, teams, and settings.
       </p>
-      <div class="mm-admin-actions" style="justify-content: flex-end; margin-top: 20px">
+
+      <template #footer>
         <button
           type="button"
           class="mm-admin-btn mm-admin-btn--ghost"
@@ -266,7 +280,74 @@
         >
           {{ deleting ? 'Deleting...' : 'Delete Tournament' }}
         </button>
-      </div>
+      </template>
+    </MmBaseModal>
+
+    <!-- Copy Tournament Modal -->
+    <MmBaseModal
+      v-model="showCopyModal"
+      title="Copy Tournament"
+      subtitle="Admin Tournaments"
+      size="md"
+      @close="showCopyModal = false"
+    >
+      <form id="copy-tournament-form" @submit.prevent="handleCopySubmit" class="mm-admin-modal-grid">
+        <div v-if="copyError" class="mm-admin-alert mm-admin-alert--err mm-admin-modal-field--full">
+          {{ copyError }}
+        </div>
+
+        <div class="mm-admin-modal-field--full">
+          <label class="mm-admin-label">New Tournament Name *</label>
+          <input
+            v-model="copyForm.name"
+            type="text"
+            class="mm-admin-input"
+            placeholder="e.g. BF1942 Summer Cup 2026 (Copy)"
+            required
+          />
+        </div>
+
+        <div class="mm-admin-modal-field--full" style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px;">
+          <label class="mm-admin-label">Additional Elements to Copy</label>
+          
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mm-ink); cursor: pointer;">
+            <input type="checkbox" v-model="copyForm.copyTeams" @change="onCopyTeamsChange" />
+            <span>Copy Teams & Rosters</span>
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mm-ink); cursor: pointer;">
+            <input type="checkbox" v-model="copyForm.copyWeeks" />
+            <span>Copy Week Date Ranges</span>
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mm-ink); cursor: pointer;">
+            <input type="checkbox" v-model="copyForm.copyMatches" @change="onCopyMatchesChange" />
+            <span>Copy Match Schedule & Maps (excluding match results)</span>
+          </label>
+        </div>
+
+        <p style="font-size: 12px; color: var(--mm-ink-muted); line-height: 1.4; margin: 0;" class="mm-admin-modal-field--full">
+          <em>Note: Tournament settings, theme, images (hero & logo), rules, links, and uploaded files will always be copied by default.</em>
+        </p>
+      </form>
+
+      <template #footer>
+        <button
+          type="button"
+          class="mm-admin-btn mm-admin-btn--ghost"
+          @click="showCopyModal = false"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="copy-tournament-form"
+          class="mm-admin-btn mm-admin-btn--primary"
+          :disabled="submittingCopy"
+        >
+          {{ submittingCopy ? 'Copying...' : 'Copy Tournament' }}
+        </button>
+      </template>
     </MmBaseModal>
   </div>
 </template>
@@ -277,7 +358,8 @@ import { useRouter } from 'vue-router'
 import {
   adminTournamentService,
   type TournamentListItem,
-  type CreateTournamentRequest
+  type CreateTournamentRequest,
+  type CopyTournamentRequest
 } from '@/services/adminTournamentService'
 import MmBaseModal from '@/components/v4/MmBaseModal.vue'
 import '@/styles/mm-admin.css'
@@ -381,6 +463,82 @@ const handleCreateSubmit = async () => {
     createError.value = err instanceof Error ? err.message : 'Failed to create tournament.'
   } finally {
     submitting.value = false
+  }
+}
+
+// Copy modal state
+const showCopyModal = ref(false)
+const copySourceTournament = ref<TournamentListItem | null>(null)
+const submittingCopy = ref(false)
+const copyError = ref<string | null>(null)
+
+const copyForm = ref<{
+  name: string
+  copyTeams: boolean
+  copyWeeks: boolean
+  copyMatches: boolean
+}>({
+  name: '',
+  copyTeams: false,
+  copyWeeks: false,
+  copyMatches: false
+})
+
+const promptCopy = (t: TournamentListItem) => {
+  copySourceTournament.value = t
+  copyForm.value = {
+    name: `${t.name} (Copy)`,
+    copyTeams: false,
+    copyWeeks: false,
+    copyMatches: false
+  }
+  copyError.value = null
+  showCopyModal.value = true
+}
+
+const onCopyMatchesChange = () => {
+  if (copyForm.value.copyMatches) {
+    copyForm.value.copyTeams = true
+  }
+}
+
+const onCopyTeamsChange = () => {
+  if (!copyForm.value.copyTeams) {
+    copyForm.value.copyMatches = false
+  }
+}
+
+const handleCopySubmit = async () => {
+  if (!copySourceTournament.value) return
+  if (!copyForm.value.name.trim()) {
+    copyError.value = 'Tournament name is required.'
+    return
+  }
+
+  submittingCopy.value = true
+  copyError.value = null
+
+  try {
+    const requestData: CopyTournamentRequest = {
+      name: copyForm.value.name.trim(),
+      copyTeams: copyForm.value.copyTeams,
+      copyWeeks: copyForm.value.copyWeeks,
+      copyMatches: copyForm.value.copyMatches
+    }
+
+    const newTournament = await adminTournamentService.copyTournament(
+      copySourceTournament.value.id,
+      requestData
+    )
+
+    showCopyModal.value = false
+    await loadTournaments()
+    void router.push(`/v4/admin/tournaments/${newTournament.id}/settings`)
+  } catch (err) {
+    console.error('Error copying tournament:', err)
+    copyError.value = err instanceof Error ? err.message : 'Failed to copy tournament.'
+  } finally {
+    submittingCopy.value = false
   }
 }
 

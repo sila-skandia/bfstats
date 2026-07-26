@@ -290,9 +290,6 @@ public class PublicTournamentController(
             if (tournament == null)
                 return NotFound(new { message = "Tournament not found" });
 
-            // Filter out draft tournaments from public view
-            if (tournament.Status == "draft")
-                return NotFound(new { message = "Tournament not found" });
 
             var tournamentId = tournament.Id;
 
@@ -337,6 +334,7 @@ public class PublicTournamentController(
                 AnticipatedRoundCount = tournament.AnticipatedRoundCount,
                 Status = tournament.Status,
                 GameMode = tournament.GameMode,
+                LayoutVersion = tournament.LayoutVersion,
                 Teams = teamResponses,
                 MatchesByWeek = matchesByWeek,
                 LatestMatches = latestMatches,
@@ -503,9 +501,9 @@ public class PublicTournamentController(
     {
         try
         {
-            // Verify tournament exists and is not draft
+            // Verify tournament exists
             var tournament = await context.Tournaments
-                .Where(t => t.Id == tournamentId && t.Status != "draft")
+                .Where(t => t.Id == tournamentId)
                 .FirstOrDefaultAsync();
 
             if (tournament == null)
@@ -582,21 +580,21 @@ public class PublicTournamentController(
             if (int.TryParse(idOrName, out int id))
             {
                 tournament = await context.Tournaments
-                    .Where(t => t.Id == id && t.Status != "draft")
+                    .Where(t => t.Id == id)
                     .FirstOrDefaultAsync();
             }
             else
             {
                 // If not a number, try slug first (more specific), then fall back to name
                 tournament = await context.Tournaments
-                    .Where(t => t.Slug == idOrName && t.Status != "draft")
+                    .Where(t => t.Slug == idOrName)
                     .FirstOrDefaultAsync();
 
                 // If no slug match, search by name
                 if (tournament == null)
                 {
                     tournament = await context.Tournaments
-                        .Where(t => t.Name == idOrName && t.Status != "draft")
+                        .Where(t => t.Name == idOrName)
                         .FirstOrDefaultAsync();
                 }
             }
@@ -657,6 +655,7 @@ public class PublicTournamentDetailResponse
     public int? AnticipatedRoundCount { get; set; }
     public string Status { get; set; } = ""; // draft, registration, open, closed
     public string? GameMode { get; set; } // Conquest, CTF, etc.
+    public int LayoutVersion { get; set; } = 1; // 1 = legacy, 2 = league layout
     public List<PublicTournamentTeamResponse> Teams { get; set; } = [];
     public List<PublicMatchWeekGroup> MatchesByWeek { get; set; } = [];
     public List<PublicTournamentMatchResponse> LatestMatches { get; set; } = []; // 2 most recent completed matches
