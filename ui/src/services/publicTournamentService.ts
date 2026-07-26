@@ -9,6 +9,7 @@ export interface PublicTournamentTeamPlayer {
 export interface PublicTournamentTeam {
   id: number;
   name: string;
+  tag?: string | null;
   createdAt: string;
   leaderPlayerName?: string;
   recruitmentStatus: TeamRecruitmentStatus;
@@ -158,8 +159,9 @@ export interface PublicTournamentDetail {
   organizer: string;
   createdAt: string;
   anticipatedRoundCount?: number;
-  status?: 'registration' | 'open' | 'closed';
+  status?: 'draft' | 'registration' | 'open' | 'closed';
   gameMode?: string;
+  layoutVersion?: 1 | 2; // 1 = legacy layout, 2 = league (v2) layout
   teams: PublicTournamentTeam[];
   matches: PublicTournamentMatch[];
   matchesByWeek?: PublicTournamentMatchesByWeek[];

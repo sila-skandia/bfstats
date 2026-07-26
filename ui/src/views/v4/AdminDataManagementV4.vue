@@ -27,7 +27,7 @@
         type="button"
         class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'query' }"
-        @click="activeTab = 'query'"
+        @click="switchTab('query')"
       >
         Query
       </button>
@@ -35,7 +35,7 @@
         type="button"
         class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'audit' }"
-        @click="activeTab = 'audit'; auditTabRef?.load?.()"
+        @click="switchTab('audit')"
       >
         Audit
       </button>
@@ -44,7 +44,7 @@
         type="button"
         class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'cron' }"
-        @click="activeTab = 'cron'"
+        @click="switchTab('cron')"
       >
         Cron
       </button>
@@ -53,7 +53,7 @@
         type="button"
         class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'merge' }"
-        @click="activeTab = 'merge'; mergeTabRef?.load?.()"
+        @click="switchTab('merge')"
       >
         Merge
       </button>
@@ -62,7 +62,7 @@
         type="button"
         class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'access' }"
-        @click="activeTab = 'access'; accessTabRef?.load?.()"
+        @click="switchTab('access')"
       >
         Access
       </button>
@@ -71,7 +71,7 @@
         type="button"
         class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'notice' }"
-        @click="activeTab = 'notice'; noticeTabRef?.load?.()"
+        @click="switchTab('notice')"
       >
         Notice
       </button>
@@ -80,9 +80,18 @@
         type="button"
         class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'ai-feedback' }"
-        @click="activeTab = 'ai-feedback'; aiFeedbackTabRef?.load?.()"
+        @click="switchTab('ai-feedback')"
       >
         AI feedback
+      </button>
+      <button
+        v-if="isAdmin"
+        type="button"
+        class="mm-admin-tab"
+        :class="{ 'mm-admin-tab--active': activeTab === 'tournaments' }"
+        @click="switchTab('tournaments')"
+      >
+        Tournaments
       </button>
     </nav>
 
@@ -95,7 +104,7 @@
         <button
           type="button"
           class="mm-admin-btn mm-admin-btn--primary mm-admin-btn--sm"
-          @click="activeTab = 'cron'; showPostDeleteAggregateHint = false"
+          @click="switchTab('cron'); showPostDeleteAggregateHint = false"
         >
           Go to Cron
         </button>
@@ -118,7 +127,7 @@
         <button
           type="button"
           class="mm-admin-btn mm-admin-btn--primary mm-admin-btn--sm"
-          @click="activeTab = 'cron'; showPostUndeleteAggregateHint = false"
+          @click="switchTab('cron'); showPostUndeleteAggregateHint = false"
         >
           Go to Cron
         </button>
@@ -164,11 +173,16 @@
     <div v-if="isAdmin" v-show="activeTab === 'ai-feedback'">
       <MmAdminAIFeedbackTab ref="aiFeedbackTabRef" />
     </div>
+
+    <div v-if="isAdmin" v-show="activeTab === 'tournaments'">
+      <AdminTournamentsV4 />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import MmAdminQueryTab from '@/components/v4/admin/MmAdminQueryTab.vue'
 import MmAdminAuditTab from '@/components/v4/admin/MmAdminAuditTab.vue'
 import MmAdminCronTab from '@/components/v4/admin/MmAdminCronTab.vue'
@@ -176,9 +190,14 @@ import MmAdminMergeTab from '@/components/v4/admin/MmAdminMergeTab.vue'
 import MmAdminAccessTab from '@/components/v4/admin/MmAdminAccessTab.vue'
 import MmAdminNoticeTab from '@/components/v4/admin/MmAdminNoticeTab.vue'
 import MmAdminAIFeedbackTab from '@/components/v4/admin/MmAdminAIFeedbackTab.vue'
+import AdminTournamentsV4 from '@/views/v4/AdminTournamentsV4.vue'
 import { useAuth } from '@/composables/useAuth'
 import '@/styles/mm-admin.css'
 
+type TabName = 'query' | 'audit' | 'cron' | 'merge' | 'access' | 'notice' | 'ai-feedback' | 'tournaments'
+
+const route = useRoute()
+const router = useRouter()
 const { isAdmin } = useAuth()
 
 const ADMIN_DATA_GAME_FILTER_KEY = 'bf1942_admin_data_game_filter'
@@ -189,7 +208,9 @@ const gameTypes = [
   { id: 'bfvietnam', label: 'BFV' },
 ]
 
-const activeTab = ref<'query' | 'audit' | 'cron' | 'merge' | 'access' | 'notice' | 'ai-feedback'>('query')
+const VALID_TABS: TabName[] = ['query', 'audit', 'cron', 'merge', 'access', 'notice', 'ai-feedback', 'tournaments']
+
+const activeTab = ref<TabName>('query')
 const activeGameFilter = ref<string>('bf1942')
 const showPostDeleteAggregateHint = ref(false)
 const showPostUndeleteAggregateHint = ref(false)
@@ -199,6 +220,28 @@ const noticeTabRef = ref<InstanceType<typeof MmAdminNoticeTab> & { load?: () => 
 const aiFeedbackTabRef = ref<InstanceType<typeof MmAdminAIFeedbackTab> & { load?: () => void } | null>(null)
 const mergeTabRef = ref<InstanceType<typeof MmAdminMergeTab> & { load?: () => void } | null>(null)
 
+function switchTab(tab: TabName) {
+  if (!VALID_TABS.includes(tab)) return
+  activeTab.value = tab
+
+  // Sync tab into URL query parameters so refreshes keep active tab
+  if (route.query.tab !== tab) {
+    void router.replace({
+      query: {
+        ...route.query,
+        tab
+      }
+    })
+  }
+
+  // Trigger load callbacks for tab components when selected
+  if (tab === 'audit') auditTabRef.value?.load?.()
+  else if (tab === 'merge') mergeTabRef.value?.load?.()
+  else if (tab === 'access') accessTabRef.value?.load?.()
+  else if (tab === 'notice') noticeTabRef.value?.load?.()
+  else if (tab === 'ai-feedback') aiFeedbackTabRef.value?.load?.()
+}
+
 function setGameFilter(id: string) {
   if (!gameTypes.some((g) => g.id === id)) return
   activeGameFilter.value = id
@@ -207,7 +250,19 @@ function setGameFilter(id: string) {
   } catch { /* ignore */ }
 }
 
+const syncTabFromRoute = () => {
+  const qTab = route.query.tab as string
+  if (qTab && VALID_TABS.includes(qTab as TabName)) {
+    activeTab.value = qTab as TabName
+  }
+}
+
+watch(() => route.query.tab, () => {
+  syncTabFromRoute()
+})
+
 onMounted(() => {
+  syncTabFromRoute()
   try {
     const saved = localStorage.getItem(ADMIN_DATA_GAME_FILTER_KEY)
     if (saved && gameTypes.some((g) => g.id === saved)) activeGameFilter.value = saved

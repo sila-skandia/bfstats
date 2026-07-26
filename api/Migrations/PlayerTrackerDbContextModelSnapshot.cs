@@ -1259,6 +1259,11 @@ namespace api.Migrations
                     b.Property<string>("HeroImageContentType")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("LayoutVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
