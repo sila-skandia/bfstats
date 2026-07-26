@@ -82,6 +82,7 @@ echo "🐳 Running in Docker (mcr.microsoft.com/playwright:v1.56.1-jammy)..."
 
 set +e # Allow script to continue after test failure to show report info
 docker run --rm --network host \
+  --add-host=localhost:127.0.0.1 \
   -v $(pwd):/work \
   -w /work \
   -e CI=true \
