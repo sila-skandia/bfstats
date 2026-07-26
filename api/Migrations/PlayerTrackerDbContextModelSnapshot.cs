@@ -1324,6 +1324,53 @@ namespace api.Migrations
                     b.ToTable("Tournaments");
                 });
 
+            modelBuilder.Entity("api.PlayerTracking.TournamentComment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AuthorPlayerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AuthorUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MatchId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ParentCommentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TournamentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorUserId");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("ParentCommentId");
+
+                    b.HasIndex("TournamentId", "MatchId", "CreatedAt");
+
+                    b.ToTable("TournamentComments");
+                });
+
             modelBuilder.Entity("api.PlayerTracking.TournamentFile", b =>
                 {
                     b.Property<int>("Id")
@@ -2086,6 +2133,39 @@ namespace api.Migrations
                     b.Navigation("Server");
 
                     b.Navigation("Theme");
+                });
+
+            modelBuilder.Entity("api.PlayerTracking.TournamentComment", b =>
+                {
+                    b.HasOne("api.PlayerTracking.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("api.PlayerTracking.TournamentMatch", "Match")
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("api.PlayerTracking.TournamentComment", "ParentComment")
+                        .WithMany()
+                        .HasForeignKey("ParentCommentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("api.PlayerTracking.Tournament", "Tournament")
+                        .WithMany()
+                        .HasForeignKey("TournamentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
+
+                    b.Navigation("Match");
+
+                    b.Navigation("ParentComment");
+
+                    b.Navigation("Tournament");
                 });
 
             modelBuilder.Entity("api.PlayerTracking.TournamentFile", b =>
