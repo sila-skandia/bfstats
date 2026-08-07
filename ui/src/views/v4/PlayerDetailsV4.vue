@@ -64,6 +64,12 @@ const loadCommunities = async () => {
   }
 }
 
+// Tightest squads first — cohesion is the most interesting axis when the
+// cards sit side by side, and it keeps the accent order stable per player.
+const sortedCommunities = computed(() =>
+  [...playerCommunities.value].sort((a, b) => b.cohesionScore - a.cohesionScore),
+)
+
 const loadStats = async () => {
   loading.value = true
   error.value = null
@@ -116,13 +122,15 @@ watch(rawName, () => {
 })
 
 // --- tabs ---
-type Tab = 'overview' | 'sessions' | 'maps' | 'servers' | 'achievements'
+type Tab = 'overview' | 'sessions' | 'maps' | 'servers' | 'achievements' | 'communities' | 'signature'
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'sessions', label: 'Recent sessions' },
   { id: 'maps', label: 'Maps' },
   { id: 'servers', label: 'Servers' },
   { id: 'achievements', label: 'Achievements' },
+  { id: 'communities', label: 'Communities' },
+  { id: 'signature', label: 'Signature' },
 ]
 const activeTab = ref<Tab>((route.query.tab as Tab) || 'overview')
 // Sync active tab into the URL via the native History API (see server view
@@ -618,8 +626,53 @@ const signatureServers = computed(() => {
           </div>
         </div>
 
+        <!-- weekly heatmap + best scores -->
+        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1.3fr 1fr; margin-top: 20px">
+          <MmPlayerActivityHeatmap :player-name="rawName" :game="primaryGameId" />
+
+          <section v-if="hasAnyBestScores" class="mm-panel">
+            <div class="mm-pbar">
+              <span class="mm-pbar__t"># Best scores</span>
+              <span class="mm-pbar__m">your local time</span>
+            </div>
+            <div style="padding: 12px 14px 6px">
+              <div class="mm-subtabs" style="margin-bottom: 10px">
+                <button
+                  v-for="w in scoreWindows"
+                  :key="w.id"
+                  type="button"
+                  class="mm-subtab"
+                  :class="{ 'mm-subtab--active': activeScoreWindow === w.id }"
+                  @click="activeScoreWindow = w.id"
+                >{{ w.label }}</button>
+              </div>
+              <div v-if="currentBestScores.length > 0" class="mm-bestrail">
+                <div
+                  v-for="(s, i) in currentBestScores"
+                  :key="`bsc-${s.roundId}-${i}`"
+                  class="mm-rrow mm-bestrail__row"
+                  :class="rankTintClass(i)"
+                  @click="openScoreRound(s)"
+                >
+                  <span class="mm-bestrail__idx">{{ rankNum(i) }}</span>
+                  <span class="mm-bestrail__score">{{ formatNumber(s.score) }}</span>
+                  <span class="mm-bestrail__body">
+                    <span class="mm-bestrail__map">{{ s.mapName }}</span>
+                    <span class="mm-bestrail__server">{{ truncate(s.serverName, 32) }}</span>
+                  </span>
+                  <span class="mm-bestrail__stats">
+                    <span class="mm-num--kill">{{ s.kills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.deaths }}</span>
+                    · <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
+                  </span>
+                </div>
+              </div>
+              <div v-else class="mm-empty" style="border: 0; padding: 24px 0">No scores in this window yet.</div>
+            </div>
+          </section>
+        </div>
+
         <!-- favourite maps + per-map statistics -->
-        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1.4fr; margin-top: 20px">
+        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1.4fr; margin-top: 24px">
           <section class="mm-panel">
             <div class="mm-pbar">
               <span class="mm-pbar__t"># Favourite maps</span>
@@ -664,75 +717,21 @@ const signatureServers = computed(() => {
           />
         </div>
 
-        <!-- weekly heatmap + best scores -->
-        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1.3fr 1fr; margin-top: 24px">
-          <MmPlayerActivityHeatmap :player-name="rawName" :game="primaryGameId" />
-
-          <section v-if="hasAnyBestScores" class="mm-panel">
-            <div class="mm-pbar">
-              <span class="mm-pbar__t"># Best scores</span>
-              <span class="mm-pbar__m">your local time</span>
-            </div>
-            <div style="padding: 12px 14px 6px">
-              <div class="mm-subtabs" style="margin-bottom: 10px">
-                <button
-                  v-for="w in scoreWindows"
-                  :key="w.id"
-                  type="button"
-                  class="mm-subtab"
-                  :class="{ 'mm-subtab--active': activeScoreWindow === w.id }"
-                  @click="activeScoreWindow = w.id"
-                >{{ w.label }}</button>
-              </div>
-              <div v-if="currentBestScores.length > 0" class="mm-bestrail">
-                <div
-                  v-for="(s, i) in currentBestScores"
-                  :key="`bsc-${s.roundId}-${i}`"
-                  class="mm-rrow mm-bestrail__row"
-                  :class="rankTintClass(i)"
-                  @click="openScoreRound(s)"
-                >
-                  <span class="mm-bestrail__idx">{{ rankNum(i) }}</span>
-                  <span class="mm-bestrail__score">{{ formatNumber(s.score) }}</span>
-                  <span class="mm-bestrail__body">
-                    <span class="mm-bestrail__map">{{ s.mapName }}</span>
-                    <span class="mm-bestrail__server">{{ truncate(s.serverName, 32) }}</span>
-                  </span>
-                  <span class="mm-bestrail__stats">
-                    <span class="mm-num--kill">{{ s.kills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.deaths }}</span>
-                    · <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
-                  </span>
-                </div>
-              </div>
-              <div v-else class="mm-empty" style="border: 0; padding: 24px 0">No scores in this window yet.</div>
-            </div>
-          </section>
-        </div>
-
-        <!-- proximity orbit + communities (retained, columnar) -->
-        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1fr; margin-top: 24px">
-          <section v-if="primaryServer" class="mm-panel">
-            <div class="mm-pbar">
-              <span class="mm-pbar__t"># Proximity orbit</span>
-              <span class="mm-pbar__m">{{ truncate(primaryServer.serverName, 22) }}</span>
-            </div>
-            <div class="mm-panel__body">
-              <MmPingProximityOrbit
-                seamless
-                :server-guid="primaryServer.serverGuid"
-                :server-name="primaryServer.serverName"
-                @player-click="goPlayerFromOrbit"
-              />
-            </div>
-          </section>
-
-          <section v-if="playerCommunities.length > 0" class="mm-panel">
-            <div class="mm-pbar"><span class="mm-pbar__t"># Communities</span></div>
-            <div class="mm-panel__body mm-comm-col">
-              <MmCommunityCard v-for="c in playerCommunities" :key="c.id" :community="c" />
-            </div>
-          </section>
-        </div>
+        <!-- proximity orbit -->
+        <section v-if="primaryServer" class="mm-panel" style="margin-top: 24px">
+          <div class="mm-pbar">
+            <span class="mm-pbar__t"># Proximity orbit</span>
+            <span class="mm-pbar__m">{{ truncate(primaryServer.serverName, 22) }}</span>
+          </div>
+          <div class="mm-panel__body">
+            <MmPingProximityOrbit
+              seamless
+              :server-guid="primaryServer.serverGuid"
+              :server-name="primaryServer.serverName"
+              @player-click="goPlayerFromOrbit"
+            />
+          </div>
+        </section>
       </div>
 
       <!-- ===================== SESSIONS ===================== -->
@@ -962,13 +961,45 @@ const signatureServers = computed(() => {
         />
       </div>
 
-      <!-- always-visible: signature + comments (retained, columnar) -->
-      <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1fr; margin-top: 24px">
+      <!-- ===================== COMMUNITIES ===================== -->
+      <div v-else-if="activeTab === 'communities'" style="margin-top: 20px">
+        <div class="mm-section-bar">
+          <span>Communities</span>
+          <span class="mm-section-bar__meta">
+            {{ playerCommunities.length }} {{ playerCommunities.length === 1 ? 'squad' : 'squads' }} · by cohesion
+          </span>
+        </div>
+
+        <div v-if="communitiesLoading" style="margin-top: 18px">
+          <div v-for="i in 2" :key="i" class="mm-skeleton mm-skeleton--lg" style="margin-bottom: 12px" />
+        </div>
+        <div v-else-if="playerCommunities.length === 0" class="mm-empty" style="margin-top: 18px">
+          This player isn't part of any detected community yet.
+        </div>
+        <div v-else class="mm-player-communities" style="margin-top: 18px">
+          <MmCommunityCard
+            v-for="(c, i) in sortedCommunities"
+            :key="c.id"
+            :community="c"
+            :accent-index="i"
+          />
+        </div>
+      </div>
+
+      <!-- ===================== SIGNATURE ===================== -->
+      <div v-else-if="activeTab === 'signature'" style="margin-top: 20px">
         <MmPlayerSignatureBuilder
           v-if="signatureServers.length > 0"
           :player-name="rawName"
           :servers="signatureServers"
         />
+        <div v-else class="mm-empty">
+          No server history yet — a signature needs at least one ranked server.
+        </div>
+      </div>
+
+      <!-- always-visible: comments -->
+      <div style="margin-top: 24px">
         <MmPlayerComments :player-name="rawName" />
       </div>
     </template>
@@ -1177,17 +1208,13 @@ const signatureServers = computed(() => {
 }
 .mm-bestrail__row.mm-rank--gold .mm-bestrail__idx { color: var(--mm-kd-elite); }
 
+/* Communities tab — squads side by side, wrapping to a single column once
+   a card can no longer hold its 4-up stat strip comfortably. */
 .mm-player-communities {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 18px;
-}
-
-/* communities stacked inside a dashboard panel column */
-.mm-comm-col {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  align-items: stretch;
 }
 
 /* Local best-scores override — the modern-minimal default is too washed out for
