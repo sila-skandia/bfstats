@@ -6,9 +6,22 @@ import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 
 const props = defineProps<{
   community: PlayerCommunity
+  // Position in the surrounding grid. Drives which of the four sanctioned
+  // accent tokens the card wears so a wall of squads doesn't read as one
+  // grey block. Falls back to a hash of the id when unset, which keeps a
+  // card's colour stable even when it's rendered on its own.
+  accentIndex?: number
 }>()
 
 const cohesionPercentage = computed(() => Math.round(props.community.cohesionScore * 100))
+
+const ACCENT_COUNT = 4
+const accentClass = computed(() => {
+  if (props.accentIndex != null) return `mm-comm--a${props.accentIndex % ACCENT_COUNT}`
+  let h = 0
+  for (const ch of props.community.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return `mm-comm--a${h % ACCENT_COUNT}`
+})
 
 const formatDate = (dateStr: string) => {
   const d = parseUtc(dateStr)
@@ -31,10 +44,10 @@ const statusChipClass = computed(() => {
 </script>
 
 <template>
-  <article class="mm-comm">
+  <article class="mm-comm" :class="accentClass">
     <header class="mm-comm__head">
       <div class="mm-comm__head-text">
-        <div class="mm-eyebrow">Community</div>
+        <div class="mm-eyebrow mm-comm__eyebrow">Community</div>
         <h3 class="mm-h2 mm-comm__name">{{ community.name }}</h3>
         <p class="mm-card__hint" style="margin: 4px 0 0; font-family: var(--mm-font-mono); font-size: 10.5px">
           {{ community.id }}
@@ -54,7 +67,7 @@ const statusChipClass = computed(() => {
         <div class="mm-stats__label">Members</div>
       </div>
       <div class="mm-comm__stat">
-        <div class="mm-stat__value mm-stat__value--small">{{ cohesionPercentage }}<span class="mm-stat__suffix">%</span></div>
+        <div class="mm-stat__value mm-stat__value--small mm-comm__cohesion">{{ cohesionPercentage }}<span class="mm-stat__suffix">%</span></div>
         <div class="mm-stats__label">Cohesion</div>
       </div>
       <div class="mm-comm__stat">
@@ -65,6 +78,10 @@ const statusChipClass = computed(() => {
         <div class="mm-stat__value mm-stat__value--small">{{ community.primaryServers.length }}</div>
         <div class="mm-stats__label">Servers</div>
       </div>
+    </div>
+
+    <div class="mm-comm__meter" :aria-label="`Cohesion ${cohesionPercentage}%`">
+      <span class="mm-comm__meter-fill" :style="{ width: `${cohesionPercentage}%` }" />
     </div>
 
     <div v-if="community.coreMembers.length > 0" class="mm-comm__section">
@@ -102,20 +119,54 @@ const statusChipClass = computed(() => {
       </div>
     </div>
 
-    <router-link :to="`/communities/${encodeURIComponent(community.id)}`" class="mm-btn mm-btn--accent mm-comm__cta">
+    <router-link :to="`/communities/${encodeURIComponent(community.id)}`" class="mm-btn mm-comm__cta">
       View community →
     </router-link>
   </article>
 </template>
 
 <style scoped>
+/* Per-card accent. Every value is an existing --mm-* token; the variants
+   only decide which one this card wears. color-mix derives the wash and
+   the hover tint so no new hex enters the palette. */
+.mm-comm { --comm-accent: var(--mm-accent); }
+.mm-comm--a0 { --comm-accent: var(--mm-accent); }
+.mm-comm--a1 { --comm-accent: var(--mm-load-busy); }
+.mm-comm--a2 { --comm-accent: var(--mm-kill); }
+.mm-comm--a3 { --comm-accent: var(--mm-success); }
+
 .mm-comm {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 18px 20px;
   border: 1px solid var(--mm-rule-strong);
+  border-top: 2px solid var(--comm-accent);
   border-radius: 2px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--comm-accent) 9%, transparent) 0%,
+      transparent 140px
+    );
+}
+
+.mm-comm__eyebrow { color: var(--comm-accent); }
+
+.mm-comm__cohesion { color: var(--comm-accent); }
+
+.mm-comm__meter {
+  position: relative;
+  height: 4px;
+  background: var(--mm-bg-mute);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mm-comm__meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--comm-accent);
 }
 
 .mm-comm__head {
@@ -174,8 +225,9 @@ const statusChipClass = computed(() => {
 }
 
 .mm-comm__member:hover {
-  border-color: var(--mm-accent);
-  color: var(--mm-accent);
+  border-color: var(--comm-accent);
+  color: var(--comm-accent);
+  background: color-mix(in srgb, var(--comm-accent) 12%, transparent);
 }
 
 .mm-comm__servers {
@@ -213,6 +265,16 @@ const statusChipClass = computed(() => {
   justify-content: center;
   padding: 8px 12px;
   text-align: center;
+  margin-top: auto;
+  border-color: var(--comm-accent);
+  color: var(--comm-accent);
+  background: color-mix(in srgb, var(--comm-accent) 10%, transparent);
+}
+
+.mm-comm__cta:hover {
+  background: var(--comm-accent);
+  border-color: var(--comm-accent);
+  color: var(--mm-bg);
 }
 
 @media (max-width: 640px) {

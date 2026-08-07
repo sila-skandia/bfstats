@@ -38,8 +38,13 @@ const playerData = ref<PlayerMapRankingsResponse | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 type SortField = 'mapName' | 'totalScore' | 'kdRatio' | 'totalKills' | 'totalDeaths' | 'sessionsPlayed' | 'rank'
-const sortField = ref<SortField>('totalScore')
-const sortDirection = ref<'asc' | 'desc'>('desc')
+// Default view is "where am I ranked best" — rank ascending (1 = best),
+// unranked maps sink to the bottom. See sortedMapStats for the null handling.
+const sortField = ref<SortField>('rank')
+const sortDirection = ref<'asc' | 'desc'>('asc')
+
+const PAGE_SIZE = 5
+const page = ref(1)
 
 const selectedTimeRange = ref<number>(60)
 const timeRangeOptions = PLAYER_STATS_TIME_RANGE_OPTIONS
@@ -114,6 +119,29 @@ const sortedMapStats = computed(() => {
   })
 })
 
+const totalRows = computed(() => sortedMapStats.value.length)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalRows.value / PAGE_SIZE)))
+const pagedMapStats = computed(() => {
+  const start = (page.value - 1) * PAGE_SIZE
+  return sortedMapStats.value.slice(start, start + PAGE_SIZE)
+})
+const rangeStart = computed(() => (totalRows.value === 0 ? 0 : (page.value - 1) * PAGE_SIZE + 1))
+const rangeEnd = computed(() => Math.min(page.value * PAGE_SIZE, totalRows.value))
+
+// Sliding window of at most 5 page numbers centred on the current page.
+const paginationRange = computed(() => {
+  const total = totalPages.value
+  const span = Math.min(5, total)
+  let first = Math.max(1, page.value - Math.floor(span / 2))
+  first = Math.min(first, total - span + 1)
+  return Array.from({ length: span }, (_, i) => first + i)
+})
+
+const goPage = (p: number) => {
+  if (p < 1 || p > totalPages.value) return
+  page.value = p
+}
+
 const changeSort = (field: SortField) => {
   if (sortField.value === field) {
     sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
@@ -121,6 +149,7 @@ const changeSort = (field: SortField) => {
     sortField.value = field
     sortDirection.value = field === 'rank' ? 'asc' : 'desc'
   }
+  page.value = 1
 }
 
 const loadData = async (days?: number) => {
@@ -128,6 +157,7 @@ const loadData = async (days?: number) => {
   const timeRange = days || selectedTimeRange.value
   isLoading.value = true
   error.value = null
+  page.value = 1
   try {
     playerData.value = await fetchPlayerMapRankings(
       props.playerName,
@@ -220,7 +250,7 @@ const sortIndicator = (field: SortField) => {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="m in sortedMapStats" :key="m.mapName" @click="handleMapClick(m.mapName)">
+        <tr v-for="m in pagedMapStats" :key="m.mapName" @click="handleMapClick(m.mapName)">
           <td class="mm-list__name-cell">
             <div class="mm-list__name">
               <span class="mm-list__name-primary">{{ m.mapName }}</span>
@@ -243,6 +273,34 @@ const sortIndicator = (field: SortField) => {
         </tr>
       </tbody>
     </table>
+
+    <div v-if="!isLoading && !error && totalRows > 0" class="mm-psms__foot">
+      <span class="mm-psms__count">
+        Showing {{ rangeStart }}–{{ rangeEnd }} of {{ totalRows.toLocaleString() }}
+      </span>
+      <div v-if="totalPages > 1" class="mm-psms__pagination">
+        <button
+          type="button"
+          class="mm-btn mm-btn--inline"
+          :disabled="page <= 1"
+          @click="goPage(page - 1)"
+        >‹</button>
+        <button
+          v-for="p in paginationRange"
+          :key="p"
+          type="button"
+          class="mm-btn mm-btn--inline"
+          :class="{ 'mm-psms__page--active': p === page }"
+          @click="goPage(p)"
+        >{{ p }}</button>
+        <button
+          type="button"
+          class="mm-btn mm-btn--inline"
+          :disabled="page >= totalPages"
+          @click="goPage(page + 1)"
+        >›</button>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -275,6 +333,34 @@ const sortIndicator = (field: SortField) => {
 }
 
 .mm-psms__sort-btn:hover { color: var(--mm-ink); }
+
+.mm-psms__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mm-psms__count {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+
+.mm-psms__pagination {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mm-psms__page--active {
+  background: var(--mm-ink);
+  color: var(--mm-bg);
+  border-color: var(--mm-ink);
+}
 
 .mm-psms__rank-btn {
   font-family: var(--mm-font-mono);
