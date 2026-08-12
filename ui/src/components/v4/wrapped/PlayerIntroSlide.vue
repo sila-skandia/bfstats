@@ -1,7 +1,7 @@
 <template>
   <div class="wrapped-slide intro-slide animate-line-in" @click="clickAdvancesSlide() && $emit('next')">
     <div class="intro-content">
-      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">BFSTATS · 2026 WRAPPED</div>
+      <div class="mm-eyebrow animate-rise-up" style="animation-delay: 0.06s">BFSTATS · {{ data.year }} WRAPPED</div>
       
       <div class="name-container animate-elegant-reveal" style="animation-delay: 0.16s">
         <h1 class="name-display">
@@ -10,7 +10,7 @@
       </div>
 
       <div class="spotify-subtitle animate-rise-up" style="animation-delay: 0.26s">
-        Player Wrapped <span class="text-italic">2026</span>
+        Player Wrapped <span class="text-italic">{{ data.year }}</span>
       </div>
 
       <div class="accent-line animate-rise-up" style="animation-delay: 0.32s"></div>
