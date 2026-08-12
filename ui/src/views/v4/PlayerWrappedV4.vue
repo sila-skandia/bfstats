@@ -387,6 +387,9 @@ const userId = computed(() => Number(route.params.userId))
 // route redirects to the current year, so this is always populated.
 const wrappedYear = Number(route.params.year) || new Date().getFullYear()
 const yearShort = String(wrappedYear).slice(-2)
+// ?refresh=true forces the API to recalculate rather than serve the stored
+// result — for tracing a recalculation, not something the UI links to.
+const forceRefresh = route.query.refresh === 'true' || route.query.refresh === ''
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -483,10 +486,10 @@ onMounted(async () => {
 
   try {
     if (isProfileMode.value) {
-      const profileData = await fetchProfileWrapped(userId.value, wrappedYear)
+      const profileData = await fetchProfileWrapped(userId.value, wrappedYear, forceRefresh)
       data.value = { ...profileData, playerName: 'Your Year in Review', serverGuid: 'global', serverName: 'All Aliases' }
     } else {
-      data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, wrappedYear)
+      data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, wrappedYear, forceRefresh)
     }
 
     // Preload dynamic achievements from the player's medals/achievements breakdown
