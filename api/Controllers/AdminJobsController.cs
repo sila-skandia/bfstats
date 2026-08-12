@@ -241,10 +241,15 @@ public class AdminJobsController(
     /// <summary>
     /// Trigger manual Player Wrapped aggregate crunching for 2026 (fire-and-forget).
     /// </summary>
+    /// <param name="topPlayers">
+    /// Optional. Crunch the busiest N players of 2026 by total playtime instead of the configured
+    /// allowlist — e.g. <c>?topPlayers=1000</c> to rehearse a full run at a manageable size.
+    /// </param>
     [HttpPost("player-wrapped-crunch")]
-    public IActionResult TriggerPlayerWrappedCrunch()
+    public IActionResult TriggerPlayerWrappedCrunch([FromQuery] int? topPlayers = null)
     {
-        logger.LogInformation("Manual trigger: PlayerWrappedCrunch (fire-and-forget)");
+        logger.LogInformation("Manual trigger: PlayerWrappedCrunch (fire-and-forget), topPlayers={TopPlayers}",
+            topPlayers?.ToString() ?? "allowlist");
 
         _ = Task.Run(async () =>
         {
@@ -252,7 +257,7 @@ public class AdminJobsController(
             var service = scope.ServiceProvider.GetRequiredService<api.Wrapped.IWrappedService>();
             try
             {
-                await service.CrunchAllPlayersWrappedAsync(2026, System.Threading.CancellationToken.None);
+                await service.CrunchAllPlayersWrappedAsync(2026, System.Threading.CancellationToken.None, topPlayers);
                 logger.LogInformation("PlayerWrappedCrunch completed successfully");
             }
             catch (Exception ex)
@@ -261,7 +266,12 @@ public class AdminJobsController(
             }
         });
 
-        return Accepted(new { message = "Player Wrapped crunching job started in the background." });
+        return Accepted(new
+        {
+            message = topPlayers is > 0
+                ? $"Player Wrapped crunching job started in the background for the top {topPlayers} players by playtime."
+                : "Player Wrapped crunching job started in the background."
+        });
     }
 
     /// <summary>

@@ -24,7 +24,11 @@ public interface IWrappedService
     /// <summary>
     /// Background job method to compute and store Player Wrapped aggregates in the database cache.
     /// </summary>
-    Task CrunchAllPlayersWrappedAsync(int year, CancellationToken ct);
+    /// <param name="topPlayerCount">
+    /// When set, crunches the busiest N players of the year by total playtime instead of the
+    /// configured allowlist. Each player's server variant is their own most-played server.
+    /// </param>
+    Task CrunchAllPlayersWrappedAsync(int year, CancellationToken ct, int? topPlayerCount = null);
 
     /// <summary>
     /// Gets a combined "Your Year in Review" Wrapped for all of a user's registered aliases,
