@@ -811,6 +811,23 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerStatsMonthly>()
             .HasIndex(psm => new { psm.Year, psm.Month });
 
+        // Covering index for the year-wide "SUM(...) GROUP BY PlayerName" population scans behind
+        // Wrapped ranks and percentiles. Without it SQLite seeks IX_Year_Month then builds a temp
+        // b-tree for the GROUP BY; with it the whole aggregate is served from the index in
+        // PlayerName order, no sorter and no table lookups.
+        modelBuilder.Entity<PlayerStatsMonthly>()
+            .HasIndex(psm => new
+            {
+                psm.Year,
+                psm.PlayerName,
+                psm.TotalScore,
+                psm.TotalKills,
+                psm.TotalRounds,
+                psm.TotalDeaths,
+                psm.TotalPlayTimeMinutes
+            })
+            .HasDatabaseName("IX_PlayerStatsMonthly_Year_PlayerName_Covering");
+
         modelBuilder.Entity<PlayerStatsMonthly>()
             .Property(psm => psm.FirstRoundTime)
             .HasConversion(
@@ -865,6 +882,16 @@ public class PlayerTrackerDbContext : DbContext
         // Optimizes alias detection queries that filter by PlayerName and ServerGuid
         modelBuilder.Entity<PlayerMapStats>()
             .HasIndex(pms => new { pms.PlayerName, pms.ServerGuid, pms.Year, pms.Month });
+
+        // Column order matters here: the per-player map aggregate filters
+        // PlayerName/Year/ServerGuid and groups by MapName. Without an index in exactly that
+        // shape SQLite prefers IX_ServerGuid_MapName - because it makes the GROUP BY free - and
+        // then seeks on ServerGuid='' (the global sentinel, i.e. most of the table), ignoring
+        // PlayerName entirely and scanning millions of rows for one player. Measured at ~4.4s
+        // per player before, sub-millisecond after.
+        modelBuilder.Entity<PlayerMapStats>()
+            .HasIndex(pms => new { pms.PlayerName, pms.Year, pms.ServerGuid, pms.MapName })
+            .HasDatabaseName("IX_PlayerMapStats_PlayerName_Year_ServerGuid_MapName");
 
         modelBuilder.Entity<PlayerMapStats>()
             .Property(pms => pms.UpdatedAt)
@@ -992,6 +1019,18 @@ public class PlayerTrackerDbContext : DbContext
 
         modelBuilder.Entity<PlayerAchievement>()
             .HasIndex(pa => pa.AchievedAt);
+
+        // Serves the year-wide round_placement tally that Wrapped's placement ranks are built
+        // from. Column order follows that query exactly: seek on AchievementType, then already
+        // grouped by (ServerGuid, PlayerName) so no temp b-tree, and covering so AchievedAt is
+        // filtered without touching the table. Measured 85ms -> 21ms over 240k placements.
+        modelBuilder.Entity<PlayerAchievement>()
+            .HasIndex(pa => new { pa.AchievementType, pa.ServerGuid, pa.PlayerName, pa.AchievedAt })
+            .HasDatabaseName("IX_PlayerAchievements_AchievementType_ServerGuid_PlayerName_AchievedAt");
+
+        // Note: the kill-streak leaderboard scan needs no new index. It was slow because
+        // LIKE 'kill\_streak\_%' can't use one at all; rewritten as a range over AchievementId it
+        // uses the existing IX_PlayerAchievements_AchievementId (measured 156ms -> 6ms).
 
         // Supports the Wrapped "Relations" lookup (WrappedService), which joins/filters
         // PlayerAchievements by (RoundId, PlayerName) to find who won a given round. Without
