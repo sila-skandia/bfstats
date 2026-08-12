@@ -86,6 +86,13 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /usr/local/etc/haproxy
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "300m"
       volumes:
       - name: config
         configMap:
