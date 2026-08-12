@@ -163,11 +163,25 @@ order by Views desc
 All scoped to the API by `@Resource.service.name = 'api'` — the notifications
 service does not export metrics.
 
+**These select `from series`, not `from stream`.** Metric samples and log events
+live in separate query sources. Querying metrics `from stream` is not an error —
+it returns a well-formed result with `null` in every slice, which looks exactly
+like "no data has arrived yet". Verified on Seq 2026.1.17083: `from stream`
+returned all-null while `from series` returned real values for the same samples.
+
+The traffic queries above stay on `from stream`, because `PageView` is a log
+event rather than a metric.
+
+`SEQ_FEATURES_ENABLED=IngestOtlpMetrics` appears to be a no-op on 2026.1 —
+`/ingest/otlp/v1/metrics` returns 200 and `EnabledFeatures` reports `None`, with
+no feature-flag line at startup. The setting is harmless and still required on
+2025.x, so it is left in place.
+
 **CPU** — chart type: **line**
 
 ```
 select mean(process.cpu.utilization) * 100 as CpuPercent
-from stream
+from series
 where @Resource.service.name = 'api'
 group by time(1m)
 ```
@@ -178,7 +192,7 @@ group by time(1m)
 select
   mean(process.memory.usage) / 1048576 as WorkingSetMB,
   mean(process.runtime.managed_heap) / 1048576 as ManagedHeapMB
-from stream
+from series
 where @Resource.service.name = 'api'
 group by time(1m)
 ```
@@ -187,7 +201,7 @@ group by time(1m)
 
 ```
 select max(process.cpu.utilization) * 100 as PeakCpuPercent
-from stream
+from series
 where @Resource.service.name = 'api'
 ```
 
