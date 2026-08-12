@@ -104,6 +104,50 @@ junie-des-1942stats/
 
 ---
 
+## Deployment constraints
+
+**Production is a single Hetzner node: 4000m CPU, 7741Mi memory.** Everything runs on it — API,
+UI, Seq, Neo4j, Redis, notifications, ingress. There is nowhere for a workload to spill over to.
+
+Manifests live in `deploy/app/`. Every container has `requests` and `limits`; keep it that way.
+An unbounded container here is a node outage waiting to happen, and one carrying
+`priorityClassName: 1942-services` doubly so — top scheduling priority means the kubelet evicts
+*everything else* first while the offender keeps growing.
+
+The invariant to preserve: **the sum of all memory limits must leave ~1.5Gi for the OS, kubelet
+and k3s system pods.** CPU limits may oversubscribe — CPU is compressible, so the scheduler
+throttles rather than kills.
+
+To check the budget before changing a limit:
+
+```bash
+grep -A6 -r "resources:" deploy/app/ --include="*.yaml" --include="*.yml"
+```
+
+### Before raising any memory-sized setting
+
+Ask what multiplies it, then do the arithmetic against 7741Mi. Two multipliers bite here:
+
+- **SQLite pragmas are per connection, and connections are pooled.** `PRAGMA cache_size` is not a
+  process-wide budget — it is a per-connection reservation, so the real cost is the value times
+  however many connections the pool holds (10–30 is normal between request concurrency and the
+  background jobs). `mmap_size` likewise maps per connection, and mapped pages count toward the
+  container's RSS and so against its cgroup limit.
+- **.NET sizes its GC heap from the cgroup limit** (~75% by default). A container's memory limit
+  is therefore also its GC back-pressure; removing the limit removes the back-pressure.
+
+This is not hypothetical. `cache_size = -262144` (256 MiB) plus `mmap_size = 1GiB` were added to
+`SqliteConnectionInterceptor` in Aug 2026 to speed up whole-table aggregate scans. Per connection,
+across an unbounded pool, on an unbounded container, that took the node into memory-pressure
+thrash and required a hard power-cycle. Reverted in `a1c5cfb`; limits added in `48c552d`.
+
+Note that `SqliteConnectionInterceptor` applies to **every** connection in the process, so a
+tuning change made for one feature lands on all of them, including the hourly
+`AggregateCalculationService` and `RankingCalculationService` loops that sweep most of an 18GB
+database.
+
+---
+
 ## Conventions
 
 - When we document our decisions or iterate on a design, we store the outcomes / tasklist / progress in a markdown file in `features/<feature-name>` where feature name is a brief descriptive name of the feature separated by hyphens
