@@ -152,6 +152,44 @@ Per player, the population work drops from ~13s to a binary search, and the map 
 ~6s to sub-millisecond. What's left is genuinely per-player: Neo4j squad lookup (~0.6s),
 Relations (~0.6s), and a handful of indexed queries.
 
+## Round two (after the first production trace)
+
+The first trace after deploying took the request from **23,296ms to 2,543ms**, of which 2,105ms
+was the one-off population snapshot build — so the per-player cost was **438ms**. Three follow-ups
+came out of reading it.
+
+### Deduplicate the server-agnostic sections across the two passes
+
+The crunch calls the calculation twice per player (their server, then global). Server Rankings
+reads `serverGuid` **zero** times, and the Relations wins/losses query has no server filter
+either, so both sections produce identical output on both passes and were being computed twice.
+
+Single-slot memos keyed by player+year — the two passes run back to back on the same service
+instance, so one slot always hits and nothing accumulates. Saves ~294ms per player (199ms
+Server Rankings + 95ms Relations), about 20% of the per-player cost. Squad was already
+deduplicated this way by its Redis cache.
+
+### Overlap Neo4j with the SQLite work
+
+Squad is the only section on a different backend, so it is the only one that can genuinely run
+concurrently. The co-player lookup now starts at the top of the calculation and is awaited at the
+Squad section, so its ~580ms uncached cost hides behind the ~438ms of SQLite work instead of
+adding to it. The `wrapped.neo4j_wait_ms` tag measures *waiting*, not the round trip — near zero
+means it fully overlapped.
+
+Everything else stays sequential deliberately: `DbContext` is not thread-safe and the raw ADO.NET
+sections share one connection, so parallelising them would need a scope per section. The crunch is
+throughput-bound and already runs 4 workers, so that would redistribute work rather than add
+capacity.
+
+### Instrument the unexplained 135ms
+
+Server Rankings measured 199ms but only 63ms of it was queries. Split into `PlayerScores`,
+`Select` and `Ping` child spans so the next trace attributes the rest.
+
+Projected: ~1,456ms → **~724ms** per player, so 30k players goes from ~12.1h to ~6.0h
+single-threaded, ~1.5h at parallelism 4.
+
 ## Not done
 
 - **Squad and Relations are duplicated between the two variants.** `CrunchAllPlayersWrappedAsync`
