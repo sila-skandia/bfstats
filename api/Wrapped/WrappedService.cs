@@ -3,13 +3,13 @@ using api.PlayerTracking;
 using api.Wrapped.Models;
 using api.Utils;
 using api.PlayerRelationships;
-using api.Players;
 using api.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -18,6 +18,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace api.Wrapped;
 
@@ -27,13 +28,41 @@ public class WrappedService(
     IServiceProvider serviceProvider,
     ILogger<WrappedService> logger) : IWrappedService
 {
-    private readonly IPlayerRelationshipService? _relationshipService = 
+    private readonly IPlayerRelationshipService? _relationshipService =
         (IPlayerRelationshipService?)serviceProvider.GetService(typeof(IPlayerRelationshipService));
 
-    private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions 
-    { 
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase 
+    private readonly IWrappedPopulationStatsProvider? _populationStatsProvider =
+        (IWrappedPopulationStatsProvider?)serviceProvider.GetService(typeof(IWrappedPopulationStatsProvider));
+
+    /// <summary>
+    /// Fallback snapshot for when no provider is registered (unit tests). Scoped to this service
+    /// instance so a crunch loop still builds it once rather than once per player.
+    /// </summary>
+    private readonly Dictionary<int, WrappedPopulationStats> _localPopulationStats = new();
+
+    private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     }.ConfigureForNodaTime(DateTimeZoneProviders.Tzdb);
+
+    /// <summary>
+    /// Population-wide leaderboards for the year. Every rank and percentile below is a binary
+    /// search into these instead of its own whole-table GROUP BY per player.
+    /// </summary>
+    private async Task<WrappedPopulationStats> GetPopulationStatsAsync(int year, CancellationToken ct = default)
+    {
+        if (_populationStatsProvider != null)
+        {
+            return await _populationStatsProvider.GetAsync(year, ct);
+        }
+
+        if (!_localPopulationStats.TryGetValue(year, out var stats))
+        {
+            stats = await WrappedPopulationStatsBuilder.BuildAsync(dbContext, year, logger, ct);
+            _localPopulationStats[year] = stats;
+        }
+        return stats;
+    }
 
     private List<string> GetAllowedGuids()
     {
@@ -883,45 +912,126 @@ public class WrappedService(
         activity?.SetTag("wrapped.player_server_pair_count", activePlayers.Count);
         logger.LogInformation("Starting pre-computation of Wrapped data for {Count} active player-server pairs for year {Year}", activePlayers.Count, year);
 
+        // Build the shared population snapshot before fanning out, so workers don't race to
+        // build it and every player's ranks come from one consistent view of the year.
+        await GetPopulationStatsAsync(year, ct);
+
+        var parallelism = GetCrunchParallelism();
+        activity?.SetTag("wrapped.crunch_parallelism", parallelism);
+
         int failures = 0;
-        foreach (var p in activePlayers)
-        {
-            if (ct.IsCancellationRequested) break;
-            logger.LogDebug("Crunching player wrapped for: {PlayerName} on server {ServerGuid}", p.PlayerName, p.ServerGuid);
-
-            // Fresh trace per player (parentContext: default), not a child of the CrunchAllPlayers
-            // root - a crunch run covers many players, and nesting every player's full
-            // calculation (all its section/batch/phase sub-spans) into one trace can exceed a
-            // trace viewer's per-trace span-count render limit. Each player's trace is still
-            // findable by its player.name/server.guid tags.
-            using var playerActivity = ActivitySources.Wrapped.StartActivity(
-                "Wrapped.CrunchPlayer", ActivityKind.Internal, parentContext: default);
-            playerActivity?.SetTag("player.name", p.PlayerName);
-            playerActivity?.SetTag("server.guid", p.ServerGuid);
-
-            try
+        await RunCrunchWorkAsync(
+            activePlayers.Select(p => (p.PlayerName, p.ServerGuid)).ToList(),
+            parallelism,
+            async (work, service, ct2) =>
             {
-                var serverData = await CalculatePlayerWrappedInternalAsync(p.PlayerName, p.ServerGuid, year);
-                if (serverData != null)
-                {
-                    await SavePlayerToCacheAsync(p.PlayerName, p.ServerGuid, year, serverData);
-                }
+                // Fresh trace per player (parentContext: default), not a child of the
+                // CrunchAllPlayers root - a crunch run covers many players, and nesting every
+                // player's full calculation (all its section/batch/phase sub-spans) into one
+                // trace can exceed a trace viewer's per-trace span-count render limit. Each
+                // player's trace is still findable by its player.name/server.guid tags.
+                using var playerActivity = ActivitySources.Wrapped.StartActivity(
+                    "Wrapped.CrunchPlayer", ActivityKind.Internal, parentContext: default);
+                playerActivity?.SetTag("player.name", work.PlayerName);
+                playerActivity?.SetTag("server.guid", work.ServerGuid);
 
-                var globalData = await CalculatePlayerWrappedInternalAsync(p.PlayerName, "global", year);
-                if (globalData != null)
+                try
                 {
-                    await SavePlayerToCacheAsync(p.PlayerName, "global", year, globalData);
+                    await service.CrunchOnePlayerAsync(work.PlayerName, work.ServerGuid, year);
+                    await service.CrunchOnePlayerAsync(work.PlayerName, "global", year);
                 }
-            }
-            catch (Exception ex)
-            {
-                failures++;
-                playerActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                logger.LogError(ex, "Failed to pre-compute wrapped data for player: {PlayerName}", p.PlayerName);
-            }
-        }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref failures);
+                    playerActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    logger.LogError(ex, "Failed to pre-compute wrapped data for player: {PlayerName}", work.PlayerName);
+                }
+            },
+            ct);
+
         activity?.SetTag("wrapped.failure_count", failures);
-        logger.LogInformation("Player Wrapped pre-computation completed successfully.");
+        logger.LogInformation("Player Wrapped pre-computation completed successfully ({Failures} failures).", failures);
+    }
+
+    /// <summary>
+    /// Calculates and caches one player/server pair. Exposed so a crunch worker running in its
+    /// own DI scope can drive its own WrappedService instance.
+    /// </summary>
+    internal async Task CrunchOnePlayerAsync(string playerName, string serverGuid, int year)
+    {
+        var data = await CalculatePlayerWrappedInternalAsync(playerName, serverGuid, year);
+        if (data != null)
+        {
+            await SavePlayerToCacheAsync(playerName, serverGuid, year, data);
+        }
+    }
+
+    private int GetCrunchParallelism()
+    {
+        var configured = configuration.GetValue<int?>("PlayerWrapped:CrunchParallelism");
+        // SQLite in WAL mode serves concurrent readers well, so a few workers scale close to
+        // linearly; past that they mostly contend for the write lock on the cache table.
+        var value = configured ?? 4;
+        return Math.Clamp(value, 1, 16);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> over every item, giving each worker its own DI scope (and so
+    /// its own DbContext and connection). Sharing one DbContext across a 30k-player run meant its
+    /// change tracker accumulated every entity ever loaded, and a single context cannot be used
+    /// concurrently at all.
+    ///
+    /// Falls back to running in-place on this instance when no scope factory is available (unit
+    /// tests construct the service directly), which keeps the original sequential behaviour.
+    /// </summary>
+    private async Task RunCrunchWorkAsync<T>(
+        IReadOnlyList<T> items,
+        int parallelism,
+        Func<T, WrappedService, CancellationToken, Task> work,
+        CancellationToken ct)
+    {
+        var scopeFactory = (IServiceScopeFactory?)serviceProvider.GetService(typeof(IServiceScopeFactory));
+
+        if (scopeFactory == null || parallelism <= 1)
+        {
+            foreach (var item in items)
+            {
+                if (ct.IsCancellationRequested) break;
+
+                if (scopeFactory == null)
+                {
+                    await work(item, this, ct);
+                }
+                else
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    await work(item, ResolveScoped(scope), ct);
+                }
+            }
+            return;
+        }
+
+        var queue = new ConcurrentQueue<T>(items);
+        var workers = Enumerable.Range(0, parallelism).Select(async _ =>
+        {
+            while (!ct.IsCancellationRequested && queue.TryDequeue(out var item))
+            {
+                // A scope per item, not per worker: the point is to bound how much the change
+                // tracker and connection state can accumulate.
+                using var scope = scopeFactory.CreateScope();
+                var scoped = (WrappedService)scope.ServiceProvider.GetRequiredService<IWrappedService>();
+                await work(item, scoped, ct);
+            }
+        });
+
+        await Task.WhenAll(workers);
+        return;
+
+        // A scope only helps if it actually yields a distinct WrappedService (and so a distinct
+        // DbContext); if the registration is ever swapped for something else, fall back to
+        // running in place rather than throwing mid-run.
+        WrappedService ResolveScoped(IServiceScope scope) =>
+            scope.ServiceProvider.GetRequiredService<IWrappedService>() as WrappedService ?? this;
     }
 
     public async Task CrunchAllProfilesWrappedAsync(int year, CancellationToken ct)
@@ -940,34 +1050,34 @@ public class WrappedService(
         activity?.SetTag("wrapped.alias_count", aliasNames.Count);
         logger.LogInformation("Starting pre-computation of Profile Wrapped alias data for {Count} aliases for year {Year}", aliasNames.Count, year);
 
+        await GetPopulationStatsAsync(year, ct);
+
         int failures = 0;
-        foreach (var alias in aliasNames)
-        {
-            if (ct.IsCancellationRequested) break;
-            logger.LogDebug("Crunching profile wrapped alias: {Alias}", alias);
-
-            // Fresh trace per alias, same reasoning as Wrapped.CrunchPlayer above.
-            using var aliasActivity = ActivitySources.Wrapped.StartActivity(
-                "Wrapped.CrunchProfileAlias", ActivityKind.Internal, parentContext: default);
-            aliasActivity?.SetTag("player.name", alias);
-
-            try
+        await RunCrunchWorkAsync(
+            aliasNames,
+            GetCrunchParallelism(),
+            async (alias, service, ct2) =>
             {
-                var globalData = await CalculatePlayerWrappedInternalAsync(alias, "global", year);
-                if (globalData != null)
+                // Fresh trace per alias, same reasoning as Wrapped.CrunchPlayer above.
+                using var aliasActivity = ActivitySources.Wrapped.StartActivity(
+                    "Wrapped.CrunchProfileAlias", ActivityKind.Internal, parentContext: default);
+                aliasActivity?.SetTag("player.name", alias);
+
+                try
                 {
-                    await SavePlayerToCacheAsync(alias, "global", year, globalData);
+                    await service.CrunchOnePlayerAsync(alias, "global", year);
                 }
-            }
-            catch (Exception ex)
-            {
-                failures++;
-                aliasActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                logger.LogError(ex, "Failed to pre-compute Profile Wrapped data for alias: {Alias}", alias);
-            }
-        }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref failures);
+                    aliasActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    logger.LogError(ex, "Failed to pre-compute Profile Wrapped data for alias: {Alias}", alias);
+                }
+            },
+            ct);
+
         activity?.SetTag("wrapped.failure_count", failures);
-        logger.LogInformation("Profile Wrapped alias pre-computation completed successfully.");
+        logger.LogInformation("Profile Wrapped alias pre-computation completed successfully ({Failures} failures).", failures);
     }
 
     public async Task<ProfileWrappedResponseDto?> GetProfileWrappedAsync(int userId, int year = 2026, bool bypassCache = false)
@@ -1351,6 +1461,18 @@ public class WrappedService(
 
     private record StreakInstanceDto(int Streak, string MapName, Instant Date, string RoundId);
 
+    /// <summary>
+    /// A player's per-map totals for the year. Shared by the Trend, Favourite Map and Dishonours
+    /// sections so PlayerMapStats is aggregated once per calculation.
+    /// </summary>
+    private record MapAggregate(
+        string MapName,
+        int TotalRounds,
+        double TotalPlayTimeMinutes,
+        int TotalKills,
+        int TotalDeaths,
+        int TotalScore);
+
     private async Task<PlayerWrappedResponseDto?> CalculatePlayerWrappedInternalAsync(string playerName, string serverGuid, int year)
     {
         using var activity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped");
@@ -1371,9 +1493,12 @@ public class WrappedService(
             serverName = server.Name;
         }
 
+        var population = await GetPopulationStatsAsync(year);
+
         // 1. Year in Numbers
         var playerYearInNumbersActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.YearInNumbers");
         var serverStatsQuery = dbContext.PlayerServerStats
+            .AsNoTracking()
             .Where(pss => pss.PlayerName == playerName && pss.Year == year);
 
         if (serverGuid != "global")
@@ -1389,80 +1514,40 @@ public class WrappedService(
         double hoursInCombat = serverStats.Sum(s => s.TotalPlayTimeMinutes) / 60.0;
         double kdRatio = totalDeaths > 0 ? Math.Round((double)totalKills / totalDeaths, 2) : totalKills;
 
+        // Ranks and percentiles are all "how many players beat this number" against the same
+        // year-wide population, so they come from the shared snapshot rather than one
+        // whole-table GROUP BY apiece. Ranks are competition ranks (ties share a place).
         int serverRank = 1;
         if (roundsPlayed > 0)
         {
-            if (serverGuid != "global")
-            {
-                var playerTotalScore = serverStats.Sum(s => s.TotalScore);
-                var higherScoreCount = await dbContext.PlayerServerStats
-                    .Where(pss => pss.ServerGuid == serverGuid && pss.Year == year)
-                    .GroupBy(pss => pss.PlayerName)
-                    .Select(g => new { PlayerName = g.Key, Score = g.Sum(pss => pss.TotalScore) })
-                    .CountAsync(x => x.Score > playerTotalScore);
-                serverRank = higherScoreCount + 1;
-            }
-            else
-            {
-                var playerTotalScore = serverStats.Sum(s => s.TotalScore);
-                var higherScoreCount = await dbContext.PlayerStatsMonthly
-                    .Where(psm => psm.Year == year)
-                    .GroupBy(psm => psm.PlayerName)
-                    .Select(g => new { PlayerName = g.Key, Score = g.Sum(psm => psm.TotalScore) })
-                    .CountAsync(x => x.Score > playerTotalScore);
-                serverRank = higherScoreCount + 1;
-            }
+            var playerTotalScore = serverStats.Sum(s => s.TotalScore);
+            var scoresAsc = serverGuid != "global"
+                ? population.ServerScoresAsc.GetValueOrDefault(serverGuid, [])
+                : population.GlobalScoresAsc;
+            serverRank = WrappedPopulationStats.CountGreater(scoresAsc, playerTotalScore) + 1;
         }
 
         int killsRank = 1;
         if (totalKills > 0)
         {
-            if (serverGuid != "global")
-            {
-                var higherKillsCount = await dbContext.PlayerServerStats
-                    .Where(pss => pss.ServerGuid == serverGuid && pss.Year == year)
-                    .GroupBy(pss => pss.PlayerName)
-                    .Select(g => new { PlayerName = g.Key, Kills = g.Sum(pss => pss.TotalKills) })
-                    .CountAsync(x => x.Kills > totalKills);
-                killsRank = higherKillsCount + 1;
-            }
-            else
-            {
-                var higherKillsCount = await dbContext.PlayerStatsMonthly
-                    .Where(psm => psm.Year == year)
-                    .GroupBy(psm => psm.PlayerName)
-                    .Select(g => new { PlayerName = g.Key, Kills = g.Sum(psm => psm.TotalKills) })
-                    .CountAsync(x => x.Kills > totalKills);
-                killsRank = higherKillsCount + 1;
-            }
+            var killsAsc = serverGuid != "global"
+                ? population.ServerKillsAsc.GetValueOrDefault(serverGuid, [])
+                : population.GlobalKillsAsc;
+            killsRank = WrappedPopulationStats.CountGreater(killsAsc, totalKills) + 1;
         }
 
-        var playerPlacementsQuery = dbContext.PlayerAchievements
-            .Where(pa => pa.PlayerName == playerName && pa.AchievementType == "round_placement" && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
-
-        if (serverGuid != "global")
-        {
-            playerPlacementsQuery = playerPlacementsQuery.Where(pa => pa.ServerGuid == serverGuid);
-        }
-
-        int playerPlacements = await playerPlacementsQuery.CountAsync();
+        int playerPlacements = serverGuid != "global"
+            ? population.PlayerPlacementsByServer.GetValueOrDefault(
+                WrappedPopulationStats.ServerPlayerKey(serverGuid, playerName))
+            : population.PlayerPlacementTotals.GetValueOrDefault(playerName);
 
         int placementsRank = 1;
         if (playerPlacements > 0)
         {
-            var higherPlacementsQuery = dbContext.PlayerAchievements
-                .Where(pa => pa.AchievementType == "round_placement" && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
-
-            if (serverGuid != "global")
-            {
-                higherPlacementsQuery = higherPlacementsQuery.Where(pa => pa.ServerGuid == serverGuid);
-            }
-
-            var higherPlacementsCount = await higherPlacementsQuery
-                .GroupBy(pa => pa.PlayerName)
-                .Select(g => new { PlayerName = g.Key, Count = g.Count() })
-                .CountAsync(x => x.Count > playerPlacements);
-            placementsRank = higherPlacementsCount + 1;
+            var placementsAsc = serverGuid != "global"
+                ? population.ServerPlacementCountsAsc.GetValueOrDefault(serverGuid, [])
+                : population.GlobalPlacementCountsAsc;
+            placementsRank = WrappedPopulationStats.CountGreater(placementsAsc, playerPlacements) + 1;
         }
 
         double roundsPercentile = 0.0;
@@ -1472,136 +1557,17 @@ public class WrappedService(
 
         if (roundsPlayed > 0)
         {
-            var connection = dbContext.Database.GetDbConnection();
-            bool wasClosed = connection.State == System.Data.ConnectionState.Closed;
-            if (wasClosed) await connection.OpenAsync();
+            // The rounds/kills/playtime percentiles all share one cohort (players with >= 5
+            // rounds this year); K/D has a stricter one (>= 5 rounds and >= 20 kills).
+            var cohort = population.EligiblePlayerCount;
+            roundsPercentile = WrappedPopulationStats.Percentile(population.EligibleRoundsAsc, roundsPlayed, cohort);
+            killsPercentile = WrappedPopulationStats.Percentile(population.EligibleKillsAsc, totalKills, cohort);
+            playtimePercentile = WrappedPopulationStats.Percentile(population.EligiblePlaytimeAsc, hoursInCombat * 60.0, cohort);
 
-            try
+            if (totalKills >= 20)
             {
-                double SafeConvertDouble(object? obj) => (obj == null || obj == DBNull.Value) ? 0.0 : Convert.ToDouble(obj);
-
-                // Rounds Percentile
-                await using (var cmd = connection.CreateCommand())
-                {
-                    cmd.CommandText = @"
-                        SELECT 
-                            (COUNT(*) * 100.0) / (
-                                SELECT COUNT(*) 
-                                FROM (
-                                    SELECT SUM(TotalRounds) as r 
-                                    FROM PlayerStatsMonthly 
-                                    WHERE Year = $year 
-                                    GROUP BY PlayerName 
-                                    HAVING r >= 5
-                                )
-                            ) 
-                        FROM (
-                            SELECT SUM(TotalRounds) as r 
-                            FROM PlayerStatsMonthly 
-                            WHERE Year = $year 
-                            GROUP BY PlayerName 
-                            HAVING r >= 5
-                        ) 
-                        WHERE r < $val";
-                    
-                    var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
-                    var pVal = cmd.CreateParameter(); pVal.ParameterName = "$val"; pVal.Value = roundsPlayed; cmd.Parameters.Add(pVal);
-                    roundsPercentile = SafeConvertDouble(await cmd.ExecuteScalarAsync());
-                }
-
-                // Kills Percentile
-                await using (var cmd = connection.CreateCommand())
-                {
-                    cmd.CommandText = @"
-                        SELECT 
-                            (COUNT(*) * 100.0) / (
-                                SELECT COUNT(*) 
-                                FROM (
-                                    SELECT SUM(TotalRounds) as r 
-                                    FROM PlayerStatsMonthly 
-                                    WHERE Year = $year 
-                                    GROUP BY PlayerName 
-                                    HAVING r >= 5
-                                )
-                            ) 
-                        FROM (
-                            SELECT SUM(TotalKills) as k, SUM(TotalRounds) as r 
-                            FROM PlayerStatsMonthly 
-                            WHERE Year = $year 
-                            GROUP BY PlayerName 
-                            HAVING r >= 5
-                        ) 
-                        WHERE k < $val";
-                    
-                    var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
-                    var pVal = cmd.CreateParameter(); pVal.ParameterName = "$val"; pVal.Value = totalKills; cmd.Parameters.Add(pVal);
-                    killsPercentile = SafeConvertDouble(await cmd.ExecuteScalarAsync());
-                }
-
-                // Playtime Percentile
-                await using (var cmd = connection.CreateCommand())
-                {
-                    cmd.CommandText = @"
-                        SELECT 
-                            (COUNT(*) * 100.0) / (
-                                SELECT COUNT(*) 
-                                FROM (
-                                    SELECT SUM(TotalRounds) as r 
-                                    FROM PlayerStatsMonthly 
-                                    WHERE Year = $year 
-                                    GROUP BY PlayerName 
-                                    HAVING r >= 5
-                                )
-                            ) 
-                        FROM (
-                            SELECT SUM(TotalPlayTimeMinutes) as pt, SUM(TotalRounds) as r 
-                            FROM PlayerStatsMonthly 
-                            WHERE Year = $year 
-                            GROUP BY PlayerName 
-                            HAVING r >= 5
-                        ) 
-                        WHERE pt < $val";
-                    
-                    var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
-                    var pVal = cmd.CreateParameter(); pVal.ParameterName = "$val"; pVal.Value = hoursInCombat * 60.0; cmd.Parameters.Add(pVal);
-                    playtimePercentile = SafeConvertDouble(await cmd.ExecuteScalarAsync());
-                }
-
-                // K/D Percentile
-                if (totalKills >= 20)
-                {
-                    await using (var cmd = connection.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-                            SELECT 
-                                (COUNT(*) * 100.0) / (
-                                    SELECT COUNT(*) 
-                                    FROM (
-                                        SELECT SUM(TotalKills) as k 
-                                        FROM PlayerStatsMonthly 
-                                        WHERE Year = $year 
-                                        GROUP BY PlayerName 
-                                        HAVING SUM(TotalRounds) >= 5 AND k >= 20
-                                    )
-                                ) 
-                            FROM (
-                                SELECT SUM(TotalKills) as k, (CAST(SUM(TotalKills) AS REAL) / MAX(1, SUM(TotalDeaths))) as kd 
-                                FROM PlayerStatsMonthly 
-                                WHERE Year = $year 
-                                GROUP BY PlayerName 
-                                HAVING SUM(TotalRounds) >= 5 AND k >= 20
-                            ) 
-                            WHERE kd < $val";
-                        
-                        var pYear = cmd.CreateParameter(); pYear.ParameterName = "$year"; pYear.Value = year; cmd.Parameters.Add(pYear);
-                        var pVal = cmd.CreateParameter(); pVal.ParameterName = "$val"; pVal.Value = kdRatio; cmd.Parameters.Add(pVal);
-                        kdPercentile = SafeConvertDouble(await cmd.ExecuteScalarAsync());
-                    }
-                }
-            }
-            finally
-            {
-                if (wasClosed) await connection.CloseAsync();
+                kdPercentile = WrappedPopulationStats.Percentile(
+                    population.EligibleKdAsc, kdRatio, population.KdEligiblePlayerCount);
             }
         }
 
@@ -1629,6 +1595,7 @@ public class WrappedService(
         if (serverGuid != "global")
         {
             var sessionStats = await dbContext.PlayerSessions
+                .AsNoTracking()
                 .Where(ps => ps.PlayerName == playerName && ps.ServerGuid == serverGuid && ps.StartTime >= startYear && ps.StartTime < endYear && !ps.IsDeleted)
                 .GroupBy(ps => ps.StartTime.Month)
                 .Select(g => new {
@@ -1659,6 +1626,7 @@ public class WrappedService(
         else
         {
             var monthlyStats = await dbContext.PlayerStatsMonthly
+                .AsNoTracking()
                 .Where(psm => psm.PlayerName == playerName && psm.Year == year)
                 .OrderBy(psm => psm.Month)
                 .ToListAsync();
@@ -1672,6 +1640,7 @@ public class WrappedService(
         }
 
         var mapStatsQuery = dbContext.PlayerMapStats
+            .AsNoTracking()
             .Where(pms => pms.PlayerName == playerName && pms.Year == year);
 
         if (serverGuid != "global")
@@ -1683,15 +1652,19 @@ public class WrappedService(
             mapStatsQuery = mapStatsQuery.Where(pms => pms.ServerGuid == PlayerMapStats.GlobalServerGuid);
         }
 
+        // One aggregation feeds both Trend and Favourite Map below. These used to be two
+        // separate round trips over the same rows differing only by a PlayTime column and a
+        // top-5 ordering, and this is the single most expensive query in the whole calculation.
         var mapStats = await mapStatsQuery
             .GroupBy(pms => pms.MapName)
-            .Select(g => new {
-                MapName = g.Key,
-                TotalRounds = g.Sum(pms => pms.TotalRounds),
-                TotalKills = g.Sum(pms => pms.TotalKills),
-                TotalDeaths = g.Sum(pms => pms.TotalDeaths),
-                TotalScore = g.Sum(pms => pms.TotalScore)
-            })
+            .Select(g => new MapAggregate(
+                g.Key,
+                g.Sum(pms => pms.TotalRounds),
+                g.Sum(pms => pms.TotalPlayTimeMinutes),
+                g.Sum(pms => pms.TotalKills),
+                g.Sum(pms => pms.TotalDeaths),
+                g.Sum(pms => pms.TotalScore)
+            ))
             .ToListAsync();
 
         var topMaps = new List<PlayerMapRankDto>();
@@ -1738,25 +1711,16 @@ public class WrappedService(
 
         // 3. Favourite Map
         var favouriteMapActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.FavouriteMap");
-        var top5MapsData = await mapStatsQuery
-            .GroupBy(pms => pms.MapName)
-            .Select(g => new {
-                MapName = g.Key,
-                Rounds = g.Sum(pms => pms.TotalRounds),
-                PlayTime = g.Sum(pms => pms.TotalPlayTimeMinutes),
-                Kills = g.Sum(pms => pms.TotalKills),
-                Deaths = g.Sum(pms => pms.TotalDeaths),
-                Score = g.Sum(pms => pms.TotalScore)
-            })
-            .OrderByDescending(x => x.Rounds)
+        var top5MapsData = mapStats
+            .OrderByDescending(x => x.TotalRounds)
             .Take(5)
-            .ToListAsync();
+            .ToList();
 
-        var totalPlayTime = top5MapsData.Sum(m => m.PlayTime);
+        var totalPlayTime = top5MapsData.Sum(m => m.TotalPlayTimeMinutes);
         var topMaps5 = top5MapsData.Select((m, idx) => new PlayerMapProgressDto(
             m.MapName,
-            m.Rounds,
-            totalPlayTime > 0 ? Math.Round(m.PlayTime * 100.0 / totalPlayTime, 1) : 0.0,
+            m.TotalRounds,
+            totalPlayTime > 0 ? Math.Round(m.TotalPlayTimeMinutes * 100.0 / totalPlayTime, 1) : 0.0,
             idx == 0 ? "var(--mm-kd-elite)" : "var(--mm-accent)"
         )).ToList();
 
@@ -1765,6 +1729,7 @@ public class WrappedService(
         if (favMap != null)
         {
             var winsQuery = dbContext.PlayerAchievements
+                .AsNoTracking()
                 .Where(pa => pa.PlayerName == playerName && (pa.AchievementId == "team_victory" || pa.AchievementId == "team_victory_switched") && pa.MapName == favMap.MapName && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
 
             if (serverGuid != "global")
@@ -1849,11 +1814,11 @@ public class WrappedService(
         }
 
         var favMapData = top5MapsData.FirstOrDefault();
-        int favMapKills = favMapData?.Kills ?? 0;
-        int favMapDeaths = favMapData?.Deaths ?? 0;
+        int favMapKills = favMapData?.TotalKills ?? 0;
+        int favMapDeaths = favMapData?.TotalDeaths ?? 0;
         double favMapKdRatio = favMapDeaths > 0 ? Math.Round((double)favMapKills / favMapDeaths, 2) : favMapKills;
-        int favMapScore = favMapData?.Score ?? 0;
-        double favMapPlayTime = favMapData?.PlayTime ?? 0.0;
+        int favMapScore = favMapData?.TotalScore ?? 0;
+        double favMapPlayTime = favMapData?.TotalPlayTimeMinutes ?? 0.0;
 
         var favouriteMap = new PlayerFavouriteMapDto(
             favMap?.MapName ?? "",
@@ -1876,6 +1841,7 @@ public class WrappedService(
         // 4. Medals
         var medalsActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Medals");
         var achievementQuery = dbContext.PlayerAchievements
+            .AsNoTracking()
             .Where(pa => pa.PlayerName == playerName && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
 
         if (serverGuid != "global")
@@ -1913,16 +1879,11 @@ public class WrappedService(
         if (streakAchievements.Count > 0)
         {
             resolvedStreaks = streakAchievements
-                .Select(s => {
-                    var actual = GetStreakValueFromId(s.AchievementId);
-                    if (!string.IsNullOrEmpty(s.Metadata)) {
-                        try {
-                            var doc = JsonDocument.Parse(s.Metadata);
-                            if (doc.RootElement.TryGetProperty("actual_streak", out var val)) actual = val.GetInt32();
-                        } catch {}
-                    }
-                    return new StreakInstanceDto(actual, s.MapName, s.AchievedAt, s.RoundId);
-                })
+                .Select(s => new StreakInstanceDto(
+                    WrappedPopulationStatsBuilder.ResolveStreakValue(s.AchievementId, s.Metadata),
+                    s.MapName,
+                    s.AchievedAt,
+                    s.RoundId))
                 .OrderByDescending(x => x.Streak)
                 .ToList();
 
@@ -2020,6 +1981,7 @@ public class WrappedService(
             var streakInfo = resolvedStreaks.First();
             int estDuration = 0;
             var observations = await dbContext.PlayerObservations
+                .AsNoTracking()
                 .Where(po => po.Session.PlayerName == playerName && po.Session.RoundId == streakInfo.RoundId)
                 .OrderBy(po => po.Timestamp)
                 .Select(po => po.Timestamp)
@@ -2032,27 +1994,13 @@ public class WrappedService(
             }
             if (estDuration <= 0) estDuration = 11;
 
-            var allServerStreaks = await dbContext.PlayerAchievements
-                .Where(pa => pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant && pa.AchievementId.StartsWith("kill_streak_"))
-                .Where(pa => serverGuid == "global" || pa.ServerGuid == serverGuid)
-                .ToListAsync();
-
-            var sortedStreaks = allServerStreaks
-                .Select(s => {
-                    var actual = GetStreakValueFromId(s.AchievementId);
-                    if (!string.IsNullOrEmpty(s.Metadata)) {
-                        try {
-                            var doc = JsonDocument.Parse(s.Metadata);
-                            if (doc.RootElement.TryGetProperty("actual_streak", out var val)) actual = val.GetInt32();
-                        } catch {}
-                    }
-                    return new { s.PlayerName, Streak = actual };
-                })
-                .OrderByDescending(x => x.Streak)
-                .ToList();
-
-            var playerIndex = sortedStreaks.FindIndex(x => x.PlayerName == playerName && x.Streak == streakInfo.Streak);
-            int serverStreakRank = playerIndex >= 0 ? playerIndex + 1 : 1;
+            // Was: load every kill-streak achievement in the year for every player, JSON-parse
+            // each one and sort the lot - per player - just to find one position. The same
+            // leaderboard now comes from the shared snapshot as a sorted array of streak values.
+            var streakLeaderboard = serverGuid != "global"
+                ? population.ServerStreakValuesAsc.GetValueOrDefault(serverGuid, [])
+                : population.GlobalStreakValuesAsc;
+            int serverStreakRank = WrappedPopulationStats.CountGreater(streakLeaderboard, streakInfo.Streak) + 1;
 
             bestMoments.Add(new PlayerBestMomentDto(
                 "streak",
@@ -2067,6 +2015,7 @@ public class WrappedService(
 
         // Fetch player sessions in 2026
         var sessionsQuery = dbContext.PlayerSessions
+            .AsNoTracking()
             .Where(ps => ps.PlayerName == playerName && ps.StartTime >= startYear && ps.StartTime < endYear && !ps.IsDeleted);
 
         if (serverGuid != "global")
@@ -2146,26 +2095,61 @@ public class WrappedService(
         var serverRankings = new List<PlayerServerRankingDto>();
         try
         {
-            var statsService = (IPlayerStatsService?)serviceProvider.GetService(typeof(IPlayerStatsService));
-            if (statsService != null)
+            // Previously routed through IPlayerStatsService.GetPlayerInsights, which ran one
+            // full per-server GROUP BY per server the player has ever played on (~30 queries),
+            // plus an activity-by-hour query Wrapped never reads. Those per-server leaderboards
+            // are player-independent, so they come from the snapshot; only the player's own
+            // scores and pings still need querying.
+            var playerServerScores = await dbContext.ServerPlayerRankings
+                .AsNoTracking()
+                .Where(r => r.PlayerName == playerName)
+                .GroupBy(r => r.ServerGuid)
+                .Select(g => new { ServerGuid = g.Key, TotalScore = g.Sum(x => x.TotalScore) })
+                .ToListAsync();
+
+            if (playerServerScores.Count > 0)
             {
-                var insights = await statsService.GetPlayerInsights(playerName, daysToAnalyze: 1);
-                if (insights?.ServerRankings != null)
-                {
-                    serverRankings = insights.ServerRankings
-                        .OrderByDescending(r => r.TotalRankedPlayers > 100)
-                        .ThenBy(r => r.Rank)
-                        .Take(2)
-                        .Select(r => new PlayerServerRankingDto(
-                            r.ServerGuid,
-                            r.ServerName,
-                            r.Rank,
-                            r.TotalScore,
-                            r.TotalRankedPlayers,
-                            r.AveragePing
-                        ))
-                        .ToList();
-                }
+                var candidates = playerServerScores
+                    .Select(s => new
+                    {
+                        s.ServerGuid,
+                        s.TotalScore,
+                        Rank = WrappedPopulationStats.CountGreater(
+                            population.RankingScoresAsc.GetValueOrDefault(s.ServerGuid, []), s.TotalScore) + 1,
+                        TotalRankedPlayers = population.RankingScoresAsc.GetValueOrDefault(s.ServerGuid, []).Length
+                    })
+                    .OrderByDescending(r => r.TotalRankedPlayers > 100)
+                    .ThenBy(r => r.Rank)
+                    .Take(2)
+                    .ToList();
+
+                // Ping is per player, so it stays a query - but only for the two servers that
+                // actually make the cut.
+                var rankedGuids = candidates.Select(c => c.ServerGuid).ToList();
+                var sixMonthsAgo = DateTime.UtcNow.AddMonths(-6);
+                var pings = await dbContext.PlayerSessions
+                    .AsNoTracking()
+                    .Where(ps => ps.PlayerName == playerName
+                                 && rankedGuids.Contains(ps.ServerGuid)
+                                 && ps.AveragePing > 0
+                                 && ps.AveragePing < 1000
+                                 && ps.StartTime >= sixMonthsAgo)
+                    .GroupBy(ps => ps.ServerGuid)
+                    .Select(g => new { ServerGuid = g.Key, AvgPing = g.Average(ps => ps.AveragePing) })
+                    .ToListAsync();
+
+                var pingByServer = pings.ToDictionary(p => p.ServerGuid, p => p.AvgPing ?? 0.0);
+
+                serverRankings = candidates
+                    .Select(c => new PlayerServerRankingDto(
+                        c.ServerGuid,
+                        population.ServerNames.GetValueOrDefault(c.ServerGuid, "Unknown Server"),
+                        c.Rank,
+                        c.TotalScore,
+                        c.TotalRankedPlayers,
+                        Math.Round(pingByServer.GetValueOrDefault(c.ServerGuid, 0.0), 2)
+                    ))
+                    .ToList();
             }
         }
         catch (Exception ex)
@@ -2655,7 +2639,7 @@ public class WrappedService(
         );
     }
 
-    private static int GetStreakValueFromId(string achievementId)
+    internal static int GetStreakValueFromId(string achievementId)
     {
         return achievementId switch
         {
