@@ -330,6 +330,9 @@ namespace api.Migrations
                     b.HasIndex("PlayerName", "AchievementId", "AchievedAt")
                         .IsUnique();
 
+                    b.HasIndex("AchievementType", "ServerGuid", "PlayerName", "AchievedAt")
+                        .HasDatabaseName("IX_PlayerAchievements_AchievementType_ServerGuid_PlayerName_AchievedAt");
+
                     b.ToTable("PlayerAchievements");
                 });
 
@@ -419,6 +422,9 @@ namespace api.Migrations
                     b.HasIndex("Year", "Month");
 
                     b.HasIndex("PlayerName", "ServerGuid", "Year", "Month");
+
+                    b.HasIndex("PlayerName", "Year", "ServerGuid", "MapName")
+                        .HasDatabaseName("IX_PlayerMapStats_PlayerName_Year_ServerGuid_MapName");
 
                     b.ToTable("PlayerMapStats");
                 });
@@ -517,6 +523,9 @@ namespace api.Migrations
                     b.HasKey("PlayerName", "Year", "Month");
 
                     b.HasIndex("Year", "Month");
+
+                    b.HasIndex("Year", "PlayerName", "TotalScore", "TotalKills", "TotalRounds", "TotalDeaths", "TotalPlayTimeMinutes")
+                        .HasDatabaseName("IX_PlayerStatsMonthly_Year_PlayerName_Covering");
 
                     b.ToTable("PlayerStatsMonthly");
                 });
