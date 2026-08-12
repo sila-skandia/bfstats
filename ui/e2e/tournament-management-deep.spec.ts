@@ -180,16 +180,60 @@ test.describe('Deep Tournament Management Editing & Deletion Suite (Admin)', () 
     }
 
     // Delete Match (Testing Match Deletion)
-    const deleteMatchBtn = page.locator('.matches-table tr, .mm-admin-table tr', { hasText: /Alpha Squad|Bravo Team/i }).locator('button', { hasText: /Delete|Remove/i }).first();
-    if (await deleteMatchBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      page.once('dialog', dialog => dialog.accept());
-      await deleteMatchBtn.click();
-      const confirmMatchDelete = page.locator('.mm-modal__panel button', { hasText: /Delete/i }).first();
-      if (await confirmMatchDelete.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await confirmMatchDelete.click();
-      }
-      await page.waitForLoadState('networkidle');
+    //
+    // This step must actually run: a team that is still referenced by a match
+    // cannot be deleted (the API answers 400 "Cannot delete team that is used
+    // in matches"), so silently skipping here resurfaces as an unexplained
+    // failure in STEP 6.
+    //
+    // The row action is labelled "Del", not "Delete"/"Remove", and the match
+    // confirmation is an inline-styled overlay rather than an `.mm-modal__panel`
+    // — the previous selectors matched neither, and the `.catch(() => false)`
+    // guards turned that into a no-op instead of a failure.
+    // The results step above drills into a per-match sub-view. Its "← Back to
+    // Matches" click is guarded, so if it no-ops we are still on the results
+    // form here and the matches table simply isn't on screen. Return to the
+    // list explicitly rather than assuming.
+    // Return to the matches list — `.matches-table` only exists there.
+    //
+    // NOTE: `locator.isVisible()` returns immediately; Playwright explicitly
+    // ignores its `timeout` option. Probing with it races the sub-view's
+    // render, reports "not there", and strands the test on the results form.
+    // Wait for the button instead, so this fails loudly if STEP 3 ever stops
+    // drilling into the results view.
+    // STEP 3's drill-in to the results sub-view is itself guarded and does not
+    // happen on every browser project (chromium enters it; webkit and Mobile
+    // Chrome stay on the list). Wait for the page to settle into *either*
+    // state, then normalise — rather than probing instantly, or assuming one.
+    const backToMatches = page.locator('button', { hasText: '← Back to Matches' }).first();
+    const matchesTable = page.locator('.matches-table');
+
+    await expect
+      .poll(
+        async () => (await backToMatches.count()) > 0 || (await matchesTable.count()) > 0,
+        { timeout: 15000 },
+      )
+      .toBe(true);
+
+    if ((await backToMatches.count()) > 0) {
+      await backToMatches.click();
     }
+
+    await expect(matchesTable).toBeVisible({ timeout: 10000 });
+
+    const deleteMatchBtn = page.locator('.matches-table button[title="Delete match"]').first();
+    await expect(deleteMatchBtn).toBeVisible({ timeout: 5000 });
+    await deleteMatchBtn.click();
+
+    const confirmMatchDelete = page.locator('button', { hasText: 'Delete Match' }).first();
+    await expect(confirmMatchDelete).toBeVisible({ timeout: 5000 });
+    await confirmMatchDelete.click();
+
+    // The dialog closes only once the delete has actually gone through.
+    await expect(page.locator('button', { hasText: 'Delete Match' })).toHaveCount(0, {
+      timeout: 10000,
+    });
+    await page.waitForLoadState('networkidle');
 
     // ----------------------------------------------------
     // STEP 4: Tournament Files Resource Editing & Deletion

@@ -18,7 +18,11 @@ test.describe('Tournament Comments', () => {
     await page.waitForLoadState('networkidle');
     await page.locator('button', { hasText: 'Create Tournament' }).first().click();
     await page.fill('input[placeholder*="BF1942 Summer Cup"]', tournamentName);
-    await page.fill('input[placeholder*="Community Staff"]', 'Comments E2E');
+    // The organizer must resolve to an existing player — the API rejects the
+    // create with 400 "Player '<name>' not found" otherwise, which leaves the
+    // modal open and looks like a mysterious navigation timeout. Every other
+    // tournament spec uses 'Admin' for the same reason.
+    await page.fill('input[placeholder*="Community Staff"]', 'Admin');
     await page.locator('button[type="submit"]', { hasText: /Create|Save/i }).first().click();
     await page.waitForURL(url => url.pathname.includes('/tournaments/'), { timeout: 10000 });
     await page.waitForLoadState('networkidle');
@@ -58,7 +62,31 @@ test.describe('Tournament Comments', () => {
         maps: [{ mapName: 'Wake Island' }],
       },
     });
-    matchId = (await matchResp.json()).id;
+    const match = await matchResp.json();
+    matchId = match.id;
+
+    // Report a round for the match's first map.
+    //
+    // `T2Matches.vue` derives `scheduled` from the round count, and the public
+    // match card only renders its "Match details & demos" link (the only way
+    // into the match modal, and therefore the match comment thread) for
+    // matches that are NOT scheduled. A result-less fixture leaves the match
+    // showing as "Upcoming" with no way to open it.
+    const mapId = match.maps?.[0]?.id;
+    if (!mapId) throw new Error('Match fixture has no map to report a result against');
+
+    const resultResp = await page.request.post(
+      `/stats/admin/tournaments/${tournamentId}/matches/${matchId}/maps/${mapId}/result`,
+      {
+        headers: authHeaders,
+        data: { mapId, team1Id, team2Id, team1Tickets: 120, team2Tickets: 85 },
+      }
+    );
+    if (!resultResp.ok()) {
+      throw new Error(
+        `Failed to seed match result: ${resultResp.status()} ${await resultResp.text()}`
+      );
+    }
 
     await context.close();
   });
@@ -105,10 +133,16 @@ test.describe('Tournament Comments', () => {
     await expect(posted).toBeVisible();
     await expect(posted.locator('button', { hasText: 'Edit' })).toBeVisible();
 
-    // Appears in the chronological activity feed too
+    // Appears in the chronological activity feed too. The overview feed only
+    // loads on mount (`T2Overview.vue` calls loadFeed from onMounted and on a
+    // tournamentId change) — posting a comment does not refresh it, so the feed
+    // has to be re-read after a reload rather than asserted live.
+    await page.goto(`/t/${tournamentId}`);
+    await page.waitForLoadState('networkidle');
     await expect(page.locator('.t2-feed__item', { hasText: commentText })).toBeVisible();
 
-    // Edit
+    // Edit — `posted` re-resolves against the reloaded page.
+    await expect(posted).toBeVisible();
     await posted.locator('button', { hasText: 'Edit' }).click();
     const editedText = `${commentText} (edited)`;
     const editEditor = posted.locator('.t2-comments__edit .t2-comments__editor-input');
