@@ -493,6 +493,138 @@ public class WrappedServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPlayerWrappedAsync_RanksAndPercentilesComeFromTheWholePopulation()
+    {
+        // Three players with a clear ordering, so every rank and percentile has one right answer.
+        // These used to be a whole-table GROUP BY apiece and now come from the shared snapshot -
+        // this pins the values so that swap can't quietly move anyone's numbers.
+        AddMonthlyStats("Alpha", rounds: 20, kills: 100, deaths: 50, playTime: 600);   // kd 2.0
+        AddMonthlyStats("Bravo", rounds: 10, kills: 50, deaths: 20, playTime: 300);    // kd 2.5
+        AddMonthlyStats("Charlie", rounds: 6, kills: 10, deaths: 5, playTime: 100);    // under the K/D cohort's 20-kill floor
+
+        // The player's own totals are read from PlayerServerStats, the population from monthly.
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = "test-server-guid", PlayerName = "Bravo", Year = 2026, Week = 23,
+            TotalRounds = 10, TotalKills = 50, TotalDeaths = 20, TotalScore = 500, TotalPlayTimeMinutes = 300
+        });
+
+        // Round placements: Alpha 3, Bravo 2, Charlie 1.
+        AddPlacements("Alpha", 3);
+        AddPlacements("Bravo", 2);
+        AddPlacements("Charlie", 1);
+
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetPlayerWrappedAsync("Bravo", "global", 2026);
+
+        // Assert
+        Assert.NotNull(result);
+        var numbers = result.YearInNumbers;
+
+        // Only Alpha beats Bravo on score, kills and placements.
+        Assert.Equal(2, numbers.ServerRank);
+        Assert.Equal(2, numbers.KillsRank);
+        Assert.Equal(2, numbers.PlacementsRank);
+
+        // Cohort for these three is all 3 players (each cleared the 5-round floor); Bravo beats
+        // Charlie only.
+        Assert.Equal(33.33, numbers.RoundsPercentile);
+        Assert.Equal(33.33, numbers.KillsPercentile);
+        Assert.Equal(33.33, numbers.PlayTimePercentile);
+
+        // K/D has its own cohort: Charlie's 10 kills miss the 20-kill floor, leaving Alpha and
+        // Bravo, and Bravo's 2.5 beats Alpha's 2.0.
+        Assert.Equal(50.0, numbers.KdPercentile);
+    }
+
+    [Fact]
+    public async Task GetPlayerWrappedAsync_RanksBestStreakAgainstEveryOtherPlayersStreaks()
+    {
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = "test-server-guid", PlayerName = "Sniper", Year = 2026, Week = 23,
+            TotalRounds = 10, TotalKills = 60, TotalDeaths = 20, TotalScore = 600, TotalPlayTimeMinutes = 300
+        });
+
+        // Sniper's own streak is 30 (from metadata, not the kill_streak_25 tier it crossed).
+        AddStreak("Sniper", "kill_streak_25", actualStreak: 30);
+        // Two players beat it, one doesn't.
+        AddStreak("Legend", "kill_streak_50", actualStreak: 55);
+        AddStreak("Veteran", "kill_streak_30", actualStreak: 31);
+        AddStreak("Rookie", "kill_streak_10", actualStreak: 12);
+
+        await _dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.GetPlayerWrappedAsync("Sniper", "global", 2026);
+
+        // Assert
+        Assert.NotNull(result);
+        var streakMoment = Assert.Single(result.BestMoments, m => m.Type == "streak");
+        Assert.Equal(30, streakMoment.Value);
+        Assert.Equal(3, streakMoment.ServerStreakRank); // beaten by Legend and Veteran
+    }
+
+    private void AddMonthlyStats(string playerName, int rounds, int kills, int deaths, double playTime)
+    {
+        _dbContext.PlayerStatsMonthly.Add(new PlayerStatsMonthly
+        {
+            PlayerName = playerName,
+            Year = 2026,
+            Month = 6,
+            TotalRounds = rounds,
+            TotalKills = kills,
+            TotalDeaths = deaths,
+            TotalScore = kills * 10,
+            TotalPlayTimeMinutes = playTime
+        });
+    }
+
+    private void AddPlacements(string playerName, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            _dbContext.PlayerAchievements.Add(new PlayerAchievement
+            {
+                PlayerName = playerName,
+                AchievementType = "round_placement",
+                AchievementId = $"round_placement_{i + 1}",
+                AchievementName = "Round Placement",
+                Tier = "bronze",
+                Value = 1,
+                AchievedAt = Instant.FromUtc(2026, 6, 1, 12, i),
+                ProcessedAt = Instant.FromUtc(2026, 6, 1, 12, i),
+                ServerGuid = "test-server-guid",
+                MapName = "El Alamein",
+                RoundId = $"placement-{playerName}-{i}",
+                Game = "bf1942"
+            });
+        }
+    }
+
+    private void AddStreak(string playerName, string achievementId, int actualStreak)
+    {
+        _dbContext.PlayerAchievements.Add(new PlayerAchievement
+        {
+            PlayerName = playerName,
+            AchievementType = "kill_streak",
+            AchievementId = achievementId,
+            AchievementName = "Kill Streak",
+            Tier = "gold",
+            Value = actualStreak,
+            AchievedAt = Instant.FromUtc(2026, 6, 1, 12, 0),
+            ProcessedAt = Instant.FromUtc(2026, 6, 1, 12, 0),
+            ServerGuid = "test-server-guid",
+            MapName = "El Alamein",
+            RoundId = $"streak-{playerName}",
+            Metadata = $"{{\"actual_streak\": {actualStreak}}}",
+            Game = "bf1942"
+        });
+    }
+
+    [Fact]
     public async Task GetProfileWrappedAsync_ReturnsNull_WhenUserHasNoAliases()
     {
         // Arrange
