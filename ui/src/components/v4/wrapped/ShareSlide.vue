@@ -8,7 +8,7 @@
       <!-- The Card -->
       <div class="share-card animate-wrapped-in" style="animation-delay: 0.15s">
         <div class="card-topbar">
-          <span>Server Wrapped 2026</span>
+          <span>Server Wrapped {{ data.year }}</span>
           <span>bfstats.io</span>
         </div>
         <div class="card-body">
@@ -113,7 +113,7 @@ const copyBg = computed(() => copied.value ? 'var(--mm-accent)' : 'transparent')
 const copyInk = computed(() => copied.value ? '#000' : 'var(--mm-ink)')
 
 function copyShareMessage() {
-  const msg = `🎮 2026 Server Wrapped for ${props.data.serverName} 🎮\n` +
+  const msg = `🎮 ${props.data.year} Server Wrapped for ${props.data.serverName} 🎮\n` +
               `• Rounds Fought: ${props.data.yearInNumbers.roundsFought.toLocaleString()}\n` +
               `• Hours in Combat: ${Math.round(props.data.yearInNumbers.hoursInCombat).toLocaleString()}h\n` +
               `• Most Played Map: ${props.data.rotation.mostPlayedMapName}\n` +
