@@ -11,6 +11,12 @@ metadata:
   namespace: seq
 spec:
   replicas: 1
+  # Recreate, not RollingUpdate: the event store is a hostPath at /opt/seq with no
+  # ReadWriteOnce lock to stop two pods mounting it at once. Under the default
+  # RollingUpdate, maxSurge starts the replacement before the old pod terminates,
+  # putting two Seq processes on one flare store — a corruption risk.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: seq
