@@ -108,7 +108,7 @@ public class WrappedService(
 
     public async Task<ServerWrappedResponseDto?> GetServerWrappedAsync(string serverGuid, int year = 2026, bool bypassCache = false)
     {
-        using var activity = ActivitySources.Wrapped.StartActivity("Wrapped.GetServerWrapped");
+        using var activity = ActivitySources.StartWrapped("Wrapped.GetServerWrapped");
         activity?.SetTag("server.guid", serverGuid);
         activity?.SetTag("wrapped.year", year);
         activity?.SetTag("wrapped.bypass_cache", bypassCache);
@@ -159,7 +159,7 @@ public class WrappedService(
         // Explicit default parentContext creates a root activity with a fresh traceId so this
         // crunch job (invoked either from the daily background service or an admin fire-and-forget
         // Task.Run) never gets attached to an unrelated caller's trace.
-        using var activity = ActivitySources.Wrapped.StartActivity(
+        using var activity = ActivitySources.StartWrapped(
             "Wrapped.CrunchAllServers", ActivityKind.Internal, parentContext: default);
         activity?.SetTag("wrapped.year", year);
 
@@ -180,7 +180,7 @@ public class WrappedService(
             // Fresh trace per server (parentContext: default), not a child of the CrunchAllServers
             // root - otherwise every server's full calculation nests into one giant trace that
             // can exceed a trace viewer's per-trace span-count render limit.
-            using var serverActivity = ActivitySources.Wrapped.StartActivity(
+            using var serverActivity = ActivitySources.StartWrapped(
                 "Wrapped.CrunchServer", ActivityKind.Internal, parentContext: default);
             serverActivity?.SetTag("server.guid", server.Guid);
             serverActivity?.SetTag("server.name", server.Name);
@@ -206,7 +206,7 @@ public class WrappedService(
 
     private async Task SaveToCacheAsync(string serverGuid, int year, ServerWrappedResponseDto dto)
     {
-        using var activity = ActivitySources.Wrapped.StartActivity("Wrapped.SaveServerCache");
+        using var activity = ActivitySources.StartWrapped("Wrapped.SaveServerCache");
         activity?.SetTag("server.guid", serverGuid);
         activity?.SetTag("wrapped.year", year);
 
@@ -234,7 +234,7 @@ public class WrappedService(
 
     private async Task<ServerWrappedResponseDto?> CalculateServerWrappedInternalAsync(string serverGuid, int year)
     {
-        using var activity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculateServerWrapped");
+        using var activity = ActivitySources.StartWrapped("Wrapped.CalculateServerWrapped");
         activity?.SetTag("server.guid", serverGuid);
         activity?.SetTag("wrapped.year", year);
 
@@ -256,7 +256,7 @@ public class WrappedService(
             : tzProvider["UTC"];
 
         // 1. Year in Numbers
-        var yearInNumbersActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculateServerWrapped.YearInNumbers");
+        var yearInNumbersActivity = ActivitySources.StartWrapped("Wrapped.CalculateServerWrapped.YearInNumbers");
         var roundsCount = await dbContext.Rounds.CountAsync(r => r.ServerGuid == serverGuid && r.StartTime >= startYear && r.StartTime < endYear && !r.IsDeleted);
         var uniqueSoldiers = await dbContext.PlayerSessions.Where(ps => ps.ServerGuid == serverGuid && ps.StartTime >= startYear && ps.StartTime < endYear && !ps.IsDeleted).Select(ps => ps.PlayerName).Distinct().CountAsync();
         var hoursInCombat = await dbContext.PlayerServerStats.Where(pss => pss.ServerGuid == serverGuid && pss.Year == year).SumAsync(pss => pss.TotalPlayTimeMinutes) / 60.0;
@@ -274,7 +274,7 @@ public class WrappedService(
         yearInNumbersActivity?.Dispose();
 
         // 2. Busiest Hours / Heatmap (Timezone-Aware)
-        var busiestHoursActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculateServerWrapped.BusiestHours");
+        var busiestHoursActivity = ActivitySources.StartWrapped("Wrapped.CalculateServerWrapped.BusiestHours");
         var onlineCounts = await dbContext.ServerOnlineCounts
             .Where(soc => soc.ServerGuid == serverGuid && soc.HourTimestamp >= startInstant && soc.HourTimestamp < endInstant)
             .ToListAsync();
@@ -305,7 +305,7 @@ public class WrappedService(
         busiestHoursActivity?.Dispose();
 
         // 3. Map Rotation
-        var rotationActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculateServerWrapped.Rotation");
+        var rotationActivity = ActivitySources.StartWrapped("Wrapped.CalculateServerWrapped.Rotation");
         var mapStatsData = await dbContext.ServerMapStats
             .Where(sms => sms.ServerGuid == serverGuid && sms.Year == year)
             .GroupBy(sms => sms.MapName)
@@ -365,7 +365,7 @@ public class WrappedService(
         rotationActivity?.Dispose();
 
         // 4. Honours (PlayerServerStats)
-        var honoursActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculateServerWrapped.Honours");
+        var honoursActivity = ActivitySources.StartWrapped("Wrapped.CalculateServerWrapped.Honours");
         var playerStats = await dbContext.PlayerServerStats
             .Where(pss => pss.ServerGuid == serverGuid && pss.Year == year)
             .GroupBy(pss => pss.PlayerName)
@@ -429,7 +429,7 @@ public class WrappedService(
         honoursActivity?.Dispose();
 
         // 5. Decorations (Milestones & Streaks with fallback)
-        var decorationsActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculateServerWrapped.Decorations");
+        var decorationsActivity = ActivitySources.StartWrapped("Wrapped.CalculateServerWrapped.Decorations");
         var streaks = await dbContext.PlayerAchievements
             .Where(pa => pa.ServerGuid == serverGuid && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant &&
                          (pa.AchievementId == "kill_streak_25" || pa.AchievementId == "kill_streak_30" || pa.AchievementId == "kill_streak_50"))
@@ -719,7 +719,7 @@ public class WrappedService(
         decorationsActivity?.Dispose();
 
         // 6. Dishonours
-        var dishonoursActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculateServerWrapped.Dishonours");
+        var dishonoursActivity = ActivitySources.StartWrapped("Wrapped.CalculateServerWrapped.Dishonours");
         var cannonFodderPlayer = playerStats.OrderByDescending(p => p.Deaths).FirstOrDefault();
         var cannonFodder = new PlayerVolumeDto(PlayerNameDecoder.Decode(cannonFodderPlayer?.PlayerName ?? ""), cannonFodderPlayer?.Deaths ?? 0);
 
@@ -805,7 +805,7 @@ public class WrappedService(
         dishonoursActivity?.Dispose();
 
         // 7. Closest Battles (dynamic player threshold fallback)
-        var closestBattlesActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculateServerWrapped.ClosestBattles");
+        var closestBattlesActivity = ActivitySources.StartWrapped("Wrapped.CalculateServerWrapped.ClosestBattles");
         int minClosestPlayers = 50;
         var roundsQuery = dbContext.Rounds.Where(r => 
             r.ServerGuid == serverGuid && 
@@ -856,7 +856,7 @@ public class WrappedService(
 
     public async Task<PlayerWrappedResponseDto?> GetPlayerWrappedAsync(string playerName, string serverGuid, int year = 2026, bool bypassCache = false)
     {
-        using var activity = ActivitySources.Wrapped.StartActivity("Wrapped.GetPlayerWrapped");
+        using var activity = ActivitySources.StartWrapped("Wrapped.GetPlayerWrapped");
         activity?.SetTag("player.name", playerName);
         activity?.SetTag("server.guid", serverGuid);
         activity?.SetTag("wrapped.year", year);
@@ -900,7 +900,7 @@ public class WrappedService(
         // Explicit default parentContext creates a root activity with a fresh traceId so this
         // crunch job (invoked either from a background service or an admin fire-and-forget
         // Task.Run) never gets attached to an unrelated caller's trace.
-        using var activity = ActivitySources.Wrapped.StartActivity(
+        using var activity = ActivitySources.StartWrapped(
             "Wrapped.CrunchAllPlayers", ActivityKind.Internal, parentContext: default);
         activity?.SetTag("wrapped.year", year);
 
@@ -924,6 +924,26 @@ public class WrappedService(
         var parallelism = GetCrunchParallelism();
         activity?.SetTag("wrapped.crunch_parallelism", parallelism);
 
+        // A Wrapped calculation emits ~15 spans and ~20 EF command logs. That is the right level
+        // of detail for a rehearsal run and unusable for a full one — 30k players would be around
+        // half a million spans and 600k log events, burying everything else in Seq. Above the
+        // limit, per-player detail is dropped and the job-level spans plus the progress logs carry
+        // the run.
+        var tracePlayerLimit = configuration.GetValue<int?>("PlayerWrapped:TracePlayerLimit") ?? 250;
+        var suppressPlayerTracing = activePlayers.Count > tracePlayerLimit;
+        activity?.SetTag("wrapped.per_player_tracing", !suppressPlayerTracing);
+
+        if (suppressPlayerTracing)
+        {
+            // Recognised by the Serilog filter in Program.cs, which walks Activity.Current and its
+            // parents. With the per-player spans gone, Activity.Current during the work is this
+            // job span, so the tag is found and EF command logging is suppressed for the run.
+            activity?.SetTag("bulk_operation", "true");
+            logger.LogInformation(
+                "Per-player Wrapped tracing disabled for this run ({Count} players > limit {Limit}); job-level spans and progress logs only",
+                activePlayers.Count, tracePlayerLimit);
+        }
+
         // Progress and throughput are logged as the run proceeds rather than only at the end:
         // a 30k-player run is long enough that "is it moving, and will it finish tonight" needs
         // answering while it is still going.
@@ -937,12 +957,17 @@ public class WrappedService(
             parallelism,
             async (work, service, ct2) =>
             {
+                // Set per item rather than once around the loop: AsyncLocal follows each worker's
+                // own async flow, so this is what makes it apply to every span the calculation
+                // starts underneath.
+                ActivitySources.SuppressWrappedTracing = suppressPlayerTracing;
+
                 // Fresh trace per player (parentContext: default), not a child of the
                 // CrunchAllPlayers root - a crunch run covers many players, and nesting every
                 // player's full calculation (all its section/batch/phase sub-spans) into one
                 // trace can exceed a trace viewer's per-trace span-count render limit. Each
                 // player's trace is still findable by its player.name/server.guid tags.
-                using var playerActivity = ActivitySources.Wrapped.StartActivity(
+                using var playerActivity = ActivitySources.StartWrapped(
                     "Wrapped.CrunchPlayer", ActivityKind.Internal, parentContext: default);
                 playerActivity?.SetTag("player.name", work.PlayerName);
                 playerActivity?.SetTag("server.guid", work.ServerGuid);
@@ -951,6 +976,13 @@ public class WrappedService(
                 {
                     await service.CrunchOnePlayerAsync(work.PlayerName, work.ServerGuid, year);
                     await service.CrunchOnePlayerAsync(work.PlayerName, "global", year);
+
+                    // One line per player, deliberately outside the tracing suppression above:
+                    // it is the only record of *who* was crunched once the per-player spans are
+                    // dropped, and one event per player is affordable where ~35 is not.
+                    logger.LogInformation(
+                        "Crunched Player Wrapped for {PlayerName} on {ServerGuid} and global",
+                        work.PlayerName, work.ServerGuid);
                 }
                 catch (Exception ex)
                 {
@@ -1136,7 +1168,7 @@ public class WrappedService(
     {
         // Explicit default parentContext creates a root activity with a fresh traceId, same
         // reasoning as CrunchAllPlayersWrappedAsync above.
-        using var activity = ActivitySources.Wrapped.StartActivity(
+        using var activity = ActivitySources.StartWrapped(
             "Wrapped.CrunchAllProfiles", ActivityKind.Internal, parentContext: default);
         activity?.SetTag("wrapped.year", year);
 
@@ -1157,7 +1189,7 @@ public class WrappedService(
             async (alias, service, ct2) =>
             {
                 // Fresh trace per alias, same reasoning as Wrapped.CrunchPlayer above.
-                using var aliasActivity = ActivitySources.Wrapped.StartActivity(
+                using var aliasActivity = ActivitySources.StartWrapped(
                     "Wrapped.CrunchProfileAlias", ActivityKind.Internal, parentContext: default);
                 aliasActivity?.SetTag("player.name", alias);
 
@@ -1180,7 +1212,7 @@ public class WrappedService(
 
     public async Task<ProfileWrappedResponseDto?> GetProfileWrappedAsync(int userId, int year = 2026, bool bypassCache = false)
     {
-        using var activity = ActivitySources.Wrapped.StartActivity("Wrapped.GetProfileWrapped");
+        using var activity = ActivitySources.StartWrapped("Wrapped.GetProfileWrapped");
         activity?.SetTag("user.id", userId);
         activity?.SetTag("wrapped.year", year);
 
@@ -1529,7 +1561,7 @@ public class WrappedService(
 
     private async Task SavePlayerToCacheAsync(string playerName, string serverGuid, int year, PlayerWrappedResponseDto dto)
     {
-        using var activity = ActivitySources.Wrapped.StartActivity("Wrapped.SavePlayerCache");
+        using var activity = ActivitySources.StartWrapped("Wrapped.SavePlayerCache");
         activity?.SetTag("player.name", playerName);
         activity?.SetTag("server.guid", serverGuid);
         activity?.SetTag("wrapped.year", year);
@@ -1573,7 +1605,7 @@ public class WrappedService(
 
     private async Task<PlayerWrappedResponseDto?> CalculatePlayerWrappedInternalAsync(string playerName, string serverGuid, int year)
     {
-        using var activity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped");
+        using var activity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped");
         activity?.SetTag("player.name", playerName);
         activity?.SetTag("server.guid", serverGuid);
         activity?.SetTag("wrapped.year", year);
@@ -1603,7 +1635,7 @@ public class WrappedService(
         var squadTask = _relationshipService?.GetMostFrequentCoPlayersAsync(playerName, limit: 10);
 
         // 1. Year in Numbers
-        var playerYearInNumbersActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.YearInNumbers");
+        var playerYearInNumbersActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.YearInNumbers");
         var serverStatsQuery = dbContext.PlayerServerStats
             .AsNoTracking()
             .Where(pss => pss.PlayerName == playerName && pss.Year == year);
@@ -1695,7 +1727,7 @@ public class WrappedService(
         playerYearInNumbersActivity?.Dispose();
 
         // 2. Trend
-        var trendActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Trend");
+        var trendActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Trend");
         List<double> monthlyKDs = new();
         List<double> monthlyKillRates = new();
 
@@ -1817,7 +1849,7 @@ public class WrappedService(
         trendActivity?.Dispose();
 
         // 3. Favourite Map
-        var favouriteMapActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.FavouriteMap");
+        var favouriteMapActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.FavouriteMap");
         var top5MapsData = mapStats
             .OrderByDescending(x => x.TotalRounds)
             .Take(5)
@@ -1946,7 +1978,7 @@ public class WrappedService(
         favouriteMapActivity?.Dispose();
 
         // 4. Medals
-        var medalsActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Medals");
+        var medalsActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Medals");
         var achievementQuery = dbContext.PlayerAchievements
             .AsNoTracking()
             .Where(pa => pa.PlayerName == playerName && pa.AchievedAt >= startInstant && pa.AchievedAt < endInstant);
@@ -2079,7 +2111,7 @@ public class WrappedService(
         medalsActivity?.Dispose();
 
         // 5. Best Moments (Streak, Score, Kills)
-        var bestMomentsActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.BestMoments");
+        var bestMomentsActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.BestMoments");
         var bestMoments = new List<PlayerBestMomentDto>();
 
         // (1) Best Streak
@@ -2169,7 +2201,7 @@ public class WrappedService(
         bestMomentsActivity?.Dispose();
 
         // 6. Squad
-        var squadActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Squad");
+        var squadActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Squad");
         var squad = new List<PlayerTeammateDto>();
         if (squadTask != null)
         {
@@ -2198,7 +2230,7 @@ public class WrappedService(
         squadActivity?.Dispose();
 
         // 7. Server Rankings (Top 2)
-        var serverRankingsActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.ServerRankings");
+        var serverRankingsActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.ServerRankings");
         var serverRankings = new List<PlayerServerRankingDto>();
         var memoKey = PlayerYearKey(playerName, year);
         try
@@ -2218,7 +2250,7 @@ public class WrappedService(
                 // plus an activity-by-hour query Wrapped never reads. Those per-server leaderboards
                 // are player-independent, so they come from the snapshot; only the player's own
                 // scores and pings still need querying.
-                var scoresActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.ServerRankings.PlayerScores");
+                var scoresActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.ServerRankings.PlayerScores");
                 var playerServerScores = await dbContext.ServerPlayerRankings
                     .AsNoTracking()
                     .Where(r => r.PlayerName == playerName)
@@ -2232,7 +2264,7 @@ public class WrappedService(
                 {
                     // Separately spanned because the trace showed ~135ms in this section that the
                     // two queries did not account for; this isolates the in-memory selection.
-                    var selectActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.ServerRankings.Select");
+                    var selectActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.ServerRankings.Select");
                     var candidates = playerServerScores
                         .Select(s =>
                         {
@@ -2253,7 +2285,7 @@ public class WrappedService(
 
                     // Ping is per player, so it stays a query - but only for the two servers that
                     // actually make the cut.
-                    var pingActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.ServerRankings.Ping");
+                    var pingActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.ServerRankings.Ping");
                     var rankedGuids = candidates.Select(c => c.ServerGuid).ToList();
                     var sixMonthsAgo = DateTime.UtcNow.AddMonths(-6);
                     var pings = await dbContext.PlayerSessions
@@ -2292,7 +2324,7 @@ public class WrappedService(
         serverRankingsActivity?.Dispose();
 
         // 8. Relations (Lucky Charm / Arch Nemesis / Two-Face)
-        var relationsActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations");
+        var relationsActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations");
         string? luckyCharmName = null;
         int? luckyCharmWins = null;
         string? archNemesisName = null;
@@ -2319,7 +2351,7 @@ public class WrappedService(
                 var winsDict = new Dictionary<string, int>();
                 var lossesDict = new Dictionary<string, int>();
 
-                using (var winsLossesActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.WinsLossesQuery"))
+                using (var winsLossesActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.WinsLossesQuery"))
                 {
                     await using var cmd = connection.CreateCommand();
                     cmd.CommandText = @"
@@ -2381,13 +2413,13 @@ public class WrappedService(
                 var teammateWins = new Dictionary<string, int>();
                 foreach (var batch in winsDict.Keys.Chunk(RoundBatchSize))
                 {
-                    using var batchActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.TeammateWinsBatch");
+                    using var batchActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.TeammateWinsBatch");
                     batchActivity?.SetTag("wrapped.batch_size", batch.Length);
                     batchActivity?.SetTag("wrapped.gap_since_previous_batch_ms", interBatchSw.Elapsed.TotalMilliseconds);
 
                     // Real child spans (not just tags) for each phase, so a slow batch shows
                     // exactly where the time went as separate rows in the trace waterfall.
-                    var buildActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.TeammateWinsBatch.Build");
+                    var buildActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.TeammateWinsBatch.Build");
                     await using var cmd = connection.CreateCommand();
                     var roundParamNames = new string[batch.Length];
                     for (int i = 0; i < batch.Length; i++)
@@ -2409,11 +2441,11 @@ public class WrappedService(
                     buildActivity?.SetTag("db.statement", cmd.CommandText);
                     buildActivity?.Dispose();
 
-                    var executeActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.TeammateWinsBatch.Execute");
+                    var executeActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.TeammateWinsBatch.Execute");
                     await using var reader = await cmd.ExecuteReaderAsync();
                     executeActivity?.Dispose();
 
-                    var readActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.TeammateWinsBatch.Read");
+                    var readActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.TeammateWinsBatch.Read");
                     int rowsReturned = 0;
                     while (await reader.ReadAsync())
                     {
@@ -2438,13 +2470,13 @@ public class WrappedService(
                 interBatchSw.Restart();
                 foreach (var batch in lossesDict.Keys.Chunk(RoundBatchSize))
                 {
-                    using var batchActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch");
+                    using var batchActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch");
                     batchActivity?.SetTag("wrapped.batch_size", batch.Length);
                     batchActivity?.SetTag("wrapped.gap_since_previous_batch_ms", interBatchSw.Elapsed.TotalMilliseconds);
 
                     // Real child spans (not just tags) for each phase, so a slow batch shows
                     // exactly where the time went as separate rows in the trace waterfall.
-                    var buildActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Build");
+                    var buildActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Build");
                     await using var cmd = connection.CreateCommand();
                     var roundParamNames = new string[batch.Length];
                     for (int i = 0; i < batch.Length; i++)
@@ -2481,11 +2513,11 @@ public class WrappedService(
                     buildActivity?.SetTag("db.statement", cmd.CommandText);
                     buildActivity?.Dispose();
 
-                    var executeActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Execute");
+                    var executeActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Execute");
                     await using var reader = await cmd.ExecuteReaderAsync();
                     executeActivity?.Dispose();
 
-                    var readActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Read");
+                    var readActivity = ActivitySources.StartWrapped("Wrapped.CalculatePlayerWrapped.Relations.NemesisLossesBatch.Read");
                     int rowsReturned = 0;
                     while (await reader.ReadAsync())
                     {
