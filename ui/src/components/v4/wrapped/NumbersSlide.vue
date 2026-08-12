@@ -89,7 +89,7 @@ const formattedPeakDate = computed(() => {
     const d = new Date(props.data.yearInNumbers.peakTimestamp)
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()
   } catch {
-    return '2026'
+    return String(props.data.year)
   }
 })
 

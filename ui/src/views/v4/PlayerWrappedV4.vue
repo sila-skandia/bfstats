@@ -2,8 +2,13 @@
   <div ref="rootEl" class="player-wrapped">
     <div class="wrapped-grain" aria-hidden="true"></div>
     <div v-if="loading" class="wrapped-loading">
+      <div class="wrapped-fx wrapped-fx--loading" aria-hidden="true">
+        <div class="fx-smoke" :style="fxSmokeBg"></div>
+        <div class="fx-embers-far" :style="fxEmbersBg"></div>
+        <div class="fx-embers-near" :style="fxEmbersBg"></div>
+      </div>
       <div class="spinner"></div>
-      <p>Retrieving Wrapped 2026 aggregates...</p>
+      <p>Retrieving Wrapped {{ wrappedYear }} aggregates...</p>
     </div>
 
     <div v-else-if="error" class="wrapped-error">
@@ -24,7 +29,7 @@
         <aside class="wrapped-sidebar">
           <div class="sidebar-header">
             <span class="logo-text">BFStats</span>
-            <span class="badge-wrapped">WRAPPED '26</span>
+            <span class="badge-wrapped">WRAPPED '{{ yearShort }}</span>
           </div>
           <div class="server-info">
             <h4>{{ data.playerName }}</h4>
@@ -161,7 +166,7 @@
           <header class="mobile-header">
             <div class="header-left">
               <span class="logo-small">BFStats</span>
-              <span class="badge-small">'26</span>
+              <span class="badge-small">'{{ yearShort }}</span>
             </div>
             <div class="header-right">
               <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="close-mobile">
@@ -378,6 +383,10 @@ const isProfileMode = computed(() => route.name === 'v4-profile-wrapped')
 const playerName = ref(route.params.playerName as string)
 const serverGuid = ref((route.params.serverGuid as string) || 'global')
 const userId = computed(() => Number(route.params.userId))
+// The year comes from the URL (/players/:name/wrapped/2026). The year-less
+// route redirects to the current year, so this is always populated.
+const wrappedYear = Number(route.params.year) || new Date().getFullYear()
+const yearShort = String(wrappedYear).slice(-2)
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -474,10 +483,10 @@ onMounted(async () => {
 
   try {
     if (isProfileMode.value) {
-      const profileData = await fetchProfileWrapped(userId.value, 2026)
+      const profileData = await fetchProfileWrapped(userId.value, wrappedYear)
       data.value = { ...profileData, playerName: 'Your Year in Review', serverGuid: 'global', serverName: 'All Aliases' }
     } else {
-      data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, 2026)
+      data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, wrappedYear)
     }
 
     // Preload dynamic achievements from the player's medals/achievements breakdown
@@ -634,6 +643,21 @@ function onStoryNavTap(e: MouseEvent) {
   padding: 24px;
   text-align: center;
   z-index: 10;
+}
+
+/* The loading section wears the same smoke + embers backdrop as the slides.
+   Own background + isolation so the fx layer's screen blend has the dark bg
+   to blend against (same setup as .mobile-layout). */
+.wrapped-loading {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background-color: var(--mm-bg);
+}
+
+.wrapped-loading .spinner,
+.wrapped-loading p {
+  position: relative;
 }
 
 .spinner {

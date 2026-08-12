@@ -87,12 +87,12 @@ const lowestMargin = computed(() => {
 })
 
 function formatDate(dateStr: string): string {
-  if (!dateStr || dateStr.startsWith('-999')) return '2026'
+  if (!dateStr || dateStr.startsWith('-999')) return String(props.data.year)
   try {
     const d = new Date(dateStr)
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()
   } catch {
-    return '2026'
+    return String(props.data.year)
   }
 }
 </script>
