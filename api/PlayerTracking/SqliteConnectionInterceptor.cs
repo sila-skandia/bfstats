@@ -24,12 +24,6 @@ public class SqliteConnectionInterceptor(ILogger<SqliteConnectionInterceptor> lo
         await base.ConnectionOpenedAsync(connection, eventData, cancellationToken);
     }
 
-    /// <summary>Page cache per connection, in KiB (negative = KiB rather than pages).</summary>
-    private const int CacheSizeKib = 262_144; // 256 MiB
-
-    /// <summary>Bytes of the database to memory-map, avoiding a read() + copy per page.</summary>
-    private const long MmapSizeBytes = 1L * 1024 * 1024 * 1024; // 1 GiB
-
     private void ConfigureConnection(DbConnection connection)
     {
         try
@@ -38,19 +32,6 @@ public class SqliteConnectionInterceptor(ILogger<SqliteConnectionInterceptor> lo
 
             // Set busy_timeout - wait for locks instead of failing immediately with SQLITE_BUSY
             command.CommandText = $"PRAGMA busy_timeout = {busyTimeoutMs};";
-            command.ExecuteNonQuery();
-
-            // The default 2 MiB page cache is thrashed by the whole-table aggregate scans behind
-            // stats/leaderboards/Wrapped, so every repeat scan pays full I/O again.
-            command.CommandText = $"PRAGMA cache_size = -{CacheSizeKib};";
-            command.ExecuteNonQuery();
-
-            // GROUP BY / ORDER BY that can't be satisfied by an index build a temp b-tree, which
-            // otherwise spills to a temp file on disk.
-            command.CommandText = "PRAGMA temp_store = MEMORY;";
-            command.ExecuteNonQuery();
-
-            command.CommandText = $"PRAGMA mmap_size = {MmapSizeBytes};";
             command.ExecuteNonQuery();
         }
         catch (Exception ex)
