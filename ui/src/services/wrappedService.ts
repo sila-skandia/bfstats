@@ -304,20 +304,20 @@ export interface PlayerWrappedData {
  * Fetch Player Wrapped data for a given player name and optional server GUID.
  * If serverGuid is omitted or set to 'global', it fetches the cross-server wrapped.
  */
-export async function fetchPlayerWrapped(playerName: string, serverGuid = 'global', year = 2026): Promise<PlayerWrappedData> {
+export async function fetchPlayerWrapped(playerName: string, serverGuid = 'global', year = 2026, refresh = false): Promise<PlayerWrappedData> {
   const API_URL = import.meta.env.VITE_API_URL || '';
   const token = localStorage.getItem('authToken');
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
-  const endpoint = serverGuid === 'global' 
-    ? `${API_URL}/stats/wrapped/player/${playerName}` 
+
+  const endpoint = serverGuid === 'global'
+    ? `${API_URL}/stats/wrapped/player/${playerName}`
     : `${API_URL}/stats/wrapped/player/${playerName}/${serverGuid}`;
 
   const response = await axios.get(endpoint, {
-    params: { year },
+    params: refresh ? { year, refresh: true } : { year },
     headers
   });
   return response.data;
@@ -366,7 +366,7 @@ export interface ProfileWrappedData {
  */
 export type WrappedViewData = PlayerWrappedData & Partial<Pick<ProfileWrappedData, 'bestAliases' | 'aliasCredits'>>
 
-export async function fetchProfileWrapped(userId: number, year = 2026): Promise<ProfileWrappedData> {
+export async function fetchProfileWrapped(userId: number, year = 2026, refresh = false): Promise<ProfileWrappedData> {
   const API_URL = import.meta.env.VITE_API_URL || '';
   const token = localStorage.getItem('authToken');
   const headers: Record<string, string> = {};
@@ -375,7 +375,7 @@ export async function fetchProfileWrapped(userId: number, year = 2026): Promise<
   }
 
   const response = await axios.get(`${API_URL}/stats/wrapped/profile/${userId}`, {
-    params: { year },
+    params: refresh ? { year, refresh: true } : { year },
     headers
   });
   return response.data;
