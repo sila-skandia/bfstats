@@ -28,6 +28,8 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - SEQ_FIRSTRUN_ADMINPASSWORD=admin
+      # Accept OTLP metric samples at /ingest/otlp/v1/metrics (CPU/memory dashboards)
+      - SEQ_FEATURES_ENABLED=IngestOtlpMetrics
     volumes:
       - seq-data:/data
     healthcheck:

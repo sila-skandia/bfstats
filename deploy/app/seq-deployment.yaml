@@ -27,6 +27,10 @@ spec:
           env:
             - name: ACCEPT_EULA
               value: "Y"
+            # Accept OTLP metric samples at /ingest/otlp/v1/metrics and store them
+            # as wide events. Required for the CPU/memory dashboards.
+            - name: SEQ_FEATURES_ENABLED
+              value: "IngestOtlpMetrics"
           volumeMounts:
             - name: seq-data
               mountPath: /data
