@@ -51,8 +51,10 @@ test.describe('Responsive Design - Desktop', () => {
     const text = await heading.first().textContent();
     expect(text).toContain('Players');
 
-    // Should have search input
-    const searchInput = page.locator('input[placeholder*="Filter players"]');
+    // Should have the page's name filter. Target it by accessible name — the
+    // global header search is also a textbox on this page, and a placeholder
+    // substring match breaks on any copy change.
+    const searchInput = page.getByRole('textbox', { name: /filter players by name/i });
     await expect(searchInput).toBeVisible();
   });
 
