@@ -40,6 +40,18 @@ public class WrappedService(
     /// </summary>
     private readonly Dictionary<int, WrappedPopulationStats> _localPopulationStats = new();
 
+    /// <summary>
+    /// Single-slot memos for the sections that produce the same answer regardless of which
+    /// server is being calculated. The crunch calls this service twice per player — once for
+    /// their server, once for global — back to back, so one slot always hits and nothing
+    /// accumulates. Squad is already deduplicated the same way by its Redis cache.
+    /// </summary>
+    private (string Key, List<PlayerServerRankingDto> Value)? _serverRankingsMemo;
+
+    private (string Key, PlayerRelationsDto Value)? _relationsMemo;
+
+    private static string PlayerYearKey(string playerName, int year) => $"{playerName}\n{year}";
+
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -1495,6 +1507,15 @@ public class WrappedService(
 
         var population = await GetPopulationStatsAsync(year);
 
+        // Kicked off here rather than at the Squad section below. Neo4j has its own driver and
+        // connection, so it is the one part of this calculation that can genuinely overlap the
+        // SQLite work instead of adding to it — uncached it costs ~580ms, which is more than
+        // every SQLite section combined. Everything else shares one DbContext (not thread-safe)
+        // and one connection, so it stays sequential.
+        //
+        // Started after the early return above, so the task is always awaited.
+        var squadTask = _relationshipService?.GetMostFrequentCoPlayersAsync(playerName, limit: 10);
+
         // 1. Year in Numbers
         var playerYearInNumbersActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.YearInNumbers");
         var serverStatsQuery = dbContext.PlayerServerStats
@@ -2064,17 +2085,17 @@ public class WrappedService(
         // 6. Squad
         var squadActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.Squad");
         var squad = new List<PlayerTeammateDto>();
-        if (_relationshipService != null)
+        if (squadTask != null)
         {
             try
             {
-                // Timed explicitly (rather than relying on the activity's own duration) so a
-                // slow Neo4j round-trip here is unambiguous in the trace, separate from any
-                // scheduling/GC delay that might show up between this span and later ones.
-                var neo4jSw = Stopwatch.StartNew();
-                var coPlayers = await _relationshipService.GetMostFrequentCoPlayersAsync(playerName, limit: 10);
-                neo4jSw.Stop();
-                squadActivity?.SetTag("wrapped.neo4j_ms", neo4jSw.Elapsed.TotalMilliseconds);
+                // With the lookup started up front this measures time spent *waiting* for Neo4j,
+                // not the round-trip itself. A value near zero means it fully overlapped the
+                // SQLite work; a large value means Neo4j is now the critical path.
+                var neo4jWaitSw = Stopwatch.StartNew();
+                var coPlayers = await squadTask;
+                neo4jWaitSw.Stop();
+                squadActivity?.SetTag("wrapped.neo4j_wait_ms", neo4jWaitSw.Elapsed.TotalMilliseconds);
                 squadActivity?.SetTag("wrapped.neo4j_result_count", coPlayers.Count);
 
                 foreach (var p in coPlayers)
@@ -2093,63 +2114,89 @@ public class WrappedService(
         // 7. Server Rankings (Top 2)
         var serverRankingsActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.ServerRankings");
         var serverRankings = new List<PlayerServerRankingDto>();
+        var memoKey = PlayerYearKey(playerName, year);
         try
         {
-            // Previously routed through IPlayerStatsService.GetPlayerInsights, which ran one
-            // full per-server GROUP BY per server the player has ever played on (~30 queries),
-            // plus an activity-by-hour query Wrapped never reads. Those per-server leaderboards
-            // are player-independent, so they come from the snapshot; only the player's own
-            // scores and pings still need querying.
-            var playerServerScores = await dbContext.ServerPlayerRankings
-                .AsNoTracking()
-                .Where(r => r.PlayerName == playerName)
-                .GroupBy(r => r.ServerGuid)
-                .Select(g => new { ServerGuid = g.Key, TotalScore = g.Sum(x => x.TotalScore) })
-                .ToListAsync();
-
-            if (playerServerScores.Count > 0)
+            // This section never reads serverGuid, so the server-specific and global passes for
+            // one player produce identical output. Computed once and reused across the pair.
+            if (_serverRankingsMemo is { } memo && memo.Key == memoKey)
             {
-                var candidates = playerServerScores
-                    .Select(s => new
-                    {
-                        s.ServerGuid,
-                        s.TotalScore,
-                        Rank = WrappedPopulationStats.CountGreater(
-                            population.RankingScoresAsc.GetValueOrDefault(s.ServerGuid, []), s.TotalScore) + 1,
-                        TotalRankedPlayers = population.RankingScoresAsc.GetValueOrDefault(s.ServerGuid, []).Length
-                    })
-                    .OrderByDescending(r => r.TotalRankedPlayers > 100)
-                    .ThenBy(r => r.Rank)
-                    .Take(2)
-                    .ToList();
-
-                // Ping is per player, so it stays a query - but only for the two servers that
-                // actually make the cut.
-                var rankedGuids = candidates.Select(c => c.ServerGuid).ToList();
-                var sixMonthsAgo = DateTime.UtcNow.AddMonths(-6);
-                var pings = await dbContext.PlayerSessions
+                serverRankings = memo.Value;
+                serverRankingsActivity?.SetTag("wrapped.memo_hit", true);
+            }
+            else
+            {
+                serverRankingsActivity?.SetTag("wrapped.memo_hit", false);
+                // Previously routed through IPlayerStatsService.GetPlayerInsights, which ran one
+                // full per-server GROUP BY per server the player has ever played on (~30 queries),
+                // plus an activity-by-hour query Wrapped never reads. Those per-server leaderboards
+                // are player-independent, so they come from the snapshot; only the player's own
+                // scores and pings still need querying.
+                var scoresActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.ServerRankings.PlayerScores");
+                var playerServerScores = await dbContext.ServerPlayerRankings
                     .AsNoTracking()
-                    .Where(ps => ps.PlayerName == playerName
-                                 && rankedGuids.Contains(ps.ServerGuid)
-                                 && ps.AveragePing > 0
-                                 && ps.AveragePing < 1000
-                                 && ps.StartTime >= sixMonthsAgo)
-                    .GroupBy(ps => ps.ServerGuid)
-                    .Select(g => new { ServerGuid = g.Key, AvgPing = g.Average(ps => ps.AveragePing) })
+                    .Where(r => r.PlayerName == playerName)
+                    .GroupBy(r => r.ServerGuid)
+                    .Select(g => new { ServerGuid = g.Key, TotalScore = g.Sum(x => x.TotalScore) })
                     .ToListAsync();
+                scoresActivity?.SetTag("wrapped.server_count", playerServerScores.Count);
+                scoresActivity?.Dispose();
 
-                var pingByServer = pings.ToDictionary(p => p.ServerGuid, p => p.AvgPing ?? 0.0);
+                if (playerServerScores.Count > 0)
+                {
+                    // Separately spanned because the trace showed ~135ms in this section that the
+                    // two queries did not account for; this isolates the in-memory selection.
+                    var selectActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.ServerRankings.Select");
+                    var candidates = playerServerScores
+                        .Select(s =>
+                        {
+                            var scores = population.RankingScoresAsc.GetValueOrDefault(s.ServerGuid, []);
+                            return new
+                            {
+                                s.ServerGuid,
+                                s.TotalScore,
+                                Rank = WrappedPopulationStats.CountGreater(scores, s.TotalScore) + 1,
+                                TotalRankedPlayers = scores.Length
+                            };
+                        })
+                        .OrderByDescending(r => r.TotalRankedPlayers > 100)
+                        .ThenBy(r => r.Rank)
+                        .Take(2)
+                        .ToList();
+                    selectActivity?.Dispose();
 
-                serverRankings = candidates
-                    .Select(c => new PlayerServerRankingDto(
-                        c.ServerGuid,
-                        population.ServerNames.GetValueOrDefault(c.ServerGuid, "Unknown Server"),
-                        c.Rank,
-                        c.TotalScore,
-                        c.TotalRankedPlayers,
-                        Math.Round(pingByServer.GetValueOrDefault(c.ServerGuid, 0.0), 2)
-                    ))
-                    .ToList();
+                    // Ping is per player, so it stays a query - but only for the two servers that
+                    // actually make the cut.
+                    var pingActivity = ActivitySources.Wrapped.StartActivity("Wrapped.CalculatePlayerWrapped.ServerRankings.Ping");
+                    var rankedGuids = candidates.Select(c => c.ServerGuid).ToList();
+                    var sixMonthsAgo = DateTime.UtcNow.AddMonths(-6);
+                    var pings = await dbContext.PlayerSessions
+                        .AsNoTracking()
+                        .Where(ps => ps.PlayerName == playerName
+                                     && rankedGuids.Contains(ps.ServerGuid)
+                                     && ps.AveragePing > 0
+                                     && ps.AveragePing < 1000
+                                     && ps.StartTime >= sixMonthsAgo)
+                        .GroupBy(ps => ps.ServerGuid)
+                        .Select(g => new { ServerGuid = g.Key, AvgPing = g.Average(ps => ps.AveragePing) })
+                        .ToListAsync();
+                    pingActivity?.Dispose();
+
+                    var pingByServer = pings.ToDictionary(p => p.ServerGuid, p => p.AvgPing ?? 0.0);
+
+                    serverRankings = candidates
+                        .Select(c => new PlayerServerRankingDto(
+                            c.ServerGuid,
+                            population.ServerNames.GetValueOrDefault(c.ServerGuid, "Unknown Server"),
+                            c.Rank,
+                            c.TotalScore,
+                            c.TotalRankedPlayers,
+                            Math.Round(pingByServer.GetValueOrDefault(c.ServerGuid, 0.0), 2)
+                        ))
+                        .ToList();
+                }
+
+                _serverRankingsMemo = (memoKey, serverRankings);
             }
         }
         catch (Exception ex)
@@ -2168,7 +2215,14 @@ public class WrappedService(
         int? twoFaceWins = null;
         int? twoFaceLosses = null;
 
-        if (roundsPlayed > 0)
+        // Like Server Rankings, this section's queries never filter by serverGuid, so both passes
+        // for a player compute the same thing. (That lack of a server filter is arguably a
+        // correctness bug for the server-specific variant — see the feature README — but while
+        // the behaviour stands, the result is safe to reuse.)
+        var relationsMemoHit = _relationsMemo is { } rMemo && rMemo.Key == memoKey;
+        relationsActivity?.SetTag("wrapped.memo_hit", relationsMemoHit);
+
+        if (roundsPlayed > 0 && !relationsMemoHit)
         {
             var connection = dbContext.Database.GetDbConnection();
             bool wasClosed = connection.State == System.Data.ConnectionState.Closed;
@@ -2395,15 +2449,24 @@ public class WrappedService(
             }
         }
 
-        var relations = new PlayerRelationsDto(
-            luckyCharmName,
-            luckyCharmWins,
-            archNemesisName,
-            archNemesisLosses,
-            twoFaceName,
-            twoFaceWins,
-            twoFaceLosses
-        );
+        PlayerRelationsDto relations;
+        if (relationsMemoHit)
+        {
+            relations = _relationsMemo!.Value.Value;
+        }
+        else
+        {
+            relations = new PlayerRelationsDto(
+                luckyCharmName,
+                luckyCharmWins,
+                archNemesisName,
+                archNemesisLosses,
+                twoFaceName,
+                twoFaceWins,
+                twoFaceLosses
+            );
+            _relationsMemo = (memoKey, relations);
+        }
         relationsActivity?.Dispose();
 
         // Calculate Dishonours (not-so-positive stats)
