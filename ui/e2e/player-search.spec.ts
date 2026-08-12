@@ -1,79 +1,61 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+/**
+ * `/players` redirects to the V4 players page, which filters by accessible
+ * name rather than the old "Search players" placeholder. The global header
+ * search (aria-label "Search players") also lives on this page, so the
+ * page-level filter must be addressed by its own accessible name.
+ */
+const filterBox = (page: Page) =>
+  page.getByRole('textbox', { name: /filter players by name/i });
+
+const resultRows = (page: Page) => page.locator('table.mm-list tbody tr');
 
 test.describe('Player Search Flow', () => {
   test('should navigate to players page', async ({ page }) => {
     await page.goto('/players');
     await page.waitForLoadState('networkidle');
 
-    // Check for search input
-    const searchInput = page.locator('input[placeholder*="Search players"]');
-    await expect(searchInput).toBeVisible();
-  });
-
-  test('should display search input on players page', async ({ page }) => {
-    await page.goto('/players');
-    await page.waitForLoadState('networkidle');
-
-    const searchInput = page.locator('input[placeholder*="Search players"]');
-    await expect(searchInput).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'Players' })).toBeVisible();
+    await expect(filterBox(page)).toBeVisible();
   });
 
   test('should search as you type with debounce', async ({ page }) => {
     await page.goto('/players');
     await page.waitForLoadState('networkidle');
 
-    const searchInput = page.locator('input[placeholder*="Search players"]');
+    const searchInput = filterBox(page);
     await expect(searchInput).toBeVisible();
 
-    // Type a search term — results should appear without pressing Enter
+    // Results arrive without pressing Enter — the debounced watcher pushes
+    // `q` into the URL and refetches.
     await searchInput.fill('player');
-    await page.waitForTimeout(500);
 
-    // Page content should still be present after search
-    const bodyText = await page.locator('body').textContent();
-    expect(bodyText?.length).toBeGreaterThan(100);
+    await page.waitForURL(/q=player/, { timeout: 10000 });
+    await expect(page.locator('.mm-skeleton')).toHaveCount(0, { timeout: 15000 });
+    await expect(page.locator('.mm-empty', { hasText: /temporarily unavailable/i })).toHaveCount(0);
   });
 
-  test('should display player results as cards', async ({ page }) => {
+  test('should display player results in a table', async ({ page }) => {
     await page.goto('/players');
     await page.waitForLoadState('networkidle');
 
-    const searchInput = page.locator('input[placeholder*="Search players"]');
-    await searchInput.fill('a');
-    await page.waitForTimeout(1500);
+    await filterBox(page).fill('a');
 
-    // Should have player cards (grid items with cursor-pointer)
-    const playerCards = page.locator('[class*="cursor-pointer"]');
-    const cardCount = await playerCards.count();
-
-    // There should be some player cards in the results
-    expect(cardCount).toBeGreaterThanOrEqual(0);
+    await expect(page.locator('table.mm-list')).toBeVisible({ timeout: 15000 });
+    expect(await resultRows(page).count()).toBeGreaterThan(0);
   });
 
-  test('should navigate to player details when clicking on a card', async ({ page }) => {
+  test('should navigate to player details when clicking a result row', async ({ page }) => {
     await page.goto('/players');
     await page.waitForLoadState('networkidle');
 
-    const searchInput = page.locator('input[placeholder*="Search players"]');
-    await searchInput.fill('player');
-    await page.waitForTimeout(1500);
+    await filterBox(page).fill('a');
 
-    // Look for player cards
-    const playerCards = page.locator('[class*="cursor-pointer"][class*="rounded-xl"]');
-    const cardCount = await playerCards.count();
+    await expect(page.locator('table.mm-list')).toBeVisible({ timeout: 15000 });
+    await resultRows(page).first().click();
 
-    if (cardCount > 0) {
-      const firstCard = playerCards.first();
-
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle' }).catch(() => null),
-        firstCard.click()
-      ]);
-
-      await page.waitForTimeout(500);
-
-      const currentUrl = page.url();
-      expect(currentUrl.toLowerCase()).toMatch(/\/players\//);
-    }
+    await page.waitForURL(/\/players\/[^/]+/, { timeout: 10000 });
+    expect(page.url().toLowerCase()).toMatch(/\/players\//);
   });
 });
