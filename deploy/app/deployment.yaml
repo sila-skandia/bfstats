@@ -176,10 +176,10 @@ spec:
           # jobs, it doesn't kill them.
           resources:
             requests:
-              memory: "512Mi"
+              memory: "768Mi"
               cpu: "500m"
             limits:
-              memory: "2Gi"
+              memory: "3Gi"
               cpu: "2000m"
 
         # SQLite tools sidecar for safe database operations
