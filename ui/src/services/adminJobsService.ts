@@ -209,9 +209,16 @@ export function triggerServerWrappedCrunch(): Promise<{ message?: string; error?
   return request('/server-wrapped-crunch');
 }
 
-/** Fire-and-forget. Pre-computes Player Wrapped data for whitelisted players. Returns 202 Accepted. */
-export function triggerPlayerWrappedCrunch(): Promise<{ message?: string; error?: string }> {
-  return request('/player-wrapped-crunch');
+/**
+ * Fire-and-forget. Pre-computes Player Wrapped data. Returns 202 Accepted.
+ *
+ * With no argument it uses the configured allowlist. Pass `topPlayers` to crunch the busiest N
+ * players of the year by total playtime instead — used to rehearse a full run at a manageable
+ * size. Progress and ms/player are logged to Seq as it goes.
+ */
+export function triggerPlayerWrappedCrunch(topPlayers?: number): Promise<{ message?: string; error?: string }> {
+  const query = topPlayers && topPlayers > 0 ? `?topPlayers=${topPlayers}` : '';
+  return request(`/player-wrapped-crunch${query}`);
 }
 
 /** Fire-and-forget. Pre-computes and caches Player Wrapped data for every registered alias. Returns 202 Accepted. */

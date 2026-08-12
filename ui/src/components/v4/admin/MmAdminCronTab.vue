@@ -154,16 +154,32 @@
         <li class="mm-admin-cron__item">
           <div class="mm-admin-cron__body-text">
             <span class="mm-admin-cron__name">Crunch Player Wrapped</span>
-            <span class="mm-admin-cron__desc">Pre-computes and caches 2026 statistics for whitelisted players on allowed servers.</span>
+            <span class="mm-admin-cron__desc">
+              {{
+                playerWrappedTopPlayers > 0
+                  ? `Pre-computes and caches 2026 statistics for the ${playerWrappedTopPlayers.toLocaleString()} busiest players by playtime, on their most-played server.`
+                  : 'Pre-computes and caches 2026 statistics for whitelisted players on allowed servers.'
+              }}
+              Fire-and-forget; progress and ms/player are logged as it runs.
+            </span>
           </div>
-          <button
-            type="button"
-            class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
-            :disabled="jobRunning !== null"
-            @click="runJob('player-wrapped-crunch', false)"
-          >
-            Start
-          </button>
+          <div class="mm-admin-cron__actions">
+            <select v-model.number="playerWrappedTopPlayers" class="mm-admin-select mm-admin-cron__select">
+              <option :value="0">Allowlist</option>
+              <option :value="50">Top 50</option>
+              <option :value="250">Top 250</option>
+              <option :value="1000">Top 1,000</option>
+              <option :value="5000">Top 5,000</option>
+            </select>
+            <button
+              type="button"
+              class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+              :disabled="jobRunning !== null"
+              @click="runJob('player-wrapped-crunch', false)"
+            >
+              Start
+            </button>
+          </div>
         </li>
 
         <li class="mm-admin-cron__item">
@@ -255,6 +271,9 @@ const jobRunning = ref<string | null>(null)
 const jobError = ref<string | null>(null)
 const jobSuccess = ref<string | null>(null)
 const aggregateBackfillTier = ref(1)
+// 0 keeps the original behaviour (the configured allowlist); anything higher crunches that many
+// of the year's busiest players instead.
+const playerWrappedTopPlayers = ref(0)
 const neo4jSyncDays = ref(7)
 const neo4jEnabled = ref(false)
 const neo4jChecked = ref(false)
@@ -328,7 +347,7 @@ async function runJob(jobKey: string, _isBlocking: boolean) {
       fn = adminJobsService.triggerServerWrappedCrunch
       break
     case 'player-wrapped-crunch':
-      fn = adminJobsService.triggerPlayerWrappedCrunch
+      fn = () => adminJobsService.triggerPlayerWrappedCrunch(playerWrappedTopPlayers.value)
       break
     case 'profile-wrapped-crunch':
       fn = adminJobsService.triggerProfileWrappedCrunch
