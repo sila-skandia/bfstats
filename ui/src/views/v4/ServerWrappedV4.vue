@@ -2,8 +2,13 @@
   <div ref="rootEl" class="server-wrapped">
     <div class="wrapped-grain" aria-hidden="true"></div>
     <div v-if="loading" class="wrapped-loading">
+      <div class="wrapped-fx wrapped-fx--loading" aria-hidden="true">
+        <div class="fx-smoke" :style="fxSmokeBg"></div>
+        <div class="fx-embers-far" :style="fxEmbersBg"></div>
+        <div class="fx-embers-near" :style="fxEmbersBg"></div>
+      </div>
       <div class="spinner"></div>
-      <p>Retrieving Wrapped 2026 aggregates...</p>
+      <p>Retrieving Wrapped {{ wrappedYear }} aggregates...</p>
     </div>
 
     <div v-else-if="error" class="wrapped-error">
@@ -21,7 +26,7 @@
         <aside class="wrapped-sidebar">
           <div class="sidebar-header">
             <span class="logo-text">BFStats</span>
-            <span class="badge-wrapped">WRAPPED '26</span>
+            <span class="badge-wrapped">WRAPPED '{{ yearShort }}</span>
           </div>
           <div class="server-info">
             <h4>{{ data.serverName }}</h4>
@@ -193,7 +198,7 @@
           <header class="mobile-header">
             <div class="header-left">
               <span class="logo-small">BFStats</span>
-              <span class="badge-small">'26</span>
+              <span class="badge-small">'{{ yearShort }}</span>
             </div>
             <div class="header-right">
               <router-link :to="`/v4/servers/detail/${encodeURIComponent(serverName)}`" class="close-mobile">
@@ -395,6 +400,10 @@ function onParallaxMove(e: MouseEvent) {
 }
 
 const serverName = ref(route.params.serverName as string)
+// The year comes from the URL (/servers/detail/:name/wrapped/2026). The
+// year-less route redirects to the current year, so this is always populated.
+const wrappedYear = Number(route.params.year) || new Date().getFullYear()
+const yearShort = String(wrappedYear).slice(-2)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const data = ref<ServerWrappedData | null>(null)
@@ -484,7 +493,7 @@ onMounted(async () => {
     if (!details || !details.serverGuid) {
       throw new Error(`Could not resolve Server GUID for: ${serverName.value}`)
     }
-    data.value = await fetchServerWrapped(details.serverGuid, 2026)
+    data.value = await fetchServerWrapped(details.serverGuid, wrappedYear)
 
     // Preload dynamic achievements once data is resolved
     const dynamicImages: string[] = []
@@ -639,6 +648,21 @@ function onStoryNavTap(e: MouseEvent) {
   padding: 24px;
   text-align: center;
   z-index: 10;
+}
+
+/* The loading section wears the same smoke + embers backdrop as the slides.
+   Own background + isolation so the fx layer's screen blend has the dark bg
+   to blend against (same setup as .mobile-layout). */
+.wrapped-loading {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background-color: var(--mm-bg);
+}
+
+.wrapped-loading .spinner,
+.wrapped-loading p {
+  position: relative;
 }
 
 .spinner {

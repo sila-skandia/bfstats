@@ -37,6 +37,10 @@ const DashboardV4 = () => import('../views/v4/DashboardV4.vue')
 const ServerWrappedV4 = () => import('../views/v4/ServerWrappedV4.vue')
 const PlayerWrappedV4 = () => import('../views/v4/PlayerWrappedV4.vue')
 
+// Wrapped URLs carry the year as a path segment (`.../wrapped/2026`). The
+// year-less form redirects here so `/wrapped` always resolves to "this year".
+export const currentWrappedYear = () => new Date().getFullYear()
+
 const routes: RouteRecordRaw[] = [
     // -------- Root + V3 → V4 redirects --------
     // Every public stats URL the legacy site used now redirects to its
@@ -73,13 +77,15 @@ const routes: RouteRecordRaw[] = [
     },
     { path: '/players', redirect: '/v4/players' },
     { path: '/players/compare', redirect: to => ({ path: '/v4/players/compare', query: to.query }) },
+    // Legacy wrapped URLs — now live under the player route as
+    // /v4/players/:playerName/wrapped/:year
     {
       path: '/wrapped/player/:playerName',
-      redirect: to => `/v4/wrapped/player/${encodeURIComponent(String(to.params.playerName))}`,
+      redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped`,
     },
     {
       path: '/wrapped/player/:playerName/:serverGuid',
-      redirect: to => `/v4/wrapped/player/${encodeURIComponent(String(to.params.playerName))}/${encodeURIComponent(String(to.params.serverGuid))}`,
+      redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped/${currentWrappedYear()}/${encodeURIComponent(String(to.params.serverGuid))}`,
     },
     {
       path: '/players/:playerName',
@@ -343,45 +349,68 @@ const routes: RouteRecordRaw[] = [
             description: 'Server profile, live roster, and population history.'
           }
         },
+        // Wrapped lives under the subject it belongs to, with the year as a
+        // path segment. The year-less form redirects to the current year.
         {
           path: 'servers/detail/:serverName/wrapped',
+          redirect: to => `/v4/servers/detail/${encodeURIComponent(String(to.params.serverName))}/wrapped/${currentWrappedYear()}`,
+        },
+        {
+          path: 'servers/detail/:serverName/wrapped/:year(\\d{4})',
           name: 'v4-server-wrapped',
           component: ServerWrappedV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.serverName} Wrapped · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${route.params.serverName} Wrapped ${route.params.year} · bfstats.io`,
             description: 'Year in Review Wrapped stories for this server.'
           }
         },
         {
-          path: 'wrapped/player/:playerName',
+          path: 'players/:playerName/wrapped',
+          redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped/${currentWrappedYear()}`,
+        },
+        {
+          path: 'players/:playerName/wrapped/:year(\\d{4})',
           name: 'v4-player-wrapped-global',
           component: PlayerWrappedV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped ${route.params.year} · bfstats.io`,
             description: 'Year in Review Wrapped stories for this player.'
           }
         },
         {
-          path: 'wrapped/player/:playerName/:serverGuid',
+          path: 'players/:playerName/wrapped/:year(\\d{4})/:serverGuid',
           name: 'v4-player-wrapped-server',
           component: PlayerWrappedV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped ${route.params.year} · bfstats.io`,
             description: 'Year in Review Wrapped stories for this player on this server.'
           }
         },
         {
           path: 'wrapped/profile/:userId',
+          redirect: to => `/v4/wrapped/profile/${encodeURIComponent(String(to.params.userId))}/${currentWrappedYear()}`,
+        },
+        {
+          path: 'wrapped/profile/:userId/:year(\\d{4})',
           name: 'v4-profile-wrapped',
           component: PlayerWrappedV4,
           props: true,
           meta: {
-            title: () => 'Your Year in Review · bfstats.io',
+            title: (route: RouteLocationNormalized) => `Your ${route.params.year} Year in Review · bfstats.io`,
             description: 'Your Year in Review across all your registered aliases.'
           }
+        },
+        // Old wrapped URL shape (/v4/wrapped/player/...) → new player-scoped shape
+        {
+          path: 'wrapped/player/:playerName',
+          redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped`,
+        },
+        {
+          path: 'wrapped/player/:playerName/:serverGuid',
+          redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped/${currentWrappedYear()}/${encodeURIComponent(String(to.params.serverGuid))}`,
         },
         {
           path: 'rounds/:roundId/report',
