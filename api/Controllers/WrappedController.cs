@@ -14,8 +14,23 @@ namespace api.Controllers;
 [Route("stats/[controller]")]
 public class WrappedController(
     IWrappedService wrappedService,
+    IWrappedPopulationStatsProvider populationStatsProvider,
     ILogger<WrappedController> logger) : ControllerBase
 {
+    /// <summary>
+    /// Handles ?refresh=true: drops both layers of caching for the year so the next call
+    /// recalculates from scratch. Without this a repeat call is served from PlayerWrappedCaches,
+    /// and even a recalculation would reuse the cached population snapshot - so a trace of the
+    /// same player twice wouldn't show the same work.
+    /// </summary>
+    private void ApplyRefresh(bool refresh, int year)
+    {
+        if (!refresh) return;
+
+        logger.LogInformation("Refresh requested: rebuilding Wrapped population stats for {Year}", year);
+        populationStatsProvider.Invalidate(year);
+    }
+
     /// <summary>
     /// Retrieves the Server Wrapped 2026 statistics for a given server.
     /// Access is restricted to users with the Support policy (Admin & Support).
@@ -25,13 +40,14 @@ public class WrappedController(
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ServerWrappedResponseDto>> GetServerWrapped(string serverGuid, [FromQuery] int year = 2026)
+    public async Task<ActionResult<ServerWrappedResponseDto>> GetServerWrapped(string serverGuid, [FromQuery] int year = 2026, [FromQuery] bool refresh = false)
     {
         logger.LogInformation("Retrieving Server Wrapped statistics for GUID: {ServerGuid}, Year: {Year} (Admin Only)", serverGuid, year);
 
         try
         {
-            var response = await wrappedService.GetServerWrappedAsync(serverGuid, year);
+            ApplyRefresh(refresh, year);
+            var response = await wrappedService.GetServerWrappedAsync(serverGuid, year, bypassCache: refresh);
             if (response == null)
             {
                 logger.LogWarning("Server Wrapped data for GUID {ServerGuid} not found", serverGuid);
@@ -53,13 +69,14 @@ public class WrappedController(
     [HttpGet("player/{playerName}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<PlayerWrappedResponseDto>> GetGlobalPlayerWrapped(string playerName, [FromQuery] int year = 2026)
+    public async Task<ActionResult<PlayerWrappedResponseDto>> GetGlobalPlayerWrapped(string playerName, [FromQuery] int year = 2026, [FromQuery] bool refresh = false)
     {
         logger.LogInformation("Retrieving Global Player Wrapped statistics for {PlayerName}, Year: {Year}", playerName, year);
 
         try
         {
-            var response = await wrappedService.GetPlayerWrappedAsync(playerName, "global", year);
+            ApplyRefresh(refresh, year);
+            var response = await wrappedService.GetPlayerWrappedAsync(playerName, "global", year, bypassCache: refresh);
             if (response == null)
             {
                 logger.LogWarning("Global Player Wrapped data for player {PlayerName} not found", playerName);
@@ -81,13 +98,16 @@ public class WrappedController(
     [HttpGet("profile/{userId:int}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ProfileWrappedResponseDto>> GetProfileWrapped(int userId, [FromQuery] int year = 2026)
+    public async Task<ActionResult<ProfileWrappedResponseDto>> GetProfileWrapped(int userId, [FromQuery] int year = 2026, [FromQuery] bool refresh = false)
     {
         logger.LogInformation("Retrieving Profile Wrapped statistics for UserId: {UserId}, Year: {Year}", userId, year);
 
         try
         {
-            var response = await wrappedService.GetProfileWrappedAsync(userId, year);
+            // Invalidated once here, not per alias, so a multi-alias profile rebuilds the
+            // snapshot a single time.
+            ApplyRefresh(refresh, year);
+            var response = await wrappedService.GetProfileWrappedAsync(userId, year, bypassCache: refresh);
             if (response == null)
             {
                 logger.LogWarning("Profile Wrapped data for UserId {UserId} not found", userId);
@@ -109,13 +129,14 @@ public class WrappedController(
     [HttpGet("player/{playerName}/{serverGuid}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<PlayerWrappedResponseDto>> GetServerPlayerWrapped(string playerName, string serverGuid, [FromQuery] int year = 2026)
+    public async Task<ActionResult<PlayerWrappedResponseDto>> GetServerPlayerWrapped(string playerName, string serverGuid, [FromQuery] int year = 2026, [FromQuery] bool refresh = false)
     {
         logger.LogInformation("Retrieving Server-Specific Player Wrapped statistics for {PlayerName}, Server: {ServerGuid}, Year: {Year}", playerName, serverGuid, year);
 
         try
         {
-            var response = await wrappedService.GetPlayerWrappedAsync(playerName, serverGuid, year);
+            ApplyRefresh(refresh, year);
+            var response = await wrappedService.GetPlayerWrappedAsync(playerName, serverGuid, year, bypassCache: refresh);
             if (response == null)
             {
                 logger.LogWarning("Server-Specific Player Wrapped data for player {PlayerName} on server {ServerGuid} not found", playerName, serverGuid);
