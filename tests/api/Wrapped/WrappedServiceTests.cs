@@ -24,6 +24,14 @@ public class WrappedServiceTests : IDisposable
     private readonly PlayerTrackerDbContext _dbContext;
     private readonly ILogger<WrappedService> _logger;
     private readonly WrappedService _service;
+    private readonly IConfiguration _configuration;
+    private readonly IServiceProvider _serviceProvider;
+
+    /// <summary>
+    /// A second service over the same database. The per-player memos live on the service
+    /// instance, so this is how a test observes a freshly computed result rather than a memo hit.
+    /// </summary>
+    private WrappedService NewService() => new(_dbContext, _configuration, _serviceProvider, _logger);
 
     public WrappedServiceTests()
     {
@@ -59,6 +67,8 @@ public class WrappedServiceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         serviceProvider.GetService(typeof(api.PlayerRelationships.IPlayerRelationshipService)).Returns(relationshipService);
         _logger = Substitute.For<ILogger<WrappedService>>();
+        _configuration = configuration;
+        _serviceProvider = serviceProvider;
         _service = new WrappedService(_dbContext, configuration, serviceProvider, _logger);
     }
 
@@ -622,6 +632,74 @@ public class WrappedServiceTests : IDisposable
             Metadata = $"{{\"actual_streak\": {actualStreak}}}",
             Game = "bf1942"
         });
+    }
+
+    [Fact]
+    public async Task GetPlayerWrappedAsync_ServerAndGlobalPasses_AgreeOnTheServerAgnosticSections()
+    {
+        // Server Rankings and Relations never filter by serverGuid, so both passes for one
+        // player must produce identical output — that equality is what makes the memo safe.
+        var serverGuid = "test-server-guid";
+        _dbContext.Servers.Add(new GameServer { Guid = serverGuid, Name = "Test Server", GameId = "bf1942", Timezone = "UTC" });
+        _dbContext.Players.Add(new Player { Name = "Twin", FirstSeen = new DateTime(2025, 1, 1), LastSeen = new DateTime(2026, 12, 31) });
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = serverGuid, PlayerName = "Twin", Year = 2026, Week = 23,
+            TotalRounds = 12, TotalKills = 60, TotalDeaths = 20, TotalScore = 600, TotalPlayTimeMinutes = 300
+        });
+        _dbContext.ServerPlayerRankings.Add(new ServerPlayerRanking
+        {
+            ServerGuid = serverGuid, PlayerName = "Twin", Year = 2026, Month = 6, Rank = 1, TotalScore = 600
+        });
+        await _dbContext.SaveChangesAsync();
+
+        // Deliberately two separate service instances, so neither result can come from the
+        // other's memo. Comparing memoised output to itself would be circular and could never
+        // fail; this compares two independent computations.
+        var serverResult = await NewService().GetPlayerWrappedAsync("Twin", serverGuid, 2026, bypassCache: true);
+        var globalResult = await NewService().GetPlayerWrappedAsync("Twin", "global", 2026, bypassCache: true);
+
+        Assert.NotNull(serverResult);
+        Assert.NotNull(globalResult);
+        Assert.Equal(serverResult.ServerRankings.Count, globalResult.ServerRankings.Count);
+        Assert.Equal(serverResult.Relations, globalResult.Relations);
+        for (int i = 0; i < serverResult.ServerRankings.Count; i++)
+        {
+            Assert.Equal(serverResult.ServerRankings[i], globalResult.ServerRankings[i]);
+        }
+    }
+
+    [Fact]
+    public async Task GetPlayerWrappedAsync_DoesNotLeakOneMemoisedPlayersRankingsToAnother()
+    {
+        // The memo is a single slot keyed by player+year. If the key check were wrong, the
+        // second player would silently inherit the first player's rankings.
+        var serverGuid = "test-server-guid";
+        _dbContext.Servers.Add(new GameServer { Guid = serverGuid, Name = "Test Server", GameId = "bf1942", Timezone = "UTC" });
+        _dbContext.Players.AddRange(
+            new Player { Name = "First", FirstSeen = new DateTime(2025, 1, 1), LastSeen = new DateTime(2026, 12, 31) },
+            new Player { Name = "Second", FirstSeen = new DateTime(2025, 1, 1), LastSeen = new DateTime(2026, 12, 31) });
+
+        _dbContext.PlayerServerStats.AddRange(
+            new PlayerServerStats { ServerGuid = serverGuid, PlayerName = "First", Year = 2026, Week = 23, TotalRounds = 10, TotalKills = 90, TotalDeaths = 20, TotalScore = 900, TotalPlayTimeMinutes = 300 },
+            new PlayerServerStats { ServerGuid = serverGuid, PlayerName = "Second", Year = 2026, Week = 23, TotalRounds = 10, TotalKills = 10, TotalDeaths = 20, TotalScore = 100, TotalPlayTimeMinutes = 300 });
+
+        _dbContext.ServerPlayerRankings.AddRange(
+            new ServerPlayerRanking { ServerGuid = serverGuid, PlayerName = "First", Year = 2026, Month = 6, Rank = 1, TotalScore = 900 },
+            new ServerPlayerRanking { ServerGuid = serverGuid, PlayerName = "Second", Year = 2026, Month = 6, Rank = 2, TotalScore = 100 });
+        await _dbContext.SaveChangesAsync();
+
+        var first = await _service.GetPlayerWrappedAsync("First", "global", 2026);
+        var second = await _service.GetPlayerWrappedAsync("Second", "global", 2026);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        var firstRanking = Assert.Single(first.ServerRankings);
+        var secondRanking = Assert.Single(second.ServerRankings);
+        Assert.Equal(900, firstRanking.TotalScore);
+        Assert.Equal(100, secondRanking.TotalScore);
+        Assert.Equal(1, firstRanking.Rank);
+        Assert.Equal(2, secondRanking.Rank);
     }
 
     [Fact]
