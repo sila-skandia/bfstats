@@ -63,6 +63,14 @@ var seqUrl = earlyConfig["SEQ_URL"] ?? Environment.GetEnvironmentVariable("SEQ_U
 var otlpEndpoint = earlyConfig["OTLP_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("OTLP_ENDPOINT")
     ?? (!string.IsNullOrEmpty(seqUrl) ? $"{seqUrl.TrimEnd('/')}/ingest/otlp/v1/traces" : "http://localhost:4318/v1/traces");
+
+// OTLP endpoint for metric export. Deliberately derived from SEQ_URL rather than
+// OTLP_ENDPOINT — traces may be pointed at Tempo, but metrics only have a home in Seq
+// (which needs SEQ_FEATURES_ENABLED=IngestOtlpMetrics to accept them). Null when there
+// is no Seq to export to, in which case the metrics exporter is not registered at all.
+var otlpMetricsEndpoint = earlyConfig["OTLP_METRICS_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("OTLP_METRICS_ENDPOINT")
+    ?? (!string.IsNullOrEmpty(seqUrl) ? $"{seqUrl.TrimEnd('/')}/ingest/otlp/v1/metrics" : null);
 var serviceName = "api";
 var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
 var samplingRatioEnv = Environment.GetEnvironmentVariable("TRACE_SAMPLING_RATIO");
@@ -223,7 +231,20 @@ try
                 // Add custom background job meters for correlation analysis
                 metrics.AddMeter("BackgroundJobs");
 
+                // Process CPU/memory heartbeat (see ProcessHealthReporter)
+                metrics.AddMeter(ProcessHealthReporter.MeterName);
+
                 metrics.AddPrometheusExporter();
+
+                if (!string.IsNullOrEmpty(otlpMetricsEndpoint))
+                {
+                    metrics.AddOtlpExporter((exporter, reader) =>
+                    {
+                        exporter.Endpoint = new Uri(otlpMetricsEndpoint);
+                        exporter.Protocol = OtlpExportProtocol.HttpProtobuf;
+                        reader.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds = 30_000;
+                    });
+                }
             })
         .WithTracing(tracing =>
             {
@@ -609,6 +630,9 @@ try
     builder.Services.AddScoped<IServerStatsService>(sp => sp.GetRequiredService<ServerStatsService>());
     builder.Services.AddScoped<RoundsService>();
     builder.Services.AddScoped<api.Landing.ILandingService, api.Landing.LandingService>();
+    // Samples process CPU/memory for the Seq metrics dashboards
+    builder.Services.AddHostedService<ProcessHealthReporter>();
+
     // Register the stat collector background services
     builder.Services.AddHostedService<StatsCollectionBackgroundService>();
     builder.Services.AddHostedService<RankingCalculationService>();
