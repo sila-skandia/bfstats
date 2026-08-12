@@ -38,10 +38,11 @@ test.describe('Global Navigation', () => {
     expect(page.url()).toContain('/players');
     expect(page.url()).not.toContain('/servers');
 
-    // Navigate back to servers
+    // Navigate back to servers. FH2 is no longer tracked — the legacy deeplink
+    // redirects to the BF1942 server list rather than rendering its own page.
     await page.goto('/servers/fh2');
     await page.waitForLoadState('networkidle');
-    expect(page.url()).toContain('/servers/fh2');
+    expect(page.url()).toContain('/v4/servers/bf1942');
   });
 
   test('should maintain navigation history across pages', async ({ page }) => {
@@ -63,19 +64,17 @@ test.describe('Global Navigation', () => {
     expect(page.url()).toContain('/servers/bf1942');
   });
 
-  test('should switch between server game modes', async ({ page }) => {
+  test('should redirect retired game modes to the BF1942 server list', async ({ page }) => {
     await page.goto('/servers/bf1942');
     await page.waitForLoadState('networkidle');
-    expect(page.url()).toContain('/servers/bf1942');
+    expect(page.url()).toContain('/v4/servers/bf1942');
 
-    // Navigate to FH2
-    await page.goto('/servers/fh2');
-    await page.waitForLoadState('networkidle');
-    expect(page.url()).toContain('/servers/fh2');
-
-    // Navigate to BFV
-    await page.goto('/servers/bfv');
-    await page.waitForLoadState('networkidle');
-    expect(page.url()).toContain('/servers/bfv');
+    // FH2 and BFV are no longer tracked. Their old URLs must not 404 or dead-end
+    // — they land on the BF1942 list.
+    for (const retired of ['/servers/fh2', '/servers/bfv', '/servers/fh2/v3', '/servers/bfv/v3']) {
+      await page.goto(retired);
+      await page.waitForLoadState('networkidle');
+      expect(page.url()).toContain('/v4/servers/bf1942');
+    }
   });
 });
