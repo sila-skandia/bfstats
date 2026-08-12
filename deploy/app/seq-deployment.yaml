@@ -40,6 +40,16 @@ spec:
           volumeMounts:
             - name: seq-data
               mountPath: /data
+          # Seq indexes and caches as it ingests, so it will happily use whatever
+          # it is given. Capped well below the API's share — losing log ingestion
+          # is survivable, losing the node is not.
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
       volumes:
         - name: seq-data
           hostPath:
