@@ -778,6 +778,11 @@ try
     builder.Services.AddScoped<api.AdminData.IServerMergeService, api.AdminData.ServerMergeService>();
     builder.Services.AddScoped<api.Wrapped.IWrappedService, api.Wrapped.WrappedService>();
 
+    // Singleton: the population-wide Wrapped leaderboards are identical for every player, so one
+    // snapshot is shared by the crunch job and every on-demand request rather than being rebuilt
+    // per player (which is what made a single Wrapped calculation take ~20s).
+    builder.Services.AddSingleton<api.Wrapped.IWrappedPopulationStatsProvider, api.Wrapped.WrappedPopulationStatsProvider>();
+
     // Register Neo4j Player Relationships services (optional, only if configured)
     var neo4jConfig = builder.Configuration.GetSection("Neo4j").Get<api.PlayerRelationships.Neo4jConfiguration>();
     if (neo4jConfig != null && !string.IsNullOrEmpty(neo4jConfig.Uri))
