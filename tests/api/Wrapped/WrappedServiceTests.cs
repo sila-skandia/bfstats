@@ -703,6 +703,67 @@ public class WrappedServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CrunchAllPlayersWrappedAsync_TopPlayerCount_TakesTheBusiestPlayersAndTheirMostPlayedServer()
+    {
+        var busyServer = "test-server-guid";
+        var quietServer = "cached-server-guid";
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = busyServer, Name = "Busy", GameId = "bf1942", Timezone = "UTC" },
+            new GameServer { Guid = quietServer, Name = "Quiet", GameId = "bf1942", Timezone = "UTC" });
+
+        // Playtime ranking comes from PlayerStatsMonthly: Heavy > Middle > Light.
+        AddMonthlyStats("Heavy", rounds: 50, kills: 500, deaths: 100, playTime: 3000);
+        AddMonthlyStats("Middle", rounds: 30, kills: 300, deaths: 100, playTime: 2000);
+        AddMonthlyStats("Light", rounds: 10, kills: 50, deaths: 40, playTime: 100);
+
+        // Heavy plays mostly on busyServer; Middle mostly on quietServer. The crunch should pick
+        // each player's own most-played server, not a globally configured one.
+        _dbContext.PlayerServerStats.AddRange(
+            new PlayerServerStats { ServerGuid = busyServer, PlayerName = "Heavy", Year = 2026, Week = 23, TotalRounds = 40, TotalKills = 400, TotalDeaths = 80, TotalScore = 4000, TotalPlayTimeMinutes = 2500 },
+            new PlayerServerStats { ServerGuid = quietServer, PlayerName = "Heavy", Year = 2026, Week = 23, TotalRounds = 10, TotalKills = 100, TotalDeaths = 20, TotalScore = 1000, TotalPlayTimeMinutes = 500 },
+            new PlayerServerStats { ServerGuid = quietServer, PlayerName = "Middle", Year = 2026, Week = 23, TotalRounds = 25, TotalKills = 250, TotalDeaths = 80, TotalScore = 2500, TotalPlayTimeMinutes = 1800 },
+            new PlayerServerStats { ServerGuid = busyServer, PlayerName = "Middle", Year = 2026, Week = 23, TotalRounds = 5, TotalKills = 50, TotalDeaths = 20, TotalScore = 500, TotalPlayTimeMinutes = 200 },
+            new PlayerServerStats { ServerGuid = busyServer, PlayerName = "Light", Year = 2026, Week = 23, TotalRounds = 10, TotalKills = 50, TotalDeaths = 40, TotalScore = 500, TotalPlayTimeMinutes = 100 });
+        await _dbContext.SaveChangesAsync();
+
+        // Act — top 2 only, so Light must be excluded.
+        await _service.CrunchAllPlayersWrappedAsync(2026, CancellationToken.None, topPlayerCount: 2);
+
+        var cached = await _dbContext.PlayerWrappedCaches.AsNoTracking().ToListAsync();
+
+        Assert.DoesNotContain(cached, c => c.PlayerName == "Light");
+        // Each selected player gets a global pass and one server pass.
+        Assert.Contains(cached, c => c.PlayerName == "Heavy" && c.ServerGuid == "global");
+        Assert.Contains(cached, c => c.PlayerName == "Heavy" && c.ServerGuid == busyServer);
+        Assert.Contains(cached, c => c.PlayerName == "Middle" && c.ServerGuid == "global");
+        Assert.Contains(cached, c => c.PlayerName == "Middle" && c.ServerGuid == quietServer);
+        // ...and specifically not their less-played server.
+        Assert.DoesNotContain(cached, c => c.PlayerName == "Heavy" && c.ServerGuid == quietServer);
+        Assert.DoesNotContain(cached, c => c.PlayerName == "Middle" && c.ServerGuid == busyServer);
+    }
+
+    [Fact]
+    public async Task CrunchAllPlayersWrappedAsync_WithoutTopPlayerCount_StillUsesTheConfiguredAllowlist()
+    {
+        // The default path must be unchanged — topPlayerCount is additive, not a replacement.
+        _dbContext.Servers.Add(new GameServer { Guid = "test-server-guid", Name = "Busy", GameId = "bf1942", Timezone = "UTC" });
+        AddMonthlyStats("Unlisted", rounds: 50, kills: 500, deaths: 100, playTime: 9000);
+        _dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            ServerGuid = "test-server-guid", PlayerName = "Unlisted", Year = 2026, Week = 23,
+            TotalRounds = 50, TotalKills = 500, TotalDeaths = 100, TotalScore = 5000, TotalPlayTimeMinutes = 9000
+        });
+        await _dbContext.SaveChangesAsync();
+
+        await _service.CrunchAllPlayersWrappedAsync(2026, CancellationToken.None);
+
+        // No PlayerWrapped:AllowedPlayerNames is configured in these tests, so the fallback
+        // allowlist applies and the busiest player is deliberately not crunched.
+        var cached = await _dbContext.PlayerWrappedCaches.AsNoTracking().ToListAsync();
+        Assert.DoesNotContain(cached, c => c.PlayerName == "Unlisted");
+    }
+
+    [Fact]
     public async Task GetProfileWrappedAsync_ReturnsNull_WhenUserHasNoAliases()
     {
         // Arrange
