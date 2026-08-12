@@ -7,12 +7,13 @@ test.describe('Landing Page - Server Browser', () => {
     // Wait for page to load
     await page.waitForLoadState('networkidle');
 
-    // Page should have loaded (check for main content area)
-    const mainContent = page.locator('[class*="bg-slate-900"]').first();
-    await expect(mainContent).toBeVisible();
+    // Page should have loaded. The V4 landing page is built from `mm-*`
+    // classes — the old Tailwind `bg-slate-900` shell no longer exists.
+    await expect(page.locator('main')).toBeVisible();
+    await expect(page.locator('.mm-landing__top')).toBeVisible();
 
     // URL should be correct
-    expect(page.url()).toContain('/servers/bf1942');
+    expect(page.url()).toContain('/v4/servers/bf1942');
   });
 
   test('should display game mode filter buttons', async ({ page }) => {
@@ -31,12 +32,13 @@ test.describe('Landing Page - Server Browser', () => {
     await page.goto('/servers/bf1942');
     await page.waitForLoadState('networkidle');
 
-    // Try to navigate to FH2 mode
+    // FH2 is no longer a tracked game mode — its old URL redirects to the
+    // BF1942 list rather than rendering a mode of its own.
     await page.goto('/servers/fh2');
     await page.waitForLoadState('networkidle');
 
-    // Should be on FH2 page
-    expect(page.url()).toContain('/servers/fh2');
+    expect(page.url()).toContain('/v4/servers/bf1942');
+    await expect(page.locator('.mm-landing__top')).toBeVisible();
   });
 
   test('should display server data/content', async ({ page }) => {
