@@ -301,10 +301,9 @@ export interface PlayerWrappedData {
 }
 
 /**
- * Fetch Player Wrapped data for a given player name and optional server GUID.
- * If serverGuid is omitted or set to 'global', it fetches the cross-server wrapped.
+ * Fetch a player's Wrapped data — always the cross-server ("global") view.
  */
-export async function fetchPlayerWrapped(playerName: string, serverGuid = 'global', year = 2026, refresh = false): Promise<PlayerWrappedData> {
+export async function fetchPlayerWrapped(playerName: string, year = 2026, refresh = false): Promise<PlayerWrappedData> {
   const API_URL = import.meta.env.VITE_API_URL || '';
   const token = localStorage.getItem('authToken');
   const headers: Record<string, string> = {};
@@ -312,9 +311,8 @@ export async function fetchPlayerWrapped(playerName: string, serverGuid = 'globa
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const endpoint = serverGuid === 'global'
-    ? `${API_URL}/stats/wrapped/player/${playerName}`
-    : `${API_URL}/stats/wrapped/player/${playerName}/${serverGuid}`;
+  // Player Wrapped is global-only — the per-server variant and its endpoint were removed.
+  const endpoint = `${API_URL}/stats/wrapped/player/${playerName}`;
 
   const response = await axios.get(endpoint, {
     params: refresh ? { year, refresh: true } : { year },
