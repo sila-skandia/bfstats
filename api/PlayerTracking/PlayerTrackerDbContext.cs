@@ -164,11 +164,21 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.IsActive);
 
-        // One active round per server (partial unique index)
+        // Active rounds per server. Deliberately NOT unique: a server merge can leave
+        // two IsActive rounds for one ServerGuid until the next map change closes them,
+        // and LiveServersController is written to tolerate that (it takes the most
+        // recent). Production holds such a pair today, so a unique index here would
+        // fail at startup — migrations run via Database.Migrate().
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.ServerGuid)
-            .IsUnique()
             .HasFilter("IsActive = 1");
+
+        // Serves "WHERE ServerGuid IN (...) AND IsActive" as EF actually emits it. SQLite
+        // will only pick the partial index above when the SQL contains a literal
+        // "IsActive = 1", and EF renders `r.IsActive` as a bare boolean, so that index is
+        // unreachable from LINQ. This composite covers the live-servers and banner queries.
+        modelBuilder.Entity<Round>()
+            .HasIndex(r => new { r.ServerGuid, r.IsActive });
 
         // Check constraint to ensure EndTime >= StartTime when EndTime is not null
         modelBuilder.Entity<Round>()
