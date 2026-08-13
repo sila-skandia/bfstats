@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using api.PlayerTracking;
 
@@ -10,9 +11,11 @@ using api.PlayerTracking;
 namespace api.Migrations
 {
     [DbContext(typeof(PlayerTrackerDbContext))]
-    partial class PlayerTrackerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814093000_RestoreMissingIndexes")]
+    partial class RestoreMissingIndexes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
@@ -1120,11 +1123,10 @@ namespace api.Migrations
                     b.HasIndex("MapName");
 
                     b.HasIndex("ServerGuid")
+                        .IsUnique()
                         .HasFilter("IsActive = 1");
 
                     b.HasIndex("ServerGuid", "EndTime");
-
-                    b.HasIndex("ServerGuid", "IsActive");
 
                     b.HasIndex("ServerGuid", "StartTime");
 

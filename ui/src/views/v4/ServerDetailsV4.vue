@@ -89,61 +89,88 @@ const openMapAnywhere = (mapName: string) => {
   openMapDrill(mapName)
 }
 
+// These feeds were previously awaited one after another. Every request from
+// Australia costs ~320ms of round trip to the Finnish origin regardless of how
+// little work it does, so six serial calls cost ~2.4s of pure latency before the
+// page settled. Only two of them actually depend on the details payload (the live
+// roster needs gameId/ip/port, the forecast needs serverGuid); the rest need only
+// serverName, which we have at mount. Two parallel waves instead of six hops.
+// Guards against two loads interleaving when serverName changes mid-flight — a
+// slower earlier response must not overwrite a newer server's data. The serial
+// version had the same hazard; firing concurrently just makes it easier to hit.
+let loadSeq = 0
+
 const load = async () => {
+  const seq = ++loadSeq
+  const stale = () => seq !== loadSeq
+
   loading.value = true
   error.value = null
   liveServer.value = null
-  try {
-    details.value = await fetchServerDetails(serverName.value)
-  } catch (e) {
-    error.value = 'Server feed temporarily unavailable.'
-  } finally {
-    loading.value = false
-  }
-  // fire-and-forget the optional feeds — the page is still useful without them
   insightsLoading.value = true
   boardsLoading.value = true
   liveLoading.value = true
-  try {
-    insights.value = await fetchServerInsights(serverName.value, 30, '7d')
-  } catch { insights.value = null } finally { insightsLoading.value = false }
-  try {
-    leaderboards.value = await fetchServerLeaderboards(serverName.value, 'month')
-  } catch { leaderboards.value = null } finally { boardsLoading.value = false }
-  // Live roster — needs gameId + ip + port from the details payload
-  try {
-    if (details.value?.gameId && details.value.serverIp && details.value.serverPort) {
-      liveServer.value = await fetchLiveServerData(
-        details.value.gameId,
-        details.value.serverIp,
-        details.value.serverPort,
-      )
-    } else {
-      liveServer.value = null
-    }
-  } catch {
-    liveServer.value = null
-  } finally {
-    liveLoading.value = false
-  }
-  // Forecast / busy-indicator hourly timeline — best-effort
-  try {
-    if (details.value?.serverGuid) {
-      const response = await fetchServerBusyIndicators([details.value.serverGuid])
-      if (response.serverResults.length > 0) {
-        hourlyTimeline.value = response.serverResults[0].hourlyTimeline
-      }
-    }
-  } catch {
-    hourlyTimeline.value = []
-  }
+
+  // Wave 1 — everything keyed off serverName alone.
+  const detailsP = fetchServerDetails(serverName.value)
+    .then(d => { if (!stale()) details.value = d })
+    .catch(() => { if (!stale()) error.value = 'Server feed temporarily unavailable.' })
+    .finally(() => { if (!stale()) loading.value = false })
+
+  const insightsP = fetchServerInsights(serverName.value, 30, '7d')
+    .then(i => { if (!stale()) insights.value = i })
+    .catch(() => { if (!stale()) insights.value = null })
+    .finally(() => { if (!stale()) insightsLoading.value = false })
+
+  const boardsP = fetchServerLeaderboards(serverName.value, 'month')
+    .then(b => { if (!stale()) leaderboards.value = b })
+    .catch(() => { if (!stale()) leaderboards.value = null })
+    .finally(() => { if (!stale()) boardsLoading.value = false })
+
   // Popular maps — own endpoint (the backend never set details.popularMaps)
-  try {
-    const maps = await fetchServerMapsInsights(serverName.value, 30)
-    mapsList.value = maps.maps ?? []
-  } catch {
-    mapsList.value = []
-  }
+  const mapsP = fetchServerMapsInsights(serverName.value, 30)
+    .then(m => { if (!stale()) mapsList.value = m.maps ?? [] })
+    .catch(() => { if (!stale()) mapsList.value = [] })
+
+  // Wave 2 — needs fields from the details payload, so it waits on that one
+  // request only, not on the whole of wave 1.
+  const dependentP = detailsP.then(() => Promise.all([
+    (async () => {
+      try {
+        if (stale()) return
+        if (details.value?.gameId && details.value.serverIp && details.value.serverPort) {
+          const live = await fetchLiveServerData(
+            details.value.gameId,
+            details.value.serverIp,
+            details.value.serverPort,
+          )
+          if (!stale()) liveServer.value = live
+        } else {
+          liveServer.value = null
+        }
+      } catch {
+        if (!stale()) liveServer.value = null
+      } finally {
+        if (!stale()) liveLoading.value = false
+      }
+    })(),
+    // Forecast / busy-indicator hourly timeline — best-effort
+    (async () => {
+      try {
+        if (stale()) return
+        if (details.value?.serverGuid) {
+          const response = await fetchServerBusyIndicators([details.value.serverGuid])
+          if (!stale() && response.serverResults.length > 0) {
+            hourlyTimeline.value = response.serverResults[0].hourlyTimeline
+          }
+        }
+      } catch {
+        if (!stale()) hourlyTimeline.value = []
+      }
+    })(),
+  ]))
+
+  await Promise.all([detailsP, insightsP, boardsP, mapsP, dependentP])
 }
 
 const liveNumPlayers = computed(() => liveServer.value?.numPlayers ?? 0)
