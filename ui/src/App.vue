@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, provide, computed } from 'vue';
+import { ref, onMounted, watch, provide, computed, defineAsyncComponent } from 'vue';
 import { useRoute } from 'vue-router';
-import DashboardLayout from './layouts/DashboardLayout.vue';
+
+// Async on purpose. This renders only for /tournaments/* and /alias-detection
+// (see useStandaloneShell below), but a static import put it — and its Sidebar,
+// and the primeicons font-face CSS that Sidebar pulls in — into the entry bundle
+// that every V4 page load parses before it can paint. Lazy keeps ~9KB of icon CSS
+// out of the render-blocking main stylesheet for the routes that never show it.
+const DashboardLayout = defineAsyncComponent(() => import('./layouts/DashboardLayout.vue'));
 import { initializeBadgeDefinitions } from './services/badgeService';
 import { useSignalR } from '@/composables/useSignalR';
 import { useNotifications } from '@/composables/useNotifications';

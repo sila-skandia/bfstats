@@ -11,7 +11,9 @@ interface NavItem { label: string; to: string; key: string; admin?: boolean }
 const baseNavItems: NavItem[] = [
   { label: 'Servers', to: '/v4/servers/bf1942', key: 'servers' },
   { label: 'Players', to: '/v4/players', key: 'players' },
-  { label: 'Rounds', to: '/v4/rounds', key: 'rounds' },
+  // Rounds is deliberately not a top-level destination — the round report is only
+  // meaningful when you arrive at a specific round from a player's session list or
+  // achievement. The /v4/rounds routes and every inbound link to them still work.
 ]
 
 const { isSupport } = useAuth()

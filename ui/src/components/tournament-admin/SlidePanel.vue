@@ -53,6 +53,11 @@
 </template>
 
 <script setup lang="ts">
+// Icon font for the `pi pi-*` classes in this component's template. Imported
+// here rather than via a <link> in index.html so it ships in this route's CSS
+// chunk — it used to be a render-blocking stylesheet fetched from unpkg.com on
+// every page load, including the three routes that never use an icon from it.
+import 'primeicons/primeicons.css'
 import { computed } from 'vue';
 
 interface Props {
