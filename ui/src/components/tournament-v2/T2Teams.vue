@@ -95,10 +95,13 @@
               <span
                 v-if="player.isLeader"
                 class="t2-roster-row__capt"
-              >CAPT</span>
+                title="Team Captain"
+                aria-label="Team Captain"
+                role="img"
+              >👑</span>
             </span>
             <span
-              v-if="player.membershipStatus === MembershipStatus.Pending"
+              v-if="player.membershipStatus != null && normalizeMembershipStatus(player.membershipStatus) === MembershipStatus.Pending"
               class="t2-roster-row__status t2-roster-row__status--pending"
             >Pending</span>
           </div>
@@ -164,6 +167,11 @@
 </template>
 
 <script setup lang="ts">
+// Icon font for the `pi pi-*` classes in this component's template. Imported
+// here rather than via a <link> in index.html so it ships in this route's CSS
+// chunk — it used to be a render-blocking stylesheet fetched from unpkg.com on
+// every page load, including the three routes that never use an icon from it.
+import 'primeicons/primeicons.css'
 import { ref, computed, watch, onMounted } from 'vue'
 import type { PublicTournamentDetail, PublicTournamentTeam } from '@/services/publicTournamentService'
 import T2CreateTeamModal from './T2CreateTeamModal.vue'
@@ -177,6 +185,7 @@ import {
   MembershipStatus,
   getRecruitmentStatusText,
   normalizeRecruitmentStatus,
+  normalizeMembershipStatus,
   type RegistrationStatusResponse,
 } from '@/services/teamRegistrationService'
 import { notificationService } from '@/services/notificationService'
@@ -275,14 +284,14 @@ const rosterFor = (team: PublicTournamentTeam) => {
   return [...team.players]
     .filter(p =>
       includePending ||
-      p.membershipStatus === MembershipStatus.Approved ||
       p.membershipStatus == null ||
+      normalizeMembershipStatus(p.membershipStatus) === MembershipStatus.Approved ||
       p.playerName === currentUserPlayerName.value)
     .sort((a, b) => {
       if (a.isLeader && !b.isLeader) return -1
       if (!a.isLeader && b.isLeader) return 1
-      const aApproved = a.membershipStatus === MembershipStatus.Approved || a.membershipStatus == null
-      const bApproved = b.membershipStatus === MembershipStatus.Approved || b.membershipStatus == null
+      const aApproved = a.membershipStatus == null || normalizeMembershipStatus(a.membershipStatus) === MembershipStatus.Approved
+      const bApproved = b.membershipStatus == null || normalizeMembershipStatus(b.membershipStatus) === MembershipStatus.Approved
       if (aApproved && !bApproved) return -1
       if (!aApproved && bApproved) return 1
       return a.playerName.localeCompare(b.playerName)

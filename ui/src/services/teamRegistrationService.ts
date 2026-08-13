@@ -32,6 +32,20 @@ export const normalizeRecruitmentStatus = (
   }
 };
 
+// Same string-vs-numeric mismatch applies to membership status.
+export const normalizeMembershipStatus = (
+  status: MembershipStatus | string | number | null | undefined
+): MembershipStatus => {
+  if (typeof status === 'number') return status as MembershipStatus;
+  switch (status) {
+    case 'Pending':
+    case '0':
+      return MembershipStatus.Pending;
+    default:
+      return MembershipStatus.Approved;
+  }
+};
+
 // Helper to get display text for recruitment status
 export const getRecruitmentStatusText = (status: TeamRecruitmentStatus): string => {
   switch (status) {
