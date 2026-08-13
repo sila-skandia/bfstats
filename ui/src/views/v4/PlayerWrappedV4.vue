@@ -15,10 +15,7 @@
       <span class="error-icon">⚠</span>
       <h3>Failed to Load Wrapped Data</h3>
       <p>{{ error }}</p>
-      <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="back-btn">
-        Back to Server Details
-      </router-link>
-      <router-link v-else to="/v4/" class="back-btn">
+      <router-link to="/v4/" class="back-btn">
         Back to Home
       </router-link>
     </div>
@@ -49,10 +46,7 @@
             </button>
           </nav>
           <div class="sidebar-footer">
-            <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="exit-btn">
-              Exit Wrapped
-            </router-link>
-            <router-link v-else to="/v4/" class="exit-btn">
+            <router-link to="/v4/" class="exit-btn">
               Exit Wrapped
             </router-link>
           </div>
@@ -169,10 +163,7 @@
               <span class="badge-small">'{{ yearShort }}</span>
             </div>
             <div class="header-right">
-              <router-link v-if="serverGuid !== 'global'" :to="`/v4/servers/detail/${encodeURIComponent(serverGuid)}`" class="close-mobile">
-                ✕
-              </router-link>
-              <router-link v-else to="/v4/" class="close-mobile">
+              <router-link to="/v4/" class="close-mobile">
                 ✕
               </router-link>
             </div>
@@ -381,7 +372,6 @@ function onParallaxMove(e: MouseEvent) {
 
 const isProfileMode = computed(() => route.name === 'v4-profile-wrapped')
 const playerName = ref(route.params.playerName as string)
-const serverGuid = ref((route.params.serverGuid as string) || 'global')
 const userId = computed(() => Number(route.params.userId))
 // The year comes from the URL (/players/:name/wrapped/2026). The year-less
 // route redirects to the current year, so this is always populated.
@@ -489,7 +479,7 @@ onMounted(async () => {
       const profileData = await fetchProfileWrapped(userId.value, wrappedYear, forceRefresh)
       data.value = { ...profileData, playerName: 'Your Year in Review', serverGuid: 'global', serverName: 'All Aliases' }
     } else {
-      data.value = await fetchPlayerWrapped(playerName.value, serverGuid.value, wrappedYear, forceRefresh)
+      data.value = await fetchPlayerWrapped(playerName.value, wrappedYear, forceRefresh)
     }
 
     // Preload dynamic achievements from the player's medals/achievements breakdown
