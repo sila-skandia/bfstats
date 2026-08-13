@@ -732,14 +732,11 @@ public class WrappedServiceTests : IDisposable
         var cached = await _dbContext.PlayerWrappedCaches.AsNoTracking().ToListAsync();
 
         Assert.DoesNotContain(cached, c => c.PlayerName == "Light");
-        // Each selected player gets a global pass and one server pass.
         Assert.Contains(cached, c => c.PlayerName == "Heavy" && c.ServerGuid == "global");
-        Assert.Contains(cached, c => c.PlayerName == "Heavy" && c.ServerGuid == busyServer);
         Assert.Contains(cached, c => c.PlayerName == "Middle" && c.ServerGuid == "global");
-        Assert.Contains(cached, c => c.PlayerName == "Middle" && c.ServerGuid == quietServer);
-        // ...and specifically not their less-played server.
-        Assert.DoesNotContain(cached, c => c.PlayerName == "Heavy" && c.ServerGuid == quietServer);
-        Assert.DoesNotContain(cached, c => c.PlayerName == "Middle" && c.ServerGuid == busyServer);
+        // Global only — the per-server variant is no longer computed, so nothing should be
+        // cached against a server guid at all.
+        Assert.All(cached, c => Assert.Equal("global", c.ServerGuid));
     }
 
     [Fact]

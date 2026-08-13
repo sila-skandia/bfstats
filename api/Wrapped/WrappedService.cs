@@ -953,9 +953,9 @@ public class WrappedService(
         int progressEvery = Math.Max(25, activePlayers.Count / 20);
 
         await RunCrunchWorkAsync(
-            activePlayers.Select(p => (p.PlayerName, p.ServerGuid)).ToList(),
+            activePlayers,
             parallelism,
-            async (work, service, ct2) =>
+            async (playerName, service, ct2) =>
             {
                 // Set per item rather than once around the loop: AsyncLocal follows each worker's
                 // own async flow, so this is what makes it apply to every span the calculation
@@ -966,29 +966,27 @@ public class WrappedService(
                 // CrunchAllPlayers root - a crunch run covers many players, and nesting every
                 // player's full calculation (all its section/batch/phase sub-spans) into one
                 // trace can exceed a trace viewer's per-trace span-count render limit. Each
-                // player's trace is still findable by its player.name/server.guid tags.
+                // player's trace is still findable by its player.name tag.
                 using var playerActivity = ActivitySources.StartWrapped(
                     "Wrapped.CrunchPlayer", ActivityKind.Internal, parentContext: default);
-                playerActivity?.SetTag("player.name", work.PlayerName);
-                playerActivity?.SetTag("server.guid", work.ServerGuid);
+                playerActivity?.SetTag("player.name", playerName);
 
                 try
                 {
-                    await service.CrunchOnePlayerAsync(work.PlayerName, work.ServerGuid, year);
-                    await service.CrunchOnePlayerAsync(work.PlayerName, "global", year);
+                    // Global only. The per-server player wrapped had no route linking to it and
+                    // doubled the run for output nobody read.
+                    await service.CrunchOnePlayerAsync(playerName, "global", year);
 
                     // One line per player, deliberately outside the tracing suppression above:
                     // it is the only record of *who* was crunched once the per-player spans are
                     // dropped, and one event per player is affordable where ~35 is not.
-                    logger.LogInformation(
-                        "Crunched Player Wrapped for {PlayerName} on {ServerGuid} and global",
-                        work.PlayerName, work.ServerGuid);
+                    logger.LogInformation("Crunched Player Wrapped for {PlayerName}", playerName);
                 }
                 catch (Exception ex)
                 {
                     Interlocked.Increment(ref failures);
                     playerActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    logger.LogError(ex, "Failed to pre-compute wrapped data for player: {PlayerName}", work.PlayerName);
+                    logger.LogError(ex, "Failed to pre-compute wrapped data for player: {PlayerName}", playerName);
                 }
 
                 var done = Interlocked.Increment(ref completed);
@@ -1013,14 +1011,12 @@ public class WrappedService(
             activePlayers.Count, runSw.Elapsed, finalPerPlayerMs, parallelism, failures);
     }
 
-    private record CrunchTarget(string PlayerName, string ServerGuid);
-
     /// <summary>
-    /// The original selection: an explicit allowlist of names, restricted to the allowed servers.
-    /// Returns null (rather than empty) when nothing is configured, so the caller can distinguish
-    /// "not set up" from "nobody qualified".
+    /// The original selection: an explicit allowlist of names, still gated on having played
+    /// enough rounds on an allowed server. Returns null (rather than empty) when nothing is
+    /// configured, so the caller can distinguish "not set up" from "nobody qualified".
     /// </summary>
-    private async Task<List<CrunchTarget>?> SelectConfiguredPlayersAsync(int year, CancellationToken ct)
+    private async Task<List<string>?> SelectConfiguredPlayersAsync(int year, CancellationToken ct)
     {
         var allowedGuids = GetAllowedGuids();
         var allowedPlayerNames = GetAllowedPlayerNames();
@@ -1034,22 +1030,23 @@ public class WrappedService(
         return await dbContext.PlayerServerStats
             .AsNoTracking()
             .Where(pss => pss.Year == year && allowedGuids.Contains(pss.ServerGuid) && allowedPlayerNames.Contains(pss.PlayerName))
-            .GroupBy(pss => new { pss.PlayerName, pss.ServerGuid })
-            .Select(g => new { g.Key.PlayerName, g.Key.ServerGuid, Rounds = g.Sum(pss => pss.TotalRounds) })
+            .GroupBy(pss => pss.PlayerName)
+            .Select(g => new { PlayerName = g.Key, Rounds = g.Sum(pss => pss.TotalRounds) })
             .Where(x => x.Rounds >= 20)
-            .Select(x => new CrunchTarget(x.PlayerName, x.ServerGuid))
+            .Select(x => x.PlayerName)
             .ToListAsync(ct);
     }
 
     /// <summary>
     /// Picks the busiest players of the year by total playtime — the ones with the most data, so
-    /// a scale test measures the expensive end rather than the average. Playtime comes from
-    /// PlayerStatsMonthly, which is already aggregated per player per month and has no server
-    /// dimension; each player's server variant is then their own most-played server that year.
+    /// a run measures the expensive end rather than the average. Playtime comes from
+    /// PlayerStatsMonthly, which is already aggregated per player per month.
+    ///
+    /// Ordering is preserved so a partial or interrupted run still covers the busiest first.
     /// </summary>
-    private async Task<List<CrunchTarget>> SelectTopPlayersByPlaytimeAsync(int year, int count, CancellationToken ct)
+    private async Task<List<string>> SelectTopPlayersByPlaytimeAsync(int year, int count, CancellationToken ct)
     {
-        var topPlayers = await dbContext.PlayerStatsMonthly
+        return await dbContext.PlayerStatsMonthly
             .AsNoTracking()
             .Where(psm => psm.Year == year)
             .GroupBy(psm => psm.PlayerName)
@@ -1058,29 +1055,6 @@ public class WrappedService(
             .Take(count)
             .Select(x => x.PlayerName)
             .ToListAsync(ct);
-
-        if (topPlayers.Count == 0) return [];
-
-        // One query for every candidate's per-server totals, then the top server per player is
-        // chosen in memory - a per-player "which server" query would be exactly the N+1 this
-        // work exists to remove.
-        var perServer = await dbContext.PlayerServerStats
-            .AsNoTracking()
-            .Where(pss => pss.Year == year && topPlayers.Contains(pss.PlayerName))
-            .GroupBy(pss => new { pss.PlayerName, pss.ServerGuid })
-            .Select(g => new { g.Key.PlayerName, g.Key.ServerGuid, PlayTime = g.Sum(pss => pss.TotalPlayTimeMinutes) })
-            .ToListAsync(ct);
-
-        var topServerByPlayer = perServer
-            .GroupBy(x => x.PlayerName)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.PlayTime).First().ServerGuid);
-
-        // Preserve the playtime ordering so a partial or interrupted run still covers the
-        // busiest players first.
-        return topPlayers
-            .Where(topServerByPlayer.ContainsKey)
-            .Select(p => new CrunchTarget(p, topServerByPlayer[p]))
-            .ToList();
     }
 
     /// <summary>
