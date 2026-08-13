@@ -88,26 +88,6 @@ const REFRESH_RING_CIRCUMFERENCE = 2 * Math.PI * 6
 const totalPlayers = computed(() =>
   servers.value.reduce((s, srv) => s + (srv.numPlayers || 0), 0),
 )
-const totalCapacity = computed(() =>
-  servers.value.reduce((s, srv) => s + (srv.maxPlayers || 0), 0),
-)
-const activeCount = computed(() =>
-  servers.value.filter(s => (s.numPlayers || 0) > 0).length,
-)
-const loadPercent = computed(() => {
-  if (totalCapacity.value === 0) return 0
-  return Math.round((totalPlayers.value / totalCapacity.value) * 100)
-})
-const topServer = computed(() => servers.value[0] ?? null)
-
-const networkStatus = computed(() => {
-  if (loading.value) return { label: 'Syncing', tone: 'off' as const }
-  if (error.value) return { label: 'Offline', tone: 'off' as const }
-  if (totalPlayers.value === 0) return { label: 'Quiet', tone: 'off' as const }
-  if (totalPlayers.value < 30) return { label: 'Live', tone: 'on' as const }
-  return { label: 'Live · Heavy', tone: 'on' as const }
-})
-
 const friendlyCountry = (code?: string) => {
   if (!code) return '—'
   return countryCodeToName[code.toUpperCase()] ?? code.toUpperCase()
@@ -191,26 +171,21 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   <div class="mm-container mm-section">
     <!-- meta row -->
     <div class="mm-landing__top">
-      <!-- Only show on mobile because desktop has it in the hero band -->
-      <div class="mm-meta-row mm-only-mobile">
-        <span class="mm-chip" :class="{ 'mm-chip--off': networkStatus.tone === 'off' }">
-          <span class="mm-chip__dot" />
-          {{ networkStatus.label }}
-        </span>
-        <span class="mm-meta-row__sep">·</span>
-        <span class="mm-meta-row__strong">
-          <span v-if="isInitialLoad" class="mm-skeleton" style="width: 16px; height: 1em; display: inline-block; vertical-align: middle"></span>
-          <template v-else>{{ formatNumber(activeCount) }}</template>
-        </span> active hosts
-        <span class="mm-meta-row__sep">·</span>
+      <!-- Player count and the refresh countdown, nothing else — the list
+           below says everything about who is playing where. -->
+      <div class="mm-meta-row">
         <span class="mm-meta-row__strong">
           <span v-if="isInitialLoad" class="mm-skeleton" style="width: 24px; height: 1em; display: inline-block; vertical-align: middle"></span>
-          <template v-else>{{ formatNumber(servers.length) }}</template>
-        </span> tracked
-        <span class="mm-meta-row__sep">·</span>
-        Network load <span class="mm-meta-row__strong">
-          <span v-if="isInitialLoad" class="mm-skeleton" style="width: 28px; height: 1em; display: inline-block; vertical-align: middle"></span>
-          <template v-else>{{ loadPercent }}%</template>
+          <template v-else>{{ formatNumber(totalPlayers) }}</template>
+        </span> in combat
+        <!-- Total tracked drops out on mobile so the row stays one line and
+             the server list starts higher up the first screen. -->
+        <span class="mm-landing__meta-extra">
+          <span class="mm-meta-row__sep">·</span>
+          <span class="mm-meta-row__strong">
+            <span v-if="isInitialLoad" class="mm-skeleton" style="width: 24px; height: 1em; display: inline-block; vertical-align: middle"></span>
+            <template v-else>{{ formatNumber(servers.length) }}</template>
+          </span> tracked
         </span>
         <span class="mm-meta-row__sep">·</span>
         <span
@@ -237,80 +212,6 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
         </span>
       </div>
       <MmInstallationLinks />
-    </div>
-
-    <!-- compact hero band: headline + stat strip merged -->
-    <div class="mm-landing__hero-only mm-landing__hero-band mm-only-desktop">
-      <div>
-        <div class="mm-meta-row" style="margin-bottom: 12px;">
-          <span class="mm-chip" :class="{ 'mm-chip--off': networkStatus.tone === 'off' }">
-            <span class="mm-chip__dot" />
-            {{ networkStatus.label }}
-          </span>
-          <span class="mm-meta-row__sep">·</span>
-          refresh in <span class="mm-meta-row__strong">{{ secondsUntilRefresh }}s</span>
-        </div>
-        <div class="mm-display" style="font-size: 58px; line-height: 1;">
-          <span v-if="isInitialLoad" class="mm-skeleton" style="width: 80px; height: 1em; display: inline-block; vertical-align: middle"></span>
-          <template v-else>
-            <span>{{ formatNumber(totalPlayers) }}</span>
-            <span style="color: var(--mm-ink-soft); font-style: italic; margin-left: 0.25em;">in combat</span>
-          </template>
-        </div>
-      </div>
-      <div style="display: flex; align-items: stretch;">
-        <div style="padding: 4px 36px 4px 0;">
-          <div class="mm-stats__label">Players online</div>
-          <div class="mm-stat__value" :class="loadClass(totalCapacity ? totalPlayers / totalCapacity : 0)" style="font-size: 27px;">
-            <div v-if="isInitialLoad" class="mm-skeleton" style="width: 40px; height: 1em;"></div>
-            <template v-else>{{ formatNumber(totalPlayers) }}</template>
-          </div>
-          <div class="mm-stat__delta">
-            <div v-if="isInitialLoad" class="mm-skeleton" style="width: 80px; height: 1em;"></div>
-            <template v-else>of {{ formatNumber(totalCapacity) }} capacity</template>
-          </div>
-        </div>
-        <div style="padding: 4px 36px; border-left: 1px solid var(--mm-rule);">
-          <div class="mm-stats__label">Active servers</div>
-          <div class="mm-stat__value" style="font-size: 27px;">
-            <div v-if="isInitialLoad" class="mm-skeleton" style="width: 30px; height: 1em;"></div>
-            <template v-else>{{ formatNumber(activeCount) }}</template>
-          </div>
-          <div class="mm-stat__delta">
-            <div v-if="isInitialLoad" class="mm-skeleton" style="width: 80px; height: 1em;"></div>
-            <template v-else>of {{ formatNumber(servers.length) }} tracked</template>
-          </div>
-        </div>
-        <div style="padding: 4px 36px; border-left: 1px solid var(--mm-rule);">
-          <div class="mm-stats__label">Network load</div>
-          <div class="mm-stat__value" :class="loadClass(loadPercent / 100)" style="font-size: 27px;">
-            <div v-if="isInitialLoad" class="mm-skeleton" style="width: 40px; height: 1em;"></div>
-            <template v-else>{{ loadPercent }}<span class="mm-stat__suffix">%</span></template>
-          </div>
-          <div class="mm-stat__delta">across all hosts</div>
-        </div>
-        <div style="padding: 4px 0 4px 36px; border-left: 1px solid var(--mm-rule); max-width: 220px;">
-          <div class="mm-stats__label">Top server</div>
-          <div class="mm-stat__value" style="font-size: 27px;">
-            <div v-if="isInitialLoad" class="mm-skeleton" style="width: 60px; height: 1em;"></div>
-            <template v-else-if="topServer">
-              <span :class="loadClass(topServer.maxPlayers ? topServer.numPlayers / topServer.maxPlayers : 0)">
-                {{ topServer.numPlayers }}</span><span class="mm-stat__suffix">/{{ topServer.maxPlayers }}</span>
-            </template>
-            <template v-else>—</template>
-          </div>
-          <div class="mm-stat__delta" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            <div v-if="isInitialLoad" class="mm-skeleton" style="width: 100px; height: 1em;"></div>
-            <template v-else>{{ topServer ? topServer.name : 'awaiting feed' }}</template>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Mobile-only "Get online" CTA strip (above the list). The inline
-         dropdown stays in the top meta row on desktop. -->
-    <div class="mm-landing__cta">
-      <MmInstallationLinks variant="cta-strip" />
     </div>
 
     <!-- search-all entry — the list below is live servers only; this finds
@@ -592,6 +493,15 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   margin-bottom: 14px;
 }
 
+/* `display: contents` so the wrapped segments stay direct flex children of
+   .mm-meta-row (same 10px gap and wrapping as before) while still being
+   hideable as a group on mobile. */
+.mm-landing__meta-extra { display: contents; }
+
+@media (max-width: 720px) {
+  .mm-landing__meta-extra { display: none; }
+}
+
 .mm-landing__roster-btn {
   font-family: var(--mm-font-mono);
   font-size: 10.5px;
@@ -643,20 +553,6 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 @media (max-width: 640px) {
   .mm-landing__search-all { justify-content: stretch; }
   .mm-landing__search-link { flex: 1; justify-content: center; }
-}
-
-/* CTA strip only shows on mobile — desktop keeps the inline install button
-   in the meta row. */
-.mm-landing__cta { display: none; margin-top: 24px; }
-@media (max-width: 640px) {
-  .mm-landing__cta { display: block; }
-  /* Inline install dropdown in the top meta row collapses on mobile —
-     the CTA strip takes over. */
-  .mm-landing__top .mm-install { display: none; }
-  /* Hero text + stat grid hide on mobile — meta row carries enough
-     summary, and the user goes straight to the servers list. */
-  .mm-landing__hero-only { display: none; }
-  .mm-landing__hero-band { display: none; }
 }
 
 /* Desktop/mobile swap for the servers list. Card layout on mobile matches
@@ -773,17 +669,6 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 .mm-refresh-ring__label {
   min-width: 22px;
   text-align: left;
-}
-
-/* Merged compact hero band */
-.mm-landing__hero-band {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 40px;
-  padding: 30px 0 26px;
-  border-bottom: 1px solid var(--mm-rule);
-  flex-wrap: wrap;
 }
 
 /* Grid layout for active list + details sidebar */

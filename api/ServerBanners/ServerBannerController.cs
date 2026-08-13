@@ -33,8 +33,13 @@ public class ServerBannerController(IServerBannerService bannerService) : Contro
             return NotFound(new { error = "Server not found" });
         }
 
-        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
-        Response.Headers.Pragma = "no-cache";
+        // The banner paints live server state, so it can't be cached for long — but
+        // no-store meant re-rendering the PNG for every single view (p50 ~460ms,
+        // p95 ~714ms) and cf-cache-status: BYPASS, so the render also cost a round
+        // trip to Finland every time. The underlying data only moves as fast as the
+        // stats collector, so 30s matches the freshest it can ever be. Hot servers
+        // are shown far more than twice a minute; those views now come off the edge.
+        Response.Headers.CacheControl = "public, max-age=30";
         return File(bytes, "image/png");
     }
 }

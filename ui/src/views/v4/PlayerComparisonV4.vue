@@ -220,6 +220,19 @@ const winnerOfInverse = (a: number, b: number): 'p1' | 'p2' | 'tie' => {
   if (b < a) return 'p2'
   return 'tie'
 }
+const calcKpm = (kills: number, playTimeMinutes?: number): number => {
+  if (!playTimeMinutes || playTimeMinutes <= 0) return 0
+  return kills / playTimeMinutes
+}
+const calcSpm = (score: number, playTimeMinutes?: number): number => {
+  if (!playTimeMinutes || playTimeMinutes <= 0) return 0
+  return score / playTimeMinutes
+}
+const deltaFloat = (a: number, b: number, decimals = 2): string => {
+  const diff = Math.abs(a - b)
+  return diff.toFixed(decimals)
+}
+
 const deltaNumber = (a: number, b: number): string => {
   const diff = Math.abs(a - b)
   return diff.toLocaleString()
@@ -243,8 +256,8 @@ const formatPlaytime = (minutes: number): string => {
 // played the map but the other didn't, so the comparison is misleading).
 const showMapDetails = ref(false)
 const hideNoScoreMaps = ref(false)
-type MapSortCol = '' | 'map' | 'p1-score' | 'p1-kills' | 'p1-deaths' | 'p1-kd'
-                       | 'p2-score' | 'p2-kills' | 'p2-deaths' | 'p2-kd'
+type MapSortCol = '' | 'map' | 'p1-score' | 'p1-kills' | 'p1-deaths' | 'p1-kd' | 'p1-kpm' | 'p1-spm'
+                       | 'p2-score' | 'p2-kills' | 'p2-deaths' | 'p2-kd' | 'p2-kpm' | 'p2-spm'
 const mapSortColumn = ref<MapSortCol>('')
 const mapSortDir = ref<'asc' | 'desc'>('desc')
 
@@ -267,16 +280,26 @@ const mapRows = computed(() => {
   const projected = rows.map(r => {
     const p1Kd = calcKd(r.player1Totals.kills, r.player1Totals.deaths)
     const p2Kd = calcKd(r.player2Totals.kills, r.player2Totals.deaths)
+    const p1Kpm = calcKpm(r.player1Totals.kills, r.player1Totals.playTimeMinutes)
+    const p2Kpm = calcKpm(r.player2Totals.kills, r.player2Totals.playTimeMinutes)
+    const p1Spm = calcSpm(r.player1Totals.score, r.player1Totals.playTimeMinutes)
+    const p2Spm = calcSpm(r.player2Totals.score, r.player2Totals.playTimeMinutes)
     return {
       mapName: r.mapName,
       p1Kd,
       p2Kd,
+      p1Kpm,
+      p2Kpm,
+      p1Spm,
+      p2Spm,
       p1Score: r.player1Totals.score,
       p2Score: r.player2Totals.score,
       p1Kills: r.player1Totals.kills,
       p2Kills: r.player2Totals.kills,
       p1Deaths: r.player1Totals.deaths,
       p2Deaths: r.player2Totals.deaths,
+      p1Time: r.player1Totals.playTimeMinutes ?? 0,
+      p2Time: r.player2Totals.playTimeMinutes ?? 0,
       winner: p1Kd > p2Kd ? 'p1' : p2Kd > p1Kd ? 'p2' : 'tie' as 'p1' | 'p2' | 'tie',
     }
   })
@@ -291,10 +314,14 @@ const mapRows = computed(() => {
         case 'p1-kills': return row.p1Kills
         case 'p1-deaths': return row.p1Deaths
         case 'p1-kd': return row.p1Kd
+        case 'p1-kpm': return row.p1Kpm
+        case 'p1-spm': return row.p1Spm
         case 'p2-score': return row.p2Score
         case 'p2-kills': return row.p2Kills
         case 'p2-deaths': return row.p2Deaths
         case 'p2-kd': return row.p2Kd
+        case 'p2-kpm': return row.p2Kpm
+        case 'p2-spm': return row.p2Spm
         default: return 0
       }
     }
@@ -604,6 +631,44 @@ const formatDateShort = (iso: string): string => {
             </div>
           </div>
 
+          <!-- Kills / min: higher better -->
+          <div v-if="(currentBucket.player1Totals.playTimeMinutes ?? 0) > 0 || (currentBucket.player2Totals.playTimeMinutes ?? 0) > 0" class="mm-cmp__perf-row">
+            <div class="mm-cmp__perf-label">Kills / min</div>
+            <div
+              class="mm-cmp__perf-cell"
+              :class="{ 'mm-cmp__perf-cell--lead': winnerOf(calcKpm(currentBucket.player1Totals.kills, currentBucket.player1Totals.playTimeMinutes), calcKpm(currentBucket.player2Totals.kills, currentBucket.player2Totals.playTimeMinutes)) === 'p1' }"
+            >
+              <span class="mm-cmp__perf-value mm-num--kill">{{ calcKpm(currentBucket.player1Totals.kills, currentBucket.player1Totals.playTimeMinutes).toFixed(2) }}</span>
+              <span v-if="winnerOf(calcKpm(currentBucket.player1Totals.kills, currentBucket.player1Totals.playTimeMinutes), calcKpm(currentBucket.player2Totals.kills, currentBucket.player2Totals.playTimeMinutes)) === 'p1'" class="mm-cmp__perf-delta">+{{ deltaFloat(calcKpm(currentBucket.player1Totals.kills, currentBucket.player1Totals.playTimeMinutes), calcKpm(currentBucket.player2Totals.kills, currentBucket.player2Totals.playTimeMinutes)) }} better</span>
+            </div>
+            <div
+              class="mm-cmp__perf-cell"
+              :class="{ 'mm-cmp__perf-cell--lead': winnerOf(calcKpm(currentBucket.player1Totals.kills, currentBucket.player1Totals.playTimeMinutes), calcKpm(currentBucket.player2Totals.kills, currentBucket.player2Totals.playTimeMinutes)) === 'p2' }"
+            >
+              <span class="mm-cmp__perf-value mm-num--kill">{{ calcKpm(currentBucket.player2Totals.kills, currentBucket.player2Totals.playTimeMinutes).toFixed(2) }}</span>
+              <span v-if="winnerOf(calcKpm(currentBucket.player1Totals.kills, currentBucket.player1Totals.playTimeMinutes), calcKpm(currentBucket.player2Totals.kills, currentBucket.player2Totals.playTimeMinutes)) === 'p2'" class="mm-cmp__perf-delta">+{{ deltaFloat(calcKpm(currentBucket.player1Totals.kills, currentBucket.player1Totals.playTimeMinutes), calcKpm(currentBucket.player2Totals.kills, currentBucket.player2Totals.playTimeMinutes)) }} better</span>
+            </div>
+          </div>
+
+          <!-- Score / min: higher better -->
+          <div v-if="(currentBucket.player1Totals.playTimeMinutes ?? 0) > 0 || (currentBucket.player2Totals.playTimeMinutes ?? 0) > 0" class="mm-cmp__perf-row">
+            <div class="mm-cmp__perf-label">Score / min</div>
+            <div
+              class="mm-cmp__perf-cell"
+              :class="{ 'mm-cmp__perf-cell--lead': winnerOf(calcSpm(currentBucket.player1Totals.score, currentBucket.player1Totals.playTimeMinutes), calcSpm(currentBucket.player2Totals.score, currentBucket.player2Totals.playTimeMinutes)) === 'p1' }"
+            >
+              <span class="mm-cmp__perf-value">{{ calcSpm(currentBucket.player1Totals.score, currentBucket.player1Totals.playTimeMinutes).toFixed(1) }}</span>
+              <span v-if="winnerOf(calcSpm(currentBucket.player1Totals.score, currentBucket.player1Totals.playTimeMinutes), calcSpm(currentBucket.player2Totals.score, currentBucket.player2Totals.playTimeMinutes)) === 'p1'" class="mm-cmp__perf-delta">+{{ deltaFloat(calcSpm(currentBucket.player1Totals.score, currentBucket.player1Totals.playTimeMinutes), calcSpm(currentBucket.player2Totals.score, currentBucket.player2Totals.playTimeMinutes), 1) }} better</span>
+            </div>
+            <div
+              class="mm-cmp__perf-cell"
+              :class="{ 'mm-cmp__perf-cell--lead': winnerOf(calcSpm(currentBucket.player1Totals.score, currentBucket.player1Totals.playTimeMinutes), calcSpm(currentBucket.player2Totals.score, currentBucket.player2Totals.playTimeMinutes)) === 'p2' }"
+            >
+              <span class="mm-cmp__perf-value">{{ calcSpm(currentBucket.player2Totals.score, currentBucket.player2Totals.playTimeMinutes).toFixed(1) }}</span>
+              <span v-if="winnerOf(calcSpm(currentBucket.player1Totals.score, currentBucket.player1Totals.playTimeMinutes), calcSpm(currentBucket.player2Totals.score, currentBucket.player2Totals.playTimeMinutes)) === 'p2'" class="mm-cmp__perf-delta">+{{ deltaFloat(calcSpm(currentBucket.player1Totals.score, currentBucket.player1Totals.playTimeMinutes), calcSpm(currentBucket.player2Totals.score, currentBucket.player2Totals.playTimeMinutes), 1) }} better</span>
+            </div>
+          </div>
+
           <!-- Deaths: lower better (winner is the inverse) -->
           <div class="mm-cmp__perf-row">
             <div class="mm-cmp__perf-label">Deaths · lower wins</div>
@@ -638,7 +703,7 @@ const formatDateShort = (iso: string): string => {
               :class="{ 'mm-cmp__perf-cell--lead': winnerOf(currentBucket.player1Totals.playTimeMinutes ?? 0, currentBucket.player2Totals.playTimeMinutes ?? 0) === 'p2' }"
             >
               <span class="mm-cmp__perf-value">{{ formatPlaytime(currentBucket.player2Totals.playTimeMinutes ?? 0) }}</span>
-              <span v-if="winnerOf(currentBucket.player1Totals.playTimeMinutes ?? 0, currentBucket.player2Totals.playTimeMinutes ?? 0) === 'p2'" class="mm-cmp__perf-delta">+{{ deltaPlaytime(currentBucket.player1Totals.playTimeMinutes ?? 0, currentBucket.player2Totals.playTimeMinutes ?? 0) }} more</span>
+              <span v-if="winnerOf(currentBucket.player2Totals.playTimeMinutes ?? 0, currentBucket.player2Totals.playTimeMinutes ?? 0) === 'p2'" class="mm-cmp__perf-delta">+{{ deltaPlaytime(currentBucket.player2Totals.playTimeMinutes ?? 0, currentBucket.player2Totals.playTimeMinutes ?? 0) }} more</span>
             </div>
           </div>
         </div>
@@ -680,10 +745,14 @@ const formatDateShort = (iso: string): string => {
               <th v-if="showMapDetails" class="is-num" @click="setMapSort('p1-kills')" style="cursor: pointer">{{ player1Display }} K{{ mapSortArrow('p1-kills') }}</th>
               <th v-if="showMapDetails" class="is-num" @click="setMapSort('p1-deaths')" style="cursor: pointer">{{ player1Display }} D{{ mapSortArrow('p1-deaths') }}</th>
               <th class="is-num" @click="setMapSort('p1-kd')" style="cursor: pointer">{{ player1Display }} K/D{{ mapSortArrow('p1-kd') }}</th>
+              <th v-if="showMapDetails" class="is-num" @click="setMapSort('p1-kpm')" style="cursor: pointer">{{ player1Display }} K/Min{{ mapSortArrow('p1-kpm') }}</th>
+              <th v-if="showMapDetails" class="is-num" @click="setMapSort('p1-spm')" style="cursor: pointer">{{ player1Display }} SPM{{ mapSortArrow('p1-spm') }}</th>
               <th v-if="showMapDetails" class="is-num" @click="setMapSort('p2-score')" style="cursor: pointer">{{ player2Display }} score{{ mapSortArrow('p2-score') }}</th>
               <th v-if="showMapDetails" class="is-num" @click="setMapSort('p2-kills')" style="cursor: pointer">{{ player2Display }} K{{ mapSortArrow('p2-kills') }}</th>
               <th v-if="showMapDetails" class="is-num" @click="setMapSort('p2-deaths')" style="cursor: pointer">{{ player2Display }} D{{ mapSortArrow('p2-deaths') }}</th>
               <th class="is-num" @click="setMapSort('p2-kd')" style="cursor: pointer">{{ player2Display }} K/D{{ mapSortArrow('p2-kd') }}</th>
+              <th v-if="showMapDetails" class="is-num" @click="setMapSort('p2-kpm')" style="cursor: pointer">{{ player2Display }} K/Min{{ mapSortArrow('p2-kpm') }}</th>
+              <th v-if="showMapDetails" class="is-num" @click="setMapSort('p2-spm')" style="cursor: pointer">{{ player2Display }} SPM{{ mapSortArrow('p2-spm') }}</th>
               <th class="is-num">Edge</th>
             </tr>
           </thead>
@@ -700,12 +769,16 @@ const formatDateShort = (iso: string): string => {
               <td class="is-num" data-cell-label="P1 K/D">
                 <span :class="r.winner === 'p1' ? 'mm-cmp__win' : 'is-muted'">{{ formatKd(r.p1Kd) }}</span>
               </td>
+              <td v-if="showMapDetails" class="is-num mm-num--kill" data-cell-label="P1 K/Min">{{ r.p1Kpm.toFixed(2) }}</td>
+              <td v-if="showMapDetails" class="is-num" data-cell-label="P1 SPM">{{ r.p1Spm.toFixed(1) }}</td>
               <td v-if="showMapDetails" class="is-num" data-cell-label="P2 score">{{ formatNumber(r.p2Score) }}</td>
               <td v-if="showMapDetails" class="is-num mm-num--kill" data-cell-label="P2 K">{{ r.p2Kills }}</td>
               <td v-if="showMapDetails" class="is-num mm-num--death" data-cell-label="P2 D">{{ r.p2Deaths }}</td>
               <td class="is-num" data-cell-label="P2 K/D">
                 <span :class="r.winner === 'p2' ? 'mm-cmp__win' : 'is-muted'">{{ formatKd(r.p2Kd) }}</span>
               </td>
+              <td v-if="showMapDetails" class="is-num mm-num--kill" data-cell-label="P2 K/Min">{{ r.p2Kpm.toFixed(2) }}</td>
+              <td v-if="showMapDetails" class="is-num" data-cell-label="P2 SPM">{{ r.p2Spm.toFixed(1) }}</td>
               <td class="is-num" data-cell-label="Edge">
                 <span v-if="r.winner === 'p1'" class="mm-cmp__edge mm-cmp__edge--p1">{{ player1Display }}</span>
                 <span v-else-if="r.winner === 'p2'" class="mm-cmp__edge mm-cmp__edge--p2">{{ player2Display }}</span>
