@@ -84,8 +84,10 @@ const routes: RouteRecordRaw[] = [
       redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped`,
     },
     {
+      // The per-server player wrapped is gone; old bookmarks land on the player's global
+      // wrapped rather than 404, since that is the same story across every server.
       path: '/wrapped/player/:playerName/:serverGuid',
-      redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped/${currentWrappedYear()}/${encodeURIComponent(String(to.params.serverGuid))}`,
+      redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped/${currentWrappedYear()}`,
     },
     {
       path: '/players/:playerName',
@@ -380,14 +382,11 @@ const routes: RouteRecordRaw[] = [
           }
         },
         {
+          // Nothing linked to the per-server variant and it doubled the crunch, so the year-only
+          // (global) route is the whole player wrapped now. A stray /:serverGuid URL falls
+          // through to the global route above via the legacy redirect.
           path: 'players/:playerName/wrapped/:year(\\d{4})/:serverGuid',
-          name: 'v4-player-wrapped-server',
-          component: PlayerWrappedV4,
-          props: true,
-          meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped ${route.params.year} · bfstats.io`,
-            description: 'Year in Review Wrapped stories for this player on this server.'
-          }
+          redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped/${to.params.year}`,
         },
         {
           path: 'wrapped/profile/:userId',
@@ -409,8 +408,9 @@ const routes: RouteRecordRaw[] = [
           redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped`,
         },
         {
+          // Per-server player wrapped is gone; land on the player's global wrapped.
           path: 'wrapped/player/:playerName/:serverGuid',
-          redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped/${currentWrappedYear()}/${encodeURIComponent(String(to.params.serverGuid))}`,
+          redirect: to => `/v4/players/${encodeURIComponent(String(to.params.playerName))}/wrapped/${currentWrappedYear()}`,
         },
         {
           path: 'rounds/:roundId/report',

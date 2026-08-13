@@ -123,32 +123,8 @@ public class WrappedController(
         }
     }
 
-    /// <summary>
-    /// Retrieves the Server-Specific Player Wrapped statistics for a given player.
-    /// </summary>
-    [HttpGet("player/{playerName}/{serverGuid}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<PlayerWrappedResponseDto>> GetServerPlayerWrapped(string playerName, string serverGuid, [FromQuery] int year = 2026, [FromQuery] bool refresh = false)
-    {
-        logger.LogInformation("Retrieving Server-Specific Player Wrapped statistics for {PlayerName}, Server: {ServerGuid}, Year: {Year}", playerName, serverGuid, year);
-
-        try
-        {
-            ApplyRefresh(refresh, year);
-            var response = await wrappedService.GetPlayerWrappedAsync(playerName, serverGuid, year, bypassCache: refresh);
-            if (response == null)
-            {
-                logger.LogWarning("Server-Specific Player Wrapped data for player {PlayerName} on server {ServerGuid} not found", playerName, serverGuid);
-                return NotFound(new { error = $"Server-Specific Player Wrapped data for player {playerName} on server {serverGuid} could not be found." });
-            }
-
-            return Ok(response);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to retrieve Server-Specific Player Wrapped statistics for player {PlayerName} on server {ServerGuid}", playerName, serverGuid);
-            return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
-        }
-    }
+    // The per-server player wrapped endpoint (player/{playerName}/{serverGuid}) was removed: no
+    // route in the UI ever linked to it, and pre-computing it doubled the crunch for output
+    // nobody read. WrappedService still accepts a serverGuid, so it can be reinstated if a
+    // per-server view is ever wanted.
 }
