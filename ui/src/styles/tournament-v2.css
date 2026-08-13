@@ -379,7 +379,7 @@
   padding: 6px 0; font-family: var(--t-font-mono); font-size: 12px;
 }
 .t2-roster-row__name { color: var(--t-text); display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
-.t2-roster-row__capt { color: var(--t-accent); font-size: 9px; letter-spacing: 0.1em; flex-shrink: 0; }
+.t2-roster-row__capt { font-size: 11px; line-height: 1; flex-shrink: 0; cursor: help; }
 .t2-roster-row__status { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t-muted); }
 .t2-roster-row__status--pending { color: var(--t-accent); }
 .t2-team-card__actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
