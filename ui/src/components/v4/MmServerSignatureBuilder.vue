@@ -31,11 +31,18 @@ const showTickets = ref(true)
 const selectedSize = computed(() => sizes.find((s) => s.width === selectedWidth.value) ?? sizes[1])
 const copyState = ref<Record<string, boolean>>({})
 const isPreviewLoading = ref(true)
-const previewVersion = ref(Date.now())
-
 const REFRESH_INTERVAL_MS = 30_000
+
+// Bucketed to the refresh interval rather than a raw Date.now(). A unique value
+// per page load made every banner URL one-of-a-kind, so the render (p50 ~460ms,
+// p95 ~714ms) could never be reused and Cloudflare could never cache it. Bucketing
+// keeps the 30s refresh cadence while letting everyone loading the same server in
+// the same window share one URL — and one cache entry.
+const bannerBucket = () => Math.floor(Date.now() / REFRESH_INTERVAL_MS)
+const previewVersion = ref(bannerBucket())
+
 const refreshTimer = window.setInterval(() => {
-  previewVersion.value = Date.now()
+  previewVersion.value = bannerBucket()
 }, REFRESH_INTERVAL_MS)
 onUnmounted(() => clearInterval(refreshTimer))
 

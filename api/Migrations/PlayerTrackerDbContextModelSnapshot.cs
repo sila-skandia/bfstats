@@ -1120,10 +1120,11 @@ namespace api.Migrations
                     b.HasIndex("MapName");
 
                     b.HasIndex("ServerGuid")
-                        .IsUnique()
                         .HasFilter("IsActive = 1");
 
                     b.HasIndex("ServerGuid", "EndTime");
+
+                    b.HasIndex("ServerGuid", "IsActive");
 
                     b.HasIndex("ServerGuid", "StartTime");
 
