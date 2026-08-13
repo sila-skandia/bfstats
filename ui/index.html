@@ -32,8 +32,11 @@
     <meta name="theme-color" content="#131313">
     <link rel="canonical" href="https://bfstats.io">
 
-    <!-- PrimeIcons via CDN for performance -->
-    <link rel="stylesheet" href="https://unpkg.com/primeicons@7.0.0/primeicons.css">
+    <!-- PrimeIcons used to be loaded here from unpkg.com. It was render-blocking and
+         on a third-party origin, so first paint waited on a fresh DNS + TCP + TLS
+         handshake to a host we don't control — and only the tournament pages use an
+         icon from it. It's now imported by the components that need it, so it ships
+         in their route chunk instead. Don't reintroduce it here. -->
 
     <!-- Pre-mount paint: matches the V4 (Neutral Depth) shell so first
          paint doesn't flash the legacy slate background / sidebar before
