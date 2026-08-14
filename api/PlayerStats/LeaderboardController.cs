@@ -24,7 +24,7 @@ public class LeaderboardController(
     /// <param name="sortBy">Column to sort by (score, kd, kills, deaths, kpm, playMin, rounds, player, favServer, favMap).</param>
     /// <param name="sortDir">Sort direction: asc or desc (default: desc).</param>
     /// <param name="q">Search query across player name, tag, server, and map.</param>
-    /// <param name="server">Server name or GUID to include (single server).</param>
+    /// <param name="server">Comma-separated server names or GUIDs to include. Wins over exclude / populated-only.</param>
     /// <param name="map">Map name filter (e.g. Wake Island, Bocage).</param>
     /// <param name="days">Lookback period in days (default: 30). 0 is all-time, allowed only with a server filter; otherwise capped at 365.</param>
     /// <param name="minRounds">Minimum rounds played to be included (default: 1).</param>

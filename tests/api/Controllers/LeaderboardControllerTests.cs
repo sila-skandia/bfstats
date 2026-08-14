@@ -324,6 +324,68 @@ public class LeaderboardControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task GetLeaderboard_WithMultipleIncludeServers_AggregatesOnlyThoseServers()
+    {
+        var now = DateTime.UtcNow;
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "srv-a", Name = "Dogtags 24/7", Game = "bf1942" },
+            new GameServer { Guid = "srv-b", Name = "Merciless Gamers", Game = "bf1942" },
+            new GameServer { Guid = "srv-c", Name = "Bot Arena", Game = "bf1942" }
+        );
+        _dbContext.PlayerMapStats.AddRange(
+            new PlayerMapStats
+            {
+                PlayerName = "Rommel",
+                ServerGuid = "srv-a",
+                MapName = "bocage",
+                Year = now.Year,
+                Month = now.Month,
+                TotalKills = 100,
+                TotalDeaths = 20,
+                TotalScore = 2000,
+                TotalRounds = 8,
+                TotalPlayTimeMinutes = 80
+            },
+            new PlayerMapStats
+            {
+                PlayerName = "Patton",
+                ServerGuid = "srv-b",
+                MapName = "omaha",
+                Year = now.Year,
+                Month = now.Month,
+                TotalKills = 80,
+                TotalDeaths = 40,
+                TotalScore = 1500,
+                TotalRounds = 6,
+                TotalPlayTimeMinutes = 60
+            },
+            new PlayerMapStats
+            {
+                PlayerName = "BotFarmer",
+                ServerGuid = "srv-c",
+                MapName = "wake",
+                Year = now.Year,
+                Month = now.Month,
+                TotalKills = 900,
+                TotalDeaths = 5,
+                TotalScore = 12000,
+                TotalRounds = 30,
+                TotalPlayTimeMinutes = 30
+            }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetLeaderboard(server: "Dogtags 24/7,Merciless Gamers");
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<GlobalLeaderboardResponse>(okResult.Value);
+
+        Assert.Equal(2, response.Players.Count);
+        Assert.Contains(response.Players, p => p.Name == "Rommel");
+        Assert.Contains(response.Players, p => p.Name == "Patton");
+        Assert.DoesNotContain(response.Players, p => p.Name == "BotFarmer");
+    }
+
+    [Fact]
     public async Task GetLeaderboard_PopulatedOnly_KeepsHighOccupancyCluster()
     {
         var now = DateTime.UtcNow;
