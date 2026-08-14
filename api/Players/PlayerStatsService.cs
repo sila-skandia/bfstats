@@ -338,7 +338,7 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
                         else
                         {
                             var winningTeam = round.Tickets1 > round.Tickets2 ? round.Team1Label : round.Team2Label;
-                            session.TeamResult = string.Equals(winningTeam?.Trim(), teamLabel, StringComparison.OrdinalIgnoreCase)
+                            session.TeamResult = string.Equals(winningTeam.Trim(), teamLabel, StringComparison.OrdinalIgnoreCase)
                                 ? "win" : "loss";
                         }
                     }
@@ -800,7 +800,7 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             .Select(d => new TrendDataPoint
             {
                 Timestamp = d.Date,
-                Value = d.TotalMinutes > 0 ? (double)d.TotalKills / d.TotalMinutes : 0
+                Value = d.TotalMinutes > 0 ? d.TotalKills / d.TotalMinutes : 0
             })
             .ToList();
 

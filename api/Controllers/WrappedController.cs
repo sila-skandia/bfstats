@@ -1,11 +1,8 @@
 using api.Wrapped;
 using api.Wrapped.Models;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using System;
-using System.Threading.Tasks;
 
 namespace api.Controllers;
 
@@ -33,7 +30,7 @@ public class WrappedController(
 
     /// <summary>
     /// Retrieves the Server Wrapped 2026 statistics for a given server.
-    /// Access is restricted to users with the Support policy (Admin & Support).
+    /// Access is restricted to users with the Support policy (Admin &amp; Support).
     /// </summary>
     [HttpGet("server/{serverGuid}")]
     [ProducesResponseType(StatusCodes.Status200OK)]

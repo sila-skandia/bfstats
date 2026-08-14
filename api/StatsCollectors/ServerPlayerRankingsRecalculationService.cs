@@ -94,6 +94,7 @@ public class ServerPlayerRankingsRecalculationService(
         string serverGuid,
         CancellationToken ct)
     {
+        _ = serverGuid;
         if (rankings.Count == 0) return;
 
         const int batchSize = 500;
