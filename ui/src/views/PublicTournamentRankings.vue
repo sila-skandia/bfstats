@@ -107,7 +107,6 @@ const {
   logoImageUrl,
   tournamentId,
   themeVars,
-  getBackgroundColor,
   getBackgroundSoftColor,
   getBackgroundMuteColor,
   getTextColor,

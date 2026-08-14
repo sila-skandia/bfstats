@@ -14,7 +14,7 @@ import {
 import type { MapPopularityResponse, MapPopularitySummary } from '@/services/mapPopularityService'
 import { fetchMapPopularity } from '@/services/mapPopularityService'
 import { MM_CHART } from '@/views/v4/mmTokens'
-import { utcHourToLocalHour, localHourToUtcHour } from '@/utils/timeUtils'
+import { localHourToUtcHour } from '@/utils/timeUtils'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
