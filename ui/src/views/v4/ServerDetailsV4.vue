@@ -42,6 +42,7 @@ const loading = ref(true)
 const insightsLoading = ref(false)
 const boardsLoading = ref(false)
 const liveLoading = ref(false)
+const mapsLoading = ref(false)
 const error = ref<string | null>(null)
 
 const showForecast = ref(false)
@@ -110,6 +111,7 @@ const load = async () => {
   insightsLoading.value = true
   boardsLoading.value = true
   liveLoading.value = true
+  mapsLoading.value = true
 
   // Wave 1 — everything keyed off serverName alone.
   const detailsP = fetchServerDetails(serverName.value)
@@ -131,6 +133,7 @@ const load = async () => {
   const mapsP = fetchServerMapsInsights(serverName.value, 30)
     .then(m => { if (!stale()) mapsList.value = m.maps ?? [] })
     .catch(() => { if (!stale()) mapsList.value = [] })
+    .finally(() => { if (!stale()) mapsLoading.value = false })
 
   // Wave 2 — needs fields from the details payload, so it waits on that one
   // request only, not on the whole of wave 1.
@@ -329,19 +332,18 @@ const $pn = decodePlayerName
 
 <template>
   <div class="mm-container mm-container--wide mm-section">
-    <div v-if="loading" style="padding: 40px 0">
-      <div v-for="i in 5" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
-    </div>
+    <div v-if="error" class="mm-empty">{{ error }}</div>
 
-    <div v-else-if="error" class="mm-empty">{{ error }}</div>
-
-    <template v-else-if="details">
+    <template v-else>
       <!-- back link to servers index -->
       <router-link to="/v4/servers/bf1942" class="mm-server__back">‹ Servers</router-link>
 
-      <!-- hero: name + quick links -->
+      <!-- Hero: painted from the route param, not from the details payload. The
+           server name is already in the URL, so there is no reason to hold the
+           whole page behind a ~1s round trip to Finland just to learn it. The
+           rest of the page fills in around it. -->
       <div class="mm-server-hero">
-        <h1 class="mm-display mm-server__name">{{ details.serverName }}</h1>
+        <h1 class="mm-display mm-server__name">{{ serverName }}</h1>
         <div class="mm-server-hero__links">
           <button
             v-if="hourlyTimeline.length > 0"
@@ -350,13 +352,12 @@ const $pn = decodePlayerName
             @click="showForecast = true"
           >Forecast →</button>
           <router-link
-            v-if="details.serverGuid"
+            v-if="details?.serverGuid"
             :to="`/v4/map-popularity/${encodeURIComponent(details.serverGuid)}`"
             class="mm-server__quick"
           >Map popularity →</router-link>
           <router-link
-            v-if="details.serverName"
-            :to="`/v4/servers/${encodeURIComponent(details.serverName)}/sessions`"
+            :to="`/v4/servers/${encodeURIComponent(serverName)}/sessions`"
             class="mm-server__quick"
           >Rounds →</router-link>
         </div>
@@ -364,15 +365,21 @@ const $pn = decodePlayerName
 
       <div class="mm-meta-row mm-server__meta">
         <span class="mm-chip mm-chip--live"><span class="mm-chip__dot" />Tracking</span>
-        <span class="mm-meta-row__sep">·</span>
-        <span><span v-if="countryFlag" class="mm-flag">{{ countryFlag }}</span>{{ region }}</span>
-        <template v-if="details.gameId">
+        <template v-if="details">
           <span class="mm-meta-row__sep">·</span>
-          <span>{{ details.gameId.toUpperCase() }}</span>
+          <span><span v-if="countryFlag" class="mm-flag">{{ countryFlag }}</span>{{ region }}</span>
+          <template v-if="details.gameId">
+            <span class="mm-meta-row__sep">·</span>
+            <span>{{ details.gameId.toUpperCase() }}</span>
+          </template>
+          <template v-if="details.serverIp">
+            <span class="mm-meta-row__sep">·</span>
+            <span>{{ details.serverIp }}:{{ details.serverPort }}</span>
+          </template>
         </template>
-        <template v-if="details.serverIp">
+        <template v-else-if="loading">
           <span class="mm-meta-row__sep">·</span>
-          <span>{{ details.serverIp }}:{{ details.serverPort }}</span>
+          <span class="mm-skeleton" style="width: 180px; height: 1em; display: inline-block; vertical-align: middle" />
         </template>
       </div>
 
@@ -469,7 +476,12 @@ const $pn = decodePlayerName
                 <span class="mm-track"><span class="mm-track__f mm-track__f--accent" :style="{ width: m.w + '%' }" /></span>
                 <span class="mm-maprail__val">{{ formatPercent(m.share) }}</span>
               </div>
-              <div v-if="mapRows.length === 0" class="mm-empty" style="border: 0; padding: 12px 0">No map history yet.</div>
+              <template v-if="mapRows.length === 0">
+                <template v-if="mapsLoading">
+                  <div v-for="i in 5" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />
+                </template>
+                <div v-else class="mm-empty" style="border: 0; padding: 12px 0">No map history yet.</div>
+              </template>
             </div>
           </section>
         </div>
@@ -480,17 +492,24 @@ const $pn = decodePlayerName
               <span class="mm-pbar__t"># Player proximity</span>
               <span class="mm-pbar__m">regulars by ping</span>
             </div>
+            <!-- Genuinely needs serverGuid from the details payload, so this one
+                 panel keeps its own skeleton rather than blocking the page. -->
             <div class="mm-panel__body">
               <MmPingProximityOrbit
+                v-if="details?.serverGuid"
                 seamless
                 :server-guid="details.serverGuid"
                 :server-name="details.serverName"
                 @player-click="goPlayerFromOrbit"
               />
+              <template v-else-if="loading">
+                <div class="mm-skeleton" style="margin-bottom: 8px" />
+                <div class="mm-skeleton" />
+              </template>
             </div>
           </section>
 
-          <MmServerSignatureBuilder :server-name="details.serverName" />
+          <MmServerSignatureBuilder :server-name="serverName" />
         </div>
       </div>
 
@@ -739,7 +758,7 @@ const $pn = decodePlayerName
                 <td data-cell-label="" class="mm-list__col--hide-sm"><span class="mm-eyebrow">Drill →</span></td>
               </tr>
               <tr v-if="popularMaps.length === 0">
-                <td colspan="7" class="mm-empty" style="border: 0">No map history yet.</td>
+                <td colspan="7" class="mm-empty" style="border: 0">{{ mapsLoading ? 'Loading…' : 'No map history yet.' }}</td>
               </tr>
             </tbody>
           </table>
@@ -757,7 +776,7 @@ const $pn = decodePlayerName
       </div>
 
       <!-- always-visible: comments -->
-      <MmServerComments :server-name="details.serverName" />
+      <MmServerComments :server-name="serverName" />
     </template>
 
     <MmForecastModal

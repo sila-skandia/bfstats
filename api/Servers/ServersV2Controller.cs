@@ -22,6 +22,7 @@ public class ServersV2Controller(
 {
     // Get server leaderboards for a specific time period (SQLite leaderboards)
     [HttpGet("{serverName}/leaderboards")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<ServerLeaderboards>> GetServerLeaderboards(
         string serverName,
         [FromQuery] int days = ApiConstants.TimePeriods.DefaultDays,
