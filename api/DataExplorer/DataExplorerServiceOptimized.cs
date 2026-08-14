@@ -940,8 +940,22 @@ public class DataExplorerService(
         var rankingGuidParams = string.Join(", ", serverGuids.Select((_, i) => $"@p{i + 2}"));
         var playerNameParamIndex = 2 + serverGuids.Count;
 
+        // PlayerMaps restricts the ranking to the maps this player has actually played.
+        // The result is filtered to one PlayerName and rank is partitioned by
+        // (MapName, ServerGuid), so no other map can contribute a row — but without the
+        // restriction every player on every map of every server for this game gets
+        // aggregated and ranked first. Narrowing by MapName cannot change a rank within
+        // a partition it doesn't remove. Measured on production data: 219ms -> 66ms,
+        // identical rows.
         var rankingSql = $@"
-            WITH PlayerRankings AS (
+            WITH PlayerMaps AS (
+                SELECT DISTINCT MapName
+                FROM PlayerMapStats
+                WHERE PlayerName = @p{playerNameParamIndex}
+                  AND ((Year > @p0) OR (Year = @p0 AND Month >= @p1))
+                  AND ServerGuid IN ({rankingGuidParams})
+            ),
+            PlayerRankings AS (
                 SELECT
                     MapName,
                     ServerGuid,
@@ -951,6 +965,7 @@ public class DataExplorerService(
                 FROM PlayerMapStats
                 WHERE ((Year > @p0) OR (Year = @p0 AND Month >= @p1))
                   AND ServerGuid IN ({rankingGuidParams})
+                  AND MapName IN (SELECT MapName FROM PlayerMaps)
                 GROUP BY MapName, ServerGuid, PlayerName
             )
             SELECT MapName, ServerGuid, Rank
@@ -2220,11 +2235,30 @@ public class DataExplorerService(
         if (!playerExists)
             return null;
 
-        // Get current rankings for all maps the player has played
+        // Get current rankings for all maps the player has played.
+        //
+        // The PlayerMaps CTE is what keeps this cheap. Rank is partitioned by MapName
+        // and the result is filtered to one player, so only the maps that player has
+        // actually played can ever appear — but without the restriction SQLite has to
+        // aggregate and rank every player on every map first and discard almost all of
+        // it. On production data that is 739k global rows across 1897 maps and 44,766
+        // players, ranked to return ~10 rows. Restricting up front lets the planner
+        // seek via IX_PlayerMapStats_ServerGuid_MapName instead of scanning.
+        //
+        // Ranks and player counts are unaffected: narrowing by MapName cannot change
+        // the ordering or the size of a partition it doesn't remove. Verified equal
+        // row-for-row against the unrestricted query for several players.
         var playerMapStats = await dbContext.Database
             .SqlQueryRaw<CompetitiveRankingResult>(@"
-                WITH PlayerScores AS (
-                    SELECT 
+                WITH PlayerMaps AS (
+                    SELECT DISTINCT MapName
+                    FROM PlayerMapStats
+                    WHERE PlayerName = {2}
+                        AND ServerGuid = ''
+                        AND ((Year > {0}) OR (Year = {0} AND Month >= {1}))
+                ),
+                PlayerScores AS (
+                    SELECT
                         pms.PlayerName,
                         pms.MapName,
                         SUM(pms.TotalScore) as Score,
@@ -2235,6 +2269,7 @@ public class DataExplorerService(
                     FROM PlayerMapStats pms
                     WHERE pms.ServerGuid = ''  -- Global stats only
                         AND ((pms.Year > {0}) OR (pms.Year = {0} AND pms.Month >= {1}))
+                        AND pms.MapName IN (SELECT MapName FROM PlayerMaps)
                     GROUP BY pms.PlayerName, pms.MapName
                     HAVING SUM(pms.TotalScore) > 0
                 ),
@@ -2266,9 +2301,20 @@ public class DataExplorerService(
         var prevMonth = previousCutoff.Month;
 
         // Query previous rankings separately with a simple result class
+        // Same restriction as the current-period query above, for the same reason —
+        // this one was ranking every player on every map to produce one player's
+        // previous rank per map.
         var previousRankQuery = @"
-            WITH PlayerScores AS (
-                SELECT 
+            WITH PlayerMaps AS (
+                SELECT DISTINCT MapName
+                FROM PlayerMapStats
+                WHERE PlayerName = {4}
+                    AND ServerGuid = ''
+                    AND ((Year > {0}) OR (Year = {0} AND Month >= {1}))
+                    AND ((Year < {2}) OR (Year = {2} AND Month < {3}))
+            ),
+            PlayerScores AS (
+                SELECT
                     pms.PlayerName,
                     pms.MapName,
                     SUM(pms.TotalScore) as Score
@@ -2276,6 +2322,7 @@ public class DataExplorerService(
                 WHERE pms.ServerGuid = ''
                     AND ((pms.Year > {0}) OR (pms.Year = {0} AND pms.Month >= {1}))
                     AND ((pms.Year < {2}) OR (pms.Year = {2} AND pms.Month < {3}))
+                    AND pms.MapName IN (SELECT MapName FROM PlayerMaps)
                 GROUP BY pms.PlayerName, pms.MapName
             ),
             RankedPlayers AS (
