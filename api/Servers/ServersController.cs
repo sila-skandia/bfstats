@@ -23,6 +23,7 @@ public class ServersController(
     /// <response code="400">If the server name is empty or invalid.</response>
     /// <response code="404">If the server is not found in the database.</response>
     [HttpGet("{serverName}")]
+    [ResponseCache(Duration = 300, Location = ResponseCacheLocation.Any)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -53,6 +54,7 @@ public class ServersController(
 
     // Get server leaderboards for a specific time period
     [HttpGet("{serverName}/leaderboards")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<ServerLeaderboards>> GetServerLeaderboards(
         string serverName,
         [FromQuery] int days = ApiConstants.TimePeriods.DefaultDays,
@@ -92,6 +94,7 @@ public class ServersController(
     // plugin via the service method; no HTTP route existed, so the V4 page's
     // `popularMaps` field came back undefined and the tab rendered empty.)
     [HttpGet("{serverName}/maps-insights")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<ServerMapsInsights>> GetServerMapsInsightsRoute(
         string serverName,
         [FromQuery] int? days)
@@ -121,6 +124,7 @@ public class ServersController(
     }
 
     [HttpGet("{serverName}/insights")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<ServerInsights>> GetServerInsights(
         string serverName,
         [FromQuery] int? days,

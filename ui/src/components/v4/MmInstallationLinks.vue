@@ -203,14 +203,16 @@ const links = [
      work with. */
   .mm-install:not(.mm-install--strip) .mm-install__toggle-label { display: none; }
   .mm-install:not(.mm-install--strip) .mm-install__toggle-label--mobile { display: inline; }
-  /* The toggle sits at the left of the wrapped meta row on narrow screens, so
-     a `right: 0` anchor pushes the 260px menu off the left edge. Anchor left
-     and cap the width to the viewport instead. */
+  /* The toggle sits flush against the right edge of the meta row at every
+     mobile width (the row does not wrap — `.mm-landing__meta-extra` is hidden
+     below 720px), so the menu stays right-anchored and grows leftwards. A
+     `left: 0` anchor here would run the 260px menu off the right edge.
+     The cap keeps it inside the container gutter on the narrowest phones. */
   .mm-install:not(.mm-install--strip) .mm-install__menu {
     min-width: 260px;
     max-width: calc(100vw - 36px);
-    left: 0;
-    right: auto;
+    left: auto;
+    right: 0;
   }
 }
 </style>
