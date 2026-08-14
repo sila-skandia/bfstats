@@ -19,6 +19,32 @@ import { visualizer } from 'rollup-plugin-visualizer'
 // Dynamic import to ensure global localStorage mock is defined before devtools loads
 const { default: vueDevTools } = await import('vite-plugin-vue-devtools')
 
+// Shared by `server` (dev) and `preview` (serving the production build). Vite
+// does not carry server.proxy over to preview, so both reference this.
+const proxy = {
+  // Proxy API requests to the backend
+  '/api': {
+    target: 'http://localhost:3000',
+    changeOrigin: true
+  },
+  // Proxy AI requests to the AI backend
+  '/ai': {
+    target: 'http://localhost:5126',
+    changeOrigin: true
+  },
+  // Proxy player stats requests to the backend
+  '/stats': {
+    target: 'http://127.0.0.1:9222',
+    changeOrigin: true
+  },
+  // Proxy SignalR hub requests
+  '/hub': {
+    target: 'http://localhost:9223',
+    changeOrigin: true,
+    ws: true // Enable WebSocket proxying
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -71,28 +97,15 @@ export default defineConfig({
         '**/dist/**',
       ],
     },
-    proxy: {
-      // Proxy API requests to the backend during development
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true
-      },
-      // Proxy AI requests to the AI backend during development
-      '/ai': {
-        target: 'http://localhost:5126',
-        changeOrigin: true
-      },
-      // Proxy player stats requests to the backend during development
-      '/stats': {
-        target: 'http://127.0.0.1:9222',
-        changeOrigin: true
-      },
-      // Proxy SignalR hub requests during development
-      '/hub': {
-        target: 'http://localhost:9223',
-        changeOrigin: true,
-        ws: true // Enable WebSocket proxying
-      }
-    }
-  }
+    proxy,
+  },
+  // `vite preview` does NOT inherit server.proxy — it needs its own copy, which
+  // is why the shared `proxy` const above exists. Without this, serving the
+  // built app locally 404s every /stats call and the dev auth bypass the E2E
+  // suite logs in with.
+  preview: {
+    port: 5173,
+    strictPort: true,
+    proxy,
+  },
 })
