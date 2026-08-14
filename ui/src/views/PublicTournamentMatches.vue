@@ -116,10 +116,6 @@ import { type PublicTournamentMatch } from '@/services/publicTournamentService'
 import { usePublicTournamentPage } from '@/composables/usePublicTournamentPage'
 import { notificationService } from '@/services/notificationService'
 
-interface MatchItem {
-  match: PublicTournamentMatch
-}
-
 const { comparePlayers } = usePlayerComparison()
 
 const {
