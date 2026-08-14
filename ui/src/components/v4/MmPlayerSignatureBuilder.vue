@@ -138,7 +138,7 @@ const shareRows = computed(() => [
         >
           <option value="">Lifetime profile · all servers</option>
           <option v-for="server in sortedServers" :key="server.serverGuid" :value="server.serverGuid">
-            {{ server.serverName }}
+            {{ $pn(server.serverName) }}
           </option>
         </select>
         <p class="mm-card__hint" style="margin-top: 4px">
