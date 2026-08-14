@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import 'primeicons/primeicons.css'
 import { fetchLeaderboard, type LeaderboardPlayer, type LeaderboardServer, type LeaderboardMap } from '@/services/leaderboardApi'
 import { kdClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
@@ -70,7 +71,10 @@ const excludedServers = ref<string[]>(
 const populatedOnly = ref(
   route.query.populatedOnly !== '0' && route.query.populatedOnly !== 'false'
 )
-const selectedMap = ref<string>((route.query.map as string) || '')
+const includedMaps = ref<string[]>(
+  route.query.map ? (route.query.map as string).split(',').filter(Boolean) : []
+)
+const mapDisplayNames = ref<Record<string, string>>({})
 const searchQuery = ref<string>((route.query.q as string) || '')
 const debouncedSearch = ref(searchQuery.value.trim())
 const serverSearchQuery = ref<string>('')
@@ -146,13 +150,19 @@ const selectedServerObj = computed(() => {
 
 const filteredServers = computed(() => {
   const q = serverSearchQuery.value.trim().toLowerCase()
-  if (!q) return servers.value
-  return servers.value.filter(s =>
-    s.name.toLowerCase().includes(q) ||
-    decodeServerName(s.name).toLowerCase().includes(q) ||
-    (s.shortName && s.shortName.toLowerCase().includes(q)) ||
-    (s.country && s.country.toLowerCase().includes(q))
-  )
+  const list = !q
+    ? servers.value
+    : servers.value.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        decodeServerName(s.name).toLowerCase().includes(q) ||
+        (s.shortName && s.shortName.toLowerCase().includes(q)) ||
+        (s.country && s.country.toLowerCase().includes(q))
+      )
+  const rank = (s: LeaderboardServer) => {
+    if (serverMode.value === 'exclude') return isServerExcluded(s.name) ? 0 : 1
+    return isServerIncluded(s.name) || isServerIncluded(s.guid) ? 0 : 1
+  }
+  return [...list].sort((a, b) => rank(a) - rank(b))
 })
 
 // Exclude mode helpers
@@ -188,6 +198,13 @@ const clearExcludedServers = () => {
   excludedServers.value = []
 }
 
+const serverChipLabel = (name: string) => {
+  const srv = servers.value.find(s =>
+    s.name.toLowerCase() === name.toLowerCase() || s.guid.toLowerCase() === name.toLowerCase()
+  )
+  return decodeServerName(srv?.shortName || srv?.name || name)
+}
+
 const switchServerMode = (mode: 'include' | 'exclude') => {
   serverMode.value = mode
   if (mode === 'exclude') {
@@ -198,32 +215,61 @@ const switchServerMode = (mode: 'include' | 'exclude') => {
 }
 
 const selectedMapObj = computed(() => {
-  if (!selectedMap.value) return null
-  const mLower = selectedMap.value.toLowerCase()
+  if (includedMaps.value.length !== 1) return null
+  const mLower = includedMaps.value[0].toLowerCase()
   return mapsForPicker.value.find(m => m.name.toLowerCase() === mLower) ?? null
 })
 
-const selectedMapLabel = ref('')
-
 const mapsForPicker = computed(() => {
   const list = maps.value
-  const selected = selectedMap.value
-  if (!selected) return list
-  if (list.some(m => m.name.toLowerCase() === selected.toLowerCase())) return list
+  const missing = includedMaps.value.filter(
+    sel => !list.some(m => m.name.toLowerCase() === sel.toLowerCase())
+  )
+  if (missing.length === 0) return list
   return [
-    { name: selected, displayName: selectedMapLabel.value || selected, playerCount: 0 },
+    ...missing.map(name => ({
+      name,
+      displayName: mapDisplayNames.value[name] || name,
+      playerCount: 0
+    })),
     ...list
   ]
 })
 
+const isMapIncluded = (mapName: string) =>
+  includedMaps.value.some(m => m.toLowerCase() === mapName.toLowerCase())
+
+const toggleIncludeMap = (mapName: string, displayName?: string) => {
+  const lower = mapName.toLowerCase()
+  if (includedMaps.value.some(m => m.toLowerCase() === lower)) {
+    includedMaps.value = includedMaps.value.filter(m => m.toLowerCase() !== lower)
+  } else {
+    includedMaps.value = [...includedMaps.value, mapName]
+    if (displayName) {
+      mapDisplayNames.value = { ...mapDisplayNames.value, [mapName]: displayName }
+    }
+  }
+}
+
+const clearIncludedMaps = () => {
+  includedMaps.value = []
+}
+
 const filteredMaps = computed(() => {
   const q = mapSearchQuery.value.trim().toLowerCase()
-  if (!q) return mapsForPicker.value
-  return mapsForPicker.value.filter(m =>
-    m.displayName.toLowerCase().includes(q) ||
-    m.name.toLowerCase().includes(q)
-  )
+  const list = !q
+    ? mapsForPicker.value
+    : mapsForPicker.value.filter(m =>
+        m.displayName.toLowerCase().includes(q) ||
+        m.name.toLowerCase().includes(q)
+      )
+  return [...list].sort((a, b) => Number(isMapIncluded(b.name)) - Number(isMapIncluded(a.name)))
 })
+
+const mapChipLabel = (name: string) => {
+  const found = mapsForPicker.value.find(m => m.name.toLowerCase() === name.toLowerCase())
+  return found?.displayName || mapDisplayNames.value[name] || name
+}
 
 // Table configuration state
 const order = ref<string[]>(ALL_COLUMNS.map(c => c.key))
@@ -263,7 +309,7 @@ const loadData = async () => {
         ? excludedServers.value.join(',')
         : undefined,
       populatedOnly: populatedOnly.value,
-      map: selectedMap.value || undefined,
+      map: includedMaps.value.length > 0 ? includedMaps.value.join(',') : undefined,
       days: days.value,
       minRounds: minRounds.value,
       minPlay: minPlay.value,
@@ -383,7 +429,7 @@ watch([serverDropdownOpen, mapDropdownOpen, periodSheetOpen, isNarrow], () => {
   syncBodyScrollLock()
 })
 
-watch([days, minPlay, minRounds, selectedMap, includedServers, excludedServers, serverMode, populatedOnly], () => {
+watch([days, minPlay, minRounds, includedMaps, includedServers, excludedServers, serverMode, populatedOnly], () => {
   page.value = 1
 })
 
@@ -400,14 +446,17 @@ watch(searchQuery, (q) => {
 })
 
 watch(() => maps.value, (list) => {
-  const selected = selectedMap.value
-  if (!selected) return
-  const found = list.find(m => m.name.toLowerCase() === selected.toLowerCase())
-  if (found) selectedMapLabel.value = found.displayName
-})
-
-watch(selectedMap, (name) => {
-  if (!name) selectedMapLabel.value = ''
+  if (includedMaps.value.length === 0) return
+  const next = { ...mapDisplayNames.value }
+  let changed = false
+  for (const sel of includedMaps.value) {
+    const found = list.find(m => m.name.toLowerCase() === sel.toLowerCase())
+    if (found && next[sel] !== found.displayName) {
+      next[sel] = found.displayName
+      changed = true
+    }
+  }
+  if (changed) mapDisplayNames.value = next
 })
 
 watch(includedServers, (list) => {
@@ -424,7 +473,7 @@ const requestKey = computed(() => [
   includedServers.value.join('\0'),
   excludedServers.value.join('\0'),
   populatedOnly.value ? '1' : '0',
-  selectedMap.value,
+  includedMaps.value.join('\0'),
   days.value,
   minRounds.value,
   minPlay.value
@@ -435,7 +484,7 @@ watch(requestKey, () => {
 })
 
 // URL sync
-watch([days, minPlay, minRounds, searchQuery, groupBy, selectedMap, includedServers, excludedServers, serverMode, populatedOnly], () => {
+watch([days, minPlay, minRounds, searchQuery, groupBy, includedMaps, includedServers, excludedServers, serverMode, populatedOnly], () => {
   router.replace({
     query: {
       ...route.query,
@@ -446,7 +495,7 @@ watch([days, minPlay, minRounds, searchQuery, groupBy, selectedMap, includedServ
       serverMode: serverMode.value === 'exclude' ? 'exclude' : undefined,
       exclude: (serverMode.value === 'exclude' && excludedServers.value.length > 0) ? excludedServers.value.join(',') : undefined,
       populatedOnly: populatedOnly.value ? undefined : '0',
-      map: selectedMap.value || undefined,
+      map: includedMaps.value.length > 0 ? includedMaps.value.join(',') : undefined,
       q: searchQuery.value.trim() || undefined,
       group: groupBy.value || undefined
     }
@@ -610,8 +659,8 @@ const resetAll = () => {
   populatedOnly.value = true
   serverSearchQuery.value = ''
   serverDropdownOpen.value = false
-  selectedMap.value = ''
-  selectedMapLabel.value = ''
+  includedMaps.value = []
+  mapDisplayNames.value = {}
   mapSearchQuery.value = ''
   mapDropdownOpen.value = false
   periodSheetOpen.value = false
@@ -656,11 +705,17 @@ const activeFilterChips = computed(() => {
       clear: clearExcludedServers
     })
   }
-  if (selectedMap.value) {
+  if (includedMaps.value.length === 1) {
     chips.push({
       key: 'map',
-      label: selectedMapObj.value?.displayName || selectedMap.value,
-      clear: () => { selectedMap.value = '' }
+      label: selectedMapObj.value?.displayName || includedMaps.value[0],
+      clear: clearIncludedMaps
+    })
+  } else if (includedMaps.value.length > 1) {
+    chips.push({
+      key: 'map',
+      label: `${includedMaps.value.length} maps`,
+      clear: clearIncludedMaps
     })
   }
   if (days.value !== 30) {
@@ -860,8 +915,9 @@ const rankTintClass = (rank: number) => {
                     :class="{ 'lb-server-item--active': days === opt.value }"
                     @click="days = opt.value; periodSheetOpen = false"
                   >
+                    <span class="lb-pick-mark" :class="{ 'is-on': days === opt.value }" aria-hidden="true"></span>
                     <span class="lb-server-item-name">{{ opt.label }}</span>
-                    <i v-if="days === opt.value" class="pi pi-check lb-server-check"></i>
+                    <span v-if="days === opt.value" class="lb-pick-state">ON</span>
                   </button>
                 </div>
               </div>
@@ -925,7 +981,7 @@ const rankTintClass = (rank: number) => {
                 :title="serverMode === 'exclude' ? 'Clear all exclusions' : 'Clear server filter'"
                 @click.stop="serverMode === 'exclude' ? clearExcludedServers() : clearIncludedServers()"
               >
-                <i class="pi pi-times"></i>
+                <span aria-hidden="true">×</span>
               </button>
 
               <!-- Server Search Popover -->
@@ -1005,18 +1061,59 @@ const rankTintClass = (rank: number) => {
                   </button>
                 </div>
 
+                <div
+                  v-if="serverMode === 'include' && includedServers.length > 0"
+                  class="lb-picked-strip"
+                >
+                  <span class="lb-picked-strip-kicker">Selected · {{ includedServers.length }}</span>
+                  <div class="lb-picked-strip-chips">
+                    <button
+                      v-for="name in includedServers"
+                      :key="name"
+                      type="button"
+                      class="lb-picked-chip"
+                      :aria-label="`Remove ${serverChipLabel(name)}`"
+                      @click="toggleIncludeServer(name)"
+                    >
+                      {{ serverChipLabel(name) }}
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-else-if="serverMode === 'exclude' && excludedServers.length > 0"
+                  class="lb-picked-strip lb-picked-strip--excl"
+                >
+                  <span class="lb-picked-strip-kicker">Excluded · {{ excludedServers.length }}</span>
+                  <div class="lb-picked-strip-chips">
+                    <button
+                      v-for="name in excludedServers"
+                      :key="name"
+                      type="button"
+                      class="lb-picked-chip lb-picked-chip--excl"
+                      :aria-label="`Stop excluding ${serverChipLabel(name)}`"
+                      @click="toggleExcludeServer(name)"
+                    >
+                      {{ serverChipLabel(name) }}
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div class="lb-server-list">
                   <!-- All Servers Option (include mode only) -->
                   <button
                     v-if="serverMode === 'include'"
                     class="lb-server-item"
                     :class="{ 'lb-server-item--active': includedServers.length === 0 }"
+                    :aria-pressed="includedServers.length === 0"
                     @click="clearIncludedServers()"
                   >
+                    <span class="lb-pick-mark" :class="{ 'is-on': includedServers.length === 0 }" aria-hidden="true"></span>
                     <i class="pi pi-globe lb-server-item-icon"></i>
                     <span class="lb-server-item-name">All Servers</span>
                     <span class="lb-server-count">{{ servers.length }}</span>
-                    <i v-if="includedServers.length === 0" class="pi pi-check lb-server-check"></i>
+                    <span v-if="includedServers.length === 0" class="lb-pick-state">ON</span>
                   </button>
 
                   <!-- Clear All Exclusions (exclude mode) -->
@@ -1038,10 +1135,16 @@ const rankTintClass = (rank: number) => {
                       class="lb-server-item"
                       :class="{
                         'lb-server-item--active': isServerIncluded(srv.name) || isServerIncluded(srv.guid),
-                        'lb-server-item--quiet': populatedOnly && !srv.isPopulated
+                        'lb-server-item--quiet': populatedOnly && !srv.isPopulated && !isServerIncluded(srv.name) && !isServerIncluded(srv.guid)
                       }"
+                      :aria-pressed="isServerIncluded(srv.name) || isServerIncluded(srv.guid)"
                       @click="toggleIncludeServer(srv.name)"
                     >
+                      <span
+                        class="lb-pick-mark"
+                        :class="{ 'is-on': isServerIncluded(srv.name) || isServerIncluded(srv.guid) }"
+                        aria-hidden="true"
+                      ></span>
                       <span v-if="srv.flag" class="lb-flag">{{ srv.flag }}</span>
                       <span class="lb-server-item-name">{{ $pn(srv.name) }}</span>
                       <span
@@ -1049,10 +1152,10 @@ const rankTintClass = (rank: number) => {
                         :class="{ 'lb-server-avg--live': srv.isPopulated }"
                         :title="`${formatAvg(srv.avgPlayers)} avg concurrent · ${srv.playerCount} ranked`"
                       >{{ formatAvg(srv.avgPlayers) }}</span>
-                      <i
+                      <span
                         v-if="isServerIncluded(srv.name) || isServerIncluded(srv.guid)"
-                        class="pi pi-check lb-server-check"
-                      ></i>
+                        class="lb-pick-state"
+                      >ON</span>
                     </button>
                   </template>
 
@@ -1064,10 +1167,16 @@ const rankTintClass = (rank: number) => {
                       class="lb-server-item"
                       :class="{
                         'lb-server-item--excluded': isServerExcluded(srv.name),
-                        'lb-server-item--quiet': populatedOnly && !srv.isPopulated
+                        'lb-server-item--quiet': populatedOnly && !srv.isPopulated && !isServerExcluded(srv.name)
                       }"
+                      :aria-pressed="isServerExcluded(srv.name)"
                       @click="toggleExcludeServer(srv.name)"
                     >
+                      <span
+                        class="lb-pick-mark lb-pick-mark--excl"
+                        :class="{ 'is-on': isServerExcluded(srv.name) }"
+                        aria-hidden="true"
+                      ></span>
                       <span v-if="srv.flag" class="lb-flag">{{ srv.flag }}</span>
                       <span class="lb-server-item-name">{{ $pn(srv.name) }}</span>
                       <span
@@ -1075,10 +1184,7 @@ const rankTintClass = (rank: number) => {
                         :class="{ 'lb-server-avg--live': srv.isPopulated }"
                         :title="`${formatAvg(srv.avgPlayers)} avg concurrent · ${srv.playerCount} ranked`"
                       >{{ formatAvg(srv.avgPlayers) }}</span>
-                      <i
-                        v-if="isServerExcluded(srv.name)"
-                        class="pi pi-ban lb-server-exclude-icon"
-                      ></i>
+                      <span v-if="isServerExcluded(srv.name)" class="lb-pick-state lb-pick-state--excl">EXCL</span>
                     </button>
                   </template>
 
@@ -1097,7 +1203,7 @@ const rankTintClass = (rank: number) => {
             <div class="lb-server-dropdown-anchor">
               <button
                 class="lb-server-dropdown-btn lb-map-dropdown-btn"
-                :class="{ 'lb-server-dropdown-btn--active': selectedMap, 'lb-server-dropdown-btn--open': mapDropdownOpen }"
+                :class="{ 'lb-server-dropdown-btn--active': includedMaps.length > 0, 'lb-server-dropdown-btn--open': mapDropdownOpen }"
                 title="Filter by map"
                 @click="toggleMapDropdown"
               >
@@ -1106,9 +1212,14 @@ const rankTintClass = (rank: number) => {
                   <span class="lb-server-dropdown-text">{{ selectedMapObj.displayName }}</span>
                   <span class="lb-server-count">{{ selectedMapObj.playerCount }}</span>
                 </template>
-                <template v-else-if="selectedMap">
+                <template v-else-if="includedMaps.length > 1">
                   <i class="pi pi-map lb-server-icon"></i>
-                  <span class="lb-server-dropdown-text">{{ selectedMap }}</span>
+                  <span class="lb-server-dropdown-text">{{ includedMaps.length }} maps</span>
+                  <span class="lb-server-count">{{ includedMaps.length }}</span>
+                </template>
+                <template v-else-if="includedMaps.length === 1">
+                  <i class="pi pi-map lb-server-icon"></i>
+                  <span class="lb-server-dropdown-text">{{ includedMaps[0] }}</span>
                 </template>
                 <template v-else>
                   <i class="pi pi-globe lb-server-icon"></i>
@@ -1119,14 +1230,14 @@ const rankTintClass = (rank: number) => {
               </button>
 
               <button
-                v-if="selectedMap"
+                v-if="includedMaps.length > 0"
                 type="button"
                 class="lb-server-clear-btn"
                 aria-label="Clear map filter"
                 title="Clear map filter"
-                @click.stop="selectedMap = ''"
+                @click.stop="clearIncludedMaps()"
               >
-                <i class="pi pi-times"></i>
+                <span aria-hidden="true">×</span>
               </button>
 
               <!-- Map Search Popover -->
@@ -1147,10 +1258,10 @@ const rankTintClass = (rank: number) => {
                   </div>
                   <div class="lb-sheet-actions">
                     <button
-                      v-if="selectedMap"
+                      v-if="includedMaps.length > 0"
                       type="button"
                       class="lb-sheet-clear"
-                      @click="selectedMap = ''; mapDropdownOpen = false"
+                      @click="clearIncludedMaps(); mapDropdownOpen = false"
                     >Clear</button>
                     <button type="button" class="lb-sheet-done" @click="mapDropdownOpen = false">Done</button>
                   </div>
@@ -1174,17 +1285,36 @@ const rankTintClass = (rank: number) => {
                   </button>
                 </div>
 
+                <div v-if="includedMaps.length > 0" class="lb-picked-strip">
+                  <span class="lb-picked-strip-kicker">Selected · {{ includedMaps.length }}</span>
+                  <div class="lb-picked-strip-chips">
+                    <button
+                      v-for="name in includedMaps"
+                      :key="name"
+                      type="button"
+                      class="lb-picked-chip"
+                      :aria-label="`Remove ${mapChipLabel(name)}`"
+                      @click="toggleIncludeMap(name)"
+                    >
+                      {{ mapChipLabel(name) }}
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div class="lb-server-list">
                   <!-- All Maps Option -->
                   <button
                     class="lb-server-item"
-                    :class="{ 'lb-server-item--active': !selectedMap }"
-                    @click="selectedMap = ''; mapDropdownOpen = false"
+                    :class="{ 'lb-server-item--active': includedMaps.length === 0 }"
+                    :aria-pressed="includedMaps.length === 0"
+                    @click="clearIncludedMaps()"
                   >
+                    <span class="lb-pick-mark" :class="{ 'is-on': includedMaps.length === 0 }" aria-hidden="true"></span>
                     <i class="pi pi-globe lb-server-item-icon"></i>
                     <span class="lb-server-item-name">All Maps</span>
                     <span class="lb-server-count">{{ maps.length }}</span>
-                    <i v-if="!selectedMap" class="pi pi-check lb-server-check"></i>
+                    <span v-if="includedMaps.length === 0" class="lb-pick-state">ON</span>
                   </button>
 
                   <!-- Filtered Map Options -->
@@ -1192,16 +1322,15 @@ const rankTintClass = (rank: number) => {
                     v-for="m in filteredMaps"
                     :key="m.name"
                     class="lb-server-item"
-                    :class="{ 'lb-server-item--active': selectedMap.toLowerCase() === m.name.toLowerCase() }"
-                    @click="selectedMap = m.name; selectedMapLabel = m.displayName; mapDropdownOpen = false"
+                    :class="{ 'lb-server-item--active': isMapIncluded(m.name) }"
+                    :aria-pressed="isMapIncluded(m.name)"
+                    @click="toggleIncludeMap(m.name, m.displayName)"
                   >
+                    <span class="lb-pick-mark" :class="{ 'is-on': isMapIncluded(m.name) }" aria-hidden="true"></span>
                     <i class="pi pi-map lb-server-item-icon"></i>
                     <span class="lb-server-item-name">{{ m.displayName }}</span>
                     <span class="lb-server-count">{{ m.playerCount }}</span>
-                    <i
-                      v-if="selectedMap.toLowerCase() === m.name.toLowerCase()"
-                      class="pi pi-check lb-server-check"
-                    ></i>
+                    <span v-if="isMapIncluded(m.name)" class="lb-pick-state">ON</span>
                   </button>
 
                   <div v-if="filteredMaps.length === 0" class="lb-server-empty">
@@ -1380,8 +1509,11 @@ const rankTintClass = (rank: number) => {
           <span v-if="populatedOnly && includedServers.length === 0" class="lb-populated-tag">
             · POPULATED
           </span>
-          <span v-if="selectedMap" class="lb-map-active-tag">
-            · MAP: {{ selectedMap.toUpperCase() }}
+          <span v-if="includedMaps.length === 1" class="lb-map-active-tag">
+            · MAP: {{ (selectedMapObj?.displayName || includedMaps[0]).toUpperCase() }}
+          </span>
+          <span v-else-if="includedMaps.length > 1" class="lb-map-active-tag">
+            · MAP: {{ includedMaps.length }} MAPS
           </span>
         </div>
         <div class="lb-section-right lb-desktop-only">
@@ -1996,10 +2128,12 @@ const rankTintClass = (rank: number) => {
   border-left: 0;
   border-radius: 0 2px 2px 0;
   background: var(--mm-bg-mute);
-  color: var(--mm-ink-muted);
+  color: var(--mm-ink);
   cursor: pointer;
   padding: 0;
-  font-size: 10px;
+  font-family: var(--mm-font-display);
+  font-size: 18px;
+  font-weight: 400;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2127,7 +2261,8 @@ const rankTintClass = (rank: number) => {
 
 .lb-server-popover--sheet .lb-server-mode-toggle,
 .lb-server-popover--sheet .lb-populated-toggle,
-.lb-server-popover--sheet .lb-server-search-box {
+.lb-server-popover--sheet .lb-server-search-box,
+.lb-server-popover--sheet .lb-picked-strip {
   margin-left: 16px;
   margin-right: 16px;
   width: auto;
@@ -2232,10 +2367,146 @@ const rankTintClass = (rank: number) => {
   color: var(--mm-accent);
 }
 
-.lb-server-item--active {
+.lb-pick-mark {
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  flex-shrink: 0;
   background: var(--mm-bg);
-  color: var(--mm-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lb-pick-mark.is-on {
+  background: var(--mm-accent);
+  border-color: var(--mm-accent);
+}
+
+.lb-pick-mark.is-on::after {
+  content: '';
+  width: 7px;
+  height: 4px;
+  margin-top: -1px;
+  border-left: 1.5px solid var(--mm-highlight-ink);
+  border-bottom: 1.5px solid var(--mm-highlight-ink);
+  transform: rotate(-45deg);
+}
+
+.lb-pick-mark--excl.is-on {
+  background: var(--mm-danger);
+  border-color: var(--mm-danger);
+}
+
+.lb-pick-mark--excl.is-on::after {
+  width: 8px;
+  height: 0;
+  margin: 0;
+  border-left: none;
+  border-bottom: 1.5px solid #fff;
+  transform: none;
+}
+
+.lb-pick-state {
+  font-family: var(--mm-font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: var(--mm-highlight-ink);
+  background: var(--mm-accent);
+  padding: 2px 5px;
+  border-radius: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.lb-pick-state--excl {
+  background: var(--mm-danger);
+  color: #fff;
+}
+
+.lb-server-item--active {
+  background: color-mix(in srgb, var(--mm-accent) 18%, var(--mm-bg-mute));
+  color: var(--mm-ink);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--mm-accent);
+}
+
+.lb-server-item--active:hover {
+  background: color-mix(in srgb, var(--mm-accent) 26%, var(--mm-bg-mute));
+  color: var(--mm-ink);
+}
+
+.lb-server-item--active .lb-server-item-icon {
+  color: var(--mm-accent);
+}
+
+.lb-picked-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--mm-accent) 14%, var(--mm-bg-mute));
+  border: 1px solid var(--mm-accent);
+  border-radius: 2px;
+}
+
+.lb-picked-strip--excl {
+  background: color-mix(in srgb, var(--mm-danger) 14%, var(--mm-bg-mute));
+  border-color: var(--mm-danger);
+}
+
+.lb-picked-strip-kicker {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-accent);
+  font-weight: 700;
+}
+
+.lb-picked-strip--excl .lb-picked-strip-kicker {
+  color: var(--mm-danger);
+}
+
+.lb-picked-strip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 72px;
+  overflow-y: auto;
+}
+
+.lb-picked-chip {
+  font-family: var(--mm-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: none;
+  border-radius: 2px;
+  background: var(--mm-accent);
+  color: var(--mm-highlight-ink);
+  cursor: pointer;
+}
+
+.lb-picked-chip span {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.lb-picked-chip:hover {
+  filter: brightness(1.08);
+}
+
+.lb-picked-chip--excl {
+  background: var(--mm-danger);
+  color: #fff;
 }
 
 .lb-server-item-icon {
@@ -2382,7 +2653,15 @@ const rankTintClass = (rank: number) => {
 }
 
 .lb-server-item--excluded {
-  color: var(--mm-danger);
+  color: var(--mm-ink);
+  background: color-mix(in srgb, var(--mm-danger) 16%, var(--mm-bg-mute));
+  box-shadow: inset 3px 0 0 var(--mm-danger);
+  font-weight: 600;
+}
+
+.lb-server-item--excluded:hover {
+  background: color-mix(in srgb, var(--mm-danger) 24%, var(--mm-bg-mute));
+  color: var(--mm-ink);
 }
 
 .lb-server-item--excluded .lb-server-item-name {
@@ -3303,7 +3582,7 @@ td {
   .lb-server-clear-btn {
     width: 44px;
     min-height: 44px;
-    font-size: 12px;
+    font-size: 22px;
   }
 
   .lb-controls-row > .lb-btn {
