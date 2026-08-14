@@ -11,6 +11,7 @@ import {
   Legend,
   type ChartOptions,
   type ChartData,
+  type Plugin,
 } from 'chart.js'
 import {
   fetchServerRankDistribution,
@@ -79,7 +80,6 @@ const loadDistribution = async () => {
     )
     data.value = res
 
-    // If a player is pinned, refresh their stats under the new filter parameters
     if (pinnedPlayer.value) {
       void refreshPinnedPlayerStats(pinnedPlayer.value.playerName)
     }
@@ -317,6 +317,146 @@ const chartData = computed<ChartData<'bar'>>(() => {
   }
 })
 
+// Column Callout Plugin drawing graphical badges directly above the columns
+const calloutPlugin = computed<Plugin<'bar'>>(() => {
+  return {
+    id: 'columnCallouts',
+    afterDatasetsDraw(chart: any) {
+      const { ctx, chartArea } = chart
+      if (!chartArea) return
+      const meta = chart.getDatasetMeta(0)
+      if (!meta || !meta.data || meta.data.length === 0) return
+
+      const dist = activeDist.value
+      if (!dist || !dist.bands) return
+
+      ctx.save()
+
+      const drawCalloutBadge = (
+        targetX: number,
+        targetY: number,
+        text: string,
+        bgColor: string,
+        textColor: string,
+        borderColor: string,
+        isPrimary: boolean = false,
+      ) => {
+        ctx.font = isPrimary
+          ? 'bold 11px var(--mm-font-mono, monospace)'
+          : '10px var(--mm-font-mono, monospace)'
+
+        const textMetrics = ctx.measureText(text)
+        const boxWidth = Math.max(textMetrics.width + 12, 36)
+        const boxHeight = 20
+        const radius = 3
+        const pointerH = 4
+
+        let boxX = targetX - boxWidth / 2
+        if (boxX < chartArea.left + 2) boxX = chartArea.left + 2
+        if (boxX + boxWidth > chartArea.right - 2) boxX = chartArea.right - boxWidth - 2
+
+        const boxY = Math.max(chartArea.top + 2, targetY - boxHeight - pointerH - 2)
+
+        if (isPrimary) {
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.4)'
+          ctx.shadowBlur = 6
+          ctx.shadowOffsetY = 2
+        } else {
+          ctx.shadowColor = 'transparent'
+        }
+
+        ctx.fillStyle = bgColor
+        ctx.strokeStyle = borderColor
+        ctx.lineWidth = isPrimary ? 1.5 : 1
+
+        ctx.beginPath()
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(boxX, boxY, boxWidth, boxHeight, radius)
+        } else {
+          ctx.rect(boxX, boxY, boxWidth, boxHeight)
+        }
+        ctx.fill()
+        ctx.stroke()
+
+        if (boxY + boxHeight <= targetY - pointerH + 1) {
+          ctx.beginPath()
+          ctx.moveTo(targetX - 4, boxY + boxHeight)
+          ctx.lineTo(targetX, targetY - 1)
+          ctx.lineTo(targetX + 4, boxY + boxHeight)
+          ctx.closePath()
+          ctx.fill()
+          ctx.stroke()
+        }
+
+        ctx.shadowColor = 'transparent'
+
+        ctx.fillStyle = textColor
+        ctx.textBaseline = 'middle'
+        ctx.font = isPrimary
+          ? 'bold 11px var(--mm-font-mono, monospace)'
+          : '10px var(--mm-font-mono, monospace)'
+        ctx.fillText(text, boxX + 6, boxY + boxHeight / 2 + 0.5)
+      }
+
+      // 1. Avg Column Callout
+      if (avgBandIndex.value >= 0 && avgBandIndex.value !== pinnedPlayerBandIndex.value) {
+        const bar = meta.data[avgBandIndex.value]
+        if (bar) {
+          const valStr = formatMetricValue(dist.average, activeMetric.value)
+          drawCalloutBadge(
+            bar.x,
+            bar.y,
+            `Avg: ${valStr}`,
+            '#1f2416',
+            '#a4b270',
+            '#6a753d',
+            false,
+          )
+        }
+      }
+
+      // 2. P95 Column Callout
+      if (p95BandIndex.value >= 0 && p95BandIndex.value !== pinnedPlayerBandIndex.value) {
+        const bar = meta.data[p95BandIndex.value]
+        if (bar) {
+          const valStr = formatMetricValue(dist.p95, activeMetric.value)
+          drawCalloutBadge(
+            bar.x,
+            bar.y,
+            `★ P95: ${valStr}`,
+            '#272b14',
+            '#c7d66d',
+            '#8f9c3f',
+            false,
+          )
+        }
+      }
+
+      // 3. Pinned Player Column Callout (Prominent Amber Pin)
+      if (pinnedPlayer.value && pinnedPlayerBandIndex.value >= 0) {
+        const bar = meta.data[pinnedPlayerBandIndex.value]
+        if (bar) {
+          const pName = $pn(pinnedPlayer.value.playerName)
+          const pVal = formatMetricValue(pinnedMetricValue.value, activeMetric.value)
+          drawCalloutBadge(
+            bar.x,
+            bar.y,
+            `📍 ${pName} (${pVal})`,
+            '#f0a04b',
+            '#121212',
+            '#ffffff',
+            true,
+          )
+        }
+      }
+
+      ctx.restore()
+    },
+  }
+})
+
+const chartPlugins = computed(() => [calloutPlugin.value])
+
 const chartOptions = computed<ChartOptions<'bar'>>(() => {
   const dist = activeDist.value
   const maxCount = dist?.bands ? Math.max(1, ...dist.bands.map(b => b.count)) : 1
@@ -324,6 +464,11 @@ const chartOptions = computed<ChartOptions<'bar'>>(() => {
   return {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        top: 28,
+      },
+    },
     scales: {
       x: {
         grid: { display: false },
@@ -345,7 +490,7 @@ const chartOptions = computed<ChartOptions<'bar'>>(() => {
           color: MM_CHART.inkMuted,
           font: { family: 'var(--mm-font-mono, monospace)', size: 10 },
         },
-        suggestedMax: Math.ceil(maxCount * 1.15),
+        suggestedMax: Math.ceil(maxCount * 1.35),
         beginAtZero: true,
       },
     },
@@ -378,13 +523,13 @@ const chartOptions = computed<ChartOptions<'bar'>>(() => {
             const idx = ctx.dataIndex
             const notes: string[] = []
             if (idx === pinnedPlayerBandIndex.value && pinnedPlayer.value) {
-              notes.push(`📍 ${$pn(pinnedPlayer.value.playerName)} (${formatMetricValue(pinnedMetricValue.value, activeMetric.value)}) is in this band`)
+              notes.push(`📍 ${$pn(pinnedPlayer.value.playerName)} (${formatMetricValue(pinnedMetricValue.value, activeMetric.value)}) is in this column`)
             }
             if (idx === avgBandIndex.value && dist) {
-              notes.push(`⚡ Contains Server Avg (${formatMetricValue(dist.average, activeMetric.value)})`)
+              notes.push(`⚡ Server Avg: ${formatMetricValue(dist.average, activeMetric.value)}`)
             }
             if (idx === p95BandIndex.value && dist) {
-              notes.push(`★ Contains 95th Percentile (${formatMetricValue(dist.p95, activeMetric.value)})`)
+              notes.push(`★ 95th Percentile: ${formatMetricValue(dist.p95, activeMetric.value)}`)
             }
             return notes.join('\n')
           },
@@ -402,15 +547,15 @@ defineExpose({
 
 <template>
   <div class="mm-rank-dist">
-    <!-- Header with title -->
+    <!-- Standard Header bar (Pure Typography on Olive Anchor Strip) -->
     <div class="mm-pbar">
       <span class="mm-pbar__t"># Rank distribution</span>
-      <span class="mm-pbar__m">player performance curve · {{ selectedDays }}d window</span>
+      <span class="mm-pbar__m">{{ activeDist?.metricName ?? 'Performance curve' }} · {{ selectedDays }}d window</span>
     </div>
 
-    <!-- Controls Row: Metric Switcher + Filters -->
+    <!-- Controls Row on Dark Surface (Metric tabs + High-contrast Search + Filters) -->
     <div class="mm-rank-dist__controls-row">
-      <!-- Metric Switcher Tabs -->
+      <!-- Left: Metric Switcher Tabs -->
       <div class="mm-subtabs mm-rank-dist__metric-subtabs">
         <button
           v-for="tab in metricTabs"
@@ -422,8 +567,55 @@ defineExpose({
         >{{ tab.label }}</button>
       </div>
 
-      <!-- Filters: Min rounds & Window -->
+      <!-- Right: Search Input + Filters Group -->
       <div class="mm-rank-dist__filters-group">
+        <!-- Player Benchmark Search Input (Crisp White Typography on Dark Surface) -->
+        <div ref="searchWrapRef" class="mm-rank-dist__search-wrap">
+          <label class="mm-search mm-rank-dist__search">
+            <svg class="mm-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              v-model="playerSearchQuery"
+              type="text"
+              class="mm-search__input mm-rank-dist__input"
+              placeholder="Plot player on curve…"
+              @input="handlePlayerSearchInput"
+              @focus="showSearchDropdown = playerSearchResults.length > 0"
+            />
+            <button
+              v-if="playerSearchQuery"
+              type="button"
+              class="mm-search__clear mm-rank-dist__clear-btn"
+              title="Clear search"
+              @click="clearPlayerSearch"
+            >×</button>
+          </label>
+
+          <!-- Autocomplete Dropdown on Dark Surface -->
+          <div v-if="showSearchDropdown && (playerSearchResults.length > 0 || playerSearchLoading)" class="mm-rank-dist__dropdown">
+            <div v-if="playerSearchLoading" class="mm-rank-dist__dropdown-item is-loading">
+              Searching players on this server…
+            </div>
+            <div
+              v-for="item in playerSearchResults"
+              :key="item.playerName"
+              class="mm-rank-dist__dropdown-item"
+              @click="pinPlayer(item)"
+            >
+              <div class="mm-rank-dist__dd-name">
+                <span class="mm-list__rank">#{{ item.rank }}</span>
+                <span class="mm-list__name-primary">{{ $pn(item.playerName) }}</span>
+              </div>
+              <div class="mm-rank-dist__dd-stats">
+                <span :class="kdClass(item.kdRatio)">{{ item.kdRatio.toFixed(2) }} K/D</span>
+                <span class="is-muted">· {{ item.totalRounds }} rnds</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Min rounds filter -->
         <div class="mm-rank-dist__filter">
           <span class="mm-rank-dist__filter-label">Min rounds</span>
@@ -458,59 +650,10 @@ defineExpose({
       </div>
     </div>
 
-    <!-- Player Benchmark Search Input -->
-    <div class="mm-rank-dist__search-bar">
-      <div ref="searchWrapRef" class="mm-rank-dist__search-wrap">
-        <label class="mm-search mm-rank-dist__search">
-          <svg class="mm-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          <input
-            v-model="playerSearchQuery"
-            type="text"
-            class="mm-search__input"
-            placeholder="Benchmark a player on curve (type name)…"
-            @input="handlePlayerSearchInput"
-            @focus="showSearchDropdown = playerSearchResults.length > 0"
-          />
-          <button
-            v-if="playerSearchQuery"
-            type="button"
-            class="mm-search__clear"
-            title="Clear search"
-            @click="clearPlayerSearch"
-          >×</button>
-        </label>
-
-        <!-- Dropdown Suggestions -->
-        <div v-if="showSearchDropdown && (playerSearchResults.length > 0 || playerSearchLoading)" class="mm-rank-dist__dropdown">
-          <div v-if="playerSearchLoading" class="mm-rank-dist__dropdown-item is-loading">
-            Searching players on this server…
-          </div>
-          <div
-            v-for="item in playerSearchResults"
-            :key="item.playerName"
-            class="mm-rank-dist__dropdown-item"
-            @click="pinPlayer(item)"
-          >
-            <div class="mm-rank-dist__dd-name">
-              <span class="mm-list__rank">#{{ item.rank }}</span>
-              <span class="mm-list__name-primary">{{ $pn(item.playerName) }}</span>
-            </div>
-            <div class="mm-rank-dist__dd-stats">
-              <span :class="kdClass(item.kdRatio)">{{ item.kdRatio.toFixed(2) }} K/D</span>
-              <span class="is-muted">· {{ item.totalRounds }} rnds</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Loading skeleton -->
     <div v-if="loading" class="mm-panel__body">
       <div class="mm-rank-dist__kpis">
-        <div v-for="i in 5" :key="i" class="mm-skeleton" style="height: 60px" />
+        <div v-for="i in 5" :key="i" class="mm-skeleton" style="height: 48px" />
       </div>
       <div class="mm-skeleton" style="height: 220px; margin-top: 14px" />
     </div>
@@ -523,106 +666,33 @@ defineExpose({
 
     <!-- Empty state -->
     <div v-else-if="!data || data.totalPlayers === 0" class="mm-empty" style="border: 0; padding: 24px 0">
-      No player activity recorded on this server for the selected window and round criteria.
+      No player activity recorded on this server for the selected criteria.
     </div>
 
-    <!-- Main Content: KPIs + Pinned Player Card + Distribution Bar Chart -->
+    <!-- Main Content: Graphical Distribution Bar Chart + Callouts + Compact Metrics -->
     <div v-else-if="activeDist" class="mm-rank-dist__content" :class="{ 'is-refreshing': isRefreshing }">
-      <!-- Pinned Player Benchmark Banner -->
-      <div v-if="pinnedPlayer" class="mm-rank-dist__benchmark-banner">
-        <div class="mm-rank-dist__bm-player">
-          <div class="mm-rank-dist__bm-pin">
-            <span class="mm-rank-dist__bm-dot" />
-            <span>Pinned benchmark</span>
-          </div>
-          <div class="mm-rank-dist__bm-name">{{ $pn(pinnedPlayer.playerName) }}</div>
-          <div class="mm-rank-dist__bm-meta">
-            Rank #{{ pinnedPlayer.rank }} of {{ data.totalPlayers }} · {{ pinnedPlayer.totalRounds }} rounds
-          </div>
-        </div>
-
-        <div class="mm-rank-dist__bm-stats">
-          <div class="mm-rank-dist__bm-stat">
-            <span class="mm-rank-dist__bm-label">Player {{ activeDist.metricName }}</span>
-            <span class="mm-stat__value mm-rank-dist__bm-val">{{ formatMetricValue(pinnedMetricValue, activeMetric) }}</span>
-          </div>
-
-          <div class="mm-rank-dist__bm-stat">
-            <span class="mm-rank-dist__bm-label">vs Server Avg</span>
-            <span
-              class="mm-rank-dist__bm-diff"
-              :class="pinnedDiffAvg != null && pinnedDiffAvg >= 0 ? 'mm-bm-diff--pos' : 'mm-bm-diff--neg'"
-            >
-              {{ formatDiff(pinnedDiffAvg, activeMetric) }}
-            </span>
-          </div>
-
-          <div class="mm-rank-dist__bm-stat">
-            <span class="mm-rank-dist__bm-label">vs P95 (Top 5%)</span>
-            <span
-              class="mm-rank-dist__bm-diff"
-              :class="pinnedDiffP95 != null && pinnedDiffP95 >= 0 ? 'mm-bm-diff--elite' : 'mm-bm-diff--neg'"
-            >
-              {{ formatDiff(pinnedDiffP95, activeMetric) }}
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          class="mm-btn mm-btn--inline mm-rank-dist__bm-clear"
-          title="Unpin player"
-          @click="clearPinnedPlayer"
-        >✕ Unpin</button>
+      <!-- Pinned Player Graphical Tag Strip -->
+      <div v-if="pinnedPlayer" class="mm-rank-dist__pinned-chip">
+        <span class="mm-rank-dist__pin-icon">📍</span>
+        <span class="mm-rank-dist__pin-name">{{ $pn(pinnedPlayer.playerName) }}</span>
+        <span class="mm-rank-dist__pin-val">{{ formatMetricValue(pinnedMetricValue, activeMetric) }}</span>
+        <span
+          class="mm-rank-dist__pin-tag"
+          :class="pinnedDiffAvg != null && pinnedDiffAvg >= 0 ? 'is-pos' : 'is-neg'"
+        >
+          {{ formatDiff(pinnedDiffAvg, activeMetric) }} vs avg
+        </span>
+        <span v-if="pinnedDiffP95 != null && pinnedDiffP95 >= 0" class="mm-rank-dist__pin-tag is-elite">
+          ★ Top 5%
+        </span>
+        <span class="mm-rank-dist__pin-meta">Rank #{{ pinnedPlayer.rank }} · {{ pinnedPlayer.totalRounds }} rnds</span>
+        <button type="button" class="mm-rank-dist__pin-clear" title="Unpin player" @click="clearPinnedPlayer">✕</button>
       </div>
 
-      <!-- KPI stats grid -->
-      <div class="mm-stats mm-rank-dist__kpis">
-        <div class="mm-stats__cell">
-          <div class="mm-stats__label">Server average</div>
-          <div class="mm-stat__value" :class="activeMetric === 'kd' ? kdClass(activeDist.average) : ''">
-            {{ formatMetricValue(activeDist.average, activeMetric) }}
-          </div>
-          <div class="mm-stat__delta">overall mean</div>
-        </div>
-
-        <div class="mm-stats__cell mm-rank-dist__cell--p95">
-          <div class="mm-stats__label">95th percentile (P95)</div>
-          <div class="mm-stat__value mm-rank-dist__val--p95">
-            {{ formatMetricValue(activeDist.p95, activeMetric) }}
-          </div>
-          <div class="mm-stat__delta">top 5% threshold</div>
-        </div>
-
-        <div class="mm-stats__cell">
-          <div class="mm-stats__label">Median (P50)</div>
-          <div class="mm-stat__value">
-            {{ formatMetricValue(activeDist.median, activeMetric) }}
-          </div>
-          <div class="mm-stat__delta">50th percentile</div>
-        </div>
-
-        <div class="mm-stats__cell">
-          <div class="mm-stats__label">Peak / Max</div>
-          <div class="mm-stat__value">
-            {{ formatMetricValue(activeDist.max, activeMetric) }}
-          </div>
-          <div class="mm-stat__delta">top player record</div>
-        </div>
-
-        <div class="mm-stats__cell mm-list__col--hide-sm">
-          <div class="mm-stats__label">Ranked sample</div>
-          <div class="mm-stat__value">
-            {{ data.totalPlayers.toLocaleString() }}
-          </div>
-          <div class="mm-stat__delta">qualified players</div>
-        </div>
-      </div>
-
-      <!-- Vertical Distribution Bar Chart -->
+      <!-- Vertical Distribution Bar Chart with Graphical Column Callouts -->
       <div class="mm-rank-dist__chart-wrap">
         <div class="mm-rank-dist__chart-canvas">
-          <Bar :data="chartData" :options="chartOptions" />
+          <Bar :data="chartData" :options="chartOptions" :plugins="chartPlugins" />
         </div>
 
         <!-- Legend / Indicators -->
@@ -645,6 +715,40 @@ defineExpose({
           </div>
         </div>
       </div>
+
+      <!-- Minimal Compact KPI Strip -->
+      <div class="mm-rank-dist__kpi-bar">
+        <div class="mm-rank-dist__kpi-item">
+          <span class="mm-rank-dist__kpi-label">Average</span>
+          <span class="mm-rank-dist__kpi-val" :class="activeMetric === 'kd' ? kdClass(activeDist.average) : ''">
+            {{ formatMetricValue(activeDist.average, activeMetric) }}
+          </span>
+        </div>
+        <div class="mm-rank-dist__kpi-item mm-rank-dist__kpi-item--p95">
+          <span class="mm-rank-dist__kpi-label">95th % (P95)</span>
+          <span class="mm-rank-dist__kpi-val mm-rank-dist__kpi-val--p95">
+            {{ formatMetricValue(activeDist.p95, activeMetric) }}
+          </span>
+        </div>
+        <div class="mm-rank-dist__kpi-item">
+          <span class="mm-rank-dist__kpi-label">Median (P50)</span>
+          <span class="mm-rank-dist__kpi-val">
+            {{ formatMetricValue(activeDist.median, activeMetric) }}
+          </span>
+        </div>
+        <div class="mm-rank-dist__kpi-item">
+          <span class="mm-rank-dist__kpi-label">Peak</span>
+          <span class="mm-rank-dist__kpi-val">
+            {{ formatMetricValue(activeDist.max, activeMetric) }}
+          </span>
+        </div>
+        <div class="mm-rank-dist__kpi-item mm-list__col--hide-sm">
+          <span class="mm-rank-dist__kpi-label">Sample</span>
+          <span class="mm-rank-dist__kpi-val">
+            {{ data.totalPlayers.toLocaleString() }}
+          </span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -654,8 +758,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--mm-rule, rgba(255, 255, 255, 0.08));
-  padding-bottom: 18px;
-  margin-bottom: 18px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
 }
 
 .mm-rank-dist__controls-row {
@@ -665,13 +769,113 @@ defineExpose({
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px 0;
+  background: var(--mm-surface, #181818);
 }
 
 .mm-rank-dist__filters-group {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+}
+
+/* High-Contrast Search Input on Dark Panel Body */
+.mm-rank-dist__search-wrap {
+  position: relative;
+  width: 200px;
+}
+
+.mm-rank-dist__search {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.mm-rank-dist__search:focus-within {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #f0a04b;
+}
+
+.mm-rank-dist__search .mm-search__icon {
+  color: #cccccc;
+}
+
+.mm-rank-dist__input {
+  color: #ffffff !important;
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 11px !important;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
+.mm-rank-dist__input::placeholder {
+  color: #a0a0a0 !important;
+  opacity: 1;
+}
+
+.mm-rank-dist__clear-btn {
+  color: #ffffff !important;
+}
+
+.mm-rank-dist__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 280px;
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.mm-rank-dist__dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.1s ease;
+}
+
+.mm-rank-dist__dropdown-item:last-child {
+  border-bottom: 0;
+}
+
+.mm-rank-dist__dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mm-rank-dist__dropdown-item.is-loading {
+  cursor: default;
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 11px;
+  color: #a0a0a0;
+  padding: 10px;
+}
+
+.mm-rank-dist__dd-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mm-rank-dist__dd-stats {
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .mm-rank-dist__filter {
@@ -685,192 +889,87 @@ defineExpose({
   font-size: 10.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--mm-ink-soft, #b3b3b3);
+  color: #e0e0e0;
+  font-weight: 600;
+}
+
+/* Pinned Player Compact Chip */
+.mm-rank-dist__pinned-chip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: rgba(240, 160, 75, 0.12);
+  border: 1px solid rgba(240, 160, 75, 0.45);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 11.5px;
+  color: #ffffff;
+  width: fit-content;
+}
+
+.mm-rank-dist__pin-icon {
+  font-size: 12px;
+}
+
+.mm-rank-dist__pin-name {
+  font-family: var(--mm-font-display, sans-serif);
+  font-weight: 600;
+  color: #f0a04b;
+}
+
+.mm-rank-dist__pin-val {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.mm-rank-dist__pin-tag {
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 2px;
   font-weight: 500;
 }
 
-.mm-rank-dist__search-bar {
-  padding: 10px 14px 0;
+.mm-rank-dist__pin-tag.is-pos {
+  background: rgba(154, 166, 102, 0.25);
+  color: #b8c77e;
 }
 
-.mm-rank-dist__search-wrap {
-  position: relative;
-  width: 100%;
-  max-width: 380px;
+.mm-rank-dist__pin-tag.is-neg {
+  background: rgba(255, 255, 255, 0.08);
+  color: #b8b8b8;
 }
 
-.mm-rank-dist__search {
-  width: 100%;
+.mm-rank-dist__pin-tag.is-elite {
+  background: rgba(180, 192, 96, 0.3);
+  color: #d6e676;
+  font-weight: 600;
 }
 
-.mm-rank-dist__dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: var(--mm-surface, #181818);
-  border: 1px solid var(--mm-rule-strong, rgba(255, 255, 255, 0.15));
-  border-radius: 4px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  max-height: 260px;
-  overflow-y: auto;
-  z-index: 50;
+.mm-rank-dist__pin-meta {
+  color: #a8a8a8;
+  font-size: 10.5px;
 }
 
-.mm-rank-dist__dropdown-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
+.mm-rank-dist__pin-clear {
+  background: none;
+  border: none;
+  color: #f0a04b;
   cursor: pointer;
-  border-bottom: 1px solid var(--mm-rule, rgba(255, 255, 255, 0.04));
-  transition: background 0.1s ease;
-}
-
-.mm-rank-dist__dropdown-item:last-child {
-  border-bottom: 0;
-}
-
-.mm-rank-dist__dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.mm-rank-dist__dropdown-item.is-loading {
-  cursor: default;
-  font-family: var(--mm-font-mono, monospace);
-  font-size: 11px;
-  color: var(--mm-ink-muted, #8a8a8a);
-  padding: 12px;
-}
-
-.mm-rank-dist__dd-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  padding: 0 4px;
   font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  opacity: 0.85;
 }
-
-.mm-rank-dist__dd-stats {
-  font-family: var(--mm-font-mono, monospace);
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Pinned Player Benchmark Banner */
-.mm-rank-dist__benchmark-banner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  background: rgba(240, 160, 75, 0.08);
-  border: 1px solid rgba(240, 160, 75, 0.28);
-  border-radius: 4px;
-  padding: 10px 14px;
-}
-
-.mm-rank-dist__bm-player {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mm-rank-dist__bm-pin {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mm-font-mono, monospace);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #f0a04b;
-  font-weight: 600;
-}
-
-.mm-rank-dist__bm-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #f0a04b;
-}
-
-.mm-rank-dist__bm-name {
-  font-family: var(--mm-font-display, sans-serif);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--mm-ink, #ffffff);
-}
-
-.mm-rank-dist__bm-meta {
-  font-family: var(--mm-font-mono, monospace);
-  font-size: 11px;
-  color: var(--mm-ink-muted, #8a8a8a);
-}
-
-.mm-rank-dist__bm-stats {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-}
-
-.mm-rank-dist__bm-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mm-rank-dist__bm-label {
-  font-family: var(--mm-font-mono, monospace);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted, #8a8a8a);
-}
-
-.mm-rank-dist__bm-val {
-  font-size: 15px;
-  color: #f0a04b;
-  font-weight: 700;
-}
-
-.mm-rank-dist__bm-diff {
-  font-family: var(--mm-font-mono, monospace);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.mm-bm-diff--pos {
-  color: var(--mm-accent-soft, #9aa666);
-}
-
-.mm-bm-diff--elite {
-  color: var(--mm-elite, #b4c060);
-}
-
-.mm-bm-diff--neg {
-  color: var(--mm-ink-muted, #8a8a8a);
-}
-
-.mm-rank-dist__bm-clear {
-  border-color: rgba(240, 160, 75, 0.4);
-  color: #f0a04b;
-}
-.mm-rank-dist__bm-clear:hover {
-  background: rgba(240, 160, 75, 0.15);
-  border-color: #f0a04b;
+.mm-rank-dist__pin-clear:hover {
+  opacity: 1;
 }
 
 .mm-rank-dist__content {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px 14px 4px;
+  gap: 10px;
+  padding: 12px 14px 2px;
   transition: opacity 0.15s ease;
 }
 
@@ -879,24 +978,15 @@ defineExpose({
   pointer-events: none;
 }
 
-.mm-rank-dist__kpis {
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 10px;
-}
-
-.mm-rank-dist__val--p95 {
-  color: var(--mm-elite, #b4c060);
-}
-
 .mm-rank-dist__chart-wrap {
   background: var(--mm-surface-soft, rgba(255, 255, 255, 0.02));
   border: 1px solid var(--mm-rule, rgba(255, 255, 255, 0.06));
   border-radius: 4px;
-  padding: 14px 14px 10px;
+  padding: 10px 14px 8px;
 }
 
 .mm-rank-dist__chart-canvas {
-  height: 210px;
+  height: 230px;
   width: 100%;
 }
 
@@ -906,12 +996,12 @@ defineExpose({
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
-  margin-top: 10px;
-  padding-top: 8px;
+  margin-top: 8px;
+  padding-top: 6px;
   border-top: 1px solid var(--mm-rule, rgba(255, 255, 255, 0.04));
   font-family: var(--mm-font-mono, monospace);
-  font-size: 11px;
-  color: var(--mm-ink-muted, #8a8a8a);
+  font-size: 10.5px;
+  color: #a8a8a8;
 }
 
 .mm-rank-dist__legend-item {
@@ -931,6 +1021,43 @@ defineExpose({
   display: inline-block;
 }
 
+/* Minimal Compact KPI Strip */
+.mm-rank-dist__kpi-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: var(--mm-font-mono, monospace);
+}
+
+.mm-rank-dist__kpi-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.mm-rank-dist__kpi-label {
+  color: #a0a0a0;
+  text-transform: uppercase;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+
+.mm-rank-dist__kpi-val {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.mm-rank-dist__kpi-val--p95 {
+  color: #d6e676;
+}
+
 @media (max-width: 768px) {
   .mm-rank-dist__controls-row {
     flex-direction: column;
@@ -938,17 +1065,20 @@ defineExpose({
   }
   .mm-rank-dist__filters-group {
     width: 100%;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .mm-rank-dist__search-wrap {
+    width: 100%;
+  }
+  .mm-rank-dist__dropdown {
+    width: 100%;
   }
   .mm-rank-dist__chart-canvas {
-    height: 180px;
+    height: 190px;
   }
   .mm-rank-dist__legend {
     justify-content: flex-start;
-  }
-  .mm-rank-dist__benchmark-banner {
-    flex-direction: column;
-    align-items: flex-start;
   }
 }
 </style>
