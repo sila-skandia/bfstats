@@ -2226,14 +2226,11 @@ public class DataExplorerService(
         var startYear = cutoffDate.Year;
         var startMonth = cutoffDate.Month;
 
-        // First check if player exists
-        var playerExists = await dbContext.PlayerMapStats
-            .AsNoTracking()
-            .Where(p => p.PlayerName == playerName)
-            .AnyAsync();
-
-        if (!playerExists)
-            return null;
+        // No separate existence check. It was a third round trip to the database
+        // to answer a question the main query below already answers — an unknown
+        // player produces no rows, and `!playerMapStats.Any()` returns null just
+        // the same. On a page where this endpoint is already the slowest call on
+        // the site, a redundant scan of PlayerMapStats is not free.
 
         // Get current rankings for all maps the player has played.
         //

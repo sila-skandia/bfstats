@@ -275,12 +275,6 @@ const deleteFileConfirmation = ref<{ id: number; name: string } | null>(null);
 const isProcessing = ref(false);
 
 // Formatting & Helpers
-const formatDate = (dateString: string): string => {
-  if (!dateString) return '—';
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
-};
-
 const copyUrl = (url: string) => {
   if (navigator?.clipboard?.writeText) {
     void navigator.clipboard.writeText(url);

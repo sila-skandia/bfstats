@@ -1,36 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, provide, computed, defineAsyncComponent } from 'vue';
-import { useRoute } from 'vue-router';
-
-// Async on purpose. This renders only for /tournaments/* and /alias-detection
-// (see useStandaloneShell below), but a static import put it — and its Sidebar,
-// and the primeicons font-face CSS that Sidebar pulls in — into the entry bundle
-// that every V4 page load parses before it can paint. Lazy keeps ~9KB of icon CSS
-// out of the render-blocking main stylesheet for the routes that never show it.
-const DashboardLayout = defineAsyncComponent(() => import('./layouts/DashboardLayout.vue'));
+import { ref, onMounted, watch, provide } from 'vue';
 import { initializeBadgeDefinitions } from './services/badgeService';
 import { useSignalR } from '@/composables/useSignalR';
 import { useNotifications } from '@/composables/useNotifications';
-import { createAIContext } from '@/composables/useAIContext';
 
-// V4 pages render their own ModernShell. Only the public tournament,
-// tournament-admin, and alias-detection pages still use the legacy
-// DashboardLayout. /admin/data was migrated to V4 (see
-// features/admin-v4-migration/) so /admin/ alone no longer implies
-// legacy — we narrow the prefix to /admin/tournaments/.
-const route = useRoute();
-const useStandaloneShell = computed(() => {
-  const path = route.path;
-  if (path.startsWith('/tournaments/')) return false;
-  if (path === '/alias-detection') return false;
-  return true;
-});
-
-// The legacy dark slate body background bleeds through on overscroll —
-// flip the body class so v4 sits on its own cream backdrop.
-watch(useStandaloneShell, (val) => {
-  document.body.classList.toggle('mm-body', val);
-}, { immediate: false });
+// Modern minimal dark surface backdrop
+document.body.classList.add('mm-body');
 
 // Dark mode state
 const isDarkMode = ref(false);
@@ -40,9 +15,6 @@ useSignalR();
 
 // Initialize notifications
 useNotifications();
-
-// Initialize AI context
-createAIContext();
 
 // Function to toggle dark mode
 const toggleDarkMode = () => {
@@ -80,11 +52,6 @@ onMounted(async () => {
   // Apply initial theme
   updateTheme();
 
-  // Match initial body class to current route. index.html pre-paints with
-  // mm-body so V4/standalone routes have no flash; here we strip it for
-  // the legacy DashboardLayout paths.
-  document.body.classList.toggle('mm-body', useStandaloneShell.value);
-
   // Listen for system preference changes
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
     // Only update if user hasn't set a preference
@@ -93,7 +60,6 @@ onMounted(async () => {
       updateTheme();
     }
   });
-
 });
 
 // Watch for changes to isDarkMode
@@ -107,8 +73,7 @@ provide('toggleDarkMode', toggleDarkMode);
 </script>
 
 <template>
-  <router-view v-if="useStandaloneShell" />
-  <DashboardLayout v-else />
+  <router-view />
 </template>
 
 <style>

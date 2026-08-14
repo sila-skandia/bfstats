@@ -136,7 +136,6 @@ const {
   logoImageUrl,
   tournamentId,
   themeVars,
-  getBackgroundColor,
   getTextColor,
   getTextMutedColor,
   getAccentColor,

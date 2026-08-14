@@ -116,10 +116,6 @@ import { type PublicTournamentMatch } from '@/services/publicTournamentService'
 import { usePublicTournamentPage } from '@/composables/usePublicTournamentPage'
 import { notificationService } from '@/services/notificationService'
 
-interface MatchItem {
-  match: PublicTournamentMatch
-}
-
 const { comparePlayers } = usePlayerComparison()
 
 const {
@@ -130,7 +126,6 @@ const {
   logoImageUrl,
   tournamentId,
   themeVars,
-  getAccentColorWithOpacity,
   getBackgroundColor,
   getBackgroundSoftColor,
   getBackgroundMuteColor,
@@ -151,94 +146,6 @@ const allMatches = computed(() => {
   })
   return flattened
 })
-
-const allMatchesByWeek = computed(() => {
-  if (!tournament.value?.matchesByWeek) return []
-
-  // Check if there's only one week group with null week value
-  const hasOnlyOneNullWeek = tournament.value.matchesByWeek.length === 1 && tournament.value.matchesByWeek[0].week === null
-
-  return tournament.value.matchesByWeek
-    .map(group => ({
-      week: group.week,
-      hideWeekHeader: hasOnlyOneNullWeek,
-      matches: group.matches.map(match => ({ match }))
-    }))
-    .filter(group => group.matches.length > 0)
-})
-
-const formatMatchDate = (dateStr: string): string => {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' +
-         date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-}
-
-const getMatchWinner = (match: PublicTournamentMatch): 'team1' | 'team2' | 'tie' => {
-  if (!match.maps || match.maps.length === 0) return 'tie'
-
-  let team1RoundsWon = 0
-  let team2RoundsWon = 0
-
-  match.maps.forEach(map => {
-    if (map.matchResults && map.matchResults.length > 0) {
-      const lastRound = map.matchResults[map.matchResults.length - 1]
-      if (lastRound.team1Tickets > lastRound.team2Tickets) team1RoundsWon++
-      else if (lastRound.team2Tickets > lastRound.team1Tickets) team2RoundsWon++
-    }
-  })
-
-  if (team1RoundsWon > team2RoundsWon) return 'team1'
-  if (team2RoundsWon > team1RoundsWon) return 'team2'
-  return 'tie'
-}
-
-const getFormattedScore = (map: any): string => {
-  if (!map.matchResults || map.matchResults.length === 0) return '—'
-
-  const results = map.matchResults
-  const lastRound = results[results.length - 1]
-
-  const team1Tickets = lastRound.team1Tickets
-  const team2Tickets = lastRound.team2Tickets
-
-  return `${team1Tickets} – ${team2Tickets} (${results.length} – ${results.length})`
-}
-
-const getResultsAggregation = (match: PublicTournamentMatch, mapId?: number): string => {
-  if (!match.maps || match.maps.length === 0) return '0 – 0'
-
-  const mapsToUse = mapId ? match.maps.filter(m => m.id === mapId) : match.maps
-
-  let team1Total = 0
-  let team2Total = 0
-
-  mapsToUse.forEach(map => {
-    if (map.matchResults && map.matchResults.length > 0) {
-      const lastRound = map.matchResults[map.matchResults.length - 1]
-      team1Total += lastRound.team1Tickets
-      team2Total += lastRound.team2Tickets
-    }
-  })
-
-  return `${team1Total} – ${team2Total}`
-}
-
-const getWeekDateRange = (week: string | null, matches: MatchItem[]): string => {
-  if (!matches || matches.length === 0) return week || 'Unscheduled'
-
-  const dates = matches
-    .map(m => new Date(m.match.scheduledDate).getTime())
-    .filter(d => !isNaN(d))
-
-  if (dates.length === 0) return week || 'Unscheduled'
-
-  const minDate = new Date(Math.min(...dates))
-  const maxDate = new Date(Math.max(...dates))
-
-  const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-
-  return `${formatDate(minDate)} - ${formatDate(maxDate)}`
-}
 
 const openMatchupModal = (match: PublicTournamentMatch) => {
   selectedMatch.value = match

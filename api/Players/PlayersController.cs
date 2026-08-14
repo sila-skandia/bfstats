@@ -109,6 +109,7 @@ public class PlayersController(
 
     // Get detailed player statistics
     [HttpGet("{playerName}")]
+    [ResponseCache(Duration = 300, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<PlayerTimeStatistics>> GetPlayerStats(string playerName)
     {
         if (string.IsNullOrWhiteSpace(playerName))
@@ -211,6 +212,7 @@ public class PlayersController(
     }
 
     [HttpGet("{playerName}/map-stats")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<List<ServerStatistics>>> GetPlayerMapStats(
         string playerName,
         [FromQuery] string game = "bf1942",

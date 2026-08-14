@@ -254,12 +254,6 @@ const deleteWeekConfirmation = ref<{ id: number; name: string } | null>(null);
 const isProcessing = ref(false);
 
 // Formatting & Helpers
-const formatDate = (dateString: string): string => {
-  if (!dateString) return '—';
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
-};
-
 const formatDateOnly = (dateString: string): string => {
   if (!dateString) return '—';
   const date = new Date(dateString);
@@ -331,7 +325,8 @@ const submitForm = async () => {
 };
 
 // Delete handlers
-const confirmDeleteWeek = (weekId: number, weekName: string) => {
+const confirmDeleteWeek = (weekId: number | undefined, weekName: string) => {
+  if (!weekId) return;
   deleteWeekConfirmation.value = { id: weekId, name: weekName };
 };
 
