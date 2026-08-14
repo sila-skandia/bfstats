@@ -65,7 +65,7 @@ const navigateToRoundReport = (session: Session) => {
         <span class="mm-session-row__chip">{{ resultLabel(session.teamResult) }}</span>
         <span class="mm-session-row__map">{{ session.mapName }}</span>
         <span class="mm-session-row__date">{{ formatDate(session.startTime) }}</span>
-        <span class="mm-session-row__server">{{ session.serverName }}</span>
+        <span class="mm-session-row__server">{{ $pn(session.serverName) }}</span>
         <span class="mm-session-row__stats">
           {{ session.totalScore.toLocaleString() }}
           <span class="mm-num__sep">·</span>
@@ -104,7 +104,7 @@ const navigateToRoundReport = (session: Session) => {
           <td class="mm-list__name-cell">
             <div class="mm-list__name">
               <span class="mm-list__name-primary">{{ session.mapName }}</span>
-              <span class="mm-list__name-sub">{{ session.serverName }}</span>
+              <span class="mm-list__name-sub">{{ $pn(session.serverName) }}</span>
             </div>
           </td>
           <td class="is-num" data-cell-label="Score">{{ session.totalScore.toLocaleString() }}</td>
