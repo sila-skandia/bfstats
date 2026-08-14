@@ -58,6 +58,19 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
   },
   server: {
+    watch: {
+      // Playwright writes its report, traces, screenshots and videos into this
+      // directory while the E2E suite is running. Without these ignores every
+      // artifact write trips the watcher and pushes an HMR page reload into the
+      // browsers that are mid-test — which both slows the run down and fails
+      // tests outright. It is self-reinforcing: a failure writes a trace, the
+      // trace reloads another page, that test fails too.
+      ignored: [
+        '**/playwright-report/**',
+        '**/test-results/**',
+        '**/dist/**',
+      ],
+    },
     proxy: {
       // Proxy API requests to the backend during development
       '/api': {
