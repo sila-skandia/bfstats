@@ -201,7 +201,7 @@ class AuthService {
       const payload = this.parseJwt(token);
       const currentTime = Math.floor(Date.now() / 1000);
       return payload.exp < currentTime;
-    } catch (error) {
+    } catch {
       return true;
     }
   }
@@ -210,7 +210,7 @@ class AuthService {
     try {
       const payload = this.parseJwt(token);
       return payload.exp * 1000; // Convert to milliseconds
-    } catch (error) {
+    } catch {
       return null;
     }
   }
