@@ -322,14 +322,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue';
-import { marked } from 'marked';
 import { adminTournamentService, type TournamentDetail } from '@/services/adminTournamentService';
-import MarkdownHelpModal from '@/components/tournament-admin/MarkdownHelpModal.vue';
-
-interface PlayerSearchResult {
-  playerName: string;
-  totalPlayTimeMinutes: number;
-}
 
 const props = defineProps<{
   tournament: TournamentDetail;
@@ -339,15 +332,10 @@ const emit = defineEmits<{
   (e: 'refresh'): void;
 }>();
 
-// View state: 'list', 'editDetails', or 'editTheme'
-type ViewState = 'list' | 'editDetails' | 'editTheme';
-const currentView = ref<ViewState>('list');
-
 // Edit Panel State
 const formLoading = ref(false);
 const formError = ref<string | null>(null);
 const saveSuccess = ref(false);
-const showMarkdownHelp = ref(false);
 const formData = ref({
   name: '',
   slug: '',
@@ -367,7 +355,6 @@ const formData = ref({
 });
 
 // Theme Panel State
-const themeLoading = ref(false);
 const themeError = ref<string | null>(null);
 const themeData = ref({
   backgroundColour: '#000000',
@@ -519,12 +506,6 @@ const populateForm = () => {
 
 watch(() => props.tournament, populateForm, { immediate: true });
 
-// Player search state
-const playerSuggestions = ref<PlayerSearchResult[]>([]);
-const showPlayerDropdown = ref(false);
-let searchTimeout: number | null = null;
-let blurTimeout: number | null = null;
-
 const heroImageUrl = computed(() => {
   if (heroImagePreview.value) return heroImagePreview.value;
   return null;
@@ -534,61 +515,6 @@ const logoImageUrl = computed(() => {
   if (logoImagePreview.value) return logoImagePreview.value;
   return null;
 });
-
-// Computed
-const renderedRules = computed(() => {
-  if (!props.tournament?.rules || !props.tournament.rules.trim()) {
-    return '';
-  }
-  try {
-    return marked(props.tournament.rules, { breaks: true });
-  } catch {
-    return '<p class="text-red-400">Invalid markdown in rules</p>';
-  }
-});
-
-// Helpers
-const getGameLabel = (game: string): string => {
-  const labels: Record<string, string> = {
-    'bf1942': 'Battlefield 1942',
-    'fh2': 'Forgotten Hope 2',
-    'bfvietnam': 'Battlefield Vietnam'
-  };
-  return labels[game] || game;
-};
-
-const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
-};
-
-// Edit Panel Functions
-const openEditPanel = () => {
-  formData.value = {
-    name: props.tournament.name,
-    slug: props.tournament.slug || '',
-    organizer: props.tournament.organizer,
-    game: props.tournament.game,
-    anticipatedRoundCount: props.tournament.anticipatedRoundCount,
-    status: props.tournament.status || 'draft',
-    gameMode: props.tournament.gameMode || 'Conquest',
-    layoutVersion: props.tournament.layoutVersion === 2 ? 2 : 1,
-    discordUrl: props.tournament.discordUrl || '',
-    youTubeUrl: props.tournament.youTubeUrl || '',
-    twitchUrl: props.tournament.twitchUrl || '',
-    forumUrl: props.tournament.forumUrl || '',
-    promoVideoUrl: props.tournament.promoVideoUrl || '',
-    rules: props.tournament.rules || '',
-    registrationRules: props.tournament.registrationRules || '',
-  };
-  formError.value = null;
-  currentView.value = 'editDetails';
-};
-
-const closeEditPanel = () => {
-  currentView.value = 'list';
-  formError.value = null;
-};
 
 const resetForm = () => {
   populateForm();
@@ -669,85 +595,6 @@ const submitForm = async () => {
   }
 };
 
-// Player search
-const searchPlayers = async (query: string) => {
-  if (!query || query.length < 2) {
-    playerSuggestions.value = [];
-    showPlayerDropdown.value = false;
-    return;
-  }
-
-  try {
-    const response = await fetch(`/stats/Players/search?query=${encodeURIComponent(query)}&pageSize=10`);
-    if (!response.ok) throw new Error('Failed to search');
-    const data = await response.json();
-    playerSuggestions.value = data.items || [];
-    showPlayerDropdown.value = playerSuggestions.value.length > 0;
-  } catch {
-    playerSuggestions.value = [];
-    showPlayerDropdown.value = false;
-  }
-};
-
-const onOrganizerInput = () => {
-  if (searchTimeout) clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    searchPlayers(formData.value.organizer);
-  }, 300) as unknown as number;
-};
-
-const onOrganizerBlur = () => {
-  blurTimeout = setTimeout(() => {
-    showPlayerDropdown.value = false;
-  }, 200) as unknown as number;
-};
-
-const selectPlayer = (player: PlayerSearchResult) => {
-  formData.value.organizer = player.playerName;
-  playerSuggestions.value = [];
-  showPlayerDropdown.value = false;
-};
-
-// Theme Panel Functions
-const openThemePanel = async () => {
-  themeData.value = {
-    backgroundColour: props.tournament.theme?.backgroundColour || '#000000',
-    textColour: props.tournament.theme?.textColour || '#FFFFFF',
-    accentColour: props.tournament.theme?.accentColour || '#FFD700',
-  };
-  resetHexDrafts();
-  themeError.value = null;
-  heroImageFile.value = null;
-  logoImageFile.value = null;
-  removeHeroImageFlag.value = false;
-  removeLogoImageFlag.value = false;
-
-  // Load existing images
-  heroImagePreview.value = null;
-  logoImagePreview.value = null;
-
-  currentView.value = 'editTheme';
-
-  if (props.tournament.hasHeroImage) {
-    await loadHeroImage();
-  }
-  if (props.tournament.hasCommunityLogo) {
-    await loadLogoImage();
-  }
-};
-
-const closeThemePanel = () => {
-  currentView.value = 'list';
-  themeError.value = null;
-  // Clean up blob URLs
-  if (heroImagePreview.value?.startsWith('blob:')) {
-    URL.revokeObjectURL(heroImagePreview.value);
-  }
-  if (logoImagePreview.value?.startsWith('blob:')) {
-    URL.revokeObjectURL(logoImagePreview.value);
-  }
-};
-
 const triggerHeroUpload = () => heroImageInput.value?.click();
 const triggerLogoUpload = () => logoImageInput.value?.click();
 
@@ -800,62 +647,6 @@ const removeLogoImage = () => {
   logoImagePreview.value = null;
   removeLogoImageFlag.value = true;
   if (logoImageInput.value) logoImageInput.value.value = '';
-};
-
-const applyPreset = (preset: string) => {
-  const presets: Record<string, { backgroundColour: string; textColour: string; accentColour: string }> = {
-    dark: { backgroundColour: '#000000', textColour: '#FFFFFF', accentColour: '#FFD700' },
-    light: { backgroundColour: '#FFFFFF', textColour: '#000000', accentColour: '#0066CC' },
-    cyberpunk: { backgroundColour: '#0a0e27', textColour: '#FFFFFF', accentColour: '#FF00FF' },
-    ocean: { backgroundColour: '#0f2c5c', textColour: '#FFFFFF', accentColour: '#00FFFF' },
-  };
-  const p = presets[preset];
-  if (p) {
-    themeData.value = { ...p };
-    resetHexDrafts();
-  }
-};
-
-const submitThemeForm = async () => {
-  themeLoading.value = true;
-  themeError.value = null;
-
-  try {
-    const request: any = {
-      theme: {
-        backgroundColour: themeData.value.backgroundColour,
-        textColour: themeData.value.textColour,
-        accentColour: themeData.value.accentColour,
-      },
-    };
-
-    // Handle hero image
-    if (heroImageFile.value) {
-      const imageData = await adminTournamentService.imageToBase64(heroImageFile.value);
-      request.heroImageBase64 = imageData.base64;
-      request.heroImageContentType = imageData.contentType;
-    } else if (removeHeroImageFlag.value) {
-      request.RemoveHeroImage = true;
-    }
-
-    // Handle logo image
-    if (logoImageFile.value) {
-      const logoData = await adminTournamentService.imageToBase64(logoImageFile.value);
-      request.communityLogoBase64 = logoData.base64;
-      request.communityLogoContentType = logoData.contentType;
-    } else if (removeLogoImageFlag.value) {
-      request.RemoveCommunityLogo = true;
-    }
-
-    await adminTournamentService.updateTournament(props.tournament.id, request);
-    closeThemePanel();
-    emit('refresh');
-  } catch (err) {
-    console.error('Error updating theme:', err);
-    themeError.value = err instanceof Error ? err.message : 'Failed to update theme';
-  } finally {
-    themeLoading.value = false;
-  }
 };
 
 // Cleanup

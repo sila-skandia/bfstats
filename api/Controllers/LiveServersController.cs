@@ -25,7 +25,13 @@ public class LiveServersController(
     /// <param name="game">Game type: bf1942 or fh2</param>
     /// <param name="showAll">If true, show all servers including offline ones. If false (default), show only online servers.</param>
     /// <returns>Server list</returns>
+    // 20s, deliberately shorter than the 30s refresh interval the landing page
+    // polls on, so a poll never gets served a stale copy out of the browser cache.
+    // The point is the shared/edge cache: this payload is identical for every
+    // visitor, and without it every one of them pays a full round trip to the
+    // origin (~400ms from Australia) for it.
     [HttpGet("{game}/servers")]
+    [ResponseCache(Duration = 20, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<ServerListResponse>> GetServers(string game, [FromQuery] bool showAll = false)
     {
         if (!ValidGames.Contains(game.ToLower()))
@@ -61,6 +67,7 @@ public class LiveServersController(
     /// <param name="port">Server port number</param>
     /// <returns>Individual server data</returns>
     [HttpGet("{game}/{ip}/{port}")]
+    [ResponseCache(Duration = 20, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<ServerSummary>> GetServer(string game, string ip, int port)
     {
         if (!ValidGames.Contains(game.ToLower()))

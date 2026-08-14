@@ -203,6 +203,7 @@ public class DataExplorerController(
     /// <param name="days">Number of days to look back (default 60)</param>
     /// <param name="serverGuid">Optional server GUID to filter results to a specific server</param>
     [HttpGet("players/{playerName}/maps")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
     [ProducesResponseType(typeof(PlayerMapRankingsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PlayerMapRankingsResponse>> GetPlayerMapRankings(
@@ -423,6 +424,7 @@ public class DataExplorerController(
     /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
     /// <param name="days">Number of days to look back (default 60)</param>
     [HttpGet("players/{playerName}/competitive-rankings")]
+    [ResponseCache(Duration = 900, Location = ResponseCacheLocation.Any)]
     [ProducesResponseType(typeof(PlayerCompetitiveRankingsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PlayerCompetitiveRankingsResponse>> GetPlayerCompetitiveRankings(
@@ -526,6 +528,7 @@ public class DataExplorerController(
     /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
     /// <param name="days">Number of days to look back (default 90)</param>
     [HttpGet("players/{playerName}/activity-heatmap")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
     [ProducesResponseType(typeof(PlayerActivityHeatmapResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PlayerActivityHeatmapResponse>> GetPlayerActivityHeatmap(

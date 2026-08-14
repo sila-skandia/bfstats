@@ -13,7 +13,6 @@ const TournamentDetails = () => import('../views/TournamentDetails.vue')
 const PublicTournamentGate = () => import('../views/tournament-v2/PublicTournamentGate.vue')
 const AdminDataManagementV4 = () => import('../views/v4/AdminDataManagementV4.vue')
 const AdminTournamentsV4 = () => import('../views/v4/AdminTournamentsV4.vue')
-const AliasDetectionView = () => import('../views/AliasDetectionView.vue')
 
 // v4 — modern-minimal theme (parallel preview, accessible at /v4/*)
 const ModernShell = () => import('../layouts/ModernShell.vue')
@@ -247,15 +246,6 @@ const routes: RouteRecordRaw[] = [
       meta: {
         title: 'Discord Authentication · bfstats.io',
         description: 'Completing Discord authentication.'
-      }
-    },
-    {
-      path: '/alias-detection',
-      name: 'alias-detection',
-      component: AliasDetectionView,
-      meta: {
-        title: 'Alias detection · bfstats.io',
-        description: 'Investigate potential player aliases and alternate accounts.'
       }
     },
     {

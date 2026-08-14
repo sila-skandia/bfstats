@@ -17,7 +17,6 @@ public class TokenService(IConfiguration configuration) : ITokenService
 {
     private readonly JwtSecurityTokenHandler _tokenHandler = new();
     private readonly SigningCredentials _signingCredentials = InitializeSigningCredentials(configuration);
-    private readonly RsaSecurityKey _securityKey = InitializeSecurityKey(configuration);
     private readonly string _issuer = configuration["Jwt:Issuer"] ?? "";
     private readonly string _audience = configuration["Jwt:Audience"] ?? "";
     private readonly int _accessMinutes = int.TryParse(configuration["Jwt:AccessTokenMinutes"], out var m) ? m : 10080 /* 7 days */;
