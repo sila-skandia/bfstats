@@ -21,6 +21,8 @@ export interface TournamentListItem {
 export interface TournamentTeam {
   id: number;
   name: string;
+  tag?: string;
+  leaderPlayerName?: string;
   createdAt: string;
   players: TeamPlayerResponse[];
 }
@@ -107,6 +109,7 @@ export interface TournamentDetail {
   latestMatches?: TournamentMatch[];
   weekDates?: TournamentWeekDate[];
   files?: TournamentFile[];
+  posts?: TournamentPost[];
   heroImageBase64?: string;
   heroImageContentType?: string;
   communityLogoBase64?: string;
@@ -119,6 +122,7 @@ export interface TournamentDetail {
   twitchUrl?: string;
   forumUrl?: string;
   rules?: string;
+  registrationRules?: string;
   promoVideoUrl?: string;
   theme: TournamentTheme;
   hasHeroImage?: boolean;
@@ -259,6 +263,7 @@ export interface AddPlayerRequest {
 
 export interface TeamPlayerResponse {
   playerName: string;
+  isLeader?: boolean;
 }
 
 // Matches interfaces
@@ -892,6 +897,7 @@ export interface TournamentPost {
   tournamentId: number;
   title: string;
   content: string;
+  author?: string;
   publishAt: string | null;
   status: 'draft' | 'published';
   createdAt: string;
