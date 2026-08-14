@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import MmHeaderAuth from '@/components/v4/MmHeaderAuth.vue'
 import MmSiteNoticeBanner from '@/components/v4/MmSiteNoticeBanner.vue'
+import MmOmnisearchModal from '@/components/v4/MmOmnisearchModal.vue'
 import { useAuth } from '@/composables/useAuth'
 import { isNavigating } from '@/composables/useNavProgress'
 import '../styles/modern-minimal.css'
@@ -107,34 +108,17 @@ onUnmounted(() => {
   if (timer) window.clearInterval(timer)
 })
 
-const router = useRouter()
-const searchQuery = ref('')
-const searchInputEl = ref<HTMLInputElement | null>(null)
+const showOmnisearch = ref(false)
 
-const submitSearch = () => {
-  const q = searchQuery.value.trim()
-  if (!q) return
-  // Route to the players page with the query prefilled — the page does
-  // its own debounced search and won't auto-load without ?q=, so we just
-  // hand it the search string.
-  void router.push({ path: '/v4/players', query: { q } })
-  searchQuery.value = ''
-  searchInputEl.value?.blur()
+const openOmnisearch = () => {
+  showOmnisearch.value = true
 }
 
-const onSearchKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') {
-    searchQuery.value = ''
-    searchInputEl.value?.blur()
-  }
-}
-
-// Global ⌘K / Ctrl+K focuses the search input.
+// Global ⌘K / Ctrl+K opens the omnisearch command palette.
 const onGlobalKeydown = (e: KeyboardEvent) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
-    searchInputEl.value?.focus()
-    searchInputEl.value?.select()
+    showOmnisearch.value = true
   }
 }
 
@@ -174,23 +158,33 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         </router-link>
       </nav>
 
-      <label class="mm-search" :title="'Search players or servers'">
+      <button
+        type="button"
+        class="mm-search mm-search--trigger"
+        title="Search players, servers, and pages (⌘K)"
+        aria-label="Search players and servers"
+        @click="openOmnisearch"
+      >
         <svg class="mm-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7" />
           <path d="m20 20-3.5-3.5" />
         </svg>
-        <input
-          ref="searchInputEl"
-          v-model="searchQuery"
-          class="mm-search__input"
-          type="text"
-          placeholder="Find a player"
-          aria-label="Search players"
-          @keydown="onSearchKeydown"
-          @keyup.enter="submitSearch"
-        />
+        <span class="mm-search__placeholder">Search players, servers…</span>
         <span class="mm-search__hint">⌘K</span>
-      </label>
+      </button>
+
+      <button
+        type="button"
+        class="mm-mobile-search-btn"
+        title="Search players and servers"
+        aria-label="Search"
+        @click="openOmnisearch"
+      >
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+      </button>
 
       <MmHeaderAuth />
     </header>
@@ -220,5 +214,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         System Stats
       </router-link>
     </footer>
+
+    <MmOmnisearchModal v-model="showOmnisearch" />
   </div>
 </template>

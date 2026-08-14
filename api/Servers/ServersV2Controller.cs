@@ -111,6 +111,130 @@ public class ServersV2Controller(
     }
 
     /// <summary>
+    /// Gets paged player rankings for a specific server and time period with sorting and search.
+    /// </summary>
+    [HttpGet("{serverName}/player-rankings")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult<ServerPlayerRankingsResponse>> GetServerPlayerRankings(
+        string serverName,
+        [FromQuery] int days = ApiConstants.TimePeriods.DefaultDays,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string sortBy = "active",
+        [FromQuery] int minRounds = 1,
+        [FromQuery] string? searchQuery = null)
+    {
+        if (string.IsNullOrWhiteSpace(serverName))
+            return BadRequest(ApiConstants.ValidationMessages.ServerNameEmpty);
+
+        serverName = Uri.UnescapeDataString(serverName);
+
+        if (days <= 0)
+            return BadRequest("Days must be greater than 0");
+
+        if (page < 1)
+            return BadRequest(ApiConstants.ValidationMessages.PageNumberTooLow);
+
+        if (pageSize < 1 || pageSize > 100)
+            return BadRequest("Page size must be between 1 and 100");
+
+        try
+        {
+            var cacheKey = cacheKeyService.GetServerPlayerRankingsKey(serverName, days, page, pageSize, sortBy, minRounds, searchQuery);
+            var cached = await cacheService.GetAsync<ServerPlayerRankingsResponse>(cacheKey);
+            if (cached != null)
+                return Ok(cached);
+
+            var server = await dbContext.Servers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Name == serverName);
+
+            if (server == null)
+            {
+                logger.LogWarning("Server not found in database: '{ServerName}'", serverName);
+                return NotFound($"Server '{serverName}' not found");
+            }
+
+            var endPeriod = DateTime.UtcNow;
+            var startPeriod = endPeriod.AddDays(-days);
+
+            var result = await sqliteLeaderboardService.GetServerPlayerRankingsAsync(
+                server.Guid,
+                server.Name,
+                days,
+                startPeriod,
+                endPeriod,
+                page,
+                pageSize,
+                sortBy,
+                minRounds,
+                searchQuery);
+
+            await cacheService.SetAsync(cacheKey, result, TimeSpan.FromMinutes(10));
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Gets rank distribution across key metrics (K/D, score, kills, hours, kill rate) with averages and P95s.
+    /// </summary>
+    [HttpGet("{serverName}/rank-distribution")]
+    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult<ServerRankDistributionResponse>> GetServerRankDistribution(
+        string serverName,
+        [FromQuery] int days = ApiConstants.TimePeriods.DefaultDays,
+        [FromQuery] int minRounds = 1)
+    {
+        if (string.IsNullOrWhiteSpace(serverName))
+            return BadRequest(ApiConstants.ValidationMessages.ServerNameEmpty);
+
+        serverName = Uri.UnescapeDataString(serverName);
+
+        if (days <= 0)
+            return BadRequest("Days must be greater than 0");
+
+        try
+        {
+            var cacheKey = cacheKeyService.GetServerRankDistributionKey(serverName, days, minRounds);
+            var cached = await cacheService.GetAsync<ServerRankDistributionResponse>(cacheKey);
+            if (cached != null)
+                return Ok(cached);
+
+            var server = await dbContext.Servers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Name == serverName);
+
+            if (server == null)
+            {
+                logger.LogWarning("Server not found in database: '{ServerName}'", serverName);
+                return NotFound($"Server '{serverName}' not found");
+            }
+
+            var endPeriod = DateTime.UtcNow;
+            var startPeriod = endPeriod.AddDays(-days);
+
+            var result = await sqliteLeaderboardService.GetServerRankDistributionAsync(
+                server.Guid,
+                server.Name,
+                days,
+                startPeriod,
+                endPeriod,
+                minRounds);
+
+            await cacheService.SetAsync(cacheKey, result, TimeSpan.FromMinutes(10));
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Placement leaderboard uses SQLite achievements data.
     /// </summary>
     private async Task<List<PlacementLeaderboardEntry>> GetPlacementLeaderboardAsync(
