@@ -516,8 +516,7 @@ public class PlayerTrackingService(
         // Normalize to second precision for stability
         var normalized = new DateTime(startTimeUtc.Ticks - (startTimeUtc.Ticks % TimeSpan.TicksPerSecond), DateTimeKind.Utc);
         var payload = $"{serverGuid}|{mapName}|{normalized:yyyy-MM-ddTHH:mm:ssZ}";
-        using var sha = SHA256.Create();
-        var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
         var hex = Convert.ToHexString(hash);
         return hex[..20].ToLowerInvariant();
     }
@@ -674,15 +673,21 @@ public class PlayerTrackingService(
         await IpInfoSemaphore.WaitAsync();
         try
         {
-            // Ensure at least 200ms between requests
+            var waitMs = 0;
             lock (IpInfoLock)
             {
-                var now = DateTime.UtcNow;
-                var sinceLast = (now - _lastIpInfoRequest).TotalMilliseconds;
+                var sinceLast = (DateTime.UtcNow - _lastIpInfoRequest).TotalMilliseconds;
                 if (sinceLast < 200)
                 {
-                    Thread.Sleep(200 - (int)sinceLast);
+                    waitMs = 200 - (int)sinceLast;
                 }
+            }
+            if (waitMs > 0)
+            {
+                await Task.Delay(waitMs);
+            }
+            lock (IpInfoLock)
+            {
                 _lastIpInfoRequest = DateTime.UtcNow;
             }
             using var httpClient = new HttpClient();

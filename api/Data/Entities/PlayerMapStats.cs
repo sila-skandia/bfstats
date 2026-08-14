@@ -35,5 +35,5 @@ public class PlayerMapStats
     /// <summary>
     /// Returns true if this represents global (cross-server) stats.
     /// </summary>
-    public bool IsGlobal => ServerGuid == GlobalServerGuid;
+    public bool IsGlobal => ServerGuid.Length == 0;
 }

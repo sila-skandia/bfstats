@@ -50,10 +50,12 @@ public sealed class EdgeCacheAttribute(int seconds) : Attribute, IResultFilter
             return;
 
         context.HttpContext.Response.Headers.CacheControl =
-            $"public, max-age=0, s-maxage={seconds}, stale-while-revalidate={StaleWhileRevalidate}";
+            $"public, max-age=0, s-maxage={Seconds}, stale-while-revalidate={StaleWhileRevalidate}";
     }
 
     public void OnResultExecuted(ResultExecutedContext context)
     {
     }
+
+    public int Seconds { get; } = seconds;
 }

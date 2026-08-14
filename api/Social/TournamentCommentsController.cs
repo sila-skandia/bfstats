@@ -17,7 +17,7 @@ public class TournamentCommentsController(
     IClock clock,
     ILogger<TournamentCommentsController> logger) : ControllerBase
 {
-    private static readonly HtmlSanitizer Sanitizer = new HtmlSanitizer();
+    private static readonly HtmlSanitizer Sanitizer = new();
 
     static TournamentCommentsController()
     {

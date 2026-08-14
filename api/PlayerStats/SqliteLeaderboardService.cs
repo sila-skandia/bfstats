@@ -1,9 +1,10 @@
 using System.Diagnostics;
-using api.Constants;
+using System.Data;
 using api.Gamification.Models;
 using api.PlayerTracking;
 using api.Servers.Models;
 using api.Telemetry;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
 
@@ -420,10 +421,10 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             return response;
         }
 
-        var kdValues = aggregated.Select(x => x.TotalDeaths > 0 ? (double)x.TotalKills / x.TotalDeaths : (double)x.TotalKills).ToList();
+        var kdValues = aggregated.Select(x => x.TotalDeaths > 0 ? (double)x.TotalKills / x.TotalDeaths : x.TotalKills).ToList();
         var scoreValues = aggregated.Select(x => (double)x.TotalScore).ToList();
         var killValues = aggregated.Select(x => (double)x.TotalKills).ToList();
-        var hoursValues = aggregated.Select(x => (double)x.MinutesPlayed / 60.0).ToList();
+        var hoursValues = aggregated.Select(x => x.MinutesPlayed / 60.0).ToList();
         var killRateValues = aggregated.Select(x => x.MinutesPlayed > 0 ? (double)x.TotalKills / x.MinutesPlayed : 0.0).ToList();
 
         response.KdDistribution = ComputeDistribution("K/D ratio", kdValues, KdBandDefs, 2);
@@ -606,22 +607,6 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         if (!scopedToServer && (days <= 0 || days > 365))
             days = 365;
 
-        var pmsQuery = dbContext.PlayerMapStats.AsNoTracking().Where(pms => pms.ServerGuid != "");
-
-        if (days > 0)
-        {
-            var cutoff = DateTime.UtcNow.AddDays(-days);
-            var startYear = cutoff.Year;
-            var startMonth = cutoff.Month;
-            var now = DateTime.UtcNow;
-            var endYear = now.Year;
-            var endMonth = now.Month;
-
-            pmsQuery = pmsQuery.Where(pms =>
-                (pms.Year > startYear || (pms.Year == startYear && pms.Month >= startMonth)) &&
-                (pms.Year < endYear || (pms.Year == endYear && pms.Month <= endMonth)));
-        }
-
         var serverMap = await dbContext.Servers
             .AsNoTracking()
             .Select(s => new { s.Guid, s.Name, s.Country, s.Game })
@@ -655,96 +640,96 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var serverLookup = serverMap.Select(kv => (kv.Value.Guid, kv.Value.Name));
         var excludeGuids = ResolveServerGuids(ParseExcludeTerms(exclude), serverLookup);
         var hasExplicitInclude = !string.IsNullOrWhiteSpace(server);
+        var effectiveGame = !string.IsNullOrWhiteSpace(game) &&
+                            serverMap.Values.Any(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
+            ? game
+            : null;
+        var includeGuids = hasExplicitInclude
+            ? ResolveServerGuids([server!.Trim()], serverLookup)
+            : [];
 
-        if (!string.IsNullOrWhiteSpace(game))
+        var isAsc = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
+        var normSort = (sortBy ?? "score").Trim().ToLowerInvariant();
+        var effectivePage = Math.Max(1, page);
+        var effectivePageSize = Math.Clamp(pageSize, 1, 100);
+        var offset = (effectivePage - 1) * effectivePageSize;
+
+        var populatedFilter = !hasExplicitInclude && populatedOnly && occupancy.Count > 0
+            ? populatedGuids
+            : [];
+        var excludedFilter = hasExplicitInclude ? [] : excludeGuids;
+        var queryResult = await ExecuteGlobalLeaderboardQueryAsync(
+            days,
+            effectiveGame,
+            map,
+            searchQuery,
+            includeGuids,
+            excludedFilter,
+            populatedFilter,
+            minRounds,
+            minPlay,
+            normSort,
+            isAsc,
+            offset,
+            effectivePageSize);
+
+        var totalPlayers = queryResult.TotalPlayers;
+        var totalPages = totalPlayers > 0 ? (int)Math.Ceiling((double)totalPlayers / effectivePageSize) : 1;
+        var pagedRows = queryResult.Players;
+
+        var playerSource = dbContext.PlayerMapStats
+            .AsNoTracking()
+            .Where(pms => pms.ServerGuid != "");
+
+        if (days > 0)
         {
-            var gameGuids = serverMap.Values
-                .Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
-                .Select(s => s.Guid)
-                .ToList();
-            if (gameGuids.Count > 0)
-            {
-                pmsQuery = pmsQuery.Where(pms => gameGuids.Contains(pms.ServerGuid));
-            }
+            var cutoff = DateTime.UtcNow.AddDays(-days);
+            var now = DateTime.UtcNow;
+            playerSource = playerSource.Where(pms =>
+                (pms.Year > cutoff.Year || (pms.Year == cutoff.Year && pms.Month >= cutoff.Month)) &&
+                (pms.Year < now.Year || (pms.Year == now.Year && pms.Month <= now.Month)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(effectiveGame))
+        {
+            playerSource = playerSource.Where(pms =>
+                dbContext.Servers.Any(s => s.Guid == pms.ServerGuid && s.Game == effectiveGame));
         }
 
         if (!string.IsNullOrWhiteSpace(map))
         {
             var cleanMap = map.Trim().ToLowerInvariant();
-            pmsQuery = pmsQuery.Where(pms => pms.MapName.ToLower() == cleanMap);
+            playerSource = playerSource.Where(pms => pms.MapName.ToLower() == cleanMap);
         }
 
-        if (hasExplicitInclude)
+        if (includeGuids.Count > 0)
         {
-            var includeGuids = ResolveServerGuids([server!.Trim()], serverLookup).ToList();
-            if (includeGuids.Count > 0)
-            {
-                pmsQuery = pmsQuery.Where(pms => includeGuids.Contains(pms.ServerGuid));
-            }
+            playerSource = playerSource.Where(pms => includeGuids.Contains(pms.ServerGuid));
         }
-
-        var playerSource = pmsQuery;
-
-        if (!hasExplicitInclude)
+        else
         {
-            if (populatedOnly && occupancy.Count > 0)
+            if (populatedFilter.Count > 0)
             {
-                var populatedList = populatedGuids.ToList();
-                playerSource = playerSource.Where(pms => populatedList.Contains(pms.ServerGuid));
+                playerSource = playerSource.Where(pms => populatedFilter.Contains(pms.ServerGuid));
             }
 
-            if (excludeGuids.Count > 0)
+            if (excludedFilter.Count > 0)
             {
-                var excludedList = excludeGuids.ToList();
-                playerSource = playerSource.Where(pms => !excludedList.Contains(pms.ServerGuid));
+                playerSource = playerSource.Where(pms => !excludedFilter.Contains(pms.ServerGuid));
             }
         }
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
-            var term = searchQuery.Trim().ToLower();
-            var matchingServerGuids = serverMap.Values
-                .Where(s => s.Name.ToLower().Contains(term))
-                .Select(s => s.Guid)
-                .ToList();
-
+            var term = searchQuery.Trim().ToLowerInvariant();
             var matchingNames = playerSource
                 .Where(pms =>
                     pms.PlayerName.ToLower().Contains(term) ||
                     pms.MapName.ToLower().Contains(term) ||
-                    matchingServerGuids.Contains(pms.ServerGuid))
+                    dbContext.Servers.Any(s => s.Guid == pms.ServerGuid && s.Name.ToLower().Contains(term)))
                 .Select(pms => pms.PlayerName);
-
             playerSource = playerSource.Where(pms => matchingNames.Contains(pms.PlayerName));
         }
-
-        var aggregated = playerSource
-            .GroupBy(pms => pms.PlayerName)
-            .Select(g => new PlayerAggRow
-            {
-                Name = g.Key,
-                Kills = g.Sum(x => x.TotalKills),
-                Deaths = g.Sum(x => x.TotalDeaths),
-                Score = g.Sum(x => x.TotalScore),
-                PlayMin = g.Sum(x => x.TotalPlayTimeMinutes),
-                Rounds = g.Sum(x => x.TotalRounds)
-            })
-            .Where(p => p.Rounds >= minRounds && p.PlayMin >= minPlay);
-
-        var isAsc = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
-        var normSort = (sortBy ?? "score").Trim().ToLowerInvariant();
-        var sorted = ApplyPlayerSort(aggregated, playerSource, normSort, isAsc);
-
-        var totalPlayers = await aggregated.CountAsync();
-        var effectivePage = Math.Max(1, page);
-        var effectivePageSize = Math.Clamp(pageSize, 1, 100);
-        var totalPages = totalPlayers > 0 ? (int)Math.Ceiling((double)totalPlayers / effectivePageSize) : 1;
-        var offset = (effectivePage - 1) * effectivePageSize;
-
-        var pagedRows = await sorted
-            .Skip(offset)
-            .Take(effectivePageSize)
-            .ToListAsync();
 
         var favs = await LoadFavouriteServersAndMapsAsync(playerSource, pagedRows.Select(p => p.Name).ToList());
 
@@ -810,12 +795,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             .ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var mapCounts = await playerSource
-            .GroupBy(pms => pms.MapName)
-            .Select(g => new { Name = g.Key, PlayerCount = g.Count() })
-            .ToListAsync();
-
-        var maps = mapCounts
+        var maps = queryResult.Maps
             .Select(m => new Models.LeaderboardMapDto
             {
                 Name = m.Name,
@@ -853,9 +833,318 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         };
     }
 
+    private async Task<GlobalLeaderboardQueryResult> ExecuteGlobalLeaderboardQueryAsync(
+        int days,
+        string? game,
+        string? map,
+        string? searchQuery,
+        IReadOnlyCollection<string> includeGuids,
+        IReadOnlyCollection<string> excludeGuids,
+        IReadOnlyCollection<string> populatedGuids,
+        int minRounds,
+        int minPlay,
+        string sort,
+        bool isAscending,
+        int offset,
+        int pageSize)
+    {
+        var filters = new List<string> { """p."ServerGuid" <> ''""" };
+        var parameters = new List<SqliteParameter>();
+
+        if (days > 0)
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-days);
+            var current = new DateTime(cutoff.Year, cutoff.Month, 1);
+            var end = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+            var monthFilters = new List<string>();
+            var monthIndex = 0;
+
+            while (current <= end)
+            {
+                var yearParameter = $"@year{monthIndex}";
+                var monthParameter = $"@month{monthIndex}";
+                monthFilters.Add($"""(p."Year" = {yearParameter} AND p."Month" = {monthParameter})""");
+                parameters.Add(new SqliteParameter(yearParameter, current.Year));
+                parameters.Add(new SqliteParameter(monthParameter, current.Month));
+                current = current.AddMonths(1);
+                monthIndex++;
+            }
+
+            filters.Add($"({string.Join(" OR ", monthFilters)})");
+        }
+
+        if (!string.IsNullOrWhiteSpace(game))
+        {
+            filters.Add("""s."Game" = @game COLLATE NOCASE""");
+            parameters.Add(new SqliteParameter("@game", game.Trim()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(map))
+        {
+            filters.Add("""p."MapName" = @map COLLATE NOCASE""");
+            parameters.Add(new SqliteParameter("@map", map.Trim()));
+        }
+
+        AddGuidFilter(filters, parameters, includeGuids, "include", negate: false);
+        AddGuidFilter(filters, parameters, populatedGuids, "populated", negate: false);
+        AddGuidFilter(filters, parameters, excludeGuids, "exclude", negate: true);
+
+        var baseQuery = $$"""
+            SELECT
+                p."PlayerName",
+                p."ServerGuid",
+                p."MapName",
+                p."TotalKills",
+                p."TotalDeaths",
+                p."TotalScore",
+                p."TotalPlayTimeMinutes",
+                p."TotalRounds",
+                s."Name" AS "ServerName"
+            FROM "PlayerMapStats" AS p
+            LEFT JOIN "Servers" AS s ON s."Guid" = p."ServerGuid"
+            WHERE {{string.Join(" AND ", filters)}}
+            """;
+
+        string filteredCte;
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredCte = $"filtered AS MATERIALIZED ({baseQuery})";
+        }
+        else
+        {
+            parameters.Add(new SqliteParameter("@search", searchQuery.Trim().ToLowerInvariant()));
+            filteredCte = $$"""
+                scoped AS MATERIALIZED ({{baseQuery}}),
+                filtered AS MATERIALIZED (
+                    SELECT *
+                    FROM scoped
+                    WHERE "PlayerName" IN (
+                        SELECT "PlayerName"
+                        FROM scoped
+                        WHERE instr(lower("PlayerName"), @search) > 0
+                           OR instr(lower("MapName"), @search) > 0
+                           OR instr(lower(COALESCE("ServerName", '')), @search) > 0
+                    )
+                )
+                """;
+        }
+
+        parameters.Add(new SqliteParameter("@minRounds", minRounds));
+        parameters.Add(new SqliteParameter("@minPlay", minPlay));
+        parameters.Add(new SqliteParameter("@offset", offset));
+        parameters.Add(new SqliteParameter("@pageSize", pageSize));
+
+        var direction = isAscending ? "ASC" : "DESC";
+        var favoriteCte = "";
+        var rankedSource = "eligible AS e";
+
+        if (sort is "favserver" or "server" or "favmap" or "map")
+        {
+            var favoriteColumn = sort is "favserver" or "server" ? "ServerGuid" : "MapName";
+            favoriteCte = $$"""
+                ,
+                favorite_values AS MATERIALIZED (
+                    SELECT "PlayerName", "Value"
+                    FROM (
+                        SELECT
+                            "PlayerName",
+                            "{{favoriteColumn}}" AS "Value",
+                            ROW_NUMBER() OVER (
+                                PARTITION BY "PlayerName"
+                                ORDER BY SUM("TotalRounds") DESC,
+                                         SUM("TotalPlayTimeMinutes") DESC,
+                                         "{{favoriteColumn}}" COLLATE NOCASE
+                            ) AS "FavoriteRank"
+                        FROM filtered
+                        GROUP BY "PlayerName", "{{favoriteColumn}}"
+                    )
+                    WHERE "FavoriteRank" = 1
+                )
+                """;
+            rankedSource = "eligible AS e LEFT JOIN favorite_values AS fv ON fv.\"PlayerName\" = e.\"Name\"";
+        }
+
+        var orderBy = sort switch
+        {
+            "kd" => $"""CASE WHEN e."Deaths" = 0 THEN e."Kills" ELSE CAST(e."Kills" AS REAL) / e."Deaths" END {direction}, e."Kills" {direction}""",
+            "kills" => $"""e."Kills" {direction}, e."Score" {direction}""",
+            "deaths" => $"""e."Deaths" {direction}, e."Name" COLLATE NOCASE ASC""",
+            "kpm" => $"""CASE WHEN e."PlayMin" = 0 THEN 0 ELSE e."Kills" / e."PlayMin" END {direction}, e."Kills" {direction}""",
+            "playmin" or "time" => $"""e."PlayMin" {direction}, e."Score" {direction}""",
+            "rounds" => $"""e."Rounds" {direction}, e."Score" {direction}""",
+            "player" or "name" => $"""e."Name" COLLATE NOCASE {direction}""",
+            "favserver" or "server" or "favmap" or "map" =>
+                $"""fv."Value" COLLATE NOCASE {direction}, e."Score" DESC""",
+            _ => $"""e."Score" {direction}, e."Kills" {direction}"""
+        };
+
+        var sql = $$"""
+            WITH
+            {{filteredCte}},
+            player_aggregates AS MATERIALIZED (
+                SELECT
+                    "PlayerName" AS "Name",
+                    SUM("TotalKills") AS "Kills",
+                    SUM("TotalDeaths") AS "Deaths",
+                    SUM("TotalScore") AS "Score",
+                    SUM("TotalPlayTimeMinutes") AS "PlayMin",
+                    SUM("TotalRounds") AS "Rounds"
+                FROM filtered
+                GROUP BY "PlayerName"
+            ),
+            eligible AS MATERIALIZED (
+                SELECT *
+                FROM player_aggregates
+                WHERE "Rounds" >= @minRounds AND "PlayMin" >= @minPlay
+            )
+            {{favoriteCte}},
+            ranked AS (
+                SELECT
+                    e.*,
+                    ROW_NUMBER() OVER (ORDER BY {{orderBy}}, e."Name" ASC) AS "Rank"
+                FROM {{rankedSource}}
+            )
+            SELECT
+                0 AS "RowType",
+                (SELECT COUNT(*) FROM eligible) AS "TotalPlayers",
+                0 AS "Rank",
+                '' AS "Name",
+                0 AS "Kills",
+                0 AS "Deaths",
+                0 AS "Score",
+                0.0 AS "PlayMin",
+                0 AS "Rounds",
+                '' AS "MapName",
+                0 AS "MapPlayerCount"
+            UNION ALL
+            SELECT
+                1,
+                0,
+                "Rank",
+                "Name",
+                "Kills",
+                "Deaths",
+                "Score",
+                "PlayMin",
+                "Rounds",
+                '',
+                0
+            FROM ranked
+            WHERE "Rank" > @offset AND "Rank" <= @offset + @pageSize
+            UNION ALL
+            SELECT
+                2,
+                0,
+                0,
+                '',
+                0,
+                0,
+                0,
+                0.0,
+                0,
+                "MapName",
+                COUNT(*)
+            FROM filtered
+            GROUP BY "MapName"
+            ORDER BY "RowType", "Rank", "MapPlayerCount" DESC, "MapName"
+            """;
+
+        var result = new GlobalLeaderboardQueryResult();
+        var connection = dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+
+        if (shouldClose)
+        {
+            await connection.OpenAsync();
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+#pragma warning disable CA2100 // SQL fragments are generated from allow-listed branches; request values are parameters.
+            command.CommandText = sql;
+#pragma warning restore CA2100
+            command.CommandTimeout = 60;
+            foreach (var parameter in parameters)
+            {
+                command.Parameters.Add(parameter);
+            }
+
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                switch (reader.GetInt32(0))
+                {
+                    case 0:
+                        result.TotalPlayers = reader.GetInt32(1);
+                        break;
+                    case 1:
+                        result.Players.Add(new PlayerAggRow
+                        {
+                            Rank = reader.GetInt32(2),
+                            Name = reader.GetString(3),
+                            Kills = reader.GetInt32(4),
+                            Deaths = reader.GetInt32(5),
+                            Score = reader.GetInt32(6),
+                            PlayMin = reader.GetDouble(7),
+                            Rounds = reader.GetInt32(8)
+                        });
+                        break;
+                    case 2:
+                        result.Maps.Add(new LeaderboardMapCountRow(
+                            reader.GetString(9),
+                            reader.GetInt32(10)));
+                        break;
+                }
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        return result;
+    }
+
+    private static void AddGuidFilter(
+        List<string> filters,
+        List<SqliteParameter> parameters,
+        IReadOnlyCollection<string> guids,
+        string parameterPrefix,
+        bool negate)
+    {
+        if (guids.Count == 0)
+        {
+            return;
+        }
+
+        var parameterNames = new List<string>(guids.Count);
+        var index = 0;
+        foreach (var guid in guids)
+        {
+            var parameterName = $"@{parameterPrefix}{index}";
+            parameterNames.Add(parameterName);
+            parameters.Add(new SqliteParameter(parameterName, guid));
+            index++;
+        }
+
+        filters.Add($"""p."ServerGuid" {(negate ? "NOT IN" : "IN")} ({string.Join(", ", parameterNames)})""");
+    }
+
+    private sealed class GlobalLeaderboardQueryResult
+    {
+        public int TotalPlayers { get; set; }
+        public List<PlayerAggRow> Players { get; } = [];
+        public List<LeaderboardMapCountRow> Maps { get; } = [];
+    }
+
     private sealed class PlayerAggRow
     {
-        public string Name { get; set; } = "";
+        public int Rank { get; set; }
+        public required string Name { get; set; }
         public int Kills { get; set; }
         public int Deaths { get; set; }
         public int Score { get; set; }
@@ -863,60 +1152,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         public int Rounds { get; set; }
     }
 
-    private static IQueryable<PlayerAggRow> ApplyPlayerSort(
-        IQueryable<PlayerAggRow> query,
-        IQueryable<api.Data.Entities.PlayerMapStats> playerSource,
-        string sort,
-        bool isAsc)
-    {
-        return (sort, isAsc) switch
-        {
-            ("kd", true) => query.OrderBy(p => p.Deaths == 0 ? p.Kills : (double)p.Kills / p.Deaths).ThenBy(p => p.Kills),
-            ("kd", false) => query.OrderByDescending(p => p.Deaths == 0 ? p.Kills : (double)p.Kills / p.Deaths).ThenByDescending(p => p.Kills),
-            ("kills", true) => query.OrderBy(p => p.Kills).ThenBy(p => p.Score),
-            ("kills", false) => query.OrderByDescending(p => p.Kills).ThenByDescending(p => p.Score),
-            ("deaths", true) => query.OrderBy(p => p.Deaths),
-            ("deaths", false) => query.OrderByDescending(p => p.Deaths),
-            ("kpm", true) => query.OrderBy(p => p.PlayMin == 0 ? 0 : p.Kills / p.PlayMin).ThenBy(p => p.Kills),
-            ("kpm", false) => query.OrderByDescending(p => p.PlayMin == 0 ? 0 : p.Kills / p.PlayMin).ThenByDescending(p => p.Kills),
-            ("playmin" or "time", true) => query.OrderBy(p => p.PlayMin).ThenBy(p => p.Score),
-            ("playmin" or "time", false) => query.OrderByDescending(p => p.PlayMin).ThenByDescending(p => p.Score),
-            ("rounds", true) => query.OrderBy(p => p.Rounds).ThenBy(p => p.Score),
-            ("rounds", false) => query.OrderByDescending(p => p.Rounds).ThenByDescending(p => p.Score),
-            ("player" or "name", true) => query.OrderBy(p => p.Name),
-            ("player" or "name", false) => query.OrderByDescending(p => p.Name),
-            ("favserver" or "server", true) => query
-                .OrderBy(p => playerSource.Where(x => x.PlayerName == p.Name)
-                    .GroupBy(x => x.ServerGuid)
-                    .OrderByDescending(g => g.Sum(x => x.TotalRounds))
-                    .Select(g => g.Key)
-                    .FirstOrDefault())
-                .ThenByDescending(p => p.Score),
-            ("favserver" or "server", false) => query
-                .OrderByDescending(p => playerSource.Where(x => x.PlayerName == p.Name)
-                    .GroupBy(x => x.ServerGuid)
-                    .OrderByDescending(g => g.Sum(x => x.TotalRounds))
-                    .Select(g => g.Key)
-                    .FirstOrDefault())
-                .ThenByDescending(p => p.Score),
-            ("favmap" or "map", true) => query
-                .OrderBy(p => playerSource.Where(x => x.PlayerName == p.Name)
-                    .GroupBy(x => x.MapName)
-                    .OrderByDescending(g => g.Sum(x => x.TotalRounds))
-                    .Select(g => g.Key)
-                    .FirstOrDefault())
-                .ThenByDescending(p => p.Score),
-            ("favmap" or "map", false) => query
-                .OrderByDescending(p => playerSource.Where(x => x.PlayerName == p.Name)
-                    .GroupBy(x => x.MapName)
-                    .OrderByDescending(g => g.Sum(x => x.TotalRounds))
-                    .Select(g => g.Key)
-                    .FirstOrDefault())
-                .ThenByDescending(p => p.Score),
-            (_, true) => query.OrderBy(p => p.Score).ThenBy(p => p.Kills),
-            _ => query.OrderByDescending(p => p.Score).ThenByDescending(p => p.Kills)
-        };
-    }
+    private readonly record struct LeaderboardMapCountRow(string Name, int PlayerCount);
 
     private static async Task<Dictionary<string, (string ServerGuid, string MapName)>> LoadFavouriteServersAndMapsAsync(
         IQueryable<api.Data.Entities.PlayerMapStats> playerSource,
@@ -973,7 +1209,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
     }
 
     private static HashSet<string> ResolveServerGuids(
-        IReadOnlyList<string> terms,
+        List<string> terms,
         IEnumerable<(string Guid, string Name)> servers)
     {
         var guids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

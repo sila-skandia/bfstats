@@ -1,15 +1,12 @@
 using api.AdminData;
 using api.Data.Entities;
 using api.PlayerTracking;
-using api.Services.BackgroundJobs;
-using api.StatsCollectors;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NodaTime;
 using NSubstitute;
-using Xunit;
 
 namespace api.tests.AdminData;
 

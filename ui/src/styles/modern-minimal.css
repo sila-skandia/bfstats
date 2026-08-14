@@ -269,6 +269,33 @@
 .mm-nav__link--admin.mm-nav__link--active { color: var(--mm-danger); }
 .mm-nav__link--admin.mm-nav__link--active::after { background: var(--mm-danger); }
 
+/* Unseen feature pip — same 5px language as the admin marker, olive
+   instead of danger, and it goes away after the first visit. */
+.mm-nav__link--new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mm-accent-soft);
+}
+.mm-nav__link--new:hover { color: var(--mm-ink); }
+.mm-nav__pip {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mm-accent);
+  flex-shrink: 0;
+  animation: mm-nav-new-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes mm-nav-new-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-nav__pip { animation: none; }
+}
+
 .mm-search {
   display: flex;
   align-items: center;

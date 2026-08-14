@@ -7,7 +7,6 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using Xunit;
 
 namespace api.tests.Controllers;
 
@@ -185,6 +184,49 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Single(res2.Players);
         Assert.Equal("PlayerA", res2.Players[0].Name);
         Assert.Equal(3, res2.Players[0].Rank);
+    }
+
+    [Theory]
+    [InlineData("favServer")]
+    [InlineData("favMap")]
+    public async Task GetLeaderboard_WithFavouriteSorting_ReturnsRankedPlayers(string sortBy)
+    {
+        var now = DateTime.UtcNow;
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "srv-1", Name = "Server One", Game = "bf1942" },
+            new GameServer { Guid = "srv-2", Name = "Server Two", Game = "bf1942" });
+        _dbContext.PlayerMapStats.AddRange(
+            new PlayerMapStats
+            {
+                PlayerName = "PlayerA",
+                ServerGuid = "srv-1",
+                MapName = "bocage",
+                Year = now.Year,
+                Month = now.Month,
+                TotalScore = 500,
+                TotalRounds = 5,
+                TotalPlayTimeMinutes = 50
+            },
+            new PlayerMapStats
+            {
+                PlayerName = "PlayerB",
+                ServerGuid = "srv-2",
+                MapName = "wake",
+                Year = now.Year,
+                Month = now.Month,
+                TotalScore = 1000,
+                TotalRounds = 8,
+                TotalPlayTimeMinutes = 80
+            });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetLeaderboard(sortBy: sortBy);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<GlobalLeaderboardResponse>(okResult.Value);
+        Assert.Equal(2, response.TotalPlayers);
+        Assert.Equal(2, response.Players.Count);
+        Assert.Equal([1, 2], response.Players.Select(player => player.Rank));
     }
 
     [Fact]

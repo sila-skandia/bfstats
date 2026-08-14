@@ -32,8 +32,7 @@ public interface ISqlitePlayerStatsService
     /// <summary>
     /// Gets player's top 3 scores for each time period.
     /// </summary>
-    /// <param name="lookBackDays">Only include rounds from the last N days. Default 30. Use 0 or less for all time.</param>
-    Task<PlayerBestScores> GetPlayerBestScoresAsync(string playerName, int lookBackDays = 30);
+    Task<PlayerBestScores> GetPlayerBestScoresAsync(string playerName);
 
     /// <summary>
     /// Gets average ping for players from their most recent sessions.

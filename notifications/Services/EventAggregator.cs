@@ -4,7 +4,7 @@ namespace notifications.Services;
 
 public interface IEventAggregator
 {
-    Task PublishAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default) where TEvent : class;
+    Task PublishAsync<TEvent>(TEvent eventItem, CancellationToken cancellationToken = default) where TEvent : class;
     void Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : class;
     void Unsubscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : class;
 }
@@ -19,9 +19,9 @@ public class EventAggregator : IEventAggregator
         _logger = logger;
     }
 
-    public async Task PublishAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default) where TEvent : class
+    public async Task PublishAsync<TEvent>(TEvent eventItem, CancellationToken cancellationToken = default) where TEvent : class
     {
-        if (@event == null) throw new ArgumentNullException(nameof(@event));
+        ArgumentNullException.ThrowIfNull(eventItem);
 
         _logger.LogDebug("Received event of type {EventType} for processing", typeof(TEvent).Name);
 
@@ -39,7 +39,7 @@ public class EventAggregator : IEventAggregator
         {
             try
             {
-                tasks.Add(handler(@event, cancellationToken));
+                tasks.Add(handler(eventItem, cancellationToken));
             }
             catch (Exception ex)
             {

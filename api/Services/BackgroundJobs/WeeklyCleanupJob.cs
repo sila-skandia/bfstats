@@ -15,7 +15,7 @@ public class WeeklyCleanupJob(
 ) : BackgroundService
 {
     private static readonly TimeSpan RunTime = TimeSpan.FromHours(3); // 3 AM UTC on Mondays
-    private static readonly DayOfWeek RunDay = DayOfWeek.Monday;
+    private const DayOfWeek RunDay = DayOfWeek.Monday;
     private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

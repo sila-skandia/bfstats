@@ -244,7 +244,7 @@ public class MilestoneCalculator(
             var invalid = pa.AchievementId switch
             {
                 { } id when id.StartsWith("total_kills_") && int.TryParse(id.AsSpan("total_kills_".Length), out var k) => totalKills < k,
-                { } id when id.StartsWith("milestone_playtime_") && id.EndsWith("h") && int.TryParse(id.AsSpan("milestone_playtime_".Length, id.Length - "milestone_playtime_".Length - 1), out var h) => totalPlayTimeMinutes < h * 60,
+                { } id when id.StartsWith("milestone_playtime_") && id.EndsWith('h') && int.TryParse(id.AsSpan("milestone_playtime_".Length, id.Length - "milestone_playtime_".Length - 1), out var h) => totalPlayTimeMinutes < h * 60,
                 { } id when id.StartsWith("total_score_") && int.TryParse(id.AsSpan("total_score_".Length), out var s) => totalScore < s,
                 _ => false
             };

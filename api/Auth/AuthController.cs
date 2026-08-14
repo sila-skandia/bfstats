@@ -717,6 +717,7 @@ public class AuthController(
 
     private async Task<User> CreateOrUpdateUserAsync(string email, string name)
     {
+        _ = name;
         var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
         var now = DateTime.UtcNow;
 
@@ -802,7 +803,7 @@ public class AuthController(
             .Include(ps => ps.Player)
             .Where(ps => ps.ServerGuid == favoriteServer.ServerGuid &&
                          ps.IsActive &&
-                         ps.Player.AiBot == false &&
+!ps.Player.AiBot &&
                          ps.LastSeenTime >= activeThreshold)
             .OrderByDescending(ps => ps.LastSeenTime)
             .ToListAsync();

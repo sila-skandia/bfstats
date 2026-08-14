@@ -468,7 +468,7 @@ public class SqliteGameTrendsService(
     private static (int days, int intervalMinutes, bool useAllTime) ParseCustomDayPeriod(string period)
     {
         // Parse custom period like "45d", "120d"
-        if (period.EndsWith("d") && int.TryParse(period[..^1], out var customDays))
+        if (period.EndsWith('d') && int.TryParse(period[..^1], out var customDays))
         {
             var interval = customDays switch
             {

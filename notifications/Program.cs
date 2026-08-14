@@ -13,7 +13,6 @@ using System.Security.Cryptography;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Exporter;
-using Microsoft.Extensions.Configuration;
 
 // Early configuration for telemetry endpoints
 var earlyConfig = new ConfigurationBuilder()
@@ -199,7 +198,8 @@ try
 
     // Configure Redis
     var redisConnection = builder.Configuration.GetConnectionString("Redis") ?? "42redis.home.net:6380";
-    builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnection));
+    var mux = await ConnectionMultiplexer.ConnectAsync(redisConnection);
+    builder.Services.AddSingleton<IConnectionMultiplexer>(mux);
     builder.Services.AddSingleton<IDatabase>(sp => sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase());
 
     // Register services
@@ -256,5 +256,5 @@ catch (Exception ex)
 }
 finally
 {
-    Log.CloseAndFlush();
+    await Log.CloseAndFlushAsync();
 }
