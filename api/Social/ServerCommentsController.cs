@@ -17,7 +17,7 @@ public class ServerCommentsController(
     IClock clock,
     ILogger<ServerCommentsController> logger) : ControllerBase
 {
-    private static readonly HtmlSanitizer Sanitizer = new HtmlSanitizer();
+    private static readonly HtmlSanitizer Sanitizer = new();
     private const int DefaultPageSize = 10;
 
     static ServerCommentsController()

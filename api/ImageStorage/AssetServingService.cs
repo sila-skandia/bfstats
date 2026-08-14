@@ -112,7 +112,7 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
             return false;
 
         // Check for absolute paths
-        if (path.StartsWith("/") || path.StartsWith("\\"))
+        if (path.StartsWith('/') || path.StartsWith('\\'))
             return false;
 
         // Check for various directory traversal patterns
@@ -128,7 +128,7 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
             return false;
 
         // Check for trailing dots or spaces (Windows alternative data streams and file name tricks)
-        if (path.EndsWith(".") || path.EndsWith(" "))
+        if (path.EndsWith('.') || path.EndsWith(' '))
             return false;
 
         // Whitelist approach: only allow safe characters

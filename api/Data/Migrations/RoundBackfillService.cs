@@ -406,8 +406,7 @@ public class RoundBackfillService(PlayerTrackerDbContext dbContext, ILogger<Roun
     {
         var normalized = new DateTime(startTimeUtc.Ticks - (startTimeUtc.Ticks % TimeSpan.TicksPerSecond), DateTimeKind.Utc);
         var payload = $"{serverGuid}|{mapName}|{normalized:yyyy-MM-ddTHH:mm:ssZ}";
-        using var sha = SHA256.Create();
-        var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
         var hex = Convert.ToHexString(hash);
         var roundId = hex[..20].ToLowerInvariant();
         return roundId;

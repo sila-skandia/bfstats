@@ -27,6 +27,7 @@ public sealed class ProcessHealthReporter(ILogger<ProcessHealthReporter> logger)
 
     // OTel semantic-convention names. Seq stores dotted names as nested objects, so these are
     // queried as e.g. process.cpu.utilization — see features/seq-dashboards/README.md.
+    // The returned gauges are stored so the instruments stay rooted for the process lifetime.
     private static readonly ObservableGauge<double> CpuUtilization = Meter.CreateObservableGauge(
         "process.cpu.utilization",
         observeValue: () => Volatile.Read(ref _cpuUtilization),

@@ -120,12 +120,11 @@ public class PlayerStatsPlugin(
     [KernelFunction("GetPlayerBestScores")]
     [Description("Gets a player's top 3 best scores for this week, last 30 days, and all time.")]
     public async Task<string> GetPlayerBestScoresAsync(
-        [Description("The exact player name to look up")] string playerName,
-        [Description("Number of days to look back for stats (default 30). Increase if the player hasn't been online recently.")] int lookBackDays = 30)
+        [Description("The exact player name to look up")] string playerName)
     {
-        logger.LogDebug("AI requesting best scores for player: {PlayerName}, lookBackDays: {LookBackDays}", playerName, lookBackDays);
+        logger.LogDebug("AI requesting best scores for player: {PlayerName}", playerName);
 
-        var bestScores = await playerStatsService.GetPlayerBestScoresAsync(playerName, lookBackDays);
+        var bestScores = await playerStatsService.GetPlayerBestScoresAsync(playerName);
 
         var formatScores = (List<BestScoreDetail> scores) => scores.Select(s => new
         {
@@ -201,7 +200,7 @@ public class PlayerStatsPlugin(
                     x.PlayerName,
                     KDRatio = x.TotalDeaths > 0
                         ? Math.Round((double)x.TotalKills / x.TotalDeaths, 3)
-                        : (double)x.TotalKills,
+                        : x.TotalKills,
                     x.TotalKills,
                     x.TotalDeaths,
                     x.TotalRounds

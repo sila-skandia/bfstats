@@ -138,7 +138,7 @@ public static class ServerRotationDetector
     {
         var cycleCoverage = Math.Min(1.0, (double)candidate.FullCycles / MinimumFullCycles);
         var tailCoverage = Math.Min(1.0, (double)candidate.MatchedRounds / Math.Max(12, sampleSize));
-        var sampleCoverage = Math.Min(1.0, (double)sampleSize / 36.0);
+        var sampleCoverage = Math.Min(1.0, sampleSize / 36.0);
 
         return Math.Round((cycleCoverage * 0.5) + (tailCoverage * 0.3) + (sampleCoverage * 0.2), 2);
     }

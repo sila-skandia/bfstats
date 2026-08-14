@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Neo4j.Driver;
 
@@ -149,6 +148,7 @@ public class Neo4jMigrationService(
     /// </summary>
     private async Task ApplyMigrationAsync(MigrationFile migration, CancellationToken cancellationToken)
     {
+        _ = cancellationToken;
         logger.LogInformation("Applying migration: {MigrationName}", migration.Name);
 
         var startTime = DateTime.UtcNow;
@@ -221,7 +221,7 @@ public class Neo4jMigrationService(
             currentStatement.Add(trimmed);
 
             // If line ends with semicolon, we have a complete statement
-            if (trimmed.EndsWith(";"))
+            if (trimmed.EndsWith(';'))
             {
                 var statement = string.Join("\n", currentStatement).Trim(';', ' ', '\n', '\r');
                 if (!string.IsNullOrWhiteSpace(statement))

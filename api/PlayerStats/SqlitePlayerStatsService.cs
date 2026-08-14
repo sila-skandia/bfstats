@@ -255,22 +255,16 @@ public class SqlitePlayerStatsService(PlayerTrackerDbContext dbContext) : ISqlit
     }
 
     /// <inheritdoc/>
-    public async Task<PlayerBestScores> GetPlayerBestScoresAsync(string playerName, int lookBackDays = 30)
+    public async Task<PlayerBestScores> GetPlayerBestScoresAsync(string playerName)
     {
         using var activity = ActivitySources.SqliteAnalytics.StartActivity("GetPlayerBestScoresAsync");
         activity?.SetTag("query.name", "GetPlayerBestScores");
-        activity?.SetTag("query.filters", $"player:{playerName},lookBackDays:{lookBackDays}");
+        activity?.SetTag("query.filters", $"player:{playerName}");
 
         var stopwatch = Stopwatch.StartNew();
 
-        var query = dbContext.PlayerBestScores.Where(p => p.PlayerName == playerName);
-        if (lookBackDays > 0)
-        {
-            var cutoff = Instant.FromDateTimeUtc(DateTime.SpecifyKind(DateTime.UtcNow.AddDays(-lookBackDays), DateTimeKind.Utc));
-            query = query.Where(p => p.RoundEndTime >= cutoff);
-        }
-
-        var bestScores = await query
+        var bestScores = await dbContext.PlayerBestScores
+            .Where(p => p.PlayerName == playerName)
             .OrderBy(p => p.Period)
             .ThenBy(p => p.Rank)
             .ToListAsync();

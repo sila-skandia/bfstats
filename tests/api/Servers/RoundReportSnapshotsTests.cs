@@ -1,5 +1,4 @@
 using api.Servers;
-using Xunit;
 
 namespace api.tests.Servers;
 
