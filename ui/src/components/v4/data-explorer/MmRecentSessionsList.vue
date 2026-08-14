@@ -147,7 +147,7 @@ watch(filtersKey, loadSessions)
             <span class="mm-card-list__time">{{ formatDuration(session.durationMinutes) }}</span>
           </div>
           <div class="mm-card-list__sub">
-            <span>{{ session.serverName }}</span>
+            <span>{{ $pn(session.serverName) }}</span>
             <span class="mm-meta-row__sep">·</span>
             <span>{{ formatRelativeTime(session.startTime) }} ago</span>
             <span class="mm-meta-row__sep">·</span>
@@ -205,7 +205,7 @@ watch(filtersKey, loadSessions)
                     <span class="mm-chip__dot" />Live
                   </span>
                 </span>
-                <span class="mm-list__name-sub">{{ session.serverName }} · {{ formatRelativeTime(session.startTime) }} ago</span>
+                <span class="mm-list__name-sub">{{ $pn(session.serverName) }} · {{ formatRelativeTime(session.startTime) }} ago</span>
               </div>
             </td>
             <td data-cell-label="Matchup">

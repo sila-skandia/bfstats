@@ -90,10 +90,10 @@ See PATTERNS.md → *Recipe: Timestamps*.
   reads against the actual C# property and the JSON response.
   TS-declared-but-unverified fields belong on the "to verify"
   list. See PATTERNS.md → *Don't trust the TypeScript interface*.
-- Player names: use `$pn(name)` in templates and
-  `decodePlayerName(name)` in `<script setup>` for display only.
+- Server and player names: use `$pn(name)` in templates and
+  `decodePlayerName(name)` / `decodeServerName(name)` in `<script setup>` for display only.
   Raw names for keys, router params, search queries. See the
-  player-name rule in the project root `CLAUDE.md`.
+  server-and-player-name rule in the project root `CLAUDE.md`.
 
 ### Testing
 

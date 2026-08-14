@@ -51,3 +51,7 @@ export function decodePlayerName(raw: string | null | undefined): string {
 
   return nonLatin / total >= 0.8 ? cp1251Decoder.decode(bytes) : raw;
 }
+
+export const decodeServerName = decodePlayerName;
+export const decodeMojibake = decodePlayerName;
+
