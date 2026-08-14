@@ -250,8 +250,7 @@ test.describe('Leaderboard Page', () => {
   test('should render table headers, player records, and map info correctly', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
-    // Verify header and eyebrow
-    await expect(page.locator('.lb-eyebrow-row')).toContainText('BFSTATS · GLOBAL RANKINGS')
+    await expect(page.locator('h1')).toHaveText('Leaderboard')
 
     // Verify table rendered with rows
     const rows = page.locator('.lb-table tbody tr.lb-row')
