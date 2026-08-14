@@ -67,14 +67,17 @@ public class EdgeCacheAttributeTests
         Assert.False(context.HttpContext.Response.Headers.ContainsKey("Cache-Control"));
     }
 
-    // The two detail endpoints are the ones that made pages look frozen: they back
-    // /v4/players/{name} and /v4/servers/{name}, which the SPA re-fetches on every
-    // navigation. If either regresses to [ResponseCache] the browser starts holding
-    // its own copy again and the staleness comes straight back, silently.
+    // These endpoints carry live state and are re-fetched by their pages. If one
+    // regresses to [ResponseCache], the browser can reuse an old response without
+    // issuing a request when the user revisits the page.
     [Theory]
-    [InlineData(typeof(api.Players.PlayersController), "GetPlayerStats")]
-    [InlineData(typeof(api.Servers.ServersController), "GetServerStats")]
-    public void DetailEndpoints_AreEdgeCachedAndNotBrowserCached(Type controller, string action)
+    [InlineData(typeof(api.Players.PlayersController), "GetPlayerStats", 30)]
+    [InlineData(typeof(api.Servers.ServersController), "GetServerStats", 30)]
+    [InlineData(typeof(api.Controllers.LiveServersController), "GetServers", 20)]
+    public void LiveEndpoints_AreEdgeCachedAndNotBrowserCached(
+        Type controller,
+        string action,
+        int expectedSMaxAge)
     {
         var method = controller.GetMethod(action)!;
 
@@ -82,7 +85,7 @@ public class EdgeCacheAttributeTests
         // filters, so finding it here is what makes the filter actually run.
         var edgeCache = Assert.Single(method.GetCustomAttributes(typeof(EdgeCacheAttribute), inherit: true));
         Assert.IsAssignableFrom<IFilterMetadata>(edgeCache);
-        Assert.Equal(30, GetSMaxAge((EdgeCacheAttribute)edgeCache));
+        Assert.Equal(expectedSMaxAge, GetSMaxAge((EdgeCacheAttribute)edgeCache));
 
         Assert.Empty(method.GetCustomAttributes(typeof(ResponseCacheAttribute), inherit: true));
     }
