@@ -4,7 +4,6 @@ import {
   PlayerTimeStatistics,
   PlayerListItem,
   SessionDetails,
-  SessionListItem,
   InitialData,
   PlayerHistoryResponse,
   ActivityHeatmapResponse,
@@ -135,7 +134,7 @@ export async function fetchSessions(
   sortBy: string = 'startTime',
   sortOrder: 'asc' | 'desc' = 'desc',
   onlySpecifiedPlayers: boolean = false
-): Promise<PagedResult<SessionListItem>> {
+): Promise<PagedResult<RoundWithPlayers>> {
   try {
     // Handle parameter mapping for the rounds API
     const roundFilters: Record<string, any> = { ...filters };
@@ -212,7 +211,7 @@ export async function fetchPlayerSessions(
   filters: Record<string, string> = {},
   sortBy: string = 'startTime',
   sortOrder: 'asc' | 'desc' = 'desc'
-): Promise<PagedResult<SessionListItem>> {
+): Promise<PagedResult<RoundWithPlayers>> {
   // Add playerName to filters and call the generic fetchSessions function
   const filtersWithPlayer = { ...filters, playerName };
   return fetchSessions(page, pageSize, filtersWithPlayer, sortBy, sortOrder);
