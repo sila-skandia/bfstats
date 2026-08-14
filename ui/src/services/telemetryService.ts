@@ -44,8 +44,7 @@ const ROUTE_TO_PAGE_TYPE: Record<string, string> = {
   'system-stats': 'system_stats',
   'discord-callback': 'discord_callback',
   'community-details': 'community_details',
-  'map-popularity': 'map_popularity',
-  'alias-detection': 'alias_detection'
+  'map-popularity': 'map_popularity'
 }
 
 function generateId(): string {
