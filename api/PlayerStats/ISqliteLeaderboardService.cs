@@ -45,4 +45,30 @@ public interface ISqliteLeaderboardService
         DateTime startPeriod,
         DateTime endPeriod,
         int limit = 10);
+
+    /// <summary>
+    /// Gets paged player rankings for a server with custom sort and search.
+    /// </summary>
+    Task<ServerPlayerRankingsResponse> GetServerPlayerRankingsAsync(
+        string serverGuid,
+        string serverName,
+        int days,
+        DateTime startPeriod,
+        DateTime endPeriod,
+        int page = 1,
+        int pageSize = 20,
+        string sortBy = "active",
+        int minRounds = 1,
+        string? searchQuery = null);
+
+    /// <summary>
+    /// Gets rank distribution across K/D, score, kills, playtime, and kill rate for a server.
+    /// </summary>
+    Task<ServerRankDistributionResponse> GetServerRankDistributionAsync(
+        string serverGuid,
+        string serverName,
+        int days,
+        DateTime startPeriod,
+        DateTime endPeriod,
+        int minRounds = 1);
 }

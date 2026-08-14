@@ -156,12 +156,12 @@ database.
 - All timestamp properties use NodaTime Instant type—must configure HasConversion() in OnModelCreating() with InstantPattern.ExtendedIso for EF Core mapping.
 - Confirm every time you run a kubectl command, even if I've approved a kubectl command in the same chat, unless I explicitly say otherwise.
 
-### Player name rendering
+### Server and player name rendering
 
-Player names are stored as raw mojibake (some clients send cp1251 bytes that BFlist decodes as cp1252). We do **not** migrate the DB — `Player.Name` is the PK. Names are decoded for display only.
+Server and player names are stored as raw mojibake (some clients/servers send cp1251 bytes that BFlist decodes as cp1252). We do **not** migrate the DB — `Player.Name` is the PK and `Server.Name` is used for queries. Names are decoded for display only.
 
-- **Vue templates**: use `$pn(name)` (registered globally in `ui/src/main.js`). Example: `{{ $pn(player.playerName) }}`, `:title="$pn(player.playerName)"`, `:aria-label="$pn(player.playerName)"`.
-- **`<script setup>` / TS**: `import { decodePlayerName } from '@/utils/playerName'` and call directly (e.g. for chart `label`, computed display strings, `charAt(0)` initials).
+- **Vue templates**: use `$pn(name)` (registered globally in `ui/src/main.js`). Example: `{{ $pn(server.name) }}`, `{{ $pn(player.playerName) }}`, `:title="$pn(server.name)"`, `:aria-label="$pn(player.playerName)"`.
+- **`<script setup>` / TS**: `import { decodePlayerName, decodeServerName } from '@/utils/playerName'` and call directly (e.g. for chart `label`, computed display strings, `charAt(0)` initials).
 - **C# server-rendered output** (banner images, Discord embeds, any other path that paints a name for human eyes): `api.Utils.PlayerNameDecoder.Decode(name)`.
 - **Do NOT decode** for: `router.push` / `:to=` URLs, search query strings, dictionary/Set keys, FK joins, `v-for :key`, or anything compared against a stored name. Those paths must keep using the raw name.
-- When adding a new component or template that surfaces a player name, default to `$pn(...)` unless the value is being used as an identifier.
+- When adding a new component or template that surfaces a server or player name, default to `$pn(...)` unless the value is being used as an identifier.
