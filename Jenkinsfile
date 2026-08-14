@@ -214,6 +214,8 @@ pipeline {
                         --platform linux/arm64 \
                         --build-arg BUILDKIT_PROGRESS=plain \
                         --build-arg VITE_DISCORD_CLIENT_ID="1410567423119196251" \
+                        --cache-from type=registry,ref=anskia/bfstats-ui:buildcache \
+                        --cache-to type=registry,ref=anskia/bfstats-ui:buildcache,mode=max \
                         --push \
                         -t anskia/bfstats-ui:latest
                     '''
@@ -222,6 +224,9 @@ pipeline {
               }
             }
             stage('Deploy UI') {
+              options {
+                skipDefaultCheckout(true)
+              }
               agent {
                 kubernetes {
                   cloud 'Local k8s'

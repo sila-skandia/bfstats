@@ -46,16 +46,20 @@ const proxy = {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
     vueDevTools(),
-    visualizer({
-      filename: './dist/stats.html',
-      open: false,
-      gzipSize: true,
-      brotliSize: true,
-    }),
+    ...(mode === 'analyze'
+      ? [
+          visualizer({
+            filename: './dist/stats.html',
+            open: false,
+            gzipSize: true,
+            brotliSize: true,
+          }),
+        ]
+      : []),
   ],
   resolve: {
     alias: {
@@ -108,4 +112,4 @@ export default defineConfig({
     strictPort: true,
     proxy,
   },
-})
+}))
