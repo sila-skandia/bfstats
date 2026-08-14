@@ -80,7 +80,7 @@ watch(() => [props.serverGuid, props.mapName], () => loadData(false))
       <header class="mm-smdp__head">
         <button type="button" class="mm-btn mm-btn--inline mm-smdp__back" @click="emit('close')">←</button>
         <div class="mm-smdp__head-text">
-          <div class="mm-eyebrow">{{ getGameLabel(detail.game) }} · {{ detail.serverName }}</div>
+          <div class="mm-eyebrow">{{ getGameLabel(detail.game) }} · {{ $pn(detail.serverName) }}</div>
           <h2 class="mm-h2 mm-smdp__title">{{ detail.mapName }}</h2>
           <span v-if="playerName" class="mm-chip mm-chip--accent" style="margin-top: 6px">Tracking {{ $pn(playerName) }}</span>
         </div>

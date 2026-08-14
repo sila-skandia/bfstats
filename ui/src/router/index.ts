@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw, type RouteLocation
 import { useAuth } from '../composables/useAuth'
 import { telemetryService } from '../services/telemetryService'
 import { isNavigating } from '../composables/useNavProgress'
+import { decodePlayerName } from '../utils/playerName'
 
 // Legacy routes have been migrated to V4 — only views that are kept (Discord
 // callback, tournaments, admin) are still imported here. All public stats
@@ -278,7 +279,7 @@ const routes: RouteRecordRaw[] = [
           component: PlayerDetailsV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName} · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.playerName))} · bfstats.io`,
             description: 'Player profile, stats, achievements, and recent sessions.'
           }
         },
@@ -288,7 +289,7 @@ const routes: RouteRecordRaw[] = [
           component: PlayerAllAchievementsV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName} · Achievements · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.playerName))} · Achievements · bfstats.io`,
             description: 'All achievements earned by this player.'
           }
         },
@@ -298,7 +299,7 @@ const routes: RouteRecordRaw[] = [
           component: PlayerSessionsV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName} · Sessions · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.playerName))} · Sessions · bfstats.io`,
             description: 'Session history for this player.'
           }
         },
@@ -308,7 +309,7 @@ const routes: RouteRecordRaw[] = [
           component: PlayerNetworkV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName} · Network · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.playerName))} · Network · bfstats.io`,
             description: 'Player co-play network and proximity.'
           }
         },
@@ -318,7 +319,7 @@ const routes: RouteRecordRaw[] = [
           component: PlayerMapDetailV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.mapName} · ${route.params.playerName} · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${route.params.mapName} · ${decodePlayerName(String(route.params.playerName))} · bfstats.io`,
             description: 'Rankings on a single map for this player.'
           }
         },
@@ -337,7 +338,7 @@ const routes: RouteRecordRaw[] = [
           component: ServerDetailsV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.serverName} · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.serverName))} · bfstats.io`,
             description: 'Server profile, live roster, and population history.'
           }
         },
@@ -353,7 +354,7 @@ const routes: RouteRecordRaw[] = [
           component: ServerWrappedV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.serverName} Wrapped ${route.params.year} · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.serverName))} Wrapped ${route.params.year} · bfstats.io`,
             description: 'Year in Review Wrapped stories for this server.'
           }
         },
@@ -367,7 +368,7 @@ const routes: RouteRecordRaw[] = [
           component: PlayerWrappedV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.playerName} Wrapped ${route.params.year} · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.playerName))} Wrapped ${route.params.year} · bfstats.io`,
             description: 'Year in Review Wrapped stories for this player.'
           }
         },
@@ -476,7 +477,7 @@ const routes: RouteRecordRaw[] = [
           component: ServerSessionsV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${route.params.serverName} · Sessions · bfstats.io`,
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.serverName))} · Sessions · bfstats.io`,
             description: 'Recent rounds played on this server.'
           }
         },

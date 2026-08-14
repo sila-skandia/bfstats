@@ -78,7 +78,7 @@ const goPlayer = (name: string) => {
 
     <section v-if="primaryServerGuid && primaryServerName" class="mm-section--tight" style="margin-top: 32px">
       <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 14px">
-        Proximity orbit · {{ primaryServerName }}
+        Proximity orbit · {{ $pn(primaryServerName) }}
       </div>
       <MmPingProximityOrbit
         seamless

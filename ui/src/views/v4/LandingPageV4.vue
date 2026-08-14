@@ -6,6 +6,7 @@ import type { ServerSummary } from '@/types/server'
 import { countryCodeToName, countryCodeToFlag } from '@/types/countryCodes'
 import { loadClass } from './mmTokens'
 import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
+import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import { formatTimeRemaining } from '@/utils/timeUtils'
 
 // Only BF1942 is actively tracked in the modern-minimal preview today.
@@ -58,7 +59,7 @@ const load = async (showSpinner = false) => {
         selectedServer.value = firstActive
       }
     }
-  } catch (e) {
+  } catch {
     error.value = 'Server feed temporarily unavailable.'
   } finally {
     loading.value = false
@@ -214,17 +215,6 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
       <MmInstallationLinks />
     </div>
 
-    <!-- search-all entry — the list below is live servers only; this finds
-         every tracked server (offline / historical) by name. -->
-    <div class="mm-landing__search-all">
-      <router-link to="/v4/servers/search" class="mm-landing__search-link">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="m20 20-3.5-3.5" />
-        </svg>
-        Search all servers
-      </router-link>
-    </div>
 
     <!-- list -->
     <div v-if="loading && servers.length === 0" style="padding: 40px 0">
@@ -257,7 +247,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
         >
           <span class="mm-landing__mrank">{{ String(idx + 1).padStart(2, '0') }}</span>
           <div class="mm-landing__mbody">
-            <div class="mm-landing__mtitle">{{ s.name }}</div>
+            <div class="mm-landing__mtitle">{{ $pn(s.name) }}</div>
             <div class="mm-landing__msub">{{ s.ip }}:{{ s.port }}</div>
             <div v-if="s.mapName || s.country" class="mm-landing__msub mm-landing__msub--alt">
               <template v-if="s.mapName">{{ s.mapName }}</template>
@@ -310,7 +300,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
                 <td class="mm-list__rank is-muted">{{ String(idx + 1).padStart(2, '0') }}</td>
                 <td class="mm-list__name-cell">
                   <div class="mm-list__name">
-                    <span class="mm-list__name-primary">{{ s.name }}</span>
+                    <span class="mm-list__name-primary">{{ $pn(s.name) }}</span>
                     <!-- Subline normal (visible when full-width or mobile) -->
                     <span class="mm-list__name-sub mm-landing__sub-normal">
                       {{ s.ip }}:{{ s.port }}
@@ -354,7 +344,16 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
           <!-- Quiet servers list below active servers -->
           <div v-if="showQuiet && quietServers.length > 0">
             <div class="mm-landing__quiet-header">
-              <span class="mm-eyebrow">Quiet · {{ quietServers.length }} hosts standing by</span>
+              <div class="mm-landing__quiet-head-row">
+                <span class="mm-eyebrow">Quiet · {{ quietServers.length }} hosts standing by</span>
+                <router-link to="/v4/servers/search" class="mm-landing__quiet-search-link">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3.5-3.5" />
+                  </svg>
+                  Search all tracked servers →
+                </router-link>
+              </div>
               <hr class="mm-rule" />
             </div>
             <div class="mm-landing__quiet-grid">
@@ -364,7 +363,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
                 class="mm-landing__quiet-cell"
                 @click="goServer(s)"
               >
-                <span class="mm-landing__quiet-name" :title="s.name">{{ s.name }}</span>
+                <span class="mm-landing__quiet-name" :title="$pn(s.name)">{{ $pn(s.name) }}</span>
                 <span class="mm-landing__quiet-meta">
                   {{ s.country ? s.country.toUpperCase() : '—' }} · 0/{{ s.maxPlayers }}
                 </span>
@@ -376,10 +375,10 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
         <!-- Sticky selected server aside panel -->
         <aside v-if="selectedServer" class="mm-landing__aside">
           <div class="mm-landing__aside-head">
-            <div>
+            <div style="flex: 1; min-width: 0;">
               <span class="mm-eyebrow">Selected host</span>
               <div class="mm-landing__aside-title-row">
-                <span class="mm-landing__aside-title" :title="selectedServer.name">{{ selectedServer.name }}</span>
+                <span class="mm-landing__aside-title" :title="$pn(selectedServer.name)">{{ $pn(selectedServer.name) }}</span>
                 <span class="mm-chip mm-chip--live"><span class="mm-chip__dot"></span>Online</span>
               </div>
               <div class="mm-meta-row" style="margin-top: 8px;">
@@ -388,6 +387,15 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
                 <span class="mm-meta-row__sep">·</span>{{ selectedServer.ip }}:{{ selectedServer.port }}
                 <span v-if="averagePing !== null" class="mm-meta-row__sep">·</span>
                 <span v-if="averagePing !== null">avg ping <span class="mm-meta-row__strong">{{ averagePing }}ms</span></span>
+              </div>
+              <div style="margin-top: 10px;">
+                <MmServerConnectAction
+                  :ip="selectedServer.ip"
+                  :port="selectedServer.port"
+                  :server-name="selectedServer.name"
+                  compact
+                  align="left"
+                />
               </div>
             </div>
             <button @click="selectedServer = null" type="button" title="Close panel" class="mm-landing__aside-close">
@@ -452,7 +460,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
                       {{ String(pidx + 1).padStart(2, '0') }}
                     </td>
                     <td class="mm-list__name-cell">
-                      <span class="mm-list__name-primary">{{ player.name }}</span>
+                      <span class="mm-list__name-primary">{{ $pn(player.name) }}</span>
                     </td>
                     <td class="is-num">
                       <span class="mm-num--kill">{{ player.kills }}</span>
@@ -523,36 +531,30 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   cursor: not-allowed;
 }
 
-.mm-landing__search-all {
+.mm-landing__quiet-head-row {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 20px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 
-.mm-landing__search-link {
+.mm-landing__quiet-search-link {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   font-family: var(--mm-font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
+  font-size: 11px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--mm-ink-soft);
+  color: var(--mm-ink-muted);
   text-decoration: none;
-  padding: 7px 12px;
-  border: 1px solid var(--mm-rule);
-  border-radius: 2px;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s ease;
 }
 
-.mm-landing__search-link:hover {
+.mm-landing__quiet-search-link:hover {
   color: var(--mm-accent);
-  border-color: var(--mm-accent);
-}
-
-@media (max-width: 640px) {
-  .mm-landing__search-all { justify-content: stretch; }
-  .mm-landing__search-link { flex: 1; justify-content: center; }
 }
 
 /* Desktop/mobile swap for the servers list. Card layout on mobile matches

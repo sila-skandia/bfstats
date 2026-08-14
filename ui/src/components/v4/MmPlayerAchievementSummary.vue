@@ -486,7 +486,7 @@ watch(() => props.error, (n) => { if (n !== undefined) error.value = n ?? null }
                     </div>
                   </div>
                   <div class="mm-ach__card-foot">
-                    <span v-if="group.serverName" class="mm-ach__card-foot-item">{{ group.serverName }}</span>
+                    <span v-if="group.serverName" class="mm-ach__card-foot-item">{{ $pn(group.serverName) }}</span>
                     <span v-if="group.serverName && group.mapName" class="mm-meta-row__sep">·</span>
                     <span v-if="group.mapName" class="mm-ach__card-foot-item">{{ group.mapName }}</span>
                     <span v-if="group.roundId" class="mm-eyebrow" style="margin-left: auto">Round report →</span>
@@ -597,7 +597,7 @@ watch(() => props.error, (n) => { if (n !== undefined) error.value = n ?? null }
                   </div>
                 </div>
                 <div class="mm-ach__card-foot">
-                  <span v-if="parseOccurrence(o).serverName" class="mm-ach__card-foot-item">{{ parseOccurrence(o).serverName }}</span>
+                  <span v-if="parseOccurrence(o).serverName" class="mm-ach__card-foot-item">{{ $pn(parseOccurrence(o).serverName) }}</span>
                   <span v-if="o.mapName" class="mm-meta-row__sep">·</span>
                   <span v-if="o.mapName" class="mm-ach__card-foot-item">{{ o.mapName }}</span>
                   <span v-if="o.roundId" class="mm-meta-row__sep">·</span>

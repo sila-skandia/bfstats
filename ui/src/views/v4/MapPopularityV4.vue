@@ -251,12 +251,12 @@ onMounted(() => {
         class="mm-meta-row__strong"
         style="text-decoration: underline; text-underline-offset: 3px"
         @click.prevent="backToServer"
-      >← {{ serverName ? `Back to ${serverName}` : 'Back' }}</a>
+      >← {{ serverName ? `Back to ${$pn(serverName)}` : 'Back' }}</a>
     </div>
 
     <h1 class="mm-display">
       Map popularity
-      <span v-if="serverName" class="mm-display__muted">· {{ serverName }}</span>
+      <span v-if="serverName" class="mm-display__muted">· {{ $pn(serverName) }}</span>
     </h1>
 
     <hr class="mm-rule" style="margin-top: 24px" />
