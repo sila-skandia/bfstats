@@ -161,16 +161,20 @@ interface RefereeComment {
   createdAt: string;
 }
 
-const props = defineProps<{
-  isOpen: boolean;
+withDefaults(defineProps<{
+  isOpen?: boolean;
   tournamentId: number;
   match: {
     id: number;
     scheduledDate?: string;
     team1?: { name: string };
     team2?: { name: string };
+    team1Name?: string;
+    team2Name?: string;
   } | null;
-}>();
+}>(), {
+  isOpen: true,
+});
 
 const emit = defineEmits<{
   (e: 'close'): void;
