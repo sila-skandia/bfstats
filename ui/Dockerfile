@@ -1,5 +1,5 @@
-# Use Node.js as the base image
-FROM node:20-alpine AS build-stage
+# Build static assets on the Jenkins node architecture; they are platform-independent.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build-stage
 
 # Accept build arguments for Vite environment variables
 ARG VITE_DISCORD_CLIENT_ID
@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy the rest of the application code
 COPY . .
