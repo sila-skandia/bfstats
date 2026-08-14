@@ -1,61 +1,74 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Read environment variables from file.
- * https://github.com/motdotla/dotenv
+ * This suite only ever runs locally, via scripts/verify.sh, to check we haven't
+ * broken anything. It is tuned for turnaround, not for a shared CI runner.
+ *
+ * Notably there is no `process.env.CI` branch. verify.sh sets CI=true inside the
+ * container purely to make Playwright non-interactive, but Playwright also reads
+ * that flag as "you are on a weak shared runner" and drops to a single worker
+ * with two retries — which is what turned a couple of minutes of real work into
+ * a fifteen minute wait.
  */
-// require('dotenv').config();
+
+/** Pins its own Pixel 5 viewport via test.use(), so it belongs to one project. */
+const MOBILE_SPECS = /responsive-mobile\.spec\.ts/;
 
 /**
- * See https://playwright.dev/docs/test-configuration.
+ * WebKit is ~2.3x slower than Chromium for the same tests and is off by default.
+ * Opt in with PW_ALL_BROWSERS=1 when a change could plausibly be engine-specific
+ * (layout, CSS, date parsing, Intl).
  */
+const allBrowsers = !!process.env.PW_ALL_BROWSERS;
+
+/**
+ * Browsers all talk to one dev server and one SQLite-backed API, so this trades
+ * off against backend contention rather than CPU. Override with PW_WORKERS.
+ */
+const workers = process.env.PW_WORKERS ?? '50%';
+
 export default defineConfig({
   testDir: './e2e',
-  /* Run tests in files in parallel */
   fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
+  // Local-only: `.only` is a debugging convenience here, not a mistake to catch.
+  forbidOnly: false,
+  // A retry hides a flake and costs a full timeout. Fix the test instead.
+  retries: 0,
+  workers,
+  // 'list' streams progress; the HTML report must never try to open a browser
+  // from inside the container.
+  reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: 'http://localhost:5173',
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
-    /* Take screenshot on failure */
     screenshot: 'only-on-failure',
-    /* Record video on failure */
     video: 'retain-on-failure',
   },
 
-  /* Configure projects for major browsers */
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: MOBILE_SPECS,
     },
-
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-
-    /* Test against mobile viewports. */
     {
       name: 'Mobile Chrome',
       use: { ...devices['Pixel 5'] },
+      testMatch: MOBILE_SPECS,
     },
+    ...(allBrowsers
+      ? [{
+          name: 'webkit',
+          use: { ...devices['Desktop Safari'] },
+          testIgnore: MOBILE_SPECS,
+        }]
+      : []),
   ],
 
-  /* Run your local dev server before starting the tests */
+  // verify.sh starts the API and UI itself and sets PW_SKIP_WEBSERVER.
   webServer: process.env.PW_SKIP_WEBSERVER ? undefined : {
     command: 'npm run dev',
     url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
   },
 });

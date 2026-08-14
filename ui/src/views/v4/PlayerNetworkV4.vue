@@ -3,6 +3,7 @@ import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchPlayerStats } from '@/services/playerStatsService'
 import { decodePlayerName } from '@/utils/playerName'
+import MmPlayerNetworkVisualizer from '@/components/v4/MmPlayerNetworkVisualizer.vue'
 import MmPlayerNetworkGraph from '@/components/v4/MmPlayerNetworkGraph.vue'
 import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
 
@@ -58,6 +59,15 @@ const goPlayer = (name: string) => {
     </h1>
 
     <hr class="mm-rule" style="margin-top: 24px; margin-bottom: 24px" />
+
+    <section class="mm-section--tight">
+      <MmPlayerNetworkVisualizer
+        :player-name="rawName"
+        @player-click="goPlayer"
+      />
+    </section>
+
+    <hr class="mm-rule" style="margin-top: 32px; margin-bottom: 28px" />
 
     <section class="mm-section--tight">
       <MmPlayerNetworkGraph

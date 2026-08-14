@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchCommunity, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { parseUtc } from '@/utils/timeUtils'
+import MmCommunityNetworkGraph from '@/components/v4/MmCommunityNetworkGraph.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,7 +11,7 @@ const router = useRouter()
 const community = ref<PlayerCommunity | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const activeTab = ref<'members' | 'servers'>('members')
+const activeTab = ref<'map' | 'members' | 'servers'>('map')
 
 const cohesionPercentage = computed(() =>
   community.value ? Math.round(community.value.cohesionScore * 100) : 0,
@@ -130,6 +131,7 @@ onMounted(loadCommunity)
       <div class="mm-tabs" style="margin-top: 28px">
         <button
           v-for="t in [
+            { id: 'map', label: 'Network Map' },
             { id: 'members', label: `Members · ${community.memberCount}` },
             { id: 'servers', label: `Servers · ${community.primaryServers.length}` },
           ]"
@@ -137,11 +139,18 @@ onMounted(loadCommunity)
           type="button"
           class="mm-tab"
           :class="{ 'mm-tab--active': activeTab === t.id }"
-          @click="activeTab = t.id as 'members' | 'servers'"
+          @click="activeTab = t.id as 'map' | 'members' | 'servers'"
         >{{ t.label }}</button>
       </div>
 
-      <div v-if="activeTab === 'members'" style="margin-top: 12px">
+      <div v-if="activeTab === 'map'" style="margin-top: 16px">
+        <MmCommunityNetworkGraph
+          :community-id="community.id"
+          seamless
+        />
+      </div>
+
+      <div v-else-if="activeTab === 'members'" style="margin-top: 12px">
         <table class="mm-list mm-list--dense">
           <thead>
             <tr>
