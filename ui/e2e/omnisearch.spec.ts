@@ -57,6 +57,28 @@ test.describe('Global Omnisearch / Command Palette (⌘K)', () => {
     await expect(items.first()).toBeVisible({ timeout: 10000 });
   });
 
+  test('should open player results on the filtered leaderboard', async ({ page }) => {
+    const playerName = 'Omni Test Player';
+    await page.route('**/stats/Players/search?**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{ playerName, totalPlayTimeMinutes: 120 }],
+      }),
+    }));
+    await page.route('**/stats/servers/search?**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [] }),
+    }));
+
+    await page.locator('button.mm-search--trigger').click();
+    await page.locator('.mm-omni-input').fill(playerName);
+    await page.locator('.mm-omni-item', { hasText: playerName }).click();
+
+    await expect(page).toHaveURL((url) =>
+      url.pathname === '/v4/leaderboard' && url.searchParams.get('q') === playerName,
+    );
+  });
+
   test('should navigate using arrow keys and Enter', async ({ page }) => {
     await page.locator('button.mm-search--trigger').click();
     const input = page.locator('.mm-omni-input');

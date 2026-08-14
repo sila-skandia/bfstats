@@ -95,7 +95,7 @@ const navShortcuts: NavShortcut[] = [
     id: 'nav-players',
     title: 'Players Leaderboard',
     subtitle: 'Search all tracked player records, aliases & achievements',
-    path: '/v4/players',
+    path: '/v4/leaderboard',
     badge: 'LEADERBOARDS',
     badgeVariant: 'amber',
     iconVariant: 'amber',
@@ -186,7 +186,7 @@ const flatResults = computed<FlatResultItem[]>(() => {
       badge,
       badgeVariant,
       iconVariant: 'player',
-      path: `/v4/players/${encodeURIComponent(p.playerName)}`,
+      path: `/v4/leaderboard?q=${encodeURIComponent(p.playerName)}`,
       raw: p,
     })
   }
@@ -313,7 +313,7 @@ const selectCurrent = () => {
     navigateTo(items[selectedIndex.value])
   } else if (query.value.trim()) {
     close()
-    void router.push({ path: '/v4/players', query: { q: query.value.trim() } })
+    void router.push({ path: '/v4/leaderboard', query: { q: query.value.trim() } })
   }
 }
 
@@ -446,7 +446,7 @@ const handleBackdropClick = (e: MouseEvent) => {
             class="mm-omni-empty"
           >
             <p>No players, servers, or pages matching <span class="mm-omni-empty__query">"{{ query }}"</span></p>
-            <span class="mm-omni-empty__hint">Press ↵ to search full player directory</span>
+            <span class="mm-omni-empty__hint">Press ↵ to search the full leaderboard</span>
           </div>
 
           <!-- Categorized Results List -->
