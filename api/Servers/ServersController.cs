@@ -1,3 +1,4 @@
+using api.Caching;
 using api.Constants;
 using api.Servers.Models;
 using Microsoft.AspNetCore.Http;
@@ -23,7 +24,10 @@ public class ServersController(
     /// <response code="400">If the server name is empty or invalid.</response>
     /// <response code="404">If the server is not found in the database.</response>
     [HttpGet("{serverName}")]
-    [ResponseCache(Duration = 300, Location = ResponseCacheLocation.Any)]
+    // Edge-only: this payload carries the live roster and current map, so a
+    // browser-held copy makes a page the user navigates back to look frozen. 30s
+    // matches the stats collector's interval — the freshest this can ever be.
+    [EdgeCache(30)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
