@@ -191,10 +191,6 @@ const getAccentColor = (): string => {
   return isValidHex(normalized) ? normalized : '#FFD700'
 }
 
-const getBackgroundColor = (): string => {
-  return themeVars.value['--color-background'] || '#000000'
-}
-
 const getBackgroundSoftColor = (): string => {
   return themeVars.value['--color-background-soft'] || '#1a1a1a'
 }

@@ -106,4 +106,5 @@ dotnet_diagnostic.CS0169.severity = warning
 dotnet_diagnostic.CS0067.severity = warning
 dotnet_diagnostic.CS0162.severity = warning
 dotnet_diagnostic.CS8019.severity = warning
+dotnet_diagnostic.CA1852.severity = none
 
