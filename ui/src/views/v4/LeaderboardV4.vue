@@ -5,7 +5,6 @@ import { fetchLeaderboard, type LeaderboardPlayer, type LeaderboardServer, type 
 import { kdClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import { decodeServerName } from '@/utils/playerName'
-import clippyImg from '@/assets/clippy_my_boi.webp'
 
 interface ColumnDef {
   key: string
@@ -765,20 +764,7 @@ const rankTintClass = (rank: number) => {
   <div class="mm lb-container" :class="{ 'lb-container--fullscreen': isFullscreen }">
     <!-- Header Section -->
     <header class="lb-header">
-      <div class="lb-eyebrow-row">
-        <img :src="clippyImg" alt="BFStats" class="lb-clippy" />
-        <span class="mm-eyebrow">BFSTATS · GLOBAL RANKINGS</span>
-        <span class="lb-divider"></span>
-        <span class="mm-eyebrow mm-ink-muted">
-          BATTLEFIELD 1942 · {{ days === 0 ? 'ALL TIME' : `LAST ${days} DAYS` }}
-        </span>
-      </div>
-
-      <div class="lb-title-row">
-        <div>
-          <h1 class="mm-display lb-title">Leaderboard</h1>
-        </div>
-      </div>
+      <h1 class="mm-display lb-title">Leaderboard</h1>
     </header>
 
     <!-- Toolbar / Slicers Bar -->
@@ -1863,41 +1849,12 @@ const rankTintClass = (rank: number) => {
   box-sizing: border-box;
 }
 
-.lb-eyebrow-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 24px;
-}
-
-.lb-clippy {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
-}
-
-.lb-divider {
-  flex: 1;
-  height: 1px;
-  background: var(--mm-rule);
-}
-
 .lb-title {
   font-size: 48px;
   font-weight: 300;
   letter-spacing: -0.02em;
   margin: 0;
   line-height: 1.1;
-}
-
-.lb-subtitle {
-  font-family: var(--mm-font-display);
-  font-weight: 300;
-  color: var(--mm-ink-soft);
-  font-size: 15px;
-  margin: 10px 0 0;
-  max-width: 65ch;
-  line-height: 1.5;
 }
 
 /* Filters & Toolbar */
@@ -3225,11 +3182,6 @@ td {
 
   .lb-title {
     font-size: 32px;
-  }
-
-  .lb-eyebrow-row {
-    margin-bottom: 12px;
-    gap: 8px;
   }
 
   .lb-filter-wrapper,
