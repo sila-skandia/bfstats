@@ -25,21 +25,25 @@ test.describe('Data Explorer legacy redirects', () => {
     '/explore/maps/Wake%20Island',
   ];
 
+  // These assert the redirect contract, so they wait on the URL itself rather
+  // than on `networkidle`. The destinations poll for live server data and hold a
+  // SignalR socket open, so "500ms of network silence" is a condition the player
+  // page in particular may never reach — it used to hang here for the full 30s
+  // timeout. toHaveURL/toBeVisible retry until they pass, so they settle as soon
+  // as the redirect lands instead.
   for (const path of toServerList) {
     test(`should redirect ${path} to the BF1942 server list`, async ({ page }) => {
       await page.goto(path);
-      await page.waitForLoadState('networkidle');
 
-      expect(page.url()).toContain('/v4/servers/bf1942');
+      await expect(page).toHaveURL(/\/v4\/servers\/bf1942/);
       expect(page.url()).not.toContain('/explore');
     });
   }
 
   test('should redirect /explore/players to the players page', async ({ page }) => {
     await page.goto('/explore/players');
-    await page.waitForLoadState('networkidle');
 
-    expect(page.url()).toContain('/v4/players');
+    await expect(page).toHaveURL(/\/v4\/players/);
     expect(page.url()).not.toContain('/explore');
 
     await expect(page.getByRole('textbox', { name: /filter players by name/i })).toBeVisible();
@@ -47,15 +51,13 @@ test.describe('Data Explorer legacy redirects', () => {
 
   test('should redirect a per-player explore link to that player', async ({ page }) => {
     await page.goto('/explore/players/Xanadu');
-    await page.waitForLoadState('networkidle');
 
-    expect(page.url()).toContain('/v4/players/Xanadu');
+    await expect(page).toHaveURL(/\/v4\/players\/Xanadu/);
     expect(page.url()).not.toContain('/explore');
   });
 
   test('should land on a rendered page, not a blank router miss', async ({ page }) => {
     await page.goto('/explore');
-    await page.waitForLoadState('networkidle');
 
     await expect(page.locator('main')).toBeVisible();
     await expect(page.locator('.mm-landing__top')).toBeVisible();

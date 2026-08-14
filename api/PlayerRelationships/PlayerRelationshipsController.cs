@@ -46,6 +46,7 @@ public class PlayerRelationshipsController(
     {
         try
         {
+            limit = Math.Clamp(limit, 1, 100);
             var teammates = await relationshipService.GetMostFrequentCoPlayersAsync(playerName, limit);
             // Transform to only show the other player (not the requested player)
             var transformed = teammates.Select(t => new PlayerRelationship

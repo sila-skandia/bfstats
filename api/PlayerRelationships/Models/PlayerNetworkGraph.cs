@@ -12,6 +12,8 @@ public record NetworkNode
 {
     public required string Id { get; init; }
     public required string Label { get; init; }
+    public int Degree { get; init; } = 1;
+    public int Weight { get; init; }
 }
 
 public record NetworkEdge
