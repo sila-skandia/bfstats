@@ -868,7 +868,6 @@ async function linkRoundToExistingResult(roundId: string): Promise<void> {
     );
 
     // Update form with result data
-    editingResult.value = result;
     formData.value = {
       team1Id: result.team1Id,
       team1Name: result.team1Name || '',
@@ -918,7 +917,6 @@ async function unlinkRoundFromResult(): Promise<void> {
       editingResult.value.id
     );
 
-    editingResult.value = result;
     formData.value.roundId = (result as any).roundId;
 
     // Check for team mapping warning

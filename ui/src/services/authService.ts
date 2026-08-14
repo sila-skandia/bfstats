@@ -198,7 +198,8 @@ class AuthService {
 
   isTokenExpired(token: string): boolean {
     try {
-      const payload = this.parseJwt(token);
+      const payload = this.parseJwt(token) as { exp?: number };
+      if (typeof payload.exp !== 'number') return true;
       const currentTime = Math.floor(Date.now() / 1000);
       return payload.exp < currentTime;
     } catch {
@@ -208,7 +209,8 @@ class AuthService {
 
   getTokenExpirationTime(token: string): number | null {
     try {
-      const payload = this.parseJwt(token);
+      const payload = this.parseJwt(token) as { exp?: number };
+      if (typeof payload.exp !== 'number') return null;
       return payload.exp * 1000; // Convert to milliseconds
     } catch {
       return null;

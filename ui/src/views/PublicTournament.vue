@@ -95,7 +95,7 @@
               :style="{
                 borderColor: getAccentColor(),
                 backgroundColor: getAccentColor(),
-                color: getBackgroundColor()
+                color: getAccentTextColor()
               }"
               @mouseenter="(e) => {
                 if (e.currentTarget) {
@@ -271,21 +271,6 @@
           />
         </div>
       </div>
-
-      <!-- Match Details Modal Component -->
-      <MatchDetailsModal
-        :match="selectedMatch"
-        :teams="tournament?.teams || []"
-        :tournament-id="tournamentId"
-        :accent-color="getAccentColor()"
-        :text-color="getTextColor()"
-        :text-muted-color="getTextMutedColor()"
-        :background-color="getBackgroundColor()"
-        :background-soft-color="getBackgroundSoftColor()"
-        :background-mute-color="getBackgroundMuteColor()"
-        @close="closeMatchupModal"
-        @compare-players="comparePlayers"
-      />
     </div>
   </div>
 </template>
@@ -293,14 +278,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { usePlayerComparison } from '@/composables/usePlayerComparison';
 import TournamentHero from '@/components/TournamentHero.vue';
 import TournamentNewsFeed from '@/components/TournamentNewsFeed.vue';
 import TournamentPromoVideo from '@/components/TournamentPromoVideo.vue';
-import MatchDetailsModal from '@/components/MatchDetailsModal.vue';
 import {
   type PublicTournamentDetail,
-  type PublicTournamentMatch,
 } from '@/services/publicTournamentService';
 import { notificationService } from '@/services/notificationService';
 import { isValidHex, normalizeHex, getContrastingTextColor, hexToRgb, rgbToHex, calculateLuminance } from '@/utils/colorUtils';
@@ -309,33 +291,14 @@ import { useTournamentCache } from '@/composables/useTournamentCache';
 const router = useRouter();
 const route = useRoute();
 const { useTournament } = useTournamentCache();
-const { comparePlayers } = usePlayerComparison();
 
 const tournament = ref<PublicTournamentDetail | null>(null);
 const heroImageUrl = ref<string | null>(null);
 const logoImageUrl = ref<string | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const selectedMatch = ref<PublicTournamentMatch | null>(null);
 
 const tournamentId = route.params.id as string;
-
-// Helper function to get theme colors
-const getThemeColors = () => {
-  if (!tournament.value?.theme) {
-    return {
-      background: '#000000',
-      text: '#FFFFFF',
-      accent: '#FFD700',
-    };
-  }
-
-  return {
-    background: tournament.value.theme.backgroundColour || '#000000',
-    text: tournament.value.theme.textColour || '#FFFFFF',
-    accent: tournament.value.theme.accentColour || '#FFD700',
-  };
-};
 
 const themeVars = computed<Record<string, string>>(() => {
   // Defaults - black background, white text, yellow/golden borders
@@ -410,16 +373,8 @@ const getAccentColorWithOpacity = (opacity: number): string => {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
 };
 
-const getBackgroundColor = (): string => {
-  return themeVars.value['--color-background'] || '#000000';
-};
-
 const getBackgroundSoftColor = (): string => {
   return themeVars.value['--color-background-soft'] || '#1a1a1a';
-};
-
-const getBackgroundMuteColor = (): string => {
-  return themeVars.value['--color-background-mute'] || '#2d2d2d';
 };
 
 const getTextColor = (): string => {
@@ -474,18 +429,18 @@ const loadTournament = async () => {
     description += '. Track live tournament progress and player statistics.';
 
     // Update meta description tag
-    const descriptionTag = document.querySelector('meta[name="description"]');
-    if (descriptionTag) {
-      descriptionTag.setAttribute('content', description);
+    let metaTag = document.querySelector('meta[name="description"]');
+    if (!metaTag) {
+      metaTag = document.createElement('meta');
+      metaTag.setAttribute('name', 'description');
+      document.head.appendChild(metaTag);
     }
-
-    // Create title
-    const fullTitle = `${data.name} - BF Stats`;
+    metaTag.setAttribute('content', description);
 
     // Update Open Graph tags
     const ogTitleTag = document.querySelector('meta[property="og:title"]');
     if (ogTitleTag) {
-      ogTitleTag.setAttribute('content', fullTitle);
+      ogTitleTag.setAttribute('content', `${data.name} - BF Stats`);
     }
 
     const ogDescriptionTag = document.querySelector('meta[property="og:description"]');
@@ -500,14 +455,6 @@ const loadTournament = async () => {
     error.value = err instanceof Error ? err.message : 'Failed to load tournament';
     loading.value = false;
   }
-};
-
-const openMatchupModal = (match: PublicTournamentMatch) => {
-  selectedMatch.value = match;
-};
-
-const closeMatchupModal = () => {
-  selectedMatch.value = null;
 };
 
 // Watch tournament data and update page title when it loads
