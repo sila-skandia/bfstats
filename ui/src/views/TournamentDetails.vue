@@ -385,13 +385,6 @@ const loadLogoImage = async () => {
 };
 
 // Helpers
-const getProgressPercentage = (): number => {
-  if (!tournament.value?.anticipatedRoundCount || tournament.value.anticipatedRoundCount === 0) {
-    return 0;
-  }
-  return Math.min(100, ((tournament.value.matches?.length ?? 0) / tournament.value.anticipatedRoundCount) * 100);
-};
-
 const formatDate = (dateString: string): string => {
   const date = new Date(dateString);
   return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
