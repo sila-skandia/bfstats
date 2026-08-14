@@ -5,6 +5,7 @@ import { searchServers, type ServerSearchItem } from '@/services/serverDetailsSe
 import { countryCodeToName, countryCodeToFlag } from '@/types/countryCodes'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
+import { decodePlayerName } from '@/utils/playerName'
 
 const route = useRoute()
 const router = useRouter()
@@ -103,11 +104,12 @@ const allTimeMax = computed(() =>
 )
 
 function highlightName(name: string): string {
+  const decoded = decodePlayerName(name)
   const q = filterName.value.trim()
-  if (!q) return escapeHtml(name)
+  if (!q) return escapeHtml(decoded)
   const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const re = new RegExp(`(${escaped})`, 'gi')
-  return escapeHtml(name).replace(re, '<mark class="mm-servers__mark">$1</mark>')
+  return escapeHtml(decoded).replace(re, '<mark class="mm-servers__mark">$1</mark>')
 }
 
 function escapeHtml(s: string): string {

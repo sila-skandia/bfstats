@@ -162,7 +162,7 @@ watch(() => props.modelValue, (newValue) => {
           <span>{{ formatPlayTime(player.totalPlayTimeMinutes) }}</span>
           <template v-if="player.currentServer && player.isActive">
             <span class="mm-meta-row__sep">·</span>
-            <span>{{ player.currentServer.serverName }}</span>
+            <span>{{ $pn(player.currentServer.serverName) }}</span>
             <span class="mm-meta-row__sep">·</span>
             <span>{{ player.currentServer.mapName }}</span>
           </template>

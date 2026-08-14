@@ -266,7 +266,7 @@ const goPlayer = (name: string) => router.push(`/v4/players/${encodeURIComponent
           <td class="mm-list__name-cell">
             <div class="mm-list__name">
               <span class="mm-list__name-primary" v-html="highlightName(p.playerName)" />
-              <span v-if="p.favoriteServer" class="mm-list__name-sub">FAV · {{ p.favoriteServer }}</span>
+              <span v-if="p.favoriteServer" class="mm-list__name-sub">FAV · {{ $pn(p.favoriteServer) }}</span>
             </div>
           </td>
           <td data-cell-label="Status">
@@ -277,7 +277,7 @@ const goPlayer = (name: string) => router.push(`/v4/players/${encodeURIComponent
                   Live
                 </span>
                 <div class="mm-players__live-detail">
-                  <span class="mm-players__live-server">{{ p.currentServer.serverName }}</span>
+                  <span class="mm-players__live-server">{{ $pn(p.currentServer.serverName) }}</span>
                   <span v-if="p.currentServer.mapName" class="mm-players__live-meta">
                     {{ p.currentServer.mapName }}
                   </span>
