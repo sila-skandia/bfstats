@@ -1,0 +1,105 @@
+import axios from 'axios'
+
+export interface LeaderboardPlayer {
+  rank: number
+  name: string
+  tag: string
+  kills: number
+  deaths: number
+  kd: number
+  score: number
+  kpm: number
+  playMin: number
+  rounds: number
+  lastSeen?: string
+  favServer?: string
+  favServerGuid?: string
+  favServerCountry?: string
+  favServerFlag?: string
+  favMap?: string
+  isActive?: boolean
+  currentServer?: string
+}
+
+export interface LeaderboardServer {
+  guid: string
+  name: string
+  shortName: string
+  country: string
+  flag: string
+  playerCount: number
+  avgPlayers?: number
+  isPopulated?: boolean
+}
+
+export interface LeaderboardMap {
+  name: string
+  displayName: string
+  playerCount: number
+}
+
+export interface LeaderboardParams {
+  page?: number
+  pageSize?: number
+  sortBy?: string
+  sortDir?: 'asc' | 'desc'
+  q?: string
+  server?: string
+  exclude?: string
+  populatedOnly?: boolean
+  map?: string
+  days?: number
+  minRounds?: number
+  minPlay?: number
+  game?: string
+}
+
+export interface LeaderboardResponse {
+  days: number
+  minRounds: number
+  minPlay: number
+  server?: string
+  exclude?: string
+  populatedOnly?: boolean
+  map?: string
+  searchQuery?: string
+  sortBy: string
+  sortDir: string
+  page: number
+  pageSize: number
+  totalPages: number
+  totalPlayers: number
+  players: LeaderboardPlayer[]
+  servers: LeaderboardServer[]
+  maps: LeaderboardMap[]
+  generatedAt: string
+}
+
+/**
+ * Fetches the global player leaderboard with server-side pagination, sorting, search, and filters.
+ */
+export async function fetchLeaderboard(params: LeaderboardParams = {}): Promise<LeaderboardResponse> {
+  try {
+    const response = await axios.get<LeaderboardResponse>('/stats/leaderboard', {
+      params: {
+        page: params.page ?? 1,
+        pageSize: params.pageSize ?? 25,
+        sortBy: params.sortBy ?? 'score',
+        sortDir: params.sortDir ?? 'desc',
+        q: params.q?.trim() || undefined,
+        server: params.server?.trim() || undefined,
+        exclude: params.exclude?.trim() || undefined,
+        populatedOnly: params.populatedOnly ? true : undefined,
+        map: params.map?.trim() || undefined,
+        days: params.days ?? 30,
+        minRounds: params.minRounds ?? 1,
+        minPlay: params.minPlay ?? 0,
+        game: params.game ?? 'bf1942'
+      }
+    })
+    return response.data
+  } catch (err) {
+    console.error('Error fetching leaderboard data:', err)
+    throw new Error('Failed to load leaderboard data')
+  }
+}
