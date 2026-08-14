@@ -301,48 +301,125 @@ public class PlayerRelationshipService(
 
         return await neo4jService.ExecuteReadAsync(async tx =>
         {
-            // Get nodes and relationships up to specified depth
-            var query = @"
-                MATCH path = (p:Player {name: $playerName})-[:PLAYED_WITH*1.." + depth + @"]-(other:Player)
-                WITH p, other, relationships(path) AS rels
-                LIMIT $maxNodes
-                
-                UNWIND rels AS rel
-                WITH DISTINCT rel, startNode(rel) AS n1, endNode(rel) AS n2
-                
-                RETURN 
-                    n1.name AS player1,
-                    n2.name AS player2,
-                    rel.sessionCount AS sessionCount,
-                    rel.lastPlayedTogether AS lastPlayed";
-
-            var cursor = await tx.RunAsync(query, new { playerName, maxNodes });
-            
-            var nodes = new HashSet<string> { playerName };
-            var edges = new List<NetworkEdge>();
-
-            await foreach (var record in cursor)
+            if (depth <= 1)
             {
-                var player1 = record["player1"].As<string>();
-                var player2 = record["player2"].As<string>();
-                
-                nodes.Add(player1);
-                nodes.Add(player2);
-                
-                edges.Add(new NetworkEdge
+                var directQuery = @"
+                    MATCH (p:Player {name: $playerName})-[r:PLAYED_WITH]-(other:Player)
+                    RETURN p.name AS player1,
+                           other.name AS player2,
+                           r.sessionCount AS sessionCount,
+                           r.lastPlayedTogether AS lastPlayed
+                    ORDER BY r.sessionCount DESC
+                    LIMIT $maxNodes";
+
+                var cursor = await tx.RunAsync(directQuery, new { playerName, maxNodes });
+                var nodes = new Dictionary<string, NetworkNode>
                 {
-                    Source = player1,
-                    Target = player2,
-                    Weight = record["sessionCount"].As<int>(),
-                    LastInteraction = ToNullableDateTime(record["lastPlayed"]) ?? DateTime.MinValue
-                });
+                    [playerName] = new NetworkNode { Id = playerName, Label = playerName, Degree = 0, Weight = 0 }
+                };
+                var edges = new List<NetworkEdge>();
+
+                await foreach (var record in cursor)
+                {
+                    var player1 = record["player1"].As<string>();
+                    var player2 = record["player2"].As<string>();
+                    var weight = record["sessionCount"].As<int>();
+                    var lastPlayed = ToNullableDateTime(record["lastPlayed"]) ?? DateTime.MinValue;
+
+                    var other = player1 == playerName ? player2 : player1;
+                    if (!nodes.ContainsKey(other))
+                    {
+                        nodes[other] = new NetworkNode { Id = other, Label = other, Degree = 1, Weight = weight };
+                    }
+
+                    edges.Add(new NetworkEdge
+                    {
+                        Source = player1,
+                        Target = player2,
+                        Weight = weight,
+                        LastInteraction = lastPlayed
+                    });
+                }
+
+                return new PlayerNetworkGraph
+                {
+                    CenterPlayer = playerName,
+                    Nodes = nodes.Values.ToList(),
+                    Edges = edges,
+                    Depth = depth
+                };
+            }
+
+            // 2-Hop Network: Focus player -> Direct Allies (up to 15) -> Top 5 Allies for each ally
+            var twoHopQuery = @"
+                MATCH (p:Player {name: $playerName})-[r:PLAYED_WITH]-(ally:Player)
+                WITH p, ally, r ORDER BY r.sessionCount DESC LIMIT 15
+                OPTIONAL MATCH (ally)-[r2:PLAYED_WITH]-(fof:Player)
+                WHERE fof.name <> $playerName
+                WITH p, ally, r, fof, r2 ORDER BY ally.name, r2.sessionCount DESC
+                WITH p, ally, r, collect(fof.name)[0..5] AS topFofNames
+                RETURN ally.name AS allyName,
+                       r.sessionCount AS allyWeight,
+                       topFofNames AS fofNames";
+
+            var nodesMap = new Dictionary<string, NetworkNode>(StringComparer.OrdinalIgnoreCase)
+            {
+                [playerName] = new NetworkNode { Id = playerName, Label = playerName, Degree = 0, Weight = 0 }
+            };
+
+            var twoHopCursor = await tx.RunAsync(twoHopQuery, new { playerName });
+            await foreach (var rec in twoHopCursor)
+            {
+                if (rec["allyName"] == null) continue;
+                var allyName = rec["allyName"].As<string>();
+                var allyWeight = rec["allyWeight"].As<int>();
+                nodesMap[allyName] = new NetworkNode { Id = allyName, Label = allyName, Degree = 1, Weight = allyWeight };
+
+                var fofNames = rec["fofNames"].As<List<string>>() ?? [];
+                foreach (var fof in fofNames)
+                {
+                    if (!string.IsNullOrWhiteSpace(fof) && !nodesMap.ContainsKey(fof))
+                    {
+                        nodesMap[fof] = new NetworkNode { Id = fof, Label = fof, Degree = 2, Weight = 0 };
+                    }
+                }
+            }
+
+            // Now fetch all edges among all discovered nodes in our network
+            var allPlayerNames = nodesMap.Keys.ToList();
+            var finalEdges = new List<NetworkEdge>();
+
+            if (allPlayerNames.Count > 1)
+            {
+                var edgesQuery = @"
+                    UNWIND $allPlayerNames AS p1Name
+                    MATCH (p1:Player {name: p1Name})-[r:PLAYED_WITH]-(p2:Player)
+                    WHERE p2.name IN $allPlayerNames AND p1.name < p2.name
+                    RETURN p1.name AS player1,
+                           p2.name AS player2,
+                           r.sessionCount AS sessionCount,
+                           r.lastPlayedTogether AS lastPlayed
+                    ORDER BY r.sessionCount DESC";
+
+                var edgeCursor = await tx.RunAsync(edgesQuery, new { allPlayerNames });
+
+                await foreach (var edgeRecord in edgeCursor)
+                {
+                    finalEdges.Add(new NetworkEdge
+                    {
+                        Source = edgeRecord["player1"].As<string>(),
+                        Target = edgeRecord["player2"].As<string>(),
+                        Weight = edgeRecord["sessionCount"].As<int>(),
+                        LastInteraction = ToNullableDateTime(edgeRecord["lastPlayed"]) ?? DateTime.MinValue
+                    });
+                }
             }
 
             return new PlayerNetworkGraph
             {
                 CenterPlayer = playerName,
-                Nodes = nodes.Select(n => new NetworkNode { Id = n, Label = n }).ToList(),
-                Edges = edges,
+                Nodes = nodesMap.Values.ToList(),
+                Edges = finalEdges,
                 Depth = depth
             };
         });
@@ -665,11 +742,52 @@ public class PlayerRelationshipService(
                 });
             }
 
+            // Also get co-play relationships between members within the community
+            var memberRelQuery = @"
+                UNWIND $members AS m1Name
+                MATCH (p1:Player {name: m1Name})-[r:PLAYED_WITH]-(p2:Player)
+                WHERE p2.name IN $members AND p1.name < p2.name
+                RETURN p1.name AS player1,
+                       p2.name AS player2,
+                       r.sessionCount AS sessionCount,
+                       r.lastPlayedTogether AS lastPlayed
+                ORDER BY r.sessionCount DESC";
+
+            var memberRelCursor = await tx.RunAsync(memberRelQuery, new { members });
+            var memberEdges = new List<ServerMapEdge>();
+
+            await foreach (var record in memberRelCursor)
+            {
+                memberEdges.Add(new ServerMapEdge
+                {
+                    Source = record["player1"].As<string>(),
+                    Target = record["player2"].As<string>(),
+                    Weight = record["sessionCount"].As<int>(),
+                    LastPlayed = ToNullableDateTime(record["lastPlayed"]) ?? DateTime.UtcNow
+                });
+            }
+
+            // Ensure all members exist in playerNodes even if they haven't played on recorded servers yet
+            foreach (var m in members)
+            {
+                if (!playerNodes.ContainsKey(m))
+                {
+                    playerNodes[m] = new ServerMapNode
+                    {
+                        Id = m,
+                        Label = m,
+                        Type = "player",
+                        IsCore = coreMembers.Contains(m)
+                    };
+                }
+            }
+
             return new CommunityServerMap
             {
                 Players = playerNodes.Values.ToList(),
                 Servers = serverNodes.Values.ToList(),
-                Edges = edges
+                Edges = edges,
+                MemberEdges = memberEdges
             };
         });
     }

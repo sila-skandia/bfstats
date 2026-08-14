@@ -23,6 +23,8 @@ export interface PlayerNetworkStats {
 export interface NetworkNode {
   id: string;
   label: string;
+  degree?: number;
+  weight?: number;
 }
 
 export interface NetworkEdge {
@@ -175,6 +177,7 @@ export interface CommunityServerMap {
   players: ServerMapNode[];
   servers: ServerMapNode[];
   edges: ServerMapEdge[];
+  memberEdges?: ServerMapEdge[];
 }
 
 export async function fetchCommunityServerMap(communityId: string): Promise<CommunityServerMap> {

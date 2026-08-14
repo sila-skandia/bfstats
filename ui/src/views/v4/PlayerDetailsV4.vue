@@ -24,9 +24,8 @@ import MmPlayerAchievementHeroBadges from '@/components/v4/MmPlayerAchievementHe
 import MmPlayerRecentRoundsCompact from '@/components/v4/MmPlayerRecentRoundsCompact.vue'
 import MmPlayerAchievementSummary from '@/components/v4/MmPlayerAchievementSummary.vue'
 import MmPlayerServerMapStats from '@/components/v4/MmPlayerServerMapStats.vue'
-import MmPlayerCompetitiveRankings from '@/components/v4/data-explorer/MmPlayerCompetitiveRankings.vue'
 import MmMapPerformanceRace from '@/components/v4/data-explorer/MmMapPerformanceRace.vue'
-import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
+import MmPlayerAllyOrbit from '@/components/v4/MmPlayerAllyOrbit.vue'
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { kdClass, streakClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip, utcHourToLocalHour } from '@/utils/timeUtils'
@@ -383,8 +382,6 @@ const primaryGameId = computed<'bf1942' | 'fh2' | 'bfvietnam'>(() => {
   return 'bf1942'
 })
 
-const primaryServer = computed(() => stats.value?.servers?.[0] ?? null)
-
 const goPlayerFromOrbit = (name: string) => {
   router.push(`/v4/players/${encodeURIComponent(name)}`)
 }
@@ -421,8 +418,6 @@ const signatureServers = computed(() => {
            it paints on the first frame. Only the parts that genuinely need the
            stats payload (rank, first seen, current server) wait on the API. -->
       <div class="mm-player-hero">
-        <div class="mm-player-hero__avatar">{{ (displayName[0] || '?').toUpperCase() }}</div>
-
         <div class="mm-player-hero__main">
           <div class="mm-meta-row" style="margin-bottom: 8px">
             <template v-if="loading">
@@ -651,7 +646,7 @@ const signatureServers = computed(() => {
                   </span>
                   <span class="mm-srank__ping">{{ r.averagePing }}ms</span>
                 </div>
-                <div v-if="allServerRankings.length === 0" class="mm-empty" style="border: 0; padding: 12px">No competitive rankings yet.</div>
+                <div v-if="allServerRankings.length === 0" class="mm-empty" style="border: 0; padding: 12px">No server rankings yet.</div>
               </div>
             </section>
           </div>
@@ -702,31 +697,8 @@ const signatureServers = computed(() => {
           </section>
         </div>
 
-        <!-- favourite maps + per-map statistics -->
-        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1.4fr; margin-top: 24px">
-          <section class="mm-panel">
-            <div class="mm-pbar">
-              <span class="mm-pbar__t"># Favourite maps</span>
-              <span class="mm-pbar__m">by K/D</span>
-            </div>
-            <div class="mm-panel__body mm-favmaps">
-              <div
-                v-for="m in topMaps.slice(0, 6)"
-                :key="m.mapName"
-                class="mm-favmaps__row"
-                @click="openMapRankings(m.mapName)"
-              >
-                <span class="mm-favmaps__name">{{ m.mapName }}</span>
-                <span class="mm-favmaps__bar">
-                  <span class="mm-track" style="width: 120px; height: 5px"><span class="mm-track__f" :class="{ 'mm-track__f--accent': m.kd >= kd }" :style="{ width: Math.min(100, (m.kd / Math.max(1, kd * 1.6)) * 100) + '%' }" /></span>
-                  <span class="mm-favmaps__kd" :class="kdClass(m.kd)">{{ m.kd.toFixed(2) }}</span>
-                </span>
-                <span class="mm-favmaps__meta">{{ formatDuration(m.minutes) }} · <span class="mm-num--kill">{{ formatNumber(m.kills) }}</span> kills</span>
-              </div>
-              <div v-if="topMaps.length === 0" class="mm-empty" style="border: 0; padding: 12px 0">No map history yet.</div>
-            </div>
-          </section>
-
+        <!-- per-map statistics -->
+        <div style="margin-top: 24px">
           <MmPlayerServerMapStats
             :player-name="rawName"
             :game="primaryGameId"
@@ -735,30 +707,16 @@ const signatureServers = computed(() => {
           />
         </div>
 
-        <!-- competitive rankings -->
-        <div class="mm-section-bar" style="margin-top: 24px">
-          <span>Competitive rankings</span>
-          <span class="mm-section-bar__meta">map-level K/D vs population</span>
-        </div>
-        <div style="margin-top: 16px">
-          <MmPlayerCompetitiveRankings
-            :player-name="rawName"
-            :game="primaryGameId"
-            @navigate-to-map="openMapRankings"
-          />
-        </div>
-
-        <!-- proximity orbit -->
-        <section v-if="primaryServer" class="mm-panel" style="margin-top: 24px">
+        <!-- ally proximity orbit -->
+        <section class="mm-panel" style="margin-top: 24px">
           <div class="mm-pbar">
-            <span class="mm-pbar__t"># Proximity orbit</span>
-            <span class="mm-pbar__m">{{ truncate(primaryServer.serverName, 22) }}</span>
+            <span class="mm-pbar__t"># Ally proximity orbit</span>
+            <span class="mm-pbar__m">{{ displayName }}</span>
           </div>
           <div class="mm-panel__body">
-            <MmPingProximityOrbit
+            <MmPlayerAllyOrbit
               seamless
-              :server-guid="primaryServer.serverGuid"
-              :server-name="primaryServer.serverName"
+              :player-name="rawName"
               @player-click="goPlayerFromOrbit"
             />
           </div>
@@ -1053,25 +1011,13 @@ const signatureServers = computed(() => {
 
 /* hero */
 .mm-player-hero {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 24px;
-  align-items: start;
+  flex-wrap: wrap;
 }
-.mm-player-hero__avatar {
-  width: 88px;
-  height: 88px;
-  border-radius: 4px;
-  background: var(--mm-bg-soft);
-  border: 1px solid var(--mm-rule-strong);
-  color: var(--mm-ink);
-  font-family: var(--mm-font-mono);
-  font-weight: 600;
-  font-size: 40px;
-  display: grid;
-  place-items: center;
-}
-.mm-player-hero__main { min-width: 0; }
+.mm-player-hero__main { min-width: 0; flex: 1 1 300px; }
 .mm-player__name {
   margin: 0;
   font-size: clamp(30px, 3.6vw, 52px);
@@ -1089,6 +1035,7 @@ const signatureServers = computed(() => {
   gap: 22px;
   align-items: center;
   padding-top: 6px;
+  flex-wrap: wrap;
 }
 .mm-player__navlink {
   font-family: var(--mm-font-display);
@@ -1103,14 +1050,13 @@ const signatureServers = computed(() => {
 .mm-player__navlink--strong { color: var(--mm-ink); font-weight: 500; }
 
 @media (max-width: 720px) {
-  .mm-player-hero { grid-template-columns: auto 1fr; }
-  .mm-player-hero__avatar { width: 64px; height: 64px; font-size: 30px; }
-  /* nav drops to a full-width wrapping row beneath the identity block */
+  .mm-player-hero {
+    flex-direction: column;
+    gap: 16px;
+  }
   .mm-player-hero__nav {
-    grid-column: 1 / -1;
-    flex-wrap: wrap;
-    gap: 16px 22px;
     padding-top: 4px;
+    gap: 14px 20px;
   }
 }
 
@@ -1179,31 +1125,6 @@ const signatureServers = computed(() => {
   color: var(--mm-ink-muted);
 }
 
-/* favourite-maps rows */
-.mm-favmaps { display: flex; flex-direction: column; gap: 14px; }
-.mm-favmaps__row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 4px 12px;
-  align-items: center;
-  cursor: pointer;
-}
-.mm-favmaps__name { font-family: var(--mm-font-display); font-size: 14px; }
-.mm-favmaps__bar { display: flex; align-items: center; gap: 10px; }
-.mm-favmaps__kd {
-  font-family: var(--mm-font-mono);
-  font-size: 12px;
-  width: 34px;
-  text-align: right;
-}
-.mm-favmaps__meta {
-  grid-column: 1;
-  font-family: var(--mm-font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-}
 .mm-track__f--accent { background: var(--mm-accent); }
 
 /* best-scores rail */
