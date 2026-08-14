@@ -93,9 +93,7 @@ const themeVars = computed<Record<string, string>>(() => {
   }
 
   const textHexRaw = normalizeHex(tournament.value?.theme?.textColour ?? '')
-  const borderHexRaw = normalizeHex(tournament.value?.theme?.accentColour ?? '')
   const text = isValidHex(textHexRaw) ? textHexRaw : getContrastingTextColor(bg)
-  const border = isValidHex(borderHexRaw) ? borderHexRaw : defaults.border
 
   const backgroundSoft = isDark ? mixHex(bg, '#FFFFFF', 0.08) : mixHex(bg, '#000000', 0.06)
   const backgroundMute = isDark ? mixHex(bg, '#FFFFFF', 0.16) : mixHex(bg, '#000000', 0.12)
@@ -116,7 +114,6 @@ const getAccentColor = (): string => {
   return isValidHex(normalized) ? normalized : '#FFD700'
 }
 
-const getBackgroundColor = (): string => themeVars.value['--color-background'] || '#000000'
 const getTextColor = (): string => themeVars.value['--color-text'] || '#FFFFFF'
 const getTextMutedColor = (): string => themeVars.value['--color-text-muted'] || '#d0d0d0'
 
