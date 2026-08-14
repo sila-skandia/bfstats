@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using api.PlayerTracking;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using api.Caching;
 
 namespace api.Controllers;
 
@@ -25,13 +26,10 @@ public class LiveServersController(
     /// <param name="game">Game type: bf1942 or fh2</param>
     /// <param name="showAll">If true, show all servers including offline ones. If false (default), show only online servers.</param>
     /// <returns>Server list</returns>
-    // 20s, deliberately shorter than the 30s refresh interval the landing page
-    // polls on, so a poll never gets served a stale copy out of the browser cache.
-    // The point is the shared/edge cache: this payload is identical for every
-    // visitor, and without it every one of them pays a full round trip to the
-    // origin (~400ms from Australia) for it.
+    // This payload is identical for every visitor, so Cloudflare can absorb repeat
+    // traffic. The browser must still request it on every landing-page visit and poll.
     [HttpGet("{game}/servers")]
-    [ResponseCache(Duration = 20, Location = ResponseCacheLocation.Any)]
+    [EdgeCache(20)]
     public async Task<ActionResult<ServerListResponse>> GetServers(string game, [FromQuery] bool showAll = false)
     {
         if (!ValidGames.Contains(game.ToLower()))
