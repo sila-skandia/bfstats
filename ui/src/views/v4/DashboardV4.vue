@@ -342,7 +342,7 @@ const handleSignOut = () => {
                   type="button"
                   class="mm-dash__squad-server"
                   @click="goServer(buddy.serverName)"
-                >{{ buddy.serverName }}</button>
+                >{{ $pn(buddy.serverName) }}</button>
                 <span class="mm-meta-row__sep">·</span>
                 <span>{{ buddy.currentMap || '—' }}</span>
               </div>
@@ -486,7 +486,7 @@ const handleSignOut = () => {
             @click="goServer(srv.serverName)"
           >
             <header class="mm-dash__server-head">
-              <span class="mm-dash__server-name">{{ srv.serverName }}</span>
+              <span class="mm-dash__server-name">{{ $pn(srv.serverName) }}</span>
               <span class="mm-chip" :class="{ 'mm-chip--off': srv.currentPlayers === 0 }">
                 <span class="mm-chip__dot" />
                 {{ srv.currentPlayers > 0 ? 'Online' : 'Quiet' }}

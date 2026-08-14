@@ -9,6 +9,8 @@ public interface ICacheKeyService
     string GetPlayerComparisonKey(string player1, string player2, string? serverGuid = null);
     string GetServerStatisticsKey(string serverName, int daysToAnalyze);
     string GetServerLeaderboardsKey(string serverName, int days);
+    string GetServerPlayerRankingsKey(string serverName, int days, int page, int pageSize, string sortBy, int minRounds, string? searchQuery);
+    string GetServerRankDistributionKey(string serverName, int days, int minRounds);
     string GetServerPlaytimeRankingsKey(IEnumerable<string> serverGuids, int days);
     string GetServerInsightsKey(string serverName, int daysToAnalyze, int? rollingWindowDays = null);
     string GetServerMapsInsightsKey(string serverName, int daysToAnalyze);
@@ -32,6 +34,17 @@ public class CacheKeyService : ICacheKeyService
     public string GetServerLeaderboardsKey(string serverName, int days)
     {
         return $"server_leaderboards:{serverName}:{days}";
+    }
+
+    public string GetServerPlayerRankingsKey(string serverName, int days, int page, int pageSize, string sortBy, int minRounds, string? searchQuery)
+    {
+        var searchPart = string.IsNullOrWhiteSpace(searchQuery) ? "none" : searchQuery.Trim().ToLowerInvariant();
+        return $"server_player_rankings:{serverName}:{days}:{page}:{pageSize}:{sortBy}:{minRounds}:{searchPart}";
+    }
+
+    public string GetServerRankDistributionKey(string serverName, int days, int minRounds)
+    {
+        return $"server_rank_dist:{serverName}:{days}:{minRounds}";
     }
 
     public string GetServerPlaytimeRankingsKey(IEnumerable<string> serverGuids, int days)
