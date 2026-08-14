@@ -222,6 +222,7 @@ public class PlayersController(
         [FromQuery] string game = "bf1942",
         [FromQuery] int days = 30)
     {
+        _ = game;
         playerName = Uri.UnescapeDataString(playerName);
         var period = days <= 30 ? TimePeriod.Last30Days : TimePeriod.ThisYear;
         var result = await sqlitePlayerStatsService.GetPlayerMapStatsAsync(playerName, period);

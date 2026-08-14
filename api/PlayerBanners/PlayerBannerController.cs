@@ -24,7 +24,7 @@ public class PlayerBannerController(IPlayerBannerService bannerService) : Contro
         }
 
         playerName = Uri.UnescapeDataString(playerName);
-        BannerStyleExtensions.TryParse(style, out var bannerStyle);
+        var bannerStyle = BannerStyleExtensions.TryParse(style, out var parsedStyle) ? parsedStyle : default;
 
         var bytes = await bannerService.RenderAsync(playerName, bannerStyle, server, cancellationToken);
         if (bytes is null)

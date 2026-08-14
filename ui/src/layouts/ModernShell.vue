@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import MmHeaderAuth from '@/components/v4/MmHeaderAuth.vue'
 import MmSiteNoticeBanner from '@/components/v4/MmSiteNoticeBanner.vue'
@@ -8,11 +8,11 @@ import { useAuth } from '@/composables/useAuth'
 import { isNavigating } from '@/composables/useNavProgress'
 import '../styles/modern-minimal.css'
 
-interface NavItem { label: string; to: string; key: string; admin?: boolean }
+interface NavItem { label: string; to: string; key: string; admin?: boolean; notice?: boolean }
 const baseNavItems: NavItem[] = [
   { label: 'Servers', to: '/v4/servers/bf1942', key: 'servers' },
   { label: 'Players', to: '/v4/players', key: 'players' },
-  { label: 'Leaderboard', to: '/v4/leaderboard', key: 'leaderboard' },
+  { label: 'Leaderboard', to: '/v4/leaderboard', key: 'leaderboard', notice: true },
   // Rounds is deliberately not a top-level destination — the round report is only
   // meaningful when you arrive at a specific round from a player's session list or
   // achievement. The /v4/rounds routes and every inbound link to them still work.
@@ -27,6 +27,28 @@ const navItems = computed<NavItem[]>(() => {
   return items
 })
 
+const NAV_NOTICE_KEY = 'bfstats:seen-nav-leaderboard'
+
+const readLeaderboardNotice = () => {
+  try {
+    return localStorage.getItem(NAV_NOTICE_KEY) !== '1'
+  } catch {
+    return true
+  }
+}
+
+const showLeaderboardNotice = ref(readLeaderboardNotice())
+
+const dismissLeaderboardNotice = () => {
+  if (!showLeaderboardNotice.value) return
+  showLeaderboardNotice.value = false
+  try {
+    localStorage.setItem(NAV_NOTICE_KEY, '1')
+  } catch {
+    /* private mode */
+  }
+}
+
 const route = useRoute()
 const activeKey = computed(() => {
   const path = route.path
@@ -37,6 +59,10 @@ const activeKey = computed(() => {
   if (path.startsWith('/v4/rounds')) return 'rounds'
   return ''
 })
+
+watch(activeKey, (key) => {
+  if (key === 'leaderboard') dismissLeaderboardNotice()
+}, { immediate: true })
 
 interface Crumb { label: string; to: string | null }
 
@@ -155,9 +181,15 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           :class="{
             'mm-nav__link--active': activeKey === item.key,
             'mm-nav__link--admin': item.admin,
+            'mm-nav__link--new': item.notice && showLeaderboardNotice,
           }"
+          :aria-label="item.notice && showLeaderboardNotice ? `${item.label}, new` : undefined"
         >
-          {{ item.label }}
+          {{ item.label }}<span
+            v-if="item.notice && showLeaderboardNotice"
+            class="mm-nav__pip"
+            aria-hidden="true"
+          />
         </router-link>
       </nav>
 

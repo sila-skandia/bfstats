@@ -113,6 +113,7 @@ public sealed class ServerBannerService(
         int currentPlayers,
         CancellationToken cancellationToken)
     {
+        _ = cancellationToken;
         try
         {
             var grouped = await gameTrendsService.GetServerBusyIndicatorAsync([serverGuid], ActivityHourRange);
@@ -155,6 +156,7 @@ public sealed class ServerBannerService(
         int port,
         CancellationToken cancellationToken)
     {
+        _ = cancellationToken;
         if (string.IsNullOrWhiteSpace(game) || string.IsNullOrWhiteSpace(ip))
         {
             return null;

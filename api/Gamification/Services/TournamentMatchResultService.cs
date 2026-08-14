@@ -336,10 +336,18 @@ public class TournamentMatchResultService(
             dbContext.TournamentMatchResults.Add(result);
             await dbContext.SaveChangesAsync();
 
-            logger.LogInformation(
-                "Created manual match result {ResultId} for tournament {TournamentId}, match {MatchId}, map {MapId}" +
-                (roundId != null ? ", linked to round {RoundId}" : ""),
-                result.Id, tournamentId, matchId, mapId, roundId);
+            if (roundId != null)
+            {
+                logger.LogInformation(
+                    "Created manual match result {ResultId} for tournament {TournamentId}, match {MatchId}, map {MapId}, linked to round {RoundId}",
+                    result.Id, tournamentId, matchId, mapId, roundId);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Created manual match result {ResultId} for tournament {TournamentId}, match {MatchId}, map {MapId}",
+                    result.Id, tournamentId, matchId, mapId);
+            }
 
             return (result.Id, teamMappingWarning);
         }

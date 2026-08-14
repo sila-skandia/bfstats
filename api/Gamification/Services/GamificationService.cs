@@ -7,7 +7,7 @@ using Serilog.Context;
 
 namespace api.Gamification.Services;
 
-public class GamificationService(SqliteGamificationService gamificationService, KillStreakDetector killStreakDetector, MilestoneCalculator milestoneCalculator, BadgeDefinitionsService badgeDefinitionsService, AchievementLabelingService achievementLabelingService, PlacementProcessor placementProcessor, TeamVictoryProcessor teamVictoryProcessor, IConfiguration configuration, ILogger<GamificationService> logger) : IDisposable
+public sealed class GamificationService(SqliteGamificationService gamificationService, KillStreakDetector killStreakDetector, MilestoneCalculator milestoneCalculator, BadgeDefinitionsService badgeDefinitionsService, AchievementLabelingService achievementLabelingService, PlacementProcessor placementProcessor, TeamVictoryProcessor teamVictoryProcessor, IConfiguration configuration, ILogger<GamificationService> logger) : IDisposable
 {
     private readonly ILogger<GamificationService> _logger = InitializeLogger(logger, configuration);
     private readonly SemaphoreSlim _concurrencyThrottle = InitializeConcurrencyThrottle(configuration);
@@ -301,6 +301,7 @@ public class GamificationService(SqliteGamificationService gamificationService, 
 
     public void Dispose()
     {
-        _concurrencyThrottle?.Dispose();
+        _concurrencyThrottle.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

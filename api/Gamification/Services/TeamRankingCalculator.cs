@@ -246,6 +246,7 @@ public class TeamRankingCalculator : ITeamRankingCalculator
         int tournamentId,
         bool isCTF = false)
     {
+        _ = tournamentId;
         _logger.LogDebug("Starting statistics calculation for TeamId={TeamId} IsCTF={IsCTF}", teamId, isCTF);
 
         int roundsWon = 0;
@@ -300,11 +301,12 @@ public class TeamRankingCalculator : ITeamRankingCalculator
             roundDetails.Add($"MatchId={result.MatchId} MapId={result.MapId} {roundOutcome} Tickets={teamTickets}v{opponentTickets}");
 
             // Group by match for match-level calculations
-            if (!roundsByMatch.ContainsKey(result.MatchId))
+            if (!roundsByMatch.TryGetValue(result.MatchId, out var matchRounds))
             {
-                roundsByMatch[result.MatchId] = [];
+                matchRounds = [];
+                roundsByMatch[result.MatchId] = matchRounds;
             }
-            roundsByMatch[result.MatchId].Add(result);
+            matchRounds.Add(result);
         }
 
         // Log all round details

@@ -70,9 +70,10 @@ public class DiscordAuthService(
             { "redirect_uri", redirectUri }
         };
 
+        using var tokenRequestContent = new FormUrlEncodedContent(formData);
         var response = await _httpClient.PostAsync(
             "https://discord.com/api/oauth2/token",
-            new FormUrlEncodedContent(formData)
+            tokenRequestContent
         );
 
         if (!response.IsSuccessStatusCode)
@@ -96,7 +97,7 @@ public class DiscordAuthService(
 
     private async Task<DiscordUserPayload> GetDiscordUserAsync(string accessToken)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "https://discord.com/api/users/@me");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://discord.com/api/users/@me");
         request.Headers.Add("Authorization", $"Bearer {accessToken}");
 
         var response = await _httpClient.SendAsync(request);

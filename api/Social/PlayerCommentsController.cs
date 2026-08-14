@@ -17,7 +17,7 @@ public class PlayerCommentsController(
     IClock clock,
     ILogger<PlayerCommentsController> logger) : ControllerBase
 {
-    private static readonly HtmlSanitizer Sanitizer = new HtmlSanitizer();
+    private static readonly HtmlSanitizer Sanitizer = new();
 
     static PlayerCommentsController()
     {

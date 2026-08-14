@@ -468,6 +468,7 @@ public class DataExplorerController(
         [FromQuery] string game = "bf1942", 
         [FromQuery] int days = 90)
     {
+        _ = game;
         // URL decode parameter
         playerName = Uri.UnescapeDataString(playerName);
 
