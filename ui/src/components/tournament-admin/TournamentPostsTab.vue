@@ -286,7 +286,7 @@ const displayPosts = computed(() => {
 const renderMarkdown = (content: string): string => {
   if (!content || !content.trim()) return '';
   try {
-    return marked(content, { breaks: true });
+    return marked(content, { breaks: true }) as string;
   } catch {
     return content;
   }

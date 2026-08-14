@@ -7,8 +7,12 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-      <UserSecretsId>fd03f769-1828-4220-b05c-bfc687797a3e</UserSecretsId>
-  </PropertyGroup>
+        <UserSecretsId>fd03f769-1828-4220-b05c-bfc687797a3e</UserSecretsId>
+        <EnableNETAnalyzers>true</EnableNETAnalyzers>
+        <AnalysisMode>All</AnalysisMode>
+        <AnalysisLevel>latest</AnalysisLevel>
+        <WarningLevel>9</WarningLevel>
+    </PropertyGroup>
 
     <ItemGroup>
       <Content Include="..\.dockerignore">

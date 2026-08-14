@@ -276,12 +276,6 @@ const getStatusTextColor = (status: string): string => {
   }
 }
 
-const getTextColor = (): string => {
-  if (!props.tournament?.theme?.textColour) return '#FFFFFF'
-  const normalized = normalizeHex(props.tournament.theme.textColour)
-  return isValidHex(normalized) ? normalized : '#FFFFFF'
-}
-
 const getTextMutedColor = (): string => {
   return '#d0d0d0'
 }

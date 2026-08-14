@@ -95,7 +95,7 @@
               :style="{
                 borderColor: getAccentColor(),
                 backgroundColor: getAccentColor(),
-                color: getBackgroundColor()
+                color: getAccentTextColor()
               }"
               @mouseenter="(e) => {
                 if (e.currentTarget) {
@@ -271,21 +271,6 @@
           />
         </div>
       </div>
-
-      <!-- Match Details Modal Component -->
-      <MatchDetailsModal
-        :match="selectedMatch"
-        :teams="tournament?.teams || []"
-        :tournament-id="tournamentId"
-        :accent-color="getAccentColor()"
-        :text-color="getTextColor()"
-        :text-muted-color="getTextMutedColor()"
-        :background-color="getBackgroundColor()"
-        :background-soft-color="getBackgroundSoftColor()"
-        :background-mute-color="getBackgroundMuteColor()"
-        @close="closeMatchupModal"
-        @compare-players="comparePlayers"
-      />
     </div>
   </div>
 </template>
@@ -293,14 +278,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { usePlayerComparison } from '@/composables/usePlayerComparison';
 import TournamentHero from '@/components/TournamentHero.vue';
 import TournamentNewsFeed from '@/components/TournamentNewsFeed.vue';
 import TournamentPromoVideo from '@/components/TournamentPromoVideo.vue';
-import MatchDetailsModal from '@/components/MatchDetailsModal.vue';
 import {
   type PublicTournamentDetail,
-  type PublicTournamentMatch,
 } from '@/services/publicTournamentService';
 import { notificationService } from '@/services/notificationService';
 import { isValidHex, normalizeHex, getContrastingTextColor, hexToRgb, rgbToHex, calculateLuminance } from '@/utils/colorUtils';
@@ -309,133 +291,14 @@ import { useTournamentCache } from '@/composables/useTournamentCache';
 const router = useRouter();
 const route = useRoute();
 const { useTournament } = useTournamentCache();
-const { comparePlayers } = usePlayerComparison();
 
 const tournament = ref<PublicTournamentDetail | null>(null);
 const heroImageUrl = ref<string | null>(null);
 const logoImageUrl = ref<string | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const selectedMatch = ref<PublicTournamentMatch | null>(null);
-const selectedPlayers = ref<string[]>([]);
-const expandedMaps = ref<Set<string>>(new Set());
 
 const tournamentId = route.params.id as string;
-
-// Helper function to get themed accent color
-const getThemedAccentColor = (): string => {
-  const colors = getThemeColors();
-  return colors.accent;
-};
-
-// Helper function to determine match winner
-const getMatchWinner = (match: PublicTournamentMatch): 'team1' | 'team2' | 'tie' | null => {
-  if (!match.maps || match.maps.length === 0) return null;
-
-  let team1Wins = 0;
-  let team2Wins = 0;
-
-  for (const map of match.maps) {
-    if (!map.matchResults || map.matchResults.length === 0) continue;
-
-    for (const result of map.matchResults) {
-      if (result.winningTeamId === result.team1Id) {
-        team1Wins++;
-      } else if (result.winningTeamId === result.team2Id) {
-        team2Wins++;
-      }
-    }
-  }
-
-  if (team1Wins > team2Wins) return 'team1';
-  if (team2Wins > team1Wins) return 'team2';
-  if (team1Wins === team2Wins && team1Wins > 0) return 'tie';
-  return null;
-};
-
-// Helper function to get formatted score with both ticket and round scores: "[Tickets] ([Rounds])"
-const getFormattedScore = (map: any, matchTeam1Name?: string, matchTeam2Name?: string): string => {
-  const results = map.matchResults;
-  if (!results || results.length === 0) return '—';
-
-  const team1Id = results[0]?.team1Id;
-  const team2Id = results[0]?.team2Id;
-  if (!team1Id || !team2Id) return '—';
-
-  // Calculate round scores (wins/losses)
-  const team1RoundWins = results.filter((r: any) => r.winningTeamId === team1Id).length;
-  const team2RoundWins = results.filter((r: any) => r.winningTeamId === team2Id).length;
-  const draws = results.filter((r: any) => r.winningTeamId !== team1Id && r.winningTeamId !== team2Id).length;
-
-  // Calculate ticket scores
-  let team1Tickets = 0;
-  let team2Tickets = 0;
-  for (const result of results) {
-    team1Tickets += result.team1Tickets || 0;
-    team2Tickets += result.team2Tickets || 0;
-  }
-
-  // Format round score
-  let roundScore: string;
-  if (draws > 0) {
-    roundScore = `${team1RoundWins}-${team2RoundWins}-${draws}`;
-  } else {
-    roundScore = `${team1RoundWins}-${team2RoundWins}`;
-  }
-
-  // Format as "[Tickets] ([Rounds])"
-  const scoreStr = `${team1Tickets}-${team2Tickets} (${roundScore})`;
-
-  // Add team names if provided
-  if (matchTeam1Name && matchTeam2Name) {
-    return `${matchTeam1Name} ${scoreStr} ${matchTeam2Name}`;
-  }
-  return scoreStr;
-};
-
-// Helper function to get results aggregation (e.g., "Team A 2-0 Team B", "Team A 1-1 Team B") - kept for backward compatibility
-const getResultsAggregation = (map: any, matchTeam1Name?: string, matchTeam2Name?: string): string => {
-  const results = map.matchResults;
-  if (!results || results.length === 0) return '—';
-
-  const team1Id = results[0]?.team1Id;
-  const team2Id = results[0]?.team2Id;
-  if (!team1Id || !team2Id) return '—';
-
-  const team1Wins = results.filter((r: any) => r.winningTeamId === team1Id).length;
-  const team2Wins = results.filter((r: any) => r.winningTeamId === team2Id).length;
-  const draws = results.filter((r: any) => r.winningTeamId !== team1Id && r.winningTeamId !== team2Id).length;
-
-  let scoreStr: string;
-  if (draws > 0) {
-    scoreStr = `${team1Wins}-${team2Wins}-${draws}`;
-  } else {
-    scoreStr = `${team1Wins}-${team2Wins}`;
-  }
-
-  // Add team names if provided
-  if (matchTeam1Name && matchTeam2Name) {
-    return `${matchTeam1Name} ${scoreStr} ${matchTeam2Name}`;
-  }
-  return scoreStr;
-};
-
-// Helper function to get theme colors
-const getThemeColors = () => {
-  if (!tournament.value?.theme) {
-    return {
-      background: '#000000',
-      text: '#FFFFFF',
-      accent: '#FFD700',
-    };
-  }
-
-  return {
-    background: tournament.value.theme.backgroundColour || '#000000',
-    text: tournament.value.theme.textColour || '#FFFFFF',
-    accent: tournament.value.theme.accentColour || '#FFD700',
-  };
-};
 
 const themeVars = computed<Record<string, string>>(() => {
   // Defaults - black background, white text, yellow/golden borders
@@ -510,16 +373,8 @@ const getAccentColorWithOpacity = (opacity: number): string => {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
 };
 
-const getBackgroundColor = (): string => {
-  return themeVars.value['--color-background'] || '#000000';
-};
-
 const getBackgroundSoftColor = (): string => {
   return themeVars.value['--color-background-soft'] || '#1a1a1a';
-};
-
-const getBackgroundMuteColor = (): string => {
-  return themeVars.value['--color-background-mute'] || '#2d2d2d';
 };
 
 const getTextColor = (): string => {
@@ -529,140 +384,6 @@ const getTextColor = (): string => {
 const getTextMutedColor = (): string => {
   return themeVars.value['--color-text-muted'] || '#d0d0d0';
 };
-
-const getStatusColor = (status: string): string => {
-  switch (status) {
-    case 'registration':
-      return '#FFEB3B'; // Yellow
-    case 'open':
-      return '#4CAF50'; // Green
-    case 'closed':
-      return '#EF4444'; // Red
-    default:
-      return '#FFD700'; // Golden (fallback)
-  }
-};
-
-const getStatusTextColor = (status: string): string => {
-  switch (status) {
-    case 'registration':
-      return '#000000'; // Black text on yellow
-    case 'open':
-      return '#FFFFFF'; // White text on green
-    case 'closed':
-      return '#FFFFFF'; // White text on red
-    default:
-      return '#000000'; // Black text (fallback)
-  }
-};
-
-const formatMatchDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-};
-
-const getWeekDateRange = (week: string | null, matches?: MatchWithStatus[]): string => {
-  // Try to use week dates if available
-  if (tournament.value?.weekDates && week) {
-    const weekDate = tournament.value.weekDates.find(w => w.week === week);
-    if (weekDate) {
-      const formatDate = (date: Date) => {
-        return date.toLocaleDateString(undefined, {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric'
-        });
-      };
-      const startDate = new Date(weekDate.startDate);
-      const endDate = new Date(weekDate.endDate);
-      return `${formatDate(startDate)} - ${formatDate(endDate)}`;
-    }
-  }
-
-  // Fallback: calculate from matches if week dates not available
-  if (!matches || matches.length === 0) return '';
-
-  const dates = matches.flatMap(m => m.match.maps.map(_map => new Date(m.match.scheduledDate)));
-
-  if (dates.length === 0) return '';
-
-  const earliestDate = new Date(Math.min(...dates.map(d => d.getTime())));
-  const latestDate = new Date(Math.max(...dates.map(d => d.getTime())));
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
-
-  return `${formatDate(earliestDate)} - ${formatDate(latestDate)}`;
-};
-
-const viewRoundReport = (roundId: string) => {
-  router.push(`/rounds/${roundId}/report`);
-};
-
-// Consolidated matches by week for condensed table view
-interface MatchWithStatus {
-  match: PublicTournamentMatch;
-  status: 'upcoming' | 'completed';
-  isCompleted: boolean;
-}
-
-// Compute latest matches - use API-provided latestMatches or derive from matches array
-const computedLatestMatches = computed(() => {
-  // If API provides latestMatches, use it
-  if (tournament.value?.latestMatches && tournament.value.latestMatches.length > 0) {
-    return tournament.value.latestMatches.slice(0, 2);
-  }
-
-  // Otherwise, derive from all matches by finding completed matches
-  if (!tournament.value?.matches) return [];
-
-  const completedMatches = tournament.value.matches.filter(match => {
-    const completedMaps = match.maps.filter(map => map.matchResults?.length > 0);
-    return completedMaps.length === match.maps.length && match.maps.length > 0;
-  });
-
-  // Return the most recent 2 completed matches (assuming createdAt is ordered)
-  return completedMatches.slice(-2).reverse();
-});
-
-const allMatchesByWeek = computed(() => {
-  if (!tournament.value?.matchesByWeek) return [];
-
-  // Check if there's only one week group with null week value
-  const hasOnlyOneNullWeek = tournament.value.matchesByWeek.length === 1 && tournament.value.matchesByWeek[0].week === null;
-
-  const filtered = tournament.value.matchesByWeek
-    .map(group => ({
-      week: group.week,
-      hideWeekHeader: hasOnlyOneNullWeek,
-      matches: group.matches.map(match => {
-        const completedMaps = match.maps.filter(map => map.matchResults?.length > 0);
-        const isCompleted = completedMaps.length === match.maps.length && match.maps.length > 0;
-        return {
-          match,
-          status: isCompleted ? 'completed' : 'upcoming',
-          isCompleted
-        } as MatchWithStatus;
-      })
-    }))
-    .filter(group => group.matches.length > 0);
-
-  return filtered;
-});
-
 
 const loadTournament = async () => {
   error.value = null;
@@ -708,18 +429,18 @@ const loadTournament = async () => {
     description += '. Track live tournament progress and player statistics.';
 
     // Update meta description tag
-    const descriptionTag = document.querySelector('meta[name="description"]');
-    if (descriptionTag) {
-      descriptionTag.setAttribute('content', description);
+    let metaTag = document.querySelector('meta[name="description"]');
+    if (!metaTag) {
+      metaTag = document.createElement('meta');
+      metaTag.setAttribute('name', 'description');
+      document.head.appendChild(metaTag);
     }
-
-    // Create title
-    const fullTitle = `${data.name} - BF Stats`;
+    metaTag.setAttribute('content', description);
 
     // Update Open Graph tags
     const ogTitleTag = document.querySelector('meta[property="og:title"]');
     if (ogTitleTag) {
-      ogTitleTag.setAttribute('content', fullTitle);
+      ogTitleTag.setAttribute('content', `${data.name} - BF Stats`);
     }
 
     const ogDescriptionTag = document.querySelector('meta[property="og:description"]');
@@ -734,80 +455,6 @@ const loadTournament = async () => {
     error.value = err instanceof Error ? err.message : 'Failed to load tournament';
     loading.value = false;
   }
-};
-
-const openMatchupModal = (match: PublicTournamentMatch) => {
-  selectedMatch.value = match;
-  selectedPlayers.value = [];
-};
-
-const closeMatchupModal = () => {
-  selectedMatch.value = null;
-  selectedPlayers.value = [];
-  expandedMaps.value.clear();
-};
-
-const toggleMapExpansion = (mapId: number) => {
-  const mapIdStr = String(mapId);
-  if (expandedMaps.value.has(mapIdStr)) {
-    expandedMaps.value.delete(mapIdStr);
-  } else {
-    expandedMaps.value.add(mapIdStr);
-  }
-};
-
-const isMapExpanded = (mapId: number): boolean => {
-  return expandedMaps.value.has(String(mapId));
-};
-
-const getTeamRoster = (_match: PublicTournamentMatch, teamName: string) => {
-  if (!tournament.value) return [];
-  const team = tournament.value.teams.find(t => t.name === teamName);
-  return team?.players || [];
-};
-
-const getTeamName = (_map: any, teamNumber: 1 | 2): string => {
-  if (!selectedMatch.value) return '';
-  return teamNumber === 1 ? selectedMatch.value.team1Name : selectedMatch.value.team2Name;
-};
-
-const getTeamPlayers = (map: any, teamNumber: 1 | 2): any[] => {
-  if (!map.round?.players) return [];
-  const teamName = getTeamName(map, teamNumber);
-  return map.round.players.filter((p: any) => p.teamName === teamName);
-};
-
-const selectPlayerForComparison = (playerName: string, teamName: string) => {
-  const currentIndex = selectedPlayers.value.indexOf(playerName);
-
-  // If player already selected, deselect them
-  if (currentIndex !== -1) {
-    selectedPlayers.value.splice(currentIndex, 1);
-    return;
-  }
-
-  // If we have 2 players selected, we need to replace one
-  if (selectedPlayers.value.length === 2) {
-    // Find which team the currently selected players are from
-    const player1Team = selectedMatch.value?.team1Name;
-
-    const player1InTeam1 = getTeamRoster(selectedMatch.value!, player1Team!).some(p => p.playerName === selectedPlayers.value[0]);
-    const newPlayerInTeam1 = teamName === player1Team;
-
-    // Replace the player from the same team
-    if (player1InTeam1 === newPlayerInTeam1) {
-      selectedPlayers.value[0] = playerName;
-    } else {
-      selectedPlayers.value[1] = playerName;
-    }
-  } else {
-    // Add the player
-    selectedPlayers.value.push(playerName);
-  }
-};
-
-const isPlayerSelected = (playerName: string): boolean => {
-  return selectedPlayers.value.includes(playerName);
 };
 
 // Watch tournament data and update page title when it loads

@@ -629,7 +629,6 @@ try
     builder.Services.AddScoped<ServerStatsService>();
     builder.Services.AddScoped<IServerStatsService>(sp => sp.GetRequiredService<ServerStatsService>());
     builder.Services.AddScoped<RoundsService>();
-    builder.Services.AddScoped<api.Landing.ILandingService, api.Landing.LandingService>();
     // Samples process CPU/memory for the Seq metrics dashboards
     builder.Services.AddHostedService<ProcessHealthReporter>();
 
@@ -812,13 +811,7 @@ try
         // Register community detection background service
         builder.Services.AddHostedService<api.PlayerRelationships.CommunityDetectionService>();
 
-        // Register player alias detection services
-        builder.Services.AddScoped<api.PlayerRelationships.StatSimilarityCalculator>();
-        builder.Services.AddScoped<api.PlayerRelationships.BehavioralPatternAnalyzer>();
         builder.Services.AddScoped<api.PlayerRelationships.ServerProximityService>();
-        builder.Services.AddScoped<api.PlayerRelationships.Neo4jNetworkAnalyzer>();
-        builder.Services.AddScoped<api.PlayerRelationships.ActivityTimelineAnalyzer>();
-        builder.Services.AddScoped<api.PlayerRelationships.PlayerAliasDetectionService>();
 
         builder.Logging.AddConsole().SetMinimumLevel(LogLevel.Information);
     }

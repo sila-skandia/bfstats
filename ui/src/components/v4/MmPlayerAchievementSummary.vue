@@ -3,7 +3,7 @@ import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Achievement, PlayerAchievementGroup } from '@/types/playerStatsTypes'
 import { getAchievementImageFromObject } from '@/utils/achievementImageUtils'
-import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
+import { parseUtc } from '@/utils/timeUtils'
 import { getBadgeDescription } from '@/services/badgeService'
 
 const props = defineProps<{
