@@ -63,28 +63,6 @@ public interface IPlayerRelationshipService
     Task<string> DetectAndStoreCommunities(
         CancellationToken cancellationToken = default);
 
-    Task<List<SquadRecommendation>> GetSquadRecommendationsAsync(
-        string playerName,
-        int limit = 10,
-        bool onlineOnly = false,
-        CancellationToken cancellationToken = default);
-
-    Task RecordSquadRecommendationFeedback(
-        string playerName,
-        string recommendedPlayer,
-        bool wasHelpful,
-        CancellationToken cancellationToken = default);
-
-    Task<PlayerMigrationFlow> GetPlayerMigrationFlowAsync(
-        DateTime startDate,
-        DateTime endDate,
-        string? game = null,
-        CancellationToken cancellationToken = default);
-
-    Task<List<ServerNode>> GetServerLifecycleAnalysisAsync(
-        int daysBack = 90,
-        CancellationToken cancellationToken = default);
-
     Task<CommunityServerMap> GetCommunityServerMapAsync(
         string communityId,
         CancellationToken cancellationToken = default);
