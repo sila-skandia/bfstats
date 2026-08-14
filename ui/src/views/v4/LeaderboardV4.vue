@@ -1491,11 +1491,11 @@ const rankTintClass = (rank: number) => {
       <div class="lb-section-bar">
         <div v-if="isRefreshing" class="lb-refresh-bar is-on" aria-hidden="true"></div>
         <div class="lb-section-left">
-          <span v-if="groupBy" class="lb-desktop-only">
-            {{ formatInt(totalItems) }} RANKED PLAYERS · GROUPED BY {{ groupBy === 'favServer' ? 'FAVOURITE SERVER' : groupBy === 'favMap' ? 'FAVOURITE MAP' : 'K/D BAND' }} (THIS PAGE)
-          </span>
-          <span v-else>
+          <span>
             SHOWING {{ totalItems === 0 ? 0 : (page - 1) * pageSize + 1 }}–{{ Math.min(page * pageSize, totalItems) }} OF {{ formatInt(totalItems) }} RANKED PLAYERS
+          </span>
+          <span v-if="groupBy" class="lb-desktop-only">
+            · GROUPED BY {{ groupBy === 'favServer' ? 'FAVOURITE SERVER' : groupBy === 'favMap' ? 'FAVOURITE MAP' : 'K/D BAND' }} (THIS PAGE)
           </span>
           <span v-if="includedServers.length === 1" class="lb-server-active-tag">
             · SRV: {{ $pn((selectedServerObj?.shortName || includedServers[0])).toUpperCase() }}
@@ -1944,8 +1944,8 @@ const rankTintClass = (rank: number) => {
       </div>
     </div>
 
-    <!-- Paginator (when not grouped, server-side) -->
-    <div v-if="!groupBy && totalItems > 0" class="lb-pagination-bar">
+    <!-- Server-side paginator -->
+    <div v-if="totalItems > 0" class="lb-pagination-bar">
       <div class="lb-page-meta">
         PAGE {{ page }} OF {{ totalPages }} · {{ pageSize }} PER PAGE
       </div>
