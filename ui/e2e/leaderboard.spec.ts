@@ -446,6 +446,48 @@ test.describe('Leaderboard Page', () => {
     await expect(groupRows.first()).toBeVisible()
   })
 
+  test('should paginate grouped leaderboard results', async ({ page }) => {
+    const players = Array.from({ length: 26 }, (_, index) => ({
+      ...MOCK_LEADERBOARD_DATA.players[index % MOCK_LEADERBOARD_DATA.players.length],
+      rank: index + 1,
+      name: `GroupedPlayer_${index + 1}`,
+      favMap: index % 2 === 0 ? 'Bocage' : 'Wake'
+    }))
+
+    await page.route('**/stats/leaderboard*', async route => {
+      const url = new URL(route.request().url())
+      const requestedPage = Math.max(1, Number(url.searchParams.get('page') ?? 1))
+      const requestedPageSize = Math.max(1, Number(url.searchParams.get('pageSize') ?? 25))
+      const start = (requestedPage - 1) * requestedPageSize
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...MOCK_LEADERBOARD_DATA,
+          page: requestedPage,
+          pageSize: requestedPageSize,
+          totalPages: Math.ceil(players.length / requestedPageSize),
+          totalPlayers: players.length,
+          players: players.slice(start, start + requestedPageSize)
+        })
+      })
+    })
+
+    await page.goto('/v4/leaderboard')
+    await page.locator('.lb-control-group', { hasText: /Group By/i }).locator('select').selectOption('favMap')
+
+    const paginator = page.locator('.lb-pagination-bar')
+    await expect(paginator).toBeVisible()
+    await expect(paginator.locator('.lb-page-meta')).toContainText('PAGE 1 OF 2')
+
+    await paginator.locator('.lb-page-btn', { hasText: 'NEXT' }).click()
+
+    await expect(paginator.locator('.lb-page-meta')).toContainText('PAGE 2 OF 2')
+    await expect(page.locator('.lb-table tbody')).toContainText('GroupedPlayer_26')
+    await expect(page.locator('.lb-section-left')).toContainText('SHOWING 26–26 OF 26')
+  })
+
   test('should toggle column visibility via columns popover', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
