@@ -553,7 +553,7 @@ defineExpose({
       <span class="mm-pbar__m">{{ activeDist?.metricName ?? 'Performance curve' }} · {{ selectedDays }}d window</span>
     </div>
 
-    <!-- Controls Row on Dark Surface (Metric tabs + High-contrast Search + Filters) -->
+    <!-- Controls Row on Dark Surface (Metric tabs on left, Window & Min rounds filters on right) -->
     <div class="mm-rank-dist__controls-row">
       <!-- Left: Metric Switcher Tabs -->
       <div class="mm-subtabs mm-rank-dist__metric-subtabs">
@@ -567,55 +567,8 @@ defineExpose({
         >{{ tab.label }}</button>
       </div>
 
-      <!-- Right: Search Input + Filters Group -->
+      <!-- Right: Filters Group -->
       <div class="mm-rank-dist__filters-group">
-        <!-- Player Benchmark Search Input (Crisp White Typography on Dark Surface) -->
-        <div ref="searchWrapRef" class="mm-rank-dist__search-wrap">
-          <label class="mm-search mm-rank-dist__search">
-            <svg class="mm-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-3.5-3.5" />
-            </svg>
-            <input
-              v-model="playerSearchQuery"
-              type="text"
-              class="mm-search__input mm-rank-dist__input"
-              placeholder="Plot player on curve…"
-              @input="handlePlayerSearchInput"
-              @focus="showSearchDropdown = playerSearchResults.length > 0"
-            />
-            <button
-              v-if="playerSearchQuery"
-              type="button"
-              class="mm-search__clear mm-rank-dist__clear-btn"
-              title="Clear search"
-              @click="clearPlayerSearch"
-            >×</button>
-          </label>
-
-          <!-- Autocomplete Dropdown on Dark Surface -->
-          <div v-if="showSearchDropdown && (playerSearchResults.length > 0 || playerSearchLoading)" class="mm-rank-dist__dropdown">
-            <div v-if="playerSearchLoading" class="mm-rank-dist__dropdown-item is-loading">
-              Searching players on this server…
-            </div>
-            <div
-              v-for="item in playerSearchResults"
-              :key="item.playerName"
-              class="mm-rank-dist__dropdown-item"
-              @click="pinPlayer(item)"
-            >
-              <div class="mm-rank-dist__dd-name">
-                <span class="mm-list__rank">#{{ item.rank }}</span>
-                <span class="mm-list__name-primary">{{ $pn(item.playerName) }}</span>
-              </div>
-              <div class="mm-rank-dist__dd-stats">
-                <span :class="kdClass(item.kdRatio)">{{ item.kdRatio.toFixed(2) }} K/D</span>
-                <span class="is-muted">· {{ item.totalRounds }} rnds</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- Min rounds filter -->
         <div class="mm-rank-dist__filter">
           <span class="mm-rank-dist__filter-label">Min rounds</span>
@@ -650,27 +603,55 @@ defineExpose({
       </div>
     </div>
 
-    <!-- Loading skeleton -->
-    <div v-if="loading" class="mm-panel__body">
-      <div class="mm-rank-dist__kpis">
-        <div v-for="i in 5" :key="i" class="mm-skeleton" style="height: 48px" />
+    <!-- Dedicated Search & Pinned Player Row -->
+    <div class="mm-rank-dist__search-row">
+      <!-- Player Benchmark Search Input (Crisp White Typography on Dark Surface) -->
+      <div ref="searchWrapRef" class="mm-rank-dist__search-wrap">
+        <label class="mm-search mm-rank-dist__search">
+          <svg class="mm-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            v-model="playerSearchQuery"
+            type="text"
+            class="mm-search__input mm-rank-dist__input"
+            placeholder="Plot player on curve…"
+            @input="handlePlayerSearchInput"
+            @focus="showSearchDropdown = playerSearchResults.length > 0"
+          />
+          <button
+            v-if="playerSearchQuery"
+            type="button"
+            class="mm-search__clear mm-rank-dist__clear-btn"
+            title="Clear search"
+            @click="clearPlayerSearch"
+          >×</button>
+        </label>
+
+        <!-- Autocomplete Dropdown on Dark Surface -->
+        <div v-if="showSearchDropdown && (playerSearchResults.length > 0 || playerSearchLoading)" class="mm-rank-dist__dropdown">
+          <div v-if="playerSearchLoading" class="mm-rank-dist__dropdown-item is-loading">
+            Searching players on this server…
+          </div>
+          <div
+            v-for="item in playerSearchResults"
+            :key="item.playerName"
+            class="mm-rank-dist__dropdown-item"
+            @click="pinPlayer(item)"
+          >
+            <div class="mm-rank-dist__dd-name">
+              <span class="mm-list__rank">#{{ item.rank }}</span>
+              <span class="mm-list__name-primary">{{ $pn(item.playerName) }}</span>
+            </div>
+            <div class="mm-rank-dist__dd-stats">
+              <span :class="kdClass(item.kdRatio)">{{ item.kdRatio.toFixed(2) }} K/D</span>
+              <span class="is-muted">· {{ item.totalRounds }} rnds</span>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="mm-skeleton" style="height: 220px; margin-top: 14px" />
-    </div>
 
-    <!-- Error state -->
-    <div v-else-if="error" class="mm-empty" style="border: 0; padding: 20px 0">
-      {{ error }}
-      <button type="button" class="mm-btn mm-btn--inline" style="margin-left: 12px" @click="loadDistribution">Retry</button>
-    </div>
-
-    <!-- Empty state -->
-    <div v-else-if="!data || data.totalPlayers === 0" class="mm-empty" style="border: 0; padding: 24px 0">
-      No player activity recorded on this server for the selected criteria.
-    </div>
-
-    <!-- Main Content: Graphical Distribution Bar Chart + Callouts + Compact Metrics -->
-    <div v-else-if="activeDist" class="mm-rank-dist__content" :class="{ 'is-refreshing': isRefreshing }">
       <!-- Pinned Player Graphical Tag Strip -->
       <div v-if="pinnedPlayer" class="mm-rank-dist__pinned-chip">
         <span class="mm-rank-dist__pin-icon">📍</span>
@@ -688,7 +669,27 @@ defineExpose({
         <span class="mm-rank-dist__pin-meta">Rank #{{ pinnedPlayer.rank }} · {{ pinnedPlayer.totalRounds }} rnds</span>
         <button type="button" class="mm-rank-dist__pin-clear" title="Unpin player" @click="clearPinnedPlayer">✕</button>
       </div>
+    </div>
 
+    <!-- Loading skeleton -->
+    <div v-if="loading" class="mm-panel__body" style="padding: 14px">
+      <div class="mm-skeleton" style="height: 48px; margin-bottom: 12px" />
+      <div class="mm-skeleton" style="height: 220px" />
+    </div>
+
+    <!-- Error state -->
+    <div v-else-if="error" class="mm-empty" style="border: 0; padding: 20px 0">
+      {{ error }}
+      <button type="button" class="mm-btn mm-btn--inline" style="margin-left: 12px" @click="loadDistribution">Retry</button>
+    </div>
+
+    <!-- Empty state -->
+    <div v-else-if="!data || data.totalPlayers === 0" class="mm-empty" style="border: 0; padding: 24px 0">
+      No player activity recorded on this server for the selected criteria.
+    </div>
+
+    <!-- Main Content: Graphical Distribution Bar Chart + Callouts + Compact Metrics -->
+    <div v-else-if="activeDist" class="mm-rank-dist__content" :class="{ 'is-refreshing': isRefreshing }">
       <!-- Vertical Distribution Bar Chart with Graphical Column Callouts -->
       <div class="mm-rank-dist__chart-wrap">
         <div class="mm-rank-dist__chart-canvas">
@@ -779,10 +780,20 @@ defineExpose({
   gap: 14px;
 }
 
+.mm-rank-dist__search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 0;
+  background: var(--mm-surface, #181818);
+}
+
 /* High-Contrast Search Input on Dark Panel Body */
 .mm-rank-dist__search-wrap {
   position: relative;
-  width: 200px;
+  width: 100%;
+  max-width: 280px;
 }
 
 .mm-rank-dist__search {
@@ -822,7 +833,7 @@ defineExpose({
 .mm-rank-dist__dropdown {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
+  left: 0;
   width: 280px;
   background: #181818;
   border: 1px solid rgba(255, 255, 255, 0.2);
