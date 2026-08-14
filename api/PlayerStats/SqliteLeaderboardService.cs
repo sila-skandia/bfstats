@@ -638,15 +638,16 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var populatedGuids = IdentifyPopulatedServers(occupancy);
 
         var serverLookup = serverMap.Select(kv => (kv.Value.Guid, kv.Value.Name));
-        var excludeGuids = ResolveServerGuids(ParseExcludeTerms(exclude), serverLookup);
+        var excludeGuids = ResolveServerGuids(ParseCsvTerms(exclude), serverLookup);
         var hasExplicitInclude = !string.IsNullOrWhiteSpace(server);
         var effectiveGame = !string.IsNullOrWhiteSpace(game) &&
                             serverMap.Values.Any(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
             ? game
             : null;
         var includeGuids = hasExplicitInclude
-            ? ResolveServerGuids(ParseExcludeTerms(server), serverLookup)
+            ? ResolveServerGuids(ParseCsvTerms(server), serverLookup)
             : [];
+        var includeMaps = ParseCsvTerms(map);
 
         var isAsc = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
         var normSort = (sortBy ?? "score").Trim().ToLowerInvariant();
@@ -661,7 +662,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var queryResult = await ExecuteGlobalLeaderboardQueryAsync(
             days,
             effectiveGame,
-            map,
+            includeMaps,
             searchQuery,
             includeGuids,
             excludedFilter,
@@ -696,10 +697,10 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 dbContext.Servers.Any(s => s.Guid == pms.ServerGuid && s.Game == effectiveGame));
         }
 
-        if (!string.IsNullOrWhiteSpace(map))
+        if (includeMaps.Count > 0)
         {
-            var cleanMap = map.Trim().ToLowerInvariant();
-            playerSource = playerSource.Where(pms => pms.MapName.ToLower() == cleanMap);
+            var mapNamesLower = includeMaps.Select(m => m.ToLowerInvariant()).ToList();
+            playerSource = playerSource.Where(pms => mapNamesLower.Contains(pms.MapName.ToLower()));
         }
 
         if (includeGuids.Count > 0)
@@ -836,7 +837,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
     private async Task<GlobalLeaderboardQueryResult> ExecuteGlobalLeaderboardQueryAsync(
         int days,
         string? game,
-        string? map,
+        IReadOnlyCollection<string> includeMaps,
         string? searchQuery,
         IReadOnlyCollection<string> includeGuids,
         IReadOnlyCollection<string> excludeGuids,
@@ -877,12 +878,6 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         {
             filters.Add("""s."Game" = @game COLLATE NOCASE""");
             parameters.Add(new SqliteParameter("@game", game.Trim()));
-        }
-
-        if (!string.IsNullOrWhiteSpace(map))
-        {
-            filters.Add("""p."MapName" = @map COLLATE NOCASE""");
-            parameters.Add(new SqliteParameter("@map", map.Trim()));
         }
 
         AddGuidFilter(filters, parameters, includeGuids, "include", negate: false);
@@ -934,6 +929,30 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         parameters.Add(new SqliteParameter("@offset", offset));
         parameters.Add(new SqliteParameter("@pageSize", pageSize));
 
+        var mapScopedCte = "";
+        var aggSource = "filtered";
+        if (includeMaps.Count > 0)
+        {
+            var parameterNames = new List<string>(includeMaps.Count);
+            var index = 0;
+            foreach (var mapName in includeMaps)
+            {
+                var parameterName = $"@map{index}";
+                parameterNames.Add(parameterName);
+                parameters.Add(new SqliteParameter(parameterName, mapName));
+                index++;
+            }
+
+            mapScopedCte = $$"""
+                ,
+                map_scoped AS MATERIALIZED (
+                    SELECT * FROM filtered
+                    WHERE "MapName" COLLATE NOCASE IN ({{string.Join(", ", parameterNames)}})
+                )
+                """;
+            aggSource = "map_scoped";
+        }
+
         var direction = isAscending ? "ASC" : "DESC";
         var favoriteCte = "";
         var rankedSource = "eligible AS e";
@@ -955,7 +974,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                                          SUM("TotalPlayTimeMinutes") DESC,
                                          "{{favoriteColumn}}" COLLATE NOCASE
                             ) AS "FavoriteRank"
-                        FROM filtered
+                        FROM {{aggSource}}
                         GROUP BY "PlayerName", "{{favoriteColumn}}"
                     )
                     WHERE "FavoriteRank" = 1
@@ -980,7 +999,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
 
         var sql = $$"""
             WITH
-            {{filteredCte}},
+            {{filteredCte}}{{mapScopedCte}},
             player_aggregates AS MATERIALIZED (
                 SELECT
                     "PlayerName" AS "Name",
@@ -989,7 +1008,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                     SUM("TotalScore") AS "Score",
                     SUM("TotalPlayTimeMinutes") AS "PlayMin",
                     SUM("TotalRounds") AS "Rounds"
-                FROM filtered
+                FROM {{aggSource}}
                 GROUP BY "PlayerName"
             ),
             eligible AS MATERIALIZED (
@@ -1198,10 +1217,10 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
 
     private readonly record struct ServerOccupancy(string ServerGuid, double AvgPlayers);
 
-    private static List<string> ParseExcludeTerms(string? exclude)
+    private static List<string> ParseCsvTerms(string? value)
     {
-        if (string.IsNullOrWhiteSpace(exclude)) return [];
-        return exclude
+        if (string.IsNullOrWhiteSpace(value)) return [];
+        return value
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(s => s.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
