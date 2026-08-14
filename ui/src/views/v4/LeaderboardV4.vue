@@ -40,6 +40,9 @@ const rawPlayers = ref<LeaderboardPlayer[]>([])
 const servers = ref<LeaderboardServer[]>([])
 const maps = ref<LeaderboardMap[]>([])
 const loading = ref(true)
+const hasLoaded = ref(false)
+const isRefreshing = computed(() => loading.value && hasLoaded.value)
+let loadSeq = 0
 const error = ref<string | null>(null)
 const copyToast = ref(false)
 
@@ -57,7 +60,9 @@ const days = ref<number>((() => {
 })())
 const minPlay = ref<number>(Number(route.query.minPlay) || 0)
 const minRounds = ref<number>(Number(route.query.minRounds) || 1)
-const selectedServer = ref<string>((route.query.server as string) || '')
+const includedServers = ref<string[]>(
+  route.query.server ? (route.query.server as string).split(',').filter(Boolean) : []
+)
 const serverMode = ref<'include' | 'exclude'>((route.query.serverMode as string) === 'exclude' ? 'exclude' : 'include')
 const excludedServers = ref<string[]>(
   route.query.exclude ? (route.query.exclude as string).split(',').filter(Boolean) : []
@@ -123,7 +128,7 @@ const periodOptions = computed(() => {
     { value: 90, label: '90 Days' },
     { value: 365, label: '1 Year' },
   ]
-  if (selectedServer.value && serverMode.value === 'include') {
+  if (includedServers.value.length > 0 && serverMode.value === 'include') {
     opts.push({ value: 0, label: 'All Time' })
   }
   return opts
@@ -134,8 +139,8 @@ const periodLabel = computed(() =>
 )
 
 const selectedServerObj = computed(() => {
-  if (!selectedServer.value) return null
-  const srvLower = selectedServer.value.toLowerCase()
+  if (includedServers.value.length !== 1) return null
+  const srvLower = includedServers.value[0].toLowerCase()
   return servers.value.find(s => s.name.toLowerCase() === srvLower || s.guid.toLowerCase() === srvLower)
 })
 
@@ -151,6 +156,22 @@ const filteredServers = computed(() => {
 })
 
 // Exclude mode helpers
+const isServerIncluded = (srvName: string) =>
+  includedServers.value.some(e => e.toLowerCase() === srvName.toLowerCase())
+
+const toggleIncludeServer = (srvName: string) => {
+  const lower = srvName.toLowerCase()
+  if (includedServers.value.some(e => e.toLowerCase() === lower)) {
+    includedServers.value = includedServers.value.filter(e => e.toLowerCase() !== lower)
+  } else {
+    includedServers.value = [...includedServers.value, srvName]
+  }
+}
+
+const clearIncludedServers = () => {
+  includedServers.value = []
+}
+
 const isServerExcluded = (srvName: string) =>
   excludedServers.value.some(e => e.toLowerCase() === srvName.toLowerCase())
 
@@ -170,7 +191,7 @@ const clearExcludedServers = () => {
 const switchServerMode = (mode: 'include' | 'exclude') => {
   serverMode.value = mode
   if (mode === 'exclude') {
-    selectedServer.value = ''
+    includedServers.value = []
   } else {
     excludedServers.value = []
   }
@@ -224,8 +245,9 @@ const resizing = ref<{ key: string; startX: number; startW: number } | null>(nul
 const dragKey = ref<string | null>(null)
 
 const loadData = async () => {
+  const seq = ++loadSeq
   loading.value = true
-  error.value = null
+  if (!hasLoaded.value) error.value = null
   try {
     const primarySort = sort.value[0]
     const res = await fetchLeaderboard({
@@ -234,7 +256,9 @@ const loadData = async () => {
       sortBy: primarySort?.key ?? 'score',
       sortDir: primarySort?.dir ?? 'desc',
       q: debouncedSearch.value || undefined,
-      server: serverMode.value === 'include' ? (selectedServer.value || undefined) : undefined,
+      server: serverMode.value === 'include' && includedServers.value.length > 0
+        ? includedServers.value.join(',')
+        : undefined,
       exclude: serverMode.value === 'exclude' && excludedServers.value.length > 0
         ? excludedServers.value.join(',')
         : undefined,
@@ -244,15 +268,20 @@ const loadData = async () => {
       minRounds: minRounds.value,
       minPlay: minPlay.value,
     })
+    if (seq !== loadSeq) return
     rawPlayers.value = res.players || []
     servers.value = res.servers || []
     maps.value = res.maps || []
     serverTotalPlayers.value = res.totalPlayers ?? 0
     serverTotalPages.value = res.totalPages ?? 1
+    error.value = null
   } catch {
-    error.value = 'Leaderboard data is temporarily unavailable.'
+    if (seq !== loadSeq) return
+    if (!hasLoaded.value) error.value = 'Leaderboard data is temporarily unavailable.'
   } finally {
+    if (seq !== loadSeq) return
     loading.value = false
+    hasLoaded.value = true
   }
 }
 
@@ -354,7 +383,7 @@ watch([serverDropdownOpen, mapDropdownOpen, periodSheetOpen, isNarrow], () => {
   syncBodyScrollLock()
 })
 
-watch([days, minPlay, minRounds, selectedMap, selectedServer, excludedServers, serverMode, populatedOnly], () => {
+watch([days, minPlay, minRounds, selectedMap, includedServers, excludedServers, serverMode, populatedOnly], () => {
   page.value = 1
 })
 
@@ -381,8 +410,8 @@ watch(selectedMap, (name) => {
   if (!name) selectedMapLabel.value = ''
 })
 
-watch(selectedServer, (srv) => {
-  if (!srv && days.value === 0) days.value = 365
+watch(includedServers, (list) => {
+  if (list.length === 0 && days.value === 0) days.value = 365
 })
 
 const requestKey = computed(() => [
@@ -392,7 +421,7 @@ const requestKey = computed(() => [
   sort.value[0]?.dir ?? 'desc',
   debouncedSearch.value,
   serverMode.value,
-  selectedServer.value,
+  includedServers.value.join('\0'),
   excludedServers.value.join('\0'),
   populatedOnly.value ? '1' : '0',
   selectedMap.value,
@@ -406,14 +435,14 @@ watch(requestKey, () => {
 })
 
 // URL sync
-watch([days, minPlay, minRounds, searchQuery, groupBy, selectedMap, selectedServer, excludedServers, serverMode, populatedOnly], () => {
+watch([days, minPlay, minRounds, searchQuery, groupBy, selectedMap, includedServers, excludedServers, serverMode, populatedOnly], () => {
   router.replace({
     query: {
       ...route.query,
       days: days.value === 30 ? undefined : String(days.value),
       minPlay: minPlay.value === 0 ? undefined : String(minPlay.value),
       minRounds: minRounds.value === 1 ? undefined : String(minRounds.value),
-      server: (serverMode.value === 'include' && selectedServer.value) ? selectedServer.value : undefined,
+      server: (serverMode.value === 'include' && includedServers.value.length > 0) ? includedServers.value.join(',') : undefined,
       serverMode: serverMode.value === 'exclude' ? 'exclude' : undefined,
       exclude: (serverMode.value === 'exclude' && excludedServers.value.length > 0) ? excludedServers.value.join(',') : undefined,
       populatedOnly: populatedOnly.value ? undefined : '0',
@@ -575,7 +604,7 @@ const toggleGroupCollapse = (groupKey: string) => {
 }
 
 const resetAll = () => {
-  selectedServer.value = ''
+  includedServers.value = []
   serverMode.value = 'include'
   excludedServers.value = []
   populatedOnly.value = true
@@ -601,18 +630,24 @@ const resetAll = () => {
 }
 
 const clearServerFilter = () => {
-  selectedServer.value = ''
+  includedServers.value = []
   excludedServers.value = []
   serverMode.value = 'include'
 }
 
 const activeFilterChips = computed(() => {
   const chips: { key: string; label: string; clear: () => void }[] = []
-  if (selectedServer.value) {
+  if (includedServers.value.length === 1) {
     chips.push({
       key: 'server',
-      label: decodeServerName(selectedServerObj.value?.shortName || selectedServer.value),
-      clear: () => { selectedServer.value = '' }
+      label: decodeServerName(selectedServerObj.value?.shortName || includedServers.value[0]),
+      clear: clearIncludedServers
+    })
+  } else if (includedServers.value.length > 1) {
+    chips.push({
+      key: 'server',
+      label: `${includedServers.value.length} servers`,
+      clear: clearIncludedServers
     })
   } else if (serverMode.value === 'exclude' && excludedServers.value.length > 0) {
     chips.push({
@@ -780,7 +815,7 @@ const rankTintClass = (rank: number) => {
               <option :value="30">30 Days</option>
               <option :value="90">90 Days</option>
               <option :value="365">1 Year</option>
-              <option v-if="selectedServer && serverMode === 'include'" :value="0">All Time</option>
+              <option v-if="includedServers.length > 0 && serverMode === 'include'" :value="0">All Time</option>
             </select>
             <button
               type="button"
@@ -840,7 +875,7 @@ const rankTintClass = (rank: number) => {
               <button
                 class="lb-server-dropdown-btn"
                 :class="{
-                  'lb-server-dropdown-btn--active': selectedServer || excludedServers.length > 0,
+                  'lb-server-dropdown-btn--active': includedServers.length > 0 || excludedServers.length > 0,
                   'lb-server-dropdown-btn--exclude': serverMode === 'exclude' && excludedServers.length > 0,
                   'lb-server-dropdown-btn--open': serverDropdownOpen
                 }"
@@ -854,8 +889,13 @@ const rankTintClass = (rank: number) => {
                     <span class="lb-server-dropdown-text">{{ $pn(selectedServerObj.shortName || selectedServerObj.name) }}</span>
                     <span class="lb-server-count">{{ formatAvg(selectedServerObj.avgPlayers) }}</span>
                   </template>
-                  <template v-else-if="selectedServer">
-                    <span class="lb-server-dropdown-text">{{ $pn(selectedServer) }}</span>
+                  <template v-else-if="includedServers.length > 1">
+                    <i class="pi pi-server lb-server-icon"></i>
+                    <span class="lb-server-dropdown-text">{{ includedServers.length }} servers</span>
+                    <span class="lb-server-count">{{ includedServers.length }}</span>
+                  </template>
+                  <template v-else-if="includedServers.length === 1">
+                    <span class="lb-server-dropdown-text">{{ $pn(includedServers[0]) }}</span>
                   </template>
                   <template v-else>
                     <i class="pi pi-server lb-server-icon"></i>
@@ -878,12 +918,12 @@ const rankTintClass = (rank: number) => {
 
               <!-- Clear button: works for both modes -->
               <button
-                v-if="selectedServer || excludedServers.length > 0"
+                v-if="includedServers.length > 0 || excludedServers.length > 0"
                 type="button"
                 class="lb-server-clear-btn"
                 :aria-label="serverMode === 'exclude' ? 'Clear all exclusions' : 'Clear server filter'"
                 :title="serverMode === 'exclude' ? 'Clear all exclusions' : 'Clear server filter'"
-                @click.stop="serverMode === 'exclude' ? clearExcludedServers() : (selectedServer = '')"
+                @click.stop="serverMode === 'exclude' ? clearExcludedServers() : clearIncludedServers()"
               >
                 <i class="pi pi-times"></i>
               </button>
@@ -906,7 +946,7 @@ const rankTintClass = (rank: number) => {
                   </div>
                   <div class="lb-sheet-actions">
                     <button
-                      v-if="selectedServer || excludedServers.length > 0"
+                      v-if="includedServers.length > 0 || excludedServers.length > 0"
                       type="button"
                       class="lb-sheet-clear"
                       @click="clearServerFilter(); serverDropdownOpen = false"
@@ -970,13 +1010,13 @@ const rankTintClass = (rank: number) => {
                   <button
                     v-if="serverMode === 'include'"
                     class="lb-server-item"
-                    :class="{ 'lb-server-item--active': !selectedServer }"
-                    @click="selectedServer = ''; serverDropdownOpen = false"
+                    :class="{ 'lb-server-item--active': includedServers.length === 0 }"
+                    @click="clearIncludedServers()"
                   >
                     <i class="pi pi-globe lb-server-item-icon"></i>
                     <span class="lb-server-item-name">All Servers</span>
                     <span class="lb-server-count">{{ servers.length }}</span>
-                    <i v-if="!selectedServer" class="pi pi-check lb-server-check"></i>
+                    <i v-if="includedServers.length === 0" class="pi pi-check lb-server-check"></i>
                   </button>
 
                   <!-- Clear All Exclusions (exclude mode) -->
@@ -990,17 +1030,17 @@ const rankTintClass = (rank: number) => {
                     <span class="lb-exclude-badge">{{ excludedServers.length }}</span>
                   </button>
 
-                  <!-- Include mode: single-select server list -->
+                  <!-- Include mode: multi-select server list -->
                   <template v-if="serverMode === 'include'">
                     <button
                       v-for="srv in filteredServers"
                       :key="srv.guid"
                       class="lb-server-item"
                       :class="{
-                        'lb-server-item--active': selectedServer.toLowerCase() === srv.name.toLowerCase() || selectedServer === srv.guid,
+                        'lb-server-item--active': isServerIncluded(srv.name) || isServerIncluded(srv.guid),
                         'lb-server-item--quiet': populatedOnly && !srv.isPopulated
                       }"
-                      @click="selectedServer = srv.name; serverDropdownOpen = false"
+                      @click="toggleIncludeServer(srv.name)"
                     >
                       <span v-if="srv.flag" class="lb-flag">{{ srv.flag }}</span>
                       <span class="lb-server-item-name">{{ $pn(srv.name) }}</span>
@@ -1010,7 +1050,7 @@ const rankTintClass = (rank: number) => {
                         :title="`${formatAvg(srv.avgPlayers)} avg concurrent · ${srv.playerCount} ranked`"
                       >{{ formatAvg(srv.avgPlayers) }}</span>
                       <i
-                        v-if="selectedServer.toLowerCase() === srv.name.toLowerCase() || selectedServer === srv.guid"
+                        v-if="isServerIncluded(srv.name) || isServerIncluded(srv.guid)"
                         class="pi pi-check lb-server-check"
                       ></i>
                     </button>
@@ -1320,6 +1360,7 @@ const rankTintClass = (rank: number) => {
     <!-- Olive Section Bar -->
     <div class="lb-section-bar-wrap">
       <div class="lb-section-bar">
+        <div v-if="isRefreshing" class="lb-refresh-bar is-on" aria-hidden="true"></div>
         <div class="lb-section-left">
           <span v-if="groupBy" class="lb-desktop-only">
             {{ formatInt(totalItems) }} RANKED PLAYERS · GROUPED BY {{ groupBy === 'favServer' ? 'FAVOURITE SERVER' : groupBy === 'favMap' ? 'FAVOURITE MAP' : 'K/D BAND' }} (THIS PAGE)
@@ -1327,13 +1368,16 @@ const rankTintClass = (rank: number) => {
           <span v-else>
             SHOWING {{ totalItems === 0 ? 0 : (page - 1) * pageSize + 1 }}–{{ Math.min(page * pageSize, totalItems) }} OF {{ formatInt(totalItems) }} RANKED PLAYERS
           </span>
-          <span v-if="selectedServer" class="lb-server-active-tag">
-            · SRV: {{ $pn((selectedServerObj?.shortName || selectedServer)).toUpperCase() }}
+          <span v-if="includedServers.length === 1" class="lb-server-active-tag">
+            · SRV: {{ $pn((selectedServerObj?.shortName || includedServers[0])).toUpperCase() }}
+          </span>
+          <span v-else-if="includedServers.length > 1" class="lb-server-active-tag">
+            · SRV: {{ includedServers.length }} SERVERS
           </span>
           <span v-else-if="serverMode === 'exclude' && excludedServers.length > 0" class="lb-excluded-tag">
             · EXCL. {{ excludedServers.length }} {{ excludedServers.length === 1 ? 'SERVER' : 'SERVERS' }}
           </span>
-          <span v-if="populatedOnly && !selectedServer" class="lb-populated-tag">
+          <span v-if="populatedOnly && includedServers.length === 0" class="lb-populated-tag">
             · POPULATED
           </span>
           <span v-if="selectedMap" class="lb-map-active-tag">
@@ -1348,17 +1392,17 @@ const rankTintClass = (rank: number) => {
 
     <!-- Table Container -->
     <div class="lb-table-container">
-      <div v-if="loading" class="lb-state-box">
+      <div v-if="loading && !hasLoaded" class="lb-state-box">
         <i class="pi pi-spin pi-spinner lb-spinner"></i>
         <span>Loading global player leaderboard...</span>
       </div>
 
-      <div v-else-if="error" class="lb-state-box lb-state-box--error">
+      <div v-else-if="error && !hasLoaded" class="lb-state-box lb-state-box--error">
         <i class="pi pi-exclamation-triangle"></i>
         <span>{{ error }}</span>
       </div>
 
-      <div v-else-if="totalItems === 0" class="lb-state-box">
+      <div v-else-if="!isRefreshing && totalItems === 0" class="lb-state-box">
         <span>NO PLAYERS MATCH THE SELECTED FILTERS.</span>
         <div v-if="activeFilterChips.length" class="lb-empty-filters">
           <button
@@ -1376,7 +1420,12 @@ const rankTintClass = (rank: number) => {
         <button class="lb-btn lb-btn--inline" @click="resetAll">Reset Filters</button>
       </div>
 
-      <template v-else>
+      <div
+        v-else
+        class="lb-results"
+        :class="{ 'is-refreshing': isRefreshing }"
+        :aria-busy="isRefreshing"
+      >
         <ol class="lb-mobile-list">
           <li v-for="p in pagedRows" :key="`m-${p.name}`">
             <RouterLink
@@ -1760,7 +1809,7 @@ const rankTintClass = (rank: number) => {
           </tbody>
         </table>
         </div>
-      </template>
+      </div>
     </div>
 
     <!-- Paginator (when not grouped, server-side) -->
@@ -2545,7 +2594,34 @@ const rankTintClass = (rank: number) => {
   box-sizing: border-box;
 }
 
+.lb-refresh-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 0;
+  background: var(--mm-highlight-ink);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.lb-refresh-bar.is-on {
+  animation: mm-progress-run 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-refresh-bar.is-on {
+    animation: none;
+    width: 100%;
+  }
+
+  .lb-results.is-refreshing {
+    transition: none;
+  }
+}
+
 .lb-section-bar {
+  position: relative;
   background: var(--mm-highlight);
   color: var(--mm-highlight-ink);
   border-radius: 2px 2px 0 0;
@@ -2572,6 +2648,11 @@ const rankTintClass = (rank: number) => {
   color: var(--mm-highlight-ink);
   font-weight: 700;
   opacity: 0.85;
+}
+
+.lb-results.is-refreshing {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
 }
 
 /* Table */
