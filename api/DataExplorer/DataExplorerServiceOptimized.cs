@@ -1099,7 +1099,7 @@ public class DataExplorerService(
         // Always include empty string for global stats unless filtering by specific server
         if (string.IsNullOrWhiteSpace(serverGuid))
         {
-            targetServerGuids = targetServerGuids.Concat(new[] { "" }).ToList();
+            targetServerGuids = [.. targetServerGuids, ""];
         }
 
         if (targetServerGuids.Count == 0)
@@ -1918,6 +1918,7 @@ public class DataExplorerService(
         Dictionary<string, string>? serverNameLookup = null,
         string game = "bf1942")
     {
+        _ = serverGuids;
         var groupBy = includeServer ? "pa.MapName, pa.ServerGuid" : "pa.MapName";
         var selectServerField = includeServer ? "pa.ServerGuid" : "NULL as ServerGuid";
 
@@ -2021,6 +2022,7 @@ public class DataExplorerService(
         Dictionary<string, string>? serverNameLookup = null,
         string game = "bf1942")
     {
+        _ = serverGuids;
         var groupBy = includeServer ? "MapName, ServerGuid" : "MapName";
         var selectFields = includeServer ? "MapName, ServerGuid," : "MapName, NULL as ServerGuid,";
 
@@ -2089,6 +2091,7 @@ public class DataExplorerService(
         Dictionary<string, string>? serverNameLookup = null,
         string game = "bf1942")
     {
+        _ = serverGuids;
         var groupBy = includeServer ? "MapName, ServerGuid" : "MapName";
         var selectFields = includeServer ? "MapName, ServerGuid," : "MapName, NULL as ServerGuid,";
 

@@ -1,7 +1,6 @@
 using api.PlayerTracking;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using NodaTime;
 using Neo4j.Driver;
 
 namespace api.PlayerRelationships;
@@ -100,7 +99,7 @@ public class PlayerRelationshipEtlService(
         {
             var key = (pair.Player1, pair.Player2);
             
-            if (!relationships.ContainsKey(key))
+            if (!relationships.TryGetValue(key, out var metrics))
             {
                 relationships[key] = new RelationshipMetrics
                 {
@@ -114,7 +113,6 @@ public class PlayerRelationshipEtlService(
             }
             else
             {
-                var metrics = relationships[key];
                 metrics.ObservationCount++;
                 
                 if (pair.Timestamp < metrics.FirstSeen)
@@ -139,6 +137,7 @@ public class PlayerRelationshipEtlService(
         Dictionary<(string, string), RelationshipMetrics> relationships,
         CancellationToken cancellationToken = default)
     {
+        _ = cancellationToken;
         if (relationships.Count == 0)
         {
             logger.LogInformation("No relationships to sync to Neo4j");
@@ -216,7 +215,7 @@ public class PlayerRelationshipEtlService(
                 return summary.Counters.NodesCreated + summary.Counters.RelationshipsCreated;
             });
 
-            totalProcessed += batch.Count();
+            totalProcessed += batch.Length;
             logger.LogDebug("Processed batch: {Processed}/{Total}", totalProcessed, relationshipData.Count);
         }
 
@@ -358,13 +357,12 @@ public class PlayerRelationshipEtlService(
     {
         foreach (var (key, metrics) in source)
         {
-            if (!target.ContainsKey(key))
+            if (!target.TryGetValue(key, out var existing))
             {
                 target[key] = metrics;
             }
             else
             {
-                var existing = target[key];
                 existing.ObservationCount += metrics.ObservationCount;
                 
                 if (metrics.FirstSeen < existing.FirstSeen)

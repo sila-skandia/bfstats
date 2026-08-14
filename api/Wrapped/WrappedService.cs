@@ -8,14 +8,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -407,7 +402,7 @@ public class WrappedService(
                 p.Rounds,
                 p.Kills,
                 (int)p.PlayTimeMinutes,
-                Math.Round((double)p.Kills / p.PlayTimeMinutes, 2),
+                Math.Round(p.Kills / p.PlayTimeMinutes, 2),
                 0
             ))
             .OrderByDescending(p => p.KillRate)

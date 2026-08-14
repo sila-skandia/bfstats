@@ -62,7 +62,7 @@ public class AdminTournamentController(
                     m.TeamId,
                     TeamName = m.Team != null ? m.Team.Name : null,
                     ImagePath = m.ImagePath,
-                    MatchResultsCount = m.MatchResults.Count(),
+                    MatchResultsCount = m.MatchResults.Count,
                     MatchResults = m.MatchResults.Select(mr => new
                     {
                         mr.Id,
@@ -3010,8 +3010,8 @@ public class AdminTournamentController(
 
             // Create the manual result with optional teams
             // Pass null if teams are not provided, otherwise pass the team ID
-            var team1Id = hasTeam1 ? request.Team1Id : (int?)null;
-            var team2Id = hasTeam2 ? request.Team2Id : (int?)null;
+            var team1Id = hasTeam1 ? request.Team1Id : null;
+            var team2Id = hasTeam2 ? request.Team2Id : null;
 
             var (resultId, teamMappingWarning) = await matchResultService.CreateOrUpdateManualMatchResultAsync(
                 tournamentId,
@@ -3024,10 +3024,18 @@ public class AdminTournamentController(
                 request.WinningTeamId,
                 request.RoundId);
 
-            logger.LogInformation(
-                "Created manual match result {ResultId} for tournament {TournamentId}, match {MatchId}, map {MapId}" +
-                (request.RoundId != null ? ", linked to round {RoundId}" : ""),
-                resultId, tournamentId, matchId, mapId, request.RoundId);
+            if (request.RoundId != null)
+            {
+                logger.LogInformation(
+                    "Created manual match result {ResultId} for tournament {TournamentId}, match {MatchId}, map {MapId}, linked to round {RoundId}",
+                    resultId, tournamentId, matchId, mapId, request.RoundId);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Created manual match result {ResultId} for tournament {TournamentId}, match {MatchId}, map {MapId}",
+                    resultId, tournamentId, matchId, mapId);
+            }
 
             if (teamMappingWarning != null)
             {

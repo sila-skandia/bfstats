@@ -1,5 +1,3 @@
-using System.Threading;
-
 namespace api.Telemetry;
 
 public static class BulkOperationContext

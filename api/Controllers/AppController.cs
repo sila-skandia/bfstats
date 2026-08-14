@@ -131,8 +131,8 @@ public class AppController(
             {
                 SqliteMetrics = new SqliteMetrics
                 {
-                    ServersTracked = serversCountTask.Result,
-                    PlayersTracked = playersCountTask.Result
+                    ServersTracked = await serversCountTask,
+                    PlayersTracked = await playersCountTask
                 },
                 GeneratedAt = DateTime.UtcNow
             };

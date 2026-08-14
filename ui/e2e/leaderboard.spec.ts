@@ -283,7 +283,7 @@ test.describe('Leaderboard Page', () => {
   test('should filter players by searchable server selector dropdown', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
-    const serverBtn = page.locator('.lb-server-dropdown-btn').first()
+    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
     await expect(serverBtn).toBeVisible()
     await expect(serverBtn).toContainText('Populated')
 
@@ -471,7 +471,7 @@ test.describe('Leaderboard Page', () => {
     await page.goto('/v4/leaderboard')
     await expect(page.locator('.lb-table tbody tr.lb-row')).toHaveCount(4)
 
-    const serverBtn = page.locator('.lb-server-dropdown-btn').first()
+    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
     await serverBtn.click()
 
     const popover = page.locator('.lb-server-popover').first()
@@ -496,7 +496,7 @@ test.describe('Leaderboard Page', () => {
     await expect(page.locator('.lb-table tbody tr.lb-row')).toHaveCount(4)
     await expect(page.locator('.lb-table')).not.toContainText('BotFarmer')
 
-    const serverBtn = page.locator('.lb-server-dropdown-btn').first()
+    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
     await serverBtn.click()
 
     const popover = page.locator('.lb-server-popover').first()
@@ -516,6 +516,7 @@ test.describe('Leaderboard Page — Mobile', () => {
     await page.route('**/stats/leaderboard*', async route => {
       const url = new URL(route.request().url())
       const serverParam = url.searchParams.get('server')
+      const mapParam = url.searchParams.get('map')
       let filtered = MOCK_LEADERBOARD_DATA.players.filter(p =>
         p.favServerGuid === 'srv-1' || p.favServerGuid === 'srv-2'
       )
@@ -524,6 +525,9 @@ test.describe('Leaderboard Page — Mobile', () => {
           p.favServer.toLowerCase() === serverParam.toLowerCase() ||
           p.favServerGuid === serverParam
         )
+      }
+      if (mapParam) {
+        filtered = filtered.filter(p => p.favMap.toLowerCase() === mapParam.toLowerCase())
       }
       await route.fulfill({
         status: 200,
@@ -538,13 +542,17 @@ test.describe('Leaderboard Page — Mobile', () => {
     })
   })
 
-  test('shows a server selector and unpinned rank cards, not the desktop table', async ({ page }) => {
+  test('shows stacked filter chips that open full-screen sheets, not the desktop table', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
-    const serverBtn = page.locator('.lb-server-dropdown-btn').first()
-    await expect(serverBtn).toBeVisible()
+    const periodBtn = page.locator('[data-lbmenu="period"] .lb-server-dropdown-btn')
+    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
+    const mapBtn = page.locator('[data-lbmenu="map"] .lb-server-dropdown-btn')
 
-    await expect(page.locator('.lb-control-group', { hasText: /Period/i })).toBeHidden()
+    await expect(periodBtn).toBeVisible()
+    await expect(serverBtn).toBeVisible()
+    await expect(mapBtn).toBeVisible()
+    await expect(page.locator('.lb-select.lb-desktop-only')).toBeHidden()
     await expect(page.locator('.lb-search-input')).toBeHidden()
     await expect(page.locator('.lb-btn', { hasText: /COLUMNS/i })).toBeHidden()
     await expect(page.locator('.lb-btn', { hasText: /^CSV$/ })).toBeHidden()
@@ -558,11 +566,53 @@ test.describe('Leaderboard Page — Mobile', () => {
     await expect(page.locator('.lb-td--pinned').first()).toBeHidden()
 
     await serverBtn.click()
-    const popover = page.locator('.lb-server-popover').first()
-    await expect(popover).toBeVisible()
-    await page.locator('.lb-server-item', { hasText: /Merciless/i }).click()
+    const sheet = page.locator('.lb-server-popover--sheet')
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByRole('heading', { name: 'Server' })).toBeVisible()
+    await expect(sheet.locator('.lb-sheet-done')).toBeVisible()
 
+    const box = await sheet.boundingBox()
+    expect(box).toBeTruthy()
+    expect(box!.width).toBeGreaterThanOrEqual(390)
+    expect(box!.height).toBeGreaterThanOrEqual(800)
+
+    await page.locator('.lb-server-item', { hasText: /Merciless/i }).click()
+    await expect(sheet).toBeHidden()
     await expect(cards).toHaveCount(2)
     await expect(cards.first()).toContainText('Patton_USA')
+
+    await periodBtn.click()
+    await expect(sheet.getByRole('heading', { name: 'Period' })).toBeVisible()
+    await sheet.locator('.lb-sheet-done').click()
+    await expect(sheet).toBeHidden()
+
+    await mapBtn.click()
+    await expect(sheet.getByRole('heading', { name: 'Map' })).toBeVisible()
+    await sheet.locator('.lb-sheet-done').click()
+    await expect(sheet).toBeHidden()
+  })
+
+  test('lets you clear a map after a server filter yields no results', async ({ page }) => {
+    await page.goto('/v4/leaderboard')
+
+    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
+    const mapBtn = page.locator('[data-lbmenu="map"] .lb-server-dropdown-btn')
+    const sheet = page.locator('.lb-server-popover--sheet')
+
+    await mapBtn.click()
+    await page.locator('.lb-server-item', { hasText: /^Bocage/ }).click()
+    await expect(sheet).toBeHidden()
+    await expect(page.locator('.lb-mobile-list .mm-session-row')).toHaveCount(2)
+
+    await serverBtn.click()
+    await page.locator('.lb-server-item', { hasText: /Merciless/i }).click()
+
+    await expect(page.locator('.lb-state-box')).toContainText('NO PLAYERS MATCH')
+    await expect(page.locator('[data-lbmenu="map"] .lb-server-clear-btn')).toBeVisible()
+    await expect(page.locator('.lb-active-filters .lb-empty-chip', { hasText: /Bocage/i })).toBeVisible()
+
+    await page.locator('[data-lbmenu="map"] .lb-server-clear-btn').click()
+    await expect(page.locator('.lb-mobile-list .mm-session-row')).toHaveCount(2)
+    await expect(page.locator('.lb-mobile-list .mm-session-row').first()).toContainText('Patton_USA')
   })
 })

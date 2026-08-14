@@ -73,31 +73,66 @@ const serverSearchQuery = ref<string>('')
 const mapSearchQuery = ref<string>('')
 const serverDropdownOpen = ref(false)
 const mapDropdownOpen = ref(false)
+const periodSheetOpen = ref(false)
 const serverSearchInputRef = ref<HTMLInputElement | null>(null)
 const mapSearchInputRef = ref<HTMLInputElement | null>(null)
 const groupBy = ref<'favServer' | 'favMap' | 'kdBand' | null>((route.query.group as any) || null)
 const collapsedGroups = ref<Set<string>>(new Set())
 
-// Search debounce timer
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
-const toggleServerDropdown = async () => {
-  serverDropdownOpen.value = !serverDropdownOpen.value
+const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
+let narrowMql: MediaQueryList | null = null
+const onNarrowChange = (e: MediaQueryListEvent) => { isNarrow.value = e.matches }
+
+const closeAllSheets = () => {
+  serverDropdownOpen.value = false
   mapDropdownOpen.value = false
-  if (serverDropdownOpen.value) {
+  periodSheetOpen.value = false
+}
+
+const toggleServerDropdown = async () => {
+  const next = !serverDropdownOpen.value
+  closeAllSheets()
+  serverDropdownOpen.value = next
+  if (serverDropdownOpen.value && !isNarrow.value) {
     await nextTick()
     serverSearchInputRef.value?.focus()
   }
 }
 
 const toggleMapDropdown = async () => {
-  mapDropdownOpen.value = !mapDropdownOpen.value
-  serverDropdownOpen.value = false
-  if (mapDropdownOpen.value) {
+  const next = !mapDropdownOpen.value
+  closeAllSheets()
+  mapDropdownOpen.value = next
+  if (mapDropdownOpen.value && !isNarrow.value) {
     await nextTick()
     mapSearchInputRef.value?.focus()
   }
 }
+
+const togglePeriodSheet = () => {
+  const next = !periodSheetOpen.value
+  closeAllSheets()
+  periodSheetOpen.value = next
+}
+
+const periodOptions = computed(() => {
+  const opts = [
+    { value: 7, label: '7 Days' },
+    { value: 30, label: '30 Days' },
+    { value: 90, label: '90 Days' },
+    { value: 365, label: '1 Year' },
+  ]
+  if (selectedServer.value && serverMode.value === 'include') {
+    opts.push({ value: 0, label: 'All Time' })
+  }
+  return opts
+})
+
+const periodLabel = computed(() =>
+  periodOptions.value.find(o => o.value === days.value)?.label ?? (days.value === 0 ? 'All Time' : `${days.value} Days`)
+)
 
 const selectedServerObj = computed(() => {
   if (!selectedServer.value) return null
@@ -145,13 +180,26 @@ const switchServerMode = (mode: 'include' | 'exclude') => {
 const selectedMapObj = computed(() => {
   if (!selectedMap.value) return null
   const mLower = selectedMap.value.toLowerCase()
-  return maps.value.find(m => m.name.toLowerCase() === mLower)
+  return mapsForPicker.value.find(m => m.name.toLowerCase() === mLower) ?? null
+})
+
+const selectedMapLabel = ref('')
+
+const mapsForPicker = computed(() => {
+  const list = maps.value
+  const selected = selectedMap.value
+  if (!selected) return list
+  if (list.some(m => m.name.toLowerCase() === selected.toLowerCase())) return list
+  return [
+    { name: selected, displayName: selectedMapLabel.value || selected, playerCount: 0 },
+    ...list
+  ]
 })
 
 const filteredMaps = computed(() => {
   const q = mapSearchQuery.value.trim().toLowerCase()
-  if (!q) return maps.value
-  return maps.value.filter(m =>
+  if (!q) return mapsForPicker.value
+  return mapsForPicker.value.filter(m =>
     m.displayName.toLowerCase().includes(q) ||
     m.name.toLowerCase().includes(q)
   )
@@ -235,6 +283,9 @@ const onDocClick = (e: MouseEvent) => {
   if (!target?.closest('[data-lbmenu="map"]')) {
     mapDropdownOpen.value = false
   }
+  if (!target?.closest('[data-lbmenu="period"]')) {
+    periodSheetOpen.value = false
+  }
   if (!target?.closest('[data-lbmenu="m"]')) {
     menuKey.value = null
   }
@@ -264,12 +315,25 @@ const onFullscreenChange = () => {
   isFullscreen.value = !!document.fullscreenElement
 }
 
+const onKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') closeAllSheets()
+}
+
+const syncBodyScrollLock = () => {
+  const sheetOpen = isNarrow.value && (serverDropdownOpen.value || mapDropdownOpen.value || periodSheetOpen.value)
+  document.body.style.overflow = sheetOpen ? 'hidden' : ''
+}
+
 onMounted(() => {
   void loadData()
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
   window.addEventListener('mousedown', onDocClick)
+  window.addEventListener('keydown', onKeydown)
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  narrowMql = window.matchMedia('(max-width: 720px)')
+  isNarrow.value = narrowMql.matches
+  narrowMql.addEventListener('change', onNarrowChange)
 })
 
 onUnmounted(() => {
@@ -277,7 +341,18 @@ onUnmounted(() => {
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('mousedown', onDocClick)
+  window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  narrowMql?.removeEventListener('change', onNarrowChange)
+  document.body.style.overflow = ''
+})
+
+watch(isNarrow, (narrow) => {
+  if (!narrow) closeAllSheets()
+})
+
+watch([serverDropdownOpen, mapDropdownOpen, periodSheetOpen, isNarrow], () => {
+  syncBodyScrollLock()
 })
 
 watch([days, minPlay, minRounds, selectedMap, selectedServer, excludedServers, serverMode, populatedOnly], () => {
@@ -294,6 +369,17 @@ watch(searchQuery, (q) => {
     page.value = 1
     debouncedSearch.value = q.trim()
   }, 250)
+})
+
+watch(() => maps.value, (list) => {
+  const selected = selectedMap.value
+  if (!selected) return
+  const found = list.find(m => m.name.toLowerCase() === selected.toLowerCase())
+  if (found) selectedMapLabel.value = found.displayName
+})
+
+watch(selectedMap, (name) => {
+  if (!name) selectedMapLabel.value = ''
 })
 
 watch(selectedServer, (srv) => {
@@ -497,8 +583,11 @@ const resetAll = () => {
   serverSearchQuery.value = ''
   serverDropdownOpen.value = false
   selectedMap.value = ''
+  selectedMapLabel.value = ''
   mapSearchQuery.value = ''
   mapDropdownOpen.value = false
+  periodSheetOpen.value = false
+  days.value = 30
   minPlay.value = 0
   minRounds.value = 1
   searchQuery.value = ''
@@ -511,6 +600,44 @@ const resetAll = () => {
   page.value = 1
   selectedPlayer.value = null
 }
+
+const clearServerFilter = () => {
+  selectedServer.value = ''
+  excludedServers.value = []
+  serverMode.value = 'include'
+}
+
+const activeFilterChips = computed(() => {
+  const chips: { key: string; label: string; clear: () => void }[] = []
+  if (selectedServer.value) {
+    chips.push({
+      key: 'server',
+      label: decodeServerName(selectedServerObj.value?.shortName || selectedServer.value),
+      clear: () => { selectedServer.value = '' }
+    })
+  } else if (serverMode.value === 'exclude' && excludedServers.value.length > 0) {
+    chips.push({
+      key: 'exclude',
+      label: `Excl. ${excludedServers.value.length} ${excludedServers.value.length === 1 ? 'server' : 'servers'}`,
+      clear: clearExcludedServers
+    })
+  }
+  if (selectedMap.value) {
+    chips.push({
+      key: 'map',
+      label: selectedMapObj.value?.displayName || selectedMap.value,
+      clear: () => { selectedMap.value = '' }
+    })
+  }
+  if (days.value !== 30) {
+    chips.push({
+      key: 'period',
+      label: periodLabel.value,
+      clear: () => { days.value = 30 }
+    })
+  }
+  return chips
+})
 
 // Column resize start
 const startResize = (key: string, e: MouseEvent) => {
@@ -660,15 +787,64 @@ const rankTintClass = (rank: number) => {
         <!-- Controls Toolbar -->
         <div class="lb-controls-row">
           <!-- Timeframe Slicer -->
-          <div class="lb-control-group lb-desktop-only">
+          <div class="lb-control-group" data-lbmenu="period">
             <span class="lb-slicer-label">Period</span>
-            <select v-model.number="days" class="lb-select">
+            <select v-model.number="days" class="lb-select lb-desktop-only">
               <option :value="7">7 Days</option>
               <option :value="30">30 Days</option>
               <option :value="90">90 Days</option>
               <option :value="365">1 Year</option>
               <option v-if="selectedServer && serverMode === 'include'" :value="0">All Time</option>
             </select>
+            <button
+              type="button"
+              class="lb-server-dropdown-btn lb-period-dropdown-btn lb-mobile-only"
+              :class="{ 'lb-server-dropdown-btn--open': periodSheetOpen }"
+              @click="togglePeriodSheet"
+            >
+              <span class="lb-server-dropdown-text">{{ periodLabel }}</span>
+              <i class="pi pi-chevron-down lb-chevron-icon"></i>
+            </button>
+            <Teleport to="body" :disabled="!isNarrow">
+              <div
+                v-if="periodSheetOpen"
+                class="mm lb-server-popover"
+                :class="{ 'lb-server-popover--sheet': isNarrow }"
+                data-lbmenu="period"
+                :role="isNarrow ? 'dialog' : undefined"
+                :aria-modal="isNarrow ? true : undefined"
+                aria-label="Period"
+              >
+                <div class="lb-sheet-head">
+                  <div>
+                    <div class="mm-eyebrow">FILTER</div>
+                    <h2 class="lb-sheet-title">Period</h2>
+                  </div>
+                  <div class="lb-sheet-actions">
+                    <button
+                      v-if="days !== 30"
+                      type="button"
+                      class="lb-sheet-clear"
+                      @click="days = 30; periodSheetOpen = false"
+                    >Clear</button>
+                    <button type="button" class="lb-sheet-done" @click="periodSheetOpen = false">Done</button>
+                  </div>
+                </div>
+                <div class="lb-server-list">
+                  <button
+                    v-for="opt in periodOptions"
+                    :key="opt.value"
+                    type="button"
+                    class="lb-server-item"
+                    :class="{ 'lb-server-item--active': days === opt.value }"
+                    @click="days = opt.value; periodSheetOpen = false"
+                  >
+                    <span class="lb-server-item-name">{{ opt.label }}</span>
+                    <i v-if="days === opt.value" class="pi pi-check lb-server-check"></i>
+                  </button>
+                </div>
+              </div>
+            </Teleport>
           </div>
 
           <!-- Searchable Server Slicer -->
@@ -717,7 +893,9 @@ const rankTintClass = (rank: number) => {
               <!-- Clear button: works for both modes -->
               <button
                 v-if="selectedServer || excludedServers.length > 0"
+                type="button"
                 class="lb-server-clear-btn"
+                :aria-label="serverMode === 'exclude' ? 'Clear all exclusions' : 'Clear server filter'"
                 :title="serverMode === 'exclude' ? 'Clear all exclusions' : 'Clear server filter'"
                 @click.stop="serverMode === 'exclude' ? clearExcludedServers() : (selectedServer = '')"
               >
@@ -725,7 +903,31 @@ const rankTintClass = (rank: number) => {
               </button>
 
               <!-- Server Search Popover -->
-              <div v-if="serverDropdownOpen" class="lb-server-popover" data-lbmenu="server">
+              <Teleport to="body" :disabled="!isNarrow">
+              <div
+                v-if="serverDropdownOpen"
+                class="mm lb-server-popover"
+                :class="{ 'lb-server-popover--sheet': isNarrow }"
+                data-lbmenu="server"
+                :role="isNarrow ? 'dialog' : undefined"
+                :aria-modal="isNarrow ? true : undefined"
+                aria-label="Server"
+              >
+                <div class="lb-sheet-head">
+                  <div>
+                    <div class="mm-eyebrow">FILTER</div>
+                    <h2 class="lb-sheet-title">Server</h2>
+                  </div>
+                  <div class="lb-sheet-actions">
+                    <button
+                      v-if="selectedServer || excludedServers.length > 0"
+                      type="button"
+                      class="lb-sheet-clear"
+                      @click="clearServerFilter(); serverDropdownOpen = false"
+                    >Clear</button>
+                    <button type="button" class="lb-sheet-done" @click="serverDropdownOpen = false">Done</button>
+                  </div>
+                </div>
                 <!-- Mode Toggle -->
                 <div class="lb-server-mode-toggle">
                   <button
@@ -766,7 +968,6 @@ const rankTintClass = (rank: number) => {
                     type="text"
                     placeholder="Search server name / country..."
                     class="lb-server-search-input"
-                    autofocus
                   />
                   <button
                     v-if="serverSearchQuery"
@@ -860,11 +1061,12 @@ const rankTintClass = (rank: number) => {
                   </div>
                 </div>
               </div>
+              </Teleport>
             </div>
           </div>
 
           <!-- Searchable Map Slicer -->
-          <div class="lb-control-group lb-server-select-wrap lb-desktop-only" data-lbmenu="map">
+          <div class="lb-control-group lb-server-select-wrap" data-lbmenu="map">
             <span class="lb-slicer-label">Map</span>
             <div class="lb-server-dropdown-anchor">
               <button
@@ -892,7 +1094,9 @@ const rankTintClass = (rank: number) => {
 
               <button
                 v-if="selectedMap"
+                type="button"
                 class="lb-server-clear-btn"
+                aria-label="Clear map filter"
                 title="Clear map filter"
                 @click.stop="selectedMap = ''"
               >
@@ -900,7 +1104,31 @@ const rankTintClass = (rank: number) => {
               </button>
 
               <!-- Map Search Popover -->
-              <div v-if="mapDropdownOpen" class="lb-server-popover" data-lbmenu="map">
+              <Teleport to="body" :disabled="!isNarrow">
+              <div
+                v-if="mapDropdownOpen"
+                class="mm lb-server-popover"
+                :class="{ 'lb-server-popover--sheet': isNarrow }"
+                data-lbmenu="map"
+                :role="isNarrow ? 'dialog' : undefined"
+                :aria-modal="isNarrow ? true : undefined"
+                aria-label="Map"
+              >
+                <div class="lb-sheet-head">
+                  <div>
+                    <div class="mm-eyebrow">FILTER</div>
+                    <h2 class="lb-sheet-title">Map</h2>
+                  </div>
+                  <div class="lb-sheet-actions">
+                    <button
+                      v-if="selectedMap"
+                      type="button"
+                      class="lb-sheet-clear"
+                      @click="selectedMap = ''; mapDropdownOpen = false"
+                    >Clear</button>
+                    <button type="button" class="lb-sheet-done" @click="mapDropdownOpen = false">Done</button>
+                  </div>
+                </div>
                 <div class="lb-server-search-box">
                   <i class="pi pi-search lb-server-search-icon"></i>
                   <input
@@ -909,7 +1137,6 @@ const rankTintClass = (rank: number) => {
                     type="text"
                     placeholder="Search map name..."
                     class="lb-server-search-input lb-map-search-input"
-                    autofocus
                   />
                   <button
                     v-if="mapSearchQuery"
@@ -940,7 +1167,7 @@ const rankTintClass = (rank: number) => {
                     :key="m.name"
                     class="lb-server-item"
                     :class="{ 'lb-server-item--active': selectedMap.toLowerCase() === m.name.toLowerCase() }"
-                    @click="selectedMap = m.name; mapDropdownOpen = false"
+                    @click="selectedMap = m.name; selectedMapLabel = m.displayName; mapDropdownOpen = false"
                   >
                     <i class="pi pi-map lb-server-item-icon"></i>
                     <span class="lb-server-item-name">{{ m.displayName }}</span>
@@ -956,6 +1183,7 @@ const rankTintClass = (rank: number) => {
                   </div>
                 </div>
               </div>
+              </Teleport>
             </div>
           </div>
 
@@ -1077,9 +1305,27 @@ const rankTintClass = (rank: number) => {
             <span>{{ isFullscreen ? 'EXIT' : 'FULLSCREEN' }}</span>
           </button>
 
-          <button class="lb-btn lb-btn--muted lb-desktop-only" title="Reset all slicers and sort" @click="resetAll">
+          <button
+            class="lb-btn lb-btn--muted"
+            :class="{ 'lb-desktop-only': activeFilterChips.length === 0 }"
+            title="Reset all slicers and sort"
+            @click="resetAll"
+          >
             <i class="pi pi-refresh"></i>
             <span>RESET</span>
+          </button>
+        </div>
+        <div v-if="activeFilterChips.length" class="lb-active-filters">
+          <button
+            v-for="chip in activeFilterChips"
+            :key="chip.key"
+            type="button"
+            class="lb-empty-chip"
+            :aria-label="`Clear ${chip.label} filter`"
+            @click="chip.clear()"
+          >
+            <span>{{ chip.label }}</span>
+            <i class="pi pi-times" aria-hidden="true"></i>
           </button>
         </div>
       </div>
@@ -1128,6 +1374,19 @@ const rankTintClass = (rank: number) => {
 
       <div v-else-if="totalItems === 0" class="lb-state-box">
         <span>NO PLAYERS MATCH THE SELECTED FILTERS.</span>
+        <div v-if="activeFilterChips.length" class="lb-empty-filters">
+          <button
+            v-for="chip in activeFilterChips"
+            :key="chip.key"
+            type="button"
+            class="lb-empty-chip"
+            :aria-label="`Clear ${chip.label} filter`"
+            @click="chip.clear()"
+          >
+            <span>{{ chip.label }}</span>
+            <i class="pi pi-times" aria-hidden="true"></i>
+          </button>
+        </div>
         <button class="lb-btn lb-btn--inline" @click="resetAll">Reset Filters</button>
       </div>
 
@@ -1664,7 +1923,8 @@ const rankTintClass = (rank: number) => {
 .lb-server-dropdown-anchor {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  max-width: 292px;
 }
 
 .lb-server-dropdown-btn {
@@ -1683,7 +1943,10 @@ const rankTintClass = (rank: number) => {
   gap: 6px;
   transition: all 0.12s ease;
   max-width: 260px;
+  flex: 1;
+  min-width: 0;
   text-align: left;
+  position: relative;
 }
 
 .lb-server-dropdown-btn:hover {
@@ -1721,18 +1984,25 @@ const rankTintClass = (rank: number) => {
 }
 
 .lb-server-clear-btn {
-  position: absolute;
-  right: 22px;
-  background: transparent;
-  border: none;
+  flex-shrink: 0;
+  width: 32px;
+  border: 1px solid var(--mm-rule);
+  border-left: 0;
+  border-radius: 0 2px 2px 0;
+  background: var(--mm-bg-mute);
   color: var(--mm-ink-muted);
   cursor: pointer;
-  padding: 2px;
-  font-size: 9px;
+  padding: 0;
+  font-size: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
+}
+
+.lb-server-dropdown-btn:has(+ .lb-server-clear-btn) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .lb-server-clear-btn:hover {
@@ -1755,6 +2025,133 @@ const rankTintClass = (rank: number) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.lb-mobile-only {
+  display: none;
+}
+
+.lb-sheet-head {
+  display: none;
+}
+
+.lb-sheet-title {
+  margin: 4px 0 0;
+  font-family: var(--mm-font-display);
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--mm-ink);
+  line-height: 1.1;
+}
+
+.lb-sheet-done {
+  flex-shrink: 0;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  color: var(--mm-ink);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.lb-sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.lb-sheet-clear {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 8px 14px;
+  background: transparent;
+  border: 0;
+  color: var(--mm-ink-muted);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.lb-sheet-clear:hover,
+.lb-sheet-done:hover {
+  border-color: var(--mm-accent);
+  color: var(--mm-accent);
+}
+
+.lb-sheet-clear:hover {
+  border-color: transparent;
+}
+
+.lb-server-popover--sheet {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  left: 0;
+  z-index: 1100;
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0 0 env(safe-area-inset-bottom);
+  box-shadow: none;
+  background: var(--mm-bg);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.lb-server-popover--sheet .lb-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  padding-top: max(16px, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--mm-rule);
+}
+
+.lb-server-popover--sheet .lb-server-mode-toggle,
+.lb-server-popover--sheet .lb-populated-toggle,
+.lb-server-popover--sheet .lb-server-search-box {
+  margin-left: 16px;
+  margin-right: 16px;
+  width: auto;
+}
+
+.lb-server-popover--sheet .lb-mode-btn {
+  min-height: 44px;
+}
+
+.lb-server-popover--sheet .lb-populated-toggle {
+  min-height: 48px;
+}
+
+.lb-server-popover--sheet .lb-server-search-input {
+  min-height: 44px;
+  font-size: 16px;
+  padding: 10px 36px 10px 32px;
+}
+
+.lb-server-popover--sheet .lb-server-list {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+  padding: 0 8px 16px;
+}
+
+.lb-server-popover--sheet .lb-server-item {
+  min-height: 48px;
+  padding: 12px 10px;
+  font-size: 14px;
 }
 
 .lb-server-search-box {
@@ -2659,6 +3056,49 @@ td {
   color: var(--mm-danger);
 }
 
+.lb-empty-filters,
+.lb-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.lb-active-filters {
+  justify-content: flex-start;
+  margin: 0;
+  padding: 0 14px 12px;
+  border-top: 1px solid var(--mm-rule);
+  padding-top: 10px;
+}
+
+.lb-empty-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  background: var(--mm-bg-mute);
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  color: var(--mm-ink);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.lb-empty-chip:hover {
+  border-color: var(--mm-accent);
+  color: var(--mm-accent);
+}
+
+.lb-empty-chip .pi {
+  font-size: 10px;
+  color: var(--mm-ink-muted);
+}
+
 .lb-spinner {
   font-size: 20px;
   color: var(--mm-accent);
@@ -2775,6 +3215,10 @@ td {
     display: none !important;
   }
 
+  .lb-mobile-only {
+    display: inline-flex;
+  }
+
   .lb-header {
     padding: 16px 12px 8px;
   }
@@ -2797,7 +3241,17 @@ td {
   }
 
   .lb-controls-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
     padding: 10px 10px;
+  }
+
+  .lb-control-group:not(.lb-desktop-only) {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
   }
 
   .lb-server-select-wrap,
@@ -2813,8 +3267,16 @@ td {
     padding: 10px 28px 10px 12px;
   }
 
-  .lb-server-popover {
-    width: min(320px, calc(100vw - 32px));
+  .lb-server-clear-btn {
+    width: 44px;
+    min-height: 44px;
+    font-size: 12px;
+  }
+
+  .lb-controls-row > .lb-btn {
+    min-height: 44px;
+    width: 100%;
+    justify-content: center;
   }
 
   .lb-section-bar {

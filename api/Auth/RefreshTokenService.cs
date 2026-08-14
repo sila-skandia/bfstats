@@ -3,7 +3,6 @@ using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using api.PlayerTracking;
 
 namespace api.Auth;
@@ -18,7 +17,7 @@ public interface IRefreshTokenService
     void ClearCookie(HttpResponse response);
 }
 
-public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration config, ILogger<RefreshTokenService> logger) : IRefreshTokenService
+public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration config) : IRefreshTokenService
 {
     private readonly string _cookieName = config["RefreshToken:CookieName"] ?? "rt";
     private readonly string? _cookieDomain = config["RefreshToken:CookieDomain"];

@@ -14,7 +14,7 @@ using Serilog.Context;
 
 namespace api.StatsCollectors;
 
-public class StatsCollectionBackgroundService(
+public sealed class StatsCollectionBackgroundService(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
     ILogger<StatsCollectionBackgroundService> logger)
@@ -140,6 +140,7 @@ public class StatsCollectionBackgroundService(
 
     private async Task<List<IGameServer>> CollectBf1942ServerStatsAsync(IBfListApiService bfListApiService, PlayerTrackingService playerTrackingService, string game, CancellationToken stoppingToken)
     {
+        _ = stoppingToken;
         var allServersObjects = await bfListApiService.FetchAllServersAsync(game);
         var allServers = allServersObjects.Cast<Bf1942ServerInfo>().ToList();
 
@@ -169,6 +170,7 @@ public class StatsCollectionBackgroundService(
     public void Dispose()
     {
         _timer?.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private static async Task UpsertServerOnlineCountsAsync(

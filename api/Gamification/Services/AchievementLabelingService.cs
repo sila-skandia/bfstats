@@ -1,11 +1,9 @@
 using api.Gamification.Models;
-using Microsoft.Extensions.Logging;
 
 namespace api.Gamification.Services;
 
 public class AchievementLabelingService(
-    BadgeDefinitionsService badgeDefinitionsService,
-    ILogger<AchievementLabelingService> logger)
+    BadgeDefinitionsService badgeDefinitionsService)
 {
     private readonly Dictionary<string, AchievementLabel> _achievementLabels = InitializeAchievementLabelsStatic(badgeDefinitionsService);
 

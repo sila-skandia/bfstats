@@ -25,7 +25,7 @@ public class ServerBannerController(IServerBannerService bannerService) : Contro
         }
 
         serverName = Uri.UnescapeDataString(serverName);
-        ServerBannerStyleExtensions.TryParse(style, out var bannerStyle);
+        var bannerStyle = ServerBannerStyleExtensions.TryParse(style, out var parsedStyle) ? parsedStyle : default;
 
         var bytes = await bannerService.RenderAsync(serverName, bannerStyle, tickets, ServerBannerRenderer.ClampWidth(w), cancellationToken);
         if (bytes is null)

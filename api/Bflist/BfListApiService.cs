@@ -4,7 +4,6 @@ using api.Caching;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using api.Telemetry;
-using api.PlayerTracking;
 
 namespace api.Bflist;
 
@@ -25,9 +24,13 @@ public class BfListApiService(
     IHttpClientFactory httpClientFactory,
     ICacheService cacheService,
     ILogger<BfListApiService> logger,
-    PlayerTrackerDbContext dbContext,
     IConfiguration configuration) : IBfListApiService
 {
+    private static readonly JsonSerializerOptions CaseInsensitiveJson = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly Models.ServerFilteringConfig _serverFilteringConfig = configuration.GetSection("ServerFiltering").Get<Models.ServerFilteringConfig>() ?? new Models.ServerFilteringConfig();
 
     private const int ServerListCacheSeconds = 30;
@@ -63,28 +66,19 @@ public class BfListApiService(
 
         if (game.ToLower() == "bf1942")
         {
-            var bf1942Response = JsonSerializer.Deserialize<Bf1942ServersResponse>(content, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var bf1942Response = JsonSerializer.Deserialize<Bf1942ServersResponse>(content, CaseInsensitiveJson);
 
             return bf1942Response?.Servers?.Cast<object>().ToArray() ?? [];
         }
         else if (game.ToLower() == "bfvietnam")
         {
-            var bfvResponse = JsonSerializer.Deserialize<Models.BfvietnamServersResponse>(content, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var bfvResponse = JsonSerializer.Deserialize<Models.BfvietnamServersResponse>(content, CaseInsensitiveJson);
 
             return bfvResponse?.Servers?.Cast<object>().ToArray() ?? [];
         }
         else // fh2
         {
-            var fh2Response = JsonSerializer.Deserialize<Models.Fh2ServersResponse>(content, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var fh2Response = JsonSerializer.Deserialize<Models.Fh2ServersResponse>(content, CaseInsensitiveJson);
 
             return fh2Response?.Servers?.Cast<object>().ToArray() ?? [];
         }
@@ -184,10 +178,7 @@ public class BfListApiService(
 
             if (game.ToLower() == "bf1942")
             {
-                var bf1942Response = JsonSerializer.Deserialize<Bf1942ServersResponse>(content, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var bf1942Response = JsonSerializer.Deserialize<Bf1942ServersResponse>(content, CaseInsensitiveJson);
 
                 if (bf1942Response?.Servers != null && bf1942Response.Servers.Length > 0)
                 {
@@ -205,10 +196,7 @@ public class BfListApiService(
             }
             else if (game.ToLower() == "bfvietnam")
             {
-                var bfvResponse = JsonSerializer.Deserialize<Models.BfvietnamServersResponse>(content, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var bfvResponse = JsonSerializer.Deserialize<Models.BfvietnamServersResponse>(content, CaseInsensitiveJson);
 
                 if (bfvResponse?.Servers != null && bfvResponse.Servers.Length > 0)
                 {
@@ -226,10 +214,7 @@ public class BfListApiService(
             }
             else // fh2
             {
-                var fh2Response = JsonSerializer.Deserialize<Models.Fh2ServersResponse>(content, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var fh2Response = JsonSerializer.Deserialize<Models.Fh2ServersResponse>(content, CaseInsensitiveJson);
 
                 if (fh2Response?.Servers != null && fh2Response.Servers.Length > 0)
                 {
@@ -272,28 +257,19 @@ public class BfListApiService(
 
             if (game.ToLower() == "bf1942")
             {
-                var bf1942Server = JsonSerializer.Deserialize<Bf1942ServerInfo>(content, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var bf1942Server = JsonSerializer.Deserialize<Bf1942ServerInfo>(content, CaseInsensitiveJson);
 
                 return bf1942Server;
             }
             else if (game.ToLower() == "bfvietnam")
             {
-                var bfvServer = JsonSerializer.Deserialize<BfvietnamServerInfo>(content, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var bfvServer = JsonSerializer.Deserialize<BfvietnamServerInfo>(content, CaseInsensitiveJson);
 
                 return bfvServer;
             }
             else // fh2
             {
-                var fh2Server = JsonSerializer.Deserialize<Fh2ServerInfo>(content, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var fh2Server = JsonSerializer.Deserialize<Fh2ServerInfo>(content, CaseInsensitiveJson);
 
                 return fh2Server;
             }

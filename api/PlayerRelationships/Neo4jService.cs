@@ -9,7 +9,6 @@ namespace api.PlayerRelationships;
 /// </summary>
 public class Neo4jService : IAsyncDisposable
 {
-    private readonly IDriver _driver;
     private readonly string _database;
     private readonly ILogger<Neo4jService> _logger;
 
@@ -17,14 +16,14 @@ public class Neo4jService : IAsyncDisposable
     /// Get the underlying Neo4j driver instance.
     /// Useful for services that need direct driver access.
     /// </summary>
-    public IDriver Driver => _driver;
+    public IDriver Driver { get; }
 
     public Neo4jService(Neo4jConfiguration config, ILogger<Neo4jService> logger)
     {
         _logger = logger;
         _database = config.Database;
         
-        _driver = GraphDatabase.Driver(
+        Driver = GraphDatabase.Driver(
             config.Uri,
             AuthTokens.Basic(config.Username, config.Password),
             o => o.WithMaxConnectionPoolSize(50)
@@ -42,7 +41,7 @@ public class Neo4jService : IAsyncDisposable
     /// </summary>
     public async Task<T> ExecuteWriteAsync<T>(Func<IAsyncQueryRunner, Task<T>> work)
     {
-        await using var session = _driver.AsyncSession(o => o.WithDatabase(_database));
+        await using var session = Driver.AsyncSession(o => o.WithDatabase(_database));
         return await session.ExecuteWriteAsync(work);
     }
 
@@ -51,7 +50,7 @@ public class Neo4jService : IAsyncDisposable
     /// </summary>
     public async Task<T> ExecuteReadAsync<T>(Func<IAsyncQueryRunner, Task<T>> work)
     {
-        await using var session = _driver.AsyncSession(o => o.WithDatabase(_database));
+        await using var session = Driver.AsyncSession(o => o.WithDatabase(_database));
         return await session.ExecuteReadAsync(work);
     }
 
@@ -62,7 +61,7 @@ public class Neo4jService : IAsyncDisposable
     {
         try
         {
-            await _driver.VerifyConnectivityAsync();
+            await Driver.VerifyConnectivityAsync();
             _logger.LogInformation("Neo4j connectivity verified");
             return true;
         }
@@ -75,7 +74,7 @@ public class Neo4jService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _driver.DisposeAsync();
+        await Driver.DisposeAsync();
         GC.SuppressFinalize(this);
     }
 }

@@ -96,9 +96,18 @@ dotnet_style_null_propagation = true:suggestion
 csharp_style_pattern_matching_over_null_check = true:suggestion
 
 # Unused members & dead code detection
+dotnet_diagnostic.IDE0004.severity = warning
+dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.IDE0032.severity = warning
+dotnet_diagnostic.IDE0041.severity = warning
+dotnet_diagnostic.IDE0044.severity = warning
 dotnet_diagnostic.IDE0051.severity = warning
 dotnet_diagnostic.IDE0052.severity = warning
 dotnet_diagnostic.IDE0060.severity = warning
+dotnet_diagnostic.IDE0079.severity = warning
+dotnet_diagnostic.IDE0090.severity = warning
+dotnet_diagnostic.IDE0100.severity = warning
+dotnet_diagnostic.IDE0110.severity = warning
 dotnet_diagnostic.CS0168.severity = warning
 dotnet_diagnostic.CS0219.severity = warning
 dotnet_diagnostic.CS0414.severity = warning
@@ -106,5 +115,147 @@ dotnet_diagnostic.CS0169.severity = warning
 dotnet_diagnostic.CS0067.severity = warning
 dotnet_diagnostic.CS0162.severity = warning
 dotnet_diagnostic.CS8019.severity = warning
+
+# Namespace/folder layout does not match this repo's feature-first structure
+dotnet_diagnostic.IDE0130.severity = none
+
+# --- Quality rules that do not apply to this ASP.NET Core app ---
+
+# ConfigureAwait(false) is for library code that must not capture a
+# SynchronizationContext. ASP.NET Core has no sync context; adding it
+# everywhere is noise and can hide bugs in UI-adjacent code.
+dotnet_diagnostic.CA2007.severity = none
+
+# This is a web API, not a class library. Public types are the HTTP surface.
+dotnet_diagnostic.CA1515.severity = none
 dotnet_diagnostic.CA1852.severity = none
+
+# Nullable reference types already enforce argument nullness. Adding
+# ArgumentNullException.ThrowIfNull to every public member is ceremony.
+dotnet_diagnostic.CA1062.severity = none
+
+# EF entities and JSON DTOs need settable collection properties and List<T>.
+dotnet_diagnostic.CA2227.severity = none
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA1819.severity = none
+
+# Game GUIDs, server identifiers, and API paths are strings, not System.Uri.
+dotnet_diagnostic.CA1054.severity = none
+dotnet_diagnostic.CA1056.severity = none
+dotnet_diagnostic.CA2234.severity = none
+
+# Background jobs, HTTP handlers, and hosted services catch Exception at
+# the boundary on purpose so one failure does not take down the process.
+dotnet_diagnostic.CA1031.severity = none
+
+# LoggerMessage source generators are a hot-path micro-optimization.
+# Keep them as IDE suggestions, not build failures.
+dotnet_diagnostic.CA1848.severity = suggestion
+dotnet_diagnostic.CA1873.severity = suggestion
+
+# Server-side stats app: string formatting uses the process culture.
+# Localizing every Parse/ToString is not meaningful here.
+dotnet_diagnostic.CA1303.severity = none
+dotnet_diagnostic.CA1304.severity = none
+dotnet_diagnostic.CA1305.severity = none
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1308.severity = none
+dotnet_diagnostic.CA1310.severity = none
+dotnet_diagnostic.CA1311.severity = none
+
+# `Any()` vs `Count == 0` is a micro-optimization; `Any()` is the idiomatic LINQ form
+# and is the right choice for IQueryable. Leave as suggestion.
+dotnet_diagnostic.CA1860.severity = suggestion
+
+# Explicit `= false` / `= 0` documents intent; the compiler already elides it.
+dotnet_diagnostic.CA1805.severity = suggestion
+
+# Instance methods that happen not to use state are common in DI services.
+# Making them static is optional hygiene, not a defect.
+dotnet_diagnostic.CA1822.severity = suggestion
+
+# EF IQueryable uses `.ToLower()` because SQLite cannot translate
+# StringComparison overloads. In-memory compares are ASCII identifiers.
+dotnet_diagnostic.CA1862.severity = none
+
+# Nested request/response types live next to the type that uses them.
+dotnet_diagnostic.CA1034.severity = none
+
+# StartsWith/EndsWith(char) vs string is a micro-optimization.
+dotnet_diagnostic.CA1866.severity = suggestion
+
+# Preferring List<T> over IReadOnlyList<T> on a private helper is not a defect.
+dotnet_diagnostic.CA1859.severity = suggestion
+
+# Unused parameters on public API (controller actions, interface impls) are
+# part of the HTTP/contract surface even when a particular method ignores them.
+dotnet_code_quality.unused_parameters = non_public
+
+# Identifiers that contain type names (e.g. "Guid", "Int") are domain terms.
+dotnet_diagnostic.CA1720.severity = none
+
+# EF entity name collides with Microsoft.AspNetCore.Session; renaming would
+# break the stored schema (Player.Name-style identifier, not display-only).
+dotnet_diagnostic.CA1724.severity = none
+
+# EF Core materializes query/row types via ADO.NET; the analyzer cannot
+# see those constructor calls and flags every SqlQuery DTO as unused.
+dotnet_diagnostic.CA1812.severity = none
+
+# --- Generated / test code ---
+
+[api/Migrations/**.cs]
+generated_code = true
+
+[*.Designer.cs]
+generated_code = true
+
+[api/DataExplorer/DataExplorerServiceOptimized.cs]
+# Display-time shuffling of engagement windows, not a security decision.
+dotnet_diagnostic.CA5394.severity = none
+
+[api/Wrapped/WrappedPopulationStats.cs]
+# ADO.NET sync IsDBNull after ReadAsync is the normal data-reader pattern.
+dotnet_diagnostic.CA1849.severity = none
+
+[api/Wrapped/WrappedService.cs]
+dotnet_diagnostic.CA1849.severity = none
+# IN-clause parameter names are generated from the loop index, values are bound.
+dotnet_diagnostic.CA2100.severity = none
+
+[api/PlayerTracking/SqliteConnectionInterceptor.cs]
+# busyTimeoutMs is a constructor int, not user input; PRAGMA cannot be parameterized.
+dotnet_diagnostic.CA2100.severity = none
+
+[api/Telemetry/ProcessHealthReporter.cs]
+# ObservableGauge fields exist to keep Meter instruments rooted; they are never read.
+dotnet_diagnostic.CA1823.severity = none
+dotnet_diagnostic.IDE0052.severity = none
+
+[api/AdminData/ServerMergeService.cs]
+# Interpolated fragments are `{0},{1}` placeholders; values are passed as parameters.
+dotnet_diagnostic.EF1002.severity = none
+
+[api/Services/BackgroundJobs/AggregateBackfillBackgroundService.cs]
+dotnet_diagnostic.EF1002.severity = none
+
+[api/Auth/TokenService.cs]
+# RSA is owned by the process-lifetime signing key; disposing it would break JWT.
+dotnet_diagnostic.CA2000.severity = none
+
+[api/Utils/PlayerNameDecoder.cs]
+# Encoding.RegisterProvider must run once before GetEncoding(1251/1252).
+dotnet_diagnostic.CA1810.severity = none
+
+[tests/**/*.cs]
+# xunit convention: Method_Scenario_ExpectedResult
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA2000.severity = none
+# Test fixtures dispose in Dispose(); the full IDisposable pattern is ceremony.
+dotnet_diagnostic.CA1063.severity = none
+dotnet_diagnostic.CA1816.severity = none
+dotnet_diagnostic.CA1001.severity = none
+# Tests throw Exception to assert failure paths.
+dotnet_diagnostic.CA2201.severity = none
 

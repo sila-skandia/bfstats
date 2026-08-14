@@ -297,7 +297,6 @@ try
                 // Enable EF Core and SqlClient instrumentation for SQL query visibility
                 tracing.AddEntityFrameworkCoreInstrumentation(options =>
                 {
-                    options.SetDbStatementForText = true;
                     options.Filter = (commandName, command) =>
                     {
                         if (BulkOperationContext.IsActive)
@@ -326,7 +325,6 @@ try
 
                 tracing.AddSqlClientInstrumentation(options =>
                 {
-                    options.SetDbStatementForText = true;
                     options.Filter = (command) =>
                     {
                         if (BulkOperationContext.IsActive)
@@ -937,7 +935,7 @@ try
         try
         {
             // Apply EF Core migrations for SQLite
-            dbContext.Database.Migrate();
+            await dbContext.Database.MigrateAsync();
             logger.LogInformation("SQLite database migrations applied successfully");
 
             // Configure SQLite PRAGMAs for optimal performance and to prevent locking issues
@@ -980,5 +978,5 @@ catch (Exception ex)
 }
 finally
 {
-    Log.CloseAndFlush();
+    await Log.CloseAndFlushAsync();
 }

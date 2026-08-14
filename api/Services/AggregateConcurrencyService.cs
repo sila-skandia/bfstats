@@ -3,7 +3,7 @@ namespace api.Services;
 /// <summary>
 /// In-memory locks (SemaphoreSlim) for aggregate recalculation. Single process only.
 /// </summary>
-public class AggregateConcurrencyService : IAggregateConcurrencyService
+public sealed class AggregateConcurrencyService : IAggregateConcurrencyService, IDisposable
 {
     private readonly SemaphoreSlim _playerAggregates = new(1, 1);
     private readonly SemaphoreSlim _serverMapStats = new(1, 1);
@@ -85,5 +85,12 @@ public class AggregateConcurrencyService : IAggregateConcurrencyService
         {
             _serverPlayerRankings.Release();
         }
+    }
+
+    public void Dispose()
+    {
+        _playerAggregates.Dispose();
+        _serverMapStats.Dispose();
+        _serverPlayerRankings.Dispose();
     }
 }
