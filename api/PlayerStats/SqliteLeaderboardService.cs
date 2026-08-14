@@ -580,6 +580,504 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         return sortedValues[lowerIndex] + fraction * (sortedValues[upperIndex] - sortedValues[lowerIndex]);
     }
 
+    /// <inheritdoc/>
+    public async Task<Models.GlobalLeaderboardResponse> GetGlobalLeaderboardAsync(
+        int page = 1,
+        int pageSize = 50,
+        string sortBy = "score",
+        string sortDir = "desc",
+        string? searchQuery = null,
+        string? server = null,
+        string? map = null,
+        int days = 30,
+        int minRounds = 1,
+        int minPlay = 0,
+        string? game = "bf1942",
+        string? exclude = null,
+        bool populatedOnly = false)
+    {
+        using var activity = ActivitySources.SqliteAnalytics.StartActivity("GetGlobalLeaderboardAsync");
+        activity?.SetTag("query.name", "GetGlobalLeaderboard");
+        activity?.SetTag("query.filters", $"page:{page},pageSize:{pageSize},sortBy:{sortBy},sortDir:{sortDir},q:{searchQuery},server:{server},exclude:{exclude},populatedOnly:{populatedOnly},map:{map},days:{days},minRounds:{minRounds},minPlay:{minPlay}");
+
+        var stopwatch = Stopwatch.StartNew();
+
+        var scopedToServer = !string.IsNullOrWhiteSpace(server);
+        if (!scopedToServer && (days <= 0 || days > 365))
+            days = 365;
+
+        var pmsQuery = dbContext.PlayerMapStats.AsNoTracking().Where(pms => pms.ServerGuid != "");
+
+        if (days > 0)
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-days);
+            var startYear = cutoff.Year;
+            var startMonth = cutoff.Month;
+            var now = DateTime.UtcNow;
+            var endYear = now.Year;
+            var endMonth = now.Month;
+
+            pmsQuery = pmsQuery.Where(pms =>
+                (pms.Year > startYear || (pms.Year == startYear && pms.Month >= startMonth)) &&
+                (pms.Year < endYear || (pms.Year == endYear && pms.Month <= endMonth)));
+        }
+
+        var serverMap = await dbContext.Servers
+            .AsNoTracking()
+            .Select(s => new { s.Guid, s.Name, s.Country, s.Game })
+            .ToDictionaryAsync(s => s.Guid);
+
+        var occupancyDays = days > 0 ? Math.Min(days, 90) : 90;
+        var occupancyCutoff = Instant.FromDateTimeUtc(
+            DateTime.SpecifyKind(DateTime.UtcNow.AddDays(-occupancyDays), DateTimeKind.Utc));
+
+        var occupancyQuery = dbContext.ServerOnlineCounts
+            .AsNoTracking()
+            .Where(soc => soc.HourTimestamp >= occupancyCutoff);
+
+        if (!string.IsNullOrWhiteSpace(game))
+        {
+            occupancyQuery = occupancyQuery.Where(soc => soc.Game == game);
+        }
+
+        var occupancyRows = await occupancyQuery
+            .GroupBy(soc => soc.ServerGuid)
+            .Select(g => new { ServerGuid = g.Key, AvgPlayers = g.Average(soc => soc.AvgPlayers) })
+            .ToListAsync();
+
+        var occupancy = occupancyRows
+            .Select(o => new ServerOccupancy(o.ServerGuid, o.AvgPlayers))
+            .ToList();
+
+        var occupancyByGuid = occupancy.ToDictionary(o => o.ServerGuid, o => o.AvgPlayers, StringComparer.OrdinalIgnoreCase);
+        var populatedGuids = IdentifyPopulatedServers(occupancy);
+
+        var serverLookup = serverMap.Select(kv => (kv.Value.Guid, kv.Value.Name));
+        var excludeGuids = ResolveServerGuids(ParseExcludeTerms(exclude), serverLookup);
+        var hasExplicitInclude = !string.IsNullOrWhiteSpace(server);
+
+        if (!string.IsNullOrWhiteSpace(game))
+        {
+            var gameGuids = serverMap.Values
+                .Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
+                .Select(s => s.Guid)
+                .ToList();
+            if (gameGuids.Count > 0)
+            {
+                pmsQuery = pmsQuery.Where(pms => gameGuids.Contains(pms.ServerGuid));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(map))
+        {
+            var cleanMap = map.Trim().ToLowerInvariant();
+            pmsQuery = pmsQuery.Where(pms => pms.MapName.ToLower() == cleanMap);
+        }
+
+        if (hasExplicitInclude)
+        {
+            var includeGuids = ResolveServerGuids([server!.Trim()], serverLookup).ToList();
+            if (includeGuids.Count > 0)
+            {
+                pmsQuery = pmsQuery.Where(pms => includeGuids.Contains(pms.ServerGuid));
+            }
+        }
+
+        var playerSource = pmsQuery;
+
+        if (!hasExplicitInclude)
+        {
+            if (populatedOnly && occupancy.Count > 0)
+            {
+                var populatedList = populatedGuids.ToList();
+                playerSource = playerSource.Where(pms => populatedList.Contains(pms.ServerGuid));
+            }
+
+            if (excludeGuids.Count > 0)
+            {
+                var excludedList = excludeGuids.ToList();
+                playerSource = playerSource.Where(pms => !excludedList.Contains(pms.ServerGuid));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            var term = searchQuery.Trim().ToLower();
+            var matchingServerGuids = serverMap.Values
+                .Where(s => s.Name.ToLower().Contains(term))
+                .Select(s => s.Guid)
+                .ToList();
+
+            var matchingNames = playerSource
+                .Where(pms =>
+                    pms.PlayerName.ToLower().Contains(term) ||
+                    pms.MapName.ToLower().Contains(term) ||
+                    matchingServerGuids.Contains(pms.ServerGuid))
+                .Select(pms => pms.PlayerName);
+
+            playerSource = playerSource.Where(pms => matchingNames.Contains(pms.PlayerName));
+        }
+
+        var aggregated = playerSource
+            .GroupBy(pms => pms.PlayerName)
+            .Select(g => new PlayerAggRow
+            {
+                Name = g.Key,
+                Kills = g.Sum(x => x.TotalKills),
+                Deaths = g.Sum(x => x.TotalDeaths),
+                Score = g.Sum(x => x.TotalScore),
+                PlayMin = g.Sum(x => x.TotalPlayTimeMinutes),
+                Rounds = g.Sum(x => x.TotalRounds)
+            })
+            .Where(p => p.Rounds >= minRounds && p.PlayMin >= minPlay);
+
+        var isAsc = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
+        var normSort = (sortBy ?? "score").Trim().ToLowerInvariant();
+        var sorted = ApplyPlayerSort(aggregated, playerSource, normSort, isAsc);
+
+        var totalPlayers = await aggregated.CountAsync();
+        var effectivePage = Math.Max(1, page);
+        var effectivePageSize = Math.Clamp(pageSize, 1, 100);
+        var totalPages = totalPlayers > 0 ? (int)Math.Ceiling((double)totalPlayers / effectivePageSize) : 1;
+        var offset = (effectivePage - 1) * effectivePageSize;
+
+        var pagedRows = await sorted
+            .Skip(offset)
+            .Take(effectivePageSize)
+            .ToListAsync();
+
+        var favs = await LoadFavouriteServersAndMapsAsync(playerSource, pagedRows.Select(p => p.Name).ToList());
+
+        var pagedPlayers = pagedRows.Select((row, idx) =>
+        {
+            favs.TryGetValue(row.Name, out var fav);
+            serverMap.TryGetValue(fav.ServerGuid ?? "", out var srv);
+            var srvCountry = srv?.Country ?? "";
+            var kills = row.Kills;
+            var deaths = row.Deaths;
+            var playMin = (int)row.PlayMin;
+
+            return new Models.LeaderboardPlayerDto
+            {
+                Rank = offset + idx + 1,
+                Name = row.Name,
+                Tag = ExtractClanTag(row.Name),
+                Kills = kills,
+                Deaths = deaths,
+                Kd = deaths > 0 ? Math.Round((double)kills / deaths, 2) : kills,
+                Score = row.Score,
+                Kpm = playMin > 0 ? Math.Round((double)kills / playMin, 2) : 0,
+                PlayMin = playMin,
+                Rounds = row.Rounds,
+                FavServer = srv?.Name ?? fav.ServerGuid,
+                FavServerGuid = fav.ServerGuid,
+                FavServerCountry = srvCountry,
+                FavServerFlag = CountryCodeToFlag(srvCountry),
+                FavMap = FormatMapDisplayName(fav.MapName)
+            };
+        }).ToList();
+
+        var catalog = serverMap.Values.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(game))
+        {
+            catalog = catalog.Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var occupancyGuids = new HashSet<string>(occupancyByGuid.Keys, StringComparer.OrdinalIgnoreCase);
+        if (occupancyGuids.Count > 0)
+        {
+            catalog = catalog.Where(s => occupancyGuids.Contains(s.Guid));
+        }
+
+        var servers = catalog
+            .Select(s =>
+            {
+                occupancyByGuid.TryGetValue(s.Guid, out var avgPlayers);
+                return new Models.LeaderboardServerDto
+                {
+                    Guid = s.Guid,
+                    Name = s.Name,
+                    ShortName = CleanServerShortName(s.Name),
+                    Country = s.Country ?? "",
+                    Flag = CountryCodeToFlag(s.Country),
+                    PlayerCount = 0,
+                    AvgPlayers = Math.Round(avgPlayers, 1),
+                    IsPopulated = populatedGuids.Contains(s.Guid)
+                };
+            })
+            .OrderByDescending(s => s.IsPopulated)
+            .ThenByDescending(s => s.AvgPlayers)
+            .ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var mapCounts = await playerSource
+            .GroupBy(pms => pms.MapName)
+            .Select(g => new { Name = g.Key, PlayerCount = g.Count() })
+            .ToListAsync();
+
+        var maps = mapCounts
+            .Select(m => new Models.LeaderboardMapDto
+            {
+                Name = m.Name,
+                DisplayName = FormatMapDisplayName(m.Name),
+                PlayerCount = m.PlayerCount
+            })
+            .OrderByDescending(m => m.PlayerCount)
+            .ToList();
+
+        stopwatch.Stop();
+        activity?.SetTag("result.player_count", pagedPlayers.Count);
+        activity?.SetTag("result.total_players", totalPlayers);
+        activity?.SetTag("result.duration_ms", stopwatch.ElapsedMilliseconds);
+
+        return new Models.GlobalLeaderboardResponse
+        {
+            Days = days,
+            MinRounds = minRounds,
+            MinPlay = minPlay,
+            Server = server,
+            Exclude = exclude,
+            PopulatedOnly = populatedOnly,
+            Map = map,
+            SearchQuery = searchQuery,
+            SortBy = normSort,
+            SortDir = isAsc ? "asc" : "desc",
+            Page = effectivePage,
+            PageSize = effectivePageSize,
+            TotalPages = totalPages,
+            TotalPlayers = totalPlayers,
+            Players = pagedPlayers,
+            Servers = servers,
+            Maps = maps,
+            GeneratedAt = DateTime.UtcNow
+        };
+    }
+
+    private sealed class PlayerAggRow
+    {
+        public string Name { get; set; } = "";
+        public int Kills { get; set; }
+        public int Deaths { get; set; }
+        public int Score { get; set; }
+        public double PlayMin { get; set; }
+        public int Rounds { get; set; }
+    }
+
+    private static IQueryable<PlayerAggRow> ApplyPlayerSort(
+        IQueryable<PlayerAggRow> query,
+        IQueryable<api.Data.Entities.PlayerMapStats> playerSource,
+        string sort,
+        bool isAsc)
+    {
+        return (sort, isAsc) switch
+        {
+            ("kd", true) => query.OrderBy(p => p.Deaths == 0 ? p.Kills : (double)p.Kills / p.Deaths).ThenBy(p => p.Kills),
+            ("kd", false) => query.OrderByDescending(p => p.Deaths == 0 ? p.Kills : (double)p.Kills / p.Deaths).ThenByDescending(p => p.Kills),
+            ("kills", true) => query.OrderBy(p => p.Kills).ThenBy(p => p.Score),
+            ("kills", false) => query.OrderByDescending(p => p.Kills).ThenByDescending(p => p.Score),
+            ("deaths", true) => query.OrderBy(p => p.Deaths),
+            ("deaths", false) => query.OrderByDescending(p => p.Deaths),
+            ("kpm", true) => query.OrderBy(p => p.PlayMin == 0 ? 0 : p.Kills / p.PlayMin).ThenBy(p => p.Kills),
+            ("kpm", false) => query.OrderByDescending(p => p.PlayMin == 0 ? 0 : p.Kills / p.PlayMin).ThenByDescending(p => p.Kills),
+            ("playmin" or "time", true) => query.OrderBy(p => p.PlayMin).ThenBy(p => p.Score),
+            ("playmin" or "time", false) => query.OrderByDescending(p => p.PlayMin).ThenByDescending(p => p.Score),
+            ("rounds", true) => query.OrderBy(p => p.Rounds).ThenBy(p => p.Score),
+            ("rounds", false) => query.OrderByDescending(p => p.Rounds).ThenByDescending(p => p.Score),
+            ("player" or "name", true) => query.OrderBy(p => p.Name),
+            ("player" or "name", false) => query.OrderByDescending(p => p.Name),
+            ("favserver" or "server", true) => query
+                .OrderBy(p => playerSource.Where(x => x.PlayerName == p.Name)
+                    .GroupBy(x => x.ServerGuid)
+                    .OrderByDescending(g => g.Sum(x => x.TotalRounds))
+                    .Select(g => g.Key)
+                    .FirstOrDefault())
+                .ThenByDescending(p => p.Score),
+            ("favserver" or "server", false) => query
+                .OrderByDescending(p => playerSource.Where(x => x.PlayerName == p.Name)
+                    .GroupBy(x => x.ServerGuid)
+                    .OrderByDescending(g => g.Sum(x => x.TotalRounds))
+                    .Select(g => g.Key)
+                    .FirstOrDefault())
+                .ThenByDescending(p => p.Score),
+            ("favmap" or "map", true) => query
+                .OrderBy(p => playerSource.Where(x => x.PlayerName == p.Name)
+                    .GroupBy(x => x.MapName)
+                    .OrderByDescending(g => g.Sum(x => x.TotalRounds))
+                    .Select(g => g.Key)
+                    .FirstOrDefault())
+                .ThenByDescending(p => p.Score),
+            ("favmap" or "map", false) => query
+                .OrderByDescending(p => playerSource.Where(x => x.PlayerName == p.Name)
+                    .GroupBy(x => x.MapName)
+                    .OrderByDescending(g => g.Sum(x => x.TotalRounds))
+                    .Select(g => g.Key)
+                    .FirstOrDefault())
+                .ThenByDescending(p => p.Score),
+            (_, true) => query.OrderBy(p => p.Score).ThenBy(p => p.Kills),
+            _ => query.OrderByDescending(p => p.Score).ThenByDescending(p => p.Kills)
+        };
+    }
+
+    private static async Task<Dictionary<string, (string ServerGuid, string MapName)>> LoadFavouriteServersAndMapsAsync(
+        IQueryable<api.Data.Entities.PlayerMapStats> playerSource,
+        List<string> names)
+    {
+        var result = new Dictionary<string, (string ServerGuid, string MapName)>(StringComparer.Ordinal);
+        if (names.Count == 0) return result;
+
+        var rows = await playerSource
+            .Where(pms => names.Contains(pms.PlayerName))
+            .GroupBy(pms => new { pms.PlayerName, pms.ServerGuid, pms.MapName })
+            .Select(g => new
+            {
+                g.Key.PlayerName,
+                g.Key.ServerGuid,
+                g.Key.MapName,
+                Rounds = g.Sum(x => x.TotalRounds),
+                PlayMin = g.Sum(x => x.TotalPlayTimeMinutes)
+            })
+            .ToListAsync();
+
+        foreach (var playerRows in rows.GroupBy(r => r.PlayerName))
+        {
+            var topServer = playerRows
+                .GroupBy(x => x.ServerGuid)
+                .Select(sg => new { ServerGuid = sg.Key, Rounds = sg.Sum(x => x.Rounds), PlayMin = sg.Sum(x => x.PlayMin) })
+                .OrderByDescending(x => x.Rounds)
+                .ThenByDescending(x => x.PlayMin)
+                .First();
+
+            var topMap = playerRows
+                .GroupBy(x => x.MapName)
+                .Select(mg => new { MapName = mg.Key, Rounds = mg.Sum(x => x.Rounds), PlayMin = mg.Sum(x => x.PlayMin) })
+                .OrderByDescending(x => x.Rounds)
+                .ThenByDescending(x => x.PlayMin)
+                .First();
+
+            result[playerRows.Key] = (topServer.ServerGuid, topMap.MapName);
+        }
+
+        return result;
+    }
+
+    private readonly record struct ServerOccupancy(string ServerGuid, double AvgPlayers);
+
+    private static List<string> ParseExcludeTerms(string? exclude)
+    {
+        if (string.IsNullOrWhiteSpace(exclude)) return [];
+        return exclude
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static HashSet<string> ResolveServerGuids(
+        IReadOnlyList<string> terms,
+        IEnumerable<(string Guid, string Name)> servers)
+    {
+        var guids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (terms.Count == 0) return guids;
+
+        var list = servers.ToList();
+        foreach (var term in terms)
+        {
+            foreach (var s in list)
+            {
+                if (s.Guid.Equals(term, StringComparison.OrdinalIgnoreCase) ||
+                    s.Name.Equals(term, StringComparison.OrdinalIgnoreCase))
+                {
+                    guids.Add(s.Guid);
+                }
+            }
+        }
+
+        return guids;
+    }
+
+    // Occupancy is bimodal: a few regularly populated servers sit well above a
+    // 0–3 avg tail of empty/bot boxes. The largest gap is that split.
+    private static HashSet<string> IdentifyPopulatedServers(
+        IReadOnlyList<ServerOccupancy> occupancy,
+        double emptyFloor = 3.0,
+        double minGap = 3.0)
+    {
+        var populated = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (occupancy.Count == 0) return populated;
+
+        var sorted = occupancy.OrderBy(o => o.AvgPlayers).ToList();
+        var bestGap = 0.0;
+        var splitIndex = -1;
+        for (var i = 1; i < sorted.Count; i++)
+        {
+            var gap = sorted[i].AvgPlayers - sorted[i - 1].AvgPlayers;
+            if (gap > bestGap)
+            {
+                bestGap = gap;
+                splitIndex = i;
+            }
+        }
+
+        var candidates = sorted.AsEnumerable();
+        if (splitIndex > 0 && bestGap >= minGap)
+        {
+            var lowerMax = sorted[splitIndex - 1].AvgPlayers;
+            if (lowerMax <= emptyFloor)
+            {
+                candidates = sorted.Skip(splitIndex);
+            }
+        }
+
+        foreach (var row in candidates.Where(o => o.AvgPlayers > emptyFloor))
+        {
+            populated.Add(row.ServerGuid);
+        }
+
+        return populated;
+    }
+
+    private static string FormatMapDisplayName(string? mapName)
+    {
+        if (string.IsNullOrWhiteSpace(mapName)) return "";
+        var words = mapName.Split([' ', '_'], StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < words.Length; i++)
+        {
+            var word = words[i].ToLowerInvariant();
+            if (i > 0 && (word == "of" || word == "the" || word == "and" || word == "in"))
+            {
+                words[i] = word;
+            }
+            else
+            {
+                words[i] = char.ToUpperInvariant(word[0]) + (word.Length > 1 ? word[1..] : "");
+            }
+        }
+        return string.Join(" ", words);
+    }
+
+    private static string ExtractClanTag(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        var match = System.Text.RegularExpressions.Regex.Match(name, @"^([=\[|#~·].*?[=\]|#~·]|\w+\|)");
+        return match.Success ? match.Value : "";
+    }
+
+    private static string CleanServerShortName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        var clean = System.Text.RegularExpressions.Regex.Replace(name, @"^\S+\s", "");
+        return clean.Length > 20 ? clean[..20] + "…" : clean;
+    }
+
+    private static string CountryCodeToFlag(string? countryCode)
+    {
+        if (string.IsNullOrWhiteSpace(countryCode) || countryCode.Length != 2) return "";
+        var code = countryCode.ToUpperInvariant();
+        var first = 0x1F1E6 + (code[0] - 'A');
+        var second = 0x1F1E6 + (code[1] - 'A');
+        return char.ConvertFromUtf32(first) + char.ConvertFromUtf32(second);
+    }
+
     /// <summary>
     /// Gets the ISO week number for a given date.
     /// ISO weeks start on Monday and the first week contains January 4th.
