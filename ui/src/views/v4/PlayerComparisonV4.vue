@@ -22,11 +22,11 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 // --- API shapes — mirror what /stats/players/compare returns ---
 
-interface PerformanceStats { score: number; kills: number; deaths: number }
+interface PerformanceStats { score: number; kills: number; deaths: number; playTimeMinutes?: number }
 interface BucketTotal {
   bucket: 'Last30Days' | 'Last6Months' | 'LastYear' | 'AllTime'
-  player1Totals: PerformanceStats & { playTimeMinutes?: number }
-  player2Totals: PerformanceStats & { playTimeMinutes?: number }
+  player1Totals: PerformanceStats
+  player2Totals: PerformanceStats
 }
 interface MapPerformance { mapName: string; player1Totals: PerformanceStats; player2Totals: PerformanceStats }
 interface KillRateData { playerName: string; killRate: number }

@@ -10,6 +10,16 @@ interface ImportMeta {
     readonly env: ImportMetaEnv
 }
 
+declare global {
+    interface Window {
+        /**
+         * In-flight live-server feed started by the inline script in index.html
+         * on the landing route. Consumed (and cleared) by `fetchAllServers`.
+         */
+        __bfLiveServersPreload?: Promise<{ servers: import('./types/server').ServerSummary[] } | null>
+    }
+}
+
 declare module 'vue' {
     interface ComponentCustomProperties {
         $pn: (name: string | null | undefined) => string
