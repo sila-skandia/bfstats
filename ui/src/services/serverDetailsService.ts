@@ -43,6 +43,70 @@ export interface TopPlacement {
   placementPoints: number;
 }
 
+export interface ServerPlayerRankingItem {
+  rank: number;
+  playerName: string;
+  minutesPlayed: number;
+  totalKills: number;
+  totalDeaths: number;
+  kdRatio: number;
+  killRate: number;
+  totalScore: number;
+  totalRounds: number;
+  firstPlaces: number;
+  secondPlaces: number;
+  thirdPlaces: number;
+  totalPlacements: number;
+  placementPoints: number;
+}
+
+export interface ServerPlayerRankingsResponse {
+  serverGuid: string;
+  serverName: string;
+  days: number;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  sortBy: string;
+  minRounds: number;
+  rankings: ServerPlayerRankingItem[];
+}
+
+export interface DistributionBand {
+  label: string;
+  minValue: number;
+  maxValue: number | null;
+  count: number;
+  percentage: number;
+}
+
+export interface MetricDistribution {
+  metricName: string;
+  average: number;
+  median: number;
+  p75: number;
+  p90: number;
+  p95: number;
+  p99: number;
+  min: number;
+  max: number;
+  bands: DistributionBand[];
+}
+
+export interface ServerRankDistributionResponse {
+  serverGuid: string;
+  serverName: string;
+  days: number;
+  minRounds: number;
+  totalPlayers: number;
+  kdDistribution: MetricDistribution;
+  scoreDistribution: MetricDistribution;
+  killsDistribution: MetricDistribution;
+  playTimeDistribution: MetricDistribution;
+  killRateDistribution: MetricDistribution;
+}
+
 // New interfaces for server insights
 export interface PingByHourData {
   timePeriod: string; // ISO date string
@@ -268,6 +332,60 @@ export async function fetchServerLeaderboards(
   } catch (err) {
     console.error('Error fetching server leaderboards:', err);
     throw new Error('Failed to get server leaderboards');
+  }
+}
+
+/**
+ * Fetches paged player rankings for a server with customizable sorting, search, and min rounds.
+ */
+export async function fetchServerPlayerRankings(
+  serverName: string,
+  page: number = 1,
+  pageSize: number = 20,
+  sortBy: string = 'active',
+  days: number = 30,
+  minRounds: number = 1,
+  searchQuery?: string
+): Promise<ServerPlayerRankingsResponse> {
+  try {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      pageSize: pageSize.toString(),
+      sortBy,
+      days: days.toString(),
+      minRounds: minRounds.toString(),
+    });
+    if (searchQuery) {
+      params.set('searchQuery', searchQuery);
+    }
+    const url = `/stats/v2/servers/${encodeURIComponent(serverName)}/player-rankings?${params.toString()}`;
+    const response = await axios.get<ServerPlayerRankingsResponse>(url);
+    return response.data;
+  } catch (err) {
+    console.error('Error fetching server player rankings:', err);
+    throw new Error('Failed to get server player rankings');
+  }
+}
+
+/**
+ * Fetches rank distributions across K/D, Score, Kills, Hours, and Kill rate with server averages and P95s.
+ */
+export async function fetchServerRankDistribution(
+  serverName: string,
+  days: number = 30,
+  minRounds: number = 1
+): Promise<ServerRankDistributionResponse> {
+  try {
+    const params = new URLSearchParams({
+      days: days.toString(),
+      minRounds: minRounds.toString(),
+    });
+    const url = `/stats/v2/servers/${encodeURIComponent(serverName)}/rank-distribution?${params.toString()}`;
+    const response = await axios.get<ServerRankDistributionResponse>(url);
+    return response.data;
+  } catch (err) {
+    console.error('Error fetching server rank distribution:', err);
+    throw new Error('Failed to get server rank distribution');
   }
 }
 

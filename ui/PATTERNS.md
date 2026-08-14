@@ -101,7 +101,7 @@ Legacy Chart.js / SVG charts use `--color-text` etc. for axis labels and
 - Grid lines: `var(--mm-rule)` at 1px, or drop entirely.
 - No drop shadows on series, no gradient fills.
 - Sparklines: use `<MmSparkline :values="…" />` directly — props
-  `width`, `height`, `fill`, `accent`.
+  `values`, `timestamps`, `labels`, `showAxis`, `unit`, `height`, `fill`, `accent`, `interactive`.
 - Tiny bar charts: use `<MmBars :values="…" />` for horizontal trickle
   bars (60-minute traces, hourly buckets, etc.).
 

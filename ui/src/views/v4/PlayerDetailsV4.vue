@@ -448,7 +448,7 @@ const signatureServers = computed(() => {
                 class="mm-meta-row__strong"
                 style="text-decoration: underline; text-underline-offset: 3px; cursor: pointer"
                 @click="goServer(currentServer.serverName)"
-              >{{ currentServer.serverName }}</a>
+              >{{ $pn(currentServer.serverName) }}</a>
               <template v-if="currentServer.mapName">
                 <span class="mm-meta-row__sep">·</span><span>{{ currentServer.mapName }}</span>
               </template>
@@ -569,9 +569,15 @@ const signatureServers = computed(() => {
 
             <section class="mm-panel"><div class="mm-panel__body">
               <span class="mm-eyebrow mm-eyebrow--strong">K/D trend</span>
-              <div class="mm-card__hint">{{ stats?.recentStats?.granularity || 'rolling' }} · {{ kdTrend.length || 0 }} pts</div>
+              <div class="mm-card__hint">{{ stats?.recentStats?.granularity || 'daily' }} · {{ kdTrend.length || 0 }} pts</div>
               <div v-if="kdTrend.length > 1" style="margin-top: 10px">
-                <MmSparkline :values="kdTrend.map(p => p.value)" :height="56" :width="260" />
+                <MmSparkline
+                  :values="kdTrend.map(p => p.value)"
+                  :timestamps="kdTrend.map(p => p.timestamp)"
+                  :height="56"
+                  :show-axis="true"
+                  unit="K/D"
+                />
               </div>
               <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
               <div v-else class="mm-card__empty">Not enough rounds yet.</div>
@@ -585,9 +591,16 @@ const signatureServers = computed(() => {
 
             <section class="mm-panel"><div class="mm-panel__body">
               <span class="mm-eyebrow mm-eyebrow--strong">Kill rate</span>
-              <div class="mm-card__hint">kills / minute</div>
+              <div class="mm-card__hint">kills / minute · {{ killRateTrend.length || 0 }} pts</div>
               <div v-if="killRateTrend.length > 1" style="margin-top: 10px">
-                <MmSparkline :values="killRateTrend.map(p => p.value)" :height="56" :width="260" :accent="true" />
+                <MmSparkline
+                  :values="killRateTrend.map(p => p.value)"
+                  :timestamps="killRateTrend.map(p => p.timestamp)"
+                  :height="56"
+                  :accent="true"
+                  :show-axis="true"
+                  unit="kills/min"
+                />
               </div>
               <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
               <div v-else class="mm-card__empty">Not enough rounds yet.</div>
@@ -641,7 +654,7 @@ const signatureServers = computed(() => {
                 >
                   <span class="mm-srank__rank">#{{ r.rank }}</span>
                   <span class="mm-srank__body">
-                    <span class="mm-srank__name">{{ truncate(r.serverName, 30) }}</span>
+                    <span class="mm-srank__name">{{ truncate($pn(r.serverName), 30) }}</span>
                     <span class="mm-srank__sub">of {{ formatNumber(r.totalRankedPlayers) }} players</span>
                   </span>
                   <span class="mm-srank__ping">{{ r.averagePing }}ms</span>
@@ -684,7 +697,7 @@ const signatureServers = computed(() => {
                   <span class="mm-bestrail__score">{{ formatNumber(s.score) }}</span>
                   <span class="mm-bestrail__body">
                     <span class="mm-bestrail__map">{{ s.mapName }}</span>
-                    <span class="mm-bestrail__server">{{ truncate(s.serverName, 32) }}</span>
+                    <span class="mm-bestrail__server">{{ truncate($pn(s.serverName), 32) }}</span>
                   </span>
                   <span class="mm-bestrail__stats">
                     <span class="mm-num--kill">{{ s.kills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.deaths }}</span>
@@ -740,7 +753,7 @@ const signatureServers = computed(() => {
             <span class="mm-session-row__chip">{{ resultLabel(s.teamResult) }}</span>
             <span class="mm-session-row__map">{{ s.mapName || 'Unknown' }}</span>
             <span class="mm-session-row__date" :title="formatLocalTooltip(s.startTime)">{{ formatRelative(s.startTime) }}</span>
-            <span class="mm-session-row__server">{{ truncate(s.serverName, 32) }}</span>
+            <span class="mm-session-row__server">{{ truncate($pn(s.serverName), 32) }}</span>
             <span class="mm-session-row__stats">
               {{ formatNumber(s.totalScore) }}
               <span class="mm-num__sep">·</span>
@@ -773,7 +786,7 @@ const signatureServers = computed(() => {
                   <span class="mm-list__name-sub">{{ s.gameType || '—' }}</span>
                 </div>
               </td>
-              <td class="is-muted">{{ truncate(s.serverName) }}</td>
+              <td class="is-muted">{{ truncate($pn(s.serverName)) }}</td>
               <td class="is-muted" :title="formatLocalTooltip(s.startTime)">{{ formatRelative(s.startTime) }}</td>
               <td class="is-num">{{ formatDuration(sessionDurationMinutes(s)) }}</td>
               <td class="is-num">
@@ -891,7 +904,7 @@ const signatureServers = computed(() => {
             @click="goServer(s.serverName)"
           >
             <span class="mm-session-row__chip">{{ rankNum(i) }}</span>
-            <span class="mm-session-row__map">{{ s.serverName }}</span>
+            <span class="mm-session-row__map">{{ $pn(s.serverName) }}</span>
             <span class="mm-session-row__date">{{ formatDuration(s.totalMinutes) }}</span>
             <span class="mm-session-row__server">{{ s.gameId.toUpperCase() }} · {{ formatNumber(s.totalRounds) }} rounds</span>
             <span class="mm-session-row__stats">
@@ -924,7 +937,7 @@ const signatureServers = computed(() => {
               <td class="mm-list__rank">{{ rankNum(i) }}</td>
               <td class="mm-list__name-cell">
                 <div class="mm-list__name">
-                  <span class="mm-list__name-primary">{{ s.serverName }}</span>
+                  <span class="mm-list__name-primary">{{ $pn(s.serverName) }}</span>
                   <span class="mm-list__name-sub">{{ s.gameId.toUpperCase() }}</span>
                 </div>
               </td>

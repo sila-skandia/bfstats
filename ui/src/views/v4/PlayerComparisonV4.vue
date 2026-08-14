@@ -500,7 +500,7 @@ const formatDateShort = (iso: string): string => {
             class="mm-btn mm-btn--inline"
             :class="{ 'mm-cmp__server--active': comparisonData.serverDetails?.guid === srv.guid }"
             @click="selectServer(srv.guid)"
-          >{{ srv.name }}</button>
+          >{{ $pn(srv.name) }}</button>
         </div>
       </section>
 

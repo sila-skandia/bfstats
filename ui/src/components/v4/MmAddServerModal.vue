@@ -146,7 +146,7 @@ const cancel = () => {
         @click="toggle(r)"
       >
         <div class="mm-add-row__body">
-          <span class="mm-add-row__name">{{ r.serverName }}</span>
+          <span class="mm-add-row__name">{{ $pn(r.serverName) }}</span>
           <span class="mm-add-row__sub">
             <span v-if="r.gameId" class="mm-chip">{{ r.gameId.toUpperCase() }}</span>
             <span v-if="r.mapName" class="mm-meta-row__sep">·</span>

@@ -375,7 +375,7 @@ onUnmounted(() => {
           <h1 class="mm-display mm-rr__title">{{ roundReport.round.mapName }}</h1>
           <div class="mm-meta-row" style="margin-top: 8px">
             <a class="mm-meta-row__strong mm-rr__server-link" @click="navigateToServer(roundReport.round.serverName)">
-              {{ roundReport.round.serverName }}
+              {{ $pn(roundReport.round.serverName) }}
             </a>
             <span class="mm-meta-row__sep">·</span>
             <span>{{ roundReport.round.totalParticipants }} players</span>

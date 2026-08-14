@@ -85,7 +85,7 @@ const filterDateTo = ref('')
 
 const contextLabel = computed(() => {
   if (props.playerName) return decodePlayerName(props.playerName)
-  if (props.serverName) return props.serverName
+  if (props.serverName) return decodePlayerName(props.serverName)
   return 'Sessions'
 })
 
@@ -340,7 +340,7 @@ const scoreLineChartOptions = computed(() => ({
           const idx = items[0]?.dataIndex
           if (idx === undefined) return ''
           const r = roundsWithScores.value[idx]
-          return r ? `${r.mapName} — ${r.serverName}` : ''
+          return r ? `${r.mapName} — ${decodePlayerName(r.serverName)}` : ''
         },
       },
     },
@@ -454,7 +454,7 @@ const playerPerformanceChartOptions = computed(() => ({
           const idx = items[0]?.dataIndex
           if (idx === undefined) return ''
           const r = playerPerformanceRounds.value[idx]
-          return r ? `${r.mapName} · ${r.serverName}` : ''
+          return r ? `${r.mapName} · ${decodePlayerName(r.serverName)}` : ''
         },
         afterBody: (items: any[]) => {
           const idx = items[0]?.dataIndex
@@ -730,7 +730,7 @@ const paginationRange = computed(() => {
                     href="#"
                     @click.stop.prevent="goServer(round)"
                     style="color: inherit; text-decoration: underline; text-underline-offset: 2px"
-                  >{{ round.serverName }}</a>
+                  >{{ $pn(round.serverName) }}</a>
                   <span class="mm-meta-row__sep">·</span>
                   <span>{{ round.participantCount }} players</span>
                   <span v-if="round.isActive" class="mm-meta-row__sep">·</span>

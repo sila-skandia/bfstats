@@ -278,14 +278,33 @@
   border: 1px solid var(--mm-rule);
   border-radius: 999px;
   min-width: 220px;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  cursor: pointer;
+  text-align: left;
 }
 
-.mm-search:focus-within { border-color: var(--mm-ink); }
+.mm-search:hover,
+.mm-search:focus-visible,
+.mm-search:focus-within {
+  border-color: var(--mm-ink);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mm-search__placeholder {
+  flex: 1;
+  font-family: var(--mm-font-display);
+  font-size: 12.5px;
+  color: var(--mm-ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
 
 .mm-search__icon {
   width: 12px; height: 12px;
   color: var(--mm-ink-muted);
+  flex-shrink: 0;
 }
 
 .mm-search__input {
@@ -309,6 +328,26 @@
   border: 1px solid var(--mm-rule);
   border-radius: 4px;
   padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+.mm-mobile-search-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--mm-rule);
+  background: transparent;
+  color: var(--mm-ink-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.mm-mobile-search-btn:hover {
+  border-color: var(--mm-ink);
+  color: var(--mm-ink);
 }
 
 /* ---------- breadcrumb / clock strip ---------- */
@@ -1117,6 +1156,7 @@
      In-page search inputs (e.g. the Players page filter) MUST stay
      visible, so we scope this hide to .mm-topbar descendants. */
   .mm-topbar .mm-search { display: none; }
+  .mm-mobile-search-btn { display: flex; }
 }
 
 /* ---------- viewport-scoped visibility utilities ----------
@@ -1412,6 +1452,11 @@
   text-transform: uppercase;
   color: var(--mm-highlight-ink);
   opacity: 0.7;
+}
+
+.mm-pbar .mm-chip {
+  color: var(--mm-highlight-ink);
+  border-color: rgba(0, 0, 0, 0.25);
 }
 
 /* Inline magnitude track for in-row bars. */
