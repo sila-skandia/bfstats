@@ -11,6 +11,9 @@ set -e
 # Env:
 #   PW_ALL_BROWSERS=1  also run the suite under WebKit (~2.3x slower; off by default)
 #   PW_WORKERS=8       override the worker count (default 50% of cores)
+#   E2E_PREVIEW=1      test the production build rather than the dev server
+#                      (~12s build + ~15s tests, vs ~20s tests on the dev
+#                      server — slower, but exercises what actually ships)
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -65,25 +68,43 @@ if curl -sf http://localhost:9222/health > /dev/null 2>&1; then
     echo "🚀 Reusing API already listening on :9222"
 else
     echo "🚀 Starting API in background..."
-    (cd api && dotnet run --no-build > /tmp/api-verify.log 2>&1) &
+    # setsid puts this in its own process group so cleanup can kill the whole
+    # tree. Both servers spawn a grandchild that holds the port — `dotnet run`
+    # launches the built binary, `npm run dev` launches vite — so killing just
+    # the process we backgrounded leaves the real server running.
+    setsid bash -c 'cd api && exec dotnet run --no-build' > /tmp/api-verify.log 2>&1 &
     API_PID=$!
 fi
 
 if curl -sf http://localhost:5173 > /dev/null 2>&1; then
-    echo "📦 Reusing UI dev server already listening on :5173"
+    echo "📦 Reusing UI already listening on :5173"
+elif [ -n "$E2E_PREVIEW" ]; then
+    # Serve the production build instead of the dev server. Slower overall —
+    # the build costs ~12s and only saves ~5s of test time — but it exercises
+    # what actually ships: bundled, minified, chunk-split output, roughly 5
+    # requests per page instead of ~80 on-demand module transforms. Worth it
+    # when a change could plausibly break at build time rather than at runtime.
+    echo "📦 Building UI for preview (E2E_PREVIEW set)..."
+    (cd ui && npm run build > /tmp/ui-build.log 2>&1) || {
+        echo "❌ UI build failed. See /tmp/ui-build.log"; exit 1;
+    }
+    echo "📦 Starting UI preview server in background..."
+    setsid bash -c 'cd ui && exec npx vite preview' > /tmp/ui-verify.log 2>&1 &
+    UI_PID=$!
 else
-    echo "📦 Starting UI in background..."
+    echo "📦 Starting UI dev server in background..."
     # --strictPort so a port clash fails loudly instead of drifting to 5174.
-    (cd ui && npm run dev -- --strictPort > /tmp/ui-verify.log 2>&1) &
+    setsid bash -c 'cd ui && exec npm run dev -- --strictPort' > /tmp/ui-verify.log 2>&1 &
     UI_PID=$!
 fi
 
-# Only tear down what we started.
+# Only tear down what we started. Negative PID targets the whole process group,
+# which is what setsid above set up.
 cleanup() {
     if [ -n "$API_PID" ] || [ -n "$UI_PID" ]; then
         echo "Cleaning up background processes..."
-        [ -n "$API_PID" ] && kill "$API_PID" 2>/dev/null || true
-        [ -n "$UI_PID" ] && kill "$UI_PID" 2>/dev/null || true
+        [ -n "$API_PID" ] && kill -- "-$API_PID" 2>/dev/null || true
+        [ -n "$UI_PID" ] && kill -- "-$UI_PID" 2>/dev/null || true
     fi
 }
 trap cleanup EXIT
