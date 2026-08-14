@@ -271,3 +271,35 @@ group by RequestPath order by p50 desc limit 25
 
 The one to watch is `/stats/liveservers/bf1942/servers`: p50 478 ms today, and step 4
 should fall from ~470 ms to single digits once the indexes land.
+
+## Correction: `[ResponseCache]` froze the detail pages (2026-08-14)
+
+The `[ResponseCache(Location = Any)]` attributes added in `ac40afd` emit
+`public, max-age=N`, and `max-age` binds *every* cache in the chain — the browser's
+included. Inside that window an SPA route change is answered from the browser's disk
+cache with no request at all, so returning to a player or server page you had opened
+minutes earlier replayed the old payload until you reloaded. The edge was never the
+problem: both endpoints were `BYPASS` at Cloudflare (see the table above), and an edge
+hit would not have cleared on refresh anyway.
+
+The fix is to split the two audiences rather than to stop caching. `s-maxage` applies to
+shared caches only, so the edge still absorbs the repeat traffic while `max-age=0` makes
+the browser ask every time:
+
+```
+Cache-Control: public, max-age=0, s-maxage=30, stale-while-revalidate=60
+```
+
+`[ResponseCache]` cannot emit `s-maxage`, so this lives in `api/Caching/EdgeCacheAttribute.cs`
+as an `IResultFilter`. It skips non-2xx results — a cached 404 outlives the condition
+that produced it. The zone-wide Cloudflare rule already reads "use cache-control header
+if present", which prefers `s-maxage`, so no dashboard change was needed.
+
+Applied to the two endpoints whose payloads carry live state — `players/{name}` (online
+flag, current server) and `servers/{name}` (live roster, current map). 30 s is the
+`STATS_COLLECTION_INTERVAL_SECONDS` default, so it is the freshest either can ever be;
+the same reasoning already sets the server banner's TTL.
+
+Deliberately left on `[ResponseCache]`: leaderboards, insights, map-stats, competitive
+rankings and proximity. Those are aggregates that move on the hourly jobs, so a
+browser-held copy is both harmless and worth the saved round trip from Australia.
