@@ -158,6 +158,95 @@ Two rules to add:
 Expected effect for a distant visitor: cacheable API calls drop from ~380 ms to ~40 ms,
 and the landing document from ~370 ms to near-zero.
 
+## Measured after deploy (2026-08-14)
+
+| | baseline | deployed |
+| --- | --- | --- |
+| Landing, settled | 2.3 s | ~0.9 s |
+| Server details, settled | 2.83 s | **1.20 s** |
+| Player details, settled | 5.6 s | 4.9 s (see below) |
+| `liveservers` wall time from AU | 870 ms | ~460 ms |
+| `liveservers` server time | 462–686 ms | **88–112 ms** |
+| └ step 4, the former full scan | 451–524 ms | **76–90 ms** |
+| `/assets/*` edge status | `REVALIDATED` | **`HIT`**, 30–45 ms |
+| Third-party requests before paint | 1 | 0 |
+
+`liveservers` no longer appears among Seq's 22 slowest endpoints. Server details now
+shows four calls starting together at 380 ms and the two dependants at 734 ms — the two
+waves, as intended. The player page's 1.9 s cold-chunk gap is gone; chunks resolve in
+14 ms.
+
+### Cloudflare Cache Rule — applied
+
+A single zone-wide rule now does it, rather than the two path-specific ones originally
+proposed:
+
+- Expression: `http.host eq "bfstats.io"`
+- Cache eligibility: **Eligible for cache**
+- Edge TTL: **Use cache-control header if present, bypass cache if not**
+  (`edge_ttl.mode: bypass_by_default`)
+
+The zone-wide form matters. The first attempt matched only `/` and `/index.html`, which
+missed every SPA deep link — nginx serves the same `index.html` for `/v4/players/X` via
+`try_files`, but Cloudflare matches on request path, so a visitor arriving from a shared
+link or search result still paid full origin latency. Matching the whole zone makes the
+origin headers the single source of truth and needs no update when routes change.
+
+"Bypass if not present" rather than "Cloudflare default TTL if not present" is a
+deliberate safety choice: `/stats/` contains authenticated routes (`Auth`, `AdminData`,
+`AdminJobs`, the comment controllers, team registration) that send no cache header at
+all. Defaulting those to cacheable could serve one user's response to another. Bypassing
+means only the endpoints that explicitly opt in via `[ResponseCache]` are ever cached.
+
+Verified after applying:
+
+| | status |
+| --- | --- |
+| `/`, `/v4/servers/bf1942`, `/v4/players/{name}`, `/v4/players` | `HIT` ~38 ms |
+| `/assets/*` | `HIT` ~37 ms |
+| `app/initialdata`, `systemstats`, `network-pulse`, both banners | `HIT` ~40 ms |
+| `liveservers`, `players/{name}` | `BYPASS` |
+| `auth/me`, player comments, server comments | `BYPASS` |
+
+Browser, server details, warm: document TTFB **9 ms** (`cfOrigin: 0`), wave 1 starting at
+92 ms, `busy-indicator` served from the edge in 4 ms, settled 1614 ms — down from 2832 ms.
+The remaining tail is the server banner at ~1.1 s on a cold render; its 30 s TTL means it
+re-renders often. Excluding it, the page's data settles at ~910 ms.
+
+## Second pass: ranking queries that ranked everybody
+
+With the above deployed, the player page was left with two endpoints accounting for
+almost all of its remaining time — everything else settled by ~1.24 s:
+
+| endpoint | observed |
+| --- | --- |
+| `data-explorer/players/{name}/competitive-rankings` | 4061 ms |
+| `data-explorer/players/{name}/maps` | 2192 ms |
+
+Both shared one shape: to produce **one** player's rank they aggregated and ranked every
+player × every map (× every server, for the second), then filtered to that player at the
+very end. `WHERE PlayerName` can never use an index there because it applies after the
+window function. On production data that is 739k global rows across 1897 maps and 44,766
+players, ranked to return about ten.
+
+Fixed by adding a `PlayerMaps` CTE that restricts the ranking to the maps the player has
+actually played, before the window function runs. Rank is partitioned by `MapName` and
+the output is a single player, so no other map can contribute a row; narrowing cannot
+change a rank inside a partition it doesn't remove. The planner then seeks via
+`IX_PlayerMapStats_ServerGuid_MapName` instead of scanning.
+
+| query | before | after |
+| --- | --- | --- |
+| competitive-rankings | 332 ms | 77 ms |
+| maps rankings | 219 ms | 66 ms |
+
+Three query sites changed — competitive-rankings does this twice, for the current and
+previous period. Results verified **row-for-row identical** to the unrestricted queries
+across five players, not just matching row counts.
+
+Local timings run roughly 4x faster than the node, so expect something like 4061 → ~950 ms
+and 2192 → ~650 ms in production. Re-measure rather than trusting the extrapolation.
+
 ## Verifying after deploy
 
 The bundle and query numbers above were measured directly and hold now. The network and
