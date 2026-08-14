@@ -166,7 +166,8 @@ test.describe('Leaderboard Page', () => {
       let filtered = [...MOCK_LEADERBOARD_DATA.players]
 
       if (mapParam) {
-        filtered = filtered.filter(p => p.favMap.toLowerCase() === mapParam.toLowerCase())
+        const terms = mapParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+        filtered = filtered.filter(p => terms.some(t => p.favMap.toLowerCase() === t))
       }
       if (serverParam) {
         const terms = serverParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
@@ -364,6 +365,8 @@ test.describe('Leaderboard Page', () => {
     const mapItem = page.locator('.lb-server-item', { hasText: /Bocage/i })
     await expect(mapItem).toBeVisible()
     await mapItem.click()
+    await expect(popover).toBeVisible()
+    await page.keyboard.press('Escape')
     await expect(popover).not.toBeVisible()
 
     // Rows should now show only players on Bocage (Rommel & Zhukov = 2)
@@ -377,6 +380,24 @@ test.describe('Leaderboard Page', () => {
     // Clear map filter via clear button
     await page.locator('.lb-server-clear-btn').click()
     await expect(page.locator('.lb-table tbody tr.lb-row')).toHaveCount(4)
+  })
+
+  test('should include multiple maps without replacing the first selection', async ({ page }) => {
+    await page.goto('/v4/leaderboard')
+
+    const mapBtn = page.locator('.lb-map-dropdown-btn')
+    await mapBtn.click()
+    const popover = page.locator('.lb-server-popover')
+
+    await popover.locator('.lb-server-item', { hasText: /Bocage/i }).click()
+    await expect(popover).toBeVisible()
+    await popover.locator('.lb-server-item', { hasText: /^Wake/ }).click()
+    await page.keyboard.press('Escape')
+
+    const rows = page.locator('.lb-table tbody tr.lb-row')
+    await expect(rows).toHaveCount(3)
+    await expect(page.locator('.lb-map-active-tag')).toContainText('MAP: 2 MAPS')
+    await expect(mapBtn).toContainText('2 maps')
   })
 
   test('should trigger CSV export and JSON export actions without errors', async ({ page }) => {
@@ -551,7 +572,8 @@ test.describe('Leaderboard Page — Mobile', () => {
         )
       }
       if (mapParam) {
-        filtered = filtered.filter(p => p.favMap.toLowerCase() === mapParam.toLowerCase())
+        const terms = mapParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+        filtered = filtered.filter(p => terms.some(t => p.favMap.toLowerCase() === t))
       }
       await route.fulfill({
         status: 200,
@@ -626,6 +648,7 @@ test.describe('Leaderboard Page — Mobile', () => {
 
     await mapBtn.click()
     await page.locator('.lb-server-item', { hasText: /^Bocage/ }).click()
+    await sheet.locator('.lb-sheet-done').click()
     await expect(sheet).toBeHidden()
     await expect(page.locator('.lb-mobile-list .mm-session-row')).toHaveCount(2)
 
