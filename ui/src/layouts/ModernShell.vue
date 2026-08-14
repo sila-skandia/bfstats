@@ -12,6 +12,7 @@ interface NavItem { label: string; to: string; key: string; admin?: boolean }
 const baseNavItems: NavItem[] = [
   { label: 'Servers', to: '/v4/servers/bf1942', key: 'servers' },
   { label: 'Players', to: '/v4/players', key: 'players' },
+  { label: 'Leaderboard', to: '/v4/leaderboard', key: 'leaderboard' },
   // Rounds is deliberately not a top-level destination — the round report is only
   // meaningful when you arrive at a specific round from a player's session list or
   // achievement. The /v4/rounds routes and every inbound link to them still work.
@@ -32,6 +33,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/admin') || path.startsWith('/v4/admin')) return 'admin'
   if (path.startsWith('/v4/servers')) return 'servers'
   if (path.startsWith('/v4/players')) return 'players'
+  if (path.startsWith('/v4/leaderboard')) return 'leaderboard'
   if (path.startsWith('/v4/rounds')) return 'rounds'
   return ''
 })
@@ -50,6 +52,7 @@ const resolveCrumbTarget = (segs: string[]): string | null => {
   if (segs.length === 1) {
     if (segs[0] === 'servers') return '/v4/servers/bf1942'
     if (segs[0] === 'players') return '/v4/players'
+    if (segs[0] === 'leaderboard') return '/v4/leaderboard'
     if (segs[0] === 'rounds') return '/v4/rounds'
     // system-stats / map-popularity / communities are terminal-only; no
     // section landing exists, so the segment isn't linkable on its own.

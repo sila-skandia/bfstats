@@ -71,4 +71,23 @@ public interface ISqliteLeaderboardService
         DateTime startPeriod,
         DateTime endPeriod,
         int minRounds = 1);
+
+    /// <summary>
+    /// Gets paged global player leaderboard with filtering, search, and sort applied in SQL
+    /// (GROUP BY + LIMIT/OFFSET). Does not materialize the full ranking set.
+    /// </summary>
+    Task<Models.GlobalLeaderboardResponse> GetGlobalLeaderboardAsync(
+        int page = 1,
+        int pageSize = 50,
+        string sortBy = "score",
+        string sortDir = "desc",
+        string? searchQuery = null,
+        string? server = null,
+        string? map = null,
+        int days = 30,
+        int minRounds = 1,
+        int minPlay = 0,
+        string? game = "bf1942",
+        string? exclude = null,
+        bool populatedOnly = false);
 }
