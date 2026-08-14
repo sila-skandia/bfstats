@@ -169,9 +169,12 @@ test.describe('Leaderboard Page', () => {
         filtered = filtered.filter(p => p.favMap.toLowerCase() === mapParam.toLowerCase())
       }
       if (serverParam) {
+        const terms = serverParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
         filtered = filtered.filter(p =>
-          p.favServer.toLowerCase() === serverParam.toLowerCase() ||
-          p.favServerGuid === serverParam
+          terms.some(t =>
+            p.favServer.toLowerCase() === t ||
+            p.favServerGuid.toLowerCase() === t
+          )
         )
       } else {
         if (populatedOnly) {
@@ -304,8 +307,9 @@ test.describe('Leaderboard Page', () => {
     await expect(serverItem).toContainText('Merciless Gamers')
     await expect(serverItem).toContainText('2')
 
-    // Select the server
+    // Select the server (include stays open for multi-select)
     await serverItem.click()
+    await page.keyboard.press('Escape')
     await expect(popover).not.toBeVisible()
 
     // Table rows should now only show Merciless Gamers players (2 players)
@@ -319,6 +323,24 @@ test.describe('Leaderboard Page', () => {
     // Clear server filter via clear button
     await page.locator('.lb-server-clear-btn').first().click()
     await expect(page.locator('.lb-table tbody tr.lb-row')).toHaveCount(4)
+  })
+
+  test('should include multiple servers without replacing the first selection', async ({ page }) => {
+    await page.goto('/v4/leaderboard')
+
+    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
+    await serverBtn.click()
+    const popover = page.locator('.lb-server-popover').first()
+
+    await popover.locator('.lb-server-item', { hasText: /Merciless/i }).click()
+    await expect(popover).toBeVisible()
+    await popover.locator('.lb-server-item', { hasText: /Dogtags/i }).click()
+    await page.keyboard.press('Escape')
+
+    const rows = page.locator('.lb-table tbody tr.lb-row')
+    await expect(rows).toHaveCount(4)
+    await expect(page.locator('.lb-section-bar')).toContainText('SRV: 2 SERVERS')
+    await expect(serverBtn).toContainText('2 servers')
   })
 
   test('should filter players by searchable map dropdown slicer and auto-focus search field', async ({ page }) => {
@@ -520,9 +542,12 @@ test.describe('Leaderboard Page — Mobile', () => {
         p.favServerGuid === 'srv-1' || p.favServerGuid === 'srv-2'
       )
       if (serverParam) {
+        const terms = serverParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
         filtered = filtered.filter(p =>
-          p.favServer.toLowerCase() === serverParam.toLowerCase() ||
-          p.favServerGuid === serverParam
+          terms.some(t =>
+            p.favServer.toLowerCase() === t ||
+            p.favServerGuid.toLowerCase() === t
+          )
         )
       }
       if (mapParam) {
@@ -576,6 +601,7 @@ test.describe('Leaderboard Page — Mobile', () => {
     expect(box!.height).toBeGreaterThanOrEqual(800)
 
     await page.locator('.lb-server-item', { hasText: /Merciless/i }).click()
+    await sheet.locator('.lb-sheet-done').click()
     await expect(sheet).toBeHidden()
     await expect(cards).toHaveCount(2)
     await expect(cards.first()).toContainText('Patton_USA')
@@ -605,6 +631,7 @@ test.describe('Leaderboard Page — Mobile', () => {
 
     await serverBtn.click()
     await page.locator('.lb-server-item', { hasText: /Merciless/i }).click()
+    await sheet.locator('.lb-sheet-done').click()
 
     await expect(page.locator('.lb-state-box')).toContainText('NO PLAYERS MATCH')
     await expect(page.locator('[data-lbmenu="map"] .lb-server-clear-btn')).toBeVisible()

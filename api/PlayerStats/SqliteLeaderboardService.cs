@@ -645,7 +645,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             ? game
             : null;
         var includeGuids = hasExplicitInclude
-            ? ResolveServerGuids([server!.Trim()], serverLookup)
+            ? ResolveServerGuids(ParseExcludeTerms(server), serverLookup)
             : [];
 
         var isAsc = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
