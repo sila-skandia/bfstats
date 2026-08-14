@@ -153,6 +153,65 @@ public class LeaderboardControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task GetLeaderboard_WithMultipleIncludeMaps_AggregatesOnlyThoseMaps()
+    {
+        var now = DateTime.UtcNow;
+        _dbContext.Servers.Add(new GameServer { Guid = "srv-1", Name = "Dogtags 24/7", Game = "bf1942" });
+        _dbContext.PlayerMapStats.AddRange(
+            new PlayerMapStats
+            {
+                PlayerName = "Rommel",
+                ServerGuid = "srv-1",
+                MapName = "bocage",
+                Year = now.Year,
+                Month = now.Month,
+                TotalKills = 100,
+                TotalDeaths = 20,
+                TotalScore = 2000,
+                TotalRounds = 8,
+                TotalPlayTimeMinutes = 80
+            },
+            new PlayerMapStats
+            {
+                PlayerName = "Patton",
+                ServerGuid = "srv-1",
+                MapName = "omaha",
+                Year = now.Year,
+                Month = now.Month,
+                TotalKills = 80,
+                TotalDeaths = 40,
+                TotalScore = 1500,
+                TotalRounds = 6,
+                TotalPlayTimeMinutes = 60
+            },
+            new PlayerMapStats
+            {
+                PlayerName = "Zhukov",
+                ServerGuid = "srv-1",
+                MapName = "wake",
+                Year = now.Year,
+                Month = now.Month,
+                TotalKills = 40,
+                TotalDeaths = 40,
+                TotalScore = 800,
+                TotalRounds = 4,
+                TotalPlayTimeMinutes = 40
+            }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetLeaderboard(map: "bocage,wake");
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<GlobalLeaderboardResponse>(okResult.Value);
+
+        Assert.Equal(2, response.Players.Count);
+        Assert.Contains(response.Players, p => p.Name == "Rommel");
+        Assert.Contains(response.Players, p => p.Name == "Zhukov");
+        Assert.DoesNotContain(response.Players, p => p.Name == "Patton");
+        Assert.Contains(response.Maps, m => string.Equals(m.Name, "omaha", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task GetLeaderboard_WithPagingAndSorting_ReturnsCorrectPageAndRanks()
     {
         var now = DateTime.UtcNow;
