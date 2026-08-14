@@ -117,7 +117,7 @@ test.describe('Tournament Comments', () => {
     await expect(panel.locator('.t2-comments__form')).toHaveCount(0);
   });
 
-  test('signed-in user can post a tournament-level comment, see it in the panel and the feed, then edit and delete it', async ({ page }) => {
+  test('signed-in user can post a tournament-level comment, see it in the panel, then edit and delete it', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto(`/t/${tournamentId}`);
     await page.waitForLoadState('networkidle');
@@ -133,13 +133,16 @@ test.describe('Tournament Comments', () => {
     await expect(posted).toBeVisible();
     await expect(posted.locator('button', { hasText: 'Edit' })).toBeVisible();
 
-    // Appears in the chronological activity feed too. The overview feed only
-    // loads on mount (`T2Overview.vue` calls loadFeed from onMounted and on a
-    // tournamentId change) — posting a comment does not refresh it, so the feed
-    // has to be re-read after a reload rather than asserted live.
+    // Reload to confirm the comment persisted server-side rather than only
+    // landing in local state.
+    //
+    // This used to also assert the comment showed up as a `.t2-feed__item` in
+    // the overview's activity feed. ddd47a5 removed tournament comments from
+    // that feed deliberately — the API no longer queries TournamentComments and
+    // T2Overview.vue dropped the branch that rendered them — so that assertion
+    // is gone. The panel is now the only surface for comments.
     await page.goto(`/t/${tournamentId}`);
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('.t2-feed__item', { hasText: commentText })).toBeVisible();
+    await expect(posted).toBeVisible();
 
     // Edit — `posted` re-resolves against the reloaded page.
     await expect(posted).toBeVisible();
@@ -158,7 +161,7 @@ test.describe('Tournament Comments', () => {
     await expect(panel.locator('.t2-comments__item', { hasText: editedText })).toHaveCount(0);
   });
 
-  test('match-level comments are isolated to their match and show a match label in the feed', async ({ page }) => {
+  test('match-level comments are isolated to their match', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto(`/t/${tournamentId}/matches`);
     await page.waitForLoadState('networkidle');
@@ -190,9 +193,9 @@ test.describe('Tournament Comments', () => {
     await modal.locator('.t2-modal__close').click();
     await expect(modal).toBeHidden();
 
-    // Feed shows the match label alongside the comment
-    await page.goto(`/t/${tournamentId}`);
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('.t2-feed__item', { hasText: matchCommentText })).toBeVisible();
+    // The trailing assertion here checked the overview feed rendered the comment
+    // with its match label. ddd47a5 removed comments from that feed, so the
+    // match-isolation checks above (the two API reads) are what this test is now
+    // for. See the note in the tournament-level comment test.
   });
 });

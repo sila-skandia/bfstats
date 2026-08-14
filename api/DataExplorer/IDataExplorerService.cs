@@ -129,31 +129,6 @@ public interface IDataExplorerService
     /// </summary>
     Task<List<SliceDimensionOption>> GetAvailableSliceDimensionsAsync();
 
-    /// <summary>
-    /// Get player's competitive rankings across all maps they've played.
-    /// Shows rank position, percentile, and trends.
-    /// </summary>
-    /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
-    /// <param name="days">Number of days to look back (default 60)</param>
-    Task<PlayerCompetitiveRankingsResponse?> GetPlayerCompetitiveRankingsAsync(
-        string playerName, 
-        string game = "bf1942", 
-        int days = 60);
-
-    /// <summary>
-    /// Get player's ranking history over time for trend analysis.
-    /// Returns monthly snapshots of rank positions.
-    /// </summary>
-    /// <param name="playerName">The player name</param>
-    /// <param name="mapName">Optional: specific map to filter by</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
-    /// <param name="months">Number of months to look back (default 12)</param>
-    Task<RankingTimelineResponse?> GetPlayerRankingTimelineAsync(
-        string playerName,
-        string? mapName = null,
-        string game = "bf1942",
-        int months = 12);
 
     /// <summary>
     /// Get player's detailed statistics for a specific map.

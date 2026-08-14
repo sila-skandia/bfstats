@@ -20,6 +20,11 @@ public record CommunityServerMap
     /// Edges between players and servers, weighted by session count.
     /// </summary>
     public required List<ServerMapEdge> Edges { get; init; }
+
+    /// <summary>
+    /// Co-play edges between community members.
+    /// </summary>
+    public List<ServerMapEdge> MemberEdges { get; init; } = [];
 }
 
 /// <summary>
