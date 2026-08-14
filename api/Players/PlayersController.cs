@@ -1,4 +1,5 @@
 using api.Analytics.Models;
+using api.Caching;
 using api.Constants;
 using api.Players.Models;
 using api.PlayerStats;
@@ -109,7 +110,10 @@ public class PlayersController(
 
     // Get detailed player statistics
     [HttpGet("{playerName}")]
-    [ResponseCache(Duration = 300, Location = ResponseCacheLocation.Any)]
+    // Edge-only: this payload carries online state and the current server, so a
+    // browser-held copy makes a page the user navigates back to look frozen. 30s
+    // matches the stats collector's interval — the freshest this can ever be.
+    [EdgeCache(30)]
     public async Task<ActionResult<PlayerTimeStatistics>> GetPlayerStats(string playerName)
     {
         if (string.IsNullOrWhiteSpace(playerName))
