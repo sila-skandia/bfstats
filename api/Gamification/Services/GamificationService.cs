@@ -10,7 +10,6 @@ namespace api.Gamification.Services;
 public class GamificationService(SqliteGamificationService gamificationService, KillStreakDetector killStreakDetector, MilestoneCalculator milestoneCalculator, BadgeDefinitionsService badgeDefinitionsService, AchievementLabelingService achievementLabelingService, PlacementProcessor placementProcessor, TeamVictoryProcessor teamVictoryProcessor, IConfiguration configuration, ILogger<GamificationService> logger) : IDisposable
 {
     private readonly ILogger<GamificationService> _logger = InitializeLogger(logger, configuration);
-    private readonly int _maxConcurrentRounds = configuration.GetValue<int>("GAMIFICATION_MAX_CONCURRENT_ROUNDS", 10);
     private readonly SemaphoreSlim _concurrencyThrottle = InitializeConcurrencyThrottle(configuration);
 
     private static ILogger<GamificationService> InitializeLogger(ILogger<GamificationService> logger, IConfiguration configuration)

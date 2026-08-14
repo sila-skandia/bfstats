@@ -159,48 +159,6 @@ public class StatsCollectionBackgroundService(
         return gameServerAdapters;
     }
 
-    private async Task<List<IGameServer>> CollectBfvietnamServerStatsAsync(IBfListApiService bfListApiService, PlayerTrackingService playerTrackingService, CancellationToken stoppingToken)
-    {
-        var allServersObjects = await bfListApiService.FetchAllServersAsync("bfvietnam");
-        var allServers = allServersObjects.Cast<BfvietnamServerInfo>().ToList();
-
-        var timestamp = DateTime.UtcNow;
-        var gameServerAdapters = new List<IGameServer>();
-
-        foreach (var server in allServers)
-        {
-            // Create adapter for batching
-            var adapter = new BfvietnamServerAdapter(server);
-            gameServerAdapters.Add(adapter);
-
-            // Store to SQLite every cycle
-            await playerTrackingService.TrackPlayersFromServerInfo(adapter, timestamp, "bfvietnam");
-        }
-
-        return gameServerAdapters;
-    }
-
-    private async Task<List<IGameServer>> CollectFh2ServerStatsAsync(IBfListApiService bfListApiService, PlayerTrackingService playerTrackingService, CancellationToken stoppingToken)
-    {
-        var allServersObjects = await bfListApiService.FetchAllServersAsync("fh2");
-        var allServers = allServersObjects.Cast<Fh2ServerInfo>().ToList();
-
-        var timestamp = DateTime.UtcNow;
-        var gameServerAdapters = new List<IGameServer>();
-
-        foreach (var server in allServers)
-        {
-            // Create adapter for batching
-            var adapter = new Fh2ServerAdapter(server);
-            gameServerAdapters.Add(adapter);
-
-            // Store to SQLite every cycle
-            await playerTrackingService.TrackPlayersFromServerInfo(adapter, timestamp, "fh2");
-        }
-
-        return gameServerAdapters;
-    }
-
     public Task StopAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Stats collection service stopping");

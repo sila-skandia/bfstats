@@ -26,12 +26,6 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
         ".pdf", ".zip", ".txt", ".json"
     };
 
-    // Extensions that pose security risks even when served as files
-    private static readonly HashSet<string> RestrictedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".svg", ".html", ".htm", ".xml", ".exe", ".dll", ".sh", ".bat", ".cmd"
-    };
-
     public async Task<AssetResult> GetAssetAsync(string basePath, string relativePath)
     {
         try
