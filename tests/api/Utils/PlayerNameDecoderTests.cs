@@ -12,6 +12,13 @@ public class PlayerNameDecoderTests
     }
 
     [Fact]
+    public void Decode_CyrillicVertoletik_RoundTripsToCyrillic()
+    {
+        var decoded = PlayerNameDecoder.Decode("Âåðòîëåòèê");
+        Assert.Equal("Вертолетик", decoded);
+    }
+
+    [Fact]
     public void Decode_PureLatinName_ReturnsUnchanged()
     {
         Assert.Equal("Dylan", PlayerNameDecoder.Decode("Dylan"));

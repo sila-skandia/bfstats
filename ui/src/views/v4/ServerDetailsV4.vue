@@ -5,12 +5,15 @@ import {
   fetchServerDetails,
   fetchServerInsights,
   fetchServerLeaderboards,
+  fetchServerPlayerRankings,
   fetchLiveServerData,
   fetchServerBusyIndicators,
   fetchServerMapsInsights,
   type ServerDetails,
   type ServerInsights,
   type LeaderboardsData,
+  type ServerPlayerRankingsResponse,
+  type ServerPlayerRankingItem,
   type ServerHourlyTimelineEntry,
   type PopularMap,
 } from '@/services/serverDetailsService'
@@ -24,6 +27,8 @@ import MmForecastModal from '@/components/v4/MmForecastModal.vue'
 import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
 import MmServerMapDetailPanel from '@/components/v4/data-explorer/MmServerMapDetailPanel.vue'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
+import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
+import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
 import { useDrillIn } from '@/composables/useDrillIn'
 import { kdClass } from './mmTokens'
 
@@ -173,6 +178,11 @@ const load = async () => {
     })(),
   ]))
 
+  pagedRankings.value = null
+  if (activeTab.value === 'players') {
+    void loadPagedRankings()
+  }
+
   await Promise.all([detailsP, insightsP, boardsP, mapsP, dependentP])
 }
 
@@ -244,57 +254,130 @@ const region = computed(() => {
 const peakPlayers = computed(() => insights.value?.playerCountSummary?.peakPlayerCount ?? null)
 const avgPlayers = computed(() => insights.value?.playerCountSummary?.averagePlayerCount ?? null)
 
-const playersList = computed(() => leaderboards.value?.mostActivePlayersByTime ?? [])
-const topKDRatios = computed(() => leaderboards.value?.topKDRatios ?? [])
-const topKillRates = computed(() => leaderboards.value?.topKillRates ?? [])
-const topPlacements = computed(() => leaderboards.value?.topPlacements ?? [])
+// players-tab sub-view selector
+type PlayersView = 'active' | 'score' | 'kd' | 'killrate' | 'placement'
+const playersView = ref<PlayersView>('active')
+const playersViewOptions: { id: PlayersView; label: string }[] = [
+  { id: 'active', label: 'Most active' },
+  { id: 'score', label: 'Top score' },
+  { id: 'kd', label: 'Top K/D' },
+  { id: 'killrate', label: 'Top kill rate' },
+  { id: 'placement', label: 'Top placements' },
+]
+
+const ranksPage = ref(1)
+const ranksPageSize = ref(20)
+const ranksDays = ref(30)
+const ranksMinRounds = ref(10)
+const ranksSearch = ref('')
+const debouncedRanksSearch = ref('')
+let ranksSearchTimeout: any = null
+
+const pagedRankings = ref<ServerPlayerRankingsResponse | null>(null)
+const ranksLoading = ref(false)
+const ranksRefreshing = ref(false)
+const ranksError = ref<string | null>(null)
+
+const loadPagedRankings = async () => {
+  if (!serverName.value) return
+  if (!pagedRankings.value) ranksLoading.value = true
+  else ranksRefreshing.value = true
+  ranksError.value = null
+
+  try {
+    const res = await fetchServerPlayerRankings(
+      serverName.value,
+      ranksPage.value,
+      ranksPageSize.value,
+      playersView.value,
+      ranksDays.value,
+      ranksMinRounds.value,
+      debouncedRanksSearch.value || undefined,
+    )
+    pagedRankings.value = res
+  } catch (err) {
+    console.error('Failed to load server player rankings:', err)
+    ranksError.value = 'Failed to load player rankings'
+  } finally {
+    ranksLoading.value = false
+    ranksRefreshing.value = false
+  }
+}
+
+const handleRankSearch = () => {
+  if (ranksSearchTimeout) clearTimeout(ranksSearchTimeout)
+  ranksSearchTimeout = setTimeout(() => {
+    debouncedRanksSearch.value = ranksSearch.value
+    ranksPage.value = 1
+    loadPagedRankings()
+  }, 300)
+}
+
+const clearRankSearch = () => {
+  ranksSearch.value = ''
+  debouncedRanksSearch.value = ''
+  ranksPage.value = 1
+  loadPagedRankings()
+}
+
+const setPlayersView = (view: PlayersView) => {
+  if (playersView.value === view && !ranksError.value) return
+  playersView.value = view
+  ranksPage.value = 1
+  loadPagedRankings()
+}
+
+const setRanksDays = (days: number) => {
+  if (ranksDays.value === days && !ranksError.value) return
+  ranksDays.value = days
+  ranksPage.value = 1
+  loadPagedRankings()
+}
+
+const setRanksMinRounds = (rounds: number) => {
+  if (ranksMinRounds.value === rounds && !ranksError.value) return
+  ranksMinRounds.value = rounds
+  ranksPage.value = 1
+  loadPagedRankings()
+}
+
+const goToRankPage = (page: number) => {
+  if (page < 1 || (pagedRankings.value && page > pagedRankings.value.totalPages) || ranksRefreshing.value) return
+  ranksPage.value = page
+  loadPagedRankings()
+}
+
+const rankPaginationRange = computed(() => {
+  const total = pagedRankings.value?.totalPages ?? 0
+  if (total <= 1) return []
+  const maxVisible = 5
+  let start = Math.max(1, ranksPage.value - Math.floor(maxVisible / 2))
+  const end = Math.min(total, start + maxVisible - 1)
+  if (end === total) start = Math.max(1, end - maxVisible + 1)
+  const range: number[] = []
+  for (let i = start; i <= end; i++) range.push(i)
+  return range
+})
+
+const rankedPlayers = computed(() => pagedRankings.value?.rankings ?? [])
 
 // Per-column maxes for the Ranks tab — drive the in-cell magnitude bars.
-const activeMax = computed(() => {
-  const list = playersList.value
-  if (list.length === 0) return { minutes: 1, kills: 1, deaths: 1, kd: 1 }
+const rankMax = computed(() => {
+  const list = rankedPlayers.value
+  if (list.length === 0) return { minutes: 1, kills: 1, deaths: 1, kd: 1, score: 1, killRate: 1, rounds: 1, placements: 1, first: 1, second: 1, third: 1, points: 1 }
   return {
     minutes: Math.max(1, ...list.map(p => p.minutesPlayed)),
     kills: Math.max(1, ...list.map(p => p.totalKills)),
     deaths: Math.max(1, ...list.map(p => p.totalDeaths)),
     kd: Math.max(1, ...list.map(p => p.kdRatio)),
-  }
-})
-// `TopKDRatio` and `TopKillRate` DTOs carry PlayerName/Kills/Deaths/KDRatio/TotalRounds —
-// no MapName, Timestamp, or Score (the TS interface aliases them as TopScore but the
-// JSON payload doesn't include those fields). Don't reference fields that aren't on the DTO.
-const kdValue = (s: { kdRatio?: number; deaths: number; kills: number }) =>
-  s.kdRatio ?? (s.deaths === 0 ? s.kills : s.kills / s.deaths)
-
-const kdViewMax = computed(() => {
-  const list = topKDRatios.value
-  if (list.length === 0) return { kills: 1, deaths: 1, kd: 1, totalRounds: 1 }
-  return {
-    kills: Math.max(1, ...list.map(s => s.kills)),
-    deaths: Math.max(1, ...list.map(s => s.deaths)),
-    kd: Math.max(1, ...list.map(s => kdValue(s))),
-    totalRounds: Math.max(1, ...list.map(s => (s as any).totalRounds ?? 0)),
-  }
-})
-const killRateMax = computed(() => {
-  const list = topKillRates.value
-  if (list.length === 0) return { kills: 1, deaths: 1, killRate: 1, totalRounds: 1 }
-  return {
-    kills: Math.max(1, ...list.map(s => s.kills)),
-    deaths: Math.max(1, ...list.map(s => s.deaths)),
-    killRate: Math.max(1, ...list.map(s => s.killRate ?? 0)),
-    totalRounds: Math.max(1, ...list.map(s => (s as any).totalRounds ?? 0)),
-  }
-})
-const placementMax = computed(() => {
-  const list = topPlacements.value
-  if (list.length === 0) return { firstPlaces: 1, secondPlaces: 1, thirdPlaces: 1, totalPlacements: 1, placementPoints: 1 }
-  return {
-    firstPlaces: Math.max(1, ...list.map(p => p.firstPlaces)),
-    secondPlaces: Math.max(1, ...list.map(p => p.secondPlaces)),
-    thirdPlaces: Math.max(1, ...list.map(p => p.thirdPlaces)),
-    totalPlacements: Math.max(1, ...list.map(p => p.totalPlacements)),
-    placementPoints: Math.max(1, ...list.map(p => p.placementPoints)),
+    score: Math.max(1, ...list.map(p => p.totalScore)),
+    killRate: Math.max(1, ...list.map(p => p.killRate)),
+    rounds: Math.max(1, ...list.map(p => p.totalRounds)),
+    placements: Math.max(1, ...list.map(p => p.totalPlacements)),
+    first: Math.max(1, ...list.map(p => p.firstPlaces)),
+    second: Math.max(1, ...list.map(p => p.secondPlaces)),
+    third: Math.max(1, ...list.map(p => p.thirdPlaces)),
+    points: Math.max(1, ...list.map(p => p.placementPoints)),
   }
 })
 
@@ -304,16 +387,6 @@ const kdTierBg = (kd: number): string => {
   if (kd >= 2) return 'mm-rank__kd-bg--good'
   return ''
 }
-
-// players-tab sub-view selector
-type PlayersView = 'active' | 'kd' | 'killrate' | 'placement'
-const playersView = ref<PlayersView>('active')
-const playersViewOptions: { id: PlayersView; label: string }[] = [
-  { id: 'active', label: 'Most active' },
-  { id: 'kd', label: 'Top K/D' },
-  { id: 'killrate', label: 'Top kill rate' },
-  { id: 'placement', label: 'Top placements' },
-]
 
 const formatNumber = (n: number) => Math.round(n).toLocaleString()
 const formatHours = (mins: number) => {
@@ -328,6 +401,22 @@ const goPlayer = (name: string) => {
 }
 
 const $pn = decodePlayerName
+
+const rankDistRef = ref<InstanceType<typeof MmServerRankDistribution> | null>(null)
+
+const benchmarkPlayer = (p: ServerPlayerRankingItem) => {
+  if (rankDistRef.value) {
+    rankDistRef.value.pinPlayer(p)
+    const el = document.querySelector('.mm-rank-dist')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+}
+
+watch(activeTab, (t) => {
+  if (t === 'players' && !pagedRankings.value) {
+    loadPagedRankings()
+  }
+})
 </script>
 
 <template>
@@ -343,8 +432,14 @@ const $pn = decodePlayerName
            whole page behind a ~1s round trip to Finland just to learn it. The
            rest of the page fills in around it. -->
       <div class="mm-server-hero">
-        <h1 class="mm-display mm-server__name">{{ serverName }}</h1>
+        <h1 class="mm-display mm-server__name">{{ $pn(serverName) }}</h1>
         <div class="mm-server-hero__links">
+          <MmServerConnectAction
+            v-if="details?.serverIp"
+            :ip="details.serverIp"
+            :port="details.serverPort"
+            :server-name="serverName"
+          />
           <button
             v-if="hourlyTimeline.length > 0"
             type="button"
@@ -515,205 +610,418 @@ const $pn = decodePlayerName
 
       <!-- ===================== RANKS ===================== -->
       <section v-else-if="activeTab === 'players'" class="mm-panel" style="margin-top: 20px">
-        <div class="mm-pbar">
-          <span class="mm-pbar__t"># Player ranks</span>
-          <span class="mm-pbar__m">{{ playersViewOptions.find(o => o.id === playersView)?.label }} · this server</span>
+        <!-- Distribution Bar Chart Component -->
+        <MmServerRankDistribution ref="rankDistRef" :server-name="serverName" />
+
+        <!-- Ladder Header + Filter Bar -->
+        <div class="mm-pbar mm-ranks__ladder-pbar">
+          <div>
+            <span class="mm-pbar__t"># Player ranks</span>
+            <span class="mm-pbar__m">{{ playersViewOptions.find(o => o.id === playersView)?.label }} · this server</span>
+          </div>
+          <span v-if="pagedRankings && pagedRankings.totalCount > 0" class="mm-chip">
+            {{ pagedRankings.totalCount.toLocaleString() }} ranked players
+          </span>
         </div>
-        <div style="padding: 12px 14px 0">
-          <div class="mm-subtabs">
+
+        <div class="mm-ranks__controls-row">
+          <!-- Subtabs for Sort / View -->
+          <div class="mm-subtabs mm-ranks__sort-subtabs">
             <button
               v-for="opt in playersViewOptions"
               :key="opt.id"
               type="button"
               class="mm-subtab"
               :class="{ 'mm-subtab--active': playersView === opt.id }"
-              @click="playersView = opt.id"
+              :disabled="ranksRefreshing"
+              @click="setPlayersView(opt.id)"
             >{{ opt.label }}</button>
+          </div>
+
+          <div class="mm-ranks__filters-group">
+            <!-- Min rounds filter -->
+            <div class="mm-rank__filter">
+              <span class="mm-rank__filter-label">Min rounds</span>
+              <div class="mm-subtabs">
+                <button
+                  v-for="rounds in [10, 25, 50, 100, 200]"
+                  :key="rounds"
+                  type="button"
+                  class="mm-subtab"
+                  :class="{ 'mm-subtab--active': ranksMinRounds === rounds }"
+                  :disabled="ranksRefreshing"
+                  @click="setRanksMinRounds(rounds)"
+                >{{ rounds }}+</button>
+              </div>
+            </div>
+
+            <!-- Window filter -->
+            <div class="mm-rank__filter">
+              <span class="mm-rank__filter-label">Window</span>
+              <div class="mm-subtabs">
+                <button
+                  v-for="days in [7, 30, 90, 365]"
+                  :key="days"
+                  type="button"
+                  class="mm-subtab"
+                  :class="{ 'mm-subtab--active': ranksDays === days }"
+                  :disabled="ranksRefreshing"
+                  @click="setRanksDays(days)"
+                >{{ days === 365 ? '1y' : `${days}d` }}</button>
+              </div>
+            </div>
           </div>
         </div>
 
+        <!-- Search input -->
+        <div style="padding: 10px 14px 0">
+          <label class="mm-search mm-ranks__search">
+            <svg class="mm-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              v-model="ranksSearch"
+              type="text"
+              class="mm-search__input"
+              placeholder="Search players…"
+              @input="handleRankSearch"
+            />
+            <button
+              v-if="ranksSearch"
+              type="button"
+              class="mm-search__clear"
+              title="Clear search"
+              @click="clearRankSearch"
+            >×</button>
+          </label>
+        </div>
+
+        <!-- Table Container -->
         <div class="mm-panel__rank">
-          <!-- Most active -->
-          <table v-if="playersView === 'active'" class="mm-list mm-list--dense mm-rank">
-            <thead>
-              <tr>
-                <th style="width: 40px"></th>
-                <th>Player</th>
-                <th class="is-num">Hours played</th>
-                <th class="is-num">Kills</th>
-                <th class="is-num">Deaths</th>
-                <th class="is-num">K/D</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(p, i) in playersList"
-                :key="p.playerName"
-                :class="{ 'mm-rank__row--top3': i < 3 }"
-                @click="goPlayer(p.playerName)"
-              >
-                <td class="mm-list__rank is-muted">{{ String(i + 1).padStart(2, '0') }}</td>
-                <td class="mm-list__name-cell">
-                  <div class="mm-list__name">
-                    <span class="mm-list__name-primary">{{ $pn(p.playerName) }}</span>
-                  </div>
-                </td>
-                <td class="is-num" data-cell-label="Hours">
-                  <MmRankCell :value="p.minutesPlayed" :max="activeMax.minutes" tone="neutral">{{ formatHours(p.minutesPlayed) }}</MmRankCell>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Kills">
-                  <MmRankCell :value="p.totalKills" :max="activeMax.kills" tone="kill"><span class="mm-num--kill">{{ formatNumber(p.totalKills) }}</span></MmRankCell>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Deaths">
-                  <MmRankCell :value="p.totalDeaths" :max="activeMax.deaths" tone="death"><span class="mm-num--death">{{ formatNumber(p.totalDeaths) }}</span></MmRankCell>
-                </td>
-                <td class="is-num" :class="kdTierBg(p.kdRatio)" data-cell-label="K/D">
-                  <MmRankCell :value="p.kdRatio" :max="activeMax.kd" tone="kd"><span :class="kdClass(p.kdRatio)">{{ p.kdRatio.toFixed(2) }}</span></MmRankCell>
-                </td>
-              </tr>
-              <tr v-if="playersList.length === 0">
-                <td colspan="6" class="mm-empty" style="border: 0">{{ boardsLoading ? 'Loading…' : 'No player history yet.' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <!-- Loading skeleton -->
+          <div v-if="ranksLoading" style="padding: 12px">
+            <div v-for="i in 8" :key="i" class="mm-skeleton" style="margin-bottom: 8px; height: 32px" />
+          </div>
 
-          <!-- Top K/D -->
-          <table v-else-if="playersView === 'kd'" class="mm-list mm-list--dense mm-rank">
-            <thead>
-              <tr>
-                <th style="width: 40px"></th>
-                <th>Player</th>
-                <th class="is-num">Kills</th>
-                <th class="is-num">Deaths</th>
-                <th class="is-num">K/D</th>
-                <th class="is-num">Rounds</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(s, i) in topKDRatios"
-                :key="i"
-                :class="{ 'mm-rank__row--top3': i < 3 }"
-                @click="goPlayer(s.playerName)"
-              >
-                <td class="mm-list__rank is-muted">{{ String(i + 1).padStart(2, '0') }}</td>
-                <td class="mm-list__name-cell">
-                  <div class="mm-list__name">
-                    <span class="mm-list__name-primary">{{ $pn(s.playerName) }}</span>
-                  </div>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Kills">
-                  <MmRankCell :value="s.kills" :max="kdViewMax.kills" tone="kill"><span class="mm-num--kill">{{ s.kills }}</span></MmRankCell>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Deaths">
-                  <MmRankCell :value="s.deaths" :max="kdViewMax.deaths" tone="death"><span class="mm-num--death">{{ s.deaths }}</span></MmRankCell>
-                </td>
-                <td class="is-num" data-cell-label="K/D" :class="kdTierBg(kdValue(s))">
-                  <MmRankCell :value="kdValue(s)" :max="kdViewMax.kd" tone="kd">
-                    <span :class="kdClass(kdValue(s))">{{ kdValue(s).toFixed(2) }}</span>
-                  </MmRankCell>
-                </td>
-                <td class="is-num is-muted" data-cell-label="Rounds">
-                  <MmRankCell :value="(s as any).totalRounds ?? 0" :max="kdViewMax.totalRounds" tone="neutral">{{ (s as any).totalRounds ?? '—' }}</MmRankCell>
-                </td>
-              </tr>
-              <tr v-if="topKDRatios.length === 0">
-                <td colspan="6" class="mm-empty" style="border: 0">{{ boardsLoading ? 'Loading…' : 'No K/D leaderboard yet.' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <!-- Error state -->
+          <div v-else-if="ranksError" class="mm-empty" style="border: 0; padding: 24px 0">
+            {{ ranksError }}
+            <button type="button" class="mm-btn mm-btn--inline" style="margin-left: 12px" @click="loadPagedRankings">Retry</button>
+          </div>
 
-          <!-- Top kill rate -->
-          <table v-else-if="playersView === 'killrate'" class="mm-list mm-list--dense mm-rank">
-            <thead>
-              <tr>
-                <th style="width: 40px"></th>
-                <th>Player</th>
-                <th class="is-num">Kills</th>
-                <th class="is-num">Deaths</th>
-                <th class="is-num">Kills / min</th>
-                <th class="is-num">Rounds</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(s, i) in topKillRates"
-                :key="i"
-                :class="{ 'mm-rank__row--top3': i < 3 }"
-                @click="goPlayer(s.playerName)"
-              >
-                <td class="mm-list__rank is-muted">{{ String(i + 1).padStart(2, '0') }}</td>
-                <td class="mm-list__name-cell">
-                  <div class="mm-list__name">
-                    <span class="mm-list__name-primary">{{ $pn(s.playerName) }}</span>
-                  </div>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Kills">
-                  <MmRankCell :value="s.kills" :max="killRateMax.kills" tone="kill"><span class="mm-num--kill">{{ s.kills }}</span></MmRankCell>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Deaths">
-                  <MmRankCell :value="s.deaths" :max="killRateMax.deaths" tone="death"><span class="mm-num--death">{{ s.deaths }}</span></MmRankCell>
-                </td>
-                <td class="is-num" data-cell-label="Kills / min">
-                  <MmRankCell :value="s.killRate ?? 0" :max="killRateMax.killRate" tone="kill"><span class="mm-num--kill">{{ (s.killRate ?? 0).toFixed(2) }}</span></MmRankCell>
-                </td>
-                <td class="is-num is-muted" data-cell-label="Rounds">
-                  <MmRankCell :value="(s as any).totalRounds ?? 0" :max="killRateMax.totalRounds" tone="neutral">{{ (s as any).totalRounds ?? '—' }}</MmRankCell>
-                </td>
-              </tr>
-              <tr v-if="topKillRates.length === 0">
-                <td colspan="6" class="mm-empty" style="border: 0">{{ boardsLoading ? 'Loading…' : 'No kill-rate leaderboard yet.' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <!-- Empty state -->
+          <div v-else-if="rankedPlayers.length === 0" class="mm-empty" style="border: 0; padding: 24px 0">
+            No player history found for the selected view and filter criteria.
+          </div>
 
-          <!-- Top placements -->
-          <table v-else-if="playersView === 'placement'" class="mm-list mm-list--dense mm-rank">
-            <thead>
-              <tr>
-                <th style="width: 40px"></th>
-                <th>Player</th>
-                <th class="is-num">1st</th>
-                <th class="is-num">2nd</th>
-                <th class="is-num">3rd</th>
-                <th class="is-num">Total</th>
-                <th class="is-num">Points</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(p, i) in topPlacements"
-                :key="p.playerName"
-                :class="{ 'mm-rank__row--top3': i < 3 }"
-                @click="goPlayer(p.playerName)"
-              >
-                <td class="mm-list__rank is-muted">{{ String(i + 1).padStart(2, '0') }}</td>
-                <td class="mm-list__name-cell">
-                  <div class="mm-list__name">
-                    <span class="mm-list__name-primary">{{ $pn(p.playerName) }}</span>
-                  </div>
-                </td>
-                <td class="is-num" data-cell-label="1st">
-                  <MmRankCell :value="p.firstPlaces" :max="placementMax.firstPlaces" tone="kd">{{ p.firstPlaces }}</MmRankCell>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="2nd">
-                  <MmRankCell :value="p.secondPlaces" :max="placementMax.secondPlaces" tone="neutral">{{ p.secondPlaces }}</MmRankCell>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="3rd">
-                  <MmRankCell :value="p.thirdPlaces" :max="placementMax.thirdPlaces" tone="neutral">{{ p.thirdPlaces }}</MmRankCell>
-                </td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Total">
-                  <MmRankCell :value="p.totalPlacements" :max="placementMax.totalPlacements" tone="neutral">{{ p.totalPlacements }}</MmRankCell>
-                </td>
-                <td class="is-num" data-cell-label="Points">
-                  <MmRankCell :value="p.placementPoints" :max="placementMax.placementPoints" tone="kd">{{ formatNumber(p.placementPoints) }}</MmRankCell>
-                </td>
-              </tr>
-              <tr v-if="topPlacements.length === 0">
-                <td colspan="7" class="mm-empty" style="border: 0">{{ boardsLoading ? 'Loading…' : 'No placement leaderboard yet.' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <!-- Tables -->
+          <template v-else>
+            <!-- Most active -->
+            <table v-if="playersView === 'active'" class="mm-list mm-list--dense mm-rank" :class="{ 'is-refreshing': ranksRefreshing }">
+              <thead>
+                <tr>
+                  <th style="width: 44px">#</th>
+                  <th>Player</th>
+                  <th class="is-num">Hours played</th>
+                  <th class="is-num">Kills</th>
+                  <th class="is-num">Deaths</th>
+                  <th class="is-num">K/D</th>
+                  <th class="is-num is-muted">Rounds</th>
+                  <th style="width: 32px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="p in rankedPlayers"
+                  :key="p.playerName"
+                  :class="{ 'mm-rank__row--top3': p.rank <= 3 }"
+                  @click="goPlayer(p.playerName)"
+                >
+                  <td class="mm-list__rank is-muted">{{ String(p.rank).padStart(2, '0') }}</td>
+                  <td class="mm-list__name-cell">
+                    <div class="mm-list__name">
+                      <span class="mm-list__name-primary">{{ $pn(p.playerName) }}</span>
+                    </div>
+                  </td>
+                  <td class="is-num" data-cell-label="Hours">
+                    <MmRankCell :value="p.minutesPlayed" :max="rankMax.minutes" tone="neutral">{{ formatHours(p.minutesPlayed) }}</MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Kills">
+                    <MmRankCell :value="p.totalKills" :max="rankMax.kills" tone="kill"><span class="mm-num--kill">{{ formatNumber(p.totalKills) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Deaths">
+                    <MmRankCell :value="p.totalDeaths" :max="rankMax.deaths" tone="death"><span class="mm-num--death">{{ formatNumber(p.totalDeaths) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num" :class="kdTierBg(p.kdRatio)" data-cell-label="K/D">
+                    <MmRankCell :value="p.kdRatio" :max="rankMax.kd" tone="kd"><span :class="kdClass(p.kdRatio)">{{ p.kdRatio.toFixed(2) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num is-muted mm-list__col--hide-sm" data-cell-label="Rounds">
+                    <MmRankCell :value="p.totalRounds" :max="rankMax.rounds" tone="neutral">{{ p.totalRounds }}</MmRankCell>
+                  </td>
+                  <td class="mm-list__col--hide-sm" style="width: 32px; text-align: center">
+                    <button
+                      type="button"
+                      class="mm-btn mm-btn--inline mm-rank__pin-btn"
+                      title="Plot player on distribution curve"
+                      @click.stop="benchmarkPlayer(p)"
+                    >📍</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Top score -->
+            <table v-else-if="playersView === 'score'" class="mm-list mm-list--dense mm-rank" :class="{ 'is-refreshing': ranksRefreshing }">
+              <thead>
+                <tr>
+                  <th style="width: 44px">#</th>
+                  <th>Player</th>
+                  <th class="is-num">Score</th>
+                  <th class="is-num">Kills</th>
+                  <th class="is-num">Deaths</th>
+                  <th class="is-num">K/D</th>
+                  <th class="is-num is-muted">Rounds</th>
+                  <th style="width: 32px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="p in rankedPlayers"
+                  :key="p.playerName"
+                  :class="{ 'mm-rank__row--top3': p.rank <= 3 }"
+                  @click="goPlayer(p.playerName)"
+                >
+                  <td class="mm-list__rank is-muted">{{ String(p.rank).padStart(2, '0') }}</td>
+                  <td class="mm-list__name-cell">
+                    <div class="mm-list__name">
+                      <span class="mm-list__name-primary">{{ $pn(p.playerName) }}</span>
+                    </div>
+                  </td>
+                  <td class="is-num" data-cell-label="Score">
+                    <MmRankCell :value="p.totalScore" :max="rankMax.score" tone="neutral"><span class="mm-num--score">{{ formatNumber(p.totalScore) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Kills">
+                    <MmRankCell :value="p.totalKills" :max="rankMax.kills" tone="kill"><span class="mm-num--kill">{{ formatNumber(p.totalKills) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Deaths">
+                    <MmRankCell :value="p.totalDeaths" :max="rankMax.deaths" tone="death"><span class="mm-num--death">{{ formatNumber(p.totalDeaths) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num" :class="kdTierBg(p.kdRatio)" data-cell-label="K/D">
+                    <MmRankCell :value="p.kdRatio" :max="rankMax.kd" tone="kd"><span :class="kdClass(p.kdRatio)">{{ p.kdRatio.toFixed(2) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num is-muted mm-list__col--hide-sm" data-cell-label="Rounds">
+                    <MmRankCell :value="p.totalRounds" :max="rankMax.rounds" tone="neutral">{{ p.totalRounds }}</MmRankCell>
+                  </td>
+                  <td class="mm-list__col--hide-sm" style="width: 32px; text-align: center">
+                    <button
+                      type="button"
+                      class="mm-btn mm-btn--inline mm-rank__pin-btn"
+                      title="Plot player on distribution curve"
+                      @click.stop="benchmarkPlayer(p)"
+                    >📍</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Top K/D -->
+            <table v-else-if="playersView === 'kd'" class="mm-list mm-list--dense mm-rank" :class="{ 'is-refreshing': ranksRefreshing }">
+              <thead>
+                <tr>
+                  <th style="width: 44px">#</th>
+                  <th>Player</th>
+                  <th class="is-num">K/D</th>
+                  <th class="is-num">Kills</th>
+                  <th class="is-num">Deaths</th>
+                  <th class="is-num">Hours</th>
+                  <th class="is-num is-muted">Rounds</th>
+                  <th style="width: 32px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="p in rankedPlayers"
+                  :key="p.playerName"
+                  :class="{ 'mm-rank__row--top3': p.rank <= 3 }"
+                  @click="goPlayer(p.playerName)"
+                >
+                  <td class="mm-list__rank is-muted">{{ String(p.rank).padStart(2, '0') }}</td>
+                  <td class="mm-list__name-cell">
+                    <div class="mm-list__name">
+                      <span class="mm-list__name-primary">{{ $pn(p.playerName) }}</span>
+                    </div>
+                  </td>
+                  <td class="is-num" :class="kdTierBg(p.kdRatio)" data-cell-label="K/D">
+                    <MmRankCell :value="p.kdRatio" :max="rankMax.kd" tone="kd">
+                      <span :class="kdClass(p.kdRatio)">{{ p.kdRatio.toFixed(2) }}</span>
+                    </MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Kills">
+                    <MmRankCell :value="p.totalKills" :max="rankMax.kills" tone="kill"><span class="mm-num--kill">{{ formatNumber(p.totalKills) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Deaths">
+                    <MmRankCell :value="p.totalDeaths" :max="rankMax.deaths" tone="death"><span class="mm-num--death">{{ formatNumber(p.totalDeaths) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Hours">
+                    <MmRankCell :value="p.minutesPlayed" :max="rankMax.minutes" tone="neutral">{{ formatHours(p.minutesPlayed) }}</MmRankCell>
+                  </td>
+                  <td class="is-num is-muted" data-cell-label="Rounds">
+                    <MmRankCell :value="p.totalRounds" :max="rankMax.rounds" tone="neutral">{{ p.totalRounds }}</MmRankCell>
+                  </td>
+                  <td class="mm-list__col--hide-sm" style="width: 32px; text-align: center">
+                    <button
+                      type="button"
+                      class="mm-btn mm-btn--inline mm-rank__pin-btn"
+                      title="Plot player on distribution curve"
+                      @click.stop="benchmarkPlayer(p)"
+                    >📍</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Top kill rate -->
+            <table v-else-if="playersView === 'killrate'" class="mm-list mm-list--dense mm-rank" :class="{ 'is-refreshing': ranksRefreshing }">
+              <thead>
+                <tr>
+                  <th style="width: 44px">#</th>
+                  <th>Player</th>
+                  <th class="is-num">Kills / min</th>
+                  <th class="is-num">Kills</th>
+                  <th class="is-num">Deaths</th>
+                  <th class="is-num">Hours</th>
+                  <th class="is-num is-muted">Rounds</th>
+                  <th style="width: 32px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="p in rankedPlayers"
+                  :key="p.playerName"
+                  :class="{ 'mm-rank__row--top3': p.rank <= 3 }"
+                  @click="goPlayer(p.playerName)"
+                >
+                  <td class="mm-list__rank is-muted">{{ String(p.rank).padStart(2, '0') }}</td>
+                  <td class="mm-list__name-cell">
+                    <div class="mm-list__name">
+                      <span class="mm-list__name-primary">{{ $pn(p.playerName) }}</span>
+                    </div>
+                  </td>
+                  <td class="is-num" data-cell-label="Kills / min">
+                    <MmRankCell :value="p.killRate" :max="rankMax.killRate" tone="kill"><span class="mm-num--kill">{{ p.killRate.toFixed(2) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Kills">
+                    <MmRankCell :value="p.totalKills" :max="rankMax.kills" tone="kill"><span class="mm-num--kill">{{ formatNumber(p.totalKills) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Deaths">
+                    <MmRankCell :value="p.totalDeaths" :max="rankMax.deaths" tone="death"><span class="mm-num--death">{{ formatNumber(p.totalDeaths) }}</span></MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Hours">
+                    <MmRankCell :value="p.minutesPlayed" :max="rankMax.minutes" tone="neutral">{{ formatHours(p.minutesPlayed) }}</MmRankCell>
+                  </td>
+                  <td class="is-num is-muted" data-cell-label="Rounds">
+                    <MmRankCell :value="p.totalRounds" :max="rankMax.rounds" tone="neutral">{{ p.totalRounds }}</MmRankCell>
+                  </td>
+                  <td class="mm-list__col--hide-sm" style="width: 32px; text-align: center">
+                    <button
+                      type="button"
+                      class="mm-btn mm-btn--inline mm-rank__pin-btn"
+                      title="Plot player on distribution curve"
+                      @click.stop="benchmarkPlayer(p)"
+                    >📍</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Top placements -->
+            <table v-else-if="playersView === 'placement'" class="mm-list mm-list--dense mm-rank" :class="{ 'is-refreshing': ranksRefreshing }">
+              <thead>
+                <tr>
+                  <th style="width: 44px">#</th>
+                  <th>Player</th>
+                  <th class="is-num">1st</th>
+                  <th class="is-num">2nd</th>
+                  <th class="is-num">3rd</th>
+                  <th class="is-num">Total</th>
+                  <th class="is-num">Points</th>
+                  <th style="width: 32px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="p in rankedPlayers"
+                  :key="p.playerName"
+                  :class="{ 'mm-rank__row--top3': p.rank <= 3 }"
+                  @click="goPlayer(p.playerName)"
+                >
+                  <td class="mm-list__rank is-muted">{{ String(p.rank).padStart(2, '0') }}</td>
+                  <td class="mm-list__name-cell">
+                    <div class="mm-list__name">
+                      <span class="mm-list__name-primary">{{ $pn(p.playerName) }}</span>
+                    </div>
+                  </td>
+                  <td class="is-num" data-cell-label="1st">
+                    <MmRankCell :value="p.firstPlaces" :max="rankMax.first" tone="kd">{{ p.firstPlaces }}</MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="2nd">
+                    <MmRankCell :value="p.secondPlaces" :max="rankMax.second" tone="neutral">{{ p.secondPlaces }}</MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="3rd">
+                    <MmRankCell :value="p.thirdPlaces" :max="rankMax.third" tone="neutral">{{ p.thirdPlaces }}</MmRankCell>
+                  </td>
+                  <td class="is-num mm-list__col--hide-sm" data-cell-label="Total">
+                    <MmRankCell :value="p.totalPlacements" :max="rankMax.placements" tone="neutral">{{ p.totalPlacements }}</MmRankCell>
+                  </td>
+                  <td class="is-num" data-cell-label="Points">
+                    <MmRankCell :value="p.placementPoints" :max="rankMax.points" tone="kd">{{ formatNumber(p.placementPoints) }}</MmRankCell>
+                  </td>
+                  <td class="mm-list__col--hide-sm" style="width: 32px; text-align: center">
+                    <button
+                      type="button"
+                      class="mm-btn mm-btn--inline mm-rank__pin-btn"
+                      title="Plot player on distribution curve"
+                      @click.stop="benchmarkPlayer(p)"
+                    >📍</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Pagination Bar -->
+            <div v-if="pagedRankings && pagedRankings.totalPages > 1" class="mm-ranks__pagination-wrap">
+              <span class="mm-ranks__pagination-summary">
+                Showing {{ (ranksPage - 1) * ranksPageSize + 1 }}–{{ Math.min(ranksPage * ranksPageSize, pagedRankings.totalCount) }} of {{ pagedRankings.totalCount.toLocaleString() }}
+              </span>
+
+              <div class="mm-rank__pagination">
+                <button
+                  type="button"
+                  class="mm-btn mm-btn--inline"
+                  :disabled="ranksPage <= 1 || ranksRefreshing"
+                  aria-label="Previous page"
+                  @click="goToRankPage(ranksPage - 1)"
+                >‹</button>
+                <button
+                  v-for="p in rankPaginationRange"
+                  :key="p"
+                  type="button"
+                  class="mm-btn mm-btn--inline"
+                  :class="{ 'mm-rank__page--active': p === ranksPage }"
+                  :disabled="ranksRefreshing"
+                  @click="goToRankPage(p)"
+                >{{ p }}</button>
+                <button
+                  type="button"
+                  class="mm-btn mm-btn--inline"
+                  :disabled="ranksPage >= pagedRankings.totalPages || ranksRefreshing"
+                  aria-label="Next page"
+                  @click="goToRankPage(ranksPage + 1)"
+                >›</button>
+              </div>
+            </div>
+          </template>
         </div>
       </section>
 
@@ -899,5 +1207,109 @@ const $pn = decodePlayerName
 
 .mm-rank :deep(tbody tr:hover td.mm-rank__kd-bg--poor) {
   background: rgba(214, 90, 90, 0.34);
+}
+
+/* Ranks Ladder Controls & Pagination */
+.mm-ranks__ladder-pbar {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mm-ranks__controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 0;
+}
+
+.mm-ranks__filters-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.mm-rank__filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mm-rank__filter-label {
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft, #b3b3b3);
+  font-weight: 500;
+}
+
+.mm-ranks__search {
+  width: 100%;
+  max-width: 320px;
+}
+
+.mm-ranks__pagination-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 8px;
+  border-top: 1px solid var(--mm-rule, rgba(255, 255, 255, 0.04));
+  margin-top: 8px;
+}
+
+.mm-ranks__pagination-summary {
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 11px;
+  color: var(--mm-ink-muted, #8a8a8a);
+}
+
+.mm-rank__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.mm-rank__page--active {
+  background: var(--mm-ink, #ffffff) !important;
+  color: var(--mm-bg, #131313) !important;
+  border-color: var(--mm-ink, #ffffff) !important;
+}
+
+.mm-list.is-refreshing {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.mm-rank__pin-btn {
+  padding: 2px 6px;
+  font-size: 11px;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.mm-rank__pin-btn:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+@media (max-width: 768px) {
+  .mm-ranks__controls-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .mm-ranks__filters-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .mm-ranks__search {
+    max-width: 100%;
+  }
 }
 </style>

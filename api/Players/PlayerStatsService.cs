@@ -746,36 +746,17 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         // Find the player's earliest session so we can trend over their whole career.
         // For players with no sessions we keep a 90-day fallback window so the payload
         // shape stays consistent.
-        var firstSeenSql = "SELECT MIN(StartTime) AS Value FROM PlayerSessions WHERE PlayerName = {0}";
+        var firstSeenSql = "SELECT MIN(StartTime) AS Value FROM PlayerSessions WHERE PlayerName = {0} AND IsDeleted = 0";
         var firstSeen = await dbContext.Database
             .SqlQueryRaw<DateTime?>(firstSeenSql, playerName)
             .FirstOrDefaultAsync();
 
         var startDate = firstSeen ?? endDate.AddDays(-90);
-        var spanDays = (endDate - startDate).TotalDays;
 
-        // Adaptive granularity keeps the sparkline readable and the payload small
-        // regardless of how long the player has been around.
-        string bucketExpr;
-        string granularity;
-        if (spanDays <= 90)
-        {
-            bucketExpr = "DATE(StartTime)";
-            granularity = "daily";
-        }
-        else if (spanDays <= 730)
-        {
-            bucketExpr = "strftime('%Y-%W', StartTime)";
-            granularity = "weekly";
-        }
-        else
-        {
-            bucketExpr = "strftime('%Y-%m', StartTime)";
-            granularity = "monthly";
-        }
+        // Daily granularity provides a rich high-resolution trend wave across the career timeline.
+        var bucketExpr = "DATE(StartTime)";
+        var granularity = "daily";
 
-        // bucketExpr is a fixed whitelist of SQL fragments above (never user input),
-        // so it's safe to interpolate into the command text. PlayerName stays a parameter.
         var sql = $@"
             SELECT
                 MIN(DATE(StartTime)) as Date,
@@ -784,7 +765,7 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
                 CAST(SUM((julianday(LastSeenTime) - julianday(StartTime)) * 1440) AS REAL) as TotalMinutes,
                 COUNT(*) as SessionCount
             FROM PlayerSessions
-            WHERE PlayerName = {{0}}
+            WHERE PlayerName = {{0}} AND IsDeleted = 0
             GROUP BY {bucketExpr}
             ORDER BY MIN(StartTime)";
 
