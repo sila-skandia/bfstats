@@ -1454,6 +1454,11 @@
   opacity: 0.7;
 }
 
+.mm-pbar .mm-chip {
+  color: var(--mm-highlight-ink);
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
 /* Inline magnitude track for in-row bars. */
 .mm-track {
   height: 3px;
