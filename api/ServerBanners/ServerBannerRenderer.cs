@@ -56,7 +56,6 @@ public sealed class ServerBannerRenderer(BannerFonts fonts)
         // ---- Neutral Depth palette (mirrors --mm-* tokens) --------------------
         private static readonly Color CardBg     = Color.FromRgba(14, 14, 14, 255);   // banner base (#0e0e0e)
         private static readonly Color Ink        = Color.FromRgba(255, 255, 255, 255);
-        private static readonly Color InkSoft    = Color.FromRgba(214, 214, 214, 255);
         private static readonly Color InkMuted   = Color.FromRgba(170, 170, 170, 255); // brighter than the UI muted so labels don't blend into the art
         private static readonly Color InkFaint   = Color.FromRgba(112, 112, 112, 255);
         private static readonly Color Olive      = Color.FromRgba(154, 166, 102, 255); // --mm-accent-soft

@@ -414,28 +414,30 @@ const signatureServers = computed(() => {
     <!-- back link to players index -->
     <router-link to="/v4/players" class="mm-player__back">‹ Players</router-link>
 
-    <!-- loading / error overlay (shared) -->
-    <div v-if="loading" style="padding: 40px 0">
-      <div v-for="i in 5" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
-    </div>
-
-    <div v-else-if="error" class="mm-empty">{{ error }}</div>
+    <div v-if="error" class="mm-empty">{{ error }}</div>
 
     <template v-else>
-      <!-- hero -->
+      <!-- Hero: the player name comes from the route param via `displayName`, so
+           it paints on the first frame. Only the parts that genuinely need the
+           stats payload (rank, first seen, current server) wait on the API. -->
       <div class="mm-player-hero">
         <div class="mm-player-hero__avatar">{{ (displayName[0] || '?').toUpperCase() }}</div>
 
         <div class="mm-player-hero__main">
           <div class="mm-meta-row" style="margin-bottom: 8px">
-            <span class="mm-chip" :class="isOnline ? 'mm-chip--live' : 'mm-chip--off'">
-              <span class="mm-chip__dot" />{{ isOnline ? 'Online' : 'Offline' }}
-            </span>
-            <span class="mm-meta-row__sep">·</span>
-            <span v-if="bestRank">Rank <span class="mm-meta-row__strong">#{{ bestRank.rank }}</span> of {{ formatNumber(bestRank.of) }}</span>
-            <span v-else>Unranked</span>
-            <span class="mm-meta-row__sep">·</span>
-            <span>First seen {{ firstSeenDate }}</span>
+            <template v-if="loading">
+              <span class="mm-skeleton" style="width: 220px; height: 1em; display: inline-block; vertical-align: middle" />
+            </template>
+            <template v-else>
+              <span class="mm-chip" :class="isOnline ? 'mm-chip--live' : 'mm-chip--off'">
+                <span class="mm-chip__dot" />{{ isOnline ? 'Online' : 'Offline' }}
+              </span>
+              <span class="mm-meta-row__sep">·</span>
+              <span v-if="bestRank">Rank <span class="mm-meta-row__strong">#{{ bestRank.rank }}</span> of {{ formatNumber(bestRank.of) }}</span>
+              <span v-else>Unranked</span>
+              <span class="mm-meta-row__sep">·</span>
+              <span>First seen {{ firstSeenDate }}</span>
+            </template>
           </div>
 
           <h1 class="mm-display mm-player__name">
@@ -444,7 +446,8 @@ const signatureServers = computed(() => {
           </h1>
 
           <div class="mm-meta-row mm-player__where">
-            <template v-if="currentServer">
+            <span v-if="loading" class="mm-skeleton" style="width: 260px; height: 1em; display: inline-block; vertical-align: middle" />
+            <template v-else-if="currentServer">
               currently on
               <a
                 class="mm-meta-row__strong"
@@ -472,34 +475,56 @@ const signatureServers = computed(() => {
         </div>
       </div>
 
-      <!-- KPI strip -->
+      <!-- KPI strip. Labels are static and paint immediately; only the numbers
+           wait on the payload, so the strip keeps its height and the page
+           doesn't jump when the stats land. -->
       <div class="mm-stats" style="margin-top: 24px">
         <div class="mm-stats__cell">
           <div class="mm-stats__label">Lifetime kills</div>
-          <div class="mm-stat__value mm-num--kill">{{ formatNumber(totalKills) }}</div>
-          <div class="mm-stat__delta"><span class="mm-num--death">{{ formatNumber(totalDeaths) }}</span> deaths</div>
+          <template v-if="loading">
+            <div class="mm-skeleton mm-skeleton--lg" style="width: 60%" />
+          </template>
+          <template v-else>
+            <div class="mm-stat__value mm-num--kill">{{ formatNumber(totalKills) }}</div>
+            <div class="mm-stat__delta"><span class="mm-num--death">{{ formatNumber(totalDeaths) }}</span> deaths</div>
+          </template>
         </div>
         <div class="mm-stats__cell">
           <div class="mm-stats__label">K/D ratio</div>
-          <div class="mm-stat__value" :class="kdClass(kd)">{{ kd.toFixed(2) }}</div>
-          <div class="mm-stat__delta">
-            <template v-if="totalKills > 0">
-              <span class="mm-num--kill">{{ formatNumber(totalKills) }} k</span>
-              <span class="mm-num__sep">/</span>
-              <span class="mm-num--death">{{ formatNumber(totalDeaths) }} d</span>
-            </template>
-            <template v-else>no rounds yet</template>
-          </div>
+          <template v-if="loading">
+            <div class="mm-skeleton mm-skeleton--lg" style="width: 50%" />
+          </template>
+          <template v-else>
+            <div class="mm-stat__value" :class="kdClass(kd)">{{ kd.toFixed(2) }}</div>
+            <div class="mm-stat__delta">
+              <template v-if="totalKills > 0">
+                <span class="mm-num--kill">{{ formatNumber(totalKills) }} k</span>
+                <span class="mm-num__sep">/</span>
+                <span class="mm-num--death">{{ formatNumber(totalDeaths) }} d</span>
+              </template>
+              <template v-else>no rounds yet</template>
+            </div>
+          </template>
         </div>
         <div class="mm-stats__cell">
           <div class="mm-stats__label">Playtime</div>
-          <div class="mm-stat__value">{{ formatNumber(playtimeHours) }}<span class="mm-stat__suffix">h</span></div>
-          <div class="mm-stat__delta">{{ formatNumber(sessionsCount) }} sessions</div>
+          <template v-if="loading">
+            <div class="mm-skeleton mm-skeleton--lg" style="width: 55%" />
+          </template>
+          <template v-else>
+            <div class="mm-stat__value">{{ formatNumber(playtimeHours) }}<span class="mm-stat__suffix">h</span></div>
+            <div class="mm-stat__delta">{{ formatNumber(sessionsCount) }} sessions</div>
+          </template>
         </div>
         <div class="mm-stats__cell">
           <div class="mm-stats__label">Best streak</div>
-          <div class="mm-stat__value" :class="streakClass(bestStreak?.latestValue)">{{ bestStreak ? bestStreak.latestValue : '—' }}</div>
-          <div class="mm-stat__delta">{{ bestStreak ? `${bestStreak.count}× recorded` : 'no streaks logged' }}</div>
+          <template v-if="achievementsLoading && !bestStreak">
+            <div class="mm-skeleton mm-skeleton--lg" style="width: 45%" />
+          </template>
+          <template v-else>
+            <div class="mm-stat__value" :class="streakClass(bestStreak?.latestValue)">{{ bestStreak ? bestStreak.latestValue : '—' }}</div>
+            <div class="mm-stat__delta">{{ bestStreak ? `${bestStreak.count}× recorded` : 'no streaks logged' }}</div>
+          </template>
         </div>
       </div>
 
@@ -525,7 +550,10 @@ const signatureServers = computed(() => {
               <span class="mm-pbar__m">tap for full debrief</span>
             </div>
             <div class="mm-panel__body">
-              <MmPlayerRecentRoundsCompact :sessions="recentSessions" :player-name="rawName" />
+              <template v-if="loading">
+                <div v-for="i in 5" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
+              </template>
+              <MmPlayerRecentRoundsCompact v-else :sessions="recentSessions" :player-name="rawName" />
             </div>
           </section>
 
@@ -536,6 +564,7 @@ const signatureServers = computed(() => {
               <div v-if="activityHours.length > 0" style="margin-top: 10px">
                 <MmBars :values="activityHours" :labels="['00', '06', '12', '18', '23']" :height="56" />
               </div>
+              <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
               <div v-else class="mm-card__empty">No activity recorded.</div>
               <div v-if="peakHour" class="mm-card__foot">
                 Peak around <span class="mm-meta-row__strong">{{ String(peakHour.hour).padStart(2, '0') }}:00</span>
@@ -549,6 +578,7 @@ const signatureServers = computed(() => {
               <div v-if="kdTrend.length > 1" style="margin-top: 10px">
                 <MmSparkline :values="kdTrend.map(p => p.value)" :height="56" :width="260" />
               </div>
+              <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
               <div v-else class="mm-card__empty">Not enough rounds yet.</div>
               <div v-if="kdTrendDelta != null" class="mm-card__foot">
                 <span :class="kdTrendDelta >= 0 ? 'mm-stat__delta--up' : 'mm-stat__delta--down'">
@@ -564,6 +594,7 @@ const signatureServers = computed(() => {
               <div v-if="killRateTrend.length > 1" style="margin-top: 10px">
                 <MmSparkline :values="killRateTrend.map(p => p.value)" :height="56" :width="260" :accent="true" />
               </div>
+              <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
               <div v-else class="mm-card__empty">Not enough rounds yet.</div>
               <div v-if="killRateTrendDelta != null" class="mm-card__foot">
                 <span :class="killRateTrendDelta >= 0 ? 'mm-stat__delta--up' : 'mm-stat__delta--down'">

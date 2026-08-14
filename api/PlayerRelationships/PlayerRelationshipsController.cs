@@ -16,6 +16,7 @@ public class PlayerRelationshipsController(
     /// Feeds the player proximity orbit visualisation.
     /// </summary>
     [HttpGet("servers/{serverGuid}/proximity")]
+    [ResponseCache(Duration = 1800, Location = ResponseCacheLocation.Any)]
     public async Task<ActionResult<Models.ServerProximityResponse>> GetServerProximity(
         string serverGuid,
         [FromQuery] int minPing = 0,

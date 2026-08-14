@@ -361,6 +361,17 @@ export async function fetchAllServers(
   game: 'bf1942' | 'fh2' | 'bfvietnam'
 ): Promise<ServerSummary[]> {
   try {
+    // index.html kicks this request off during HTML parse for the landing route,
+    // well before this module has even been downloaded. Consume that response if
+    // it's there. Cleared after the first read so the 30s refresh timer and any
+    // later navigation go to the network as normal.
+    if (game === 'bf1942' && typeof window !== 'undefined' && window.__bfLiveServersPreload) {
+      const preload = window.__bfLiveServersPreload;
+      window.__bfLiveServersPreload = undefined;
+      const preloaded = await preload;
+      if (preloaded?.servers) return preloaded.servers;
+    }
+
     const response = await axios.get<ServersResponse>(`/stats/liveservers/${game}/servers`);
     return response.data.servers;
   } catch (err) {

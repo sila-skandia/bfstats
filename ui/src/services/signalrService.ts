@@ -34,15 +34,15 @@ export class SignalRService {
       .build();
 
     // Set up event listeners for connection state changes
-    this.connection.onreconnecting((error) => {
+    this.connection.onreconnecting(() => {
       // SignalR reconnecting
     });
 
-    this.connection.onreconnected((connectionId) => {
+    this.connection.onreconnected(() => {
       this.registerUser();
     });
 
-    this.connection.onclose((error) => {
+    this.connection.onclose(() => {
       // SignalR connection closed
     });
 

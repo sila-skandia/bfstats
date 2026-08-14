@@ -38,6 +38,34 @@
          icon from it. It's now imported by the components that need it, so it ships
          in their route chunk instead. Don't reintroduce it here. -->
 
+    <!-- Head-start the landing feed.
+         The fetch normally lives in LandingPageV4's onMounted, so it can't fire
+         until the whole route module graph (index → ModernShell → LandingPageV4
+         → serverDetailsService → countryCodes → timeUtils) has downloaded and
+         executed — measured ~250ms after DOMContentLoaded on a cold load, on top
+         of a ~400ms round trip to the Finnish origin. Starting it during HTML
+         parse recovers that. `fetchAllServers` consumes the in-flight promise.
+
+         Mirrors the '/' redirect in router/index.ts: signed-in users land on
+         /v4/dashboard, not the server list, so don't prefetch for them. -->
+    <script>
+      (function () {
+        try {
+          var p = window.location.pathname;
+          var isLanding =
+            p === '/v4/servers/bf1942' ||
+            p === '/v4/servers' ||
+            p === '/v4' ||
+            p === '/v4/' ||
+            (p === '/' && !window.localStorage.getItem('auth_token'));
+          if (!isLanding) return;
+          window.__bfLiveServersPreload = fetch('/stats/liveservers/bf1942/servers')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; });
+        } catch (e) { /* preload is best-effort — never block boot */ }
+      })();
+    </script>
+
     <!-- Pre-mount paint: matches the V4 (Neutral Depth) shell so first
          paint doesn't flash the legacy slate background / sidebar before
          Vue mounts and the lazy ModernShell chunk loads. Replaced once

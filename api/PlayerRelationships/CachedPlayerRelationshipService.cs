@@ -208,66 +208,6 @@ public class CachedPlayerRelationshipService(
         return result;
     }
 
-    public Task<List<SquadRecommendation>> GetSquadRecommendationsAsync(
-        string playerName,
-        int limit = 10,
-        bool onlineOnly = false,
-        CancellationToken cancellationToken = default)
-    {
-        // Don't cache squad recommendations as they should be fresh and personalized
-        return innerService.GetSquadRecommendationsAsync(playerName, limit, onlineOnly, cancellationToken);
-    }
-
-    public Task RecordSquadRecommendationFeedback(
-        string playerName,
-        string recommendedPlayer,
-        bool wasHelpful,
-        CancellationToken cancellationToken = default)
-    {
-        // No caching needed for feedback recording
-        return innerService.RecordSquadRecommendationFeedback(playerName, recommendedPlayer, wasHelpful, cancellationToken);
-    }
-
-    public async Task<PlayerMigrationFlow> GetPlayerMigrationFlowAsync(
-        DateTime startDate,
-        DateTime endDate,
-        string? game = null,
-        CancellationToken cancellationToken = default)
-    {
-        var cacheKey = $"migration-flow:{startDate:yyyy-MM-dd}:{endDate:yyyy-MM-dd}:{game ?? "all"}";
-        var cached = await cacheService.GetAsync<PlayerMigrationFlow>(cacheKey, cancellationToken);
-        
-        if (cached != null)
-        {
-            logger.LogDebug("Cache hit for migration flow");
-            return cached;
-        }
-
-        var result = await innerService.GetPlayerMigrationFlowAsync(startDate, endDate, game, cancellationToken);
-        await cacheService.SetAsync(cacheKey, result, TimeSpan.FromHours(6), cancellationToken);
-        
-        return result;
-    }
-
-    public async Task<List<ServerNode>> GetServerLifecycleAnalysisAsync(
-        int daysBack = 90,
-        CancellationToken cancellationToken = default)
-    {
-        var cacheKey = $"server-lifecycle:{daysBack}";
-        var cached = await cacheService.GetAsync<List<ServerNode>>(cacheKey, cancellationToken);
-        
-        if (cached != null)
-        {
-            logger.LogDebug("Cache hit for server lifecycle analysis");
-            return cached;
-        }
-
-        var result = await innerService.GetServerLifecycleAnalysisAsync(daysBack, cancellationToken);
-        await cacheService.SetAsync(cacheKey, result, TimeSpan.FromHours(12), cancellationToken);
-
-        return result;
-    }
-
     public async Task<CommunityServerMap> GetCommunityServerMapAsync(
         string communityId,
         CancellationToken cancellationToken = default)

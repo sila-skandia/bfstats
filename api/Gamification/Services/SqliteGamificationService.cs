@@ -15,10 +15,8 @@ namespace api.Gamification.Services;
 /// </summary>
 public class SqliteGamificationService(
     PlayerTrackerDbContext dbContext,
-    ILogger<SqliteGamificationService> logger) : IDisposable
+    ILogger<SqliteGamificationService> logger)
 {
-    private bool _disposed;
-
     /// <summary>
     /// Insert achievements in batch to SQLite
     /// </summary>
@@ -686,10 +684,5 @@ public class SqliteGamificationService(
             IsBot = session.Player?.AiBot ?? false,
             AveragePing = session.AveragePing
         };
-    }
-
-    public void Dispose()
-    {
-        _disposed = true;
     }
 }
