@@ -109,6 +109,11 @@ junie-des-1942stats/
 **Production is a single Hetzner node: 4000m CPU, 7741Mi memory.** Everything runs on it — API,
 UI, Seq, Neo4j, Redis, notifications, ingress. There is nowhere for a workload to spill over to.
 
+Host-level tuning that no manifest captures — volume readahead, SQLite planner statistics,
+and the measured I/O characteristics of the network-attached data volume — is documented in
+`deploy/NODE_TUNING.md`. Read it before changing anything I/O-related, and update it when you
+change a host setting; a node rebuild restores none of it.
+
 Manifests live in `deploy/app/`. Every container has `requests` and `limits`; keep it that way.
 An unbounded container here is a node outage waiting to happen, and one carrying
 `priorityClassName: 1942-services` doubly so — top scheduling priority means the kubelet evicts
