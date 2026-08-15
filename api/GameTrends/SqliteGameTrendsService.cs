@@ -5,7 +5,6 @@ using api.PlayerTracking;
 using api.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
-using Microsoft.Extensions.Configuration;
 
 namespace api.GameTrends;
 
@@ -14,8 +13,7 @@ namespace api.GameTrends;
 /// Queries pre-computed tables for analytics.
 /// </summary>
 public class SqliteGameTrendsService(
-    PlayerTrackerDbContext dbContext,
-    IConfiguration configuration) : ISqliteGameTrendsService
+    PlayerTrackerDbContext dbContext) : ISqliteGameTrendsService
 {
     /// <inheritdoc/>
     public async Task<SmartPredictionInsights> GetSmartPredictionInsightsAsync(string? game = null)
@@ -32,8 +30,8 @@ public class SqliteGameTrendsService(
         var currentDayOfWeek = (int)currentTime.DayOfWeek;
 
         // Get current player count from active sessions
-        var intervalSeconds = configuration.GetValue<int?>("STATS_COLLECTION_INTERVAL_SECONDS") ?? 30;
-        var activeThreshold = DateTime.UtcNow.AddSeconds(-Math.Max(60, intervalSeconds * 2));
+        // Align active session threshold with session timeout (5 minutes) rather than 60s
+        var activeThreshold = DateTime.UtcNow.AddMinutes(-5);
         var currentPlayerQuery = dbContext.PlayerSessions
             .Include(ps => ps.Server)
             .Include(ps => ps.Player)
@@ -173,8 +171,8 @@ public class SqliteGameTrendsService(
         var currentDayOfWeek = (int)currentTime.DayOfWeek;
 
         // Get current activity from active sessions
-        var intervalSeconds = configuration.GetValue<int?>("STATS_COLLECTION_INTERVAL_SECONDS") ?? 30;
-        var activeThreshold = DateTime.UtcNow.AddSeconds(-Math.Max(60, intervalSeconds * 2));
+        // Align active session threshold with session timeout (5 minutes) rather than 60s
+        var activeThreshold = DateTime.UtcNow.AddMinutes(-5);
         var currentActivities = await dbContext.PlayerSessions
             .Where(ps => ps.IsActive &&
                         ps.LastSeenTime >= activeThreshold &&

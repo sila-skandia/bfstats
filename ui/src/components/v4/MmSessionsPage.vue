@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchSessions, type PlayerContextInfo } from '@/services/playerStatsService'
 import { kdClass, MM_CHART, teamColor, teamFill } from '@/views/v4/mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
@@ -27,6 +27,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const route = useRoute()
 const router = useRouter()
 
 interface TopPlayer {
@@ -487,7 +488,18 @@ const playerPerformanceChartOptions = computed(() => ({
   },
 }))
 
-onMounted(fetchData)
+const hydrateQueryFilters = () => {
+  const from = typeof route.query.from === 'string' ? route.query.from : ''
+  const to = typeof route.query.to === 'string' ? route.query.to : ''
+  if (from) filterDateFrom.value = from.slice(0, 10)
+  if (to) filterDateTo.value = to.slice(0, 10)
+  if (from || to) showFilters.value = true
+}
+
+onMounted(() => {
+  hydrateQueryFilters()
+  void fetchData()
+})
 watch(() => pageSize.value, () => { currentPage.value = 1; fetchData() })
 watch(() => currentPage.value, fetchData)
 watch(() => [props.playerName, props.serverName, props.mapName], () => {
