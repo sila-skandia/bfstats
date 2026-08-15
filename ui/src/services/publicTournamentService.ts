@@ -170,7 +170,7 @@ export interface PublicTournamentDetail {
   files?: TournamentFile[];
   hasHeroImage?: boolean;
   hasCommunityLogo?: boolean;
-  game: 'bf1942' | 'fh2' | 'bfvietnam';
+  game: 'bf1942';
   serverGuid?: string;
   serverName?: string;
   discordUrl?: string;

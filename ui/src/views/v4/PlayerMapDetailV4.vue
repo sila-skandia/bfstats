@@ -10,13 +10,8 @@ const route = useRoute()
 const rawName = computed(() => decodeURIComponent(route.params.playerName as string))
 const displayName = computed(() => decodePlayerName(rawName.value))
 const mapName = computed(() => decodeURIComponent(route.params.mapName as string))
-// Game id flows through the query string so we don't conflate the player's
-// primary game with the URL. Falls back to bf1942 (the only tracked game).
-const game = computed<GameType>(() => {
-  const g = (route.query.game as string) || 'bf1942'
-  if (g === 'fh2' || g === 'bfvietnam') return g
-  return 'bf1942'
-})
+// bf1942 is the only tracked game.
+const game = computed<GameType>(() => 'bf1942')
 </script>
 
 <template>

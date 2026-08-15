@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using api.Constants;
 using api.PlayerTracking;
 using api.Gamification.Services;
 using api.Utils;
@@ -437,7 +438,7 @@ public class AdminTournamentController(
             if (string.IsNullOrWhiteSpace(request.Game))
                 return BadRequest(new { message = "Game is required" });
 
-            var allowedGames = new[] { "bf1942", "fh2", "bfvietnam" };
+            var allowedGames = ApiConstants.Games.AllowedGames;
             if (!allowedGames.Contains(request.Game.ToLower()))
                 return BadRequest(new { message = $"Invalid game. Allowed values: {string.Join(", ", allowedGames)}" });
 
@@ -915,7 +916,7 @@ public class AdminTournamentController(
 
             if (!string.IsNullOrWhiteSpace(request.Game))
             {
-                var allowedGames = new[] { "bf1942", "fh2", "bfvietnam" };
+                var allowedGames = ApiConstants.Games.AllowedGames;
                 if (!allowedGames.Contains(request.Game.ToLower()))
                     return BadRequest(new { message = $"Invalid game. Allowed values: {string.Join(", ", allowedGames)}" });
 

@@ -161,8 +161,6 @@
           <label class="mm-admin-label">Game *</label>
           <select v-model="createForm.game" class="mm-admin-select">
             <option value="bf1942">Battlefield 1942</option>
-            <option value="fh2">Forgotten Hope 2</option>
-            <option value="bfvietnam">Battlefield Vietnam</option>
           </select>
         </div>
 
@@ -664,16 +662,6 @@ onMounted(() => {
 .mm-game-badge--bf1942 {
   background: rgba(52, 152, 219, 0.15);
   color: #60a5fa;
-}
-
-.mm-game-badge--fh2 {
-  background: rgba(230, 126, 34, 0.15);
-  color: #f59e0b;
-}
-
-.mm-game-badge--bfvietnam {
-  background: rgba(46, 204, 113, 0.15);
-  color: #34d399;
 }
 
 .mm-tournament-card__name {

@@ -232,8 +232,6 @@ import TournamentPostsTab from '@/components/tournament-admin/TournamentPostsTab
 import TournamentMatchesTab from '@/components/tournament-admin/TournamentMatchesTab.vue';
 import TournamentSettingsTab from '@/components/tournament-admin/TournamentSettingsTab.vue';
 import bf1942Icon from '@/assets/bf1942.webp';
-import fh2Icon from '@/assets/fh2.webp';
-import bfvIcon from '@/assets/bfv.webp';
 
 const router = useRouter();
 const route = useRoute();
@@ -390,16 +388,7 @@ const formatDate = (dateString: string): string => {
   return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 };
 
-const getGameIcon = (): string => {
-  if (!tournament.value) return `url('${bf1942Icon}')`;
-
-  const iconMap: Record<string, string> = {
-    'bf1942': `url('${bf1942Icon}')`,
-    'fh2': `url('${fh2Icon}')`,
-    'bfvietnam': `url('${bfvIcon}')`
-  };
-  return iconMap[tournament.value.game] || `url('${bf1942Icon}')`;
-};
+const getGameIcon = (): string => `url('${bf1942Icon}')`;
 
 onMounted(() => {
   initializeTabFromRoute();

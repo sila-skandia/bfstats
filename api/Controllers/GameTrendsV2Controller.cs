@@ -64,7 +64,7 @@ public class GameTrendsV2Controller(
     /// Gets comprehensive trend summary optimized for landing page display.
     /// Uses SQLite aggregates for v2 endpoints.
     /// </summary>
-    /// <param name="game">Optional filter by game (bf1942, fh2, bfv)</param>
+    /// <param name="game">Optional filter by game (bf1942)</param>
     [HttpGet("landing-summary")]
     [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)] // 10 minutes cache
     public async Task<ActionResult<LandingPageTrendSummary>> GetLandingPageTrendSummary(

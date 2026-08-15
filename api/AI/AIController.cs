@@ -147,21 +147,15 @@ public class AIController(
     /// Search for players by name (for @ mentions).
     /// </summary>
     [HttpGet("search/players")]
-    public async Task<ActionResult<object>> SearchPlayers([FromQuery] string query, [FromQuery] string game = "bf1942")
+    public async Task<ActionResult<object>> SearchPlayers([FromQuery] string query)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Length < 2)
         {
             return Ok(new { players = Array.Empty<object>() });
         }
 
-        // Normalize game name
-        var normalizedGame = game.ToLowerInvariant() switch
-        {
-            "bf1942" or "battlefield 1942" => "bf1942",
-            "fh2" or "forgotten hope 2" => "fh2",
-            "bfvietnam" or "battlefield vietnam" => "bfvietnam",
-            _ => "bf1942"
-        };
+        // Normalize game name — bf1942 is the only tracked game.
+        var normalizedGame = "bf1942";
 
         // Get server GUIDs for the specified game
         var serverGuids = await dbContext.Servers

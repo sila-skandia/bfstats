@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Overview
 
-The **Admin Tournaments Platform** is the core management interface for competitive Battlefield 1942, Forgotten Hope 2, and Battlefield Vietnam tournaments on `bfstats.io`. It manages the entire competition lifecycle: tournament creation, match scheduling, ticket score entry, live server telemetry round-linking, team & roster registration, weekly date range boundaries, map packs / demos file uploads, announcement publishing, referee comment threads, and branding customisation.
+The **Admin Tournaments Platform** is the core management interface for competitive Battlefield 1942 tournaments on `bfstats.io`. It manages the entire competition lifecycle: tournament creation, match scheduling, ticket score entry, live server telemetry round-linking, team & roster registration, weekly date range boundaries, map packs / demos file uploads, announcement publishing, referee comment threads, and branding customisation.
 
 This document specifies the complete **V4 Design System Architecture** for all admin tournament components, replacing all legacy V3 dark-slate/portal code (`portal-admin.css`, `portal-layout.css`) with standardized `--mm-*` CSS design tokens, crisp typography, high-density data tables, slide-over drawer panels, and modern modal interfaces.
 
@@ -115,7 +115,7 @@ graph TD
 - **Key Features**:
   - **Header Section**: Title "Tournaments", subtitle description, and primary `+ Create Tournament` button.
   - **Tournament Cards Grid**: Responsive grid (`repeat(auto-fill, minmax(360px, 1fr))`).
-    - **Header**: Game badge (`BF1942`, `FH2`, `BFV`), Tournament title, Organizer name, Creation date.
+    - **Header**: Game badge (`BF1942`), Tournament title, Organizer name, Creation date.
     - **Stats Summary**: Match count vs anticipated count (`4/10`), Team count, Linked server name.
     - **Action Bar**: `Manage →` (navigates to detail workspace), `View Public ↗` (opens `/t/:id`), `Delete` (prompts confirmation).
   - **Create Tournament Modal**: Full form containing Name, Organizer, Game type, Status, Anticipated round count, Game mode, Slug, Rules markdown, and Discord/social links.

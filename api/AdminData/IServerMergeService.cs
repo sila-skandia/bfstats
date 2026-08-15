@@ -8,7 +8,7 @@ public interface IServerMergeService
     /// Find groups of GameServer rows that share (Game, Ip, Port, Name) — likely the same physical
     /// server that was re-registered with a new GUID by upstream bflist.io.
     /// </summary>
-    /// <param name="game">Optional game filter (bf1942, fh2, bfvietnam). Null/empty = all games.</param>
+    /// <param name="game">Optional game filter (bf1942). Null/empty = all games.</param>
     Task<IReadOnlyList<ServerMergeCandidate>> FindDuplicateCandidatesAsync(string? game);
 
     /// <summary>

@@ -1293,7 +1293,7 @@ public class GameServer
     public string Ip { get; set; } = "";
     public int Port { get; set; }
     public string GameId { get; set; } = "";
-    public string Game { get; set; } = ""; // Standardized game type: bf1942, fh2, bfvietnam
+    public string Game { get; set; } = ""; // Standardized game type: bf1942
 
     // Server info fields from bflist API
     public int? MaxPlayers { get; set; }
@@ -1507,7 +1507,7 @@ public class Tournament
     public string Name { get; set; } = "";
     public string? Slug { get; set; } // URL-friendly identifier, max 100 chars
     public string Organizer { get; set; } = ""; // References Player.Name
-    public string Game { get; set; } = ""; // bf1942, fh2, bfvietnam
+    public string Game { get; set; } = ""; // bf1942
     public Instant CreatedAt { get; set; }
     public int CreatedByUserId { get; set; }
     public string CreatedByUserEmail { get; set; } = "";

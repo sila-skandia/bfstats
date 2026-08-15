@@ -33,7 +33,7 @@ public class AdminDataService(
             query = query.Where(x => !x.r.IsDeleted && !x.ps.IsDeleted);
         }
 
-        // Filter by game type (from server record: bf1942, fh2, bfvietnam)
+        // Filter by game type (from server record: bf1942)
         if (!string.IsNullOrWhiteSpace(request.Game))
         {
             var game = request.Game.Trim().ToLowerInvariant();

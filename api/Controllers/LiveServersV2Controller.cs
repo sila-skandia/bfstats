@@ -1,4 +1,5 @@
 using api.Bflist.Models;
+using api.Constants;
 using api.GameTrends;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -11,12 +12,12 @@ public class LiveServersV2Controller(
     ISqliteGameTrendsService sqliteGameTrendsService,
     ILogger<LiveServersV2Controller> logger) : ControllerBase
 {
-    private static readonly string[] ValidGames = ["bf1942", "fh2", "bfvietnam"];
+    private static readonly string[] ValidGames = ApiConstants.Games.AllowedGames;
 
     /// <summary>
     /// Get players online history for a specific game using SQLite aggregates.
     /// </summary>
-    /// <param name="game">Game type: bf1942, fh2, or bfvietnam</param>
+    /// <param name="game">Game type: bf1942</param>
     /// <param name="period">Time period: 1d, 3d, 7d, 1month, 3months, thisyear, alltime (default: 7d)</param>
     /// <param name="rollingWindowDays">Rolling average window size in days (default: 7, min: 3, max: 30)</param>
     [HttpGet("{game}/players-online-history")]

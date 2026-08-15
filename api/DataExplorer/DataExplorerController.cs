@@ -15,7 +15,7 @@ public class DataExplorerController(
     /// <summary>
     /// Get paginated servers with summary information, filtered by game.
     /// </summary>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="page">Page number (1-based, default 1)</param>
     /// <param name="pageSize">Number of results per page (default 50, max 100)</param>
     [HttpGet("servers")]
@@ -113,7 +113,7 @@ public class DataExplorerController(
     /// <summary>
     /// Get all maps with summary information, filtered by game.
     /// </summary>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     [HttpGet("maps")]
     [ProducesResponseType(typeof(MapListResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<MapListResponse>> GetMaps([FromQuery] string game = "bf1942")
@@ -127,7 +127,7 @@ public class DataExplorerController(
     /// Get detailed information for a specific map, filtered by game.
     /// </summary>
     /// <param name="mapName">The map name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     [HttpGet("maps/{mapName}")]
     [ProducesResponseType(typeof(MapDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -183,7 +183,7 @@ public class DataExplorerController(
     /// Requires at least 3 characters. Returns top 50 matches by score.
     /// </summary>
     /// <param name="query">Search query (min 3 characters)</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     [HttpGet("players/search")]
     [ProducesResponseType(typeof(PlayerSearchResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<PlayerSearchResponse>> SearchPlayers(
@@ -199,7 +199,7 @@ public class DataExplorerController(
     /// Get player map rankings with per-server breakdown and rank information.
     /// </summary>
     /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="days">Number of days to look back (default 60)</param>
     /// <param name="serverGuid">Optional server GUID to filter results to a specific server</param>
     [HttpGet("players/{playerName}/maps")]
@@ -234,7 +234,7 @@ public class DataExplorerController(
     /// Returns hourly patterns grouped by day of week for heatmap visualization.
     /// </summary>
     /// <param name="mapName">The map name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     [HttpGet("maps/{mapName}/activity-patterns")]
     [ProducesResponseType(typeof(MapActivityPatternsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -262,7 +262,7 @@ public class DataExplorerController(
     /// Get paginated player rankings for a specific map (aggregated across all servers).
     /// </summary>
     /// <param name="mapName">The map name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="page">Page number (1-based, default 1)</param>
     /// <param name="pageSize">Number of results per page (default 10, max 50)</param>
     /// <param name="search">Optional player name search filter (min 2 characters)</param>
@@ -332,7 +332,7 @@ public class DataExplorerController(
     /// Returns 3 different randomized interesting statistics about the player.
     /// </summary>
     /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     [HttpGet("engagement/player/{playerName}")]
     [ProducesResponseType(typeof(PlayerEngagementStatsDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -356,7 +356,7 @@ public class DataExplorerController(
     /// </summary>
     /// <param name="playerName">The player name</param>
     /// <param name="sliceType">The slice dimension type (e.g., winsByMap, scoreByMap, etc.)</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="page">Page number (1-based, default 1)</param>
     /// <param name="pageSize">Number of results per page (default 20, max 100)</param>
     /// <param name="days">Number of days to look back (default 60)</param>
@@ -423,7 +423,7 @@ public class DataExplorerController(
     /// </summary>
     /// <param name="playerName">The player name</param>
     /// <param name="mapName">The map name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="days">Number of days to look back (default 60)</param>
     [HttpGet("players/{playerName}/map-stats/{mapName}")]
     [ProducesResponseType(typeof(PlayerMapDetailResponse), StatusCodes.Status200OK)]
@@ -457,7 +457,7 @@ public class DataExplorerController(
     /// Returns activity data grouped by day of week and hour.
     /// </summary>
     /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="days">Number of days to look back (default 90)</param>
     [HttpGet("players/{playerName}/activity-heatmap")]
     [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
@@ -490,7 +490,7 @@ public class DataExplorerController(
     /// Returns monthly snapshots of map performance metrics.
     /// </summary>
     /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="months">Number of months to look back (default 12)</param>
     [HttpGet("players/{playerName}/map-performance-timeline")]
     [ProducesResponseType(typeof(MapPerformanceTimelineResponse), StatusCodes.Status200OK)]

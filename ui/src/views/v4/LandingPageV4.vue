@@ -107,6 +107,19 @@ const navigateToPlayerProfile = (playerName: string) => {
 // Group active and quiet servers
 const activeServers = computed(() => servers.value.filter(s => (s.numPlayers || 0) > 0))
 const quietServers = computed(() => servers.value.filter(s => (s.numPlayers || 0) === 0))
+const quietFilter = ref('')
+const filteredQuietServers = computed(() => {
+  const q = quietFilter.value.trim().toLowerCase()
+  if (!q) return quietServers.value
+  return quietServers.value.filter(s => {
+    const name = (s.name || '').toLowerCase()
+    const countryCode = (s.country || '').toLowerCase()
+    const countryName = friendlyCountry(s.country).toLowerCase()
+    const ip = (s.ip || '').toLowerCase()
+    const map = (s.mapName || '').toLowerCase()
+    return name.includes(q) || countryCode.includes(q) || countryName.includes(q) || ip.includes(q) || map.includes(q)
+  })
+})
 
 // Selected server computed properties and roster helpers
 const averagePing = computed(() => {
@@ -342,23 +355,48 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
           </table>
 
           <!-- Quiet servers list below active servers -->
-          <div v-if="showQuiet && quietServers.length > 0">
+          <div v-if="showQuiet && quietServers.length > 0" class="mm-landing__quiet-section">
             <div class="mm-landing__quiet-header">
               <div class="mm-landing__quiet-head-row">
-                <span class="mm-eyebrow">Quiet · {{ quietServers.length }} hosts standing by</span>
-                <router-link to="/v4/servers/search" class="mm-landing__quiet-search-link">
-                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="m20 20-3.5-3.5" />
-                  </svg>
-                  Search all tracked servers →
-                </router-link>
+                <span class="mm-eyebrow">
+                  Quiet · {{ quietFilter ? `${filteredQuietServers.length} of ${quietServers.length}` : quietServers.length }} hosts standing by
+                </span>
+                <div class="mm-landing__quiet-controls">
+                  <label class="mm-search mm-landing__quiet-filter">
+                    <svg class="mm-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="m20 20-3.5-3.5" />
+                    </svg>
+                    <input
+                      v-model="quietFilter"
+                      type="text"
+                      class="mm-search__input"
+                      placeholder="Filter standby hosts…"
+                      aria-label="Filter standby hosts"
+                    />
+                    <button
+                      v-if="quietFilter"
+                      type="button"
+                      class="mm-landing__quiet-filter-clear"
+                      title="Clear filter"
+                      aria-label="Clear filter"
+                      @click="quietFilter = ''"
+                    >×</button>
+                  </label>
+                  <router-link to="/v4/servers/search" class="mm-landing__quiet-search-link">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="m20 20-3.5-3.5" />
+                    </svg>
+                    Search all tracked servers →
+                  </router-link>
+                </div>
               </div>
               <hr class="mm-rule" />
             </div>
-            <div class="mm-landing__quiet-grid">
+            <div v-if="filteredQuietServers.length > 0" class="mm-landing__quiet-grid">
               <div
-                v-for="s in quietServers"
+                v-for="s in filteredQuietServers"
                 :key="s.guid"
                 class="mm-landing__quiet-cell"
                 @click="goServer(s)"
@@ -368,6 +406,12 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
                   {{ s.country ? s.country.toUpperCase() : '—' }} · 0/{{ s.maxPlayers }}
                 </span>
               </div>
+            </div>
+            <div v-else class="mm-landing__quiet-empty">
+              <span>No standby hosts match "{{ quietFilter }}"</span>
+              <button type="button" class="mm-landing__quiet-reset-btn" @click="quietFilter = ''">
+                Reset filter
+              </button>
             </div>
           </div>
         </div>
@@ -531,31 +575,6 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   cursor: not-allowed;
 }
 
-.mm-landing__quiet-head-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.mm-landing__quiet-search-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-  text-decoration: none;
-  transition: color 0.15s ease;
-}
-
-.mm-landing__quiet-search-link:hover {
-  color: var(--mm-accent);
-}
 
 /* Desktop/mobile swap for the servers list. Card layout on mobile matches
    mock #1: rank · name-stack · players + bar stacked on the right. */
@@ -870,15 +889,102 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 
 /* Quiet servers styling */
 .mm-landing__quiet-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
   margin: 34px 0 14px;
 }
 
-.mm-landing__quiet-header hr {
-  flex: 1;
-  margin: 0;
+.mm-landing__quiet-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mm-landing__quiet-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.mm-landing__quiet-filter {
+  min-width: 170px;
+  max-width: 220px;
+  padding: 4px 10px;
+  height: 28px;
+}
+
+.mm-landing__quiet-filter .mm-search__input {
+  font-size: 11.5px;
+}
+
+.mm-landing__quiet-filter .mm-search__icon {
+  width: 11px;
+  height: 11px;
+}
+
+.mm-landing__quiet-filter-clear {
+  background: transparent;
+  border: none;
+  color: var(--mm-ink-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.mm-landing__quiet-filter-clear:hover {
+  color: var(--mm-ink);
+}
+
+.mm-landing__quiet-search-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.mm-landing__quiet-search-link:hover {
+  color: var(--mm-accent);
+}
+
+.mm-landing__quiet-empty {
+  padding: 28px 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--mm-ink-muted);
+  font-size: 13px;
+}
+
+.mm-landing__quiet-reset-btn {
+  background: transparent;
+  border: 1px solid var(--mm-rule);
+  color: var(--mm-ink-soft);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.mm-landing__quiet-reset-btn:hover {
+  border-color: var(--mm-ink);
+  color: var(--mm-ink);
 }
 
 .mm-landing__quiet-grid {
