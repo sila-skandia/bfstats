@@ -17,10 +17,6 @@ public sealed class ServerBannerService(
     // Past + future hours shown either side of "now" on the Waveform timeline.
     private const int ActivityHourRange = 4;
 
-    // Treat sessions seen in the last minute as currently online — same threshold the
-    // live-servers controller uses, so the banner agrees with what the live UI shows.
-    private static readonly TimeSpan ActiveSessionWindow = TimeSpan.FromMinutes(1);
-
     public async Task<byte[]?> RenderAsync(
         string serverName,
         ServerBannerStyle style,
@@ -37,11 +33,11 @@ public sealed class ServerBannerService(
         return await renderer.RenderAsync(stats, style, width, cancellationToken);
     }
 
-    private async Task<ServerBannerStats?> ResolveStatsAsync(
+    internal async Task<ServerBannerStats?> ResolveStatsAsync(
         string serverName,
         ServerBannerStyle style,
         bool showTickets,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         var server = await dbContext.Servers
             .Where(s => s.Name == serverName)
@@ -53,6 +49,7 @@ public sealed class ServerBannerService(
                 s.Port,
                 s.Game,
                 s.MaxPlayers,
+                s.CurrentNumPlayers,
                 s.MapName,
                 s.IsOnline
             })
@@ -62,14 +59,6 @@ public sealed class ServerBannerService(
         {
             return null;
         }
-
-        var cutoff = DateTime.UtcNow - ActiveSessionWindow;
-        var numPlayers = await dbContext.PlayerSessions
-            .Where(ps => ps.ServerGuid == server.Guid
-                         && ps.IsActive
-                         && ps.LastSeenTime >= cutoff
-                         && !ps.Player.AiBot)
-            .CountAsync(cancellationToken);
 
         var currentRound = await dbContext.Rounds
             .Where(r => r.ServerGuid == server.Guid && r.IsActive)
@@ -87,7 +76,7 @@ public sealed class ServerBannerService(
         // Only the Waveform style renders the population timeline, so skip the extra
         // query for the other three.
         var activity = style == ServerBannerStyle.Waveform
-            ? await ResolveActivityAsync(server.Guid, numPlayers, cancellationToken)
+            ? await ResolveActivityAsync(server.Guid, server.CurrentNumPlayers, cancellationToken)
             : null;
 
         return new ServerBannerStats(
@@ -95,7 +84,7 @@ public sealed class ServerBannerService(
             IpPort: $"{server.Ip}:{server.Port}",
             Map: map,
             GameMode: currentRound?.GameType,
-            NumPlayers: numPlayers,
+            NumPlayers: server.CurrentNumPlayers,
             MaxPlayers: server.MaxPlayers ?? 0,
             IsOnline: server.IsOnline,
             Tickets: tickets,

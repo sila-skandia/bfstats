@@ -128,6 +128,7 @@ public class LiveServersController(
         // Get servers filtering only by online status
         stepStopwatch.Restart();
         var serverQuery = dbContext.Servers
+            .AsNoTracking()
             .Where(s => s.Game.ToLower() == game.ToLower());
 
         // Filter by online status unless showing all servers
@@ -146,19 +147,20 @@ public class LiveServersController(
             return [];
         }
 
-        var serverGuids = servers.Select(s => s.Guid).ToList();
+        var serverGuids = servers.Select(s => s.Guid).ToHashSet();
         logger.LogDebug("Processing {ServerCount} servers with GUIDs: {ServerGuids}",
             servers.Count, string.Join(", ", serverGuids.Take(5)) + (serverGuids.Count > 5 ? "..." : ""));
 
-        // Get active player sessions efficiently (excluding bots) - ALL DATA NOW IN ONE QUERY!
+        // Get active player sessions efficiently (excluding bots) using the IsActive index directly
         stepStopwatch.Restart();
-        var activeSessions = await dbContext.PlayerSessions
-            .Where(ps => serverGuids.Contains(ps.ServerGuid)
-                         && ps.IsActive
+        var allActiveSessions = await dbContext.PlayerSessions
+            .AsNoTracking()
+            .Where(ps => ps.IsActive
                          && ps.LastSeenTime >= activeThreshold
                          && (!ps.Player.AiBot))
             .Include(ps => ps.Player)
             .ToListAsync();
+        var activeSessions = allActiveSessions.Where(ps => serverGuids.Contains(ps.ServerGuid)).ToList();
         stepStopwatch.Stop();
         logger.LogDebug("Step 2 - Active player sessions query completed in {ElapsedMs}ms. Found {SessionCount} sessions WITH ALL DATA",
             stepStopwatch.ElapsedMilliseconds, activeSessions.Count);
@@ -166,13 +168,15 @@ public class LiveServersController(
         // ELIMINATED: PlayerObservations query - no longer needed!
         logger.LogDebug("Step 3 - SKIPPED PlayerObservations query - using denormalized data from PlayerSession!");
 
-        // Get current rounds efficiently. Server merges can leave multiple IsActive rounds
-        // per ServerGuid until the next map change closes them, so pick the most recent.
+        // Get current rounds efficiently using the IsActive index directly.
+        // Server merges can leave multiple IsActive rounds per ServerGuid until the next map change closes them, so pick the most recent.
         stepStopwatch.Restart();
-        var activeRounds = await dbContext.Rounds
-            .Where(r => serverGuids.Contains(r.ServerGuid) && r.IsActive)
+        var allActiveRounds = await dbContext.Rounds
+            .AsNoTracking()
+            .Where(r => r.IsActive)
             .ToListAsync();
-        var currentRounds = activeRounds
+        var currentRounds = allActiveRounds
+            .Where(r => serverGuids.Contains(r.ServerGuid))
             .GroupBy(r => r.ServerGuid)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.StartTime).First());
         stepStopwatch.Stop();

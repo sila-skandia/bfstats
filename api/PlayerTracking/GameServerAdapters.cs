@@ -14,6 +14,7 @@ namespace api.PlayerTracking
         int? Tickets1 { get; }
         int? Tickets2 { get; }
         int? MaxPlayers { get; }
+        int NumPlayers { get; }
         string? JoinLink { get; }
         int? RoundTimeRemain { get; }
         IEnumerable<PlayerInfo> Players { get; }
@@ -32,11 +33,12 @@ namespace api.PlayerTracking
         public int? Tickets1 => serverInfo.Tickets1;
         public int? Tickets2 => serverInfo.Tickets2;
         public int? MaxPlayers => serverInfo.MaxPlayers;
+        public int NumPlayers => serverInfo.NumPlayers;
         public string? JoinLink => serverInfo.JoinLink;
         public int? RoundTimeRemain => serverInfo.RoundTimeRemain;
 
-        public IEnumerable<PlayerInfo> Players => serverInfo.Players;
-        public IEnumerable<TeamInfo> Teams => serverInfo.Teams;
+        public IEnumerable<PlayerInfo> Players => serverInfo.Players ?? [];
+        public IEnumerable<TeamInfo> Teams => serverInfo.Teams ?? [];
     }
 
 }
