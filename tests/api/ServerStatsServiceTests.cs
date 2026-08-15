@@ -72,9 +72,50 @@ public sealed class ServerStatsServiceTests : IDisposable
         // Filtered by bf1942, prefix matched first ordered by CurrentNumPlayers desc
         var items = result.Items.ToList();
         Assert.Equal(3, items.Count);
+        Assert.Equal(3, result.TotalItems);
+        Assert.Equal(1, result.TotalPages);
+        Assert.Equal(1, result.CurrentPage);
         Assert.Equal("Apex Full Server", items[0].ServerName);
         Assert.Equal("Apex BF1942 Server", items[1].ServerName);
         Assert.Equal("Another Apex Server", items[2].ServerName); // Substring match
+    }
+
+    [Fact]
+    public async Task SearchServersAsync_PaginatesCorrectly_AcrossMultiplePagesWithAccurateTotals()
+    {
+        dbContext.Servers.AddRange(
+            new GameServer { Guid = "srv-1", Name = "Apex BF1942 Alpha", Game = "bf1942", CurrentNumPlayers = 10 },
+            new GameServer { Guid = "srv-2", Name = "Apex BF1942 Beta", Game = "bf1942", CurrentNumPlayers = 20 },
+            new GameServer { Guid = "srv-3", Name = "Apex BF1942 Gamma", Game = "bf1942", CurrentNumPlayers = 5 },
+            new GameServer { Guid = "srv-4", Name = "Community Apex Delta", Game = "bf1942", CurrentNumPlayers = 15 }
+        );
+        await dbContext.SaveChangesAsync();
+
+        // Page 1 (pageSize = 2)
+        var page1 = await service.SearchServersAsync("Apex", "bf1942", page: 1, pageSize: 2);
+        var page1Items = page1.Items.ToList();
+
+        Assert.Equal(4, page1.TotalItems);
+        Assert.Equal(2, page1.TotalPages);
+        Assert.Equal(1, page1.CurrentPage);
+        Assert.Equal(2, page1Items.Count);
+        Assert.Equal("Apex BF1942 Beta", page1Items[0].ServerName);  // Prefix, 20 players
+        Assert.Equal("Apex BF1942 Alpha", page1Items[1].ServerName); // Prefix, 10 players
+
+        // Page 2 (pageSize = 2)
+        var page2 = await service.SearchServersAsync("Apex", "bf1942", page: 2, pageSize: 2);
+        var page2Items = page2.Items.ToList();
+
+        Assert.Equal(4, page2.TotalItems);
+        Assert.Equal(2, page2.TotalPages);
+        Assert.Equal(2, page2.CurrentPage);
+        Assert.Equal(2, page2Items.Count);
+        Assert.Equal("Apex BF1942 Gamma", page2Items[0].ServerName);   // Prefix, 5 players
+        Assert.Equal("Community Apex Delta", page2Items[1].ServerName); // Substring, 15 players
+
+        // Ensure distinct items across pages
+        var combinedGuids = page1Items.Concat(page2Items).Select(s => s.ServerGuid).Distinct().ToList();
+        Assert.Equal(4, combinedGuids.Count);
     }
 
     public void Dispose()
