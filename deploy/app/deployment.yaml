@@ -64,6 +64,14 @@ spec:
               value: "neo4j"
             - name: Neo4j__Password
               value: "bf1942stats"
+            # Maintenance switch. "true" unregisters every background data service
+            # (stats collectors, ranking/aggregate jobs, scheduled jobs, gamification,
+            # community detection) so the SQLite database goes quiet and can be copied
+            # consistently. The API keeps serving reads throughout.
+            # Read once at startup — changing it requires a rollout, not just an edit.
+            # Leave "false" in normal operation.
+            - name: DISABLE_BACKGROUND_PROCESSING
+              value: "false"
             - name: ENABLE_GAMIFICATION_PROCESSING
               value: "true"
             - name: GAMIFICATION_MAX_CONCURRENT_ROUNDS
