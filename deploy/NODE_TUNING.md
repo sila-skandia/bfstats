@@ -168,6 +168,22 @@ allocatable**, leaving 765Mi — already under the ~1.5Gi headroom invariant in
 - **Never run `sqlite3` against the database as root over SSH.** The files are owned by
   uid 1000; root can create root-owned `-wal`/`-shm` files and lock the app out of its
   own database. Use the `sqlite-tools` sidecar, which runs as uid 1000.
-- **Reads are unaffected by write-lock problems.** In WAL mode the site keeps serving
-  normally while every writer fails, so "the site is up" is not evidence the database is
-  healthy. Check that the WAL mtime is advancing.
+- **Reads are unaffected by write-lock problems** — *provided shared-cache mode is off*.
+  In WAL mode the site keeps serving normally while every writer fails, so "the site is
+  up" is not evidence the database is healthy. Check that the WAL mtime is advancing.
+- **Never put `Cache=Shared` in the connection string.** It reads like a page-cache
+  optimisation and is actually a change to the locking model: connections in the same
+  process stop using WAL snapshot isolation and take table-level read/write locks against
+  each other, so an HTTP read blocks for the full duration of any background write
+  transaction on the same table. Added 2026-08-16 in `7dbedac`, took the site down,
+  removed the same day. Measured with a writer holding a 12s transaction: reader blocked
+  0ms without the flag, 12,010ms with it.
+- **`PRAGMA busy_timeout` is not what bounds a blocked command.** Microsoft.Data.Sqlite
+  retries BUSY/LOCKED in its own loop until `CommandTimeout`, which defaults to **30s**
+  and overrides any shorter PRAGMA. Set `Default Timeout` on the connection string
+  alongside the PRAGMA or the PRAGMA is decorative. This is why lowering the PRAGMA back
+  to 5s in `1c468b0` did not restore the site.
+- **Shared-cache contention does not raise `SQLITE_BUSY`.** It raises `SQLITE_LOCKED`
+  (6 / extended 262 `SQLITE_LOCKED_SHAREDCACHE`), which the busy handler never sees —
+  only `sqlite3_unlock_notify` does, and Microsoft.Data.Sqlite does not use it. Tuning
+  `busy_timeout` against a shared-cache stall does nothing at all.
