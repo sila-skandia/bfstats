@@ -792,7 +792,8 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             .Select(d => new TrendDataPoint
             {
                 Timestamp = d.Date,
-                Value = d.TotalDeaths > 0 ? (double)d.TotalKills / d.TotalDeaths : d.TotalKills
+                Value = d.TotalDeaths > 0 ? (double)d.TotalKills / d.TotalDeaths : d.TotalKills,
+                SessionCount = d.SessionCount
             })
             .ToList();
 
@@ -800,7 +801,8 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             .Select(d => new TrendDataPoint
             {
                 Timestamp = d.Date,
-                Value = d.TotalMinutes > 0 ? d.TotalKills / d.TotalMinutes : 0
+                Value = d.TotalMinutes > 0 ? d.TotalKills / d.TotalMinutes : 0,
+                SessionCount = d.SessionCount
             })
             .ToList();
 

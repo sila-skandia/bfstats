@@ -9,7 +9,7 @@ namespace api.PlayerTracking;
 /// This is necessary because SQLite PRAGMAs like busy_timeout are connection-specific
 /// and must be set each time a new connection is opened.
 /// </summary>
-public class SqliteConnectionInterceptor(ILogger<SqliteConnectionInterceptor> logger, int busyTimeoutMs = 5000)
+public class SqliteConnectionInterceptor(ILogger<SqliteConnectionInterceptor> logger, int busyTimeoutMs = 30000)
     : DbConnectionInterceptor
 {
     public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)

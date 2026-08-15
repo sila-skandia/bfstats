@@ -584,9 +584,10 @@ try
     }
 
     // Configure SQLite with proper connection settings to prevent locking issues
-    // - busy_timeout: Wait up to 5 seconds for locks instead of failing immediately (via interceptor)
+    // - Default Timeout: Wait up to 30 seconds for locks across all connections
+    // - Cache=Shared: Coordinate in-process page cache sharing
     // - journal_mode: WAL provides better concurrent read/write performance
-    var connectionString = $"Data Source={dbPath}";
+    var connectionString = $"Data Source={dbPath};Default Timeout=30;Cache=Shared;Mode=ReadWriteCreate";
 
     // Register the connection interceptor as a singleton so it can be injected into DbContext
     builder.Services.AddSingleton<SqliteConnectionInterceptor>();
@@ -987,20 +988,20 @@ try
 
             using var command = connection.CreateCommand();
 
-            // Set busy_timeout to 5 seconds - wait for locks instead of failing immediately
-            command.CommandText = "PRAGMA busy_timeout = 5000;";
+            // Set busy_timeout to 30 seconds - wait for locks instead of failing immediately
+            command.CommandText = "PRAGMA busy_timeout = 30000;";
             await command.ExecuteNonQueryAsync();
-            logger.LogInformation("SQLite busy_timeout set to 5000ms");
+            logger.LogInformation("SQLite busy_timeout set to 30000ms");
 
             // Ensure WAL mode is enabled for better concurrent access
             command.CommandText = "PRAGMA journal_mode = WAL;";
             var journalMode = await command.ExecuteScalarAsync();
             logger.LogInformation("SQLite journal_mode: {JournalMode}", journalMode);
 
-            // Checkpoint WAL to ensure clean state (important after database restore)
-            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            // Passive WAL checkpoint to flush available frames safely without blocking or requiring exclusive locks
+            command.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
             await command.ExecuteNonQueryAsync();
-            logger.LogInformation("SQLite WAL checkpoint completed");
+            logger.LogInformation("SQLite WAL checkpoint (PASSIVE) completed");
 
             await connection.CloseAsync();
         }

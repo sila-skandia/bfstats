@@ -146,6 +146,7 @@ export interface BestScore {
 export interface TrendDataPoint {
   timestamp: string; // ISO date string
   value: number;
+  sessionCount?: number;
 }
 
 export interface RecentStats {
