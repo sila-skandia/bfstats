@@ -13,8 +13,8 @@ import type {
 } from '@/types/playerStatsTypes'
 import { decodePlayerName } from '@/utils/playerName'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
-import MmSparkline from '@/components/v4/MmSparkline.vue'
 import MmBars from '@/components/v4/MmBars.vue'
+import MmPlayerTrendPanel from '@/components/v4/MmPlayerTrendPanel.vue'
 import MmPlayerComments from '@/components/v4/MmPlayerComments.vue'
 import MmPlayerSignatureBuilder from '@/components/v4/MmPlayerSignatureBuilder.vue'
 import MmCommunityCard from '@/components/v4/MmCommunityCard.vue'
@@ -297,18 +297,8 @@ const peakHour = computed(() => {
   return { hour: i, minutes: max }
 })
 
-// Trend sparklines (recentStats)
 const kdTrend = computed(() => stats.value?.recentStats?.kdRatioTrend ?? [])
 const killRateTrend = computed(() => stats.value?.recentStats?.killRateTrend ?? [])
-const trendDelta = (series: { value: number }[]) => {
-  if (series.length < 2) return null
-  const first = series[0].value
-  const last = series[series.length - 1].value
-  if (first === 0) return null
-  return ((last - first) / Math.abs(first)) * 100
-}
-const kdTrendDelta = computed(() => trendDelta(kdTrend.value))
-const killRateTrendDelta = computed(() => trendDelta(killRateTrend.value))
 
 // Server rankings (top 4)
 const allServerRankings = computed<ServerRanking[]>(() => {
@@ -563,50 +553,13 @@ const signatureServers = computed(() => {
               </div>
             </div></section>
 
-            <section class="mm-panel"><div class="mm-panel__body">
-              <span class="mm-eyebrow mm-eyebrow--strong">K/D trend</span>
-              <div class="mm-card__hint">{{ stats?.recentStats?.granularity || 'daily' }} · {{ kdTrend.length || 0 }} pts</div>
-              <div v-if="kdTrend.length > 1" style="margin-top: 10px">
-                <MmSparkline
-                  :values="kdTrend.map(p => p.value)"
-                  :timestamps="kdTrend.map(p => p.timestamp)"
-                  :height="56"
-                  :show-axis="true"
-                  unit="K/D"
-                />
-              </div>
-              <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
-              <div v-else class="mm-card__empty">Not enough rounds yet.</div>
-              <div v-if="kdTrendDelta != null" class="mm-card__foot">
-                <span :class="kdTrendDelta >= 0 ? 'mm-stat__delta--up' : 'mm-stat__delta--down'">
-                  {{ kdTrendDelta >= 0 ? '+' : '' }}{{ kdTrendDelta.toFixed(1) }}%
-                </span>
-                vs first · last {{ kdTrend[kdTrend.length - 1]?.value.toFixed(2) }}
-              </div>
-            </div></section>
-
-            <section class="mm-panel"><div class="mm-panel__body">
-              <span class="mm-eyebrow mm-eyebrow--strong">Kill rate</span>
-              <div class="mm-card__hint">kills / minute · {{ killRateTrend.length || 0 }} pts</div>
-              <div v-if="killRateTrend.length > 1" style="margin-top: 10px">
-                <MmSparkline
-                  :values="killRateTrend.map(p => p.value)"
-                  :timestamps="killRateTrend.map(p => p.timestamp)"
-                  :height="56"
-                  :accent="true"
-                  :show-axis="true"
-                  unit="kills/min"
-                />
-              </div>
-              <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
-              <div v-else class="mm-card__empty">Not enough rounds yet.</div>
-              <div v-if="killRateTrendDelta != null" class="mm-card__foot">
-                <span :class="killRateTrendDelta >= 0 ? 'mm-stat__delta--up' : 'mm-stat__delta--down'">
-                  {{ killRateTrendDelta >= 0 ? '+' : '' }}{{ killRateTrendDelta.toFixed(1) }}%
-                </span>
-                vs first · last {{ killRateTrend[killRateTrend.length - 1]?.value.toFixed(2) }}
-              </div>
-            </div></section>
+            <MmPlayerTrendPanel
+              :kd-trend="kdTrend"
+              :kill-rate-trend="killRateTrend"
+              :granularity="stats?.recentStats?.granularity || 'daily'"
+              :player-name="rawName"
+              :loading="loading"
+            />
           </div>
 
           <div class="mm-dash-col">

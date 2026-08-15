@@ -109,63 +109,61 @@ public class AggregateCalculationService(
         var yearString = year.ToString();
         var monthString = month.ToString("00");
 
+        // Read and project OUTSIDE the transaction. See WriteLockNote at the bottom of
+        // this file: the aggregate scan is the expensive half, and running it inside the
+        // write transaction is what held the lock for minutes at a time.
+        var playerData = await dbContext.Database.SqlQueryRaw<PlayerStatsAggregateData>(@"
+            SELECT
+                ps.PlayerName,
+                COUNT(DISTINCT ps.RoundId) AS TotalRounds,
+                SUM(ps.TotalKills) AS TotalKills,
+                SUM(ps.TotalDeaths) AS TotalDeaths,
+                SUM(ps.TotalScore) AS TotalScore,
+                SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440) AS TotalPlayTimeMinutes,
+                MIN(ps.StartTime) AS FirstRoundTime,
+                MAX(ps.LastSeenTime) AS LastRoundTime
+            FROM PlayerSessions ps
+            INNER JOIN Players p ON ps.PlayerName = p.Name
+            WHERE strftime('%Y', ps.StartTime) = {0}
+              AND strftime('%m', ps.StartTime) = {1}
+              AND p.AiBot = 0
+              AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
+            GROUP BY ps.PlayerName",
+            yearString, monthString).ToListAsync();
+
+        activity?.SetTag("player_count", playerData.Count);
+
+        var now = clock.GetCurrentInstant();
+        var records = playerData.Select(p => new PlayerStatsMonthly
+        {
+            PlayerName = p.PlayerName,
+            Year = year,
+            Month = month,
+            TotalRounds = p.TotalRounds,
+            TotalKills = p.TotalKills,
+            TotalDeaths = p.TotalDeaths,
+            TotalScore = p.TotalScore,
+            TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
+            AvgScorePerRound = p.TotalRounds > 0 ? (double)p.TotalScore / p.TotalRounds : 0,
+            KdRatio = p.TotalDeaths > 0 ? (double)p.TotalKills / p.TotalDeaths : p.TotalKills,
+            KillRate = p.TotalPlayTimeMinutes > 0 ? p.TotalKills / p.TotalPlayTimeMinutes : 0,
+            FirstRoundTime = Instant.FromDateTimeUtc(DateTime.SpecifyKind(p.FirstRoundTime, DateTimeKind.Utc)),
+            LastRoundTime = Instant.FromDateTimeUtc(DateTime.SpecifyKind(p.LastRoundTime, DateTimeKind.Utc)),
+            UpdatedAt = now
+        }).ToList();
+
         await using var transaction = await dbContext.Database.BeginTransactionAsync();
         try
         {
-            // Delete existing records for this month
+            // Delete existing records for this month. Still atomic with the insert below:
+            // readers never observe a half-rebuilt period.
             await dbContext.Database.ExecuteSqlRawAsync(@"
                 DELETE FROM ""PlayerStatsMonthly""
                 WHERE ""Year"" = {0} AND ""Month"" = {1}",
                 year, month);
 
-            // Query aggregated data from PlayerSessions
-            var playerData = await dbContext.Database.SqlQueryRaw<PlayerStatsAggregateData>(@"
-                SELECT
-                    ps.PlayerName,
-                    COUNT(DISTINCT ps.RoundId) AS TotalRounds,
-                    SUM(ps.TotalKills) AS TotalKills,
-                    SUM(ps.TotalDeaths) AS TotalDeaths,
-                    SUM(ps.TotalScore) AS TotalScore,
-                    SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440) AS TotalPlayTimeMinutes,
-                    MIN(ps.StartTime) AS FirstRoundTime,
-                    MAX(ps.LastSeenTime) AS LastRoundTime
-                FROM PlayerSessions ps
-                INNER JOIN Players p ON ps.PlayerName = p.Name
-                WHERE strftime('%Y', ps.StartTime) = {0}
-                  AND strftime('%m', ps.StartTime) = {1}
-                  AND p.AiBot = 0
-                  AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
-                GROUP BY ps.PlayerName",
-                yearString, monthString).ToListAsync();
-
-            activity?.SetTag("player_count", playerData.Count);
-
-            if (playerData.Count == 0)
-            {
-                await transaction.CommitAsync();
-                return 0;
-            }
-
-            // Build and insert records
-            var now = clock.GetCurrentInstant();
-            var records = playerData.Select(p => new PlayerStatsMonthly
-            {
-                PlayerName = p.PlayerName,
-                Year = year,
-                Month = month,
-                TotalRounds = p.TotalRounds,
-                TotalKills = p.TotalKills,
-                TotalDeaths = p.TotalDeaths,
-                TotalScore = p.TotalScore,
-                TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
-                AvgScorePerRound = p.TotalRounds > 0 ? (double)p.TotalScore / p.TotalRounds : 0,
-                KdRatio = p.TotalDeaths > 0 ? (double)p.TotalKills / p.TotalDeaths : p.TotalKills,
-                KillRate = p.TotalPlayTimeMinutes > 0 ? p.TotalKills / p.TotalPlayTimeMinutes : 0,
-                FirstRoundTime = Instant.FromDateTimeUtc(DateTime.SpecifyKind(p.FirstRoundTime, DateTimeKind.Utc)),
-                LastRoundTime = Instant.FromDateTimeUtc(DateTime.SpecifyKind(p.LastRoundTime, DateTimeKind.Utc)),
-                UpdatedAt = now
-            }).ToList();
-
+            // Deliberately still runs the DELETE when there is nothing to insert, so a
+            // month that has lost all its sessions clears its stale rows.
             await BulkInsertPlayerStatsMonthly(dbContext, records);
             activity?.SetTag("records_inserted", records.Count);
 
@@ -194,6 +192,47 @@ public class AggregateCalculationService(
 
         var weekString = week.ToString("00");
 
+        // Query aggregated data from PlayerSessions for this ISO week, outside the
+        // transaction — see WriteLockNote at the bottom of this file.
+        var weekStart = System.Globalization.ISOWeek.ToDateTime(year, week, DayOfWeek.Monday);
+        var weekEnd = weekStart.AddDays(7);
+
+        var serverData = await dbContext.Database.SqlQueryRaw<PlayerServerStatsAggregateData>(@"
+            SELECT
+                ps.PlayerName,
+                ps.ServerGuid,
+                COUNT(DISTINCT ps.RoundId) AS TotalRounds,
+                SUM(ps.TotalKills) AS TotalKills,
+                SUM(ps.TotalDeaths) AS TotalDeaths,
+                SUM(ps.TotalScore) AS TotalScore,
+                SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440) AS TotalPlayTimeMinutes
+            FROM PlayerSessions ps
+            INNER JOIN Players p ON ps.PlayerName = p.Name
+            WHERE ps.StartTime >= {0}
+              AND ps.StartTime < {1}
+              AND p.AiBot = 0
+              AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
+            GROUP BY ps.PlayerName, ps.ServerGuid",
+            weekStart.ToString("yyyy-MM-dd HH:mm:ss"),
+            weekEnd.ToString("yyyy-MM-dd HH:mm:ss")).ToListAsync();
+
+        activity?.SetTag("record_count", serverData.Count);
+
+        var now = clock.GetCurrentInstant();
+        var records = serverData.Select(p => new PlayerServerStats
+        {
+            PlayerName = p.PlayerName,
+            ServerGuid = p.ServerGuid,
+            Year = year,
+            Week = week,
+            TotalRounds = p.TotalRounds,
+            TotalKills = p.TotalKills,
+            TotalDeaths = p.TotalDeaths,
+            TotalScore = p.TotalScore,
+            TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
+            UpdatedAt = now
+        }).ToList();
+
         await using var transaction = await dbContext.Database.BeginTransactionAsync();
         try
         {
@@ -202,52 +241,6 @@ public class AggregateCalculationService(
                 DELETE FROM ""PlayerServerStats""
                 WHERE ""Year"" = {0} AND ""Week"" = {1}",
                 year, week);
-
-            // Query aggregated data from PlayerSessions for this ISO week
-            var weekStart = System.Globalization.ISOWeek.ToDateTime(year, week, DayOfWeek.Monday);
-            var weekEnd = weekStart.AddDays(7);
-
-            var serverData = await dbContext.Database.SqlQueryRaw<PlayerServerStatsAggregateData>(@"
-                SELECT
-                    ps.PlayerName,
-                    ps.ServerGuid,
-                    COUNT(DISTINCT ps.RoundId) AS TotalRounds,
-                    SUM(ps.TotalKills) AS TotalKills,
-                    SUM(ps.TotalDeaths) AS TotalDeaths,
-                    SUM(ps.TotalScore) AS TotalScore,
-                    SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440) AS TotalPlayTimeMinutes
-                FROM PlayerSessions ps
-                INNER JOIN Players p ON ps.PlayerName = p.Name
-                WHERE ps.StartTime >= {0}
-                  AND ps.StartTime < {1}
-                  AND p.AiBot = 0
-                  AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
-                GROUP BY ps.PlayerName, ps.ServerGuid",
-                weekStart.ToString("yyyy-MM-dd HH:mm:ss"),
-                weekEnd.ToString("yyyy-MM-dd HH:mm:ss")).ToListAsync();
-
-            activity?.SetTag("record_count", serverData.Count);
-
-            if (serverData.Count == 0)
-            {
-                await transaction.CommitAsync();
-                return 0;
-            }
-
-            var now = clock.GetCurrentInstant();
-            var records = serverData.Select(p => new PlayerServerStats
-            {
-                PlayerName = p.PlayerName,
-                ServerGuid = p.ServerGuid,
-                Year = year,
-                Week = week,
-                TotalRounds = p.TotalRounds,
-                TotalKills = p.TotalKills,
-                TotalDeaths = p.TotalDeaths,
-                TotalScore = p.TotalScore,
-                TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
-                UpdatedAt = now
-            }).ToList();
 
             await BulkInsertPlayerServerStats(dbContext, records);
             activity?.SetTag("records_inserted", records.Count);
@@ -278,17 +271,10 @@ public class AggregateCalculationService(
         var yearString = year.ToString();
         var monthString = month.ToString("00");
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync();
-        try
-        {
-            // Delete existing records for this month
-            await dbContext.Database.ExecuteSqlRawAsync(@"
-                DELETE FROM ""PlayerMapStats""
-                WHERE ""Year"" = {0} AND ""Month"" = {1}",
-                year, month);
-
-            // Query aggregated data from PlayerSessions - per server
-            var mapData = await dbContext.Database.SqlQueryRaw<PlayerMapStatsAggregateData>(@"
+        // Both aggregate scans run outside the transaction — see WriteLockNote at the
+        // bottom of this file. This method is the worst offender of the three: it scans
+        // PlayerSessions twice, once per-server and once cross-server.
+        var mapData = await dbContext.Database.SqlQueryRaw<PlayerMapStatsAggregateData>(@"
                 SELECT
                     ps.PlayerName,
                     ps.MapName,
@@ -307,10 +293,10 @@ public class AggregateCalculationService(
                 GROUP BY ps.PlayerName, ps.MapName, ps.ServerGuid",
                 yearString, monthString).ToListAsync();
 
-            activity?.SetTag("per_server_record_count", mapData.Count);
+        activity?.SetTag("per_server_record_count", mapData.Count);
 
-            // Also query global (cross-server) map stats
-            var globalMapData = await dbContext.Database.SqlQueryRaw<PlayerMapStatsAggregateData>(@"
+        // Also query global (cross-server) map stats
+        var globalMapData = await dbContext.Database.SqlQueryRaw<PlayerMapStatsAggregateData>(@"
                 SELECT
                     ps.PlayerName,
                     ps.MapName,
@@ -329,31 +315,34 @@ public class AggregateCalculationService(
                 GROUP BY ps.PlayerName, ps.MapName",
                 yearString, monthString).ToListAsync();
 
-            activity?.SetTag("global_record_count", globalMapData.Count);
+        activity?.SetTag("global_record_count", globalMapData.Count);
 
-            var allMapData = mapData.Concat(globalMapData).ToList();
+        var allMapData = mapData.Concat(globalMapData).ToList();
 
-            if (allMapData.Count == 0)
-            {
-                await transaction.CommitAsync();
-                return 0;
-            }
+        var now = clock.GetCurrentInstant();
+        var records = allMapData.Select(p => new PlayerMapStats
+        {
+            PlayerName = p.PlayerName,
+            MapName = p.MapName,
+            ServerGuid = p.ServerGuid,
+            Year = year,
+            Month = month,
+            TotalRounds = p.TotalRounds,
+            TotalKills = p.TotalKills,
+            TotalDeaths = p.TotalDeaths,
+            TotalScore = p.TotalScore,
+            TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
+            UpdatedAt = now
+        }).ToList();
 
-            var now = clock.GetCurrentInstant();
-            var records = allMapData.Select(p => new PlayerMapStats
-            {
-                PlayerName = p.PlayerName,
-                MapName = p.MapName,
-                ServerGuid = p.ServerGuid,
-                Year = year,
-                Month = month,
-                TotalRounds = p.TotalRounds,
-                TotalKills = p.TotalKills,
-                TotalDeaths = p.TotalDeaths,
-                TotalScore = p.TotalScore,
-                TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
-                UpdatedAt = now
-            }).ToList();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync();
+        try
+        {
+            // Delete existing records for this month
+            await dbContext.Database.ExecuteSqlRawAsync(@"
+                DELETE FROM ""PlayerMapStats""
+                WHERE ""Year"" = {0} AND ""Month"" = {1}",
+                year, month);
 
             await BulkInsertPlayerMapStats(dbContext, records);
             activity?.SetTag("records_inserted", records.Count);
@@ -463,6 +452,35 @@ public class AggregateCalculationService(
         }
     }
 }
+
+// ---------------------------------------------------------------------------------
+// WriteLockNote — why the aggregate scans run outside the transaction.
+//
+// Each Calculate* method used to open a transaction, DELETE the period, then run its
+// aggregate scan of PlayerSessions, then insert. In SQLite a deferred BEGIN takes no
+// lock until the first write, so the DELETE acquired the write lock and the scan then
+// ran while holding it. SQLite allows exactly one writer, so for the whole duration of
+// that scan every other writer in the process was blocked.
+//
+// Measured in production on the Hetzner volume, 2026-08-15:
+//   105,128ms / 75,035ms / 150,098ms per cycle
+// against a busy_timeout of 5,000ms. Every stats-collection cycle, ranking
+// recalculation and "mark servers offline" that landed in those windows failed with
+// SQLITE_BUSY ("database is locked"). The scans are the expensive half — they are
+// non-sargable (strftime() per row, so no index is usable) and sweep ~1.7M sessions,
+// and on network-attached storage that is minutes of I/O, not seconds.
+//
+// Reading first and writing second keeps the lock held only for DELETE + INSERT.
+// Atomicity is unchanged: the delete and the rebuild are still one transaction, so
+// readers never see a half-rebuilt period. The trade is that the data is now read
+// slightly before it is written, so a session landing mid-scan lands in the next hourly
+// cycle instead of this one — which was already true of anything arriving after the scan.
+//
+// Still outstanding: the strftime() predicates cannot use an index. Rewriting them as
+// range comparisons on StartTime (it is stored as ISO text, so lexicographic ordering
+// holds) would let an index serve them, but PlayerSessions currently has no index
+// leading with StartTime, so that needs an index to go with it.
+// ---------------------------------------------------------------------------------
 
 // DTOs for raw SQL query results
 public class PlayerStatsAggregateData
