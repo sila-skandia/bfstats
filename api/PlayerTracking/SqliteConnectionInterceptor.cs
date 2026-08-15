@@ -24,6 +24,17 @@ public class SqliteConnectionInterceptor(ILogger<SqliteConnectionInterceptor> lo
         await base.ConnectionOpenedAsync(connection, eventData, cancellationToken);
     }
 
+    /// <summary>
+    /// Caps how many rows ANALYZE (and PRAGMA optimize) samples per index. Without a cap,
+    /// analysing this database means reading every index in full — PlayerObservations alone
+    /// carries ~8.8GB of them — which on the network-attached volume takes minutes and
+    /// saturates the disk. At 400 the sample is bounded and effectively free (measured
+    /// 0.115s vs 1.305s for a full ANALYZE of PlayerSessions) and produced identical plans.
+    /// This is per-connection, so it must be set here for SqliteStatisticsBackgroundService's
+    /// PRAGMA optimize to inherit it.
+    /// </summary>
+    private const int AnalysisLimit = 400;
+
     private void ConfigureConnection(DbConnection connection)
     {
         try
@@ -32,6 +43,9 @@ public class SqliteConnectionInterceptor(ILogger<SqliteConnectionInterceptor> lo
 
             // Set busy_timeout - wait for locks instead of failing immediately with SQLITE_BUSY
             command.CommandText = $"PRAGMA busy_timeout = {busyTimeoutMs};";
+            command.ExecuteNonQuery();
+
+            command.CommandText = $"PRAGMA analysis_limit = {AnalysisLimit};";
             command.ExecuteNonQuery();
         }
         catch (Exception ex)
