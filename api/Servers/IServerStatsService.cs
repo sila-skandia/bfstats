@@ -67,4 +67,19 @@ public interface IServerStatsService
     Task<List<ServerRank>> GetServerRankingsByPlaytimeAsync(
         IEnumerable<string> serverGuids,
         int days = 30);
+
+    /// <summary>
+    /// Fast server search hitting directly on server name, optimized for autocomplete and omnisearch.
+    /// </summary>
+    /// <param name="query">Server name search query.</param>
+    /// <param name="game">Optional game filter.</param>
+    /// <param name="page">Page number (1-based).</param>
+    /// <param name="pageSize">Number of items per page.</param>
+    /// <returns>Paginated list of matching servers.</returns>
+    Task<PagedResult<ServerBasicInfo>> SearchServersAsync(
+        string query,
+        string? game = null,
+        int page = 1,
+        int pageSize = 10);
 }
+

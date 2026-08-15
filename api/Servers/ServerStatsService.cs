@@ -932,4 +932,125 @@ LIMIT $limit";
         return System.Globalization.CultureInfo.CurrentCulture.Calendar.GetWeekOfYear(date, System.Globalization.CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
     }
 
+    public async Task<PagedResult<ServerBasicInfo>> SearchServersAsync(
+        string query,
+        string? game = null,
+        int page = 1,
+        int pageSize = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return new PagedResult<ServerBasicInfo>
+            {
+                Items = [],
+                CurrentPage = page,
+                TotalItems = 0,
+                TotalPages = 0
+            };
+        }
+
+        var trimmed = query.Trim();
+        var offset = Math.Max(0, (page - 1) * pageSize);
+
+        IQueryable<GameServer> baseQuery = dbContext.Servers.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(game))
+        {
+            var normalizedGame = game.Trim().ToLower();
+            baseQuery = baseQuery.Where(s => s.Game == normalizedGame);
+        }
+
+        // 1. Fast prefix match (starts with query) ordered by active player count then name
+        var prefixResults = await baseQuery
+            .Where(s => EF.Functions.Like(s.Name, $"{trimmed}%"))
+            .OrderByDescending(s => s.CurrentNumPlayers)
+            .ThenBy(s => s.Name)
+            .Skip(offset)
+            .Take(pageSize)
+            .Select(s => new ServerBasicInfo
+            {
+                ServerGuid = s.Guid,
+                ServerName = s.Name,
+                GameId = s.GameId,
+                ServerIp = s.Ip,
+                ServerPort = s.Port,
+                Country = s.Country,
+                Region = s.Region,
+                City = s.City,
+                Timezone = s.Timezone,
+                CurrentMap = s.CurrentMap ?? s.MapName,
+                HasActivePlayers = s.CurrentNumPlayers > 0,
+                TotalActivePlayersLast24h = s.CurrentNumPlayers,
+                TotalPlayersAllTime = s.CurrentNumPlayers,
+                LastActivity = s.LastSeenTime
+            })
+            .ToListAsync();
+
+        var results = new List<ServerBasicInfo>(prefixResults);
+
+        // 2. Backfill with substring matches if prefix matches don't fill pageSize
+        if (results.Count < pageSize)
+        {
+            var needed = pageSize - results.Count;
+            var existingGuids = results.Select(r => r.ServerGuid).ToList();
+
+            var substringResults = await baseQuery
+                .Where(s => EF.Functions.Like(s.Name, $"%{trimmed}%") && !existingGuids.Contains(s.Guid))
+                .OrderByDescending(s => s.CurrentNumPlayers)
+                .ThenBy(s => s.Name)
+                .Take(needed)
+                .Select(s => new ServerBasicInfo
+                {
+                    ServerGuid = s.Guid,
+                    ServerName = s.Name,
+                    GameId = s.GameId,
+                    ServerIp = s.Ip,
+                    ServerPort = s.Port,
+                    Country = s.Country,
+                    Region = s.Region,
+                    City = s.City,
+                    Timezone = s.Timezone,
+                    CurrentMap = s.CurrentMap ?? s.MapName,
+                    HasActivePlayers = s.CurrentNumPlayers > 0,
+                    TotalActivePlayersLast24h = s.CurrentNumPlayers,
+                    TotalPlayersAllTime = s.CurrentNumPlayers,
+                    LastActivity = s.LastSeenTime
+                })
+                .ToListAsync();
+
+            results.AddRange(substringResults);
+        }
+
+        // 3. Double-check real-time active sessions for matched subset (5-10 servers)
+        if (results.Count > 0)
+        {
+            var matchedGuids = results.Select(r => r.ServerGuid).ToList();
+            var activeGuids = await dbContext.PlayerSessions
+                .AsNoTracking()
+                .Where(ps => ps.IsActive && matchedGuids.Contains(ps.ServerGuid))
+                .Select(ps => ps.ServerGuid)
+                .Distinct()
+                .ToListAsync();
+
+            if (activeGuids.Count > 0)
+            {
+                var activeSet = new HashSet<string>(activeGuids);
+                foreach (var s in results)
+                {
+                    if (activeSet.Contains(s.ServerGuid))
+                    {
+                        s.HasActivePlayers = true;
+                    }
+                }
+            }
+        }
+
+        return new PagedResult<ServerBasicInfo>
+        {
+            Items = results,
+            CurrentPage = page,
+            TotalItems = results.Count,
+            TotalPages = results.Count > 0 ? 1 : 0
+        };
+    }
 }
+
