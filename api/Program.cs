@@ -988,10 +988,18 @@ try
 
             using var command = connection.CreateCommand();
 
-            // Set busy_timeout to 30 seconds - wait for locks instead of failing immediately
-            command.CommandText = "PRAGMA busy_timeout = 30000;";
+            // Set busy_timeout - wait for locks instead of failing immediately.
+            //
+            // Kept deliberately short. This was raised to 30s on 2026-08-15 to stop writers
+            // failing during the aggregate cycle, and it turned a write problem into a read
+            // outage: a blocked writer holds its pooled connection for the whole wait, so
+            // background writers drained the connection pool and HTTP reads — which SQLite
+            // would have served fine, since WAL readers never block — began timing out.
+            // Failing fast keeps the pool circulating and the site serving. Raise this only
+            // together with a fix for whatever is holding the write lock.
+            command.CommandText = "PRAGMA busy_timeout = 5000;";
             await command.ExecuteNonQueryAsync();
-            logger.LogInformation("SQLite busy_timeout set to 30000ms");
+            logger.LogInformation("SQLite busy_timeout set to 5000ms");
 
             // Ensure WAL mode is enabled for better concurrent access
             command.CommandText = "PRAGMA journal_mode = WAL;";
