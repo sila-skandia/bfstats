@@ -79,6 +79,9 @@ public sealed class PlayerStatsServiceTests : IDisposable
         // MaxBot (bot) must be excluded.
         // Prefix matches: Maximus (1200m), Maverick does not match Max prefix, TopMax is substring.
         Assert.Equal(2, result.Items.Count);
+        Assert.Equal(2, result.TotalItems);
+        Assert.Equal(1, result.TotalPages);
+        Assert.Equal(1, result.Page);
         Assert.Equal("Maximus", result.Items[0].PlayerName);
         Assert.True(result.Items[0].IsActive);
         Assert.NotNull(result.Items[0].CurrentServer);
@@ -88,6 +91,39 @@ public sealed class PlayerStatsServiceTests : IDisposable
         // Substring match
         Assert.Equal("TopMax", result.Items[1].PlayerName);
         Assert.False(result.Items[1].IsActive);
+    }
+
+    [Fact]
+    public async Task SearchPlayersAsync_PaginatesCorrectly_AcrossMultiplePagesWithAccurateTotals()
+    {
+        dbContext.Players.AddRange(
+            new Player { Name = "MaxOne", TotalPlayTimeMinutes = 100 },
+            new Player { Name = "MaxTwo", TotalPlayTimeMinutes = 200 },
+            new Player { Name = "MaxThree", TotalPlayTimeMinutes = 50 },
+            new Player { Name = "TheMaximus", TotalPlayTimeMinutes = 500 }
+        );
+        await dbContext.SaveChangesAsync();
+
+        // Page 1 (pageSize = 2)
+        var page1 = await service.SearchPlayersAsync("Max", page: 1, pageSize: 2);
+        Assert.Equal(4, page1.TotalItems);
+        Assert.Equal(2, page1.TotalPages);
+        Assert.Equal(1, page1.Page);
+        Assert.Equal(2, page1.Items.Count);
+        Assert.Equal("MaxTwo", page1.Items[0].PlayerName); // Prefix, 200m
+        Assert.Equal("MaxOne", page1.Items[1].PlayerName); // Prefix, 100m
+
+        // Page 2 (pageSize = 2)
+        var page2 = await service.SearchPlayersAsync("Max", page: 2, pageSize: 2);
+        Assert.Equal(4, page2.TotalItems);
+        Assert.Equal(2, page2.TotalPages);
+        Assert.Equal(2, page2.Page);
+        Assert.Equal(2, page2.Items.Count);
+        Assert.Equal("MaxThree", page2.Items[0].PlayerName);   // Prefix, 50m
+        Assert.Equal("TheMaximus", page2.Items[1].PlayerName); // Substring, 500m
+
+        var allNames = page1.Items.Concat(page2.Items).Select(p => p.PlayerName).Distinct().ToList();
+        Assert.Equal(4, allNames.Count);
     }
 
     public void Dispose()
