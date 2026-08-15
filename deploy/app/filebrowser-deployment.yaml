@@ -52,7 +52,7 @@ spec:
       volumes:
         - name: assets-data
           persistentVolumeClaim:
-            claimName: bf42-stats-pvc
+            claimName: bf42-stats-pvc-v2
 
 
 ---
