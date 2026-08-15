@@ -15,7 +15,7 @@ namespace api.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
 
             modelBuilder.Entity("api.AI.Models.AIChatFeedback", b =>
                 {
@@ -425,6 +425,9 @@ namespace api.Migrations
 
                     b.HasIndex("PlayerName", "Year", "ServerGuid", "MapName")
                         .HasDatabaseName("IX_PlayerMapStats_PlayerName_Year_ServerGuid_MapName");
+
+                    b.HasIndex("MapName", "ServerGuid", "PlayerName", "Year", "Month", "TotalScore")
+                        .HasDatabaseName("IX_PlayerMapStats_MapRanking_Covering");
 
                     b.ToTable("PlayerMapStats");
                 });
@@ -923,8 +926,6 @@ namespace api.Migrations
 
                     b.HasKey("ObservationId");
 
-                    b.HasIndex("SessionId");
-
                     b.HasIndex("Timestamp");
 
                     b.HasIndex("SessionId", "Timestamp");
@@ -1217,6 +1218,9 @@ namespace api.Migrations
                     b.HasIndex("PlayerName");
 
                     b.HasIndex("ServerGuid", "Rank");
+
+                    b.HasIndex("ServerGuid", "PlayerName", "TotalScore")
+                        .HasDatabaseName("IX_ServerPlayerRankings_ServerGuid_PlayerName_TotalScore");
 
                     b.HasIndex("ServerGuid", "PlayerName", "Year", "Month")
                         .IsUnique();
