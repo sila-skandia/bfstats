@@ -846,11 +846,16 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         var trimmed = query.Trim();
         var offset = Math.Max(0, (page - 1) * pageSize);
 
-        // 1. Fast prefix match (starts with query). Uses index on Player.Name.
-        var prefixResults = await dbContext.Players
+        var matchingQuery = dbContext.Players
             .AsNoTracking()
-            .Where(p => !p.AiBot && EF.Functions.Like(p.Name, $"{trimmed}%"))
-            .OrderByDescending(p => p.TotalPlayTimeMinutes)
+            .Where(p => !p.AiBot && EF.Functions.Like(p.Name, $"%{trimmed}%"));
+
+        var totalItems = await matchingQuery.CountAsync();
+        var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+
+        var results = await matchingQuery
+            .OrderByDescending(p => EF.Functions.Like(p.Name, $"{trimmed}%"))
+            .ThenByDescending(p => p.TotalPlayTimeMinutes)
             .Skip(offset)
             .Take(pageSize)
             .Select(p => new PlayerBasicInfo
@@ -861,31 +866,7 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             })
             .ToListAsync();
 
-        var results = new List<PlayerBasicInfo>(prefixResults);
-
-        // 2. If prefix matches do not fill the requested page size, backfill with substring matches
-        if (results.Count < pageSize)
-        {
-            var needed = pageSize - results.Count;
-            var existingNames = results.Select(r => r.PlayerName).ToList();
-
-            var substringResults = await dbContext.Players
-                .AsNoTracking()
-                .Where(p => !p.AiBot && EF.Functions.Like(p.Name, $"%{trimmed}%") && !existingNames.Contains(p.Name))
-                .OrderByDescending(p => p.TotalPlayTimeMinutes)
-                .Take(needed)
-                .Select(p => new PlayerBasicInfo
-                {
-                    PlayerName = p.Name,
-                    TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
-                    LastSeen = p.LastSeen
-                })
-                .ToListAsync();
-
-            results.AddRange(substringResults);
-        }
-
-        // 3. Populate active status and current server for the matched small subset (5-10 items)
+        // Populate active status and current server for the matched small subset (5-10 items)
         if (results.Count > 0)
         {
             var matchedNames = results.Select(r => r.PlayerName).ToList();
@@ -931,8 +912,8 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             Items = results,
             Page = page,
             PageSize = pageSize,
-            TotalItems = results.Count,
-            TotalPages = results.Count > 0 ? 1 : 0
+            TotalItems = totalItems,
+            TotalPages = totalPages
         };
     }
 }

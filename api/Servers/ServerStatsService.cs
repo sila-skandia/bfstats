@@ -959,10 +959,14 @@ LIMIT $limit";
             baseQuery = baseQuery.Where(s => s.Game == normalizedGame);
         }
 
-        // 1. Fast prefix match (starts with query) ordered by active player count then name
-        var prefixResults = await baseQuery
-            .Where(s => EF.Functions.Like(s.Name, $"{trimmed}%"))
-            .OrderByDescending(s => s.CurrentNumPlayers)
+        var matchingQuery = baseQuery.Where(s => EF.Functions.Like(s.Name, $"%{trimmed}%"));
+        var totalItems = await matchingQuery.CountAsync();
+        var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+
+        // Order prefix matches first, then by active player count descending, then name
+        var results = await matchingQuery
+            .OrderByDescending(s => EF.Functions.Like(s.Name, $"{trimmed}%"))
+            .ThenByDescending(s => s.CurrentNumPlayers)
             .ThenBy(s => s.Name)
             .Skip(offset)
             .Take(pageSize)
@@ -985,42 +989,7 @@ LIMIT $limit";
             })
             .ToListAsync();
 
-        var results = new List<ServerBasicInfo>(prefixResults);
-
-        // 2. Backfill with substring matches if prefix matches don't fill pageSize
-        if (results.Count < pageSize)
-        {
-            var needed = pageSize - results.Count;
-            var existingGuids = results.Select(r => r.ServerGuid).ToList();
-
-            var substringResults = await baseQuery
-                .Where(s => EF.Functions.Like(s.Name, $"%{trimmed}%") && !existingGuids.Contains(s.Guid))
-                .OrderByDescending(s => s.CurrentNumPlayers)
-                .ThenBy(s => s.Name)
-                .Take(needed)
-                .Select(s => new ServerBasicInfo
-                {
-                    ServerGuid = s.Guid,
-                    ServerName = s.Name,
-                    GameId = s.GameId,
-                    ServerIp = s.Ip,
-                    ServerPort = s.Port,
-                    Country = s.Country,
-                    Region = s.Region,
-                    City = s.City,
-                    Timezone = s.Timezone,
-                    CurrentMap = s.CurrentMap ?? s.MapName,
-                    HasActivePlayers = s.CurrentNumPlayers > 0,
-                    TotalActivePlayersLast24h = s.CurrentNumPlayers,
-                    TotalPlayersAllTime = s.CurrentNumPlayers,
-                    LastActivity = s.LastSeenTime
-                })
-                .ToListAsync();
-
-            results.AddRange(substringResults);
-        }
-
-        // 3. Double-check real-time active sessions for matched subset (5-10 servers)
+        // Double-check real-time active sessions for matched subset (5-10 servers)
         if (results.Count > 0)
         {
             var matchedGuids = results.Select(r => r.ServerGuid).ToList();
@@ -1048,8 +1017,8 @@ LIMIT $limit";
         {
             Items = results,
             CurrentPage = page,
-            TotalItems = results.Count,
-            TotalPages = results.Count > 0 ? 1 : 0
+            TotalItems = totalItems,
+            TotalPages = totalPages
         };
     }
 }
