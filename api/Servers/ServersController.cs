@@ -190,14 +190,8 @@ public class ServersController(
 
         try
         {
-            var filters = new ServerFilters
-            {
-                ServerName = query.Trim(),
-                Game = game?.Trim().ToLower()
-            };
-
-            var result = await serverStatsService.GetAllServersWithPaging(
-                page, pageSize, "ServerName", "asc", filters);
+            var result = await serverStatsService.SearchServersAsync(
+                query.Trim(), game?.Trim().ToLower(), page, pageSize);
 
             return Ok(result);
         }
