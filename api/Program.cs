@@ -627,13 +627,38 @@ try
     builder.Services.AddScoped<ServerStatsService>();
     builder.Services.AddScoped<IServerStatsService>(sp => sp.GetRequiredService<ServerStatsService>());
     builder.Services.AddScoped<RoundsService>();
-    // Samples process CPU/memory for the Seq metrics dashboards
+
+    // Maintenance switch. Set DISABLE_BACKGROUND_PROCESSING=true to start the API
+    // with every data-writing background service unregistered, so the SQLite
+    // database goes quiet while the API keeps serving reads. Used to take a
+    // consistent file-level copy (backup, PVC migration) without a full outage.
+    //
+    // Defaults to OFF — a missing, empty or misspelled value leaves background
+    // processing running, so this can never silently stop data collection.
+    //
+    // Read once at process start: environment variables are fixed for the life of
+    // the process, so flipping this requires a rollout of the deployment. It is
+    // not a runtime toggle.
+    var disableBackgroundProcessing =
+        Environment.GetEnvironmentVariable("DISABLE_BACKGROUND_PROCESSING")?.ToLowerInvariant() == "true";
+
+    if (disableBackgroundProcessing)
+    {
+        Console.WriteLine("[startup] DISABLE_BACKGROUND_PROCESSING=true — background data services will NOT be registered");
+    }
+
+    // Samples process CPU/memory for the Seq metrics dashboards. Deliberately NOT
+    // gated: it touches no database, and keeping metrics flowing is exactly what
+    // you want while a maintenance copy is running.
     builder.Services.AddHostedService<ProcessHealthReporter>();
 
     // Register the stat collector background services
-    builder.Services.AddHostedService<StatsCollectionBackgroundService>();
-    builder.Services.AddHostedService<RankingCalculationService>();
-    builder.Services.AddHostedService<AggregateCalculationService>();
+    if (!disableBackgroundProcessing)
+    {
+        builder.Services.AddHostedService<StatsCollectionBackgroundService>();
+        builder.Services.AddHostedService<RankingCalculationService>();
+        builder.Services.AddHostedService<AggregateCalculationService>();
+    }
 
     // Register NodaTime clock for time-based services
     builder.Services.AddSingleton<IClock>(SystemClock.Instance);
@@ -647,10 +672,15 @@ try
     builder.Services.AddScoped<IAggregateBackfillBackgroundService, AggregateBackfillBackgroundService>();
     builder.Services.AddScoped<api.StatsCollectors.IServerPlayerRankingsRecalculationService, api.StatsCollectors.ServerPlayerRankingsRecalculationService>();
 
-    // Register background jobs for scheduled execution
-    builder.Services.AddHostedService<DailyAggregateRefreshBackgroundService>();
-    builder.Services.AddHostedService<WeeklyCleanupJob>();
-    builder.Services.AddHostedService<ServerWrappedCrunchBackgroundService>();
+    // Register background jobs for scheduled execution.
+    // The scoped job runners above stay registered either way — AdminJobsController
+    // can still trigger them on demand; only the scheduled drivers are suppressed.
+    if (!disableBackgroundProcessing)
+    {
+        builder.Services.AddHostedService<DailyAggregateRefreshBackgroundService>();
+        builder.Services.AddHostedService<WeeklyCleanupJob>();
+        builder.Services.AddHostedService<ServerWrappedCrunchBackgroundService>();
+    }
 
 
     // Configure Redis caching with short timeouts
@@ -743,8 +773,13 @@ try
     builder.Services.AddScoped<api.Gamification.Services.TeamVictoryProcessor>();
     builder.Services.AddScoped<api.Gamification.Services.GamificationService>();
 
-    // Register Gamification Background Service
-    builder.Services.AddHostedService<api.Gamification.Services.GamificationBackgroundService>();
+    // Register Gamification Background Service.
+    // It has its own ENABLE_GAMIFICATION_PROCESSING flag checked at runtime, but
+    // gate registration too so the maintenance switch is a single lever.
+    if (!disableBackgroundProcessing)
+    {
+        builder.Services.AddHostedService<api.Gamification.Services.GamificationBackgroundService>();
+    }
 
     // Register ImageStorage Services
     builder.Services.AddScoped<api.ImageStorage.IImageIndexingService, api.ImageStorage.ImageIndexingService>();
@@ -807,7 +842,10 @@ try
             sp.GetRequiredService<api.PlayerRelationships.CachedPlayerRelationshipService>());
 
         // Register community detection background service
-        builder.Services.AddHostedService<api.PlayerRelationships.CommunityDetectionService>();
+        if (!disableBackgroundProcessing)
+        {
+            builder.Services.AddHostedService<api.PlayerRelationships.CommunityDetectionService>();
+        }
 
         builder.Services.AddScoped<api.PlayerRelationships.ServerProximityService>();
 
