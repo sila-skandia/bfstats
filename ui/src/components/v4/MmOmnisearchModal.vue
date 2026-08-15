@@ -186,7 +186,7 @@ const flatResults = computed<FlatResultItem[]>(() => {
       badge,
       badgeVariant,
       iconVariant: 'player',
-      path: `/v4/leaderboard?q=${encodeURIComponent(p.playerName)}`,
+      path: `/v4/players/${encodeURIComponent(p.playerName)}`,
       raw: p,
     })
   }
