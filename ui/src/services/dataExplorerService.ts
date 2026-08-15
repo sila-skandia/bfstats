@@ -138,11 +138,11 @@ export interface MapDetail {
 /**
  * Valid game types for filtering
  */
-export type GameType = 'bf1942' | 'fh2' | 'bfvietnam';
+export type GameType = 'bf1942';
 
 /**
  * Fetches paginated servers with summary information
- * @param game - Game filter: bf1942 (default), fh2, or bfvietnam
+ * @param game - Game filter: bf1942 (default)
  * @param page - Page number (1-based, default 1)
  * @param pageSize - Number of results per page (default 50)
  */
@@ -206,7 +206,7 @@ export async function fetchServerMapRotation(
 
 /**
  * Fetches all maps with summary information
- * @param game - Game filter: bf1942 (default), fh2, or bfvietnam
+ * @param game - Game filter: bf1942 (default)
  */
 export async function fetchMaps(game: GameType = 'bf1942'): Promise<MapListResponse> {
   try {
@@ -223,7 +223,7 @@ export async function fetchMaps(game: GameType = 'bf1942'): Promise<MapListRespo
 /**
  * Fetches detailed information for a specific map
  * @param mapName - The map name
- * @param game - Game filter: bf1942 (default), fh2, or bfvietnam
+ * @param game - Game filter: bf1942 (default)
  */
 export async function fetchMapDetail(mapName: string, game: GameType = 'bf1942'): Promise<MapDetail | null> {
   try {
@@ -433,7 +433,7 @@ export async function fetchServerMapSessions(
  * Search for players by name prefix
  * Requires at least 3 characters. Returns top 50 matches by score.
  * @param query - Search query (min 3 characters)
- * @param game - Game filter: bf1942 (default), fh2, or bfvietnam
+ * @param game - Game filter: bf1942 (default)
  */
 export async function searchPlayers(
   query: string,
@@ -453,7 +453,7 @@ export async function searchPlayers(
 /**
  * Fetches player map rankings with per-server breakdown
  * @param playerName - The player name
- * @param game - Game filter: bf1942 (default), fh2, or bfvietnam
+ * @param game - Game filter: bf1942 (default)
  * @param days - Number of days to look back (default 60)
  * @param serverGuid - Optional server GUID to filter results to a specific server
  */
@@ -569,7 +569,7 @@ export async function fetchPlayerEngagementStats(playerName: string, game: GameT
 /**
  * Fetches paginated player rankings for a specific map (aggregated across all servers)
  * @param mapName - The map name
- * @param game - Game filter: bf1942 (default), fh2, or bfvietnam
+ * @param game - Game filter: bf1942 (default)
  * @param page - Page number (1-based)
  * @param pageSize - Number of results per page
  * @param search - Optional player name search filter
@@ -630,7 +630,7 @@ export interface MapActivityPatternsResponse {
 /**
  * Fetches activity patterns for a specific map showing when it's typically played.
  * @param mapName - The map name
- * @param game - Game filter: bf1942 (default), fh2, or bfvietnam
+ * @param game - Game filter: bf1942 (default)
  */
 export async function fetchMapActivityPatterns(
   mapName: string,

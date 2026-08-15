@@ -330,7 +330,7 @@ interface RoundListItem {
 
 interface Props {
   open: boolean;
-  game: 'bf1942' | 'fh2' | 'bfvietnam';
+  game: 'bf1942';
   defaultServerGuid?: string;
   defaultServerName?: string;
   defaultMapName?: string;

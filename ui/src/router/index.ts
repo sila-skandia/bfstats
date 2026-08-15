@@ -624,7 +624,7 @@ router.afterEach((to) => {
 router.afterEach((to) => {
   const meta = to.meta
   let title = 'BF Stats - Battlefield Server Statistics'
-  let description = 'Real-time Battlefield server monitoring and player statistics for BF1942, FH2, and BF Vietnam.'
+  let description = 'Real-time Battlefield 1942 server monitoring and player statistics.'
 
   if (meta?.title) {
     title = typeof meta.title === 'function' ? meta.title(to) : meta.title

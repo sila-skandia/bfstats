@@ -58,7 +58,7 @@ junie-des-1942stats/
 │   ├── PlayerInfo.cs
 │   └── Models/
 │       ├── Bf1942ServerInfo.cs
-│       ├── BfvietnamServerInfo.cs
+│       ├── ServerSummary.cs
 │       └── ...
 ├── Gamification/                   # Tournaments and achievements feature
 │   ├── GamificationService.cs

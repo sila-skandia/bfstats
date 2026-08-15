@@ -79,15 +79,8 @@ public static class ApiConstants
     public static class Games
     {
         public const string BattleField1942 = "bf1942";
-        public const string ForgottenHope2 = "fh2";
-        public const string BattleFieldVietnam = "bfvietnam";
 
-        public static readonly string[] AllowedGames =
-        {
-            BattleField1942,
-            ForgottenHope2,
-            BattleFieldVietnam
-        };
+        public static readonly string[] AllowedGames = [BattleField1942];
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using api.Bflist;
 using api.Bflist.Models;
+using api.Constants;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using api.PlayerTracking;
@@ -18,12 +19,12 @@ public class LiveServersController(
     IConfiguration configuration) : ControllerBase
 {
 
-    private static readonly string[] ValidGames = ["bf1942", "fh2", "bfvietnam"];
+    private static readonly string[] ValidGames = ApiConstants.Games.AllowedGames;
 
     /// <summary>
     /// Get all servers for a specific game
     /// </summary>
-    /// <param name="game">Game type: bf1942 or fh2</param>
+    /// <param name="game">Game type: bf1942</param>
     /// <param name="showAll">If true, show all servers including offline ones. If false (default), show only online servers.</param>
     /// <returns>Server list</returns>
     // This payload is identical for every visitor, so Cloudflare can absorb repeat
@@ -60,7 +61,7 @@ public class LiveServersController(
     /// <summary>
     /// Get individual server data for real-time updates
     /// </summary>
-    /// <param name="game">Game type: bf1942 or fh2</param>
+    /// <param name="game">Game type: bf1942</param>
     /// <param name="ip">Server IP address</param>
     /// <param name="port">Server port number</param>
     /// <returns>Individual server data</returns>

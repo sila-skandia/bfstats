@@ -9,7 +9,7 @@ test.describe('Server Details Page', () => {
 
       // Find server links (excluding game mode links)
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       const linkCount = await serverLinks.count();
@@ -25,7 +25,7 @@ test.describe('Server Details Page', () => {
         // Should be on server details page
         expect(page.url()).toContain('/servers/');
         // Should not be on the list page
-        expect(page.url()).not.toMatch(/\/servers\/(bf1942|fh2|bfv)$/);
+        expect(page.url()).not.toMatch(/\/servers\/bf1942$/);
 
         // Should have server name in URL
         if (href) {
@@ -40,7 +40,7 @@ test.describe('Server Details Page', () => {
 
       // Navigate to first server
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       const linkCount = await serverLinks.count();
@@ -62,7 +62,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -89,7 +89,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -113,7 +113,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -134,7 +134,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -158,7 +158,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -184,7 +184,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -213,7 +213,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -246,7 +246,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -267,7 +267,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -302,7 +302,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -323,7 +323,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -349,7 +349,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -371,7 +371,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -397,7 +397,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
@@ -419,7 +419,7 @@ test.describe('Server Details Page', () => {
       await page.waitForLoadState('networkidle');
 
       const serverLinks = page.locator('a[href^="/servers/"]').filter({
-        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"], [href="/servers"]')
+        hasNot: page.locator('[href="/servers/bf1942"], [href="/servers"]')
       });
 
       if (await serverLinks.count() > 0) {
