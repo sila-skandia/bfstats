@@ -583,11 +583,24 @@ try
         Directory.CreateDirectory(dbDir);
     }
 
-    // Configure SQLite with proper connection settings to prevent locking issues
-    // - Default Timeout: Wait up to 30 seconds for locks across all connections
-    // - Cache=Shared: Coordinate in-process page cache sharing
+    // Configure SQLite connection settings.
+    //
+    // Do NOT add Cache=Shared here. It was added on 2026-08-16 to "coordinate in-process
+    // page cache sharing" and caused a site-wide slowdown. Shared-cache mode replaces
+    // WAL's snapshot isolation with table-level read/write locks between connections in
+    // the same process, so an HTTP read blocks for the entire duration of any background
+    // write transaction touching the same table — exactly what WAL exists to prevent.
+    // Measured with a writer holding a 12s transaction: reader blocked 0ms without the
+    // flag, 12,010ms with it. The failure surfaces as SQLITE_LOCKED (6 / 262
+    // SQLITE_LOCKED_SHAREDCACHE), which PRAGMA busy_timeout does not govern at all —
+    // only sqlite3_unlock_notify does, and Microsoft.Data.Sqlite does not use it.
+    //
+    // - Default Timeout: bounds Microsoft.Data.Sqlite's own BUSY/LOCKED retry loop, which
+    //   is what actually decides how long a blocked command waits. It defaults to 30s and
+    //   overrides the shorter PRAGMA busy_timeout, so it must be set here for the
+    //   fail-fast intent documented in the busy_timeout note below to hold.
     // - journal_mode: WAL provides better concurrent read/write performance
-    var connectionString = $"Data Source={dbPath};Default Timeout=30;Cache=Shared;Mode=ReadWriteCreate";
+    var connectionString = $"Data Source={dbPath};Default Timeout=5;Mode=ReadWriteCreate";
 
     // Register the connection interceptor as a singleton so it can be injected into DbContext
     builder.Services.AddSingleton<SqliteConnectionInterceptor>();
@@ -997,6 +1010,11 @@ try
             // would have served fine, since WAL readers never block — began timing out.
             // Failing fast keeps the pool circulating and the site serving. Raise this only
             // together with a fix for whatever is holding the write lock.
+            //
+            // This PRAGMA alone does not bound the wait. Microsoft.Data.Sqlite wraps every
+            // command in its own retry loop on BUSY/LOCKED that runs until CommandTimeout,
+            // which defaults to 30s — so a 5s PRAGMA still yielded a 30s stall until
+            // "Default Timeout=5" was set on the connection string. Keep the two in step.
             command.CommandText = "PRAGMA busy_timeout = 5000;";
             await command.ExecuteNonQueryAsync();
             logger.LogInformation("SQLite busy_timeout set to 5000ms");
