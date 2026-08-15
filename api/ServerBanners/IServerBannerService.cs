@@ -3,8 +3,9 @@ namespace api.ServerBanners;
 public interface IServerBannerService
 {
     /// <summary>
-    /// Renders a live server signature banner as PNG bytes. Player count, current map,
-    /// and live team tickets are read fresh on every call — no caching, by design.
+    /// Renders a live server signature banner as PNG bytes. Player count is the
+    /// collector's stored <c>CurrentNumPlayers</c>. Map and live team tickets are
+    /// read fresh on every call.
     /// </summary>
     /// <param name="showTickets">
     /// When true (default) the renderer shows the live Axis-vs-Allies ticket scoreboard

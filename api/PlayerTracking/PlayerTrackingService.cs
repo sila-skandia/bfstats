@@ -265,8 +265,7 @@ public class PlayerTrackingService(
         bool ipChanged = false;
         string? oldMapName = null;
 
-        // Count human players only (exclude AI bots)
-        var humanPlayerCount = serverInfo.Players.Count(p => !botDetectionService.IsBotPlayer(p.Name, p.AiBot));
+        var humanPlayerCount = CountCurrentPlayers(serverInfo);
 
         if (server == null)
         {
@@ -411,6 +410,26 @@ public class PlayerTrackingService(
         {
             _logger.LogError(ex, "Error marking servers as offline");
         }
+    }
+
+    private int CountCurrentPlayers(IGameServer serverInfo)
+    {
+        var roster = serverInfo.Players ?? [];
+        var humans = roster.Count(p => !botDetectionService.IsBotPlayer(p.Name, p.AiBot));
+        if (humans > 0)
+        {
+            return humans;
+        }
+
+        // Snapshot reported a population but omitted the roster — persist the
+        // reported count so CurrentNumPlayers cannot drop to 0 while people
+        // are on the server.
+        if (!roster.Any() && serverInfo.NumPlayers > 0)
+        {
+            return serverInfo.NumPlayers;
+        }
+
+        return 0;
     }
 
     // Helper methods
