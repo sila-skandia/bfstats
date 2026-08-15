@@ -40,7 +40,11 @@ const load = async (showSpinner = false) => {
   error.value = null
   try {
     const data = await fetchAllServers(game.value)
-    servers.value = [...data].sort((a, b) => (b.numPlayers || 0) - (a.numPlayers || 0))
+    if (data && data.length > 0) {
+      servers.value = [...data].sort((a, b) => (b.numPlayers || 0) - (a.numPlayers || 0))
+    } else if (servers.value.length === 0) {
+      servers.value = []
+    }
 
     // Re-link selectedServer to point to the new data object (by GUID)
     if (selectedServer.value) {
