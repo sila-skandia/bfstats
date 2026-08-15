@@ -126,12 +126,11 @@ public class ServersControllerTests
             TotalPages = 1
         };
 
-        _serverStatsService.GetAllServersWithPaging(
-                Arg.Any<int>(),
-                Arg.Any<int>(),
+        _serverStatsService.SearchServersAsync(
                 Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<ServerFilters>())
+                Arg.Any<string?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>())
             .Returns(Task.FromResult(mockResults));
 
         // Act

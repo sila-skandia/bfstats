@@ -292,9 +292,20 @@ const executeSearch = async (searchTerm: string) => {
 
 const onQueryInput = () => {
   if (searchTimer) clearTimeout(searchTimer)
+  const q = query.value.trim()
+  if (!q) {
+    if (activeAbortController) {
+      activeAbortController.abort()
+      activeAbortController = null
+    }
+    players.value = []
+    servers.value = []
+    loading.value = false
+    return
+  }
   searchTimer = window.setTimeout(() => {
     void executeSearch(query.value)
-  }, 160)
+  }, 280)
 }
 
 const close = () => {
