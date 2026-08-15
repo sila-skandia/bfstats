@@ -175,14 +175,7 @@ public class PlayersController(
 
         try
         {
-            var filters = new PlayerFilters
-            {
-                PlayerName = query.Trim()
-            };
-
-            var result = await playerStatsService.GetAllPlayersWithPaging(
-                page, pageSize, "PlayerName", "asc", filters);
-
+            var result = await playerStatsService.SearchPlayersAsync(query, page, pageSize);
             return Ok(result);
         }
         catch (ArgumentException ex)
