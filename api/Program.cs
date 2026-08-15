@@ -658,6 +658,10 @@ try
         builder.Services.AddHostedService<StatsCollectionBackgroundService>();
         builder.Services.AddHostedService<RankingCalculationService>();
         builder.Services.AddHostedService<AggregateCalculationService>();
+
+        // Writes sqlite_stat1, so it is gated with the other writers — a maintenance
+        // copy should see a completely idle database.
+        builder.Services.AddHostedService<api.Services.BackgroundJobs.SqliteStatisticsBackgroundService>();
     }
 
     // Register NodaTime clock for time-based services

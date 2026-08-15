@@ -127,8 +127,10 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerObservation>()
             .HasKey(po => po.ObservationId);
 
-        modelBuilder.Entity<PlayerObservation>()
-            .HasIndex(po => po.SessionId);
+        // No standalone index on SessionId: it is a strict prefix of the composite below,
+        // which serves every lookup a single-column index would. On 101M rows the duplicate
+        // cost 1.26GB and an extra B-tree write per observation insert. Dropped in
+        // AddCoveringIndexesForRankingQueries.
 
         modelBuilder.Entity<PlayerObservation>()
             .HasIndex(po => po.Timestamp);
@@ -147,6 +149,16 @@ public class PlayerTrackerDbContext : DbContext
 
         modelBuilder.Entity<ServerPlayerRanking>()
             .HasIndex(r => new { r.ServerGuid, r.Rank });
+
+        // Covering index for the per-server rank query in
+        // PlayerStatsService.GetServerRankingsWithPing, which re-aggregates a whole
+        // server's ranking history (SUM(TotalScore) GROUP BY PlayerName) once per server
+        // the player has played on. The unique index above stops at Year/Month, so
+        // TotalScore had to come from the table — one random row fetch per entry, 27k of
+        // them on the busiest server. Adding TotalScore makes it index-only.
+        modelBuilder.Entity<ServerPlayerRanking>()
+            .HasIndex(r => new { r.ServerGuid, r.PlayerName, r.TotalScore })
+            .HasDatabaseName("IX_ServerPlayerRankings_ServerGuid_PlayerName_TotalScore");
 
         // Configure Round entity
         modelBuilder.Entity<Round>()
@@ -902,6 +914,24 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerMapStats>()
             .HasIndex(pms => new { pms.PlayerName, pms.Year, pms.ServerGuid, pms.MapName })
             .HasDatabaseName("IX_PlayerMapStats_PlayerName_Year_ServerGuid_MapName");
+
+        // Covering index for the map-rankings query behind
+        // /stats/data-explorer/players/{name}/maps. To report one player's rank it ranks
+        // every player on every map that player has touched — 607,689 of 1.46M rows for a
+        // typical player — so the cost is set by the dataset, not by the player. It cannot
+        // be indexed away, but it can be kept off the table: IX_PlayerMapStats_MapName is
+        // not covering, so each of those rows was a random row fetch, which is what hurts
+        // on the network volume.
+        //
+        // Column order is deliberate. Leading MapName serves the WHERE; MapName,
+        // ServerGuid, PlayerName then match the GROUP BY exactly, so SQLite drops the
+        // "USE TEMP B-TREE FOR GROUP BY" step as well. Measured on a copy of production
+        // PlayerMapStats, fully warm (so the I/O saving is not even represented):
+        //   before  1.029s total, 0.25s system
+        //   after   0.434s total, 0.02s system
+        modelBuilder.Entity<PlayerMapStats>()
+            .HasIndex(pms => new { pms.MapName, pms.ServerGuid, pms.PlayerName, pms.Year, pms.Month, pms.TotalScore })
+            .HasDatabaseName("IX_PlayerMapStats_MapRanking_Covering");
 
         modelBuilder.Entity<PlayerMapStats>()
             .Property(pms => pms.UpdatedAt)
