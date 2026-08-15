@@ -114,6 +114,10 @@ and the measured I/O characteristics of the network-attached data volume — is 
 `deploy/NODE_TUNING.md`. Read it before changing anything I/O-related, and update it when you
 change a host setting; a node rebuild restores none of it.
 
+Things that have actually broken production — and the settings that caused them — are in
+`deploy/PRODUCTION_ISSUES.md`. Read it before touching the SQLite connection string, any
+PRAGMA, or a container's resource limits. Add an entry whenever an incident is resolved.
+
 Manifests live in `deploy/app/`. Every container has `requests` and `limits`; keep it that way.
 An unbounded container here is a node outage waiting to happen, and one carrying
 `priorityClassName: 1942-services` doubly so — top scheduling priority means the kubelet evicts
