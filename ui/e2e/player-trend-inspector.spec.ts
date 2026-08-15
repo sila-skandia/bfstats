@@ -153,10 +153,10 @@ test.describe('Player trend inspector', () => {
       clientY: y,
     });
 
-    await expect(panel.getByRole('button', { name: /^reset$/i })).toBeVisible();
+    await expect(panel.getByRole('button', { name: /^reset$/i }).first()).toBeVisible();
     await expect(panel.getByRole('button', { name: /view .* rounds/i })).toBeVisible();
 
-    await panel.getByRole('button', { name: /^reset$/i }).click();
+    await panel.getByRole('button', { name: /^reset$/i }).first().click();
     await expect(panel.getByRole('button', { name: /^reset$/i })).toHaveCount(0);
     await expect(panel.getByText('drag to zoom').first()).toBeVisible();
   });
