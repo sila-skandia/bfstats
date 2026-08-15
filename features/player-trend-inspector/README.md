@@ -10,7 +10,8 @@ selected period.
 1. **Hover** still reads a single bucket (date + value).
 2. **Drag horizontally** across either sparkline to select a slice.
    On release the visible series is that window, Y-axis refits, and a
-   range chip appears (`12 Mar – 28 Apr · Reset · View N rounds`).
+   range chip appears (`12 Mar – 28 Apr · View N rounds`). **Reset**
+   (and **Wider** on nested zooms) sit on the plot itself.
 3. Dragging again zooms further. **Wider** pops one level; **Reset**
    returns to the full career.
 4. **Expand** opens a fullscreen inspector: career overview strip
