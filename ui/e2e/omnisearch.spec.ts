@@ -57,7 +57,7 @@ test.describe('Global Omnisearch / Command Palette (⌘K)', () => {
     await expect(items.first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('should open player results on the filtered leaderboard', async ({ page }) => {
+  test('should open player results on the player details page', async ({ page }) => {
     const playerName = 'Omni Test Player';
     await page.route('**/stats/Players/search?**', route => route.fulfill({
       contentType: 'application/json',
@@ -74,9 +74,7 @@ test.describe('Global Omnisearch / Command Palette (⌘K)', () => {
     await page.locator('.mm-omni-input').fill(playerName);
     await page.locator('.mm-omni-item', { hasText: playerName }).click();
 
-    await expect(page).toHaveURL((url) =>
-      url.pathname === '/v4/leaderboard' && url.searchParams.get('q') === playerName,
-    );
+    await expect(page).toHaveURL(new RegExp(`/v4/players/${encodeURIComponent(playerName)}`));
   });
 
   test('should navigate using arrow keys and Enter', async ({ page }) => {
