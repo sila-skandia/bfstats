@@ -45,11 +45,20 @@ public interface IPlayerStatsService
     /// <param name="sortBy">Field to sort by.</param>
     /// <param name="sortOrder">Order direction ('asc' or 'desc').</param>
     /// <param name="filters">Filters to apply.</param>
-    /// <returns>Paginated list of players.</returns>
     Task<PagedResult<PlayerBasicInfo>> GetAllPlayersWithPaging(
         int page,
         int pageSize,
         string sortBy,
         string sortOrder,
         PlayerFilters filters);
+
+    /// <summary>
+    /// Fast player search hitting directly on player name, optimized for autocomplete and omnisearch.
+    /// </summary>
+    /// <param name="query">Player name search query.</param>
+    /// <param name="page">Page number (1-based).</param>
+    /// <param name="pageSize">Number of items per page.</param>
+    /// <returns>Paginated list of matching players.</returns>
+    Task<PagedResult<PlayerBasicInfo>> SearchPlayersAsync(string query, int page = 1, int pageSize = 10);
 }
+
