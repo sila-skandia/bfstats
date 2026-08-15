@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-UI for bfstats.io — a statistics dashboard for Battlefield 1942,
-Forgotten Hope 2, and Battlefield Vietnam servers and players.
+UI for bfstats.io — a statistics dashboard for Battlefield 1942
+servers and players.
 
 ## Tech stack
 

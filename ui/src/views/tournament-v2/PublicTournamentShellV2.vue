@@ -265,8 +265,6 @@ const statusLabel = computed(() => {
 const gameLabel = computed(() => {
   switch (props.tournament.game) {
     case 'bf1942': return 'BF1942'
-    case 'fh2': return 'FH2'
-    case 'bfvietnam': return 'BF Vietnam'
     default: return String(props.tournament.game ?? '').toUpperCase()
   }
 })

@@ -280,9 +280,9 @@ class NotificationService {
     const testData: ServerMapChangeNotification = {
       type: 'server_map_change',
       serverName,
-      mapName: 'fh2 normandy_1944',
+      mapName: 'berlin',
       timestamp: new Date().toISOString(),
-      message: `Server ${serverName} changed map from fh2 sidi_bou_zid to fh2 normandy_1944`,
+      message: `Server ${serverName} changed map from el_alamein to berlin`,
       joinLink: 'bf1942://192.168.1.100:14567'
     };
 

@@ -476,7 +476,7 @@ interface ServersResponse {
  * @returns All servers sorted by player count
  */
 export async function fetchAllServers(
-  game: 'bf1942' | 'fh2' | 'bfvietnam'
+  game: 'bf1942'
 ): Promise<ServerSummary[]> {
   try {
     // index.html kicks this request off during HTML parse for the landing route,
@@ -534,7 +534,7 @@ export async function searchServers(
   query: string,
   page = 1,
   pageSize = 25,
-  game: 'bf1942' | 'fh2' | 'bfvietnam' = 'bf1942'
+  game: 'bf1942' = 'bf1942'
 ): Promise<PagedServers> {
   const response = await axios.get<PagedServers>('/stats/servers/search', {
     params: { query: query.trim(), game, page, pageSize },
@@ -544,34 +544,17 @@ export async function searchServers(
 
 /**
  * Fetches live server data from backend API using cached endpoint
- * @param gameId The game ID ('fh2' for Forgotten Hope 2, 'bf1942' for BF1942, 'bfvietnam' for Battlefield Vietnam)
  * @param serverIp The IP address of the server
  * @param serverPort The port of the server
  * @returns Live server information including current leaderboard
  */
 export async function fetchLiveServerData(
-  gameId: string, 
-  serverIp: string, 
+  serverIp: string,
   serverPort: number
 ): Promise<ServerSummary> {
   try {
-    // Map gameId to the correct format for the API endpoint
-    let game: string;
-    switch (gameId.toLowerCase()) {
-      case 'fh2':
-        game = 'fh2';
-        break;
-      case 'bfvietnam':
-      case 'bfv':
-        game = 'bfvietnam';
-        break;
-      case 'bf1942':
-      case '42':
-      default:
-        game = 'bf1942';
-        break;
-    }
-    
+    const game = 'bf1942';
+
     // Use the backend API endpoint with separate IP and port parameters
     const response = await axios.get<ServerSummary>(
       `/stats/liveservers/${game}/${serverIp}/${serverPort}`

@@ -83,7 +83,7 @@ const loadStats = async () => {
   // upgrades the period from Last30Days to ThisYear and we surface
   // every map the player has touched this year, not just the last 30d.
   try {
-    mapStats.value = await fetchPlayerMapStats(rawName.value, primaryGameId.value, 365)
+    mapStats.value = await fetchPlayerMapStats(rawName.value, primaryGameId, 365)
   } catch {
     mapStats.value = []
   }
@@ -371,16 +371,12 @@ const goServer = (serverName: string) => {
 const openMapRankings = (mapName: string) => {
   router.push({
     path: `/v4/players/${encodeURIComponent(rawName.value)}/maps/${encodeURIComponent(mapName)}`,
-    query: { game: primaryGameId.value },
+    query: { game: primaryGameId },
   })
 }
 
-const primaryGameId = computed<'bf1942' | 'fh2' | 'bfvietnam'>(() => {
-  const g = (stats.value?.servers?.[0]?.gameId || 'bf1942').toLowerCase()
-  if (g.includes('fh2')) return 'fh2'
-  if (g.includes('vietnam') || g === 'bfv') return 'bfvietnam'
-  return 'bf1942'
-})
+// bf1942 is the only tracked game.
+const primaryGameId = 'bf1942' as const
 
 const goPlayerFromOrbit = (name: string) => {
   router.push(`/v4/players/${encodeURIComponent(name)}`)

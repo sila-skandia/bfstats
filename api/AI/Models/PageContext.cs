@@ -26,7 +26,7 @@ public record PageContext
     public string? ServerName { get; init; }
 
     /// <summary>
-    /// Game identifier: bf1942, fh2, bfvietnam.
+    /// Game identifier: bf1942.
     /// </summary>
     public string? Game { get; init; }
 }

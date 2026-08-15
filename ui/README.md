@@ -1,6 +1,6 @@
 # BF1942 Servers Dashboard
 
-Statistics dashboard for Battlefield 1942, Forgotten Hope 2 (a mod), and Battlefield Vietnam.
+Statistics dashboard for Battlefield 1942.
 
 ## Quick Start
 

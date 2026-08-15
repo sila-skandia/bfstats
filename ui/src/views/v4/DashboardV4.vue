@@ -80,8 +80,6 @@ const loadTournaments = async () => {
 const gameLabel = (game: TournamentListItem['game']) => {
   switch (game) {
     case 'bf1942': return 'BF1942'
-    case 'fh2': return 'FH2'
-    case 'bfvietnam': return 'BFV'
     default: return game
   }
 }

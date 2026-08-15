@@ -20,7 +20,8 @@ test.describe('Landing Page - Server Browser', () => {
     await page.goto('/servers/bf1942');
     await page.waitForLoadState('networkidle');
 
-    // Look for game type buttons (BF1942, FH2, BFV)
+    // BF1942 is the only tracked game, so there is no game switcher — this
+    // just guards that the landing page renders its interactive controls.
     const gameButtons = page.locator('button');
     const buttonCount = await gameButtons.count();
 
@@ -28,12 +29,11 @@ test.describe('Landing Page - Server Browser', () => {
     expect(buttonCount).toBeGreaterThan(0);
   });
 
-  test('should allow navigation between game modes', async ({ page }) => {
+  test('should land retired game-mode URLs on the BF1942 list', async ({ page }) => {
     await page.goto('/servers/bf1942');
     await page.waitForLoadState('networkidle');
 
-    // FH2 is no longer a tracked game mode — its old URL redirects to the
-    // BF1942 list rather than rendering a mode of its own.
+    // Retired deeplink — must reach the BF1942 list, not a dead end.
     await page.goto('/servers/fh2');
     await page.waitForLoadState('networkidle');
 
@@ -62,7 +62,7 @@ test.describe('Landing Page - Server Browser', () => {
 
     // Find links that navigate to server details (href contains /servers/)
     const serverLinks = page.locator('a[href*="/servers/"]').filter({
-      hasNot: page.locator('[href="/servers/bf1942"], [href="/servers/fh2"], [href="/servers/bfv"]')
+      hasNot: page.locator('[href="/servers/bf1942"]')
     });
 
     const linkCount = await serverLinks.count();

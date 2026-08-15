@@ -35,7 +35,7 @@ export async function fetchPlayerStats(playerName: string): Promise<PlayerTimeSt
  * @param pageSize The number of items per page
  * @param sortBy The field to sort by
  * @param sortOrder The sort order ('asc' or 'desc')
- * @param filters Object containing filter parameters (e.g. { playerName: 'john', gameId: 'fh2' })
+ * @param filters Object containing filter parameters (e.g. { playerName: 'john', gameId: 'bf1942' })
  * @returns Paged list of players
  */
 export async function fetchPlayersList(
@@ -260,13 +260,13 @@ export function clearInitialDataCache(): void {
 
 /**
  * Fetches historical player count data for a specific game
- * @param game The game type ('bf1942', 'fh2', 'bfvietnam')
+ * @param game The game type ('bf1942')
  * @param period The time period ('1d', '3d', '7d', '1month', '3months', 'thisyear', 'alltime') - defaults to '7d'
  * @param rollingWindow The rolling window for averaging in days (7, 14, 30) - defaults to 7
  * @returns Historical player count data
  */
 export async function fetchPlayerOnlineHistory(
-  game: 'bf1942' | 'fh2' | 'bfvietnam',
+  game: 'bf1942',
   period: string = '7d',
   rollingWindow: number = 7
 ): Promise<PlayerHistoryResponse> {

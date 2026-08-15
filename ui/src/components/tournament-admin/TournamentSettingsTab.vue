@@ -340,7 +340,7 @@ const formData = ref({
   name: '',
   slug: '',
   organizer: '',
-  game: 'bf1942' as 'bf1942' | 'fh2' | 'bfvietnam',
+  game: 'bf1942' as 'bf1942',
   anticipatedRoundCount: undefined as number | undefined,
   status: 'draft' as 'draft' | 'registration' | 'open' | 'closed',
   gameMode: 'Conquest',
