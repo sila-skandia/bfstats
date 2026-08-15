@@ -20,6 +20,8 @@ interface Props {
   interactive?: boolean
   brushable?: boolean
   highlightRange?: SparklineBrushRange | null
+  showReset?: boolean
+  canWiden?: boolean
   unit?: string
   valueFormatter?: (v: number) => string
 }
@@ -34,10 +36,14 @@ const props = withDefaults(defineProps<Props>(), {
   interactive: true,
   brushable: false,
   highlightRange: null,
+  showReset: false,
+  canWiden: false,
 })
 
 const emit = defineEmits<{
   brush: [range: SparklineBrushRange]
+  reset: []
+  widen: []
 }>()
 
 const wrapEl = ref<HTMLElement | null>(null)
@@ -420,6 +426,32 @@ const onPointerLeave = (e: PointerEvent) => {
           <span v-if="unit" class="mm-sparkline__tip-unit">{{ unit }}</span>
         </span>
       </div>
+
+      <div
+        v-if="showReset || canWiden"
+        class="mm-sparkline__overlay"
+        @pointerdown.stop
+        @pointermove.stop
+        @pointerup.stop
+        @click.stop
+      >
+        <button
+          v-if="canWiden"
+          type="button"
+          class="mm-sparkline__reset"
+          @click="emit('widen')"
+        >
+          Wider
+        </button>
+        <button
+          v-if="showReset"
+          type="button"
+          class="mm-sparkline__reset"
+          @click="emit('reset')"
+        >
+          Reset
+        </button>
+      </div>
     </div>
 
     <div v-if="showValueScale" class="mm-sparkline__scale">
@@ -492,6 +524,38 @@ const onPointerLeave = (e: PointerEvent) => {
 
 .mm-sparkline__sel--live {
   background: color-mix(in srgb, var(--mm-accent) 28%, transparent);
+}
+
+.mm-sparkline__overlay {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 6;
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.mm-sparkline__reset {
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+  background: color-mix(in srgb, var(--mm-bg) 82%, transparent);
+  border: 1px solid var(--mm-rule-strong);
+  padding: 5px 8px;
+  min-height: 28px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.mm-sparkline__reset:hover,
+.mm-sparkline__reset:focus-visible {
+  color: var(--mm-ink);
+  border-color: var(--mm-ink-soft);
+  outline: none;
 }
 
 .mm-sparkline__dot {

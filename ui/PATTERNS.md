@@ -102,7 +102,8 @@ Legacy Chart.js / SVG charts use `--color-text` etc. for axis labels and
 - No drop shadows on series, no gradient fills.
 - Sparklines: use `<MmSparkline :values="…" />` directly — props
   `values`, `timestamps`, `labels`, `showAxis`, `showValueScale`, `unit`,
-  `height`, `fill`, `accent`, `interactive`, `brushable`, `highlightRange`.
+  `height`, `fill`, `accent`, `interactive`, `brushable`, `highlightRange`,
+  `showReset`, `canWiden`.
 - Brush-to-zoom: set `brushable` and listen for `@brush="{ startIndex, endIndex }"`.
   Horizontal drag selects a window; the parent slices the series so the
   chart refits (Y-axis included). Player details uses this on K/D and

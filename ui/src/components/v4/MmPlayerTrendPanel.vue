@@ -239,10 +239,6 @@ const expandIcon = [
         <template v-if="windowRounds"> · {{ windowRounds.toLocaleString() }} rounds</template>
       </span>
       <div class="mm-trend-pair__window-actions">
-        <button v-if="zoomStack.length > 1" type="button" class="mm-btn" @click="stepBack">
-          ← Wider
-        </button>
-        <button type="button" class="mm-btn" @click="resetZoom">Reset</button>
         <button type="button" class="mm-btn mm-btn--strong" @click="openRounds">
           {{ roundsCta }}
         </button>
@@ -278,8 +274,12 @@ const expandIcon = [
             :height="56"
             :show-axis="true"
             :brushable="true"
+            :show-reset="isZoomed"
+            :can-widen="zoomStack.length > 1"
             unit="K/D"
             @brush="onChartBrush"
+            @reset="resetZoom"
+            @widen="stepBack"
           />
         </div>
         <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
@@ -323,8 +323,12 @@ const expandIcon = [
             :accent="true"
             :show-axis="true"
             :brushable="true"
+            :show-reset="isZoomed"
+            :can-widen="zoomStack.length > 1"
             unit="kills/min"
             @brush="onChartBrush"
+            @reset="resetZoom"
+            @widen="stepBack"
           />
         </div>
         <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
@@ -361,10 +365,6 @@ const expandIcon = [
               </p>
             </div>
             <div class="mm-trend-fs__head-actions">
-              <button v-if="isZoomed && zoomStack.length > 1" type="button" class="mm-btn" @click="stepBack">
-                ← Wider
-              </button>
-              <button v-if="isZoomed" type="button" class="mm-btn" @click="resetZoom">Reset zoom</button>
               <button
                 type="button"
                 class="mm-trend-so__close"
@@ -384,8 +384,10 @@ const expandIcon = [
               :height="36"
               :brushable="true"
               :highlight-range="highlightRange"
+              :show-reset="isZoomed"
               unit="K/D"
               @brush="onOverviewBrush"
+              @reset="resetZoom"
             />
           </div>
 
@@ -406,8 +408,12 @@ const expandIcon = [
                 :show-axis="true"
                 :show-value-scale="true"
                 :brushable="true"
+                :show-reset="isZoomed"
+                :can-widen="zoomStack.length > 1"
                 unit="K/D"
                 @brush="onChartBrush"
+                @reset="resetZoom"
+                @widen="stepBack"
               />
             </section>
 
@@ -430,8 +436,12 @@ const expandIcon = [
                 :show-axis="true"
                 :show-value-scale="true"
                 :brushable="true"
+                :show-reset="isZoomed"
+                :can-widen="zoomStack.length > 1"
                 unit="kills/min"
                 @brush="onChartBrush"
+                @reset="resetZoom"
+                @widen="stepBack"
               />
             </section>
           </div>
