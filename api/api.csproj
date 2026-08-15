@@ -70,4 +70,8 @@
     <EmbeddedResource Include="PlayerBanners\Resources\*.ttf" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="api.tests" />
+  </ItemGroup>
+
 </Project>
