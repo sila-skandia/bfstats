@@ -32,7 +32,7 @@ public class PlayersController(
     /// <param name="isActive">Optional active status filter.</param>
     /// <param name="serverName">Optional server name filter.</param>
     /// <param name="gameId">Optional game ID filter.</param>
-    /// <param name="game">Optional game type filter (bf1942, fh2, bfvietnam).</param>
+    /// <param name="game">Optional game type filter (bf1942).</param>
     /// <param name="mapName">Optional map name filter.</param>
     /// <returns>Paginated list of players matching the specified criteria.</returns>
     /// <response code="200">Returns the list of players.</response>

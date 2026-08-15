@@ -9,7 +9,7 @@ namespace api.Data.Entities;
 /// </summary>
 public class HourlyActivityPattern
 {
-    public required string Game { get; set; } // bf1942, fh2, bfvietnam
+    public required string Game { get; set; } // bf1942
     public int DayOfWeek { get; set; } // 0=Sunday, 6=Saturday (SQLite convention)
     public int HourOfDay { get; set; } // 0-23
     public double UniquePlayersAvg { get; set; }

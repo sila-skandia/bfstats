@@ -11,7 +11,7 @@ public class ServerOnlineCount
 {
     public required string ServerGuid { get; set; }
     public Instant HourTimestamp { get; set; } // Truncated to hour
-    public required string Game { get; set; } // bf1942, fh2, bfvietnam
+    public required string Game { get; set; } // bf1942
     public double AvgPlayers { get; set; }
     public int PeakPlayers { get; set; }
     public int SampleCount { get; set; } // Number of 30s samples averaged

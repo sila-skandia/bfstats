@@ -45,7 +45,7 @@ public static class BackgroundJobMetrics
 
     /// <summary>
     /// Counter for game servers processed. High volume = potential memory spike.
-    /// Labels: game={bf1942|fh2|bfvietnam|all}
+    /// Labels: game={bf1942|all}
     /// </summary>
     public static readonly Counter<long> ServersProcessed = Meter.CreateCounter<long>(
         "bg_servers_processed_total",

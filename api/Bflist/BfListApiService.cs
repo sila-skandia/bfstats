@@ -64,85 +64,29 @@ public class BfListApiService(
         response.EnsureSuccessStatusCode();
         var content = await response.Content.ReadAsStringAsync();
 
-        if (game.ToLower() == "bf1942")
-        {
-            var bf1942Response = JsonSerializer.Deserialize<Bf1942ServersResponse>(content, CaseInsensitiveJson);
+        var bf1942Response = JsonSerializer.Deserialize<Bf1942ServersResponse>(content, CaseInsensitiveJson);
 
-            return bf1942Response?.Servers?.Cast<object>().ToArray() ?? [];
-        }
-        else if (game.ToLower() == "bfvietnam")
-        {
-            var bfvResponse = JsonSerializer.Deserialize<Models.BfvietnamServersResponse>(content, CaseInsensitiveJson);
-
-            return bfvResponse?.Servers?.Cast<object>().ToArray() ?? [];
-        }
-        else // fh2
-        {
-            var fh2Response = JsonSerializer.Deserialize<Models.Fh2ServersResponse>(content, CaseInsensitiveJson);
-
-            return fh2Response?.Servers?.Cast<object>().ToArray() ?? [];
-        }
+        return bf1942Response?.Servers?.Cast<object>().ToArray() ?? [];
     }
 
     public async Task<object[]> FetchAllServersAsync(string game)
     {
-        if (game.ToLower() == "bf1942")
+        var cacheKey = $"raw_servers:{game}";
+        var cachedResult = await cacheService.GetAsync<Bf1942ServerInfo[]>(cacheKey);
+
+        if (cachedResult != null)
         {
-            var cacheKey = $"raw_servers:{game}";
-            var cachedResult = await cacheService.GetAsync<Bf1942ServerInfo[]>(cacheKey);
-
-            if (cachedResult != null)
-            {
-                logger.LogDebug("Cache hit for raw servers of game {Game}", game);
-                return cachedResult.Cast<object>().ToArray();
-            }
-
-            logger.LogDebug("Cache miss for raw servers of game {Game}", game);
-            var freshServers = await FetchAllServersFromApiAsync(game);
-            var typedServers = freshServers.Cast<Bf1942ServerInfo>()
-                .Where(server => !IsStuckServer(server.Name))
-                .ToArray();
-            await cacheService.SetAsync(cacheKey, typedServers, TimeSpan.FromSeconds(ServerListCacheSeconds));
-            return typedServers.Cast<object>().ToArray();
+            logger.LogDebug("Cache hit for raw servers of game {Game}", game);
+            return cachedResult.Cast<object>().ToArray();
         }
-        else if (game.ToLower() == "bfvietnam")
-        {
-            var cacheKey = $"raw_servers:{game}";
-            var cachedResult = await cacheService.GetAsync<BfvietnamServerInfo[]>(cacheKey);
 
-            if (cachedResult != null)
-            {
-                logger.LogDebug("Cache hit for raw servers of game {Game}", game);
-                return cachedResult.Cast<object>().ToArray();
-            }
-
-            logger.LogDebug("Cache miss for raw servers of game {Game}", game);
-            var freshServers = await FetchAllServersFromApiAsync(game);
-            var typedServers = freshServers.Cast<BfvietnamServerInfo>()
-                .Where(server => !IsStuckServer(server.Name))
-                .ToArray();
-            await cacheService.SetAsync(cacheKey, typedServers, TimeSpan.FromSeconds(ServerListCacheSeconds));
-            return typedServers.Cast<object>().ToArray();
-        }
-        else // fh2
-        {
-            var cacheKey = $"raw_servers:{game}";
-            var cachedResult = await cacheService.GetAsync<Fh2ServerInfo[]>(cacheKey);
-
-            if (cachedResult != null)
-            {
-                logger.LogDebug("Cache hit for raw servers of game {Game}", game);
-                return cachedResult.Cast<object>().ToArray();
-            }
-
-            logger.LogDebug("Cache miss for raw servers of game {Game}", game);
-            var freshServers = await FetchAllServersFromApiAsync(game);
-            var typedServers = freshServers.Cast<Fh2ServerInfo>()
-                .Where(server => !IsStuckServer(server.Name))
-                .ToArray();
-            await cacheService.SetAsync(cacheKey, typedServers, TimeSpan.FromSeconds(ServerListCacheSeconds));
-            return typedServers.Cast<object>().ToArray();
-        }
+        logger.LogDebug("Cache miss for raw servers of game {Game}", game);
+        var freshServers = await FetchAllServersFromApiAsync(game);
+        var typedServers = freshServers.Cast<Bf1942ServerInfo>()
+            .Where(server => !IsStuckServer(server.Name))
+            .ToArray();
+        await cacheService.SetAsync(cacheKey, typedServers, TimeSpan.FromSeconds(ServerListCacheSeconds));
+        return typedServers.Cast<object>().ToArray();
     }
 
     private async Task<object[]> FetchAllServersFromApiAsync(string game)
@@ -176,59 +120,20 @@ public class BfListApiService(
             response.EnsureSuccessStatusCode();
             var content = await response.Content.ReadAsStringAsync();
 
-            if (game.ToLower() == "bf1942")
+            var bf1942Response = JsonSerializer.Deserialize<Bf1942ServersResponse>(content, CaseInsensitiveJson);
+
+            if (bf1942Response?.Servers != null && bf1942Response.Servers.Length > 0)
             {
-                var bf1942Response = JsonSerializer.Deserialize<Bf1942ServersResponse>(content, CaseInsensitiveJson);
+                allServers.AddRange(bf1942Response.Servers.Cast<object>());
 
-                if (bf1942Response?.Servers != null && bf1942Response.Servers.Length > 0)
-                {
-                    allServers.AddRange(bf1942Response.Servers.Cast<object>());
-
-                    // Set pagination parameters for next request
-                    cursor = bf1942Response.Cursor;
-                    after = $"{bf1942Response.Servers.Last().Ip}:{bf1942Response.Servers.Last().Port}";
-                    hasMore = bf1942Response.HasMore;
-                }
-                else
-                {
-                    hasMore = false;
-                }
+                // Set pagination parameters for next request
+                cursor = bf1942Response.Cursor;
+                after = $"{bf1942Response.Servers.Last().Ip}:{bf1942Response.Servers.Last().Port}";
+                hasMore = bf1942Response.HasMore;
             }
-            else if (game.ToLower() == "bfvietnam")
+            else
             {
-                var bfvResponse = JsonSerializer.Deserialize<Models.BfvietnamServersResponse>(content, CaseInsensitiveJson);
-
-                if (bfvResponse?.Servers != null && bfvResponse.Servers.Length > 0)
-                {
-                    allServers.AddRange(bfvResponse.Servers.Cast<object>());
-
-                    // Set pagination parameters for next request
-                    cursor = bfvResponse.Cursor;
-                    after = $"{bfvResponse.Servers.Last().Ip}:{bfvResponse.Servers.Last().Port}";
-                    hasMore = bfvResponse.HasMore;
-                }
-                else
-                {
-                    hasMore = false;
-                }
-            }
-            else // fh2
-            {
-                var fh2Response = JsonSerializer.Deserialize<Models.Fh2ServersResponse>(content, CaseInsensitiveJson);
-
-                if (fh2Response?.Servers != null && fh2Response.Servers.Length > 0)
-                {
-                    allServers.AddRange(fh2Response.Servers.Cast<object>());
-
-                    // Set pagination parameters for next request
-                    cursor = fh2Response.Cursor;
-                    after = $"{fh2Response.Servers.Last().Ip}:{fh2Response.Servers.Last().Port}";
-                    hasMore = fh2Response.HasMore;
-                }
-                else
-                {
-                    hasMore = false;
-                }
+                hasMore = false;
             }
         }
 
@@ -255,24 +160,7 @@ public class BfListApiService(
             response.EnsureSuccessStatusCode();
             var content = await response.Content.ReadAsStringAsync();
 
-            if (game.ToLower() == "bf1942")
-            {
-                var bf1942Server = JsonSerializer.Deserialize<Bf1942ServerInfo>(content, CaseInsensitiveJson);
-
-                return bf1942Server;
-            }
-            else if (game.ToLower() == "bfvietnam")
-            {
-                var bfvServer = JsonSerializer.Deserialize<BfvietnamServerInfo>(content, CaseInsensitiveJson);
-
-                return bfvServer;
-            }
-            else // fh2
-            {
-                var fh2Server = JsonSerializer.Deserialize<Fh2ServerInfo>(content, CaseInsensitiveJson);
-
-                return fh2Server;
-            }
+            return JsonSerializer.Deserialize<Bf1942ServerInfo>(content, CaseInsensitiveJson);
         }
         catch (HttpRequestException ex)
         {
@@ -285,13 +173,13 @@ public class BfListApiService(
     public async Task<Models.ServerSummary[]> FetchServerSummariesAsync(string game, int perPage = 100, string? cursor = null, string? after = null)
     {
         var servers = await FetchServersAsync(game, perPage, cursor, after);
-        return ConvertToServerSummaries(servers, game);
+        return ConvertToServerSummaries(servers);
     }
 
     public async Task<Models.ServerSummary[]> FetchAllServerSummariesWithCacheStatusAsync(string game)
     {
         var servers = await FetchAllServersAsync(game);
-        return ConvertToServerSummaries(servers, game);
+        return ConvertToServerSummaries(servers);
     }
 
     public async Task<Models.ServerSummary[]> FetchAllServerSummariesAsync(string game)
@@ -315,21 +203,9 @@ public class BfListApiService(
 
         if (server == null) return null;
 
-        if (game.ToLower() == "bf1942" && server is Bf1942ServerInfo bf1942Server)
+        if (server is Bf1942ServerInfo bf1942Server)
         {
             var summary = MapBf1942ToSummary(bf1942Server);
-            await cacheService.SetAsync(cacheKey, summary, TimeSpan.FromSeconds(SingleServerCacheSeconds));
-            return summary;
-        }
-        else if (game.ToLower() == "bfvietnam" && server is BfvietnamServerInfo bfvServer)
-        {
-            var summary = MapBfvToSummary(bfvServer);
-            await cacheService.SetAsync(cacheKey, summary, TimeSpan.FromSeconds(SingleServerCacheSeconds));
-            return summary;
-        }
-        else if (server is Fh2ServerInfo fh2Server)
-        {
-            var summary = MapFh2ToSummary(fh2Server);
             await cacheService.SetAsync(cacheKey, summary, TimeSpan.FromSeconds(SingleServerCacheSeconds));
             return summary;
         }
@@ -337,29 +213,12 @@ public class BfListApiService(
         return null;
     }
 
-    private Models.ServerSummary[] ConvertToServerSummaries(object[] servers, string game)
+    private Models.ServerSummary[] ConvertToServerSummaries(object[] servers)
     {
-        if (game.ToLower() == "bf1942")
-        {
-            return servers.Cast<Bf1942ServerInfo>()
-                .Select(MapBf1942ToSummary)
-                .OrderByDescending(s => s.NumPlayers)
-                .ToArray();
-        }
-        else if (game.ToLower() == "bfvietnam")
-        {
-            return servers.Cast<BfvietnamServerInfo>()
-                .Select(MapBfvToSummary)
-                .OrderByDescending(s => s.NumPlayers)
-                .ToArray();
-        }
-        else // fh2
-        {
-            return servers.Cast<Fh2ServerInfo>()
-                .Select(MapFh2ToSummary)
-                .OrderByDescending(s => s.NumPlayers)
-                .ToArray();
-        }
+        return servers.Cast<Bf1942ServerInfo>()
+            .Select(MapBf1942ToSummary)
+            .OrderByDescending(s => s.NumPlayers)
+            .ToArray();
     }
 
     private bool IsStuckServer(string serverName)
@@ -420,51 +279,4 @@ public class BfListApiService(
         };
     }
 
-    private Models.ServerSummary MapBfvToSummary(BfvietnamServerInfo server)
-    {
-        var filteredPlayers = FilterDuplicatePlayers(server.Players ?? [], server.Name);
-
-        return new Models.ServerSummary
-        {
-            Guid = server.Guid,
-            Name = server.Name,
-            Ip = server.Ip,
-            Port = server.Port,
-            NumPlayers = server.NumPlayers,
-            MaxPlayers = server.MaxPlayers,
-            MapName = server.MapName,
-            GameType = server.GameType,
-            JoinLink = server.JoinLink,
-            RoundTimeRemain = 0, // BFV doesn't have this field in the provided sample
-            Tickets1 = server.Teams?.FirstOrDefault(t => t.Index == 1)?.Tickets ?? 0,
-            Tickets2 = server.Teams?.FirstOrDefault(t => t.Index == 2)?.Tickets ?? 0,
-            Players = filteredPlayers,
-            Teams = server.Teams ?? [],
-            GameId = server.GameId
-        };
-    }
-
-    private Models.ServerSummary MapFh2ToSummary(Fh2ServerInfo server)
-    {
-        var filteredPlayers = FilterDuplicatePlayers(server.Players?.ToArray() ?? [], server.Name);
-
-        return new Models.ServerSummary
-        {
-            Guid = server.Guid,
-            Name = server.Name,
-            Ip = server.Ip,
-            Port = server.Port,
-            NumPlayers = server.NumPlayers,
-            MaxPlayers = server.MaxPlayers,
-            MapName = server.MapName,
-            GameType = server.GameType,
-            JoinLink = "", // FH2 doesn't have join links in the current model
-            RoundTimeRemain = server.Timelimit,
-            Tickets1 = 0, // FH2 doesn't have tickets in the current model
-            Tickets2 = 0,
-            Players = filteredPlayers,
-            Teams = server.Teams?.ToArray() ?? [],
-            GameId = server.GameVariant
-        };
-    }
 }

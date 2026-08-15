@@ -8,7 +8,7 @@ export interface TournamentListItem {
   matchCount: number;
   teamCount: number;
   hasHeroImage: boolean;
-  game: 'bf1942' | 'fh2' | 'bfvietnam';
+  game: 'bf1942';
   serverGuid?: string;
   serverName?: string;
   discordUrl?: string;
@@ -114,7 +114,7 @@ export interface TournamentDetail {
   heroImageContentType?: string;
   communityLogoBase64?: string;
   communityLogoContentType?: string;
-  game: 'bf1942' | 'fh2' | 'bfvietnam';
+  game: 'bf1942';
   serverGuid?: string;
   serverName?: string;
   discordUrl?: string;
@@ -133,7 +133,7 @@ export interface CreateTournamentRequest {
   name: string;
   slug?: string;
   organizer: string;
-  game: 'bf1942' | 'fh2' | 'bfvietnam';
+  game: 'bf1942';
   anticipatedRoundCount?: number;
   status?: 'draft' | 'registration' | 'open' | 'closed';
   gameMode?: string;
@@ -159,7 +159,7 @@ export interface UpdateTournamentRequest {
   name?: string;
   slug?: string;
   organizer?: string;
-  game?: 'bf1942' | 'fh2' | 'bfvietnam';
+  game?: 'bf1942';
   anticipatedRoundCount?: number;
   status?: 'draft' | 'registration' | 'open' | 'closed';
   gameMode?: string;
