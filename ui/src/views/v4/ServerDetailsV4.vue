@@ -148,7 +148,6 @@ const load = async () => {
         if (stale()) return
         if (details.value?.gameId && details.value.serverIp && details.value.serverPort) {
           const live = await fetchLiveServerData(
-            details.value.gameId,
             details.value.serverIp,
             details.value.serverPort,
           )

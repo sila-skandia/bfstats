@@ -317,7 +317,7 @@ public class PlayerStatsPlugin(
     [Description("Search for players by partial name. Returns up to 10 matching players with basic stats.")]
     public async Task<string> SearchPlayersAsync(
         [Description("The partial player name to search for (minimum 3 characters)")] string query,
-        [Description("Game to search: 'bf1942', 'fh2', or 'bfvietnam'")] string game = "bf1942")
+        [Description("Game to search: 'bf1942'")] string game = "bf1942")
     {
         logger.LogDebug("AI searching players with query: {Query}, game: {Game}", query, game);
 

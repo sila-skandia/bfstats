@@ -33,7 +33,7 @@ This document describes **every feature and data capability** currently implemen
 ### 3.1 Overview Tab (`/t/:id`)
 
 1. **Hero Header**:
-   - Displays tournament title, organizer name, creation date, game mode (e.g., `Conquest 8v8`), game title (`BF1942`, `FH2`, `BFV`), and status badge (`Registration Open`, `Active / Open`, `Closed`).
+   - Displays tournament title, organizer name, creation date, game mode (e.g., `Conquest 8v8`), game title (`BF1942`), and status badge (`Registration Open`, `Active / Open`, `Closed`).
    - Shows match progress indicator (`Matches played / Anticipated round count`).
 
 2. **Registration Open Banner**:

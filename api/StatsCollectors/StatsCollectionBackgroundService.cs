@@ -82,7 +82,7 @@ public sealed class StatsCollectionBackgroundService(
                 await playerTrackingService.CloseAllTimedOutSessionsAsync(DateTime.UtcNow);
                 await playerTrackingService.MarkOfflineServersAsync(DateTime.UtcNow);
 
-                // 2. Collect stats (FH2 and BFV retired — no active players)
+                // 2. Collect stats (bf1942 is the only tracked game)
                 var bf1942Servers = await CollectBf1942ServerStatsAsync(bfListApiService, playerTrackingService, "bf1942", CancellationToken.None);
 
                 // 3. Collect all servers

@@ -1,3 +1,4 @@
+using api.Constants;
 using api.DataExplorer.Models;
 using api.Gamification.Models;
 using api.PlayerTracking;
@@ -24,10 +25,8 @@ public class DataExplorerService(
     /// <summary>
     /// Valid game types for filtering.
     /// </summary>
-    private static readonly HashSet<string> ValidGames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "bf1942", "fh2", "bfvietnam"
-    };
+    private static readonly HashSet<string> ValidGames =
+        new(ApiConstants.Games.AllowedGames, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Normalize game parameter to lowercase, defaulting to bf1942 if invalid.

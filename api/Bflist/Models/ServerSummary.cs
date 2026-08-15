@@ -136,7 +136,7 @@ public class ServerSummary
     public string? ForumUrl { get; set; }
 
     /// <summary>
-    /// Game identifier (bf1942, fh2, bfvietnam)
+    /// Game identifier (bf1942)
     /// </summary>
     public string GameId { get; set; } = "";
 }

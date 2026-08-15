@@ -8,7 +8,7 @@ export interface QuerySuspiciousSessionsRequest {
   dateTo?: string;
   /** When true, include sessions from rounds that have been marked as deleted (so they can be undeleted). */
   includeDeletedRounds?: boolean;
-  /** Game type filter: bf1942, fh2, bfvietnam. From server record. */
+  /** Game type filter: bf1942. From server record. */
   game?: string;
 }
 
@@ -399,7 +399,7 @@ class AdminDataService {
 }
 
 // Server search for the query form (uses existing /stats/servers/search; no admin auth required for read)
-// game: bf1942 | fh2 | bfvietnam — filters by server's game type
+// game: bf1942 — filters by server's game type
 export async function searchServersForAdmin(
   query: string,
   pageSize = 20,

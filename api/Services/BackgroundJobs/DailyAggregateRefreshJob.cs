@@ -320,7 +320,7 @@ public class DailyAggregateRefreshJob(
                     SUM(AvgPlayers) as HourlyTotal
                 FROM ServerOnlineCounts
                 WHERE HourTimestamp >= @p0
-                  AND Game IN ('bf1942', 'fh2', 'bfvietnam')
+                  AND Game = 'bf1942'
                 GROUP BY Game, date(HourTimestamp), CAST(strftime('%w', HourTimestamp) AS INTEGER), CAST(strftime('%H', HourTimestamp) AS INTEGER)
             ) hourly_totals
             GROUP BY Game, DayOfWeek, HourOfDay";
@@ -366,7 +366,7 @@ public class DailyAggregateRefreshJob(
                 FROM PlayerSessions ps
                 INNER JOIN Servers s ON ps.ServerGuid = s.Guid
                 WHERE ps.StartTime >= @p0
-                  AND s.Game IN ('bf1942', 'fh2', 'bfvietnam')
+                  AND s.Game = 'bf1942'
                   AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
                 GROUP BY s.Game, date(ps.StartTime), CAST(strftime('%w', ps.StartTime) AS INTEGER), CAST(strftime('%H', ps.StartTime) AS INTEGER)
             ) daily_stats
@@ -490,7 +490,7 @@ public class DailyAggregateRefreshJob(
               AND (r.IsDeleted = 0 OR r.IsDeleted IS NULL)
               AND r.MapName IS NOT NULL
               AND r.MapName != ''
-              AND s.Game IN ('bf1942', 'fh2', 'bfvietnam')
+              AND s.Game = 'bf1942'
             GROUP BY r.ServerGuid, r.MapName, s.Game,
                      CAST(strftime('%w', r.StartTime) AS INTEGER),
                      CAST(strftime('%H', r.StartTime) AS INTEGER)";
@@ -659,7 +659,7 @@ public class DailyAggregateRefreshJob(
               AND (r.IsDeleted = 0 OR r.IsDeleted IS NULL)
               AND r.MapName IS NOT NULL
               AND r.MapName != ''
-              AND s.Game IN ('bf1942', 'fh2', 'bfvietnam')
+              AND s.Game = 'bf1942'
             GROUP BY r.ServerGuid, r.MapName, s.Game,
                      CAST(strftime('%w', r.StartTime) AS INTEGER),
                      CAST(strftime('%H', r.StartTime) AS INTEGER)";

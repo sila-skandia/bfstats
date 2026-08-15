@@ -204,8 +204,6 @@ const ADMIN_DATA_GAME_FILTER_KEY = 'bf1942_admin_data_game_filter'
 
 const gameTypes = [
   { id: 'bf1942', label: 'BF1942' },
-  { id: 'fh2', label: 'FH2' },
-  { id: 'bfvietnam', label: 'BFV' },
 ]
 
 const VALID_TABS: TabName[] = ['query', 'audit', 'cron', 'merge', 'access', 'notice', 'ai-feedback', 'tournaments']

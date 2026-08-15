@@ -1,6 +1,6 @@
 # Project Overview
 
-This is a **BF1942 Servers Dashboard** - a web application for monitoring Battlefield 1942, Forgotten Hope 2, and Battlefield Vietnam game servers with real-time player statistics and AI-powered analytics.
+This is a **BF1942 Servers Dashboard** - a web application for monitoring Battlefield 1942 game servers with real-time player statistics and AI-powered analytics.
 
 ## System Architecture
 

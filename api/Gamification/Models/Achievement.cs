@@ -14,6 +14,6 @@ public class Achievement
     public string MapName { get; set; } = "";
     public string RoundId { get; set; } = "";
     public string Metadata { get; set; } = ""; // JSON for additional context
-    public string Game { get; set; } = ""; // Game type: bf1942, fh2, bfvietnam
+    public string Game { get; set; } = ""; // Game type: bf1942
     public DateTime Version { get; set; } // Version field for ReplacingMergeTree deduplication
 }

@@ -7,7 +7,7 @@ public interface IDataExplorerService
     /// <summary>
     /// Get paginated servers with summary information, filtered by game.
     /// </summary>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="page">Page number (1-based)</param>
     /// <param name="pageSize">Number of results per page</param>
     Task<ServerListResponse> GetServersAsync(string game = "bf1942", int page = 1, int pageSize = 50);
@@ -29,14 +29,14 @@ public interface IDataExplorerService
     /// <summary>
     /// Get all maps with summary information, filtered by game.
     /// </summary>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     Task<MapListResponse> GetMapsAsync(string game = "bf1942");
 
     /// <summary>
     /// Get detailed information for a specific map, filtered by game.
     /// </summary>
     /// <param name="mapName">The map name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     Task<MapDetailDto?> GetMapDetailAsync(string mapName, string game = "bf1942");
 
     /// <summary>
@@ -49,14 +49,14 @@ public interface IDataExplorerService
     /// Requires at least 3 characters. Returns top 50 matches by score.
     /// </summary>
     /// <param name="query">Search query (min 3 characters)</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     Task<PlayerSearchResponse> SearchPlayersAsync(string query, string game = "bf1942");
 
     /// <summary>
     /// Get player map rankings with per-server breakdown and rank information.
     /// </summary>
     /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="days">Number of days to look back (default 60)</param>
     Task<PlayerMapRankingsResponse?> GetPlayerMapRankingsAsync(string playerName, string game = "bf1942", int days = 60, string? serverGuid = null);
 
@@ -64,7 +64,7 @@ public interface IDataExplorerService
     /// Get paginated player rankings for a specific map (aggregated across all servers).
     /// </summary>
     /// <param name="mapName">The map name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="page">Page number (1-based)</param>
     /// <param name="pageSize">Number of results per page</param>
     /// <param name="searchQuery">Optional player name search filter</param>
@@ -87,7 +87,7 @@ public interface IDataExplorerService
     /// Returns hourly patterns grouped by day of week.
     /// </summary>
     /// <param name="mapName">The map name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     Task<MapActivityPatternsResponse?> GetMapActivityPatternsAsync(string mapName, string game = "bf1942");
 
     /// <summary>
@@ -102,7 +102,7 @@ public interface IDataExplorerService
     /// Returns 3 different randomized interesting statistics.
     /// </summary>
     /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     Task<PlayerEngagementStatsDto> GetPlayerEngagementStatsAsync(string playerName, string game = "bf1942");
 
     /// <summary>
@@ -112,7 +112,7 @@ public interface IDataExplorerService
     /// </summary>
     /// <param name="playerName">The player name</param>
     /// <param name="sliceType">The slice dimension type</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="page">Page number (1-based)</param>
     /// <param name="pageSize">Number of results per page (default 20, max 100)</param>
     /// <param name="days">Number of days to look back (default 60)</param>
@@ -136,7 +136,7 @@ public interface IDataExplorerService
     /// </summary>
     /// <param name="playerName">The player name</param>
     /// <param name="mapName">The map name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="days">Number of days to look back (default 60)</param>
     Task<PlayerMapDetailResponse?> GetPlayerMapStatsAsync(
         string playerName,
@@ -157,7 +157,7 @@ public interface IDataExplorerService
     /// Returns monthly snapshots of map performance metrics.
     /// </summary>
     /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default), fh2, or bfvietnam</param>
+    /// <param name="game">Game filter: bf1942 (default)</param>
     /// <param name="months">Number of months to look back (default 12)</param>
     Task<MapPerformanceTimelineResponse?> GetMapPerformanceTimelineAsync(string playerName, string game = "bf1942", int months = 12);
 }

@@ -293,7 +293,7 @@ export interface Achievement {
   mapName: string;
   roundId: string;
   metadata: string;       // JSON string for additional context
-  game: string;           // 'bf1942', 'fh2', 'bfvietnam'
+  game: string;           // 'bf1942'
   version: string;        // DateTime in ISO format for deduplication
 }
 
