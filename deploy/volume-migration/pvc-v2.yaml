@@ -1,0 +1,44 @@
+# The new PVCs on /mnt/bfstats-data. PERSISTENT — these hold your data.
+#
+# NEVER `kubectl delete -f` this file. Both PVs are reclaim policy Delete and the
+# local-path teardown is `rm -rf "${VOL_DIR}"`, so deleting a PVC erases the
+# directory immediately.
+#
+# These are WaitForFirstConsumer: applying this file alone creates no PV and no
+# directory. Apply pvc-v2-primer-pods.yaml to trigger provisioning.
+# New PVCs on the attached volume, plus throwaway pods to trigger provisioning.
+#
+# The local-path StorageClass is WaitForFirstConsumer, so a PVC on its own
+# creates nothing — no PV, no directory. The primer pods are what make the
+# provisioner materialise the directories under /mnt/bfstats-data.
+#
+# Delete the primer pods once the data is copied in; the PVCs and their
+# directories persist.
+#
+# The existing bf42-stats-pvc and neo4j-pvc are left completely untouched as
+# the rollback path.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bf42-stats-pvc-v2
+  namespace: bf42-stats
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: neo4j-pvc-v2
+  namespace: bf42-stats
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
