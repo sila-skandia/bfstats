@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using api.PlayerTracking;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using api.Caching;
 
 namespace api.Controllers;
@@ -15,8 +14,7 @@ namespace api.Controllers;
 public class LiveServersController(
     IBfListApiService bfListApiService,
     ILogger<LiveServersController> logger,
-    PlayerTrackerDbContext dbContext,
-    IConfiguration configuration) : ControllerBase
+    PlayerTrackerDbContext dbContext) : ControllerBase
 {
 
     private static readonly string[] ValidGames = ApiConstants.Games.AllowedGames;
@@ -30,7 +28,7 @@ public class LiveServersController(
     // This payload is identical for every visitor, so Cloudflare can absorb repeat
     // traffic. The browser must still request it on every landing-page visit and poll.
     [HttpGet("{game}/servers")]
-    [EdgeCache(20)]
+    [EdgeCache(20, StaleWhileRevalidate = 15)]
     public async Task<ActionResult<ServerListResponse>> GetServers(string game, [FromQuery] bool showAll = false)
     {
         if (!ValidGames.Contains(game.ToLower()))
@@ -43,9 +41,18 @@ public class LiveServersController(
         try
         {
             var servers = await GetServersFromDatabaseAsync(game, showAll);
+            var serverList = servers ?? [];
+
+            // If no servers or all servers have 0 players, don't let Cloudflare edge-cache a degraded/empty response
+            var totalPlayers = serverList.Sum(s => s.NumPlayers);
+            if (serverList.Length == 0 || totalPlayers == 0)
+            {
+                Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            }
+
             var response = new ServerListResponse
             {
-                Servers = servers ?? [],
+                Servers = serverList,
                 LastUpdated = DateTime.UtcNow.ToString("O")
             };
 
@@ -114,8 +121,9 @@ public class LiveServersController(
         var totalStopwatch = System.Diagnostics.Stopwatch.StartNew();
         var stepStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-        var intervalSeconds = configuration.GetValue<int?>("STATS_COLLECTION_INTERVAL_SECONDS") ?? 30;
-        var activeThreshold = DateTime.UtcNow.AddSeconds(-Math.Max(60, intervalSeconds * 2));
+        // Align active session threshold with session timeout (5 minutes) rather than 60s
+        // so deployments and transient collection delays do not abruptly drop active players to 0.
+        var activeThreshold = DateTime.UtcNow.AddMinutes(-5);
 
         // Get servers filtering only by online status
         stepStopwatch.Restart();

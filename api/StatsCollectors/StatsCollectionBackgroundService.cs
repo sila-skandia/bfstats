@@ -71,58 +71,73 @@ public sealed class StatsCollectionBackgroundService(
 
         try
         {
-            using (BulkOperationContext.Begin())
-            using (LogContext.PushProperty("bulk_operation", true))
-            using (var scope = scopeFactory.CreateScope())
+            const int maxAttempts = 3;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                var playerTrackingService = scope.ServiceProvider.GetRequiredService<PlayerTrackingService>();
-                var bfListApiService = scope.ServiceProvider.GetRequiredService<IBfListApiService>();
-
-                // 1. Global timeout cleanup
-                await playerTrackingService.CloseAllTimedOutSessionsAsync(DateTime.UtcNow);
-                await playerTrackingService.MarkOfflineServersAsync(DateTime.UtcNow);
-
-                // 2. Collect stats (bf1942 is the only tracked game)
-                var bf1942Servers = await CollectBf1942ServerStatsAsync(bfListApiService, playerTrackingService, "bf1942", CancellationToken.None);
-
-                // 3. Collect all servers
-                var allServers = new List<IGameServer>();
-                allServers.AddRange(bf1942Servers);
-                var timestamp = DateTime.UtcNow;
-
-                // 4. Store server online counts to SQLite for analytics
-                var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
-                await UpsertServerOnlineCountsAsync(dbContext, bf1942Servers, "bf1942", timestamp);
-
-                activity?.SetTag("total_servers_processed", allServers.Count);
-                activity?.SetTag("bf1942_servers_processed", bf1942Servers.Count);
-
-                // Calculate active player count for metrics
-                var activePlayers = allServers.Sum(s => s.Players.Count());
-                BackgroundJobMetrics.SetActivePlayers(activePlayers);
-
-                // Emit metrics
-                BackgroundJobMetrics.ServersProcessed.Add(allServers.Count,
-                    new KeyValuePair<string, object?>("game", "all"));
-
-                cycleStopwatch.Stop();
-                activity?.SetTag("cycle_duration_ms", cycleStopwatch.ElapsedMilliseconds);
-
-                // Log summary every 10th cycle to reduce noise (every ~5 minutes at 30s intervals)
-                if (currentCycle % 10 == 0)
+                try
                 {
-                    logger.LogInformation(
-                        "Stats collection cycle #{Cycle}: {TotalServers} servers (BF1942={Bf1942}), {Players} players in {Duration}ms",
-                        currentCycle, allServers.Count, bf1942Servers.Count,
-                        activePlayers, cycleStopwatch.ElapsedMilliseconds);
+                    using (BulkOperationContext.Begin())
+                    using (LogContext.PushProperty("bulk_operation", true))
+                    using (var scope = scopeFactory.CreateScope())
+                    {
+                        var playerTrackingService = scope.ServiceProvider.GetRequiredService<PlayerTrackingService>();
+                        var bfListApiService = scope.ServiceProvider.GetRequiredService<IBfListApiService>();
+
+                        // 1. Global timeout cleanup
+                        await playerTrackingService.CloseAllTimedOutSessionsAsync(DateTime.UtcNow);
+                        await playerTrackingService.MarkOfflineServersAsync(DateTime.UtcNow);
+
+                        // 2. Collect stats (bf1942 is the only tracked game)
+                        var bf1942Servers = await CollectBf1942ServerStatsAsync(bfListApiService, playerTrackingService, "bf1942", CancellationToken.None);
+
+                        // 3. Collect all servers
+                        var allServers = new List<IGameServer>();
+                        allServers.AddRange(bf1942Servers);
+                        var timestamp = DateTime.UtcNow;
+
+                        // 4. Store server online counts to SQLite for analytics
+                        var dbContext = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
+                        await UpsertServerOnlineCountsAsync(dbContext, bf1942Servers, "bf1942", timestamp);
+
+                        activity?.SetTag("total_servers_processed", allServers.Count);
+                        activity?.SetTag("bf1942_servers_processed", bf1942Servers.Count);
+
+                        // Calculate active player count for metrics
+                        var activePlayers = allServers.Sum(s => s.Players.Count());
+                        BackgroundJobMetrics.SetActivePlayers(activePlayers);
+
+                        // Emit metrics
+                        BackgroundJobMetrics.ServersProcessed.Add(allServers.Count,
+                            new KeyValuePair<string, object?>("game", "all"));
+
+                        cycleStopwatch.Stop();
+                        activity?.SetTag("cycle_duration_ms", cycleStopwatch.ElapsedMilliseconds);
+
+                        // Log summary every 10th cycle to reduce noise (every ~5 minutes at 30s intervals)
+                        if (currentCycle % 10 == 0)
+                        {
+                            logger.LogInformation(
+                                "Stats collection cycle #{Cycle}: {TotalServers} servers (BF1942={Bf1942}), {Players} players in {Duration}ms",
+                                currentCycle, allServers.Count, bf1942Servers.Count,
+                                activePlayers, cycleStopwatch.ElapsedMilliseconds);
+                        }
+                    }
+                    break; // Completed successfully
+                }
+                catch (Exception ex) when (attempt < maxAttempts && IsSqliteBusyException(ex))
+                {
+                    logger.LogWarning(ex, "Stats collection cycle #{Cycle} encountered database lock on attempt {Attempt}/{MaxAttempts}; retrying in 1s...",
+                        currentCycle, attempt, maxAttempts);
+                    await Task.Delay(1000);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error in stats collection cycle #{Cycle}", currentCycle);
+                    activity?.SetTag("error", ex.Message);
+                    activity?.SetStatus(ActivityStatusCode.Error, $"Collection cycle failed: {ex.Message}");
+                    break;
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in stats collection cycle #{Cycle}", currentCycle);
-            activity?.SetTag("error", ex.Message);
-            activity?.SetStatus(ActivityStatusCode.Error, $"Collection cycle failed: {ex.Message}");
         }
         finally
         {
@@ -224,5 +239,16 @@ public sealed class StatsCollectionBackgroundService(
         }
 
         await dbContext.SaveChangesAsync();
+    }
+
+    private static bool IsSqliteBusyException(Exception ex)
+    {
+        if (ex is Microsoft.Data.Sqlite.SqliteException sqliteEx && (sqliteEx.SqliteErrorCode == 5 || sqliteEx.SqliteErrorCode == 6 || sqliteEx.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (ex.InnerException != null)
+            return IsSqliteBusyException(ex.InnerException);
+
+        return false;
     }
 }

@@ -125,6 +125,18 @@ interface RoundWithPlayers {
     deaths: number;
     isActive: boolean;
   }[];
+  topPlayers?: {
+    sessionId: number;
+    roundId: string;
+    playerName: string;
+    startTime: string;
+    endTime: string;
+    durationMinutes: number;
+    score: number;
+    kills: number;
+    deaths: number;
+    isActive: boolean;
+  }[];
 }
 
 export async function fetchSessions(
