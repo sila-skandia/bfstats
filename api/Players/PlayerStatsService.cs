@@ -824,5 +824,114 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         public int SessionCount { get; set; }
     }
 
+    public async Task<PagedResult<PlayerBasicInfo>> SearchPlayersAsync(
+        string query,
+        int page = 1,
+        int pageSize = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return new PagedResult<PlayerBasicInfo>
+            {
+                Items = [],
+                Page = page,
+                PageSize = pageSize,
+                TotalItems = 0,
+                TotalPages = 0
+            };
+        }
 
+        var trimmed = query.Trim();
+        var offset = Math.Max(0, (page - 1) * pageSize);
+
+        // 1. Fast prefix match (starts with query). Uses index on Player.Name.
+        var prefixResults = await dbContext.Players
+            .AsNoTracking()
+            .Where(p => !p.AiBot && EF.Functions.Like(p.Name, $"{trimmed}%"))
+            .OrderByDescending(p => p.TotalPlayTimeMinutes)
+            .Skip(offset)
+            .Take(pageSize)
+            .Select(p => new PlayerBasicInfo
+            {
+                PlayerName = p.Name,
+                TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
+                LastSeen = p.LastSeen
+            })
+            .ToListAsync();
+
+        var results = new List<PlayerBasicInfo>(prefixResults);
+
+        // 2. If prefix matches do not fill the requested page size, backfill with substring matches
+        if (results.Count < pageSize)
+        {
+            var needed = pageSize - results.Count;
+            var existingNames = results.Select(r => r.PlayerName).ToList();
+
+            var substringResults = await dbContext.Players
+                .AsNoTracking()
+                .Where(p => !p.AiBot && EF.Functions.Like(p.Name, $"%{trimmed}%") && !existingNames.Contains(p.Name))
+                .OrderByDescending(p => p.TotalPlayTimeMinutes)
+                .Take(needed)
+                .Select(p => new PlayerBasicInfo
+                {
+                    PlayerName = p.Name,
+                    TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
+                    LastSeen = p.LastSeen
+                })
+                .ToListAsync();
+
+            results.AddRange(substringResults);
+        }
+
+        // 3. Populate active status and current server for the matched small subset (5-10 items)
+        if (results.Count > 0)
+        {
+            var matchedNames = results.Select(r => r.PlayerName).ToList();
+            var activeSessions = await dbContext.PlayerSessions
+                .AsNoTracking()
+                .Where(s => s.IsActive && matchedNames.Contains(s.PlayerName))
+                .Select(s => new
+                {
+                    s.PlayerName,
+                    s.ServerGuid,
+                    ServerName = s.Server.Name,
+                    s.MapName,
+                    s.Server.GameId,
+                    s.TotalKills,
+                    s.TotalDeaths
+                })
+                .ToListAsync();
+
+            if (activeSessions.Count > 0)
+            {
+                var activeLookup = activeSessions.ToDictionary(s => s.PlayerName);
+                foreach (var p in results)
+                {
+                    if (activeLookup.TryGetValue(p.PlayerName, out var session))
+                    {
+                        p.IsActive = true;
+                        p.CurrentServer = new ServerInfo
+                        {
+                            ServerGuid = session.ServerGuid,
+                            ServerName = session.ServerName,
+                            MapName = session.MapName,
+                            GameId = session.GameId,
+                            SessionKills = session.TotalKills,
+                            SessionDeaths = session.TotalDeaths
+                        };
+                    }
+                }
+            }
+        }
+
+        return new PagedResult<PlayerBasicInfo>
+        {
+            Items = results,
+            Page = page,
+            PageSize = pageSize,
+            TotalItems = results.Count,
+            TotalPages = results.Count > 0 ? 1 : 0
+        };
+    }
 }
+

@@ -180,12 +180,10 @@ public class PlayersControllerTests
             TotalPages = 1
         };
 
-        _playerStatsService.GetAllPlayersWithPaging(
-                Arg.Any<int>(),
-                Arg.Any<int>(),
+        _playerStatsService.SearchPlayersAsync(
                 Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<PlayerFilters>())
+                Arg.Any<int>(),
+                Arg.Any<int>())
             .Returns(Task.FromResult(mockResults));
 
         // Act
