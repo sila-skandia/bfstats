@@ -163,6 +163,21 @@ public class PlayerTrackingService(
             }
         }
 
+        // Update participant count for the round outside the write transaction
+        if (activeRound != null)
+        {
+            var playerCount = await dbContext.PlayerSessions
+                .Where(ps => ps.RoundId == activeRound.RoundId)
+                .Select(ps => ps.PlayerName)
+                .Distinct()
+                .CountAsync();
+
+            activeRound.ParticipantCount = Math.Max(playerCount, playerNames.Count);
+            activeRound.Tickets1 = server.Tickets1;
+            activeRound.Tickets2 = server.Tickets2;
+            dbContext.Rounds.Update(activeRound);
+        }
+
         // Execute all database operations
         using (var transaction = await dbContext.Database.BeginTransactionAsync())
         {
@@ -219,21 +234,6 @@ public class PlayerTrackingService(
                 if (observations.Any())
                 {
                     await dbContext.PlayerObservations.AddRangeAsync(observations);
-                }
-
-                // Update participant count for the round (all players since bots are no longer stored)
-                if (activeRound != null)
-                {
-                    var playerCount = await dbContext.PlayerSessions
-                        .Where(ps => ps.RoundId == activeRound.RoundId)
-                        .Select(ps => ps.PlayerName)
-                        .Distinct()
-                        .CountAsync();
-
-                    activeRound.ParticipantCount = playerCount;
-                    activeRound.Tickets1 = server.Tickets1;
-                    activeRound.Tickets2 = server.Tickets2;
-                    dbContext.Rounds.Update(activeRound);
                 }
 
                 if (observations.Any() || activeRound != null)
