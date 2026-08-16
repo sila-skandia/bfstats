@@ -113,6 +113,11 @@ public class AggregateBackfillBackgroundService(
                         bestScoresCount += await BackfillBestScoresAsync(dbContext, batchPlayers, nowUtc, c);
 
                         processedPlayers += batchPlayers.Count;
+
+                        if (batchIndex + 1 < totalBatches)
+                        {
+                            await Task.Delay(50, c);
+                        }
                     }
 
                     stopwatch.Stop();

@@ -194,6 +194,8 @@ public class WrappedService(
                 serverActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 logger.LogError(ex, "Failed to pre-compute wrapped data for server: {ServerName} ({Guid})", server.Name, server.Guid);
             }
+
+            await Task.Delay(50, ct);
         }
         activity?.SetTag("wrapped.failure_count", failures);
         logger.LogInformation("Wrapped pre-computation completed successfully.");

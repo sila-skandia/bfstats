@@ -67,7 +67,11 @@ public class AggregateCalculationService(
                     await concurrency.ExecuteWithPlayerAggregatesLockAsync(async (_) =>
                     {
                         results["monthly"] = await CalculatePlayerStatsMonthly(dbContext, currentYear, currentMonth);
+                        await Task.Delay(50, stoppingToken);
+
                         results["server"] = await CalculatePlayerServerStats(dbContext, isoYear, currentWeek);
+                        await Task.Delay(50, stoppingToken);
+
                         results["map"] = await CalculatePlayerMapStats(dbContext, currentYear, currentMonth);
                     }, stoppingToken);
 

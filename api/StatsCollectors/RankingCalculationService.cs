@@ -95,6 +95,8 @@ public class RankingCalculationService(IServiceProvider services, ILogger<Rankin
                 serversWithErrors++;
                 logger.LogError(ex, "Error calculating rankings for server {ServerGuid}", serverGuid);
             }
+
+            await Task.Delay(50, ct);
         }
 
         logger.LogInformation(
