@@ -154,11 +154,11 @@ public class LiveServersController(
         // Get active player sessions efficiently (excluding bots) using the IsActive index directly
         stepStopwatch.Restart();
         var allActiveSessions = await dbContext.PlayerSessions
+            .FromSqlRaw("SELECT * FROM \"PlayerSessions\" WHERE \"IsActive\" = 1")
             .AsNoTracking()
-            .Where(ps => ps.IsActive == true
-                         && ps.LastSeenTime >= activeThreshold
-                         && (!ps.Player.AiBot))
             .Include(ps => ps.Player)
+            .Where(ps => ps.LastSeenTime >= activeThreshold
+                         && (!ps.Player.AiBot))
             .ToListAsync();
         var activeSessions = allActiveSessions.Where(ps => serverGuids.Contains(ps.ServerGuid)).ToList();
         stepStopwatch.Stop();
@@ -172,8 +172,8 @@ public class LiveServersController(
         // Server merges can leave multiple IsActive rounds per ServerGuid until the next map change closes them, so pick the most recent.
         stepStopwatch.Restart();
         var allActiveRounds = await dbContext.Rounds
+            .FromSqlRaw("SELECT * FROM \"Rounds\" WHERE \"IsActive\" = 1")
             .AsNoTracking()
-            .Where(r => r.IsActive == true)
             .ToListAsync();
         var currentRounds = allActiveRounds
             .Where(r => serverGuids.Contains(r.ServerGuid))
