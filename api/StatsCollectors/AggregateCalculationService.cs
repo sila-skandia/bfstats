@@ -22,7 +22,7 @@ public class AggregateCalculationService(
     ILogger<AggregateCalculationService> logger,
     IClock clock) : BackgroundService
 {
-    private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(10);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
