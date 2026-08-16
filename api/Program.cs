@@ -740,6 +740,11 @@ try
     builder.Services.AddScoped<ICacheService, CacheService>();
     builder.Services.AddScoped<ICacheKeyService, CacheKeyService>();
 
+    // In-process L1 cache. BfListApiService layers this in front of the Redis-backed
+    // ICacheService for the live server snapshot, so the landing page keeps serving data
+    // out of this pod's own memory even if Redis itself is unreachable.
+    builder.Services.AddMemoryCache();
+
     // Register BFList API service with configured HTTP client and resilience
     builder.Services.AddHttpClient("BfListApi", client =>
     {
