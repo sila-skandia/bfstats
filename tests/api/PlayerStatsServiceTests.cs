@@ -1,5 +1,7 @@
+using api.Caching;
 using api.Data.Entities;
 using api.Players;
+using api.Players.Models;
 using api.PlayerStats;
 using api.PlayerTracking;
 using Microsoft.Data.Sqlite;
@@ -194,6 +196,94 @@ public sealed class PlayerStatsServiceTests : IDisposable
         Assert.Equal(50, player.TotalDeaths);
         Assert.Equal(10, player.TotalRounds);
         Assert.Equal("MoonGamers BF1942", player.FavoriteServer);
+    }
+
+    [Fact]
+    public async Task GetPlayerStatistics_CalculatesServerRankings_BatchedQuery()
+    {
+        var server1 = new GameServer { Guid = "srv-1", Name = "Server Alpha", GameId = "bf1942" };
+        var server2 = new GameServer { Guid = "srv-2", Name = "Server Bravo", GameId = "bf1942" };
+        dbContext.Servers.AddRange(server1, server2);
+
+        dbContext.Players.AddRange(
+            new Player { Name = "AcePlayer", TotalPlayTimeMinutes = 500, AiBot = false, LastSeen = DateTime.UtcNow },
+            new Player { Name = "RivalPlayer", TotalPlayTimeMinutes = 400, AiBot = false, LastSeen = DateTime.UtcNow },
+            new Player { Name = "ThirdPlayer", TotalPlayTimeMinutes = 300, AiBot = false, LastSeen = DateTime.UtcNow }
+        );
+
+        // Server 1 rankings: RivalPlayer (score 1000) > AcePlayer (score 800) > ThirdPlayer (score 200)
+        dbContext.ServerPlayerRankings.AddRange(
+            new ServerPlayerRanking { ServerGuid = "srv-1", PlayerName = "RivalPlayer", Year = 2026, Month = 8, TotalScore = 1000, Rank = 1 },
+            new ServerPlayerRanking { ServerGuid = "srv-1", PlayerName = "AcePlayer", Year = 2026, Month = 8, TotalScore = 800, Rank = 2 },
+            new ServerPlayerRanking { ServerGuid = "srv-1", PlayerName = "ThirdPlayer", Year = 2026, Month = 8, TotalScore = 200, Rank = 3 },
+            // Server 2 rankings: AcePlayer (score 500) > RivalPlayer (score 300)
+            new ServerPlayerRanking { ServerGuid = "srv-2", PlayerName = "AcePlayer", Year = 2026, Month = 8, TotalScore = 500, Rank = 1 },
+            new ServerPlayerRanking { ServerGuid = "srv-2", PlayerName = "RivalPlayer", Year = 2026, Month = 8, TotalScore = 300, Rank = 2 }
+        );
+
+        await dbContext.SaveChangesAsync();
+
+        var stats = await service.GetPlayerStatistics("AcePlayer");
+
+        Assert.NotNull(stats);
+        Assert.NotNull(stats.Insights);
+        Assert.Equal(2, stats.Insights.ServerRankings.Count);
+
+        // Best rank first (Server 2 rank 1, Server 1 rank 2)
+        var rankSrv2 = stats.Insights.ServerRankings.FirstOrDefault(r => r.ServerGuid == "srv-2");
+        Assert.NotNull(rankSrv2);
+        Assert.Equal(1, rankSrv2!.Rank);
+        Assert.Equal(500, rankSrv2.TotalScore);
+        Assert.Equal(2, rankSrv2.TotalRankedPlayers);
+        Assert.Equal("Server Bravo", rankSrv2.ServerName);
+
+        var rankSrv1 = stats.Insights.ServerRankings.FirstOrDefault(r => r.ServerGuid == "srv-1");
+        Assert.NotNull(rankSrv1);
+        Assert.Equal(2, rankSrv1!.Rank);
+        Assert.Equal(800, rankSrv1.TotalScore);
+        Assert.Equal(3, rankSrv1.TotalRankedPlayers);
+        Assert.Equal("Server Alpha", rankSrv1.ServerName);
+    }
+
+    [Fact]
+    public async Task GetPlayerStatistics_UsesCache_WhenAvailable()
+    {
+        var cacheMock = Substitute.For<ICacheService>();
+        var cachedStats = new PlayerTimeStatistics
+        {
+            TotalPlayTimeMinutes = 9999,
+            TotalKills = 1234
+        };
+
+        cacheMock.GetAsync<PlayerTimeStatistics>("player_stats:cachedguy")
+            .Returns(cachedStats);
+
+        var cachedService = new PlayerStatsService(dbContext, sqlitePlayerStatsService, NullLogger<PlayerStatsService>.Instance, cacheMock);
+
+        var result = await cachedService.GetPlayerStatistics("CachedGuy");
+
+        Assert.Equal(9999, result.TotalPlayTimeMinutes);
+        Assert.Equal(1234, result.TotalKills);
+        // Did not query dbContext for player
+        await cacheMock.DidNotReceive().SetAsync(Arg.Any<string>(), Arg.Any<PlayerTimeStatistics>(), Arg.Any<TimeSpan>());
+    }
+
+    [Fact]
+    public async Task GetPlayerStatistics_SetsCache_OnCacheMiss()
+    {
+        var cacheMock = Substitute.For<ICacheService>();
+        cacheMock.GetAsync<PlayerTimeStatistics>(Arg.Any<string>())
+            .Returns((PlayerTimeStatistics?)null);
+
+        dbContext.Players.Add(new Player { Name = "FreshPlayer", TotalPlayTimeMinutes = 100, AiBot = false, LastSeen = DateTime.UtcNow });
+        await dbContext.SaveChangesAsync();
+
+        var cachedService = new PlayerStatsService(dbContext, sqlitePlayerStatsService, NullLogger<PlayerStatsService>.Instance, cacheMock);
+
+        var result = await cachedService.GetPlayerStatistics("FreshPlayer");
+
+        Assert.NotNull(result);
+        await cacheMock.Received(1).SetAsync("player_stats:freshplayer", Arg.Any<PlayerTimeStatistics>(), TimeSpan.FromSeconds(30));
     }
 
     public void Dispose()
