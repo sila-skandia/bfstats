@@ -119,6 +119,7 @@ pipeline {
                         --from-literal=refresh-token-secret="$REFRESH_TOKEN_SECRET" \
                         --dry-run=client -o yaml | kubectl apply -f -
                       kubectl -n bf42-stats rollout restart deployment/bf42-stats
+                      kubectl -n bf42-stats rollout status deployment/bf42-stats --timeout=120s
                     '''
                   }
                 }
@@ -261,6 +262,30 @@ pipeline {
                           "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
                       fi
                       echo "Cloudflare cache purged successfully."
+
+                      echo "Warming Cloudflare edge cache for critical landing page & API..."
+                      if command -v curl >/dev/null 2>&1; then
+                        HTML=$(curl -s https://bfstats.io/ || true)
+                        if [ -n "$HTML" ]; then
+                          ASSETS=$(echo "$HTML" | grep -oE '/assets/[a-zA-Z0-9_.-]+\.(js|css|woff2?)' | sort -u)
+                          for asset in $ASSETS; do
+                            curl -s -o /dev/null "https://bfstats.io${asset}" &
+                          done
+                        fi
+                        curl -s -o /dev/null "https://bfstats.io/stats/liveservers/bf1942/servers" &
+                        wait
+                      else
+                        HTML=$(wget -qO- https://bfstats.io/ || true)
+                        if [ -n "$HTML" ]; then
+                          ASSETS=$(echo "$HTML" | grep -oE '/assets/[a-zA-Z0-9_.-]+\.(js|css|woff2?)' | sort -u)
+                          for asset in $ASSETS; do
+                            wget -qO- "https://bfstats.io${asset}" >/dev/null 2>&1 &
+                          done
+                        fi
+                        wget -qO- "https://bfstats.io/stats/liveservers/bf1942/servers" >/dev/null 2>&1 &
+                        wait
+                      fi
+                      echo "Edge cache warming complete."
                     '''
                   }
                 }
