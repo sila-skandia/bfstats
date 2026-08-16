@@ -7,7 +7,7 @@ import { countryCodeToName, countryCodeToFlag } from '@/types/countryCodes'
 import { loadClass } from './mmTokens'
 import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
-import { formatTimeRemaining } from '@/utils/timeUtils'
+import { formatTimeRemaining, formatRelativeTime, parseUtc } from '@/utils/timeUtils'
 
 // Only BF1942 is actively tracked in the modern-minimal preview today.
 type GameKey = 'bf1942'
@@ -28,6 +28,25 @@ const REFRESH_INTERVAL_MS = 30_000
 const nextRefreshAt = ref(Date.now() + REFRESH_INTERVAL_MS)
 const now = ref(Date.now())
 
+// When the live feed was actually current as of, per the API — not "when we last asked."
+// Reflects the real age of the data even when it's served from cache or a last-known-good
+// fallback, so this is what decides whether the "data may be stale" banner shows.
+const lastUpdated = ref<string | null>(null)
+
+// A couple of missed 30s collection cycles' worth of grace — mirrors
+// LiveServersController's StaleDataThreshold so client and server agree on what "stale"
+// means. Below this: normal render. At/above it, or with nothing to show at all: banner.
+const STALE_THRESHOLD_MS = 90_000
+
+const dataAgeMs = computed(() => {
+  if (!lastUpdated.value) return Infinity
+  const fetchedAt = parseUtc(lastUpdated.value).getTime()
+  if (Number.isNaN(fetchedAt)) return Infinity
+  return Math.max(0, now.value - fetchedAt)
+})
+const isDataStale = computed(() => dataAgeMs.value >= STALE_THRESHOLD_MS)
+const staleSince = computed(() => (lastUpdated.value ? formatRelativeTime(lastUpdated.value) : ''))
+
 const selectedServer = ref<ServerSummary | null>(null)
 const showQuiet = ref(true)
 
@@ -45,8 +64,9 @@ const applyServerList = (data: ServerSummary[]) => {
 }
 
 const cached = peekCachedLiveServers()
-if (cached && cached.length > 0) {
-  applyServerList(cached)
+if (cached && cached.servers.length > 0) {
+  applyServerList(cached.servers)
+  lastUpdated.value = cached.lastUpdated
   loading.value = false
 }
 
@@ -54,12 +74,13 @@ const load = async (showSpinner = false) => {
   if (showSpinner && servers.value.length === 0) loading.value = true
   error.value = null
   try {
-    const data = await fetchAllServers(game.value)
-    if (data && data.length > 0) {
-      applyServerList(data)
+    const result = await fetchAllServers(game.value)
+    if (result.servers && result.servers.length > 0) {
+      applyServerList(result.servers)
     } else if (servers.value.length === 0) {
       servers.value = []
     }
+    lastUpdated.value = result.lastUpdated
   } catch {
     error.value = 'Server feed temporarily unavailable.'
   } finally {
@@ -230,6 +251,21 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
     </div>
 
 
+    <!-- Live feed may be running off a last-known-good snapshot (upstream API or
+         Redis degraded) — say so and give an escape hatch to the DB-backed search
+         page, which doesn't depend on either. -->
+    <div v-if="isDataStale && !loading && servers.length > 0" class="mm-landing__stale-banner" role="status">
+      <svg class="mm-landing__stale-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+      </svg>
+      <span class="mm-landing__stale-text">
+        Live server data is temporarily unavailable — showing data from <strong>{{ staleSince }}</strong>.
+      </span>
+      <router-link to="/v4/servers/search" class="mm-landing__stale-link">
+        Search all tracked servers →
+      </router-link>
+    </div>
+
     <!-- list -->
     <div v-if="loading && servers.length === 0" style="padding: 40px 0">
       <div v-for="i in 6" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
@@ -237,8 +273,11 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 
     <div v-else-if="error" class="mm-empty">{{ error }}</div>
 
-    <div v-else-if="servers.length === 0" class="mm-empty">
-      No {{ GAME_LABEL }} servers reporting in right now.
+    <div v-else-if="servers.length === 0" class="mm-empty mm-landing__empty">
+      <span>No {{ GAME_LABEL }} servers reporting in right now.</span>
+      <router-link to="/v4/servers/search" class="mm-landing__stale-link">
+        Search all tracked servers →
+      </router-link>
     </div>
 
     <template v-else>
@@ -553,6 +592,62 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 
 @media (max-width: 720px) {
   .mm-landing__meta-extra { display: none; }
+}
+
+/* Staleness banner — data may be old (last-known-good fallback) but still shown below,
+   with an escape hatch to the DB-backed search page which doesn't depend on the live feed. */
+.mm-landing__stale-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--mm-danger);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--mm-danger) 14%, var(--mm-bg-mute));
+}
+
+.mm-landing__stale-icon {
+  flex: 0 0 auto;
+  color: var(--mm-danger);
+}
+
+.mm-landing__stale-text {
+  flex: 1 1 240px;
+  font-size: 12.5px;
+  color: var(--mm-ink-soft);
+}
+
+.mm-landing__stale-text strong {
+  color: var(--mm-ink);
+  font-weight: 600;
+}
+
+.mm-landing__stale-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.mm-landing__stale-link:hover {
+  color: var(--mm-accent);
+}
+
+.mm-landing__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 
 .mm-landing__roster-btn {
