@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using api.PlayerTracking;
 using Microsoft.EntityFrameworkCore;
 using api.Caching;
+using api.Servers;
 
 namespace api.Controllers;
 
@@ -13,11 +14,17 @@ namespace api.Controllers;
 [Route("stats/[controller]")]
 public class LiveServersController(
     IBfListApiService bfListApiService,
+    IBotDetectionService botDetectionService,
     ILogger<LiveServersController> logger,
     PlayerTrackerDbContext dbContext) : ControllerBase
 {
 
     private static readonly string[] ValidGames = ApiConstants.Games.AllowedGames;
+
+    // How old the live snapshot can be before we stop trusting it as "current" — a couple of
+    // missed 30s collection cycles' worth of grace. Beyond this: don't let Cloudflare lock the
+    // response in at the edge, and the UI switches to its "data may be stale" treatment.
+    private static readonly TimeSpan StaleDataThreshold = TimeSpan.FromSeconds(90);
 
     /// <summary>
     /// Get all servers for a specific game
@@ -48,12 +55,43 @@ public class LiveServersController(
 
         try
         {
-            var servers = await GetServersFromDatabaseAsync(game, showAll);
-            var serverList = servers ?? [];
+            ServerSummary[] serverList;
+            DateTime fetchedAtUtc;
+            var isFallback = false;
 
-            // If no servers or all servers have 0 players, don't let Cloudflare edge-cache a degraded/empty response
+            if (showAll)
+            {
+                // Historical/offline browse mode — BFList's live response only contains
+                // servers it can currently reach, so this still needs the DB.
+                serverList = await GetServersFromDatabaseAsync(game, showAll: true) ?? [];
+                fetchedAtUtc = DateTime.UtcNow;
+            }
+            else
+            {
+                try
+                {
+                    var snapshot = await GetLiveServersAsync(game);
+                    serverList = snapshot.Servers;
+                    fetchedAtUtc = snapshot.FetchedAtUtc;
+                    isFallback = snapshot.IsFallback;
+                }
+                catch (Exception ex)
+                {
+                    // No hot cache, no live upstream, no last-known-good — genuinely nothing to show.
+                    logger.LogError(ex, "No live server snapshot available for {Game}", game);
+                    serverList = [];
+                    fetchedAtUtc = DateTime.UtcNow;
+                    isFallback = true;
+                }
+            }
+
             var totalPlayers = serverList.Sum(s => s.NumPlayers);
-            if (serverList.Length == 0 || totalPlayers == 0)
+            var isStale = isFallback || DateTime.UtcNow - fetchedAtUtc > StaleDataThreshold;
+
+            // Don't let Cloudflare edge-cache a degraded, empty, or stale response — every one
+            // of those should be re-checked on the next request rather than served for the
+            // full SWR window.
+            if (serverList.Length == 0 || totalPlayers == 0 || isStale)
             {
                 Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
             }
@@ -61,7 +99,7 @@ public class LiveServersController(
             var response = new ServerListResponse
             {
                 Servers = serverList,
-                LastUpdated = DateTime.UtcNow.ToString("O")
+                LastUpdated = fetchedAtUtc.ToString("O")
             };
 
             return Ok(response);
@@ -71,6 +109,62 @@ public class LiveServersController(
             logger.LogError(ex, "Error fetching servers for game {Game} after {ElapsedMs}ms", game, stopwatch.ElapsedMilliseconds);
             return StatusCode(500, "Internal server error");
         }
+    }
+
+    /// <summary>
+    /// The landing page's "who's online now" — sourced directly from the last successful
+    /// BFList poll (via <see cref="IBfListApiService.FetchAllServersWithMetaAsync"/>) rather
+    /// than reconstructed from PlayerSessions. This removes the active-session threshold
+    /// entirely: there's nothing to age out, the snapshot either reflects reality as of
+    /// FetchedAtUtc or falls back to the last known one.
+    /// </summary>
+    private async Task<(ServerSummary[] Servers, DateTime FetchedAtUtc, bool IsFallback)> GetLiveServersAsync(string game)
+    {
+        var snapshot = await bfListApiService.FetchAllServersWithMetaAsync(game);
+        var summaries = snapshot.Servers.Select(bfListApiService.MapToSummary).ToArray();
+
+        if (summaries.Length > 0)
+        {
+            // Bot flag isn't reported by the bf1942 API — apply the same name-pattern
+            // detection PlayerTrackingService uses at ingestion time.
+            foreach (var summary in summaries)
+            {
+                foreach (var player in summary.Players)
+                {
+                    player.AiBot = botDetectionService.IsBotPlayer(player.Name, false);
+                }
+            }
+
+            // Geo/Discord/forum data isn't in the BFList payload — cheap point lookup by
+            // Guid, not the PlayerSessions/Rounds scans this used to require.
+            var guids = summaries.Select(s => s.Guid).ToArray();
+            var geoByGuid = await dbContext.Servers
+                .AsNoTracking()
+                .Where(s => guids.Contains(s.Guid))
+                .ToDictionaryAsync(s => s.Guid);
+
+            foreach (var summary in summaries)
+            {
+                if (geoByGuid.TryGetValue(summary.Guid, out var gameServer))
+                {
+                    summary.Country = gameServer.Country;
+                    summary.Region = gameServer.Region;
+                    summary.City = gameServer.City;
+                    summary.Loc = gameServer.Loc;
+                    summary.Timezone = gameServer.Timezone;
+                    summary.Org = gameServer.Org;
+                    summary.Postal = gameServer.Postal;
+                    summary.GeoLookupDate = gameServer.GeoLookupDate;
+                    summary.DiscordUrl = gameServer.DiscordUrl;
+                    summary.ForumUrl = gameServer.ForumUrl;
+                }
+                summary.IsOnline = true;
+                summary.LastSeenTime = snapshot.FetchedAtUtc;
+            }
+        }
+
+        var sorted = summaries.OrderByDescending(s => s.NumPlayers).ToArray();
+        return (sorted, snapshot.FetchedAtUtc, snapshot.IsFallback);
     }
 
     /// <summary>
