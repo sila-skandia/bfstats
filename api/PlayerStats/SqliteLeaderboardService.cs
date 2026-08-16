@@ -678,67 +678,8 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var totalPages = totalPlayers > 0 ? (int)Math.Ceiling((double)totalPlayers / effectivePageSize) : 1;
         var pagedRows = queryResult.Players;
 
-        var playerSource = dbContext.PlayerMapStats
-            .AsNoTracking()
-            .Where(pms => pms.ServerGuid != "");
-
-        if (days > 0)
-        {
-            var cutoff = DateTime.UtcNow.AddDays(-days);
-            var now = DateTime.UtcNow;
-            playerSource = playerSource.Where(pms =>
-                (pms.Year > cutoff.Year || (pms.Year == cutoff.Year && pms.Month >= cutoff.Month)) &&
-                (pms.Year < now.Year || (pms.Year == now.Year && pms.Month <= now.Month)));
-        }
-
-        if (!string.IsNullOrWhiteSpace(effectiveGame))
-        {
-            playerSource = playerSource.Where(pms =>
-                dbContext.Servers.Any(s => s.Guid == pms.ServerGuid && s.Game == effectiveGame));
-        }
-
-        if (includeMaps.Count > 0)
-        {
-            var mapNamesLower = includeMaps.Select(m => m.ToLowerInvariant()).ToList();
-            playerSource = playerSource.Where(pms => mapNamesLower.Contains(pms.MapName.ToLower()));
-        }
-
-        if (includeGuids.Count > 0)
-        {
-            playerSource = playerSource.Where(pms => includeGuids.Contains(pms.ServerGuid));
-        }
-        else
-        {
-            if (populatedFilter.Count > 0)
-            {
-                playerSource = playerSource.Where(pms => populatedFilter.Contains(pms.ServerGuid));
-            }
-
-            if (excludedFilter.Count > 0)
-            {
-                playerSource = playerSource.Where(pms => !excludedFilter.Contains(pms.ServerGuid));
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(searchQuery))
-        {
-            var term = searchQuery.Trim().ToLowerInvariant();
-            var matchingNames = playerSource
-                .Where(pms =>
-                    pms.PlayerName.ToLower().Contains(term) ||
-                    pms.MapName.ToLower().Contains(term) ||
-                    dbContext.Servers.Any(s => s.Guid == pms.ServerGuid && s.Name.ToLower().Contains(term)))
-                .Select(pms => pms.PlayerName);
-            playerSource = playerSource.Where(pms => matchingNames.Contains(pms.PlayerName));
-        }
-
-        var favs = await LoadFavouriteServersAndMapsAsync(playerSource, pagedRows.Select(p => p.Name).ToList());
-
         var pagedPlayers = pagedRows.Select((row, idx) =>
         {
-            favs.TryGetValue(row.Name, out var fav);
-            serverMap.TryGetValue(fav.ServerGuid ?? "", out var srv);
-            var srvCountry = srv?.Country ?? "";
             var kills = row.Kills;
             var deaths = row.Deaths;
             var playMin = (int)row.PlayMin;
@@ -755,11 +696,11 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 Kpm = playMin > 0 ? Math.Round((double)kills / playMin, 2) : 0,
                 PlayMin = playMin,
                 Rounds = row.Rounds,
-                FavServer = srv?.Name ?? fav.ServerGuid,
-                FavServerGuid = fav.ServerGuid,
-                FavServerCountry = srvCountry,
-                FavServerFlag = CountryCodeToFlag(srvCountry),
-                FavMap = FormatMapDisplayName(fav.MapName)
+                FavServer = "",
+                FavServerGuid = null,
+                FavServerCountry = "",
+                FavServerFlag = "",
+                FavMap = ""
             };
         }).ToList();
 
@@ -1172,48 +1113,6 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
     }
 
     private readonly record struct LeaderboardMapCountRow(string Name, int PlayerCount);
-
-    private static async Task<Dictionary<string, (string ServerGuid, string MapName)>> LoadFavouriteServersAndMapsAsync(
-        IQueryable<api.Data.Entities.PlayerMapStats> playerSource,
-        List<string> names)
-    {
-        var result = new Dictionary<string, (string ServerGuid, string MapName)>(StringComparer.Ordinal);
-        if (names.Count == 0) return result;
-
-        var rows = await playerSource
-            .Where(pms => names.Contains(pms.PlayerName))
-            .GroupBy(pms => new { pms.PlayerName, pms.ServerGuid, pms.MapName })
-            .Select(g => new
-            {
-                g.Key.PlayerName,
-                g.Key.ServerGuid,
-                g.Key.MapName,
-                Rounds = g.Sum(x => x.TotalRounds),
-                PlayMin = g.Sum(x => x.TotalPlayTimeMinutes)
-            })
-            .ToListAsync();
-
-        foreach (var playerRows in rows.GroupBy(r => r.PlayerName))
-        {
-            var topServer = playerRows
-                .GroupBy(x => x.ServerGuid)
-                .Select(sg => new { ServerGuid = sg.Key, Rounds = sg.Sum(x => x.Rounds), PlayMin = sg.Sum(x => x.PlayMin) })
-                .OrderByDescending(x => x.Rounds)
-                .ThenByDescending(x => x.PlayMin)
-                .First();
-
-            var topMap = playerRows
-                .GroupBy(x => x.MapName)
-                .Select(mg => new { MapName = mg.Key, Rounds = mg.Sum(x => x.Rounds), PlayMin = mg.Sum(x => x.PlayMin) })
-                .OrderByDescending(x => x.Rounds)
-                .ThenByDescending(x => x.PlayMin)
-                .First();
-
-            result[playerRows.Key] = (topServer.ServerGuid, topMap.MapName);
-        }
-
-        return result;
-    }
 
     private readonly record struct ServerOccupancy(string ServerGuid, double AvgPlayers);
 
