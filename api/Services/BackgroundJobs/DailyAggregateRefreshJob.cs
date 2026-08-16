@@ -41,13 +41,27 @@ public class DailyAggregateRefreshJob(
                 var results = new Dictionary<string, int>();
 
                 results["serverHourlyPatterns"] = await RefreshServerHourlyPatternsAsync(dbContext, ct);
+                await Task.Delay(100, ct);
+
                 results["hourlyPlayerPredictions"] = await RefreshHourlyPlayerPredictionsAsync(dbContext, ct);
+                await Task.Delay(100, ct);
+
                 results["hourlyActivityPatterns"] = await RefreshHourlyActivityPatternsAsync(dbContext, ct);
+                await Task.Delay(100, ct);
+
                 results["mapGlobalAverages"] = await RefreshMapGlobalAveragesAsync(dbContext, ct);
+                await Task.Delay(100, ct);
+
                 results["serverMapStats"] = await concurrency.ExecuteWithServerMapStatsLockAsync(async (c) => await RefreshServerMapStatsAsync(dbContext, c), ct);
+                await Task.Delay(100, ct);
+
                 results["mapServerHourlyPatterns"] = await RefreshMapServerHourlyPatternsAsync(dbContext, ct);
+                await Task.Delay(100, ct);
+
                 results["bestScores"] = await concurrency.ExecuteWithPlayerAggregatesLockAsync(
                     async (c) => await RefreshBestScoresAsync(dbContext, c), ct);
+                await Task.Delay(100, ct);
+
                 results["neo4jRelationships"] = await RefreshNeo4jRelationshipsAsync(scope, ct);
 
                 stopwatch.Stop();
@@ -284,6 +298,11 @@ public class DailyAggregateRefreshJob(
             }));
 
             totalInserted += await dbContext.Database.ExecuteSqlRawAsync(batchSql, batchParams, ct);
+
+            if (batchStart + batchSize < valueClauses.Count)
+            {
+                await Task.Delay(25, ct);
+            }
         }
 
         return totalInserted;
@@ -614,6 +633,11 @@ public class DailyAggregateRefreshJob(
 
             logger.LogDebug("Best scores refresh: batch {Batch}/{TotalBatches} ({BatchSize} players)",
                 batchIndex, totalBatches, batchPlayers.Count);
+
+            if (batchStart + batchSize < playerNames.Count)
+            {
+                await Task.Delay(50, ct);
+            }
         }
 
         stopwatch.Stop();
