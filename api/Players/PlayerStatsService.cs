@@ -52,101 +52,120 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
 
             if (filters.IsActive.HasValue)
             {
-                if (filters.IsActive.Value)
-                {
-                    // Only players with active sessions
-                    baseQuery = baseQuery.Where(p => p.Sessions.Any(s => s.IsActive));
-                }
-                else
-                {
-                    // Only players without active sessions
-                    baseQuery = baseQuery.Where(p => !p.Sessions.Any(s => s.IsActive));
-                }
+                var activePlayerNames = await dbContext.PlayerSessions
+                    .FromSqlRaw("SELECT * FROM \"PlayerSessions\" WHERE \"IsActive\" = 1")
+                    .AsNoTracking()
+                    .Select(s => s.PlayerName)
+                    .Distinct()
+                    .ToListAsync();
+
+                baseQuery = filters.IsActive.Value
+                    ? baseQuery.Where(p => activePlayerNames.Contains(p.Name))
+                    : baseQuery.Where(p => !activePlayerNames.Contains(p.Name));
             }
 
             // Server-related filters - filter by players who have active sessions matching criteria
-            if (!string.IsNullOrEmpty(filters.ServerName))
+            if (!string.IsNullOrEmpty(filters.ServerName) ||
+                !string.IsNullOrEmpty(filters.GameId) ||
+                !string.IsNullOrEmpty(filters.Game) ||
+                !string.IsNullOrEmpty(filters.MapName))
             {
-                baseQuery = baseQuery.Where(p => p.Sessions.Any(s => s.IsActive &&
-                    s.Server.Name.Contains(filters.ServerName)));
-            }
+                var matchingQuery = dbContext.PlayerSessions
+                    .FromSqlRaw("SELECT * FROM \"PlayerSessions\" WHERE \"IsActive\" = 1")
+                    .AsNoTracking()
+                    .Include(s => s.Server)
+                    .AsQueryable();
 
-            if (!string.IsNullOrEmpty(filters.GameId))
-            {
-                baseQuery = baseQuery.Where(p => p.Sessions.Any(s => s.IsActive &&
-                    s.Server.GameId == filters.GameId));
-            }
+                if (!string.IsNullOrEmpty(filters.ServerName))
+                    matchingQuery = matchingQuery.Where(s => s.Server.Name.Contains(filters.ServerName));
+                if (!string.IsNullOrEmpty(filters.GameId))
+                    matchingQuery = matchingQuery.Where(s => s.Server.GameId == filters.GameId);
+                if (!string.IsNullOrEmpty(filters.Game))
+                    matchingQuery = matchingQuery.Where(s => s.Server.Game == filters.Game);
+                if (!string.IsNullOrEmpty(filters.MapName))
+                    matchingQuery = matchingQuery.Where(s => s.MapName.Contains(filters.MapName));
 
-            if (!string.IsNullOrEmpty(filters.Game))
-            {
-                baseQuery = baseQuery.Where(p => p.Sessions.Any(s => s.IsActive &&
-                    s.Server.Game == filters.Game));
-            }
-
-            if (!string.IsNullOrEmpty(filters.MapName))
-            {
-                baseQuery = baseQuery.Where(p => p.Sessions.Any(s => s.IsActive &&
-                    s.MapName.Contains(filters.MapName)));
+                var matchingPlayerNames = await matchingQuery.Select(s => s.PlayerName).Distinct().ToListAsync();
+                baseQuery = baseQuery.Where(p => matchingPlayerNames.Contains(p.Name));
             }
         }
 
         // Apply sorting at database level
         var isDescending = sortOrder.ToLower() == "desc";
 
-        var query = sortBy.ToLower() switch
-        {
-            "playername" => isDescending
-                ? baseQuery.OrderByDescending(p => p.Name)
-                : baseQuery.OrderBy(p => p.Name),
-            "totalplaytimeminutes" => isDescending
-                ? baseQuery.OrderByDescending(p => p.TotalPlayTimeMinutes)
-                : baseQuery.OrderBy(p => p.TotalPlayTimeMinutes),
-            "lastseen" => isDescending
-                ? baseQuery.OrderByDescending(p => p.LastSeen)
-                : baseQuery.OrderBy(p => p.LastSeen),
-            "isactive" => isDescending
-                ? baseQuery.OrderByDescending(p => p.Sessions.Any(s => s.IsActive)).ThenByDescending(p => p.LastSeen)
-                : baseQuery.OrderBy(p => p.Sessions.Any(s => s.IsActive)).ThenByDescending(p => p.LastSeen),
-            _ => baseQuery.OrderByDescending(p => p.Sessions.Any(s => s.IsActive)).ThenByDescending(p => p.LastSeen)
-        };
+        var sortField = sortBy.ToLower();
+        IQueryable<Player> query;
 
-        // Now project to PlayerBasicInfo
-        var projectedQuery = query.Select(p => new PlayerBasicInfo
+        if (sortField == "isactive")
         {
-            PlayerName = p.Name,
-            TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
-            LastSeen = p.LastSeen,
-            IsActive = p.Sessions.Any(s => s.IsActive),
-            CurrentServer = p.Sessions.Any(s => s.IsActive)
-                ? p.Sessions.Where(s => s.IsActive)
-                    .Select(s => new ServerInfo
-                    {
-                        ServerGuid = s.ServerGuid,
-                        ServerName = s.Server.Name,
-                        SessionKills = s.TotalKills,
-                        SessionDeaths = s.TotalDeaths,
-                        MapName = s.MapName,
-                        GameId = s.Server.GameId,
-                    })
-                    .FirstOrDefault()
-                : null
-        });
+            var activePlayerNames = await dbContext.PlayerSessions
+                .FromSqlRaw("SELECT * FROM \"PlayerSessions\" WHERE \"IsActive\" = 1")
+                .AsNoTracking()
+                .Select(s => s.PlayerName)
+                .Distinct()
+                .ToListAsync();
 
-        // Get total count for pagination (after filters are applied)
-        var totalCount = await projectedQuery.CountAsync();
+            query = isDescending
+                ? baseQuery.OrderByDescending(p => activePlayerNames.Contains(p.Name)).ThenByDescending(p => p.LastSeen)
+                : baseQuery.OrderBy(p => activePlayerNames.Contains(p.Name)).ThenByDescending(p => p.LastSeen);
+        }
+        else
+        {
+            query = sortField switch
+            {
+                "playername" => isDescending
+                    ? baseQuery.OrderByDescending(p => p.Name)
+                    : baseQuery.OrderBy(p => p.Name),
+                "totalplaytimeminutes" => isDescending
+                    ? baseQuery.OrderByDescending(p => p.TotalPlayTimeMinutes)
+                    : baseQuery.OrderBy(p => p.TotalPlayTimeMinutes),
+                "lastseen" => isDescending
+                    ? baseQuery.OrderByDescending(p => p.LastSeen)
+                    : baseQuery.OrderBy(p => p.LastSeen),
+                _ => baseQuery.OrderByDescending(p => p.LastSeen)
+            };
+        }
+
+        // Get total count for pagination directly on base query without subqueries
+        var totalCount = await baseQuery.CountAsync();
 
         // Apply pagination
-        var players = await projectedQuery
+        var players = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
+            .Select(p => new PlayerBasicInfo
+            {
+                PlayerName = p.Name,
+                TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
+                LastSeen = p.LastSeen,
+            })
             .ToListAsync();
 
         var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
 
-        // Enrich with aggregate stats from PlayerServerStats (batch load for efficiency)
+        // Enrich with active session info and aggregate stats from PlayerServerStats (batch load for efficiency)
         if (players.Count > 0)
         {
             var playerNames = players.Select(p => p.PlayerName).ToList();
+
+            // Get active session details for current page players
+            var activeSessions = await dbContext.PlayerSessions
+                .FromSqlRaw("SELECT * FROM \"PlayerSessions\" WHERE \"IsActive\" = 1")
+                .AsNoTracking()
+                .Where(s => playerNames.Contains(s.PlayerName))
+                .Select(s => new
+                {
+                    s.PlayerName,
+                    s.ServerGuid,
+                    ServerName = s.Server.Name,
+                    s.MapName,
+                    s.Server.GameId,
+                    s.TotalKills,
+                    s.TotalDeaths
+                })
+                .ToListAsync();
+
+            var activeLookup = activeSessions.ToDictionary(s => s.PlayerName);
 
             // Get aggregate stats for all players in the current page
             var aggregateStats = await dbContext.PlayerServerStats
@@ -206,6 +225,20 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             // Enrich player data
             foreach (var player in players)
             {
+                if (activeLookup.TryGetValue(player.PlayerName, out var active))
+                {
+                    player.IsActive = true;
+                    player.CurrentServer = new ServerInfo
+                    {
+                        ServerGuid = active.ServerGuid,
+                        ServerName = active.ServerName,
+                        MapName = active.MapName,
+                        GameId = active.GameId,
+                        SessionKills = active.TotalKills,
+                        SessionDeaths = active.TotalDeaths
+                    };
+                }
+
                 if (aggregateStats.TryGetValue(player.PlayerName, out var stats))
                 {
                     player.TotalKills = stats.TotalKills;
