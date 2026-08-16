@@ -667,4 +667,17 @@ router.afterEach((to) => {
   updateMetaTag('meta[name="twitter:description"]', 'name=twitter:description', description)
 })
 
+// Recover from stale dynamic chunk imports following a new deployment
+router.onError((error: any, to: RouteLocationNormalized) => {
+  const message = error?.message || ''
+  const isChunkLoadFailed =
+    message.includes('Failed to fetch dynamically imported module') ||
+    message.includes('Importing a module script failed') ||
+    error?.name === 'ChunkLoadError'
+
+  if (isChunkLoadFailed && to?.fullPath) {
+    window.location.href = to.fullPath
+  }
+})
+
 export default router
