@@ -515,7 +515,12 @@ public class PlayerStatsService(
 
         if (cacheService != null)
         {
-            await cacheService.SetAsync(cacheKey, stats, TimeSpan.FromSeconds(30));
+            // 30s was short enough that entries expired before a second reader arrived —
+            // a FLUSHALL-then-browse cycle found no player keys surviving in Redis at all,
+            // for a payload that costs 460-730ms of 19 sequential queries to rebuild.
+            // The edge copy (EdgeCache(30) on the endpoint) revalidates every 30s while a
+            // page is open, and it is those revalidations this cache exists to absorb.
+            await cacheService.SetAsync(cacheKey, stats, TimeSpan.FromMinutes(5));
         }
 
         return stats;
