@@ -267,7 +267,7 @@ pipeline {
                       if command -v curl >/dev/null 2>&1; then
                         HTML=$(curl -s https://bfstats.io/ || true)
                         if [ -n "$HTML" ]; then
-                          ASSETS=$(echo "$HTML" | grep -oE '/assets/[a-zA-Z0-9_.-]+\.(js|css|woff2?)' | sort -u)
+                          ASSETS=$(echo "$HTML" | grep -oE '/assets/[^" >]+' | sort -u)
                           for asset in $ASSETS; do
                             curl -s -o /dev/null "https://bfstats.io${asset}" &
                           done
@@ -277,7 +277,7 @@ pipeline {
                       else
                         HTML=$(wget -qO- https://bfstats.io/ || true)
                         if [ -n "$HTML" ]; then
-                          ASSETS=$(echo "$HTML" | grep -oE '/assets/[a-zA-Z0-9_.-]+\.(js|css|woff2?)' | sort -u)
+                          ASSETS=$(echo "$HTML" | grep -oE '/assets/[^" >]+' | sort -u)
                           for asset in $ASSETS; do
                             wget -qO- "https://bfstats.io${asset}" >/dev/null 2>&1 &
                           done
