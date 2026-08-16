@@ -56,6 +56,24 @@ test.describe('Landing Page - Server Browser', () => {
     expect(bodyText?.length).toBeGreaterThan(100);
   });
 
+  test('revisiting via the site banner refetches live player counts', async ({ page }) => {
+    await page.goto('/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('.mm-landing__top')).toBeVisible();
+
+    await page.locator('.mm-nav__link', { hasText: 'Players' }).click();
+    await expect(page).toHaveURL(/\/v4\/players/);
+
+    const refresh = page.waitForResponse(
+      r => r.url().includes('/stats/liveservers/bf1942/servers') && r.request().method() === 'GET',
+      { timeout: 15_000 },
+    );
+    await page.locator('a.mm-brand').click();
+    await refresh;
+    await expect(page.locator('.mm-landing__top')).toBeVisible();
+    expect(page.url()).toContain('/v4/servers/bf1942');
+  });
+
   test('should allow clicking on a server link to view details', async ({ page }) => {
     await page.goto('/servers/bf1942');
     await page.waitForLoadState('networkidle');

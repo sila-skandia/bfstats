@@ -470,10 +470,24 @@ interface ServersResponse {
   lastUpdated: string;
 }
 
+// Last successful live-server snapshot. Survives SPA navigations so the
+// landing page can paint immediately, then this function always revalidates.
+let cachedLiveServers: ServerSummary[] | null = null
+
+export function peekCachedLiveServers(): ServerSummary[] | null {
+  return cachedLiveServers
+}
+
+function rememberLiveServers(servers: ServerSummary[]): ServerSummary[] {
+  cachedLiveServers = servers
+  return servers
+}
+
 /**
- * Fetches all servers from backend API with caching support
- * @param game The game name used by the API
- * @returns All servers sorted by player count
+ * Fetches all servers from the live-server feed.
+ * Always revalidates with the network (Cloudflare may still HIT via s-maxage).
+ * The in-memory snapshot from {@link peekCachedLiveServers} is for instant
+ * paint only — it is never returned in place of a request.
  */
 export async function fetchAllServers(
   game: 'bf1942'
@@ -487,11 +501,21 @@ export async function fetchAllServers(
       const preload = window.__bfLiveServersPreload;
       window.__bfLiveServersPreload = undefined;
       const preloaded = await preload;
-      if (preloaded?.servers) return preloaded.servers;
+      if (preloaded?.servers) return rememberLiveServers(preloaded.servers);
     }
 
-    const response = await axios.get<ServersResponse>(`/stats/liveservers/${game}/servers`);
-    return response.data.servers;
+    // cache: 'no-cache' forces a revalidation. Axios/XHR will happily return
+    // a browser-cached body when the response carries stale-while-revalidate,
+    // which is why banner-back showed frozen player counts until a reload.
+    const response = await fetch(`/stats/liveservers/${game}/servers`, {
+      cache: 'no-cache',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to get all servers');
+    }
+    const body = (await response.json()) as ServersResponse;
+    return rememberLiveServers(body.servers);
   } catch (err) {
     console.error('Error fetching all servers:', err);
     throw new Error('Failed to get all servers');

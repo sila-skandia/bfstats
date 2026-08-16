@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { fetchAllServers } from '@/services/serverDetailsService'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { fetchAllServers, peekCachedLiveServers } from '@/services/serverDetailsService'
 import type { ServerSummary } from '@/types/server'
 import { countryCodeToName, countryCodeToFlag } from '@/types/countryCodes'
 import { loadClass } from './mmTokens'
@@ -15,7 +15,6 @@ const GAME_LABEL = 'Battlefield 1942'
 
 defineProps<{ initialMode?: string }>()
 
-const route = useRoute()
 const router = useRouter()
 
 const game = ref<GameKey>('bf1942')
@@ -29,39 +28,37 @@ const REFRESH_INTERVAL_MS = 30_000
 const nextRefreshAt = ref(Date.now() + REFRESH_INTERVAL_MS)
 const now = ref(Date.now())
 
-// Path is fixed to bf1942 today — only re-fetch on revisit.
-watch(() => route.path, () => void load(false))
-
 const selectedServer = ref<ServerSummary | null>(null)
 const showQuiet = ref(true)
 
+const applyServerList = (data: ServerSummary[]) => {
+  servers.value = [...data].sort((a, b) => (b.numPlayers || 0) - (a.numPlayers || 0))
+
+  if (selectedServer.value) {
+    const found = servers.value.find(s => s.guid === selectedServer.value?.guid)
+    selectedServer.value = found ?? null
+  }
+
+  if (!selectedServer.value && servers.value.length > 0) {
+    selectedServer.value = servers.value.find(s => (s.numPlayers || 0) > 0) ?? null
+  }
+}
+
+const cached = peekCachedLiveServers()
+if (cached && cached.length > 0) {
+  applyServerList(cached)
+  loading.value = false
+}
+
 const load = async (showSpinner = false) => {
-  if (showSpinner) loading.value = true
+  if (showSpinner && servers.value.length === 0) loading.value = true
   error.value = null
   try {
     const data = await fetchAllServers(game.value)
     if (data && data.length > 0) {
-      servers.value = [...data].sort((a, b) => (b.numPlayers || 0) - (a.numPlayers || 0))
+      applyServerList(data)
     } else if (servers.value.length === 0) {
       servers.value = []
-    }
-
-    // Re-link selectedServer to point to the new data object (by GUID)
-    if (selectedServer.value) {
-      const found = servers.value.find(s => s.guid === selectedServer.value?.guid)
-      if (found) {
-        selectedServer.value = found
-      } else {
-        selectedServer.value = null
-      }
-    }
-
-    // Auto-select first active server with players on initial load
-    if (!selectedServer.value && servers.value.length > 0) {
-      const firstActive = servers.value.find(s => (s.numPlayers || 0) > 0)
-      if (firstActive) {
-        selectedServer.value = firstActive
-      }
     }
   } catch {
     error.value = 'Server feed temporarily unavailable.'
@@ -72,7 +69,7 @@ const load = async (showSpinner = false) => {
 }
 
 onMounted(() => {
-  void load(true)
+  void load(servers.value.length === 0)
   refreshTimer = window.setInterval(() => void load(false), REFRESH_INTERVAL_MS)
   tickTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
 })
