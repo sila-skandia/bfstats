@@ -19,6 +19,8 @@ metadata:
   namespace: bf42-stats
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: bf42-stats
