@@ -540,7 +540,13 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
                   TICKETS <span :style="{ color: getTeamColor(team.label || '') }">{{ team.tickets }}</span>
                 </span>
               </div>
-              <table class="mm-list mm-list--dense">
+              <table class="mm-list mm-list--dense mm-landing__aside-roster-table">
+                <colgroup>
+                  <col style="width: 30px;">
+                  <col>
+                  <col style="width: 64px;">
+                  <col style="width: 48px;">
+                </colgroup>
                 <tbody>
                   <tr
                     v-for="(player, pidx) in getSortedTeamPlayers(selectedServer, team.index)"
@@ -941,10 +947,29 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 
 .mm-landing__aside-team {
   min-width: 0;
+  overflow: hidden;
 }
 
 .mm-landing__aside-team--left {
   border-right: 1px solid var(--mm-rule);
+}
+
+/* table-layout: fixed makes the colgroup widths authoritative — without
+   it, a long player name grows the name column past its 1fr track and
+   bleeds into (left team) or overflows past (right team) the panel. */
+.mm-landing__aside-roster-table {
+  table-layout: fixed;
+}
+
+.mm-landing__aside-roster-table .mm-list__name-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mm-landing__aside-roster-table td.is-num {
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .mm-landing__aside-team-header {
