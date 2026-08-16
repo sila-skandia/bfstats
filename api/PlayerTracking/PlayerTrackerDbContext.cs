@@ -123,6 +123,12 @@ public class PlayerTrackerDbContext : DbContext
             .HasFilter("IsDeleted = 0")
             .HasDatabaseName("IX_PlayerSessions_LastSeenTime_WhereNotDeleted");
 
+        // Serves recent sessions and player profile queries ordered by LastSeenTime.
+        // Turns ORDER BY LastSeenTime DESC LIMIT 10 into an immediate backward index scan.
+        modelBuilder.Entity<PlayerSession>()
+            .HasIndex(ps => new { ps.PlayerName, ps.LastSeenTime })
+            .HasDatabaseName("IX_PlayerSessions_PlayerName_LastSeenTime");
+
         // Configure PlayerObservation entity
         modelBuilder.Entity<PlayerObservation>()
             .HasKey(po => po.ObservationId);
@@ -159,6 +165,12 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<ServerPlayerRanking>()
             .HasIndex(r => new { r.ServerGuid, r.PlayerName, r.TotalScore })
             .HasDatabaseName("IX_ServerPlayerRankings_ServerGuid_PlayerName_TotalScore");
+
+        // Covering index for player-first ranking queries in PlayerStatsService.
+        // Prevents full table scan on ServerPlayerRankings when looking up a player's servers and scores.
+        modelBuilder.Entity<ServerPlayerRanking>()
+            .HasIndex(r => new { r.PlayerName, r.ServerGuid, r.TotalScore })
+            .HasDatabaseName("IX_ServerPlayerRankings_PlayerName_ServerGuid_TotalScore");
 
         // Configure Round entity
         modelBuilder.Entity<Round>()

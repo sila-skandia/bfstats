@@ -22,6 +22,46 @@ public class ServerPlayerRankingsRecalculationService(
             var yearString = year.ToString();
             var monthString = month.ToString("00");
 
+            var monthStart = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var monthEnd = monthStart.AddMonths(1);
+            var startString = monthStart.ToString("yyyy-MM-dd HH:mm:ss");
+            var endString = monthEnd.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // Execute the read query OUTSIDE the transaction to avoid holding the SQLite write lock during the scan.
+            var playerData = await dbContext.Database.SqlQueryRaw<PlayerRankingRow>(@"
+                SELECT
+                    ps.PlayerName,
+                    SUM(ps.TotalScore) AS TotalScore,
+                    SUM(ps.TotalKills) AS TotalKills,
+                    SUM(ps.TotalDeaths) AS TotalDeaths,
+                    CAST(SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440) AS INTEGER) AS TotalPlayTimeMinutes
+                FROM PlayerSessions ps
+                INNER JOIN Players p ON ps.PlayerName = p.Name
+                WHERE ps.ServerGuid = {0}
+                  AND ps.StartTime >= {1}
+                  AND ps.StartTime < {2}
+                  AND p.AiBot = 0
+                  AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
+                GROUP BY ps.PlayerName
+                ORDER BY SUM(ps.TotalScore) DESC",
+                serverGuid, startString, endString).ToListAsync(c);
+
+            var rankings = playerData
+                .Select((p, index) => new ServerPlayerRanking
+                {
+                    ServerGuid = serverGuid,
+                    PlayerName = p.PlayerName,
+                    Rank = index + 1,
+                    Year = year,
+                    Month = month,
+                    TotalScore = p.TotalScore,
+                    TotalKills = p.TotalKills,
+                    TotalDeaths = p.TotalDeaths,
+                    KDRatio = p.TotalDeaths > 0 ? Math.Round((double)p.TotalKills / p.TotalDeaths, 2) : p.TotalKills,
+                    TotalPlayTimeMinutes = p.TotalPlayTimeMinutes
+                })
+                .ToList();
+
             await using var transaction = await dbContext.Database.BeginTransactionAsync(c);
             try
             {
@@ -30,52 +70,18 @@ public class ServerPlayerRankingsRecalculationService(
                     WHERE ""ServerGuid"" = {0} AND ""Year"" = {1} AND ""Month"" = {2}",
                     serverGuid, year, month);
 
-                var playerData = await dbContext.Database.SqlQueryRaw<PlayerRankingRow>(@"
-                    SELECT
-                        ps.PlayerName,
-                        SUM(ps.TotalScore) AS TotalScore,
-                        SUM(ps.TotalKills) AS TotalKills,
-                        SUM(ps.TotalDeaths) AS TotalDeaths,
-                        CAST(SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440) AS INTEGER) AS TotalPlayTimeMinutes
-                    FROM PlayerSessions ps
-                    INNER JOIN Players p ON ps.PlayerName = p.Name
-                    WHERE ps.ServerGuid = {0}
-                      AND strftime('%Y', ps.StartTime) = {1}
-                      AND strftime('%m', ps.StartTime) = {2}
-                      AND p.AiBot = 0
-                      AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
-                    GROUP BY ps.PlayerName
-                    ORDER BY SUM(ps.TotalScore) DESC",
-                    serverGuid, yearString, monthString).ToListAsync(c);
-
-                if (playerData.Count == 0)
+                if (rankings.Count > 0)
                 {
-                    await transaction.CommitAsync(c);
-                    logger.LogDebug("No player data for server {ServerGuid} in {Year}-{Month}", serverGuid, year, monthString);
-                    return 0;
+                    await BulkInsertRankingsAsync(dbContext, rankings, serverGuid, c);
                 }
 
-                var rankings = playerData
-                    .Select((p, index) => new ServerPlayerRanking
-                    {
-                        ServerGuid = serverGuid,
-                        PlayerName = p.PlayerName,
-                        Rank = index + 1,
-                        Year = year,
-                        Month = month,
-                        TotalScore = p.TotalScore,
-                        TotalKills = p.TotalKills,
-                        TotalDeaths = p.TotalDeaths,
-                        KDRatio = p.TotalDeaths > 0 ? Math.Round((double)p.TotalKills / p.TotalDeaths, 2) : p.TotalKills,
-                        TotalPlayTimeMinutes = p.TotalPlayTimeMinutes
-                    })
-                    .ToList();
-
-                await BulkInsertRankingsAsync(dbContext, rankings, serverGuid, c);
                 await transaction.CommitAsync(c);
 
-                logger.LogDebug("Recalculated {Count} ServerPlayerRankings for server {ServerGuid} {Year}-{Month}",
-                    rankings.Count, serverGuid, year, monthString);
+                if (rankings.Count > 0)
+                {
+                    logger.LogDebug("Recalculated {Count} ServerPlayerRankings for server {ServerGuid} {Year}-{Month}",
+                        rankings.Count, serverGuid, year, monthString);
+                }
                 return rankings.Count;
             }
             catch (Exception ex)
