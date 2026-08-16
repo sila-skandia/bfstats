@@ -265,7 +265,7 @@ public class BfListApiService(
             Name = server.Name,
             Ip = server.Ip,
             Port = server.Port,
-            NumPlayers = server.NumPlayers,
+            NumPlayers = filteredPlayers.Length > 0 ? filteredPlayers.Length : server.NumPlayers,
             MaxPlayers = server.MaxPlayers,
             MapName = server.MapName,
             GameType = server.GameType,

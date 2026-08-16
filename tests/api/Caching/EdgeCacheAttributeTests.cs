@@ -74,6 +74,7 @@ public class EdgeCacheAttributeTests
     [InlineData(typeof(api.Players.PlayersController), "GetPlayerStats", 30)]
     [InlineData(typeof(api.Servers.ServersController), "GetServerStats", 30)]
     [InlineData(typeof(api.Controllers.LiveServersController), "GetServers", 20)]
+    [InlineData(typeof(api.Controllers.LiveServersController), "GetServer", 10)]
     public void LiveEndpoints_AreEdgeCachedAndNotBrowserCached(
         Type controller,
         string action,
