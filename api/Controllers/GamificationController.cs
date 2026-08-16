@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using api.Caching;
 using api.Gamification.Models;
 using api.Gamification.Services;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,12 @@ public class GamificationController(
     /// <summary>
     /// Get hero achievements for a player (latest milestone + 5 recent achievements with full details)
     /// </summary>
+    // Both player achievement endpoints sat at cf-cache-status: BYPASS for want of any
+    // Cache-Control header, so every player-page view paid a full origin round trip for
+    // a response the server builds in single-digit milliseconds. Achievements only move
+    // when the player finishes a round.
     [HttpGet("player/{playerName}/hero-achievements")]
+    [EdgeCache(60)]
     public async Task<ActionResult<List<Achievement>>> GetPlayerHeroAchievements(string playerName)
     {
         if (string.IsNullOrWhiteSpace(playerName))
@@ -36,6 +42,7 @@ public class GamificationController(
     /// Get grouped achievement counts for a player
     /// </summary>
     [HttpGet("player/{playerName}/achievement-groups")]
+    [EdgeCache(60)]
     public async Task<ActionResult<List<PlayerAchievementGroup>>> GetPlayerAchievementGroups(string playerName)
     {
         if (string.IsNullOrWhiteSpace(playerName))

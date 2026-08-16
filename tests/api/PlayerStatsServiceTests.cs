@@ -283,7 +283,7 @@ public sealed class PlayerStatsServiceTests : IDisposable
         var result = await cachedService.GetPlayerStatistics("FreshPlayer");
 
         Assert.NotNull(result);
-        await cacheMock.Received(1).SetAsync("player_stats:freshplayer", Arg.Any<PlayerTimeStatistics>(), TimeSpan.FromSeconds(30));
+        await cacheMock.Received(1).SetAsync("player_stats:freshplayer", Arg.Any<PlayerTimeStatistics>(), TimeSpan.FromMinutes(5));
     }
 
     public void Dispose()

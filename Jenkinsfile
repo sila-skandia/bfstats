@@ -237,12 +237,30 @@ pipeline {
               steps {
                 container('kubectl') {
                   withCredentials([
-                    file(credentialsId: 'bf42-stats-k3s-kubeconfig', variable: 'KUBECONFIG_FILE')
+                    file(credentialsId: 'bf42-stats-k3s-kubeconfig', variable: 'KUBECONFIG_FILE'),
+                    string(credentialsId: 'bfstats-cloudflare-api-token', variable: 'CF_API_TOKEN'),
+                    string(credentialsId: 'bfstats-cloudflare-zone-id', variable: 'CF_ZONE_ID')
                   ]) {
                     sh '''
                       set -euo pipefail
                       export KUBECONFIG="$KUBECONFIG_FILE"
                       kubectl -n bfstats-ui rollout restart deployment/bfstats-ui
+                      kubectl -n bfstats-ui rollout status deployment/bfstats-ui --timeout=120s
+
+                      echo "Purging Cloudflare cache for bfstats.io..."
+                      if command -v curl >/dev/null 2>&1; then
+                        curl -s -f -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+                          -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                          -H "Content-Type: application/json" \
+                          --data '{"purge_everything":true}'
+                      else
+                        wget -qO- \
+                          --header="Authorization: Bearer ${CF_API_TOKEN}" \
+                          --header="Content-Type: application/json" \
+                          --post-data='{"purge_everything":true}' \
+                          "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
+                      fi
+                      echo "Cloudflare cache purged successfully."
                     '''
                   }
                 }

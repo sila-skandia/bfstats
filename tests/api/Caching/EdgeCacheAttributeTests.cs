@@ -70,11 +70,19 @@ public class EdgeCacheAttributeTests
     // These endpoints carry live state and are re-fetched by their pages. If one
     // regresses to [ResponseCache], the browser can reuse an old response without
     // issuing a request when the user revisits the page.
+    //
+    // The player-page endpoints below were previously uncached entirely — they served
+    // cf-cache-status: BYPASS for want of any Cache-Control header. They are listed here
+    // so that dropping the attribute again is a test failure rather than a silent
+    // regression back to a full origin round trip per view.
     [Theory]
     [InlineData(typeof(api.Players.PlayersController), "GetPlayerStats", 30)]
     [InlineData(typeof(api.Servers.ServersController), "GetServerStats", 30)]
-    [InlineData(typeof(api.Controllers.LiveServersController), "GetServers", 20)]
+    [InlineData(typeof(api.Controllers.LiveServersController), "GetServers", 30)]
     [InlineData(typeof(api.Controllers.LiveServersController), "GetServer", 10)]
+    [InlineData(typeof(api.Controllers.GamificationController), "GetPlayerAchievementGroups", 60)]
+    [InlineData(typeof(api.Controllers.GamificationController), "GetPlayerHeroAchievements", 60)]
+    [InlineData(typeof(api.PlayerRelationships.CommunitiesController), "GetPlayerCommunities", 300)]
     public void LiveEndpoints_AreEdgeCachedAndNotBrowserCached(
         Type controller,
         string action,

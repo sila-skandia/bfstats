@@ -72,21 +72,33 @@ const sortedCommunities = computed(() =>
 const loadStats = async () => {
   loading.value = true
   error.value = null
+
+  // Maps tab data — separate endpoint. Use days=365 so the controller
+  // upgrades the period from Last30Days to ThisYear and we surface
+  // every map the player has touched this year, not just the last 30d.
+  //
+  // It has no data dependency on the profile payload — primaryGameId is a constant —
+  // so start both together. Awaiting them in sequence pushed map-stats into a second
+  // round trip that landed ~440ms after the rest of the page had finished.
+  const statsRequest = fetchPlayerStats(rawName.value)
+  const mapStatsRequest = fetchPlayerMapStats(rawName.value, primaryGameId, 365)
+
+  // Attach the rejection handler now rather than at the await below: nothing is
+  // awaiting this promise while the profile request is in flight, so a fast failure
+  // would otherwise surface as an unhandled rejection.
+  const settledMapStats = mapStatsRequest.catch((): PlayerMapStatEntry[] => [])
+
+  // Await the profile first so the page gate lifts as soon as it lands, independently
+  // of how long map-stats takes.
   try {
-    stats.value = await fetchPlayerStats(rawName.value)
+    stats.value = await statsRequest
   } catch (e) {
     error.value = 'Player feed temporarily unavailable.'
   } finally {
     loading.value = false
   }
-  // Maps tab data — separate endpoint. Use days=365 so the controller
-  // upgrades the period from Last30Days to ThisYear and we surface
-  // every map the player has touched this year, not just the last 30d.
-  try {
-    mapStats.value = await fetchPlayerMapStats(rawName.value, primaryGameId, 365)
-  } catch {
-    mapStats.value = []
-  }
+
+  mapStats.value = await settledMapStats
 }
 
 const loadAchievements = async () => {

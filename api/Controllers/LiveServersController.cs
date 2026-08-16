@@ -27,8 +27,16 @@ public class LiveServersController(
     /// <returns>Server list</returns>
     // This payload is identical for every visitor, so Cloudflare can absorb repeat
     // traffic. The browser must still request it on every landing-page visit and poll.
+    //
+    // s-maxage tracks the UI's own 30s poll interval — a shorter TTL bought freshness
+    // nobody consumed and made expiry more frequent, which matters because Cloudflare
+    // does not appear to honour stale-while-revalidate here: an expired entry was
+    // measured revalidating synchronously (cf-cache-status: EXPIRED, 1164ms) rather
+    // than serving stale and refreshing behind the request. Every expiry is a visitor
+    // paying full origin latency, so expiries should be no more frequent than the data
+    // actually changes.
     [HttpGet("{game}/servers")]
-    [EdgeCache(20, StaleWhileRevalidate = 15)]
+    [EdgeCache(30, StaleWhileRevalidate = 30)]
     public async Task<ActionResult<ServerListResponse>> GetServers(string game, [FromQuery] bool showAll = false)
     {
         if (!ValidGames.Contains(game.ToLower()))
