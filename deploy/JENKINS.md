@@ -151,6 +151,24 @@ Remove these Jenkins credentials (no longer needed):
 
 ---
 
+## 6. Configure Cloudflare credentials (Cache Purge)
+
+The `Deploy UI` stage purges the Cloudflare edge cache upon successful rollout to ensure visitors immediately receive updated SPA shells without 404s on previous asset hashes.
+
+1. Go to **Jenkins > Manage Jenkins > Credentials**
+2. Add API Token credential:
+   - **Kind**: `Secret text`
+   - **Secret**: Cloudflare API Token (scoped to `Zone -> Cache Purge -> Purge` for `bfstats.io`)
+   - **ID**: `bfstats-cloudflare-api-token`
+   - **Description**: `Cloudflare API token for bfstats.io cache purge`
+3. Add Zone ID credential:
+   - **Kind**: `Secret text`
+   - **Secret**: Cloudflare Zone ID for `bfstats.io`
+   - **ID**: `bfstats-cloudflare-zone-id`
+   - **Description**: `Cloudflare Zone ID for bfstats.io`
+
+---
+
 ## Jenkins credentials summary
 
 | Credential ID | Type | Purpose |
@@ -161,3 +179,6 @@ Remove these Jenkins credentials (no longer needed):
 | `jenkins-bf1942-stats-dockerhub-pat` | Username/Password | Docker Hub push |
 | `bfstats-git-https` | Username/Password | Git HTTPS credential for cloning this repo |
 | `bfstats-appi-connection-string` | Secret Text | Application Insights connection string (UI build) |
+| `bfstats-cloudflare-api-token` | Secret Text | Cloudflare API token for cache purge on UI deploy |
+| `bfstats-cloudflare-zone-id` | Secret Text | Cloudflare Zone ID for `bfstats.io` |
+

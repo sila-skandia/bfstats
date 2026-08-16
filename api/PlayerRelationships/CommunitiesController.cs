@@ -1,3 +1,4 @@
+using api.Caching;
 using api.PlayerRelationships.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -63,7 +64,11 @@ public class CommunitiesController(
     /// <summary>
     /// Get communities that a player belongs to.
     /// </summary>
+    // Was cf-cache-status: BYPASS — no Cache-Control at all — so the player page paid a
+    // full origin round trip for a ~3ms response. Communities are recomputed by a
+    // background job, so they move far slower than this TTL.
     [HttpGet("players/{playerName}")]
+    [EdgeCache(300)]
     public async Task<ActionResult<List<PlayerCommunity>>> GetPlayerCommunities(string playerName)
     {
         try
