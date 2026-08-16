@@ -12,17 +12,31 @@ public class CommunityDetectionService(
     IServiceProvider serviceProvider,
     ILogger<CommunityDetectionService> logger) : BackgroundService
 {
-    private readonly TimeSpan _delay = TimeSpan.FromHours(24); // Run daily
+    private static readonly TimeSpan RunTime = TimeSpan.FromHours(2); // 2 AM UTC
+    private static readonly TimeSpan RetryInterval = TimeSpan.FromMinutes(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Clear any inherited activity context from hosting startup
+        System.Diagnostics.Activity.Current = null;
+
         logger.LogInformation("Community Detection Service started");
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(_delay, stoppingToken);
+                var now = DateTime.UtcNow;
+                var targetToday = now.Date.Add(RunTime);
+
+                var nextRun = now >= targetToday
+                    ? targetToday.AddDays(1)
+                    : targetToday;
+
+                var delay = nextRun - now;
+                logger.LogInformation("Next community detection scheduled for {NextRun} (in {Delay})", nextRun, delay);
+
+                await Task.Delay(delay, stoppingToken);
                 
                 using var bulkScope = BulkOperationContext.Begin();
                 using var scope = serviceProvider.CreateScope();
@@ -32,13 +46,14 @@ public class CommunityDetectionService(
                 var result = await relationshipService.DetectAndStoreCommunities(stoppingToken);
                 logger.LogInformation("Community detection completed: {Result}", result);
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                // Expected when cancellation is requested
+                break;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in community detection service");
+                await Task.Delay(RetryInterval, stoppingToken);
             }
         }
 

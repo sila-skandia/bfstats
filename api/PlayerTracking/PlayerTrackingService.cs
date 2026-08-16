@@ -168,27 +168,28 @@ public class PlayerTrackingService(
         {
             try
             {
-                // 1. Save new players first
+                // 1. Save new players and all session changes together in a single batch
                 if (newPlayers.Any())
                 {
                     await dbContext.Players.AddRangeAsync(newPlayers);
-                    await dbContext.SaveChangesAsync();
                 }
 
-                // 2. Save sessions
                 if (sessionsToCreate.Any())
                 {
                     await dbContext.PlayerSessions.AddRangeAsync(sessionsToCreate);
-                    await dbContext.SaveChangesAsync();
                 }
 
                 if (sessionsToUpdate.Any())
                 {
                     dbContext.PlayerSessions.UpdateRange(sessionsToUpdate);
+                }
+
+                if (newPlayers.Any() || sessionsToCreate.Any() || sessionsToUpdate.Any())
+                {
                     await dbContext.SaveChangesAsync();
                 }
 
-                // 3. Save observations
+                // 2. Save observations and round update together
                 var observations = pendingObservations.Select(x =>
                 {
                     if (x.Session.SessionId == 0)
@@ -218,7 +219,6 @@ public class PlayerTrackingService(
                 if (observations.Any())
                 {
                     await dbContext.PlayerObservations.AddRangeAsync(observations);
-                    await dbContext.SaveChangesAsync();
                 }
 
                 // Update participant count for the round (all players since bots are no longer stored)
@@ -234,6 +234,10 @@ public class PlayerTrackingService(
                     activeRound.Tickets1 = server.Tickets1;
                     activeRound.Tickets2 = server.Tickets2;
                     dbContext.Rounds.Update(activeRound);
+                }
+
+                if (observations.Any() || activeRound != null)
+                {
                     await dbContext.SaveChangesAsync();
                 }
 
@@ -546,7 +550,7 @@ public class PlayerTrackingService(
         if (string.IsNullOrWhiteSpace(server.MapName)) return null;
 
         var active = await dbContext.Rounds
-            .Where(r => r.ServerGuid == server.Guid && r.IsActive)
+            .FromSqlRaw("SELECT * FROM \"Rounds\" WHERE \"IsActive\" = 1 AND \"ServerGuid\" = {0}", server.Guid)
             .OrderByDescending(r => r.StartTime)
             .FirstOrDefaultAsync();
 
