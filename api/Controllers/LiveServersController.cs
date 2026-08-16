@@ -73,7 +73,7 @@ public class LiveServersController(
     /// <param name="port">Server port number</param>
     /// <returns>Individual server data</returns>
     [HttpGet("{game}/{ip}/{port}")]
-    [ResponseCache(Duration = 20, Location = ResponseCacheLocation.Any)]
+    [EdgeCache(10, StaleWhileRevalidate = 5)]
     public async Task<ActionResult<ServerSummary>> GetServer(string game, string ip, int port)
     {
         if (!ValidGames.Contains(game.ToLower()))
