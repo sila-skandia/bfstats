@@ -281,9 +281,9 @@ public class PlayerStatsService(
             return new PlayerTimeStatistics();
 
         var cacheKey = $"player_stats:{playerName.ToLowerInvariant()}";
-        if (_cacheService != null)
+        if (cacheService != null)
         {
-            var cached = await _cacheService.GetAsync<PlayerTimeStatistics>(cacheKey);
+            var cached = await cacheService.GetAsync<PlayerTimeStatistics>(cacheKey);
             if (cached != null)
             {
                 return cached;
@@ -416,7 +416,7 @@ public class PlayerStatsService(
             // lookBackDays: 0 → all-time per-server breakdown for the Servers
             // tab on PlayerDetailsV4. Default of 30 days plus a 10-hour
             // min-playtime filter made the tab empty for most players.
-            serverInsights = await sqlitePlayerStatsService.GetPlayerServerInsightsAsync(playerName, lookBackDays: 0);
+            serverInsights = await sqlitePlayerStatsService.GetPlayerServerInsightsAsync(playerName, lookBackDays: 0) ?? [];
         }
         catch (Exception ex)
         {
@@ -428,7 +428,7 @@ public class PlayerStatsService(
         PlayerBestScores bestScores;
         try
         {
-            bestScores = await sqlitePlayerStatsService.GetPlayerBestScoresAsync(playerName);
+            bestScores = await sqlitePlayerStatsService.GetPlayerBestScoresAsync(playerName) ?? new PlayerBestScores();
         }
         catch (Exception ex)
         {
@@ -513,9 +513,9 @@ public class PlayerStatsService(
             BestScores = bestScores
         };
 
-        if (_cacheService != null)
+        if (cacheService != null)
         {
-            await _cacheService.SetAsync(cacheKey, stats, TimeSpan.FromSeconds(30));
+            await cacheService.SetAsync(cacheKey, stats, TimeSpan.FromSeconds(30));
         }
 
         return stats;
