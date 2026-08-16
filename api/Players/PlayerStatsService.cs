@@ -1,3 +1,4 @@
+using api.Caching;
 using api.Players.Models;
 using api.PlayerTracking;
 using api.PlayerStats;
@@ -6,9 +7,11 @@ using Microsoft.Extensions.Logging;
 
 namespace api.Players;
 
-public class PlayerStatsService(PlayerTrackerDbContext dbContext,
+public class PlayerStatsService(
+    PlayerTrackerDbContext dbContext,
     ISqlitePlayerStatsService sqlitePlayerStatsService,
-    ILogger<PlayerStatsService> logger) : IPlayerStatsService
+    ILogger<PlayerStatsService> logger,
+    ICacheService? cacheService = null) : IPlayerStatsService
 {
     // Define a threshold for considering a player "active" (e.g., 5 minutes)
     private readonly TimeSpan _activeThreshold = TimeSpan.FromMinutes(1);
@@ -274,6 +277,19 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
 
     public async Task<PlayerTimeStatistics> GetPlayerStatistics(string playerName)
     {
+        if (string.IsNullOrWhiteSpace(playerName))
+            return new PlayerTimeStatistics();
+
+        var cacheKey = $"player_stats:{playerName.ToLowerInvariant()}";
+        if (_cacheService != null)
+        {
+            var cached = await _cacheService.GetAsync<PlayerTimeStatistics>(cacheKey);
+            if (cached != null)
+            {
+                return cached;
+            }
+        }
+
         // First check if the player exists
         var player = await dbContext.Players
             .FirstOrDefaultAsync(p => p.Name == playerName);
@@ -422,7 +438,8 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
 
         // 5. Get insights and recent stats trends
         var insights = await GetPlayerInsights(playerName);
-        var recentStats = await GetRecentStatsTrends(playerName);
+        var firstKnownPlayed = sessionStats?.FirstPlayed ?? (player.FirstSeen != default ? player.FirstSeen : null);
+        var recentStats = await GetRecentStatsTrends(playerName, firstKnownPlayed);
 
         var aggregateStats = new
         {
@@ -495,6 +512,11 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             RecentStats = recentStats,
             BestScores = bestScores
         };
+
+        if (_cacheService != null)
+        {
+            await _cacheService.SetAsync(cacheKey, stats, TimeSpan.FromSeconds(30));
+        }
 
         return stats;
     }
@@ -619,9 +641,17 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         return insights;
     }
 
+    private sealed class ServerRankingQueryResult
+    {
+        public string ServerGuid { get; set; } = "";
+        public int TotalScore { get; set; }
+        public int PlayerRank { get; set; }
+        public int TotalPlayers { get; set; }
+    }
+
     private async Task<List<ServerRanking>> GetServerRankingsWithPing(string playerName)
     {
-        // First, get the player's server stats efficiently
+        // First, get the player's server stats efficiently using the covering index (PlayerName, ServerGuid, TotalScore)
         var playerServerStats = await dbContext.ServerPlayerRankings
             .Where(r => r.PlayerName == playerName)
             .GroupBy(r => r.ServerGuid)
@@ -644,39 +674,64 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
         // Get ping data from SQLite PlayerSessions
         var pingData = await GetAveragePingFromSessions(playerName, serverGuids);
 
-        // Calculate rankings using a more efficient approach - one query per server but much faster
-        var results = new List<ServerRanking>();
+        // Calculate rankings in a single batched CTE query across all servers using SQLite window functions
+        var serverGuidsIn = string.Join(",", serverGuids.Select(g => $"'{g.Replace("'", "''")}'"));
 
+        var batchRankingSql = $"""
+            WITH ServerTotals AS (
+                SELECT ServerGuid, PlayerName, SUM(TotalScore) AS TotalScore
+                FROM ServerPlayerRankings
+                WHERE ServerGuid IN ({serverGuidsIn})
+                GROUP BY ServerGuid, PlayerName
+            ),
+            RankedPlayers AS (
+                SELECT
+                    ServerGuid,
+                    PlayerName,
+                    TotalScore,
+                    RANK() OVER (PARTITION BY ServerGuid ORDER BY TotalScore DESC) AS PlayerRank,
+                    COUNT(*) OVER (PARTITION BY ServerGuid) AS TotalPlayers
+                FROM ServerTotals
+            )
+            SELECT ServerGuid, TotalScore, PlayerRank, TotalPlayers
+            FROM RankedPlayers
+            WHERE PlayerName = @playerName
+            """;
+
+        var rankingResults = await dbContext.Database
+            .SqlQueryRaw<ServerRankingQueryResult>(batchRankingSql,
+                new Microsoft.Data.Sqlite.SqliteParameter("@playerName", playerName))
+            .ToListAsync();
+
+        var rankingDict = rankingResults.ToDictionary(r => r.ServerGuid, r => r);
+
+        var results = new List<ServerRanking>();
         foreach (var serverStat in playerServerStats)
         {
-            // Count players with higher scores + get total players in one query per server
-            var rankingSql = @"
-                SELECT
-                    (SELECT COUNT(*) + 1
-                     FROM (SELECT PlayerName, SUM(TotalScore) as Total
-                           FROM ServerPlayerRankings
-                           WHERE ServerGuid = @serverGuid
-                           GROUP BY PlayerName)
-                     WHERE Total > @playerScore) as PlayerRank,
-                    (SELECT COUNT(DISTINCT PlayerName)
-                     FROM ServerPlayerRankings
-                     WHERE ServerGuid = @serverGuid) as TotalPlayers";
-
-            var rankingResult = await dbContext.Database
-                .SqlQueryRaw<RankingResult>(rankingSql,
-                    new Microsoft.Data.Sqlite.SqliteParameter("@serverGuid", serverStat.ServerGuid),
-                    new Microsoft.Data.Sqlite.SqliteParameter("@playerScore", serverStat.TotalScore))
-                .FirstAsync();
-
-            results.Add(new ServerRanking
+            if (rankingDict.TryGetValue(serverStat.ServerGuid, out var rankingResult))
             {
-                ServerGuid = serverStat.ServerGuid,
-                ServerName = servers.GetValueOrDefault(serverStat.ServerGuid, "Unknown Server"),
-                Rank = rankingResult.PlayerRank,
-                TotalScore = serverStat.TotalScore,
-                TotalRankedPlayers = rankingResult.TotalPlayers,
-                AveragePing = Math.Round(pingData.GetValueOrDefault(serverStat.ServerGuid, 0.0), 2)
-            });
+                results.Add(new ServerRanking
+                {
+                    ServerGuid = serverStat.ServerGuid,
+                    ServerName = servers.GetValueOrDefault(serverStat.ServerGuid, "Unknown Server"),
+                    Rank = rankingResult.PlayerRank,
+                    TotalScore = rankingResult.TotalScore,
+                    TotalRankedPlayers = rankingResult.TotalPlayers,
+                    AveragePing = Math.Round(pingData.GetValueOrDefault(serverStat.ServerGuid, 0.0), 2)
+                });
+            }
+            else
+            {
+                results.Add(new ServerRanking
+                {
+                    ServerGuid = serverStat.ServerGuid,
+                    ServerName = servers.GetValueOrDefault(serverStat.ServerGuid, "Unknown Server"),
+                    Rank = 1,
+                    TotalScore = serverStat.TotalScore,
+                    TotalRankedPlayers = 1,
+                    AveragePing = Math.Round(pingData.GetValueOrDefault(serverStat.ServerGuid, 0.0), 2)
+                });
+            }
         }
 
         return results;
@@ -772,17 +827,19 @@ public class PlayerStatsService(PlayerTrackerDbContext dbContext,
             .ToList();
     }
 
-    private async Task<RecentStats> GetRecentStatsTrends(string playerName)
+    private async Task<RecentStats> GetRecentStatsTrends(string playerName, DateTime? knownFirstSeen = null)
     {
         var endDate = DateTime.UtcNow;
 
-        // Find the player's earliest session so we can trend over their whole career.
-        // For players with no sessions we keep a 90-day fallback window so the payload
-        // shape stays consistent.
-        var firstSeenSql = "SELECT MIN(StartTime) AS Value FROM PlayerSessions WHERE PlayerName = {0} AND IsDeleted = 0";
-        var firstSeen = await dbContext.Database
-            .SqlQueryRaw<DateTime?>(firstSeenSql, playerName)
-            .FirstOrDefaultAsync();
+        DateTime? firstSeen = knownFirstSeen;
+        if (!firstSeen.HasValue)
+        {
+            // Find the player's earliest session if not already provided
+            var firstSeenSql = "SELECT MIN(StartTime) AS Value FROM PlayerSessions WHERE PlayerName = {0} AND IsDeleted = 0";
+            firstSeen = await dbContext.Database
+                .SqlQueryRaw<DateTime?>(firstSeenSql, playerName)
+                .FirstOrDefaultAsync();
+        }
 
         var startDate = firstSeen ?? endDate.AddDays(-90);
 
