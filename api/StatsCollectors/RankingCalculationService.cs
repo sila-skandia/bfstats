@@ -11,7 +11,7 @@ namespace api.StatsCollectors;
 
 public class RankingCalculationService(IServiceProvider services, ILogger<RankingCalculationService> logger) : BackgroundService
 {
-    private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(3);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
