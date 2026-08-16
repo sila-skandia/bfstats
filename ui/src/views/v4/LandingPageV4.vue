@@ -47,6 +47,13 @@ const dataAgeMs = computed(() => {
 const isDataStale = computed(() => dataAgeMs.value >= STALE_THRESHOLD_MS)
 const staleSince = computed(() => (lastUpdated.value ? formatRelativeTime(lastUpdated.value) : ''))
 
+// peekCachedLiveServers() restores the previous visit's lastUpdated synchronously on mount
+// for instant paint — if the user was away long enough, that cached timestamp already reads
+// as stale before this mount's own fetch has had a chance to revalidate it, flashing the
+// banner for however long the request takes. Don't trust staleness until we've actually
+// checked ourselves.
+const hasRevalidated = ref(false)
+
 const selectedServer = ref<ServerSummary | null>(null)
 const showQuiet = ref(true)
 
@@ -85,6 +92,7 @@ const load = async (showSpinner = false) => {
     error.value = 'Server feed temporarily unavailable.'
   } finally {
     loading.value = false
+    hasRevalidated.value = true
     nextRefreshAt.value = Date.now() + REFRESH_INTERVAL_MS
   }
 }
@@ -254,7 +262,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
     <!-- Live feed may be running off a last-known-good snapshot (upstream API or
          Redis degraded) — say so and give an escape hatch to the DB-backed search
          page, which doesn't depend on either. -->
-    <div v-if="isDataStale && !loading && servers.length > 0" class="mm-landing__stale-banner" role="status">
+    <div v-if="hasRevalidated && isDataStale && !loading && servers.length > 0" class="mm-landing__stale-banner" role="status">
       <svg class="mm-landing__stale-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
       </svg>
