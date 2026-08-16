@@ -44,13 +44,30 @@ Misses are common and each one is a network round trip.
 
 ### 1. Readahead on the data volume: 128KB → 512KB
 
-**File:** `/etc/udev/rules.d/60-bfstats-volume-readahead.rules`
+**File:** `/etc/udev/rules.d/65-bfstats-volume-readahead.rules`
 
 ```
 ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_SERIAL}=="0HC_Volume_106624631", ATTR{queue/read_ahead_kb}="512"
 ```
 
 Scoped by serial so it cannot affect the OS disk and survives `sdX` renaming.
+
+**The `65-` prefix is load-bearing.** This rule first shipped as `60-bfstats-…` and never
+once fired: udev evaluates rule files in lexical filename order, `ID_SERIAL` is set by
+`/usr/lib/udev/rules.d/60-persistent-storage.rules`, and `60-b…` sorts before `60-p…`, so
+the match ran against an empty variable. The value was set live by hand at the time, which
+made it verify as applied, and reverted at the next boot. Found at 128KB on 2026-08-16,
+three days into an uptime; renamed and re-applied. Any rule that depends on `ID_SERIAL`
+must sort after `60-persistent-storage.rules`.
+
+Prove the rule actually matches — not just that the file exists:
+
+```bash
+ssh -i ~/.ssh/hetzner root@77.42.38.148 'udevadm test --action=change /sys/block/sdb 2>&1 | grep read_ahead'
+```
+
+A firing rule prints `skipping writing ATTR{…/read_ahead_kb}="512"` (test mode does not
+write). No line means no match.
 
 Measured with fio, **buffered** sequential reads (`direct=1` bypasses readahead, so it
 cannot measure this) on cold regions of the database file:
@@ -65,6 +82,19 @@ cannot measure this) on cold regions of the database file:
 512 is the knee. Going higher gains ~4% and wastes more page cache, which is the scarce
 resource here.
 
+**Measure it with small reads or you will measure nothing.** Readahead only acts when the
+application issues reads smaller than the window, so `dd bs=1M` shows no difference between
+128 and 512 — the 1MB request is already large. Use SQLite's own 4K read size. Interleaved
+A/B on five cold regions of `playertracker.db`, 2026-08-16, live traffic:
+
+| read_ahead_kb | 4K buffered sequential |
+|---|---|
+| 128 | 139, 136 MB/s |
+| **512** | **263, 241, 226 MB/s** |
+
+~1.77×. Note also that a re-read of the same 128MB region is no faster than the first —
+there is no spare RAM on this node to retain it, so every large scan is a cold scan.
+
 **This helps sequential scans only** — aggregate jobs, ranking sweeps, `ANALYZE`, large
 `GROUP BY`s. Player pages are point lookups and are unchanged by it. The trade-off is
 that speculative reads which turn out to be random evict useful cached pages.
@@ -78,7 +108,7 @@ ssh -i ~/.ssh/hetzner root@77.42.38.148 'cat /sys/block/sdb/queue/read_ahead_kb'
 Revert (live, no reboot):
 
 ```bash
-ssh -i ~/.ssh/hetzner root@77.42.38.148 'rm /etc/udev/rules.d/60-bfstats-volume-readahead.rules && echo 128 > /sys/block/sdb/queue/read_ahead_kb'
+ssh -i ~/.ssh/hetzner root@77.42.38.148 'rm /etc/udev/rules.d/65-bfstats-volume-readahead.rules && echo 128 > /sys/block/sdb/queue/read_ahead_kb'
 ```
 
 ### 2. SQLite query planner statistics (database, not host — recorded here because it is applied out-of-band)
@@ -138,6 +168,24 @@ Not done because it requires `VACUUM` of a 24GB database with the DB quiet: hour
 ~24GB of scratch space (the volume has ~49GB free, so space is fine). Use
 `DISABLE_BACKGROUND_PROCESSING` for the window.
 
+Two consequences to weigh before booking that window — neither is about the VACUUM itself:
+
+- **It quadruples WAL write amplification.** A one-row update dirties a whole page, so a
+  16K page writes 16K into the WAL where 4K did. The WAL is already the unresolved problem
+  below (250MB observed against a 4MB autocheckpoint target) on a database whose ingest
+  path writes constantly. Page size is a read optimisation charged to the write path.
+- **It quadruples any page-denominated memory setting.** `PRAGMA cache_size` given as a
+  *positive* value is a page count, not bytes — the same value silently becomes 4× the RAM
+  per connection, across the pool, which is the failure mode `CLAUDE.md` records from
+  Aug 2026. Keep `cache_size` negative (KiB) and re-check every pragma for page units
+  before changing `page_size`.
+
+Sizing note for reads: the win is only where reads are dense. Measured on the leaderboard
+scan, `PlayerMapStats` packs ~27 rows into a 4K page and the scan touches nearly every row
+on every page it reads — 16K would cut that read count ~4×. The map-scoped path is the
+opposite (~1.5 rows per page, effectively random), where a bigger page changes bytes per
+round trip but not the number of round trips.
+
 ### `discard` mount option → `fstrim.timer`
 
 `/mnt/bfstats-data` mounts `rw,relatime,discard`. Inline discard issues a TRIM on the
@@ -151,6 +199,8 @@ over target — because checkpoints could not complete while writers were consta
 contending. Every reader consults that WAL index. A clean pod shutdown checkpointed it
 back to 76MB. Watch whether it climbs again; if it does, it is a separate problem from
 readahead and worth its own investigation.
+
+**It climbed again:** 250MB on 2026-08-16. Still unowned.
 
 ### Raising container memory limits to buy page cache
 
