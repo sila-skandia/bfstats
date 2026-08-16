@@ -1,3 +1,4 @@
+using api.Data.Entities;
 using api.Players;
 using api.PlayerStats;
 using api.PlayerTracking;
@@ -124,6 +125,75 @@ public sealed class PlayerStatsServiceTests : IDisposable
 
         var allNames = page1.Items.Concat(page2.Items).Select(p => p.PlayerName).Distinct().ToList();
         Assert.Equal(4, allNames.Count);
+    }
+
+    [Fact]
+    public async Task GetAllPlayersWithPaging_HydratesActiveStatusAndAggregatesAccurately()
+    {
+        var server = new GameServer
+        {
+            Guid = "srv-1",
+            Name = "MoonGamers BF1942",
+            GameId = "bf1942"
+        };
+        dbContext.Servers.Add(server);
+
+        dbContext.Players.AddRange(
+            new Player { Name = "The Muffin Man", TotalPlayTimeMinutes = 1500, AiBot = false, LastSeen = DateTime.UtcNow },
+            new Player { Name = "AnotherPlayer", TotalPlayTimeMinutes = 200, AiBot = false, LastSeen = DateTime.UtcNow.AddDays(-1) }
+        );
+
+        dbContext.PlayerSessions.Add(new PlayerSession
+        {
+            SessionId = 10,
+            PlayerName = "The Muffin Man",
+            ServerGuid = "srv-1",
+            IsActive = true,
+            MapName = "Wake Island",
+            StartTime = DateTime.UtcNow.AddMinutes(-20),
+            LastSeenTime = DateTime.UtcNow,
+            TotalKills = 25,
+            TotalDeaths = 5
+        });
+
+        dbContext.PlayerServerStats.Add(new PlayerServerStats
+        {
+            PlayerName = "The Muffin Man",
+            ServerGuid = "srv-1",
+            Year = DateTime.UtcNow.Year,
+            Week = System.Globalization.ISOWeek.GetWeekOfYear(DateTime.UtcNow),
+            TotalKills = 100,
+            TotalDeaths = 50,
+            TotalRounds = 10,
+            TotalScore = 500
+        });
+
+        await dbContext.SaveChangesAsync();
+
+        var filters = new api.Players.Models.PlayerFilters
+        {
+            PlayerName = "Muffin"
+        };
+
+        var result = await service.GetAllPlayersWithPaging(
+            page: 1,
+            pageSize: 10,
+            sortBy: "totalplaytimeminutes",
+            sortOrder: "desc",
+            filters: filters);
+
+        Assert.Single(result.Items);
+        Assert.Equal(1, result.TotalItems);
+        var player = result.Items[0];
+        Assert.Equal("The Muffin Man", player.PlayerName);
+        Assert.True(player.IsActive);
+        Assert.NotNull(player.CurrentServer);
+        Assert.Equal("MoonGamers BF1942", player.CurrentServer!.ServerName);
+        Assert.Equal("Wake Island", player.CurrentServer!.MapName);
+        Assert.Equal(100, player.TotalKills);
+        Assert.Equal(50, player.TotalDeaths);
+        Assert.Equal(10, player.TotalRounds);
+        Assert.Equal("MoonGamers BF1942", player.FavoriteServer);
     }
 
     public void Dispose()
