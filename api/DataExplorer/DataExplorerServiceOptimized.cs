@@ -935,9 +935,20 @@ public class DataExplorerService(
 
         // Get rankings for each map/server combination
         // We need to calculate the player's rank on each server for each map
+        //
+        // Scope this to the servers the player actually appears on, not every server for
+        // the game. playerStats above is already exactly that set. Ranking any other
+        // server only builds partitions the player is absent from, which are discarded by
+        // the final PlayerName filter — they cannot change a rank, only cost scan time.
+        // It also lets the planner use two columns of IX_PlayerMapStats_MapRanking_Covering
+        // (MapName, ServerGuid) instead of seeking on MapName alone.
+        // Measured on production: 690 servers -> 7 for a typical player, 52.0s -> 24.7s,
+        // identical rows. Same shape as the 90-parameter IN scan fixed in f15f9cd.
+        var rankedGuids = playerStats.Select(ps => ps.ServerGuid).Distinct().ToList();
+
         // Build separate guidParams for this query (starts at @p2 since we have year, month first)
-        var rankingGuidParams = string.Join(", ", serverGuids.Select((_, i) => $"@p{i + 2}"));
-        var playerNameParamIndex = 2 + serverGuids.Count;
+        var rankingGuidParams = string.Join(", ", rankedGuids.Select((_, i) => $"@p{i + 2}"));
+        var playerNameParamIndex = 2 + rankedGuids.Count;
 
         // PlayerMaps restricts the ranking to the maps this player has actually played.
         // The result is filtered to one PlayerName and rank is partitioned by
@@ -972,7 +983,7 @@ public class DataExplorerService(
             WHERE PlayerName = @p{playerNameParamIndex}";
 
         var rankingParams = new List<object> { cutoffYear, cutoffMonth };
-        rankingParams.AddRange(serverGuids.Cast<object>());
+        rankingParams.AddRange(rankedGuids.Cast<object>());
         rankingParams.Add(playerName);
 
         var rankings = await dbContext.Database
