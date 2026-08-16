@@ -470,17 +470,26 @@ interface ServersResponse {
   lastUpdated: string;
 }
 
+// What the landing page actually needs to know: the servers, and how old that data
+// really is. lastUpdated comes from the API's own fetch timestamp against BFList — not
+// "when this request happened" — so it reflects the underlying data's true age even when
+// served from cache or a last-known-good fallback.
+export interface LiveServersResult {
+  servers: ServerSummary[];
+  lastUpdated: string;
+}
+
 // Last successful live-server snapshot. Survives SPA navigations so the
 // landing page can paint immediately, then this function always revalidates.
-let cachedLiveServers: ServerSummary[] | null = null
+let cachedLiveServers: LiveServersResult | null = null
 
-export function peekCachedLiveServers(): ServerSummary[] | null {
+export function peekCachedLiveServers(): LiveServersResult | null {
   return cachedLiveServers
 }
 
-function rememberLiveServers(servers: ServerSummary[]): ServerSummary[] {
-  cachedLiveServers = servers
-  return servers
+function rememberLiveServers(result: LiveServersResult): LiveServersResult {
+  cachedLiveServers = result
+  return result
 }
 
 /**
@@ -491,7 +500,7 @@ function rememberLiveServers(servers: ServerSummary[]): ServerSummary[] {
  */
 export async function fetchAllServers(
   game: 'bf1942'
-): Promise<ServerSummary[]> {
+): Promise<LiveServersResult> {
   try {
     // index.html kicks this request off during HTML parse for the landing route,
     // well before this module has even been downloaded. Consume that response if
@@ -501,7 +510,12 @@ export async function fetchAllServers(
       const preload = window.__bfLiveServersPreload;
       window.__bfLiveServersPreload = undefined;
       const preloaded = await preload;
-      if (preloaded?.servers) return rememberLiveServers(preloaded.servers);
+      if (preloaded?.servers) {
+        return rememberLiveServers({
+          servers: preloaded.servers,
+          lastUpdated: preloaded.lastUpdated ?? new Date().toISOString(),
+        });
+      }
     }
 
     // cache: 'no-cache' forces a revalidation. Axios/XHR will happily return
@@ -515,7 +529,7 @@ export async function fetchAllServers(
       throw new Error('Failed to get all servers');
     }
     const body = (await response.json()) as ServersResponse;
-    return rememberLiveServers(body.servers);
+    return rememberLiveServers({ servers: body.servers, lastUpdated: body.lastUpdated });
   } catch (err) {
     console.error('Error fetching all servers:', err);
     throw new Error('Failed to get all servers');

@@ -16,7 +16,7 @@ declare global {
          * In-flight live-server feed started by the inline script in index.html
          * on the landing route. Consumed (and cleared) by `fetchAllServers`.
          */
-        __bfLiveServersPreload?: Promise<{ servers: import('./types/server').ServerSummary[] } | null>
+        __bfLiveServersPreload?: Promise<{ servers: import('./types/server').ServerSummary[]; lastUpdated?: string } | null>
     }
 }
 

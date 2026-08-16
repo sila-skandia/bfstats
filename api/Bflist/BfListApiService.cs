@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using api.Bflist.Models;
 using api.Caching;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using api.Telemetry;
@@ -13,6 +15,21 @@ public interface IBfListApiService
     Task<object[]> FetchAllServersAsync(string game);
     Task<object?> FetchSingleServerAsync(string game, string serverIdentifier);
 
+    /// <summary>
+    /// Read-path variant of <see cref="FetchAllServersAsync"/>: same hot cache, but if the
+    /// upstream fetch fails and the hot cache is empty, falls back to the last successful
+    /// snapshot (raw_servers:{game}:last_good) instead of throwing. Never used by the stats
+    /// collector — session tracking must never be fed a stale/fallback snapshot.
+    /// </summary>
+    Task<Models.RawServerSnapshot> FetchAllServersWithMetaAsync(string game);
+
+    /// <summary>
+    /// Maps a raw BFList server to the UI-facing summary shape (dedup, field projection).
+    /// Exposed so callers with their own enrichment (geo, bot detection) can reuse it
+    /// instead of duplicating the mapping.
+    /// </summary>
+    Models.ServerSummary MapToSummary(Models.Bf1942ServerInfo server);
+
     // Helper methods for UI that need ServerSummary
     Task<Models.ServerSummary[]> FetchServerSummariesAsync(string game, int perPage = 100, string? cursor = null, string? after = null);
     Task<Models.ServerSummary[]> FetchAllServerSummariesWithCacheStatusAsync(string game);
@@ -23,6 +40,7 @@ public interface IBfListApiService
 public class BfListApiService(
     IHttpClientFactory httpClientFactory,
     ICacheService cacheService,
+    IMemoryCache memoryCache,
     ILogger<BfListApiService> logger,
     IConfiguration configuration) : IBfListApiService
 {
@@ -35,6 +53,20 @@ public class BfListApiService(
 
     private const int ServerListCacheSeconds = 30;
     private const int SingleServerCacheSeconds = 8; // 8 seconds for individual server updates
+
+    // Read-path safety net: kept far longer than the hot cache so a sustained BFList outage
+    // degrades to "last known status, clearly stale" instead of an empty landing page.
+    private static readonly TimeSpan LastGoodCacheDuration = TimeSpan.FromHours(24);
+
+    private static string RawServersCacheKey(string game) => $"raw_servers:{game}";
+    private static string RawServersLastGoodCacheKey(string game) => $"raw_servers:{game}:last_good";
+
+    // BfListApiService is request-scoped (Program.cs registers it AddScoped), so anything
+    // that needs to survive across requests — the per-game upstream-fetch lock — has to live
+    // in static state rather than an instance field.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FetchLocks = new();
+
+    private static SemaphoreSlim GetFetchLock(string game) => FetchLocks.GetOrAdd(game, static _ => new SemaphoreSlim(1, 1));
 
     public async Task<object[]> FetchServersAsync(string game, int perPage = 100, string? cursor = null, string? after = null)
     {
@@ -71,22 +103,118 @@ public class BfListApiService(
 
     public async Task<object[]> FetchAllServersAsync(string game)
     {
-        var cacheKey = $"raw_servers:{game}";
-        var cachedResult = await cacheService.GetAsync<Bf1942ServerInfo[]>(cacheKey);
-
-        if (cachedResult != null)
+        var cached = await GetSnapshotAsync(RawServersCacheKey(game), TimeSpan.FromSeconds(ServerListCacheSeconds));
+        if (cached != null)
         {
-            logger.LogDebug("Cache hit for raw servers of game {Game}", game);
-            return cachedResult.Cast<object>().ToArray();
+            return cached.Servers.Cast<object>().ToArray();
         }
 
-        logger.LogDebug("Cache miss for raw servers of game {Game}", game);
-        var freshServers = await FetchAllServersFromApiAsync(game);
-        var typedServers = freshServers.Cast<Bf1942ServerInfo>()
-            .Where(server => !IsStuckServer(server.Name))
-            .ToArray();
-        await cacheService.SetAsync(cacheKey, typedServers, TimeSpan.FromSeconds(ServerListCacheSeconds));
-        return typedServers.Cast<object>().ToArray();
+        var snapshot = await FetchAndCacheServersAsync(game);
+        return snapshot.Servers.Cast<object>().ToArray();
+    }
+
+    public async Task<RawServerSnapshot> FetchAllServersWithMetaAsync(string game)
+    {
+        var cached = await GetSnapshotAsync(RawServersCacheKey(game), TimeSpan.FromSeconds(ServerListCacheSeconds));
+        if (cached != null)
+        {
+            return cached;
+        }
+
+        try
+        {
+            return await FetchAndCacheServersAsync(game);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Live fetch failed for game {Game}; falling back to last-known-good snapshot", game);
+            var lastGood = await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
+            if (lastGood == null)
+            {
+                throw;
+            }
+
+            // Never hand back a cache-owned instance with IsFallback flipped — IMemoryCache
+            // returns the same shared reference on every read (unlike Redis, which
+            // deserializes a fresh object per call), so mutating it here would corrupt what
+            // every other reader — and every future recovery — sees from the same entry.
+            return new RawServerSnapshot
+            {
+                FetchedAtUtc = lastGood.FetchedAtUtc,
+                Servers = lastGood.Servers,
+                IsFallback = true
+            };
+        }
+    }
+
+    /// <summary>
+    /// Checks the in-process L1 cache first, then the Redis-backed L2 (backfilling L1 on a
+    /// Redis hit). Used for both the hot key and the last-good key — same lookup shape,
+    /// different TTL. This is what keeps the landing page working out of this pod's own
+    /// memory if Redis itself is unreachable, not just if BFList is.
+    /// </summary>
+    private async Task<RawServerSnapshot?> GetSnapshotAsync(string cacheKey, TimeSpan memoryTtl)
+    {
+        if (memoryCache.TryGetValue<RawServerSnapshot>(cacheKey, out var memoryHit) && memoryHit != null)
+        {
+            logger.LogDebug("Memory cache hit for {CacheKey}", cacheKey);
+            return memoryHit;
+        }
+
+        var redisHit = await cacheService.GetAsync<RawServerSnapshot>(cacheKey);
+        if (redisHit != null)
+        {
+            logger.LogDebug("Redis cache hit for {CacheKey}", cacheKey);
+            memoryCache.Set(cacheKey, redisHit, memoryTtl);
+        }
+
+        return redisHit;
+    }
+
+    /// <summary>
+    /// Fetches fresh servers from the upstream API and populates the hot and last-known-good
+    /// caches, in both memory and Redis. Guarded by a per-game lock so concurrent cache
+    /// misses (e.g. several landing-page requests arriving while Redis is down) share one
+    /// upstream call instead of each hitting BFList independently — the thing we're most
+    /// trying to avoid here. Only called on a cache miss, so a live upstream failure here
+    /// propagates — callers decide whether to fall back or (for the collector) let the cycle
+    /// fail and retry next tick.
+    /// </summary>
+    private async Task<RawServerSnapshot> FetchAndCacheServersAsync(string game)
+    {
+        var fetchLock = GetFetchLock(game);
+        await fetchLock.WaitAsync();
+        try
+        {
+            // Someone else may have already refreshed the snapshot while we waited.
+            var cached = await GetSnapshotAsync(RawServersCacheKey(game), TimeSpan.FromSeconds(ServerListCacheSeconds));
+            if (cached != null)
+            {
+                return cached;
+            }
+
+            var freshServers = await FetchAllServersFromApiAsync(game);
+            var typedServers = freshServers.Cast<Bf1942ServerInfo>()
+                .Where(server => !IsStuckServer(server.Name))
+                .ToArray();
+
+            var snapshot = new RawServerSnapshot
+            {
+                FetchedAtUtc = DateTime.UtcNow,
+                Servers = typedServers
+            };
+
+            memoryCache.Set(RawServersCacheKey(game), snapshot, TimeSpan.FromSeconds(ServerListCacheSeconds));
+            memoryCache.Set(RawServersLastGoodCacheKey(game), snapshot, LastGoodCacheDuration);
+            await cacheService.SetAsync(RawServersCacheKey(game), snapshot, TimeSpan.FromSeconds(ServerListCacheSeconds));
+            await cacheService.SetAsync(RawServersLastGoodCacheKey(game), snapshot, LastGoodCacheDuration);
+
+            return snapshot;
+        }
+        finally
+        {
+            fetchLock.Release();
+        }
     }
 
     private async Task<object[]> FetchAllServersFromApiAsync(string game)
@@ -205,7 +333,7 @@ public class BfListApiService(
 
         if (server is Bf1942ServerInfo bf1942Server)
         {
-            var summary = MapBf1942ToSummary(bf1942Server);
+            var summary = MapToSummary(bf1942Server);
             await cacheService.SetAsync(cacheKey, summary, TimeSpan.FromSeconds(SingleServerCacheSeconds));
             return summary;
         }
@@ -216,7 +344,7 @@ public class BfListApiService(
     private Models.ServerSummary[] ConvertToServerSummaries(object[] servers)
     {
         return servers.Cast<Bf1942ServerInfo>()
-            .Select(MapBf1942ToSummary)
+            .Select(MapToSummary)
             .OrderByDescending(s => s.NumPlayers)
             .ToArray();
     }
@@ -255,7 +383,7 @@ public class BfListApiService(
         return filteredPlayers;
     }
 
-    private Models.ServerSummary MapBf1942ToSummary(Bf1942ServerInfo server)
+    public Models.ServerSummary MapToSummary(Bf1942ServerInfo server)
     {
         var filteredPlayers = FilterDuplicatePlayers(server.Players ?? [], server.Name);
 
