@@ -579,12 +579,16 @@ export async function fetchLiveServerData(
   try {
     const game = 'bf1942';
 
-    // Use the backend API endpoint with separate IP and port parameters
-    const response = await axios.get<ServerSummary>(
-      `/stats/liveservers/${game}/${serverIp}/${serverPort}`
-    );
-    
-    return response.data;
+    // cache: 'no-cache' forces a revalidation so the browser does not return a stale
+    // cached body when navigating across pages or refreshing.
+    const response = await fetch(`/stats/liveservers/${game}/${serverIp}/${serverPort}`, {
+      cache: 'no-cache',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to get live server data');
+    }
+    return (await response.json()) as ServerSummary;
   } catch (err) {
     console.error('Error fetching live server data:', err);
     throw new Error('Failed to get live server data');
