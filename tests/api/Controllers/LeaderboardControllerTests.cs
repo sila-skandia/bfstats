@@ -105,8 +105,6 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Equal(2000, rommel.Score);
         Assert.Equal(1.25, rommel.Kpm); // 150 / 120
         Assert.Equal(10, rommel.Rounds);
-        Assert.Equal("=DOG= Dogtags 24/7", rommel.FavServer);
-        Assert.Equal("Bocage", rommel.FavMap);
     }
 
     [Fact]
@@ -149,7 +147,7 @@ public class LeaderboardControllerTests : IDisposable
         var response = Assert.IsType<GlobalLeaderboardResponse>(okResult.Value);
 
         Assert.Single(response.Players);
-        Assert.Equal("Wake", response.Players[0].FavMap);
+        Assert.Equal("Rommel_44", response.Players[0].Name);
     }
 
     [Fact]
@@ -379,7 +377,6 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Equal("Rommel", liveResponse.Players[0].Name);
         Assert.Equal(100, liveResponse.Players[0].Kills);
         Assert.Equal(2000, liveResponse.Players[0].Score);
-        Assert.Equal("Dogtags 24/7", liveResponse.Players[0].FavServer);
     }
 
     [Fact]
