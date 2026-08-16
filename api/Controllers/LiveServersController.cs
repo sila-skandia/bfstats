@@ -155,7 +155,7 @@ public class LiveServersController(
         stepStopwatch.Restart();
         var allActiveSessions = await dbContext.PlayerSessions
             .AsNoTracking()
-            .Where(ps => ps.IsActive
+            .Where(ps => ps.IsActive == true
                          && ps.LastSeenTime >= activeThreshold
                          && (!ps.Player.AiBot))
             .Include(ps => ps.Player)
@@ -173,7 +173,7 @@ public class LiveServersController(
         stepStopwatch.Restart();
         var allActiveRounds = await dbContext.Rounds
             .AsNoTracking()
-            .Where(r => r.IsActive)
+            .Where(r => r.IsActive == true)
             .ToListAsync();
         var currentRounds = allActiveRounds
             .Where(r => serverGuids.Contains(r.ServerGuid))
