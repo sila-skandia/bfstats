@@ -8,14 +8,12 @@ import {
   fetchServerPlayerRankings,
   fetchLiveServerData,
   fetchServerBusyIndicators,
-  fetchServerMapsInsights,
   type ServerDetails,
   type ServerInsights,
   type LeaderboardsData,
   type ServerPlayerRankingsResponse,
   type ServerPlayerRankingItem,
   type ServerHourlyTimelineEntry,
-  type PopularMap,
 } from '@/services/serverDetailsService'
 import type { ServerSummary } from '@/types/server'
 import { decodePlayerName } from '@/utils/playerName'
@@ -25,11 +23,10 @@ import MmServerComments from '@/components/v4/MmServerComments.vue'
 import MmServerSignatureBuilder from '@/components/v4/MmServerSignatureBuilder.vue'
 import MmForecastModal from '@/components/v4/MmForecastModal.vue'
 import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
-import MmServerMapDetailPanel from '@/components/v4/data-explorer/MmServerMapDetailPanel.vue'
+import MmServerMapPopularity from '@/components/v4/MmServerMapPopularity.vue'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
-import { useDrillIn } from '@/composables/useDrillIn'
 import { kdClass } from './mmTokens'
 
 const route = useRoute()
@@ -42,12 +39,10 @@ const insights = ref<ServerInsights | null>(null)
 const leaderboards = ref<LeaderboardsData | null>(null)
 const liveServer = ref<ServerSummary | null>(null)
 const hourlyTimeline = ref<ServerHourlyTimelineEntry[]>([])
-const mapsList = ref<PopularMap[]>([])
 const loading = ref(true)
 const insightsLoading = ref(false)
 const boardsLoading = ref(false)
 const liveLoading = ref(false)
-const mapsLoading = ref(false)
 const error = ref<string | null>(null)
 
 const showForecast = ref(false)
@@ -77,24 +72,6 @@ watch(activeTab, (t) => {
   window.history.replaceState(window.history.state, '', url.toString())
 })
 
-// --- map drill-in (Maps tab) ---
-const selectedMap = ref<string | null>(null)
-const mapDrillRef = ref<HTMLElement | null>(null)
-const mapDrill = useDrillIn()
-const openMapDrill = (mapName: string) => {
-  selectedMap.value = mapName
-  mapDrill.enter(mapDrillRef)
-}
-const closeMapDrill = () => {
-  selectedMap.value = null
-  mapDrill.exit()
-}
-// From the Overview map-popularity rail: jump to the Maps tab, then drill.
-const openMapAnywhere = (mapName: string) => {
-  activeTab.value = 'maps'
-  openMapDrill(mapName)
-}
-
 // These feeds were previously awaited one after another. Every request from
 // Australia costs ~320ms of round trip to the Finnish origin regardless of how
 // little work it does, so six serial calls cost ~2.4s of pure latency before the
@@ -116,7 +93,6 @@ const load = async () => {
   insightsLoading.value = true
   boardsLoading.value = true
   liveLoading.value = true
-  mapsLoading.value = true
 
   // Wave 1 — everything keyed off serverName alone.
   const detailsP = fetchServerDetails(serverName.value)
@@ -133,12 +109,6 @@ const load = async () => {
     .then(b => { if (!stale()) leaderboards.value = b })
     .catch(() => { if (!stale()) leaderboards.value = null })
     .finally(() => { if (!stale()) boardsLoading.value = false })
-
-  // Popular maps — own endpoint (the backend never set details.popularMaps)
-  const mapsP = fetchServerMapsInsights(serverName.value, 30)
-    .then(m => { if (!stale()) mapsList.value = m.maps ?? [] })
-    .catch(() => { if (!stale()) mapsList.value = [] })
-    .finally(() => { if (!stale()) mapsLoading.value = false })
 
   // Wave 2 — needs fields from the details payload, so it waits on that one
   // request only, not on the whole of wave 1.
@@ -182,7 +152,7 @@ const load = async () => {
     void loadPagedRankings()
   }
 
-  await Promise.all([detailsP, insightsP, boardsP, mapsP, dependentP])
+  await Promise.all([detailsP, insightsP, boardsP, dependentP])
 }
 
 const liveNumPlayers = computed(() => liveServer.value?.numPlayers ?? 0)
@@ -223,25 +193,8 @@ const countryFlag = computed(() => {
   return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1f1e6 + c.charCodeAt(0) - 65))
 })
 
-// Map-popularity rail rows (right column). Track width scaled to the busiest map.
-const mapRows = computed(() => {
-  const maps = popularMaps.value.slice(0, 8)
-  const maxShare = Math.max(1, ...maps.map(m => m.playTimePercentage))
-  return maps.map(m => ({
-    mapName: m.mapName,
-    share: m.playTimePercentage,
-    avg: m.averagePlayerCount,
-    w: Math.round((m.playTimePercentage / maxShare) * 100),
-  }))
-})
-
 onMounted(load)
 watch(serverName, load)
-
-// `details.popularMaps` was always undefined — the backend ServerStatistics
-// model has no such field. The real source is /servers/:name/maps-insights
-// which queries the SQLite ServerMapStats table. See `mapsList` ref above.
-const popularMaps = computed(() => mapsList.value)
 
 const region = computed(() => {
   const code = details.value?.countryCode
@@ -446,11 +399,6 @@ watch(activeTab, (t) => {
             @click="showForecast = true"
           >Forecast →</button>
           <router-link
-            v-if="details?.serverGuid"
-            :to="`/v4/map-popularity/${encodeURIComponent(details.serverGuid)}`"
-            class="mm-server__quick"
-          >Map popularity →</router-link>
-          <router-link
             :to="`/v4/servers/${encodeURIComponent(serverName)}/sessions`"
             class="mm-server__quick"
           >Rounds →</router-link>
@@ -534,51 +482,25 @@ watch(activeTab, (t) => {
 
       <!-- ===================== OVERVIEW ===================== -->
       <div v-if="activeTab === 'overview'" style="margin-top: 20px">
-        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1fr">
-          <section class="mm-panel">
-            <div class="mm-pbar">
-              <span class="mm-pbar__t">● Online now</span>
-              <span class="mm-pbar__m">
-                <template v-if="hasLiveRoster">{{ liveNumPlayers }} playing · by score</template>
-                <template v-else-if="liveLoading">checking…</template>
-                <template v-else>server quiet</template>
-              </span>
-            </div>
-            <div v-if="hasLiveRoster" style="padding: 6px">
-              <MmPlayersPanel :show="true" :server="liveServer" :inline="true" :embedded="true" />
-            </div>
-            <div v-else-if="liveLoading" class="mm-panel__body">
-              <div class="mm-skeleton" style="margin-bottom: 8px" />
-              <div class="mm-skeleton" />
-            </div>
-            <div v-else class="mm-panel__body mm-empty" style="border: 0; padding: 24px 0">No players online right now.</div>
-          </section>
-
-          <section class="mm-panel">
-            <div class="mm-pbar">
-              <span class="mm-pbar__t"># Map popularity</span>
-              <span class="mm-pbar__m">share · last 30d</span>
-            </div>
-            <div class="mm-panel__body mm-maprail">
-              <div
-                v-for="m in mapRows"
-                :key="m.mapName"
-                class="mm-rrow mm-maprail__row"
-                @click="openMapAnywhere(m.mapName)"
-              >
-                <span class="mm-maprail__name">{{ m.mapName }}</span>
-                <span class="mm-track"><span class="mm-track__f mm-track__f--accent" :style="{ width: m.w + '%' }" /></span>
-                <span class="mm-maprail__val">{{ formatPercent(m.share) }}</span>
-              </div>
-              <template v-if="mapRows.length === 0">
-                <template v-if="mapsLoading">
-                  <div v-for="i in 5" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />
-                </template>
-                <div v-else class="mm-empty" style="border: 0; padding: 12px 0">No map history yet.</div>
-              </template>
-            </div>
-          </section>
-        </div>
+        <!-- Full-width Online Now panel -->
+        <section class="mm-panel">
+          <div class="mm-pbar">
+            <span class="mm-pbar__t">● Online now</span>
+            <span class="mm-pbar__m">
+              <template v-if="hasLiveRoster">{{ liveNumPlayers }} playing · by score</template>
+              <template v-else-if="liveLoading">checking…</template>
+              <template v-else>server quiet</template>
+            </span>
+          </div>
+          <div v-if="hasLiveRoster" style="padding: 10px 14px">
+            <MmPlayersPanel :show="true" :server="liveServer" :inline="true" :embedded="true" />
+          </div>
+          <div v-else-if="liveLoading" class="mm-panel__body">
+            <div class="mm-skeleton" style="margin-bottom: 8px" />
+            <div class="mm-skeleton" />
+          </div>
+          <div v-else class="mm-panel__body mm-empty" style="border: 0; padding: 24px 0">No players online right now.</div>
+        </section>
 
         <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1.15fr; margin-top: 20px">
           <section class="mm-panel">
@@ -1026,59 +948,16 @@ watch(activeTab, (t) => {
 
       <!-- ===================== MAPS ===================== -->
       <div v-else-if="activeTab === 'maps'" style="margin-top: 20px">
-        <template v-if="!selectedMap">
-          <table class="mm-list mm-list--dense">
-            <thead>
-              <tr>
-                <th style="width: 40px"></th>
-                <th>Map</th>
-                <th class="is-num">Avg players</th>
-                <th class="is-num">Peak</th>
-                <th class="is-num">Time played</th>
-                <th class="is-num">Share</th>
-                <th style="width: 70px"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(m, i) in popularMaps" :key="m.mapName" @click="openMapDrill(m.mapName)">
-                <td class="mm-list__rank is-muted">{{ String(i + 1).padStart(2, '0') }}</td>
-                <td class="mm-list__name-cell">
-                  <div class="mm-list__name">
-                    <span class="mm-list__name-primary">{{ m.mapName }}</span>
-                  </div>
-                </td>
-                <td class="is-num" data-cell-label="Avg players">{{ m.averagePlayerCount.toFixed(1) }}</td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Peak">{{ m.peakPlayerCount }}</td>
-                <td class="is-num mm-list__col--hide-sm" data-cell-label="Time played">{{ formatHours(m.totalPlayTime) }}</td>
-                <td class="is-num" data-cell-label="Share">
-                  <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end">
-                    <span>{{ formatPercent(m.playTimePercentage) }}</span>
-                    <div class="mm-list__bar mm-list__col--hide-sm" style="width: 80px">
-                      <div
-                        class="mm-list__bar-fill"
-                        :class="{ 'mm-list__bar-fill--accent': m.playTimePercentage >= 20 }"
-                        :style="{ width: Math.min(100, m.playTimePercentage * 2) + '%' }"
-                      />
-                    </div>
-                  </div>
-                </td>
-                <td data-cell-label="" class="mm-list__col--hide-sm"><span class="mm-eyebrow">Drill →</span></td>
-              </tr>
-              <tr v-if="popularMaps.length === 0">
-                <td colspan="7" class="mm-empty" style="border: 0">{{ mapsLoading ? 'Loading…' : 'No map history yet.' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </template>
-
-        <div v-else ref="mapDrillRef" style="scroll-margin-top: 16px">
-          <button type="button" class="mm-btn mm-btn--inline" style="margin-bottom: 16px" @click="closeMapDrill">← Back to maps</button>
-          <MmServerMapDetailPanel
-            v-if="details"
-            :server-guid="details.serverGuid"
-            :map-name="selectedMap"
-            @close="closeMapDrill"
-          />
+        <MmServerMapPopularity
+          v-if="details?.serverGuid"
+          :server-guid="details.serverGuid"
+          :server-name="serverName"
+        />
+        <div v-else-if="loading" style="padding: 32px 0">
+          <div v-for="i in 6" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />
+        </div>
+        <div v-else class="mm-empty">
+          Map statistics not available for this server.
         </div>
       </div>
 
@@ -1156,33 +1035,6 @@ watch(activeTab, (t) => {
 
 /* Rank panel body — tighten table padding to sit inside the panel frame. */
 .mm-panel__rank { padding: 8px 6px 6px; }
-
-/* Map-popularity rail rows. */
-.mm-maprail {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-}
-.mm-maprail__row {
-  display: grid;
-  grid-template-columns: 1fr 2fr auto;
-  gap: 12px;
-  align-items: center;
-}
-.mm-maprail__name {
-  font-family: var(--mm-font-display);
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mm-maprail .mm-track { height: 5px; }
-.mm-track__f--accent { background: var(--mm-accent); }
-.mm-maprail__val {
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  color: var(--mm-ink-muted);
-}
 
 /* Ranks tab — leaderboard styling. Top-3 rows get an amber left rail, and
    the K/D cell picks up a tier-tinted background (poor → kill-soft pink,
