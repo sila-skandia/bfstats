@@ -106,8 +106,11 @@ public class AggregateCalculationService(
         activity?.SetTag("year", year);
         activity?.SetTag("month", month);
 
-        var yearString = year.ToString();
         var monthString = month.ToString("00");
+        var monthStart = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var monthEnd = monthStart.AddMonths(1);
+        var startString = monthStart.ToString("yyyy-MM-dd HH:mm:ss");
+        var endString = monthEnd.ToString("yyyy-MM-dd HH:mm:ss");
 
         // Read and project OUTSIDE the transaction. See WriteLockNote at the bottom of
         // this file: the aggregate scan is the expensive half, and running it inside the
@@ -124,12 +127,12 @@ public class AggregateCalculationService(
                 MAX(ps.LastSeenTime) AS LastRoundTime
             FROM PlayerSessions ps
             INNER JOIN Players p ON ps.PlayerName = p.Name
-            WHERE strftime('%Y', ps.StartTime) = {0}
-              AND strftime('%m', ps.StartTime) = {1}
+            WHERE ps.StartTime >= {0}
+              AND ps.StartTime < {1}
               AND p.AiBot = 0
               AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
             GROUP BY ps.PlayerName",
-            yearString, monthString).ToListAsync();
+            startString, endString).ToListAsync();
 
         activity?.SetTag("player_count", playerData.Count);
 
@@ -268,8 +271,11 @@ public class AggregateCalculationService(
         activity?.SetTag("year", year);
         activity?.SetTag("month", month);
 
-        var yearString = year.ToString();
         var monthString = month.ToString("00");
+        var monthStart = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var monthEnd = monthStart.AddMonths(1);
+        var startString = monthStart.ToString("yyyy-MM-dd HH:mm:ss");
+        var endString = monthEnd.ToString("yyyy-MM-dd HH:mm:ss");
 
         // Both aggregate scans run outside the transaction — see WriteLockNote at the
         // bottom of this file. This method is the worst offender of the three: it scans
@@ -286,12 +292,12 @@ public class AggregateCalculationService(
                     SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440) AS TotalPlayTimeMinutes
                 FROM PlayerSessions ps
                 INNER JOIN Players p ON ps.PlayerName = p.Name
-                WHERE strftime('%Y', ps.StartTime) = {0}
-                  AND strftime('%m', ps.StartTime) = {1}
+                WHERE ps.StartTime >= {0}
+                  AND ps.StartTime < {1}
                   AND p.AiBot = 0
                   AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
                 GROUP BY ps.PlayerName, ps.MapName, ps.ServerGuid",
-                yearString, monthString).ToListAsync();
+                startString, endString).ToListAsync();
 
         activity?.SetTag("per_server_record_count", mapData.Count);
 
@@ -308,12 +314,12 @@ public class AggregateCalculationService(
                     SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440) AS TotalPlayTimeMinutes
                 FROM PlayerSessions ps
                 INNER JOIN Players p ON ps.PlayerName = p.Name
-                WHERE strftime('%Y', ps.StartTime) = {0}
-                  AND strftime('%m', ps.StartTime) = {1}
+                WHERE ps.StartTime >= {0}
+                  AND ps.StartTime < {1}
                   AND p.AiBot = 0
                   AND (ps.IsDeleted = 0 OR ps.IsDeleted IS NULL)
                 GROUP BY ps.PlayerName, ps.MapName",
-                yearString, monthString).ToListAsync();
+                startString, endString).ToListAsync();
 
         activity?.SetTag("global_record_count", globalMapData.Count);
 
