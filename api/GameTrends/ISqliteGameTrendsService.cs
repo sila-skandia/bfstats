@@ -1,5 +1,6 @@
 using api.Bflist.Models;
 using api.Analytics.Models;
+using api.GameTrends.Models;
 
 namespace api.GameTrends;
 
@@ -28,4 +29,14 @@ public interface ISqliteGameTrendsService
     /// Gets weekly activity patterns (168 hour slots).
     /// </summary>
     Task<List<WeeklyActivityPattern>> GetWeeklyActivityPatternsAsync(string? game = null, int daysPeriod = 30);
+
+    /// <summary>
+    /// Hourly occupancy for servers currently marked online. One grouped row per hour.
+    /// </summary>
+    Task<PlayerTrendResponse> GetNetworkPlayerTrendAsync(string game, int days = 60);
+
+    /// <summary>
+    /// Hourly occupancy for a single server. Primary-key range on ServerOnlineCounts.
+    /// </summary>
+    Task<PlayerTrendResponse> GetServerPlayerTrendAsync(string serverGuid, int days = 60);
 }

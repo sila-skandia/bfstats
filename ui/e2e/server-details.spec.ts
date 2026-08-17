@@ -57,6 +57,19 @@ test.describe('Server Details Page', () => {
       }
     });
 
+    test('player trend stays collapsed until opened', async ({ page }) => {
+      await page.goto('/v4/servers/detail/E2E%20Test%20Server');
+      await expect(page.locator('h1')).toBeVisible({ timeout: 15_000 });
+
+      const trend = page.getByTestId('server-population-trend');
+      await expect(trend).toBeVisible();
+      await expect(trend.getByText(/POPULATION OVER TIME/)).toBeVisible();
+      await expect(trend.locator('.mm-pop-trend')).toHaveCount(0);
+
+      await trend.getByRole('button', { name: /PLAYER TREND/ }).click();
+      await expect(trend.getByText('HIDE')).toBeVisible();
+    });
+
     test('should display back button in hero section', async ({ page }) => {
       await page.goto('/servers/bf1942');
       await page.waitForLoadState('networkidle');
