@@ -179,6 +179,7 @@ const overlayOpen = computed(() => isFullscreen.value || roundsOpen.value)
 
 watch(overlayOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
+  document.documentElement.classList.toggle('mm-fs-lock', open)
 })
 
 const onKeydown = (e: KeyboardEvent) => {
@@ -201,6 +202,7 @@ watch(isFullscreen, (open) => {
 
 onUnmounted(() => {
   document.body.style.overflow = ''
+  document.documentElement.classList.remove('mm-fs-lock')
   window.removeEventListener('keydown', onKeydown)
 })
 
@@ -552,6 +554,8 @@ const expandIcon = [
   background: var(--mm-bg);
   display: flex;
   flex-direction: column;
+  overscroll-behavior: none;
+  min-height: 100dvh;
 }
 
 .mm-trend-fs__frame {
@@ -643,7 +647,11 @@ const expandIcon = [
 }
 
 @media (max-width: 720px) {
-  .mm-trend-fs__frame { padding: 12px 14px 12px; }
+  .mm-trend-fs__frame {
+    padding: 12px 14px 12px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
   .mm-trend-fs__charts { gap: 14px; }
   .mm-trend-fs__live { font-size: 18px; }
   .mm-trend-fs__chart :deep(.mm-sparkline-root) {

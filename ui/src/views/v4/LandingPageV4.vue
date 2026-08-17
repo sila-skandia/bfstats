@@ -117,6 +117,7 @@ const onTrendKey = (e: KeyboardEvent) => {
 
 watch(trendOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
+  document.documentElement.classList.toggle('mm-fs-lock', open)
 })
 
 onMounted(() => {
@@ -130,6 +131,7 @@ onUnmounted(() => {
   if (tickTimer) window.clearInterval(tickTimer)
   window.removeEventListener('keydown', onTrendKey)
   document.body.style.overflow = ''
+  document.documentElement.classList.remove('mm-fs-lock')
 })
 
 const refreshProgress = computed(() => {
@@ -1301,11 +1303,32 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   color: var(--mm-ink);
 }
 @media (max-width: 720px) {
+  .mm-pop-drawer {
+    z-index: 9999;
+    background: var(--mm-bg);
+    overscroll-behavior: none;
+  }
+  .mm-pop-drawer__back {
+    display: none;
+  }
   .mm-pop-drawer__panel {
-    width: calc(100vw - 16px);
-    height: calc(100% - 16px);
-    margin: 8px;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    margin: 0;
     padding: 18px 16px 32px;
+    padding-top: max(18px, env(safe-area-inset-top));
+    padding-bottom: max(32px, env(safe-area-inset-bottom));
+    border: 0;
+    box-shadow: none;
+    background: var(--mm-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    overscroll-behavior: contain;
+  }
+  .mm-pop-drawer__close {
+    width: 44px;
+    height: 44px;
   }
 }
 </style>
