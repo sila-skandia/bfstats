@@ -576,4 +576,61 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Single(maps);
         Assert.Equal("Wake Island", maps[0]);
     }
+
+    [Fact]
+    public async Task GetLeaderboard_SortByKpm_SortsCorrectly()
+    {
+        var now = DateTime.UtcNow;
+        _dbContext.PlayerStatsMonthly.AddRange(
+            new PlayerStatsMonthly { PlayerName = "FastKiller", Year = now.Year, Month = now.Month, TotalKills = 100, TotalDeaths = 10, TotalScore = 500, TotalRounds = 5, TotalPlayTimeMinutes = 10 },  // KPM = 10.0
+            new PlayerStatsMonthly { PlayerName = "SlowKiller", Year = now.Year, Month = now.Month, TotalKills = 20, TotalDeaths = 10, TotalScore = 1000, TotalRounds = 5, TotalPlayTimeMinutes = 40 }   // KPM = 0.5
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var descResult = await _controller.GetLeaderboard(sortBy: "kpm", sortDir: "desc");
+        var descOk = Assert.IsType<OkObjectResult>(descResult.Result);
+        var descResp = Assert.IsType<GlobalLeaderboardResponse>(descOk.Value);
+
+        Assert.Equal(2, descResp.Players.Count);
+        Assert.Equal("FastKiller", descResp.Players[0].Name);
+        Assert.Equal(10.0, descResp.Players[0].Kpm);
+        Assert.Equal("SlowKiller", descResp.Players[1].Name);
+        Assert.Equal(0.5, descResp.Players[1].Kpm);
+
+        var ascResult = await _controller.GetLeaderboard(sortBy: "kpm", sortDir: "asc");
+        var ascOk = Assert.IsType<OkObjectResult>(ascResult.Result);
+        var ascResp = Assert.IsType<GlobalLeaderboardResponse>(ascOk.Value);
+
+        Assert.Equal(2, ascResp.Players.Count);
+        Assert.Equal("SlowKiller", ascResp.Players[0].Name);
+        Assert.Equal("FastKiller", descResp.Players[0].Name);
+    }
+
+    [Fact]
+    public async Task GetLeaderboard_PopulatesFavoriteServerAndMap()
+    {
+        var now = DateTime.UtcNow;
+        _dbContext.Servers.Add(new GameServer { Guid = "s1", Name = "Dogtags 24/7", Country = "DE", Game = "bf1942" });
+        _dbContext.PlayerStatsMonthly.Add(
+            new PlayerStatsMonthly { PlayerName = "Hero", Year = now.Year, Month = now.Month, TotalKills = 50, TotalDeaths = 10, TotalScore = 500, TotalRounds = 5, TotalPlayTimeMinutes = 50 }
+        );
+        _dbContext.PlayerServerStats.Add(
+            new PlayerServerStats { PlayerName = "Hero", ServerGuid = "s1", Year = now.Year, Week = 30, TotalKills = 50, TotalDeaths = 10, TotalScore = 500, TotalRounds = 5, TotalPlayTimeMinutes = 50 }
+        );
+        _dbContext.PlayerMapStats.Add(
+            new PlayerMapStats { PlayerName = "Hero", ServerGuid = "s1", MapName = "bocage", Year = now.Year, Month = now.Month, TotalKills = 50, TotalDeaths = 10, TotalScore = 500, TotalRounds = 5, TotalPlayTimeMinutes = 50 }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetLeaderboard();
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var resp = Assert.IsType<GlobalLeaderboardResponse>(okResult.Value);
+
+        Assert.Single(resp.Players);
+        Assert.Equal("Hero", resp.Players[0].Name);
+        Assert.Equal("Dogtags 24/7", resp.Players[0].FavServer);
+        Assert.Equal("s1", resp.Players[0].FavServerGuid);
+        Assert.Equal("DE", resp.Players[0].FavServerCountry);
+        Assert.Equal("bocage", resp.Players[0].FavMap);
+    }
 }
