@@ -711,7 +711,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
 
         var serverMap = await dbContext.Servers
             .AsNoTracking()
-            .Select(s => new { s.Guid, s.Name, s.Country, s.Game })
+            .Select(s => new ServerCatalogEntry(s.Guid, s.Name, s.Country, s.Game))
             .ToDictionaryAsync(s => s.Guid);
 
         var (occupancyByGuid, populatedGuids) = await GetServerOccupancyCachedAsync();
@@ -756,7 +756,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         {
             var kills = row.Kills;
             var deaths = row.Deaths;
-            var playMin = (int)row.PlayMin;
+            var playMin = (int)Math.Round(row.PlayMin);
 
             return new Models.LeaderboardPlayerDto
             {
@@ -767,7 +767,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 Deaths = deaths,
                 Kd = deaths > 0 ? Math.Round((double)kills / deaths, 2) : kills,
                 Score = row.Score,
-                Kpm = playMin > 0 ? Math.Round((double)kills / playMin, 2) : 0,
+                Kpm = row.PlayMin > 0 ? Math.Round(kills / row.PlayMin, 2) : 0,
                 PlayMin = playMin,
                 Rounds = row.Rounds,
                 FavServer = "",
@@ -777,6 +777,8 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 FavMap = ""
             };
         }).ToList();
+
+        await PopulateFavoritesAsync(pagedPlayers, serverMap);
 
         var catalog = serverMap.Values.AsEnumerable();
         var occupancyGuids = new HashSet<string>(occupancyByGuid.Keys, StringComparer.OrdinalIgnoreCase);
@@ -970,7 +972,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             "kd" => $"""CASE WHEN e."Deaths" = 0 THEN e."Kills" ELSE CAST(e."Kills" AS REAL) / e."Deaths" END {direction}, e."Kills" {direction}""",
             "kills" => $"""e."Kills" {direction}, e."Score" {direction}""",
             "deaths" => $"""e."Deaths" {direction}, e."Name" COLLATE NOCASE ASC""",
-            "kpm" => $"""CASE WHEN e."PlayMin" = 0 THEN 0 ELSE e."Kills" / e."PlayMin" END {direction}, e."Kills" {direction}""",
+            "kpm" => $"""CASE WHEN e."PlayMin" <= 0 THEN 0.0 ELSE CAST(e."Kills" AS REAL) / e."PlayMin" END {direction}, e."Kills" {direction}""",
             "playmin" or "time" => $"""e."PlayMin" {direction}, e."Score" {direction}""",
             "rounds" => $"""e."Rounds" {direction}, e."Score" {direction}""",
             "player" or "name" => $"""e."Name" COLLATE NOCASE {direction}""",
@@ -1157,6 +1159,8 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
 
     private readonly record struct ServerOccupancy(string ServerGuid, double AvgPlayers);
 
+    private readonly record struct ServerCatalogEntry(string Guid, string Name, string? Country, string? Game);
+
     private static List<string> ParseCsvTerms(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return [];
@@ -1252,6 +1256,171 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var first = 0x1F1E6 + (code[0] - 'A');
         var second = 0x1F1E6 + (code[1] - 'A');
         return char.ConvertFromUtf32(first) + char.ConvertFromUtf32(second);
+    }
+
+    private async Task PopulateFavoritesAsync(
+        List<Models.LeaderboardPlayerDto> players,
+        IReadOnlyDictionary<string, ServerCatalogEntry> serverMap)
+    {
+        if (players.Count == 0) return;
+
+        var playerNames = players.Select(p => p.Name).Distinct().ToList();
+        var parameters = new List<SqliteParameter>();
+        var inParams = new List<string>(playerNames.Count);
+        for (int i = 0; i < playerNames.Count; i++)
+        {
+            var param = $"@p{i}";
+            inParams.Add(param);
+            parameters.Add(new SqliteParameter(param, playerNames[i]));
+        }
+        var inClause = string.Join(", ", inParams);
+
+        var sql = $$"""
+            SELECT 0 AS SourceType, PlayerName, ServerGuid AS Value
+            FROM (
+                SELECT PlayerName, ServerGuid,
+                       ROW_NUMBER() OVER (PARTITION BY PlayerName ORDER BY SUM(TotalRounds) DESC, SUM(TotalPlayTimeMinutes) DESC) as rn
+                FROM PlayerServerStats
+                WHERE PlayerName IN ({{inClause}})
+                GROUP BY PlayerName, ServerGuid
+            )
+            WHERE rn = 1
+            UNION ALL
+            SELECT 1 AS SourceType, PlayerName, MapName AS Value
+            FROM (
+                SELECT PlayerName, MapName,
+                       ROW_NUMBER() OVER (PARTITION BY PlayerName ORDER BY SUM(TotalRounds) DESC, SUM(TotalPlayTimeMinutes) DESC) as rn
+                FROM PlayerMapStats
+                WHERE PlayerName IN ({{inClause}})
+                GROUP BY PlayerName, MapName
+            )
+            WHERE rn = 1
+            """;
+
+        var favServers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var favMaps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var connection = dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync();
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+#pragma warning disable CA2100
+            command.CommandText = sql;
+#pragma warning restore CA2100
+            command.CommandTimeout = 15;
+            foreach (var parameter in parameters)
+            {
+                command.Parameters.Add(parameter);
+            }
+
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var sourceType = reader.GetInt32(0);
+                var playerName = reader.GetString(1);
+                var value = reader.GetString(2);
+                if (sourceType == 0)
+                {
+                    favServers[playerName] = value;
+                }
+                else
+                {
+                    favMaps[playerName] = value;
+                }
+            }
+        }
+        catch
+        {
+            // Silently continue if favorites query cannot complete
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        // If PlayerServerStats had no data (e.g. test environment where only PlayerMapStats was seeded),
+        // fallback to PlayerMapStats for ServerGuid.
+        if (favServers.Count == 0 && favMaps.Count > 0)
+        {
+            try
+            {
+                var fallbackSql = $$"""
+                    SELECT PlayerName, ServerGuid
+                    FROM (
+                        SELECT PlayerName, ServerGuid,
+                               ROW_NUMBER() OVER (PARTITION BY PlayerName ORDER BY SUM(TotalRounds) DESC, SUM(TotalPlayTimeMinutes) DESC) as rn
+                        FROM PlayerMapStats
+                        WHERE PlayerName IN ({{inClause}})
+                        GROUP BY PlayerName, ServerGuid
+                    )
+                    WHERE rn = 1
+                    """;
+
+                if (shouldClose && connection.State != ConnectionState.Open)
+                {
+                    await connection.OpenAsync();
+                }
+
+                await using var command = connection.CreateCommand();
+#pragma warning disable CA2100
+                command.CommandText = fallbackSql;
+#pragma warning restore CA2100
+                command.CommandTimeout = 15;
+                foreach (var parameter in parameters)
+                {
+                    command.Parameters.Add(new SqliteParameter(parameter.ParameterName, parameter.Value));
+                }
+
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    favServers[reader.GetString(0)] = reader.GetString(1);
+                }
+            }
+            catch
+            {
+                // Silently continue
+            }
+            finally
+            {
+                if (shouldClose && connection.State == ConnectionState.Open)
+                {
+                    await connection.CloseAsync();
+                }
+            }
+        }
+
+        foreach (var player in players)
+        {
+            if (favServers.TryGetValue(player.Name, out var srvGuid) && !string.IsNullOrWhiteSpace(srvGuid))
+            {
+                player.FavServerGuid = srvGuid;
+                if (serverMap.TryGetValue(srvGuid, out var srvInfo))
+                {
+                    player.FavServer = srvInfo.Name;
+                    player.FavServerCountry = srvInfo.Country ?? "";
+                    player.FavServerFlag = CountryCodeToFlag(srvInfo.Country);
+                }
+                else
+                {
+                    player.FavServer = srvGuid;
+                }
+            }
+
+            if (favMaps.TryGetValue(player.Name, out var mapName) && !string.IsNullOrWhiteSpace(mapName))
+            {
+                player.FavMap = mapName;
+            }
+        }
     }
 
     /// <summary>
