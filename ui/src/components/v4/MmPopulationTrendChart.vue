@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { MM_CHART } from '@/views/v4/mmTokens'
 
 export interface TrendChartSeries {
@@ -24,17 +24,47 @@ const props = defineProps<{
 
 const wrapEl = ref<HTMLElement | null>(null)
 const hover = ref<number | null>(null)
+const cssW = ref(0)
+const cssH = ref(0)
 
-const W = 1000
-const H = computed(() => props.height ?? 360)
-const ML = 48
-const MR = 56
-const MT = 28
-const MB = 36
+let ro: ResizeObserver | null = null
+
+onMounted(() => {
+  const el = wrapEl.value
+  if (!el) return
+  const sync = (width: number, height: number) => {
+    const w = Math.round(width)
+    const h = Math.round(height)
+    if (w < 2 || h < 2) return
+    if (w === cssW.value && h === cssH.value) return
+    cssW.value = w
+    cssH.value = h
+  }
+  const rect = el.getBoundingClientRect()
+  sync(rect.width, rect.height)
+  ro = new ResizeObserver(entries => {
+    const cr = entries[0]?.contentRect
+    if (cr) sync(cr.width, cr.height)
+  })
+  ro.observe(el)
+})
+
+onUnmounted(() => {
+  ro?.disconnect()
+  ro = null
+})
+
+const W = computed(() => Math.max(1, cssW.value || 1000))
+const H = computed(() => Math.max(1, cssH.value || (props.height ?? 360)))
+const narrow = computed(() => W.value < 520)
+const ML = computed(() => (narrow.value ? 40 : 48))
+const MR = computed(() => (narrow.value ? 16 : 56))
+const MT = computed(() => (narrow.value ? 22 : 28))
+const MB = computed(() => (narrow.value ? 28 : 36))
 
 const n = computed(() => props.series[0]?.values.length ?? 0)
-const plotW = computed(() => W - ML - MR)
-const plotH = computed(() => H.value - MT - MB)
+const plotW = computed(() => W.value - ML.value - MR.value)
+const plotH = computed(() => H.value - MT.value - MB.value)
 
 const yMax = computed(() => {
   let raw = 1
@@ -50,8 +80,8 @@ const yMax = computed(() => {
   return Math.max(10, Math.ceil((raw * 1.14) / 10) * 10)
 })
 
-const X = (i: number) => ML + (n.value <= 1 ? 0 : (i / (n.value - 1)) * plotW.value)
-const Y = (v: number) => MT + plotH.value - (v / yMax.value) * plotH.value
+const X = (i: number) => ML.value + (n.value <= 1 ? 0 : (i / (n.value - 1)) * plotW.value)
+const Y = (v: number) => MT.value + plotH.value - (v / yMax.value) * plotH.value
 
 const gridLines = computed(() =>
   [0, 1, 2, 3, 4].map(g => {
@@ -96,7 +126,7 @@ const areaPath = computed(() => {
   for (let i = 0; i < n.value; i++) {
     d += `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(s.values[i] ?? 0).toFixed(1)} `
   }
-  d += `L${X(n.value - 1).toFixed(1)} ${MT + plotH.value} L${X(0).toFixed(1)} ${MT + plotH.value} Z`
+  d += `L${X(n.value - 1).toFixed(1)} ${MT.value + plotH.value} L${X(0).toFixed(1)} ${MT.value + plotH.value} Z`
   return d
 })
 
@@ -118,7 +148,7 @@ const peak = computed(() => {
   const v = primary.value.values[i] ?? 0
   const px = X(i)
   const py = Y(v)
-  return { i, v, px, py, flip: px > W - MR - 90 }
+  return { i, v, px, py, flip: px > W.value - MR.value - 90 }
 })
 
 const hoverLines = computed(() => {
@@ -136,8 +166,8 @@ const hoverLines = computed(() => {
   const tw = Math.max(...lines.map(l => l.length)) * 6.4 + 18
   const th = 16 + lines.length * 15 + 4
   let tx = hx + 12
-  if (tx + tw > W - 4) tx = hx - 12 - tw
-  return { hx, dots, lines, tw, th, tx, ty: MT + 6, title: lines[0] }
+  if (tx + tw > W.value - 4) tx = hx - 12 - tw
+  return { hx, dots, lines, tw, th, tx, ty: MT.value + 6, title: lines[0] }
 })
 
 const onMove = (e: PointerEvent) => {
@@ -152,10 +182,15 @@ const CH = MM_CHART
 </script>
 
 <template>
-  <div ref="wrapEl" class="mm-pop-chart">
+  <div
+    ref="wrapEl"
+    class="mm-pop-chart"
+    :style="height ? { height: `${height}px` } : undefined"
+  >
     <svg
+      v-show="cssW > 0"
       :viewBox="`0 0 ${W} ${H}`"
-      preserveAspectRatio="none"
+      preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label="Player population over time"
     >
@@ -325,6 +360,7 @@ const CH = MM_CHART
 <style scoped>
 .mm-pop-chart {
   width: 100%;
+  height: 240px;
   background: var(--mm-bg);
   border: 1px solid var(--mm-rule);
   border-radius: 2px;
@@ -332,10 +368,9 @@ const CH = MM_CHART
 .mm-pop-chart svg {
   display: block;
   width: 100%;
-  height: auto;
-  min-height: 280px;
+  height: 100%;
 }
 @media (min-width: 721px) {
-  .mm-pop-chart svg { min-height: 380px; }
+  .mm-pop-chart { height: 360px; }
 }
 </style>

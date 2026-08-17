@@ -646,8 +646,16 @@ const expandIcon = [
   .mm-trend-fs__frame { padding: 12px 14px 12px; }
   .mm-trend-fs__charts { gap: 14px; }
   .mm-trend-fs__live { font-size: 18px; }
+  .mm-trend-fs__chart :deep(.mm-sparkline-root) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .mm-trend-fs__chart :deep(.mm-sparkline-wrap) {
-    height: 140px !important;
+    flex: 1;
+    height: auto !important;
+    min-height: 96px;
   }
 }
 
