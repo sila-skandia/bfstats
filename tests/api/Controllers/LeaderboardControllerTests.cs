@@ -20,6 +20,7 @@ public class LeaderboardControllerTests : IDisposable
 
     public LeaderboardControllerTests()
     {
+        SqliteLeaderboardService.ClearOccupancyCache();
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
@@ -36,6 +37,7 @@ public class LeaderboardControllerTests : IDisposable
 
     public void Dispose()
     {
+        SqliteLeaderboardService.ClearOccupancyCache();
         _dbContext.Dispose();
         _connection.Dispose();
     }
@@ -96,7 +98,11 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Equal(2, response.Players.Count);
         Assert.Single(response.Servers);
         Assert.Equal("srv-1", response.Servers[0].Guid);
-        Assert.Equal(2, response.Maps.Count);
+
+        var mapsResult = await _controller.GetMaps();
+        var mapsOk = Assert.IsType<OkObjectResult>(mapsResult.Result);
+        var mapsList = Assert.IsType<List<string>>(mapsOk.Value);
+        Assert.Equal(2, mapsList.Count);
 
         var rommel = response.Players.First(p => p.Name == "Rommel_44");
         Assert.Equal(150, rommel.Kills);
@@ -206,7 +212,6 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Contains(response.Players, p => p.Name == "Rommel");
         Assert.Contains(response.Players, p => p.Name == "Zhukov");
         Assert.DoesNotContain(response.Players, p => p.Name == "Patton");
-        Assert.Contains(response.Maps, m => string.Equals(m.Name, "omaha", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -551,5 +556,24 @@ public class LeaderboardControllerTests : IDisposable
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<GlobalLeaderboardResponse>(okResult.Value);
         Assert.Equal(100, response.PageSize);
+    }
+
+    [Fact]
+    public async Task GetMaps_WithQuery_FiltersMaps()
+    {
+        var now = DateTime.UtcNow;
+        _dbContext.PlayerMapStats.AddRange(
+            new PlayerMapStats { PlayerName = "P1", ServerGuid = "s1", MapName = "Wake Island", Year = now.Year, Month = now.Month, TotalKills = 10, TotalDeaths = 5, TotalScore = 100, TotalRounds = 1, TotalPlayTimeMinutes = 10 },
+            new PlayerMapStats { PlayerName = "P2", ServerGuid = "s1", MapName = "Bocage", Year = now.Year, Month = now.Month, TotalKills = 10, TotalDeaths = 5, TotalScore = 100, TotalRounds = 1, TotalPlayTimeMinutes = 10 },
+            new PlayerMapStats { PlayerName = "P3", ServerGuid = "s1", MapName = "Omaha Beach", Year = now.Year, Month = now.Month, TotalKills = 10, TotalDeaths = 5, TotalScore = 100, TotalRounds = 1, TotalPlayTimeMinutes = 10 }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetMaps(q: "island");
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var maps = Assert.IsType<List<string>>(okResult.Value);
+
+        Assert.Single(maps);
+        Assert.Equal("Wake Island", maps[0]);
     }
 }

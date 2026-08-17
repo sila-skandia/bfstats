@@ -76,4 +76,26 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
       expect(await searchInput.inputValue()).toBe('test');
     }
   });
+
+  test('should open player details from omnisearch, not the landing page', async ({ page }) => {
+    const playerName = 'Omni Test Player';
+    await page.route('**/stats/Players/search?**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [{ playerName }] }),
+    }));
+    await page.route('**/stats/servers/search?**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [] }),
+    }));
+
+    await page.goto('/v4/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+
+    await page.locator('.mm-mobile-search-btn').click();
+    await page.locator('.mm-omni-input').fill(playerName);
+    await page.locator('.mm-omni-item', { hasText: playerName }).tap();
+
+    await expect(page).toHaveURL(new RegExp(`/v4/players/${encodeURIComponent(playerName)}`));
+    await expect(page).not.toHaveURL(/\/v4\/servers\/bf1942\/?$/);
+  });
 });
