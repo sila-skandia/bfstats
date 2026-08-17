@@ -1524,8 +1524,8 @@ const rankTintClass = (rank: number) => {
 
     <!-- Table Container -->
     <div class="lb-table-container">
-      <div v-if="loading && !hasLoaded" class="lb-state-box">
-        <i class="pi pi-spin pi-spinner lb-spinner"></i>
+      <div v-if="loading && !hasLoaded" class="lb-state-box" role="status" aria-live="polite">
+        <i class="pi pi-spin pi-spinner lb-spinner" aria-hidden="true"></i>
         <span>Loading global player leaderboard...</span>
       </div>
 
@@ -3367,6 +3367,7 @@ td {
   border: 1px solid var(--mm-rule);
   border-top: none;
   background: var(--mm-bg);
+  overflow: hidden;
 }
 
 .lb-state-box--error {
@@ -3420,7 +3421,11 @@ td {
   font-size: 20px;
   color: var(--mm-accent);
   display: block;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
   margin: 0 auto 12px;
+  overflow: hidden;
 }
 
 /* Paginator */
