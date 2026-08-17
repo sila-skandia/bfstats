@@ -1,0 +1,18 @@
+# Optional. Isolation is implemented in scripts/verify.sh regardless of mise.
+# `mise run e2e` only gives the command a dedicated subprocess — it does not
+# change your interactive shell. Do not put E2E ports in [env]; mise activate
+# would then rewrite API_PORT/UI_PORT every time you cd into a worktree.
+#
+# Install: curl https://mise.run | sh
+
+[tasks.e2e]
+description = "API unit tests + isolated Playwright E2E (safe across worktrees)"
+run = "./scripts/verify.sh {{args}}"
+
+[tasks."e2e-fast"]
+description = "API unit tests only"
+run = "./scripts/verify.sh --skip-e2e"
+
+[tasks."e2e-env"]
+description = "Print the isolation slot this worktree prefers (does not lock)"
+run = "./scripts/e2e-env.sh --print"

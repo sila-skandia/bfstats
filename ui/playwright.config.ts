@@ -39,7 +39,7 @@ export default defineConfig({
   // from inside the container.
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -68,7 +68,7 @@ export default defineConfig({
   // verify.sh starts the API and UI itself and sets PW_SKIP_WEBSERVER.
   webServer: process.env.PW_SKIP_WEBSERVER ? undefined : {
     command: 'npm run dev',
-    url: 'http://localhost:5173',
+    url: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
     reuseExistingServer: true,
   },
 });
