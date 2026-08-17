@@ -29,7 +29,6 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: 'rounds', label: 'Rounds', align: 'right', w: 96, type: 'int', sortable: true },
   { key: 'lastSeen', label: 'Last seen', align: 'right', w: 112, type: 'date', sortable: false },
   { key: 'favServer', label: 'Fav. server', align: 'left', w: 200, type: 'server', sortable: true, groupable: true },
-  { key: 'favMap', label: 'Fav. map', align: 'left', w: 160, type: 'map', sortable: true, groupable: true },
   { key: 'status', label: 'Status', align: 'center', w: 90, type: 'status', sortable: false }
 ]
 
@@ -84,7 +83,7 @@ const mapDropdownOpen = ref(false)
 const periodSheetOpen = ref(false)
 const serverSearchInputRef = ref<HTMLInputElement | null>(null)
 const mapSearchInputRef = ref<HTMLInputElement | null>(null)
-const groupBy = ref<'favServer' | 'favMap' | 'kdBand' | null>((route.query.group as any) || null)
+const groupBy = ref<'favServer' | 'kdBand' | null>((route.query.group as any) || null)
 const collapsedGroups = ref<Set<string>>(new Set())
 
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -598,7 +597,6 @@ const getCellValue = (p: LeaderboardPlayer, key: string): any => {
     case 'rounds': return p.rounds
     case 'lastSeen': return p.lastSeen ? new Date(p.lastSeen).getTime() : 0
     case 'favServer': return p.favServer || ''
-    case 'favMap': return p.favMap || ''
     case 'status': return p.isActive ? 1 : 0
     default: return (p as any)[key] ?? ''
   }
@@ -641,7 +639,6 @@ const groupedRows = computed<PlayerGroup[] | null>(() => {
   for (const p of processedData.value) {
     let key = ''
     if (groupBy.value === 'favServer') key = p.favServer || 'Other'
-    else if (groupBy.value === 'favMap') key = p.favMap || 'Other'
     else if (groupBy.value === 'kdBand') key = getKdBand(p.kd)
     if (!groupsMap.has(key)) groupsMap.set(key, [])
     groupsMap.get(key)!.push(p)
@@ -1418,7 +1415,6 @@ const rankTintClass = (rank: number) => {
             <select v-model="groupBy" class="lb-select">
               <option :value="null">None</option>
               <option value="favServer">Fav. Server</option>
-              <option value="favMap">Fav. Map</option>
               <option value="kdBand">K/D Band</option>
             </select>
           </div>
@@ -1540,7 +1536,7 @@ const rankTintClass = (rank: number) => {
             SHOWING {{ totalItems === 0 ? 0 : (page - 1) * pageSize + 1 }}–{{ Math.min(page * pageSize, totalItems) }} OF {{ formatInt(totalItems) }} RANKED PLAYERS
           </span>
           <span v-if="groupBy" class="lb-desktop-only">
-            · GROUPED BY {{ groupBy === 'favServer' ? 'FAVOURITE SERVER' : groupBy === 'favMap' ? 'FAVOURITE MAP' : 'K/D BAND' }} (THIS PAGE)
+            · GROUPED BY {{ groupBy === 'favServer' ? 'FAVOURITE SERVER' : 'K/D BAND' }} (THIS PAGE)
           </span>
           <span v-if="includedServers.length === 1" class="lb-server-active-tag">
             · SRV: {{ $pn((selectedServerObj?.shortName || includedServers[0])).toUpperCase() }}
@@ -1615,7 +1611,6 @@ const rankTintClass = (rank: number) => {
               <span class="mm-session-row__date" :class="kdClass(p.kd)">{{ p.kd.toFixed(2) }}</span>
               <span class="mm-session-row__server">
                 {{ p.favServer ? $pn(p.favServer) : '—' }}
-                <template v-if="p.favMap"> · {{ p.favMap }}</template>
               </span>
               <span class="mm-session-row__stats">
                 <span class="mm-num--kill">{{ formatInt(p.kills) }}</span>
@@ -1838,15 +1833,6 @@ const rankTintClass = (rank: number) => {
                         </div>
                       </template>
 
-                      <!-- Favorite Map -->
-                      <template v-else-if="k === 'favMap'">
-                        <div class="lb-map-cell">
-                          <i class="pi pi-map lb-map-icon"></i>
-                          <span v-if="p.favMap" class="lb-map-name" :title="p.favMap">{{ p.favMap }}</span>
-                          <span v-else class="lb-muted">—</span>
-                        </div>
-                      </template>
-
                       <!-- Online Status -->
                       <template v-else-if="k === 'status'">
                         <span v-if="p.isActive" class="lb-status-badge lb-status-badge--online">ONLINE</span>
@@ -1962,15 +1948,6 @@ const rankTintClass = (rank: number) => {
                       >
                         {{ $pn(p.favServer) }}
                       </RouterLink>
-                      <span v-else class="lb-muted">—</span>
-                    </div>
-                  </template>
-
-                  <!-- Favorite Map -->
-                  <template v-else-if="k === 'favMap'">
-                    <div class="lb-map-cell">
-                      <i class="pi pi-map lb-map-icon"></i>
-                      <span v-if="p.favMap" class="lb-map-name" :title="p.favMap">{{ p.favMap }}</span>
                       <span v-else class="lb-muted">—</span>
                     </div>
                   </template>
