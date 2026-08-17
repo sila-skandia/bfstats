@@ -1,4 +1,17 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, devices } from '@playwright/test';
+
+async function mockPlayerSearch(page: import('@playwright/test').Page, playerName: string) {
+  await page.route('**/stats/Players/search?**', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      items: [{ playerName, totalPlayTimeMinutes: 120 }],
+    }),
+  }));
+  await page.route('**/stats/servers/search?**', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [] }),
+  }));
+}
 
 test.describe('Global Omnisearch / Command Palette (⌘K)', () => {
   test.beforeEach(async ({ page }) => {
@@ -59,16 +72,7 @@ test.describe('Global Omnisearch / Command Palette (⌘K)', () => {
 
   test('should open player results on the player details page', async ({ page }) => {
     const playerName = 'Omni Test Player';
-    await page.route('**/stats/Players/search?**', route => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        items: [{ playerName, totalPlayTimeMinutes: 120 }],
-      }),
-    }));
-    await page.route('**/stats/servers/search?**', route => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({ items: [] }),
-    }));
+    await mockPlayerSearch(page, playerName);
 
     await page.locator('button.mm-search--trigger').click();
     await page.locator('.mm-omni-input').fill(playerName);
@@ -106,5 +110,27 @@ test.describe('Global Omnisearch / Command Palette (⌘K)', () => {
     // Dashboard navigation item should not be present when logged out
     const dashboardNav = page.locator('.mm-omni-item', { hasText: 'Dashboard' });
     await expect(dashboardNav).toHaveCount(0);
+  });
+});
+
+test.describe('Omnisearch on mobile', () => {
+  test.use({
+    viewport: devices['Pixel 5'].viewport,
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test('should open player details from omnisearch, not the landing page', async ({ page }) => {
+    const playerName = 'Omni Test Player';
+    await page.goto('/v4/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+    await mockPlayerSearch(page, playerName);
+
+    await page.locator('.mm-mobile-search-btn').click();
+    await page.locator('.mm-omni-input').fill(playerName);
+    await page.locator('.mm-omni-item', { hasText: playerName }).tap();
+
+    await expect(page).toHaveURL(new RegExp(`/v4/players/${encodeURIComponent(playerName)}`));
+    await expect(page).not.toHaveURL(/\/v4\/servers\/bf1942\/?$/);
   });
 });

@@ -90,4 +90,9 @@ public interface ISqliteLeaderboardService
         string? game = "bf1942",
         string? exclude = null,
         bool populatedOnly = false);
+
+    /// <summary>
+    /// Searches available map names for leaderboard map filters.
+    /// </summary>
+    Task<List<string>> SearchMapsAsync(string? query = null, int limit = 50);
 }
