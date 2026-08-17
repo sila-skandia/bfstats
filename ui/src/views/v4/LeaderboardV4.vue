@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import 'primeicons/primeicons.css'
-import { fetchLeaderboard, type LeaderboardPlayer, type LeaderboardServer, type LeaderboardMap } from '@/services/leaderboardApi'
+import { fetchLeaderboard, fetchLeaderboardMaps, type LeaderboardPlayer, type LeaderboardServer, type LeaderboardMap } from '@/services/leaderboardApi'
 import { kdClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import { decodeServerName } from '@/utils/playerName'
@@ -109,13 +109,55 @@ const toggleServerDropdown = async () => {
   }
 }
 
+const mapsList = ref<string[]>([])
+const loadingMaps = ref(false)
+let mapLoadSeq = 0
+
+const formatMapTitle = (name: string) => {
+  if (!name) return ''
+  return name.split(/[\s_]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+}
+
+const loadMaps = async (query = '') => {
+  const seq = ++mapLoadSeq
+  loadingMaps.value = true
+  try {
+    const res = await fetchLeaderboardMaps(query, 50)
+    if (seq === mapLoadSeq) {
+      mapsList.value = res
+    }
+  } finally {
+    if (seq === mapLoadSeq) {
+      loadingMaps.value = false
+    }
+  }
+}
+
+let mapSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+watch(mapSearchQuery, (q) => {
+  if (mapSearchDebounceTimer) clearTimeout(mapSearchDebounceTimer)
+  const trimmed = q.trim()
+  if (!trimmed) {
+    void loadMaps('')
+    return
+  }
+  mapSearchDebounceTimer = setTimeout(() => {
+    void loadMaps(trimmed)
+  }, 300)
+})
+
 const toggleMapDropdown = async () => {
   const next = !mapDropdownOpen.value
   closeAllSheets()
   mapDropdownOpen.value = next
-  if (mapDropdownOpen.value && !isNarrow.value) {
-    await nextTick()
-    mapSearchInputRef.value?.focus()
+  if (mapDropdownOpen.value) {
+    if (mapsList.value.length === 0) {
+      await loadMaps(mapSearchQuery.value)
+    }
+    if (!isNarrow.value) {
+      await nextTick()
+      mapSearchInputRef.value?.focus()
+    }
   }
 }
 
@@ -127,9 +169,9 @@ const togglePeriodSheet = () => {
 
 const periodOptions = computed(() => {
   const opts = [
-    { value: 7, label: '7 Days' },
     { value: 30, label: '30 Days' },
     { value: 90, label: '90 Days' },
+    { value: 180, label: '6 Months' },
     { value: 365, label: '1 Year' },
   ]
   if (includedServers.value.length > 0 && serverMode.value === 'include') {
@@ -221,7 +263,10 @@ const selectedMapObj = computed(() => {
 })
 
 const mapsForPicker = computed(() => {
-  const list = maps.value
+  const list = mapsList.value.map(name => ({
+    name,
+    displayName: formatMapTitle(name)
+  }))
   const missing = includedMaps.value.filter(
     sel => !list.some(m => m.name.toLowerCase() === sel.toLowerCase())
   )
@@ -229,8 +274,7 @@ const mapsForPicker = computed(() => {
   return [
     ...missing.map(name => ({
       name,
-      displayName: mapDisplayNames.value[name] || name,
-      playerCount: 0
+      displayName: mapDisplayNames.value[name] || formatMapTitle(name)
     })),
     ...list
   ]
@@ -412,6 +456,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  if (mapSearchDebounceTimer) clearTimeout(mapSearchDebounceTimer)
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('mousedown', onDocClick)
@@ -1210,7 +1255,6 @@ const rankTintClass = (rank: number) => {
                 <template v-if="selectedMapObj">
                   <i class="pi pi-map lb-server-icon"></i>
                   <span class="lb-server-dropdown-text">{{ selectedMapObj.displayName }}</span>
-                  <span class="lb-server-count">{{ selectedMapObj.playerCount }}</span>
                 </template>
                 <template v-else-if="includedMaps.length > 1">
                   <i class="pi pi-map lb-server-icon"></i>
@@ -1224,7 +1268,6 @@ const rankTintClass = (rank: number) => {
                 <template v-else>
                   <i class="pi pi-globe lb-server-icon"></i>
                   <span class="lb-server-dropdown-text">All Maps</span>
-                  <span v-if="maps.length > 0" class="lb-server-count">{{ maps.length }}</span>
                 </template>
                 <i class="pi pi-chevron-down lb-chevron-icon"></i>
               </button>
@@ -1313,9 +1356,12 @@ const rankTintClass = (rank: number) => {
                     <span class="lb-pick-mark" :class="{ 'is-on': includedMaps.length === 0 }" aria-hidden="true"></span>
                     <i class="pi pi-globe lb-server-item-icon"></i>
                     <span class="lb-server-item-name">All Maps</span>
-                    <span class="lb-server-count">{{ maps.length }}</span>
                     <span v-if="includedMaps.length === 0" class="lb-pick-state">ON</span>
                   </button>
+
+                  <div v-if="loadingMaps" class="lb-server-empty" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <i class="pi pi-spin pi-spinner"></i> Searching...
+                  </div>
 
                   <!-- Filtered Map Options -->
                   <button
@@ -1329,11 +1375,10 @@ const rankTintClass = (rank: number) => {
                     <span class="lb-pick-mark" :class="{ 'is-on': isMapIncluded(m.name) }" aria-hidden="true"></span>
                     <i class="pi pi-map lb-server-item-icon"></i>
                     <span class="lb-server-item-name">{{ m.displayName }}</span>
-                    <span class="lb-server-count">{{ m.playerCount }}</span>
                     <span v-if="isMapIncluded(m.name)" class="lb-pick-state">ON</span>
                   </button>
 
-                  <div v-if="filteredMaps.length === 0" class="lb-server-empty">
+                  <div v-if="!loadingMaps && filteredMaps.length === 0" class="lb-server-empty">
                     No maps match "{{ mapSearchQuery }}"
                   </div>
                 </div>

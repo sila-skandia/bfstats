@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { countryCodeToFlag, countryCodeToName } from '@/types/countryCodes'
 import { decodePlayerName } from '@/utils/playerName'
@@ -53,7 +53,7 @@ interface FlatResultItem {
   iconVariant?: 'player' | 'server' | 'green' | 'amber' | 'purple' | 'olive' | 'gold' | 'cyan'
   icon?: string
   flag?: string
-  path: string
+  to: RouteLocationRaw
   raw?: any
 }
 
@@ -178,7 +178,7 @@ const flatResults = computed<FlatResultItem[]>(() => {
       badge,
       badgeVariant,
       iconVariant: 'player',
-      path: `/v4/players/${encodeURIComponent(p.playerName)}`,
+      to: { name: 'v4-player-details', params: { playerName: p.playerName } },
       raw: p,
     })
   }
@@ -214,7 +214,7 @@ const flatResults = computed<FlatResultItem[]>(() => {
       badgeVariant,
       iconVariant: 'server',
       flag,
-      path: `/v4/servers/detail/${encodeURIComponent(s.serverName)}`,
+      to: { name: 'v4-server-details', params: { serverName: s.serverName } },
       raw: s,
     })
   }
@@ -230,7 +230,7 @@ const flatResults = computed<FlatResultItem[]>(() => {
       badgeVariant: nav.badgeVariant,
       iconVariant: nav.iconVariant,
       icon: nav.icon,
-      path: nav.path,
+      to: nav.path,
       raw: nav,
     })
   }
@@ -305,9 +305,25 @@ const close = () => {
   emit('close')
 }
 
+let navLock = false
+
 const navigateTo = (item: FlatResultItem) => {
-  close()
-  void router.push(item.path)
+  if (navLock) return
+  navLock = true
+  // Keep the overlay mounted until the route resolves so a leftover
+  // mobile click cannot fall through to the header brand / Servers link
+  // (which is the landing page sitting directly under the palette).
+  void router.push(item.to).finally(() => {
+    navLock = false
+    close()
+  })
+}
+
+const onItemPointerDown = (e: PointerEvent, item: FlatResultItem) => {
+  if (e.button !== 0) return
+  e.preventDefault()
+  e.stopPropagation()
+  navigateTo(item)
 }
 
 const selectCurrent = () => {
@@ -394,7 +410,7 @@ const handleBackdropClick = (e: MouseEvent) => {
       @click="handleBackdropClick"
       @keydown="onKeydown"
     >
-      <div class="mm-omni-modal" role="dialog" aria-modal="true" aria-label="Command palette and search">
+      <div class="mm-omni-modal" role="dialog" aria-modal="true" aria-label="Command palette and search" @click.stop>
         <!-- Search Input Bar -->
         <div class="mm-omni-header">
           <svg
@@ -460,12 +476,15 @@ const handleBackdropClick = (e: MouseEvent) => {
                 <span>Players</span>
                 <span class="mm-omni-section-count">{{ players.length }} found</span>
               </div>
-              <div
+              <button
                 v-for="item in flatResults.filter(r => r.type === 'player')"
                 :key="item.id"
+                type="button"
                 class="mm-omni-item"
                 :class="{ 'is-selected': flatResults.indexOf(item) === selectedIndex }"
-                @click="navigateTo(item)"
+                @pointerdown="onItemPointerDown($event, item)"
+                @mousedown.prevent
+                @click.prevent="navigateTo(item)"
                 @mouseenter="selectedIndex = flatResults.indexOf(item)"
               >
                 <div class="mm-omni-item__icon-wrap mm-omni-item__icon-wrap--amber">
@@ -491,7 +510,7 @@ const handleBackdropClick = (e: MouseEvent) => {
                   <span v-else class="mm-omni-item__sub">{{ item.subtitle }}</span>
                 </div>
                 <span class="mm-omni-item__arrow" aria-hidden="true">↵</span>
-              </div>
+              </button>
             </template>
 
             <!-- 2. SERVERS SECTION -->
@@ -500,12 +519,15 @@ const handleBackdropClick = (e: MouseEvent) => {
                 <span>Servers</span>
                 <span class="mm-omni-section-count">{{ servers.length }} found</span>
               </div>
-              <div
+              <button
                 v-for="item in flatResults.filter(r => r.type === 'server')"
                 :key="item.id"
+                type="button"
                 class="mm-omni-item"
                 :class="{ 'is-selected': flatResults.indexOf(item) === selectedIndex }"
-                @click="navigateTo(item)"
+                @pointerdown="onItemPointerDown($event, item)"
+                @mousedown.prevent
+                @click.prevent="navigateTo(item)"
                 @mouseenter="selectedIndex = flatResults.indexOf(item)"
               >
                 <div class="mm-omni-item__icon-wrap mm-omni-item__icon-wrap--green">
@@ -533,7 +555,7 @@ const handleBackdropClick = (e: MouseEvent) => {
                   <span v-else class="mm-omni-item__sub">{{ item.subtitle }}</span>
                 </div>
                 <span class="mm-omni-item__arrow" aria-hidden="true">↵</span>
-              </div>
+              </button>
             </template>
 
             <!-- 3. NAVIGATION SECTION -->
@@ -541,12 +563,15 @@ const handleBackdropClick = (e: MouseEvent) => {
               <div class="mm-omni-section-title mm-omni-section-title--nav">
                 <span>{{ query.trim() ? 'Navigation Shortcuts' : 'Quick Navigation' }}</span>
               </div>
-              <div
+              <button
                 v-for="item in flatResults.filter(r => r.type === 'nav')"
                 :key="item.id"
+                type="button"
                 class="mm-omni-item"
                 :class="{ 'is-selected': flatResults.indexOf(item) === selectedIndex }"
-                @click="navigateTo(item)"
+                @pointerdown="onItemPointerDown($event, item)"
+                @mousedown.prevent
+                @click.prevent="navigateTo(item)"
                 @mouseenter="selectedIndex = flatResults.indexOf(item)"
               >
                 <!-- Color-Coded Category Icons -->
@@ -599,7 +624,7 @@ const handleBackdropClick = (e: MouseEvent) => {
                   <span class="mm-omni-item__sub">{{ item.subtitle }}</span>
                 </div>
                 <span class="mm-omni-item__arrow" aria-hidden="true">↵</span>
-              </div>
+              </button>
             </template>
           </div>
         </div>
@@ -779,17 +804,29 @@ const handleBackdropClick = (e: MouseEvent) => {
   display: flex;
   align-items: center;
   gap: 14px;
+  width: 100%;
+  margin: 0;
   padding: 10px 18px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
   transition: background 0.12s ease, border-left-color 0.12s ease;
   user-select: none;
-  border-left: 3px solid transparent;
 }
 
 .mm-omni-item:hover,
 .mm-omni-item.is-selected {
   background: #202020;
   border-left-color: var(--mm-accent);
+}
+
+.mm-omni-item:focus {
+  outline: none;
 }
 
 .mm-omni-item.is-selected .mm-omni-item__title {

@@ -103,3 +103,21 @@ export async function fetchLeaderboard(params: LeaderboardParams = {}): Promise<
     throw new Error('Failed to load leaderboard data')
   }
 }
+
+/**
+ * Searches available maps for the leaderboard map picker on the fly.
+ */
+export async function fetchLeaderboardMaps(query?: string, limit = 50): Promise<string[]> {
+  try {
+    const response = await axios.get<string[]>('/stats/leaderboard/maps', {
+      params: {
+        q: query?.trim() || undefined,
+        limit
+      }
+    })
+    return response.data || []
+  } catch (err) {
+    console.error('Error fetching leaderboard maps:', err)
+    return []
+  }
+}
