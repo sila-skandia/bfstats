@@ -411,7 +411,10 @@
   gap: 6px;
 }
 
-.mm-clock__time { color: var(--mm-ink); }
+.mm-clock__time {
+  color: var(--mm-ink);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ---------- containers ---------- */
 
