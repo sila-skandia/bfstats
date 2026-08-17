@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { formatRelativeTime } from '@/utils/timeUtils'
 
 interface PlayerSearchResult {
   playerName: string
-  totalPlayTimeMinutes: number
   lastSeen: string
   isActive: boolean
   currentServer?: {
@@ -45,13 +45,6 @@ const searchResults = ref<PlayerSearchResult[]>([])
 const isLoading = ref(false)
 const showDropdown = ref(false)
 const searchDebounceTimeout = ref<number | null>(null)
-
-const formatPlayTime = (minutes: number): string => {
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
-  return `${days}d ${hours % 24}h`
-}
 
 const searchPlayers = async (query: string) => {
   if (!query || query.length < 2) {
@@ -159,7 +152,7 @@ watch(() => props.modelValue, (newValue) => {
           </span>
         </div>
         <div class="mm-psearch__row-meta">
-          <span>{{ formatPlayTime(player.totalPlayTimeMinutes) }}</span>
+          <span v-if="player.lastSeen">Last seen {{ formatRelativeTime(player.lastSeen) }}</span>
           <template v-if="player.currentServer && player.isActive">
             <span class="mm-meta-row__sep">·</span>
             <span>{{ $pn(player.currentServer.serverName) }}</span>

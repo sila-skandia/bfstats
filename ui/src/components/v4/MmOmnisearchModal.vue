@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { countryCodeToFlag, countryCodeToName } from '@/types/countryCodes'
 import { decodePlayerName } from '@/utils/playerName'
+import { formatRelativeTime } from '@/utils/timeUtils'
 
 interface PlayerResult {
   playerName: string
-  totalPlayTimeMinutes: number
   lastSeen?: string
   isActive?: boolean
   currentServer?: {
@@ -134,14 +134,6 @@ const navShortcuts: NavShortcut[] = [
   },
 ]
 
-const formatPlayTime = (minutes: number): string => {
-  if (!minutes) return '0h'
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h playtime`
-  const days = Math.floor(hours / 24)
-  return `${days}d ${hours % 24}h playtime`
-}
-
 const availableNavShortcuts = computed<NavShortcut[]>(() =>
   navShortcuts.filter(item => !item.requiresAuth || isAuthenticated.value),
 )
@@ -162,10 +154,10 @@ const flatResults = computed<FlatResultItem[]>(() => {
 
   // 1. Players
   for (const p of players.value) {
-    let subtitle = formatPlayTime(p.totalPlayTimeMinutes)
+    let subtitle = p.lastSeen ? `Last seen ${formatRelativeTime(p.lastSeen)}` : ''
     let subtitleHtml: string | undefined
-    let badge: string = 'VETERAN'
-    let badgeVariant: FlatResultItem['badgeVariant'] = 'time'
+    let badge: string | undefined
+    let badgeVariant: FlatResultItem['badgeVariant']
 
     if (p.currentServer) {
       subtitle = `In combat on ${decodePlayerName(p.currentServer.serverName)}`

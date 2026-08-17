@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import MmBaseModal from './MmBaseModal.vue'
 import type { ServerHourlyTimelineEntry } from '@/services/serverDetailsService'
 
+type Occupancy = 'busy' | 'moderate' | 'quiet'
+
 interface Props {
   modelValue: boolean
   hourlyTimeline: ServerHourlyTimelineEntry[]
@@ -24,6 +26,21 @@ const maxTypical = computed(() => {
   return Math.max(1, ...props.hourlyTimeline.map(e => Math.max(0, e.typicalPlayers || 0)))
 })
 
+const occupancyOf = (entry: ServerHourlyTimelineEntry): Occupancy => {
+  const pct = (entry.typicalPlayers || 0) / maxTypical.value
+  if (pct >= 2 / 3) return 'busy'
+  if (pct >= 1 / 3) return 'moderate'
+  return 'quiet'
+}
+
+const occupancyLabel = (level: Occupancy): string => {
+  switch (level) {
+    case 'busy': return 'Busy'
+    case 'moderate': return 'Moderate'
+    case 'quiet': return 'Quiet'
+  }
+}
+
 const getBarHeight = (entry: ServerHourlyTimelineEntry): number => {
   const pct = Math.max(0, Math.min(1, (entry.typicalPlayers || 0) / maxTypical.value))
   return Math.max(8, Math.round(pct * 100))
@@ -35,34 +52,11 @@ const formatHourLabel = (entry: ServerHourlyTimelineEntry): string => {
   return d.toLocaleTimeString(undefined, { hour: '2-digit' })
 }
 
-const getBusyLabel = (level: string): string => {
-  switch (level) {
-    case 'very_busy': return 'Very busy'
-    case 'busy': return 'Busy'
-    case 'moderate': return 'Moderate'
-    case 'quiet': return 'Quiet'
-    case 'very_quiet': return 'Very quiet'
-    default: return 'Unknown'
-  }
-}
-
-const barFillClass = (level: string): string => {
-  switch (level) {
-    case 'very_busy':
-    case 'busy':
-      return 'mm-forecast__bar-fill--busy'
-    case 'moderate':
-      return ''
-    default:
-      return 'mm-forecast__bar-fill--idle'
-  }
-}
-
 const tooltipFor = (entry: ServerHourlyTimelineEntry): string => {
   const now = new Date()
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), entry.hour, 0, 0))
   const local = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  return `${local} · typical ${Math.round(entry.typicalPlayers)} · ${getBusyLabel(entry.busyLevel)}`
+  return `${local} · typical ${Math.round(entry.typicalPlayers)} · ${occupancyLabel(occupancyOf(entry))}`
 }
 </script>
 
@@ -93,7 +87,7 @@ const tooltipFor = (entry: ServerHourlyTimelineEntry): string => {
         <div class="mm-forecast__bar">
           <div
             class="mm-forecast__bar-fill"
-            :class="barFillClass(entry.busyLevel)"
+            :class="`mm-forecast__bar-fill--${occupancyOf(entry)}`"
             :style="{ height: getBarHeight(entry) + 'px' }"
           />
         </div>
@@ -101,11 +95,20 @@ const tooltipFor = (entry: ServerHourlyTimelineEntry): string => {
       </div>
     </div>
 
-    <div class="mm-forecast__legend">
-      <span class="mm-chip mm-chip--accent">Busy</span>
-      <span class="mm-chip">Moderate</span>
-      <span class="mm-chip mm-chip--off">Quiet</span>
-    </div>
+    <ul class="mm-forecast__legend" aria-label="Occupancy relative to this server's typical peak">
+      <li class="mm-forecast__legend-item">
+        <span class="mm-forecast__swatch mm-forecast__bar-fill--busy" />
+        Busy
+      </li>
+      <li class="mm-forecast__legend-item">
+        <span class="mm-forecast__swatch mm-forecast__bar-fill--moderate" />
+        Moderate
+      </li>
+      <li class="mm-forecast__legend-item">
+        <span class="mm-forecast__swatch mm-forecast__bar-fill--quiet" />
+        Quiet
+      </li>
+    </ul>
   </MmBaseModal>
 </template>
 
@@ -147,13 +150,13 @@ const tooltipFor = (entry: ServerHourlyTimelineEntry): string => {
 
 .mm-forecast__bar-fill {
   width: 100%;
-  background: var(--mm-ink);
   border-radius: 1px 1px 0 0;
   transition: height 0.2s ease;
 }
 
 .mm-forecast__bar-fill--busy { background: var(--mm-accent); }
-.mm-forecast__bar-fill--idle { background: var(--mm-ink-faint); }
+.mm-forecast__bar-fill--moderate { background: var(--mm-ink); }
+.mm-forecast__bar-fill--quiet { background: var(--mm-ink-faint); }
 
 .mm-forecast__label {
   font-family: var(--mm-font-mono);
@@ -165,8 +168,28 @@ const tooltipFor = (entry: ServerHourlyTimelineEntry): string => {
 .mm-forecast__legend {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
   padding-top: 12px;
+  margin: 0;
+  list-style: none;
+}
+
+.mm-forecast__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+
+.mm-forecast__swatch {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 1px;
 }
 
 @media (max-width: 720px) {

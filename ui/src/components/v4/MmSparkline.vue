@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { parseUtc } from '@/utils/timeUtils'
 
 export interface SparklineBrushRange {
@@ -48,6 +48,31 @@ const emit = defineEmits<{
 
 const wrapEl = ref<HTMLElement | null>(null)
 const hoverIndex = ref<number | null>(null)
+const drawH = ref(props.height)
+
+let ro: ResizeObserver | null = null
+
+const syncDrawH = () => {
+  const h = wrapEl.value?.clientHeight
+  if (h && h > 0 && h !== drawH.value) drawH.value = h
+}
+
+watch(() => props.height, (h) => {
+  drawH.value = h
+  syncDrawH()
+})
+
+onMounted(() => {
+  syncDrawH()
+  if (!wrapEl.value) return
+  ro = new ResizeObserver(() => syncDrawH())
+  ro.observe(wrapEl.value)
+})
+
+onUnmounted(() => {
+  ro?.disconnect()
+  ro = null
+})
 
 const pointerStartX = ref(0)
 const pointerStartY = ref(0)
@@ -70,7 +95,7 @@ const geometry = computed(() => {
     return { d: '', area: '', points: [] as [number, number][] }
   }
   const w = props.width
-  const h = props.height
+  const h = drawH.value
   const pad = 2
   const innerW = w - pad * 2
   const innerH = h - pad * 2
@@ -333,7 +358,7 @@ const onPointerLeave = (e: PointerEvent) => {
       @pointerleave="onPointerLeave"
     >
       <svg
-        :viewBox="`0 0 ${width} ${height}`"
+        :viewBox="`0 0 ${width} ${drawH}`"
         preserveAspectRatio="none"
         class="mm-sparkline-svg"
         aria-hidden="true"
@@ -359,7 +384,7 @@ const onPointerLeave = (e: PointerEvent) => {
           :x1="hoverPoint[0]"
           y1="0"
           :x2="hoverPoint[0]"
-          :y2="height"
+          :y2="drawH"
           stroke="var(--mm-rule-strong)"
           stroke-dasharray="2 2"
           stroke-width="1"
