@@ -99,4 +99,19 @@ test.describe('Landing Page - Server Browser', () => {
       }
     }
   });
+
+  test('does not fetch population trend until View trend is clicked', async ({ page }) => {
+    const trendUrls: string[] = []
+    page.on('request', (req) => {
+      if (req.url().includes('/game-trends/player-trend')) trendUrls.push(req.url())
+    })
+
+    await page.goto('/servers/bf1942')
+    await page.waitForLoadState('networkidle')
+    expect(trendUrls).toHaveLength(0)
+
+    await page.getByTestId('open-population-trend').click()
+    await expect(page.getByTestId('population-trend-drawer')).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Network player trend' })).toBeVisible()
+  });
 });

@@ -3,13 +3,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchServerDetails,
-  fetchServerInsights,
   fetchServerLeaderboards,
   fetchServerPlayerRankings,
   fetchLiveServerData,
   fetchServerBusyIndicators,
   type ServerDetails,
-  type ServerInsights,
   type LeaderboardsData,
   type ServerPlayerRankingsResponse,
   type ServerPlayerRankingItem,
@@ -27,6 +25,7 @@ import MmServerMapPopularity from '@/components/v4/MmServerMapPopularity.vue'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
+import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
 import { kdClass } from './mmTokens'
 
 const route = useRoute()
@@ -35,15 +34,16 @@ const router = useRouter()
 const serverName = computed(() => decodeURIComponent(route.params.serverName as string))
 
 const details = ref<ServerDetails | null>(null)
-const insights = ref<ServerInsights | null>(null)
 const leaderboards = ref<LeaderboardsData | null>(null)
 const liveServer = ref<ServerSummary | null>(null)
 const hourlyTimeline = ref<ServerHourlyTimelineEntry[]>([])
 const loading = ref(true)
-const insightsLoading = ref(false)
 const boardsLoading = ref(false)
 const liveLoading = ref(false)
 const error = ref<string | null>(null)
+const trendExpanded = ref(false)
+const trendPeak = ref<number | null>(null)
+const trendAvg = ref<number | null>(null)
 
 const showForecast = ref(false)
 
@@ -90,20 +90,17 @@ const load = async () => {
   loading.value = true
   error.value = null
   liveServer.value = null
-  insightsLoading.value = true
   boardsLoading.value = true
   liveLoading.value = true
+  trendExpanded.value = false
+  trendPeak.value = null
+  trendAvg.value = null
 
   // Wave 1 — everything keyed off serverName alone.
   const detailsP = fetchServerDetails(serverName.value)
     .then(d => { if (!stale()) details.value = d })
     .catch(() => { if (!stale()) error.value = 'Server feed temporarily unavailable.' })
     .finally(() => { if (!stale()) loading.value = false })
-
-  const insightsP = fetchServerInsights(serverName.value, 30, '7d')
-    .then(i => { if (!stale()) insights.value = i })
-    .catch(() => { if (!stale()) insights.value = null })
-    .finally(() => { if (!stale()) insightsLoading.value = false })
 
   const boardsP = fetchServerLeaderboards(serverName.value, 'month')
     .then(b => { if (!stale()) leaderboards.value = b })
@@ -152,7 +149,7 @@ const load = async () => {
     void loadPagedRankings()
   }
 
-  await Promise.all([detailsP, insightsP, boardsP, dependentP])
+  await Promise.all([detailsP, boardsP, dependentP])
 }
 
 const liveNumPlayers = computed(() => liveServer.value?.numPlayers ?? 0)
@@ -203,8 +200,13 @@ const region = computed(() => {
 })
 
 // Still used inside the Population history card footer in the Overview tab.
-const peakPlayers = computed(() => insights.value?.playerCountSummary?.peakPlayerCount ?? null)
-const avgPlayers = computed(() => insights.value?.playerCountSummary?.averagePlayerCount ?? null)
+const peakPlayers = computed(() => trendPeak.value)
+const avgPlayers = computed(() => trendAvg.value)
+const openTrend = () => { trendExpanded.value = true }
+const onTrendSummary = (payload: { peak: number; avg: number }) => {
+  trendPeak.value = payload.peak
+  trendAvg.value = payload.avg
+}
 
 // players-tab sub-view selector
 type PlayersView = 'active' | 'score' | 'kd' | 'killrate' | 'placement'
@@ -375,8 +377,7 @@ watch(activeTab, (t) => {
   <div class="mm-container mm-container--wide mm-section">
     <div v-if="error" class="mm-empty">{{ error }}</div>
 
-    <template v-else>
-      <!-- back link to servers index -->
+    <!-- back link to servers index -->
       <router-link to="/v4/servers/bf1942" class="mm-server__back">‹ Servers</router-link>
 
       <!-- Hero: painted from the route param, not from the details payload. The
@@ -443,14 +444,19 @@ watch(activeTab, (t) => {
           <div class="mm-stat__value mm-stat__value--small">{{ liveMap || '—' }}</div>
           <div class="mm-stat__delta">{{ liveMode || (liveLoading ? 'checking…' : 'server quiet') }}</div>
         </div>
-        <div class="mm-stats__cell">
+        <button
+          type="button"
+          class="mm-stats__cell mm-stats__cell--btn"
+          data-testid="open-server-trend"
+          @click="openTrend"
+        >
           <div class="mm-stats__label">Peak · 30d</div>
-          <div class="mm-stat__value">{{ peakPlayers != null ? peakPlayers : '—' }}</div>
+          <div class="mm-stat__value">{{ peakPlayers != null ? Math.round(peakPlayers) : '—' }}</div>
           <div class="mm-stat__delta">
             <template v-if="avgPlayers != null">avg {{ avgPlayers.toFixed(1) }} players</template>
-            <template v-else>no history yet</template>
+            <template v-else>View trend →</template>
           </div>
-        </div>
+        </button>
         <div class="mm-stats__cell">
           <div class="mm-stats__label">Live ticket lead</div>
           <div class="mm-stat__value">
@@ -482,8 +488,31 @@ watch(activeTab, (t) => {
 
       <!-- ===================== OVERVIEW ===================== -->
       <div v-if="activeTab === 'overview'" style="margin-top: 20px">
+        <section class="mm-panel" data-testid="server-population-trend">
+          <button
+            type="button"
+            class="mm-section-bar mm-section-bar--btn"
+            :aria-expanded="trendExpanded"
+            @click="trendExpanded = !trendExpanded"
+          >
+            <span># PLAYER TREND</span>
+            <span class="mm-section-bar__meta">
+              {{ trendExpanded ? 'HIDE' : 'POPULATION OVER TIME · VIEW →' }}
+            </span>
+          </button>
+          <div v-if="trendExpanded" class="mm-panel__body">
+            <MmPopulationTrendPanel
+              v-if="details?.serverGuid"
+              :server-guid="details.serverGuid"
+              :server-label="$pn(details.serverName || serverName)"
+              @summary="onTrendSummary"
+            />
+            <div v-else class="mm-skeleton" style="height: 160px" />
+          </div>
+        </section>
+
         <!-- Full-width Online Now panel -->
-        <section class="mm-panel">
+        <section class="mm-panel" style="margin-top: 20px">
           <div class="mm-pbar">
             <span class="mm-pbar__t">● Online now</span>
             <span class="mm-pbar__m">
@@ -963,7 +992,6 @@ watch(activeTab, (t) => {
 
       <!-- always-visible: comments -->
       <MmServerComments :server-name="serverName" />
-    </template>
 
     <MmForecastModal
       v-model="showForecast"
@@ -1162,5 +1190,34 @@ watch(activeTab, (t) => {
   .mm-ranks__search {
     max-width: 100%;
   }
+}
+
+.mm-stats__cell--btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background: transparent;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+.mm-stats__cell--btn:hover .mm-stat__delta {
+  color: var(--mm-accent);
+}
+
+.mm-section-bar--btn {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.mm-section-bar--btn:hover .mm-section-bar__meta {
+  text-decoration: underline;
 }
 </style>

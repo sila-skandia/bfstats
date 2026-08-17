@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAllServers, peekCachedLiveServers } from '@/services/serverDetailsService'
 import type { ServerSummary } from '@/types/server'
@@ -7,6 +7,7 @@ import { countryCodeToName, countryCodeToFlag } from '@/types/countryCodes'
 import { loadClass } from './mmTokens'
 import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
+import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
 import { formatTimeRemaining, formatRelativeTime, parseUtc } from '@/utils/timeUtils'
 
 // Only BF1942 is actively tracked in the modern-minimal preview today.
@@ -56,6 +57,19 @@ const hasRevalidated = ref(false)
 
 const selectedServer = ref<ServerSummary | null>(null)
 const showQuiet = ref(true)
+const trendOpen = ref(false)
+
+const openTrend = () => { trendOpen.value = true }
+const closeTrend = () => { trendOpen.value = false }
+
+const pickerServers = computed(() =>
+  servers.value.map(s => ({
+    guid: s.guid,
+    name: s.name,
+    country: s.country,
+    numPlayers: s.numPlayers || 0,
+  })),
+)
 
 const applyServerList = (data: ServerSummary[]) => {
   servers.value = [...data].sort((a, b) => (b.numPlayers || 0) - (a.numPlayers || 0))
@@ -97,14 +111,25 @@ const load = async (showSpinner = false) => {
   }
 }
 
+const onTrendKey = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && trendOpen.value) closeTrend()
+}
+
+watch(trendOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
+})
+
 onMounted(() => {
   void load(servers.value.length === 0)
   refreshTimer = window.setInterval(() => void load(false), REFRESH_INTERVAL_MS)
   tickTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
+  window.addEventListener('keydown', onTrendKey)
 })
 onUnmounted(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
   if (tickTimer) window.clearInterval(tickTimer)
+  window.removeEventListener('keydown', onTrendKey)
+  document.body.style.overflow = ''
 })
 
 const refreshProgress = computed(() => {
@@ -231,6 +256,15 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
             <template v-else>{{ formatNumber(servers.length) }}</template>
           </span> tracked
         </span>
+        <span class="mm-meta-row__sep">·</span>
+        <button
+          type="button"
+          class="mm-trend-launch"
+          data-testid="open-population-trend"
+          @click="openTrend"
+        >
+          View trend →
+        </button>
         <span class="mm-meta-row__sep">·</span>
         <span
           class="mm-refresh-ring"
@@ -587,6 +621,37 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
       </div>
     </template>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="trendOpen"
+      class="mm mm-pop-drawer"
+      data-testid="population-trend-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Network player trend"
+    >
+      <div class="mm-pop-drawer__back" @click="closeTrend" />
+      <aside class="mm-pop-drawer__panel">
+        <div class="mm-pop-drawer__head">
+          <div>
+            <span class="mm-eyebrow">Network trend</span>
+            <div class="mm-pop-drawer__title">Players online</div>
+          </div>
+          <button type="button" class="mm-pop-drawer__close" aria-label="Close" @click="closeTrend">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        <MmPopulationTrendPanel
+          show-picker
+          :servers="pickerServers"
+          game="bf1942"
+        />
+      </aside>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -1160,5 +1225,87 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   color: var(--mm-ink-muted);
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.mm-trend-launch {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mm-accent);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.mm-trend-launch:hover { color: var(--mm-accent-soft); }
+
+.mm-pop-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  background: transparent;
+}
+.mm-pop-drawer__back {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--mm-bg) 42%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.mm-pop-drawer__panel {
+  position: relative;
+  width: min(calc(100vw - 72px), 1280px);
+  height: calc(100% - 32px);
+  margin: 16px 16px 16px 0;
+  background: color-mix(in srgb, var(--mm-bg) 88%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--mm-rule-strong);
+  padding: 26px 32px 40px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  box-shadow: -20px 0 48px color-mix(in srgb, #000 40%, transparent);
+}
+.mm-pop-drawer__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.mm-pop-drawer__title {
+  font-family: var(--mm-font-display);
+  font-weight: 300;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  color: var(--mm-ink);
+  margin-top: 4px;
+}
+.mm-pop-drawer__close {
+  background: transparent;
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  color: var(--mm-ink-muted);
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.mm-pop-drawer__close:hover {
+  border-color: var(--mm-ink);
+  color: var(--mm-ink);
+}
+@media (max-width: 720px) {
+  .mm-pop-drawer__panel {
+    width: calc(100vw - 16px);
+    height: calc(100% - 16px);
+    margin: 8px;
+    padding: 18px 16px 32px;
+  }
 }
 </style>

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using api.Analytics.Models;
 using api.Caching;
+using api.Constants;
 using api.GameTrends;
 using api.GameTrends.Models;
 using Microsoft.Extensions.Logging;
@@ -100,6 +101,75 @@ public class GameTrendsV2Controller(
         {
             logger.LogError(ex, "Error generating v2 landing page trend summary for game {GameId}", game);
             return StatusCode(500, "Failed to generate landing page trend summary");
+        }
+    }
+
+    /// <summary>
+    /// Hourly player counts across currently live servers. Fetched on demand from the
+    /// landing trend drawer — not on first paint.
+    /// </summary>
+    [HttpGet("player-trend")]
+    [ResponseCache(Duration = 900, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult<PlayerTrendResponse>> GetNetworkPlayerTrend(
+        [FromQuery] string game = "bf1942",
+        [FromQuery] int days = 60)
+    {
+        if (!ApiConstants.Games.AllowedGames.Contains(game.ToLowerInvariant()))
+        {
+            return BadRequest($"Invalid game type. Valid types: {string.Join(", ", ApiConstants.Games.AllowedGames)}");
+        }
+
+        try
+        {
+            var cacheKey = $"trends:v2:player-trend:network:{game.ToLowerInvariant()}:{days}";
+            var cached = await cacheService.GetAsync<PlayerTrendResponse>(cacheKey);
+            if (cached != null)
+            {
+                return Ok(cached);
+            }
+
+            var trend = await sqliteGameTrendsService.GetNetworkPlayerTrendAsync(game.ToLowerInvariant(), days);
+            await cacheService.SetAsync(cacheKey, trend, TimeSpan.FromMinutes(15));
+            return Ok(trend);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error generating network player trend for {Game}", game);
+            return StatusCode(500, "Failed to generate player trend");
+        }
+    }
+
+    /// <summary>
+    /// Hourly player counts for one server. Primary-key range on ServerOnlineCounts.
+    /// </summary>
+    [HttpGet("player-trend/server/{serverGuid}")]
+    [ResponseCache(Duration = 900, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult<PlayerTrendResponse>> GetServerPlayerTrend(
+        string serverGuid,
+        [FromQuery] int days = 60)
+    {
+        if (string.IsNullOrWhiteSpace(serverGuid))
+        {
+            return BadRequest("Server GUID is required");
+        }
+
+        try
+        {
+            var cacheKey = $"trends:v2:player-trend:server:{serverGuid}:{days}";
+            var cached = await cacheService.GetAsync<PlayerTrendResponse>(cacheKey);
+            if (cached != null)
+            {
+                return Ok(cached);
+            }
+
+            var trend = await sqliteGameTrendsService.GetServerPlayerTrendAsync(serverGuid, days);
+            await cacheService.SetAsync(cacheKey, trend, TimeSpan.FromMinutes(15));
+            return Ok(trend);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error generating player trend for server {ServerGuid}", serverGuid);
+            return StatusCode(500, "Failed to generate player trend");
         }
     }
 }
