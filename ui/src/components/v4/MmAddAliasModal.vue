@@ -9,7 +9,6 @@ import { parseBuddyListText, MAX_BULK_PLAYER_NAMES } from '@/utils/buddyListPars
 
 interface PlayerSearchResult {
   playerName: string
-  totalPlayTimeMinutes: number
   totalKills?: number
   totalDeaths?: number
   totalRounds?: number
@@ -52,12 +51,6 @@ const kdOf = (r: PlayerSearchResult): number => {
   const d = r.totalDeaths ?? 0
   if (d === 0) return k
   return k / d
-}
-
-const formatHours = (mins: number): string => {
-  if (!mins) return '0h'
-  const h = mins / 60
-  return h >= 100 ? `${Math.round(h)}h` : `${h.toFixed(1)}h`
 }
 
 const formatRelative = (iso: string): string => {
@@ -254,10 +247,6 @@ const cancel = () => {
                 <span class="mm-num--kill">{{ r.totalKills }}</span> K
                 <span class="mm-meta-row__sep">·</span>
                 <span class="mm-num--death">{{ r.totalDeaths }}</span> D
-              </template>
-              <template v-if="r.totalPlayTimeMinutes">
-                <span class="mm-meta-row__sep">·</span>
-                <span>{{ formatHours(r.totalPlayTimeMinutes) }}</span>
               </template>
             </span>
           </div>
