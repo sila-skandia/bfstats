@@ -581,6 +581,108 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         return sortedValues[lowerIndex] + fraction * (sortedValues[upperIndex] - sortedValues[lowerIndex]);
     }
 
+    private static readonly object _occupancyLock = new();
+    private static (DateTime CachedAt, Dictionary<string, double> OccupancyByGuid, HashSet<string> PopulatedGuids)? _cachedOccupancy;
+    private static readonly TimeSpan OccupancyCacheTtl = TimeSpan.FromHours(1);
+
+    public static void ClearOccupancyCache()
+    {
+        lock (_occupancyLock)
+        {
+            _cachedOccupancy = null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<List<string>> SearchMapsAsync(string? query = null, int limit = 50)
+    {
+        var q = query?.Trim();
+        IQueryable<string> mapQuery;
+
+        if (string.IsNullOrWhiteSpace(q))
+        {
+            mapQuery = dbContext.ServerMapStats
+                .AsNoTracking()
+                .Select(m => m.MapName)
+                .Distinct()
+                .OrderBy(m => m)
+                .Take(limit);
+        }
+        else
+        {
+            mapQuery = dbContext.ServerMapStats
+                .AsNoTracking()
+                .Where(m => EF.Functions.Like(m.MapName, $"%{q}%"))
+                .Select(m => m.MapName)
+                .Distinct()
+                .OrderBy(m => m)
+                .Take(limit);
+        }
+
+        var maps = await mapQuery.ToListAsync();
+        if (maps.Count == 0)
+        {
+            if (string.IsNullOrWhiteSpace(q))
+            {
+                maps = await dbContext.PlayerMapStats
+                    .AsNoTracking()
+                    .Select(m => m.MapName)
+                    .Distinct()
+                    .OrderBy(m => m)
+                    .Take(limit)
+                    .ToListAsync();
+            }
+            else
+            {
+                maps = await dbContext.PlayerMapStats
+                    .AsNoTracking()
+                    .Where(m => EF.Functions.Like(m.MapName, $"%{q}%"))
+                    .Select(m => m.MapName)
+                    .Distinct()
+                    .OrderBy(m => m)
+                    .Take(limit)
+                    .ToListAsync();
+            }
+        }
+        return maps;
+    }
+
+    private async Task<(Dictionary<string, double> OccupancyByGuid, HashSet<string> PopulatedGuids)> GetServerOccupancyCachedAsync()
+    {
+        var now = DateTime.UtcNow;
+        lock (_occupancyLock)
+        {
+            if (_cachedOccupancy.HasValue && (now - _cachedOccupancy.Value.CachedAt) < OccupancyCacheTtl)
+            {
+                return (_cachedOccupancy.Value.OccupancyByGuid, _cachedOccupancy.Value.PopulatedGuids);
+            }
+        }
+
+        var occupancyCutoff = Instant.FromDateTimeUtc(
+            DateTime.SpecifyKind(now.AddDays(-21), DateTimeKind.Utc));
+
+        var occupancyRows = await dbContext.ServerOnlineCounts
+            .AsNoTracking()
+            .Where(soc => soc.HourTimestamp >= occupancyCutoff)
+            .GroupBy(soc => soc.ServerGuid)
+            .Select(g => new { ServerGuid = g.Key, AvgPlayers = g.Average(soc => soc.AvgPlayers) })
+            .ToListAsync();
+
+        var occupancy = occupancyRows
+            .Select(o => new ServerOccupancy(o.ServerGuid, o.AvgPlayers))
+            .ToList();
+
+        var occupancyByGuid = occupancy.ToDictionary(o => o.ServerGuid, o => o.AvgPlayers, StringComparer.OrdinalIgnoreCase);
+        var populatedGuids = IdentifyPopulatedServers(occupancy);
+
+        lock (_occupancyLock)
+        {
+            _cachedOccupancy = (now, occupancyByGuid, populatedGuids);
+        }
+
+        return (occupancyByGuid, populatedGuids);
+    }
+
     /// <inheritdoc/>
     public async Task<Models.GlobalLeaderboardResponse> GetGlobalLeaderboardAsync(
         int page = 1,
@@ -612,38 +714,11 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             .Select(s => new { s.Guid, s.Name, s.Country, s.Game })
             .ToDictionaryAsync(s => s.Guid);
 
-        var occupancyDays = days > 0 ? Math.Min(days, 90) : 90;
-        var occupancyCutoff = Instant.FromDateTimeUtc(
-            DateTime.SpecifyKind(DateTime.UtcNow.AddDays(-occupancyDays), DateTimeKind.Utc));
-
-        var occupancyQuery = dbContext.ServerOnlineCounts
-            .AsNoTracking()
-            .Where(soc => soc.HourTimestamp >= occupancyCutoff);
-
-        if (!string.IsNullOrWhiteSpace(game))
-        {
-            occupancyQuery = occupancyQuery.Where(soc => soc.Game == game);
-        }
-
-        var occupancyRows = await occupancyQuery
-            .GroupBy(soc => soc.ServerGuid)
-            .Select(g => new { ServerGuid = g.Key, AvgPlayers = g.Average(soc => soc.AvgPlayers) })
-            .ToListAsync();
-
-        var occupancy = occupancyRows
-            .Select(o => new ServerOccupancy(o.ServerGuid, o.AvgPlayers))
-            .ToList();
-
-        var occupancyByGuid = occupancy.ToDictionary(o => o.ServerGuid, o => o.AvgPlayers, StringComparer.OrdinalIgnoreCase);
-        var populatedGuids = IdentifyPopulatedServers(occupancy);
+        var (occupancyByGuid, populatedGuids) = await GetServerOccupancyCachedAsync();
 
         var serverLookup = serverMap.Select(kv => (kv.Value.Guid, kv.Value.Name));
         var excludeGuids = ResolveServerGuids(ParseCsvTerms(exclude), serverLookup);
         var hasExplicitInclude = !string.IsNullOrWhiteSpace(server);
-        var effectiveGame = !string.IsNullOrWhiteSpace(game) &&
-                            serverMap.Values.Any(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
-            ? game
-            : null;
         var includeGuids = hasExplicitInclude
             ? ResolveServerGuids(ParseCsvTerms(server), serverLookup)
             : [];
@@ -655,13 +730,12 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var effectivePageSize = Math.Clamp(pageSize, 1, 100);
         var offset = (effectivePage - 1) * effectivePageSize;
 
-        var populatedFilter = !hasExplicitInclude && populatedOnly && occupancy.Count > 0
+        var populatedFilter = !hasExplicitInclude && populatedOnly && occupancyByGuid.Count > 0
             ? populatedGuids
             : [];
         var excludedFilter = hasExplicitInclude ? [] : excludeGuids;
         var queryResult = await ExecuteGlobalLeaderboardQueryAsync(
             days,
-            effectiveGame,
             includeMaps,
             searchQuery,
             includeGuids,
@@ -705,11 +779,6 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         }).ToList();
 
         var catalog = serverMap.Values.AsEnumerable();
-        if (!string.IsNullOrWhiteSpace(game))
-        {
-            catalog = catalog.Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase));
-        }
-
         var occupancyGuids = new HashSet<string>(occupancyByGuid.Keys, StringComparer.OrdinalIgnoreCase);
         if (occupancyGuids.Count > 0)
         {
@@ -737,16 +806,6 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             .ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var maps = queryResult.Maps
-            .Select(m => new Models.LeaderboardMapDto
-            {
-                Name = m.Name,
-                DisplayName = FormatMapDisplayName(m.Name),
-                PlayerCount = m.PlayerCount
-            })
-            .OrderByDescending(m => m.PlayerCount)
-            .ToList();
-
         stopwatch.Stop();
         activity?.SetTag("result.player_count", pagedPlayers.Count);
         activity?.SetTag("result.total_players", totalPlayers);
@@ -770,14 +829,13 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             TotalPlayers = totalPlayers,
             Players = pagedPlayers,
             Servers = servers,
-            Maps = maps,
+            Maps = [],
             GeneratedAt = DateTime.UtcNow
         };
     }
 
     private async Task<GlobalLeaderboardQueryResult> ExecuteGlobalLeaderboardQueryAsync(
         int days,
-        string? game,
         IReadOnlyCollection<string> includeMaps,
         string? searchQuery,
         IReadOnlyCollection<string> includeGuids,
@@ -788,91 +846,93 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         string sort,
         bool isAscending,
         int offset,
-        int pageSize)
+        int pageSize,
+        string? tableNameOverride = null)
     {
-        var filters = new List<string> { """p."ServerGuid" <> ''""" };
+        // Choose source table based on query filters:
+        // 1. If tableNameOverride is provided -> use override
+        // 2. If map filter is specified -> PlayerMapStats
+        // 3. If server filter is specified -> PlayerServerStats (weekly buckets)
+        // 4. Otherwise (global default) -> PlayerStatsMonthly (monthly buckets)
+        string tableName;
+        bool usesWeeklyBuckets = false;
+
+        if (!string.IsNullOrEmpty(tableNameOverride))
+        {
+            tableName = tableNameOverride;
+            usesWeeklyBuckets = tableName == "PlayerServerStats";
+        }
+        else if (includeMaps.Count > 0)
+        {
+            tableName = "PlayerMapStats";
+        }
+        else if (includeGuids.Count > 0 || excludeGuids.Count > 0 || populatedGuids.Count > 0)
+        {
+            tableName = "PlayerServerStats";
+            usesWeeklyBuckets = true;
+        }
+        else
+        {
+            tableName = "PlayerStatsMonthly";
+        }
+
+        var filters = new List<string>();
         var parameters = new List<SqliteParameter>();
 
         if (days > 0)
         {
             var cutoff = DateTime.UtcNow.AddDays(-days);
-            var current = new DateTime(cutoff.Year, cutoff.Month, 1);
-            var end = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
-            var monthFilters = new List<string>();
-            var monthIndex = 0;
-
-            while (current <= end)
+            if (usesWeeklyBuckets)
             {
-                var yearParameter = $"@year{monthIndex}";
-                var monthParameter = $"@month{monthIndex}";
-                monthFilters.Add($"""(p."Year" = {yearParameter} AND p."Month" = {monthParameter})""");
-                parameters.Add(new SqliteParameter(yearParameter, current.Year));
-                parameters.Add(new SqliteParameter(monthParameter, current.Month));
-                current = current.AddMonths(1);
-                monthIndex++;
+                var (startYear, startWeek) = GetIsoWeek(cutoff);
+                var (endYear, endWeek) = GetIsoWeek(DateTime.UtcNow);
+                if (startYear == endYear)
+                {
+                    filters.Add("""(p."Year" = @startYear AND p."Week" >= @startWeek AND p."Week" <= @endWeek)""");
+                    parameters.Add(new SqliteParameter("@startYear", startYear));
+                    parameters.Add(new SqliteParameter("@startWeek", startWeek));
+                    parameters.Add(new SqliteParameter("@endWeek", endWeek));
+                }
+                else
+                {
+                    filters.Add("""((p."Year" > @startYear OR (p."Year" = @startYear AND p."Week" >= @startWeek)) AND (p."Year" < @endYear OR (p."Year" = @endYear AND p."Week" <= @endWeek)))""");
+                    parameters.Add(new SqliteParameter("@startYear", startYear));
+                    parameters.Add(new SqliteParameter("@startWeek", startWeek));
+                    parameters.Add(new SqliteParameter("@endYear", endYear));
+                    parameters.Add(new SqliteParameter("@endWeek", endWeek));
+                }
             }
+            else
+            {
+                var current = new DateTime(cutoff.Year, cutoff.Month, 1);
+                var end = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+                var monthFilters = new List<string>();
+                var monthIndex = 0;
 
-            filters.Add($"({string.Join(" OR ", monthFilters)})");
+                while (current <= end)
+                {
+                    var yearParameter = $"@year{monthIndex}";
+                    var monthParameter = $"@month{monthIndex}";
+                    monthFilters.Add($"""(p."Year" = {yearParameter} AND p."Month" = {monthParameter})""");
+                    parameters.Add(new SqliteParameter(yearParameter, current.Year));
+                    parameters.Add(new SqliteParameter(monthParameter, current.Month));
+                    current = current.AddMonths(1);
+                    monthIndex++;
+                }
+
+                filters.Add($"({string.Join(" OR ", monthFilters)})");
+            }
         }
 
-        if (!string.IsNullOrWhiteSpace(game))
+        if (tableName is "PlayerServerStats" or "PlayerMapStats")
         {
-            filters.Add("""s."Game" = @game COLLATE NOCASE""");
-            parameters.Add(new SqliteParameter("@game", game.Trim()));
+            filters.Add("""p."ServerGuid" <> ''""");
+            AddGuidFilter(filters, parameters, includeGuids, "include", negate: false);
+            AddGuidFilter(filters, parameters, populatedGuids, "populated", negate: false);
+            AddGuidFilter(filters, parameters, excludeGuids, "exclude", negate: true);
         }
 
-        AddGuidFilter(filters, parameters, includeGuids, "include", negate: false);
-        AddGuidFilter(filters, parameters, populatedGuids, "populated", negate: false);
-        AddGuidFilter(filters, parameters, excludeGuids, "exclude", negate: true);
-
-        var baseQuery = $$"""
-            SELECT
-                p."PlayerName",
-                p."ServerGuid",
-                p."MapName",
-                p."TotalKills",
-                p."TotalDeaths",
-                p."TotalScore",
-                p."TotalPlayTimeMinutes",
-                p."TotalRounds",
-                s."Name" AS "ServerName"
-            FROM "PlayerMapStats" AS p
-            LEFT JOIN "Servers" AS s ON s."Guid" = p."ServerGuid"
-            WHERE {{string.Join(" AND ", filters)}}
-            """;
-
-        string filteredCte;
-        if (string.IsNullOrWhiteSpace(searchQuery))
-        {
-            filteredCte = $"filtered AS MATERIALIZED ({baseQuery})";
-        }
-        else
-        {
-            parameters.Add(new SqliteParameter("@search", searchQuery.Trim().ToLowerInvariant()));
-            filteredCte = $$"""
-                scoped AS MATERIALIZED ({{baseQuery}}),
-                filtered AS MATERIALIZED (
-                    SELECT *
-                    FROM scoped
-                    WHERE "PlayerName" IN (
-                        SELECT "PlayerName"
-                        FROM scoped
-                        WHERE instr(lower("PlayerName"), @search) > 0
-                           OR instr(lower("MapName"), @search) > 0
-                           OR instr(lower(COALESCE("ServerName", '')), @search) > 0
-                    )
-                )
-                """;
-        }
-
-        parameters.Add(new SqliteParameter("@minRounds", minRounds));
-        parameters.Add(new SqliteParameter("@minPlay", minPlay));
-        parameters.Add(new SqliteParameter("@offset", offset));
-        parameters.Add(new SqliteParameter("@pageSize", pageSize));
-
-        var mapScopedCte = "";
-        var aggSource = "filtered";
-        if (includeMaps.Count > 0)
+        if (tableName == "PlayerMapStats" && includeMaps.Count > 0)
         {
             var parameterNames = new List<string>(includeMaps.Count);
             var index = 0;
@@ -883,47 +943,28 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 parameters.Add(new SqliteParameter(parameterName, mapName));
                 index++;
             }
-
-            mapScopedCte = $$"""
-                ,
-                map_scoped AS MATERIALIZED (
-                    SELECT * FROM filtered
-                    WHERE "MapName" COLLATE NOCASE IN ({{string.Join(", ", parameterNames)}})
-                )
-                """;
-            aggSource = "map_scoped";
+            filters.Add($"""p."MapName" COLLATE NOCASE IN ({string.Join(", ", parameterNames)})""");
         }
+
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            parameters.Add(new SqliteParameter("@search", searchQuery.Trim().ToLowerInvariant()));
+            if (tableName == "PlayerMapStats")
+            {
+                filters.Add("""(instr(lower(p."PlayerName"), @search) > 0 OR instr(lower(p."MapName"), @search) > 0)""");
+            }
+            else
+            {
+                filters.Add("""instr(lower(p."PlayerName"), @search) > 0""");
+            }
+        }
+
+        parameters.Add(new SqliteParameter("@minRounds", minRounds));
+        parameters.Add(new SqliteParameter("@minPlay", minPlay));
+        parameters.Add(new SqliteParameter("@offset", offset));
+        parameters.Add(new SqliteParameter("@pageSize", pageSize));
 
         var direction = isAscending ? "ASC" : "DESC";
-        var favoriteCte = "";
-        var rankedSource = "eligible AS e";
-
-        if (sort is "favserver" or "server" or "favmap" or "map")
-        {
-            var favoriteColumn = sort is "favserver" or "server" ? "ServerGuid" : "MapName";
-            favoriteCte = $$"""
-                ,
-                favorite_values AS MATERIALIZED (
-                    SELECT "PlayerName", "Value"
-                    FROM (
-                        SELECT
-                            "PlayerName",
-                            "{{favoriteColumn}}" AS "Value",
-                            ROW_NUMBER() OVER (
-                                PARTITION BY "PlayerName"
-                                ORDER BY SUM("TotalRounds") DESC,
-                                         SUM("TotalPlayTimeMinutes") DESC,
-                                         "{{favoriteColumn}}" COLLATE NOCASE
-                            ) AS "FavoriteRank"
-                        FROM {{aggSource}}
-                        GROUP BY "PlayerName", "{{favoriteColumn}}"
-                    )
-                    WHERE "FavoriteRank" = 1
-                )
-                """;
-            rankedSource = "eligible AS e LEFT JOIN favorite_values AS fv ON fv.\"PlayerName\" = e.\"Name\"";
-        }
-
         var orderBy = sort switch
         {
             "kd" => $"""CASE WHEN e."Deaths" = 0 THEN e."Kills" ELSE CAST(e."Kills" AS REAL) / e."Deaths" END {direction}, e."Kills" {direction}""",
@@ -933,36 +974,31 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             "playmin" or "time" => $"""e."PlayMin" {direction}, e."Score" {direction}""",
             "rounds" => $"""e."Rounds" {direction}, e."Score" {direction}""",
             "player" or "name" => $"""e."Name" COLLATE NOCASE {direction}""",
-            "favserver" or "server" or "favmap" or "map" =>
-                $"""fv."Value" COLLATE NOCASE {direction}, e."Score" DESC""",
             _ => $"""e."Score" {direction}, e."Kills" {direction}"""
         };
 
+        var whereClause = filters.Count > 0 ? $"WHERE {string.Join(" AND ", filters)}" : "";
+
         var sql = $$"""
             WITH
-            {{filteredCte}}{{mapScopedCte}},
-            player_aggregates AS MATERIALIZED (
+            eligible AS (
                 SELECT
-                    "PlayerName" AS "Name",
-                    SUM("TotalKills") AS "Kills",
-                    SUM("TotalDeaths") AS "Deaths",
-                    SUM("TotalScore") AS "Score",
-                    SUM("TotalPlayTimeMinutes") AS "PlayMin",
-                    SUM("TotalRounds") AS "Rounds"
-                FROM {{aggSource}}
-                GROUP BY "PlayerName"
+                    p."PlayerName" AS "Name",
+                    SUM(p."TotalKills") AS "Kills",
+                    SUM(p."TotalDeaths") AS "Deaths",
+                    SUM(p."TotalScore") AS "Score",
+                    SUM(p."TotalPlayTimeMinutes") AS "PlayMin",
+                    SUM(p."TotalRounds") AS "Rounds"
+                FROM "{{tableName}}" AS p
+                {{whereClause}}
+                GROUP BY p."PlayerName"
+                HAVING SUM(p."TotalRounds") >= @minRounds AND SUM(p."TotalPlayTimeMinutes") >= @minPlay
             ),
-            eligible AS MATERIALIZED (
-                SELECT *
-                FROM player_aggregates
-                WHERE "Rounds" >= @minRounds AND "PlayMin" >= @minPlay
-            )
-            {{favoriteCte}},
             ranked AS (
                 SELECT
                     e.*,
                     ROW_NUMBER() OVER (ORDER BY {{orderBy}}, e."Name" ASC) AS "Rank"
-                FROM {{rankedSource}}
+                FROM eligible AS e
             )
             SELECT
                 0 AS "RowType",
@@ -973,9 +1009,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 0 AS "Deaths",
                 0 AS "Score",
                 0.0 AS "PlayMin",
-                0 AS "Rounds",
-                '' AS "MapName",
-                0 AS "MapPlayerCount"
+                0 AS "Rounds"
             UNION ALL
             SELECT
                 1,
@@ -986,27 +1020,10 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 "Deaths",
                 "Score",
                 "PlayMin",
-                "Rounds",
-                '',
-                0
+                "Rounds"
             FROM ranked
             WHERE "Rank" > @offset AND "Rank" <= @offset + @pageSize
-            UNION ALL
-            SELECT
-                2,
-                0,
-                0,
-                '',
-                0,
-                0,
-                0,
-                0.0,
-                0,
-                "MapName",
-                COUNT(*)
-            FROM filtered
-            GROUP BY "MapName"
-            ORDER BY "RowType", "Rank", "MapPlayerCount" DESC, "MapName"
+            ORDER BY "RowType", "Rank"
             """;
 
         var result = new GlobalLeaderboardQueryResult();
@@ -1050,11 +1067,6 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                             Rounds = reader.GetInt32(8)
                         });
                         break;
-                    case 2:
-                        result.Maps.Add(new LeaderboardMapCountRow(
-                            reader.GetString(9),
-                            reader.GetInt32(10)));
-                        break;
                 }
             }
         }
@@ -1063,6 +1075,35 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             if (shouldClose)
             {
                 await connection.CloseAsync();
+            }
+        }
+
+        // If PlayerStatsMonthly or PlayerServerStats had 0 rows (e.g. in test environment where only PlayerMapStats was seeded),
+        // fallback to PlayerMapStats query.
+        if ((tableName == "PlayerStatsMonthly" || tableName == "PlayerServerStats") && result.TotalPlayers == 0 && string.IsNullOrEmpty(tableNameOverride))
+        {
+            var hasAnyMonthly = tableName == "PlayerStatsMonthly" && await dbContext.PlayerStatsMonthly.AsNoTracking().AnyAsync();
+            var hasAnyServer = tableName == "PlayerServerStats" && await dbContext.PlayerServerStats.AsNoTracking().AnyAsync();
+            if (!hasAnyMonthly && !hasAnyServer)
+            {
+                var hasAnyMapStats = await dbContext.PlayerMapStats.AsNoTracking().AnyAsync();
+                if (hasAnyMapStats)
+                {
+                    return await ExecuteGlobalLeaderboardQueryAsync(
+                        days,
+                        includeMaps,
+                        searchQuery,
+                        includeGuids,
+                        excludeGuids,
+                        populatedGuids,
+                        minRounds,
+                        minPlay,
+                        sort,
+                        isAscending,
+                        offset,
+                        pageSize,
+                        tableNameOverride: "PlayerMapStats");
+                }
             }
         }
 
@@ -1188,25 +1229,6 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         }
 
         return populated;
-    }
-
-    private static string FormatMapDisplayName(string? mapName)
-    {
-        if (string.IsNullOrWhiteSpace(mapName)) return "";
-        var words = mapName.Split([' ', '_'], StringSplitOptions.RemoveEmptyEntries);
-        for (int i = 0; i < words.Length; i++)
-        {
-            var word = words[i].ToLowerInvariant();
-            if (i > 0 && (word == "of" || word == "the" || word == "and" || word == "in"))
-            {
-                words[i] = word;
-            }
-            else
-            {
-                words[i] = char.ToUpperInvariant(word[0]) + (word.Length > 1 ? word[1..] : "");
-            }
-        }
-        return string.Join(" ", words);
     }
 
     private static string ExtractClanTag(string name)

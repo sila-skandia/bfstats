@@ -91,4 +91,31 @@ public class LeaderboardController(
             return StatusCode(StatusCodes.Status500InternalServerError, "Failed to retrieve leaderboard data.");
         }
     }
+
+    /// <summary>
+    /// Searches available maps for map filters on the leaderboard.
+    /// </summary>
+    /// <param name="q">Optional search substring for map name.</param>
+    /// <param name="limit">Max maps to return (default: 50, max: 200).</param>
+    [HttpGet("maps")]
+    [EdgeCache(3600)]
+    [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<string>>> GetMaps(
+        [FromQuery] string? q = null,
+        [FromQuery] int limit = 50)
+    {
+        if (limit < 1) limit = 50;
+        if (limit > 200) limit = 200;
+
+        try
+        {
+            var maps = await sqliteLeaderboardService.SearchMapsAsync(q, limit);
+            return Ok(maps);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to search leaderboard maps for q={Q}", q);
+            return StatusCode(StatusCodes.Status500InternalServerError, "Failed to retrieve maps.");
+        }
+    }
 }
