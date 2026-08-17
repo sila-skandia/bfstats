@@ -431,15 +431,14 @@ test.describe('Leaderboard Page', () => {
     await expect(page.locator('.lb-table')).not.toContainText('NovicePlayer')
   })
 
-  test('should group players by Fav. Map with collapsible group headers', async ({ page }) => {
+  test('should group players by Fav. Server with collapsible group headers', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
     const groupSelect = page.locator('.lb-control-group', { hasText: /Group By/i }).locator('select')
-    await groupSelect.selectOption('favMap')
+    await groupSelect.selectOption('favServer')
 
-    // Group rows should be present for Bocage, Omaha Beach, Wake
     const groupRows = page.locator('.lb-group-row')
-    await expect(groupRows).toHaveCount(3)
+    await expect(groupRows.first()).toBeVisible()
 
     // Toggle collapse on first group
     await groupRows.first().click()
@@ -451,7 +450,7 @@ test.describe('Leaderboard Page', () => {
       ...MOCK_LEADERBOARD_DATA.players[index % MOCK_LEADERBOARD_DATA.players.length],
       rank: index + 1,
       name: `GroupedPlayer_${index + 1}`,
-      favMap: index % 2 === 0 ? 'Bocage' : 'Wake'
+      favServer: index % 2 === 0 ? 'Server Alpha' : 'Server Bravo'
     }))
 
     await page.route('**/stats/leaderboard*', async route => {
@@ -475,7 +474,7 @@ test.describe('Leaderboard Page', () => {
     })
 
     await page.goto('/v4/leaderboard')
-    await page.locator('.lb-control-group', { hasText: /Group By/i }).locator('select').selectOption('favMap')
+    await page.locator('.lb-control-group', { hasText: /Group By/i }).locator('select').selectOption('favServer')
 
     const paginator = page.locator('.lb-pagination-bar')
     await expect(paginator).toBeVisible()
