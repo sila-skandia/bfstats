@@ -292,6 +292,9 @@ playertracker.db
 playertracker.db-shm
 playertracker.db-wal
 
+# Per-worktree throwaway E2E sqlite (see features/isolated-e2e-worktrees/)
+.e2e/
+
 # Tournament images uploaded via FileBrowser in local development
 tournament-images/
 

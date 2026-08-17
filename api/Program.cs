@@ -703,10 +703,11 @@ try
 
     // Configure Redis caching with short timeouts
     var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING") ?? "42redis.home.net:6380";
+    var redisInstanceName = Environment.GetEnvironmentVariable("REDIS_INSTANCE_NAME") ?? serviceName;
     builder.Services.AddStackExchangeRedisCache(options =>
     {
         options.Configuration = $"{redisConnectionString},connectTimeout=1000,syncTimeout=1000,connectRetry=1,abortConnect=false";
-        options.InstanceName = serviceName;
+        options.InstanceName = redisInstanceName;
     });
 
     // Configure Redis for event publishing with graceful failure handling
@@ -995,9 +996,21 @@ try
 
         try
         {
-            // Apply EF Core migrations for SQLite
-            await dbContext.Database.MigrateAsync();
-            logger.LogInformation("SQLite database migrations applied successfully");
+            if (string.Equals(Environment.GetEnvironmentVariable("E2E_SEED"), "true", StringComparison.OrdinalIgnoreCase))
+            {
+                // Throwaway fixture: build schema from the current model rather than
+                // the migration chain. Worktrees often have pending model changes that
+                // make MigrateAsync refuse to run, and this database is discarded after
+                // the suite anyway.
+                await dbContext.Database.EnsureCreatedAsync();
+                await api.E2e.E2eDatabaseSeed.ApplyAsync(dbContext);
+                logger.LogInformation("E2E sqlite schema created and seed applied");
+            }
+            else
+            {
+                await dbContext.Database.MigrateAsync();
+                logger.LogInformation("SQLite database migrations applied successfully");
+            }
 
             // Configure SQLite PRAGMAs for optimal performance and to prevent locking issues
             // These need to be set after the connection is established
