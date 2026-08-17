@@ -607,7 +607,7 @@ public class LeaderboardControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task GetLeaderboard_PopulatesFavoriteServerAndMap()
+    public async Task GetLeaderboard_PopulatesFavoriteServer()
     {
         var now = DateTime.UtcNow;
         _dbContext.Servers.Add(new GameServer { Guid = "s1", Name = "Dogtags 24/7", Country = "DE", Game = "bf1942" });
@@ -631,6 +631,5 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Equal("Dogtags 24/7", resp.Players[0].FavServer);
         Assert.Equal("s1", resp.Players[0].FavServerGuid);
         Assert.Equal("DE", resp.Players[0].FavServerCountry);
-        Assert.Equal("bocage", resp.Players[0].FavMap);
     }
 }

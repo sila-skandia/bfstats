@@ -1276,7 +1276,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var inClause = string.Join(", ", inParams);
 
         var sql = $$"""
-            SELECT 0 AS SourceType, PlayerName, ServerGuid AS Value
+            SELECT PlayerName, ServerGuid
             FROM (
                 SELECT PlayerName, ServerGuid,
                        ROW_NUMBER() OVER (PARTITION BY PlayerName ORDER BY SUM(TotalRounds) DESC, SUM(TotalPlayTimeMinutes) DESC) as rn
@@ -1285,20 +1285,9 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 GROUP BY PlayerName, ServerGuid
             )
             WHERE rn = 1
-            UNION ALL
-            SELECT 1 AS SourceType, PlayerName, MapName AS Value
-            FROM (
-                SELECT PlayerName, MapName,
-                       ROW_NUMBER() OVER (PARTITION BY PlayerName ORDER BY SUM(TotalRounds) DESC, SUM(TotalPlayTimeMinutes) DESC) as rn
-                FROM PlayerMapStats
-                WHERE PlayerName IN ({{inClause}})
-                GROUP BY PlayerName, MapName
-            )
-            WHERE rn = 1
             """;
 
         var favServers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var favMaps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         var connection = dbContext.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
@@ -1322,17 +1311,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             await using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
-                var sourceType = reader.GetInt32(0);
-                var playerName = reader.GetString(1);
-                var value = reader.GetString(2);
-                if (sourceType == 0)
-                {
-                    favServers[playerName] = value;
-                }
-                else
-                {
-                    favMaps[playerName] = value;
-                }
+                favServers[reader.GetString(0)] = reader.GetString(1);
             }
         }
         catch
@@ -1349,7 +1328,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
 
         // If PlayerServerStats had no data (e.g. test environment where only PlayerMapStats was seeded),
         // fallback to PlayerMapStats for ServerGuid.
-        if (favServers.Count == 0 && favMaps.Count > 0)
+        if (favServers.Count == 0)
         {
             try
             {
@@ -1414,11 +1393,6 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 {
                     player.FavServer = srvGuid;
                 }
-            }
-
-            if (favMaps.TryGetValue(player.Name, out var mapName) && !string.IsNullOrWhiteSpace(mapName))
-            {
-                player.FavMap = mapName;
             }
         }
     }
