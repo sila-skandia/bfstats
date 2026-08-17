@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using api.Bflist.Models;
 using api.Analytics.Models;
+using api.GameTrends.Models;
 using api.PlayerTracking;
 using api.Telemetry;
 using Microsoft.EntityFrameworkCore;
@@ -595,4 +596,84 @@ public class SqliteGameTrendsService(
             _ => "Aggregated player counts"
         };
     }
+
+    /// <inheritdoc/>
+    public async Task<PlayerTrendResponse> GetNetworkPlayerTrendAsync(string game, int days = 60)
+    {
+        using var activity = ActivitySources.SqliteAnalytics.StartActivity("GetNetworkPlayerTrendAsync");
+        activity?.SetTag("query.name", "GetNetworkPlayerTrend");
+        activity?.SetTag("query.filters", $"game:{game},days:{days}");
+
+        days = ClampTrendDays(days);
+        var end = SystemClock.Instance.GetCurrentInstant();
+        var start = end.Minus(Duration.FromDays(days));
+
+        var liveGuids = await dbContext.Servers
+            .AsNoTracking()
+            .Where(s => s.IsOnline && (s.Game == game || s.GameId == game))
+            .Select(s => s.Guid)
+            .ToListAsync();
+
+        if (liveGuids.Count == 0)
+        {
+            return new PlayerTrendResponse("network", game, null, start, end, 0, []);
+        }
+
+        var grouped = await dbContext.ServerOnlineCounts
+            .AsNoTracking()
+            .Where(s => liveGuids.Contains(s.ServerGuid) && s.HourTimestamp >= start)
+            .GroupBy(s => s.HourTimestamp)
+            .Select(g => new
+            {
+                Timestamp = g.Key,
+                AvgPlayers = g.Sum(x => x.AvgPlayers),
+                PeakPlayers = g.Sum(x => x.PeakPlayers)
+            })
+            .OrderBy(p => p.Timestamp)
+            .ToListAsync();
+
+        var points = grouped
+            .Select(p => new PlayerTrendPoint(p.Timestamp, p.AvgPlayers, p.PeakPlayers))
+            .ToArray();
+
+        activity?.SetTag("result.row_count", points.Length);
+        activity?.SetTag("result.server_count", liveGuids.Count);
+
+        return new PlayerTrendResponse("network", game, null, start, end, liveGuids.Count, points);
+    }
+
+    /// <inheritdoc/>
+    public async Task<PlayerTrendResponse> GetServerPlayerTrendAsync(string serverGuid, int days = 60)
+    {
+        using var activity = ActivitySources.SqliteAnalytics.StartActivity("GetServerPlayerTrendAsync");
+        activity?.SetTag("query.name", "GetServerPlayerTrend");
+        activity?.SetTag("query.filters", $"server:{serverGuid},days:{days}");
+
+        days = ClampTrendDays(days);
+        var end = SystemClock.Instance.GetCurrentInstant();
+        var start = end.Minus(Duration.FromDays(days));
+
+        var rows = await dbContext.ServerOnlineCounts
+            .AsNoTracking()
+            .Where(s => s.ServerGuid == serverGuid && s.HourTimestamp >= start)
+            .OrderBy(s => s.HourTimestamp)
+            .Select(s => new { s.HourTimestamp, s.AvgPlayers, s.PeakPlayers, s.Game })
+            .ToListAsync();
+
+        var game = rows.Count > 0 ? rows[0].Game : null;
+        var points = rows
+            .Select(s => new PlayerTrendPoint(s.HourTimestamp, s.AvgPlayers, s.PeakPlayers))
+            .ToArray();
+
+        activity?.SetTag("result.row_count", points.Length);
+
+        return new PlayerTrendResponse("server", game, serverGuid, start, end, 1, points);
+    }
+
+    private static int ClampTrendDays(int days) => days switch
+    {
+        < 7 => 7,
+        > 60 => 60,
+        _ => days
+    };
 }
