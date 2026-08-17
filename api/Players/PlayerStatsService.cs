@@ -956,7 +956,6 @@ public class PlayerStatsService(
             .Select(p => new PlayerBasicInfo
             {
                 PlayerName = p.Name,
-                TotalPlayTimeMinutes = p.TotalPlayTimeMinutes,
                 LastSeen = p.LastSeen
             })
             .ToListAsync();

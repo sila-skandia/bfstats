@@ -29,7 +29,7 @@
       >
         <span class="t2-search__opt-name">{{ $pn(player.playerName) }}</span>
         <span class="t2-search__opt-meta">
-          {{ player.isActive ? 'online' : 'last ' + formatPlayTime(player.totalPlayTimeMinutes) }}
+          {{ player.isActive ? 'online' : (player.lastSeen ? 'last seen ' + formatRelativeTime(player.lastSeen) : 'offline') }}
         </span>
       </div>
       <div
@@ -44,10 +44,10 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { formatRelativeTime } from '@/utils/timeUtils'
 
 interface PlayerSearchResult {
   playerName: string
-  totalPlayTimeMinutes: number
   lastSeen: string
   isActive: boolean
 }
@@ -70,12 +70,6 @@ const searchResults = ref<PlayerSearchResult[]>([])
 const isLoading = ref(false)
 const showDropdown = ref(false)
 let debounce: ReturnType<typeof setTimeout> | null = null
-
-const formatPlayTime = (minutes: number): string => {
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
-}
 
 // Same endpoint the legacy PlayerSearch uses
 const searchPlayers = async (query: string) => {

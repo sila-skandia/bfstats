@@ -179,21 +179,6 @@ const firstSeenDate = computed(() => {
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 })
-const yearsActive = computed(() => {
-  if (!firstSeen.value) return 0
-  const d = parseUtc(firstSeen.value)
-  if (isNaN(d.getTime())) return 0
-  return (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
-})
-const tierLabel = computed(() => {
-  const y = yearsActive.value
-  if (y >= 10) return 'Old Guard'
-  if (y >= 5) return 'Veteran'
-  if (y >= 2) return 'Regular'
-  if (y > 0) return 'Recruit'
-  return ''
-})
-
 // best server rank (lowest rank number = best)
 const bestRank = computed(() => {
   const rankings = stats.value?.insights?.serverRankings
@@ -433,10 +418,7 @@ const signatureServers = computed(() => {
             </template>
           </div>
 
-          <h1 class="mm-display mm-player__name">
-            {{ displayName }}
-            <span v-if="tierLabel" class="mm-display__muted">{{ tierLabel }}</span>
-          </h1>
+          <h1 class="mm-display mm-player__name">{{ displayName }}</h1>
 
           <div class="mm-meta-row mm-player__where">
             <span v-if="loading" class="mm-skeleton" style="width: 260px; height: 1em; display: inline-block; vertical-align: middle" />

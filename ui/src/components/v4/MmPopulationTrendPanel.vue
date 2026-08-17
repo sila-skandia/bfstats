@@ -269,7 +269,7 @@ const empty = computed(() =>
     </div>
 
     <div v-if="loading" class="mm-pop-trend__skel">
-      <div class="mm-skeleton" style="height: 280px" />
+      <div class="mm-skeleton" style="height: 240px" />
     </div>
     <div v-else-if="error" class="mm-empty" style="border: 0">{{ error }}</div>
     <div v-else-if="empty" class="mm-empty" style="border: 0">No occupancy history for this window yet.</div>
