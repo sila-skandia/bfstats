@@ -2,9 +2,14 @@
 
 After making any code changes, you **must** run the verification script. This script runs API unit tests and containerized Playwright E2E tests.
 
-- **Full Verification**: `./scripts/verify.sh`
+- **Full Verification**: `./scripts/verify.sh` (or `mise run e2e`)
 - **Fast Logic Check**: `./scripts/verify.sh --skip-e2e`
 - **Targeted E2E**: `./scripts/verify.sh e2e/relevant-test.spec.ts --project=chromium`
+
+E2E binds unique API/UI ports and a slim sqlite copy per worktree, so two
+checkouts can verify at once without sharing `playertracker.db` or colliding
+on `:9222` / `:5173`. See `features/isolated-e2e-worktrees/README.md`.
+Interactive `dotnet run` / `npm run dev` is unchanged.
 
 ### Feature to Test Mapping
 - **Players/Search**: `e2e/player-search.spec.ts`, `e2e/players-extended.spec.ts`

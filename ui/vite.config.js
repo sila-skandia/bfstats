@@ -21,6 +21,10 @@ const { default: vueDevTools } = await import('vite-plugin-vue-devtools')
 
 // Shared by `server` (dev) and `preview` (serving the production build). Vite
 // does not carry server.proxy over to preview, so both reference this.
+const apiPort = process.env.API_PORT || '9222'
+const uiPort = Number.parseInt(process.env.UI_PORT || '5173', 10)
+const notificationsPort = process.env.NOTIFICATIONS_PORT || '9223'
+
 const proxy = {
   // Proxy API requests to the backend
   '/api': {
@@ -34,12 +38,12 @@ const proxy = {
   },
   // Proxy player stats requests to the backend
   '/stats': {
-    target: 'http://127.0.0.1:9222',
+    target: `http://127.0.0.1:${apiPort}`,
     changeOrigin: true
   },
   // Proxy SignalR hub requests
   '/hub': {
-    target: 'http://localhost:9223',
+    target: `http://localhost:${notificationsPort}`,
     changeOrigin: true,
     ws: true // Enable WebSocket proxying
   }
@@ -88,6 +92,7 @@ export default defineConfig(({ mode }) => ({
     chunkSizeWarningLimit: 600,
   },
   server: {
+    port: uiPort,
     watch: {
       // Playwright writes its report, traces, screenshots and videos into this
       // directory while the E2E suite is running. Without these ignores every
@@ -108,7 +113,7 @@ export default defineConfig(({ mode }) => ({
   // built app locally 404s every /stats call and the dev auth bypass the E2E
   // suite logs in with.
   preview: {
-    port: 5173,
+    port: uiPort,
     strictPort: true,
     proxy,
   },
