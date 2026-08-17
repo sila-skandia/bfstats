@@ -1531,6 +1531,19 @@
   .mm-dash-grid--early { grid-template-columns: 1fr !important; }
 }
 
+/* ---------- fullscreen overlay scroll lock ----------
+   Toggled on <html> while a mobile full-screen replacement (trend drawer,
+   trend inspector, modal) is open. overflow:hidden on body is not enough
+   on mobile Chrome — pull-to-refresh and overscroll still move the page
+   behind the overlay. Desktop is untouched. */
+@media (max-width: 720px) {
+  html.mm-fs-lock,
+  html.mm-fs-lock body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+}
+
 /* ---------- wrapped stories scroll lock ----------
    Toggled on <html> while a Wrapped view is mounted. On mobile the wrapped
    shell is a fixed fullscreen overlay; locking the document removes the

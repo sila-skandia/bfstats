@@ -125,6 +125,7 @@ const handleEscapeKey = (e: KeyboardEvent) => {
 
 watch(() => props.modelValue, (isOpen) => {
   document.body.style.overflow = isOpen ? 'hidden' : ''
+  document.documentElement.classList.toggle('mm-fs-lock', isOpen)
 })
 
 onMounted(() => {
@@ -134,6 +135,7 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleEscapeKey)
   document.body.style.overflow = ''
+  document.documentElement.classList.remove('mm-fs-lock')
 })
 </script>
 
@@ -224,6 +226,7 @@ onUnmounted(() => {
   .mm-modal__backdrop {
     padding: 0;
     align-items: stretch;
+    overscroll-behavior: none;
   }
 
   .mm-modal__panel,
@@ -232,22 +235,35 @@ onUnmounted(() => {
   .mm-modal__panel--lg,
   .mm-modal__panel--xl,
   .mm-modal__panel--full {
-    max-width: 100%;
-    max-height: 100vh !important;
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    max-height: 100dvh !important;
     border: 0;
     border-radius: 0;
   }
 
-  .mm-modal__head {
-    padding: 16px 18px 12px;
+  .mm-modal__body {
+    max-height: none !important;
+    flex: 1;
+    min-height: 0;
+    padding: 16px 18px;
   }
 
-  .mm-modal__body {
-    padding: 16px 18px;
+  .mm-modal__head {
+    padding: 16px 18px 12px;
+    padding-top: max(16px, env(safe-area-inset-top));
   }
 
   .mm-modal__foot {
     padding: 12px 18px 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .mm-modal__close {
+    width: 44px;
+    height: 44px;
   }
 }
 </style>
