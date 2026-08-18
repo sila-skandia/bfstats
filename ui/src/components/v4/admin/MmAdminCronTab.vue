@@ -204,26 +204,50 @@
           <div class="mm-admin-cron__body-text">
             <span class="mm-admin-cron__name">Neo4j Sync (Player Relationships)</span>
             <span class="mm-admin-cron__desc">
-              Sync player co-play data to graph database. Last {{ neo4jSyncDays }} days.
+              Syncs completed rounds/sessions never synced to Neo4j. The daily job already keeps this
+              drained — normally a no-op.
               <span v-if="neo4jStatus" class="mm-admin-cron__neo4j-status">
                 Schema: {{ neo4jStatus.isUpToDate ? '✓ up-to-date' : `⚠ ${neo4jStatus.pendingCount} pending` }}
               </span>
             </span>
           </div>
           <div class="mm-admin-cron__actions">
-            <select v-model.number="neo4jSyncDays" class="mm-admin-select mm-admin-cron__select">
-              <option :value="1">1 day</option>
-              <option :value="7">7 days</option>
-              <option :value="30">30 days</option>
-              <option :value="90">90 days</option>
-            </select>
             <button
               type="button"
               class="mm-admin-btn mm-admin-btn--primary mm-admin-btn--sm"
               :disabled="jobRunning !== null"
               @click="runJob('neo4j-sync', true)"
             >
-              {{ jobRunning === 'neo4j-sync' ? 'Syncing…' : 'Sync' }}
+              {{ jobRunning === 'neo4j-sync' ? 'Syncing…' : 'Sync pending' }}
+            </button>
+          </div>
+        </li>
+
+        <li
+          v-if="neo4jEnabled"
+          class="mm-admin-cron__item mm-admin-cron__item--neo4j"
+        >
+          <div class="mm-admin-cron__body-text">
+            <span class="mm-admin-cron__name">Neo4j Relationships Backfill/Repair</span>
+            <span class="mm-admin-cron__desc">
+              Resets the sync watermark from a date and rebuilds PLAYED_WITH/PLAYS_ON from scratch.
+              Only run this right after Neo4j's player-relationship data has been wiped — it's
+              additive, so running it against data that hasn't been cleared will double-count.
+            </span>
+          </div>
+          <div class="mm-admin-cron__actions">
+            <input
+              v-model="neo4jBackfillFromDate"
+              type="date"
+              class="mm-admin-select mm-admin-cron__select"
+            />
+            <button
+              type="button"
+              class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+              :disabled="jobRunning !== null"
+              @click="runJob('neo4j-relationships-backfill', false)"
+            >
+              Start
             </button>
           </div>
         </li>
@@ -274,7 +298,7 @@ const aggregateBackfillTier = ref(1)
 // 0 keeps the original behaviour (the configured allowlist); anything higher crunches that many
 // of the year's busiest players instead.
 const playerWrappedTopPlayers = ref(0)
-const neo4jSyncDays = ref(7)
+const neo4jBackfillFromDate = ref('2026-01-01')
 const neo4jEnabled = ref(false)
 const neo4jChecked = ref(false)
 const neo4jStatus = ref<{
@@ -303,7 +327,7 @@ async function runJob(jobKey: string, _isBlocking: boolean) {
 
   if (jobKey === 'neo4j-sync') {
     try {
-      const res = await adminJobsService.triggerNeo4jSync(neo4jSyncDays.value)
+      const res = await adminJobsService.triggerNeo4jSync()
       if (res.success) {
         jobSuccess.value = `Synced ${res.relationshipsProcessed} relationships in ${res.durationMs}ms`
         try {
@@ -354,6 +378,9 @@ async function runJob(jobKey: string, _isBlocking: boolean) {
       break
     case 'community-detection':
       fn = adminJobsService.triggerCommunityDetection
+      break
+    case 'neo4j-relationships-backfill':
+      fn = () => adminJobsService.triggerNeo4jRelationshipsBackfill(neo4jBackfillFromDate.value)
       break
     default:
       jobRunning.value = null
