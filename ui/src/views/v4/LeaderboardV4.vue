@@ -2069,11 +2069,15 @@ const applyPreset = (preset: string) => {
               <!-- Grouped mode: playerServer -->
               <template v-if="groupBy === 'playerServer'">
                 <template v-for="(p, pIdx) in pagedRows" :key="`lbm-ps-${p.name}`">
-                  <tr class="lbm-tr lbm-tr--parent" :class="{ 'lbm-tr--alt': pIdx % 2 === 1 }">
+                  <tr
+                    class="lbm-tr lbm-tr--parent"
+                    :class="{ 'lbm-tr--alt': pIdx % 2 === 1, 'lbm-tr--selected': selectedPlayer === p.name }"
+                    @click="selectedPlayer = selectedPlayer === p.name ? null : p.name"
+                  >
                     <td class="lbm-td lbm-td--player">
                       <div class="lbm-player-cell">
                         <span class="lbm-rank" :style="{ color: rankColor(p.rank) }">{{ String(p.rank).padStart(2, '0') }}</span>
-                        <RouterLink :to="`/v4/players/${encodeURIComponent(p.name)}`" class="lbm-player-name">
+                        <RouterLink :to="`/v4/players/${encodeURIComponent(p.name)}`" class="lbm-player-name" @click.stop>
                           <span v-if="p.tag" class="lbm-clan-tag">{{ p.tag }} </span>{{ $pn(p.name) }}
                         </RouterLink>
                       </div>
@@ -2087,17 +2091,23 @@ const applyPreset = (preset: string) => {
                     <td class="lbm-td lbm-td--stat lbm-num--soft">{{ formatInt(p.rounds) }}</td>
                     <td class="lbm-td lbm-td--server">
                       <span v-if="p.favServerFlag" class="lb-flag">{{ p.favServerFlag }}</span>
-                      <RouterLink v-if="p.favServer" :to="`/v4/servers/detail/${encodeURIComponent(p.favServer)}`" class="lbm-server-link">
+                      <RouterLink v-if="p.favServer" :to="`/v4/servers/detail/${encodeURIComponent(p.favServer)}`" class="lbm-server-link" @click.stop>
                         {{ $pn(p.favServer) }}
                       </RouterLink>
                       <span v-else class="lbm-muted">—</span>
                     </td>
                   </tr>
-                  <tr v-for="s in p.servers" :key="`lbm-ps-${p.name}-${s.guid}`" class="lbm-tr lbm-tr--subrow" :class="{ 'lbm-tr--alt': pIdx % 2 === 1 }">
+                  <tr
+                    v-for="s in p.servers"
+                    :key="`lbm-ps-${p.name}-${s.guid}`"
+                    class="lbm-tr lbm-tr--subrow"
+                    :class="{ 'lbm-tr--alt': pIdx % 2 === 1, 'lbm-tr--selected': selectedPlayer === `${p.name}-${s.guid}` }"
+                    @click="selectedPlayer = selectedPlayer === `${p.name}-${s.guid}` ? null : `${p.name}-${s.guid}`"
+                  >
                     <td class="lbm-td lbm-td--player lbm-td--sub-player">
                       <div class="lbm-player-cell" style="padding-left: 16px;">
                         <span v-if="s.flag" class="lb-flag">{{ s.flag }}</span>
-                        <RouterLink :to="`/v4/servers/detail/${encodeURIComponent(s.name)}`" class="lbm-server-link">
+                        <RouterLink :to="`/v4/servers/detail/${encodeURIComponent(s.name)}`" class="lbm-server-link" @click.stop>
                           {{ $pn(s.shortName || s.name) }}
                         </RouterLink>
                       </div>
@@ -2117,11 +2127,17 @@ const applyPreset = (preset: string) => {
               </template>
               <!-- Flat paged rows -->
               <template v-else>
-                <tr v-for="(p, pIdx) in pagedRows" :key="`lbm-${p.name}`" class="lbm-tr" :class="{ 'lbm-tr--alt': pIdx % 2 === 1 }">
+                <tr
+                  v-for="(p, pIdx) in pagedRows"
+                  :key="`lbm-${p.name}`"
+                  class="lbm-tr"
+                  :class="{ 'lbm-tr--alt': pIdx % 2 === 1, 'lbm-tr--selected': selectedPlayer === p.name }"
+                  @click="selectedPlayer = selectedPlayer === p.name ? null : p.name"
+                >
                   <td class="lbm-td lbm-td--player">
                     <div class="lbm-player-cell">
                       <span class="lbm-rank" :style="{ color: rankColor(p.rank) }">{{ String(p.rank).padStart(2, '0') }}</span>
-                      <RouterLink :to="`/v4/players/${encodeURIComponent(p.name)}`" class="lbm-player-name">
+                      <RouterLink :to="`/v4/players/${encodeURIComponent(p.name)}`" class="lbm-player-name" @click.stop>
                         <span v-if="p.tag" class="lbm-clan-tag">{{ p.tag }} </span>{{ $pn(p.name) }}
                       </RouterLink>
                     </div>
@@ -2139,6 +2155,7 @@ const applyPreset = (preset: string) => {
                       v-if="p.favServer"
                       :to="`/v4/servers/detail/${encodeURIComponent(p.favServer)}`"
                       class="lbm-server-link"
+                      @click.stop
                     >
                       {{ $pn(p.favServer) }}
                     </RouterLink>
@@ -4071,11 +4088,15 @@ td {
 }
 
 .lb-row:hover td {
-  background: var(--mm-bg-soft);
+  background: rgba(132, 125, 76, 0.15);
 }
 
 .lb-row--selected td {
-  background: var(--mm-bg-soft) !important;
+  background: rgba(132, 125, 76, 0.28) !important;
+}
+
+.lb-row--selected .lb-player-link {
+  color: var(--mm-accent);
 }
 
 /* Cell Elements */
@@ -4577,10 +4598,24 @@ td {
 
 .lbm-tr {
   border-bottom: 1px solid var(--mm-rule);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
 }
 
 .lbm-tr--alt {
   background: var(--mm-bg-soft);
+}
+
+.lbm-tr:hover td {
+  background: rgba(132, 125, 76, 0.15);
+}
+
+.lbm-tr--selected td {
+  background: rgba(132, 125, 76, 0.28) !important;
+}
+
+.lbm-tr--selected .lbm-player-name {
+  color: var(--mm-accent);
 }
 
 .lbm-td {
