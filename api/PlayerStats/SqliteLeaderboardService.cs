@@ -697,11 +697,12 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         int minPlay = 0,
         string? game = "bf1942",
         string? exclude = null,
-        bool populatedOnly = false)
+        bool populatedOnly = false,
+        string? groupBy = null)
     {
         using var activity = ActivitySources.SqliteAnalytics.StartActivity("GetGlobalLeaderboardAsync");
         activity?.SetTag("query.name", "GetGlobalLeaderboard");
-        activity?.SetTag("query.filters", $"page:{page},pageSize:{pageSize},sortBy:{sortBy},sortDir:{sortDir},q:{searchQuery},server:{server},exclude:{exclude},populatedOnly:{populatedOnly},map:{map},days:{days},minRounds:{minRounds},minPlay:{minPlay}");
+        activity?.SetTag("query.filters", $"page:{page},pageSize:{pageSize},sortBy:{sortBy},sortDir:{sortDir},q:{searchQuery},server:{server},exclude:{exclude},populatedOnly:{populatedOnly},map:{map},days:{days},minRounds:{minRounds},minPlay:{minPlay},groupBy:{groupBy}");
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -778,7 +779,14 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             };
         }).ToList();
 
-        await PopulateFavoritesAsync(pagedPlayers, serverMap);
+        if (string.Equals(groupBy, "playerServer", StringComparison.OrdinalIgnoreCase))
+        {
+            await PopulatePlayerServersAsync(pagedPlayers, serverMap, days, includeMaps, includeGuids, excludedFilter, populatedFilter);
+        }
+        else
+        {
+            await PopulateFavoritesAsync(pagedPlayers, serverMap);
+        }
 
         var catalog = serverMap.Values.AsEnumerable();
         var occupancyGuids = new HashSet<string>(occupancyByGuid.Keys, StringComparer.OrdinalIgnoreCase);
@@ -823,6 +831,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             PopulatedOnly = populatedOnly,
             Map = map,
             SearchQuery = searchQuery,
+            GroupBy = groupBy,
             SortBy = normSort,
             SortDir = isAsc ? "asc" : "desc",
             Page = effectivePage,
@@ -1245,8 +1254,9 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
     private static string CleanServerShortName(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return "";
-        var clean = System.Text.RegularExpressions.Regex.Replace(name, @"^\S+\s", "");
-        return clean.Length > 20 ? clean[..20] + "…" : clean;
+        // Strip leading promotional/decorator prefixes like *NEW*, ***, [NEW], etc.
+        var clean = System.Text.RegularExpressions.Regex.Replace(name.Trim(), @"^(\*+[^*]+\*+|\[\s*NEW\s*\])\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return clean.Trim();
     }
 
     private static string CountryCodeToFlag(string? countryCode)
@@ -1393,6 +1403,186 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 {
                     player.FavServer = srvGuid;
                 }
+            }
+        }
+    }
+
+    private async Task PopulatePlayerServersAsync(
+        List<Models.LeaderboardPlayerDto> players,
+        IReadOnlyDictionary<string, ServerCatalogEntry> serverMap,
+        int days,
+        IReadOnlyList<string> includeMaps,
+        IReadOnlyCollection<string> includeGuids,
+        IReadOnlyCollection<string> excludeGuids,
+        IReadOnlyCollection<string> populatedGuids)
+    {
+        if (players.Count == 0) return;
+
+        var playerNames = players.Select(p => p.Name).Distinct().ToList();
+        var parameters = new List<SqliteParameter>();
+        var inParams = new List<string>(playerNames.Count);
+        for (int i = 0; i < playerNames.Count; i++)
+        {
+            var param = $"@p{i}";
+            inParams.Add(param);
+            parameters.Add(new SqliteParameter(param, playerNames[i]));
+        }
+        var inClause = string.Join(", ", inParams);
+
+        var filters = new List<string> { $"p.\"PlayerName\" IN ({inClause})" };
+
+        var useMapStats = includeMaps.Count > 0;
+        var tableName = useMapStats ? "PlayerMapStats" : "PlayerServerStats";
+
+        if (days > 0)
+        {
+            if (useMapStats)
+            {
+                var cutoff = DateTime.UtcNow.AddDays(-days);
+                var cutoffMonth = cutoff.Month;
+                var cutoffYear = cutoff.Year;
+                parameters.Add(new SqliteParameter("@cutoffYear", cutoffYear));
+                parameters.Add(new SqliteParameter("@cutoffMonth", cutoffMonth));
+                filters.Add("""(p."Year" > @cutoffYear OR (p."Year" = @cutoffYear AND p."Month" >= @cutoffMonth))""");
+            }
+            else
+            {
+                var cutoff = DateTime.UtcNow.AddDays(-days);
+                var (cutoffYear, cutoffWeek) = GetIsoWeek(cutoff);
+                parameters.Add(new SqliteParameter("@cutoffYear", cutoffYear));
+                parameters.Add(new SqliteParameter("@cutoffWeek", cutoffWeek));
+                filters.Add("""(p."Year" > @cutoffYear OR (p."Year" = @cutoffYear AND p."Week" >= @cutoffWeek))""");
+            }
+        }
+
+        AddGuidFilter(filters, parameters, includeGuids, "incSrv", negate: false);
+        AddGuidFilter(filters, parameters, populatedGuids, "popSrv", negate: false);
+        AddGuidFilter(filters, parameters, excludeGuids, "excSrv", negate: true);
+
+        if (useMapStats)
+        {
+            var mapParamNames = new List<string>(includeMaps.Count);
+            var mIdx = 0;
+            foreach (var mapName in includeMaps)
+            {
+                var pName = $"@mapFlt{mIdx}";
+                mapParamNames.Add(pName);
+                parameters.Add(new SqliteParameter(pName, mapName));
+                mIdx++;
+            }
+            filters.Add($"""p."MapName" COLLATE NOCASE IN ({string.Join(", ", mapParamNames)})""");
+        }
+
+        var whereClause = filters.Count > 0 ? $"WHERE {string.Join(" AND ", filters)}" : "";
+
+        var sql = $$"""
+            SELECT
+                p."PlayerName" AS PlayerName,
+                p."ServerGuid" AS ServerGuid,
+                SUM(p."TotalKills") AS Kills,
+                SUM(p."TotalDeaths") AS Deaths,
+                SUM(p."TotalScore") AS Score,
+                SUM(p."TotalPlayTimeMinutes") AS PlayMin,
+                SUM(p."TotalRounds") AS Rounds
+            FROM "{{tableName}}" AS p
+            {{whereClause}}
+            GROUP BY p."PlayerName", p."ServerGuid"
+            ORDER BY p."PlayerName", SUM(p."TotalScore") DESC
+            """;
+
+        var playerServers = new Dictionary<string, List<Models.LeaderboardPlayerServerDto>>(StringComparer.OrdinalIgnoreCase);
+
+        var connection = dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync();
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+#pragma warning disable CA2100
+            command.CommandText = sql;
+#pragma warning restore CA2100
+            command.CommandTimeout = 15;
+            foreach (var parameter in parameters)
+            {
+                command.Parameters.Add(parameter);
+            }
+
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var playerName = reader.GetString(0);
+                var serverGuid = reader.GetString(1);
+                var kills = reader.GetInt32(2);
+                var deaths = reader.GetInt32(3);
+                var score = reader.GetInt32(4);
+                var playMinRaw = reader.GetDouble(5);
+                var rounds = reader.GetInt32(6);
+
+                var playMin = (int)Math.Round(playMinRaw);
+                var kd = deaths > 0 ? Math.Round((double)kills / deaths, 2) : kills;
+                var kpm = playMinRaw > 0 ? Math.Round(kills / playMinRaw, 2) : 0;
+
+                string srvName = serverGuid;
+                string srvShortName = serverGuid;
+                string srvCountry = "";
+                string srvFlag = "";
+
+                if (serverMap.TryGetValue(serverGuid, out var srvEntry))
+                {
+                    srvName = srvEntry.Name;
+                    srvShortName = CleanServerShortName(srvEntry.Name);
+                    srvCountry = srvEntry.Country ?? "";
+                    srvFlag = CountryCodeToFlag(srvEntry.Country);
+                }
+
+                if (!playerServers.TryGetValue(playerName, out var list))
+                {
+                    list = [];
+                    playerServers[playerName] = list;
+                }
+
+                list.Add(new Models.LeaderboardPlayerServerDto
+                {
+                    Guid = serverGuid,
+                    Name = srvName,
+                    ShortName = srvShortName,
+                    Country = srvCountry,
+                    Flag = srvFlag,
+                    Kills = kills,
+                    Deaths = deaths,
+                    Kd = kd,
+                    Score = score,
+                    Kpm = kpm,
+                    PlayMin = playMin,
+                    Rounds = rounds
+                });
+            }
+        }
+        catch
+        {
+            // Silently continue if breakdown query fails
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        foreach (var player in players)
+        {
+            if (playerServers.TryGetValue(player.Name, out var srvList))
+            {
+                player.Servers = srvList;
+            }
+            else
+            {
+                player.Servers = [];
             }
         }
     }
