@@ -89,7 +89,8 @@ public interface ISqliteLeaderboardService
         int minPlay = 0,
         string? game = "bf1942",
         string? exclude = null,
-        bool populatedOnly = false);
+        bool populatedOnly = false,
+        string? groupBy = null);
 
     /// <summary>
     /// Searches available map names for leaderboard map filters.

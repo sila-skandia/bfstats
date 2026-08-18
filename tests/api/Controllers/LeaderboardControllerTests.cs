@@ -632,4 +632,75 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Equal("s1", resp.Players[0].FavServerGuid);
         Assert.Equal("DE", resp.Players[0].FavServerCountry);
     }
+
+    [Fact]
+    public async Task GetLeaderboard_GroupByPlayerServer_PopulatesPerServerBreakdown()
+    {
+        var now = DateTime.UtcNow;
+        var (isoYear, isoWeek) = (System.Globalization.ISOWeek.GetYear(now), System.Globalization.ISOWeek.GetWeekOfYear(now));
+
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "srv-simple", Name = "*NEW* SIMPLE | RtR+SW", Country = "FR", Game = "bf1942" },
+            new GameServer { Guid = "srv-7kav", Name = "=7Kav= Panzerkrieg", Country = "DE", Game = "bf1942" },
+            new GameServer { Guid = "srv-moon", Name = "MoonGamers.com | Est. 2004", Country = "US", Game = "bf1942" }
+        );
+
+        _dbContext.PlayerStatsMonthly.Add(
+            new PlayerStatsMonthly { PlayerName = "Falcon", Year = now.Year, Month = now.Month, TotalKills = 28280, TotalDeaths = 6000, TotalScore = 39132, TotalRounds = 728, TotalPlayTimeMinutes = 13260 }
+        );
+
+        _dbContext.PlayerServerStats.AddRange(
+            new PlayerServerStats { PlayerName = "Falcon", ServerGuid = "srv-simple", Year = isoYear, Week = isoWeek, TotalKills = 21400, TotalDeaths = 3980, TotalScore = 25390, TotalRounds = 472, TotalPlayTimeMinutes = 8460 },
+            new PlayerServerStats { PlayerName = "Falcon", ServerGuid = "srv-7kav", Year = isoYear, Week = isoWeek, TotalKills = 6880, TotalDeaths = 2020, TotalScore = 13742, TotalRounds = 256, TotalPlayTimeMinutes = 4800 },
+            new PlayerServerStats { PlayerName = "Falcon", ServerGuid = "srv-moon", Year = isoYear, Week = isoWeek, TotalKills = 100, TotalDeaths = 50, TotalScore = 200, TotalRounds = 10, TotalPlayTimeMinutes = 120 }
+        );
+
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetLeaderboard(groupBy: "playerServer");
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var resp = Assert.IsType<GlobalLeaderboardResponse>(okResult.Value);
+
+        Assert.Equal("playerServer", resp.GroupBy);
+        Assert.Single(resp.Players);
+
+        var falcon = resp.Players[0];
+        Assert.Equal("Falcon", falcon.Name);
+        Assert.NotNull(falcon.Servers);
+        Assert.Equal(3, falcon.Servers.Count);
+
+        // Highest score server first
+        var simpleSrv = falcon.Servers[0];
+        Assert.Equal("srv-simple", simpleSrv.Guid);
+        Assert.Equal("*NEW* SIMPLE | RtR+SW", simpleSrv.Name);
+        Assert.Equal("SIMPLE | RtR+SW", simpleSrv.ShortName);
+        Assert.Equal("FR", simpleSrv.Country);
+        Assert.Equal("🇫🇷", simpleSrv.Flag);
+        Assert.Equal(21400, simpleSrv.Kills);
+        Assert.Equal(3980, simpleSrv.Deaths);
+        Assert.Equal(25390, simpleSrv.Score);
+        Assert.Equal(472, simpleSrv.Rounds);
+        Assert.Equal(8460, simpleSrv.PlayMin);
+        Assert.Equal(Math.Round(21400.0 / 3980, 2), simpleSrv.Kd);
+        Assert.Equal(Math.Round(21400.0 / 8460, 2), simpleSrv.Kpm);
+
+        var kavSrv = falcon.Servers[1];
+        Assert.Equal("srv-7kav", kavSrv.Guid);
+        Assert.Equal("=7Kav= Panzerkrieg", kavSrv.Name);
+        Assert.Equal("=7Kav= Panzerkrieg", kavSrv.ShortName);
+        Assert.Equal("DE", kavSrv.Country);
+        Assert.Equal("🇩🇪", kavSrv.Flag);
+        Assert.Equal(6880, kavSrv.Kills);
+        Assert.Equal(2020, kavSrv.Deaths);
+        Assert.Equal(13742, kavSrv.Score);
+        Assert.Equal(256, kavSrv.Rounds);
+        Assert.Equal(4800, kavSrv.PlayMin);
+
+        var moonSrv = falcon.Servers[2];
+        Assert.Equal("srv-moon", moonSrv.Guid);
+        Assert.Equal("MoonGamers.com | Est. 2004", moonSrv.Name);
+        Assert.Equal("MoonGamers.com | Est. 2004", moonSrv.ShortName);
+        Assert.Equal("US", moonSrv.Country);
+        Assert.Equal("🇺🇸", moonSrv.Flag);
+    }
 }

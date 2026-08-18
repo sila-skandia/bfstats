@@ -487,6 +487,80 @@ test.describe('Leaderboard Page', () => {
     await expect(page.locator('.lb-section-left')).toContainText('SHOWING 26–26 OF 26')
   })
 
+  test('should render Player · Per-server grouping mode with child server rows', async ({ page }) => {
+    await page.route('**/stats/leaderboard*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...MOCK_LEADERBOARD_DATA,
+          groupBy: 'playerServer',
+          players: [
+            {
+              rank: 1,
+              name: 'The unknown Soldier',
+              tag: '',
+              kills: 28021,
+              deaths: 2076,
+              kd: 13.5,
+              score: 30053,
+              kpm: 2.86,
+              playMin: 9780,
+              rounds: 494,
+              servers: [
+                {
+                  guid: 'srv-1',
+                  name: '*NEW* SIMPLE | RtR+SW',
+                  shortName: 'SIMPLE | RtR+SW',
+                  country: 'FR',
+                  flag: '🇫🇷',
+                  kills: 19540,
+                  deaths: 1386,
+                  kd: 14.1,
+                  score: 20910,
+                  kpm: 2.96,
+                  playMin: 6600,
+                  rounds: 331
+                },
+                {
+                  guid: 'srv-2',
+                  name: '=7Kav= Panzerkrieg',
+                  shortName: '=7Kav= Panzerkrieg',
+                  country: 'DE',
+                  flag: '🇩🇪',
+                  kills: 6880,
+                  deaths: 555,
+                  kd: 12.4,
+                  score: 7420,
+                  kpm: 2.73,
+                  playMin: 2520,
+                  rounds: 128
+                }
+              ]
+            }
+          ]
+        })
+      })
+    })
+
+    await page.goto('/v4/leaderboard?group=playerServer')
+    await expect(page.locator('.lb-section-left')).toContainText('PLAYER · PER-SERVER')
+
+    // Aggregate player row
+    const prow = page.locator('.lb-prow')
+    await expect(prow).toBeVisible()
+    await expect(prow).toContainText('The unknown Soldier')
+    await expect(prow).toContainText('28,021')
+
+    // Child server rows
+    const srows = page.locator('.lb-srow')
+    await expect(srows).toHaveCount(2)
+    await expect(srows.first()).toContainText('SIMPLE | RtR+SW')
+    await expect(srows.first()).toContainText('19,540')
+    await expect(srows.nth(1)).toContainText('=7Kav= Panzerkrieg')
+    await expect(srows.nth(1)).toContainText('6,880')
+  })
+
   test('should toggle column visibility via columns popover', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 

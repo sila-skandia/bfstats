@@ -83,7 +83,7 @@ const mapDropdownOpen = ref(false)
 const periodSheetOpen = ref(false)
 const serverSearchInputRef = ref<HTMLInputElement | null>(null)
 const mapSearchInputRef = ref<HTMLInputElement | null>(null)
-const groupBy = ref<'favServer' | 'kdBand' | null>((route.query.group as any) || null)
+const groupBy = ref<'playerServer' | 'favServer' | 'kdBand' | null>((route.query.group as any) || null)
 const collapsedGroups = ref<Set<string>>(new Set())
 
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -356,6 +356,7 @@ const loadData = async () => {
       days: days.value,
       minRounds: minRounds.value,
       minPlay: minPlay.value,
+      groupBy: groupBy.value === 'playerServer' ? 'playerServer' : undefined
     })
     if (seq !== loadSeq) return
     rawPlayers.value = res.players || []
@@ -520,7 +521,8 @@ const requestKey = computed(() => [
   includedMaps.value.join('\0'),
   days.value,
   minRounds.value,
-  minPlay.value
+  minPlay.value,
+  groupBy.value === 'playerServer' ? 'playerServer' : ''
 ].join('|'))
 
 watch(requestKey, () => {
@@ -634,7 +636,7 @@ interface PlayerGroup {
 }
 
 const groupedRows = computed<PlayerGroup[] | null>(() => {
-  if (!groupBy.value) return null
+  if (!groupBy.value || groupBy.value === 'playerServer') return null
   const groupsMap = new Map<string, ProcessedPlayer[]>()
   for (const p of processedData.value) {
     let key = ''
@@ -1414,6 +1416,7 @@ const rankTintClass = (rank: number) => {
             <span class="lb-slicer-label">Group By</span>
             <select v-model="groupBy" class="lb-select">
               <option :value="null">None</option>
+              <option value="playerServer">Player · Per-server</option>
               <option value="favServer">Fav. Server</option>
               <option value="kdBand">K/D Band</option>
             </select>
@@ -1430,15 +1433,30 @@ const rankTintClass = (rank: number) => {
             />
             <button
               v-if="searchQuery"
+              type="button"
               class="lb-search-clear"
               title="Clear search"
+              aria-label="Clear search"
               @click="searchQuery = ''"
             >
               <i class="pi pi-times"></i>
             </button>
           </div>
 
-          <div class="lb-spacer lb-desktop-only"></div>
+          <!-- Quick presets dropdown (compact replacement for multi-button row) -->
+          <div class="lb-control-group lb-desktop-only">
+            <span class="lb-slicer-label">Views</span>
+            <select
+              class="lb-select"
+              @change="e => applyPreset((e.target as HTMLSelectElement).value)"
+            >
+              <option value="" disabled selected>Presets...</option>
+              <option value="default">Default</option>
+              <option value="populated">Populated Only</option>
+              <option value="hardcore">Hardcore (10+ rnd)</option>
+              <option value="pro">Pro Players (25+ rnd)</option>
+            </select>
+          </div>
 
           <!-- Density Toggle -->
           <button
@@ -1536,7 +1554,7 @@ const rankTintClass = (rank: number) => {
             SHOWING {{ totalItems === 0 ? 0 : (page - 1) * pageSize + 1 }}–{{ Math.min(page * pageSize, totalItems) }} OF {{ formatInt(totalItems) }} RANKED PLAYERS
           </span>
           <span v-if="groupBy" class="lb-desktop-only">
-            · GROUPED BY {{ groupBy === 'favServer' ? 'FAVOURITE SERVER' : 'K/D BAND' }} (THIS PAGE)
+            · GROUPED BY {{ groupBy === 'playerServer' ? 'PLAYER · PER-SERVER' : groupBy === 'favServer' ? 'FAVOURITE SERVER' : 'K/D BAND' }} (THIS PAGE)
           </span>
           <span v-if="includedServers.length === 1" class="lb-server-active-tag">
             · SRV: {{ $pn((selectedServerObj?.shortName || includedServers[0])).toUpperCase() }}
@@ -1600,7 +1618,11 @@ const rankTintClass = (rank: number) => {
         :aria-busy="isRefreshing"
       >
         <ol class="lb-mobile-list">
-          <li v-for="p in pagedRows" :key="`m-${p.name}`">
+          <li
+            v-for="(p, pIdx) in pagedRows"
+            :key="`m-${p.name}`"
+            :class="{ 'mm-mobile-player-group--alt': groupBy === 'playerServer' && pIdx % 2 === 1 }"
+          >
             <RouterLink
               :to="`/v4/players/${encodeURIComponent(p.name)}`"
               class="mm-session-row mm-session-row--rank"
@@ -1620,6 +1642,18 @@ const rankTintClass = (rank: number) => {
                 <span>{{ formatInt(p.score) }}</span>
               </span>
             </RouterLink>
+            <div v-if="groupBy === 'playerServer' && p.servers && p.servers.length" class="mm-mobile-server-rows">
+              <div v-for="s in p.servers" :key="`ms-${p.name}-${s.guid}`" class="mm-mobile-server-row">
+                <span class="mm-mobile-server-name"><span v-if="s.flag" class="lb-flag">{{ s.flag }}</span>{{ $pn(s.shortName || s.name) }}</span>
+                <span class="mm-mobile-server-stats">
+                  <span :class="kdClass(s.kd)">{{ s.kd.toFixed(2) }}</span>
+                  <span class="mm-num__sep">·</span>
+                  <span class="mm-num--kill">{{ formatInt(s.kills) }}</span>
+                  <span class="mm-num__sep">·</span>
+                  <span>{{ formatTime(s.playMin) }}</span>
+                </span>
+              </div>
+            </div>
           </li>
         </ol>
         <div class="lb-scroll-pane">
@@ -1841,6 +1875,210 @@ const rankTintClass = (rank: number) => {
                     </td>
                   </tr>
                 </template>
+              </template>
+            </template>
+
+            <!-- Player · Per-server Split Rendering Mode -->
+            <template v-else-if="groupBy === 'playerServer'">
+              <template v-for="(p, pIdx) in pagedRows" :key="`ps-${p.name}`">
+                <!-- Aggregate (Parent) Player Row -->
+                <tr
+                  class="lb-row lb-prow"
+                  :class="{ 'lb-row--alt': pIdx % 2 === 1, 'lb-row--selected': selectedPlayer === p.name }"
+                  @click="selectedPlayer = selectedPlayer === p.name ? null : p.name"
+                >
+                  <td
+                    v-for="k in displayCols"
+                    :key="k"
+                    :style="{
+                      width: `${widths[k] || 80}px`,
+                      minWidth: `${widths[k] || 80}px`,
+                      maxWidth: `${widths[k] || 80}px`,
+                      left: pinned.includes(k) ? `${pinnedOffsets.offsets[k]}px` : undefined,
+                      zIndex: pinned.includes(k) ? 2 : 1
+                    }"
+                    :class="{
+                      'lb-td--pinned': pinned.includes(k),
+                      'lb-td--pinned-last': pinned.includes(k) && pinnedOffsets.offsets[k] + (widths[k] || 80) >= pinnedOffsets.totalPinnedWidth,
+                      'lb-td--right': getCol(k)?.align === 'right',
+                      'lb-td--center': getCol(k)?.align === 'center'
+                    }"
+                  >
+                    <!-- Rank Cell -->
+                    <template v-if="k === 'rank'">
+                      <span class="lb-rank" :class="{ 'lb-rank--podium': p.rank <= 3 }">
+                        {{ String(p.rank).padStart(2, '0') }}
+                      </span>
+                    </template>
+
+                    <!-- Player Cell -->
+                    <template v-else-if="k === 'player'">
+                      <div class="lb-player-cell">
+                        <span v-if="p.isActive" class="lb-online-dot" title="Currently online playing"></span>
+                        <span v-if="p.tag" class="lb-tag">{{ p.tag }}</span>
+                        <RouterLink
+                          :to="`/v4/players/${encodeURIComponent(p.name)}`"
+                          class="lb-player-link"
+                          :title="`View ${$pn(p.name)}'s profile`"
+                          @click.stop
+                        >
+                          {{ $pn(p.name) }}
+                        </RouterLink>
+                      </div>
+                    </template>
+
+                    <!-- K/D Cell -->
+                    <template v-else-if="k === 'kd'">
+                      <span class="lb-kd" :class="kdClass(p.kd)">{{ p.kd.toFixed(2) }}</span>
+                    </template>
+
+                    <!-- Kills Cell -->
+                    <template v-else-if="k === 'kills'">
+                      <span class="lb-kill">{{ formatInt(p.kills) }}</span>
+                    </template>
+
+                    <!-- Deaths Cell -->
+                    <template v-else-if="k === 'deaths'">
+                      <span class="lb-death">{{ formatInt(p.deaths) }}</span>
+                    </template>
+
+                    <!-- Score Cell -->
+                    <template v-else-if="k === 'score'">
+                      <span class="lb-score">{{ formatInt(p.score) }}</span>
+                    </template>
+
+                    <!-- Kill Rate KPM -->
+                    <template v-else-if="k === 'kpm'">
+                      <span class="lb-kpm">{{ p.kpm.toFixed(2) }}</span>
+                    </template>
+
+                    <!-- Play Time -->
+                    <template v-else-if="k === 'playMin'">
+                      <span class="lb-time">{{ formatTime(p.playMin) }}</span>
+                    </template>
+
+                    <!-- Rounds -->
+                    <template v-else-if="k === 'rounds'">
+                      <span class="lb-int">{{ formatInt(p.rounds) }}</span>
+                    </template>
+
+                    <!-- Last Seen -->
+                    <template v-else-if="k === 'lastSeen'">
+                      <span class="lb-date" :title="p.lastSeen ? formatLocalTooltip(p.lastSeen) : undefined">
+                        {{ formatRelativeDate(p.lastSeen) }}
+                      </span>
+                    </template>
+
+                    <!-- Favorite Server -->
+                    <template v-else-if="k === 'favServer'">
+                      <div class="lb-server-cell">
+                        <span v-if="p.favServerFlag" class="lb-flag">{{ p.favServerFlag }}</span>
+                        <RouterLink
+                          v-if="p.favServer"
+                          :to="`/v4/servers/detail/${encodeURIComponent(p.favServer)}`"
+                          class="lb-server-link"
+                          :title="$pn(p.favServer)"
+                          @click.stop
+                        >
+                          {{ $pn(p.favServer) }}
+                        </RouterLink>
+                        <span v-else class="lb-muted">—</span>
+                      </div>
+                    </template>
+
+                    <!-- Online Status -->
+                    <template v-else-if="k === 'status'">
+                      <span v-if="p.isActive" class="lb-status-badge lb-status-badge--online">ONLINE</span>
+                      <span v-else class="lb-status-badge lb-status-badge--offline">OFFLINE</span>
+                    </template>
+                  </td>
+                </tr>
+
+                <!-- Per-Server (Child) Rows -->
+                <tr
+                  v-for="s in p.servers"
+                  :key="`ps-${p.name}-${s.guid}`"
+                  class="lb-row lb-srow"
+                  :class="{ 'lb-row--alt': pIdx % 2 === 1 }"
+                >
+                  <td
+                    v-for="k in displayCols"
+                    :key="k"
+                    :style="{
+                      width: `${widths[k] || 80}px`,
+                      minWidth: `${widths[k] || 80}px`,
+                      maxWidth: `${widths[k] || 80}px`,
+                      left: pinned.includes(k) ? `${pinnedOffsets.offsets[k]}px` : undefined,
+                      zIndex: pinned.includes(k) ? 2 : 1
+                    }"
+                    :class="{
+                      'lb-td--pinned': pinned.includes(k),
+                      'lb-td--pinned-last': pinned.includes(k) && pinnedOffsets.offsets[k] + (widths[k] || 80) >= pinnedOffsets.totalPinnedWidth,
+                      'lb-td--right': getCol(k)?.align === 'right',
+                      'lb-td--center': getCol(k)?.align === 'center'
+                    }"
+                  >
+                    <!-- Rank Cell (empty in server rows) -->
+                    <template v-if="k === 'rank'">
+                      <span></span>
+                    </template>
+
+                    <!-- Server Name with Flag -->
+                    <template v-else-if="k === 'player'">
+                      <div class="lb-player-cell lb-srow-namecell">
+                        <span v-if="s.flag" class="lb-flag">{{ s.flag }}</span>
+                        <RouterLink
+                          :to="`/v4/servers/detail/${encodeURIComponent(s.name)}`"
+                          class="lb-server-link"
+                          :title="$pn(s.name)"
+                          @click.stop
+                        >
+                          <span class="lb-srvname">{{ $pn(s.shortName || s.name) }}</span>
+                        </RouterLink>
+                      </div>
+                    </template>
+
+                    <!-- K/D Cell -->
+                    <template v-else-if="k === 'kd'">
+                      <span class="lb-kd" :class="kdClass(s.kd)">{{ s.kd.toFixed(2) }}</span>
+                    </template>
+
+                    <!-- Kills Cell -->
+                    <template v-else-if="k === 'kills'">
+                      <span class="lb-kill">{{ formatInt(s.kills) }}</span>
+                    </template>
+
+                    <!-- Deaths Cell -->
+                    <template v-else-if="k === 'deaths'">
+                      <span class="lb-death">{{ formatInt(s.deaths) }}</span>
+                    </template>
+
+                    <!-- Score Cell -->
+                    <template v-else-if="k === 'score'">
+                      <span class="lb-score">{{ formatInt(s.score) }}</span>
+                    </template>
+
+                    <!-- Kill Rate KPM -->
+                    <template v-else-if="k === 'kpm'">
+                      <span class="lb-kpm">{{ s.kpm.toFixed(2) }}</span>
+                    </template>
+
+                    <!-- Play Time -->
+                    <template v-else-if="k === 'playMin'">
+                      <span class="lb-time">{{ formatTime(s.playMin) }}</span>
+                    </template>
+
+                    <!-- Rounds -->
+                    <template v-else-if="k === 'rounds'">
+                      <span class="lb-int">{{ formatInt(s.rounds) }}</span>
+                    </template>
+
+                    <!-- Other columns -->
+                    <template v-else>
+                      <span class="lb-muted">—</span>
+                    </template>
+                  </td>
+                </tr>
               </template>
             </template>
 
@@ -3652,5 +3890,87 @@ td {
     min-width: 44px;
     padding: 8px 12px;
   }
+}
+
+/* Per-server player grouping styles */
+.lb-row--alt {
+  background: var(--mm-bg-soft, rgba(255, 255, 255, 0.02));
+}
+
+.lb-prow td {
+  padding-top: 8px;
+  padding-bottom: 5px;
+  font-size: 13.5px;
+}
+
+.lb-prow .lb-rank--podium {
+  color: var(--mm-accent);
+  font-weight: 600;
+}
+
+.lb-srow td {
+  padding-top: 3px;
+  padding-bottom: 4px;
+  border-top: none;
+}
+
+.lb-srow .lb-srow-namecell {
+  padding-left: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.lb-srow .lb-srvname {
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--mm-ink-soft, rgba(255, 255, 255, 0.7));
+}
+
+.lb-srow .lb-kill,
+.lb-srow .lb-death,
+.lb-srow .lb-score,
+.lb-srow .lb-kpm,
+.lb-srow .lb-time,
+.lb-srow .lb-int {
+  font-size: 11.5px;
+  color: var(--mm-ink-soft, rgba(255, 255, 255, 0.7));
+}
+
+.lb-srow .lb-kd {
+  font-size: 11.5px;
+}
+
+.mm-mobile-player-group--alt {
+  background: var(--mm-bg-soft, rgba(255, 255, 255, 0.02));
+}
+
+.mm-mobile-server-rows {
+  padding: 4px 12px 8px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mm-mobile-server-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 11px;
+  color: var(--mm-ink-muted, rgba(255, 255, 255, 0.5));
+}
+
+.mm-mobile-server-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mm-ink-soft, rgba(255, 255, 255, 0.7));
+}
+
+.mm-mobile-server-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 </style>
