@@ -275,6 +275,48 @@ public class AdminJobsController(
     }
 
     /// <summary>
+    /// Repair tool (fire-and-forget): resets the Neo4j sync watermark for every round/session
+    /// on or after <paramref name="fromDate"/>, then drains the resulting backlog through the
+    /// normal incremental sync. Intended to be run once, right after the Neo4j PLAYED_WITH /
+    /// PLAYS_ON data has been wiped, to rebuild player-relationship data from
+    /// <paramref name="fromDate"/> onward using the corrected co-play logic.
+    /// Returns immediately - check logs for progress ("Neo4j relationship sync: N rounds
+    /// processed so far").
+    /// </summary>
+    [HttpPost("neo4j-relationships-backfill")]
+    public IActionResult TriggerNeo4jRelationshipsBackfill([FromQuery] DateTime? fromDate = null)
+    {
+        var since = fromDate ?? new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        logger.LogInformation("Manual trigger: Neo4j relationships backfill from {FromDate} (fire-and-forget)", since);
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = scopeFactory.CreateScope();
+            var relationshipEtl = scope.ServiceProvider.GetRequiredService<api.PlayerRelationships.PlayerRelationshipEtlService>();
+            try
+            {
+                var (roundsReset, sessionsReset) = await relationshipEtl.ResetNeo4jSyncWatermarkAsync(since);
+                logger.LogInformation(
+                    "Neo4j relationships backfill: reset watermark for {RoundsReset} rounds, {SessionsReset} sessions; draining backlog",
+                    roundsReset, sessionsReset);
+
+                var result = await relationshipEtl.SyncPendingRelationshipsAsync();
+                await relationshipEtl.SyncPlayerServerRelationshipsAsync();
+
+                logger.LogInformation(
+                    "Neo4j relationships backfill completed: {RoundsProcessed} rounds, {RelationshipsProcessed} relationships in {Duration}s",
+                    result.RoundsProcessed, result.RelationshipsProcessed, result.Duration.TotalSeconds);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Neo4j relationships backfill failed");
+            }
+        });
+
+        return Accepted(new { message = $"Neo4j relationships backfill started in background from {since:yyyy-MM-dd}. Check logs for progress." });
+    }
+
+    /// <summary>
     /// Trigger manual Profile Wrapped alias-cache crunching for 2026 (fire-and-forget).
     /// Pre-computes and caches Player Wrapped data for every registered alias so
     /// "Your Year in Review" reads are served from cache.
