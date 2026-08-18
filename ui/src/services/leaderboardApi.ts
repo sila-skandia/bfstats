@@ -1,5 +1,20 @@
 import axios from 'axios'
 
+export interface LeaderboardPlayerServer {
+  guid: string
+  name: string
+  shortName: string
+  country: string
+  flag: string
+  kills: number
+  deaths: number
+  kd: number
+  score: number
+  kpm: number
+  playMin: number
+  rounds: number
+}
+
 export interface LeaderboardPlayer {
   rank: number
   name: string
@@ -19,6 +34,7 @@ export interface LeaderboardPlayer {
   favMap?: string
   isActive?: boolean
   currentServer?: string
+  servers?: LeaderboardPlayerServer[]
 }
 
 export interface LeaderboardServer {
@@ -52,6 +68,7 @@ export interface LeaderboardParams {
   minRounds?: number
   minPlay?: number
   game?: string
+  groupBy?: string
 }
 
 export interface LeaderboardResponse {
@@ -63,6 +80,7 @@ export interface LeaderboardResponse {
   populatedOnly?: boolean
   map?: string
   searchQuery?: string
+  groupBy?: string
   sortBy: string
   sortDir: string
   page: number
@@ -94,7 +112,8 @@ export async function fetchLeaderboard(params: LeaderboardParams = {}): Promise<
         days: params.days ?? 30,
         minRounds: params.minRounds ?? 1,
         minPlay: params.minPlay ?? 0,
-        game: params.game ?? 'bf1942'
+        game: params.game ?? 'bf1942',
+        groupBy: params.groupBy?.trim() || undefined
       }
     })
     return response.data
