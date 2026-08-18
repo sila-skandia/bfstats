@@ -703,4 +703,45 @@ public class LeaderboardControllerTests : IDisposable
         Assert.Equal("US", moonSrv.Country);
         Assert.Equal("🇺🇸", moonSrv.Flag);
     }
+
+    [Fact]
+    public async Task GetLeaderboard_WithPlayerFilter_ReturnsOnlySpecifiedPlayers()
+    {
+        var now = DateTime.UtcNow;
+        _dbContext.PlayerStatsMonthly.AddRange(
+            new PlayerStatsMonthly { PlayerName = "Falcon", Year = now.Year, Month = now.Month, TotalKills = 100, TotalDeaths = 50, TotalScore = 300, TotalRounds = 5, TotalPlayTimeMinutes = 60 },
+            new PlayerStatsMonthly { PlayerName = "Sky Miner", Year = now.Year, Month = now.Month, TotalKills = 80, TotalDeaths = 40, TotalScore = 200, TotalRounds = 4, TotalPlayTimeMinutes = 50 },
+            new PlayerStatsMonthly { PlayerName = "Spoegwolf", Year = now.Year, Month = now.Month, TotalKills = 60, TotalDeaths = 30, TotalScore = 150, TotalRounds = 3, TotalPlayTimeMinutes = 40 }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetLeaderboard(player: "Falcon,Spoegwolf");
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var resp = Assert.IsType<GlobalLeaderboardResponse>(okResult.Value);
+
+        Assert.Equal("Falcon,Spoegwolf", resp.Player);
+        Assert.Equal(2, resp.TotalPlayers);
+        Assert.Equal(2, resp.Players.Count);
+        Assert.Contains(resp.Players, p => p.Name == "Falcon");
+        Assert.Contains(resp.Players, p => p.Name == "Spoegwolf");
+        Assert.DoesNotContain(resp.Players, p => p.Name == "Sky Miner");
+    }
+
+    [Fact]
+    public async Task GetPlayers_ReturnsMatchingPlayers()
+    {
+        var now = DateTime.UtcNow;
+        _dbContext.PlayerStatsMonthly.AddRange(
+            new PlayerStatsMonthly { PlayerName = "Falcon", Year = now.Year, Month = now.Month, TotalKills = 100, TotalDeaths = 50, TotalScore = 300, TotalRounds = 5, TotalPlayTimeMinutes = 60 },
+            new PlayerStatsMonthly { PlayerName = "Sky Miner", Year = now.Year, Month = now.Month, TotalKills = 80, TotalDeaths = 40, TotalScore = 200, TotalRounds = 4, TotalPlayTimeMinutes = 50 }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetPlayers(q: "fal");
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var list = Assert.IsType<List<string>>(okResult.Value);
+
+        Assert.Single(list);
+        Assert.Equal("Falcon", list[0]);
+    }
 }

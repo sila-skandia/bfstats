@@ -647,6 +647,48 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         return maps;
     }
 
+    /// <inheritdoc/>
+    public async Task<List<string>> SearchPlayersAsync(string? query = null, int limit = 50)
+    {
+        var q = query?.Trim();
+        IQueryable<string> playerQuery;
+
+        if (string.IsNullOrWhiteSpace(q))
+        {
+            playerQuery = dbContext.PlayerStatsMonthly
+                .AsNoTracking()
+                .Select(p => p.PlayerName)
+                .Distinct()
+                .OrderBy(p => p)
+                .Take(limit);
+        }
+        else
+        {
+            playerQuery = dbContext.PlayerStatsMonthly
+                .AsNoTracking()
+                .Where(p => EF.Functions.Like(p.PlayerName, $"%{q}%"))
+                .Select(p => p.PlayerName)
+                .Distinct()
+                .OrderBy(p => p)
+                .Take(limit);
+        }
+
+        var players = await playerQuery.ToListAsync();
+        if (players.Count == 0 && !string.IsNullOrWhiteSpace(q))
+        {
+            players = await dbContext.PlayerServerStats
+                .AsNoTracking()
+                .Where(p => EF.Functions.Like(p.PlayerName, $"%{q}%"))
+                .Select(p => p.PlayerName)
+                .Distinct()
+                .OrderBy(p => p)
+                .Take(limit)
+                .ToListAsync();
+        }
+
+        return players;
+    }
+
     private async Task<(Dictionary<string, double> OccupancyByGuid, HashSet<string> PopulatedGuids)> GetServerOccupancyCachedAsync()
     {
         var now = DateTime.UtcNow;
@@ -692,6 +734,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         string? searchQuery = null,
         string? server = null,
         string? map = null,
+        string? player = null,
         int days = 30,
         int minRounds = 1,
         int minPlay = 0,
@@ -702,7 +745,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
     {
         using var activity = ActivitySources.SqliteAnalytics.StartActivity("GetGlobalLeaderboardAsync");
         activity?.SetTag("query.name", "GetGlobalLeaderboard");
-        activity?.SetTag("query.filters", $"page:{page},pageSize:{pageSize},sortBy:{sortBy},sortDir:{sortDir},q:{searchQuery},server:{server},exclude:{exclude},populatedOnly:{populatedOnly},map:{map},days:{days},minRounds:{minRounds},minPlay:{minPlay},groupBy:{groupBy}");
+        activity?.SetTag("query.filters", $"page:{page},pageSize:{pageSize},sortBy:{sortBy},sortDir:{sortDir},q:{searchQuery},server:{server},exclude:{exclude},populatedOnly:{populatedOnly},map:{map},player:{player},days:{days},minRounds:{minRounds},minPlay:{minPlay},groupBy:{groupBy}");
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -724,6 +767,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             ? ResolveServerGuids(ParseCsvTerms(server), serverLookup)
             : [];
         var includeMaps = ParseCsvTerms(map);
+        var includePlayers = ParseCsvTerms(player);
 
         var isAsc = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
         var normSort = (sortBy ?? "score").Trim().ToLowerInvariant();
@@ -738,6 +782,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var queryResult = await ExecuteGlobalLeaderboardQueryAsync(
             days,
             includeMaps,
+            includePlayers,
             searchQuery,
             includeGuids,
             excludedFilter,
@@ -830,6 +875,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             Exclude = exclude,
             PopulatedOnly = populatedOnly,
             Map = map,
+            Player = player,
             SearchQuery = searchQuery,
             GroupBy = groupBy,
             SortBy = normSort,
@@ -848,6 +894,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
     private async Task<GlobalLeaderboardQueryResult> ExecuteGlobalLeaderboardQueryAsync(
         int days,
         IReadOnlyCollection<string> includeMaps,
+        IReadOnlyCollection<string> includePlayers,
         string? searchQuery,
         IReadOnlyCollection<string> includeGuids,
         IReadOnlyCollection<string> excludeGuids,
@@ -955,6 +1002,20 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 index++;
             }
             filters.Add($"""p."MapName" COLLATE NOCASE IN ({string.Join(", ", parameterNames)})""");
+        }
+
+        if (includePlayers.Count > 0)
+        {
+            var parameterNames = new List<string>(includePlayers.Count);
+            var index = 0;
+            foreach (var playerName in includePlayers)
+            {
+                var parameterName = $"@plyr{index}";
+                parameterNames.Add(parameterName);
+                parameters.Add(new SqliteParameter(parameterName, playerName));
+                index++;
+            }
+            filters.Add($"""p."PlayerName" COLLATE NOCASE IN ({string.Join(", ", parameterNames)})""");
         }
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
@@ -1103,6 +1164,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                     return await ExecuteGlobalLeaderboardQueryAsync(
                         days,
                         includeMaps,
+                        includePlayers,
                         searchQuery,
                         includeGuids,
                         excludeGuids,

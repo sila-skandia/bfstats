@@ -64,6 +64,7 @@ export interface LeaderboardParams {
   exclude?: string
   populatedOnly?: boolean
   map?: string
+  player?: string
   days?: number
   minRounds?: number
   minPlay?: number
@@ -79,6 +80,7 @@ export interface LeaderboardResponse {
   exclude?: string
   populatedOnly?: boolean
   map?: string
+  player?: string
   searchQuery?: string
   groupBy?: string
   sortBy: string
@@ -109,6 +111,7 @@ export async function fetchLeaderboard(params: LeaderboardParams = {}): Promise<
         exclude: params.exclude?.trim() || undefined,
         populatedOnly: params.populatedOnly ? true : undefined,
         map: params.map?.trim() || undefined,
+        player: params.player?.trim() || undefined,
         days: params.days ?? 30,
         minRounds: params.minRounds ?? 1,
         minPlay: params.minPlay ?? 0,
@@ -137,6 +140,24 @@ export async function fetchLeaderboardMaps(query?: string, limit = 50): Promise<
     return response.data || []
   } catch (err) {
     console.error('Error fetching leaderboard maps:', err)
+    return []
+  }
+}
+
+/**
+ * Searches available player names for the leaderboard player picker on the fly.
+ */
+export async function fetchLeaderboardPlayers(query?: string, limit = 50): Promise<string[]> {
+  try {
+    const response = await axios.get<string[]>('/stats/leaderboard/players', {
+      params: {
+        q: query?.trim() || undefined,
+        limit
+      }
+    })
+    return response.data || []
+  } catch (err) {
+    console.error('Error fetching leaderboard players:', err)
     return []
   }
 }
