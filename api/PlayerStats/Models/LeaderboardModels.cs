@@ -23,6 +23,26 @@ public class LeaderboardPlayerDto
     public string? FavMap { get; set; }
     public bool IsActive { get; set; }
     public string? CurrentServer { get; set; }
+    public List<LeaderboardPlayerServerDto>? Servers { get; set; }
+}
+
+/// <summary>
+/// DTO representing a player's stats on a specific server in grouped views.
+/// </summary>
+public class LeaderboardPlayerServerDto
+{
+    public required string Guid { get; set; }
+    public required string Name { get; set; }
+    public string ShortName { get; set; } = "";
+    public string Country { get; set; } = "";
+    public string Flag { get; set; } = "";
+    public int Kills { get; set; }
+    public int Deaths { get; set; }
+    public double Kd { get; set; }
+    public int Score { get; set; }
+    public double Kpm { get; set; }
+    public int PlayMin { get; set; }
+    public int Rounds { get; set; }
 }
 
 /// <summary>
@@ -63,6 +83,7 @@ public class GlobalLeaderboardResponse
     public bool PopulatedOnly { get; set; }
     public string? Map { get; set; }
     public string? SearchQuery { get; set; }
+    public string? GroupBy { get; set; }
     public string SortBy { get; set; } = "score";
     public string SortDir { get; set; } = "desc";
     public int Page { get; set; } = 1;

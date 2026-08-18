@@ -50,7 +50,8 @@ public class LeaderboardController(
         [FromQuery] int minPlay = 0,
         [FromQuery] string game = "bf1942",
         [FromQuery] string? exclude = null,
-        [FromQuery] bool populatedOnly = false)
+        [FromQuery] bool populatedOnly = false,
+        [FromQuery] string? groupBy = null)
     {
         if (days < 0)
             return BadRequest("Days parameter cannot be negative.");
@@ -76,13 +77,13 @@ public class LeaderboardController(
         if (minPlay < 0)
             minPlay = 0;
 
-        logger.LogDebug("Fetching global leaderboard: page={Page}, size={PageSize}, sort={SortBy} {SortDir}, q={Q}, server={Server}, exclude={Exclude}, populatedOnly={PopulatedOnly}, map={Map}, days={Days}, minRounds={MinRounds}, minPlay={MinPlay}",
-            page, pageSize, sortBy, sortDir, q, server, exclude, populatedOnly, map, days, minRounds, minPlay);
+        logger.LogDebug("Fetching global leaderboard: page={Page}, size={PageSize}, sort={SortBy} {SortDir}, q={Q}, server={Server}, exclude={Exclude}, populatedOnly={PopulatedOnly}, map={Map}, days={Days}, minRounds={MinRounds}, minPlay={MinPlay}, groupBy={GroupBy}",
+            page, pageSize, sortBy, sortDir, q, server, exclude, populatedOnly, map, days, minRounds, minPlay, groupBy);
 
         try
         {
             var response = await sqliteLeaderboardService.GetGlobalLeaderboardAsync(
-                page, pageSize, sortBy, sortDir, q, server, map, days, minRounds, minPlay, game, exclude, populatedOnly);
+                page, pageSize, sortBy, sortDir, q, server, map, days, minRounds, minPlay, game, exclude, populatedOnly, groupBy);
             return Ok(response);
         }
         catch (Exception ex)
