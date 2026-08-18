@@ -294,21 +294,6 @@ test.describe('Leaderboard Page', () => {
     await expect(firstRow).toContainText('Dogtags')
   })
 
-  test('should filter players using client search including map name', async ({ page }) => {
-    await page.goto('/v4/leaderboard')
-
-    const searchInput = page.locator('.lb-search-input')
-    await searchInput.fill('Omaha')
-
-    const rows = page.locator('.lb-table tbody tr.lb-row')
-    await expect(rows).toHaveCount(1)
-    await expect(rows.first()).toContainText('Patton_USA')
-
-    // Clear search
-    await page.locator('.lb-search-clear').click()
-    await expect(page.locator('.lb-table tbody tr.lb-row')).toHaveCount(4)
-  })
-
   test('should filter players by searchable server selector dropdown', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
@@ -693,14 +678,16 @@ test.describe('Leaderboard Page', () => {
   test('should reset all filters when Reset button is clicked', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
-    // Apply search filter
-    await page.locator('.lb-search-input').fill('Zhukov')
-    await expect(page.locator('.lb-table tbody tr.lb-row')).toHaveCount(1)
+    // Apply server filter
+    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
+    await serverBtn.click()
+    const popover = page.locator('.lb-server-popover').first()
+    await popover.locator('.lb-server-item', { hasText: /Merciless/i }).click()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.lb-table tbody tr.lb-row')).toHaveCount(2)
 
     // Click Reset
     await page.locator('.lb-btn', { hasText: /RESET/i }).click()
-
-    await expect(page.locator('.lb-search-input')).toHaveValue('')
     await expect(page.locator('.lb-table tbody tr.lb-row')).toHaveCount(4)
   })
 
