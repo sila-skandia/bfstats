@@ -79,8 +79,6 @@ const mapDisplayNames = ref<Record<string, string>>({})
 const includedPlayers = ref<string[]>(
   route.query.player ? (route.query.player as string).split(',').filter(Boolean) : []
 )
-const searchQuery = ref<string>((route.query.q as string) || '')
-const debouncedSearch = ref(searchQuery.value.trim())
 const serverSearchQuery = ref<string>('')
 const mapSearchQuery = ref<string>('')
 const playerSearchQuery = ref<string>('')
@@ -93,8 +91,6 @@ const mapSearchInputRef = ref<HTMLInputElement | null>(null)
 const playerSearchInputRef = ref<HTMLInputElement | null>(null)
 const groupBy = ref<'playerServer' | 'favServer' | 'kdBand' | null>((route.query.group as any) || null)
 const collapsedGroups = ref<Set<string>>(new Set())
-
-let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
 let narrowMql: MediaQueryList | null = null
@@ -448,7 +444,6 @@ const loadData = async () => {
       pageSize: pageSize.value,
       sortBy: primarySort?.key ?? 'score',
       sortDir: primarySort?.dir ?? 'desc',
-      q: debouncedSearch.value || undefined,
       server: serverMode.value === 'include' && includedServers.value.length > 0
         ? includedServers.value.join(',')
         : undefined,
@@ -563,7 +558,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
   if (mapSearchDebounceTimer) clearTimeout(mapSearchDebounceTimer)
   if (playerSearchDebounceTimer) clearTimeout(playerSearchDebounceTimer)
   window.removeEventListener('mousemove', onMouseMove)
@@ -591,14 +585,6 @@ watch(sort, () => {
   page.value = 1
 }, { deep: true })
 
-watch(searchQuery, (q) => {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-  searchDebounceTimer = setTimeout(() => {
-    page.value = 1
-    debouncedSearch.value = q.trim()
-  }, 250)
-})
-
 watch(() => maps.value, (list) => {
   if (includedMaps.value.length === 0) return
   const next = { ...mapDisplayNames.value }
@@ -622,7 +608,6 @@ const requestKey = computed(() => [
   pageSize.value,
   sort.value[0]?.key ?? 'score',
   sort.value[0]?.dir ?? 'desc',
-  debouncedSearch.value,
   serverMode.value,
   includedServers.value.join('\0'),
   excludedServers.value.join('\0'),
@@ -640,7 +625,7 @@ watch(requestKey, () => {
 })
 
 // URL sync
-watch([days, minPlay, minRounds, searchQuery, groupBy, includedMaps, includedPlayers, includedServers, excludedServers, serverMode, populatedOnly], () => {
+watch([days, minPlay, minRounds, groupBy, includedMaps, includedPlayers, includedServers, excludedServers, serverMode, populatedOnly], () => {
   router.replace({
     query: {
       ...route.query,
@@ -653,7 +638,6 @@ watch([days, minPlay, minRounds, searchQuery, groupBy, includedMaps, includedPla
       populatedOnly: populatedOnly.value ? undefined : '0',
       map: includedMaps.value.length > 0 ? includedMaps.value.join(',') : undefined,
       player: includedPlayers.value.length > 0 ? includedPlayers.value.join(',') : undefined,
-      q: searchQuery.value.trim() || undefined,
       group: groupBy.value || undefined
     }
   })
@@ -825,9 +809,6 @@ const resetAll = () => {
   days.value = 30
   minPlay.value = 0
   minRounds.value = 1
-  searchQuery.value = ''
-  debouncedSearch.value = ''
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
   groupBy.value = null
   sort.value = [{ key: 'score', dir: 'desc' }]
   pinned.value = ['rank', 'player']
@@ -1688,27 +1669,6 @@ const rankTintClass = (rank: number) => {
               <option value="favServer">Fav. Server</option>
               <option value="kdBand">K/D Band</option>
             </select>
-          </div>
-
-          <!-- Client Search -->
-          <div class="lb-search-group lb-desktop-only">
-            <i class="pi pi-search lb-search-icon"></i>
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="Search player, server, map..."
-              class="lb-search-input"
-            />
-            <button
-              v-if="searchQuery"
-              type="button"
-              class="lb-search-clear"
-              title="Clear search"
-              aria-label="Clear search"
-              @click="searchQuery = ''"
-            >
-              <i class="pi pi-times"></i>
-            </button>
           </div>
 
           <!-- Quick presets dropdown (compact replacement for multi-button row) -->
@@ -3273,49 +3233,6 @@ const rankTintClass = (rank: number) => {
 
 .lb-select:focus {
   border-color: var(--mm-accent);
-}
-
-/* Search input */
-.lb-search-group {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.lb-search-icon {
-  position: absolute;
-  left: 8px;
-  font-size: 10px;
-  color: var(--mm-ink-muted);
-}
-
-.lb-search-input {
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  background: var(--mm-bg-mute);
-  color: var(--mm-ink);
-  border: 1px solid var(--mm-rule);
-  border-radius: 2px;
-  padding: 5px 24px 5px 26px;
-  width: 190px;
-  outline: none;
-  transition: width 0.2s ease, border-color 0.2s ease;
-}
-
-.lb-search-input:focus {
-  border-color: var(--mm-accent);
-  width: 230px;
-}
-
-.lb-search-clear {
-  position: absolute;
-  right: 6px;
-  background: transparent;
-  border: none;
-  color: var(--mm-ink-muted);
-  cursor: pointer;
-  font-size: 9px;
-  padding: 2px;
 }
 
 .lb-spacer {
