@@ -45,6 +45,7 @@ public class LeaderboardController(
         [FromQuery] string? q = null,
         [FromQuery] string? server = null,
         [FromQuery] string? map = null,
+        [FromQuery] string? player = null,
         [FromQuery] int days = 30,
         [FromQuery] int minRounds = 1,
         [FromQuery] int minPlay = 0,
@@ -77,13 +78,13 @@ public class LeaderboardController(
         if (minPlay < 0)
             minPlay = 0;
 
-        logger.LogDebug("Fetching global leaderboard: page={Page}, size={PageSize}, sort={SortBy} {SortDir}, q={Q}, server={Server}, exclude={Exclude}, populatedOnly={PopulatedOnly}, map={Map}, days={Days}, minRounds={MinRounds}, minPlay={MinPlay}, groupBy={GroupBy}",
-            page, pageSize, sortBy, sortDir, q, server, exclude, populatedOnly, map, days, minRounds, minPlay, groupBy);
+        logger.LogDebug("Fetching global leaderboard: page={Page}, size={PageSize}, sort={SortBy} {SortDir}, q={Q}, server={Server}, exclude={Exclude}, populatedOnly={PopulatedOnly}, map={Map}, player={Player}, days={Days}, minRounds={MinRounds}, minPlay={MinPlay}, groupBy={GroupBy}",
+            page, pageSize, sortBy, sortDir, q, server, exclude, populatedOnly, map, player, days, minRounds, minPlay, groupBy);
 
         try
         {
             var response = await sqliteLeaderboardService.GetGlobalLeaderboardAsync(
-                page, pageSize, sortBy, sortDir, q, server, map, days, minRounds, minPlay, game, exclude, populatedOnly, groupBy);
+                page, pageSize, sortBy, sortDir, q, server, map, player, days, minRounds, minPlay, game, exclude, populatedOnly, groupBy);
             return Ok(response);
         }
         catch (Exception ex)
@@ -117,6 +118,33 @@ public class LeaderboardController(
         {
             logger.LogError(ex, "Failed to search leaderboard maps for q={Q}", q);
             return StatusCode(StatusCodes.Status500InternalServerError, "Failed to retrieve maps.");
+        }
+    }
+
+    /// <summary>
+    /// Searches available player names for player filters on the leaderboard.
+    /// </summary>
+    /// <param name="q">Optional search substring for player name.</param>
+    /// <param name="limit">Max players to return (default: 50, max: 200).</param>
+    [HttpGet("players")]
+    [EdgeCache(60)]
+    [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<string>>> GetPlayers(
+        [FromQuery] string? q = null,
+        [FromQuery] int limit = 50)
+    {
+        if (limit < 1) limit = 50;
+        if (limit > 200) limit = 200;
+
+        try
+        {
+            var players = await sqliteLeaderboardService.SearchPlayersAsync(q, limit);
+            return Ok(players);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to search leaderboard players for q={Q}", q);
+            return StatusCode(StatusCodes.Status500InternalServerError, "Failed to retrieve players.");
         }
     }
 }
