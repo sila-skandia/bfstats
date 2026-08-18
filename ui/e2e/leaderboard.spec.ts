@@ -150,10 +150,32 @@ const MOCK_LEADERBOARD_DATA = {
 
 test.describe('Leaderboard Page', () => {
   test.beforeEach(async ({ page }) => {
+    // Intercept map search
+    await page.route('**/stats/leaderboard/maps*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(['Bocage', 'Omaha Beach', 'El Alamein', 'Wake Island'])
+      })
+    })
+
+    // Intercept player search
+    await page.route('**/stats/leaderboard/players*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(['Rommel_44', 'Patton_USA', 'Zhukov_USSR', 'Montgomery_UK'])
+      })
+    })
+
     // Intercept leaderboard API — server-side filters applied from query params
     await page.route('**/stats/leaderboard*', async route => {
       const url = new URL(route.request().url())
+      if (url.pathname.endsWith('/maps') || url.pathname.endsWith('/players')) {
+        return route.fallback()
+      }
       const mapParam = url.searchParams.get('map')
+      const playerParam = url.searchParams.get('player')
       const serverParam = url.searchParams.get('server')
       const excludeParam = url.searchParams.get('exclude')
       const populatedParam = url.searchParams.get('populatedOnly')
@@ -168,6 +190,10 @@ test.describe('Leaderboard Page', () => {
       if (mapParam) {
         const terms = mapParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
         filtered = filtered.filter(p => terms.some(t => p.favMap.toLowerCase() === t))
+      }
+      if (playerParam) {
+        const terms = playerParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+        filtered = filtered.filter(p => terms.some(t => p.name.toLowerCase() === t))
       }
       if (serverParam) {
         const terms = serverParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
@@ -213,15 +239,16 @@ test.describe('Leaderboard Page', () => {
       const response = {
         ...MOCK_LEADERBOARD_DATA,
         map: mapParam ?? undefined,
+        player: playerParam ?? undefined,
         server: serverParam ?? undefined,
         exclude: excludeParam ?? undefined,
         populatedOnly,
         searchQuery: qParam ?? undefined,
         page: pageParam,
         pageSize: pageSizeParam,
-        totalPlayers,
         totalPages,
-        players: paged.map((p, i) => ({ ...p, rank: start + i + 1 }))
+        totalPlayers,
+        players: paged
       }
 
       await route.fulfill({
@@ -232,12 +259,11 @@ test.describe('Leaderboard Page', () => {
     })
   })
 
-  test('should redirect /leaderboard to /v4/leaderboard', async ({ page }) => {
-    await page.goto('/leaderboard')
-    await expect(page).toHaveURL(/\/v4\/leaderboard/)
+  test('should render page heading and active tab correctly', async ({ page }) => {
+    await page.goto('/v4/leaderboard')
 
-    const heading = page.locator('h1')
-    await expect(heading).toHaveText('Leaderboard')
+    await expect(page).toHaveURL(/\/v4\/leaderboard/)
+    await expect(page.locator('h1')).toHaveText('Leaderboard')
   })
 
   test('should navigate via top navigation bar', async ({ page }) => {
@@ -265,7 +291,7 @@ test.describe('Leaderboard Page', () => {
     await expect(firstRow).toContainText('Rommel_44')
     await expect(firstRow).toContainText('3.00')
     await expect(firstRow.locator('.lb-rank')).toHaveText('01')
-    await expect(firstRow).toContainText('Bocage')
+    await expect(firstRow).toContainText('Dogtags')
   })
 
   test('should filter players using client search including map name', async ({ page }) => {
@@ -395,7 +421,7 @@ test.describe('Leaderboard Page', () => {
     await page.keyboard.press('Escape')
 
     const rows = page.locator('.lb-table tbody tr.lb-row')
-    await expect(rows).toHaveCount(3)
+    await expect(rows).toHaveCount(2)
     await expect(page.locator('.lb-map-active-tag')).toContainText('MAP: 2 MAPS')
     await expect(mapBtn).toContainText('2 maps')
   })
@@ -561,6 +587,60 @@ test.describe('Leaderboard Page', () => {
     await expect(srows.nth(1)).toContainText('6,880')
   })
 
+  test('should search players and multi-select them with badge style', async ({ page }) => {
+    await page.route('**/stats/leaderboard/players*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(['Falcon', 'Sky Miner', 'Spoegwolf'])
+      })
+    })
+
+    await page.goto('/v4/leaderboard')
+
+    // Find Player slicer trigger button
+    const playerSlicer = page.locator('[data-lbmenu="player"]')
+    await expect(playerSlicer).toBeVisible()
+    const playerBtn = playerSlicer.locator('.lb-server-dropdown-btn')
+    await expect(playerBtn).toContainText('All Players')
+
+    // Open player dropdown
+    await playerBtn.click()
+    const popover = page.locator('.lb-server-popover[data-lbmenu="player"]')
+    await expect(popover).toBeVisible()
+
+    // Search input
+    const searchInput = popover.locator('.lb-server-search-input')
+    await expect(searchInput).toBeVisible()
+
+    // Select Falcon
+    const falconItem = popover.locator('.lb-server-item', { hasText: 'Falcon' })
+    await falconItem.click()
+
+    // Selected strip / badge chip should show Falcon
+    const chip = popover.locator('.lb-picked-chip', { hasText: 'Falcon' })
+    await expect(chip).toBeVisible()
+
+    // Select Sky Miner
+    const skyItem = popover.locator('.lb-server-item', { hasText: 'Sky Miner' })
+    await skyItem.click()
+
+    // Selected strip should now have 2 chips
+    await expect(popover.locator('.lb-picked-chip')).toHaveCount(2)
+    await expect(popover.locator('.lb-picked-strip-kicker')).toContainText('Selected · 2')
+
+    // Slicer button text should show 2 players
+    await expect(playerBtn).toContainText('2 players')
+
+    // Section bar tag
+    await expect(page.locator('.lb-player-active-tag')).toContainText('2 PLAYERS')
+
+    // Remove Falcon via badge chip 'x'
+    await chip.click()
+    await expect(popover.locator('.lb-picked-chip')).toHaveCount(1)
+    await expect(playerBtn).toContainText('Sky Miner')
+  })
+
   test('should toggle column visibility via columns popover', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
@@ -670,8 +750,27 @@ test.describe('Leaderboard Page — Mobile', () => {
   test.use({ viewport: { width: 393, height: 851 } })
 
   test.beforeEach(async ({ page }) => {
+    await page.route('**/stats/leaderboard/maps*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(['Bocage', 'Omaha Beach', 'El Alamein', 'Wake Island'])
+      })
+    })
+
+    await page.route('**/stats/leaderboard/players*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(['Rommel_44', 'Patton_USA', 'Zhukov_USSR', 'Montgomery_UK'])
+      })
+    })
+
     await page.route('**/stats/leaderboard*', async route => {
       const url = new URL(route.request().url())
+      if (url.pathname.endsWith('/maps') || url.pathname.endsWith('/players')) {
+        return route.fallback()
+      }
       const serverParam = url.searchParams.get('server')
       const mapParam = url.searchParams.get('map')
       let filtered = MOCK_LEADERBOARD_DATA.players.filter(p =>
@@ -762,13 +861,15 @@ test.describe('Leaderboard Page — Mobile', () => {
     const sheet = page.locator('.lb-server-popover--sheet')
 
     await mapBtn.click()
-    await page.locator('.lb-server-item', { hasText: /^Bocage/ }).click()
+    await expect(sheet).toBeVisible()
+    await sheet.locator('.lb-server-item', { hasText: /Bocage/i }).click()
     await sheet.locator('.lb-sheet-done').click()
     await expect(sheet).toBeHidden()
     await expect(page.locator('.lb-mobile-list .mm-session-row')).toHaveCount(2)
 
     await serverBtn.click()
-    await page.locator('.lb-server-item', { hasText: /Merciless/i }).click()
+    await expect(sheet).toBeVisible()
+    await sheet.locator('.lb-server-item', { hasText: /Merciless/i }).click()
     await sheet.locator('.lb-sheet-done').click()
 
     await expect(page.locator('.lb-state-box')).toContainText('NO PLAYERS MATCH')
