@@ -129,6 +129,12 @@ public class PlayerTrackerDbContext : DbContext
             .HasIndex(ps => new { ps.PlayerName, ps.LastSeenTime })
             .HasDatabaseName("IX_PlayerSessions_PlayerName_LastSeenTime");
 
+        // Serves the Neo4j PLAYS_ON relationship sync's "completed sessions not yet
+        // synced" scan. Mirrors IX_Rounds_IsActive_SyncedToNeo4jAt_StartTime.
+        modelBuilder.Entity<PlayerSession>()
+            .HasIndex(ps => new { ps.IsActive, ps.SyncedToNeo4jAt, ps.LastSeenTime })
+            .HasDatabaseName("IX_PlayerSessions_IsActive_SyncedToNeo4jAt_LastSeenTime");
+
         // Configure PlayerObservation entity
         modelBuilder.Entity<PlayerObservation>()
             .HasKey(po => po.ObservationId);
@@ -203,6 +209,13 @@ public class PlayerTrackerDbContext : DbContext
         // unreachable from LINQ. This composite covers the live-servers and banner queries.
         modelBuilder.Entity<Round>()
             .HasIndex(r => new { r.ServerGuid, r.IsActive });
+
+        // Serves the Neo4j relationship sync's "completed rounds not yet synced" scan.
+        // Shrinks to near-empty once the backlog is drained, since SyncedToNeo4jAt is set
+        // exactly once per round and never cleared by the incremental path.
+        modelBuilder.Entity<Round>()
+            .HasIndex(r => new { r.IsActive, r.SyncedToNeo4jAt, r.StartTime })
+            .HasDatabaseName("IX_Rounds_IsActive_SyncedToNeo4jAt_StartTime");
 
         // Check constraint to ensure EndTime >= StartTime when EndTime is not null
         modelBuilder.Entity<Round>()
@@ -1388,6 +1401,13 @@ public class PlayerSession
     /// <summary>True when an admin has soft-deleted this session (round marked deleted). Excluded from aggregates.</summary>
     public bool IsDeleted { get; set; }
 
+    /// <summary>
+    /// When this session's PLAYS_ON contribution was last written to Neo4j.
+    /// Null means pending. Set exactly once by the incremental sync so a completed
+    /// session contributes to PLAYS_ON.sessionCount at most one time, ever.
+    /// </summary>
+    public DateTime? SyncedToNeo4jAt { get; set; }
+
     // Current live state - updated with each observation for performance
     public int CurrentPing { get; set; } = 0;
     public int CurrentTeam { get; set; } = 1;
@@ -1422,6 +1442,13 @@ public class Round
 
     /// <summary>True when an admin has soft-deleted this round. Excluded from aggregates; achievements are removed.</summary>
     public bool IsDeleted { get; set; }
+
+    /// <summary>
+    /// When this round's co-play relationships were last written to Neo4j.
+    /// Null means pending. Set exactly once by the incremental sync so a completed
+    /// round contributes to PLAYED_WITH.sessionCount at most one time, ever.
+    /// </summary>
+    public DateTime? SyncedToNeo4jAt { get; set; }
 
     // Navigation properties
     public List<PlayerSession> Sessions { get; set; } = new();

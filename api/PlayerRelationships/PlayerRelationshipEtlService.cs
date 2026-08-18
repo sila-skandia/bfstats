@@ -6,9 +6,15 @@ using Neo4j.Driver;
 namespace api.PlayerRelationships;
 
 /// <summary>
-/// ETL service that syncs PlayerObservations from SQLite to Neo4j graph database.
-/// Detects co-play sessions (players online at the same time on the same server)
-/// and creates/updates relationship edges in Neo4j.
+/// ETL service that syncs completed rounds from SQLite to Neo4j graph database.
+/// Detects co-play pairs (players whose sessions overlapped in time within the same
+/// round) and creates/updates relationship edges in Neo4j.
+///
+/// Correctness rests entirely on Round.SyncedToNeo4jAt / PlayerSession.SyncedToNeo4jAt:
+/// a round (or session) is picked up, contributes to Neo4j, and is stamped in one
+/// transaction-adjacent step, then never picked up again. PLAYED_WITH.sessionCount and
+/// PLAYS_ON.sessionCount stay additive on the Neo4j side, but the SQLite watermark is
+/// what guarantees each round/session can only ever add to them once.
 /// </summary>
 public class PlayerRelationshipEtlService(
     PlayerTrackerDbContext dbContext,
@@ -16,78 +22,87 @@ public class PlayerRelationshipEtlService(
     ILogger<PlayerRelationshipEtlService> logger)
 {
     /// <summary>
-    /// Find co-play sessions for a specific round by grouping observations with the same timestamp.
-    /// This is the core detection logic: if players have observations at the same time
-    /// on the same server, they played together.
+    /// Find co-play pairs across a batch of rounds in one query, by checking for time
+    /// overlap between player sessions. Two players "played together" in a round if any
+    /// of their sessions overlapped in time — this is deliberately session-interval-based,
+    /// not round-membership-based, because a player can leave a round before another one
+    /// joins and never actually cross paths.
+    ///
+    /// A player who reconnects mid-round has multiple sessions for the same round; any
+    /// overlap between any of their sessions and the other player's sessions still
+    /// yields exactly one fact for that pair for that round.
     /// </summary>
-    public async Task<List<(string Player1, string Player2, DateTime Timestamp, string ServerGuid)>> 
-        DetectCoPlaySessionsForRoundAsync(
-            string roundId,
+    public async Task<List<(string Player1, string Player2, DateTime Timestamp, string ServerGuid)>>
+        DetectCoPlayPairsForRoundsAsync(
+            List<(string RoundId, DateTime StartTime, string ServerGuid)> rounds,
             CancellationToken cancellationToken = default)
     {
-        // Query: Find all observations for sessions in this round
-        // Note: We materialize the grouped data first, then do the Cartesian product in memory
-        // because EF Core can't translate the complex SelectMany to SQL
-        var groupedObservations = await dbContext.PlayerObservations
-            .Include(po => po.Session)
-            .Where(po => po.Session.RoundId == roundId)
-            .Where(po => !po.Session.IsDeleted) // Exclude deleted sessions
-            .Select(po => new
+        if (rounds.Count == 0)
+        {
+            return [];
+        }
+
+        var roundIds = rounds.Select(r => r.RoundId).ToList();
+        var roundMeta = rounds.ToDictionary(r => r.RoundId);
+
+        var sessions = await dbContext.PlayerSessions
+            .Where(ps => ps.RoundId != null && roundIds.Contains(ps.RoundId))
+            .Where(ps => !ps.IsDeleted)
+            .Select(ps => new
             {
-                PlayerName = po.Session.PlayerName,
-                po.Timestamp,
-                ServerGuid = po.Session.ServerGuid
+                ps.RoundId,
+                ps.PlayerName,
+                ps.StartTime,
+                ps.LastSeenTime
             })
             .ToListAsync(cancellationToken);
 
-        if (groupedObservations.Count == 0)
-        {
-            return [];
-        }
+        var facts = new List<(string, string, DateTime, string)>();
 
-        // Trim and filter player names in memory to avoid whitespace issues
-        var validObservations = groupedObservations
-            .Select(po => new
+        foreach (var roundGroup in sessions.GroupBy(s => s.RoundId!))
+        {
+            if (!roundMeta.TryGetValue(roundGroup.Key, out var meta))
             {
-                PlayerName = po.PlayerName?.Trim() ?? "",
-                po.Timestamp,
-                po.ServerGuid
-            })
-            .Where(po => !string.IsNullOrEmpty(po.PlayerName))
-            .ToList();
+                continue;
+            }
 
-        if (validObservations.Count == 0)
-        {
-            logger.LogDebug("No valid observations after filtering empty names for round {RoundId}", roundId);
-            return [];
+            // Group by player (trimmed) to handle reconnects: a player can have
+            // multiple sessions within the same round.
+            var byPlayer = roundGroup
+                .Select(s => new { PlayerName = s.PlayerName?.Trim() ?? "", s.StartTime, s.LastSeenTime })
+                .Where(s => !string.IsNullOrEmpty(s.PlayerName))
+                .GroupBy(s => s.PlayerName)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var players = byPlayer.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList();
+            if (players.Count < 2)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < players.Count; i++)
+            {
+                for (var j = i + 1; j < players.Count; j++)
+                {
+                    var p1Sessions = byPlayer[players[i]];
+                    var p2Sessions = byPlayer[players[j]];
+
+                    var overlaps = p1Sessions.Any(s1 =>
+                        p2Sessions.Any(s2 => s1.StartTime <= s2.LastSeenTime && s2.StartTime <= s1.LastSeenTime));
+
+                    if (overlaps)
+                    {
+                        facts.Add((players[i], players[j], meta.StartTime, meta.ServerGuid));
+                    }
+                }
+            }
         }
 
-        // Group and create pairs in memory (client-side evaluation)
-        var coPlayPairs = validObservations
-            .GroupBy(po => new { po.ServerGuid, po.Timestamp })
-            .Where(g => g.Count() > 1) // Only groups with multiple players
-            .SelectMany(g =>
-                // Create pairs of all players in this group (cartesian product)
-                from p1 in g
-                from p2 in g
-                where string.Compare(p1.PlayerName, p2.PlayerName, StringComparison.Ordinal) < 0
-                select new
-                {
-                    Player1 = p1.PlayerName,
-                    Player2 = p2.PlayerName,
-                    Timestamp = p1.Timestamp,
-                    ServerGuid = p1.ServerGuid
-                })
-            .Distinct()
-            .ToList();
-
-        return coPlayPairs
-            .Select(p => (p.Player1, p.Player2, p.Timestamp, p.ServerGuid))
-            .ToList();
+        return facts;
     }
 
     /// <summary>
-    /// Aggregate co-play pairs into relationships with session counts and durations.
+    /// Aggregate co-play pairs into relationships with round counts.
     /// Groups by player pair and calculates metrics.
     /// </summary>
     public Dictionary<(string, string), RelationshipMetrics> AggregateRelationships(
@@ -98,7 +113,7 @@ public class PlayerRelationshipEtlService(
         foreach (var pair in coPlayPairs)
         {
             var key = (pair.Player1, pair.Player2);
-            
+
             if (!relationships.TryGetValue(key, out var metrics))
             {
                 relationships[key] = new RelationshipMetrics
@@ -114,13 +129,13 @@ public class PlayerRelationshipEtlService(
             else
             {
                 metrics.ObservationCount++;
-                
+
                 if (pair.Timestamp < metrics.FirstSeen)
                     metrics.FirstSeen = pair.Timestamp;
-                
+
                 if (pair.Timestamp > metrics.LastSeen)
                     metrics.LastSeen = pair.Timestamp;
-                
+
                 if (!metrics.ServerGuids.Contains(pair.ServerGuid))
                     metrics.ServerGuids.Add(pair.ServerGuid);
             }
@@ -132,6 +147,9 @@ public class PlayerRelationshipEtlService(
     /// <summary>
     /// Sync detected relationships to Neo4j.
     /// Uses batch MERGE to create/update Player nodes and PLAYED_WITH relationships.
+    /// This is additive (ON MATCH SET r.sessionCount = r.sessionCount + rel.observationCount);
+    /// safety against double-counting comes from callers only ever passing a given
+    /// round's contribution through here once (see Round.SyncedToNeo4jAt).
     /// </summary>
     public async Task SyncToNeo4jAsync(
         Dictionary<(string, string), RelationshipMetrics> relationships,
@@ -160,7 +178,7 @@ public class PlayerRelationshipEtlService(
         const int batchSize = 1000;
         var batches = relationshipData.Chunk(batchSize).ToList();
 
-        logger.LogInformation("Processing {BatchCount} batches of {BatchSize} relationships", 
+        logger.LogInformation("Processing {BatchCount} batches of {BatchSize} relationships",
             batches.Count, batchSize);
 
         var totalProcessed = 0;
@@ -175,22 +193,22 @@ public class PlayerRelationshipEtlService(
                     ON CREATE SET p1.firstSeen = datetime(rel.firstSeen),
                                   p1.lastSeen = datetime(rel.lastSeen),
                                   p1.totalSessions = 0
-                    ON MATCH SET p1.lastSeen = CASE 
-                        WHEN datetime(rel.lastSeen) > p1.lastSeen 
-                        THEN datetime(rel.lastSeen) 
-                        ELSE p1.lastSeen 
+                    ON MATCH SET p1.lastSeen = CASE
+                        WHEN datetime(rel.lastSeen) > p1.lastSeen
+                        THEN datetime(rel.lastSeen)
+                        ELSE p1.lastSeen
                     END
-                    
+
                     MERGE (p2:Player {name: rel.player2})
                     ON CREATE SET p2.firstSeen = datetime(rel.firstSeen),
                                   p2.lastSeen = datetime(rel.lastSeen),
                                   p2.totalSessions = 0
-                    ON MATCH SET p2.lastSeen = CASE 
-                        WHEN datetime(rel.lastSeen) > p2.lastSeen 
-                        THEN datetime(rel.lastSeen) 
-                        ELSE p2.lastSeen 
+                    ON MATCH SET p2.lastSeen = CASE
+                        WHEN datetime(rel.lastSeen) > p2.lastSeen
+                        THEN datetime(rel.lastSeen)
+                        ELSE p2.lastSeen
                     END
-                    
+
                     MERGE (p1)-[r:PLAYED_WITH]-(p2)
                     ON CREATE SET r.sessionCount = rel.observationCount,
                                   r.firstPlayedTogether = datetime(rel.firstSeen),
@@ -207,7 +225,7 @@ public class PlayerRelationshipEtlService(
                                      THEN r.servers + [x IN rel.serverGuids WHERE NOT x IN r.servers]
                                      ELSE r.servers
                                  END
-                    
+
                     RETURN count(*) as processed";
 
                 var result = await tx.RunAsync(query, new { relationships = batch });
@@ -225,116 +243,70 @@ public class PlayerRelationshipEtlService(
     }
 
     /// <summary>
-    /// Full sync process: page through rounds, detect co-play sessions, and sync to Neo4j.
-    /// This processes rounds in batches to handle large datasets (100M+ observations).
+    /// Process every completed round that has never been synced to Neo4j
+    /// (Round.SyncedToNeo4jAt IS NULL). A batch of rounds is stamped synced only after
+    /// its contribution has been successfully written to Neo4j, so a failed batch is
+    /// retried on the next run but a succeeded one is never re-added.
+    ///
+    /// This is the method the daily background job calls, and also what a backfill
+    /// drains after <see cref="ResetNeo4jSyncWatermarkAsync"/> clears the watermark for
+    /// a date range — same code path either way, just a bigger backlog.
     /// </summary>
-    public async Task<SyncResult> SyncRelationshipsAsync(
-        DateTime fromTimestamp,
-        DateTime toTimestamp,
+    public async Task<SyncResult> SyncPendingRelationshipsAsync(
+        int roundBatchSize = 1000,
         CancellationToken cancellationToken = default)
     {
         var startTime = DateTime.UtcNow;
-        logger.LogInformation(
-            "Starting relationship sync from {FromTime} to {ToTime}",
-            fromTimestamp,
-            toTimestamp);
-
-        const int roundBatchSize = 100; // Process 100 rounds at a time
-        var totalRelationshipsProcessed = 0;
         var roundsProcessed = 0;
-        var allRelationships = new Dictionary<(string, string), RelationshipMetrics>();
+        var totalRelationshipsProcessed = 0;
 
-        // Get total count for progress tracking
-        var totalRounds = await dbContext.Rounds
-            .Where(r => !r.IsDeleted)
-            .Where(r => r.StartTime >= fromTimestamp && r.StartTime <= toTimestamp)
-            .CountAsync(cancellationToken);
-
-        logger.LogInformation("Found {TotalRounds} rounds to process", totalRounds);
-
-        if (totalRounds == 0)
-        {
-            return new SyncResult
-            {
-                Success = true,
-                RelationshipsProcessed = 0,
-                RoundsProcessed = 0,
-                Duration = DateTime.UtcNow - startTime
-            };
-        }
-
-        // Page through rounds
-        var offset = 0;
-        while (offset < totalRounds)
+        while (true)
         {
             var roundBatch = await dbContext.Rounds
-                .Where(r => !r.IsDeleted)
-                .Where(r => r.StartTime >= fromTimestamp && r.StartTime <= toTimestamp)
+                .Where(r => !r.IsDeleted && !r.IsActive && r.SyncedToNeo4jAt == null)
                 .OrderBy(r => r.StartTime)
-                .Skip(offset)
+                .Select(r => new { r.RoundId, r.StartTime, r.ServerGuid })
                 .Take(roundBatchSize)
-                .Select(r => r.RoundId)
                 .ToListAsync(cancellationToken);
 
             if (roundBatch.Count == 0)
-                break;
-
-            logger.LogInformation(
-                "Processing rounds {From}-{To} of {Total}",
-                offset + 1,
-                offset + roundBatch.Count,
-                totalRounds);
-
-            // Process each round in the batch
-            foreach (var roundId in roundBatch)
             {
-                var coPlayPairs = await DetectCoPlaySessionsForRoundAsync(roundId, cancellationToken);
-                
-                if (coPlayPairs.Count > 0)
-                {
-                    // Aggregate relationships for this round
-                    var roundRelationships = AggregateRelationships(coPlayPairs);
-                    
-                    // Merge into the global relationship dictionary
-                    MergeRelationships(allRelationships, roundRelationships);
-                }
-
-                roundsProcessed++;
-                
-                // Sync to Neo4j periodically (every 100 rounds or when we have 10k+ relationships)
-                if (roundsProcessed % 100 == 0 || allRelationships.Count >= 10000)
-                {
-                    if (allRelationships.Count > 0)
-                    {
-                        logger.LogInformation(
-                            "Syncing {Count} relationships to Neo4j (checkpoint at round {Round})",
-                            allRelationships.Count,
-                            roundsProcessed);
-                        
-                        await SyncToNeo4jAsync(allRelationships, cancellationToken);
-                        totalRelationshipsProcessed += allRelationships.Count;
-                        allRelationships.Clear();
-                    }
-                }
+                break;
             }
 
-            offset += roundBatch.Count;
-        }
+            var pairs = await DetectCoPlayPairsForRoundsAsync(
+                roundBatch.Select(r => (r.RoundId, r.StartTime, r.ServerGuid)).ToList(),
+                cancellationToken);
 
-        // Final sync for any remaining relationships
-        if (allRelationships.Count > 0)
-        {
+            var batchRelationships = AggregateRelationships(pairs);
+
+            if (batchRelationships.Count > 0)
+            {
+                await SyncToNeo4jAsync(batchRelationships, cancellationToken);
+                totalRelationshipsProcessed += batchRelationships.Count;
+            }
+
+            roundsProcessed += roundBatch.Count;
+
+            var roundIds = roundBatch.Select(r => r.RoundId).ToList();
+            var syncedAt = DateTime.UtcNow;
+            await dbContext.Rounds
+                .Where(r => roundIds.Contains(r.RoundId))
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.SyncedToNeo4jAt, syncedAt), cancellationToken);
+
             logger.LogInformation(
-                "Syncing final {Count} relationships to Neo4j",
-                allRelationships.Count);
-            
-            await SyncToNeo4jAsync(allRelationships, cancellationToken);
-            totalRelationshipsProcessed += allRelationships.Count;
+                "Neo4j relationship sync: {RoundsProcessed} rounds processed so far ({RelationshipsProcessed} relationship pairs)",
+                roundsProcessed, totalRelationshipsProcessed);
+
+            if (roundBatch.Count < roundBatchSize)
+            {
+                break;
+            }
         }
 
         var duration = DateTime.UtcNow - startTime;
         logger.LogInformation(
-            "Relationship sync completed in {Duration}s: {RoundsProcessed} rounds, {RelationshipsProcessed} relationships",
+            "Neo4j relationship sync completed in {Duration}s: {RoundsProcessed} rounds, {RelationshipsProcessed} relationships",
             duration.TotalSeconds,
             roundsProcessed,
             totalRelationshipsProcessed);
@@ -349,107 +321,105 @@ public class PlayerRelationshipEtlService(
     }
 
     /// <summary>
-    /// Merge relationships from a round into the global dictionary, combining metrics.
+    /// Clears the Neo4j sync watermark for rounds/sessions on or after <paramref name="fromDate"/>,
+    /// so the next call to <see cref="SyncPendingRelationshipsAsync"/> /
+    /// <see cref="SyncPlayerServerRelationshipsAsync"/> reprocesses them.
+    ///
+    /// This is a deliberate repair operation: it must only be called after the
+    /// corresponding PLAYED_WITH / PLAYS_ON data in Neo4j has actually been wiped (or
+    /// never existed), because the write side stays additive. Calling this against a
+    /// range whose Neo4j data is still present will double-count.
     /// </summary>
-    private void MergeRelationships(
-        Dictionary<(string, string), RelationshipMetrics> target,
-        Dictionary<(string, string), RelationshipMetrics> source)
+    public async Task<(int RoundsReset, int SessionsReset)> ResetNeo4jSyncWatermarkAsync(
+        DateTime fromDate,
+        CancellationToken cancellationToken = default)
     {
-        foreach (var (key, metrics) in source)
-        {
-            if (!target.TryGetValue(key, out var existing))
-            {
-                target[key] = metrics;
-            }
-            else
-            {
-                existing.ObservationCount += metrics.ObservationCount;
-                
-                if (metrics.FirstSeen < existing.FirstSeen)
-                    existing.FirstSeen = metrics.FirstSeen;
-                
-                if (metrics.LastSeen > existing.LastSeen)
-                    existing.LastSeen = metrics.LastSeen;
-                
-                // Merge server GUIDs
-                foreach (var serverGuid in metrics.ServerGuids)
-                {
-                    if (!existing.ServerGuids.Contains(serverGuid))
-                        existing.ServerGuids.Add(serverGuid);
-                }
-            }
-        }
+        logger.LogWarning(
+            "Resetting Neo4j sync watermark for rounds/sessions from {FromDate} onward — " +
+            "the next sync pass will reprocess all of them. This assumes Neo4j has already " +
+            "been cleared for this range.", fromDate);
+
+        var roundsReset = await dbContext.Rounds
+            .Where(r => r.StartTime >= fromDate)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.SyncedToNeo4jAt, (DateTime?)null), cancellationToken);
+
+        var sessionsReset = await dbContext.PlayerSessions
+            .Where(ps => ps.LastSeenTime >= fromDate)
+            .ExecuteUpdateAsync(s => s.SetProperty(ps => ps.SyncedToNeo4jAt, (DateTime?)null), cancellationToken);
+
+        logger.LogInformation(
+            "Reset Neo4j sync watermark: {RoundsReset} rounds, {SessionsReset} sessions pending resync",
+            roundsReset, sessionsReset);
+
+        return (roundsReset, sessionsReset);
     }
 
     /// <summary>
-    /// Sync player-server relationships (who plays on which servers).
+    /// Incremental sync of player-server relationships (who plays on which servers).
+    /// Only processes completed sessions that have never been synced
+    /// (PlayerSession.SyncedToNeo4jAt IS NULL), mirroring
+    /// <see cref="SyncPendingRelationshipsAsync"/> so a session contributes to
+    /// PLAYS_ON.sessionCount at most once.
     /// </summary>
     public async Task SyncPlayerServerRelationshipsAsync(
-        DateTime fromTimestamp,
-        DateTime toTimestamp,
+        int sessionBatchSize = 5000,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation(
-            "Syncing player-server relationships from {FromTime} to {ToTime}",
-            fromTimestamp,
-            toTimestamp);
+        var totalSynced = 0;
 
-        // Aggregate player activity per server, including average ping
-        var playerServerData = await dbContext.PlayerSessions
-            .Where(ps => ps.LastSeenTime >= fromTimestamp && ps.LastSeenTime <= toTimestamp)
-            .Where(ps => !ps.IsDeleted)
-            .GroupBy(ps => new { ps.PlayerName, ps.ServerGuid })
-            .Select(g => new
+        while (true)
+        {
+            var sessionBatch = await dbContext.PlayerSessions
+                .Where(ps => !ps.IsDeleted && !ps.IsActive && ps.SyncedToNeo4jAt == null)
+                .OrderBy(ps => ps.LastSeenTime)
+                .Select(ps => new
+                {
+                    ps.SessionId,
+                    ps.PlayerName,
+                    ps.ServerGuid,
+                    ps.LastSeenTime,
+                    ps.AveragePing
+                })
+                .Take(sessionBatchSize)
+                .ToListAsync(cancellationToken);
+
+            if (sessionBatch.Count == 0)
             {
-                g.Key.PlayerName,
-                g.Key.ServerGuid,
-                SessionCount = g.Count(),
-                LastPlayed = g.Max(ps => ps.LastSeenTime),
-                AvgPing = g.Where(ps => ps.AveragePing != null && ps.AveragePing > 0)
-                    .Average(ps => ps.AveragePing)
-            })
-            .ToListAsync(cancellationToken);
+                break;
+            }
 
-        if (playerServerData.Count == 0)
-        {
-            logger.LogInformation("No player-server relationships to sync");
-            return;
-        }
+            var validSessions = sessionBatch
+                .Select(ps => new { PlayerName = ps.PlayerName?.Trim() ?? "", ps.SessionId, ps.ServerGuid, ps.LastSeenTime, ps.AveragePing })
+                .Where(ps => !string.IsNullOrEmpty(ps.PlayerName))
+                .ToList();
 
-        // Trim player names and filter out empty ones
-        var validPlayerServerData = playerServerData
-            .Select(ps => new
+            if (validSessions.Count == 0)
             {
-                PlayerName = ps.PlayerName?.Trim() ?? "",
-                ps.ServerGuid,
-                ps.SessionCount,
-                ps.LastPlayed,
-                ps.AvgPing
-            })
-            .Where(ps => !string.IsNullOrEmpty(ps.PlayerName))
-            .ToList();
+                await MarkSessionsSyncedAsync(sessionBatch.Select(s => s.SessionId).ToList(), cancellationToken);
+                continue;
+            }
 
-        if (validPlayerServerData.Count == 0)
-        {
-            logger.LogInformation("No valid player-server relationships after filtering empty names");
-            return;
-        }
+            var grouped = validSessions
+                .GroupBy(ps => new { ps.PlayerName, ps.ServerGuid })
+                .Select(g => new
+                {
+                    g.Key.PlayerName,
+                    g.Key.ServerGuid,
+                    SessionCount = g.Count(),
+                    LastPlayed = g.Max(ps => ps.LastSeenTime),
+                    AvgPing = g.Any(ps => ps.AveragePing is > 0)
+                        ? g.Where(ps => ps.AveragePing is > 0).Select(ps => ps.AveragePing!.Value).Average()
+                        : (double?)null
+                })
+                .ToList();
 
-        // Get server info for MERGE
-        var serverGuids = validPlayerServerData.Select(ps => ps.ServerGuid).Distinct().ToList();
-        var servers = await dbContext.Servers
-            .Where(s => serverGuids.Contains(s.Guid))
-            .Select(s => new { s.Guid, s.Name, s.Game })
-            .ToListAsync(cancellationToken);
+            var serverGuids = grouped.Select(g => g.ServerGuid).Distinct().ToList();
+            var servers = await dbContext.Servers
+                .Where(s => serverGuids.Contains(s.Guid))
+                .Select(s => new { s.Guid, s.Name, s.Game })
+                .ToListAsync(cancellationToken);
+            var serverLookup = servers.ToDictionary(s => s.Guid);
 
-        var serverLookup = servers.ToDictionary(s => s.Guid);
-
-        // Batch sync to Neo4j
-        const int batchSize = 1000;
-        var batches = validPlayerServerData.Chunk(batchSize);
-
-        foreach (var batch in batches)
-        {
             await neo4jService.ExecuteWriteAsync(async tx =>
             {
                 var query = @"
@@ -458,7 +428,7 @@ public class PlayerRelationshipEtlService(
                     MERGE (s:Server {guid: rel.serverGuid})
                     ON CREATE SET s.name = rel.serverName,
                                   s.game = rel.game
-                    
+
                     MERGE (p)-[r:PLAYS_ON]->(s)
                     ON CREATE SET r.sessionCount = rel.sessionCount,
                                   r.lastPlayed = datetime(rel.lastPlayed),
@@ -474,28 +444,42 @@ public class PlayerRelationshipEtlService(
                                      WHEN rel.avgPing IS NULL THEN r.avgPing
                                      ELSE (r.avgPing + rel.avgPing) / 2.0
                                  END
-                    
+
                     RETURN count(*) as processed";
 
-                var relationshipData = batch.Select(ps => new Dictionary<string, object>
+                var relationshipData = grouped.Select(g => new Dictionary<string, object>
                 {
-                    ["playerName"] = ps.PlayerName,
-                    ["serverGuid"] = ps.ServerGuid,
-                    ["serverName"] = serverLookup.TryGetValue(ps.ServerGuid, out var server) ? server.Name : "Unknown",
-                    ["game"] = serverLookup.TryGetValue(ps.ServerGuid, out var srv) ? srv.Game : "unknown",
-                    ["sessionCount"] = ps.SessionCount,
-                    ["lastPlayed"] = ps.LastPlayed.ToString("o"),
-                    ["avgPing"] = ps.AvgPing ?? (object)null!
+                    ["playerName"] = g.PlayerName,
+                    ["serverGuid"] = g.ServerGuid,
+                    ["serverName"] = serverLookup.TryGetValue(g.ServerGuid, out var server) ? server.Name : "Unknown",
+                    ["game"] = serverLookup.TryGetValue(g.ServerGuid, out var srv) ? srv.Game : "unknown",
+                    ["sessionCount"] = g.SessionCount,
+                    ["lastPlayed"] = g.LastPlayed.ToString("o"),
+                    ["avgPing"] = g.AvgPing.HasValue ? g.AvgPing.Value : null!
                 }).ToList();
 
                 await tx.RunAsync(query, new { relationships = relationshipData });
                 return true;
             });
+
+            await MarkSessionsSyncedAsync(sessionBatch.Select(s => s.SessionId).ToList(), cancellationToken);
+            totalSynced += validSessions.Count;
+
+            if (sessionBatch.Count < sessionBatchSize)
+            {
+                break;
+            }
         }
 
-        logger.LogInformation(
-            "Synced {Count} player-server relationships to Neo4j",
-            playerServerData.Count);
+        logger.LogInformation("Synced {Count} player-server sessions to Neo4j", totalSynced);
+    }
+
+    private async Task MarkSessionsSyncedAsync(List<int> sessionIds, CancellationToken cancellationToken)
+    {
+        var syncedAt = DateTime.UtcNow;
+        await dbContext.PlayerSessions
+            .Where(ps => sessionIds.Contains(ps.SessionId))
+            .ExecuteUpdateAsync(s => s.SetProperty(ps => ps.SyncedToNeo4jAt, syncedAt), cancellationToken);
     }
 
     public class RelationshipMetrics
