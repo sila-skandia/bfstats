@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import 'primeicons/primeicons.css'
-import { fetchLeaderboard, fetchLeaderboardMaps, type LeaderboardPlayer, type LeaderboardServer, type LeaderboardMap } from '@/services/leaderboardApi'
+import { fetchLeaderboard, fetchLeaderboardMaps, fetchLeaderboardPlayers, type LeaderboardPlayer, type LeaderboardServer, type LeaderboardMap } from '@/services/leaderboardApi'
 import { kdClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import { decodeServerName } from '@/utils/playerName'
@@ -23,30 +23,32 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: 'kd', label: 'K/D', align: 'right', w: 92, type: 'kd', sortable: true, groupable: true },
   { key: 'kills', label: 'Kills', align: 'right', w: 96, type: 'kills', sortable: true },
   { key: 'deaths', label: 'Deaths', align: 'right', w: 96, type: 'deaths', sortable: true },
-  { key: 'score', label: 'Score', align: 'right', w: 112, type: 'score', sortable: true },
-  { key: 'kpm', label: 'Kill rate', align: 'right', w: 104, type: 'kpm', sortable: true },
-  { key: 'playMin', label: 'Play time', align: 'right', w: 112, type: 'time', sortable: true },
-  { key: 'rounds', label: 'Rounds', align: 'right', w: 96, type: 'int', sortable: true },
-  { key: 'lastSeen', label: 'Last seen', align: 'right', w: 112, type: 'date', sortable: false },
-  { key: 'favServer', label: 'Fav. server', align: 'left', w: 200, type: 'server', sortable: true, groupable: true },
-  { key: 'status', label: 'Status', align: 'center', w: 90, type: 'status', sortable: false }
+  { key: 'score', label: 'Score', align: 'right', w: 108, type: 'score', sortable: true },
+  { key: 'kpm', label: 'Kill Rate', align: 'right', w: 96, type: 'kpm', sortable: true },
+  { key: 'playMin', label: 'Play Time', align: 'right', w: 108, type: 'time', sortable: true },
+  { key: 'rounds', label: 'Rounds', align: 'right', w: 82, type: 'int', sortable: true },
+  { key: 'favServer', label: 'Fav Server', align: 'left', w: 200, type: 'server', sortable: true, groupable: true },
+  { key: 'lastSeen', label: 'Last Seen', align: 'left', w: 110, type: 'date', sortable: true },
+  { key: 'status', label: 'Status', align: 'center', w: 85, type: 'status', sortable: true }
 ]
 
 const route = useRoute()
 const router = useRouter()
 
-// Data state
+// Leaderboard data state
 const rawPlayers = ref<LeaderboardPlayer[]>([])
 const servers = ref<LeaderboardServer[]>([])
 const maps = ref<LeaderboardMap[]>([])
 const loading = ref(true)
 const hasLoaded = ref(false)
 const isRefreshing = computed(() => loading.value && hasLoaded.value)
-let loadSeq = 0
 const error = ref<string | null>(null)
 const copyToast = ref(false)
+let loadSeq = 0
 
-// Server-side pagination / sort metadata
+// Pagination state
+const page = ref<number>(Math.max(1, Number(route.query.page) || 1))
+const pageSize = ref<number>(Math.max(10, Math.min(100, Number(route.query.pageSize) || 25)))
 const serverTotalPlayers = ref(0)
 const serverTotalPages = ref(1)
 
@@ -74,15 +76,21 @@ const includedMaps = ref<string[]>(
   route.query.map ? (route.query.map as string).split(',').filter(Boolean) : []
 )
 const mapDisplayNames = ref<Record<string, string>>({})
+const includedPlayers = ref<string[]>(
+  route.query.player ? (route.query.player as string).split(',').filter(Boolean) : []
+)
 const searchQuery = ref<string>((route.query.q as string) || '')
 const debouncedSearch = ref(searchQuery.value.trim())
 const serverSearchQuery = ref<string>('')
 const mapSearchQuery = ref<string>('')
+const playerSearchQuery = ref<string>('')
 const serverDropdownOpen = ref(false)
 const mapDropdownOpen = ref(false)
+const playerDropdownOpen = ref(false)
 const periodSheetOpen = ref(false)
 const serverSearchInputRef = ref<HTMLInputElement | null>(null)
 const mapSearchInputRef = ref<HTMLInputElement | null>(null)
+const playerSearchInputRef = ref<HTMLInputElement | null>(null)
 const groupBy = ref<'playerServer' | 'favServer' | 'kdBand' | null>((route.query.group as any) || null)
 const collapsedGroups = ref<Set<string>>(new Set())
 
@@ -95,6 +103,7 @@ const onNarrowChange = (e: MediaQueryListEvent) => { isNarrow.value = e.matches 
 const closeAllSheets = () => {
   serverDropdownOpen.value = false
   mapDropdownOpen.value = false
+  playerDropdownOpen.value = false
   periodSheetOpen.value = false
 }
 
@@ -314,6 +323,103 @@ const mapChipLabel = (name: string) => {
   return found?.displayName || mapDisplayNames.value[name] || name
 }
 
+const playersList = ref<string[]>([])
+const loadingPlayers = ref(false)
+let playerLoadSeq = 0
+
+const extractClanTag = (name: string) => {
+  if (!name) return ''
+  const match = name.match(/^([=\[|#~·].*?[=\]|#~·]|\w+\|)/)
+  return match ? match[1] : ''
+}
+
+const loadPlayers = async (query = '') => {
+  const seq = ++playerLoadSeq
+  loadingPlayers.value = true
+  try {
+    const res = await fetchLeaderboardPlayers(query, 50)
+    if (seq === playerLoadSeq) {
+      playersList.value = res
+    }
+  } finally {
+    if (seq === playerLoadSeq) {
+      loadingPlayers.value = false
+    }
+  }
+}
+
+let playerSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+watch(playerSearchQuery, (q) => {
+  if (playerSearchDebounceTimer) clearTimeout(playerSearchDebounceTimer)
+  const trimmed = q.trim()
+  if (!trimmed) {
+    void loadPlayers('')
+    return
+  }
+  playerSearchDebounceTimer = setTimeout(() => {
+    void loadPlayers(trimmed)
+  }, 250)
+})
+
+const togglePlayerDropdown = async () => {
+  const next = !playerDropdownOpen.value
+  closeAllSheets()
+  playerDropdownOpen.value = next
+  if (playerDropdownOpen.value) {
+    if (playersList.value.length === 0) {
+      await loadPlayers(playerSearchQuery.value)
+    }
+    if (!isNarrow.value) {
+      await nextTick()
+      playerSearchInputRef.value?.focus()
+    }
+  }
+}
+
+const playersForPicker = computed(() => {
+  const list = playersList.value.map(name => ({
+    name,
+    tag: extractClanTag(name)
+  }))
+  const missing = includedPlayers.value.filter(
+    sel => !list.some(p => p.name.toLowerCase() === sel.toLowerCase())
+  )
+  if (missing.length === 0) return list
+  return [
+    ...missing.map(name => ({
+      name,
+      tag: extractClanTag(name)
+    })),
+    ...list
+  ]
+})
+
+const isPlayerIncluded = (playerName: string) =>
+  includedPlayers.value.some(p => p.toLowerCase() === playerName.toLowerCase())
+
+const toggleIncludePlayer = (playerName: string) => {
+  const lower = playerName.toLowerCase()
+  if (includedPlayers.value.some(p => p.toLowerCase() === lower)) {
+    includedPlayers.value = includedPlayers.value.filter(p => p.toLowerCase() !== lower)
+  } else {
+    includedPlayers.value = [...includedPlayers.value, playerName]
+  }
+}
+
+const clearIncludedPlayers = () => {
+  includedPlayers.value = []
+}
+
+const filteredPlayers = computed(() => {
+  const q = playerSearchQuery.value.trim().toLowerCase()
+  const list = !q
+    ? playersForPicker.value
+    : playersForPicker.value.filter(p => p.name.toLowerCase().includes(q))
+  return [...list].sort((a, b) => Number(isPlayerIncluded(b.name)) - Number(isPlayerIncluded(a.name)))
+})
+
+const playerChipLabel = (name: string) => name
+
 // Table configuration state
 const order = ref<string[]>(ALL_COLUMNS.map(c => c.key))
 const hidden = ref<Set<string>>(new Set(['status', 'lastSeen']))
@@ -321,8 +427,6 @@ const pinned = ref<string[]>(['rank', 'player'])
 const widths = ref<Record<string, number>>(ALL_COLUMNS.reduce((acc, c) => { acc[c.key] = c.w; return acc }, {} as Record<string, number>))
 const sort = ref<{ key: string; dir: 'asc' | 'desc' }[]>([{ key: 'score', dir: 'desc' }])
 const density = ref<'comfortable' | 'compact'>('comfortable')
-const page = ref(1)
-const pageSize = ref(25)
 const selectedPlayer = ref<string | null>(null)
 
 // UI Popovers / Menus
@@ -353,6 +457,7 @@ const loadData = async () => {
         : undefined,
       populatedOnly: populatedOnly.value,
       map: includedMaps.value.length > 0 ? includedMaps.value.join(',') : undefined,
+      player: includedPlayers.value.length > 0 ? includedPlayers.value.join(',') : undefined,
       days: days.value,
       minRounds: minRounds.value,
       minPlay: minPlay.value,
@@ -401,6 +506,9 @@ const onDocClick = (e: MouseEvent) => {
   if (!target?.closest('[data-lbmenu="map"]')) {
     mapDropdownOpen.value = false
   }
+  if (!target?.closest('[data-lbmenu="player"]')) {
+    playerDropdownOpen.value = false
+  }
   if (!target?.closest('[data-lbmenu="period"]')) {
     periodSheetOpen.value = false
   }
@@ -438,7 +546,7 @@ const onKeydown = (e: KeyboardEvent) => {
 }
 
 const syncBodyScrollLock = () => {
-  const sheetOpen = isNarrow.value && (serverDropdownOpen.value || mapDropdownOpen.value || periodSheetOpen.value)
+  const sheetOpen = isNarrow.value && (serverDropdownOpen.value || mapDropdownOpen.value || playerDropdownOpen.value || periodSheetOpen.value)
   document.body.style.overflow = sheetOpen ? 'hidden' : ''
 }
 
@@ -457,6 +565,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
   if (mapSearchDebounceTimer) clearTimeout(mapSearchDebounceTimer)
+  if (playerSearchDebounceTimer) clearTimeout(playerSearchDebounceTimer)
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('mousedown', onDocClick)
@@ -470,11 +579,11 @@ watch(isNarrow, (narrow) => {
   if (!narrow) closeAllSheets()
 })
 
-watch([serverDropdownOpen, mapDropdownOpen, periodSheetOpen, isNarrow], () => {
+watch([serverDropdownOpen, mapDropdownOpen, playerDropdownOpen, periodSheetOpen, isNarrow], () => {
   syncBodyScrollLock()
 })
 
-watch([days, minPlay, minRounds, includedMaps, includedServers, excludedServers, serverMode, populatedOnly], () => {
+watch([days, minPlay, minRounds, includedMaps, includedPlayers, includedServers, excludedServers, serverMode, populatedOnly], () => {
   page.value = 1
 })
 
@@ -519,6 +628,7 @@ const requestKey = computed(() => [
   excludedServers.value.join('\0'),
   populatedOnly.value ? '1' : '0',
   includedMaps.value.join('\0'),
+  includedPlayers.value.join('\0'),
   days.value,
   minRounds.value,
   minPlay.value,
@@ -530,7 +640,7 @@ watch(requestKey, () => {
 })
 
 // URL sync
-watch([days, minPlay, minRounds, searchQuery, groupBy, includedMaps, includedServers, excludedServers, serverMode, populatedOnly], () => {
+watch([days, minPlay, minRounds, searchQuery, groupBy, includedMaps, includedPlayers, includedServers, excludedServers, serverMode, populatedOnly], () => {
   router.replace({
     query: {
       ...route.query,
@@ -542,6 +652,7 @@ watch([days, minPlay, minRounds, searchQuery, groupBy, includedMaps, includedSer
       exclude: (serverMode.value === 'exclude' && excludedServers.value.length > 0) ? excludedServers.value.join(',') : undefined,
       populatedOnly: populatedOnly.value ? undefined : '0',
       map: includedMaps.value.length > 0 ? includedMaps.value.join(',') : undefined,
+      player: includedPlayers.value.length > 0 ? includedPlayers.value.join(',') : undefined,
       q: searchQuery.value.trim() || undefined,
       group: groupBy.value || undefined
     }
@@ -707,6 +818,9 @@ const resetAll = () => {
   mapDisplayNames.value = {}
   mapSearchQuery.value = ''
   mapDropdownOpen.value = false
+  includedPlayers.value = []
+  playerSearchQuery.value = ''
+  playerDropdownOpen.value = false
   periodSheetOpen.value = false
   days.value = 30
   minPlay.value = 0
@@ -760,6 +874,19 @@ const activeFilterChips = computed(() => {
       key: 'map',
       label: `${includedMaps.value.length} maps`,
       clear: clearIncludedMaps
+    })
+  }
+  if (includedPlayers.value.length === 1) {
+    chips.push({
+      key: 'player',
+      label: `Player: ${includedPlayers.value[0]}`,
+      clear: clearIncludedPlayers
+    })
+  } else if (includedPlayers.value.length > 1) {
+    chips.push({
+      key: 'player',
+      label: `${includedPlayers.value.length} players`,
+      clear: clearIncludedPlayers
     })
   }
   if (days.value !== 30) {
@@ -1386,6 +1513,147 @@ const rankTintClass = (rank: number) => {
             </div>
           </div>
 
+          <!-- Searchable Player Slicer -->
+          <div class="lb-control-group lb-server-select-wrap" data-lbmenu="player">
+            <span class="lb-slicer-label">Player</span>
+            <div class="lb-server-dropdown-anchor">
+              <button
+                class="lb-server-dropdown-btn lb-player-dropdown-btn"
+                :class="{ 'lb-server-dropdown-btn--active': includedPlayers.length > 0, 'lb-server-dropdown-btn--open': playerDropdownOpen }"
+                title="Filter by player"
+                @click="togglePlayerDropdown"
+              >
+                <template v-if="includedPlayers.length === 1">
+                  <i class="pi pi-user lb-server-icon"></i>
+                  <span class="lb-server-dropdown-text">{{ $pn(includedPlayers[0]) }}</span>
+                </template>
+                <template v-else-if="includedPlayers.length > 1">
+                  <i class="pi pi-users lb-server-icon"></i>
+                  <span class="lb-server-dropdown-text">{{ includedPlayers.length }} players</span>
+                  <span class="lb-server-count">{{ includedPlayers.length }}</span>
+                </template>
+                <template v-else>
+                  <i class="pi pi-users lb-server-icon"></i>
+                  <span class="lb-server-dropdown-text">All Players</span>
+                </template>
+                <i class="pi pi-chevron-down lb-chevron-icon"></i>
+              </button>
+
+              <button
+                v-if="includedPlayers.length > 0"
+                type="button"
+                class="lb-server-clear-btn"
+                aria-label="Clear player filter"
+                title="Clear player filter"
+                @click.stop="clearIncludedPlayers()"
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+
+              <!-- Player Search Popover -->
+              <Teleport to="body" :disabled="!isNarrow">
+              <div
+                v-if="playerDropdownOpen"
+                class="mm lb-server-popover"
+                :class="{ 'lb-server-popover--sheet': isNarrow }"
+                data-lbmenu="player"
+                :role="isNarrow ? 'dialog' : undefined"
+                :aria-modal="isNarrow ? true : undefined"
+                aria-label="Player"
+              >
+                <div class="lb-sheet-head">
+                  <div>
+                    <div class="mm-eyebrow">FILTER</div>
+                    <h2 class="lb-sheet-title">Player</h2>
+                  </div>
+                  <div class="lb-sheet-actions">
+                    <button
+                      v-if="includedPlayers.length > 0"
+                      type="button"
+                      class="lb-sheet-clear"
+                      @click="clearIncludedPlayers(); playerDropdownOpen = false"
+                    >Clear</button>
+                    <button type="button" class="lb-sheet-done" @click="playerDropdownOpen = false">Done</button>
+                  </div>
+                </div>
+                <div class="lb-server-search-box">
+                  <i class="pi pi-search lb-server-search-icon"></i>
+                  <input
+                    ref="playerSearchInputRef"
+                    v-model="playerSearchQuery"
+                    type="text"
+                    placeholder="Search player name..."
+                    class="lb-server-search-input"
+                  />
+                  <button
+                    v-if="playerSearchQuery"
+                    class="lb-server-search-clear"
+                    title="Clear search"
+                    @click="playerSearchQuery = ''"
+                  >
+                    <i class="pi pi-times"></i>
+                  </button>
+                </div>
+
+                <div v-if="includedPlayers.length > 0" class="lb-picked-strip">
+                  <span class="lb-picked-strip-kicker">Selected · {{ includedPlayers.length }}</span>
+                  <div class="lb-picked-strip-chips">
+                    <button
+                      v-for="name in includedPlayers"
+                      :key="name"
+                      type="button"
+                      class="lb-picked-chip"
+                      :aria-label="`Remove ${name}`"
+                      @click="toggleIncludePlayer(name)"
+                    >
+                      {{ $pn(name) }}
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="lb-server-list">
+                  <!-- All Players Option -->
+                  <button
+                    class="lb-server-item"
+                    :class="{ 'lb-server-item--active': includedPlayers.length === 0 }"
+                    :aria-pressed="includedPlayers.length === 0"
+                    @click="clearIncludedPlayers()"
+                  >
+                    <span class="lb-pick-mark" :class="{ 'is-on': includedPlayers.length === 0 }" aria-hidden="true"></span>
+                    <i class="pi pi-globe lb-server-item-icon"></i>
+                    <span class="lb-server-item-name">All Players</span>
+                    <span v-if="includedPlayers.length === 0" class="lb-pick-state">ON</span>
+                  </button>
+
+                  <div v-if="loadingPlayers" class="lb-server-empty" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <i class="pi pi-spin pi-spinner"></i> Searching...
+                  </div>
+
+                  <!-- Filtered Player Options -->
+                  <button
+                    v-for="p in filteredPlayers"
+                    :key="p.name"
+                    class="lb-server-item"
+                    :class="{ 'lb-server-item--active': isPlayerIncluded(p.name) }"
+                    :aria-pressed="isPlayerIncluded(p.name)"
+                    @click="toggleIncludePlayer(p.name)"
+                  >
+                    <span class="lb-pick-mark" :class="{ 'is-on': isPlayerIncluded(p.name) }" aria-hidden="true"></span>
+                    <span v-if="p.tag" class="lb-tag">{{ p.tag }}</span>
+                    <span class="lb-server-item-name">{{ $pn(p.name) }}</span>
+                    <span v-if="isPlayerIncluded(p.name)" class="lb-pick-state">ON</span>
+                  </button>
+
+                  <div v-if="!loadingPlayers && filteredPlayers.length === 0" class="lb-server-empty">
+                    No players match "{{ playerSearchQuery }}"
+                  </div>
+                </div>
+              </div>
+              </Teleport>
+            </div>
+          </div>
+
           <!-- Min Play Slicer -->
           <div class="lb-control-group lb-desktop-only">
             <span class="lb-slicer-label">Min Play</span>
@@ -1573,6 +1841,12 @@ const rankTintClass = (rank: number) => {
           </span>
           <span v-else-if="includedMaps.length > 1" class="lb-map-active-tag">
             · MAP: {{ includedMaps.length }} MAPS
+          </span>
+          <span v-if="includedPlayers.length === 1" class="lb-player-active-tag">
+            · PLYR: {{ $pn(includedPlayers[0]).toUpperCase() }}
+          </span>
+          <span v-else-if="includedPlayers.length > 1" class="lb-player-active-tag">
+            · PLYR: {{ includedPlayers.length }} PLAYERS
           </span>
         </div>
         <div class="lb-section-right lb-desktop-only">
@@ -2798,7 +3072,8 @@ const rankTintClass = (rank: number) => {
   font-style: italic;
 }
 
-.lb-server-active-tag {
+.lb-server-active-tag,
+.lb-player-active-tag {
   color: var(--mm-highlight-ink);
   font-weight: 700;
 }

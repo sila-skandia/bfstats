@@ -82,6 +82,7 @@ public class GlobalLeaderboardResponse
     public string? Exclude { get; set; }
     public bool PopulatedOnly { get; set; }
     public string? Map { get; set; }
+    public string? Player { get; set; }
     public string? SearchQuery { get; set; }
     public string? GroupBy { get; set; }
     public string SortBy { get; set; } = "score";

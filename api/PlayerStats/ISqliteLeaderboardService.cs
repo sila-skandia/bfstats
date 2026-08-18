@@ -84,6 +84,7 @@ public interface ISqliteLeaderboardService
         string? searchQuery = null,
         string? server = null,
         string? map = null,
+        string? player = null,
         int days = 30,
         int minRounds = 1,
         int minPlay = 0,
@@ -96,4 +97,9 @@ public interface ISqliteLeaderboardService
     /// Searches available map names for leaderboard map filters.
     /// </summary>
     Task<List<string>> SearchMapsAsync(string? query = null, int limit = 50);
+
+    /// <summary>
+    /// Searches available player names for leaderboard player filters.
+    /// </summary>
+    Task<List<string>> SearchPlayersAsync(string? query = null, int limit = 50);
 }
