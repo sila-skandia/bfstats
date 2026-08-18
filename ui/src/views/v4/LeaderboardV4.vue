@@ -86,6 +86,9 @@ const serverDropdownOpen = ref(false)
 const mapDropdownOpen = ref(false)
 const playerDropdownOpen = ref(false)
 const periodSheetOpen = ref(false)
+const minPlaySheetOpen = ref(false)
+const minRoundsSheetOpen = ref(false)
+const moreFiltersSheetOpen = ref(false)
 const serverSearchInputRef = ref<HTMLInputElement | null>(null)
 const mapSearchInputRef = ref<HTMLInputElement | null>(null)
 const playerSearchInputRef = ref<HTMLInputElement | null>(null)
@@ -101,6 +104,27 @@ const closeAllSheets = () => {
   mapDropdownOpen.value = false
   playerDropdownOpen.value = false
   periodSheetOpen.value = false
+  minPlaySheetOpen.value = false
+  minRoundsSheetOpen.value = false
+  moreFiltersSheetOpen.value = false
+}
+
+const toggleMinPlaySheet = () => {
+  const next = !minPlaySheetOpen.value
+  closeAllSheets()
+  minPlaySheetOpen.value = next
+}
+
+const toggleMinRoundsSheet = () => {
+  const next = !minRoundsSheetOpen.value
+  closeAllSheets()
+  minRoundsSheetOpen.value = next
+}
+
+const toggleMoreFiltersSheet = () => {
+  const next = !moreFiltersSheetOpen.value
+  closeAllSheets()
+  moreFiltersSheetOpen.value = next
 }
 
 const toggleServerDropdown = async () => {
@@ -187,6 +211,57 @@ const periodOptions = computed(() => {
 const periodLabel = computed(() =>
   periodOptions.value.find(o => o.value === days.value)?.label ?? (days.value === 0 ? 'All Time' : `${days.value} Days`)
 )
+
+const minPlayOptions = [
+  { value: 0, label: 'Any' },
+  { value: 60, label: '1h+' },
+  { value: 300, label: '5h+' },
+  { value: 600, label: '10h+' },
+  { value: 1500, label: '25h+' },
+  { value: 3000, label: '50h+' },
+]
+const minPlayLabel = computed(() => {
+  const opt = minPlayOptions.find(o => o.value === minPlay.value)
+  return opt?.label ?? (minPlay.value === 0 ? 'Any' : `${minPlay.value}m+`)
+})
+
+const minRoundsOptions = [
+  { value: 1, label: '1+' },
+  { value: 3, label: '3+' },
+  { value: 5, label: '5+' },
+  { value: 10, label: '10+' },
+  { value: 25, label: '25+' },
+]
+const minRoundsLabel = computed(() => {
+  const opt = minRoundsOptions.find(o => o.value === minRounds.value)
+  return opt?.label ?? `${minRounds.value}+`
+})
+
+const mobileServerPillLabel = computed(() => {
+  if (serverMode.value === 'exclude' && excludedServers.value.length > 0) {
+    return `Excl. ${excludedServers.value.length}`
+  }
+  if (includedServers.value.length === 1) {
+    return decodeServerName(selectedServerObj.value?.shortName || includedServers.value[0])
+  }
+  if (includedServers.value.length > 1) {
+    return `${includedServers.value.length} Servers`
+  }
+  if (populatedOnly.value) {
+    return `Populated · ${populatedServerCount.value}`
+  }
+  return 'All Servers'
+})
+
+const mobileMapPillLabel = computed(() => {
+  if (includedMaps.value.length === 1) {
+    return selectedMapObj.value?.displayName || includedMaps.value[0]
+  }
+  if (includedMaps.value.length > 1) {
+    return `${includedMaps.value.length} Maps`
+  }
+  return 'All Maps'
+})
 
 const selectedServerObj = computed(() => {
   if (includedServers.value.length !== 1) return null
@@ -414,8 +489,6 @@ const filteredPlayers = computed(() => {
   return [...list].sort((a, b) => Number(isPlayerIncluded(b.name)) - Number(isPlayerIncluded(a.name)))
 })
 
-const playerChipLabel = (name: string) => name
-
 // Table configuration state
 const order = ref<string[]>(ALL_COLUMNS.map(c => c.key))
 const hidden = ref<Set<string>>(new Set(['status', 'lastSeen']))
@@ -507,6 +580,15 @@ const onDocClick = (e: MouseEvent) => {
   if (!target?.closest('[data-lbmenu="period"]')) {
     periodSheetOpen.value = false
   }
+  if (!target?.closest('[data-lbmenu="minPlay"]')) {
+    minPlaySheetOpen.value = false
+  }
+  if (!target?.closest('[data-lbmenu="minRounds"]')) {
+    minRoundsSheetOpen.value = false
+  }
+  if (!target?.closest('[data-lbmenu="moreFilters"]')) {
+    moreFiltersSheetOpen.value = false
+  }
   if (!target?.closest('[data-lbmenu="m"]')) {
     menuKey.value = null
   }
@@ -541,7 +623,15 @@ const onKeydown = (e: KeyboardEvent) => {
 }
 
 const syncBodyScrollLock = () => {
-  const sheetOpen = isNarrow.value && (serverDropdownOpen.value || mapDropdownOpen.value || playerDropdownOpen.value || periodSheetOpen.value)
+  const sheetOpen = isNarrow.value && (
+    serverDropdownOpen.value ||
+    mapDropdownOpen.value ||
+    playerDropdownOpen.value ||
+    periodSheetOpen.value ||
+    minPlaySheetOpen.value ||
+    minRoundsSheetOpen.value ||
+    moreFiltersSheetOpen.value
+  )
   document.body.style.overflow = sheetOpen ? 'hidden' : ''
 }
 
@@ -573,7 +663,7 @@ watch(isNarrow, (narrow) => {
   if (!narrow) closeAllSheets()
 })
 
-watch([serverDropdownOpen, mapDropdownOpen, playerDropdownOpen, periodSheetOpen, isNarrow], () => {
+watch([serverDropdownOpen, mapDropdownOpen, playerDropdownOpen, periodSheetOpen, minPlaySheetOpen, minRoundsSheetOpen, moreFiltersSheetOpen, isNarrow], () => {
   syncBodyScrollLock()
 })
 
@@ -994,11 +1084,46 @@ const sortSummary = computed(() => {
     .join(', ')
 })
 
-const rankTintClass = (rank: number) => {
-  if (rank === 1) return 'mm-rank--gold'
-  if (rank === 2) return 'mm-rank--silver'
-  if (rank === 3) return 'mm-rank--bronze'
-  return ''
+const MOBILE_SORTS = [
+  { key: 'score', label: 'Score' },
+  { key: 'kd', label: 'K/D' },
+  { key: 'kills', label: 'Kills' },
+  { key: 'deaths', label: 'Deaths' },
+  { key: 'kpm', label: 'Kill Rate' },
+  { key: 'playMin', label: 'Play Time' },
+  { key: 'rounds', label: 'Rounds' }
+]
+
+const rankColor = (rank: number) => {
+  if (rank === 1) return 'var(--mm-kd-elite)'
+  if (rank === 2) return 'var(--mm-ink)'
+  if (rank === 3) return 'var(--mm-bronze)'
+  return 'var(--mm-ink-muted)'
+}
+
+const sortArrow = (key: string) => {
+  const cur = sort.value.find(s => s.key === key)
+  if (!cur) return ''
+  return cur.dir === 'desc' ? ' ↓' : ' ↑'
+}
+
+const applyPreset = (preset: string) => {
+  switch (preset) {
+    case 'default':
+      resetAll()
+      break
+    case 'populated':
+      populatedOnly.value = true
+      break
+    case 'hardcore':
+      minRounds.value = 10
+      minPlay.value = 300
+      break
+    case 'pro':
+      minRounds.value = 25
+      minPlay.value = 600
+      break
+  }
 }
 </script>
 
@@ -1009,8 +1134,8 @@ const rankTintClass = (rank: number) => {
       <h1 class="mm-display lb-title">Leaderboard</h1>
     </header>
 
-    <!-- Toolbar / Slicers Bar -->
-    <div class="lb-filter-wrapper">
+    <!-- Toolbar / Slicers Bar (Desktop) -->
+    <div class="lb-filter-wrapper lb-desktop-only">
       <div class="lb-filter-card">
         <!-- Controls Toolbar -->
         <div class="lb-controls-row">
@@ -1773,8 +1898,75 @@ const rankTintClass = (rank: number) => {
       </div>
     </div>
 
-    <!-- Olive Section Bar -->
-    <div class="lb-section-bar-wrap">
+    <!-- Mobile Filters Strip -->
+    <div class="lbm-filter-strip lbm-scroll lb-mobile-only">
+      <button
+        type="button"
+        class="lbm-filter-pill"
+        :class="{ 'lbm-filter-pill--active': days !== 30 }"
+        @click="togglePeriodSheet"
+      >
+        <span class="lbm-pill-label">Period</span> {{ periodLabel }}
+      </button>
+      <button
+        type="button"
+        class="lbm-filter-pill"
+        :class="{ 'lbm-filter-pill--active': includedServers.length > 0 || excludedServers.length > 0 }"
+        @click="toggleServerDropdown"
+      >
+        <span class="lbm-pill-label">Server</span> {{ mobileServerPillLabel }}
+      </button>
+      <button
+        type="button"
+        class="lbm-filter-pill"
+        :class="{ 'lbm-filter-pill--active': includedMaps.length > 0 }"
+        @click="toggleMapDropdown"
+      >
+        <span class="lbm-pill-label">Map</span> {{ mobileMapPillLabel }}
+      </button>
+      <button
+        type="button"
+        class="lbm-filter-pill"
+        :class="{ 'lbm-filter-pill--active': minPlay !== 0 }"
+        @click="toggleMinPlaySheet"
+      >
+        <span class="lbm-pill-label">Min Play</span> {{ minPlayLabel }}
+      </button>
+      <button
+        type="button"
+        class="lbm-filter-pill"
+        :class="{ 'lbm-filter-pill--active': minRounds !== 1 }"
+        @click="toggleMinRoundsSheet"
+      >
+        <span class="lbm-pill-label">Rounds</span> {{ minRoundsLabel }}
+      </button>
+      <button
+        type="button"
+        class="lbm-filter-pill lbm-filter-pill--round"
+        :class="{ 'lbm-filter-pill--active': activeFilterChips.length > 0 || groupBy !== null }"
+        @click="toggleMoreFiltersSheet"
+      >
+        <i class="pi pi-sliders-h"></i> Filters
+      </button>
+    </div>
+
+    <!-- Mobile Sort Strip -->
+    <div class="lbm-sort-strip lbm-scroll lb-mobile-only">
+      <span class="lbm-sort-heading">Sort</span>
+      <button
+        v-for="s in MOBILE_SORTS"
+        :key="s.key"
+        type="button"
+        class="lbm-sort-btn"
+        :class="{ 'lbm-sort-btn--active': sort[0]?.key === s.key }"
+        @click="toggleSort(s.key)"
+      >
+        {{ s.label }}{{ sort[0]?.key === s.key ? (sort[0].dir === 'desc' ? ' ↓' : ' ↑') : '' }}
+      </button>
+    </div>
+
+    <!-- Desktop Section Bar -->
+    <div class="lb-section-bar-wrap lb-desktop-only">
       <div class="lb-section-bar">
         <div v-if="isRefreshing" class="lb-refresh-bar is-on" aria-hidden="true"></div>
         <div class="lb-section-left">
@@ -1815,6 +2007,12 @@ const rankTintClass = (rank: number) => {
       </div>
     </div>
 
+    <!-- Mobile Summary Bar -->
+    <div class="lbm-summary-bar lb-mobile-only">
+      <span class="lbm-summary-count">{{ formatInt(totalItems) }} RANKED</span>
+      <span class="lbm-summary-tag">{{ mobileServerPillLabel }}</span>
+    </div>
+
     <!-- Table Container -->
     <div class="lb-table-container">
       <div v-if="loading && !hasLoaded" class="lb-state-box" role="status" aria-live="polite">
@@ -1851,46 +2049,107 @@ const rankTintClass = (rank: number) => {
         :class="{ 'is-refreshing': isRefreshing }"
         :aria-busy="isRefreshing"
       >
-        <ol class="lb-mobile-list">
-          <li
-            v-for="(p, pIdx) in pagedRows"
-            :key="`m-${p.name}`"
-            :class="{ 'mm-mobile-player-group--alt': groupBy === 'playerServer' && pIdx % 2 === 1 }"
-          >
-            <RouterLink
-              :to="`/v4/players/${encodeURIComponent(p.name)}`"
-              class="mm-session-row mm-session-row--rank"
-              :class="rankTintClass(p.rank)"
-            >
-              <span class="mm-session-row__chip">{{ String(p.rank).padStart(2, '0') }}</span>
-              <span class="mm-session-row__map">{{ $pn(p.name) }}</span>
-              <span class="mm-session-row__date" :class="kdClass(p.kd)">{{ p.kd.toFixed(2) }}</span>
-              <span class="mm-session-row__server">
-                {{ p.favServer ? $pn(p.favServer) : '—' }}
-              </span>
-              <span class="mm-session-row__stats">
-                <span class="mm-num--kill">{{ formatInt(p.kills) }}</span>
-                <span class="mm-num__sep">/</span>
-                <span class="mm-num--death">{{ formatInt(p.deaths) }}</span>
-                <span class="mm-num__sep">·</span>
-                <span>{{ formatInt(p.score) }}</span>
-              </span>
-            </RouterLink>
-            <div v-if="groupBy === 'playerServer' && p.servers && p.servers.length" class="mm-mobile-server-rows">
-              <div v-for="s in p.servers" :key="`ms-${p.name}-${s.guid}`" class="mm-mobile-server-row">
-                <span class="mm-mobile-server-name"><span v-if="s.flag" class="lb-flag">{{ s.flag }}</span>{{ $pn(s.shortName || s.name) }}</span>
-                <span class="mm-mobile-server-stats">
-                  <span :class="kdClass(s.kd)">{{ s.kd.toFixed(2) }}</span>
-                  <span class="mm-num__sep">·</span>
-                  <span class="mm-num--kill">{{ formatInt(s.kills) }}</span>
-                  <span class="mm-num__sep">·</span>
-                  <span>{{ formatTime(s.playMin) }}</span>
-                </span>
-              </div>
-            </div>
-          </li>
-        </ol>
-        <div class="lb-scroll-pane">
+        <!-- Mobile Horizontal Scroll Table -->
+        <div class="lbm-table-wrap lbm-scroll lb-mobile-only">
+          <table class="lbm-table">
+            <thead>
+              <tr>
+                <th class="lbm-th lbm-th--player"># Player</th>
+                <th class="lbm-th lbm-th--stat" @click="toggleSort('kd')">K/D{{ sortArrow('kd') }}</th>
+                <th class="lbm-th lbm-th--stat" @click="toggleSort('kills')">Kills{{ sortArrow('kills') }}</th>
+                <th class="lbm-th lbm-th--stat" @click="toggleSort('deaths')">Deaths{{ sortArrow('deaths') }}</th>
+                <th class="lbm-th lbm-th--stat" @click="toggleSort('score')">Score{{ sortArrow('score') }}</th>
+                <th class="lbm-th lbm-th--stat" @click="toggleSort('kpm')">Kill Rate{{ sortArrow('kpm') }}</th>
+                <th class="lbm-th lbm-th--stat" @click="toggleSort('playMin')">Play Time{{ sortArrow('playMin') }}</th>
+                <th class="lbm-th lbm-th--stat" @click="toggleSort('rounds')">Rounds{{ sortArrow('rounds') }}</th>
+                <th class="lbm-th lbm-th--server">Fav Server</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Grouped mode: playerServer -->
+              <template v-if="groupBy === 'playerServer'">
+                <template v-for="(p, pIdx) in pagedRows" :key="`lbm-ps-${p.name}`">
+                  <tr class="lbm-tr lbm-tr--parent" :class="{ 'lbm-tr--alt': pIdx % 2 === 1 }">
+                    <td class="lbm-td lbm-td--player">
+                      <div class="lbm-player-cell">
+                        <span class="lbm-rank" :style="{ color: rankColor(p.rank) }">{{ String(p.rank).padStart(2, '0') }}</span>
+                        <RouterLink :to="`/v4/players/${encodeURIComponent(p.name)}`" class="lbm-player-name">
+                          <span v-if="p.tag" class="lbm-clan-tag">{{ p.tag }} </span>{{ $pn(p.name) }}
+                        </RouterLink>
+                      </div>
+                    </td>
+                    <td class="lbm-td lbm-td--stat" :class="kdClass(p.kd)">{{ p.kd.toFixed(2) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--kill">{{ formatInt(p.kills) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--death">{{ formatInt(p.deaths) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--score">{{ formatInt(p.score) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--soft">{{ p.kpm.toFixed(2) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--soft">{{ formatTime(p.playMin) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--soft">{{ formatInt(p.rounds) }}</td>
+                    <td class="lbm-td lbm-td--server">
+                      <span v-if="p.favServerFlag" class="lb-flag">{{ p.favServerFlag }}</span>
+                      <RouterLink v-if="p.favServer" :to="`/v4/servers/detail/${encodeURIComponent(p.favServer)}`" class="lbm-server-link">
+                        {{ $pn(p.favServer) }}
+                      </RouterLink>
+                      <span v-else class="lbm-muted">—</span>
+                    </td>
+                  </tr>
+                  <tr v-for="s in p.servers" :key="`lbm-ps-${p.name}-${s.guid}`" class="lbm-tr lbm-tr--subrow" :class="{ 'lbm-tr--alt': pIdx % 2 === 1 }">
+                    <td class="lbm-td lbm-td--player lbm-td--sub-player">
+                      <div class="lbm-player-cell" style="padding-left: 16px;">
+                        <span v-if="s.flag" class="lb-flag">{{ s.flag }}</span>
+                        <RouterLink :to="`/v4/servers/detail/${encodeURIComponent(s.name)}`" class="lbm-server-link">
+                          {{ $pn(s.shortName || s.name) }}
+                        </RouterLink>
+                      </div>
+                    </td>
+                    <td class="lbm-td lbm-td--stat" :class="kdClass(s.kd)">{{ s.kd.toFixed(2) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--kill">{{ formatInt(s.kills) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--death">{{ formatInt(s.deaths) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--score">{{ formatInt(s.score) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--soft">{{ s.kpm.toFixed(2) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--soft">{{ formatTime(s.playMin) }}</td>
+                    <td class="lbm-td lbm-td--stat lbm-num--soft">{{ formatInt(s.rounds) }}</td>
+                    <td class="lbm-td lbm-td--server">
+                      <span class="lbm-muted">—</span>
+                    </td>
+                  </tr>
+                </template>
+              </template>
+              <!-- Flat paged rows -->
+              <template v-else>
+                <tr v-for="(p, pIdx) in pagedRows" :key="`lbm-${p.name}`" class="lbm-tr" :class="{ 'lbm-tr--alt': pIdx % 2 === 1 }">
+                  <td class="lbm-td lbm-td--player">
+                    <div class="lbm-player-cell">
+                      <span class="lbm-rank" :style="{ color: rankColor(p.rank) }">{{ String(p.rank).padStart(2, '0') }}</span>
+                      <RouterLink :to="`/v4/players/${encodeURIComponent(p.name)}`" class="lbm-player-name">
+                        <span v-if="p.tag" class="lbm-clan-tag">{{ p.tag }} </span>{{ $pn(p.name) }}
+                      </RouterLink>
+                    </div>
+                  </td>
+                  <td class="lbm-td lbm-td--stat" :class="kdClass(p.kd)">{{ p.kd.toFixed(2) }}</td>
+                  <td class="lbm-td lbm-td--stat lbm-num--kill">{{ formatInt(p.kills) }}</td>
+                  <td class="lbm-td lbm-td--stat lbm-num--death">{{ formatInt(p.deaths) }}</td>
+                  <td class="lbm-td lbm-td--stat lbm-num--score">{{ formatInt(p.score) }}</td>
+                  <td class="lbm-td lbm-td--stat lbm-num--soft">{{ p.kpm.toFixed(2) }}</td>
+                  <td class="lbm-td lbm-td--stat lbm-num--soft">{{ formatTime(p.playMin) }}</td>
+                  <td class="lbm-td lbm-td--stat lbm-num--soft">{{ formatInt(p.rounds) }}</td>
+                  <td class="lbm-td lbm-td--server">
+                    <span v-if="p.favServerFlag" class="lb-flag">{{ p.favServerFlag }}</span>
+                    <RouterLink
+                      v-if="p.favServer"
+                      :to="`/v4/servers/detail/${encodeURIComponent(p.favServer)}`"
+                      class="lbm-server-link"
+                    >
+                      {{ $pn(p.favServer) }}
+                    </RouterLink>
+                    <span v-else class="lbm-muted">—</span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div class="lb-scroll-pane lb-desktop-only">
         <table class="lb-table" :class="{ 'lb-table--compact': density === 'compact' }">
           <!-- Table Header -->
           <thead>
@@ -2438,8 +2697,8 @@ const rankTintClass = (rank: number) => {
       </div>
     </div>
 
-    <!-- Server-side paginator -->
-    <div v-if="totalItems > 0" class="lb-pagination-bar">
+    <!-- Server-side paginator (Desktop) -->
+    <div v-if="totalItems > 0" class="lb-pagination-bar lb-desktop-only">
       <div class="lb-page-meta">
         PAGE {{ page }} OF {{ totalPages }} · {{ pageSize }} PER PAGE
       </div>
@@ -2492,6 +2751,215 @@ const rankTintClass = (rank: number) => {
         </select>
       </div>
     </div>
+
+    <!-- Mobile Load More Button -->
+    <button
+      v-if="page < totalPages"
+      type="button"
+      class="lbm-load-more lb-mobile-only"
+      :disabled="loading"
+      @click="page = page + 1; selectedPlayer = null"
+    >
+      Load next {{ pageSize }}
+    </button>
+
+    <!-- Mobile Compact Pagination -->
+    <div v-if="totalItems > 0" class="lbm-pagination lb-mobile-only">
+      <button
+        class="lb-page-btn"
+        :disabled="page <= 1 || loading"
+        @click="page = Math.max(1, page - 1); selectedPlayer = null"
+      >
+        ← PREV
+      </button>
+      <span class="lbm-page-info">PAGE {{ page }} OF {{ totalPages }}</span>
+      <button
+        class="lb-page-btn"
+        :disabled="page >= totalPages || loading"
+        @click="page = Math.min(totalPages, page + 1); selectedPlayer = null"
+      >
+        NEXT →
+      </button>
+    </div>
+
+    <!-- Mobile Min Play Bottom Sheet -->
+    <Teleport to="body" :disabled="!isNarrow">
+      <div
+        v-if="minPlaySheetOpen"
+        class="mm lb-server-popover lb-server-popover--sheet"
+        data-lbmenu="minPlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Min Play Time"
+      >
+        <div class="lb-sheet-head">
+          <div>
+            <div class="mm-eyebrow">FILTER</div>
+            <h2 class="lb-sheet-title">Min Play Time</h2>
+          </div>
+          <div class="lb-sheet-actions">
+            <button
+              v-if="minPlay !== 0"
+              type="button"
+              class="lb-sheet-clear"
+              @click="minPlay = 0; minPlaySheetOpen = false"
+            >Clear</button>
+            <button type="button" class="lb-sheet-done" @click="minPlaySheetOpen = false">Done</button>
+          </div>
+        </div>
+        <div class="lb-server-list">
+          <button
+            v-for="opt in minPlayOptions"
+            :key="opt.value"
+            type="button"
+            class="lb-server-item"
+            :class="{ 'lb-server-item--active': minPlay === opt.value }"
+            @click="minPlay = opt.value; minPlaySheetOpen = false"
+          >
+            <span class="lb-pick-mark" :class="{ 'is-on': minPlay === opt.value }" aria-hidden="true"></span>
+            <span class="lb-server-item-name">{{ opt.label }}</span>
+            <span v-if="minPlay === opt.value" class="lb-pick-state">ON</span>
+          </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Mobile Min Rounds Bottom Sheet -->
+    <Teleport to="body" :disabled="!isNarrow">
+      <div
+        v-if="minRoundsSheetOpen"
+        class="mm lb-server-popover lb-server-popover--sheet"
+        data-lbmenu="minRounds"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Min Rounds"
+      >
+        <div class="lb-sheet-head">
+          <div>
+            <div class="mm-eyebrow">FILTER</div>
+            <h2 class="lb-sheet-title">Min Rounds</h2>
+          </div>
+          <div class="lb-sheet-actions">
+            <button
+              v-if="minRounds !== 1"
+              type="button"
+              class="lb-sheet-clear"
+              @click="minRounds = 1; minRoundsSheetOpen = false"
+            >Clear</button>
+            <button type="button" class="lb-sheet-done" @click="minRoundsSheetOpen = false">Done</button>
+          </div>
+        </div>
+        <div class="lb-server-list">
+          <button
+            v-for="opt in minRoundsOptions"
+            :key="opt.value"
+            type="button"
+            class="lb-server-item"
+            :class="{ 'lb-server-item--active': minRounds === opt.value }"
+            @click="minRounds = opt.value; minRoundsSheetOpen = false"
+          >
+            <span class="lb-pick-mark" :class="{ 'is-on': minRounds === opt.value }" aria-hidden="true"></span>
+            <span class="lb-server-item-name">{{ opt.label }}</span>
+            <span v-if="minRounds === opt.value" class="lb-pick-state">ON</span>
+          </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Mobile More Filters Bottom Sheet -->
+    <Teleport to="body" :disabled="!isNarrow">
+      <div
+        v-if="moreFiltersSheetOpen"
+        class="mm lb-server-popover lb-server-popover--sheet"
+        data-lbmenu="moreFilters"
+        role="dialog"
+        aria-modal="true"
+        aria-label="More Filters"
+      >
+        <div class="lb-sheet-head">
+          <div>
+            <div class="mm-eyebrow">OPTIONS</div>
+            <h2 class="lb-sheet-title">Filters & Views</h2>
+          </div>
+          <div class="lb-sheet-actions">
+            <button
+              type="button"
+              class="lb-sheet-clear"
+              @click="resetAll(); moreFiltersSheetOpen = false"
+            >Reset</button>
+            <button type="button" class="lb-sheet-done" @click="moreFiltersSheetOpen = false">Done</button>
+          </div>
+        </div>
+        <div class="lb-sheet-body">
+          <!-- Player Search Trigger -->
+          <div class="lb-sheet-section">
+            <div class="mm-eyebrow">FILTER BY PLAYER</div>
+            <button
+              type="button"
+              class="lb-server-dropdown-btn"
+              style="width: 100%; margin-top: 6px;"
+              @click="moreFiltersSheetOpen = false; togglePlayerDropdown()"
+            >
+              <i class="pi pi-user lb-server-icon"></i>
+              <span class="lb-server-dropdown-text">{{ includedPlayers.length ? `${includedPlayers.length} Selected` : 'Search Player...' }}</span>
+              <i class="pi pi-chevron-down lb-chevron-icon"></i>
+            </button>
+          </div>
+          <!-- Group By -->
+          <div class="lb-sheet-section">
+            <div class="mm-eyebrow">GROUP BY</div>
+            <div class="lb-sheet-pills">
+              <button
+                type="button"
+                class="lb-sheet-pill-btn"
+                :class="{ 'is-active': groupBy === null }"
+                @click="groupBy = null"
+              >None</button>
+              <button
+                type="button"
+                class="lb-sheet-pill-btn"
+                :class="{ 'is-active': groupBy === 'playerServer' }"
+                @click="groupBy = 'playerServer'"
+              >Per-Server</button>
+              <button
+                type="button"
+                class="lb-sheet-pill-btn"
+                :class="{ 'is-active': groupBy === 'favServer' }"
+                @click="groupBy = 'favServer'"
+              >Fav Server</button>
+              <button
+                type="button"
+                class="lb-sheet-pill-btn"
+                :class="{ 'is-active': groupBy === 'kdBand' }"
+                @click="groupBy = 'kdBand'"
+              >K/D Band</button>
+            </div>
+          </div>
+          <!-- Presets -->
+          <div class="lb-sheet-section">
+            <div class="mm-eyebrow">PRESETS</div>
+            <div class="lb-sheet-pills">
+              <button type="button" class="lb-sheet-pill-btn" @click="applyPreset('default')">Default</button>
+              <button type="button" class="lb-sheet-pill-btn" @click="applyPreset('populated')">Populated Only</button>
+              <button type="button" class="lb-sheet-pill-btn" @click="applyPreset('hardcore')">Hardcore (10+ rnd)</button>
+              <button type="button" class="lb-sheet-pill-btn" @click="applyPreset('pro')">Pro (25+ rnd)</button>
+            </div>
+          </div>
+          <!-- Export & Copy -->
+          <div class="lb-sheet-section">
+            <div class="mm-eyebrow">DATA EXPORT</div>
+            <div style="display: flex; gap: 8px; margin-top: 6px;">
+              <button type="button" class="lb-btn" style="flex: 1; justify-content: center;" @click="exportCsv">
+                <i class="pi pi-download"></i> CSV
+              </button>
+              <button type="button" class="lb-btn" style="flex: 1; justify-content: center;" @click="copyJson">
+                <i :class="copyToast ? 'pi pi-check' : 'pi pi-copy'"></i> {{ copyToast ? 'COPIED' : 'JSON' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -3947,141 +4415,353 @@ td {
   align-items: center;
 }
 
-.lb-mobile-list {
+/* Mobile Layout (.lbm-*) Styles */
+.lbm-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.lbm-scroll::-webkit-scrollbar {
   display: none;
-  list-style: none;
-  margin: 0;
-  padding: 8px 4px 4px;
-  border: 1px solid var(--mm-rule);
-  border-top: none;
-  background: var(--mm-bg);
 }
 
-.lb-mobile-list .mm-session-row {
-  padding-left: 10px;
-  padding-right: 10px;
+.lbm-filter-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 14px 16px 4px;
+  -webkit-overflow-scrolling: touch;
 }
 
-.lb-mobile-list .mm-session-row--rank .mm-session-row__chip {
+.lbm-filter-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
   background: transparent;
-  color: var(--mm-ink-muted);
-  border-color: var(--mm-rule);
-}
-
-.lb-mobile-list .mm-rank--gold .mm-session-row__chip {
-  color: var(--mm-kd-elite);
-  border-color: var(--mm-kd-elite);
-}
-
-.lb-mobile-list .mm-rank--silver .mm-session-row__chip {
   color: var(--mm-ink);
-  border-color: var(--mm-ink-soft);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.lb-mobile-list .mm-rank--bronze .mm-session-row__chip {
-  color: var(--mm-accent-soft);
+.lbm-filter-pill:hover {
   border-color: var(--mm-accent-soft);
 }
 
-@media (max-width: 720px) {
-  .lb-desktop-only {
-    display: none !important;
-  }
+.lbm-filter-pill--active {
+  border-color: var(--mm-accent);
+  color: var(--mm-ink);
+}
 
-  .lb-mobile-only {
-    display: inline-flex;
-  }
+.lbm-filter-pill--round {
+  border-radius: 999px;
+  color: var(--mm-ink-muted);
+}
 
-  .lb-header {
-    padding: 16px 12px 8px;
-  }
+.lbm-pill-label {
+  color: var(--mm-ink-muted);
+}
 
-  .lb-title {
-    font-size: 32px;
-  }
+.lbm-sort-strip {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 8px 16px 2px;
+  -webkit-overflow-scrolling: touch;
+}
 
-  .lb-filter-wrapper,
-  .lb-section-bar-wrap,
-  .lb-table-container,
-  .lb-pagination-bar {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
+.lbm-sort-heading {
+  flex: 0 0 auto;
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-ink-faint);
+  align-self: center;
+  padding-right: 2px;
+}
 
-  .lb-controls-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-    padding: 10px 10px;
-  }
+.lbm-sort-btn {
+  flex: 0 0 auto;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 11px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--mm-ink-soft);
+  border: 1px solid var(--mm-rule-strong);
+  transition: all 0.15s ease;
+}
 
-  .lb-control-group:not(.lb-desktop-only) {
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-  }
+.lbm-sort-btn--active {
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  border: 1px solid var(--mm-highlight);
+  font-weight: 600;
+}
 
-  .lb-server-select-wrap,
-  .lb-server-dropdown-anchor,
-  .lb-server-dropdown-btn {
-    width: 100%;
-    max-width: none;
-  }
+.lbm-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 16px 6px;
+  padding: 0 16px;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
 
-  .lb-server-dropdown-btn {
-    min-height: 44px;
-    font-size: 13px;
-    padding: 10px 28px 10px 12px;
-  }
+.lbm-summary-count {
+  color: var(--mm-ink-muted);
+}
 
-  .lb-server-clear-btn {
-    width: 44px;
-    min-height: 44px;
-    font-size: 22px;
-  }
+.lbm-summary-tag {
+  color: var(--mm-ink-faint);
+}
 
-  .lb-controls-row > .lb-btn {
-    min-height: 44px;
-    width: 100%;
-    justify-content: center;
-  }
+.lbm-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 4px;
+}
 
-  .lb-section-bar {
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 8px 10px;
-    font-size: 10px;
-  }
+.lbm-table {
+  border-collapse: collapse;
+  white-space: nowrap;
+  min-width: 100%;
+  width: 100%;
+}
 
-  .lb-scroll-pane {
-    display: none;
-  }
+.lbm-th {
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 9px 12px;
+  border: none;
+  user-select: none;
+}
 
-  .lb-mobile-list {
-    display: flex;
-    flex-direction: column;
-  }
+.lbm-th--player {
+  text-align: left;
+  padding: 9px 14px 9px 16px;
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--mm-highlight);
+  border-right: 1px solid var(--mm-rule);
+}
 
-  .lb-th--pinned,
-  .lb-td--pinned {
-    position: static;
-    left: auto !important;
-    z-index: auto !important;
-  }
+.lbm-th--stat {
+  text-align: right;
+  cursor: pointer;
+}
 
-  .lb-pagination-bar {
-    justify-content: center;
-    margin-bottom: 24px;
-  }
+.lbm-th--server {
+  text-align: left;
+  padding: 9px 16px 9px 12px;
+}
 
-  .lb-page-btn,
-  .lb-page-num {
-    min-height: 44px;
-    min-width: 44px;
-    padding: 8px 12px;
-  }
+.lbm-tr {
+  border-bottom: 1px solid var(--mm-rule);
+}
+
+.lbm-tr--alt {
+  background: var(--mm-bg-soft);
+}
+
+.lbm-tr--alt .lbm-td--player {
+  background: var(--mm-bg-soft);
+}
+
+.lbm-td {
+  padding: 11px 12px;
+  font-family: var(--mm-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  border: none;
+}
+
+.lbm-td--player {
+  padding: 11px 14px 11px 16px;
+  border-right: 1px solid var(--mm-rule);
+  position: sticky;
+  left: 0;
+  background: var(--mm-bg);
+  z-index: 2;
+  text-align: left;
+}
+
+.lbm-td--sub-player {
+  font-size: 11.5px;
+}
+
+.lbm-player-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.lbm-rank {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 20px;
+}
+
+.lbm-player-name {
+  font-family: var(--mm-font-display);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--mm-ink);
+  text-decoration: none;
+}
+
+.lbm-player-name:hover {
+  color: var(--mm-accent-soft);
+}
+
+.lbm-clan-tag {
+  color: var(--mm-ink-muted);
+  font-weight: 400;
+}
+
+.lbm-td--stat {
+  text-align: right;
+  font-weight: 500;
+}
+
+.lbm-num--kill {
+  color: var(--mm-kill);
+}
+
+.lbm-num--death {
+  color: var(--mm-death);
+}
+
+.lbm-num--score {
+  color: var(--mm-ink);
+}
+
+.lbm-num--soft {
+  color: var(--mm-ink-soft);
+}
+
+.lbm-td--server {
+  padding: 11px 16px 11px 12px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--mm-ink-soft);
+  text-align: left;
+}
+
+.lbm-server-link {
+  color: var(--mm-ink-soft);
+  text-decoration: none;
+}
+
+.lbm-server-link:hover {
+  color: var(--mm-accent-soft);
+}
+
+.lbm-muted {
+  color: var(--mm-ink-faint);
+}
+
+.lbm-load-more {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 14px 16px 8px;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.lbm-load-more:hover {
+  border-color: var(--mm-accent);
+  background: rgba(125, 136, 73, 0.08);
+}
+
+.lbm-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px 20px;
+}
+
+.lbm-page-info {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--mm-ink-muted);
+}
+
+.lb-sheet-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  max-height: calc(85vh - 70px);
+}
+
+.lb-sheet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lb-sheet-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lb-sheet-pill-btn {
+  padding: 6px 12px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  background: transparent;
+  color: var(--mm-ink-soft);
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lb-sheet-pill-btn.is-active {
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  border-color: var(--mm-highlight);
+  font-weight: 600;
 }
 
 /* Per-server player grouping styles */
@@ -4164,5 +4844,44 @@ td {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+@media (max-width: 720px) {
+  .lb-desktop-only {
+    display: none !important;
+  }
+
+  .lb-mobile-only {
+    display: block;
+  }
+
+  .lbm-filter-strip.lb-mobile-only,
+  .lbm-sort-strip.lb-mobile-only,
+  .lbm-summary-bar.lb-mobile-only,
+  .lbm-pagination.lb-mobile-only {
+    display: flex;
+  }
+
+  .lb-header {
+    padding: 16px 16px 0;
+  }
+
+  .lb-title {
+    font-size: 34px;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .lb-table-container {
+    padding-left: 0;
+    padding-right: 0;
+    border: none;
+    background: transparent;
+  }
+
+  .lb-results {
+    border: none;
+  }
 }
 </style>
