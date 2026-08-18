@@ -492,7 +492,7 @@ const filteredPlayers = computed(() => {
 // Table configuration state
 const order = ref<string[]>(ALL_COLUMNS.map(c => c.key))
 const hidden = ref<Set<string>>(new Set(['status', 'lastSeen']))
-const pinned = ref<string[]>(['rank', 'player'])
+const pinned = ref<string[]>(['rank'])
 const widths = ref<Record<string, number>>(ALL_COLUMNS.reduce((acc, c) => { acc[c.key] = c.w; return acc }, {} as Record<string, number>))
 const sort = ref<{ key: string; dir: 'asc' | 'desc' }[]>([{ key: 'score', dir: 'desc' }])
 const density = ref<'comfortable' | 'compact'>('comfortable')
@@ -901,7 +901,7 @@ const resetAll = () => {
   minRounds.value = 1
   groupBy.value = null
   sort.value = [{ key: 'score', dir: 'desc' }]
-  pinned.value = ['rank', 'player']
+  pinned.value = ['rank']
   hidden.value = new Set(['status', 'lastSeen'])
   page.value = 1
   selectedPlayer.value = null
@@ -4562,11 +4562,7 @@ td {
 .lbm-th--player {
   text-align: left;
   padding: 9px 14px 9px 16px;
-  position: sticky;
-  left: 0;
-  z-index: 5;
   background: var(--mm-highlight);
-  border-right: 1px solid var(--mm-rule);
 }
 
 .lbm-th--stat {
@@ -4587,10 +4583,6 @@ td {
   background: var(--mm-bg-soft);
 }
 
-.lbm-tr--alt .lbm-td--player {
-  background: var(--mm-bg-soft);
-}
-
 .lbm-td {
   padding: 11px 12px;
   font-family: var(--mm-font-mono);
@@ -4601,11 +4593,6 @@ td {
 
 .lbm-td--player {
   padding: 11px 14px 11px 16px;
-  border-right: 1px solid var(--mm-rule);
-  position: sticky;
-  left: 0;
-  background: var(--mm-bg);
-  z-index: 2;
   text-align: left;
 }
 
