@@ -153,6 +153,7 @@ public class PlayerRelationshipEtlService(
     /// </summary>
     public async Task SyncToNeo4jAsync(
         Dictionary<(string, string), RelationshipMetrics> relationships,
+        (int RoundsProcessed, int TotalPendingRounds)? roundProgress = null,
         CancellationToken cancellationToken = default)
     {
         _ = cancellationToken;
@@ -234,7 +235,16 @@ public class PlayerRelationshipEtlService(
             });
 
             totalProcessed += batch.Length;
-            logger.LogDebug("Processed batch: {Processed}/{Total}", totalProcessed, relationshipData.Count);
+            if (roundProgress is { } progress)
+            {
+                logger.LogInformation(
+                    "Processed batch: {Processed}/{Total} relationship pairs (rounds {RoundsProcessed}/{TotalPendingRounds})",
+                    totalProcessed, relationshipData.Count, progress.RoundsProcessed, progress.TotalPendingRounds);
+            }
+            else
+            {
+                logger.LogInformation("Processed batch: {Processed}/{Total} relationship pairs", totalProcessed, relationshipData.Count);
+            }
         }
 
         logger.LogInformation(
@@ -260,6 +270,15 @@ public class PlayerRelationshipEtlService(
         var roundsProcessed = 0;
         var totalRelationshipsProcessed = 0;
 
+        // Snapshot at the start so progress logs have a denominator. It can drift low as
+        // more rounds finish and become pending during a long-running backfill — that's
+        // fine, it's a progress indicator, not a completion gate.
+        var totalPending = await dbContext.Rounds
+            .Where(r => !r.IsDeleted && !r.IsActive && r.SyncedToNeo4jAt == null)
+            .CountAsync(cancellationToken);
+
+        logger.LogInformation("Neo4j relationship sync: {TotalPending} rounds pending", totalPending);
+
         while (true)
         {
             var roundBatch = await dbContext.Rounds
@@ -282,7 +301,10 @@ public class PlayerRelationshipEtlService(
 
             if (batchRelationships.Count > 0)
             {
-                await SyncToNeo4jAsync(batchRelationships, cancellationToken);
+                await SyncToNeo4jAsync(
+                    batchRelationships,
+                    roundProgress: (roundsProcessed + roundBatch.Count, totalPending),
+                    cancellationToken: cancellationToken);
                 totalRelationshipsProcessed += batchRelationships.Count;
             }
 
@@ -293,10 +315,6 @@ public class PlayerRelationshipEtlService(
             await dbContext.Rounds
                 .Where(r => roundIds.Contains(r.RoundId))
                 .ExecuteUpdateAsync(s => s.SetProperty(r => r.SyncedToNeo4jAt, syncedAt), cancellationToken);
-
-            logger.LogInformation(
-                "Neo4j relationship sync: {RoundsProcessed} rounds processed so far ({RelationshipsProcessed} relationship pairs)",
-                roundsProcessed, totalRelationshipsProcessed);
 
             if (roundBatch.Count < roundBatchSize)
             {
