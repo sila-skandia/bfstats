@@ -348,7 +348,6 @@ const formatHours = (mins: number) => {
   const h = mins / 60
   return h >= 10 ? `${Math.round(h)}h` : `${h.toFixed(1)}h`
 }
-const formatPercent = (v: number) => `${v.toFixed(1)}%`
 
 const goPlayer = (name: string) => {
   router.push(`/v4/players/${encodeURIComponent(name)}`)
