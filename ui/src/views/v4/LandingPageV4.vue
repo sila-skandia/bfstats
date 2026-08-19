@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import 'primeicons/primeicons.css'
 import { fetchAllServers, peekCachedLiveServers } from '@/services/serverDetailsService'
@@ -9,6 +9,7 @@ import { loadClass, teamColor } from './mmTokens'
 import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
+import LandingColumnFilterPanel from './LandingColumnFilterPanel.vue'
 import { formatTimeRemaining, formatRelativeTime, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
 import {
   ALL_COLUMNS,
@@ -16,7 +17,8 @@ import {
   DEFAULT_HIDDEN,
   DEFAULT_PINNED,
   DEFAULT_SORT,
-  filterPlaceholder,
+  formatColFilterLabel,
+  formatColFilterValue,
   friendlyCountry,
   getAveragePing,
   getCellValue,
@@ -28,7 +30,6 @@ import {
   matchesGlobalSearch,
   rowsToCsv,
   rowsToTsv,
-  uniqueColumnValues,
 } from './landingServerTable'
 
 type GameKey = 'bf1942'
@@ -100,6 +101,9 @@ const colFilters = ref<Record<string, string>>(
   saved?.colFilters && typeof saved.colFilters === 'object' ? { ...saved.colFilters } : {}
 )
 
+const filtersOpen = ref(false)
+const filterColKey = ref<string | null>(null)
+
 const density = ref<'comfortable' | 'compact'>(
   saved?.density === 'compact' ? 'compact' : 'comfortable'
 )
@@ -142,6 +146,8 @@ const resetAll = () => {
   filterPreset.value = 'all'
   filterQuery.value = ''
   colFilters.value = {}
+  filtersOpen.value = false
+  filterColKey.value = null
   selectedGuids.value = new Set()
   try {
     localStorage.removeItem(STORAGE_KEY)
@@ -197,14 +203,17 @@ const dragKey = ref<string | null>(null)
 const menuKey = ref<string | null>(null)
 const colPanelOpen = ref(false)
 const colPanelQuery = ref('')
-const selectedFilterCol = ref<string | null>(null)
-const filterInputEls = new Map<string, HTMLInputElement>()
 const searchInputEl = ref<HTMLInputElement | null>(null)
 const copyToast = ref('')
 const shortcutsOpen = ref(false)
 const isFullscreen = ref(false)
 const selectedGuids = ref<Set<string>>(new Set())
+const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
 let copyToastTimer: number | undefined
+let narrowMql: MediaQueryList | null = null
+
+const onNarrowChange = (e: MediaQueryListEvent) => { isNarrow.value = e.matches }
+const colIsPinned = (key: string) => !isNarrow.value && pinned.value.includes(key)
 
 const groupedPanelColumns = computed(() => {
   const q = colPanelQuery.value.trim().toLowerCase()
@@ -214,17 +223,25 @@ const groupedPanelColumns = computed(() => {
   })).filter(g => g.cols.length > 0)
 })
 
-const setFilterInputRef = (key: string, el: unknown) => {
-  if (el instanceof HTMLInputElement) filterInputEls.set(key, el)
-  else filterInputEls.delete(key)
+const openFilters = (key: string | null = null) => {
+  if (key) {
+    const col = getCol(key)
+    if (!col || col.filter === 'none') return
+    filterColKey.value = key
+    filtersOpen.value = true
+    return
+  }
+  if (filtersOpen.value && !filterColKey.value) {
+    closeFilters()
+    return
+  }
+  filterColKey.value = null
+  filtersOpen.value = true
 }
 
-const focusColumnFilter = async (key: string) => {
-  const col = getCol(key)
-  if (!col || col.filter === 'none') return
-  selectedFilterCol.value = key
-  await nextTick()
-  filterInputEls.get(key)?.focus()
+const closeFilters = () => {
+  filtersOpen.value = false
+  filterColKey.value = null
 }
 
 const setColFilter = (key: string, value: string) => {
@@ -243,18 +260,11 @@ const clearColFilter = (key: string) => {
 const onHeaderClick = (key: string, e: MouseEvent) => {
   const target = e.target as HTMLElement | null
   if (target?.closest('.lb-th-actions, .lb-resize-handle')) return
+  if (e.altKey) {
+    openFilters(key)
+    return
+  }
   toggleSort(key, e.shiftKey)
-  void focusColumnFilter(key)
-}
-
-const colFilterPlaceholder = (key: string) => {
-  const col = getCol(key)
-  return col ? filterPlaceholder(col) : 'filter…'
-}
-
-const onColFilterInput = (key: string, e: Event) => {
-  const target = e.target
-  if (target instanceof HTMLInputElement) setColFilter(key, target.value)
 }
 
 const startResize = (key: string, e: MouseEvent) => {
@@ -400,7 +410,9 @@ const applyUrlState = () => {
     const colKey = key.slice(2)
     if (ALL_COLUMNS.some(c => c.key === colKey)) nextFilters[colKey] = value
   }
-  if (Object.keys(nextFilters).length > 0) colFilters.value = nextFilters
+  if (Object.keys(nextFilters).length > 0) {
+    colFilters.value = nextFilters
+  }
   if (typeof q.sort === 'string' && q.sort) {
     const parsed = q.sort.split(',').flatMap(part => {
       const [key, dir] = part.split(':')
@@ -523,13 +535,10 @@ const load = async (showSpinner = false) => {
 const onKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
     if (trendOpen.value) { closeTrend(); return }
+    if (filtersOpen.value) { closeFilters(); return }
     if (shortcutsOpen.value) { shortcutsOpen.value = false; return }
     if (colPanelOpen.value) { colPanelOpen.value = false; return }
     if (menuKey.value) { menuKey.value = null; return }
-    if (selectedFilterCol.value && colFilters.value[selectedFilterCol.value]) {
-      clearColFilter(selectedFilterCol.value)
-      return
-    }
     if (filterQuery.value) { filterQuery.value = ''; return }
     if (selectedGuids.value.size) { selectedGuids.value = new Set(); return }
     if (expandedGuids.value.size) { expandedGuids.value = new Set() }
@@ -554,9 +563,9 @@ const onKeydown = (e: KeyboardEvent) => {
   }
 }
 
-watch(trendOpen, (open) => {
-  document.body.style.overflow = open ? 'hidden' : ''
-  document.documentElement.classList.toggle('mm-fs-lock', open)
+watch([trendOpen, filtersOpen], () => {
+  document.body.style.overflow = (trendOpen.value || filtersOpen.value) ? 'hidden' : ''
+  document.documentElement.classList.toggle('mm-fs-lock', trendOpen.value)
 })
 
 onMounted(() => {
@@ -569,6 +578,9 @@ onMounted(() => {
   window.addEventListener('mouseup', onMouseUp)
   window.addEventListener('mousedown', onDocClick)
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  narrowMql = window.matchMedia('(max-width: 720px)')
+  isNarrow.value = narrowMql.matches
+  narrowMql.addEventListener('change', onNarrowChange)
 })
 
 onUnmounted(() => {
@@ -581,6 +593,7 @@ onUnmounted(() => {
   window.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('mousedown', onDocClick)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  narrowMql?.removeEventListener('change', onNarrowChange)
   document.body.style.overflow = ''
   document.documentElement.classList.remove('mm-fs-lock')
 })
@@ -732,14 +745,17 @@ const sortedServers = computed(() => {
   })
 })
 
-const columnUniques = computed(() => {
-  const map: Record<string, string[]> = {}
-  for (const col of ALL_COLUMNS) {
-    if (col.filter === 'none') continue
-    map[col.key] = uniqueColumnValues(servers.value, col.key)
-  }
-  return map
-})
+const MOBILE_FILTER_PILLS = [
+  { key: 'map', label: 'Map' },
+  { key: 'players', label: 'Players' },
+  { key: 'region', label: 'Country' },
+] as const
+
+const pillSummary = (key: string) => formatColFilterValue(key, colFilters.value[key] || '') || 'All'
+
+const clearAllColFilters = () => {
+  colFilters.value = {}
+}
 
 const onRowClick = (s: ServerSummary, idx: number, e: MouseEvent) => {
   if (e.ctrlKey || e.metaKey) {
@@ -801,7 +817,7 @@ const activeFilterChips = computed(() => {
     if (!value.trim()) continue
     chips.push({
       key: `col:${key}`,
-      label: `${(getCol(key)?.label || key).toUpperCase()}: ${value.trim()}`,
+      label: formatColFilterLabel(key, value),
       clear: () => clearColFilter(key),
     })
   }
@@ -910,6 +926,18 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
               <option value="standby">Standby Only ({{ standbyCount }})</option>
             </select>
           </div>
+
+          <button
+            type="button"
+            class="lb-btn lb-desktop-only"
+            :class="{ 'lb-btn--active': filtersOpen || Object.values(colFilters).some(v => v.trim()) }"
+            data-testid="landing-filters-open"
+            title="Column filters"
+            @click="openFilters()"
+          >
+            <i class="pi pi-sliders-h"></i>
+            <span>FILTERS{{ Object.values(colFilters).some(v => v.trim()) ? ` (${Object.values(colFilters).filter(v => v.trim()).length})` : '' }}</span>
+          </button>
 
           <div class="lb-spacer"></div>
 
@@ -1046,19 +1074,52 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
       </div>
     </div>
 
-    <!-- Section Bar (Olive) -->
-    <div class="lb-section-bar-wrap">
-      <div class="lb-section-bar">
-        <div class="lb-section-left">
-          <span>SHOWING {{ sortedServers.length }} OF {{ servers.length }} TRACKED SERVERS ({{ formatNumber(totalPlayers) }} IN COMBAT)</span>
-          <span v-if="filterPreset === 'populated'" class="lb-populated-tag">· POPULATED</span>
-          <span v-else-if="filterPreset === 'standby'" class="lb-standby-tag">· STANDBY</span>
-          <span v-if="filterQuery" class="lb-search-tag">· SEARCH: "{{ filterQuery }}"</span>
-        </div>
-        <div class="lb-section-right lb-desktop-only">
-          <span>SORT · {{ sortSummary }}</span>
-        </div>
-      </div>
+    <div class="lbm-filter-strip lbm-scroll lb-mobile-only">
+      <button
+        v-for="pill in MOBILE_FILTER_PILLS"
+        :key="pill.key"
+        type="button"
+        class="lbm-filter-pill"
+        :class="{ 'lbm-filter-pill--active': hasActiveColFilter(pill.key) }"
+        :data-testid="`landing-filter-pill-${pill.key}`"
+        @click="openFilters(pill.key)"
+      >
+        <span class="lbm-pill-label">{{ pill.label }}</span> {{ pillSummary(pill.key) }}
+      </button>
+      <button
+        type="button"
+        class="lbm-filter-pill lbm-filter-pill--round"
+        :class="{ 'lbm-filter-pill--active': Object.values(colFilters).some(v => v.trim()) }"
+        data-testid="landing-filters-pill"
+        @click="openFilters()"
+      >
+        <i class="pi pi-sliders-h"></i> Filters
+      </button>
+    </div>
+
+    <LandingColumnFilterPanel
+      :open="filtersOpen"
+      :column-key="filterColKey"
+      :servers="servers"
+      :filters="colFilters"
+      :is-narrow="isNarrow"
+      @close="closeFilters"
+      @update:column-key="filterColKey = $event"
+      @set-filter="setColFilter"
+      @clear-filter="clearColFilter"
+      @clear-all="clearAllColFilters"
+    />
+
+    <div class="lbm-summary-bar" data-testid="landing-summary">
+      <span class="lbm-summary-count">
+        <span class="mm-meta-row__strong">{{ formatNumber(totalPlayers) }}</span> in combat
+        <span class="mm-meta-row__sep">·</span>
+        showing {{ sortedServers.length }} of {{ servers.length }} tracked
+        <span v-if="filterPreset === 'populated'" class="lbm-summary-tag"> · populated</span>
+        <span v-else-if="filterPreset === 'standby'" class="lbm-summary-tag"> · standby</span>
+        <span v-if="filterQuery" class="lbm-summary-tag"> · search: "{{ filterQuery }}"</span>
+      </span>
+      <span class="lbm-summary-tag lb-desktop-only">sort · {{ sortSummary }}</span>
     </div>
 
     <!-- Loading / Error / Empty States -->
@@ -1085,7 +1146,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
           </div>
         </div>
 
-        <div v-else class="lb-scroll-pane">
+        <div v-else class="lb-scroll-pane" data-testid="landing-table-scroll">
           <table class="lb-table" :class="{ 'lb-table--compact': density === 'compact' }">
             <thead>
               <tr>
@@ -1096,19 +1157,19 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                     width: `${widths[key] || 80}px`,
                     minWidth: `${widths[key] || 80}px`,
                     maxWidth: `${widths[key] || 80}px`,
-                    left: pinned.includes(key) ? `${pinnedOffsets.offsets[key]}px` : undefined,
-                    zIndex: pinned.includes(key) ? 6 : 4
+                    left: colIsPinned(key) ? `${pinnedOffsets.offsets[key]}px` : undefined,
+                    zIndex: colIsPinned(key) ? 6 : 4
                   }"
                   :class="{
-                    'lb-th--pinned': pinned.includes(key),
-                    'lb-th--pinned-last': pinned.includes(key) && pinnedOffsets.offsets[key] + (widths[key] || 80) >= pinnedOffsets.totalPinnedWidth,
+                    'lb-th--pinned': colIsPinned(key),
+                    'lb-th--pinned-last': colIsPinned(key) && pinnedOffsets.offsets[key] + (widths[key] || 80) >= pinnedOffsets.totalPinnedWidth,
                     'lb-th--right': getCol(key)?.align === 'right',
                     'lb-th--center': getCol(key)?.align === 'center',
                     'lb-th--filtered': hasActiveColFilter(key),
-                    'lb-th--filter-focus': selectedFilterCol === key
+                    'lb-th--filter-focus': filtersOpen && filterColKey === key
                   }"
                   :data-testid="`col-header-${key}`"
-                  draggable="true"
+                  :draggable="!isNarrow"
                   @dragstart="onDragStart(key, $event)"
                   @dragover.prevent
                   @drop="onDrop(key)"
@@ -1116,7 +1177,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                 >
                   <div class="lb-th-inner">
                     <div class="lb-th-label-group">
-                      <i v-if="pinned.includes(key)" class="pi pi-lock lb-pin-icon" title="Pinned column"></i>
+                      <i v-if="colIsPinned(key)" class="pi pi-lock lb-pin-icon" title="Pinned column"></i>
                       <span class="lb-th-text">{{ getCol(key)?.label }}</span>
                       <span v-if="sort.find(s => s.key === key)" class="lb-sort-arrow">
                         {{ sort.find(s => s.key === key)?.dir === 'desc' ? '↓' : '↑' }}
@@ -1124,7 +1185,12 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                           {{ sort.findIndex(s => s.key === key) + 1 }}
                         </sup>
                       </span>
-                      <i v-if="hasActiveColFilter(key)" class="pi pi-filter lb-filter-dot" title="Column filter active"></i>
+                      <i
+                        v-if="hasActiveColFilter(key)"
+                        class="pi pi-filter lb-filter-dot"
+                        title="Column filter active — click to edit"
+                        @click.stop="openFilters(key)"
+                      ></i>
                     </div>
 
                     <!-- Header Context Menu Trigger -->
@@ -1145,12 +1211,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                         <button v-if="getCol(key)?.sortable !== false" class="lb-menu-item" @click.stop="sort = [{ key, dir: 'desc' }]; menuKey = null">
                           <i class="pi pi-sort-amount-down"></i> Sort Descending
                         </button>
-                        <button v-if="getCol(key)?.filter !== 'none'" class="lb-menu-item" @click.stop="focusColumnFilter(key); menuKey = null">
-                          <i class="pi pi-filter"></i> Filter this column
-                        </button>
-                        <button v-if="hasActiveColFilter(key)" class="lb-menu-item" @click.stop="clearColFilter(key); menuKey = null">
-                          <i class="pi pi-filter-slash"></i> Clear filter
-                        </button>
                         <button class="lb-menu-item lb-desktop-only" @click.stop="togglePin(key)">
                           <i :class="pinned.includes(key) ? 'pi pi-unlock' : 'pi pi-lock'"></i>
                           {{ pinned.includes(key) ? 'Unpin column' : 'Pin column' }}
@@ -1168,43 +1228,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                       @click.stop
                     ></span>
                   </div>
-                </th>
-              </tr>
-              <tr class="lb-filter-row lb-desktop-only">
-                <th
-                  v-for="key in displayCols"
-                  :key="`f-${key}`"
-                  :style="{
-                    width: `${widths[key] || 80}px`,
-                    minWidth: `${widths[key] || 80}px`,
-                    maxWidth: `${widths[key] || 80}px`,
-                    left: pinned.includes(key) ? `${pinnedOffsets.offsets[key]}px` : undefined,
-                    zIndex: pinned.includes(key) ? 5 : 3
-                  }"
-                  :class="{
-                    'lb-th--pinned': pinned.includes(key),
-                    'lb-th--pinned-last': pinned.includes(key) && pinnedOffsets.offsets[key] + (widths[key] || 80) >= pinnedOffsets.totalPinnedWidth
-                  }"
-                >
-                  <input
-                    v-if="getCol(key)?.filter !== 'none'"
-                    :ref="(el) => setFilterInputRef(key, el)"
-                    class="lb-col-filter"
-                    :class="{ 'lb-col-filter--active': hasActiveColFilter(key) }"
-                    type="text"
-                    :list="`lb-filter-vals-${key}`"
-                    :value="colFilters[key] || ''"
-                    :placeholder="colFilterPlaceholder(key)"
-                    :aria-label="`Filter ${getCol(key)?.label}`"
-                    :data-testid="`col-filter-${key}`"
-                    @input="onColFilterInput(key, $event)"
-                    @focus="selectedFilterCol = key"
-                    @click.stop
-                    @mousedown.stop
-                  />
-                  <datalist :id="`lb-filter-vals-${key}`">
-                    <option v-for="val in (columnUniques[key] || [])" :key="val" :value="val" />
-                  </datalist>
                 </th>
               </tr>
             </thead>
@@ -1225,12 +1248,12 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                       width: `${widths[k] || 80}px`,
                       minWidth: `${widths[k] || 80}px`,
                       maxWidth: `${widths[k] || 80}px`,
-                      left: pinned.includes(k) ? `${pinnedOffsets.offsets[k]}px` : undefined,
-                      zIndex: pinned.includes(k) ? 2 : 1
+                      left: colIsPinned(k) ? `${pinnedOffsets.offsets[k]}px` : undefined,
+                      zIndex: k === 'action' ? (colIsPinned(k) ? 3 : 2) : (colIsPinned(k) ? 2 : 1)
                     }"
                     :class="{
-                      'lb-td--pinned': pinned.includes(k),
-                      'lb-td--pinned-last': pinned.includes(k) && pinnedOffsets.offsets[k] + (widths[k] || 80) >= pinnedOffsets.totalPinnedWidth,
+                      'lb-td--pinned': colIsPinned(k),
+                      'lb-td--pinned-last': colIsPinned(k) && pinnedOffsets.offsets[k] + (widths[k] || 80) >= pinnedOffsets.totalPinnedWidth,
                       'lb-td--action': k === 'action',
                       'lb-td--right': getCol(k)?.align === 'right',
                       'lb-td--center': getCol(k)?.align === 'center'
@@ -1258,7 +1281,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                           :port="s.port"
                           :server-name="s.name"
                           compact
-                          align="left"
                         />
                       </div>
                     </template>
@@ -1407,14 +1429,15 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                 <!-- In-Game Scoreboard Aesthetic: Authentic AXIS vs ALLIED Scoreboard -->
                 <tr v-if="expandedGuids.has(s.guid)" class="lb-expand-row">
                   <td :colspan="displayCols.length" class="lb-expand-td">
-                    <div class="lb-inline-roster">
+                    <div class="lb-roster-scroll" data-testid="landing-roster-scroll">
+                      <div class="lb-inline-roster">
                       <div v-if="s.players && s.players.length > 0" class="lb-roster-teams">
-                        <!-- Two Teams Side by Side -->
                         <div
                           v-for="teamIdx in [1, 2]"
                           :key="teamIdx"
                           class="lb-roster-team-card"
                           :class="teamIdx === 1 ? 'lb-roster-team--axis' : 'lb-roster-team--allies'"
+                          :data-testid="teamIdx === 1 ? 'roster-team-axis' : 'roster-team-allies'"
                         >
                           <!-- Team Header: Clean Faction Title & Direct Tickets Number -->
                           <div class="lb-team-strip">
@@ -1493,6 +1516,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                         <i class="pi pi-info-circle" style="font-size: 18px; color: var(--mm-accent);"></i>
                         <span>No active combatants currently on this server. Be the first to join!</span>
                       </div>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -1516,10 +1540,9 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
         <div class="lb-shortcuts__title">Keyboard</div>
         <dl class="lb-shortcuts__list">
           <div><dt>/</dt><dd>Focus search</dd></div>
-          <div><dt>Click header</dt><dd>Sort, then type to filter that column</dd></div>
+          <div><dt>Click header</dt><dd>Sort</dd></div>
+          <div><dt>Alt + click header</dt><dd>Open that column’s filter</dd></div>
           <div><dt>Shift + click header</dt><dd>Add a sort level</dd></div>
-          <div><dt>&gt; &lt; = 8..32</dt><dd>Numeric column filters</dd></div>
-          <div><dt>=exact  !exclude  a|b</dt><dd>Text column filters</dd></div>
           <div><dt>Ctrl/⌘ + click row</dt><dd>Select row</dd></div>
           <div><dt>Shift + click row</dt><dd>Select range</dd></div>
           <div><dt>Ctrl/⌘ + C</dt><dd>Copy selected rows as TSV</dd></div>
@@ -1570,6 +1593,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-width: 0;
   background: var(--mm-bg);
   color: var(--mm-ink);
   font-family: var(--mm-font-display);
@@ -1913,51 +1937,107 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
   background: color-mix(in srgb, var(--mm-accent) 25%, var(--mm-bg));
 }
 
-/* Section Bar (Olive) */
-.lb-section-bar-wrap {
-  width: 100%;
-  margin-top: 16px;
-  box-sizing: border-box;
+.lb-mobile-only {
+  display: none;
 }
 
-.lb-section-bar {
-  background: var(--mm-highlight);
-  color: var(--mm-highlight-ink);
-  border-radius: 3px 3px 0 0;
+.lbm-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.lbm-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.lbm-filter-strip {
   display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 0 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lbm-filter-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
+  gap: 6px;
   font-family: var(--mm-font-mono);
-  font-size: 11px;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 8px 11px;
+  min-height: 40px;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--mm-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lbm-filter-pill:hover {
+  border-color: var(--mm-accent-soft);
+}
+
+.lbm-filter-pill--active {
+  border-color: var(--mm-accent);
+  color: var(--mm-ink);
+}
+
+.lbm-filter-pill--round {
+  border-radius: 999px;
+  color: var(--mm-ink-muted);
+}
+
+.lbm-pill-label {
+  color: var(--mm-ink-muted);
+}
+
+.lbm-summary-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 16px 0 8px;
+  padding: 0;
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
   letter-spacing: 0.1em;
-  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
 }
 
-.lb-section-right {
-  opacity: 0.9;
+.lbm-summary-count {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--mm-ink-muted);
 }
 
-.lb-populated-tag,
-.lb-standby-tag,
-.lb-search-tag {
-  color: var(--mm-highlight-ink);
-  font-weight: 700;
+.lbm-summary-tag {
+  color: var(--mm-ink-faint);
 }
 
 /* Table */
 .mm-landing__full {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .mm-landing__list-container {
   min-width: 0;
+  max-width: 100%;
 }
 
 .lb-scroll-pane {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  min-width: 0;
   border: 1px solid var(--mm-rule);
-  border-top: none;
   background: var(--mm-bg);
 }
 
@@ -2035,50 +2115,6 @@ th {
 .lb-filter-dot {
   font-size: 9px;
   opacity: 0.85;
-}
-
-.lb-filter-row th {
-  height: 34px;
-  background: var(--mm-bg-mute);
-  color: var(--mm-ink);
-  top: 42px;
-  border-right: 1px solid var(--mm-rule);
-  padding: 0 6px;
-}
-
-.lb-table--compact .lb-filter-row th {
-  top: 36px;
-}
-
-.lb-filter-row .lb-th--pinned {
-  background: var(--mm-bg-mute);
-}
-
-.lb-col-filter {
-  width: 100%;
-  box-sizing: border-box;
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0;
-  text-transform: none;
-  font-weight: 500;
-  padding: 4px 6px;
-  background: var(--mm-bg);
-  border: 1px solid var(--mm-rule);
-  border-radius: 2px;
-  color: var(--mm-ink);
-  outline: none;
-}
-
-.lb-col-filter:focus,
-.lb-col-filter--active {
-  border-color: var(--mm-accent);
-}
-
-.lb-col-filter::placeholder {
-  color: var(--mm-ink-faint);
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .lb-th--center {
@@ -2216,6 +2252,9 @@ td {
 
 .lb-td--action {
   overflow: visible !important;
+  position: relative;
+  padding-left: 6px !important;
+  padding-right: 6px !important;
 }
 
 .lb-row:hover .lb-td--action,
@@ -2251,11 +2290,11 @@ td {
 }
 
 .lb-row:hover td {
-  background: rgba(132, 125, 76, 0.15);
+  background: var(--mm-bg-soft);
 }
 
 .lb-row--selected td {
-  background: rgba(132, 125, 76, 0.24) !important;
+  background: var(--mm-bg-mute) !important;
 }
 
 .lb-row--selected .lb-server-link {
@@ -2565,6 +2604,52 @@ td {
   .lb-desktop-only {
     display: none !important;
   }
+
+  .lbm-filter-strip.lb-mobile-only {
+    display: flex;
+  }
+
+  .lb-scroll-pane {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    overscroll-behavior-x: contain;
+    min-width: 0;
+    margin-left: -20px;
+    margin-right: -20px;
+    width: calc(100% + 40px);
+    max-width: none;
+    border-left: none;
+    border-right: none;
+    container-type: inline-size;
+    container-name: lb-pane;
+  }
+
+  .lb-table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+  }
+
+  .lb-table th,
+  .lb-table td,
+  .lb-th--pinned,
+  .lb-td--pinned {
+    position: static !important;
+    left: auto !important;
+  }
+
+  .lb-resize-handle {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .lb-scroll-pane {
+    margin-left: -12px;
+    margin-right: -12px;
+    width: calc(100% + 24px);
+  }
 }
 
 .lb-muted {
@@ -2574,39 +2659,77 @@ td {
 /* ============================================================================
    Authentic Battlefield 1942 In-Game Inspired Scoreboard (AXIS vs ALLIED)
    ============================================================================ */
-.lb-expand-row td {
+.lb-expand-row td,
+.lb-expand-td {
   padding: 0 !important;
+  overflow: visible !important;
+  white-space: normal;
   background: color-mix(in srgb, var(--mm-bg-soft) 85%, var(--mm-bg)) !important;
   border-bottom: 2px solid var(--mm-rule-strong);
+}
+
+.lb-roster-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  min-width: 0;
+}
+
+.lb-roster-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.lb-roster-scroll::-webkit-scrollbar-thumb {
+  background: var(--mm-rule-strong);
+  border-radius: 2px;
+}
+
+.lb-roster-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .lb-inline-roster {
   padding: 18px 24px 24px;
   box-sizing: border-box;
+  min-width: 100%;
+  width: max-content;
 }
 
 .lb-roster-teams {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
   gap: 24px;
+  min-width: 100%;
 }
 
 @media (max-width: 860px) {
   .lb-inline-roster {
-    padding: 14px 14px 20px 14px;
+    padding: 14px 14px 20px;
   }
   .lb-roster-teams {
-    grid-template-columns: 1fr;
-    gap: 18px;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 720px) {
+  .lb-roster-scroll {
+    position: sticky;
+    left: 0;
+    width: 100vw;
+    width: 100cqw;
+    max-width: 100vw;
+    max-width: 100cqw;
+    touch-action: pan-x pan-y;
   }
 }
 
 .lb-roster-team-card {
   display: flex;
   flex-direction: column;
+  min-width: 320px;
   border-radius: 4px;
   background: var(--mm-bg);
-  overflow: hidden;
+  overflow: clip;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   border: 1px solid var(--mm-rule);
   transition: border-color 0.15s ease;
@@ -2715,7 +2838,7 @@ td {
 }
 
 .lb-player-item:hover {
-  background: rgba(132, 125, 76, 0.22);
+  background: var(--mm-bg-soft);
 }
 
 .lb-player-item:last-child {
