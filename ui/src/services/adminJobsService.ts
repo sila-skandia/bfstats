@@ -86,13 +86,11 @@ export function triggerRunAll(): Promise<{ message?: string; error?: string }> {
   return request('/run-all');
 }
 
-/** Sync player relationships to Neo4j for the last N days. Runs to completion. */
-export function triggerNeo4jSync(days: number): Promise<{ 
+/** Sync any completed rounds/sessions that have never been synced to Neo4j. Runs to completion, normally near-instant. */
+export function triggerNeo4jSync(): Promise<{
   success: boolean;
   relationshipsProcessed?: number;
   durationMs?: number;
-  fromDate?: string;
-  toDate?: string;
   errorMessage?: string;
 }> {
   return fetch('/stats/admin/data/neo4j/sync', {
@@ -101,7 +99,6 @@ export function triggerNeo4jSync(days: number): Promise<{
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
     },
-    body: JSON.stringify({ days }),
   }).then(async (res) => {
     if (res.status === 401) {
       const { authService } = await import('./authService');
@@ -113,7 +110,6 @@ export function triggerNeo4jSync(days: number): Promise<{
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
           },
-          body: JSON.stringify({ days }),
         });
         if (!retry.ok) {
           const err = await retry.json().catch(() => ({}));
@@ -130,6 +126,16 @@ export function triggerNeo4jSync(days: number): Promise<{
     }
     return res.json();
   });
+}
+
+/**
+ * Repair tool (fire-and-forget). Resets the Neo4j sync watermark for every round/session
+ * on or after `fromDate`, then drains the backlog through the normal incremental sync.
+ * Only meaningful right after the Neo4j PLAYED_WITH/PLAYS_ON data has actually been wiped —
+ * the write side stays additive, so running this against un-wiped data double-counts.
+ */
+export function triggerNeo4jRelationshipsBackfill(fromDate: string): Promise<{ message?: string; error?: string }> {
+  return request(`/neo4j-relationships-backfill?fromDate=${encodeURIComponent(fromDate)}`);
 }
 
 /** Detect player communities using graph algorithms. Runs to completion. */
