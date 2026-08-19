@@ -97,7 +97,7 @@ onUnmounted(() => {
     v-if="ip"
     ref="rootEl"
     class="mm-connect"
-    :class="{ 'mm-connect--compact': compact }"
+    :class="{ 'mm-connect--compact': compact, 'is-open': showDropdown }"
   >
     <div class="mm-connect__group">
       <!-- Direct protocol launch link -->
@@ -232,6 +232,10 @@ onUnmounted(() => {
   font-family: var(--mm-font-display);
 }
 
+.mm-connect.is-open {
+  z-index: 150;
+}
+
 .mm-connect__group {
   display: inline-flex;
   align-items: stretch;
@@ -332,10 +336,12 @@ onUnmounted(() => {
 
 .mm-connect__menu--right {
   right: 0;
+  left: auto;
 }
 
 .mm-connect__menu--left {
   left: 0;
+  right: auto;
 }
 
 .mm-connect__menu-header {

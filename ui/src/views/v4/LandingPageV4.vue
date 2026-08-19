@@ -1,23 +1,269 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import 'primeicons/primeicons.css'
 import { fetchAllServers, peekCachedLiveServers } from '@/services/serverDetailsService'
 import type { ServerSummary } from '@/types/server'
-import { countryCodeToName, countryCodeToFlag } from '@/types/countryCodes'
-import { loadClass } from './mmTokens'
+import { countryCodeToFlag } from '@/types/countryCodes'
+import { loadClass, teamColor } from './mmTokens'
 import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
-import { formatTimeRemaining, formatRelativeTime, parseUtc } from '@/utils/timeUtils'
+import { formatTimeRemaining, formatRelativeTime, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
+import {
+  ALL_COLUMNS,
+  COLUMN_GROUPS,
+  DEFAULT_HIDDEN,
+  DEFAULT_PINNED,
+  DEFAULT_SORT,
+  filterPlaceholder,
+  friendlyCountry,
+  getAveragePing,
+  getCellValue,
+  getCol,
+  getDisplayValue,
+  getTeamPlayerCount,
+  linkHostname,
+  matchColumnFilter,
+  matchesGlobalSearch,
+  rowsToCsv,
+  rowsToTsv,
+  uniqueColumnValues,
+} from './landingServerTable'
 
-// Only BF1942 is actively tracked in the modern-minimal preview today.
 type GameKey = 'bf1942'
 const GAME_LABEL = 'Battlefield 1942'
 
 defineProps<{ initialMode?: string }>()
 
 const router = useRouter()
+const route = useRoute()
 
+// ============================================================================
+// Layout Preferences & LocalStorage Persistence
+// ============================================================================
+const STORAGE_KEY = 'bfstats_landing_table_layout_v1'
+
+const loadSavedLayout = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+const saved = loadSavedLayout()
+
+const order = ref<string[]>(
+  Array.isArray(saved?.order) && saved.order.length > 0
+    ? [
+        ...saved.order.filter((k: string) => ALL_COLUMNS.some(c => c.key === k)),
+        ...ALL_COLUMNS.map(c => c.key).filter(k => !saved.order.includes(k))
+      ]
+    : ALL_COLUMNS.map(c => c.key)
+)
+
+const hidden = ref<Set<string>>((() => {
+  const known = new Set(ALL_COLUMNS.map(c => c.key))
+  const fromSave = Array.isArray(saved?.hidden)
+    ? saved.hidden.filter((k: string) => known.has(k))
+    : [...DEFAULT_HIDDEN]
+  const next = new Set<string>(fromSave)
+  if (Array.isArray(saved?.order)) {
+    for (const col of ALL_COLUMNS) {
+      if (!saved.order.includes(col.key) && col.defaultHidden) next.add(col.key)
+    }
+  }
+  return next
+})())
+
+const pinned = ref<string[]>(
+  Array.isArray(saved?.pinned)
+    ? saved.pinned.filter((k: string) => ALL_COLUMNS.some(c => c.key === k))
+    : [...DEFAULT_PINNED]
+)
+
+const widths = ref<Record<string, number>>({
+  ...ALL_COLUMNS.reduce((acc, c) => { acc[c.key] = c.w; return acc }, {} as Record<string, number>),
+  ...(typeof saved?.widths === 'object' && saved?.widths !== null ? saved.widths : {})
+})
+
+const sort = ref<{ key: string; dir: 'asc' | 'desc' }[]>(
+  Array.isArray(saved?.sort) && saved.sort.length > 0
+    ? saved.sort
+    : [...DEFAULT_SORT]
+)
+
+const colFilters = ref<Record<string, string>>(
+  saved?.colFilters && typeof saved.colFilters === 'object' ? { ...saved.colFilters } : {}
+)
+
+const density = ref<'comfortable' | 'compact'>(
+  saved?.density === 'compact' ? 'compact' : 'comfortable'
+)
+
+const filterPreset = ref<'all' | 'populated' | 'standby'>(
+  saved?.filterPreset === 'populated' || saved?.filterPreset === 'standby' ? saved.filterPreset : 'all'
+)
+
+watch([order, hidden, pinned, widths, sort, density, filterPreset, colFilters], () => {
+  try {
+    const payload = {
+      order: order.value,
+      hidden: Array.from(hidden.value),
+      pinned: pinned.value,
+      widths: widths.value,
+      sort: sort.value,
+      density: density.value,
+      filterPreset: filterPreset.value,
+      colFilters: colFilters.value,
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch {
+    // ignore quota/security errors
+  }
+}, { deep: true })
+
+const resetColumns = () => {
+  order.value = ALL_COLUMNS.map(c => c.key)
+  hidden.value = new Set(DEFAULT_HIDDEN)
+  pinned.value = [...DEFAULT_PINNED]
+  widths.value = ALL_COLUMNS.reduce((acc, c) => { acc[c.key] = c.w; return acc }, {} as Record<string, number>)
+}
+
+const resetAll = () => {
+  resetColumns()
+  sort.value = [...DEFAULT_SORT]
+  density.value = 'comfortable'
+  filterPreset.value = 'all'
+  filterQuery.value = ''
+  colFilters.value = {}
+  selectedGuids.value = new Set()
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {}
+  void router.replace({ query: {} })
+}
+
+// Active & visible columns computation (pinned placed first)
+const visibleOrderedCols = computed(() => order.value.filter(k => !hidden.value.has(k)))
+const pinnedCols = computed(() => visibleOrderedCols.value.filter(k => pinned.value.includes(k)))
+const unpinnedCols = computed(() => visibleOrderedCols.value.filter(k => !pinned.value.includes(k)))
+const displayCols = computed(() => [...pinnedCols.value, ...unpinnedCols.value])
+
+const pinnedOffsets = computed(() => {
+  let acc = 0
+  const offsets: Record<string, number> = {}
+  for (const k of pinnedCols.value) {
+    offsets[k] = acc
+    acc += widths.value[k] || 80
+  }
+  return { offsets, totalPinnedWidth: acc }
+})
+
+const getCol = (key: string) => ALL_COLUMNS.find(c => c.key === key)
+
+const togglePin = (key: string) => {
+  if (pinned.value.includes(key)) {
+    pinned.value = pinned.value.filter(k => k !== key)
+  } else {
+    pinned.value = [...pinned.value, key]
+  }
+}
+
+const toggleHideCol = (key: string) => {
+  const next = new Set(hidden.value)
+  if (next.has(key)) {
+    next.delete(key)
+  } else {
+    next.add(key)
+  }
+  hidden.value = next
+}
+
+// Drag & Resize state
+const resizing = ref<{ key: string; startX: number; startW: number } | null>(null)
+const dragKey = ref<string | null>(null)
+const menuKey = ref<string | null>(null)
+const colPanelOpen = ref(false)
+
+const startResize = (key: string, e: MouseEvent) => {
+  resizing.value = {
+    key,
+    startX: e.clientX,
+    startW: widths.value[key] || ALL_COLUMNS.find(c => c.key === key)?.w || 80
+  }
+  document.body.style.cursor = 'col-resize'
+  e.preventDefault()
+}
+
+const onMouseMove = (e: MouseEvent) => {
+  if (resizing.value) {
+    const dx = e.clientX - resizing.value.startX
+    const newW = Math.max(40, resizing.value.startW + dx)
+    widths.value = { ...widths.value, [resizing.value.key]: newW }
+  }
+}
+
+const onMouseUp = () => {
+  if (resizing.value) {
+    resizing.value = null
+    document.body.style.cursor = ''
+  }
+}
+
+const onDragStart = (key: string, e: DragEvent) => {
+  dragKey.value = key
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', key)
+  }
+}
+
+const onDrop = (targetKey: string) => {
+  const from = dragKey.value
+  dragKey.value = null
+  if (!from || from === targetKey) return
+
+  const newOrder = [...order.value]
+  const fromIdx = newOrder.indexOf(from)
+  if (fromIdx < 0) return
+  newOrder.splice(fromIdx, 1)
+  const targetIdx = newOrder.indexOf(targetKey)
+  newOrder.splice(targetIdx, 0, from)
+  order.value = newOrder
+}
+
+const onDocClick = (e: MouseEvent) => {
+  const target = e.target as HTMLElement | null
+  if (!target?.closest('[data-lbmenu="panel"]')) {
+    colPanelOpen.value = false
+  }
+  if (!target?.closest('[data-lbmenu="m"]')) {
+    menuKey.value = null
+  }
+}
+
+// ============================================================================
+// Row Expansion (Inline Ladder) State
+// ============================================================================
+const expandedGuids = ref<Set<string>>(new Set())
+
+const toggleRowExpand = (guid: string) => {
+  const next = new Set(expandedGuids.value)
+  if (next.has(guid)) {
+    next.delete(guid)
+  } else {
+    next.add(guid)
+  }
+  expandedGuids.value = next
+}
+
+// ============================================================================
+// Data Loading & Live Sync
+// ============================================================================
 const game = ref<GameKey>('bf1942')
 const servers = ref<ServerSummary[]>([])
 const loading = ref(true)
@@ -28,15 +274,7 @@ let tickTimer: number | undefined
 const REFRESH_INTERVAL_MS = 30_000
 const nextRefreshAt = ref(Date.now() + REFRESH_INTERVAL_MS)
 const now = ref(Date.now())
-
-// When the live feed was actually current as of, per the API — not "when we last asked."
-// Reflects the real age of the data even when it's served from cache or a last-known-good
-// fallback, so this is what decides whether the "data may be stale" banner shows.
 const lastUpdated = ref<string | null>(null)
-
-// A couple of missed 30s collection cycles' worth of grace — mirrors
-// LiveServersController's StaleDataThreshold so client and server agree on what "stale"
-// means. Below this: normal render. At/above it, or with nothing to show at all: banner.
 const STALE_THRESHOLD_MS = 90_000
 
 const dataAgeMs = computed(() => {
@@ -47,17 +285,10 @@ const dataAgeMs = computed(() => {
 })
 const isDataStale = computed(() => dataAgeMs.value >= STALE_THRESHOLD_MS)
 const staleSince = computed(() => (lastUpdated.value ? formatRelativeTime(lastUpdated.value) : ''))
-
-// peekCachedLiveServers() restores the previous visit's lastUpdated synchronously on mount
-// for instant paint — if the user was away long enough, that cached timestamp already reads
-// as stale before this mount's own fetch has had a chance to revalidate it, flashing the
-// banner for however long the request takes. Don't trust staleness until we've actually
-// checked ourselves.
 const hasRevalidated = ref(false)
 
-const selectedServer = ref<ServerSummary | null>(null)
-const showQuiet = ref(true)
 const trendOpen = ref(false)
+const filterQuery = ref('')
 
 const openTrend = () => { trendOpen.value = true }
 const closeTrend = () => { trendOpen.value = false }
@@ -72,16 +303,7 @@ const pickerServers = computed(() =>
 )
 
 const applyServerList = (data: ServerSummary[]) => {
-  servers.value = [...data].sort((a, b) => (b.numPlayers || 0) - (a.numPlayers || 0))
-
-  if (selectedServer.value) {
-    const found = servers.value.find(s => s.guid === selectedServer.value?.guid)
-    selectedServer.value = found ?? null
-  }
-
-  if (!selectedServer.value && servers.value.length > 0) {
-    selectedServer.value = servers.value.find(s => (s.numPlayers || 0) > 0) ?? null
-  }
+  servers.value = [...data]
 }
 
 const cached = peekCachedLiveServers()
@@ -125,11 +347,18 @@ onMounted(() => {
   refreshTimer = window.setInterval(() => void load(false), REFRESH_INTERVAL_MS)
   tickTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
   window.addEventListener('keydown', onTrendKey)
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+  window.addEventListener('mousedown', onDocClick)
 })
+
 onUnmounted(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
   if (tickTimer) window.clearInterval(tickTimer)
   window.removeEventListener('keydown', onTrendKey)
+  window.removeEventListener('mousemove', onMouseMove)
+  window.removeEventListener('mouseup', onMouseUp)
+  window.removeEventListener('mousedown', onDocClick)
   document.body.style.overflow = ''
   document.documentElement.classList.remove('mm-fs-lock')
 })
@@ -146,6 +375,15 @@ const REFRESH_RING_CIRCUMFERENCE = 2 * Math.PI * 6
 const totalPlayers = computed(() =>
   servers.value.reduce((s, srv) => s + (srv.numPlayers || 0), 0),
 )
+
+const populatedCount = computed(() =>
+  servers.value.filter(s => (s.numPlayers || 0) > 0).length,
+)
+
+const standbyCount = computed(() =>
+  servers.value.filter(s => (s.numPlayers || 0) === 0).length,
+)
+
 const friendlyCountry = (code?: string) => {
   if (!code) return '—'
   return countryCodeToName[code.toUpperCase()] ?? code.toUpperCase()
@@ -153,104 +391,215 @@ const friendlyCountry = (code?: string) => {
 
 const formatNumber = (n: number) => n.toLocaleString()
 
-const goServer = (s: ServerSummary) => {
-  router.push(`/v4/servers/detail/${encodeURIComponent(s.name)}`)
-}
-
 const navigateToPlayerProfile = (playerName: string) => {
   router.push(`/v4/players/${encodeURIComponent(playerName)}`)
 }
 
-// Group active and quiet servers
-const activeServers = computed(() => servers.value.filter(s => (s.numPlayers || 0) > 0))
-const quietServers = computed(() => servers.value.filter(s => (s.numPlayers || 0) === 0))
-const quietFilter = ref('')
-const filteredQuietServers = computed(() => {
-  const q = quietFilter.value.trim().toLowerCase()
-  if (!q) return quietServers.value
-  return quietServers.value.filter(s => {
-    const name = (s.name || '').toLowerCase()
-    const countryCode = (s.country || '').toLowerCase()
-    const countryName = friendlyCountry(s.country).toLowerCase()
-    const ip = (s.ip || '').toLowerCase()
-    const map = (s.mapName || '').toLowerCase()
-    return name.includes(q) || countryCode.includes(q) || countryName.includes(q) || ip.includes(q) || map.includes(q)
-  })
-})
-
-// Selected server computed properties and roster helpers
-const averagePing = computed(() => {
-  if (!selectedServer.value || !selectedServer.value.players || selectedServer.value.players.length === 0) return null
-  const validPings = selectedServer.value.players.map(p => p.ping).filter(p => p > 0)
+const calculateAveragePing = (s: ServerSummary): number | null => {
+  if (!s.players || s.players.length === 0) return null
+  const validPings = s.players.map(p => p.ping).filter(p => p > 0)
   if (validPings.length === 0) return null
   const sum = validPings.reduce((acc, p) => acc + p, 0)
   return Math.round(sum / validPings.length)
-})
-
-const formattedTimeRemaining = computed(() => {
-  if (!selectedServer.value || selectedServer.value.roundTimeRemain === undefined || selectedServer.value.roundTimeRemain === -1) {
-    return '—'
-  }
-  return formatTimeRemaining(selectedServer.value.roundTimeRemain)
-})
-
-const formattedTotalRoundTime = computed(() => {
-  if (!selectedServer.value) return '—'
-  const total = (selectedServer.value as any).roundTime || 1800
-  return formatTimeRemaining(total)
-})
+}
 
 const getTeamPlayerCount = (server: ServerSummary, teamIndex: number) =>
   (server.players ?? []).filter(p => p.team === teamIndex).length
 
 const getSortedTeamPlayers = (server: ServerSummary, teamIndex: number) => {
   const players = (server.players ?? []).filter(p => p.team === teamIndex)
-  return [...players].sort((a, b) => b.score - a.score)
+  return [...players].sort((a, b) => (b.score || 0) - (a.score || 0))
+}
+
+const getTeamLabel = (server: ServerSummary, teamIndex: number) => {
+  if (server.teams && server.teams.length > 0) {
+    const t = server.teams.find(tm => tm.index === teamIndex)
+    if (t?.label) return t.label.toUpperCase()
+  }
+  return teamIndex === 1 ? 'AXIS' : 'ALLIED'
+}
+
+const getTeamTickets = (server: ServerSummary, teamIndex: number) => {
+  if (server.teams && server.teams.length > 0) {
+    const t = server.teams.find(tm => tm.index === teamIndex)
+    if (t?.tickets !== undefined) return t.tickets
+  }
+  return teamIndex === 1 ? (server.tickets1 ?? 0) : (server.tickets2 ?? 0)
 }
 
 const getTeamColor = (label: string) => {
   const l = label.toLowerCase()
-  if (l.includes('axis') || l.includes('germany') || l.includes('japan')) return '#d65a5a'
-  if (l.includes('allies') || l.includes('ussr') || l.includes('usa') || l.includes('uk') || l.includes('canada') || l.includes('france')) return '#7da34c'
-  return '#8a8a8a'
+  if (l.includes('axis') || l.includes('germany') || l.includes('japan') || l === 'team 2') return '#d65a5a'
+  if (l.includes('allies') || l.includes('allied') || l.includes('ussr') || l.includes('usa') || l.includes('uk') || l.includes('canada') || l.includes('france') || l === 'team 1') return '#61afef'
+  return '#c5a23a'
 }
 
-const getPlayerRowClass = (team: any, pidx: number) => {
-  if (pidx === 0) {
-    const label = (team.label || '').toLowerCase()
-    if (label.includes('axis') || team.index === 1) {
-      return 'mm-rank--gold'
-    } else {
-      return 'mm-rank--silver'
-    }
-  }
-  return ''
-}
-
-const handleRowClick = (s: ServerSummary) => {
-  if (window.innerWidth >= 1024) {
-    selectedServer.value = s
-  } else {
-    goServer(s)
-  }
+const pingClass = (ping: number) => {
+  if (ping <= 0) return 'lb-ping--muted'
+  if (ping < 60) return 'lb-ping--good'
+  if (ping < 120) return 'lb-ping--mid'
+  return 'lb-ping--high'
 }
 
 const isInitialLoad = computed(() => loading.value && servers.value.length === 0)
+
+// ============================================================================
+// Filter, Search, and Sort Logic
+// ============================================================================
+const filteredServers = computed(() => {
+  let list = servers.value
+
+  // Preset filter
+  if (filterPreset.value === 'populated') {
+    list = list.filter(s => (s.numPlayers || 0) > 0)
+  } else if (filterPreset.value === 'standby') {
+    list = list.filter(s => (s.numPlayers || 0) === 0)
+  }
+
+  // Text search filter
+  const q = filterQuery.value.trim().toLowerCase()
+  if (q) {
+    list = list.filter(s => {
+      const name = (s.name || '').toLowerCase()
+      const countryCode = (s.country || '').toLowerCase()
+      const countryName = friendlyCountry(s.country).toLowerCase()
+      const ip = (s.ip || '').toLowerCase()
+      const map = (s.mapName || '').toLowerCase()
+      const gameType = (s.gameType || '').toLowerCase()
+      return name.includes(q) || countryCode.includes(q) || countryName.includes(q) || ip.includes(q) || map.includes(q) || gameType.includes(q)
+    })
+  }
+
+  return list
+})
+
+const getCellValue = (s: ServerSummary, key: string): any => {
+  switch (key) {
+    case 'rank': return 0
+    case 'name': return s.name?.toLowerCase() || ''
+    case 'players': return s.numPlayers || 0
+    case 'load': return s.maxPlayers ? (s.numPlayers || 0) / s.maxPlayers : 0
+    case 'map': return s.mapName?.toLowerCase() || ''
+    case 'gameType': return s.gameType?.toLowerCase() || ''
+    case 'region': return friendlyCountry(s.country).toLowerCase()
+    case 'ping': {
+      const valid = (s.players || []).map(p => p.ping).filter(p => p > 0)
+      return valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length) : null
+    }
+    case 'timeRemain': return s.roundTimeRemain ?? -1
+    case 'tickets': return Math.max(s.tickets1 ?? 0, s.tickets2 ?? 0)
+    case 'ip': return `${s.ip}:${s.port}`
+    default: return (s as any)[key] ?? ''
+  }
+}
+
+const toggleSort = (key: string, multi = false) => {
+  const col = ALL_COLUMNS.find(c => c.key === key)
+  if (col && col.sortable === false) return
+
+  const existing = sort.value.find(s => s.key === key)
+  if (!multi) {
+    if (!existing) {
+      sort.value = [{ key, dir: 'desc' }]
+    } else if (existing.dir === 'desc') {
+      sort.value = [{ key, dir: 'asc' }]
+    } else {
+      sort.value = [{ key, dir: 'desc' }]
+    }
+  } else {
+    if (!existing) {
+      sort.value = [...sort.value, { key, dir: 'desc' }]
+    } else if (existing.dir === 'desc') {
+      existing.dir = 'asc'
+    } else {
+      sort.value = sort.value.filter(s => s.key !== key)
+      if (sort.value.length === 0) {
+        sort.value = [{ key, dir: 'desc' }]
+      }
+    }
+  }
+}
+
+const sortedServers = computed(() => {
+  const list = [...filteredServers.value]
+  const sorts = sort.value
+  if (sorts.length === 0) return list
+
+  return list.sort((a, b) => {
+    for (const s of sorts) {
+      const va = getCellValue(a, s.key)
+      const vb = getCellValue(b, s.key)
+
+      if (va === null || va === undefined || va === -1) {
+        if (vb === null || vb === undefined || vb === -1) continue
+        return 1
+      }
+      if (vb === null || vb === undefined || vb === -1) {
+        return -1
+      }
+
+      let cmp = 0
+      if (typeof va === 'string' && typeof vb === 'string') {
+        cmp = va.localeCompare(vb)
+      } else if (typeof va === 'number' && typeof vb === 'number') {
+        cmp = va - vb
+      } else {
+        cmp = String(va).localeCompare(String(vb))
+      }
+
+      if (cmp !== 0) {
+        return s.dir === 'desc' ? -cmp : cmp
+      }
+    }
+    return 0
+  })
+})
+
+const sortSummary = computed(() => {
+  if (sort.value.length === 0) return 'DEFAULT'
+  return sort.value
+    .map(s => {
+      const col = ALL_COLUMNS.find(c => c.key === s.key)
+      return `${col?.label || s.key} ${s.dir.toUpperCase()}`
+    })
+    .join(', ')
+})
+
+const activeFilterChips = computed(() => {
+  const chips: { key: string; label: string; clear: () => void }[] = []
+  if (filterQuery.value.trim()) {
+    chips.push({
+      key: 'search',
+      label: `SEARCH: "${filterQuery.value.trim()}"`,
+      clear: () => { filterQuery.value = '' }
+    })
+  }
+  if (filterPreset.value === 'populated') {
+    chips.push({
+      key: 'populated',
+      label: 'POPULATED ONLY',
+      clear: () => { filterPreset.value = 'all' }
+    })
+  } else if (filterPreset.value === 'standby') {
+    chips.push({
+      key: 'standby',
+      label: 'STANDBY ONLY',
+      clear: () => { filterPreset.value = 'all' }
+    })
+  }
+  return chips
+})
 </script>
 
 <template>
-  <div class="mm-container mm-section">
-    <!-- meta row -->
+  <div class="mm lb-container">
+    <!-- meta top row -->
     <div class="mm-landing__top">
-      <!-- Player count and the refresh countdown, nothing else — the list
-           below says everything about who is playing where. -->
       <div class="mm-meta-row">
         <span class="mm-meta-row__strong">
           <span v-if="isInitialLoad" class="mm-skeleton" style="width: 24px; height: 1em; display: inline-block; vertical-align: middle"></span>
           <template v-else>{{ formatNumber(totalPlayers) }}</template>
         </span> in combat
-        <!-- Total tracked drops out on mobile so the row stays one line and
-             the server list starts higher up the first screen. -->
         <span class="mm-landing__meta-extra">
           <span class="mm-meta-row__sep">·</span>
           <span class="mm-meta-row__strong">
@@ -273,7 +622,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
           :title="`Next refresh in ${secondsUntilRefresh}s`"
           :aria-label="`Next refresh in ${secondsUntilRefresh} seconds`"
         >
-          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
             <circle cx="8" cy="8" r="6" fill="none" stroke="var(--mm-rule)" stroke-width="1.5" />
             <circle
               cx="8"
@@ -294,12 +643,9 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
       <MmInstallationLinks />
     </div>
 
-
-    <!-- Live feed may be running off a last-known-good snapshot (upstream API or
-         Redis degraded) — say so and give an escape hatch to the DB-backed search
-         page, which doesn't depend on either. -->
+    <!-- Stale data banner -->
     <div v-if="hasRevalidated && isDataStale && !loading && servers.length > 0" class="mm-landing__stale-banner" role="status">
-      <svg class="mm-landing__stale-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg class="mm-landing__stale-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
       </svg>
       <span class="mm-landing__stale-text">
@@ -310,9 +656,136 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
       </router-link>
     </div>
 
-    <!-- list -->
-    <div v-if="loading && servers.length === 0" style="padding: 40px 0">
-      <div v-for="i in 6" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
+    <!-- Toolbar & Slicers -->
+    <div class="lb-filter-wrapper">
+      <div class="lb-filter-card">
+        <div class="lb-toolbar">
+          <!-- Search input -->
+          <label class="lb-search-wrap">
+            <i class="pi pi-search lb-search-icon" aria-hidden="true"></i>
+            <input
+              v-model="filterQuery"
+              type="text"
+              class="lb-search-input"
+              placeholder="Search servers, maps, regions, IP…"
+              aria-label="Filter servers"
+            />
+            <button
+              v-if="filterQuery"
+              type="button"
+              class="lb-search-clear"
+              title="Clear search"
+              aria-label="Clear search"
+              @click="filterQuery = ''"
+            >×</button>
+          </label>
+
+          <!-- Preset Filter -->
+          <div class="lb-control-group">
+            <span class="lb-slicer-label">Filter</span>
+            <select v-model="filterPreset" class="lb-select">
+              <option value="all">All Servers ({{ servers.length }})</option>
+              <option value="populated">Populated Only ({{ populatedCount }})</option>
+              <option value="standby">Standby Only ({{ standbyCount }})</option>
+            </select>
+          </div>
+
+          <div class="lb-spacer"></div>
+
+          <!-- Density Toggle -->
+          <button
+            class="lb-btn lb-desktop-only"
+            :class="{ 'lb-btn--active': density === 'compact' }"
+            title="Toggle compact table density"
+            @click="density = density === 'compact' ? 'comfortable' : 'compact'"
+          >
+            <i :class="density === 'compact' ? 'pi pi-bars' : 'pi pi-align-justify'"></i>
+            <span>{{ density === 'compact' ? 'COMPACT' : 'COMFORTABLE' }}</span>
+          </button>
+
+          <!-- Columns Popover Trigger -->
+          <div class="lb-menu-anchor lb-desktop-only" data-lbmenu="panel">
+            <button
+              class="lb-btn"
+              :class="{ 'lb-btn--active': colPanelOpen }"
+              @click="colPanelOpen = !colPanelOpen"
+            >
+              <i class="pi pi-table"></i>
+              <span>COLUMNS ({{ ALL_COLUMNS.length - hidden.size }}/{{ ALL_COLUMNS.length }})</span>
+            </button>
+
+            <!-- Columns Show / Hide Panel -->
+            <div v-if="colPanelOpen" class="lb-col-popover" data-lbmenu="panel">
+              <div class="lb-popover-title">SHOW / HIDE COLUMNS</div>
+              <label
+                v-for="col in ALL_COLUMNS"
+                :key="col.key"
+                class="lb-col-check"
+              >
+                <input
+                  type="checkbox"
+                  :checked="!hidden.has(col.key)"
+                  @change="toggleHideCol(col.key)"
+                />
+                <span>{{ col.label }}</span>
+              </label>
+              <button
+                type="button"
+                class="lb-btn lb-btn--muted"
+                style="width: 100%; justify-content: center; margin-top: 10px;"
+                @click="resetColumns"
+              >
+                Reset Columns
+              </button>
+            </div>
+          </div>
+
+          <!-- Reset -->
+          <button
+            class="lb-btn lb-btn--muted"
+            title="Reset all filters, sorting, and layout"
+            @click="resetAll"
+          >
+            <i class="pi pi-refresh"></i>
+            <span>RESET</span>
+          </button>
+        </div>
+
+        <!-- Active filter chips -->
+        <div v-if="activeFilterChips.length" class="lb-active-filters">
+          <button
+            v-for="chip in activeFilterChips"
+            :key="chip.key"
+            type="button"
+            class="lb-empty-chip"
+            :aria-label="`Clear ${chip.label} filter`"
+            @click="chip.clear()"
+          >
+            <span>{{ chip.label }}</span>
+            <i class="pi pi-times" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section Bar (Olive) -->
+    <div class="lb-section-bar-wrap">
+      <div class="lb-section-bar">
+        <div class="lb-section-left">
+          <span>SHOWING {{ sortedServers.length }} OF {{ servers.length }} TRACKED SERVERS ({{ formatNumber(totalPlayers) }} IN COMBAT)</span>
+          <span v-if="filterPreset === 'populated'" class="lb-populated-tag">· POPULATED</span>
+          <span v-else-if="filterPreset === 'standby'" class="lb-standby-tag">· STANDBY</span>
+          <span v-if="filterQuery" class="lb-search-tag">· SEARCH: "{{ filterQuery }}"</span>
+        </div>
+        <div class="lb-section-right lb-desktop-only">
+          <span>SORT · {{ sortSummary }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading / Error / Empty States -->
+    <div v-if="loading && servers.length === 0" style="padding: 48px 0">
+      <div v-for="i in 8" :key="i" class="mm-skeleton" style="margin-bottom: 14px; height: 36px;" />
     </div>
 
     <div v-else-if="error" class="mm-empty">{{ error }}</div>
@@ -324,306 +797,350 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
       </router-link>
     </div>
 
-    <template v-else>
-      <!-- Section bar is the anchor for the mobile card list — on
-           desktop, the table <thead> below already carries the olive
-           header treatment, so showing both produces a stacked strip. -->
-      <div class="mm-section-bar mm-only-mobile">
-        <span># SERVER</span>
-        <span class="mm-section-bar__meta">PLAYERS · LOAD</span>
-      </div>
-
-      <!-- Mobile rendering — bespoke card matching mock #1: rank +
-           name-stack on the left, players value over load bar on the right. -->
-      <ol class="mm-landing__mobile">
-        <li
-          v-for="(s, idx) in activeServers"
-          :key="`m-${s.guid}`"
-          class="mm-landing__mcard"
-          @click="goServer(s)"
-        >
-          <span class="mm-landing__mrank">{{ String(idx + 1).padStart(2, '0') }}</span>
-          <div class="mm-landing__mbody">
-            <div class="mm-landing__mtitle">{{ $pn(s.name) }}</div>
-            <div class="mm-landing__msub">{{ s.ip }}:{{ s.port }}</div>
-            <div v-if="s.mapName || s.country" class="mm-landing__msub mm-landing__msub--alt">
-              <template v-if="s.mapName">{{ s.mapName }}</template>
-              <template v-if="s.mapName && s.country"> · </template>
-              <template v-if="s.country"><span class="mm-landing__flag">{{ countryCodeToFlag(s.country) }}</span> {{ friendlyCountry(s.country) }}</template>
-            </div>
-          </div>
-          <div class="mm-landing__mright">
-            <div class="mm-landing__mplayers">
-              <span :class="loadClass(s.maxPlayers ? s.numPlayers / s.maxPlayers : 0)">{{ s.numPlayers }}</span><span style="color: var(--mm-ink-faint)">/{{ s.maxPlayers }}</span>
-            </div>
-            <div class="mm-list__bar mm-landing__mbar" :title="`${s.maxPlayers ? Math.round((s.numPlayers / s.maxPlayers) * 100) : 0}%`">
-              <div
-                class="mm-list__bar-fill"
-                :class="{
-                  'mm-list__bar-fill--accent': s.maxPlayers && s.numPlayers / s.maxPlayers >= 0.66,
-                  'mm-list__bar-fill--idle': !s.numPlayers,
-                }"
-                :style="{ width: (s.maxPlayers ? Math.min(100, (s.numPlayers / s.maxPlayers) * 100) : 0) + '%' }"
-              />
-            </div>
-          </div>
-        </li>
-      </ol>
-
-      <!-- Condensed grid or full-width container -->
-      <div :class="selectedServer ? 'mm-landing__grid' : 'mm-landing__full'">
-        <div class="mm-landing__list-container">
-          <div v-if="activeServers.length === 0" class="mm-empty" style="padding: 20px 0;">
-            No active servers right now.
-          </div>
-          <table v-else class="mm-list mm-list--dense mm-landing__desktop">
-            <thead>
-              <tr>
-                <th style="width: 40px"></th>
-                <th>Server</th>
-                <th class="mm-list__col--hide-condensed" style="width: 25%;">Map</th>
-                <th class="mm-list__col--hide-condensed" style="width: 20%;">Region</th>
-                <th class="is-num" style="width: 100px">Players</th>
-                <th class="is-num" style="width: 90px">Load</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(s, idx) in activeServers"
-                :key="s.guid"
-                :class="{ 'mm-landing__row--selected': selectedServer?.guid === s.guid }"
-                @click="handleRowClick(s)"
-              >
-                <td class="mm-list__rank is-muted">{{ String(idx + 1).padStart(2, '0') }}</td>
-                <td class="mm-list__name-cell">
-                  <div class="mm-list__name">
-                    <span class="mm-list__name-primary">{{ $pn(s.name) }}</span>
-                    <!-- Subline normal (visible when full-width or mobile) -->
-                    <span class="mm-list__name-sub mm-landing__sub-normal">
-                      {{ s.ip }}:{{ s.port }}
-                      <template v-if="s.mapName"> · {{ s.mapName }}</template>
-                      <template v-if="s.country"> · {{ friendlyCountry(s.country) }}</template>
-                    </span>
-                    <!-- Subline folded (visible when condensed on desktop) -->
-                    <span class="mm-list__name-sub mm-landing__sub-folded">
-                      <span v-if="s.country" class="mm-landing__flag" :title="friendlyCountry(s.country)">{{ countryCodeToFlag(s.country) }}</span>
-                      {{ s.country ? friendlyCountry(s.country).toUpperCase() : '' }}
-                      <template v-if="s.mapName"> · {{ s.mapName.toUpperCase() }}</template>
-                      · {{ s.ip }}:{{ s.port }}
-                    </span>
-                  </div>
-                </td>
-                <td class="is-muted mm-list__col--hide-sm mm-list__col--hide-condensed" data-cell-label="Map">{{ s.mapName || '—' }}</td>
-                <td class="is-muted mm-list__col--hide-sm mm-list__col--hide-condensed" data-cell-label="Region">
-                  <span v-if="s.country" class="mm-landing__flag" :title="friendlyCountry(s.country)">{{ countryCodeToFlag(s.country) }}</span>
-                  <span>{{ friendlyCountry(s.country) }}</span>
-                </td>
-                <td class="is-num" data-cell-label="Players">
-                  <span :class="loadClass(s.maxPlayers ? s.numPlayers / s.maxPlayers : 0)">{{ s.numPlayers }}</span>
-                  <span style="color: var(--mm-ink-faint)"> / {{ s.maxPlayers }}</span>
-                </td>
-                <td class="is-num" data-cell-label="Load">
-                  <div class="mm-list__bar" :title="`${s.maxPlayers ? Math.round((s.numPlayers / s.maxPlayers) * 100) : 0}%`">
-                    <div
-                      class="mm-list__bar-fill"
-                      :class="{
-                        'mm-list__bar-fill--accent': s.maxPlayers && s.numPlayers / s.maxPlayers >= 0.66,
-                        'mm-list__bar-fill--idle': !s.numPlayers,
-                      }"
-                      :style="{ width: (s.maxPlayers ? Math.min(100, (s.numPlayers / s.maxPlayers) * 100) : 0) + '%' }"
-                    />
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Quiet servers list below active servers -->
-          <div v-if="showQuiet && quietServers.length > 0" class="mm-landing__quiet-section">
-            <div class="mm-landing__quiet-header">
-              <div class="mm-landing__quiet-head-row">
-                <span class="mm-eyebrow">
-                  Quiet · {{ quietFilter ? `${filteredQuietServers.length} of ${quietServers.length}` : quietServers.length }} hosts standing by
-                </span>
-                <div class="mm-landing__quiet-controls">
-                  <label class="mm-search mm-landing__quiet-filter">
-                    <svg class="mm-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <circle cx="11" cy="11" r="7" />
-                      <path d="m20 20-3.5-3.5" />
-                    </svg>
-                    <input
-                      v-model="quietFilter"
-                      type="text"
-                      class="mm-search__input"
-                      placeholder="Filter standby hosts…"
-                      aria-label="Filter standby hosts"
-                    />
-                    <button
-                      v-if="quietFilter"
-                      type="button"
-                      class="mm-landing__quiet-filter-clear"
-                      title="Clear filter"
-                      aria-label="Clear filter"
-                      @click="quietFilter = ''"
-                    >×</button>
-                  </label>
-                  <router-link to="/v4/servers/search" class="mm-landing__quiet-search-link">
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <circle cx="11" cy="11" r="7" />
-                      <path d="m20 20-3.5-3.5" />
-                    </svg>
-                    Search all tracked servers →
-                  </router-link>
-                </div>
-              </div>
-              <hr class="mm-rule" />
-            </div>
-            <div v-if="filteredQuietServers.length > 0" class="mm-landing__quiet-grid">
-              <div
-                v-for="s in filteredQuietServers"
-                :key="s.guid"
-                class="mm-landing__quiet-cell"
-                @click="goServer(s)"
-              >
-                <span class="mm-landing__quiet-name" :title="$pn(s.name)">{{ $pn(s.name) }}</span>
-                <span class="mm-landing__quiet-meta">
-                  {{ s.country ? s.country.toUpperCase() : '—' }} · 0/{{ s.maxPlayers }}
-                </span>
-              </div>
-            </div>
-            <div v-else class="mm-landing__quiet-empty">
-              <span>No standby hosts match "{{ quietFilter }}"</span>
-              <button type="button" class="mm-landing__quiet-reset-btn" @click="quietFilter = ''">
-                Reset filter
-              </button>
-            </div>
+    <!-- Full-Width Responsive Table with Optimal Breakpoint Framing -->
+    <div v-else class="mm-landing__full">
+      <div class="mm-landing__list-container">
+        <div v-if="sortedServers.length === 0" class="mm-empty" style="padding: 36px 0;">
+          No servers match the selected filters.
+          <div style="margin-top: 14px;">
+            <button class="lb-btn" @click="resetAll">Reset Filters</button>
           </div>
         </div>
 
-        <!-- Sticky selected server aside panel -->
-        <aside v-if="selectedServer" class="mm-landing__aside">
-          <div class="mm-landing__aside-head">
-            <div style="flex: 1; min-width: 0;">
-              <span class="mm-eyebrow">Selected host</span>
-              <div class="mm-landing__aside-title-row">
-                <span class="mm-landing__aside-title" :title="$pn(selectedServer.name)">{{ $pn(selectedServer.name) }}</span>
-                <span class="mm-chip mm-chip--live"><span class="mm-chip__dot"></span>Online</span>
-              </div>
-              <div class="mm-meta-row" style="margin-top: 8px;">
-                <span v-if="selectedServer.country" class="mm-landing__flag" :title="friendlyCountry(selectedServer.country)">{{ countryCodeToFlag(selectedServer.country) }}</span>
-                <span>{{ friendlyCountry(selectedServer.country) }}</span>
-                <span class="mm-meta-row__sep">·</span>{{ selectedServer.ip }}:{{ selectedServer.port }}
-                <span v-if="averagePing !== null" class="mm-meta-row__sep">·</span>
-                <span v-if="averagePing !== null">avg ping <span class="mm-meta-row__strong">{{ averagePing }}ms</span></span>
-              </div>
-              <div style="margin-top: 10px;">
-                <MmServerConnectAction
-                  :ip="selectedServer.ip"
-                  :port="selectedServer.port"
-                  :server-name="selectedServer.name"
-                  compact
-                  align="left"
-                />
-              </div>
-            </div>
-            <button @click="selectedServer = null" type="button" title="Close panel" class="mm-landing__aside-close">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l10 10M11 1L1 11"></path></svg>
-            </button>
-          </div>
-
-          <div class="mm-landing__aside-stats">
-            <div class="mm-landing__aside-stat-cell">
-              <div class="mm-stats__label">Now playing</div>
-              <div class="mm-stat__value mm-stat__value--small" style="margin-top: 6px;">{{ selectedServer.mapName || '—' }}</div>
-              <div class="mm-stat__delta">{{ selectedServer.gameType || 'Conquest' }}</div>
-            </div>
-            <div class="mm-landing__aside-stat-cell">
-              <div class="mm-stats__label">Round ends</div>
-              <div class="mm-stat__value mm-stat__value--small" style="margin-top: 6px; font-family: var(--mm-font-mono);">
-                {{ formattedTimeRemaining }}
-              </div>
-              <div class="mm-stat__delta">of {{ formattedTotalRoundTime }}</div>
-            </div>
-            <div class="mm-landing__aside-stat-cell">
-              <div class="mm-stats__label">Population</div>
-              <div class="mm-stat__value mm-stat__value--small" style="margin-top: 6px;">
-                {{ selectedServer.numPlayers }}<span class="mm-stat__suffix">/{{ selectedServer.maxPlayers }}</span>
-              </div>
-              <div class="mm-stat__delta">{{ Math.round((selectedServer.numPlayers / (selectedServer.maxPlayers || 1)) * 100) }}% full</div>
-            </div>
-          </div>
-
-          <div class="mm-section-bar" style="margin-top: 0;">
-            <span># LIVE ROSTER</span>
-            <span class="mm-section-bar__meta">{{ selectedServer.numPlayers }} PLAYING · SORTED BY SCORE</span>
-          </div>
-
-          <div v-if="selectedServer.players && selectedServer.players.length > 0" class="mm-landing__aside-roster">
-            <div
-              v-for="team in selectedServer.teams"
-              :key="team.index"
-              class="mm-landing__aside-team"
-              :class="{ 'mm-landing__aside-team--left': team.index === 1 }"
-            >
-              <div class="mm-landing__aside-team-header">
-                <span
-                  class="mm-landing__aside-team-label"
-                  :style="{ color: getTeamColor(team.label || '') }"
+        <div v-else class="lb-scroll-pane">
+          <table class="lb-table" :class="{ 'lb-table--compact': density === 'compact' }">
+            <thead>
+              <tr>
+                <th
+                  v-for="key in displayCols"
+                  :key="key"
+                  :style="{
+                    width: `${widths[key] || 80}px`,
+                    minWidth: `${widths[key] || 80}px`,
+                    maxWidth: `${widths[key] || 80}px`,
+                    left: pinned.includes(key) ? `${pinnedOffsets.offsets[key]}px` : undefined,
+                    zIndex: pinned.includes(key) ? 6 : 4
+                  }"
+                  :class="{
+                    'lb-th--pinned': pinned.includes(key),
+                    'lb-th--pinned-last': pinned.includes(key) && pinnedOffsets.offsets[key] + (widths[key] || 80) >= pinnedOffsets.totalPinnedWidth,
+                    'lb-th--right': getCol(key)?.align === 'right',
+                    'lb-th--center': getCol(key)?.align === 'center'
+                  }"
+                  draggable="true"
+                  @dragstart="onDragStart(key, $event)"
+                  @dragover.prevent
+                  @drop="onDrop(key)"
+                  @click="toggleSort(key, $event.shiftKey)"
                 >
-                  {{ team.label || `Team ${team.index}` }} · {{ getTeamPlayerCount(selectedServer, team.index) }}
-                </span>
-                <span class="mm-landing__aside-tickets">
-                  TICKETS <span :style="{ color: getTeamColor(team.label || '') }">{{ team.tickets }}</span>
-                </span>
-              </div>
-              <table class="mm-list mm-list--dense mm-landing__aside-roster-table">
-                <colgroup>
-                  <col style="width: 30px;">
-                  <col>
-                  <col style="width: 64px;">
-                  <col style="width: 48px;">
-                </colgroup>
-                <tbody>
-                  <tr
-                    v-for="(player, pidx) in getSortedTeamPlayers(selectedServer, team.index)"
-                    :key="player.name"
-                    :class="getPlayerRowClass(team, pidx)"
-                    @click="navigateToPlayerProfile(player.name)"
-                  >
-                    <td class="mm-list__rank" style="width: 30px;">
-                      {{ String(pidx + 1).padStart(2, '0') }}
-                    </td>
-                    <td class="mm-list__name-cell">
-                      <span class="mm-list__name-primary">{{ $pn(player.name) }}</span>
-                    </td>
-                    <td class="is-num">
-                      <span class="mm-num--kill">{{ player.kills }}</span>
-                      <span class="mm-num__sep">/</span>
-                      <span class="mm-num--death">{{ player.deaths }}</span>
-                    </td>
-                    <td class="is-num">{{ formatNumber(player.score) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div v-else class="mm-empty" style="padding: 30px;">
-            No players online
-          </div>
+                  <div class="lb-th-inner">
+                    <div class="lb-th-label-group">
+                      <i v-if="pinned.includes(key)" class="pi pi-lock lb-pin-icon" title="Pinned column"></i>
+                      <span class="lb-th-text">{{ getCol(key)?.label }}</span>
+                      <!-- Sort Direction Indicator -->
+                      <span v-if="sort.find(s => s.key === key)" class="lb-sort-arrow">
+                        {{ sort.find(s => s.key === key)?.dir === 'desc' ? '↓' : '↑' }}
+                        <sup v-if="sort.length > 1" class="lb-sort-idx">
+                          {{ sort.findIndex(s => s.key === key) + 1 }}
+                        </sup>
+                      </span>
+                    </div>
 
-          <div class="mm-landing__aside-foot">
-            <router-link :to="`/v4/servers/detail/${encodeURIComponent(selectedServer.name)}`" class="mm-landing__aside-full-link">
-              Full server view ↗
-            </router-link>
-            <span style="font-family: var(--mm-font-mono); font-size: 10px; letter-spacing: .08em; color: #555;">
-              REFRESH {{ secondsUntilRefresh }}S
-            </span>
-          </div>
-        </aside>
+                    <!-- Header Context Menu Trigger -->
+                    <div class="lb-th-actions" data-lbmenu="m">
+                      <button
+                        class="lb-th-menu-btn"
+                        title="Column options"
+                        @click.stop="menuKey = menuKey === key ? null : key"
+                      >
+                        <i class="pi pi-chevron-down"></i>
+                      </button>
+
+                      <!-- Context Menu Dropdown -->
+                      <div v-if="menuKey === key" class="lb-menu-popover" data-lbmenu="m">
+                        <button v-if="getCol(key)?.sortable !== false" class="lb-menu-item" @click.stop="sort = [{ key, dir: 'asc' }]; menuKey = null">
+                          <i class="pi pi-sort-amount-up"></i> Sort Ascending
+                        </button>
+                        <button v-if="getCol(key)?.sortable !== false" class="lb-menu-item" @click.stop="sort = [{ key, dir: 'desc' }]; menuKey = null">
+                          <i class="pi pi-sort-amount-down"></i> Sort Descending
+                        </button>
+                        <button class="lb-menu-item lb-desktop-only" @click.stop="togglePin(key)">
+                          <i :class="pinned.includes(key) ? 'pi pi-unlock' : 'pi pi-lock'"></i>
+                          {{ pinned.includes(key) ? 'Unpin column' : 'Pin column' }}
+                        </button>
+                        <button class="lb-menu-item" @click.stop="toggleHideCol(key); menuKey = null">
+                          <i class="pi pi-eye-slash"></i> Hide column
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Column Resize Handle -->
+                    <span
+                      class="lb-resize-handle"
+                      @mousedown.stop="startResize(key, $event)"
+                      @click.stop
+                    ></span>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="(s, idx) in sortedServers" :key="s.guid">
+                <tr
+                  class="lb-row"
+                  :class="{ 'lb-row--selected': expandedGuids.has(s.guid) }"
+                  @click="toggleRowExpand(s.guid)"
+                >
+                  <td
+                    v-for="k in displayCols"
+                    :key="k"
+                    :style="{
+                      width: `${widths[k] || 80}px`,
+                      minWidth: `${widths[k] || 80}px`,
+                      maxWidth: `${widths[k] || 80}px`,
+                      left: pinned.includes(k) ? `${pinnedOffsets.offsets[k]}px` : undefined,
+                      zIndex: pinned.includes(k) ? 2 : 1
+                    }"
+                    :class="{
+                      'lb-td--pinned': pinned.includes(k),
+                      'lb-td--pinned-last': pinned.includes(k) && pinnedOffsets.offsets[k] + (widths[k] || 80) >= pinnedOffsets.totalPinnedWidth,
+                      'lb-td--action': k === 'action',
+                      'lb-td--right': getCol(k)?.align === 'right',
+                      'lb-td--center': getCol(k)?.align === 'center'
+                    }"
+                  >
+                    <!-- Rank Cell -->
+                    <template v-if="k === 'rank'">
+                      <div class="lb-rank-cell">
+                        <i
+                          class="pi lb-expand-chevron"
+                          :class="expandedGuids.has(s.guid) ? 'pi-chevron-down' : 'pi-chevron-right'"
+                          :title="expandedGuids.has(s.guid) ? 'Collapse roster' : 'Expand roster ladder'"
+                        ></i>
+                        <span class="lb-rank" :class="{ 'lb-rank--podium': idx < 3 && (s.numPlayers || 0) > 0 }">
+                          {{ String(idx + 1).padStart(2, '0') }}
+                        </span>
+                      </div>
+                    </template>
+
+                    <!-- Join / Connect Action Cell -->
+                    <template v-else-if="k === 'action'">
+                      <div class="lb-action-cell" @click.stop>
+                        <MmServerConnectAction
+                          :ip="s.ip"
+                          :port="s.port"
+                          :server-name="s.name"
+                          compact
+                          align="left"
+                        />
+                      </div>
+                    </template>
+
+                    <!-- Server Name Cell -->
+                    <template v-else-if="k === 'name'">
+                      <div class="lb-name-cell">
+                        <div class="lb-server-cell">
+                          <span v-if="(s.numPlayers || 0) > 0" class="lb-online-dot" title="Populated and active"></span>
+                          <span v-else class="lb-standby-dot" title="Standby host"></span>
+                          <RouterLink
+                            :to="`/v4/servers/detail/${encodeURIComponent(s.name)}`"
+                            class="lb-server-link"
+                            :title="`View ${$pn(s.name)} details`"
+                            @click.stop
+                          >
+                            {{ $pn(s.name) }}
+                          </RouterLink>
+                        </div>
+                        <div class="lb-server-subline">
+                          <span>{{ s.ip }}:{{ s.port }}</span>
+                          <template v-if="s.country"> · <span class="lb-flag" :title="friendlyCountry(s.country)">{{ countryCodeToFlag(s.country) }}</span> {{ friendlyCountry(s.country) }}</template>
+                          <template v-if="s.mapName"> · {{ s.mapName }}</template>
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- Players Count (Interactive ladder toggle) -->
+                    <template v-else-if="k === 'players'">
+                      <div class="lb-players-cell">
+                        <span class="lb-players-val" :class="loadClass(s.maxPlayers ? s.numPlayers / s.maxPlayers : 0)">{{ s.numPlayers }}</span>
+                        <span class="lb-players-max"> / {{ s.maxPlayers }}</span>
+                        <span v-if="(s.numPlayers || 0) > 0" class="lb-players-ladder-hint" title="Click to view live team ladder">
+                          <i class="pi pi-users" style="font-size: 11px; margin-left: 5px; opacity: 0.85;"></i>
+                        </span>
+                      </div>
+                    </template>
+
+                    <!-- Load Bar & % -->
+                    <template v-else-if="k === 'load'">
+                      <div class="lb-load-wrap">
+                        <span class="lb-load-pct">{{ s.maxPlayers ? Math.round((s.numPlayers / s.maxPlayers) * 100) : 0 }}%</span>
+                        <div class="mm-list__bar" :title="`${s.maxPlayers ? Math.round((s.numPlayers / s.maxPlayers) * 100) : 0}%`">
+                          <div
+                            class="mm-list__bar-fill"
+                            :class="{
+                              'mm-list__bar-fill--accent': s.maxPlayers && s.numPlayers / s.maxPlayers >= 0.66,
+                              'mm-list__bar-fill--idle': !s.numPlayers,
+                            }"
+                            :style="{ width: (s.maxPlayers ? Math.min(100, (s.numPlayers / s.maxPlayers) * 100) : 0) + '%' }"
+                          />
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- Map -->
+                    <template v-else-if="k === 'map'">
+                      <span class="lb-text-cell">{{ s.mapName || '—' }}</span>
+                    </template>
+
+                    <!-- Game Mode -->
+                    <template v-else-if="k === 'gameType'">
+                      <span class="is-muted lb-text-cell">{{ s.gameType || 'Conquest' }}</span>
+                    </template>
+
+                    <!-- Region / Country -->
+                    <template v-else-if="k === 'region'">
+                      <div class="lb-region-cell">
+                        <span v-if="s.country" class="lb-flag" :title="friendlyCountry(s.country)">{{ countryCodeToFlag(s.country) }}</span>
+                        <span>{{ friendlyCountry(s.country) }}</span>
+                      </div>
+                    </template>
+
+                    <!-- Average Ping -->
+                    <template v-else-if="k === 'ping'">
+                      <template v-if="calculateAveragePing(s) !== null">
+                        <span class="lb-ping-val" :class="pingClass(calculateAveragePing(s) || 0)">
+                          {{ calculateAveragePing(s) }}
+                        </span>
+                        <span class="lb-ping-unit">ms</span>
+                      </template>
+                      <span v-else class="lb-muted">—</span>
+                    </template>
+
+                    <!-- Round Time Left -->
+                    <template v-else-if="k === 'timeRemain'">
+                      <span style="font-family: var(--mm-font-mono);">
+                        {{ s.roundTimeRemain !== undefined && s.roundTimeRemain !== -1 ? formatTimeRemaining(s.roundTimeRemain) : '—' }}
+                      </span>
+                    </template>
+
+                    <!-- Tickets -->
+                    <template v-else-if="k === 'tickets'">
+                      <template v-if="s.tickets1 !== undefined && s.tickets2 !== undefined && (s.tickets1 > 0 || s.tickets2 > 0)">
+                        <span style="color: #7da34c; font-weight: 700;">{{ s.tickets1 }}</span>
+                        <span class="lb-ticket-sep">:</span>
+                        <span style="color: #d65a5a; font-weight: 700;">{{ s.tickets2 }}</span>
+                      </template>
+                      <span v-else class="lb-muted">—</span>
+                    </template>
+
+                    <!-- Address IP:Port -->
+                    <template v-else-if="k === 'ip'">
+                      <span style="font-family: var(--mm-font-mono); font-size: 12.5px;">{{ s.ip }}:{{ s.port }}</span>
+                    </template>
+                  </td>
+                </tr>
+
+                <!-- In-Game Scoreboard Aesthetic: Authentic AXIS vs ALLIED Scoreboard -->
+                <tr v-if="expandedGuids.has(s.guid)" class="lb-expand-row">
+                  <td :colspan="displayCols.length" class="lb-expand-td">
+                    <div class="lb-inline-roster">
+                      <div v-if="s.players && s.players.length > 0" class="lb-roster-teams">
+                        <!-- Two Teams Side by Side -->
+                        <div
+                          v-for="teamIdx in [1, 2]"
+                          :key="teamIdx"
+                          class="lb-roster-team-card"
+                          :class="teamIdx === 1 ? 'lb-roster-team--axis' : 'lb-roster-team--allies'"
+                        >
+                          <!-- Team Header: Clean Faction Title & Direct Tickets Number -->
+                          <div class="lb-team-strip">
+                            <span class="lb-team-name" :style="{ color: getTeamColor(getTeamLabel(s, teamIdx)) }">
+                              {{ getTeamLabel(s, teamIdx) }}
+                            </span>
+                            <div class="lb-team-tickets-plain" :style="{ color: getTeamColor(getTeamLabel(s, teamIdx)) }">
+                              {{ getTeamTickets(s, teamIdx) }}
+                            </div>
+                          </div>
+
+                          <!-- In-Game Styled Player Scoreboard Ladder -->
+                          <div class="lb-player-list">
+                            <div class="lb-player-list-head">
+                              <span class="lb-pcol-name">PLAYERNAME</span>
+                              <span class="lb-pcol-score">SCORE</span>
+                              <span class="lb-pcol-kd">K</span>
+                              <span class="lb-pcol-kd">D</span>
+                              <span class="lb-pcol-ping">PING</span>
+                            </div>
+
+                            <div
+                              v-for="player in getSortedTeamPlayers(s, teamIdx)"
+                              :key="player.name"
+                              class="lb-player-item"
+                              :class="{
+                                'lb-player-item--axis': teamIdx === 1,
+                                'lb-player-item--allies': teamIdx === 2
+                              }"
+                              @click.stop="navigateToPlayerProfile(player.name)"
+                            >
+                              <!-- Player Name with Authentic Color Tint -->
+                              <div class="lb-pcol-name">
+                                <RouterLink
+                                  :to="`/v4/players/${encodeURIComponent(player.name)}`"
+                                  class="lb-player-link"
+                                  :class="teamIdx === 1 ? 'lb-player-link--axis' : 'lb-player-link--allies'"
+                                  :title="`View ${$pn(player.name)} profile`"
+                                  @click.stop
+                                >
+                                  {{ $pn(player.name) }}
+                                </RouterLink>
+                              </div>
+
+                              <!-- Score (Trophy Column) -->
+                              <span class="lb-pcol-score">
+                                <span class="lb-score-val">{{ formatNumber(player.score) }}</span>
+                              </span>
+
+                              <!-- Kills -->
+                              <span class="lb-pcol-kd">
+                                <span class="lb-num--kill">{{ player.kills }}</span>
+                              </span>
+
+                              <!-- Deaths -->
+                              <span class="lb-pcol-kd">
+                                <span class="lb-num--death">{{ player.deaths }}</span>
+                              </span>
+
+                              <!-- Ping -->
+                              <span class="lb-pcol-ping">
+                                <span class="lb-ping-badge" :class="pingClass(player.ping)">
+                                  {{ player.ping > 0 ? `${player.ping}ms` : '—' }}
+                                </span>
+                              </span>
+                            </div>
+
+                            <div v-if="getTeamPlayerCount(s, teamIdx) === 0" class="lb-player-empty">
+                              <span>No soldiers currently deployed on this side.</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div v-else class="lb-roster-empty">
+                        <i class="pi pi-info-circle" style="font-size: 18px; color: var(--mm-accent);"></i>
+                        <span>No active combatants currently on this server. Be the first to join!</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </template>
+    </div>
   </div>
 
+  <!-- Population Trend Teleport Drawer -->
   <Teleport to="body">
     <Transition name="mm-pop-drawer">
       <div
@@ -642,7 +1159,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
               <div class="mm-pop-drawer__title">Players online</div>
             </div>
             <button type="button" class="mm-pop-drawer__close" aria-label="Close" @click="closeTrend">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
                 <path d="M6 6l12 12M18 6L6 18" />
               </svg>
             </button>
@@ -659,33 +1176,55 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 </template>
 
 <style scoped>
+.lb-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--mm-bg);
+  color: var(--mm-ink);
+  font-family: var(--mm-font-display);
+  width: 100%;
+  max-width: 1920px;
+  margin: 0 auto;
+  padding: 22px 32px 48px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1024px) {
+  .lb-container {
+    padding: 16px 20px 36px;
+  }
+}
+
+@media (max-width: 640px) {
+  .lb-container {
+    padding: 12px 12px 24px;
+  }
+}
+
 .mm-landing__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 14px;
+  margin-bottom: 16px;
 }
 
-/* `display: contents` so the wrapped segments stay direct flex children of
-   .mm-meta-row (same 10px gap and wrapping as before) while still being
-   hideable as a group on mobile. */
 .mm-landing__meta-extra { display: contents; }
 
 @media (max-width: 720px) {
   .mm-landing__meta-extra { display: none; }
 }
 
-/* Staleness banner — data may be old (last-known-good fallback) but still shown below,
-   with an escape hatch to the DB-backed search page which doesn't depend on the live feed. */
+/* Staleness banner */
 .mm-landing__stale-banner {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px 16px;
-  margin-top: 14px;
-  padding: 10px 14px;
+  margin-bottom: 16px;
+  padding: 11px 16px;
   border: 1px solid var(--mm-danger);
   border-radius: 2px;
   background: color-mix(in srgb, var(--mm-danger) 14%, var(--mm-bg-mute));
@@ -698,7 +1237,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 
 .mm-landing__stale-text {
   flex: 1 1 240px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--mm-ink-soft);
 }
 
@@ -713,7 +1252,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   align-items: center;
   gap: 6px;
   font-family: var(--mm-font-mono);
-  font-size: 11px;
+  font-size: 11.5px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--mm-ink);
@@ -730,119 +1269,964 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
-.mm-landing__roster-btn {
+/* Toolbar & Filters */
+.lb-filter-wrapper {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.lb-filter-card {
+  border: 1px solid var(--mm-rule);
+  border-radius: 3px;
+  background: var(--mm-bg-soft);
+}
+
+.lb-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 12px 16px;
+}
+
+.lb-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 240px;
+  max-width: 420px;
+}
+
+.lb-search-icon {
+  position: absolute;
+  left: 10px;
+  font-size: 12px;
+  color: var(--mm-ink-muted);
+  pointer-events: none;
+}
+
+.lb-search-input {
+  width: 100%;
+  font-family: var(--mm-font-display);
+  font-size: 13px;
+  padding: 6px 28px 6px 30px;
+  background: var(--mm-bg-mute);
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  color: var(--mm-ink);
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.lb-search-input:focus {
+  border-color: var(--mm-accent);
+}
+
+.lb-search-clear {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: var(--mm-ink-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.lb-search-clear:hover {
+  color: var(--mm-ink);
+}
+
+.lb-control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lb-slicer-label {
   font-family: var(--mm-font-mono);
   font-size: 10.5px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
+  color: var(--mm-ink-muted);
   text-transform: uppercase;
+}
+
+.lb-select {
+  font-family: var(--mm-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  background: var(--mm-bg-mute);
+  color: var(--mm-ink);
   border: 1px solid var(--mm-rule);
-  padding: 4px 10px;
+  border-radius: 2px;
+  padding: 6px 10px;
+  cursor: pointer;
+  outline: none;
+}
+
+.lb-select:focus {
+  border-color: var(--mm-accent);
+}
+
+.lb-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.lb-btn {
+  font-family: var(--mm-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 2px;
+  border: 1px solid var(--mm-rule);
+  background: var(--mm-bg-mute);
+  color: var(--mm-ink);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.lb-btn:hover {
+  border-color: var(--mm-accent-soft);
+  color: var(--mm-ink);
+}
+
+.lb-btn--active {
+  border-color: var(--mm-accent);
+  background: var(--mm-bg);
+  color: var(--mm-ink);
+}
+
+.lb-btn--muted {
+  color: var(--mm-ink-muted);
+}
+
+.lb-menu-anchor {
+  position: relative;
+}
+
+.lb-col-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 3px;
+  padding: 14px;
+  width: 230px;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.65);
+}
+
+.lb-popover-title {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--mm-ink-muted);
+  margin-bottom: 10px;
+}
+
+.lb-col-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--mm-ink-soft);
+}
+
+.lb-col-check:hover {
+  color: var(--mm-ink);
+}
+
+.lb-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 12px;
+}
+
+.lb-empty-chip {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 2px;
+  border: 1px solid var(--mm-accent);
+  background: color-mix(in srgb, var(--mm-accent) 15%, var(--mm-bg));
+  color: var(--mm-ink);
+  cursor: pointer;
+}
+
+.lb-empty-chip:hover {
+  background: color-mix(in srgb, var(--mm-accent) 25%, var(--mm-bg));
+}
+
+/* Section Bar (Olive) */
+.lb-section-bar-wrap {
+  width: 100%;
+  margin-top: 16px;
+  box-sizing: border-box;
+}
+
+.lb-section-bar {
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  border-radius: 3px 3px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+
+.lb-section-right {
+  opacity: 0.9;
+}
+
+.lb-populated-tag,
+.lb-standby-tag,
+.lb-search-tag {
+  color: var(--mm-highlight-ink);
+  font-weight: 700;
+}
+
+/* Table */
+.mm-landing__full {
+  width: 100%;
+}
+
+.mm-landing__list-container {
+  min-width: 0;
+}
+
+.lb-scroll-pane {
+  overflow-x: auto;
+  border: 1px solid var(--mm-rule);
+  border-top: none;
+  background: var(--mm-bg);
+}
+
+.lb-scroll-pane::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.lb-scroll-pane::-webkit-scrollbar-thumb {
+  background: var(--mm-rule-strong);
   border-radius: 2px;
 }
 
-.mm-landing__roster-btn:hover:not(:disabled) {
-  border-color: var(--mm-ink);
-  color: var(--mm-ink);
+.lb-scroll-pane::-webkit-scrollbar-track {
+  background: var(--mm-bg);
 }
 
-.mm-landing__roster-btn:disabled {
-  color: var(--mm-ink-faint);
-  border-color: var(--mm-rule);
-  cursor: not-allowed;
+.lb-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  table-layout: fixed;
 }
 
-
-/* Desktop/mobile swap for the servers list. Card layout on mobile matches
-   mock #1: rank · name-stack · players + bar stacked on the right. */
-.mm-landing__mobile {
-  display: none;
-  list-style: none;
-  margin: 0;
+/* TH */
+th {
+  position: sticky;
+  top: 0;
+  height: 42px;
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
   padding: 0;
-}
-
-@media (max-width: 720px) {
-  .mm-landing__desktop { display: none; }
-  .mm-landing__mobile { display: flex; flex-direction: column; }
-}
-
-.mm-landing__mcard {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 4px 12px;
-  align-items: start;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--mm-rule);
-  cursor: pointer;
-}
-.mm-landing__mcard:last-child { border-bottom: 0; }
-
-.mm-landing__mrank {
-  grid-row: 1 / span 3;
+  user-select: none;
   font-family: var(--mm-font-mono);
   font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--mm-ink-muted);
-  align-self: start;
-  padding-top: 2px;
-}
-
-.mm-landing__mbody { min-width: 0; }
-
-.mm-landing__mtitle {
-  font-family: var(--mm-font-display);
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--mm-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mm-landing__msub {
-  font-family: var(--mm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--mm-ink-muted);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mm-landing__msub--alt {
+  letter-spacing: 0.1em;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  border-right: 1px solid rgba(0,0,0,0.12);
+  box-sizing: border-box;
 }
 
-.mm-landing__mright {
-  grid-row: 1 / span 3;
-  grid-column: 3;
+.lb-th--pinned {
+  position: sticky;
+  background: var(--mm-highlight);
+}
+
+.lb-th--pinned-last {
+  border-right: 2px solid var(--mm-bg) !important;
+}
+
+.lb-th--right {
+  text-align: right;
+}
+
+.lb-th--center {
+  text-align: center;
+}
+
+.lb-th-inner {
+  position: relative;
+  height: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  min-width: 80px;
+  padding: 0 12px;
+  cursor: pointer;
 }
 
-.mm-landing__mplayers {
+.lb-th--right .lb-th-inner {
+  justify-content: flex-end;
+}
+
+.lb-th--center .lb-th-inner {
+  justify-content: center;
+}
+
+.lb-th-label-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.lb-pin-icon {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.lb-th-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lb-sort-arrow {
+  margin-left: 4px;
+  color: var(--mm-highlight-ink);
+}
+
+.lb-sort-idx {
+  font-size: 9px;
+  margin-left: 1px;
+}
+
+.lb-th-actions {
+  position: relative;
+}
+
+.lb-th-menu-btn {
+  background: transparent;
+  border: none;
+  color: var(--mm-highlight-ink);
+  opacity: 0.65;
+  cursor: pointer;
+  padding: 3px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.lb-th-menu-btn:hover {
+  opacity: 1;
+}
+
+.lb-menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 3px;
+  padding: 5px;
+  min-width: 170px;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.65);
+  font-family: var(--mm-font-display);
+}
+
+.lb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--mm-ink);
+  font-size: 12.5px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.lb-menu-item:hover {
+  background: var(--mm-bg-mute);
+  color: var(--mm-accent-soft);
+}
+
+.lb-resize-handle {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  height: 100%;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 7;
+}
+
+/* TD */
+td {
+  padding: 10px 14px;
   font-family: var(--mm-font-mono);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--mm-rule);
+  background: var(--mm-bg);
+  box-sizing: border-box;
+}
+
+.lb-table--compact td {
+  padding: 7px 10px;
+  font-size: 12.5px;
+}
+
+.lb-td--action {
+  overflow: visible !important;
+}
+
+.lb-row:hover .lb-td--action,
+.lb-row:focus-within .lb-td--action,
+.lb-row:has(.is-open) td,
+.lb-row:has(.is-open) .lb-td--action,
+.lb-row:has(.is-active) td,
+.lb-row:has(.is-active) .lb-td--action {
+  z-index: 50 !important;
+}
+
+.lb-td--pinned {
+  position: sticky;
+  background: var(--mm-bg);
+}
+
+.lb-td--pinned-last {
+  border-right: 2px solid var(--mm-rule-strong) !important;
+}
+
+.lb-td--right {
+  text-align: right;
+}
+
+.lb-td--center {
+  text-align: center;
+}
+
+/* Rows */
+.lb-row {
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.lb-row:hover td {
+  background: rgba(132, 125, 76, 0.15);
+}
+
+.lb-row--selected td {
+  background: rgba(132, 125, 76, 0.24) !important;
+}
+
+.lb-row--selected .lb-server-link {
+  color: var(--mm-accent);
+}
+
+/* Cell Elements */
+.lb-rank-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.lb-expand-chevron {
+  font-size: 10px;
+  color: var(--mm-ink-muted);
+  transition: transform 0.15s ease;
+}
+
+.lb-action-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: visible;
+}
+
+.lb-rank {
+  font-weight: 400;
+  color: var(--mm-ink-muted);
+  font-size: 13.5px;
+}
+
+.lb-rank--podium {
+  font-weight: 700;
+  color: var(--mm-accent);
+}
+
+.lb-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lb-server-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mm-font-display);
+  min-width: 0;
+}
+
+.lb-server-link {
+  color: var(--mm-ink);
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+}
+
+.lb-server-link:hover {
+  color: var(--mm-accent);
+}
+
+.lb-server-subline {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--mm-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mm-success);
+  box-shadow: 0 0 7px var(--mm-success);
+  flex-shrink: 0;
+}
+
+.lb-standby-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mm-ink-faint);
+  flex-shrink: 0;
+}
+
+.lb-players-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.lb-players-val {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lb-players-max {
+  color: var(--mm-ink-faint);
+  font-size: 14px;
+}
+
+.lb-load-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.lb-load-pct {
+  font-family: var(--mm-font-mono);
+  font-size: 12px;
+  color: var(--mm-ink-muted);
+  min-width: 36px;
+  text-align: right;
+}
+
+.lb-text-cell {
+  font-family: var(--mm-font-display);
+  font-size: 14px;
+}
+
+.lb-region-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mm-font-display);
+  font-size: 14px;
+}
+
+.lb-flag {
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  font-size: 1.1em;
+  vertical-align: -0.05em;
+}
+
+.lb-ping-val {
+  font-family: var(--mm-font-mono);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lb-ping-unit {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  color: var(--mm-ink-muted);
+  margin-left: 2px;
+}
+
+.lb-ping--good {
+  color: #7da34c;
+}
+
+.lb-ping--mid {
+  color: #c5a23a;
+}
+
+.lb-ping--high {
+  color: #d65a5a;
+}
+
+.lb-ping--muted {
+  color: var(--mm-ink-muted);
+}
+
+.lb-ticket-sep {
+  color: var(--mm-ink-muted);
+  margin: 0 4px;
+}
+
+.lb-muted {
+  color: var(--mm-ink-faint);
+}
+
+/* ============================================================================
+   Authentic Battlefield 1942 In-Game Inspired Scoreboard (AXIS vs ALLIED)
+   ============================================================================ */
+.lb-expand-row td {
+  padding: 0 !important;
+  background: color-mix(in srgb, var(--mm-bg-soft) 85%, var(--mm-bg)) !important;
+  border-bottom: 2px solid var(--mm-rule-strong);
+}
+
+.lb-inline-roster {
+  padding: 18px 24px 24px;
+  box-sizing: border-box;
+}
+
+.lb-roster-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 860px) {
+  .lb-inline-roster {
+    padding: 14px 14px 20px 14px;
+  }
+  .lb-roster-teams {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+.lb-roster-team-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 4px;
+  background: var(--mm-bg);
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--mm-rule);
+  transition: border-color 0.15s ease;
+}
+
+.lb-roster-team--axis {
+  border-color: rgba(214, 90, 90, 0.5);
+}
+
+.lb-roster-team--axis:hover {
+  border-color: rgba(214, 90, 90, 0.75);
+}
+
+.lb-roster-team--allies {
+  border-color: rgba(97, 175, 239, 0.5);
+}
+
+.lb-roster-team--allies:hover {
+  border-color: rgba(97, 175, 239, 0.75);
+}
+
+.lb-team-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--mm-rule);
+}
+
+.lb-roster-team--axis .lb-team-strip {
+  background: linear-gradient(90deg, rgba(214, 90, 90, 0.22) 0%, rgba(214, 90, 90, 0.05) 100%);
+}
+
+.lb-roster-team--allies .lb-team-strip {
+  background: linear-gradient(90deg, rgba(97, 175, 239, 0.22) 0%, rgba(97, 175, 239, 0.05) 100%);
+}
+
+.lb-team-strip-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lb-team-flag {
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  font-size: 1.25em;
+  line-height: 1;
+}
+
+.lb-team-name {
+  font-family: var(--mm-font-display);
+  font-size: 15.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lb-team-badge {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--mm-ink-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--mm-rule);
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+
+.lb-team-tickets-plain {
+  font-family: var(--mm-font-mono);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  padding-right: 4px;
+}
+
+.lb-player-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.lb-player-list-head {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  background: var(--mm-bg-mute);
+  border-bottom: 1px solid var(--mm-rule);
+}
+
+.lb-player-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--mm-rule) 60%, transparent);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-family: var(--mm-font-mono);
+  font-size: 13.5px;
+}
+
+.lb-player-item:hover {
+  background: rgba(132, 125, 76, 0.22);
+}
+
+.lb-player-item:last-child {
+  border-bottom: none;
+}
+
+/* Player Name Cell with In-Game Color Tints */
+.lb-pcol-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.lb-player-link {
+  text-decoration: none;
+  font-family: var(--mm-font-display);
+  font-size: 14.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.12s ease;
+}
+
+.lb-player-link--axis {
+  color: #e06c75;
+}
+
+.lb-player-link--axis:hover {
+  color: #ff858d;
+  text-decoration: underline;
+}
+
+.lb-player-link--allies {
+  color: #61afef;
+}
+
+.lb-player-link--allies:hover {
+  color: #85c5ff;
+  text-decoration: underline;
+}
+
+/* Stats Columns */
+.lb-pcol-score {
+  width: 72px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.lb-score-val {
+  font-weight: 700;
+  color: var(--mm-ink);
+  font-size: 13.5px;
+}
+
+.lb-pcol-kd {
+  width: 48px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 13px;
+}
+
+.lb-num--kill {
+  color: #ff7b72;
+  font-weight: 600;
+}
+
+.lb-num--death {
+  color: var(--mm-ink-soft);
+}
+
+.lb-pcol-ratio {
+  width: 64px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.lb-kd-pill {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.lb-kd-pill.mm-kd--elite {
+  color: #b4c060;
+  font-weight: 700;
+  background: rgba(180, 192, 96, 0.16);
+  border: 1px solid rgba(180, 192, 96, 0.35);
+}
+
+.lb-kd-pill.mm-kd--good {
+  color: #7da34c;
+  font-weight: 600;
+  background: rgba(125, 163, 76, 0.14);
+}
+
+.lb-kd-pill.mm-kd--mid {
+  color: var(--mm-ink);
+}
+
+.lb-kd-pill.mm-kd--low {
+  color: #a0a07a;
+}
+
+.lb-kd-pill.mm-kd--poor {
+  color: #777777;
+}
+
+.lb-pcol-ping {
+  width: 58px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.lb-ping-badge {
+  font-family: var(--mm-font-mono);
+  font-size: 12px;
   font-weight: 500;
 }
 
-.mm-landing__mbar {
-  width: 80px;
+.lb-player-empty {
+  padding: 20px 16px;
+  font-family: var(--mm-font-mono);
+  font-size: 12.5px;
+  color: var(--mm-ink-muted);
+  font-style: italic;
+  text-align: center;
 }
 
-/* Flag emoji needs an explicit emoji font stack — otherwise some
-   browsers fall back to the monochrome regional-indicator letters. */
+.lb-roster-empty {
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-family: var(--mm-font-mono);
+  font-size: 13px;
+  color: var(--mm-ink-soft);
+  background: var(--mm-bg);
+  border: 1px solid var(--mm-rule);
+  border-radius: 3px;
+}
+
+/* Flag & Refresh ring */
 .mm-landing__flag {
   font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
-  font-size: 1.05em;
+  font-size: 1.1em;
   margin-right: 4px;
   vertical-align: -0.05em;
 }
@@ -854,7 +2238,7 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   vertical-align: middle;
   color: var(--mm-ink-soft);
   font-family: var(--mm-font-mono);
-  font-size: 11px;
+  font-size: 11.5px;
   letter-spacing: 0.04em;
 }
 
@@ -867,373 +2251,13 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
 }
 
 .mm-refresh-ring__label {
-  min-width: 22px;
+  min-width: 24px;
   text-align: left;
-}
-
-/* Grid layout for active list + details sidebar */
-.mm-landing__grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 32px;
-  align-items: start;
-  margin-top: 26px;
-}
-
-@media (min-width: 1024px) {
-  .mm-landing__grid {
-    grid-template-columns: 1fr 660px;
-  }
-}
-
-.mm-landing__full {
-  margin-top: 26px;
-}
-
-/* Server table condensed styling */
-@media (min-width: 1024px) {
-  .mm-landing__grid .mm-list__col--hide-condensed {
-    display: none;
-  }
-}
-
-/* Sub-line folded/normal control */
-.mm-landing__sub-folded {
-  display: none;
-}
-.mm-landing__sub-normal {
-  display: inline;
-}
-
-@media (min-width: 1024px) {
-  .mm-landing__grid .mm-landing__sub-folded {
-    display: inline-block;
-    margin-top: 2px;
-  }
-  .mm-landing__grid .mm-landing__sub-normal {
-    display: none;
-  }
-}
-
-/* Row selection state */
-.mm-landing__row--selected {
-  background: #1a1a1a !important;
-  box-shadow: inset 2px 0 0 var(--mm-accent);
-}
-
-.mm-landing__desktop tbody tr,
-.mm-landing__aside tbody tr {
-  cursor: pointer;
-}
-
-.mm-landing__aside tbody tr:hover {
-  background: #1d1d1d;
-}
-
-/* Sticky selected server aside panel */
-.mm-landing__aside {
-  border: 1px solid var(--mm-rule);
-  border-radius: 2px;
-  position: sticky;
-  top: 24px;
-  background: #131313;
-  width: 100%;
-}
-
-@media (max-width: 1023px) {
-  .mm-landing__aside {
-    display: none;
-  }
-}
-
-.mm-landing__aside-head {
-  padding: 18px 22px 16px;
-  border-bottom: 1px solid var(--mm-rule);
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.mm-landing__aside-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.mm-landing__aside-title {
-  font-family: var(--mm-font-display);
-  font-size: 21px;
-  font-weight: 400;
-  color: var(--mm-ink);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 480px;
-}
-
-.mm-landing__aside-close {
-  background: transparent;
-  border: 1px solid #3d3d3d;
-  border-radius: 2px;
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  color: var(--mm-ink-soft);
-  cursor: pointer;
-  flex: 0 0 auto;
-  transition: border-color 0.15s, color 0.15s;
-}
-
-.mm-landing__aside-close:hover {
-  border-color: var(--mm-ink);
-  color: var(--mm-ink);
-}
-
-.mm-landing__aside-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  border-bottom: 1px solid var(--mm-rule);
-}
-
-.mm-landing__aside-stat-cell {
-  padding: 14px 22px;
-  border-right: 1px solid var(--mm-rule);
-  min-width: 0;
-}
-
-.mm-landing__aside-stat-cell:last-child {
-  border-right: 0;
-}
-
-.mm-landing__aside-roster {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.mm-landing__aside-team {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.mm-landing__aside-team--left {
-  border-right: 1px solid var(--mm-rule);
-}
-
-/* table-layout: fixed makes the colgroup widths authoritative — without
-   it, a long player name grows the name column past its 1fr track and
-   bleeds into (left team) or overflows past (right team) the panel. */
-.mm-landing__aside-roster-table {
-  table-layout: fixed;
-}
-
-.mm-landing__aside-roster-table .mm-list__name-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mm-landing__aside-roster-table td.is-num {
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.mm-landing__aside-team-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 12px 18px 10px;
-  border-bottom: 1px solid var(--mm-rule);
-}
-
-.mm-landing__aside-team-label {
-  font-family: var(--mm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-}
-
-.mm-landing__aside-tickets {
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: .08em;
-  color: var(--mm-ink-soft);
-}
-
-.mm-landing__aside-foot {
-  padding: 14px 22px;
-  border-top: 1px solid var(--mm-rule);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.mm-landing__aside-full-link {
-  font-family: var(--mm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--mm-ink);
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.mm-landing__aside-full-link:hover {
-  color: var(--mm-accent);
-}
-
-/* Quiet servers styling */
-.mm-landing__quiet-header {
-  margin: 34px 0 14px;
-}
-
-.mm-landing__quiet-head-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.mm-landing__quiet-controls {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.mm-landing__quiet-filter {
-  min-width: 170px;
-  max-width: 220px;
-  padding: 4px 10px;
-  height: 28px;
-}
-
-.mm-landing__quiet-filter .mm-search__input {
-  font-size: 11.5px;
-}
-
-.mm-landing__quiet-filter .mm-search__icon {
-  width: 11px;
-  height: 11px;
-}
-
-.mm-landing__quiet-filter-clear {
-  background: transparent;
-  border: none;
-  color: var(--mm-ink-muted);
-  cursor: pointer;
-  padding: 0 2px;
-  font-size: 14px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s ease;
-}
-
-.mm-landing__quiet-filter-clear:hover {
-  color: var(--mm-ink);
-}
-
-.mm-landing__quiet-search-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-  text-decoration: none;
-  transition: color 0.15s ease;
-}
-
-.mm-landing__quiet-search-link:hover {
-  color: var(--mm-accent);
-}
-
-.mm-landing__quiet-empty {
-  padding: 28px 0;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--mm-ink-muted);
-  font-size: 13px;
-}
-
-.mm-landing__quiet-reset-btn {
-  background: transparent;
-  border: 1px solid var(--mm-rule);
-  color: var(--mm-ink-soft);
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 2px;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-
-.mm-landing__quiet-reset-btn:hover {
-  border-color: var(--mm-ink);
-  color: var(--mm-ink);
-}
-
-.mm-landing__quiet-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  column-gap: 40px;
-}
-
-@media (max-width: 768px) {
-  .mm-landing__quiet-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.mm-landing__quiet-cell {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
-  padding: 9px 0;
-  border-bottom: 1px solid #222;
-  min-width: 0;
-  cursor: pointer;
-}
-
-.mm-landing__quiet-cell:hover .mm-landing__quiet-name {
-  color: var(--mm-accent);
-}
-
-.mm-landing__quiet-name {
-  font-size: 13px;
-  color: var(--mm-ink-soft);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: color 0.15s;
-}
-
-.mm-landing__quiet-meta {
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .mm-trend-launch {
   font-family: var(--mm-font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--mm-accent);
