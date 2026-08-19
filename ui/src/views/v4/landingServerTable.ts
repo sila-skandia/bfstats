@@ -32,7 +32,7 @@ export const COLUMN_GROUPS: { id: ColGroup; label: string }[] = [
 
 export const ALL_COLUMNS: ServerColumnDef[] = [
   { key: 'rank', label: '#', align: 'right', w: 48, kind: 'custom', filter: 'none', group: 'identity', sortable: false },
-  { key: 'action', label: 'Join', align: 'center', w: 86, kind: 'custom', filter: 'none', group: 'identity', sortable: false },
+  { key: 'action', label: 'Join', align: 'center', w: 168, kind: 'custom', filter: 'none', group: 'identity', sortable: false },
   { key: 'name', label: 'Server', align: 'left', w: 300, kind: 'custom', filter: 'text', group: 'identity' },
   { key: 'players', label: 'Players', align: 'right', w: 115, kind: 'custom', filter: 'number', group: 'live' },
   { key: 'load', label: 'Load', align: 'right', w: 115, kind: 'custom', filter: 'number', group: 'live' },
@@ -203,32 +203,101 @@ const toNum = (value: unknown): number | null => {
   return null
 }
 
-const matchText = (hay: string, q: string): boolean => {
-  const hayL = hay.toLowerCase()
-  if (q.startsWith('=')) return hayL === q.slice(1).trim().toLowerCase()
-  if (q.startsWith('!') || q.startsWith('-')) {
-    const rest = q.slice(1).trim()
-    if (!rest) return true
-    return !hayL.includes(rest.toLowerCase())
-  }
-  if (q.includes('|')) {
-    return q.split('|').some(part => {
-      const p = part.trim()
-      return p.length > 0 && hayL.includes(p.toLowerCase())
-    })
-  }
-  return hayL.includes(q.toLowerCase())
+const matchText = (hay: string, q: string): boolean =>
+  hay.toLowerCase().includes(q.toLowerCase())
+
+export interface NumberRangeBounds {
+  min: number | null
+  max: number | null
 }
 
-const matchNumber = (num: number | null, q: string, raw: unknown): boolean => {
-  const range = q.match(/^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/)
-  if (range) {
-    if (num === null) return false
-    return num >= Number(range[1]) && num <= Number(range[2])
+export const parseNumberRangeQuery = (q: string): NumberRangeBounds | null => {
+  const t = q.trim()
+  if (!t) return { min: null, max: null }
+  const range = t.match(/^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/)
+  if (range) return { min: Number(range[1]), max: Number(range[2]) }
+  const op = t.match(/^(<=|>=|<|>|=)\s*(-?\d+(?:\.\d+)?)$/)
+  if (op) {
+    const n = Number(op[2])
+    switch (op[1]) {
+      case '>':
+      case '>=':
+        return { min: n, max: null }
+      case '<':
+      case '<=':
+        return { min: null, max: n }
+      case '=':
+        return { min: n, max: n }
+    }
   }
+  const asNum = Number(t)
+  if (t !== '' && !Number.isNaN(asNum)) return { min: asNum, max: asNum }
+  return null
+}
+
+export const formatNumberRangeQuery = (min: number, max: number): string => {
+  if (min === max) return String(min)
+  return `${min}..${max}`
+}
+
+export const formatFilterNumber = (key: string, n: number): string => {
+  if (key === 'load') return `${Math.round(n)}%`
+  if (key === 'timeRemain' || key === 'roundTime') return formatTimeRemaining(n)
+  if (Number.isInteger(n)) return String(n)
+  return String(Math.round(n * 10) / 10)
+}
+
+export const formatColFilterValue = (key: string, query: string): string => {
+  const col = getCol(key)
+  const q = query.trim()
+  if (!q) return ''
+  if (col?.filter === 'number') {
+    const parsed = parseNumberRangeQuery(q)
+    if (parsed && (parsed.min !== null || parsed.max !== null)) {
+      const lo = parsed.min !== null ? formatFilterNumber(key, parsed.min) : ''
+      const hi = parsed.max !== null ? formatFilterNumber(key, parsed.max) : ''
+      if (parsed.min !== null && parsed.max !== null && parsed.min === parsed.max) return lo
+      if (parsed.min !== null && parsed.max !== null) return `${lo}–${hi}`
+      if (parsed.min !== null) return `${lo}+`
+      return `≤${hi}`
+    }
+  }
+  return q
+}
+
+export const formatColFilterLabel = (key: string, query: string): string => {
+  const heading = (getCol(key)?.label || key).toUpperCase()
+  const value = formatColFilterValue(key, query)
+  return value ? `${heading}: ${value}` : heading
+}
+
+export const columnNumericExtent = (servers: ServerSummary[], key: string): { min: number; max: number } | null => {
+  let min = Infinity
+  let max = -Infinity
+  for (const s of servers) {
+    const n = toNum(getCellValue(s, key))
+    if (n === null) continue
+    if (n < min) min = n
+    if (n > max) max = n
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null
+  return { min, max }
+}
+
+export const columnFilterStep = (key: string, extent: { min: number; max: number }): number => {
+  if (key === 'timeRemain' || key === 'roundTime') return 30
+  const span = extent.max - extent.min
+  if (span > 500) return 10
+  if (Number.isInteger(extent.min) && Number.isInteger(extent.max)) return 1
+  return 0.1
+}
+
+const matchNumber = (num: number | null, q: string): boolean => {
+  if (num === null) return false
+  const range = q.match(/^(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)$/)
+  if (range) return num >= Number(range[1]) && num <= Number(range[2])
   const op = q.match(/^(<=|>=|!=|<|>|=)\s*(-?\d+(?:\.\d+)?)$/)
   if (op) {
-    if (num === null) return false
     const n = Number(op[2])
     switch (op[1]) {
       case '>': return num > n
@@ -239,16 +308,9 @@ const matchNumber = (num: number | null, q: string, raw: unknown): boolean => {
       case '!=': return num !== n
     }
   }
-  if (q.startsWith('!') || q.startsWith('-')) {
-    const rest = q.slice(1).trim()
-    if (!rest) return true
-    return !stringify(raw).toLowerCase().includes(rest.toLowerCase())
-  }
   const asNum = Number(q)
-  if (q !== '' && !Number.isNaN(asNum) && num !== null) {
-    return num === asNum || String(num).includes(q)
-  }
-  return stringify(raw).toLowerCase().includes(q.toLowerCase())
+  if (q !== '' && !Number.isNaN(asNum)) return num === asNum
+  return false
 }
 
 export const matchColumnFilter = (value: unknown, rawQuery: string, kind: FilterKind): boolean => {
@@ -259,7 +321,7 @@ export const matchColumnFilter = (value: unknown, rawQuery: string, kind: Filter
     if (want === null) return matchText(stringify(value), q)
     return Boolean(value) === want
   }
-  if (kind === 'number') return matchNumber(toNum(value), q, value)
+  if (kind === 'number') return matchNumber(toNum(value), q)
   return matchText(stringify(value), q)
 }
 
@@ -286,20 +348,21 @@ export const matchesGlobalSearch = (s: ServerSummary, rawQuery: string): boolean
   return haystacks.some(h => h.toLowerCase().includes(q))
 }
 
-export const uniqueColumnValues = (servers: ServerSummary[], key: string, limit = 40): string[] => {
-  const seen = new Set<string>()
+export const uniqueColumnValues = (
+  servers: ServerSummary[],
+  key: string,
+  limit = 80,
+): { value: string; count: number }[] => {
+  const counts = new Map<string, number>()
   for (const s of servers) {
     const display = getDisplayValue(s, key).trim()
-    if (display) seen.add(display)
-    if (seen.size >= limit * 4) break
+    if (!display) continue
+    counts.set(display, (counts.get(display) || 0) + 1)
   }
-  return [...seen].sort((a, b) => a.localeCompare(b)).slice(0, limit)
-}
-
-export const filterPlaceholder = (col: ServerColumnDef): string => {
-  if (col.filter === 'number') return '>10  8..32'
-  if (col.filter === 'bool') return 'yes / no'
-  return 'filter…'
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([value, count]) => ({ value, count }))
 }
 
 export const csvEscape = (value: string): string => `"${value.replace(/"/g, '""')}"`
