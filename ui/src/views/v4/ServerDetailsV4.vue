@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchServerDetails,
@@ -202,7 +202,16 @@ const region = computed(() => {
 // Still used inside the Population history card footer in the Overview tab.
 const peakPlayers = computed(() => trendPeak.value)
 const avgPlayers = computed(() => trendAvg.value)
-const openTrend = () => { trendExpanded.value = true }
+const openTrend = () => {
+  activeTab.value = 'overview'
+  trendExpanded.value = true
+  nextTick(() => {
+    document.querySelector('[data-testid="server-population-trend"]')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  })
+}
 const onTrendSummary = (payload: { peak: number; avg: number }) => {
   trendPeak.value = payload.peak
   trendAvg.value = payload.avg
@@ -430,18 +439,24 @@ watch(activeTab, (t) => {
         <div class="mm-stats__cell">
           <div class="mm-stats__label">Online now</div>
           <div class="mm-stat__value" :class="loadClass">
-            {{ liveNumPlayers }}<span v-if="maxPlayers != null" class="mm-stat__suffix">/{{ maxPlayers }}</span>
+            <span v-if="liveLoading" class="mm-skeleton" style="width: 48px; height: 1em; display: inline-block; vertical-align: middle" />
+            <template v-else>
+              {{ liveNumPlayers }}<span v-if="maxPlayers != null" class="mm-stat__suffix">/{{ maxPlayers }}</span>
+            </template>
           </div>
           <div class="mm-stat__delta">
-            <template v-if="capacityPct != null">{{ capacityPct }}% of capacity</template>
-            <template v-else-if="liveLoading">checking…</template>
+            <template v-if="liveLoading">checking…</template>
+            <template v-else-if="capacityPct != null">{{ capacityPct }}% of capacity</template>
             <template v-else>offline</template>
           </div>
         </div>
         <div class="mm-stats__cell">
           <div class="mm-stats__label">Now playing</div>
-          <div class="mm-stat__value mm-stat__value--small">{{ liveMap || '—' }}</div>
-          <div class="mm-stat__delta">{{ liveMode || (liveLoading ? 'checking…' : 'server quiet') }}</div>
+          <div class="mm-stat__value mm-stat__value--small">
+            <span v-if="liveLoading" class="mm-skeleton" style="width: 80px; height: 1em; display: inline-block; vertical-align: middle" />
+            <template v-else>{{ liveMap || '—' }}</template>
+          </div>
+          <div class="mm-stat__delta">{{ liveLoading ? 'checking…' : (liveMode || 'server quiet') }}</div>
         </div>
         <button
           type="button"
@@ -459,7 +474,8 @@ watch(activeTab, (t) => {
         <div class="mm-stats__cell">
           <div class="mm-stats__label">Live ticket lead</div>
           <div class="mm-stat__value">
-            <template v-if="teamTickets.length === 2">
+            <span v-if="liveLoading" class="mm-skeleton" style="width: 64px; height: 1em; display: inline-block; vertical-align: middle" />
+            <template v-else-if="teamTickets.length === 2">
               <span class="mm-num--kill">{{ formatNumber(teamTickets[0].tickets) }}</span>
               <span class="mm-num__sep">/</span>
               <span style="color: var(--mm-success)">{{ formatNumber(teamTickets[1].tickets) }}</span>
@@ -467,8 +483,9 @@ watch(activeTab, (t) => {
             <template v-else>—</template>
           </div>
           <div class="mm-stat__delta">
-            <template v-if="teamTickets.length === 2">{{ teamTickets[0].label }} / {{ teamTickets[1].label }}</template>
-            <template v-else>no live round</template>
+            <template v-if="liveLoading">checking live feed…</template>
+            <template v-else-if="teamTickets.length === 2">{{ teamTickets[0].label }} / {{ teamTickets[1].label }}</template>
+            <template v-else>no active round</template>
           </div>
         </div>
       </div>
@@ -515,17 +532,18 @@ watch(activeTab, (t) => {
           <div class="mm-pbar">
             <span class="mm-pbar__t">● Online now</span>
             <span class="mm-pbar__m">
-              <template v-if="hasLiveRoster">{{ liveNumPlayers }} playing · by score</template>
-              <template v-else-if="liveLoading">checking…</template>
+              <template v-if="liveLoading">checking…</template>
+              <template v-else-if="hasLiveRoster">{{ liveNumPlayers }} playing · by score</template>
               <template v-else>server quiet</template>
             </span>
           </div>
-          <div v-if="hasLiveRoster" style="padding: 10px 14px">
-            <MmPlayersPanel :show="true" :server="liveServer" :inline="true" :embedded="true" />
+          <div v-if="liveLoading" class="mm-panel__body">
+            <div class="mm-skeleton mm-skeleton--lg" style="margin-bottom: 8px" />
+            <div class="mm-skeleton" style="width: 70%; margin-bottom: 8px" />
+            <div class="mm-skeleton" style="width: 45%" />
           </div>
-          <div v-else-if="liveLoading" class="mm-panel__body">
-            <div class="mm-skeleton" style="margin-bottom: 8px" />
-            <div class="mm-skeleton" />
+          <div v-else-if="hasLiveRoster" style="padding: 10px 14px">
+            <MmPlayersPanel :show="true" :server="liveServer" :inline="true" :embedded="true" />
           </div>
           <div v-else class="mm-panel__body mm-empty" style="border: 0; padding: 24px 0">No players online right now.</div>
         </section>
