@@ -38,4 +38,19 @@ public interface IAggregateConcurrencyService
     /// Runs work while holding the ServerPlayerRankings lock and returns a value.
     /// </summary>
     Task<T> ExecuteWithServerPlayerRankingsLockAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default);
+
+    /// <summary>
+    /// Runs work while holding the Neo4j relationship-sync lock. There are three
+    /// independent entry points that all drive PlayerRelationshipEtlService against the
+    /// same Neo4j graph (the daily background job, the admin "sync pending" endpoint,
+    /// and the admin backfill job) — without this, two of them running at once race on
+    /// the SyncedToNeo4jAt watermark and collide on the same Player/Server node locks in
+    /// Neo4j, which surfaces as a Forseti deadlock and aborts the transaction.
+    /// </summary>
+    Task ExecuteWithNeo4jRelationshipSyncLockAsync(Func<CancellationToken, Task> work, CancellationToken ct = default);
+
+    /// <summary>
+    /// Runs work while holding the Neo4j relationship-sync lock and returns a value.
+    /// </summary>
+    Task<T> ExecuteWithNeo4jRelationshipSyncLockAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default);
 }
