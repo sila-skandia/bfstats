@@ -309,8 +309,8 @@ public class AdminJobsController(
                 // and collide on the same Neo4j node locks (Forseti deadlock).
                 var result = await concurrency.ExecuteWithNeo4jRelationshipSyncLockAsync(async lockCt =>
                 {
-                    var syncResult = await relationshipEtl.SyncPendingRelationshipsAsync(cancellationToken: lockCt);
-                    await relationshipEtl.SyncPlayerServerRelationshipsAsync(cancellationToken: lockCt);
+                    var syncResult = await relationshipEtl.SyncPendingRelationshipsAsync(fromDate: since, cancellationToken: lockCt);
+                    await relationshipEtl.SyncPlayerServerRelationshipsAsync(fromDate: since, cancellationToken: lockCt);
                     return syncResult;
                 });
 
