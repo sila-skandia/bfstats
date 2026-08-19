@@ -333,10 +333,15 @@ spec:
               value: "false"
             - name: NEO4J_dbms_memory_pagecache_size
               value: "512M"
+            # Heap temporarily raised (512M/1G -> 768M/1.25G) for the co-rounds
+            # relationship-data migration — batched writes/deletes need more headroom
+            # than steady-state traffic. Still comfortably under the 2Gi container
+            # limit with pagecache (512M + 1.25G = 1.75G, ~300Mi spare for JVM/off-heap
+            # overhead). Revert to 512M/1G once the backfill is confirmed complete.
             - name: NEO4J_dbms_memory_heap_initial__size
-              value: "512M"
+              value: "768M"
             - name: NEO4J_dbms_memory_heap_max__size
-              value: "1G"
+              value: "1.25G"
           volumeMounts:
             - name: neo4j-data
               mountPath: /data
