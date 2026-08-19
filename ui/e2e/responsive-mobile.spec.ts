@@ -162,11 +162,13 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
     await page.waitForLoadState('networkidle');
     await expect(page.getByRole('link', { name: 'Wake Island Host' })).toBeVisible();
     await expect(page.getByTestId('landing-filter-panel')).toHaveCount(0);
+    await expect(page.getByTestId('landing-filter-pill-map')).toHaveCount(0);
 
-    await page.getByTestId('landing-filter-pill-map').click();
+    await page.getByTestId('landing-filters-open').click();
     const panel = page.getByTestId('landing-filter-panel');
     await expect(panel).toBeVisible();
     await expect(panel).toHaveClass(/lb-filter-panel--sheet/);
+    await page.getByTestId('filter-col-map').click();
     await page.getByTestId('col-filter-map').fill('Wake');
     await expect(page.getByRole('link', { name: 'Wake Island Host' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Berlin Host' })).toHaveCount(0);
@@ -213,6 +215,7 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
     await expect(row.locator('a[href^="bf1942://"]')).toHaveCount(0);
 
     const copyToggle = row.locator('button.mm-connect__btn--copy');
+    await copyToggle.scrollIntoViewIfNeeded();
     await expect(copyToggle).toBeVisible();
     await copyToggle.click();
 
@@ -244,7 +247,7 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
     expect(overlaps).toBe(false);
   });
 
-  test('expanded roster is condensed side by side and scrolls with the table', async ({ page }) => {
+  test('expanded roster stays in view and omits rank on mobile', async ({ page }) => {
     const servers = [
       {
         guid: 'wake-1',
@@ -285,9 +288,21 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
 
     const row = page.locator('tr.lb-row', { has: page.getByRole('link', { name: 'Wake Island Host' }) });
     await expect(row).toBeVisible({ timeout: 15_000 });
-    await row.locator('.lb-rank-cell').click();
+    await expect(page.getByTestId('col-header-rank')).toHaveCount(0);
+    await expect(row.locator('.lb-rank-cell')).toHaveCount(0);
+
+    const nameHeader = page.getByTestId('col-header-name');
+    const actionHeader = page.getByTestId('col-header-action');
+    await expect(actionHeader).toBeVisible();
+    const nameHeaderBox = await nameHeader.boundingBox();
+    const actionHeaderBox = await actionHeader.boundingBox();
+    expect(nameHeaderBox).toBeTruthy();
+    expect(actionHeaderBox).toBeTruthy();
+    expect(actionHeaderBox!.x).toBeGreaterThan(nameHeaderBox!.x + 80);
 
     const pane = page.getByTestId('landing-table-scroll');
+    await row.getByTestId('roster-expand').click();
+
     const roster = page.getByTestId('landing-roster-scroll');
     const axis = page.getByTestId('roster-team-axis');
     const allies = page.getByTestId('roster-team-allies');
@@ -300,12 +315,15 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
     const axisBox = await axis.boundingBox();
     const alliesBox = await allies.boundingBox();
     const paneBox = await pane.boundingBox();
+    const rosterBox = await roster.boundingBox();
     expect(axisBox).toBeTruthy();
     expect(alliesBox).toBeTruthy();
     expect(paneBox).toBeTruthy();
+    expect(rosterBox).toBeTruthy();
     expect(Math.abs(axisBox!.y - alliesBox!.y)).toBeLessThan(12);
     expect(alliesBox!.x).toBeGreaterThan(axisBox!.x + 40);
-    expect(alliesBox!.x).toBeLessThan(paneBox!.x + paneBox!.width);
+    expect(rosterBox!.x).toBeLessThan(paneBox!.x + paneBox!.width);
+    expect(rosterBox!.x + rosterBox!.width).toBeGreaterThan(paneBox!.x);
 
     const nameBox = await axis.getByRole('link', { name: 'AxisAce' }).boundingBox();
     const scoreBox = await axis.locator('.lb-score-val').boundingBox();
@@ -313,12 +331,13 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
     expect(scoreBox).toBeTruthy();
     expect(scoreBox!.y).toBeGreaterThan(nameBox!.y + nameBox!.height - 2);
 
-    const rosterBefore = await roster.boundingBox();
-    expect(rosterBefore).toBeTruthy();
-    await pane.evaluate((el) => { el.scrollLeft = 200; });
-    const rosterAfter = await roster.boundingBox();
-    expect(rosterAfter).toBeTruthy();
-    expect(rosterAfter!.x).toBeLessThan(rosterBefore!.x - 80);
+    await pane.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+    const rosterAtEnd = await roster.boundingBox();
+    const paneAtEnd = await pane.boundingBox();
+    expect(rosterAtEnd).toBeTruthy();
+    expect(paneAtEnd).toBeTruthy();
+    expect(rosterAtEnd!.x).toBeLessThan(paneAtEnd!.x + paneAtEnd!.width);
+    expect(rosterAtEnd!.x + Math.min(rosterAtEnd!.width, 40)).toBeGreaterThan(paneAtEnd!.x);
   });
 
   test('should open player details from omnisearch, not the landing page', async ({ page }) => {
