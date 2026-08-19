@@ -144,5 +144,89 @@ test.describe('Landing Page - Server Browser', () => {
     const parsed = JSON.parse(storedLayout || '{}');
     expect(parsed.density).toBe('compact');
   });
+
+  test('filters by typing into a column header filter', async ({ page }) => {
+    const servers = [
+      {
+        guid: 'wake-1',
+        name: 'Wake Island Host',
+        ip: '10.0.0.1',
+        port: 14567,
+        numPlayers: 24,
+        maxPlayers: 64,
+        mapName: 'Wake Island',
+        gameType: 'Conquest',
+        joinLink: 'bf1942://10.0.0.1:14567',
+        roundTimeRemain: 400,
+        tickets1: 200,
+        tickets2: 180,
+        players: [],
+        teams: [],
+        country: 'US',
+        password: false,
+        gameVersion: '1.61',
+      },
+      {
+        guid: 'berlin-1',
+        name: 'Berlin Host',
+        ip: '10.0.0.2',
+        port: 14567,
+        numPlayers: 2,
+        maxPlayers: 32,
+        mapName: 'Battle of Berlin',
+        gameType: 'Conquest',
+        joinLink: 'bf1942://10.0.0.2:14567',
+        roundTimeRemain: 900,
+        tickets1: 100,
+        tickets2: 90,
+        players: [],
+        teams: [],
+        country: 'DE',
+        password: true,
+        gameVersion: '1.6',
+      },
+    ];
+
+    await page.route('**/stats/liveservers/bf1942/servers**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ servers, lastUpdated: new Date().toISOString() }),
+      });
+    });
+
+    await page.goto('/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('link', { name: 'Wake Island Host' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Berlin Host' })).toBeVisible();
+
+    const mapHeader = page.getByTestId('col-header-map');
+    await mapHeader.click();
+    const mapFilter = page.getByTestId('col-filter-map');
+    await expect(mapFilter).toBeFocused();
+    await mapFilter.fill('Wake');
+
+    await expect(page.getByRole('link', { name: 'Wake Island Host' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Berlin Host' })).toHaveCount(0);
+    await expect(page.locator('.lb-empty-chip', { hasText: /Map:\s*Wake/i })).toBeVisible();
+
+    await page.getByTestId('col-filter-players').fill('>10');
+    await expect(page.getByRole('link', { name: 'Wake Island Host' })).toBeVisible();
+
+    await page.locator('button', { hasText: /COLUMNS/ }).click();
+    await expect(page.locator('.lb-col-popover')).toContainText('Version');
+    await expect(page.locator('.lb-col-popover')).toContainText('Password');
+    await expect(page.locator('.lb-col-popover')).toContainText('Discord');
+    await expect(page.locator('.lb-col-popover')).toContainText('GUID');
+  });
+
+  test('slash focuses search and CSV export control is present', async ({ page }) => {
+    await page.goto('/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+
+    await page.keyboard.press('/');
+    await expect(page.getByRole('textbox', { name: 'Filter servers' })).toBeFocused();
+    await expect(page.locator('button', { hasText: /^CSV$/ })).toBeVisible();
+    await expect(page.locator('button', { hasText: /^JSON$/ })).toBeVisible();
+  });
 });
 
