@@ -1429,8 +1429,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                 <!-- In-Game Scoreboard Aesthetic: Authentic AXIS vs ALLIED Scoreboard -->
                 <tr v-if="expandedGuids.has(s.guid)" class="lb-expand-row">
                   <td :colspan="displayCols.length" class="lb-expand-td">
-                    <div class="lb-roster-scroll" data-testid="landing-roster-scroll">
-                      <div class="lb-inline-roster">
+                    <div class="lb-inline-roster" data-testid="landing-roster-scroll">
                       <div v-if="s.players && s.players.length > 0" class="lb-roster-teams">
                         <div
                           v-for="teamIdx in [1, 2]"
@@ -1439,7 +1438,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                           :class="teamIdx === 1 ? 'lb-roster-team--axis' : 'lb-roster-team--allies'"
                           :data-testid="teamIdx === 1 ? 'roster-team-axis' : 'roster-team-allies'"
                         >
-                          <!-- Team Header: Clean Faction Title & Direct Tickets Number -->
                           <div class="lb-team-strip">
                             <span class="lb-team-name" :style="{ color: teamColor(getTeamLabel(s, teamIdx)) }">
                               {{ getTeamLabel(s, teamIdx) }}
@@ -1449,14 +1447,15 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                             </div>
                           </div>
 
-                          <!-- In-Game Styled Player Scoreboard Ladder -->
                           <div class="lb-player-list">
                             <div class="lb-player-list-head">
                               <span class="lb-pcol-name">PLAYERNAME</span>
-                              <span class="lb-pcol-score">SCORE</span>
-                              <span class="lb-pcol-kd">K</span>
-                              <span class="lb-pcol-kd">D</span>
-                              <span class="lb-pcol-ping">PING</span>
+                              <span class="lb-player-stats">
+                                <span class="lb-pcol-score">SCORE</span>
+                                <span class="lb-pcol-kd">K</span>
+                                <span class="lb-pcol-kd">D</span>
+                                <span class="lb-pcol-ping">PING</span>
+                              </span>
                             </div>
 
                             <div
@@ -1469,7 +1468,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                               }"
                               @click.stop="navigateToPlayerProfile(player.name)"
                             >
-                              <!-- Player Name with Authentic Color Tint -->
                               <div class="lb-pcol-name">
                                 <RouterLink
                                   :to="`/v4/players/${encodeURIComponent(player.name)}`"
@@ -1482,27 +1480,22 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                                 </RouterLink>
                               </div>
 
-                              <!-- Score (Trophy Column) -->
-                              <span class="lb-pcol-score">
-                                <span class="lb-score-val">{{ formatNumber(player.score) }}</span>
-                              </span>
-
-                              <!-- Kills -->
-                              <span class="lb-pcol-kd">
-                                <span class="lb-num--kill">{{ player.kills }}</span>
-                              </span>
-
-                              <!-- Deaths -->
-                              <span class="lb-pcol-kd">
-                                <span class="lb-num--death">{{ player.deaths }}</span>
-                              </span>
-
-                              <!-- Ping -->
-                              <span class="lb-pcol-ping">
-                                <span class="lb-ping-badge" :class="pingClass(player.ping)">
-                                  {{ player.ping > 0 ? `${player.ping}ms` : '—' }}
+                              <div class="lb-player-stats">
+                                <span class="lb-pcol-score">
+                                  <span class="lb-score-val">{{ formatNumber(player.score) }}</span>
                                 </span>
-                              </span>
+                                <span class="lb-pcol-kd">
+                                  <span class="lb-num--kill">{{ player.kills }}</span>
+                                </span>
+                                <span class="lb-pcol-kd">
+                                  <span class="lb-num--death">{{ player.deaths }}</span>
+                                </span>
+                                <span class="lb-pcol-ping">
+                                  <span class="lb-ping-badge" :class="pingClass(player.ping)">
+                                    {{ player.ping > 0 ? `${player.ping}ms` : '—' }}
+                                  </span>
+                                </span>
+                              </div>
                             </div>
 
                             <div v-if="getTeamPlayerCount(s, teamIdx) === 0" class="lb-player-empty">
@@ -1515,7 +1508,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                       <div v-else class="lb-roster-empty">
                         <i class="pi pi-info-circle" style="font-size: 18px; color: var(--mm-accent);"></i>
                         <span>No active combatants currently on this server. Be the first to join!</span>
-                      </div>
                       </div>
                     </div>
                   </td>
@@ -2668,31 +2660,10 @@ td {
   border-bottom: 2px solid var(--mm-rule-strong);
 }
 
-.lb-roster-scroll {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-x: contain;
-  min-width: 0;
-}
-
-.lb-roster-scroll::-webkit-scrollbar {
-  height: 8px;
-}
-
-.lb-roster-scroll::-webkit-scrollbar-thumb {
-  background: var(--mm-rule-strong);
-  border-radius: 2px;
-}
-
-.lb-roster-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
 .lb-inline-roster {
   padding: 18px 24px 24px;
   box-sizing: border-box;
   min-width: 100%;
-  width: max-content;
 }
 
 .lb-roster-teams {
@@ -2712,21 +2683,24 @@ td {
 }
 
 @media (max-width: 720px) {
-  .lb-roster-scroll {
-    position: sticky;
-    left: 0;
-    width: 100vw;
-    width: 100cqw;
-    max-width: 100vw;
-    max-width: 100cqw;
-    touch-action: pan-x pan-y;
+  .lb-inline-roster {
+    width: 100cqi;
+    min-width: 0;
+    max-width: 100cqi;
+    padding: 10px 10px 14px;
+  }
+
+  .lb-roster-teams {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    min-width: 0;
   }
 }
 
 .lb-roster-team-card {
   display: flex;
   flex-direction: column;
-  min-width: 320px;
+  min-width: 0;
   border-radius: 4px;
   background: var(--mm-bg);
   overflow: clip;
@@ -2824,6 +2798,12 @@ td {
   color: var(--mm-ink-muted);
   background: var(--mm-bg-mute);
   border-bottom: 1px solid var(--mm-rule);
+}
+
+.lb-player-stats {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .lb-player-item {
@@ -2960,6 +2940,72 @@ td {
   font-family: var(--mm-font-mono);
   font-size: 12px;
   font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .lb-roster-team-card {
+    min-width: 0;
+  }
+
+  .lb-team-strip {
+    padding: 8px 10px;
+  }
+
+  .lb-team-name {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+  }
+
+  .lb-team-tickets-plain {
+    font-size: 16px;
+  }
+
+  .lb-player-list-head {
+    display: none;
+  }
+
+  .lb-player-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .lb-pcol-name {
+    width: 100%;
+  }
+
+  .lb-player-link {
+    font-size: 13px;
+  }
+
+  .lb-player-stats {
+    width: 100%;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .lb-pcol-score,
+  .lb-pcol-kd,
+  .lb-pcol-ping {
+    width: auto;
+    flex: 1;
+    text-align: left;
+    font-size: 11px;
+  }
+
+  .lb-pcol-ping {
+    text-align: right;
+  }
+
+  .lb-score-val {
+    font-size: 12px;
+  }
+
+  .lb-ping-badge {
+    font-size: 11px;
+  }
 }
 
 .lb-player-empty {
