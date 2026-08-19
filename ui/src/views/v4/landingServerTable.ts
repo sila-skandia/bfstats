@@ -122,7 +122,7 @@ export const getCellValue = (s: ServerSummary, key: string): unknown => {
     case 'rank': return 0
     case 'name': return decodeServerName(s.name || '').toLowerCase()
     case 'players': return s.numPlayers || 0
-    case 'load': return s.maxPlayers ? (s.numPlayers || 0) / s.maxPlayers : 0
+    case 'load': return s.maxPlayers ? Math.round(((s.numPlayers || 0) / s.maxPlayers) * 100) : 0
     case 'emptySlots': return Math.max(0, (s.maxPlayers || 0) - (s.numPlayers || 0))
     case 'humans': return getHumanCount(s)
     case 'bots': return getBotCount(s)
@@ -160,7 +160,7 @@ export const getCellValue = (s: ServerSummary, key: string): unknown => {
     case 'guid': return s.guid || ''
     case 'mapId': return s.mapId || ''
     case 'lastSeen': return s.lastSeenTime || ''
-    default: return (s as Record<string, unknown>)[key] ?? ''
+    default: return (s as unknown as Record<string, unknown>)[key] ?? ''
   }
 }
 
