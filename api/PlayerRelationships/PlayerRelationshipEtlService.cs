@@ -153,17 +153,13 @@ public class PlayerRelationshipEtlService(
     /// </summary>
     public async Task SyncToNeo4jAsync(
         Dictionary<(string, string), RelationshipMetrics> relationships,
-        (int RoundsProcessed, int TotalPendingRounds)? roundProgress = null,
         CancellationToken cancellationToken = default)
     {
         _ = cancellationToken;
         if (relationships.Count == 0)
         {
-            logger.LogInformation("No relationships to sync to Neo4j");
             return;
         }
-
-        logger.LogInformation("Syncing {Count} relationships to Neo4j", relationships.Count);
 
         var relationshipData = relationships.Select(kvp => new Dictionary<string, object>
         {
@@ -175,14 +171,21 @@ public class PlayerRelationshipEtlService(
             ["serverGuids"] = kvp.Value.ServerGuids
         }).ToList();
 
-        // Batch size for processing (prevent overwhelming Neo4j)
-        const int batchSize = 1000;
+        // Each chunk is a separate transaction (small rows: two names, a count, two
+        // dates, a server-guid list), unlike the unbatched full-graph DELETE that hit
+        // Neo4j's transaction memory ceiling — that was one giant transaction, this is
+        // many small ones. Round-trip count, not payload size, dominates wall-clock time
+        // here since the same frequently-co-playing pair gets a separate MERGE per
+        // round-batch that touches them (AggregateRelationships only dedupes within one
+        // round-batch, not across the whole run).
+        //
+        // Deliberately no per-chunk logging here: this app's base Serilog level is
+        // Debug (see Program.cs), so LogDebug is not actually suppressed by default —
+        // the caller's own progress logging (SyncPendingRelationshipsAsync /
+        // SyncPlayerServerRelationshipsAsync) is the only progress signal.
+        const int batchSize = 5000;
         var batches = relationshipData.Chunk(batchSize).ToList();
 
-        logger.LogInformation("Processing {BatchCount} batches of {BatchSize} relationships",
-            batches.Count, batchSize);
-
-        var totalProcessed = 0;
         foreach (var batch in batches)
         {
             await neo4jService.ExecuteWriteAsync(async tx =>
@@ -233,23 +236,7 @@ public class PlayerRelationshipEtlService(
                 var summary = await result.ConsumeAsync();
                 return summary.Counters.NodesCreated + summary.Counters.RelationshipsCreated;
             });
-
-            totalProcessed += batch.Length;
-            if (roundProgress is { } progress)
-            {
-                logger.LogInformation(
-                    "Processed batch: {Processed}/{Total} relationship pairs (rounds {RoundsProcessed}/{TotalPendingRounds})",
-                    totalProcessed, relationshipData.Count, progress.RoundsProcessed, progress.TotalPendingRounds);
-            }
-            else
-            {
-                logger.LogInformation("Processed batch: {Processed}/{Total} relationship pairs", totalProcessed, relationshipData.Count);
-            }
         }
-
-        logger.LogInformation(
-            "Successfully synced {Count} relationships to Neo4j",
-            relationships.Count);
     }
 
     /// <summary>
@@ -263,7 +250,7 @@ public class PlayerRelationshipEtlService(
     /// a date range — same code path either way, just a bigger backlog.
     /// </summary>
     public async Task<SyncResult> SyncPendingRelationshipsAsync(
-        int roundBatchSize = 1000,
+        int roundBatchSize = 2500,
         CancellationToken cancellationToken = default)
     {
         var startTime = DateTime.UtcNow;
@@ -278,6 +265,16 @@ public class PlayerRelationshipEtlService(
             .CountAsync(cancellationToken);
 
         logger.LogInformation("Neo4j relationship sync: {TotalPending} rounds pending", totalPending);
+
+        // Sample progress at ~1% intervals instead of logging every round-batch — a
+        // large backfill can be hundreds of batches, and one round-batch alone can be
+        // well under 1%. Also log on a time interval regardless of percent crossed, so
+        // a large total (or small batch share of it) can't leave the log silent for a
+        // long stretch.
+        const int progressSampleIntervalPercent = 1;
+        var progressTimeInterval = TimeSpan.FromSeconds(15);
+        var lastLoggedProgressBucket = -1;
+        var lastProgressLogTime = DateTime.UtcNow;
 
         while (true)
         {
@@ -301,10 +298,7 @@ public class PlayerRelationshipEtlService(
 
             if (batchRelationships.Count > 0)
             {
-                await SyncToNeo4jAsync(
-                    batchRelationships,
-                    roundProgress: (roundsProcessed + roundBatch.Count, totalPending),
-                    cancellationToken: cancellationToken);
+                await SyncToNeo4jAsync(batchRelationships, cancellationToken);
                 totalRelationshipsProcessed += batchRelationships.Count;
             }
 
@@ -315,6 +309,18 @@ public class PlayerRelationshipEtlService(
             await dbContext.Rounds
                 .Where(r => roundIds.Contains(r.RoundId))
                 .ExecuteUpdateAsync(s => s.SetProperty(r => r.SyncedToNeo4jAt, syncedAt), cancellationToken);
+
+            var progressPercent = totalPending == 0 ? 100 : (int)(100.0 * roundsProcessed / totalPending);
+            var progressBucket = Math.Min(progressPercent, 100) / progressSampleIntervalPercent * progressSampleIntervalPercent;
+            var now = DateTime.UtcNow;
+            if (progressBucket > lastLoggedProgressBucket || now - lastProgressLogTime >= progressTimeInterval)
+            {
+                lastLoggedProgressBucket = Math.Max(lastLoggedProgressBucket, progressBucket);
+                lastProgressLogTime = now;
+                logger.LogInformation(
+                    "Neo4j relationship sync: {ProgressPercent}% ({RoundsProcessed}/{TotalPending} rounds, {RelationshipsProcessed} relationship pairs so far)",
+                    progressPercent, roundsProcessed, totalPending, totalRelationshipsProcessed);
+            }
 
             if (roundBatch.Count < roundBatchSize)
             {
@@ -384,6 +390,17 @@ public class PlayerRelationshipEtlService(
         CancellationToken cancellationToken = default)
     {
         var totalSynced = 0;
+
+        var totalPending = await dbContext.PlayerSessions
+            .Where(ps => !ps.IsDeleted && !ps.IsActive && ps.SyncedToNeo4jAt == null)
+            .CountAsync(cancellationToken);
+
+        logger.LogInformation("Neo4j player-server sync: {TotalPending} sessions pending", totalPending);
+
+        const int progressSampleIntervalPercent = 1;
+        var progressTimeInterval = TimeSpan.FromSeconds(15);
+        var lastLoggedProgressBucket = -1;
+        var lastProgressLogTime = DateTime.UtcNow;
 
         while (true)
         {
@@ -482,6 +499,18 @@ public class PlayerRelationshipEtlService(
 
             await MarkSessionsSyncedAsync(sessionBatch.Select(s => s.SessionId).ToList(), cancellationToken);
             totalSynced += validSessions.Count;
+
+            var progressPercent = totalPending == 0 ? 100 : (int)(100.0 * totalSynced / totalPending);
+            var progressBucket = Math.Min(progressPercent, 100) / progressSampleIntervalPercent * progressSampleIntervalPercent;
+            var now = DateTime.UtcNow;
+            if (progressBucket > lastLoggedProgressBucket || now - lastProgressLogTime >= progressTimeInterval)
+            {
+                lastLoggedProgressBucket = Math.Max(lastLoggedProgressBucket, progressBucket);
+                lastProgressLogTime = now;
+                logger.LogInformation(
+                    "Neo4j player-server sync: {ProgressPercent}% ({Synced}/{TotalPending} sessions)",
+                    progressPercent, totalSynced, totalPending);
+            }
 
             if (sessionBatch.Count < sessionBatchSize)
             {

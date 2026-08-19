@@ -322,6 +322,11 @@ public class AdminDataController(
 
         try
         {
+            // Suppress EF Core SQL statement logging for the duration of the sync — this
+            // walks every pending round/session and is extremely noisy at the default
+            // Information level otherwise. Matches the daily background job's convention.
+            using var bulkScope = api.Telemetry.BulkOperationContext.Begin();
+
             var relationshipResult = await relationshipEtlService.SyncPendingRelationshipsAsync(cancellationToken: ct);
             await relationshipEtlService.SyncPlayerServerRelationshipsAsync(cancellationToken: ct);
 
