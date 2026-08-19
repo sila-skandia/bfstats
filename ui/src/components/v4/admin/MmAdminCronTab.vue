@@ -204,21 +204,28 @@
           <div class="mm-admin-cron__body-text">
             <span class="mm-admin-cron__name">Neo4j Sync (Player Relationships)</span>
             <span class="mm-admin-cron__desc">
-              Syncs completed rounds/sessions never synced to Neo4j. The daily job already keeps this
-              drained — normally a no-op.
+              Syncs completed rounds/sessions never synced to Neo4j — never resets the watermark, only
+              picks up whatever's still pending, so it's always safe to resume with. Leave the date
+              blank to sweep everything pending; set it to resume just that range (e.g. after a
+              backfill got interrupted) without re-touching rounds already synced from other dates.
               <span v-if="neo4jStatus" class="mm-admin-cron__neo4j-status">
                 Schema: {{ neo4jStatus.isUpToDate ? '✓ up-to-date' : `⚠ ${neo4jStatus.pendingCount} pending` }}
               </span>
             </span>
           </div>
           <div class="mm-admin-cron__actions">
+            <input
+              v-model="neo4jSyncFromDate"
+              type="date"
+              class="mm-admin-select mm-admin-cron__select"
+            />
             <button
               type="button"
               class="mm-admin-btn mm-admin-btn--primary mm-admin-btn--sm"
               :disabled="jobRunning !== null"
-              @click="runJob('neo4j-sync', true)"
+              @click="runJob('neo4j-sync', false)"
             >
-              {{ jobRunning === 'neo4j-sync' ? 'Syncing…' : 'Sync pending' }}
+              {{ jobRunning === 'neo4j-sync' ? 'Starting…' : 'Sync pending' }}
             </button>
           </div>
         </li>
@@ -298,6 +305,7 @@ const aggregateBackfillTier = ref(1)
 // 0 keeps the original behaviour (the configured allowlist); anything higher crunches that many
 // of the year's busiest players instead.
 const playerWrappedTopPlayers = ref(0)
+const neo4jSyncFromDate = ref('')
 const neo4jBackfillFromDate = ref('2026-01-01')
 const neo4jEnabled = ref(false)
 const neo4jChecked = ref(false)
@@ -325,27 +333,11 @@ async function runJob(jobKey: string, _isBlocking: boolean) {
   jobSuccess.value = null
   jobRunning.value = jobKey
 
-  if (jobKey === 'neo4j-sync') {
-    try {
-      const res = await adminJobsService.triggerNeo4jSync()
-      if (res.success) {
-        jobSuccess.value = `Synced ${res.relationshipsProcessed} relationships in ${res.durationMs}ms`
-        try {
-          neo4jStatus.value = await adminJobsService.getNeo4jMigrationStatus()
-        } catch { /* migration status is optional */ }
-      } else {
-        jobError.value = res.errorMessage || 'Neo4j sync failed'
-      }
-    } catch (e) {
-      jobError.value = e instanceof Error ? e.message : 'Neo4j sync failed'
-    } finally {
-      jobRunning.value = null
-    }
-    return
-  }
-
   let fn: () => Promise<{ message?: string; error?: string }>
   switch (jobKey) {
+    case 'neo4j-sync':
+      fn = () => adminJobsService.triggerNeo4jSync(neo4jSyncFromDate.value || undefined)
+      break
     case 'daily-aggregate-refresh':
       fn = adminJobsService.triggerDailyAggregateRefresh
       break
