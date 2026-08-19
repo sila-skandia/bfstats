@@ -19,10 +19,12 @@ test.describe('Landing Page - Server Browser', () => {
   test('should display game mode filter buttons', async ({ page }) => {
     await page.goto('/servers/bf1942');
     await page.waitForLoadState('networkidle');
+    await expect(page.locator('.mm-landing__top')).toBeVisible();
 
     // BF1942 is the only tracked game, so there is no game switcher — this
     // just guards that the landing page renders its interactive controls.
     const gameButtons = page.locator('button');
+    await expect(gameButtons.first()).toBeVisible();
     const buttonCount = await gameButtons.count();
 
     // Should have some buttons for game selection
@@ -114,4 +116,33 @@ test.describe('Landing Page - Server Browser', () => {
     await expect(page.getByTestId('population-trend-drawer')).toBeVisible()
     await expect(page.getByRole('dialog', { name: 'Network player trend' })).toBeVisible()
   });
+
+  test('supports configurable columns, density toggle, and localStorage persistence', async ({ page }) => {
+    await page.goto('/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+
+    // Table and toolbar controls are present
+    const densityBtn = page.locator('button', { hasText: /COMPACT|COMFORTABLE/ });
+    await expect(densityBtn).toBeVisible();
+
+    const columnsBtn = page.locator('button', { hasText: /COLUMNS/ });
+    await expect(columnsBtn).toBeVisible();
+
+    // Toggle density
+    const table = page.locator('.lb-table');
+    await densityBtn.click();
+    await expect(table).toHaveClass(/lb-table--compact/);
+
+    // Open columns popover and toggle a column
+    await columnsBtn.click();
+    const colPopover = page.locator('.lb-col-popover');
+    await expect(colPopover).toBeVisible();
+
+    // Check localStorage preference was saved
+    const storedLayout = await page.evaluate(() => localStorage.getItem('bfstats_landing_table_layout_v1'));
+    expect(storedLayout).toBeTruthy();
+    const parsed = JSON.parse(storedLayout || '{}');
+    expect(parsed.density).toBe('compact');
+  });
 });
+

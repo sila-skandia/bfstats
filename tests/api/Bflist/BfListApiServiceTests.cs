@@ -144,6 +144,59 @@ public sealed class BfListApiServiceTests
         await Assert.ThrowsAsync<HttpRequestException>(() => service.FetchAllServersAsync(Game));
         await cacheService.DidNotReceive().GetAsync<RawServerSnapshot>(LastGoodKey);
     }
+
+    [Fact]
+    public void MapToSummary_CopiesAllBfListHostFields()
+    {
+        var service = BuildService(Substitute.For<ICacheService>());
+        var mapped = service.MapToSummary(new Bf1942ServerInfo
+        {
+            Guid = "g-1",
+            Name = "Host",
+            Ip = "1.2.3.4",
+            Port = 14567,
+            QueryPort = 23000,
+            Password = true,
+            GameVersion = "1.61",
+            GameMode = "gpm_cq",
+            AverageFps = 33,
+            ContentCheck = true,
+            Dedicated = 1,
+            MapId = "wake",
+            ReservedSlots = 2,
+            RoundTime = 1200,
+            Status = 4,
+            Anticheat = true,
+            UnpureMods = "foo",
+            JoinLink = "bf1942://1.2.3.4:14567",
+            JoinLinkWeb = "https://example.test/join",
+            NumPlayers = 4,
+            MaxPlayers = 64,
+            MapName = "Wake Island",
+            GameType = "Conquest",
+            RoundTimeRemain = 400,
+            Tickets1 = 312,
+            Tickets2 = 198,
+            GameId = "bf1942",
+        });
+
+        Assert.Equal("g-1", mapped.Guid);
+        Assert.Equal(23000, mapped.QueryPort);
+        Assert.True(mapped.Password);
+        Assert.Equal("1.61", mapped.GameVersion);
+        Assert.Equal("gpm_cq", mapped.GameMode);
+        Assert.Equal(33, mapped.AverageFps);
+        Assert.True(mapped.ContentCheck);
+        Assert.Equal(1, mapped.Dedicated);
+        Assert.Equal("wake", mapped.MapId);
+        Assert.Equal(2, mapped.ReservedSlots);
+        Assert.Equal(1200, mapped.RoundTime);
+        Assert.Equal(4, mapped.Status);
+        Assert.True(mapped.Anticheat);
+        Assert.Equal("foo", mapped.UnpureMods);
+        Assert.Equal("https://example.test/join", mapped.JoinLinkWeb);
+        Assert.Equal("bf1942://1.2.3.4:14567", mapped.JoinLink);
+    }
 }
 
 /// <summary>Minimal configurable HttpMessageHandler for exercising BfListApiService without a real network call.</summary>

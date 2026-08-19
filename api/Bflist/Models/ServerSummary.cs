@@ -1,7 +1,8 @@
 namespace api.Bflist.Models;
 
 /// <summary>
-/// Minimal server summary containing only fields needed for the servers table
+/// Live-server projection for the landing table: BFList snapshot plus geo/community
+/// fields filled in by <c>LiveServersController</c>.
 /// </summary>
 public class ServerSummary
 {
@@ -24,6 +25,76 @@ public class ServerSummary
     /// Server port
     /// </summary>
     public int Port { get; set; }
+
+    /// <summary>
+    /// Query port used by BFList / GameSpy
+    /// </summary>
+    public int QueryPort { get; set; }
+
+    /// <summary>
+    /// Whether the server requires a password
+    /// </summary>
+    public bool Password { get; set; }
+
+    /// <summary>
+    /// Game version string reported by the server
+    /// </summary>
+    public string GameVersion { get; set; } = "";
+
+    /// <summary>
+    /// Game mode reported by BFList (distinct from game type)
+    /// </summary>
+    public string GameMode { get; set; } = "";
+
+    /// <summary>
+    /// Server-reported average FPS
+    /// </summary>
+    public int AverageFps { get; set; }
+
+    /// <summary>
+    /// Whether content checking is enabled
+    /// </summary>
+    public bool ContentCheck { get; set; }
+
+    /// <summary>
+    /// Dedicated-host flag (non-zero means dedicated)
+    /// </summary>
+    public int Dedicated { get; set; }
+
+    /// <summary>
+    /// Map identifier
+    /// </summary>
+    public string MapId { get; set; } = "";
+
+    /// <summary>
+    /// Reserved / VIP slot count
+    /// </summary>
+    public int ReservedSlots { get; set; }
+
+    /// <summary>
+    /// Configured round length in seconds
+    /// </summary>
+    public int RoundTime { get; set; }
+
+    /// <summary>
+    /// BFList status code
+    /// </summary>
+    public int Status { get; set; }
+
+    /// <summary>
+    /// Whether PunkBuster / anticheat is reported on
+    /// </summary>
+    public bool Anticheat { get; set; }
+
+    /// <summary>
+    /// Unpure / extra mods string
+    /// </summary>
+    public string UnpureMods { get; set; } = "";
+
+    /// <summary>
+    /// Browser join URL
+    /// </summary>
+    public string JoinLinkWeb { get; set; } = "";
 
     /// <summary>
     /// Current number of players
