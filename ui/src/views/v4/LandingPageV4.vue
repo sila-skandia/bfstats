@@ -108,6 +108,8 @@ const filterPreset = ref<'all' | 'populated' | 'standby'>(
   saved?.filterPreset === 'populated' || saved?.filterPreset === 'standby' ? saved.filterPreset : 'all'
 )
 
+const filterQuery = ref('')
+
 watch([order, hidden, pinned, widths, sort, density, filterPreset, colFilters], () => {
   try {
     const payload = {
@@ -163,8 +165,6 @@ const pinnedOffsets = computed(() => {
   return { offsets, totalPinnedWidth: acc }
 })
 
-const getCol = (key: string) => ALL_COLUMNS.find(c => c.key === key)
-
 const togglePin = (key: string) => {
   if (pinned.value.includes(key)) {
     pinned.value = pinned.value.filter(k => k !== key)
@@ -183,11 +183,79 @@ const toggleHideCol = (key: string) => {
   hidden.value = next
 }
 
+const showAllColumns = () => {
+  hidden.value = new Set()
+}
+
+const hideExtraColumns = () => {
+  hidden.value = new Set(DEFAULT_HIDDEN)
+}
+
 // Drag & Resize state
 const resizing = ref<{ key: string; startX: number; startW: number } | null>(null)
 const dragKey = ref<string | null>(null)
 const menuKey = ref<string | null>(null)
 const colPanelOpen = ref(false)
+const colPanelQuery = ref('')
+const selectedFilterCol = ref<string | null>(null)
+const filterInputEls = new Map<string, HTMLInputElement>()
+const searchInputEl = ref<HTMLInputElement | null>(null)
+const copyToast = ref('')
+const shortcutsOpen = ref(false)
+const isFullscreen = ref(false)
+const selectedGuids = ref<Set<string>>(new Set())
+let copyToastTimer: number | undefined
+
+const groupedPanelColumns = computed(() => {
+  const q = colPanelQuery.value.trim().toLowerCase()
+  return COLUMN_GROUPS.map(group => ({
+    ...group,
+    cols: ALL_COLUMNS.filter(c => c.group === group.id && (!q || c.label.toLowerCase().includes(q) || c.key.includes(q))),
+  })).filter(g => g.cols.length > 0)
+})
+
+const setFilterInputRef = (key: string, el: unknown) => {
+  if (el instanceof HTMLInputElement) filterInputEls.set(key, el)
+  else filterInputEls.delete(key)
+}
+
+const focusColumnFilter = async (key: string) => {
+  const col = getCol(key)
+  if (!col || col.filter === 'none') return
+  selectedFilterCol.value = key
+  await nextTick()
+  filterInputEls.get(key)?.focus()
+}
+
+const setColFilter = (key: string, value: string) => {
+  const next = { ...colFilters.value }
+  if (value.trim()) next[key] = value
+  else delete next[key]
+  colFilters.value = next
+}
+
+const clearColFilter = (key: string) => {
+  const next = { ...colFilters.value }
+  delete next[key]
+  colFilters.value = next
+}
+
+const onHeaderClick = (key: string, e: MouseEvent) => {
+  const target = e.target as HTMLElement | null
+  if (target?.closest('.lb-th-actions, .lb-resize-handle')) return
+  toggleSort(key, e.shiftKey)
+  void focusColumnFilter(key)
+}
+
+const colFilterPlaceholder = (key: string) => {
+  const col = getCol(key)
+  return col ? filterPlaceholder(col) : 'filter…'
+}
+
+const onColFilterInput = (key: string, e: Event) => {
+  const target = e.target
+  if (target instanceof HTMLInputElement) setColFilter(key, target.value)
+}
 
 const startResize = (key: string, e: MouseEvent) => {
   resizing.value = {
@@ -246,6 +314,126 @@ const onDocClick = (e: MouseEvent) => {
   }
 }
 
+const flashCopy = (label: string) => {
+  copyToast.value = label
+  if (copyToastTimer) window.clearTimeout(copyToastTimer)
+  copyToastTimer = window.setTimeout(() => { copyToast.value = '' }, 1800)
+}
+
+const copyText = async (text: string, label: string) => {
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      flashCopy(label)
+      return
+    }
+  } catch { /* fallback */ }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.style.position = 'fixed'
+  area.style.left = '-9999px'
+  document.body.appendChild(area)
+  area.select()
+  document.execCommand('copy')
+  document.body.removeChild(area)
+  flashCopy(label)
+}
+
+const exportCsv = () => {
+  const csv = rowsToCsv(sortedServers.value, displayCols.value)
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `bfstats_servers_${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+const copyJson = () => {
+  void copyText(JSON.stringify(sortedServers.value, null, 2), 'JSON copied')
+}
+
+const copyVisibleTsv = (rows: ServerSummary[]) => {
+  void copyText(rowsToTsv(rows, displayCols.value), `${rows.length} row${rows.length === 1 ? '' : 's'} copied`)
+}
+
+const copyShareLink = () => {
+  void copyText(window.location.href, 'Link copied')
+}
+
+const toggleFullscreen = async () => {
+  try {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen()
+      isFullscreen.value = true
+    } else {
+      await document.exitFullscreen()
+      isFullscreen.value = false
+    }
+  } catch {
+    isFullscreen.value = !isFullscreen.value
+  }
+}
+
+const onFullscreenChange = () => {
+  isFullscreen.value = !!document.fullscreenElement
+}
+
+const isTypingTarget = (el: EventTarget | null) => {
+  if (!(el instanceof HTMLElement)) return false
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+}
+
+const applyUrlState = () => {
+  const q = route.query
+  if (typeof q.q === 'string') filterQuery.value = q.q
+  if (q.preset === 'populated' || q.preset === 'standby' || q.preset === 'all') {
+    filterPreset.value = q.preset
+  }
+  const nextFilters: Record<string, string> = {}
+  for (const [key, value] of Object.entries(q)) {
+    if (!key.startsWith('f.') || typeof value !== 'string' || !value) continue
+    const colKey = key.slice(2)
+    if (ALL_COLUMNS.some(c => c.key === colKey)) nextFilters[colKey] = value
+  }
+  if (Object.keys(nextFilters).length > 0) colFilters.value = nextFilters
+  if (typeof q.sort === 'string' && q.sort) {
+    const parsed = q.sort.split(',').flatMap(part => {
+      const [key, dir] = part.split(':')
+      if (!key || (dir !== 'asc' && dir !== 'desc')) return []
+      if (!ALL_COLUMNS.some(c => c.key === key)) return []
+      return [{ key, dir: dir as 'asc' | 'desc' }]
+    })
+    if (parsed.length) sort.value = parsed
+  }
+}
+
+let urlSyncTimer: number | undefined
+const syncUrl = () => {
+  const query: Record<string, string> = {}
+  if (filterQuery.value.trim()) query.q = filterQuery.value.trim()
+  if (filterPreset.value !== 'all') query.preset = filterPreset.value
+  for (const [key, value] of Object.entries(colFilters.value)) {
+    if (value.trim()) query[`f.${key}`] = value.trim()
+  }
+  if (sort.value.length && !(sort.value.length === 1 && sort.value[0].key === 'players' && sort.value[0].dir === 'desc')) {
+    query.sort = sort.value.map(s => `${s.key}:${s.dir}`).join(',')
+  }
+  const current = route.query as Record<string, string | string[] | undefined>
+  const same = Object.keys({ ...current, ...query }).every(k => (current[k] ?? '') === (query[k] ?? ''))
+  if (same && Object.keys(current).length === Object.keys(query).length) return
+  void router.replace({ query })
+}
+
+watch([filterQuery, filterPreset, colFilters, sort], () => {
+  if (urlSyncTimer) window.clearTimeout(urlSyncTimer)
+  urlSyncTimer = window.setTimeout(syncUrl, 280)
+}, { deep: true })
+
 // ============================================================================
 // Row Expansion (Inline Ladder) State
 // ============================================================================
@@ -288,7 +476,6 @@ const staleSince = computed(() => (lastUpdated.value ? formatRelativeTime(lastUp
 const hasRevalidated = ref(false)
 
 const trendOpen = ref(false)
-const filterQuery = ref('')
 
 const openTrend = () => { trendOpen.value = true }
 const closeTrend = () => { trendOpen.value = false }
@@ -333,8 +520,38 @@ const load = async (showSpinner = false) => {
   }
 }
 
-const onTrendKey = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && trendOpen.value) closeTrend()
+const onKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    if (trendOpen.value) { closeTrend(); return }
+    if (shortcutsOpen.value) { shortcutsOpen.value = false; return }
+    if (colPanelOpen.value) { colPanelOpen.value = false; return }
+    if (menuKey.value) { menuKey.value = null; return }
+    if (selectedFilterCol.value && colFilters.value[selectedFilterCol.value]) {
+      clearColFilter(selectedFilterCol.value)
+      return
+    }
+    if (filterQuery.value) { filterQuery.value = ''; return }
+    if (selectedGuids.value.size) { selectedGuids.value = new Set(); return }
+    if (expandedGuids.value.size) { expandedGuids.value = new Set() }
+    return
+  }
+  if (isTypingTarget(e.target)) return
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault()
+    searchInputEl.value?.focus()
+    searchInputEl.value?.select()
+    return
+  }
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault()
+    shortcutsOpen.value = !shortcutsOpen.value
+    return
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedGuids.value.size > 0) {
+    e.preventDefault()
+    const rows = sortedServers.value.filter(s => selectedGuids.value.has(s.guid))
+    copyVisibleTsv(rows)
+  }
 }
 
 watch(trendOpen, (open) => {
@@ -343,22 +560,27 @@ watch(trendOpen, (open) => {
 })
 
 onMounted(() => {
+  applyUrlState()
   void load(servers.value.length === 0)
   refreshTimer = window.setInterval(() => void load(false), REFRESH_INTERVAL_MS)
   tickTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
-  window.addEventListener('keydown', onTrendKey)
+  window.addEventListener('keydown', onKeydown)
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
   window.addEventListener('mousedown', onDocClick)
+  document.addEventListener('fullscreenchange', onFullscreenChange)
 })
 
 onUnmounted(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
   if (tickTimer) window.clearInterval(tickTimer)
-  window.removeEventListener('keydown', onTrendKey)
+  if (urlSyncTimer) window.clearTimeout(urlSyncTimer)
+  if (copyToastTimer) window.clearTimeout(copyToastTimer)
+  window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('mousedown', onDocClick)
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.body.style.overflow = ''
   document.documentElement.classList.remove('mm-fs-lock')
 })
@@ -384,27 +606,11 @@ const standbyCount = computed(() =>
   servers.value.filter(s => (s.numPlayers || 0) === 0).length,
 )
 
-const friendlyCountry = (code?: string) => {
-  if (!code) return '—'
-  return countryCodeToName[code.toUpperCase()] ?? code.toUpperCase()
-}
-
 const formatNumber = (n: number) => n.toLocaleString()
 
 const navigateToPlayerProfile = (playerName: string) => {
   router.push(`/v4/players/${encodeURIComponent(playerName)}`)
 }
-
-const calculateAveragePing = (s: ServerSummary): number | null => {
-  if (!s.players || s.players.length === 0) return null
-  const validPings = s.players.map(p => p.ping).filter(p => p > 0)
-  if (validPings.length === 0) return null
-  const sum = validPings.reduce((acc, p) => acc + p, 0)
-  return Math.round(sum / validPings.length)
-}
-
-const getTeamPlayerCount = (server: ServerSummary, teamIndex: number) =>
-  (server.players ?? []).filter(p => p.team === teamIndex).length
 
 const getSortedTeamPlayers = (server: ServerSummary, teamIndex: number) => {
   const players = (server.players ?? []).filter(p => p.team === teamIndex)
@@ -427,13 +633,6 @@ const getTeamTickets = (server: ServerSummary, teamIndex: number) => {
   return teamIndex === 1 ? (server.tickets1 ?? 0) : (server.tickets2 ?? 0)
 }
 
-const getTeamColor = (label: string) => {
-  const l = label.toLowerCase()
-  if (l.includes('axis') || l.includes('germany') || l.includes('japan') || l === 'team 2') return '#d65a5a'
-  if (l.includes('allies') || l.includes('allied') || l.includes('ussr') || l.includes('usa') || l.includes('uk') || l.includes('canada') || l.includes('france') || l === 'team 1') return '#61afef'
-  return '#c5a23a'
-}
-
 const pingClass = (ping: number) => {
   if (ping <= 0) return 'lb-ping--muted'
   if (ping < 60) return 'lb-ping--good'
@@ -443,58 +642,34 @@ const pingClass = (ping: number) => {
 
 const isInitialLoad = computed(() => loading.value && servers.value.length === 0)
 
-// ============================================================================
-// Filter, Search, and Sort Logic
-// ============================================================================
 const filteredServers = computed(() => {
   let list = servers.value
 
-  // Preset filter
   if (filterPreset.value === 'populated') {
     list = list.filter(s => (s.numPlayers || 0) > 0)
   } else if (filterPreset.value === 'standby') {
     list = list.filter(s => (s.numPlayers || 0) === 0)
   }
 
-  // Text search filter
-  const q = filterQuery.value.trim().toLowerCase()
-  if (q) {
-    list = list.filter(s => {
-      const name = (s.name || '').toLowerCase()
-      const countryCode = (s.country || '').toLowerCase()
-      const countryName = friendlyCountry(s.country).toLowerCase()
-      const ip = (s.ip || '').toLowerCase()
-      const map = (s.mapName || '').toLowerCase()
-      const gameType = (s.gameType || '').toLowerCase()
-      return name.includes(q) || countryCode.includes(q) || countryName.includes(q) || ip.includes(q) || map.includes(q) || gameType.includes(q)
-    })
+  if (filterQuery.value.trim()) {
+    list = list.filter(s => matchesGlobalSearch(s, filterQuery.value))
+  }
+
+  const active = Object.entries(colFilters.value).filter(([, v]) => v.trim())
+  if (active.length) {
+    list = list.filter(s =>
+      active.every(([key, query]) => {
+        const col = getCol(key)
+        return matchColumnFilter(getCellValue(s, key), query, col?.filter ?? 'text')
+      }),
+    )
   }
 
   return list
 })
 
-const getCellValue = (s: ServerSummary, key: string): any => {
-  switch (key) {
-    case 'rank': return 0
-    case 'name': return s.name?.toLowerCase() || ''
-    case 'players': return s.numPlayers || 0
-    case 'load': return s.maxPlayers ? (s.numPlayers || 0) / s.maxPlayers : 0
-    case 'map': return s.mapName?.toLowerCase() || ''
-    case 'gameType': return s.gameType?.toLowerCase() || ''
-    case 'region': return friendlyCountry(s.country).toLowerCase()
-    case 'ping': {
-      const valid = (s.players || []).map(p => p.ping).filter(p => p > 0)
-      return valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length) : null
-    }
-    case 'timeRemain': return s.roundTimeRemain ?? -1
-    case 'tickets': return Math.max(s.tickets1 ?? 0, s.tickets2 ?? 0)
-    case 'ip': return `${s.ip}:${s.port}`
-    default: return (s as any)[key] ?? ''
-  }
-}
-
 const toggleSort = (key: string, multi = false) => {
-  const col = ALL_COLUMNS.find(c => c.key === key)
+  const col = getCol(key)
   if (col && col.sortable === false) return
 
   const existing = sort.value.find(s => s.key === key)
@@ -530,16 +705,18 @@ const sortedServers = computed(() => {
       const va = getCellValue(a, s.key)
       const vb = getCellValue(b, s.key)
 
-      if (va === null || va === undefined || va === -1) {
-        if (vb === null || vb === undefined || vb === -1) continue
+      if (va === null || va === undefined || va === '') {
+        if (vb === null || vb === undefined || vb === '') continue
         return 1
       }
-      if (vb === null || vb === undefined || vb === -1) {
+      if (vb === null || vb === undefined || vb === '') {
         return -1
       }
 
       let cmp = 0
-      if (typeof va === 'string' && typeof vb === 'string') {
+      if (typeof va === 'boolean' && typeof vb === 'boolean') {
+        cmp = Number(va) - Number(vb)
+      } else if (typeof va === 'string' && typeof vb === 'string') {
         cmp = va.localeCompare(vb)
       } else if (typeof va === 'number' && typeof vb === 'number') {
         cmp = va - vb
@@ -555,13 +732,46 @@ const sortedServers = computed(() => {
   })
 })
 
+const columnUniques = computed(() => {
+  const map: Record<string, string[]> = {}
+  for (const col of ALL_COLUMNS) {
+    if (col.filter === 'none') continue
+    map[col.key] = uniqueColumnValues(servers.value, col.key)
+  }
+  return map
+})
+
+const onRowClick = (s: ServerSummary, idx: number, e: MouseEvent) => {
+  if (e.ctrlKey || e.metaKey) {
+    const next = new Set(selectedGuids.value)
+    if (next.has(s.guid)) next.delete(s.guid)
+    else next.add(s.guid)
+    selectedGuids.value = next
+    return
+  }
+  if (e.shiftKey && selectedGuids.value.size > 0) {
+    const guids = sortedServers.value.map(row => row.guid)
+    const selectedIdx = guids.reduce<number[]>((acc, g, i) => {
+      if (selectedGuids.value.has(g)) acc.push(i)
+      return acc
+    }, [])
+    const from = selectedIdx.length ? selectedIdx[selectedIdx.length - 1] : idx
+    const start = Math.min(from, idx)
+    const end = Math.max(from, idx)
+    selectedGuids.value = new Set(guids.slice(start, end + 1))
+    return
+  }
+  toggleRowExpand(s.guid)
+}
+
+const selectedRows = computed(() =>
+  sortedServers.value.filter(s => selectedGuids.value.has(s.guid)),
+)
+
 const sortSummary = computed(() => {
   if (sort.value.length === 0) return 'DEFAULT'
   return sort.value
-    .map(s => {
-      const col = ALL_COLUMNS.find(c => c.key === s.key)
-      return `${col?.label || s.key} ${s.dir.toUpperCase()}`
-    })
+    .map(s => `${getCol(s.key)?.label || s.key} ${s.dir.toUpperCase()}`)
     .join(', ')
 })
 
@@ -571,28 +781,38 @@ const activeFilterChips = computed(() => {
     chips.push({
       key: 'search',
       label: `SEARCH: "${filterQuery.value.trim()}"`,
-      clear: () => { filterQuery.value = '' }
+      clear: () => { filterQuery.value = '' },
     })
   }
   if (filterPreset.value === 'populated') {
     chips.push({
       key: 'populated',
       label: 'POPULATED ONLY',
-      clear: () => { filterPreset.value = 'all' }
+      clear: () => { filterPreset.value = 'all' },
     })
   } else if (filterPreset.value === 'standby') {
     chips.push({
       key: 'standby',
       label: 'STANDBY ONLY',
-      clear: () => { filterPreset.value = 'all' }
+      clear: () => { filterPreset.value = 'all' },
+    })
+  }
+  for (const [key, value] of Object.entries(colFilters.value)) {
+    if (!value.trim()) continue
+    chips.push({
+      key: `col:${key}`,
+      label: `${(getCol(key)?.label || key).toUpperCase()}: ${value.trim()}`,
+      clear: () => clearColFilter(key),
     })
   }
   return chips
 })
+
+const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim())
 </script>
 
 <template>
-  <div class="mm lb-container">
+  <div class="mm lb-container" :class="{ 'lb-container--fullscreen': isFullscreen }">
     <!-- meta top row -->
     <div class="mm-landing__top">
       <div class="mm-meta-row">
@@ -664,10 +884,11 @@ const activeFilterChips = computed(() => {
           <label class="lb-search-wrap">
             <i class="pi pi-search lb-search-icon" aria-hidden="true"></i>
             <input
+              ref="searchInputEl"
               v-model="filterQuery"
               type="text"
               class="lb-search-input"
-              placeholder="Search servers, maps, regions, IP…"
+              placeholder="Search servers, maps, players, IP…  (/ to focus)"
               aria-label="Filter servers"
             />
             <button
@@ -714,31 +935,79 @@ const activeFilterChips = computed(() => {
               <span>COLUMNS ({{ ALL_COLUMNS.length - hidden.size }}/{{ ALL_COLUMNS.length }})</span>
             </button>
 
-            <!-- Columns Show / Hide Panel -->
             <div v-if="colPanelOpen" class="lb-col-popover" data-lbmenu="panel">
               <div class="lb-popover-title">SHOW / HIDE COLUMNS</div>
-              <label
-                v-for="col in ALL_COLUMNS"
-                :key="col.key"
-                class="lb-col-check"
-              >
-                <input
-                  type="checkbox"
-                  :checked="!hidden.has(col.key)"
-                  @change="toggleHideCol(col.key)"
-                />
-                <span>{{ col.label }}</span>
-              </label>
-              <button
-                type="button"
-                class="lb-btn lb-btn--muted"
-                style="width: 100%; justify-content: center; margin-top: 10px;"
-                @click="resetColumns"
-              >
-                Reset Columns
-              </button>
+              <input
+                v-model="colPanelQuery"
+                type="text"
+                class="lb-col-search"
+                placeholder="Find a column…"
+                aria-label="Find a column"
+              />
+              <div class="lb-col-scroll">
+                <div v-for="group in groupedPanelColumns" :key="group.id" class="lb-col-group">
+                  <div class="lb-col-group__label">{{ group.label }}</div>
+                  <label
+                    v-for="col in group.cols"
+                    :key="col.key"
+                    class="lb-col-check"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="!hidden.has(col.key)"
+                      @change="toggleHideCol(col.key)"
+                    />
+                    <span>{{ col.label }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="lb-col-actions">
+                <button type="button" class="lb-btn lb-btn--muted" @click="showAllColumns">Show all</button>
+                <button type="button" class="lb-btn lb-btn--muted" @click="hideExtraColumns">Defaults</button>
+              </div>
             </div>
           </div>
+
+          <button
+            class="lb-btn lb-desktop-only"
+            title="Download visible rows as CSV"
+            @click="exportCsv"
+          >
+            <i class="pi pi-download"></i>
+            <span>CSV</span>
+          </button>
+          <button
+            class="lb-btn lb-desktop-only"
+            :title="copyToast || 'Copy filtered rows as JSON'"
+            @click="copyJson"
+          >
+            <i class="pi pi-copy"></i>
+            <span>{{ copyToast || 'JSON' }}</span>
+          </button>
+          <button
+            class="lb-btn lb-desktop-only"
+            title="Copy a shareable link with the current filters"
+            @click="copyShareLink"
+          >
+            <i class="pi pi-share-alt"></i>
+            <span>SHARE</span>
+          </button>
+          <button
+            class="lb-btn lb-desktop-only"
+            :class="{ 'lb-btn--active': isFullscreen }"
+            title="Toggle fullscreen"
+            @click="toggleFullscreen"
+          >
+            <i :class="isFullscreen ? 'pi pi-window-minimize' : 'pi pi-window-maximize'"></i>
+          </button>
+          <button
+            class="lb-btn lb-desktop-only"
+            title="Keyboard shortcuts"
+            aria-label="Keyboard shortcuts"
+            @click="shortcutsOpen = !shortcutsOpen"
+          >
+            <i class="pi pi-question-circle"></i>
+          </button>
 
           <!-- Reset -->
           <button
@@ -762,6 +1031,15 @@ const activeFilterChips = computed(() => {
             @click="chip.clear()"
           >
             <span>{{ chip.label }}</span>
+            <i class="pi pi-times" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div v-if="selectedGuids.size" class="lb-active-filters">
+          <button type="button" class="lb-empty-chip" @click="copyVisibleTsv(selectedRows)">
+            <span>{{ selectedGuids.size }} SELECTED · COPY TSV</span>
+          </button>
+          <button type="button" class="lb-empty-chip" @click="selectedGuids = new Set()">
+            <span>CLEAR SELECTION</span>
             <i class="pi pi-times" aria-hidden="true"></i>
           </button>
         </div>
@@ -825,25 +1103,28 @@ const activeFilterChips = computed(() => {
                     'lb-th--pinned': pinned.includes(key),
                     'lb-th--pinned-last': pinned.includes(key) && pinnedOffsets.offsets[key] + (widths[key] || 80) >= pinnedOffsets.totalPinnedWidth,
                     'lb-th--right': getCol(key)?.align === 'right',
-                    'lb-th--center': getCol(key)?.align === 'center'
+                    'lb-th--center': getCol(key)?.align === 'center',
+                    'lb-th--filtered': hasActiveColFilter(key),
+                    'lb-th--filter-focus': selectedFilterCol === key
                   }"
+                  :data-testid="`col-header-${key}`"
                   draggable="true"
                   @dragstart="onDragStart(key, $event)"
                   @dragover.prevent
                   @drop="onDrop(key)"
-                  @click="toggleSort(key, $event.shiftKey)"
+                  @click="onHeaderClick(key, $event)"
                 >
                   <div class="lb-th-inner">
                     <div class="lb-th-label-group">
                       <i v-if="pinned.includes(key)" class="pi pi-lock lb-pin-icon" title="Pinned column"></i>
                       <span class="lb-th-text">{{ getCol(key)?.label }}</span>
-                      <!-- Sort Direction Indicator -->
                       <span v-if="sort.find(s => s.key === key)" class="lb-sort-arrow">
                         {{ sort.find(s => s.key === key)?.dir === 'desc' ? '↓' : '↑' }}
                         <sup v-if="sort.length > 1" class="lb-sort-idx">
                           {{ sort.findIndex(s => s.key === key) + 1 }}
                         </sup>
                       </span>
+                      <i v-if="hasActiveColFilter(key)" class="pi pi-filter lb-filter-dot" title="Column filter active"></i>
                     </div>
 
                     <!-- Header Context Menu Trigger -->
@@ -864,6 +1145,12 @@ const activeFilterChips = computed(() => {
                         <button v-if="getCol(key)?.sortable !== false" class="lb-menu-item" @click.stop="sort = [{ key, dir: 'desc' }]; menuKey = null">
                           <i class="pi pi-sort-amount-down"></i> Sort Descending
                         </button>
+                        <button v-if="getCol(key)?.filter !== 'none'" class="lb-menu-item" @click.stop="focusColumnFilter(key); menuKey = null">
+                          <i class="pi pi-filter"></i> Filter this column
+                        </button>
+                        <button v-if="hasActiveColFilter(key)" class="lb-menu-item" @click.stop="clearColFilter(key); menuKey = null">
+                          <i class="pi pi-filter-slash"></i> Clear filter
+                        </button>
                         <button class="lb-menu-item lb-desktop-only" @click.stop="togglePin(key)">
                           <i :class="pinned.includes(key) ? 'pi pi-unlock' : 'pi pi-lock'"></i>
                           {{ pinned.includes(key) ? 'Unpin column' : 'Pin column' }}
@@ -883,13 +1170,53 @@ const activeFilterChips = computed(() => {
                   </div>
                 </th>
               </tr>
+              <tr class="lb-filter-row lb-desktop-only">
+                <th
+                  v-for="key in displayCols"
+                  :key="`f-${key}`"
+                  :style="{
+                    width: `${widths[key] || 80}px`,
+                    minWidth: `${widths[key] || 80}px`,
+                    maxWidth: `${widths[key] || 80}px`,
+                    left: pinned.includes(key) ? `${pinnedOffsets.offsets[key]}px` : undefined,
+                    zIndex: pinned.includes(key) ? 5 : 3
+                  }"
+                  :class="{
+                    'lb-th--pinned': pinned.includes(key),
+                    'lb-th--pinned-last': pinned.includes(key) && pinnedOffsets.offsets[key] + (widths[key] || 80) >= pinnedOffsets.totalPinnedWidth
+                  }"
+                >
+                  <input
+                    v-if="getCol(key)?.filter !== 'none'"
+                    :ref="(el) => setFilterInputRef(key, el)"
+                    class="lb-col-filter"
+                    :class="{ 'lb-col-filter--active': hasActiveColFilter(key) }"
+                    type="text"
+                    :list="`lb-filter-vals-${key}`"
+                    :value="colFilters[key] || ''"
+                    :placeholder="colFilterPlaceholder(key)"
+                    :aria-label="`Filter ${getCol(key)?.label}`"
+                    :data-testid="`col-filter-${key}`"
+                    @input="onColFilterInput(key, $event)"
+                    @focus="selectedFilterCol = key"
+                    @click.stop
+                    @mousedown.stop
+                  />
+                  <datalist :id="`lb-filter-vals-${key}`">
+                    <option v-for="val in (columnUniques[key] || [])" :key="val" :value="val" />
+                  </datalist>
+                </th>
+              </tr>
             </thead>
             <tbody>
               <template v-for="(s, idx) in sortedServers" :key="s.guid">
                 <tr
                   class="lb-row"
-                  :class="{ 'lb-row--selected': expandedGuids.has(s.guid) }"
-                  @click="toggleRowExpand(s.guid)"
+                  :class="{
+                    'lb-row--selected': expandedGuids.has(s.guid),
+                    'lb-row--picked': selectedGuids.has(s.guid)
+                  }"
+                  @click="onRowClick(s, idx, $event)"
                 >
                   <td
                     v-for="k in displayCols"
@@ -942,6 +1269,9 @@ const activeFilterChips = computed(() => {
                         <div class="lb-server-cell">
                           <span v-if="(s.numPlayers || 0) > 0" class="lb-online-dot" title="Populated and active"></span>
                           <span v-else class="lb-standby-dot" title="Standby host"></span>
+                          <span v-if="s.password" class="lb-lock" title="Password protected">
+                            <i class="pi pi-lock" aria-hidden="true"></i>
+                          </span>
                           <RouterLink
                             :to="`/v4/servers/detail/${encodeURIComponent(s.name)}`"
                             class="lb-server-link"
@@ -1007,9 +1337,9 @@ const activeFilterChips = computed(() => {
 
                     <!-- Average Ping -->
                     <template v-else-if="k === 'ping'">
-                      <template v-if="calculateAveragePing(s) !== null">
-                        <span class="lb-ping-val" :class="pingClass(calculateAveragePing(s) || 0)">
-                          {{ calculateAveragePing(s) }}
+                      <template v-if="getAveragePing(s) !== null">
+                        <span class="lb-ping-val" :class="pingClass(getAveragePing(s) || 0)">
+                          {{ getAveragePing(s) }}
                         </span>
                         <span class="lb-ping-unit">ms</span>
                       </template>
@@ -1026,16 +1356,50 @@ const activeFilterChips = computed(() => {
                     <!-- Tickets -->
                     <template v-else-if="k === 'tickets'">
                       <template v-if="s.tickets1 !== undefined && s.tickets2 !== undefined && (s.tickets1 > 0 || s.tickets2 > 0)">
-                        <span style="color: #7da34c; font-weight: 700;">{{ s.tickets1 }}</span>
+                        <span class="lb-ticket lb-ticket--t1">{{ s.tickets1 }}</span>
                         <span class="lb-ticket-sep">:</span>
-                        <span style="color: #d65a5a; font-weight: 700;">{{ s.tickets2 }}</span>
+                        <span class="lb-ticket lb-ticket--t2">{{ s.tickets2 }}</span>
                       </template>
                       <span v-else class="lb-muted">—</span>
                     </template>
 
-                    <!-- Address IP:Port -->
                     <template v-else-if="k === 'ip'">
-                      <span style="font-family: var(--mm-font-mono); font-size: 12.5px;">{{ s.ip }}:{{ s.port }}</span>
+                      <button
+                        type="button"
+                        class="lb-copy-cell"
+                        title="Copy address"
+                        @click.stop="copyText(`${s.ip}:${s.port}`, 'Address copied')"
+                      >{{ s.ip }}:{{ s.port }}</button>
+                    </template>
+
+                    <template v-else-if="getCol(k)?.kind === 'bool'">
+                      <span class="lb-bool" :class="getCellValue(s, k) ? 'lb-bool--yes' : 'lb-bool--no'">
+                        {{ getCellValue(s, k) ? 'Yes' : '—' }}
+                      </span>
+                    </template>
+
+                    <template v-else-if="getCol(k)?.kind === 'link'">
+                      <a
+                        v-if="getCellValue(s, k)"
+                        :href="String(getCellValue(s, k))"
+                        class="lb-cell-link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        @click.stop
+                      >{{ linkHostname(String(getCellValue(s, k))) }}</a>
+                      <span v-else class="lb-muted">—</span>
+                    </template>
+
+                    <template v-else-if="getCol(k)?.kind === 'duration'">
+                      <span class="lb-mono">{{ getDisplayValue(s, k) || '—' }}</span>
+                    </template>
+
+                    <template v-else>
+                      <span
+                        class="lb-text-cell"
+                        :class="{ 'lb-mono': getCol(k)?.kind === 'num' || k === 'guid' || k === 'loc' || k === 'lastSeen' }"
+                        :title="k === 'lastSeen' && s.lastSeenTime ? formatLocalTooltip(s.lastSeenTime) : getDisplayValue(s, k)"
+                      >{{ getDisplayValue(s, k) || '—' }}</span>
                     </template>
                   </td>
                 </tr>
@@ -1054,10 +1418,10 @@ const activeFilterChips = computed(() => {
                         >
                           <!-- Team Header: Clean Faction Title & Direct Tickets Number -->
                           <div class="lb-team-strip">
-                            <span class="lb-team-name" :style="{ color: getTeamColor(getTeamLabel(s, teamIdx)) }">
+                            <span class="lb-team-name" :style="{ color: teamColor(getTeamLabel(s, teamIdx)) }">
                               {{ getTeamLabel(s, teamIdx) }}
                             </span>
-                            <div class="lb-team-tickets-plain" :style="{ color: getTeamColor(getTeamLabel(s, teamIdx)) }">
+                            <div class="lb-team-tickets-plain" :style="{ color: teamColor(getTeamLabel(s, teamIdx)) }">
                               {{ getTeamTickets(s, teamIdx) }}
                             </div>
                           </div>
@@ -1136,6 +1500,32 @@ const activeFilterChips = computed(() => {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <div v-if="copyToast" class="lb-toast" role="status">{{ copyToast }}</div>
+
+    <div
+      v-if="shortcutsOpen"
+      class="lb-shortcuts"
+      role="dialog"
+      aria-label="Keyboard shortcuts"
+      @click.self="shortcutsOpen = false"
+    >
+      <div class="lb-shortcuts__panel">
+        <div class="lb-shortcuts__title">Keyboard</div>
+        <dl class="lb-shortcuts__list">
+          <div><dt>/</dt><dd>Focus search</dd></div>
+          <div><dt>Click header</dt><dd>Sort, then type to filter that column</dd></div>
+          <div><dt>Shift + click header</dt><dd>Add a sort level</dd></div>
+          <div><dt>&gt; &lt; = 8..32</dt><dd>Numeric column filters</dd></div>
+          <div><dt>=exact  !exclude  a|b</dt><dd>Text column filters</dd></div>
+          <div><dt>Ctrl/⌘ + click row</dt><dd>Select row</dd></div>
+          <div><dt>Shift + click row</dt><dd>Select range</dd></div>
+          <div><dt>Ctrl/⌘ + C</dt><dd>Copy selected rows as TSV</dd></div>
+          <div><dt>?</dt><dd>Toggle this help</dd></div>
+          <div><dt>Esc</dt><dd>Clear filter / close / collapse</dd></div>
+        </dl>
       </div>
     </div>
   </div>
@@ -1421,8 +1811,58 @@ const activeFilterChips = computed(() => {
   border: 1px solid var(--mm-rule-strong);
   border-radius: 3px;
   padding: 14px;
-  width: 230px;
+  width: 260px;
   box-shadow: 0 10px 32px rgba(0,0,0,0.65);
+}
+
+.lb-col-search {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mm-font-display);
+  font-size: 12.5px;
+  padding: 6px 8px;
+  margin-bottom: 10px;
+  background: var(--mm-bg-mute);
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  color: var(--mm-ink);
+  outline: none;
+}
+
+.lb-col-search:focus {
+  border-color: var(--mm-accent);
+}
+
+.lb-col-scroll {
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.lb-col-group + .lb-col-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--mm-rule);
+}
+
+.lb-col-group__label {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  margin-bottom: 4px;
+}
+
+.lb-col-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lb-col-actions .lb-btn {
+  flex: 1;
+  justify-content: center;
 }
 
 .lb-popover-title {
@@ -1571,6 +2011,74 @@ th {
 
 .lb-th--right {
   text-align: right;
+}
+
+.lb-th--filtered {
+  box-shadow: inset 0 -2px 0 var(--mm-highlight-ink);
+}
+
+.lb-container--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: var(--mm-bg);
+  overflow: auto;
+  max-width: none;
+  padding-bottom: 32px;
+}
+
+.lb-th--filter-focus .lb-th-inner {
+  outline: 1px solid color-mix(in srgb, var(--mm-highlight-ink) 35%, transparent);
+  outline-offset: -2px;
+}
+
+.lb-filter-dot {
+  font-size: 9px;
+  opacity: 0.85;
+}
+
+.lb-filter-row th {
+  height: 34px;
+  background: var(--mm-bg-mute);
+  color: var(--mm-ink);
+  top: 42px;
+  border-right: 1px solid var(--mm-rule);
+  padding: 0 6px;
+}
+
+.lb-table--compact .lb-filter-row th {
+  top: 36px;
+}
+
+.lb-filter-row .lb-th--pinned {
+  background: var(--mm-bg-mute);
+}
+
+.lb-col-filter {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+  padding: 4px 6px;
+  background: var(--mm-bg);
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  color: var(--mm-ink);
+  outline: none;
+}
+
+.lb-col-filter:focus,
+.lb-col-filter--active {
+  border-color: var(--mm-accent);
+}
+
+.lb-col-filter::placeholder {
+  color: var(--mm-ink-faint);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .lb-th--center {
@@ -1908,15 +2416,15 @@ td {
 }
 
 .lb-ping--good {
-  color: #7da34c;
+  color: var(--mm-success);
 }
 
 .lb-ping--mid {
-  color: #c5a23a;
+  color: var(--mm-accent-soft);
 }
 
 .lb-ping--high {
-  color: #d65a5a;
+  color: var(--mm-danger);
 }
 
 .lb-ping--muted {
@@ -1926,6 +2434,137 @@ td {
 .lb-ticket-sep {
   color: var(--mm-ink-muted);
   margin: 0 4px;
+}
+
+.lb-ticket {
+  font-weight: 700;
+}
+
+.lb-ticket--t1 {
+  color: var(--mm-success);
+}
+
+.lb-ticket--t2 {
+  color: var(--mm-danger);
+}
+
+.lb-lock {
+  color: var(--mm-ink-muted);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.lb-bool--yes {
+  color: var(--mm-success);
+  font-weight: 600;
+}
+
+.lb-bool--no {
+  color: var(--mm-ink-faint);
+}
+
+.lb-cell-link {
+  color: var(--mm-accent-soft);
+  text-decoration: none;
+}
+
+.lb-cell-link:hover {
+  color: var(--mm-accent);
+  text-decoration: underline;
+}
+
+.lb-copy-cell {
+  font-family: var(--mm-font-mono);
+  font-size: 12.5px;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.lb-copy-cell:hover {
+  color: var(--mm-accent);
+}
+
+.lb-mono {
+  font-family: var(--mm-font-mono);
+  font-size: 12.5px;
+}
+
+.lb-row--picked td {
+  background: color-mix(in srgb, var(--mm-accent) 18%, var(--mm-bg)) !important;
+}
+
+.lb-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 90;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 10px 14px;
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-accent);
+  color: var(--mm-ink);
+}
+
+.lb-shortcuts {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--mm-bg) 55%, transparent);
+}
+
+.lb-shortcuts__panel {
+  width: min(92vw, 420px);
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule-strong);
+  padding: 20px 22px;
+}
+
+.lb-shortcuts__title {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+  margin-bottom: 14px;
+}
+
+.lb-shortcuts__list {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.lb-shortcuts__list > div {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.lb-shortcuts__list dt {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  color: var(--mm-accent-soft);
+}
+
+.lb-shortcuts__list dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--mm-ink-soft);
+}
+
+@media (max-width: 720px) {
+  .lb-desktop-only {
+    display: none !important;
+  }
 }
 
 .lb-muted {
