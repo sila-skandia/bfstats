@@ -37,8 +37,6 @@ interface NavShortcut {
   path: string
   badge: string
   badgeVariant: 'green' | 'amber' | 'purple' | 'olive' | 'cyan'
-  iconVariant: 'green' | 'amber' | 'purple' | 'olive' | 'cyan'
-  icon: 'server' | 'player' | 'compare' | 'dashboard' | 'stats'
   requiresAuth?: boolean
 }
 
@@ -50,8 +48,6 @@ interface FlatResultItem {
   subtitleHtml?: string
   badge?: string
   badgeVariant?: 'live' | 'active' | 'idle' | 'time' | 'green' | 'amber' | 'purple' | 'olive' | 'gold' | 'cyan' | 'muted'
-  iconVariant?: 'player' | 'server' | 'green' | 'amber' | 'purple' | 'olive' | 'gold' | 'cyan'
-  icon?: string
   flag?: string
   to: RouteLocationRaw
   raw?: any
@@ -88,8 +84,6 @@ const navShortcuts: NavShortcut[] = [
     path: '/v4/servers/bf1942',
     badge: 'LIVE SERVERS',
     badgeVariant: 'green',
-    iconVariant: 'green',
-    icon: 'server',
   },
   {
     id: 'nav-players',
@@ -98,8 +92,6 @@ const navShortcuts: NavShortcut[] = [
     path: '/v4/leaderboard',
     badge: 'LEADERBOARDS',
     badgeVariant: 'amber',
-    iconVariant: 'amber',
-    icon: 'player',
   },
   {
     id: 'nav-compare',
@@ -108,8 +100,6 @@ const navShortcuts: NavShortcut[] = [
     path: '/v4/players/compare',
     badge: 'ANALYTICS',
     badgeVariant: 'purple',
-    iconVariant: 'purple',
-    icon: 'compare',
   },
   {
     id: 'nav-dashboard',
@@ -118,8 +108,6 @@ const navShortcuts: NavShortcut[] = [
     path: '/v4/dashboard',
     badge: 'MY PROFILE',
     badgeVariant: 'olive',
-    iconVariant: 'olive',
-    icon: 'dashboard',
     requiresAuth: true,
   },
   {
@@ -129,8 +117,6 @@ const navShortcuts: NavShortcut[] = [
     path: '/system-stats',
     badge: 'TELEMETRY',
     badgeVariant: 'cyan',
-    iconVariant: 'cyan',
-    icon: 'stats',
   },
 ]
 
@@ -177,7 +163,6 @@ const flatResults = computed<FlatResultItem[]>(() => {
       subtitleHtml,
       badge,
       badgeVariant,
-      iconVariant: 'player',
       to: { name: 'v4-player-details', params: { playerName: p.playerName } },
       raw: p,
     })
@@ -212,7 +197,6 @@ const flatResults = computed<FlatResultItem[]>(() => {
       subtitleHtml,
       badge,
       badgeVariant,
-      iconVariant: 'server',
       flag,
       to: { name: 'v4-server-details', params: { serverName: s.serverName } },
       raw: s,
@@ -228,8 +212,6 @@ const flatResults = computed<FlatResultItem[]>(() => {
       subtitle: nav.subtitle,
       badge: nav.badge,
       badgeVariant: nav.badgeVariant,
-      iconVariant: nav.iconVariant,
-      icon: nav.icon,
       to: nav.path,
       raw: nav,
     })
@@ -487,12 +469,6 @@ const handleBackdropClick = (e: MouseEvent) => {
                 @click.prevent="navigateTo(item)"
                 @mouseenter="selectedIndex = flatResults.indexOf(item)"
               >
-                <div class="mm-omni-item__icon-wrap mm-omni-item__icon-wrap--amber">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                </div>
                 <div class="mm-omni-item__content">
                   <div class="mm-omni-item__title-row">
                     <span class="mm-omni-item__title">{{ item.title }}</span>
@@ -530,14 +506,6 @@ const handleBackdropClick = (e: MouseEvent) => {
                 @click.prevent="navigateTo(item)"
                 @mouseenter="selectedIndex = flatResults.indexOf(item)"
               >
-                <div class="mm-omni-item__icon-wrap mm-omni-item__icon-wrap--green">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-                    <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-                    <line x1="6" y1="6" x2="6.01" y2="6" />
-                    <line x1="6" y1="18" x2="6.01" y2="18" />
-                  </svg>
-                </div>
                 <div class="mm-omni-item__content">
                   <div class="mm-omni-item__title-row">
                     <span v-if="item.flag" class="mm-omni-flag">{{ item.flag }}</span>
@@ -574,42 +542,6 @@ const handleBackdropClick = (e: MouseEvent) => {
                 @click.prevent="navigateTo(item)"
                 @mouseenter="selectedIndex = flatResults.indexOf(item)"
               >
-                <!-- Color-Coded Category Icons -->
-                <div class="mm-omni-item__icon-wrap" :class="`mm-omni-item__icon-wrap--${item.iconVariant}`">
-                  <!-- Live Servers -->
-                  <svg v-if="item.icon === 'server'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-                    <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-                    <line x1="6" y1="6" x2="6.01" y2="6" />
-                    <line x1="6" y1="18" x2="6.01" y2="18" />
-                  </svg>
-
-                  <!-- Players -->
-                  <svg v-else-if="item.icon === 'player'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
-
-                  <!-- Compare -->
-                  <svg v-else-if="item.icon === 'compare'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="20" x2="18" y2="10" />
-                    <line x1="12" y1="20" x2="12" y2="4" />
-                    <line x1="6" y1="20" x2="6" y2="14" />
-                  </svg>
-
-                  <!-- Dashboard -->
-                  <svg v-else-if="item.icon === 'dashboard'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                  </svg>
-
-                  <!-- System Stats -->
-                  <svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                  </svg>
-                </div>
-
                 <div class="mm-omni-item__content">
                   <div class="mm-omni-item__title-row">
                     <span class="mm-omni-item__title mm-omni-item__title--nav">{{ item.title }}</span>
@@ -836,56 +768,6 @@ const handleBackdropClick = (e: MouseEvent) => {
 .mm-omni-item.is-selected .mm-omni-item__arrow {
   opacity: 1;
   transform: translateX(0);
-}
-
-/* Category Icon Boxes */
-.mm-omni-item__icon-wrap {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.mm-omni-item__icon-wrap--player,
-.mm-omni-item__icon-wrap--amber {
-  background: rgba(212, 163, 89, 0.14);
-  border-color: rgba(212, 163, 89, 0.3);
-  color: #e5b369;
-}
-
-.mm-omni-item__icon-wrap--server,
-.mm-omni-item__icon-wrap--green {
-  background: rgba(125, 163, 76, 0.14);
-  border-color: rgba(125, 163, 76, 0.3);
-  color: #8db55c;
-}
-
-.mm-omni-item__icon-wrap--purple {
-  background: rgba(142, 151, 198, 0.14);
-  border-color: rgba(142, 151, 198, 0.3);
-  color: #a3abdc;
-}
-
-.mm-omni-item__icon-wrap--olive {
-  background: rgba(139, 153, 82, 0.16);
-  border-color: rgba(139, 153, 82, 0.35);
-  color: #a6b567;
-}
-
-.mm-omni-item__icon-wrap--gold {
-  background: rgba(229, 169, 60, 0.14);
-  border-color: rgba(229, 169, 60, 0.3);
-  color: #f0b74b;
-}
-
-.mm-omni-item__icon-wrap--cyan {
-  background: rgba(91, 184, 186, 0.14);
-  border-color: rgba(91, 184, 186, 0.3);
-  color: #6ec7c9;
 }
 
 /* Content block */
