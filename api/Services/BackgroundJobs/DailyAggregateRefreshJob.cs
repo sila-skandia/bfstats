@@ -696,33 +696,29 @@ public class DailyAggregateRefreshJob(
     }
 
     /// <summary>
-    /// Refreshes Neo4j player relationships by syncing co-play sessions from the last 7 days.
-    /// Uses incremental upsert pattern to add new relationships and update existing ones.
+    /// Refreshes Neo4j player relationships by processing every completed round/session
+    /// that has never been synced (watermark-driven — see Round.SyncedToNeo4jAt /
+    /// PlayerSession.SyncedToNeo4jAt). Safe to run daily indefinitely: once caught up,
+    /// each pass finds nothing pending and is a no-op.
     /// </summary>
     private async Task<int> RefreshNeo4jRelationshipsAsync(IServiceScope scope, CancellationToken ct)
     {
         try
         {
             var relationshipEtl = scope.ServiceProvider.GetRequiredService<PlayerRelationshipEtlService>();
-            
-            // Sync last 7 days of data daily (catches new rounds + late arrivals)
-            var toTime = DateTime.UtcNow;
-            var fromTime = toTime.AddDays(-7);
-            
-            logger.LogInformation("Syncing Neo4j relationships from {FromTime} to {ToTime}", fromTime, toTime);
-            
+
             // Sync player co-play relationships
-            var result = await relationshipEtl.SyncRelationshipsAsync(fromTime, toTime, ct);
-            
+            var result = await relationshipEtl.SyncPendingRelationshipsAsync(cancellationToken: ct);
+
             // Also sync player-server relationships
-            await relationshipEtl.SyncPlayerServerRelationshipsAsync(fromTime, toTime, ct);
-            
+            await relationshipEtl.SyncPlayerServerRelationshipsAsync(cancellationToken: ct);
+
             logger.LogInformation(
                 "Neo4j sync completed: {RelationshipsProcessed} relationships from {RoundsProcessed} rounds in {Duration}s",
                 result.RelationshipsProcessed,
                 result.RoundsProcessed,
                 result.Duration.TotalSeconds);
-            
+
             return result.RelationshipsProcessed;
         }
         catch (Exception ex)
