@@ -18,7 +18,6 @@ import {
   DEFAULT_PINNED,
   DEFAULT_SORT,
   formatColFilterLabel,
-  formatColFilterValue,
   friendlyCountry,
   getAveragePing,
   getCellValue,
@@ -155,11 +154,25 @@ const resetAll = () => {
   void router.replace({ query: {} })
 }
 
+const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
+let narrowMql: MediaQueryList | null = null
+const onNarrowChange = (e: MediaQueryListEvent) => { isNarrow.value = e.matches }
+
 // Active & visible columns computation (pinned placed first)
 const visibleOrderedCols = computed(() => order.value.filter(k => !hidden.value.has(k)))
 const pinnedCols = computed(() => visibleOrderedCols.value.filter(k => pinned.value.includes(k)))
 const unpinnedCols = computed(() => visibleOrderedCols.value.filter(k => !pinned.value.includes(k)))
-const displayCols = computed(() => [...pinnedCols.value, ...unpinnedCols.value])
+const displayCols = computed(() => {
+  const cols = [...pinnedCols.value, ...unpinnedCols.value]
+  if (!isNarrow.value) return cols
+  const rest = cols.filter(k => k !== 'rank' && k !== 'action')
+  return cols.includes('action') ? [...rest, 'action'] : rest
+})
+
+const colWidth = (key: string) => {
+  if (isNarrow.value && key === 'action') return 52
+  return widths.value[key] || 80
+}
 
 const pinnedOffsets = computed(() => {
   let acc = 0
@@ -208,11 +221,8 @@ const copyToast = ref('')
 const shortcutsOpen = ref(false)
 const isFullscreen = ref(false)
 const selectedGuids = ref<Set<string>>(new Set())
-const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
 let copyToastTimer: number | undefined
-let narrowMql: MediaQueryList | null = null
 
-const onNarrowChange = (e: MediaQueryListEvent) => { isNarrow.value = e.matches }
 const colIsPinned = (key: string) => !isNarrow.value && pinned.value.includes(key)
 
 const groupedPanelColumns = computed(() => {
@@ -745,14 +755,6 @@ const sortedServers = computed(() => {
   })
 })
 
-const MOBILE_FILTER_PILLS = [
-  { key: 'map', label: 'Map' },
-  { key: 'players', label: 'Players' },
-  { key: 'region', label: 'Country' },
-] as const
-
-const pillSummary = (key: string) => formatColFilterValue(key, colFilters.value[key] || '') || 'All'
-
 const clearAllColFilters = () => {
   colFilters.value = {}
 }
@@ -917,8 +919,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
             >×</button>
           </label>
 
-          <!-- Preset Filter -->
-          <div class="lb-control-group">
+          <div class="lb-control-group lb-desktop-only">
             <span class="lb-slicer-label">Filter</span>
             <select v-model="filterPreset" class="lb-select">
               <option value="all">All Servers ({{ servers.length }})</option>
@@ -929,7 +930,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
 
           <button
             type="button"
-            class="lb-btn lb-desktop-only"
+            class="lb-btn"
             :class="{ 'lb-btn--active': filtersOpen || Object.values(colFilters).some(v => v.trim()) }"
             data-testid="landing-filters-open"
             title="Column filters"
@@ -1074,29 +1075,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
       </div>
     </div>
 
-    <div class="lbm-filter-strip lbm-scroll lb-mobile-only">
-      <button
-        v-for="pill in MOBILE_FILTER_PILLS"
-        :key="pill.key"
-        type="button"
-        class="lbm-filter-pill"
-        :class="{ 'lbm-filter-pill--active': hasActiveColFilter(pill.key) }"
-        :data-testid="`landing-filter-pill-${pill.key}`"
-        @click="openFilters(pill.key)"
-      >
-        <span class="lbm-pill-label">{{ pill.label }}</span> {{ pillSummary(pill.key) }}
-      </button>
-      <button
-        type="button"
-        class="lbm-filter-pill lbm-filter-pill--round"
-        :class="{ 'lbm-filter-pill--active': Object.values(colFilters).some(v => v.trim()) }"
-        data-testid="landing-filters-pill"
-        @click="openFilters()"
-      >
-        <i class="pi pi-sliders-h"></i> Filters
-      </button>
-    </div>
-
     <LandingColumnFilterPanel
       :open="filtersOpen"
       :column-key="filterColKey"
@@ -1154,9 +1132,9 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                   v-for="key in displayCols"
                   :key="key"
                   :style="{
-                    width: `${widths[key] || 80}px`,
-                    minWidth: `${widths[key] || 80}px`,
-                    maxWidth: `${widths[key] || 80}px`,
+                    width: `${colWidth(key)}px`,
+                    minWidth: `${colWidth(key)}px`,
+                    maxWidth: `${colWidth(key)}px`,
                     left: colIsPinned(key) ? `${pinnedOffsets.offsets[key]}px` : undefined,
                     zIndex: colIsPinned(key) ? 6 : 4
                   }"
@@ -1178,7 +1156,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                   <div class="lb-th-inner">
                     <div class="lb-th-label-group">
                       <i v-if="colIsPinned(key)" class="pi pi-lock lb-pin-icon" title="Pinned column"></i>
-                      <span class="lb-th-text">{{ getCol(key)?.label }}</span>
+                      <span class="lb-th-text">{{ isNarrow && key === 'action' ? '' : getCol(key)?.label }}</span>
                       <span v-if="sort.find(s => s.key === key)" class="lb-sort-arrow">
                         {{ sort.find(s => s.key === key)?.dir === 'desc' ? '↓' : '↑' }}
                         <sup v-if="sort.length > 1" class="lb-sort-idx">
@@ -1194,7 +1172,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                     </div>
 
                     <!-- Header Context Menu Trigger -->
-                    <div class="lb-th-actions" data-lbmenu="m">
+                    <div v-if="!(isNarrow && key === 'action')" class="lb-th-actions" data-lbmenu="m">
                       <button
                         class="lb-th-menu-btn"
                         title="Column options"
@@ -1245,9 +1223,9 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                     v-for="k in displayCols"
                     :key="k"
                     :style="{
-                      width: `${widths[k] || 80}px`,
-                      minWidth: `${widths[k] || 80}px`,
-                      maxWidth: `${widths[k] || 80}px`,
+                      width: `${colWidth(k)}px`,
+                      minWidth: `${colWidth(k)}px`,
+                      maxWidth: `${colWidth(k)}px`,
                       left: colIsPinned(k) ? `${pinnedOffsets.offsets[k]}px` : undefined,
                       zIndex: k === 'action' ? (colIsPinned(k) ? 3 : 2) : (colIsPinned(k) ? 2 : 1)
                     }"
@@ -1264,6 +1242,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                       <div class="lb-rank-cell">
                         <i
                           class="pi lb-expand-chevron"
+                          data-testid="roster-expand"
                           :class="expandedGuids.has(s.guid) ? 'pi-chevron-down' : 'pi-chevron-right'"
                           :title="expandedGuids.has(s.guid) ? 'Collapse roster' : 'Expand roster ladder'"
                         ></i>
@@ -1288,6 +1267,21 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                     <!-- Server Name Cell -->
                     <template v-else-if="k === 'name'">
                       <div class="lb-name-cell">
+                        <button
+                          v-if="isNarrow"
+                          type="button"
+                          class="lb-expand-hit"
+                          data-testid="roster-expand"
+                          :aria-expanded="expandedGuids.has(s.guid)"
+                          :aria-label="expandedGuids.has(s.guid) ? 'Collapse roster' : 'Expand roster'"
+                          @click.stop="toggleRowExpand(s.guid)"
+                        >
+                          <i
+                            class="pi lb-expand-chevron"
+                            :class="expandedGuids.has(s.guid) ? 'pi-chevron-down' : 'pi-chevron-right'"
+                          ></i>
+                        </button>
+                        <div class="lb-name-cell__body">
                         <div class="lb-server-cell">
                           <span v-if="(s.numPlayers || 0) > 0" class="lb-online-dot" title="Populated and active"></span>
                           <span v-else class="lb-standby-dot" title="Standby host"></span>
@@ -1307,6 +1301,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                           <span>{{ s.ip }}:{{ s.port }}</span>
                           <template v-if="s.country"> · <span class="lb-flag" :title="friendlyCountry(s.country)">{{ countryCodeToFlag(s.country) }}</span> {{ friendlyCountry(s.country) }}</template>
                           <template v-if="s.mapName"> · {{ s.mapName }}</template>
+                        </div>
                         </div>
                       </div>
                     </template>
@@ -1933,60 +1928,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
   display: none;
 }
 
-.lbm-scroll {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.lbm-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.lbm-filter-strip {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 10px 0 2px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.lbm-filter-pill {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mm-font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 8px 11px;
-  min-height: 40px;
-  border: 1px solid var(--mm-rule-strong);
-  border-radius: 2px;
-  background: transparent;
-  color: var(--mm-ink);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.lbm-filter-pill:hover {
-  border-color: var(--mm-accent-soft);
-}
-
-.lbm-filter-pill--active {
-  border-color: var(--mm-accent);
-  color: var(--mm-ink);
-}
-
-.lbm-filter-pill--round {
-  border-radius: 999px;
-  color: var(--mm-ink-muted);
-}
-
-.lbm-pill-label {
-  color: var(--mm-ink-muted);
-}
-
 .lbm-summary-bar {
   display: flex;
   align-items: baseline;
@@ -2328,9 +2269,33 @@ td {
 
 .lb-name-cell {
   display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lb-name-cell__body {
+  display: flex;
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+  flex: 1;
+}
+
+.lb-expand-hit {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mm-ink-muted);
+  cursor: pointer;
 }
 
 .lb-server-cell {
@@ -2597,8 +2562,15 @@ td {
     display: none !important;
   }
 
-  .lbm-filter-strip.lb-mobile-only {
-    display: flex;
+  .lb-toolbar {
+    padding: 8px 10px;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .lb-search-wrap {
+    flex: 1 1 auto;
+    max-width: none;
   }
 
   .lb-scroll-pane {
@@ -2684,9 +2656,12 @@ td {
 
 @media (max-width: 720px) {
   .lb-inline-roster {
+    position: sticky;
+    left: 0;
     width: 100cqi;
     min-width: 0;
     max-width: 100cqi;
+    z-index: 1;
     padding: 10px 10px 14px;
   }
 
