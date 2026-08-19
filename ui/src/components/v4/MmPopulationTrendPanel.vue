@@ -97,10 +97,28 @@ onMounted(async () => {
   await loadNetwork()
 })
 
+watch(() => props.serverGuid, async (guid) => {
+  if (!guid) return
+  loading.value = true
+  error.value = null
+  try {
+    await loadServer(guid)
+  } catch {
+    error.value = 'Trend feed temporarily unavailable.'
+  } finally {
+    loading.value = false
+  }
+})
+
 watch(selectedGuids, async (guids) => {
   const missing = guids.filter(g => !seriesCache.value[g]).slice(0, 8)
   if (missing.length === 0) return
-  await Promise.all(missing.map(loadServer))
+  loading.value = true
+  try {
+    await Promise.all(missing.map(loadServer))
+  } finally {
+    loading.value = false
+  }
 })
 
 const overlayKeys = computed(() =>
@@ -160,7 +178,8 @@ const chartSeries = computed((): TrendChartSeries[] => {
 
 const insights = computed(() => trendInsights(chartSeries.value[0]?.values ?? []))
 
-watch(insights, (ins) => {
+watch([insights, loading], ([ins, isLoading]) => {
+  if (isLoading || (chartSeries.value[0]?.values.length ?? 0) === 0) return
   emit('summary', { peak: ins.peak, avg: ins.avg })
 }, { immediate: true })
 
@@ -250,26 +269,59 @@ const empty = computed(() =>
       </div>
     </div>
 
-    <div class="tc-insights">
+    <div class="tc-insights" :aria-busy="loading">
       <div class="tc-insight">
         <span class="tc-insight__k">Peak</span>
-        <span class="tc-insight__v mm-num--load-full">{{ Math.round(insights.peak).toLocaleString() }}</span>
-        <span class="tc-insight__s">{{ builtPrimary.tsLabel(insights.peakIndex) }}</span>
+        <template v-if="loading">
+          <div class="mm-skeleton mm-pop-trend__skel-val" />
+          <div class="mm-skeleton mm-pop-trend__skel-sub" />
+        </template>
+        <template v-else>
+          <span class="tc-insight__v mm-num--load-full">{{ Math.round(insights.peak).toLocaleString() }}</span>
+          <span class="tc-insight__s">{{ builtPrimary.tsLabel(insights.peakIndex) }}</span>
+        </template>
       </div>
       <div class="tc-insight">
         <span class="tc-insight__k">Average</span>
-        <span class="tc-insight__v">{{ Math.round(insights.avg).toLocaleString() }}</span>
-        <span class="tc-insight__s">this period</span>
+        <template v-if="loading">
+          <div class="mm-skeleton mm-pop-trend__skel-val" />
+          <div class="mm-skeleton mm-pop-trend__skel-sub" />
+        </template>
+        <template v-else>
+          <span class="tc-insight__v">{{ Math.round(insights.avg).toLocaleString() }}</span>
+          <span class="tc-insight__s">this period</span>
+        </template>
       </div>
       <div class="tc-insight">
         <span class="tc-insight__k">Trend</span>
-        <span class="tc-insight__v" :class="trendClass">{{ trendLabel }}</span>
-        <span class="tc-insight__s">vs previous</span>
+        <template v-if="loading">
+          <div class="mm-skeleton mm-pop-trend__skel-val" />
+          <div class="mm-skeleton mm-pop-trend__skel-sub" />
+        </template>
+        <template v-else>
+          <span class="tc-insight__v" :class="trendClass">{{ trendLabel }}</span>
+          <span class="tc-insight__s">vs previous</span>
+        </template>
       </div>
     </div>
 
-    <div v-if="loading" class="mm-pop-trend__skel">
-      <div class="mm-skeleton" style="height: 240px" />
+    <div v-if="loading" class="mm-pop-trend__skel" aria-label="Loading occupancy trend" aria-busy="true">
+      <div class="mm-pop-trend__skel-box">
+        <div class="mm-pop-trend__skel-grid">
+          <div class="mm-pop-trend__skel-line" />
+          <div class="mm-pop-trend__skel-line" />
+          <div class="mm-pop-trend__skel-line" />
+          <div class="mm-pop-trend__skel-line" />
+        </div>
+        <div class="mm-pop-trend__skel-shimmer" />
+        <div class="mm-pop-trend__skel-badge">
+          <span class="mm-pop-trend__skel-dot" />
+          <span>Loading occupancy trend…</span>
+        </div>
+      </div>
+      <div class="mm-pop-trend__skel-ticks">
+        <div v-for="i in 5" :key="i" class="mm-skeleton mm-pop-trend__skel-tick" />
+      </div>
     </div>
     <div v-else-if="error" class="mm-empty" style="border: 0">{{ error }}</div>
     <div v-else-if="empty" class="mm-empty" style="border: 0">No occupancy history for this window yet.</div>
@@ -435,9 +487,132 @@ const empty = computed(() =>
   color: var(--mm-ink-faint);
   margin-top: 8px;
 }
-.mm-pop-trend__skel { margin: 18px 0; }
+.mm-pop-trend__skel-val {
+  height: 22px;
+  width: 68px;
+  margin: 4px 0 3px;
+  border-radius: 2px;
+}
+.mm-pop-trend__skel-sub {
+  height: 11px;
+  width: 52px;
+  border-radius: 2px;
+}
+.mm-pop-trend__skel {
+  margin: 18px 0;
+}
+.mm-pop-trend__skel-box {
+  width: 100%;
+  height: 240px;
+  background: var(--mm-bg);
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mm-pop-trend__skel-grid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px 16px;
+  pointer-events: none;
+}
+.mm-pop-trend__skel-line {
+  width: 100%;
+  height: 1px;
+  background: var(--mm-rule);
+  opacity: 0.7;
+}
+.mm-pop-trend__skel-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--mm-accent) 9%, transparent) 50%, transparent 100%);
+  animation: mm-pop-shimmer 2s ease-in-out infinite;
+  pointer-events: none;
+}
+.mm-pop-trend__skel-badge {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--mm-bg) 85%, transparent);
+  border: 1px solid var(--mm-rule-strong);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.mm-pop-trend__skel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mm-accent);
+  box-shadow: 0 0 8px var(--mm-accent);
+  animation: mm-pulse 1.2s ease-in-out infinite;
+}
+.mm-pop-trend__skel-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 0 8px;
+}
+.mm-pop-trend__skel-tick {
+  height: 9px;
+  width: 46px;
+  border-radius: 2px;
+}
+@keyframes mm-pop-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes mm-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+@media (min-width: 721px) {
+  .mm-pop-trend__skel-box { height: 360px; }
+}
 @media (max-width: 720px) {
-  .tc-insights { grid-template-columns: 1fr; }
-  .tc-tab, .tc-chip { min-height: 44px; }
+  .tc-insights {
+    grid-template-columns: repeat(3, 1fr);
+    margin: 14px 0 12px;
+  }
+  .tc-insight {
+    padding: 8px 8px;
+    gap: 2px;
+  }
+  .tc-insight__v {
+    font-size: 17px;
+  }
+  .tc-insight__s {
+    font-size: 8.5px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mm-pop-trend__skel-val {
+    height: 18px;
+    width: 48px;
+  }
+  .mm-pop-trend__skel-sub {
+    height: 9px;
+    width: 36px;
+  }
+  .mm-pop-trend__skel-tick:nth-child(even) {
+    display: none;
+  }
+  .tc-tab, .tc-chip { min-height: 38px; }
 }
 </style>

@@ -625,34 +625,36 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   </div>
 
   <Teleport to="body">
-    <div
-      v-if="trendOpen"
-      class="mm mm-pop-drawer"
-      data-testid="population-trend-drawer"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Network player trend"
-    >
-      <div class="mm-pop-drawer__back" @click="closeTrend" />
-      <aside class="mm-pop-drawer__panel">
-        <div class="mm-pop-drawer__head">
-          <div>
-            <span class="mm-eyebrow">Network trend</span>
-            <div class="mm-pop-drawer__title">Players online</div>
+    <Transition name="mm-pop-drawer">
+      <div
+        v-if="trendOpen"
+        class="mm mm-pop-drawer"
+        data-testid="population-trend-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Network player trend"
+      >
+        <div class="mm-pop-drawer__back" @click="closeTrend" />
+        <aside class="mm-pop-drawer__panel">
+          <div class="mm-pop-drawer__head">
+            <div>
+              <span class="mm-eyebrow">Network trend</span>
+              <div class="mm-pop-drawer__title">Players online</div>
+            </div>
+            <button type="button" class="mm-pop-drawer__close" aria-label="Close" @click="closeTrend">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
           </div>
-          <button type="button" class="mm-pop-drawer__close" aria-label="Close" @click="closeTrend">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </div>
-        <MmPopulationTrendPanel
-          show-picker
-          :servers="pickerServers"
-          game="bf1942"
-        />
-      </aside>
-    </div>
+          <MmPopulationTrendPanel
+            show-picker
+            :servers="pickerServers"
+            game="bf1942"
+          />
+        </aside>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -1329,6 +1331,34 @@ const isInitialLoad = computed(() => loading.value && servers.value.length === 0
   .mm-pop-drawer__close {
     width: 44px;
     height: 44px;
+  }
+}
+
+/* Drawer Transitions */
+.mm-pop-drawer-enter-active,
+.mm-pop-drawer-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.mm-pop-drawer-enter-active .mm-pop-drawer__panel,
+.mm-pop-drawer-leave-active .mm-pop-drawer__panel {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mm-pop-drawer-enter-from,
+.mm-pop-drawer-leave-to {
+  opacity: 0;
+}
+
+.mm-pop-drawer-enter-from .mm-pop-drawer__panel,
+.mm-pop-drawer-leave-to .mm-pop-drawer__panel {
+  transform: translateX(100%);
+}
+
+@media (max-width: 720px) {
+  .mm-pop-drawer-enter-from .mm-pop-drawer__panel,
+  .mm-pop-drawer-leave-to .mm-pop-drawer__panel {
+    transform: translateY(100%);
   }
 }
 </style>
