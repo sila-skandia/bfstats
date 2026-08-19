@@ -353,7 +353,11 @@ spec:
               cpu: "500m"
             limits:
               memory: "2Gi"
-              cpu: "1000m"
+              # Temporarily raised 1000m -> 3000m for the co-rounds backfill — it was
+              # pinned at its old limit (100% CPU) while the node overall sat at 34%.
+              # CPU is compressible (throttles, doesn't OOM), and node has 4 cores total.
+              # Revert to 1000m once the backfill is confirmed complete.
+              cpu: "3000m"
       volumes:
         - name: neo4j-data
           persistentVolumeClaim:
