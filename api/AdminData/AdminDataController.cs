@@ -5,6 +5,8 @@ using api.PlayerTracking;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace api.AdminData;
 
@@ -15,7 +17,8 @@ public class AdminDataController(
     IAdminDataService adminDataService,
     IServerMergeService serverMergeService,
     PlayerTrackerDbContext dbContext,
-    api.Services.IAggregateConcurrencyService concurrency,
+    IServiceScopeFactory scopeFactory,
+    ILogger<AdminDataController> logger,
     PlayerRelationshipEtlService? relationshipEtlService = null,
     Neo4jMigrationService? neo4jMigrationService = null) : ControllerBase
 {
@@ -310,50 +313,52 @@ public class AdminDataController(
     /// </summary>
     [HttpPost("neo4j/sync")]
     [Authorize(Policy = "Admin")]
-    public async Task<ActionResult<Neo4jSyncResponse>> SyncPlayerRelationships(CancellationToken ct)
+    public ActionResult SyncPlayerRelationships([FromQuery] DateTime? fromDate = null)
     {
         if (relationshipEtlService == null)
         {
-            return BadRequest(new Neo4jSyncResponse
-            {
-                Success = false,
-                ErrorMessage = "Neo4j integration is not enabled. Configure Neo4j settings in appsettings.json."
-            });
+            return BadRequest(new { error = "Neo4j integration is not enabled. Configure Neo4j settings in appsettings.json." });
         }
 
-        try
+        // Fire-and-forget: this used to await inline, but a full sync/resume can take
+        // hours, and awaiting inline ties the work to the HTTP request's
+        // CancellationToken (ASP.NET Core binds it to RequestAborted) — a proxy or
+        // browser timeout would silently cancel the sync mid-run. Matches the backfill
+        // endpoint's pattern.
+        _ = Task.Run(async () =>
         {
+            using var scope = scopeFactory.CreateScope();
+            var relationshipEtl = scope.ServiceProvider.GetRequiredService<PlayerRelationshipEtlService>();
+            var scopedConcurrency = scope.ServiceProvider.GetRequiredService<api.Services.IAggregateConcurrencyService>();
             // Suppress EF Core SQL statement logging for the duration of the sync — this
             // walks every pending round/session and is extremely noisy at the default
             // Information level otherwise. Matches the daily background job's convention.
             using var bulkScope = api.Telemetry.BulkOperationContext.Begin();
+            try
+            {
+                // Serialized against the daily job and the backfill endpoint — two of
+                // these running at once race on the SyncedToNeo4jAt watermark and
+                // collide on the same Neo4j node locks (Forseti deadlock).
+                var result = await scopedConcurrency.ExecuteWithNeo4jRelationshipSyncLockAsync(async lockCt =>
+                {
+                    var syncResult = await relationshipEtl.SyncPendingRelationshipsAsync(fromDate: fromDate, cancellationToken: lockCt);
+                    await relationshipEtl.SyncPlayerServerRelationshipsAsync(fromDate: fromDate, cancellationToken: lockCt);
+                    return syncResult;
+                });
 
-            // Serialized against the daily job and the backfill endpoint — two of these
-            // running at once race on the SyncedToNeo4jAt watermark and collide on the
-            // same Neo4j node locks (Forseti deadlock).
-            var relationshipResult = await concurrency.ExecuteWithNeo4jRelationshipSyncLockAsync(async lockCt =>
+                logger.LogInformation(
+                    "Neo4j sync completed: {RoundsProcessed} rounds, {RelationshipsProcessed} relationships in {Duration}s",
+                    result.RoundsProcessed, result.RelationshipsProcessed, result.Duration.TotalSeconds);
+            }
+            catch (Exception ex)
             {
-                var result = await relationshipEtlService.SyncPendingRelationshipsAsync(cancellationToken: lockCt);
-                await relationshipEtlService.SyncPlayerServerRelationshipsAsync(cancellationToken: lockCt);
-                return result;
-            }, ct);
+                logger.LogError(ex, "Neo4j sync failed");
+            }
+        });
 
-            return Ok(new Neo4jSyncResponse
-            {
-                Success = true,
-                RelationshipsProcessed = relationshipResult.RelationshipsProcessed,
-                RoundsProcessed = relationshipResult.RoundsProcessed,
-                DurationMs = (int)relationshipResult.Duration.TotalMilliseconds
-            });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new Neo4jSyncResponse
-            {
-                Success = false,
-                ErrorMessage = $"Sync failed: {ex.Message}"
-            });
-        }
+        return Accepted(new { message = fromDate is { } d
+            ? $"Neo4j sync started in background for rounds/sessions from {d:yyyy-MM-dd} onward. Check logs for progress."
+            : "Neo4j sync started in background for all pending rounds/sessions. Check logs for progress." });
     }
 
     /// <summary>
@@ -394,12 +399,3 @@ public record AuditLogEntry(
     string AdminEmail,
     NodaTime.Instant Timestamp
 );
-
-public class Neo4jSyncResponse
-{
-    public bool Success { get; set; }
-    public int RelationshipsProcessed { get; set; }
-    public int RoundsProcessed { get; set; }
-    public int DurationMs { get; set; }
-    public string? ErrorMessage { get; set; }
-}
