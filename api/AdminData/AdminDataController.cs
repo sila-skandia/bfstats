@@ -301,13 +301,15 @@ public class AdminDataController(
     }
 
     /// <summary>
-    /// Sync player relationships to Neo4j for the last N days.
-    /// This detects co-play sessions and updates the graph database.
+    /// Sync any completed rounds/sessions that have never been synced to Neo4j
+    /// (watermark-driven — see PlayerRelationshipEtlService.SyncPendingRelationshipsAsync).
+    /// Normally near-instant, since the daily job already keeps this drained; useful for
+    /// catching up on demand (e.g. right after enabling Neo4j, or after a
+    /// <see cref="ResetNeo4jSyncWatermark"/> call) without waiting for the next daily run.
     /// </summary>
     [HttpPost("neo4j/sync")]
     [Authorize(Policy = "Admin")]
-    public async Task<ActionResult<Neo4jSyncResponse>> SyncPlayerRelationships(
-        [FromBody] Neo4jSyncRequest? request)
+    public async Task<ActionResult<Neo4jSyncResponse>> SyncPlayerRelationships(CancellationToken ct)
     {
         if (relationshipEtlService == null)
         {
@@ -318,39 +320,22 @@ public class AdminDataController(
             });
         }
 
-        var days = request?.Days ?? 7;
-        if (days < 1 || days > 365)
-        {
-            return BadRequest(new Neo4jSyncResponse
-            {
-                Success = false,
-                ErrorMessage = "Days must be between 1 and 365"
-            });
-        }
-
-        var toTimestamp = DateTime.UtcNow;
-        var fromTimestamp = toTimestamp.AddDays(-days);
-
         try
         {
-            // Sync player-player relationships
-            var relationshipResult = await relationshipEtlService.SyncRelationshipsAsync(
-                fromTimestamp,
-                toTimestamp);
+            // Suppress EF Core SQL statement logging for the duration of the sync — this
+            // walks every pending round/session and is extremely noisy at the default
+            // Information level otherwise. Matches the daily background job's convention.
+            using var bulkScope = api.Telemetry.BulkOperationContext.Begin();
 
-            // Sync player-server relationships
-            await relationshipEtlService.SyncPlayerServerRelationshipsAsync(
-                fromTimestamp,
-                toTimestamp);
+            var relationshipResult = await relationshipEtlService.SyncPendingRelationshipsAsync(cancellationToken: ct);
+            await relationshipEtlService.SyncPlayerServerRelationshipsAsync(cancellationToken: ct);
 
             return Ok(new Neo4jSyncResponse
             {
                 Success = true,
                 RelationshipsProcessed = relationshipResult.RelationshipsProcessed,
                 RoundsProcessed = relationshipResult.RoundsProcessed,
-                DurationMs = (int)relationshipResult.Duration.TotalMilliseconds,
-                FromDate = fromTimestamp,
-                ToDate = toTimestamp
+                DurationMs = (int)relationshipResult.Duration.TotalMilliseconds
             });
         }
         catch (Exception ex)
@@ -361,6 +346,29 @@ public class AdminDataController(
                 ErrorMessage = $"Sync failed: {ex.Message}"
             });
         }
+    }
+
+    /// <summary>
+    /// Repair tool: clears Round.SyncedToNeo4jAt / PlayerSession.SyncedToNeo4jAt for
+    /// everything on or after <paramref name="fromDate"/>, so the next sync pass
+    /// reprocesses that range from scratch. Only meaningful immediately after the
+    /// corresponding PLAYED_WITH / PLAYS_ON data in Neo4j has been wiped — the write
+    /// side is additive, so resetting the watermark without first clearing Neo4j will
+    /// double-count. Does not itself trigger a sync; call POST neo4j/sync (or the
+    /// fire-and-forget admin/jobs/neo4j-relationships-backfill for a large range)
+    /// afterward.
+    /// </summary>
+    [HttpPost("neo4j/reset-sync-watermark")]
+    [Authorize(Policy = "Admin")]
+    public async Task<IActionResult> ResetNeo4jSyncWatermark([FromQuery] DateTime fromDate, CancellationToken ct)
+    {
+        if (relationshipEtlService == null)
+        {
+            return BadRequest(new { error = "Neo4j integration is not enabled. Configure Neo4j settings in appsettings.json." });
+        }
+
+        var (roundsReset, sessionsReset) = await relationshipEtlService.ResetNeo4jSyncWatermarkAsync(fromDate, ct);
+        return Ok(new { roundsReset, sessionsReset });
     }
 }
 
@@ -379,19 +387,11 @@ public record AuditLogEntry(
     NodaTime.Instant Timestamp
 );
 
-public class Neo4jSyncRequest
-{
-    /// <summary>Number of days to sync (default: 7, max: 365)</summary>
-    public int Days { get; set; } = 7;
-}
-
 public class Neo4jSyncResponse
 {
     public bool Success { get; set; }
     public int RelationshipsProcessed { get; set; }
     public int RoundsProcessed { get; set; }
     public int DurationMs { get; set; }
-    public DateTime? FromDate { get; set; }
-    public DateTime? ToDate { get; set; }
     public string? ErrorMessage { get; set; }
 }
