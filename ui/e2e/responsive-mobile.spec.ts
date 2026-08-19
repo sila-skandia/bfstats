@@ -244,7 +244,7 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
     expect(overlaps).toBe(false);
   });
 
-  test('expanded roster stays side by side and scrolls horizontally', async ({ page }) => {
+  test('expanded roster is condensed side by side and scrolls with the table', async ({ page }) => {
     const servers = [
       {
         guid: 'wake-1',
@@ -287,37 +287,38 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
     await expect(row).toBeVisible({ timeout: 15_000 });
     await row.locator('.lb-rank-cell').click();
 
+    const pane = page.getByTestId('landing-table-scroll');
     const roster = page.getByTestId('landing-roster-scroll');
-    await expect(roster).toBeVisible();
     const axis = page.getByTestId('roster-team-axis');
     const allies = page.getByTestId('roster-team-allies');
+    await expect(roster).toBeVisible();
     await expect(axis).toBeVisible();
     await expect(allies).toBeVisible();
     await expect(axis.getByRole('link', { name: 'AxisAce' })).toBeVisible();
+    await expect(allies.getByRole('link', { name: 'AlliedAce' })).toBeVisible();
 
     const axisBox = await axis.boundingBox();
     const alliesBox = await allies.boundingBox();
-    const rosterBox = await roster.boundingBox();
+    const paneBox = await pane.boundingBox();
     expect(axisBox).toBeTruthy();
     expect(alliesBox).toBeTruthy();
-    expect(rosterBox).toBeTruthy();
+    expect(paneBox).toBeTruthy();
     expect(Math.abs(axisBox!.y - alliesBox!.y)).toBeLessThan(12);
-    expect(axisBox!.width).toBeGreaterThanOrEqual(300);
-    expect(alliesBox!.width).toBeGreaterThanOrEqual(300);
-    expect(alliesBox!.x).toBeGreaterThan(axisBox!.x + 80);
+    expect(alliesBox!.x).toBeGreaterThan(axisBox!.x + 40);
+    expect(alliesBox!.x).toBeLessThan(paneBox!.x + paneBox!.width);
 
-    const metrics = await roster.evaluate((el) => ({
-      scrollWidth: el.scrollWidth,
-      clientWidth: el.clientWidth,
-    }));
-    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+    const nameBox = await axis.getByRole('link', { name: 'AxisAce' }).boundingBox();
+    const scoreBox = await axis.locator('.lb-score-val').boundingBox();
+    expect(nameBox).toBeTruthy();
+    expect(scoreBox).toBeTruthy();
+    expect(scoreBox!.y).toBeGreaterThan(nameBox!.y + nameBox!.height - 2);
 
-    const alliesXBefore = alliesBox!.x;
-    await roster.evaluate((el) => { el.scrollLeft = 220; });
-    const alliesAfter = await allies.boundingBox();
-    expect(alliesAfter).toBeTruthy();
-    expect(alliesAfter!.x).toBeLessThan(alliesXBefore - 80);
-    await expect(allies.getByRole('link', { name: 'AlliedAce' })).toBeVisible();
+    const rosterBefore = await roster.boundingBox();
+    expect(rosterBefore).toBeTruthy();
+    await pane.evaluate((el) => { el.scrollLeft = 200; });
+    const rosterAfter = await roster.boundingBox();
+    expect(rosterAfter).toBeTruthy();
+    expect(rosterAfter!.x).toBeLessThan(rosterBefore!.x - 80);
   });
 
   test('should open player details from omnisearch, not the landing page', async ({ page }) => {
