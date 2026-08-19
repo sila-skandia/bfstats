@@ -707,19 +707,24 @@ public class DailyAggregateRefreshJob(
         {
             var relationshipEtl = scope.ServiceProvider.GetRequiredService<PlayerRelationshipEtlService>();
 
-            // Sync player co-play relationships
-            var result = await relationshipEtl.SyncPendingRelationshipsAsync(cancellationToken: ct);
+            // Serialized against the admin-triggered sync/backfill endpoints — two of
+            // these running at once race on the SyncedToNeo4jAt watermark and collide on
+            // the same Neo4j node locks (Forseti deadlock).
+            var relationshipsProcessed = await concurrency.ExecuteWithNeo4jRelationshipSyncLockAsync(async lockCt =>
+            {
+                var result = await relationshipEtl.SyncPendingRelationshipsAsync(cancellationToken: lockCt);
+                await relationshipEtl.SyncPlayerServerRelationshipsAsync(cancellationToken: lockCt);
 
-            // Also sync player-server relationships
-            await relationshipEtl.SyncPlayerServerRelationshipsAsync(cancellationToken: ct);
+                logger.LogInformation(
+                    "Neo4j sync completed: {RelationshipsProcessed} relationships from {RoundsProcessed} rounds in {Duration}s",
+                    result.RelationshipsProcessed,
+                    result.RoundsProcessed,
+                    result.Duration.TotalSeconds);
 
-            logger.LogInformation(
-                "Neo4j sync completed: {RelationshipsProcessed} relationships from {RoundsProcessed} rounds in {Duration}s",
-                result.RelationshipsProcessed,
-                result.RoundsProcessed,
-                result.Duration.TotalSeconds);
+                return result.RelationshipsProcessed;
+            }, ct);
 
-            return result.RelationshipsProcessed;
+            return relationshipsProcessed;
         }
         catch (Exception ex)
         {

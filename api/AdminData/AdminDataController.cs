@@ -15,6 +15,7 @@ public class AdminDataController(
     IAdminDataService adminDataService,
     IServerMergeService serverMergeService,
     PlayerTrackerDbContext dbContext,
+    api.Services.IAggregateConcurrencyService concurrency,
     PlayerRelationshipEtlService? relationshipEtlService = null,
     Neo4jMigrationService? neo4jMigrationService = null) : ControllerBase
 {
@@ -327,8 +328,15 @@ public class AdminDataController(
             // Information level otherwise. Matches the daily background job's convention.
             using var bulkScope = api.Telemetry.BulkOperationContext.Begin();
 
-            var relationshipResult = await relationshipEtlService.SyncPendingRelationshipsAsync(cancellationToken: ct);
-            await relationshipEtlService.SyncPlayerServerRelationshipsAsync(cancellationToken: ct);
+            // Serialized against the daily job and the backfill endpoint — two of these
+            // running at once race on the SyncedToNeo4jAt watermark and collide on the
+            // same Neo4j node locks (Forseti deadlock).
+            var relationshipResult = await concurrency.ExecuteWithNeo4jRelationshipSyncLockAsync(async lockCt =>
+            {
+                var result = await relationshipEtlService.SyncPendingRelationshipsAsync(cancellationToken: lockCt);
+                await relationshipEtlService.SyncPlayerServerRelationshipsAsync(cancellationToken: lockCt);
+                return result;
+            }, ct);
 
             return Ok(new Neo4jSyncResponse
             {

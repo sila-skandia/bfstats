@@ -293,6 +293,7 @@ public class AdminJobsController(
         {
             using var scope = scopeFactory.CreateScope();
             var relationshipEtl = scope.ServiceProvider.GetRequiredService<api.PlayerRelationships.PlayerRelationshipEtlService>();
+            var concurrency = scope.ServiceProvider.GetRequiredService<api.Services.IAggregateConcurrencyService>();
             // Suppress EF Core SQL statement logging — this walks every pending round/
             // session and is extremely noisy at the default Information level otherwise.
             using var bulkScope = api.Telemetry.BulkOperationContext.Begin();
@@ -303,8 +304,15 @@ public class AdminJobsController(
                     "Neo4j relationships backfill: reset watermark for {RoundsReset} rounds, {SessionsReset} sessions; draining backlog",
                     roundsReset, sessionsReset);
 
-                var result = await relationshipEtl.SyncPendingRelationshipsAsync();
-                await relationshipEtl.SyncPlayerServerRelationshipsAsync();
+                // Serialized against the daily job and the plain "sync pending" endpoint
+                // — two of these running at once race on the SyncedToNeo4jAt watermark
+                // and collide on the same Neo4j node locks (Forseti deadlock).
+                var result = await concurrency.ExecuteWithNeo4jRelationshipSyncLockAsync(async lockCt =>
+                {
+                    var syncResult = await relationshipEtl.SyncPendingRelationshipsAsync(cancellationToken: lockCt);
+                    await relationshipEtl.SyncPlayerServerRelationshipsAsync(cancellationToken: lockCt);
+                    return syncResult;
+                });
 
                 logger.LogInformation(
                     "Neo4j relationships backfill completed: {RoundsProcessed} rounds, {RelationshipsProcessed} relationships in {Duration}s",
