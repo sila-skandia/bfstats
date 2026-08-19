@@ -61,6 +61,7 @@ export interface PlayerInfo {
   ping: number;
   team: number;
   teamLabel: string;
+  aiBot?: boolean;
 }
 
 export interface TeamInfo {
@@ -74,18 +75,41 @@ export interface ServerSummary {
   name: string;
   ip: string;
   port: number;
+  queryPort?: number;
+  password?: boolean;
+  gameVersion?: string;
+  gameMode?: string;
+  averageFps?: number;
+  contentCheck?: boolean;
+  dedicated?: number;
+  mapId?: string;
+  reservedSlots?: number;
+  roundTime?: number;
+  status?: number;
+  anticheat?: boolean;
+  unpureMods?: string;
   numPlayers: number;
   maxPlayers: number;
   mapName: string;
   gameType: string;
   joinLink: string;
+  joinLinkWeb?: string;
   roundTimeRemain: number;
   tickets1: number;
   tickets2: number;
   players: PlayerInfo[];
   teams: TeamInfo[];
   country?: string;
+  region?: string;
+  city?: string;
+  loc?: string;
   timezone?: string;
+  org?: string;
+  postal?: string;
+  geoLookupDate?: string;
+  isOnline?: boolean;
+  lastSeenTime?: string;
   discordUrl?: string;
   forumUrl?: string;
+  gameId?: string;
 }
