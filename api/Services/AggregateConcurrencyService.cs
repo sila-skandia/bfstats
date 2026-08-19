@@ -8,6 +8,7 @@ public sealed class AggregateConcurrencyService : IAggregateConcurrencyService, 
     private readonly SemaphoreSlim _playerAggregates = new(1, 1);
     private readonly SemaphoreSlim _serverMapStats = new(1, 1);
     private readonly SemaphoreSlim _serverPlayerRankings = new(1, 1);
+    private readonly SemaphoreSlim _neo4jRelationshipSync = new(1, 1);
 
     public async Task ExecuteWithPlayerAggregatesLockAsync(Func<CancellationToken, Task> work, CancellationToken ct = default)
     {
@@ -87,10 +88,37 @@ public sealed class AggregateConcurrencyService : IAggregateConcurrencyService, 
         }
     }
 
+    public async Task ExecuteWithNeo4jRelationshipSyncLockAsync(Func<CancellationToken, Task> work, CancellationToken ct = default)
+    {
+        await _neo4jRelationshipSync.WaitAsync(ct);
+        try
+        {
+            await work(ct);
+        }
+        finally
+        {
+            _neo4jRelationshipSync.Release();
+        }
+    }
+
+    public async Task<T> ExecuteWithNeo4jRelationshipSyncLockAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default)
+    {
+        await _neo4jRelationshipSync.WaitAsync(ct);
+        try
+        {
+            return await work(ct);
+        }
+        finally
+        {
+            _neo4jRelationshipSync.Release();
+        }
+    }
+
     public void Dispose()
     {
         _playerAggregates.Dispose();
         _serverMapStats.Dispose();
         _serverPlayerRankings.Dispose();
+        _neo4jRelationshipSync.Dispose();
     }
 }
