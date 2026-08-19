@@ -251,6 +251,7 @@ public class PlayerRelationshipEtlService(
     /// </summary>
     public async Task<SyncResult> SyncPendingRelationshipsAsync(
         int roundBatchSize = 2500,
+        DateTime? fromDate = null,
         CancellationToken cancellationToken = default)
     {
         var startTime = DateTime.UtcNow;
@@ -262,6 +263,7 @@ public class PlayerRelationshipEtlService(
         // fine, it's a progress indicator, not a completion gate.
         var totalPending = await dbContext.Rounds
             .Where(r => !r.IsDeleted && !r.IsActive && r.SyncedToNeo4jAt == null)
+            .Where(r => fromDate == null || r.StartTime >= fromDate)
             .CountAsync(cancellationToken);
 
         logger.LogInformation("Neo4j relationship sync: {TotalPending} rounds pending", totalPending);
@@ -280,6 +282,7 @@ public class PlayerRelationshipEtlService(
         {
             var roundBatch = await dbContext.Rounds
                 .Where(r => !r.IsDeleted && !r.IsActive && r.SyncedToNeo4jAt == null)
+                .Where(r => fromDate == null || r.StartTime >= fromDate)
                 .OrderBy(r => r.StartTime)
                 .Select(r => new { r.RoundId, r.StartTime, r.ServerGuid })
                 .Take(roundBatchSize)
@@ -387,12 +390,14 @@ public class PlayerRelationshipEtlService(
     /// </summary>
     public async Task SyncPlayerServerRelationshipsAsync(
         int sessionBatchSize = 5000,
+        DateTime? fromDate = null,
         CancellationToken cancellationToken = default)
     {
         var totalSynced = 0;
 
         var totalPending = await dbContext.PlayerSessions
             .Where(ps => !ps.IsDeleted && !ps.IsActive && ps.SyncedToNeo4jAt == null)
+            .Where(ps => fromDate == null || ps.LastSeenTime >= fromDate)
             .CountAsync(cancellationToken);
 
         logger.LogInformation("Neo4j player-server sync: {TotalPending} sessions pending", totalPending);
@@ -406,6 +411,7 @@ public class PlayerRelationshipEtlService(
         {
             var sessionBatch = await dbContext.PlayerSessions
                 .Where(ps => !ps.IsDeleted && !ps.IsActive && ps.SyncedToNeo4jAt == null)
+                .Where(ps => fromDate == null || ps.LastSeenTime >= fromDate)
                 .OrderBy(ps => ps.LastSeenTime)
                 .Select(ps => new
                 {
