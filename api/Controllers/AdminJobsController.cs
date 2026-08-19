@@ -293,6 +293,9 @@ public class AdminJobsController(
         {
             using var scope = scopeFactory.CreateScope();
             var relationshipEtl = scope.ServiceProvider.GetRequiredService<api.PlayerRelationships.PlayerRelationshipEtlService>();
+            // Suppress EF Core SQL statement logging — this walks every pending round/
+            // session and is extremely noisy at the default Information level otherwise.
+            using var bulkScope = api.Telemetry.BulkOperationContext.Begin();
             try
             {
                 var (roundsReset, sessionsReset) = await relationshipEtl.ResetNeo4jSyncWatermarkAsync(since);
