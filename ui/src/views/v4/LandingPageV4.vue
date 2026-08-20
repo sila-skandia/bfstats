@@ -460,13 +460,11 @@ watch([filterQuery, filterPreset, colFilters], () => {
 const expandedGuids = ref<Set<string>>(new Set())
 
 const toggleRowExpand = (guid: string) => {
-  const next = new Set(expandedGuids.value)
-  if (next.has(guid)) {
-    next.delete(guid)
-  } else {
-    next.add(guid)
+  if (expandedGuids.value.has(guid)) {
+    expandedGuids.value = new Set()
+    return
   }
-  expandedGuids.value = next
+  expandedGuids.value = new Set([guid])
 }
 
 // ============================================================================
