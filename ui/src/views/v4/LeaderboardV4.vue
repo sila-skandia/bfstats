@@ -6,6 +6,7 @@ import { fetchLeaderboard, fetchLeaderboardMaps, fetchLeaderboardPlayers, type L
 import { kdClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import { decodeServerName } from '@/utils/playerName'
+import MmStatColIcon from '@/components/v4/MmStatColIcon.vue'
 
 interface ColumnDef {
   key: string
@@ -1107,6 +1108,12 @@ const sortArrow = (key: string) => {
   return cur.dir === 'desc' ? ' ↓' : ' ↑'
 }
 
+const STAT_HEADER_ICONS: Partial<Record<string, 'kills' | 'deaths' | 'score'>> = {
+  kills: 'kills',
+  deaths: 'deaths',
+  score: 'score',
+}
+
 const applyPreset = (preset: string) => {
   switch (preset) {
     case 'default':
@@ -2056,9 +2063,15 @@ const applyPreset = (preset: string) => {
               <tr>
                 <th class="lbm-th lbm-th--player"># Player</th>
                 <th class="lbm-th lbm-th--stat" @click="toggleSort('kd')">K/D{{ sortArrow('kd') }}</th>
-                <th class="lbm-th lbm-th--stat" @click="toggleSort('kills')">Kills{{ sortArrow('kills') }}</th>
-                <th class="lbm-th lbm-th--stat" @click="toggleSort('deaths')">Deaths{{ sortArrow('deaths') }}</th>
-                <th class="lbm-th lbm-th--stat" @click="toggleSort('score')">Score{{ sortArrow('score') }}</th>
+                <th class="lbm-th lbm-th--stat" aria-label="Kills" @click="toggleSort('kills')">
+                  <MmStatColIcon name="kills" label="Kills" />{{ sortArrow('kills') }}
+                </th>
+                <th class="lbm-th lbm-th--stat" aria-label="Deaths" @click="toggleSort('deaths')">
+                  <MmStatColIcon name="deaths" label="Deaths" />{{ sortArrow('deaths') }}
+                </th>
+                <th class="lbm-th lbm-th--stat" aria-label="Score" @click="toggleSort('score')">
+                  <MmStatColIcon name="score" label="Score" />{{ sortArrow('score') }}
+                </th>
                 <th class="lbm-th lbm-th--stat" @click="toggleSort('kpm')">Kill Rate{{ sortArrow('kpm') }}</th>
                 <th class="lbm-th lbm-th--stat" @click="toggleSort('playMin')">Play Time{{ sortArrow('playMin') }}</th>
                 <th class="lbm-th lbm-th--stat" @click="toggleSort('rounds')">Rounds{{ sortArrow('rounds') }}</th>
@@ -2174,6 +2187,8 @@ const applyPreset = (preset: string) => {
               <th
                 v-for="key in displayCols"
                 :key="key"
+                :data-col="key"
+                :aria-label="getCol(key)?.label"
                 :style="{
                   width: `${widths[key] || 80}px`,
                   minWidth: `${widths[key] || 80}px`,
@@ -2195,7 +2210,12 @@ const applyPreset = (preset: string) => {
                 <div class="lb-th-inner">
                   <div class="lb-th-label-group">
                     <i v-if="pinned.includes(key)" class="pi pi-lock lb-pin-icon" title="Pinned column"></i>
-                    <span class="lb-th-text">{{ getCol(key)?.label }}</span>
+                    <MmStatColIcon
+                      v-if="STAT_HEADER_ICONS[key]"
+                      :name="STAT_HEADER_ICONS[key] ?? 'score'"
+                      :label="getCol(key)?.label ?? key"
+                    />
+                    <span v-else class="lb-th-text">{{ getCol(key)?.label }}</span>
                     <!-- Sort Direction Indicator -->
                     <span v-if="sort.find(s => s.key === key)" class="lb-sort-arrow">
                       {{ sort.find(s => s.key === key)?.dir === 'desc' ? '↓' : '↑' }}
