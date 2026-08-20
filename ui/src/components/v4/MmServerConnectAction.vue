@@ -227,7 +227,7 @@ onUnmounted(() => {
         >
           <polygon points="5 3 19 12 5 21 5 3" />
         </svg>
-        <span class="mm-connect__label">Play Now</span>
+        <span v-if="!compact" class="mm-connect__label">Play Now</span>
       </a>
 
       <button
@@ -441,6 +441,12 @@ onUnmounted(() => {
 .mm-connect--compact .mm-connect__btn {
   padding: 4px 8px;
   font-size: 10.5px;
+}
+
+.mm-connect--compact .mm-connect__btn--primary {
+  padding: 6px 8px;
+  min-width: 32px;
+  justify-content: center;
 }
 
 .mm-connect--compact .mm-connect__btn--copy {
