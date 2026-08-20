@@ -92,11 +92,15 @@
           <table v-if="getTeamPlayerCount(team.index) > 0" class="mm-list mm-list--dense">
             <thead>
               <tr>
-                <th class="mm-list__rank">#</th>
+                <th class="mm-list__rank"><MmStatColIcon name="position" label="Rank" /></th>
                 <th>Player</th>
-                <th class="is-num">Score</th>
-                <th class="is-num">K / D</th>
-                <th class="is-num">Ping</th>
+                <th class="is-num"><MmStatColIcon name="score" label="Score" /></th>
+                <th class="is-num mm-roster__kd-head">
+                  <MmStatColIcon name="kills" label="Kills" />
+                  <span class="mm-num__sep">/</span>
+                  <MmStatColIcon name="deaths" label="Deaths" />
+                </th>
+                <th class="is-num"><MmStatColIcon name="ping" label="Ping" /></th>
               </tr>
             </thead>
             <tbody>
@@ -136,6 +140,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { ServerSummary } from '@/types/server'
 import { formatTimeRemaining } from '@/utils/timeUtils'
+import MmStatColIcon from '@/components/v4/MmStatColIcon.vue'
 
 interface Props {
   show: boolean
@@ -247,6 +252,22 @@ const getSortedTeamPlayers = (teamIndex: number) => {
 </script>
 
 <style scoped>
+.mm-roster__kd-head {
+  white-space: nowrap;
+}
+
+.mm-roster__kd-head .mm-num__sep {
+  margin: 0 5px;
+  color: var(--mm-highlight-ink);
+  opacity: 0.55;
+}
+
+.mm-roster :deep(.mm-list thead .mm-stat-col-icon) {
+  height: 20px;
+  width: auto;
+  vertical-align: middle;
+}
+
 .mm-roster--modal {
   position: fixed;
   inset: 0;
