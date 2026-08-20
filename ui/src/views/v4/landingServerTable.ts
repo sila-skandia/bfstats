@@ -32,7 +32,7 @@ export const COLUMN_GROUPS: { id: ColGroup; label: string }[] = [
 
 export const ALL_COLUMNS: ServerColumnDef[] = [
   { key: 'rank', label: '#', align: 'right', w: 48, kind: 'custom', filter: 'none', group: 'identity', sortable: false },
-  { key: 'action', label: 'Join', align: 'center', w: 168, kind: 'custom', filter: 'none', group: 'identity', sortable: false },
+  { key: 'action', label: 'Join', align: 'center', w: 76, kind: 'custom', filter: 'none', group: 'identity', sortable: false },
   { key: 'name', label: 'Server', align: 'left', w: 300, kind: 'custom', filter: 'text', group: 'identity' },
   { key: 'players', label: 'Players', align: 'right', w: 115, kind: 'custom', filter: 'number', group: 'live' },
   { key: 'load', label: 'Load', align: 'right', w: 115, kind: 'custom', filter: 'number', group: 'live' },
