@@ -143,6 +143,14 @@ test.describe('Landing Page - Server Browser', () => {
     expect(storedLayout).toBeTruthy();
     const parsed = JSON.parse(storedLayout || '{}');
     expect(parsed.density).toBe('compact');
+    expect(parsed.sort).toBeUndefined();
+
+    await page.getByTestId('col-header-map').click();
+    await expect(page.getByTestId('col-header-map').locator('.lb-sort-arrow')).toBeVisible();
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByTestId('col-header-players').locator('.lb-sort-arrow')).toBeVisible();
+    await expect(page.getByTestId('col-header-map').locator('.lb-sort-arrow')).toHaveCount(0);
   });
 
   test('filters from the column filter panel with literal text and a number range', async ({ page }) => {

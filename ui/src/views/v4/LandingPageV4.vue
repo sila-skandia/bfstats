@@ -90,11 +90,7 @@ const widths = ref<Record<string, number>>({
   ...(typeof saved?.widths === 'object' && saved?.widths !== null ? saved.widths : {})
 })
 
-const sort = ref<{ key: string; dir: 'asc' | 'desc' }[]>(
-  Array.isArray(saved?.sort) && saved.sort.length > 0
-    ? saved.sort
-    : [...DEFAULT_SORT]
-)
+const sort = ref<{ key: string; dir: 'asc' | 'desc' }[]>([...DEFAULT_SORT])
 
 const colFilters = ref<Record<string, string>>(
   saved?.colFilters && typeof saved.colFilters === 'object' ? { ...saved.colFilters } : {}
@@ -113,14 +109,13 @@ const filterPreset = ref<'all' | 'populated' | 'standby'>(
 
 const filterQuery = ref('')
 
-watch([order, hidden, pinned, widths, sort, density, filterPreset, colFilters], () => {
+watch([order, hidden, pinned, widths, density, filterPreset, colFilters], () => {
   try {
     const payload = {
       order: order.value,
       hidden: Array.from(hidden.value),
       pinned: pinned.value,
       widths: widths.value,
-      sort: sort.value,
       density: density.value,
       filterPreset: filterPreset.value,
       colFilters: colFilters.value,
@@ -381,7 +376,13 @@ const copyVisibleTsv = (rows: ServerSummary[]) => {
 }
 
 const copyShareLink = () => {
-  void copyText(window.location.href, 'Link copied')
+  const url = new URL(window.location.href)
+  if (sort.value.length && !(sort.value.length === 1 && sort.value[0].key === 'players' && sort.value[0].dir === 'desc')) {
+    url.searchParams.set('sort', sort.value.map(s => `${s.key}:${s.dir}`).join(','))
+  } else {
+    url.searchParams.delete('sort')
+  }
+  void copyText(url.toString(), 'Link copied')
 }
 
 const toggleFullscreen = async () => {
@@ -442,16 +443,13 @@ const syncUrl = () => {
   for (const [key, value] of Object.entries(colFilters.value)) {
     if (value.trim()) query[`f.${key}`] = value.trim()
   }
-  if (sort.value.length && !(sort.value.length === 1 && sort.value[0].key === 'players' && sort.value[0].dir === 'desc')) {
-    query.sort = sort.value.map(s => `${s.key}:${s.dir}`).join(',')
-  }
   const current = route.query as Record<string, string | string[] | undefined>
   const same = Object.keys({ ...current, ...query }).every(k => (current[k] ?? '') === (query[k] ?? ''))
   if (same && Object.keys(current).length === Object.keys(query).length) return
   void router.replace({ query })
 }
 
-watch([filterQuery, filterPreset, colFilters, sort], () => {
+watch([filterQuery, filterPreset, colFilters], () => {
   if (urlSyncTimer) window.clearTimeout(urlSyncTimer)
   urlSyncTimer = window.setTimeout(syncUrl, 280)
 }, { deep: true })
