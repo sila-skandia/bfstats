@@ -9,6 +9,7 @@ import { loadClass } from './mmTokens'
 import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
+import MmStatColIcon from '@/components/v4/MmStatColIcon.vue'
 import LandingColumnFilterPanel from './LandingColumnFilterPanel.vue'
 import { formatTimeRemaining, formatRelativeTime, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
 import {
@@ -1430,20 +1431,17 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                         >
                           <div class="lb-team-strip">
                             <span class="lb-team-name">{{ getTeamLabel(s, teamIdx) }}</span>
-                            <div class="lb-team-tickets">
-                              <span class="lb-team-tickets-lbl">Team score</span>
-                              <span class="lb-team-tickets-plain">{{ getTeamTickets(s, teamIdx) }}</span>
-                            </div>
+                            <span class="lb-team-tickets-plain">{{ getTeamTickets(s, teamIdx) }}</span>
                           </div>
 
                           <div class="lb-player-list">
                             <div class="lb-player-list-head">
                               <span class="lb-pcol-name">Playername</span>
                               <span class="lb-player-stats">
-                                <span class="lb-pcol-score">Score</span>
-                                <span class="lb-pcol-kd">K</span>
-                                <span class="lb-pcol-kd">D</span>
-                                <span class="lb-pcol-ping">Ping</span>
+                                <span class="lb-pcol-score"><MmStatColIcon name="score" label="Score" /></span>
+                                <span class="lb-pcol-kd"><MmStatColIcon name="kills" label="Kills" /></span>
+                                <span class="lb-pcol-kd"><MmStatColIcon name="deaths" label="Deaths" /></span>
+                                <span class="lb-pcol-ping"><MmStatColIcon name="ping" label="Ping" /></span>
                               </span>
                             </div>
 
@@ -2686,20 +2684,6 @@ td {
   background: var(--team);
 }
 
-.lb-team-tickets {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.lb-team-tickets-lbl {
-  font-family: var(--mm-font-mono);
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-}
-
 .lb-team-tickets-plain {
   font-family: var(--mm-font-display);
   font-weight: 300;
@@ -2722,7 +2706,9 @@ td {
 }
 
 .lb-player-list-head {
-  padding: 6px 14px;
+  padding: 8px 14px;
+  min-height: 36px;
+  box-sizing: border-box;
   font-family: var(--mm-font-mono);
   font-size: 10px;
   letter-spacing: 0.12em;
@@ -2730,6 +2716,21 @@ td {
   color: var(--mm-highlight-ink);
   font-weight: 600;
   background: var(--mm-highlight);
+  overflow: visible;
+}
+
+.lb-player-list-head .lb-pcol-score,
+.lb-player-list-head .lb-pcol-kd,
+.lb-player-list-head .lb-pcol-ping {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.lb-player-list-head :deep(.mm-stat-col-icon) {
+  height: 20px;
+  width: auto;
+  vertical-align: middle;
 }
 
 .lb-player-stats {
@@ -2874,16 +2875,13 @@ td {
     padding: 8px 10px;
   }
 
-  .lb-team-tickets-lbl {
-    display: none;
-  }
-
   .lb-team-tickets-plain {
     font-size: 18px;
   }
 
   .lb-player-list-head {
-    display: none;
+    min-height: 32px;
+    padding: 6px 10px;
   }
 
   .lb-player-item {

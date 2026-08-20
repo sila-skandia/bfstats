@@ -642,11 +642,11 @@ test.describe('Leaderboard Page', () => {
     await scoreCheck.dispatchEvent('click')
 
     // Table header should no longer have Score
-    await expect(page.locator('.lb-table th', { hasText: 'Score' })).toHaveCount(0)
+    await expect(page.locator('.lb-table th[data-col="score"]')).toHaveCount(0)
 
     // Re-enable Score
     await scoreCheck.dispatchEvent('click')
-    await expect(page.locator('.lb-table th', { hasText: 'Score' })).toBeVisible()
+    await expect(page.locator('.lb-table th[data-col="score"]')).toBeVisible()
   })
 
   test('should toggle density between comfortable and compact', async ({ page }) => {
