@@ -166,6 +166,52 @@ test.describe('Server Details Page', () => {
       }
     });
 
+    test('online now uses the same team ladder as the landing roster', async ({ page }) => {
+      const live = {
+        guid: 'e2e-server-1',
+        name: 'E2E Test Server',
+        ip: '127.0.0.1',
+        port: 14567,
+        numPlayers: 2,
+        maxPlayers: 64,
+        mapName: 'Wake Island',
+        gameType: 'Conquest',
+        joinLink: 'bf1942://127.0.0.1:14567',
+        roundTimeRemain: 400,
+        tickets1: 200,
+        tickets2: 180,
+        teams: [
+          { index: 1, label: 'Axis', tickets: 200 },
+          { index: 2, label: 'Allied', tickets: 180 },
+        ],
+        players: [
+          { name: 'AxisAce', score: 42, kills: 8, deaths: 3, ping: 40, team: 1, teamLabel: 'Axis' },
+          { name: 'AlliedAce', score: 35, kills: 6, deaths: 4, ping: 55, team: 2, teamLabel: 'Allied' },
+        ],
+      };
+
+      await page.route(/\/stats\/liveservers\/bf1942\/(?!servers(?:\/|$))/, async (route) => {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify(live),
+        });
+      });
+
+      await page.goto('/v4/servers/detail/E2E%20Test%20Server');
+      await expect(page.locator('h1')).toBeVisible({ timeout: 15_000 });
+
+      const roster = page.getByTestId('server-live-roster');
+      const axis = page.getByTestId('roster-team-axis');
+      const allies = page.getByTestId('roster-team-allies');
+      await expect(roster).toBeVisible({ timeout: 15_000 });
+      await expect(axis).toBeVisible();
+      await expect(allies).toBeVisible();
+      await expect(axis).toContainText('AXIS');
+      await expect(allies).toContainText('ALLIED');
+      await expect(axis.getByRole('link', { name: 'AxisAce' })).toBeVisible();
+      await expect(allies.getByRole('link', { name: 'AlliedAce' })).toBeVisible();
+    });
+
     test('should display join server button when server is online', async ({ page }) => {
       await page.goto('/servers/bf1942');
       await page.waitForLoadState('networkidle');

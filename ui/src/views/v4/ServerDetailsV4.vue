@@ -16,7 +16,7 @@ import {
 import type { ServerSummary } from '@/types/server'
 import { decodePlayerName } from '@/utils/playerName'
 import { countryCodeToName } from '@/types/countryCodes'
-import MmPlayersPanel from '@/components/v4/MmPlayersPanel.vue'
+import MmTeamLadderRoster from '@/components/v4/MmTeamLadderRoster.vue'
 import MmServerComments from '@/components/v4/MmServerComments.vue'
 import MmServerSignatureBuilder from '@/components/v4/MmServerSignatureBuilder.vue'
 import MmForecastModal from '@/components/v4/MmForecastModal.vue'
@@ -542,8 +542,8 @@ watch(activeTab, (t) => {
             <div class="mm-skeleton" style="width: 70%; margin-bottom: 8px" />
             <div class="mm-skeleton" style="width: 45%" />
           </div>
-          <div v-else-if="hasLiveRoster" style="padding: 10px 14px">
-            <MmPlayersPanel :show="true" :server="liveServer" :inline="true" :embedded="true" />
+          <div v-else-if="hasLiveRoster && liveServer">
+            <MmTeamLadderRoster :server="liveServer" data-testid="server-live-roster" />
           </div>
           <div v-else class="mm-panel__body mm-empty" style="border: 0; padding: 24px 0">No players online right now.</div>
         </section>

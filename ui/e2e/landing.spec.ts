@@ -366,10 +366,95 @@ test.describe('Landing Page - Server Browser', () => {
 
     const axisBox = await axis.boundingBox();
     const alliesBox = await allies.boundingBox();
+    const paneBox = await page.getByTestId('landing-table-scroll').boundingBox();
+    const rosterBox = await roster.boundingBox();
     expect(axisBox).toBeTruthy();
     expect(alliesBox).toBeTruthy();
+    expect(paneBox).toBeTruthy();
+    expect(rosterBox).toBeTruthy();
     expect(Math.abs(axisBox!.y - alliesBox!.y)).toBeLessThan(12);
     expect(alliesBox!.x).toBeGreaterThan(axisBox!.x + 100);
+    expect(rosterBox!.x).toBeGreaterThanOrEqual(paneBox!.x - 2);
+    expect(rosterBox!.x + rosterBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 2);
+    expect(axisBox!.x).toBeGreaterThanOrEqual(paneBox!.x - 2);
+    expect(alliesBox!.x + alliesBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 2);
+  });
+
+  test('expanded roster stays inside the pane when the table is wider than the viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+
+    const servers = [
+      {
+        guid: 'wake-1',
+        name: 'Wake Island Host',
+        ip: '10.0.0.1',
+        port: 14567,
+        numPlayers: 2,
+        maxPlayers: 64,
+        mapName: 'Wake Island',
+        gameType: 'Conquest',
+        joinLink: 'bf1942://10.0.0.1:14567',
+        roundTimeRemain: 400,
+        tickets1: 200,
+        tickets2: 180,
+        teams: [
+          { index: 1, label: 'Axis', tickets: 200 },
+          { index: 2, label: 'Allied', tickets: 180 },
+        ],
+        players: [
+          { name: 'AxisAce', score: 42, kills: 8, deaths: 3, ping: 40, team: 1, teamLabel: 'Axis' },
+          { name: 'AlliedAce', score: 35, kills: 6, deaths: 4, ping: 55, team: 2, teamLabel: 'Allied' },
+        ],
+        country: 'US',
+        password: false,
+        gameVersion: '1.61',
+      },
+    ];
+
+    await page.route('**/stats/liveservers/bf1942/servers**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ servers, lastUpdated: new Date().toISOString() }),
+      });
+    });
+
+    await page.goto('/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+
+    const pane = page.getByTestId('landing-table-scroll');
+    const row = page.locator('tr.lb-row', { has: page.getByRole('link', { name: 'Wake Island Host' }) });
+    await row.locator('.lb-rank-cell').click();
+
+    const roster = page.getByTestId('landing-roster-scroll');
+    const axis = page.getByTestId('roster-team-axis');
+    const allies = page.getByTestId('roster-team-allies');
+    await expect(roster).toBeVisible();
+    await expect(axis.getByRole('link', { name: 'AxisAce' })).toBeVisible();
+    await expect(allies.getByRole('link', { name: 'AlliedAce' })).toBeVisible();
+
+    const assertRosterFitsPane = async () => {
+      const axisBox = await axis.boundingBox();
+      const alliesBox = await allies.boundingBox();
+      const paneBox = await pane.boundingBox();
+      const rosterBox = await roster.boundingBox();
+      expect(axisBox).toBeTruthy();
+      expect(alliesBox).toBeTruthy();
+      expect(paneBox).toBeTruthy();
+      expect(rosterBox).toBeTruthy();
+      expect(Math.abs(axisBox!.y - alliesBox!.y)).toBeLessThan(12);
+      expect(alliesBox!.x).toBeGreaterThan(axisBox!.x + 40);
+      expect(rosterBox!.x).toBeGreaterThanOrEqual(paneBox!.x - 2);
+      expect(rosterBox!.x + rosterBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 2);
+      expect(axisBox!.x).toBeGreaterThanOrEqual(paneBox!.x - 2);
+      expect(alliesBox!.x + alliesBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 2);
+    };
+
+    await assertRosterFitsPane();
+
+    const overflow = await pane.evaluate((el) => el.scrollWidth > el.clientWidth + 8);
+    expect(overflow).toBe(true);
+    await pane.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+    await assertRosterFitsPane();
   });
 
   test('expanding a roster collapses the previously open one', async ({ page }) => {
