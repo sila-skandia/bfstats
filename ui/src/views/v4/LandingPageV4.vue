@@ -5,7 +5,7 @@ import 'primeicons/primeicons.css'
 import { fetchAllServers, peekCachedLiveServers } from '@/services/serverDetailsService'
 import type { ServerSummary } from '@/types/server'
 import { countryCodeToFlag } from '@/types/countryCodes'
-import { loadClass, teamColor } from './mmTokens'
+import { loadClass } from './mmTokens'
 import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
@@ -1419,7 +1419,6 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                   </td>
                 </tr>
 
-                <!-- In-Game Scoreboard Aesthetic: Authentic AXIS vs ALLIED Scoreboard -->
                 <tr v-if="expandedGuids.has(s.guid)" class="lb-expand-row">
                   <td :colspan="displayCols.length" class="lb-expand-td">
                     <div class="lb-inline-roster" data-testid="landing-roster-scroll">
@@ -1432,22 +1431,21 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                           :data-testid="teamIdx === 1 ? 'roster-team-axis' : 'roster-team-allies'"
                         >
                           <div class="lb-team-strip">
-                            <span class="lb-team-name" :style="{ color: teamColor(getTeamLabel(s, teamIdx)) }">
-                              {{ getTeamLabel(s, teamIdx) }}
-                            </span>
-                            <div class="lb-team-tickets-plain" :style="{ color: teamColor(getTeamLabel(s, teamIdx)) }">
-                              {{ getTeamTickets(s, teamIdx) }}
+                            <span class="lb-team-name">{{ getTeamLabel(s, teamIdx) }}</span>
+                            <div class="lb-team-tickets">
+                              <span class="lb-team-tickets-lbl">Team score</span>
+                              <span class="lb-team-tickets-plain">{{ getTeamTickets(s, teamIdx) }}</span>
                             </div>
                           </div>
 
                           <div class="lb-player-list">
                             <div class="lb-player-list-head">
-                              <span class="lb-pcol-name">PLAYERNAME</span>
+                              <span class="lb-pcol-name">Playername</span>
                               <span class="lb-player-stats">
-                                <span class="lb-pcol-score">SCORE</span>
+                                <span class="lb-pcol-score">Score</span>
                                 <span class="lb-pcol-kd">K</span>
                                 <span class="lb-pcol-kd">D</span>
-                                <span class="lb-pcol-ping">PING</span>
+                                <span class="lb-pcol-ping">Ping</span>
                               </span>
                             </div>
 
@@ -1485,7 +1483,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                                 </span>
                                 <span class="lb-pcol-ping">
                                   <span class="lb-ping-badge" :class="pingClass(player.ping)">
-                                    {{ player.ping > 0 ? `${player.ping}ms` : '—' }}
+                                    {{ player.ping > 0 ? player.ping : '—' }}
                                   </span>
                                 </span>
                               </div>
@@ -2619,28 +2617,229 @@ td {
 }
 
 /* ============================================================================
-   Authentic Battlefield 1942 In-Game Inspired Scoreboard (AXIS vs ALLIED)
+   Embedded players panel — Neutral Depth Axis / Allied ladder
    ============================================================================ */
 .lb-expand-row td,
 .lb-expand-td {
   padding: 0 !important;
   overflow: visible !important;
   white-space: normal;
-  background: color-mix(in srgb, var(--mm-bg-soft) 85%, var(--mm-bg)) !important;
-  border-bottom: 2px solid var(--mm-rule-strong);
+  background: var(--mm-bg) !important;
+  border-bottom: 1px solid var(--mm-rule);
 }
 
 .lb-inline-roster {
-  padding: 18px 24px 24px;
   box-sizing: border-box;
   min-width: 100%;
+  padding: 8px 16px 20px;
 }
 
 .lb-roster-teams {
   display: grid;
   grid-template-columns: repeat(2, minmax(320px, 1fr));
-  gap: 24px;
+  gap: 20px;
   min-width: 100%;
+}
+
+.lb-roster-team-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: clip;
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  background: var(--mm-bg);
+}
+
+.lb-roster-team--axis {
+  --team: var(--mm-kill);
+}
+
+.lb-roster-team--allies {
+  --team: #5b8fd6;
+}
+
+.lb-team-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--mm-rule);
+}
+
+.lb-team-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mm-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--mm-ink);
+}
+
+.lb-team-name::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--team);
+}
+
+.lb-team-tickets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lb-team-tickets-lbl {
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+
+.lb-team-tickets-plain {
+  font-family: var(--mm-font-display);
+  font-weight: 300;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--mm-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-player-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.lb-player-list-head,
+.lb-player-item {
+  display: flex;
+  align-items: center;
+}
+
+.lb-player-list-head {
+  padding: 6px 14px;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-highlight-ink);
+  font-weight: 600;
+  background: var(--mm-highlight);
+}
+
+.lb-player-stats {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.lb-player-item {
+  cursor: pointer;
+  padding: 9px 14px;
+  font-family: var(--mm-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--mm-rule);
+  transition: background-color 0.15s ease;
+}
+
+.lb-player-list-head + .lb-player-item {
+  border-top: 0;
+}
+
+.lb-player-item:hover {
+  background: var(--mm-bg-soft);
+}
+
+.lb-pcol-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.lb-player-link,
+.lb-player-link--axis,
+.lb-player-link--allies {
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mm-font-display);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--team);
+  transition: color 0.15s ease;
+}
+
+.lb-player-link:focus-visible {
+  outline: 2px solid var(--mm-accent);
+  outline-offset: 2px;
+}
+
+.lb-player-link:hover,
+.lb-player-link--axis:hover,
+.lb-player-link--allies:hover {
+  color: var(--mm-accent);
+}
+
+.lb-pcol-score,
+.lb-pcol-kd,
+.lb-pcol-ping {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.lb-pcol-score {
+  width: 64px;
+}
+
+.lb-score-val {
+  font-weight: 600;
+  color: var(--mm-ink);
+  font-size: 12.5px;
+}
+
+.lb-pcol-kd {
+  width: 48px;
+  font-size: 12.5px;
+}
+
+.lb-num--kill {
+  color: var(--mm-kill);
+}
+
+.lb-num--death {
+  color: var(--mm-death);
+}
+
+.lb-pcol-ping {
+  width: 56px;
+  white-space: nowrap;
+}
+
+.lb-ping-badge {
+  font-family: var(--mm-font-mono);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.lb-inline-roster .lb-ping--good,
+.lb-inline-roster .lb-ping--mid,
+.lb-inline-roster .lb-ping--muted {
+  color: var(--mm-ink-muted);
+}
+
+.lb-inline-roster .lb-ping--high {
+  color: var(--mm-kill);
 }
 
 @media (max-width: 860px) {
@@ -2668,254 +2867,7 @@ td {
     gap: 8px;
     min-width: 0;
   }
-}
 
-.lb-roster-team-card {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border-radius: 4px;
-  background: var(--mm-bg);
-  overflow: clip;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
-  border: 1px solid var(--mm-rule);
-  transition: border-color 0.15s ease;
-}
-
-.lb-roster-team--axis {
-  border-color: rgba(214, 90, 90, 0.5);
-}
-
-.lb-roster-team--axis:hover {
-  border-color: rgba(214, 90, 90, 0.75);
-}
-
-.lb-roster-team--allies {
-  border-color: rgba(97, 175, 239, 0.5);
-}
-
-.lb-roster-team--allies:hover {
-  border-color: rgba(97, 175, 239, 0.75);
-}
-
-.lb-team-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 11px 16px;
-  border-bottom: 1px solid var(--mm-rule);
-}
-
-.lb-roster-team--axis .lb-team-strip {
-  background: linear-gradient(90deg, rgba(214, 90, 90, 0.22) 0%, rgba(214, 90, 90, 0.05) 100%);
-}
-
-.lb-roster-team--allies .lb-team-strip {
-  background: linear-gradient(90deg, rgba(97, 175, 239, 0.22) 0%, rgba(97, 175, 239, 0.05) 100%);
-}
-
-.lb-team-strip-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.lb-team-flag {
-  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
-  font-size: 1.25em;
-  line-height: 1;
-}
-
-.lb-team-name {
-  font-family: var(--mm-font-display);
-  font-size: 15.5px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.lb-team-badge {
-  font-family: var(--mm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  color: var(--mm-ink-muted);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--mm-rule);
-  padding: 2px 7px;
-  border-radius: 2px;
-}
-
-.lb-team-tickets-plain {
-  font-family: var(--mm-font-mono);
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  padding-right: 4px;
-}
-
-.lb-player-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.lb-player-list-head {
-  display: flex;
-  align-items: center;
-  padding: 8px 14px;
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-  background: var(--mm-bg-mute);
-  border-bottom: 1px solid var(--mm-rule);
-}
-
-.lb-player-stats {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.lb-player-item {
-  display: flex;
-  align-items: center;
-  padding: 8px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--mm-rule) 60%, transparent);
-  cursor: pointer;
-  transition: all 0.12s ease;
-  font-family: var(--mm-font-mono);
-  font-size: 13.5px;
-}
-
-.lb-player-item:hover {
-  background: var(--mm-bg-soft);
-}
-
-.lb-player-item:last-child {
-  border-bottom: none;
-}
-
-/* Player Name Cell with In-Game Color Tints */
-.lb-pcol-name {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-
-.lb-player-link {
-  text-decoration: none;
-  font-family: var(--mm-font-display);
-  font-size: 14.5px;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: color 0.12s ease;
-}
-
-.lb-player-link--axis {
-  color: #e06c75;
-}
-
-.lb-player-link--axis:hover {
-  color: #ff858d;
-  text-decoration: underline;
-}
-
-.lb-player-link--allies {
-  color: #61afef;
-}
-
-.lb-player-link--allies:hover {
-  color: #85c5ff;
-  text-decoration: underline;
-}
-
-/* Stats Columns */
-.lb-pcol-score {
-  width: 72px;
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.lb-score-val {
-  font-weight: 700;
-  color: var(--mm-ink);
-  font-size: 13.5px;
-}
-
-.lb-pcol-kd {
-  width: 48px;
-  flex-shrink: 0;
-  text-align: right;
-  font-size: 13px;
-}
-
-.lb-num--kill {
-  color: #ff7b72;
-  font-weight: 600;
-}
-
-.lb-num--death {
-  color: var(--mm-ink-soft);
-}
-
-.lb-pcol-ratio {
-  width: 64px;
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.lb-kd-pill {
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  padding: 1px 5px;
-  border-radius: 2px;
-}
-
-.lb-kd-pill.mm-kd--elite {
-  color: #b4c060;
-  font-weight: 700;
-  background: rgba(180, 192, 96, 0.16);
-  border: 1px solid rgba(180, 192, 96, 0.35);
-}
-
-.lb-kd-pill.mm-kd--good {
-  color: #7da34c;
-  font-weight: 600;
-  background: rgba(125, 163, 76, 0.14);
-}
-
-.lb-kd-pill.mm-kd--mid {
-  color: var(--mm-ink);
-}
-
-.lb-kd-pill.mm-kd--low {
-  color: #a0a07a;
-}
-
-.lb-kd-pill.mm-kd--poor {
-  color: #777777;
-}
-
-.lb-pcol-ping {
-  width: 58px;
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.lb-ping-badge {
-  font-family: var(--mm-font-mono);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-@media (max-width: 720px) {
   .lb-roster-team-card {
     min-width: 0;
   }
@@ -2924,13 +2876,12 @@ td {
     padding: 8px 10px;
   }
 
-  .lb-team-name {
-    font-size: 12px;
-    letter-spacing: 0.06em;
+  .lb-team-tickets-lbl {
+    display: none;
   }
 
   .lb-team-tickets-plain {
-    font-size: 16px;
+    font-size: 18px;
   }
 
   .lb-player-list-head {
@@ -2975,10 +2926,6 @@ td {
   .lb-score-val {
     font-size: 12px;
   }
-
-  .lb-ping-badge {
-    font-size: 11px;
-  }
 }
 
 .lb-player-empty {
@@ -3001,7 +2948,7 @@ td {
   color: var(--mm-ink-soft);
   background: var(--mm-bg);
   border: 1px solid var(--mm-rule);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 /* Flag & Refresh ring */
