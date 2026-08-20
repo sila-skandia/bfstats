@@ -371,5 +371,59 @@ test.describe('Landing Page - Server Browser', () => {
     expect(Math.abs(axisBox!.y - alliesBox!.y)).toBeLessThan(12);
     expect(alliesBox!.x).toBeGreaterThan(axisBox!.x + 100);
   });
+
+  test('expanding a roster collapses the previously open one', async ({ page }) => {
+    const rosterServer = (guid: string, name: string, player: string) => ({
+      guid,
+      name,
+      ip: '10.0.0.1',
+      port: 14567,
+      numPlayers: 1,
+      maxPlayers: 64,
+      mapName: 'Wake Island',
+      gameType: 'Conquest',
+      joinLink: `bf1942://10.0.0.1:14567`,
+      roundTimeRemain: 400,
+      tickets1: 200,
+      tickets2: 180,
+      teams: [
+        { index: 1, label: 'Axis', tickets: 200 },
+        { index: 2, label: 'Allied', tickets: 180 },
+      ],
+      players: [
+        { name: player, score: 12, kills: 4, deaths: 2, ping: 40, team: 1, teamLabel: 'Axis' },
+      ],
+      country: 'US',
+      password: false,
+      gameVersion: '1.61',
+    });
+
+    await page.route('**/stats/liveservers/bf1942/servers**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          servers: [
+            rosterServer('wake-1', 'Wake Island Host', 'WakeAce'),
+            rosterServer('berlin-1', 'Berlin Host', 'BerlinAce'),
+          ],
+          lastUpdated: new Date().toISOString(),
+        }),
+      });
+    });
+
+    await page.goto('/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+
+    const wake = page.locator('tr.lb-row', { has: page.getByRole('link', { name: 'Wake Island Host' }) });
+    const berlin = page.locator('tr.lb-row', { has: page.getByRole('link', { name: 'Berlin Host' }) });
+    await wake.locator('.lb-rank-cell').click();
+    await expect(page.getByTestId('landing-roster-scroll')).toHaveCount(1);
+    await expect(page.getByRole('link', { name: 'WakeAce' })).toBeVisible();
+
+    await berlin.locator('.lb-rank-cell').click();
+    await expect(page.getByTestId('landing-roster-scroll')).toHaveCount(1);
+    await expect(page.getByRole('link', { name: 'BerlinAce' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'WakeAce' })).toHaveCount(0);
+  });
 });
 
