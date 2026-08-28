@@ -98,7 +98,8 @@ public class SqliteStatisticsBackgroundService(
         {
             // Statistics are an optimisation, never a correctness requirement. A failure
             // here must not take the service down or stop later attempts.
-            logger.LogWarning(ex, "SQLite PRAGMA optimize failed; query plans may be stale");
+            logger.LogWarning("SQLite PRAGMA optimize failed ({ExceptionType}: {Message}); query plans may be stale",
+                ex.GetType().Name, ex.Message);
         }
     }
 }
