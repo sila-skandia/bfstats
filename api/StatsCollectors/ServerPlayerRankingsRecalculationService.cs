@@ -84,11 +84,9 @@ public class ServerPlayerRankingsRecalculationService(
                 }
                 return rankings.Count;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await transaction.RollbackAsync(c);
-                logger.LogError(ex, "Failed to recalculate ServerPlayerRankings for server {ServerGuid} {Year}-{Month}",
-                    serverGuid, year, monthString);
                 throw;
             }
         }, ct);
