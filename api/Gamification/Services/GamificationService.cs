@@ -1,6 +1,7 @@
 using api.Gamification.Models;
 using api.Analytics.Models;
 using api.Telemetry;
+using api.StatsCollectors;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Serilog.Context;
@@ -74,6 +75,10 @@ public sealed class GamificationService(SqliteGamificationService gamificationSe
                 }
             }
         }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing new achievements");
@@ -116,6 +121,10 @@ public sealed class GamificationService(SqliteGamificationService gamificationSe
             }
 
             return await ProcessAchievementsIndividuallyAsync(rounds);
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -170,6 +179,10 @@ public sealed class GamificationService(SqliteGamificationService gamificationSe
                 {
                     return await killStreakDetector.CalculateKillStreaksForRoundAsync(round);
                 }
+                catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error processing kill streaks for round {RoundId}", round.RoundId);
@@ -192,6 +205,10 @@ public sealed class GamificationService(SqliteGamificationService gamificationSe
                 {
                     return await milestoneCalculator.CheckMilestoneCrossedAsync(round);
                 }
+                catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error processing milestones for round {RoundId}", round.RoundId);
@@ -205,6 +222,10 @@ public sealed class GamificationService(SqliteGamificationService gamificationSe
 
             var milestoneResults = await Task.WhenAll(milestoneTasks);
             allAchievements.AddRange(milestoneResults.SelectMany(r => r));
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {
