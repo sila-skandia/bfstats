@@ -54,7 +54,8 @@ public class CacheService : ICacheService
         {
             activity?.SetTag("cache.error", ex.Message);
             activity?.SetTag("cache.hit", false);
-            _logger.LogWarning(ex, "Cache get failed for key: {Key}", key);
+            _logger.LogWarning("Cache get failed for key: {Key} ({ExceptionType}: {Message})",
+                key, ex.GetType().Name, ex.Message);
             return null;
         }
     }
@@ -73,7 +74,8 @@ public class CacheService : ICacheService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Cache set failed for key: {Key}", key);
+            _logger.LogWarning("Cache set failed for key: {Key} ({ExceptionType}: {Message})",
+                key, ex.GetType().Name, ex.Message);
         }
     }
 
@@ -85,7 +87,8 @@ public class CacheService : ICacheService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Cache remove failed for key: {Key}", key);
+            _logger.LogWarning("Cache remove failed for key: {Key} ({ExceptionType}: {Message})",
+                key, ex.GetType().Name, ex.Message);
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using api.StatsCollectors;
 using api.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -62,6 +63,12 @@ public class GamificationBackgroundService(IServiceProvider services, ILogger<Ga
                 }
 
                 logger.LogDebug("Completed gamification processing cycle");
+            }
+            catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+            {
+                logger.LogWarning(
+                    "Gamification cycle skipped due to database lock ({SqliteError})",
+                    SqliteBusy.Describe(ex));
             }
             catch (Exception ex)
             {
