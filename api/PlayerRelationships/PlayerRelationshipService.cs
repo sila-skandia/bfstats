@@ -900,179 +900,200 @@ public class PlayerRelationshipService(
     {
         logger.LogInformation("Starting community detection (Cypher-based clustering)");
 
-        return await neo4jService.ExecuteWriteAsync(async tx =>
+        const int minSessions = 5;
+        var runId = Guid.NewGuid().ToString("N");
+
+        try
         {
-            // First, clear existing communities
-            await tx.RunAsync("MATCH (c:Community) DELETE c");
+            // Per-player batched assignment. A single write that COLLECTs every
+            // PLAYED_WITH neighbour for every player has OOM'd / deadlocked Neo4j
+            // since the co-rounds backfill grew the graph (last successful nightly
+            // run stamped Community.formationDate = 2026-08-20).
+            logger.LogInformation(
+                "Assigning communityIds in batched transactions (minSessions={MinSessions})",
+                minSessions);
 
-            // Minimum session threshold for considering players connected
-            // Higher threshold = tighter, more meaningful communities
-            const int minSessions = 5;
-
-            // Step 1: Find player groups using simple connection-based clustering
-            // Group players by finding the smallest player name they're connected to (creates stable groups)
-            var assignQuery = $@"
-                // For each player, find all their strong connections
+            await neo4jService.RunAutoCommitAsync(
+                $$"""
                 MATCH (p:Player)
-                MATCH (p)-[rel:PLAYED_WITH]-(teammate)
-                WHERE rel.sessionCount >= {minSessions}
-                WITH p, COLLECT(DISTINCT teammate.name) AS teammates
-                WHERE SIZE(teammates) >= 1
-                // Find the 'leader' - the alphabetically first name (stable, deterministic)
-                WITH p, teammates + [p.name] AS allNames, teammates
-                // Get lexicographically smallest name for community ID
-                UNWIND allNames AS name
-                WITH p, teammates, MIN(name) AS leader
-                SET p.communityId = leader
-                RETURN COUNT(DISTINCT leader) AS communityCount,
-                       COUNT(p) AS playersAssigned";
+                CALL {
+                    WITH p
+                    OPTIONAL MATCH (p)-[rel:PLAYED_WITH]-(teammate)
+                    WHERE rel.sessionCount >= {{minSessions}}
+                    WITH p, collect(DISTINCT teammate.name) AS teammates
+                    WITH p, teammates,
+                         CASE WHEN size(teammates) >= 1
+                              THEN reduce(min = p.name, n IN teammates | CASE WHEN n < min THEN n ELSE min END)
+                              ELSE null
+                         END AS leader
+                    SET p.communityId = leader
+                } IN TRANSACTIONS OF 200 ROWS
+                """);
 
-            // Step 2: Create community nodes with full statistics
-            var createCommunitiesQuery = @"
-                // Group players by community
-                MATCH (p:Player)
-                WHERE p.communityId IS NOT NULL
-                WITH p.communityId AS communityId, COLLECT(p.name) AS members
-                WHERE SIZE(members) >= 3 AND SIZE(members) <= 20
+            cancellationToken.ThrowIfCancellationRequested();
 
-                // Calculate cohesion and other stats
-                UNWIND members AS m1
-                UNWIND members AS m2
-                WITH communityId, members, m1, m2
-                WHERE m1 < m2
-                MATCH (p1:Player {name: m1})-[r:PLAYED_WITH]-(p2:Player {name: m2})
-                WITH communityId, members, AVG(r.sessionCount) AS avgSessions,
-                     MAX(r.lastPlayedTogether) AS lastActive, COUNT(r) AS edgeCount
+            logger.LogDebug("Creating community nodes for run {RunId}", runId);
+            var createdCount = await neo4jService.ExecuteWriteAsync(async tx =>
+            {
+                var createCursor = await tx.RunAsync(CreateCommunitiesQuery, new { runId });
+                var createResult = await createCursor.SingleAsync();
+                return createResult["createdCommunities"].As<int>();
+            });
 
-                // Cohesion = density of connections within the community
-                WITH communityId, members, avgSessions, lastActive, edgeCount,
-                     CASE WHEN SIZE(members) <= 1
-                          THEN 0.0
-                          ELSE toFloat(edgeCount * 2) / (SIZE(members) * (SIZE(members) - 1))
-                     END AS cohesion
+            cancellationToken.ThrowIfCancellationRequested();
 
-                // Filter: Only keep communities with meaningful cohesion and sufficient connections
-                WHERE cohesion >= 0.3 AND avgSessions >= 2
-
-                // Find core members (those with most connections in the community)
-                UNWIND members AS member
-                MATCH (p:Player {name: member})-[r:PLAYED_WITH]-(other:Player)
-                WHERE other.name IN members
-                WITH communityId, members, avgSessions, lastActive, cohesion, member, COUNT(r) AS degree
-                ORDER BY degree DESC
-                WITH communityId, members, avgSessions, lastActive, cohesion, COLLECT(member)[0..5] AS coreMembers
-
-                // Find primary servers (as simple lists since Neo4j can't store complex objects)
-                UNWIND members AS member
-                MATCH (p:Player {name: member})-[ps:PLAYS_ON]->(s:Server)
-                WITH communityId, members, avgSessions, lastActive, cohesion, coreMembers,
-                     s.guid AS serverGuid, s.name AS serverName, COUNT(*) AS playCount
-                ORDER BY playCount DESC
-                WITH communityId, members, avgSessions, lastActive, cohesion, coreMembers,
-                     COLLECT(serverGuid)[0..5] AS serverGuids,
-                     COLLECT(serverName)[0..5] AS serverNames
-
-                // Create Community node (with simplified primaryServers structure)
-                CREATE (c:Community {
-                    id: 'comm_' + SUBSTRING(communityId, 0, 20),
-                    name: 'Squad: ' + coreMembers[0],
-                    members: members,
-                    coreMembers: coreMembers,
-                    primaryServers: serverNames,
-                    formationDate: datetime(),
-                    lastActiveDate: lastActive,
-                    avgSessionsPerPair: avgSessions,
-                    cohesionScore: cohesion
-                })
-                RETURN COUNT(c) AS createdCommunities";
-
+            var syntheticCount = 0;
             try
             {
-                logger.LogDebug("Assigning players to communities with minimum {MinSessions} sessions", minSessions);
-                var assignCursor = await tx.RunAsync(assignQuery);
-                var assignResult = await assignCursor.SingleAsync();
-                var communityCount = assignResult["communityCount"].As<int>();
-                var playersAssigned = assignResult["playersAssigned"].As<int>();
-                logger.LogDebug("Assigned {PlayersAssigned} players to {CommunityCount} communities", playersAssigned, communityCount);
-
-                logger.LogDebug("Creating community nodes");
-                var createCursor = await tx.RunAsync(createCommunitiesQuery);
-                var createResult = await createCursor.SingleAsync();
-                var createdCount = createResult["createdCommunities"].As<int>();
-
-                // Step 3: Create synthetic communities for highly connected players without a natural community
-                var syntheticCommunitiesQuery = @"
-                    // Find players who are not in any community but have strong connections
-                    MATCH (p:Player)
-                    WHERE p.communityId IS NULL
-                    MATCH (p)-[r:PLAYED_WITH]-(teammate)
-                    WITH p, teammate, r.sessionCount AS sessions
-                    ORDER BY p.name, sessions DESC
-                    WITH p, COLLECT({name: teammate.name, sessions: sessions})[0..7] AS topTeammates
-                    WHERE SIZE(topTeammates) >= 3
-                    WITH p, topTeammates, [t IN topTeammates | t.name] AS topNames
-
-                    // Create a synthetic community with the player and their top teammates
-                    // Calculate average sessions manually
-                    WITH p, topNames, topNames + [p.name] AS allNames,
-                         reduce(sum = 0, t IN topTeammates | sum + t.sessions) / toFloat(SIZE(topTeammates)) AS avgSessions,
-                         MAX(datetime()) AS lastActive
-
-                    // Calculate cohesion for the synthetic community
-                    UNWIND allNames AS m1
-                    UNWIND allNames AS m2
-                    WITH p, topNames, allNames, avgSessions, lastActive, m1, m2
-                    WHERE m1 < m2
-                    OPTIONAL MATCH (p1:Player {name: m1})-[r:PLAYED_WITH]-(p2:Player {name: m2})
-                    WITH p, topNames, allNames, avgSessions, lastActive, COUNT(r) AS edgeCount
-
-                    // Calculate cohesion
-                    WITH p, topNames, allNames, avgSessions, lastActive, edgeCount,
-                         CASE WHEN SIZE(allNames) <= 1
-                              THEN 0.0
-                              ELSE toFloat(edgeCount * 2) / (SIZE(allNames) * (SIZE(allNames) - 1))
-                         END AS cohesion
-
-                    // Find primary servers for this group
-                    UNWIND allNames AS member
-                    MATCH (pl:Player {name: member})-[ps:PLAYS_ON]->(s:Server)
-                    WITH p, topNames, allNames, avgSessions, lastActive, cohesion,
-                         s.guid AS serverGuid, s.name AS serverName, COUNT(*) AS playCount
-                    ORDER BY playCount DESC
-                    WITH p, topNames, allNames, avgSessions, lastActive, cohesion,
-                         COLLECT(serverGuid)[0..5] AS serverGuids,
-                         COLLECT(serverName)[0..5] AS serverNames
-
-                    // Create synthetic community node
-                    CREATE (c:Community {
-                        id: 'synth_' + SUBSTRING(p.name, 0, 15) + '_' + SUBSTRING(randomUUID(), 0, 8),
-                        name: 'Squad: ' + p.name + ' & Co',
-                        members: allNames,
-                        coreMembers: [p.name] + topNames[0..4],
-                        primaryServers: serverNames,
-                        formationDate: datetime(),
-                        lastActiveDate: lastActive,
-                        avgSessionsPerPair: avgSessions,
-                        cohesionScore: cohesion
-                    })
-                    RETURN COUNT(c) AS createdSyntheticCommunities";
-
                 logger.LogDebug("Creating synthetic communities for unassigned highly-connected players");
-                var syntheticCursor = await tx.RunAsync(syntheticCommunitiesQuery);
-                var syntheticResult = await syntheticCursor.SingleAsync();
-                var syntheticCount = syntheticResult["createdSyntheticCommunities"].As<int>();
-
-                var totalCount = createdCount + syntheticCount;
-                logger.LogInformation("Community detection completed: created {CreatedCount} natural + {SyntheticCount} synthetic communities", createdCount, syntheticCount);
-                return $"Successfully detected and created {totalCount} communities ({createdCount} natural + {syntheticCount} synthetic)";
+                syntheticCount = await neo4jService.ExecuteWriteAsync(async tx =>
+                {
+                    var syntheticCursor = await tx.RunAsync(SyntheticCommunitiesQuery, new { runId });
+                    var syntheticResult = await syntheticCursor.SingleAsync();
+                    return syntheticResult["createdSyntheticCommunities"].As<int>();
+                });
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error during community detection");
-                throw;
+                logger.LogWarning(
+                    "Synthetic community creation failed after {CreatedCount} natural communities; swapping in natural results anyway. {ExceptionType}: {Message}",
+                    createdCount, ex.GetType().Name, ex.Message);
             }
-        });
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await neo4jService.ExecuteWriteAsync(async tx =>
+            {
+                var cursor = await tx.RunAsync(
+                    """
+                    MATCH (c:Community)
+                    WHERE c.detectedRunId <> $runId OR c.detectedRunId IS NULL
+                    DELETE c
+                    """,
+                    new { runId });
+                await cursor.ConsumeAsync();
+                return 0;
+            });
+
+            logger.LogInformation(
+                "Community detection completed: created {CreatedCount} natural + {SyntheticCount} synthetic communities",
+                createdCount, syntheticCount);
+            return $"Successfully detected and created {createdCount + syntheticCount} communities ({createdCount} natural + {syntheticCount} synthetic)";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during community detection");
+            throw;
+        }
     }
+
+    private const string CreateCommunitiesQuery = """
+        MATCH (p:Player)
+        WHERE p.communityId IS NOT NULL
+        WITH p.communityId AS communityId, COLLECT(p.name) AS members
+        WHERE SIZE(members) >= 3 AND SIZE(members) <= 20
+
+        UNWIND members AS m1
+        UNWIND members AS m2
+        WITH communityId, members, m1, m2
+        WHERE m1 < m2
+        MATCH (p1:Player {name: m1})-[r:PLAYED_WITH]-(p2:Player {name: m2})
+        WITH communityId, members, AVG(r.sessionCount) AS avgSessions,
+             MAX(r.lastPlayedTogether) AS lastActive, COUNT(r) AS edgeCount
+
+        WITH communityId, members, avgSessions, lastActive, edgeCount,
+             CASE WHEN SIZE(members) <= 1
+                  THEN 0.0
+                  ELSE toFloat(edgeCount * 2) / (SIZE(members) * (SIZE(members) - 1))
+             END AS cohesion
+
+        WHERE cohesion >= 0.3 AND avgSessions >= 2
+
+        UNWIND members AS member
+        MATCH (p:Player {name: member})-[r:PLAYED_WITH]-(other:Player)
+        WHERE other.name IN members
+        WITH communityId, members, avgSessions, lastActive, cohesion, member, COUNT(r) AS degree
+        ORDER BY degree DESC
+        WITH communityId, members, avgSessions, lastActive, cohesion, COLLECT(member)[0..5] AS coreMembers
+
+        UNWIND members AS member
+        MATCH (p:Player {name: member})-[ps:PLAYS_ON]->(s:Server)
+        WITH communityId, members, avgSessions, lastActive, cohesion, coreMembers,
+             s.guid AS serverGuid, s.name AS serverName, COUNT(*) AS playCount
+        ORDER BY playCount DESC
+        WITH communityId, members, avgSessions, lastActive, cohesion, coreMembers,
+             COLLECT(serverGuid)[0..5] AS serverGuids,
+             COLLECT(serverName)[0..5] AS serverNames
+
+        CREATE (c:Community {
+            id: 'comm_' + SUBSTRING(communityId, 0, 20),
+            name: 'Squad: ' + coreMembers[0],
+            members: members,
+            coreMembers: coreMembers,
+            primaryServers: serverNames,
+            formationDate: datetime(),
+            lastActiveDate: lastActive,
+            avgSessionsPerPair: avgSessions,
+            cohesionScore: cohesion,
+            detectedRunId: $runId
+        })
+        RETURN COUNT(c) AS createdCommunities
+        """;
+
+    private const string SyntheticCommunitiesQuery = """
+        MATCH (p:Player)
+        WHERE p.communityId IS NULL
+        MATCH (p)-[r:PLAYED_WITH]-(teammate)
+        WITH p, teammate, r.sessionCount AS sessions
+        ORDER BY p.name, sessions DESC
+        WITH p, COLLECT({name: teammate.name, sessions: sessions})[0..7] AS topTeammates
+        WHERE SIZE(topTeammates) >= 3
+        WITH p, topTeammates, [t IN topTeammates | t.name] AS topNames
+
+        WITH p, topNames, topNames + [p.name] AS allNames,
+             reduce(sum = 0, t IN topTeammates | sum + t.sessions) / toFloat(SIZE(topTeammates)) AS avgSessions,
+             MAX(datetime()) AS lastActive
+
+        UNWIND allNames AS m1
+        UNWIND allNames AS m2
+        WITH p, topNames, allNames, avgSessions, lastActive, m1, m2
+        WHERE m1 < m2
+        OPTIONAL MATCH (p1:Player {name: m1})-[r:PLAYED_WITH]-(p2:Player {name: m2})
+        WITH p, topNames, allNames, avgSessions, lastActive, COUNT(r) AS edgeCount
+
+        WITH p, topNames, allNames, avgSessions, lastActive, edgeCount,
+             CASE WHEN SIZE(allNames) <= 1
+                  THEN 0.0
+                  ELSE toFloat(edgeCount * 2) / (SIZE(allNames) * (SIZE(allNames) - 1))
+             END AS cohesion
+
+        UNWIND allNames AS member
+        MATCH (pl:Player {name: member})-[ps:PLAYS_ON]->(s:Server)
+        WITH p, topNames, allNames, avgSessions, lastActive, cohesion,
+             s.guid AS serverGuid, s.name AS serverName, COUNT(*) AS playCount
+        ORDER BY playCount DESC
+        WITH p, topNames, allNames, avgSessions, lastActive, cohesion,
+             COLLECT(serverGuid)[0..5] AS serverGuids,
+             COLLECT(serverName)[0..5] AS serverNames
+
+        CREATE (c:Community {
+            id: 'synth_' + SUBSTRING(p.name, 0, 15) + '_' + SUBSTRING(randomUUID(), 0, 8),
+            name: 'Squad: ' + p.name + ' & Co',
+            members: allNames,
+            coreMembers: [p.name] + topNames[0..4],
+            primaryServers: serverNames,
+            formationDate: datetime(),
+            lastActiveDate: lastActive,
+            avgSessionsPerPair: avgSessions,
+            cohesionScore: cohesion,
+            detectedRunId: $runId
+        })
+        RETURN COUNT(c) AS createdSyntheticCommunities
+        """;
 
     public async Task<List<Models.ServerPlayerCloseness>> GetServerPlayerClosenessAsync(
         string serverGuid,
