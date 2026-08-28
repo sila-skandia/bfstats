@@ -1,6 +1,7 @@
 using api.Gamification.Models;
 using api.Analytics.Models;
 using api.PlayerTracking;
+using api.StatsCollectors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -152,6 +153,10 @@ public class KillStreakDetector(
                 }
             }
         }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error calculating kill streaks from player_metrics for round {RoundId}, player {PlayerName}",
@@ -197,6 +202,10 @@ public class KillStreakDetector(
                 observations.Count, round.PlayerName, round.RoundId);
 
             return observations;
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {
