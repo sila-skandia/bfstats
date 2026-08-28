@@ -11,6 +11,11 @@ internal static class SqliteBusy
             return true;
         }
 
+        if (ex is AggregateException aggregate)
+        {
+            return aggregate.InnerExceptions.Any(IsBusy);
+        }
+
         return ex.InnerException != null && IsBusy(ex.InnerException);
     }
 
@@ -21,6 +26,18 @@ internal static class SqliteBusy
             if (current is Microsoft.Data.Sqlite.SqliteException sqliteEx)
             {
                 return $"SQLITE {sqliteEx.SqliteErrorCode}/{sqliteEx.SqliteExtendedErrorCode}";
+            }
+
+            if (current is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.InnerExceptions)
+                {
+                    var described = Describe(inner);
+                    if (described.StartsWith("SQLITE ", StringComparison.Ordinal))
+                    {
+                        return described;
+                    }
+                }
             }
         }
 
