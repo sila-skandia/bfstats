@@ -2,6 +2,7 @@ using api.Data.Entities;
 using api.Gamification.Models;
 using api.Analytics.Models;
 using api.PlayerTracking;
+using api.StatsCollectors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -61,6 +62,10 @@ public class MilestoneCalculator(
                 .ToList();
 
             return newUniqueAchievements;
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -289,6 +294,10 @@ public class MilestoneCalculator(
                 TotalPlayTimeMinutes = (int)monthlyStats.Sum(ps => ps.TotalPlayTimeMinutes),
                 LastUpdated = DateTime.UtcNow
             };
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {
