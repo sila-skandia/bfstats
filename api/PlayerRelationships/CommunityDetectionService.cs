@@ -52,7 +52,9 @@ public class CommunityDetectionService(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error in community detection service");
+                // DetectAndStoreCommunities already logged the exception; attaching it
+                // here would fire a second Seq @Exception event for the same failure.
+                logger.LogError("Error in community detection service: {Message}", ex.Message);
                 await Task.Delay(RetryInterval, stoppingToken);
             }
         }

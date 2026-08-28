@@ -55,6 +55,19 @@ public class Neo4jService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Run Cypher in auto-commit mode. Required for <c>CALL { } IN TRANSACTIONS</c>,
+    /// which cannot run inside an explicit transaction.
+    /// </summary>
+    public async Task RunAutoCommitAsync(string cypher, object? parameters = null)
+    {
+        await using var session = Driver.AsyncSession(o => o.WithDatabase(_database));
+        var cursor = parameters is null
+            ? await session.RunAsync(cypher)
+            : await session.RunAsync(cypher, parameters);
+        await cursor.ConsumeAsync();
+    }
+
+    /// <summary>
     /// Verify connectivity to Neo4j.
     /// </summary>
     public async Task<bool> VerifyConnectivityAsync()
