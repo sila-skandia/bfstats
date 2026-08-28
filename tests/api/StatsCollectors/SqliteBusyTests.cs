@@ -26,6 +26,16 @@ public class SqliteBusyTests
     }
 
     [Fact]
+    public void IsBusy_True_ForAggregateExceptionWrappingSqliteBusy()
+    {
+        var inner = new SqliteException("database is locked", 5);
+        var wrapped = new AggregateException(inner);
+
+        Assert.True(SqliteBusy.IsBusy(wrapped));
+        Assert.StartsWith("SQLITE 5/", SqliteBusy.Describe(wrapped));
+    }
+
+    [Fact]
     public void IsBusy_False_ForUnrelatedExceptions()
     {
         var ex = new InvalidOperationException("nope");
