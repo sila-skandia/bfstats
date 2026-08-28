@@ -127,7 +127,9 @@ public class BfListApiService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Live fetch failed for game {Game}; falling back to last-known-good snapshot", game);
+            logger.LogWarning(
+                "Live fetch failed for game {Game} ({ExceptionType}: {Message}); falling back to last-known-good snapshot",
+                game, ex.GetType().Name, ex.Message);
             var lastGood = await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
             if (lastGood == null)
             {
