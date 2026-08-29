@@ -4,6 +4,26 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 00:07 UTC page
+
+~5 hours after the 19:04 page. Live site at 00:08 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Players `lastSeen` 00:08:33, liveservers 200
+- `GET /stats/players` (default, sort `IsActive`) **400**
+  `An item with the same key has already been added. Key: ping galarga`
+- `BATTLER` is now offline (`lastSeen` 21:47 UTC), so the colliding name
+  rotated. Same `ToDictionary` bug, different player.
+
+The 19:04 branch (`cursor/site-error-analysis-41f0`) never opened a PR, so
+production still pages on handled `SQLITE_BUSY` and still 400s the default
+players list whenever two people with the same name are online. This change
+re-lands that work.
+
+00:07 is the top of the hour: ranking and aggregate writers plus the 5-minute
+gamification cycle and 30s stats collector. Same class of noise as 13:07 /
+15:02 / 19:04.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
