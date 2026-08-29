@@ -4,6 +4,26 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 05:15 UTC page
+
+~63 minutes after the 04:12 page (hourly ranking/aggregate cadence). Live site
+at 05:16 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Players `lastSeen` 05:15:33, 86 live BF1942 servers
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+`GET /stats/players` still 400. Colliding `IsActive` keys in this window:
+**Xberg** (not on the live list — stale or cross-game session) and **chris**
+(live on both `-[ECHO]- DC | North America` and `-[ECHO]- DC | Europe`).
+Player detail for Xberg is 200 (`isActive: false`, lastPlayed 05:11). This
+still does not page Seq — the controller maps `ArgumentException` to 400
+without logging.
+
+The 04:12 branch (`cursor/site-error-analysis-a868`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY`. This change re-lands that work.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
