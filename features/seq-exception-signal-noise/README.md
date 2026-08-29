@@ -4,6 +4,69 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 08:17 UTC page
+
+~35 minutes after the 07:42 page; ~2 minutes after the typical :15 hourly
+ranking/aggregate window (Seq may also re-notify while the condition stays
+true). Live site at 08:18 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Players `lastSeen` 08:18:03, 86 live BF1942 servers, liveservers
+  `lastUpdated` 08:18:23
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+`GET /stats/players` (default page) and the previously colliding search keys
+(`bacon_ita019`, `Xberg`, `chris`, `Hattori Hanzo`, `BATTLER`,
+`ping galarga`) were all 200. `bacon_ita019` is now inactive (`isActive:
+false`, lastPlayed 08:08). `chris` is live on `-[ECHO]- DC | Europe` only,
+so the duplicate-`IsActive` 400 is not firing in this window.
+
+The 07:42 branch (`cursor/bc-e1511cf7-f5b0-46dc-854a-28db0178ebe2-5d82`)
+never opened a PR, so production still has the noisy `LogWarning(ex)` /
+`LogError(ex)` on handled `SQLITE_BUSY`. This change re-lands that work.
+
+## 2026-08-29 07:42 UTC page
+
+~2.5 hours after the 05:15 page (hourly ranking/aggregate cadence; Seq may
+also re-notify while the condition stays true). Live site at 07:43 UTC was
+healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Players `lastSeen` 07:43:03, 86 live BF1942 servers, liveservers
+  `lastUpdated` 07:43:11
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+`GET /stats/players` (default page) and `/stats/players/search?query=bacon_ita019`
+both 400. Colliding `IsActive` key: **bacon_ita019**. Live on
+`*NEW* SiMPLE | RtR+SW` only; player detail is 200 (`isActive: true`,
+lastPlayed 07:43:33). The second `IsActive` row is stale or another game.
+This still does not page Seq — the controller maps `ArgumentException` to 400
+without logging.
+
+The 05:15 branch (`cursor/site-error-analysis-cf45`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY`. This change re-lands that work.
+
+## 2026-08-29 05:15 UTC page
+
+~63 minutes after the 04:12 page (hourly ranking/aggregate cadence). Live site
+at 05:16 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Players `lastSeen` 05:15:33, 86 live BF1942 servers
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+`GET /stats/players` still 400. Colliding `IsActive` keys in this window:
+**Xberg** (not on the live list — stale or cross-game session) and **chris**
+(live on both `-[ECHO]- DC | North America` and `-[ECHO]- DC | Europe`).
+Player detail for Xberg is 200 (`isActive: false`, lastPlayed 05:11). This
+still does not page Seq — the controller maps `ArgumentException` to 400
+without logging.
+
+The 04:12 branch (`cursor/site-error-analysis-a868`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY`. This change re-lands that work.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
