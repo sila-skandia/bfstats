@@ -4,6 +4,34 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 12:22 UTC page
+
+~59 minutes after the 11:23 page (hourly ranking/aggregate cadence, or Seq
+re-notify). Live site at 12:23 UTC was otherwise healthy:
+
+- Liveservers `lastUpdated` 12:23:33, 88 BF1942 servers
+- bflist `api.bflist.io/v2/bf1942/servers` 200
+- Landing, leaderboard, and player details 200
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. Same best fit as 11:23: hourly
+ranking/aggregate writers overlapping the 5-minute gamification job, with
+`LogWarning(ex)` / `LogError(ex)` on handled `SQLITE_BUSY` still tripping
+`@Exception is not null`.
+
+Separately, `GET /stats/players` and `/stats/players/search?query=CrossMax`
+currently return 400 `An item with the same key has already been added. Key:
+CrossMax`. CrossMax is live on `*NEW* SiMPLE | BF1942` only; a second stale
+`IsActive` session for the same name is enough to break `ToDictionary`.
+Previous colliding keys (bacon_ita019, chris, Xberg, Hattori Hanzo, BATTLER,
+ping galarga) were 200. The controller catches `ArgumentException` and
+returns 400 without logging, so this is **not** the Seq page — but the
+players list is broken while that name is online.
+
+The 11:23 branch (`cursor/site-error-analysis-eab5`) never opened a PR, so
+production still has the noisy logging and the duplicate-name `ToDictionary`
+400. This change re-lands that work on current main.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
