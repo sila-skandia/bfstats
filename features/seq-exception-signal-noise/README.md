@@ -4,6 +4,26 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 10:20 UTC page
+
+~2 hours after the 08:17 page (~5 min after the hourly ranking/aggregate
+window). Live site at 10:20 UTC was healthy:
+
+- Players `lastSeen` 10:20:33, liveservers `lastUpdated` 10:20:33
+- 87 live BF1942 servers, bflist `api.bflist.io/v2/bf1942/servers` 200
+- `GET /stats/players` 200; previously colliding search keys (bacon_ita019,
+  chris, Xberg, Hattori Hanzo, BATTLER, ping galarga) all 200
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. Same best fit as 08:17: hourly
+ranking/aggregate writers overlapping the 5-minute gamification job, with
+`LogWarning(ex)` / `LogError(ex)` on handled `SQLITE_BUSY` still tripping
+`@Exception is not null`.
+
+The 08:17 branch (`cursor/site-error-analysis-9a6d`) never opened a PR, so
+production still has the noisy logging and the duplicate-name `ToDictionary`
+400. This change re-lands that work on current main.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
