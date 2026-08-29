@@ -4,6 +4,54 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 21:00 UTC page
+
+~1h 30m after the 19:30 page (hourly ranking/aggregate cadence on the
+hour, or Seq re-notify). Live site at 21:01 UTC was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 21:01:03, 85 BF1942 servers
+- bflist `api.bflist.io/v2/bf1942/servers` 200
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+- Leaderboard / player-detail / default `/stats/players` 200
+
+The 19:30 colliding key (`LUMIA 1520 WP 8.1 SE`) is now 200 and
+`isActive: false` (`lastSeen` 20:19:03). Older colliding search keys
+(Banzaq Ipona San, CrossMax, chris, Xberg, bacon_ita019, BATTLER) are
+also 200. The players-list 400 is still real when a hopper leaves a
+stale `IsActive` row, but it is not firing right now and does **not**
+page Seq.
+
+The page itself is still the undeployed `LogWarning(ex)` / `LogError(ex)`
+on handled `SQLITE_BUSY`. The 19:30 branch
+(`cursor/site-error-analysis-8807`) never opened a PR, so this change
+re-lands that stack on current main.
+
+## 2026-08-29 19:30 UTC page
+
+~3h 25m after the 16:05 page (hourly ranking/aggregate cadence or Seq
+re-notify). Live site at 19:31 UTC was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 19:31:33, 86 BF1942 servers
+- bflist `api.bflist.io/v2/bf1942/servers` 200
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+- Leaderboard / player-detail pages 200
+
+`GET /stats/players` (default IsActive page) and
+`/stats/players/search?query=LUMIA%201520%20WP%208.1%20SE` both 400
+`An item with the same key has already been added. Key: LUMIA 1520 WP 8.1 SE`.
+`?pageSize=5` also 400 (LUMIA is page-1 / IsActive). Player detail 200,
+`isActive: true`, live only on `Battlefield COOP Server` (session 3007127,
+started 19:29:33, lastSeen 19:31:03). A second IsActive row remains on
+`TheGreatEscape | BF1942 | USA` (session 3007119, lastSeen 19:29:03) —
+same hop-before-5-minute-timeout pattern as Banzaq at 16:06. Older
+colliding keys (Banzaq Ipona San, CrossMax, chris, Xberg, bacon_ita019,
+BATTLER) all 200.
+
+The 400 is caught in the controller and does **not** page Seq. The page
+itself is still the undeployed `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY`. The 16:05 branch (`cursor/site-error-analysis-78ea`) never
+opened a PR, so this change re-lands that stack on current main.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
