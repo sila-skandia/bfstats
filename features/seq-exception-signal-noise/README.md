@@ -4,6 +4,43 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 02:02 UTC page
+
+Exactly 24h after the 02:02 page on 2026-08-28 — wall-clock of nightly
+community detection (`CommunityDetectionService` at 02:00 UTC). Live site
+at 02:02 UTC was healthy:
+
+- Homepage 200 in 136ms, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Players `lastSeen` 02:02:33, 86 live BF1942 servers
+- `/stats/communities` still **17,963** rows, all `formationDate = 2026-08-20`
+- Seq API still 401
+
+`GET /stats/players` (default, sort `IsActive`) **400**
+`An item with the same key has already been added. Key: Hattori Hanzo`
+(`pageSize=5` happened to 200 because that colliding name was not on page 1).
+Same `ToDictionary` bug as BATTLER / ping galarga — names rotate as people
+come online.
+
+This is the 02:00 detection job still colliding with the co-rounds Neo4j
+backfill (and/or OOMing the 1.25G heap), plus the same unmerged SQLITE_BUSY
+signal noise. Previous branches `0575` / `41f0` / `7c47` never reached
+production. This change re-lands that work.
+
+## 2026-08-29 00:07 UTC page
+
+~5 hours after the 19:04 page. Live site at 00:08 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Players `lastSeen` 00:08:33, liveservers 200
+- `GET /stats/players` (default, sort `IsActive`) **400**
+  `An item with the same key has already been added. Key: ping galarga`
+- `BATTLER` is now offline (`lastSeen` 21:47 UTC), so the colliding name
+  rotated. Same `ToDictionary` bug, different player.
+
+00:07 is the top of the hour: ranking and aggregate writers plus the 5-minute
+gamification cycle and 30s stats collector. Same class of SQLITE_BUSY noise
+as 13:07 / 15:02 / 19:04.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:

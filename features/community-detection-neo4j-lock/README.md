@@ -2,8 +2,9 @@
 
 ## Symptom
 
-Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28**. Site was healthy
-(stats collection `lastSeen` within seconds, live rounds 200, `/health` 200).
+Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28** and again at
+**02:02 UTC on 2026-08-29**. Site was healthy both times
+(stats collection `lastSeen` within seconds, live rounds 200, homepage 200).
 
 Live `/stats/communities` still served **17,963 communities**, all stamped
 `formationDate = 2026-08-20T02:00:05–08Z`. Nightly detection last succeeded
