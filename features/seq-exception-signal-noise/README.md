@@ -4,6 +4,43 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 04:12 UTC page
+
+~2 hours after the 02:02 page. Live site at 04:13 UTC was healthy:
+
+- Homepage 200 in 129ms, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Players `lastSeen` 04:13:03, 85 live BF1942 servers
+- `/stats/communities` still **17,963** rows, all `formationDate = 2026-08-20`
+- Seq API still 401
+
+`GET /stats/players` (default, sort `IsActive`) **400**
+`An item with the same key has already been added. Key: Xberg`
+(`pageSize=5` 200; `sortBy=LastSeen&pageSize=1` 200). Xberg was on one live
+BF1942 server (`[e.n.d.s]`); the second `IsActive` row is either the same
+name on another game or a stale session. Same `ToDictionary` bug as BATTLER /
+ping galarga / Hattori Hanzo.
+
+04:12 is the top of the hour plus ranking/aggregate writers overlapping the
+5-minute gamification cycle and 30s stats collector. Same SQLITE_BUSY signal
+noise as 13:07 / 15:02 / 19:04 / 00:07. Community detection does not retry
+after 02:00 (it sleeps until tomorrow), so this page is not a 02:00 leftover
+unless Seq is re-notifying the still-matching 02:02 `LogError`.
+
+Previous branches `ffd1` / `0575` / `41f0` / `7c47` never reached production.
+This change re-lands that work.
+
+## 2026-08-29 02:02 UTC page
+
+Exactly 24h after the 02:02 page on 2026-08-28 — wall-clock of nightly
+community detection (`CommunityDetectionService` at 02:00 UTC). Live site
+at 02:02 UTC was healthy. Duplicate-name 400 key: **Hattori Hanzo**.
+
+## 2026-08-29 00:07 UTC page
+
+~5 hours after the 19:04 page. Live site at 00:08 UTC was healthy.
+Duplicate-name 400 key: **ping galarga**. 00:07 is the same hourly
+SQLITE_BUSY class as 13:07 / 15:02 / 19:04.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
