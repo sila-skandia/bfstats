@@ -4,6 +4,30 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-29 16:05 UTC page
+
+~3h 43m after the 12:22 page. Live site at 16:06 UTC was healthy:
+
+- Homepage 200, leaderboard 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 16:06:03, 86 live BF1942 servers
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. Best fit is the same hourly
+ranking/aggregate `SQLITE_BUSY` overlap; the 12:22 branch
+(`cursor/site-error-analysis-eeeb`) never opened a PR, so production still
+attaches `ex` on handled locks and pages `@Exception is not null`.
+
+Separately, `GET /stats/players` (default page and `?pageSize=5`) and
+`/stats/players/search?query=Banzaq%20Ipona%20San` return 400
+`An item with the same key has already been added. Key: Banzaq Ipona San`.
+Player detail is 200, `isActive` true, live only on `ReD DawG | DCF+DCF/SW | RTR`
+(`lastPlayed` 16:06:33). A second `IsActive` session remains on
+`Badewiese DC-FINAL` (`lastSeen` 16:03:03) — inside the 5-minute session
+timeout after a server hop. Liveservers lists the name once. Older colliding
+search keys (CrossMax, chris, Xberg, bacon_ita019, BATTLER) are all 200.
+This does **not** page Seq (controller catches `ArgumentException`), but the
+default players list is broken while the stale row is still open.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
