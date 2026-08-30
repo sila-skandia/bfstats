@@ -4,6 +4,39 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-30 08:43 UTC page
+
+~1 hour after the 07:43 page (and ~6.5h after the 02:00 community-detection
+slot). Live site at 08:44 UTC was healthy:
+
+- Homepage 200, leaderboard 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 08:43:38, 88 live BF1942 servers
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. Best fit is the hourly
+ranking/aggregate writers overlapping the 5-minute gamification / 30s stats
+collection cycle, with `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY` still tripping `@Exception is not null`. A :43 page is not the
+02:00 community-detection job.
+
+The 07:43 branch (`cursor/site-error-analysis-cb02`) and earlier 3c0a / 720b
+never opened a PR, so production still has the noisy logging. This change
+re-lands that work.
+
+Separately, `GET /stats/players` (default page, sort `IsActive`) currently
+returns 400 `An item with the same key has already been added. Key: Blezzed`.
+Player detail is 200 (`isActive: true` on `Battlefield COOP Server`); only one
+live server shows that name. Same stale second `IsActive` row as earlier hops
+(LUMIA, Banzaq, CGT-GAUCHO). The controller catches `ArgumentException` and
+returns 400 without logging, so this is **not** the Seq page — but the players
+list is broken while a colliding name is on page 1. The lookup now keeps the
+most recently seen session.
+
+Known colliding names at 08:44: CGT-GAUCHO / Hattori Hanzo / Xberg / BATTLER /
+bacon_ita019 / CrossMax / Banzaq / chris search 200 and `isActive` false.
+LUMIA 1520 WP 8.1 SE search 200, `isActive` true on `*NEW* SiMPLE | RtR+SW`.
+`?pageSize=5` 200 (Blezzed is not on that page).
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
