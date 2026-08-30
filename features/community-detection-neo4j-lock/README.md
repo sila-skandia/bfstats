@@ -2,13 +2,18 @@
 
 ## Symptom
 
-Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28**. Site was healthy
-(stats collection `lastSeen` within seconds, live rounds 200, `/health` 200).
+Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28**, **02:03 UTC on
+2026-08-30**, and again at **02:38 UTC on 2026-08-30**. Site was healthy each
+time (stats collection `lastUpdated` within seconds, liveservers 200).
+
+The **07:43 UTC on 2026-08-30** page is *not* this job: detection does not
+retry all night after a catch (5 min wait, then sleep until tomorrow). That
+page is hourly SQLITE_BUSY or Seq re-notify. Communities are still stale.
 
 Live `/stats/communities` still served **17,963 communities**, all stamped
 `formationDate = 2026-08-20T02:00:05–08Z`. Nightly detection last succeeded
 the morning after the co-rounds backfill started (heap/CPU bump, fire-and-forget
-sync) and has failed every 2 AM run since.
+sync) and has failed every 2 AM run since, including 2026-08-30.
 
 ## Cause
 

@@ -4,6 +4,29 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-30 07:43 UTC page
+
+~5 hours after the 02:38 page (and well after the 02:00 community-detection
+slot). Live site at 07:44 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 07:43:33, 86 BF1942 servers
+- Landing / leaderboard / default `/stats/players` / `pageSize=5` all 200
+- Known colliding names (CGT-GAUCHO, Hattori Hanzo, Xberg, BATTLER, …) search
+  200; none currently `isActive`
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. 07:43 is past the 5-minute catch
+retry on the 02:00 job, so this is hourly ranking/aggregate writers
+overlapping the 5-minute gamification / 30s stats-collection cycle (or Seq
+re-notifying an earlier exception). Daily aggregate (04:00) and Server
+Wrapped crunch (05:00) are other `LogError(ex)` sources; without Seq we
+cannot rule them out, but the site stayed up and collection kept writing.
+
+The 02:38 branch (`cursor/site-error-analysis-3c0a`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY`. This change re-lands that work.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
