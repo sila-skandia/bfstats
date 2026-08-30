@@ -4,6 +4,37 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-30 02:38 UTC page
+
+35 minutes after the 02:03 page (nightly community-detection slot). Live site
+at 02:38 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 02:38:33, 87 live BF1942 servers
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+- Leaderboard 200, `GET /stats/players?pageSize=5` 200
+
+The 02:03 branch (`cursor/site-error-analysis-720b`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY` and the community-detection wipe-on-failure path. This change
+re-lands that work.
+
+`02:38` is past the 5-minute catch-and-retry window, so this is not a second
+02:00 attempt. Best fit is the 02:00 run still holding the Neo4j write (or
+waiting on the backfill lock) and then paging, or Seq re-notifying that
+exception. 5-minute gamification overlapping a long detection write can also
+`SQLITE_BUSY` and page the same signal.
+
+Separately, `GET /stats/players` (default page, sort `IsActive`) currently
+returns 400 `An item with the same key has already been added. Key: CGT-GAUCHO`.
+Search for that name also 400s. Player detail is 200, `isActive: true` on
+`*NEW* SiMPLE | RtR+SW`. Older colliding keys (Hattori Hanzo, Xberg, BATTLER,
+chris, bacon_ita019, CrossMax, Banzaq Ipona San, LUMIA 1520 WP 8.1 SE) are
+200. The controller catches `ArgumentException` and returns 400 without
+logging, so this is **not** the Seq page — but the players list is broken
+while that name has two active sessions. The lookup now keeps the most
+recently seen session.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
