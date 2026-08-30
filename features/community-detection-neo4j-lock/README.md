@@ -8,7 +8,9 @@ Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28**. Site was healthy
 Live `/stats/communities` still served **17,963 communities**, all stamped
 `formationDate = 2026-08-20T02:00:05–08Z`. Nightly detection last succeeded
 the morning after the co-rounds backfill started (heap/CPU bump, fire-and-forget
-sync) and has failed every 2 AM run since.
+sync) and has failed every 2 AM run since. Still 17,963 / 2026-08-20 as of
+the 2026-08-30 09:45 UTC Seq page (that :45 fire is hourly SQLITE_BUSY, not
+a second detection attempt).
 
 ## Cause
 
