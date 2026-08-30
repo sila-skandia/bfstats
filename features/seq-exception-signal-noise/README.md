@@ -4,6 +4,34 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-30 18:53 UTC page
+
+~8 hours after the 10:45 page (and ~17h after the 02:00 community-detection
+slot). Live site at 18:54 UTC was healthy:
+
+- Homepage 200, leaderboard 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 18:54:08, 87 live BF1942 servers
+- `?pageSize=5` players 200; default `/stats/players` **400** `Key: Urgo`
+- `/stats/players/search?query=Urgo` **400**; player detail 200, `isActive`
+  true on `*NEW* SiMPLE | BF1942` (only one live server lists that name)
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. Best fit is the hourly
+ranking/aggregate writers overlapping the 5-minute gamification / 30s stats
+collection cycle, with `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY` still tripping `@Exception is not null`. An :53 page is not
+the 02:00 community-detection job.
+
+The 10:45 branch (`cursor/site-error-analysis-54b4`) and earlier 0b15 /
+ad44 / cb02 / 3c0a never opened a PR, so production still has the noisy
+logging. This change re-lands that work.
+
+`GET /stats/players` is 400 again because two `IsActive` sessions share
+`Urgo`. Older colliding names (Blezzed, CGT-GAUCHO, Hattori Hanzo, Xberg,
+BATTLER, bacon_ita019, CrossMax, Banzaq Ipona San, chris, LUMIA 1520 WP
+8.1 SE) search 200. The `ToDictionary(s => s.PlayerName)` lookup is still
+on production; the list will 400 whenever a colliding name lands on page 1.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
