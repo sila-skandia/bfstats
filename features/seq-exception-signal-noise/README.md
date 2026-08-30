@@ -4,6 +4,31 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-30 02:03 UTC page
+
+Fired at the nightly 02:00 UTC community-detection slot. Live site at 02:03 UTC
+was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 02:03:42, 87 BF1942 servers
+- bflist `api.bflist.io/v2/bf1942/servers` 200
+- Leaderboard / default `/stats/players` 200
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+This is the same 2 AM job that last succeeded on 2026-08-20. Detection still
+wipes-then-clusters in one Neo4j write without the relationship-sync lock, so
+it Forseti-deadlocks against the co-rounds backfill and/or OOMs the 1.25G heap.
+`CommunityDetectionService` then `LogError(ex)`, which pages
+`@Exception is not null`.
+
+Separately, `/stats/players/search?query=Hattori%20Hanzo` 400ed
+`An item with the same key has already been added. Key: Hattori Hanzo`.
+Player detail 200, `isActive: true` on `*NEW* SiMPLE | RtR+SW`. The controller
+catches `ArgumentException` and does **not** page Seq — same hop-before-timeout
+duplicate `IsActive` row as BATTLER / Banzaq / LUMIA on earlier pages.
+
+Earlier branches (`cursor/site-error-analysis-a9b5` and the 8807/78ea stack)
+never opened a PR, so this change re-lands that work on current main.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
