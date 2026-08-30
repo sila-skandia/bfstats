@@ -4,6 +4,34 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-30 21:58 UTC page
+
+~2 hours after the 19:40 page. Live site at 21:58 UTC was healthy:
+
+- Homepage 200, leaderboard 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 21:58:33, 87 live BF1942 servers, 104 named players
+- Default `/stats/players` 200; `?pageSize=5` 200
+- `/stats/players/search` 200 for Urgo, Xberg, chris, Hattori Hanzo, and the
+  other names that have 400'd earlier today
+- `/stats/communities` still 17,963 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. 21:58 is two minutes before the
+hourly writers and three minutes after a 5-minute gamification boundary —
+not the 02:00 community-detection slot. Best fit is the hourly
+ranking/aggregate writers overlapping the 5-minute gamification / 30s stats
+collection cycle, or a Seq re-notify of the same handled `SQLITE_BUSY`,
+with `LogWarning(ex)` / `LogError(ex)` still tripping `@Exception is not
+null`.
+
+The 19:40 branch (`cursor/site-error-analysis-97bb`) and earlier 3081 /
+54b4 / 0b15 / ad44 / cb02 / 3c0a never opened a PR, so production still
+has the noisy logging. This change re-lands that work.
+
+`GET /stats/players` is 200 this time. `BFSoldier` is live on three servers
+(MoonGamers, FHSWeu, SiMPLE RtR+SW) and does not 400 the list or search
+right now. The `ToDictionary` lookup is still on production; the list will
+400 whenever a colliding name lands on page 1.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
