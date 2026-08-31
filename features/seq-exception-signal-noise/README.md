@@ -4,6 +4,31 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-31 12:08 UTC page
+
+8 minutes after hourly ranking/aggregate writers (`:00`) and 3 minutes after a
+5-minute gamification tick (`:05`). Live site at 12:09 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 12:09:09, 86 BF1942 servers, 36 named players
+- `/stats/communities` still 17,962 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. Best fit is the same hourly
+`SQLITE_BUSY` overlap as the 10:13 / 10:53 pages, with `LogWarning(ex)` /
+`LogError(ex)` on handled lock contention still tripping `@Exception is not
+null`. Previous branches (`ae5d`, `3854`, `b0a1`, `3081`, …) never merged, so
+production still has the noisy logging. This change re-lands that work.
+
+Separately, `GET /stats/players` (default page, sort `IsActive`) currently
+returns 400 `An item with the same key has already been added. Key: Fuchs`.
+The same name is live on two servers at once (`Battlefield COOP Server` and
+`Badewiese [Public DC Server]`). Player-detail for Fuchs is 200 (`isActive:
+true` on the COOP server). Search for `Fuchs` 400s; other historical collision
+names (Engineer, TEST, Combat Engineer, …) were 200 at probe time. The
+controller catches `ArgumentException` and returns 400 without logging, so
+this is **not** the Seq page — but the players list is broken while Fuchs is
+on both servers. The lookup now keeps the most recently seen session.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
