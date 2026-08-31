@@ -4,6 +4,20 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-31 09:03 UTC page
+
+Hourly SQLITE_BUSY slot (writers at :00 overlapping 5-min gamification /
+30s stats collection). Site at 09:04 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 09:04:03, 87 BF1942 servers, 28 named players
+- `GET /stats/players` 200 (no colliding IsActive names at probe time)
+- `/stats/communities` still 17,962 rows, all `formationDate = 2026-08-20`
+
+Same unmerged stack as `cursor/site-error-analysis-b888` / `3081`. This
+branch re-lands those five fix commits; production will keep paging until
+they merge and deploy.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
