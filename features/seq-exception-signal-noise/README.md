@@ -4,6 +4,28 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-31 02:03 UTC page
+
+This is the nightly 02:00 UTC community-detection slot. Live site at 02:04 UTC
+was otherwise healthy:
+
+- liveservers `lastUpdated` 02:04:04, 85 servers, 65 named players
+- bflist `api.bflist.io/v2/bf1942/servers` 200, leaderboard 200
+- `/stats/communities` still 17,962 rows, all `formationDate = 2026-08-20`
+
+`GET /stats/players` (default page, sort `IsActive`) returned 400
+`An item with the same key has already been added. Key: -=count***flatula=-`.
+Search for `flatula` / `count` 400s the same way. Player detail 200, live on
+`*NEW* SiMPLE | RtR+SW` only — a second stale `IsActive` row is still open
+inside the 5-minute hop timeout. The controller catches `ArgumentException`
+and returns 400 without logging, so this is **not** the Seq page.
+
+Best fit for the page is the 02:00 community-detection writer failing again
+(stale since 2026-08-20). Earlier investigation branches never merged, so
+production still has the unbatched wipe-first Cypher and the noisy
+`LogWarning(ex)` / `LogError(ex)` on handled `SQLITE_BUSY`. This change
+re-lands that stack.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:

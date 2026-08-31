@@ -2,13 +2,15 @@
 
 ## Symptom
 
-Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28**. Site was healthy
-(stats collection `lastSeen` within seconds, live rounds 200, `/health` 200).
+Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28** and again at
+**02:03 UTC on 2026-08-31**. Site was healthy both times (stats collection
+`lastSeen` within seconds, live rounds 200).
 
-Live `/stats/communities` still served **17,963 communities**, all stamped
-`formationDate = 2026-08-20T02:00:05–08Z`. Nightly detection last succeeded
+Live `/stats/communities` still served **17,962 communities** on 2026-08-31,
+all stamped `formationDate = 2026-08-20`. Nightly detection last succeeded
 the morning after the co-rounds backfill started (heap/CPU bump, fire-and-forget
-sync) and has failed every 2 AM run since.
+sync) and has failed every 2 AM run since. The 02:03 page on 2026-08-31 is
+that same job — not a second attempt and not hourly SQLITE_BUSY overlap.
 
 ## Cause
 
