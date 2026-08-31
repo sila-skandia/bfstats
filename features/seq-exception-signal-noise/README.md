@@ -4,6 +4,33 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-31 05:03 UTC page
+
+Three hours after the 02:03 community-detection page. Live site at 05:04 UTC
+was healthy:
+
+- liveservers `lastUpdated` 05:04:13, 86 servers, 33 named players
+- bflist `api.bflist.io/v2/bf1942/servers` 200, leaderboard 200
+- `/stats/communities` still 17,962 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. 05:03 sits on the hourly
+ranking/aggregate write overlapping the 5-minute gamification tick — the
+same handled `SQLITE_BUSY` that pages `@Exception is not null`.
+
+The 02:03 branch (`cursor/site-error-analysis-0334`) never opened a PR, so
+production still has the noisy logging and the players-list
+`ToDictionary` crash. This change re-lands that work.
+
+Separately, `GET /stats/players` 400s whenever a hopper still has two
+`isActive` sessions inside the 5-minute timeout. At 05:04 the key was
+`Combat Engineer` (MoonGamers last seen 05:00:03 + ECHO DC last seen
+05:03:34). Minutes later Combat Engineer had timed out and the same
+endpoint 400'd on `TEST AI`. Search for `Engineer` 400'd while the
+collision was in the result set. The controller catches
+`ArgumentException` and returns 400 without logging, so this is **not**
+the Seq page — but the default players list is broken for anyone hitting
+it during a hop.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
