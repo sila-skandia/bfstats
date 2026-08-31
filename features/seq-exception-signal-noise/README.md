@@ -4,6 +4,30 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-08-31 13:13 UTC page
+
+13 minutes after hourly ranking/aggregate writers at 13:00, 3 minutes after
+the 5-minute gamification tick at 13:10. Live site at 13:14 UTC was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 13:14:13, 85 servers, 42 named players
+- Default `/stats/players` 200 (page-1 had 44 active, no colliding keys)
+- `/stats/communities` still 17,962 rows, all `formationDate = 2026-08-20`
+- Seq `/api/events` still 401
+
+Not a user-facing outage, not bflist, and not the 02:00 community-detection
+job. Best fit is handled `SQLITE_BUSY` from the 13:10 gamification tick
+overlapping 30s stats collection (or Seq re-notifying a held :00 event),
+with `LogWarning(ex)` / `LogError(ex)` still tripping `@Exception is not
+null`. The 12:41 branch (`cursor/bc-11b196cb-3aa9-40ab-915a-86f33d50869e-f8f5`)
+never merged, so production still has the noisy logging. This change re-lands
+the same five fix commits.
+
+`BFSoldier` was live on two servers (MoonGamers and SiMPLE RtR+SW) without
+400ing the default list. Player-detail for that exact name was not active.
+Empty `/stats/players/search?query=` is a 400 validation error (`query` is
+required) and does not page Seq.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
