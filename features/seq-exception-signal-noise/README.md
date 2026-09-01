@@ -4,6 +4,32 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-01 02:01 UTC page
+
+This page hit the nightly community-detection window (02:00 UTC), 1 minute
+after hourly ranking/aggregate writers also start. Live site at 02:01 UTC
+was healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 02:01:50, 86 BF1942 servers, 28 unique named players
+- Default `/stats/players` 200 (50 unique); search `Americanator` / `Angela Merkel` 200
+- `/stats/communities` still **17,959** rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+Not a user-facing outage and not bflist. Two overlapping causes, neither
+new:
+
+1. Nightly community detection at 02:00 has failed every morning since
+   2026-08-20 (Neo4j lock / 1.25G heap). Communities were not wiped (GET
+   still returned the Aug 20 set), so this run died before the delete
+   committed, or Seq paged an hourly `SQLITE_BUSY` at the same minute.
+2. Hourly ranking/aggregate writers at :00 overlapping 30s stats collection
+   / 5-min gamification, with `LogWarning(ex)` / `LogError(ex)` on handled
+   `SQLITE_BUSY` still tripping `@Exception is not null`.
+
+Previous investigation branches (fbad at 00:08, 41f0, and earlier) were
+never merged, so production still pages. This change re-lands the same five
+fix commits.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
