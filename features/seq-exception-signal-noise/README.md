@@ -4,6 +4,34 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-01 09:51 UTC page
+
+1 min after the :50 gamification tick / 51 min after hourly writers. Live
+site at 09:52 UTC was otherwise healthy:
+
+- Homepage 200, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 09:52:19, 86 servers, 15 named unique players
+- `/stats/communities` still 17,959 rows, all `formationDate = 2026-08-20`
+
+Not a user-facing outage and not bflist. Best fit is the same contention as
+the 04:21 page: 5-min gamification overlapping 30s stats collection, with
+`LogWarning(ex)` on handled `SQLITE_BUSY` still tripping `@Exception is not
+null`. The 04:21 branch (`cursor/site-error-analysis-fe4e`) never merged, so
+production still has the noisy logging. This change re-lands that work.
+
+Separately, `GET /stats/players` (default page) and search
+`query=Mikael Skillt` currently return 400
+`An item with the same key has already been added. Key: Mikael Skillt`.
+Player-detail shows two `IsActive` sessions: live on MoonGamers (`lastSeen`
+09:53:04, `bf1942` market garden — present on liveservers) and a stale row
+on `*NEW* SiMPLE | RtR+SW` (`lastSeen` 09:51:03, `xpack1` cassino — not on
+liveservers). The controller catches `ArgumentException` and returns 400
+without logging, so this is **not** the Seq page — but the players list is
+broken while the colliding name is in page 1. A retry 3 minutes later 400ed
+on `Ho-Chi Minh` instead (live on Oz Wake, stale `IsActive` on
+`*NEW* SiMPLE | BF1942`); search `query=Mikael Skillt` still 400ed. The
+lookup now keeps the most recently seen session.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
