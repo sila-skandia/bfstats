@@ -76,6 +76,34 @@ aggregate, and gamification all write SQLite around this time of day.
 
 Real failures still `LogError(ex)` and will still page.
 
+## 2026-09-01 23:39 UTC page
+
+4 minutes after the :35 gamification tick / 39 minutes after hourly writers.
+Site otherwise healthy at 23:39–23:40:
+
+- Homepage 200, liveservers `lastUpdated` 23:39:33, 88 servers
+- 51 named live players, all unique on the live list; bflist 200
+- Seq UI 200 / API 401 (no key)
+- `/stats/communities` still 17,959 rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+Not the 02:00 community-detection job (that sleeps until tomorrow after
+failure). Best fit is the same handled `SQLITE_BUSY` as earlier 09-01 pages:
+the :35 gamification tick overlapping 30s stats collection.
+
+Separately, `GET /stats/players` and search `query=JUANI` returned 400
+`An item with the same key has already been added. Key: JUANI`. Liveservers
+showed JUANI only on MoonGamers; player-detail `isActive: true` there, plus a
+stale second IsActive row on `*NEW* SiMPLE | BF1942` (`lastSeenTime` 23:39:03).
+Session tracking only looks at the current server, so a switch leaves the old
+row active until the 5-minute timeout. The controller catches
+`ArgumentException` and does **not** page Seq — but the default players list
+is broken until that row times out. `LatestActiveSessionByPlayer` keeps the
+most recently seen session.
+
+The 20:56 branch (`cursor/site-error-analysis-a74d`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY` and the ToDictionary crash. This change re-lands that work.
+
 ## Still needed
 
 - Seq API key in the investigation environment
