@@ -4,6 +4,29 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-02 02:01 UTC page
+
+Wall-clock **02:01 UTC** is the nightly `CommunityDetectionService` run
+(02:00) plus hourly ranking/aggregate writers that also start around `:00`.
+Live site at 02:02 UTC was healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 02:02:19, 87 servers, 36 named / 35 unique (BFSoldier ×2)
+- Default `/stats/players` 200 (50 unique). Search `query=JUANI` 200 (23:40 collision timed out)
+- Player `BetMan` 200 `isActive: true`; wrapped for a live guid 200
+- `/stats/communities` still **17,955** rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+Not a user-facing outage and not bflist. Best fit is the 02:00 community
+detection job failing again (Forseti deadlock with the co-rounds backfill,
+or the single-transaction `COLLECT` OOM on the 1.25G heap). Hourly
+`SQLITE_BUSY` `LogWarning(ex)` from ranking/aggregate overlapping 30s
+collection can page the same signal at `:00`/`:01`.
+
+The 23:39 branch (`cursor/site-error-analysis-3556`) never opened a PR, so
+production still has the noisy logging and unlocked nightly detection.
+This change re-lands that work (cherry-pick of
+`origin/cursor/site-error-analysis-41f0`).
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:

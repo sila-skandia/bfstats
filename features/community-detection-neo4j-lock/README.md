@@ -29,6 +29,10 @@ Seq's webhook still does not include `@Exception` / `@Message`, so this is
 inferred from wall-clock (only 2 AM job) + stale `formationDate` rather than
 a stack trace.
 
+Re-paged **2026-09-02 02:01 UTC** (this branch). Live `/stats/communities`
+was **17,955** rows, still all `formationDate = 2026-08-20T02:00:05–08Z`.
+Site otherwise healthy. Same root cause; the 41f0 fix is still not on main.
+
 ## Fix
 
 1. Take the Neo4j relationship-sync lock around detection (same lock as ETL /
