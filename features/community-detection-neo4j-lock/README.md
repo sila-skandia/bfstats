@@ -29,6 +29,10 @@ Seq's webhook still does not include `@Exception` / `@Message`, so this is
 inferred from wall-clock (only 2 AM job) + stale `formationDate` rather than
 a stack trace.
 
+A **11:34 UTC 2026-09-02** page is not this job: communities were still
+17,955 rows stamped 2026-08-20, and 11:34 is a 5-minute gamification
+boundary, not 02:00. See `features/seq-exception-signal-noise/README.md`.
+
 ## Fix
 
 1. Take the Neo4j relationship-sync lock around detection (same lock as ETL /
