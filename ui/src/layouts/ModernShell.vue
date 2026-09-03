@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import MmHeaderAuth from '@/components/v4/MmHeaderAuth.vue'
 import MmSiteNoticeBanner from '@/components/v4/MmSiteNoticeBanner.vue'
@@ -7,6 +7,8 @@ import MmOmnisearchModal from '@/components/v4/MmOmnisearchModal.vue'
 import { useAuth } from '@/composables/useAuth'
 import { isNavigating } from '@/composables/useNavProgress'
 import '../styles/modern-minimal.css'
+
+const MmRadioCommoRose = defineAsyncComponent(() => import('@/components/v4/MmRadioCommoRose.vue'))
 
 interface NavItem { label: string; to: string; key: string; admin?: boolean; notice?: boolean }
 const baseNavItems: NavItem[] = [
@@ -138,16 +140,25 @@ onUnmounted(() => {
 })
 
 const showOmnisearch = ref(false)
+const showRadio = ref(false)
 
 const openOmnisearch = () => {
   showOmnisearch.value = true
 }
 
-// Global ⌘K / Ctrl+K opens the omnisearch command palette.
+// Global ⌘K / Ctrl+K opens omnisearch, and 'r'/'R' opens BF1942 Radio Commo-Rose.
 const onGlobalKeydown = (e: KeyboardEvent) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     showOmnisearch.value = true
+    return
+  }
+
+  const target = e.target as HTMLElement | null
+  const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+  if (!isInput && (e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault()
+    showRadio.value = !showRadio.value
   }
 }
 
@@ -221,6 +232,17 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         </svg>
       </button>
 
+      <button
+        type="button"
+        class="mm-radio-trigger-btn"
+        title="BF1942 Commo-Rose Radio (Press R)"
+        aria-label="Open BF1942 Radio"
+        @click="showRadio = !showRadio"
+      >
+        <span class="mm-radio-trigger-btn__text">Commo-Rose</span>
+        <span class="mm-radio-trigger-btn__hint">R</span>
+      </button>
+
       <MmHeaderAuth />
     </header>
 
@@ -248,8 +270,81 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
       <router-link to="/system-stats" title="System Statistics">
         System Stats
       </router-link>
+      <span>·</span>
+      <button
+        type="button"
+        class="mm-foot__link-btn"
+        title="BF1942 Radio Comms"
+        @click="showRadio = true"
+      >
+        Radio (R)
+      </button>
     </footer>
 
     <MmOmnisearchModal v-model="showOmnisearch" />
+    <MmRadioCommoRose v-model="showRadio" />
   </div>
 </template>
+
+<style scoped>
+.mm-radio-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--mm-surface);
+  border: 1px solid var(--mm-line);
+  color: var(--mm-ink);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  margin-left: 4px;
+}
+
+.mm-radio-trigger-btn:hover {
+  background: var(--mm-ink);
+  color: var(--mm-bg);
+}
+
+.mm-radio-trigger-btn__icon {
+  font-size: 12px;
+}
+
+.mm-radio-trigger-btn__hint {
+  font-size: 9px;
+  color: var(--mm-ink-muted);
+  border: 1px solid var(--mm-line);
+  padding: 0 4px;
+  border-radius: 2px;
+}
+
+.mm-radio-trigger-btn:hover .mm-radio-trigger-btn__hint {
+  color: var(--mm-bg);
+  border-color: var(--mm-bg-mute);
+}
+
+.mm-foot__link-btn {
+  background: transparent;
+  border: none;
+  color: var(--mm-ink-muted);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mm-foot__link-btn:hover {
+  color: var(--mm-ink);
+}
+
+@media (max-width: 640px) {
+  .mm-radio-trigger-btn__text,
+  .mm-radio-trigger-btn__hint {
+    display: none;
+  }
+}
+</style>

@@ -25,7 +25,7 @@ import MmServerMapPopularity from '@/components/v4/MmServerMapPopularity.vue'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
-import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
+import MmServerActivityHeatmap from '@/components/v4/MmServerActivityHeatmap.vue'
 import { kdClass } from './mmTokens'
 
 const route = useRoute()
@@ -504,31 +504,8 @@ watch(activeTab, (t) => {
 
       <!-- ===================== OVERVIEW ===================== -->
       <div v-if="activeTab === 'overview'" style="margin-top: 20px">
-        <section class="mm-panel" data-testid="server-population-trend">
-          <button
-            type="button"
-            class="mm-section-bar mm-section-bar--btn"
-            :aria-expanded="trendExpanded"
-            @click="trendExpanded = !trendExpanded"
-          >
-            <span># PLAYER TREND</span>
-            <span class="mm-section-bar__meta">
-              {{ trendExpanded ? 'HIDE' : 'POPULATION OVER TIME · VIEW →' }}
-            </span>
-          </button>
-          <div v-if="trendExpanded" class="mm-panel__body">
-            <MmPopulationTrendPanel
-              v-if="details?.serverGuid"
-              :server-guid="details.serverGuid"
-              :server-label="$pn(details.serverName || serverName)"
-              @summary="onTrendSummary"
-            />
-            <div v-else class="mm-skeleton" style="height: 160px" />
-          </div>
-        </section>
-
         <!-- Full-width Online Now panel -->
-        <section class="mm-panel" style="margin-top: 20px">
+        <section class="mm-panel">
           <div class="mm-pbar">
             <span class="mm-pbar__t">● Online now</span>
             <span class="mm-pbar__m">
@@ -546,6 +523,21 @@ watch(activeTab, (t) => {
             <MmTeamLadderRoster :server="liveServer" data-testid="server-live-roster" />
           </div>
           <div v-else class="mm-panel__body mm-empty" style="border: 0; padding: 24px 0">No players online right now.</div>
+        </section>
+
+        <!-- Golden Hour Server Activity & Population Trend Heatmap -->
+        <section
+          class="mm-section--tight"
+          style="margin-top: 20px"
+          data-testid="server-population-trend"
+        >
+          <MmServerActivityHeatmap
+            v-if="details?.serverGuid"
+            :server-guid="details.serverGuid"
+            :server-name="details.serverName || serverName"
+            @summary="onTrendSummary"
+          />
+          <div v-else class="mm-skeleton" style="height: 200px" />
         </section>
 
         <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1.15fr; margin-top: 20px">

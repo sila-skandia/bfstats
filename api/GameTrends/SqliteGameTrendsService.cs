@@ -670,6 +670,55 @@ public class SqliteGameTrendsService(
         return new PlayerTrendResponse("server", game, serverGuid, start, end, 1, points);
     }
 
+    /// <inheritdoc/>
+    public async Task<ServerWeeklyPatternResponse> GetServerWeeklyPatternAsync(
+        string serverGuid,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = ActivitySources.SqliteAnalytics.StartActivity("GetServerWeeklyPatternAsync");
+        activity?.SetTag("query.name", "GetServerWeeklyPattern");
+        activity?.SetTag("query.filters", $"server:{serverGuid}");
+
+        var serverName = await dbContext.Servers
+            .AsNoTracking()
+            .Where(s => s.Guid == serverGuid)
+            .Select(s => s.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var patterns = await dbContext.ServerHourlyPatterns
+            .AsNoTracking()
+            .Where(p => p.ServerGuid == serverGuid)
+            .OrderBy(p => p.DayOfWeek)
+            .ThenBy(p => p.HourOfDay)
+            .ToListAsync(cancellationToken);
+
+        var slots = patterns.Select(p => new ServerWeeklyPatternSlot(
+            p.DayOfWeek,
+            p.HourOfDay,
+            Math.Round(p.AvgPlayers, 1),
+            Math.Round(p.MaxPlayers, 1),
+            Math.Round(p.MedianPlayers, 1),
+            p.DataPoints
+        )).ToList();
+
+        var peakSlot = patterns.MaxBy(p => p.AvgPlayers);
+        var overallAvg = patterns.Count > 0 ? Math.Round(patterns.Average(p => p.AvgPlayers), 1) : 0;
+        var totalDataPoints = patterns.Sum(p => p.DataPoints);
+
+        activity?.SetTag("result.row_count", slots.Count);
+
+        return new ServerWeeklyPatternResponse(
+            serverGuid,
+            serverName,
+            peakSlot?.DayOfWeek,
+            peakSlot?.HourOfDay,
+            peakSlot != null ? Math.Round(peakSlot.AvgPlayers, 1) : 0,
+            overallAvg,
+            totalDataPoints,
+            slots
+        );
+    }
+
     private static int ClampTrendDays(int days) => days switch
     {
         < 7 => 7,
