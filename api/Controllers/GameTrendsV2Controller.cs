@@ -172,4 +172,38 @@ public class GameTrendsV2Controller(
             return StatusCode(500, "Failed to generate player trend");
         }
     }
+
+    /// <summary>
+    /// Gets 7x24 weekly activity pattern for a server from pre-computed ServerHourlyPatterns.
+    /// </summary>
+    [HttpGet("servers/{serverGuid}/weekly-pattern")]
+    [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult<ServerWeeklyPatternResponse>> GetServerWeeklyPattern(
+        string serverGuid,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(serverGuid))
+        {
+            return BadRequest("Server GUID is required");
+        }
+
+        try
+        {
+            var cacheKey = $"trends:v2:weekly-pattern:{serverGuid}";
+            var cached = await cacheService.GetAsync<ServerWeeklyPatternResponse>(cacheKey, cancellationToken);
+            if (cached != null)
+            {
+                return Ok(cached);
+            }
+
+            var pattern = await sqliteGameTrendsService.GetServerWeeklyPatternAsync(serverGuid, cancellationToken);
+            await cacheService.SetAsync(cacheKey, pattern, TimeSpan.FromHours(1), cancellationToken);
+            return Ok(pattern);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error generating weekly pattern for server {ServerGuid}", serverGuid);
+            return StatusCode(500, "Failed to generate server weekly pattern");
+        }
+    }
 }

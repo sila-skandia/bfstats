@@ -39,4 +39,9 @@ public interface ISqliteGameTrendsService
     /// Hourly occupancy for a single server. Primary-key range on ServerOnlineCounts.
     /// </summary>
     Task<PlayerTrendResponse> GetServerPlayerTrendAsync(string serverGuid, int days = 60);
+
+    /// <summary>
+    /// Gets 7x24 weekly activity pattern for a single server from ServerHourlyPatterns.
+    /// </summary>
+    Task<ServerWeeklyPatternResponse> GetServerWeeklyPatternAsync(string serverGuid, CancellationToken cancellationToken = default);
 }
