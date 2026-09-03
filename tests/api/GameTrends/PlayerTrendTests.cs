@@ -106,6 +106,55 @@ public sealed class PlayerTrendTests : IDisposable
         Assert.Equal(5, point.AvgPlayers);
     }
 
+    [Fact]
+    public async Task ServerWeeklyPattern_ReturnsCorrectPeakAndSlots()
+    {
+        _dbContext.Servers.Add(new GameServer
+        {
+            Guid = "srv-1",
+            Name = "Wake Island 24/7",
+            Game = "bf1942",
+            GameId = "bf1942",
+            IsOnline = true
+        });
+
+        _dbContext.ServerHourlyPatterns.AddRange(
+            new ServerHourlyPattern
+            {
+                ServerGuid = "srv-1",
+                DayOfWeek = 6,
+                HourOfDay = 19,
+                AvgPlayers = 42.5,
+                MaxPlayers = 50,
+                MedianPlayers = 40,
+                DataPoints = 30,
+                UpdatedAt = Instant.FromDateTimeUtc(DateTime.UtcNow)
+            },
+            new ServerHourlyPattern
+            {
+                ServerGuid = "srv-1",
+                DayOfWeek = 1,
+                HourOfDay = 3,
+                AvgPlayers = 4.0,
+                MaxPlayers = 10,
+                MedianPlayers = 2,
+                DataPoints = 25,
+                UpdatedAt = Instant.FromDateTimeUtc(DateTime.UtcNow)
+            }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var pattern = await _service.GetServerWeeklyPatternAsync("srv-1");
+
+        Assert.Equal("srv-1", pattern.ServerGuid);
+        Assert.Equal("Wake Island 24/7", pattern.ServerName);
+        Assert.Equal(6, pattern.PeakDayOfWeek);
+        Assert.Equal(19, pattern.PeakHourOfDay);
+        Assert.Equal(42.5, pattern.PeakAvgPlayers);
+        Assert.Equal(2, pattern.Slots.Count);
+        Assert.Equal(55, pattern.TotalDataPoints);
+    }
+
     public void Dispose()
     {
         _dbContext.Dispose();

@@ -674,3 +674,34 @@ export async function fetchServerBusyIndicators(serverGuids: string[]): Promise<
     throw new Error('Failed to get server busy indicators');
   }
 }
+
+export interface ServerWeeklyPatternSlot {
+  dayOfWeek: number;
+  hourOfDay: number;
+  avgPlayers: number;
+  maxPlayers: number;
+  medianPlayers: number;
+  dataPoints: number;
+}
+
+export interface ServerWeeklyPatternResponse {
+  serverGuid: string;
+  serverName?: string;
+  peakDayOfWeek?: number;
+  peakHourOfDay?: number;
+  peakAvgPlayers: number;
+  overallAvgPlayers: number;
+  totalDataPoints: number;
+  slots: ServerWeeklyPatternSlot[];
+}
+
+export async function fetchServerWeeklyPattern(serverGuid: string): Promise<ServerWeeklyPatternResponse> {
+  const url = `/stats/v2/game-trends/servers/${encodeURIComponent(serverGuid)}/weekly-pattern`;
+  try {
+    const response = await axios.get<ServerWeeklyPatternResponse>(url);
+    return response.data;
+  } catch (err) {
+    console.error('Error fetching server weekly pattern:', err);
+    throw new Error('Failed to get server weekly pattern');
+  }
+}

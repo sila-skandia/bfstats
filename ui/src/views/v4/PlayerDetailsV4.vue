@@ -26,6 +26,7 @@ import MmPlayerAchievementSummary from '@/components/v4/MmPlayerAchievementSumma
 import MmPlayerServerMapStats from '@/components/v4/MmPlayerServerMapStats.vue'
 import MmMapPerformanceRace from '@/components/v4/data-explorer/MmMapPerformanceRace.vue'
 import MmPlayerAllyOrbit from '@/components/v4/MmPlayerAllyOrbit.vue'
+import MmPlayerRivalsDossier from '@/components/v4/MmPlayerRivalsDossier.vue'
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { kdClass, streakClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip, utcHourToLocalHour } from '@/utils/timeUtils'
@@ -661,6 +662,11 @@ const signatureServers = computed(() => {
             @open-rankings="openMapRankings"
             @open-map-detail="openMapRankings"
           />
+        </div>
+
+        <!-- Rivals and battle dossier -->
+        <div style="margin-top: 24px">
+          <MmPlayerRivalsDossier :player-name="rawName" />
         </div>
 
         <!-- ally proximity orbit -->
