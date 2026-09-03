@@ -4,6 +4,32 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-03 23:37 UTC page
+
+Wall-clock **23:37 UTC** is 2 minutes after the :35 gamification tick
+(and 37 minutes after hourly ranking/aggregate writers). It is not the
+02:00 community-detection job. Live site at 23:37–23:38 UTC was healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 23:37:56, 85 servers, 47 named / 47 unique
+- `/stats/communities` still **17,955** rows, all
+  `formationDate = 2026-08-20T02:00:05–08Z`
+- Player `atp` 200; wrapped for a live guid 200
+- Default `/stats/players` 200 (50 unique). Search of nico / Cosmik_Debris
+  / Paciencia / JUANI / Angela Merkel / Americanator / Mikael Skillt /
+  Ho-Chi Minh all 200. The 21:30 nico / Cosmik_Debris collisions have
+  timed out.
+
+Not a user-facing outage and not bflist. Best fit is handled
+`SQLITE_BUSY` `LogWarning(ex)` from the :35 gamification tick overlapping
+30s stats collection (or Seq re-notify of a held earlier event). Same
+`@Exception is not null` signal as previous pages.
+
+The 21:30 branch (`cursor/site-error-analysis-5522`) never opened a PR,
+so production still has the noisy logging and unlocked nightly
+detection. This change re-lands that work (cherry-pick of
+`origin/cursor/site-error-analysis-41f0`).
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
