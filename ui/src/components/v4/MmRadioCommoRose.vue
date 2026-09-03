@@ -131,7 +131,7 @@ onUnmounted(() => {
           <div class="mm-radio-modal__head">
             <div class="mm-radio-modal__channel">
               <span class="mm-radio-modal__led" />
-              <span class="mm-radio-modal__freq">CH 24.2 MHz · COMMO-ROSE</span>
+              <span class="mm-radio-modal__freq">CH 24.2 MHz · F8 RADIO</span>
             </div>
             <span class="mm-radio-modal__hint">Press hotkey or click</span>
             <button
