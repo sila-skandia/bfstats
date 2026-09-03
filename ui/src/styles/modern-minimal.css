@@ -173,10 +173,10 @@
 
 .mm-topbar {
   display: grid;
-  /* brand · nav · search · auth */
-  grid-template-columns: auto 1fr auto auto;
+  /* brand · nav · search · radio · auth */
+  grid-template-columns: auto 1fr auto auto auto;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
   padding: 16px 32px;
   border-bottom: 1px solid var(--mm-rule);
 }
@@ -1159,10 +1159,10 @@
 
 @media (max-width: 880px) {
   .mm-topbar {
-    /* brand on the left, auth on the right; nav + search wrap below */
-    grid-template-columns: 1fr auto auto;
+    /* brand on the left, search + radio + auth on the right; nav wraps below */
+    grid-template-columns: 1fr auto auto auto;
     padding: 14px 18px;
-    gap: 14px;
+    gap: 12px;
   }
   .mm-nav {
     grid-column: 1 / -1;

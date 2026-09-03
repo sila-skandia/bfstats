@@ -300,16 +300,12 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   border-radius: 3px;
   cursor: pointer;
   transition: all 0.12s ease;
-  margin-left: 4px;
+  flex-shrink: 0;
 }
 
 .mm-radio-trigger-btn:hover {
   background: var(--mm-ink);
   color: var(--mm-bg);
-}
-
-.mm-radio-trigger-btn__icon {
-  font-size: 12px;
 }
 
 .mm-radio-trigger-btn__hint {
