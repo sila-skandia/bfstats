@@ -4,6 +4,40 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-03 02:02 UTC page
+
+Wall-clock **02:02 UTC** is the nightly community-detection job at 02:00
+(and hourly ranking/aggregate writers at the same `:00`). It is not a
+5-minute gamification tick. Live site at 02:02–02:03 UTC was healthy
+aside from a known players-list collision:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 02:02:42, 87 servers, 52 named / 49 unique
+  (`BFSoldier` ×3, `SPACE` ×2)
+- `/stats/communities` still **17,955** rows, all
+  `formationDate = 2026-08-20T02:00:05–08Z`
+- Player `atp` 200; wrapped for a live guid 200
+- Default `/stats/players` **400** `Key: Paciencia`. Liveservers showed
+  one server (`*NEW* SiMPLE | BF1942`, bocage). Player-detail `isActive:
+  true` on that server (`lastSeenTime` 02:03:03, started 02:01:03) plus a
+  stale second IsActive on `testing patch` (`lastSeenTime` 01:58:33,
+  started 01:01:03, stalingrad). `testing patch` itself had 0 players.
+  Search `query=Paciencia` also 400. Prior collision names (JUANI, Angela
+  Merkel, Americanator, Mikael Skillt, Ho-Chi Minh) all search 200.
+  Controller catches `ArgumentException` and returns 400 **without
+  logging**, so this is not the Seq page.
+
+Not a user-facing outage and not bflist. Best fit is handled
+`SQLITE_BUSY` `LogWarning(ex)` from the 02:00 community-detection run
+colliding with hourly writers (or Seq re-notify of that event). Same
+`@Exception is not null` signal as previous pages. After a failed 02:00
+run, catch waits 5 min then the loop sleeps until tomorrow 02:00.
+
+The 11:34 branch (`cursor/site-error-analysis-356f`) never opened a PR,
+so production still has the noisy logging and unlocked nightly
+detection. This change re-lands that work (cherry-pick of
+`origin/cursor/site-error-analysis-41f0`).
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
