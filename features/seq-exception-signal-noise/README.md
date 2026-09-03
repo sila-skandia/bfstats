@@ -4,6 +4,42 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-03 21:30 UTC page
+
+Wall-clock **21:30 UTC** is a 5-minute gamification tick (and 30 minutes
+after hourly ranking/aggregate writers). It is not the 02:00 community-
+detection job. Live site at 21:30–21:31 UTC was healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 21:30:54, 86 servers, 51 named / 51 unique
+- `/stats/communities` still **17,955** rows, all
+  `formationDate = 2026-08-20T02:00:05–08Z`
+- Player `atp` 200; wrapped for a live guid 200
+
+Not a user-facing outage and not bflist. Best fit is handled
+`SQLITE_BUSY` `LogWarning(ex)` from the :30 gamification tick overlapping
+30s stats collection (or Seq re-notify of a held earlier event). Same
+`@Exception is not null` signal as previous pages.
+
+The 13:50 branch (`cursor/site-error-analysis-a970`) never opened a PR,
+so production still has the noisy logging and unlocked nightly
+detection. This change re-lands that work (cherry-pick of
+`origin/cursor/site-error-analysis-41f0`).
+
+Separately, default `/stats/players` returned 400 `Key: nico` at 21:30
+and `Key: Cosmik_Debris` on a recheck ~30s later. Search `query=nico`
+also 400ed. Both names had two `IsActive` rows after hopping from
+`*NEW* SiMPLE | RtR+SW` to `*NEW* SiMPLE | BF1942` (kharkov):
+
+- `nico`: live kharkov lastSeen 21:30:56, plus stale RtR+SW mimoyecques
+  lastSeen 21:27:26
+- `Cosmik_Debris`: live kharkov lastSeen 21:31:26, plus stale RtR+SW
+  anzio lastSeen 21:30:26
+
+The controller catches `ArgumentException` without logging, so this is
+**not** the Seq page. The cherry-picked player-list lookup keeps the
+most recently seen session.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
