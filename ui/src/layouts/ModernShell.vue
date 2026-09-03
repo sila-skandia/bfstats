@@ -235,11 +235,11 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
       <button
         type="button"
         class="mm-radio-trigger-btn"
-        title="BF1942 Commo-Rose Radio (Press R)"
-        aria-label="Open BF1942 Radio"
+        title="BF1942 F8 Radio (Press R)"
+        aria-label="Open BF1942 F8 Radio"
         @click="showRadio = !showRadio"
       >
-        <span class="mm-radio-trigger-btn__text">Commo-Rose</span>
+        <span class="mm-radio-trigger-btn__text">F8</span>
         <span class="mm-radio-trigger-btn__hint">R</span>
       </button>
 
@@ -277,7 +277,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         title="BF1942 Radio Comms"
         @click="showRadio = true"
       >
-        Radio (R)
+        F8 (R)
       </button>
     </footer>
 
