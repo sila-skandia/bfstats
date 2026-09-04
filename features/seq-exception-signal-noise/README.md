@@ -4,6 +4,56 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-04 04:15 UTC page
+
+~73 minutes after the 03:02 09-04 page. Live site at 04:15 UTC was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 04:15:49, 85 servers, 85 named / unique
+- 25 live players, all unique (no live-list duplicates)
+- Default `/stats/players` 200 (50 unique)
+- Frankie search 200; player-detail `isActive: false`, lastPlayed 03:04:56
+  (the 03:02 leftover IsActive pair has timed out)
+- Search of nico / Cosmik_Debris / Paciencia all 200
+- bflist 200, Seq UI 200 / API 401, wrapped for MoonGamers / SiMPLE 200,
+  player atp 200
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+**5-min gamification tick at :15 overlapping 30s stats collection**
+(`SQLITE_BUSY`), or Seq re-notify of the 03:02 hourly-writer page ~73 min
+later. Not a 02:00 community-detection retry: after a failed 02:00 run the
+catch waits 5 min then the loop sleeps until tomorrow 02:00, and communities
+are still frozen since 2026-08-20. A :15 page is 15 min after hourly writers
+and exactly on a gamification boundary.
+
+The 03:02 branch (`cursor/site-error-analysis-0ae5`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY` and the `ToDictionary(PlayerName)` list crash. This change
+re-lands that work.
+
+## 2026-09-04 03:02 UTC page
+
+~60 minutes after the 02:02 09-04 page. Live site at 03:03 UTC was healthy
+apart from the players list:
+
+- Homepage 200, liveservers `lastUpdated` 03:03:30, 85 servers, 63 named / unique
+- bflist 200, Seq UI 200 / API 401, wrapped for a live guid 200, player atp 200
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+**Hourly writers at 03:00 overlapping the 5-min gamification tick and 30s
+stats collection** (`SQLITE_BUSY`), or Seq re-notify of the 02:00 community
+detection failure ~60 min later. Not a 02:00 retry.
+
+Separately, `GET /stats/players` and search `query=Frankie` returned 400
+`Key: Frankie`. Liveservers showed Frankie once on `Badewiese [Public DC
+Server]`. Player-detail had that live session plus a stale IsActive row on
+`MoonGamers.com | Est. 2004`. Cleared by 04:15.
+
+## 2026-09-04 02:02 UTC page
+
+**Nightly community detection at 02:00 UTC** (or hourly writers at the same
+`:00` colliding with it). Communities still 17,954 rows, all
+`formationDate = 2026-08-20T02:00:05–08Z`. Default `/stats/players` 200.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
@@ -73,6 +123,8 @@ aggregate, and gamification all write SQLite around this time of day.
    without `ex` instead of `LogError(ex)` (and ranking no longer logs the
    same failure twice). Inner gamification layers rethrow busy instead of
    logging-and-swallowing it.
+4. Player list/search keep the most recently seen active session when two
+   `IsActive` rows share a name, instead of 400ing `ToDictionary`.
 
 Real failures still `LogError(ex)` and will still page.
 
