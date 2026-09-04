@@ -4,6 +4,26 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-04 00:47 UTC page
+
+~70 minutes after the 23:37 09-03 page. Live site at 00:47–00:48 UTC was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 00:47:56, 85 servers, 42 named / unique
+- Default `/stats/players` 200 (50 unique)
+- Search of nico / Cosmik_Debris / Paciencia / JUANI / Angela Merkel /
+  Americanator / Mikael Skillt / Ho-Chi Minh all 200
+- bflist 200, Seq UI 200 / API 401, wrapped for a live guid 200, player atp 200
+- `/stats/communities` still 17,955 rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+**SQLITE_BUSY from the :45 gamification tick overlapping 30s collection.**
+Not the 02:00 community-detection job. A :47 page is 2 minutes after that
+tick / 47 minutes after hourly writers — same handled lock contention, or
+Seq re-notify of a held :45 event.
+
+The 23:37 branch (`cursor/site-error-analysis-8310`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY`. This change re-lands that work.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
