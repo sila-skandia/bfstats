@@ -4,6 +4,28 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-04 02:02 UTC page
+
+~75 minutes after the 00:47 09-04 page. Live site at 02:02–02:03 UTC was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 02:02:56, 85 servers, 62 named / unique
+- Default `/stats/players` 200 (50 unique)
+- Search of nico / Cosmik_Debris / Paciencia / JUANI / Angela Merkel /
+  Americanator / Mikael Skillt / Ho-Chi Minh all 200
+- bflist 200, Seq UI 200 / API 401, wrapped for a live guid 200, player atp 200
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+**Nightly community detection at 02:00 UTC** (or hourly writers at the same
+`:00` colliding with it). Confirmed by the schedule (`CommunityDetectionService`
+`RunTime = 02:00 UTC`) and communities still frozen since 2026-08-20. After a
+failed 02:00 run the catch waits 5 min then the loop sleeps until tomorrow
+02:00 — this page is the 02:00 attempt itself, not a retry.
+
+The 00:47 branch (`cursor/site-error-analysis-fbb1`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY` and community detection still races the Neo4j sync lock. This
+change re-lands that work.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
