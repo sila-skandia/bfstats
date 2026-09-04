@@ -4,6 +4,69 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-04 08:00 UTC page
+
+~3 hours 45 minutes after the 04:15 09-04 page. Live site at 08:00 UTC was
+healthy:
+
+- Homepage 200, liveservers `lastUpdated` 08:00:56, 86 servers, 86 named / unique
+- 20 live players, all unique (no live-list duplicates)
+- Default `/stats/players` 200 (50 unique)
+- Frankie search 200; player-detail `isActive: false`, lastPlayed 03:04:56
+- Search of nico / Cosmik_Debris / Paciencia all 200
+- bflist 200, Seq UI 200 / API 401, wrapped for MoonGamers / SiMPLE 200,
+  player atp 200
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+**Hourly writers at 08:00 overlapping the 5-min gamification tick (also :00)
+and 30s stats collection** (`SQLITE_BUSY`), or Seq re-notify of a held :00
+event. Not a 02:00 community-detection retry: after a failed 02:00 run the
+catch waits 5 min then the loop sleeps until tomorrow 02:00, and communities
+are still frozen since 2026-08-20. A :00 page at any hour other than 02:00 is
+hourly ranking/aggregate writers colliding with the 5-min gamification job
+that also fires at :00.
+
+The 04:15 branch (`cursor/bc-c68f02c9-0dc1-4442-b423-5538ef451dc3-c0a4`)
+never opened a PR, so production still has the noisy `LogWarning(ex)` /
+`LogError(ex)` on handled `SQLITE_BUSY` and the `ToDictionary(PlayerName)`
+list crash. This change re-lands that work.
+
+## 2026-09-04 04:15 UTC page
+
+~73 minutes after the 03:02 09-04 page. Live site at 04:15 UTC was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 04:15:49, 85 servers, 85 named / unique
+- 25 live players, all unique (no live-list duplicates)
+- Default `/stats/players` 200 (50 unique)
+- Frankie search 200; player-detail `isActive: false`, lastPlayed 03:04:56
+- Search of nico / Cosmik_Debris / Paciencia all 200
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+**5-min gamification tick at :15 overlapping 30s stats collection**
+(`SQLITE_BUSY`), or Seq re-notify of the 03:02 hourly-writer page ~73 min
+later. Not a 02:00 community-detection retry.
+
+## 2026-09-04 03:02 UTC page
+
+~60 minutes after the 02:02 09-04 page. Live site at 03:03 UTC was healthy
+apart from the players list:
+
+- Homepage 200, liveservers `lastUpdated` 03:03:30, 85 servers
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20T02:00:05–08Z`
+
+**Hourly writers at 03:00 overlapping the 5-min gamification tick and 30s
+stats collection** (`SQLITE_BUSY`), or Seq re-notify of the 02:00 community
+detection failure ~60 min later. Not a 02:00 retry.
+
+Separately, `GET /stats/players` and search `query=Frankie` returned 400
+`Key: Frankie`. Cleared by 04:15.
+
+## 2026-09-04 02:02 UTC page
+
+**Nightly community detection at 02:00 UTC** (or hourly writers at the same
+`:00` colliding with it). Communities still 17,954 rows, all
+`formationDate = 2026-08-20T02:00:05–08Z`. Default `/stats/players` 200.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
