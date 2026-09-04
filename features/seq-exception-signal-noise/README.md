@@ -4,6 +4,59 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-04 13:33 UTC page
+
+~48 minutes after the 12:45 09-04 page. Live site at 13:34 UTC was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 13:33:56, 87 servers named / unique
+- 53 live players / 52 unique; live-list duplicate `Player` is an AI bot on
+  `*NEW* SiMPLE | RtR+SW` (mimoyecques) and `MoonGamers.com | Est. 2004`
+  (iwo jima) — not tracked as a player (`/stats/players/Player` empty)
+- Default `/stats/players` **200** (50 unique). Search `query=Rick` 200.
+  Rick back on `*NEW* SiMPLE | BF1942` with a single `IsActive` session
+  (3032039 started 13:27:56); the 12:45 stale RtR+SW row is closed
+- bflist 200, Seq UI 200 / API 401, wrapped for MoonGamers / SiMPLE 200,
+  player atp 200
+- `/stats/communities` still 17,954 rows, all
+  `formationDate = 2026-08-20T02:00:05–08Z`
+
+**5-min gamification tick at :30 overlapping 30s stats collection**
+(`SQLITE_BUSY`), or Seq re-notify of a held earlier event. A :33 page is
+3 min after that gamification boundary / 33 min after hourly writers.
+Not a 02:00 community-detection retry: after a failed 02:00 run the catch
+waits 5 min then the loop sleeps until tomorrow 02:00, and communities are
+still frozen since 2026-08-20.
+
+The 12:45 branch
+(`cursor/bc-fd53435f-df42-4119-b052-8e16f4ff70c9-b835`) never opened a PR,
+so production still has the noisy `LogWarning(ex)` / `LogError(ex)` on
+handled `SQLITE_BUSY` and the `ToDictionary(PlayerName)` list crash. This
+change re-lands that work.
+
+## 2026-09-04 12:45 UTC page
+
+~4 hours 45 minutes after the 08:00 09-04 page. Live site at 12:46 UTC was
+healthy aside from the players list:
+
+- Homepage 200, liveservers `lastUpdated` 12:46:12 then 12:46:56, 87 servers,
+  87 named / unique
+- 57–59 live players, 56–58 unique; live-list duplicate `BFSoldier` on
+  `*NEW* SiMPLE | BF1942` (ctf) and `MoonGamers.com | Est. 2004` (conquest)
+- bflist 200, Seq UI 200 / API 401, wrapped for MoonGamers / SiMPLE 200,
+  player atp 200
+- `/stats/communities` still 17,954 rows, all
+  `formationDate = 2026-08-20T02:00:05–08Z`
+
+**5-min gamification tick at :45 overlapping 30s stats collection**
+(`SQLITE_BUSY`), or Seq re-notify of a held earlier event. A :45 page is
+that gamification boundary / 45 min after hourly writers.
+
+Separately, `GET /stats/players` (default page, sort `IsActive`) returned 400
+`Key: Aaa` then `Key: Rick`. Search `query=Rick` also 400. **Rick** hopped
+`*NEW* SiMPLE | BF1942` → `*NEW* SiMPLE | RtR+SW` (husky): player-detail
+showed two `IsActive` sessions (3031848 lastSeen 12:41:56 on BF1942, 3031899
+started 12:43:26 on RtR+SW). Cleared by 13:34 (single IsActive, search 200).
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
