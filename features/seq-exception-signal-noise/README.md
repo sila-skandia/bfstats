@@ -4,6 +4,43 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-04 12:45 UTC page
+
+~4 hours 45 minutes after the 08:00 09-04 page. Live site at 12:46 UTC was
+healthy aside from the players list:
+
+- Homepage 200, liveservers `lastUpdated` 12:46:12 then 12:46:56, 87 servers,
+  87 named / unique
+- 57–59 live players, 56–58 unique; live-list duplicate `BFSoldier` on
+  `*NEW* SiMPLE | BF1942` (ctf) and `MoonGamers.com | Est. 2004` (conquest)
+- bflist 200, Seq UI 200 / API 401, wrapped for MoonGamers / SiMPLE 200,
+  player atp 200
+- `/stats/communities` still 17,954 rows, all
+  `formationDate = 2026-08-20T02:00:05–08Z`
+
+**5-min gamification tick at :45 overlapping 30s stats collection**
+(`SQLITE_BUSY`), or Seq re-notify of a held earlier event. Not a 02:00
+community-detection retry: after a failed 02:00 run the catch waits 5 min
+then the loop sleeps until tomorrow 02:00, and communities are still frozen
+since 2026-08-20. A :45 page is that gamification boundary / 45 min after
+hourly writers.
+
+The 08:00 branch (`cursor/site-error-analysis-76c3`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY` and the `ToDictionary(PlayerName)` list crash. This change
+re-lands that work.
+
+Separately, `GET /stats/players` (default page, sort `IsActive`) returned 400
+`Key: Aaa` then `Key: Rick`. Search `query=Rick` also 400. **Rick** hopped
+`*NEW* SiMPLE | BF1942` → `*NEW* SiMPLE | RtR+SW` (husky): player-detail
+showed two `IsActive` sessions (3031848 lastSeen 12:41:56 on BF1942, 3031899
+started 12:43:26 on RtR+SW). `GetActiveSessionsAsync` filters by current
+server only, so a switch leaves the old row until the 5-minute timeout.
+**Aaa** was on RtR+SW only (one active in recentSessions); the first 400 key
+was page-1 membership, then Rick became the colliding name. This 400 is
+caught as `ArgumentException` and does **not** page Seq — but the players
+list is broken while a colliding name is online.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
