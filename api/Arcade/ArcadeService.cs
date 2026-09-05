@@ -565,33 +565,11 @@ public class ArcadeService(
         }
 
         var quizTokenPayload = new TriviaQuizTokenPayload(
-            selectedQuestions.Select(q => new TriviaAnswerPayload(
-                q.Id,
-                q.Question,
-                q.CorrectAnswer,
-                q.Explanation,
-                q.TargetPlayerName,
-                q.TargetRoundId,
-                q.TargetMapName,
-                q.TargetServerName)).ToList()
+            selectedQuestions.Select(ToTriviaAnswerPayload).ToList()
         );
         var quizToken = SignPayload(quizTokenPayload);
 
-        var dtoList = selectedQuestions.Select(q =>
-        {
-            var shuffledOptions = q.Options.ToList();
-            Shuffle(shuffledOptions);
-            return new TriviaQuestionDto(
-                q.Id,
-                q.Category,
-                q.Question,
-                shuffledOptions,
-                null,
-                q.TargetRoundId,
-                q.TargetMapName,
-                q.TargetServerName
-            );
-        }).ToList();
+        var dtoList = selectedQuestions.Select(ToTriviaQuestionDto).ToList();
 
         return new TriviaQuizDto(quizToken, dtoList);
     }
@@ -610,33 +588,11 @@ public class ArcadeService(
         var selectedQuestions = SelectDiverseTriviaQuestions(masterPool, 5);
 
         var quizTokenPayload = new TriviaQuizTokenPayload(
-            selectedQuestions.Select(q => new TriviaAnswerPayload(
-                q.Id,
-                q.Question,
-                q.CorrectAnswer,
-                q.Explanation,
-                q.TargetPlayerName,
-                q.TargetRoundId,
-                q.TargetMapName,
-                q.TargetServerName)).ToList()
+            selectedQuestions.Select(ToTriviaAnswerPayload).ToList()
         );
         var quizToken = SignPayload(quizTokenPayload);
 
-        var dtoList = selectedQuestions.Select(q =>
-        {
-            var shuffledOptions = q.Options.ToList();
-            Shuffle(shuffledOptions);
-            return new TriviaQuestionDto(
-                q.Id,
-                q.Category,
-                q.Question,
-                shuffledOptions,
-                null,
-                q.TargetRoundId,
-                q.TargetMapName,
-                q.TargetServerName
-            );
-        }).ToList();
+        var dtoList = selectedQuestions.Select(ToTriviaQuestionDto).ToList();
 
         return new TriviaQuizDto(quizToken, dtoList);
     }
@@ -2348,7 +2304,8 @@ public class ArcadeService(
             question.TargetPlayerName,
             question.TargetRoundId,
             question.TargetMapName,
-            question.TargetServerName
+            question.TargetServerName,
+            question.Highlights
         ));
     }
 
@@ -2386,7 +2343,8 @@ public class ArcadeService(
                 q.TargetPlayerName,
                 q.TargetRoundId,
                 q.TargetMapName,
-                q.TargetServerName
+                q.TargetServerName,
+                q.Highlights
             ));
         }
 
@@ -3844,6 +3802,36 @@ public class ArcadeService(
         List<string>? AttributeKeys = null
     );
 
+    private static TriviaQuestionDto ToTriviaQuestionDto(TriviaQuestionInternal q)
+    {
+        var shuffledOptions = q.Options.ToList();
+        Shuffle(shuffledOptions);
+        return new TriviaQuestionDto(
+            q.Id,
+            q.Category,
+            q.Question,
+            shuffledOptions,
+            null,
+            q.TargetRoundId,
+            q.TargetMapName,
+            q.TargetServerName,
+            TriviaQuestionEmphasis.From(q)
+        );
+    }
+
+    private static TriviaAnswerPayload ToTriviaAnswerPayload(TriviaQuestionInternal q) =>
+        new(
+            q.Id,
+            q.Question,
+            q.CorrectAnswer,
+            q.Explanation,
+            q.TargetPlayerName,
+            q.TargetRoundId,
+            q.TargetMapName,
+            q.TargetServerName,
+            TriviaQuestionEmphasis.From(q)
+        );
+
     private sealed record TriviaAnswerPayload(
         string Id,
         string Question,
@@ -3852,7 +3840,8 @@ public class ArcadeService(
         string? TargetPlayerName = null,
         string? TargetRoundId = null,
         string? TargetMapName = null,
-        string? TargetServerName = null
+        string? TargetServerName = null,
+        IReadOnlyList<string>? Highlights = null
     );
 
     private sealed record TriviaQuizTokenPayload(
