@@ -796,6 +796,23 @@ public class ArcadeTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcedeMysterySoldier_RevealsTargetIdentity()
+    {
+        var dossier = await _service.GetDailyMysteryDossierAsync();
+        Assert.NotNull(dossier.DossierToken);
+
+        var concedeResult = await _service.ConcedeMysterySoldierAsync(new MysteryConcedeRequest(dossier.DossierToken));
+
+        Assert.NotNull(concedeResult);
+        Assert.False(string.IsNullOrWhiteSpace(concedeResult.TargetPlayerName));
+        Assert.Contains(concedeResult.TargetPlayerName, dossier.CandidateOptions, StringComparer.OrdinalIgnoreCase);
+
+        // Submitting this revealed target name as a guess should return IsCorrect == true
+        var guessResult = await _service.GuessMysterySoldierAsync(new MysteryGuessRequest(dossier.DossierToken, concedeResult.TargetPlayerName));
+        Assert.True(guessResult.IsCorrect);
+    }
+
+    [Fact]
     public async Task GenerateTriviaQuiz_ServerScoped_CreatesServerQuestions()
     {
         var quiz = await _service.GenerateTriviaQuizAsync("srv-1");

@@ -124,6 +124,31 @@ public class ArcadeController(
     }
 
     /// <summary>
+    /// Forfeits the mystery soldier investigation and reveals the classified target identity.
+    /// </summary>
+    [HttpPost("mystery/reveal")]
+    [ProducesResponseType(typeof(MysteryConcedeResultDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<MysteryConcedeResultDto>> RevealMysterySoldier(
+        [FromBody] MysteryConcedeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.DossierToken))
+        {
+            return BadRequest("DossierToken is required.");
+        }
+
+        try
+        {
+            var result = await arcadeService.ConcedeMysterySoldierAsync(request, cancellationToken);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Generates a dynamic 5-question Field Lore trivia quiz from live and historical statistics,
     /// tailored to a specific server if requested.
     /// </summary>

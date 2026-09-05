@@ -5,6 +5,7 @@ import {
   fetchDailyMystery,
   fetchRandomMystery,
   submitMysteryGuess,
+  revealMysterySoldier,
   type MysteryDossier,
   type MysteryGuessResult,
   type MysteryAttributeMatch,
@@ -137,12 +138,57 @@ const loadMission = async (excludeCandidate?: string) => {
   }
 }
 
+const extractTargetFromToken = (token?: string): string | null => {
+  if (!token) return null
+  try {
+    const raw = atob(token)
+    const jsonStr = raw.slice(0, raw.lastIndexOf('}') + 1)
+    const parsed = JSON.parse(jsonStr)
+    return parsed.TargetPlayerName || null
+  } catch {
+    return null
+  }
+}
+
 const continuePlaying = () => {
-  const lastTarget = identifiedTarget.value || undefined
+  const lastTarget = identifiedTarget.value || extractTargetFromToken(dossier.value?.dossierToken) || undefined
   if (mode.value === 'daily') {
     mode.value = 'random'
   }
   loadMission(lastTarget)
+}
+
+const skipToNextSoldier = async () => {
+  if (submitting.value) return
+  const currentTarget = identifiedTarget.value || extractTargetFromToken(dossier.value?.dossierToken) || undefined
+  streak.value = 0
+  if (mode.value === 'daily') {
+    mode.value = 'random'
+  }
+  await loadMission(currentTarget)
+}
+
+const giveUpAndReveal = async () => {
+  if (!dossier.value || isGameOver.value || submitting.value) return
+  submitting.value = true
+  try {
+    let target = extractTargetFromToken(dossier.value.dossierToken)
+    try {
+      const res = await revealMysterySoldier(dossier.value.dossierToken)
+      if (res.targetPlayerName) {
+        target = res.targetPlayerName
+      }
+    } catch {
+      /* token fallback */
+    }
+    identifiedTarget.value = target || 'Classified'
+    isGameOver.value = true
+    isVictorious.value = false
+    streak.value = 0
+    playNegative()
+  } finally {
+    submitting.value = false
+  }
 }
 
 watch(mode, () => {
@@ -187,7 +233,7 @@ const makeGuess = async (guessedName: string) => {
     } else {
       if (guesses.value.length >= maxGuesses.value) {
         isGameOver.value = true
-        identifiedTarget.value = res.targetPlayerName || 'Classified'
+        identifiedTarget.value = res.targetPlayerName || extractTargetFromToken(dossier.value.dossierToken) || 'Classified'
         streak.value = 0
       }
       playNegative()
@@ -269,14 +315,15 @@ onUnmounted(() => {
 
       <div class="mm-mystery__bar-actions">
         <button
-          v-if="mode === 'random' && !isGameOver"
+          v-if="!isGameOver"
           type="button"
           class="mm-mystery__skip-btn"
-          title="Skip to another random soldier"
-          @click="continuePlaying"
+          title="Continue to the next soldier without guessing"
+          :disabled="submitting"
+          @click="skipToNextSoldier"
         >
-          <i class="pi pi-refresh" />
-          <span>New Case</span>
+          <i class="pi pi-step-forward" />
+          <span>Next Soldier</span>
         </button>
 
         <button
@@ -363,10 +410,34 @@ onUnmounted(() => {
         class="mm-mystery__suspects"
       >
         <div class="mm-mystery__suspects-header">
-          <span class="mm-eyebrow">Candidates</span>
-          <p class="mm-mystery__suspects-hint">
-            Select a candidate to check their stats against the mystery player.
-          </p>
+          <div>
+            <span class="mm-eyebrow">Candidates</span>
+            <p class="mm-mystery__suspects-hint">
+              Select a candidate to check their stats against the mystery player.
+            </p>
+          </div>
+          <div class="mm-mystery__candidate-actions">
+            <button
+              type="button"
+              class="mm-mystery__action-btn mm-mystery__action-btn--ghost"
+              title="Reveal who the mystery soldier is"
+              :disabled="submitting"
+              @click="giveUpAndReveal"
+            >
+              <i class="pi pi-eye" />
+              <span>Reveal Target</span>
+            </button>
+            <button
+              type="button"
+              class="mm-mystery__action-btn mm-mystery__action-btn--next"
+              title="Continue to the next soldier without guessing"
+              :disabled="submitting"
+              @click="skipToNextSoldier"
+            >
+              <span>Next Soldier</span>
+              <i class="pi pi-arrow-right" />
+            </button>
+          </div>
         </div>
 
         <div class="mm-mystery__suspect-grid">
@@ -407,6 +478,27 @@ onUnmounted(() => {
             </span>
           </button>
         </div>
+
+        <div class="mm-mystery__suspects-footer">
+          <button
+            type="button"
+            class="mm-mystery__footer-btn mm-mystery__footer-btn--reveal"
+            :disabled="submitting"
+            @click="giveUpAndReveal"
+          >
+            <i class="pi pi-eye" />
+            <span>Give Up & Reveal Target</span>
+          </button>
+          <button
+            type="button"
+            class="mm-mystery__footer-btn mm-mystery__footer-btn--skip"
+            :disabled="submitting"
+            @click="skipToNextSoldier"
+          >
+            <span>Next Soldier (Skip)</span>
+            <i class="pi pi-arrow-right" />
+          </button>
+        </div>
       </div>
 
       <div
@@ -425,7 +517,7 @@ onUnmounted(() => {
               {{
                 isVictorious
                   ? (mode === 'daily' ? 'Daily Mission Solved! Mystery soldier identified.' : 'Target Identified! Mystery soldier revealed.')
-                  : (mode === 'daily' ? 'Daily Mission Compromised: Target revealed.' : 'Mission Over: Mystery soldier revealed.')
+                  : (mode === 'daily' ? 'Daily Mission Conceded: Target revealed.' : 'Mission Conceded: Mystery soldier revealed.')
               }}
             </span>
           </h2>
@@ -776,10 +868,116 @@ onUnmounted(() => {
   gap: 12px;
 }
 
+.mm-mystery__suspects-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .mm-mystery__suspects-hint {
   margin: 4px 0 0;
   font-size: 13px;
   color: var(--mm-ink-muted);
+}
+
+.mm-mystery__candidate-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mm-mystery__action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mm-mystery__action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mm-mystery__action-btn--ghost {
+  border: 1px solid var(--mm-rule-strong);
+  background: var(--mm-bg);
+  color: var(--mm-ink-muted);
+}
+.mm-mystery__action-btn--ghost:hover:not(:disabled) {
+  border-color: var(--mm-rule-strong);
+  color: var(--mm-ink);
+  background: var(--mm-bg-mute);
+}
+
+.mm-mystery__action-btn--next {
+  border: 1px solid var(--mm-rule-strong);
+  background: var(--mm-bg-mute);
+  color: var(--mm-ink);
+}
+.mm-mystery__action-btn--next:hover:not(:disabled) {
+  border-color: var(--mm-accent);
+  color: var(--mm-accent-soft);
+  background: var(--mm-bg-soft);
+}
+
+.mm-mystery__suspects-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.mm-mystery__footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mm-mystery__footer-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mm-mystery__footer-btn--reveal {
+  border: 1px dashed var(--mm-rule-strong);
+  background: transparent;
+  color: var(--mm-ink-muted);
+}
+.mm-mystery__footer-btn--reveal:hover:not(:disabled) {
+  border-color: var(--mm-rule-strong);
+  color: var(--mm-ink);
+  background: var(--mm-bg-soft);
+}
+
+.mm-mystery__footer-btn--skip {
+  border: 1px solid var(--mm-rule-strong);
+  background: var(--mm-bg);
+  color: var(--mm-ink);
+}
+.mm-mystery__footer-btn--skip:hover:not(:disabled) {
+  border-color: var(--mm-accent);
+  color: var(--mm-accent-soft);
+  background: var(--mm-bg-soft);
 }
 
 .mm-mystery__suspect-grid {

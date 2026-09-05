@@ -90,6 +90,11 @@ export interface MysteryGuessResult {
   attributes?: MysteryAttributeMatch[]
 }
 
+export interface MysteryConcedeResult {
+  targetPlayerName: string
+  message: string
+}
+
 export interface TriviaQuestion {
   id: string
   category: string
@@ -192,6 +197,15 @@ export async function submitMysteryGuess(
   const res = await axios.post<MysteryGuessResult>('/stats/arcade/mystery/guess', {
     dossierToken,
     guessedPlayerName
+  })
+  return res.data
+}
+
+export async function revealMysterySoldier(
+  dossierToken: string
+): Promise<MysteryConcedeResult> {
+  const res = await axios.post<MysteryConcedeResult>('/stats/arcade/mystery/reveal', {
+    dossierToken
   })
   return res.data
 }

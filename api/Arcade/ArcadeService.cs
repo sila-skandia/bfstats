@@ -21,6 +21,8 @@ public class ArcadeService(
     private const string ServerListCacheKey = "Arcade:Servers";
     private const int OrbitCoPlayerLimit = 100;
     private const int MinOrbitPoolSize = 4;
+    private const int TriviaTopMapCount = 30;
+    private const int TriviaTopPlayerCount = 40;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
 
     private readonly IPlayerRelationshipService? _relationships =
@@ -111,29 +113,42 @@ public class ArcadeService(
                 })
                 .ToListAsync(cancellationToken);
 
-            var serverAggregates = await dbContext.PlayerServerStats
+            var playByServer = await dbContext.ServerMapStats
                 .AsNoTracking()
-                .GroupBy(pss => pss.ServerGuid)
+                .GroupBy(s => s.ServerGuid)
                 .Select(g => new
                 {
                     ServerGuid = g.Key,
-                    Count = g.Select(x => x.PlayerName).Distinct().Count(),
                     TotalPlayTimeMinutes = g.Sum(x => x.TotalPlayTimeMinutes)
                 })
-                .ToDictionaryAsync(x => x.ServerGuid, cancellationToken);
+                .ToDictionaryAsync(x => x.ServerGuid, x => (double)x.TotalPlayTimeMinutes, cancellationToken);
+
+            var latestWeek = await TryGetLatestPlayerServerStatsWeekAsync(cancellationToken);
+            Dictionary<string, int> candidateCounts = [];
+            if (latestWeek != null)
+            {
+                var (year, week) = latestWeek.Value;
+                candidateCounts = await dbContext.PlayerServerStats
+                    .AsNoTracking()
+                    .Where(p => p.Year == year && p.Week == week)
+                    .GroupBy(p => p.ServerGuid)
+                    .Select(g => new { ServerGuid = g.Key, Count = g.Count() })
+                    .ToDictionaryAsync(x => x.ServerGuid, x => x.Count, cancellationToken);
+            }
 
             var result = servers
-                .Where(s => serverAggregates.ContainsKey(s.Guid) || s.CurrentNumPlayers > 0)
+                .Where(s => playByServer.ContainsKey(s.Guid) || candidateCounts.ContainsKey(s.Guid) || s.CurrentNumPlayers > 0)
                 .Select(s =>
                 {
-                    serverAggregates.TryGetValue(s.Guid, out var stats);
+                    playByServer.TryGetValue(s.Guid, out var playMinutes);
+                    candidateCounts.TryGetValue(s.Guid, out var candidates);
                     return new ArcadeServerDto(
                         s.Guid,
                         s.Name,
                         s.Country,
                         s.CurrentNumPlayers,
-                        stats?.Count ?? 0,
-                        stats != null ? Math.Round(stats.TotalPlayTimeMinutes / 60.0, 1) : 0
+                        candidates,
+                        playMinutes > 0 ? Math.Round(playMinutes / 60.0, 1) : 0
                     );
                 })
                 .OrderByDescending(s => s.TotalPlayTimeHours)
@@ -484,6 +499,22 @@ public class ArcadeService(
         );
     }
 
+    public Task<MysteryConcedeResultDto> ConcedeMysterySoldierAsync(
+        MysteryConcedeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = ValidateToken<MysteryTokenPayload>(request.DossierToken);
+        if (payload == null)
+        {
+            throw new ArgumentException("Invalid or expired dossier token.");
+        }
+
+        return Task.FromResult(new MysteryConcedeResultDto(
+            payload.TargetPlayerName,
+            $"Mission conceded. Classified target was {payload.TargetPlayerName}."
+        ));
+    }
+
     public async Task<TriviaQuizDto> GenerateTriviaQuizAsync(
         string? serverGuid = null,
         string? orbitPlayer = null,
@@ -622,7 +653,6 @@ public class ArcadeService(
         var candidates = (await LoadGlobalRosterFromDbAsync(cancellationToken)).Candidates;
 
         await AddCombinatorialMapTriviaQuestionsAsync(pool, null, cancellationToken);
-        await AddMapScopedTriviaQuestionsAsync(pool, cancellationToken);
         await AddPeriodScopedTriviaQuestionsAsync(pool, cancellationToken);
         await AddMapBestScoreTriviaQuestionsAsync(pool, cancellationToken);
         await AddMapGlobalAndTheaterQuestionsAsync(pool, cancellationToken);
