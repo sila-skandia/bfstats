@@ -532,6 +532,9 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 r.Tickets2,
                 r.Team1Label,
                 r.Team2Label,
+                // The mod the server runs (bf1942, fhsw, dc_final, ...). Together with
+                // MapName this addresses the map's preview image under /stats/assets/maps.
+                GameId = r.GameServer != null ? r.GameServer.GameId : null,
                 SessionIds = r.Sessions.Select(s => s.SessionId).ToList()
             })
             .FirstOrDefaultAsync(ct);
@@ -591,7 +594,8 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 Tickets1 = roundData.Tickets1,
                 Tickets2 = roundData.Tickets2,
                 Team1Label = roundData.Team1Label,
-                Team2Label = roundData.Team2Label
+                Team2Label = roundData.Team2Label,
+                GameId = roundData.GameId
             },
             LeaderboardSnapshots = leaderboardSnapshots,
             Achievements = achievements
