@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import 'primeicons/primeicons.css'
 import {
+  arcadeLoadError,
   fetchDailyMystery,
   fetchRandomMystery,
   submitMysteryGuess,
@@ -131,8 +132,8 @@ const loadMission = async (excludeCandidate?: string) => {
     dossier.value = mode.value === 'daily'
       ? await fetchDailyMystery(props.serverGuid, props.orbitPlayer)
       : await fetchRandomMystery(props.serverGuid, props.orbitPlayer, excludeCandidate)
-  } catch {
-    error.value = 'Classified dossier unavailable. Please retry.'
+  } catch (err) {
+    error.value = arcadeLoadError(err, 'Classified dossier unavailable. Please retry.')
   } finally {
     loading.value = false
   }
@@ -354,6 +355,7 @@ onUnmounted(() => {
     <div
       v-else-if="error"
       class="mm-mystery__error"
+      data-testid="arcade-error"
     >
       {{ error }}
       <button

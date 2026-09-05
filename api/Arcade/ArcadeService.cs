@@ -22,7 +22,6 @@ public class ArcadeService(
     private const string ServerListCacheKey = "Arcade:Servers";
     private const int OrbitCoPlayerLimit = 100;
     private const int MinOrbitPoolSize = 4;
-    private const int TriviaTopMapCount = 30;
     private const int TriviaTopPlayerCount = 40;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
 
@@ -34,64 +33,10 @@ public class ArcadeService(
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<PlayerMapSnapshot>> EmptyMapSnapshots =
         new Dictionary<string, IReadOnlyList<PlayerMapSnapshot>>(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly IReadOnlyDictionary<string, IReadOnlyList<PlayerMapSnapshot>> DefaultMapSnapshots =
-        new Dictionary<string, IReadOnlyList<PlayerMapSnapshot>>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Sgt_Rock"] =
-            [
-                new("Wake Island", 6200, 3100, 9800, 140, 48, 2.00, 0.74),
-                new("Omaha Beach", 4100, 2800, 7200, 95, 32, 1.46, 0.72)
-            ],
-            ["Panzer_Ace"] =
-            [
-                new("Bocage", 9100, 3600, 15200, 180, 62, 2.53, 0.84),
-                new("Stalingrad", 5400, 2900, 9100, 110, 38, 1.86, 0.82)
-            ],
-            ["Red_Baron"] =
-            [
-                new("El Alamein", 4800, 2200, 8100, 88, 29, 2.18, 0.91),
-                new("Stalingrad", 3900, 2100, 6700, 72, 24, 1.86, 0.90)
-            ],
-            ["Major_Kong"] =
-            [
-                new("Bocage", 3500, 2700, 6100, 78, 26, 1.30, 0.75),
-                new("Market Garden", 2900, 2400, 5200, 64, 21, 1.21, 0.76)
-            ],
-            ["Desert_Fox"] =
-            [
-                new("Tobruk", 7200, 3100, 11800, 150, 44, 2.32, 0.80),
-                new("Bocage", 4100, 2500, 7400, 86, 28, 1.64, 0.79)
-            ],
-            ["Viper_42"] =
-            [
-                new("Wake Island", 5100, 3400, 8600, 120, 41, 1.50, 0.71),
-                new("Midway", 2600, 1900, 4500, 58, 18, 1.37, 0.75)
-            ],
-            ["Ghost_Sniper"] =
-            [
-                new("Stalingrad", 4700, 1800, 7900, 92, 30, 2.61, 0.85),
-                new("Kharkov", 2200, 1500, 3900, 48, 16, 1.47, 0.76)
-            ],
-            ["Iron_Duke"] =
-            [
-                new("Wake Island", 4300, 3000, 7400, 105, 36, 1.43, 0.68),
-                new("Battleaxe", 3900, 2600, 6800, 88, 27, 1.50, 0.74)
-            ]
-        };
+    private static ArcadeRoster EmptyRoster => new([], EmptyMapSnapshots);
 
-    private static ArcadeRoster DefaultRoster => new(DefaultCandidates, DefaultMapSnapshots);
-
-    private static readonly IReadOnlyList<ArcadeCandidate> DefaultCandidates =
-    [
-        new("Sgt_Rock", "US", 14500, 24800, 320, 1.85, "Omaha Beach", "Simple 24/7 Wake", "Sharpshooter"),
-        new("Panzer_Ace", "DE", 18200, 31200, 410, 2.10, "Bocage", "BFClassic Rotation", "Tank Buster"),
-        new("Red_Baron", "DE", 12100, 21900, 280, 1.95, "El Alamein", "Desert Rats BF", "Ace Pilot"),
-        new("Major_Kong", "GB", 9800, 17500, 220, 1.45, "Market Garden", "UK Veterans Server", "Iron Man"),
-        new("Desert_Fox", "DE", 16400, 28700, 390, 2.05, "Tobruk", "Desert Rats BF", "Tactician"),
-        new("Viper_42", "US", 11300, 19400, 250, 1.68, "Wake Island", "Simple 24/7 Wake", "Combat Scout"),
-        new("Ghost_Sniper", "SE", 8700, 15100, 190, 1.72, "Stalingrad", "Nordic Warriors", "Deadly Aim"),
-        new("Iron_Duke", "CA", 13800, 23500, 310, 1.55, "Battleaxe", "Allied Command", "Frontline Legend")
-    ];
+    private const string InsufficientRosterMessage =
+        "Not enough tracked regulars on this server to play.";
 
     public async Task<IReadOnlyList<ArcadeServerDto>> GetArcadeServersAsync(CancellationToken cancellationToken = default)
     {
@@ -245,7 +190,7 @@ public class ArcadeService(
     {
         var orbit = NormalizeOrbitPlayer(orbitPlayer);
         var roster = await GetArcadeRosterAsync(serverGuid, orbit, cancellationToken);
-        var candidates = roster.Candidates.Count > 0 ? roster.Candidates : DefaultCandidates;
+        var candidates = RequireCandidates(roster.Candidates);
 
         var todayKey = $"{DateTime.UtcNow:yyyy-MM-dd}_{serverGuid ?? "global"}_{orbit ?? "_"}";
         var hash = (uint)todayKey.GetHashCode();
@@ -272,7 +217,7 @@ public class ArcadeService(
     {
         var orbit = NormalizeOrbitPlayer(orbitPlayer);
         var roster = await GetArcadeRosterAsync(serverGuid, orbit, cancellationToken);
-        var candidates = roster.Candidates.Count > 0 ? roster.Candidates : DefaultCandidates;
+        var candidates = RequireCandidates(roster.Candidates);
 
         var pool = candidates;
         if (!string.IsNullOrWhiteSpace(exclude))
@@ -310,14 +255,12 @@ public class ArcadeService(
         }
 
         var roster = await GetArcadeRosterAsync(payload.ServerGuid, payload.OrbitPlayer, cancellationToken);
-        var candidates = roster.Candidates.Count > 0 ? roster.Candidates : DefaultCandidates;
+        var candidates = RequireCandidates(roster.Candidates);
         var mapsByPlayer = roster.MapsByPlayer;
 
         var target = candidates.FirstOrDefault(c =>
             string.Equals(c.PlayerName, payload.TargetPlayerName, StringComparison.OrdinalIgnoreCase))
-            ?? DefaultCandidates.FirstOrDefault(c =>
-                string.Equals(c.PlayerName, payload.TargetPlayerName, StringComparison.OrdinalIgnoreCase))
-            ?? candidates[0];
+            ?? throw new ArgumentException("Mystery target is no longer in the server roster.");
 
         var guessedName = request.GuessedPlayerName.Trim();
         var guessedCandidate = candidates.FirstOrDefault(c =>
@@ -852,9 +795,10 @@ public class ArcadeService(
     {
         var candidates = await GetArcadeCandidatesAsync(serverGuid, null, cancellationToken);
 
+        var rosterNames = CandidateNames(candidates);
         var bestScores = await dbContext.PlayerBestScores
             .AsNoTracking()
-            .Where(pbs => pbs.ServerGuid == serverGuid && pbs.Period == "all_time")
+            .Where(pbs => pbs.ServerGuid == serverGuid && pbs.Period == "all_time" && rosterNames.Contains(pbs.PlayerName))
             .OrderByDescending(pbs => pbs.FinalScore)
             .Take(16)
             .ToListAsync(cancellationToken);
@@ -895,7 +839,7 @@ public class ArcadeService(
 
         var bestKills = await dbContext.PlayerBestScores
             .AsNoTracking()
-            .Where(pbs => pbs.ServerGuid == serverGuid && pbs.Period == "all_time")
+            .Where(pbs => pbs.ServerGuid == serverGuid && pbs.Period == "all_time" && rosterNames.Contains(pbs.PlayerName))
             .OrderByDescending(pbs => pbs.FinalKills)
             .Take(16)
             .ToListAsync(cancellationToken);
@@ -1024,9 +968,16 @@ public class ArcadeService(
         string serverName,
         CancellationToken cancellationToken)
     {
+        var candidates = await GetArcadeCandidatesAsync(serverGuid, null, cancellationToken);
+        if (candidates.Count < 4)
+        {
+            return;
+        }
+
+        var rosterNames = CandidateNames(candidates);
         var yearlyData = await dbContext.PlayerServerStats
             .AsNoTracking()
-            .Where(pss => pss.ServerGuid == serverGuid && pss.Year > 2000)
+            .Where(pss => pss.ServerGuid == serverGuid && pss.Year > 2000 && rosterNames.Contains(pss.PlayerName))
             .GroupBy(pss => new { pss.Year, pss.PlayerName })
             .Select(g => new
             {
@@ -1110,9 +1061,19 @@ public class ArcadeService(
         string serverName,
         CancellationToken cancellationToken)
     {
+        var candidates = await GetArcadeCandidatesAsync(serverGuid, null, cancellationToken);
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        var rosterNames = CandidateNames(candidates);
         var firstPlaceLeaders = await dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(pa => pa.ServerGuid == serverGuid && pa.AchievementType == "round_placement" && pa.AchievementId == "round_placement_1")
+            .Where(pa => pa.ServerGuid == serverGuid
+                         && pa.AchievementType == "round_placement"
+                         && pa.AchievementId == "round_placement_1"
+                         && rosterNames.Contains(pa.PlayerName))
             .GroupBy(pa => pa.PlayerName)
             .Select(g => new { PlayerName = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -1138,7 +1099,9 @@ public class ArcadeService(
 
         var podiumLeaders = await dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(pa => pa.ServerGuid == serverGuid && pa.AchievementType == "round_placement")
+            .Where(pa => pa.ServerGuid == serverGuid
+                         && pa.AchievementType == "round_placement"
+                         && rosterNames.Contains(pa.PlayerName))
             .GroupBy(pa => pa.PlayerName)
             .Select(g => new { PlayerName = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -1164,7 +1127,9 @@ public class ArcadeService(
 
         var streakLeaders = await dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(pa => pa.ServerGuid == serverGuid && pa.AchievementType == "kill_streak")
+            .Where(pa => pa.ServerGuid == serverGuid
+                         && pa.AchievementType == "kill_streak"
+                         && rosterNames.Contains(pa.PlayerName))
             .GroupBy(pa => pa.PlayerName)
             .Select(g => new { PlayerName = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -1190,7 +1155,10 @@ public class ArcadeService(
 
         var longestStreaks = await dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(pa => pa.ServerGuid == serverGuid && pa.AchievementType == "kill_streak" && pa.RoundId != "")
+            .Where(pa => pa.ServerGuid == serverGuid
+                         && pa.AchievementType == "kill_streak"
+                         && pa.RoundId != ""
+                         && rosterNames.Contains(pa.PlayerName))
             .OrderByDescending(pa => pa.Value)
             .Take(10)
             .ToListAsync(cancellationToken);
@@ -1388,7 +1356,7 @@ public class ArcadeService(
         var loadTimer = Stopwatch.StartNew();
         var facts = await LoadPlayerMapFactsAsync(serverGuid, cancellationToken);
         logger.LogInformation(
-            "Arcade trivia loaded {FactCount} player-map facts for {PlayerCount} soldiers in {ElapsedMs}ms",
+            "Arcade trivia loaded {FactCount} player-map facts for {PlayerCount} soldiers from roster in {ElapsedMs}ms",
             facts.Count,
             facts.Select(f => f.PlayerName).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
             loadTimer.ElapsedMilliseconds);
@@ -1436,123 +1404,58 @@ public class ArcadeService(
         string? serverGuid,
         CancellationToken cancellationToken)
     {
-        var mapNames = await LoadTopMapNamesForTriviaAsync(serverGuid, cancellationToken);
-        var query = await ArcadePlayerMapStatsQueryAsync(serverGuid, cancellationToken);
-
-        if (mapNames.Count == 0)
-        {
-            mapNames = await query
-                .GroupBy(m => m.MapName)
-                .Select(g => new
-                {
-                    MapName = g.Key,
-                    TotalKills = g.Sum(x => x.TotalKills)
-                })
-                .OrderByDescending(x => x.TotalKills)
-                .Take(TriviaTopMapCount)
-                .Select(x => x.MapName)
-                .ToListAsync(cancellationToken);
-        }
-
-        if (mapNames.Count == 0)
+        var roster = await GetArcadeRosterAsync(serverGuid, null, cancellationToken);
+        if (roster.Candidates.Count == 0)
         {
             return [];
         }
 
-        // Resolve the roster in SQL (LIMIT 40) before materializing facts.
-        // Loading every soldier on the top maps made Compose() the cold-path bottleneck.
-        var topPlayers = await query
-            .Where(m => mapNames.Contains(m.MapName))
-            .GroupBy(m => m.PlayerName)
-            .Select(g => new
-            {
-                PlayerName = g.Key,
-                TotalKills = g.Sum(x => x.TotalKills)
-            })
-            .OrderByDescending(x => x.TotalKills)
+        return PlayerMapFactsFromRoster(roster);
+    }
+
+    private static IReadOnlyList<ArcadeCandidate> RequireCandidates(IReadOnlyList<ArcadeCandidate> candidates)
+    {
+        if (candidates.Count == 0)
+        {
+            throw new InvalidOperationException(InsufficientRosterMessage);
+        }
+
+        return candidates;
+    }
+
+    private static List<string> CandidateNames(IReadOnlyList<ArcadeCandidate> candidates) =>
+        candidates.Select(c => c.PlayerName).ToList();
+
+    private static List<PlayerMapFact> PlayerMapFactsFromRoster(ArcadeRoster roster)
+    {
+        var topNames = roster.Candidates
+            .OrderByDescending(c => c.TotalKills)
             .Take(TriviaTopPlayerCount)
-            .Select(x => x.PlayerName)
-            .ToListAsync(cancellationToken);
+            .Select(c => c.PlayerName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        if (topPlayers.Count == 0)
+        var facts = new List<PlayerMapFact>();
+        foreach (var name in topNames)
         {
-            return [];
-        }
-
-        return await query
-            .Where(m => topPlayers.Contains(m.PlayerName))
-            .GroupBy(m => new { m.PlayerName, m.MapName })
-            .Select(g => new PlayerMapFact(
-                g.Key.PlayerName,
-                g.Key.MapName,
-                g.Sum(x => x.TotalKills),
-                g.Sum(x => x.TotalDeaths),
-                g.Sum(x => x.TotalScore),
-                g.Sum(x => x.TotalPlayTimeMinutes),
-                g.Sum(x => x.TotalRounds)))
-            .ToListAsync(cancellationToken);
-    }
-
-    private async Task<List<string>> LoadTopMapNamesForTriviaAsync(
-        string? serverGuid,
-        CancellationToken cancellationToken)
-    {
-        var serverMaps = dbContext.ServerMapStats.AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(serverGuid))
-        {
-            serverMaps = serverMaps.Where(s => s.ServerGuid == serverGuid);
-        }
-
-        var fromServerMaps = await serverMaps
-            .GroupBy(s => s.MapName)
-            .Select(g => new
+            if (!roster.MapsByPlayer.TryGetValue(name, out var snaps))
             {
-                MapName = g.Key,
-                TotalRounds = g.Sum(x => x.TotalRounds)
-            })
-            .Where(x => x.TotalRounds > 0)
-            .OrderByDescending(x => x.TotalRounds)
-            .Take(TriviaTopMapCount)
-            .Select(x => x.MapName)
-            .ToListAsync(cancellationToken);
+                continue;
+            }
 
-        if (fromServerMaps.Count > 0)
-        {
-            return fromServerMaps;
+            foreach (var snap in snaps)
+            {
+                facts.Add(new PlayerMapFact(
+                    name,
+                    snap.MapName,
+                    snap.TotalKills,
+                    snap.TotalDeaths,
+                    snap.TotalScore,
+                    snap.PlayTimeHours * 60.0,
+                    snap.TotalRounds));
+            }
         }
 
-        var averages = dbContext.MapGlobalAverages.AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(serverGuid))
-        {
-            averages = averages.Where(a => a.ServerGuid == serverGuid);
-        }
-        else
-        {
-            averages = averages.Where(a => a.ServerGuid == MapGlobalAverage.GlobalServerGuid);
-        }
-
-        return await averages
-            .OrderByDescending(a => a.SampleCount)
-            .Take(TriviaTopMapCount)
-            .Select(a => a.MapName)
-            .ToListAsync(cancellationToken);
-    }
-
-    private async Task<IQueryable<PlayerMapStats>> ArcadePlayerMapStatsQueryAsync(
-        string? serverGuid,
-        CancellationToken cancellationToken)
-    {
-        var query = dbContext.PlayerMapStats.AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(serverGuid))
-        {
-            return query.Where(m => m.ServerGuid == serverGuid);
-        }
-
-        var hasGlobal = await dbContext.PlayerMapStats.AsNoTracking()
-            .AnyAsync(m => m.ServerGuid == PlayerMapStats.GlobalServerGuid, cancellationToken);
-        return hasGlobal
-            ? query.Where(m => m.ServerGuid == PlayerMapStats.GlobalServerGuid)
-            : query.Where(m => m.ServerGuid != PlayerMapStats.GlobalServerGuid);
+        return facts;
     }
 
     private async Task AddPeriodScopedTriviaQuestionsAsync(
@@ -1698,12 +1601,19 @@ public class ArcadeService(
         List<TriviaQuestionInternal> pool,
         CancellationToken cancellationToken)
     {
-        var bestScores = await dbContext.PlayerBestScores
+        var candidates = await GetArcadeCandidatesAsync(null, null, cancellationToken);
+        if (candidates.Count < 4)
+        {
+            return;
+        }
+
+        var rosterNames = CandidateNames(candidates);
+        var allTime = await dbContext.PlayerBestScores
             .AsNoTracking()
-            .Where(pbs => pbs.Period == "all_time")
-            .OrderByDescending(pbs => pbs.FinalScore)
-            .Take(8)
+            .Where(pbs => pbs.Period == "all_time" && rosterNames.Contains(pbs.PlayerName))
             .ToListAsync(cancellationToken);
+
+        var bestScores = allTime.OrderByDescending(pbs => pbs.FinalScore).Take(8).ToList();
 
         if (bestScores.Count >= 4)
         {
@@ -1725,12 +1635,7 @@ public class ArcadeService(
             }
         }
 
-        var bestKills = await dbContext.PlayerBestScores
-            .AsNoTracking()
-            .Where(pbs => pbs.Period == "all_time")
-            .OrderByDescending(pbs => pbs.FinalKills)
-            .Take(8)
-            .ToListAsync(cancellationToken);
+        var bestKills = allTime.OrderByDescending(pbs => pbs.FinalKills).Take(8).ToList();
 
         if (bestKills.Count >= 4)
         {
@@ -1752,30 +1657,22 @@ public class ArcadeService(
             }
         }
 
-        var mapsWithScores = await dbContext.PlayerBestScores
-            .AsNoTracking()
-            .Where(pbs => pbs.Period == "all_time")
+        var mapsWithScores = allTime
             .GroupBy(pbs => pbs.MapName)
             .Select(g => new
             {
                 MapName = g.Key,
-                PlayerCount = g.Select(x => x.PlayerName).Distinct().Count(),
+                Rows = g.ToList(),
+                PlayerCount = g.Select(x => x.PlayerName).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
                 TopScore = g.Max(x => x.FinalScore)
             })
             .Where(x => x.PlayerCount >= 4)
             .OrderByDescending(x => x.TopScore)
-            .Take(16)
-            .ToListAsync(cancellationToken);
+            .Take(16);
 
         foreach (var map in mapsWithScores)
         {
-            var scores = await dbContext.PlayerBestScores
-                .AsNoTracking()
-                .Where(pbs => pbs.Period == "all_time" && pbs.MapName == map.MapName)
-                .OrderByDescending(pbs => pbs.FinalScore)
-                .Take(8)
-                .ToListAsync(cancellationToken);
-
+            var scores = map.Rows.OrderByDescending(s => s.FinalScore).Take(8).ToList();
             var options = scores.Select(s => s.PlayerName).Distinct().Take(4).ToList();
             if (options.Count < 4) continue;
 
@@ -1794,13 +1691,7 @@ public class ArcadeService(
                 TargetMapName: top.MapName
             ));
 
-            var killRecords = await dbContext.PlayerBestScores
-                .AsNoTracking()
-                .Where(pbs => pbs.Period == "all_time" && pbs.MapName == map.MapName)
-                .OrderByDescending(pbs => pbs.FinalKills)
-                .Take(8)
-                .ToListAsync(cancellationToken);
-
+            var killRecords = map.Rows.OrderByDescending(s => s.FinalKills).Take(8).ToList();
             var kOptions = killRecords.Select(s => s.PlayerName).Distinct().Take(4).ToList();
             if (kOptions.Count == 4 && killRecords[0].FinalKills > 0)
             {
@@ -1956,9 +1847,18 @@ public class ArcadeService(
         List<TriviaQuestionInternal> pool,
         CancellationToken cancellationToken)
     {
+        var candidates = await GetArcadeCandidatesAsync(null, null, cancellationToken);
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        var rosterNames = CandidateNames(candidates);
         var firstPlaceLeaders = await dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(pa => pa.AchievementType == "round_placement" && pa.AchievementId == "round_placement_1")
+            .Where(pa => pa.AchievementType == "round_placement"
+                         && pa.AchievementId == "round_placement_1"
+                         && rosterNames.Contains(pa.PlayerName))
             .GroupBy(pa => pa.PlayerName)
             .Select(g => new { PlayerName = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -1982,7 +1882,7 @@ public class ArcadeService(
 
         var podiumLeaders = await dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(pa => pa.AchievementType == "round_placement")
+            .Where(pa => pa.AchievementType == "round_placement" && rosterNames.Contains(pa.PlayerName))
             .GroupBy(pa => pa.PlayerName)
             .Select(g => new { PlayerName = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -2006,7 +1906,7 @@ public class ArcadeService(
 
         var streakLeaders = await dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(pa => pa.AchievementType == "kill_streak")
+            .Where(pa => pa.AchievementType == "kill_streak" && rosterNames.Contains(pa.PlayerName))
             .GroupBy(pa => pa.PlayerName)
             .Select(g => new { PlayerName = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -2030,7 +1930,7 @@ public class ArcadeService(
 
         var longestStreaks = await dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(pa => pa.AchievementType == "kill_streak" && pa.RoundId != "")
+            .Where(pa => pa.AchievementType == "kill_streak" && pa.RoundId != "" && rosterNames.Contains(pa.PlayerName))
             .OrderByDescending(pa => pa.Value)
             .Take(10)
             .ToListAsync(cancellationToken);
@@ -2214,6 +2114,40 @@ public class ArcadeService(
         return latest == null ? null : (latest.Year, latest.Week);
     }
 
+    private async Task<List<string>> TryLoadServerRosterSeedNamesAsync(
+        string serverGuid,
+        CancellationToken cancellationToken)
+    {
+        var fromRankings = await dbContext.ServerPlayerRankings
+            .AsNoTracking()
+            .Where(r => r.ServerGuid == serverGuid)
+            .GroupBy(r => r.PlayerName)
+            .Select(g => new { PlayerName = g.Key, TotalScore = g.Sum(x => x.TotalScore) })
+            .OrderByDescending(x => x.TotalScore)
+            .Take(150)
+            .Select(x => x.PlayerName)
+            .ToListAsync(cancellationToken);
+        if (fromRankings.Count > 0)
+        {
+            return fromRankings;
+        }
+
+        var latestWeek = await TryGetLatestPlayerServerStatsWeekAsync(cancellationToken);
+        if (latestWeek == null)
+        {
+            return [];
+        }
+
+        var (year, week) = latestWeek.Value;
+        return await dbContext.PlayerServerStats
+            .AsNoTracking()
+            .Where(p => p.ServerGuid == serverGuid && p.Year == year && p.Week == week)
+            .OrderByDescending(p => p.TotalScore)
+            .Take(150)
+            .Select(p => p.PlayerName)
+            .ToListAsync(cancellationToken);
+    }
+
     private static string SanitizeTriviaId(string value)
     {
         var chars = value
@@ -2367,10 +2301,6 @@ public class ArcadeService(
         CancellationToken cancellationToken = default)
     {
         var candidates = await GetArcadeCandidatesAsync(serverGuid, null, cancellationToken);
-        if (candidates.Count == 0)
-        {
-            candidates = DefaultCandidates;
-        }
 
         var q = query.Trim();
         if (string.IsNullOrWhiteSpace(q))
@@ -2417,10 +2347,6 @@ public class ArcadeService(
                     ? await LoadRosterForServerAsync(serverGuid, cancellationToken)
                     : await LoadGlobalRosterFromDbAsync(cancellationToken);
 
-                if (roster.Candidates.Count == 0)
-                {
-                    roster = DefaultRoster;
-                }
             }
             else
             {
@@ -2428,13 +2354,17 @@ public class ArcadeService(
                 roster = await ApplyOrbitBiasAsync(baseline, serverGuid, orbit, cancellationToken);
             }
 
-            memoryCache.Set(cacheKey, roster, CacheDuration);
+            if (roster.Candidates.Count > 0)
+            {
+                memoryCache.Set(cacheKey, roster, CacheDuration);
+            }
+
             return roster;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to load arcade candidates for server {ServerGuid}. Using default fallback roster.", serverGuid);
-            return DefaultRoster;
+            logger.LogWarning(ex, "Failed to load arcade candidates for server {ServerGuid}.", serverGuid);
+            return EmptyRoster;
         }
     }
 
@@ -2505,8 +2435,7 @@ public class ArcadeService(
             }
         }
 
-        var existing = baseline.Candidates
-            .ToDictionary(c => c.PlayerName, c => c, StringComparer.OrdinalIgnoreCase);
+        var existing = IndexCandidatesByName(baseline.Candidates);
 
         var missing = orbitNames.Where(n => !existing.ContainsKey(n)).ToList();
         var extraRoster = await LoadNamedCandidatesAsync(missing, serverGuid, cancellationToken);
@@ -2568,7 +2497,7 @@ public class ArcadeService(
             }
         }
 
-        return new ArcadeRoster(orbitCandidates, maps);
+        return CreateRoster(orbitCandidates, maps);
     }
 
     private async Task<ArcadeRoster> LoadNamedCandidatesAsync(
@@ -2578,7 +2507,7 @@ public class ArcadeService(
     {
         if (playerNames.Count == 0)
         {
-            return new ArcadeRoster([], EmptyMapSnapshots);
+            return CreateRoster([], EmptyMapSnapshots);
         }
 
         List<PlayerStatRow> rows;
@@ -2628,7 +2557,7 @@ public class ArcadeService(
 
         if (rows.Count == 0)
         {
-            return new ArcadeRoster([], EmptyMapSnapshots);
+            return CreateRoster([], EmptyMapSnapshots);
         }
 
         return await BuildRosterFromStatRowsAsync(rows, serverGuid, cancellationToken);
@@ -2727,7 +2656,7 @@ public class ArcadeService(
                 badge));
         }
 
-        return new ArcadeRoster(result, mapsByPlayer);
+        return CreateRoster(result, mapsByPlayer);
     }
 
     private async Task<ArcadeRoster> LoadRosterForServerAsync(string serverGuid, CancellationToken cancellationToken)
@@ -2736,9 +2665,16 @@ public class ArcadeService(
         var serverName = server?.Name ?? "Selected Server";
         var serverCountry = server?.Country ?? "US";
 
-        var serverPlayers = await dbContext.PlayerServerStats
+        var seedNames = await TryLoadServerRosterSeedNamesAsync(serverGuid, cancellationToken);
+        var statsQuery = dbContext.PlayerServerStats
             .AsNoTracking()
-            .Where(p => p.ServerGuid == serverGuid)
+            .Where(p => p.ServerGuid == serverGuid);
+        if (seedNames.Count > 0)
+        {
+            statsQuery = statsQuery.Where(p => seedNames.Contains(p.PlayerName));
+        }
+
+        var serverPlayers = await statsQuery
             .GroupBy(p => p.PlayerName)
             .Select(g => new
             {
@@ -2754,7 +2690,7 @@ public class ArcadeService(
 
         if (serverPlayers.Count == 0)
         {
-            return new ArcadeRoster([], EmptyMapSnapshots);
+            return CreateRoster([], EmptyMapSnapshots);
         }
 
         var playerNames = serverPlayers.Select(p => p.PlayerName).ToList();
@@ -2796,7 +2732,7 @@ public class ArcadeService(
             ));
         }
 
-        return new ArcadeRoster(result, mapsByPlayer);
+        return CreateRoster(result, mapsByPlayer);
     }
 
     private async Task<ArcadeRoster> LoadGlobalRosterFromDbAsync(CancellationToken cancellationToken)
@@ -2838,7 +2774,7 @@ public class ArcadeService(
 
         if (monthlyPlayers.Count == 0)
         {
-            return new ArcadeRoster([], EmptyMapSnapshots);
+            return CreateRoster([], EmptyMapSnapshots);
         }
 
         var playerNames = monthlyPlayers.Select(p => p.PlayerName).ToList();
@@ -2918,43 +2854,27 @@ public class ArcadeService(
             ));
         }
 
-        return new ArcadeRoster(result, mapsByPlayer);
+        return CreateRoster(result, mapsByPlayer);
     }
-
-    private static readonly IReadOnlyDictionary<string, string> DefaultBuddies =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Sgt_Rock"] = "Desert_Fox",
-            ["Panzer_Ace"] = "Red_Baron",
-            ["Red_Baron"] = "Panzer_Ace",
-            ["Major_Kong"] = "Viper_42",
-            ["Desert_Fox"] = "Sgt_Rock",
-            ["Viper_42"] = "Major_Kong",
-            ["Ghost_Sniper"] = "Iron_Duke",
-            ["Iron_Duke"] = "Ghost_Sniper"
-        };
 
     private async Task<string?> GetTopSquadBuddyAsync(string playerName, CancellationToken cancellationToken = default)
     {
-        if (_relationships != null)
+        if (_relationships == null)
         {
-            try
-            {
-                var coPlayers = await _relationships.GetMostFrequentCoPlayersAsync(playerName, 1, cancellationToken);
-                if (coPlayers != null && coPlayers.Count > 0 && coPlayers[0].SessionCount >= 1)
-                {
-                    return coPlayers[0].Player2Name;
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Failed to query Neo4j for top buddy of {PlayerName}", playerName);
-            }
+            return null;
         }
 
-        if (DefaultBuddies.TryGetValue(playerName, out var fallbackBuddy))
+        try
         {
-            return fallbackBuddy;
+            var coPlayers = await _relationships.GetMostFrequentCoPlayersAsync(playerName, 1, cancellationToken);
+            if (coPlayers != null && coPlayers.Count > 0 && coPlayers[0].SessionCount >= 1)
+            {
+                return coPlayers[0].Player2Name;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to query Neo4j for top buddy of {PlayerName}", playerName);
         }
 
         return null;
@@ -3208,8 +3128,13 @@ public class ArcadeService(
         CancellationToken cancellationToken)
     {
         var roster = await GetArcadeRosterAsync(serverGuid, orbitPlayer, cancellationToken);
-        var candidates = roster.Candidates.Count >= 2 ? roster.Candidates : DefaultCandidates;
-        var mapsByPlayer = roster.MapsByPlayer.Count > 0 ? roster.MapsByPlayer : DefaultMapSnapshots;
+        if (roster.Candidates.Count < 2)
+        {
+            throw new InvalidOperationException(InsufficientRosterMessage);
+        }
+
+        var candidates = roster.Candidates;
+        var mapsByPlayer = roster.MapsByPlayer;
 
         string? serverName = null;
         if (!string.IsNullOrWhiteSpace(serverGuid))
@@ -3361,7 +3286,7 @@ public class ArcadeService(
             return null;
         }
 
-        var byName = candidates.ToDictionary(c => c.PlayerName, StringComparer.OrdinalIgnoreCase);
+        var byName = IndexCandidatesByName(candidates);
         var playersByMap = new Dictionary<string, List<(ArcadeCandidate Player, PlayerMapSnapshot Snap)>>(
             StringComparer.OrdinalIgnoreCase);
 
@@ -3503,7 +3428,7 @@ public class ArcadeService(
             .ToList();
         if (opponents.Count == 0)
         {
-            opponents = DefaultCandidates.Where(c => !NamesEqual(c.PlayerName, candidateA.PlayerName)).ToList();
+            throw new InvalidOperationException(InsufficientRosterMessage);
         }
 
         Shuffle(opponents);
@@ -3681,6 +3606,27 @@ public class ArcadeService(
         "kd" => $"{formattedValue} K/D",
         _ => formattedValue
     };
+
+    private static ArcadeRoster CreateRoster(
+        IEnumerable<ArcadeCandidate> candidates,
+        IReadOnlyDictionary<string, IReadOnlyList<PlayerMapSnapshot>> mapsByPlayer)
+        => new(IndexCandidatesByName(candidates).Values.ToList(), mapsByPlayer);
+
+    private static Dictionary<string, ArcadeCandidate> IndexCandidatesByName(
+        IEnumerable<ArcadeCandidate> candidates)
+    {
+        var byName = new Dictionary<string, ArcadeCandidate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in candidates)
+        {
+            if (!byName.TryGetValue(candidate.PlayerName, out var existing)
+                || candidate.TotalScore > existing.TotalScore)
+            {
+                byName[candidate.PlayerName] = candidate;
+            }
+        }
+
+        return byName;
+    }
 
     private static bool NamesEqual(string? a, string? b)
         => !string.IsNullOrWhiteSpace(a)

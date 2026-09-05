@@ -61,7 +61,7 @@ onUnmounted(() => {
             class="close-btn"
             @click="emit('close')"
           >
-            <span>&larr; Back to Arcade</span>
+            <span>&larr; Back to Trivia</span>
           </button>
           <div class="slideover-title-badge">
             <span class="mm-eyebrow">Round Report</span>

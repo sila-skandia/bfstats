@@ -11,6 +11,8 @@ public class ArcadeController(
     IArcadeService arcadeService,
     ILogger<ArcadeController> logger) : ControllerBase
 {
+    private const string UnexpectedArcadeError = "Something went wrong loading this game. Please retry.";
+
     /// <summary>
     /// Gets active servers with player counts and candidate regular counts.
     /// </summary>
@@ -19,8 +21,15 @@ public class ArcadeController(
     public async Task<ActionResult<IReadOnlyList<ArcadeServerDto>>> GetArcadeServers(
         CancellationToken cancellationToken = default)
     {
-        var servers = await arcadeService.GetArcadeServersAsync(cancellationToken);
-        return Ok(servers);
+        try
+        {
+            var servers = await arcadeService.GetArcadeServersAsync(cancellationToken);
+            return Ok(servers);
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "servers");
+        }
     }
 
     /// <summary>
@@ -38,8 +47,19 @@ public class ArcadeController(
         CancellationToken cancellationToken = default)
     {
         logger.LogDebug("Fetching next higher-lower matchup (server={ServerGuid}, current={Candidate}, orbit={Orbit})", serverGuid, currentCandidate, orbitPlayer);
-        var question = await arcadeService.GetNextHigherLowerQuestionAsync(serverGuid, currentCandidate, orbitPlayer, cancellationToken);
-        return Ok(question);
+        try
+        {
+            var question = await arcadeService.GetNextHigherLowerQuestionAsync(serverGuid, currentCandidate, orbitPlayer, cancellationToken);
+            return Ok(question);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return UnprocessableEntity(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "higher-lower/next", serverGuid);
+        }
     }
 
     /// <summary>
@@ -64,7 +84,11 @@ public class ArcadeController(
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "higher-lower/reveal");
         }
     }
 
@@ -78,8 +102,19 @@ public class ArcadeController(
         [FromQuery] string? orbitPlayer = null,
         CancellationToken cancellationToken = default)
     {
-        var dossier = await arcadeService.GetDailyMysteryDossierAsync(serverGuid, orbitPlayer, cancellationToken);
-        return Ok(dossier);
+        try
+        {
+            var dossier = await arcadeService.GetDailyMysteryDossierAsync(serverGuid, orbitPlayer, cancellationToken);
+            return Ok(dossier);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return UnprocessableEntity(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "mystery/today", serverGuid);
+        }
     }
 
     /// <summary>
@@ -93,8 +128,19 @@ public class ArcadeController(
         [FromQuery] string? exclude = null,
         CancellationToken cancellationToken = default)
     {
-        var dossier = await arcadeService.GetRandomMysteryDossierAsync(serverGuid, orbitPlayer, exclude, cancellationToken);
-        return Ok(dossier);
+        try
+        {
+            var dossier = await arcadeService.GetRandomMysteryDossierAsync(serverGuid, orbitPlayer, exclude, cancellationToken);
+            return Ok(dossier);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return UnprocessableEntity(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "mystery/random", serverGuid);
+        }
     }
 
     /// <summary>
@@ -119,7 +165,11 @@ public class ArcadeController(
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "mystery/guess");
         }
     }
 
@@ -144,7 +194,11 @@ public class ArcadeController(
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "mystery/reveal");
         }
     }
 
@@ -159,8 +213,19 @@ public class ArcadeController(
         [FromQuery] string? orbitPlayer = null,
         CancellationToken cancellationToken = default)
     {
-        var quiz = await arcadeService.GenerateTriviaQuizAsync(serverGuid, orbitPlayer, cancellationToken);
-        return Ok(quiz);
+        try
+        {
+            var quiz = await arcadeService.GenerateTriviaQuizAsync(serverGuid, orbitPlayer, cancellationToken);
+            return Ok(quiz);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return UnprocessableEntity(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "trivia/quiz", serverGuid);
+        }
     }
 
     /// <summary>
@@ -185,7 +250,11 @@ public class ArcadeController(
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "trivia/verify-question");
         }
     }
 
@@ -211,7 +280,11 @@ public class ArcadeController(
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(SafeClientMessage(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "trivia/verify");
         }
     }
 
@@ -227,7 +300,38 @@ public class ArcadeController(
         CancellationToken cancellationToken = default)
     {
         limit = Math.Clamp(limit, 1, 50);
-        var matches = await arcadeService.SearchPlayersAsync(query ?? "", serverGuid, limit, cancellationToken);
-        return Ok(matches);
+        try
+        {
+            var matches = await arcadeService.SearchPlayersAsync(query ?? "", serverGuid, limit, cancellationToken);
+            return Ok(matches);
+        }
+        catch (Exception ex)
+        {
+            return UnexpectedFailure(ex, "players/search", serverGuid);
+        }
     }
+
+    private ObjectResult UnexpectedFailure(Exception ex, string operation, string? serverGuid = null)
+    {
+        logger.LogError(ex, "Arcade {Operation} failed (server={ServerGuid})", operation, serverGuid);
+        return StatusCode(StatusCodes.Status500InternalServerError, UnexpectedArcadeError);
+    }
+
+    private static string SafeClientMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message) || LooksLikeRawException(message))
+        {
+            return UnexpectedArcadeError;
+        }
+
+        return message.Trim();
+    }
+
+    internal static bool LooksLikeRawException(string text)
+        => text.Contains('\n', StringComparison.Ordinal)
+           || text.Contains('\r', StringComparison.Ordinal)
+           || text.Contains("Exception:", StringComparison.OrdinalIgnoreCase)
+           || text.Contains("   at ", StringComparison.Ordinal)
+           || text.Contains("stack trace", StringComparison.OrdinalIgnoreCase)
+           || text.Contains("HEADERS", StringComparison.Ordinal);
 }

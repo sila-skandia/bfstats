@@ -52,8 +52,8 @@ Players can optionally identify themselves at the top of Arcade. This does **not
 - Opposite-team / "who opposed you" is **not** asked here. That answer is a heavy SQLite session scan (Wrapped yearly crunch), not a Neo4j property.
 
 ### 5. Community Server Filtering
-Minigames can be scoped to any community server (e.g. MoonGamers, SiMPLE, etc.):
-- **Server Selector**: Quick pills for top community servers + searchable popover for all tracked servers.
+A server is **required** before any minigame loads. The all-servers / global pool is not offered — that roster is too large and makes Higher or Lower, Mystery Soldier, and Field Lore too slow.
+- **Server Selector**: Required picker plus quick pills for top community servers and a searchable popover for all tracked servers. The last choice is remembered in localStorage and the `?server=` query.
 - **Server-Specific Matchups**: Higher or Lower compares regulars using that server's `PlayerMapStats` when they share a map, otherwise `PlayerServerStats` career totals.
 - **Server Dossiers**: Mystery Soldier selects notable veterans and regulars of that server, with a multiple-choice suspect roster drawn from that server's candidate pool.
 - **Server-Specific Lore**: Trivia asks about the server's most contested maps, single-round score record holders (`PlayerBestScores`), map-scoped top killers on the server, longest average round maps, and faction win balances (`ServerMapStats.Team1Victories` vs `Team2Victories`).
@@ -61,9 +61,13 @@ Minigames can be scoped to any community server (e.g. MoonGamers, SiMPLE, etc.):
 ## Performance & Caching Strategy
 
 In accordance with single-node Hetzner constraints:
-- Candidate pool (top active players from `PlayerStatsMonthly` or `PlayerServerStats`, maps from `ServerMapStats` / `MapGlobalAverages`, servers from `GameServer`) is compiled into an in-memory cache (`IMemoryCache`) with a 30-minute sliding expiration per server scope (`Arcade:Roster:{serverGuid}:{orbit}`).
+- Candidate pool is **query-built only**: top regulars from `ServerPlayerRankings` / latest-week `PlayerServerStats` (server) or `PlayerStatsMonthly` (global). There is no synthetic fallback roster. An empty query returns an empty pool and the minigame fails with "Not enough tracked regulars" rather than inventing soldiers. Case-variant spellings of the same soldier (SQLite `GROUP BY` is case-sensitive) are collapsed before matchups so roster dictionaries cannot throw on duplicate keys. Unexpected failures return a short retry message; stack traces stay in logs.
+- That pool is compiled into an in-memory cache (`IMemoryCache`) with a 30-minute sliding expiration per server scope (`Arcade:Roster:{serverGuid}:{orbit}`). Empty pools are not cached.
 - The server picker (`/servers`) ranks from `ServerMapStats` playtime and latest-week `PlayerServerStats` row counts. It does not `COUNT(DISTINCT)` the full weekly table.
-- Minigame requests do **not** perform expensive full-table scans for Higher/Lower and Mystery. Trivia never walks `PlayerMapStats` or `PlayerSessions` just to discover maps: top maps come from `ServerMapStats` (then `MapGlobalAverages`). Combinatorial facts resolve the top 40 soldiers in SQL first, then load only those players' map rows — Compose never sees every casual on a popular theater.
+- Minigame requests do **not** perform expensive full-table scans for Higher/Lower and Mystery. Trivia never walks `PlayerMapStats` or `PlayerSessions` just to discover maps: top maps come from `ServerMapStats` (then `MapGlobalAverages`).
+- Combinatorial facts reuse the arcade roster already loaded for Higher/Lower and Mystery (top 40 by career kills, plus those soldiers' map snapshots). They do **not** `GROUP BY PlayerName` across `PlayerMapStats` for a server's top maps — that scan was 33s on a busy server and the quiz request was cancelled (HTTP 499) before the 20-minute pool cache could warm.
+- Round records (`PlayerBestScores`), yearly leaders (`PlayerServerStats`), and achievement tallies are restricted to roster player names so SQLite can seek the player-leading primary keys instead of sorting or aggregating the whole server.
+- Server roster load prefers `ServerPlayerRankings` (covering index) or the latest weekly bucket to seed names, then aggregates `PlayerServerStats` only for those names.
 - Memory footprint is strictly bounded (< 2 MB for candidate records).
 
 ## API Endpoints
