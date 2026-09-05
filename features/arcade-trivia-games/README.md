@@ -24,9 +24,10 @@ A daily (or endless/practice) guessing challenge inspired by Wordle / Poeltl wit
   - Numeric metrics (Kills, Time, K/D, Score): Match (within tolerance) / Higher / Lower directional indicators
   - Text & Categorical metrics (Maps, Servers, Neo4j Buddy, Badge): Match / Mismatch
 - **Continuous Play & Streaks**:
-  - After solving or finishing (Daily or Random), players can immediately proceed to the next soldier via **"Next Soldier (Keep Going)"** / Enter shortcut.
-  - Solving Daily transitions smoothly into endless practice mode without leaving the page.
-  - Consecutive rounds automatically exclude the just-identified soldier (`?exclude=`) to avoid immediate repeats.
+  - Players can continue to the next soldier at any time—either after solving, by clicking **"Next Soldier"** (skip), or via **"Reveal Target"** if stuck, without having to guess the correct answer.
+  - After solving or conceding (Daily or Random), players can immediately proceed via **"Next Soldier (Keep Going)"** / Enter shortcut.
+  - Solving or skipping Daily transitions smoothly into endless practice mode without leaving the page.
+  - Consecutive rounds automatically exclude the just-identified or skipped soldier (`?exclude=`) to avoid immediate repeats.
   - Active session HUD tracks continuous Streak, Best Streak, and Total Solved using tactical color-coded badges (strictly no emojis).
 
 ### 3. Field Lore (Battlefield Trivia)
