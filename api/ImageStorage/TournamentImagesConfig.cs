@@ -33,6 +33,15 @@ public static class TournamentImagesConfig
     }
 
     /// <summary>
+    /// Resolves the path to BF1942 map preview images (under maps/ subfolder),
+    /// laid out as maps/&lt;gameId&gt;/&lt;mapName&gt;.png
+    /// </summary>
+    public static string ResolveMapsPath()
+    {
+        return Path.Combine(ResolveBasePath(), "maps");
+    }
+
+    /// <summary>
     /// Legacy method for backward compatibility - returns tournaments path
     /// </summary>
     public static string ResolvePath() => ResolveTournamentsPath();
