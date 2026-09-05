@@ -2,13 +2,19 @@
 
 ## Symptom
 
-Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28**. Site was healthy
-(stats collection `lastSeen` within seconds, live rounds 200, `/health` 200).
+Seq `bfstats/Exceptions` fired at **02:02 UTC on 2026-08-28**, again at
+**02:21 UTC on 2026-09-05**, and again at **05:11 UTC on 2026-09-05**. Site
+was healthy each time (stats collection `lastSeen` within seconds, live
+rounds 200, homepage 200).
 
-Live `/stats/communities` still served **17,963 communities**, all stamped
-`formationDate = 2026-08-20T02:00:05–08Z`. Nightly detection last succeeded
-the morning after the co-rounds backfill started (heap/CPU bump, fire-and-forget
-sync) and has failed every 2 AM run since.
+Live `/stats/communities` still served **17,954 communities** on 2026-09-05
+(17,963 on 2026-08-28), all stamped `formationDate = 2026-08-20T02:00:05–08Z`.
+Nightly detection last succeeded the morning after the co-rounds backfill
+started (heap/CPU bump, fire-and-forget sync) and has failed every 2 AM run
+since. A 02:21 page is the 02:00 run still in flight (lock wait / long Neo4j
+write) overlapping the :20 gamification tick, not a second attempt. A 05:11
+page is the :10 gamification tick overlapping 30s collection, or Seq
+re-notify — not a 02:00 retry.
 
 ## Cause
 
