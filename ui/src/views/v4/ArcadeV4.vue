@@ -8,6 +8,8 @@ import MmFieldTriviaGame from '@/components/v4/arcade/MmFieldTriviaGame.vue'
 import { fetchArcadeServers, type ArcadeServer } from '@/services/arcadeService'
 import { decodeServerName } from '@/utils/playerName'
 
+const ORBIT_STORAGE_KEY = 'bfstats:arcade-orbit-player'
+
 type ArcadeTab = 'higher-lower' | 'mystery' | 'trivia'
 
 const route = useRoute()
@@ -30,6 +32,21 @@ const selectedServerGuid = ref<string>((route.query.server as string) || '')
 const isPickerOpen = ref(false)
 const serverSearchQuery = ref('')
 const serverSearchInputRef = ref<HTMLInputElement | null>(null)
+
+const initialOrbitPlayer = (): string => {
+  const fromQuery = typeof route.query.player === 'string' ? route.query.player.trim() : ''
+  if (fromQuery) return fromQuery
+  if (typeof window === 'undefined') return ''
+  return window.localStorage.getItem(ORBIT_STORAGE_KEY)?.trim() || ''
+}
+
+const orbitPlayer = ref(initialOrbitPlayer())
+const orbitQuery = ref('')
+const orbitResults = ref<{ playerName: string; isActive: boolean }[]>([])
+const orbitLoading = ref(false)
+const isOrbitOpen = ref(false)
+const orbitInputRef = ref<HTMLInputElement | null>(null)
+let orbitDebounce: ReturnType<typeof setTimeout> | null = null
 
 const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
 let narrowMql: MediaQueryList | null = null
@@ -117,8 +134,78 @@ const setServer = (guid: string) => {
   })
 }
 
+const persistOrbitQuery = (name: string) => {
+  router.replace({
+    query: {
+      ...route.query,
+      player: name || undefined,
+    },
+  })
+}
+
+const setOrbitPlayer = (name: string) => {
+  const trimmed = name.trim()
+  orbitPlayer.value = trimmed
+  isOrbitOpen.value = false
+  orbitQuery.value = ''
+  orbitResults.value = []
+  if (typeof window !== 'undefined') {
+    if (trimmed) {
+      window.localStorage.setItem(ORBIT_STORAGE_KEY, trimmed)
+    } else {
+      window.localStorage.removeItem(ORBIT_STORAGE_KEY)
+    }
+  }
+  persistOrbitQuery(trimmed)
+}
+
+const searchOrbitPlayers = async (query: string) => {
+  const q = query.trim()
+  if (q.length < 2) {
+    orbitResults.value = []
+    return
+  }
+
+  orbitLoading.value = true
+  try {
+    const response = await fetch(`/stats/Players/search?query=${encodeURIComponent(q)}&pageSize=8`)
+    if (!response.ok) throw new Error('Failed to search players')
+    const data = await response.json() as { items?: { playerName: string; isActive: boolean }[] }
+    orbitResults.value = data.items ?? []
+  } catch {
+    orbitResults.value = []
+  } finally {
+    orbitLoading.value = false
+  }
+}
+
+const onOrbitInput = (value: string) => {
+  orbitQuery.value = value
+  if (orbitDebounce) clearTimeout(orbitDebounce)
+  orbitDebounce = setTimeout(() => {
+    void searchOrbitPlayers(value)
+  }, 300)
+}
+
+const toggleOrbitPicker = () => {
+  isOrbitOpen.value = !isOrbitOpen.value
+  isPickerOpen.value = false
+  if (isOrbitOpen.value) {
+    orbitQuery.value = ''
+    orbitResults.value = []
+    nextTick(() => {
+      orbitInputRef.value?.focus()
+    })
+  }
+}
+
+const closeOrbitPicker = () => {
+  isOrbitOpen.value = false
+}
+
 const togglePicker = () => {
   isPickerOpen.value = !isPickerOpen.value
+  isOrbitOpen.value = false
   if (isPickerOpen.value) {
     serverSearchQuery.value = ''
     nextTick(() => {
@@ -135,6 +222,9 @@ const onDocClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement | null
   if (!target?.closest('[data-server-picker]')) {
     isPickerOpen.value = false
+  }
+  if (!target?.closest('[data-orbit-picker]')) {
+    isOrbitOpen.value = false
   }
 }
 
@@ -156,8 +246,18 @@ watch(
   }
 )
 
-watch([isPickerOpen, isNarrow], () => {
-  if (isPickerOpen.value && isNarrow.value) {
+watch(
+  () => route.query.player,
+  (newPlayer) => {
+    const name = typeof newPlayer === 'string' ? newPlayer.trim() : ''
+    if (name !== orbitPlayer.value) {
+      orbitPlayer.value = name
+    }
+  }
+)
+
+watch([isPickerOpen, isOrbitOpen, isNarrow], () => {
+  if ((isPickerOpen.value || isOrbitOpen.value) && isNarrow.value) {
     document.body.style.overflow = 'hidden'
   } else {
     document.body.style.overflow = ''
@@ -170,6 +270,9 @@ onMounted(async () => {
     narrowMql.addEventListener('change', onNarrowChange)
   }
   document.addEventListener('click', onDocClick)
+  if (orbitPlayer.value && route.query.player !== orbitPlayer.value) {
+    persistOrbitQuery(orbitPlayer.value)
+  }
   serversLoading.value = true
   try {
     servers.value = await fetchArcadeServers()
@@ -196,6 +299,10 @@ onUnmounted(() => {
       <span class="mm-meta-row__sep">·</span>
       <span v-if="selectedServer">{{ $pn(selectedServer.name) }}</span>
       <span v-else>Global Network</span>
+      <template v-if="orbitPlayer">
+        <span class="mm-meta-row__sep">·</span>
+        <span>Orbit: {{ $pn(orbitPlayer) }}</span>
+      </template>
     </div>
 
     <!-- Header & Prompt -->
@@ -206,17 +313,17 @@ onUnmounted(() => {
       Arcade
     </h1>
     <p class="mm-arcade-prompt">
-      Choose your favourite server, and the game will begin
+      Choose a server, and optionally identify yourself so matchups lean toward soldiers you actually play with.
     </p>
 
     <!-- Prominent Server Selector Card -->
-    <div
-      class="arcade-server-picker-card"
-      data-server-picker
-    >
+    <div class="arcade-server-picker-card">
       <div class="arcade-picker-row">
         <!-- Main Selector Trigger -->
-        <div class="arcade-picker-field">
+        <div
+          class="arcade-picker-field"
+          data-server-picker
+        >
           <label class="arcade-picker-label">Server</label>
           <div class="arcade-picker-dropdown-wrap">
             <button
@@ -380,6 +487,147 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <div
+          class="arcade-picker-field"
+          data-orbit-picker
+          data-testid="arcade-orbit-picker"
+        >
+          <label class="arcade-picker-label">You</label>
+          <div class="arcade-picker-dropdown-wrap">
+            <button
+              type="button"
+              class="arcade-picker-btn"
+              :class="{
+                'arcade-picker-btn--active': Boolean(orbitPlayer),
+                'arcade-picker-btn--open': isOrbitOpen
+              }"
+              aria-haspopup="listbox"
+              :aria-expanded="isOrbitOpen"
+              aria-label="Who am I? Identify yourself for orbit-biased matchups"
+              @click="toggleOrbitPicker"
+            >
+              <i class="pi pi-user arcade-picker-icon" />
+              <template v-if="orbitPlayer">
+                <span class="arcade-picker-text">{{ $pn(orbitPlayer) }}</span>
+                <span class="arcade-picker-scope">orbit</span>
+              </template>
+              <template v-else>
+                <span class="arcade-picker-placeholder">Who am I?</span>
+                <span class="arcade-picker-scope">(optional)</span>
+              </template>
+              <i class="pi pi-chevron-down arcade-picker-chevron" />
+            </button>
+
+            <button
+              v-if="orbitPlayer"
+              type="button"
+              class="arcade-picker-clear-btn"
+              title="Clear identity (play the global pool)"
+              aria-label="Clear identity"
+              @click.stop="setOrbitPlayer('')"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+
+            <Teleport
+              to="body"
+              :disabled="!isNarrow"
+            >
+              <div
+                v-if="isOrbitOpen"
+                class="mm arcade-popover"
+                :class="{ 'arcade-popover--sheet': isNarrow }"
+                role="listbox"
+                aria-label="Identify yourself"
+              >
+                <div class="arcade-sheet-head">
+                  <div>
+                    <div class="mm-eyebrow">
+                      WHO AM I
+                    </div>
+                    <h2 class="arcade-sheet-title">
+                      Your orbit
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    class="arcade-sheet-close"
+                    aria-label="Close"
+                    @click="closeOrbitPicker"
+                  >
+                    Done
+                  </button>
+                </div>
+
+                <div class="arcade-search-box">
+                  <i class="pi pi-search arcade-search-icon" />
+                  <input
+                    ref="orbitInputRef"
+                    :value="orbitQuery"
+                    type="text"
+                    placeholder="Search your soldier name..."
+                    class="arcade-search-input"
+                    @input="onOrbitInput(($event.target as HTMLInputElement).value)"
+                  >
+                  <button
+                    v-if="orbitQuery"
+                    type="button"
+                    class="arcade-search-clear"
+                    title="Clear search"
+                    @click="onOrbitInput('')"
+                  >
+                    <i class="pi pi-times" />
+                  </button>
+                </div>
+
+                <div class="arcade-server-list">
+                  <button
+                    v-for="player in orbitResults"
+                    :key="player.playerName"
+                    type="button"
+                    class="arcade-server-option"
+                    :class="{ 'arcade-server-option--selected': orbitPlayer === player.playerName }"
+                    role="option"
+                    :aria-selected="orbitPlayer === player.playerName"
+                    @click="setOrbitPlayer(player.playerName)"
+                  >
+                    <i class="pi pi-user arcade-option-icon" />
+                    <div class="arcade-option-body">
+                      <span class="arcade-option-title">{{ $pn(player.playerName) }}</span>
+                      <span class="arcade-option-sub">
+                        {{ player.isActive ? 'Online now' : 'Bias matchups toward your frequent co-players' }}
+                      </span>
+                    </div>
+                    <i
+                      v-if="orbitPlayer === player.playerName"
+                      class="pi pi-check arcade-option-check"
+                    />
+                  </button>
+
+                  <div
+                    v-if="orbitLoading"
+                    class="arcade-server-empty"
+                  >
+                    Searching…
+                  </div>
+                  <div
+                    v-else-if="orbitQuery.trim().length >= 2 && orbitResults.length === 0"
+                    class="arcade-server-empty"
+                  >
+                    No soldiers matching "{{ orbitQuery }}"
+                  </div>
+                  <div
+                    v-else-if="orbitQuery.trim().length < 2"
+                    class="arcade-server-empty"
+                  >
+                    Type at least two characters to find your name.
+                  </div>
+                </div>
+              </div>
+            </Teleport>
+          </div>
+        </div>
+
         <!-- Quick Defaults: Most Play Time -->
         <div
           v-if="topServersByPlayTime.length > 0"
@@ -434,16 +682,19 @@ onUnmounted(() => {
         v-if="activeTab === 'higher-lower'"
         :server-guid="selectedServerGuid || undefined"
         :server-name="selectedServer ? selectedServer.name : undefined"
+        :orbit-player="orbitPlayer || undefined"
       />
       <MmMysterySoldierGame
         v-else-if="activeTab === 'mystery'"
         :server-guid="selectedServerGuid || undefined"
         :server-name="selectedServer ? selectedServer.name : undefined"
+        :orbit-player="orbitPlayer || undefined"
       />
       <MmFieldTriviaGame
         v-else-if="activeTab === 'trivia'"
         :server-guid="selectedServerGuid || undefined"
         :server-name="selectedServer ? selectedServer.name : undefined"
+        :orbit-player="orbitPlayer || undefined"
       />
     </main>
   </div>

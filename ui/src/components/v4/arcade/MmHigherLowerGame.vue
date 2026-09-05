@@ -13,6 +13,7 @@ import { useArcadeAudio } from '@/composables/useArcadeAudio'
 const props = defineProps<{
   serverGuid?: string
   serverName?: string
+  orbitPlayer?: string
 }>()
 
 const { isMuted, toggleMute, playRoger, playNegative } = useArcadeAudio()
@@ -78,7 +79,7 @@ const loadNext = async () => {
   revealResult.value = null
   selectedGuess.value = null
   try {
-    currentQuestion.value = await fetchHigherLowerNext(props.serverGuid)
+    currentQuestion.value = await fetchHigherLowerNext(props.serverGuid, undefined, props.orbitPlayer)
   } catch {
     error.value = 'Failed to load matchup. Retrying in a moment...'
   } finally {
@@ -87,7 +88,7 @@ const loadNext = async () => {
 }
 
 watch(
-  () => props.serverGuid,
+  () => [props.serverGuid, props.orbitPlayer],
   () => {
     restartGame()
   }
