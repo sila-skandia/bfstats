@@ -824,6 +824,9 @@ public class ArcadeTests : IDisposable
         Assert.Contains(quiz.Questions, q => q.Question.Contains("Simple 24/7 Wake"));
         Assert.All(quiz.Questions, q => Assert.DoesNotContain("V - 1", q.Question, StringComparison.OrdinalIgnoreCase));
         Assert.All(quiz.Questions, q => Assert.DoesNotContain("commo-rose", q.Question, StringComparison.OrdinalIgnoreCase));
+        Assert.All(
+            quiz.Questions.Where(q => q.Question.Contains("Simple 24/7 Wake", StringComparison.Ordinal)),
+            q => Assert.Contains("Simple 24/7 Wake", q.Highlights ?? []));
     }
 
     [Fact]
@@ -1077,6 +1080,8 @@ public class ArcadeTests : IDisposable
         Assert.Equal("Wake Island", apexKillsMap.CorrectAnswer);
         Assert.Contains("On which map has ApexSoldier recorded the most kills?", apexKillsMap.Question);
         Assert.Equal(4, apexKillsMap.Options.Count);
+        Assert.Contains("ApexSoldier", TriviaQuestionEmphasis.From(apexKillsMap));
+        Assert.DoesNotContain("Wake Island", TriviaQuestionEmphasis.From(apexKillsMap));
 
         var apexKillRate = questions.Single(q => q.Id == "player_map_killrate_apexsoldier");
         Assert.Equal("Wake Island", apexKillRate.CorrectAnswer);
@@ -1084,6 +1089,8 @@ public class ArcadeTests : IDisposable
         var wakeKd = questions.Single(q => q.Id == "map_player_kd_wake_island");
         Assert.Equal("EagleEye", wakeKd.CorrectAnswer);
         Assert.Contains("Kill/Death", wakeKd.Question);
+        Assert.Contains("Wake Island", TriviaQuestionEmphasis.From(wakeKd));
+        Assert.DoesNotContain("EagleEye", TriviaQuestionEmphasis.From(wakeKd));
 
         var wakeKillRate = questions.Single(q => q.Id == "map_player_killrate_wake_island");
         Assert.Equal("ApexSoldier", wakeKillRate.CorrectAnswer);
@@ -1091,6 +1098,36 @@ public class ArcadeTests : IDisposable
         Assert.Contains(questions, q => q.Id.StartsWith("player_map_", StringComparison.Ordinal));
         Assert.Contains(questions, q => q.Id.StartsWith("map_player_", StringComparison.Ordinal));
         Assert.True(questions.Count > 8, $"Expected a combinatorial pool, got {questions.Count}");
+    }
+
+    [Fact]
+    public void TriviaQuestionEmphasis_HighlightsSentenceLikePlayerNames()
+    {
+        const string player = "I am quitting job today";
+        const string question = "On which map does I am quitting job today have the highest Kill/Death ratio?";
+
+        var highlights = TriviaQuestionEmphasis.Resolve(
+            question,
+            player,
+            "Wake Island",
+            null);
+
+        Assert.Contains(player, highlights);
+        Assert.DoesNotContain("Wake Island", highlights);
+        Assert.DoesNotContain("which", highlights);
+    }
+
+    [Fact]
+    public void TriviaQuestionEmphasis_HighlightsPeriodAndIgnoresTemplateWords()
+    {
+        var highlights = TriviaQuestionEmphasis.Resolve(
+            "In October 2024, which soldier topped the monthly leaderboard with the most kills?",
+            "which",
+            null,
+            null);
+
+        Assert.Contains("October 2024", highlights);
+        Assert.DoesNotContain("which", highlights);
     }
 
     [Fact]
@@ -1224,6 +1261,7 @@ public class ArcadeTests : IDisposable
         Assert.Contains(questions, q => q.Id == "rel_longest_apexsoldier" && q.CorrectAnswer == "EagleEye");
         Assert.Contains(questions, q => q.Id == "rel_recent_apexsoldier" && q.CorrectAnswer == "ExtraFour");
         Assert.All(questions, q => Assert.Equal(4, q.Options.Count));
+        Assert.All(questions, q => Assert.Contains("ApexSoldier", TriviaQuestionEmphasis.From(q)));
     }
 
     [Fact]
