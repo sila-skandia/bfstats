@@ -422,6 +422,8 @@ public class ArcadeService(
             .ToListAsync(cancellationToken);
 
         var questions = new List<TriviaQuestionInternal>();
+        var composed = new List<TriviaQuestionInternal>();
+        await AddCombinatorialMapTriviaQuestionsAsync(composed, serverGuid, cancellationToken);
 
         // Q1: Most contested map on this server
         var mostPlayed = topMaps[0];
@@ -482,50 +484,60 @@ public class ArcadeService(
             ));
         }
 
-        // Q3: Map-scoped top killer on this server (harder than all-time server crown)
-        var mapForKills = topMaps[RandomNumberGenerator.GetInt32(Math.Min(4, topMaps.Count))];
-        var mapKillLeaders = await dbContext.PlayerMapStats
-            .AsNoTracking()
-            .Where(m => m.ServerGuid == serverGuid && m.MapName == mapForKills.MapName)
-            .GroupBy(m => m.PlayerName)
-            .Select(g => new { PlayerName = g.Key, TotalKills = g.Sum(x => x.TotalKills) })
-            .OrderByDescending(x => x.TotalKills)
-            .Take(4)
-            .ToListAsync(cancellationToken);
-
-        if (mapKillLeaders.Count >= 4)
+        // Q3: Map-scoped player comparison (kills / K/D / kill rate) from combinatorial templates
+        var mapCompare = composed
+            .Where(q => q.Id.StartsWith("map_player_", StringComparison.Ordinal))
+            .ToList();
+        if (mapCompare.Count > 0)
         {
-            var topMapKiller = mapKillLeaders[0];
-            var killOptions = mapKillLeaders.Select(x => x.PlayerName).ToList();
-            Shuffle(killOptions);
-            questions.Add(new TriviaQuestionInternal(
-                "srv_map_top_kills",
-                "Map Dominance",
-                $"On {mapForKills.MapName} on {serverName}, which combatant has recorded the most kills?",
-                killOptions,
-                topMapKiller.PlayerName,
-                $"{topMapKiller.PlayerName} leads {mapForKills.MapName} on {serverName} with {topMapKiller.TotalKills:N0} kills!"
-            ));
+            questions.Add(mapCompare[RandomNumberGenerator.GetInt32(mapCompare.Count)]);
         }
         else
         {
-            var topKiller = candidates.OrderByDescending(c => c.TotalKills).First();
-            var killOptions = candidates
-                .Where(c => c.PlayerName != topKiller.PlayerName)
-                .Take(3)
-                .Select(c => c.PlayerName)
-                .Concat([topKiller.PlayerName])
-                .ToList();
-            Shuffle(killOptions);
+            var mapForKills = topMaps[RandomNumberGenerator.GetInt32(Math.Min(4, topMaps.Count))];
+            var mapKillLeaders = await dbContext.PlayerMapStats
+                .AsNoTracking()
+                .Where(m => m.ServerGuid == serverGuid && m.MapName == mapForKills.MapName)
+                .GroupBy(m => m.PlayerName)
+                .Select(g => new { PlayerName = g.Key, TotalKills = g.Sum(x => x.TotalKills) })
+                .OrderByDescending(x => x.TotalKills)
+                .Take(4)
+                .ToListAsync(cancellationToken);
 
-            questions.Add(new TriviaQuestionInternal(
-                "srv_top_kills",
-                "Server Dominance",
-                $"Which soldier has logged the most career kills on {serverName}?",
-                killOptions,
-                topKiller.PlayerName,
-                $"{topKiller.PlayerName} leads the server killboard with {topKiller.TotalKills:N0} confirmed frags!"
-            ));
+            if (mapKillLeaders.Count >= 4)
+            {
+                var topMapKiller = mapKillLeaders[0];
+                var killOptions = mapKillLeaders.Select(x => x.PlayerName).ToList();
+                Shuffle(killOptions);
+                questions.Add(new TriviaQuestionInternal(
+                    "srv_map_top_kills",
+                    "Map Dominance",
+                    $"On {mapForKills.MapName} on {serverName}, which combatant has recorded the most kills?",
+                    killOptions,
+                    topMapKiller.PlayerName,
+                    $"{topMapKiller.PlayerName} leads {mapForKills.MapName} on {serverName} with {topMapKiller.TotalKills:N0} kills!"
+                ));
+            }
+            else
+            {
+                var topKiller = candidates.OrderByDescending(c => c.TotalKills).First();
+                var killOptions = candidates
+                    .Where(c => c.PlayerName != topKiller.PlayerName)
+                    .Take(3)
+                    .Select(c => c.PlayerName)
+                    .Concat([topKiller.PlayerName])
+                    .ToList();
+                Shuffle(killOptions);
+
+                questions.Add(new TriviaQuestionInternal(
+                    "srv_top_kills",
+                    "Server Dominance",
+                    $"Which soldier has logged the most career kills on {serverName}?",
+                    killOptions,
+                    topKiller.PlayerName,
+                    $"{topKiller.PlayerName} leads the server killboard with {topKiller.TotalKills:N0} confirmed frags!"
+                ));
+            }
         }
 
         // Q4: Longest average round duration
@@ -543,7 +555,16 @@ public class ArcadeService(
             $"Rounds on {longestMap.MapName} average {longestMap.AvgDurationMinutes:F1} minutes of combat on this server."
         ));
 
-        // Q5: Map team balance or lethal KD
+        // Q5: Player's strongest map, faction balance, or lethal KD
+        var playerMapQuestions = composed
+            .Where(q => q.Id.StartsWith("player_map_", StringComparison.Ordinal))
+            .ToList();
+        if (playerMapQuestions.Count > 0)
+        {
+            questions.Add(playerMapQuestions[RandomNumberGenerator.GetInt32(playerMapQuestions.Count)]);
+        }
+        else
+        {
         var balancedMap = topMaps.FirstOrDefault(m =>
             m.Team1Wins > 0 && m.Team2Wins > 0 &&
             !string.IsNullOrEmpty(m.Team1Label) && !string.IsNullOrEmpty(m.Team2Label) &&
@@ -617,6 +638,7 @@ public class ArcadeService(
                 $"Which veteran boasts the most lethal career Kill/Death ratio on {serverName}?",
                 c => c.KdRatio,
                 c => $"{c.PlayerName} boasts a lethal {c.KdRatio:F2} K/D ratio on {serverName}!");
+        }
         }
 
         if (questions.Count < 5)
@@ -790,12 +812,56 @@ public class ArcadeService(
         return selected;
     }
 
-    private async Task AddMapScopedTriviaQuestionsAsync(
+    private static bool IsScopedTriviaQuestion(string id) =>
+        id.StartsWith("map_player_", StringComparison.Ordinal)
+        || id.StartsWith("player_map_", StringComparison.Ordinal)
+        || id.StartsWith("period_", StringComparison.Ordinal)
+        || id.StartsWith("map_best_", StringComparison.Ordinal);
+
+    private async Task AddCombinatorialMapTriviaQuestionsAsync(
         List<TriviaQuestionInternal> pool,
+        string? serverGuid,
         CancellationToken cancellationToken)
     {
-        var mapsWithPlayers = await dbContext.PlayerMapStats
-            .AsNoTracking()
+        var facts = await LoadPlayerMapFactsAsync(serverGuid, cancellationToken);
+        if (facts.Count == 0)
+        {
+            return;
+        }
+
+        var distractorMaps = facts
+            .Select(f => f.MapName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(serverGuid))
+        {
+            var serverMaps = await dbContext.ServerMapStats
+                .AsNoTracking()
+                .Where(sms => sms.ServerGuid == serverGuid)
+                .Select(sms => sms.MapName)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            distractorMaps = distractorMaps
+                .Concat(serverMaps)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        pool.AddRange(TriviaQuestionComposer.Compose(facts, distractorMaps));
+    }
+
+    private async Task<List<PlayerMapFact>> LoadPlayerMapFactsAsync(
+        string? serverGuid,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.PlayerMapStats.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(serverGuid))
+        {
+            query = query.Where(m => m.ServerGuid == serverGuid);
+        }
+
+        var mapsWithPlayers = await query
             .GroupBy(m => m.MapName)
             .Select(g => new
             {
@@ -803,115 +869,71 @@ public class ArcadeService(
                 PlayerCount = g.Select(x => x.PlayerName).Distinct().Count(),
                 TotalKills = g.Sum(x => x.TotalKills)
             })
-            .Where(x => x.PlayerCount >= 4)
+            .Where(x => x.PlayerCount >= 2)
             .OrderByDescending(x => x.TotalKills)
             .Take(30)
             .ToListAsync(cancellationToken);
 
-        var processedMaps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var map in mapsWithPlayers)
+        var mapNames = mapsWithPlayers.Select(m => m.MapName).ToList();
+        if (mapNames.Count == 0)
         {
-            processedMaps.Add(map.MapName);
-            var players = await dbContext.PlayerMapStats
-                .AsNoTracking()
-                .Where(m => m.MapName == map.MapName)
-                .GroupBy(m => m.PlayerName)
-                .Select(g => new
-                {
-                    PlayerName = g.Key,
-                    TotalKills = g.Sum(x => x.TotalKills),
-                    TotalScore = g.Sum(x => x.TotalScore),
-                    TotalPlayTimeMinutes = g.Sum(x => x.TotalPlayTimeMinutes),
-                    TotalRounds = g.Sum(x => x.TotalRounds)
-                })
-                .ToListAsync(cancellationToken);
-
-            if (players.Count < 4) continue;
-
-            var mapSlug = SanitizeTriviaId(map.MapName);
-
-            // Kills
-            var topKills = players.OrderByDescending(p => p.TotalKills).ToList();
-            if (topKills[0].TotalKills > topKills[1].TotalKills)
-            {
-                var killOpts = topKills.Take(4).Select(p => p.PlayerName).Distinct().ToList();
-                if (killOpts.Count == 4)
-                {
-                    pool.Add(new TriviaQuestionInternal(
-                        $"map_player_kills_{mapSlug}",
-                        "Map Dominance",
-                        $"On {map.MapName}, which combatant has recorded the most kills?",
-                        killOpts,
-                        topKills[0].PlayerName,
-                        $"{topKills[0].PlayerName} leads {map.MapName} with {topKills[0].TotalKills:N0} confirmed kills.",
-                        TargetPlayerName: topKills[0].PlayerName,
-                        TargetMapName: map.MapName
-                    ));
-                }
-            }
-
-            // Score
-            var topScore = players.OrderByDescending(p => p.TotalScore).ToList();
-            if (topScore[0].TotalScore > topScore[1].TotalScore)
-            {
-                var scoreOpts = topScore.Take(4).Select(p => p.PlayerName).Distinct().ToList();
-                if (scoreOpts.Count == 4)
-                {
-                    pool.Add(new TriviaQuestionInternal(
-                        $"map_player_score_{mapSlug}",
-                        "Map Scoreboard",
-                        $"On {map.MapName}, which combatant holds the highest recorded total score?",
-                        scoreOpts,
-                        topScore[0].PlayerName,
-                        $"{topScore[0].PlayerName} leads {map.MapName} with {topScore[0].TotalScore:N0} total score.",
-                        TargetPlayerName: topScore[0].PlayerName,
-                        TargetMapName: map.MapName
-                    ));
-                }
-            }
-
-            // Playtime
-            var topTime = players.OrderByDescending(p => p.TotalPlayTimeMinutes).ToList();
-            if (topTime[0].TotalPlayTimeMinutes > topTime[1].TotalPlayTimeMinutes)
-            {
-                var timeOpts = topTime.Take(4).Select(p => p.PlayerName).Distinct().ToList();
-                if (timeOpts.Count == 4)
-                {
-                    var hours = topTime[0].TotalPlayTimeMinutes / 60.0;
-                    pool.Add(new TriviaQuestionInternal(
-                        $"map_player_playtime_{mapSlug}",
-                        "Map Endurance",
-                        $"On {map.MapName}, which veteran has logged the most combat hours?",
-                        timeOpts,
-                        topTime[0].PlayerName,
-                        $"{topTime[0].PlayerName} has {hours:N0} hours recorded on {map.MapName}.",
-                        TargetPlayerName: topTime[0].PlayerName,
-                        TargetMapName: map.MapName
-                    ));
-                }
-            }
-
-            // Rounds
-            var topRounds = players.OrderByDescending(p => p.TotalRounds).ToList();
-            if (topRounds[0].TotalRounds > topRounds[1].TotalRounds && topRounds[0].TotalRounds > 0)
-            {
-                var roundOpts = topRounds.Take(4).Select(p => p.PlayerName).Distinct().ToList();
-                if (roundOpts.Count == 4)
-                {
-                    pool.Add(new TriviaQuestionInternal(
-                        $"map_player_rounds_{mapSlug}",
-                        "Map Deployments",
-                        $"On {map.MapName}, which soldier has deployed into the most recorded rounds?",
-                        roundOpts,
-                        topRounds[0].PlayerName,
-                        $"{topRounds[0].PlayerName} has fought in {topRounds[0].TotalRounds:N0} rounds on {map.MapName}.",
-                        TargetPlayerName: topRounds[0].PlayerName,
-                        TargetMapName: map.MapName
-                    ));
-                }
-            }
+            return [];
         }
+
+        var mapFacts = await query
+            .Where(m => mapNames.Contains(m.MapName))
+            .GroupBy(m => new { m.PlayerName, m.MapName })
+            .Select(g => new PlayerMapFact(
+                g.Key.PlayerName,
+                g.Key.MapName,
+                g.Sum(x => x.TotalKills),
+                g.Sum(x => x.TotalDeaths),
+                g.Sum(x => x.TotalScore),
+                g.Sum(x => x.TotalPlayTimeMinutes),
+                g.Sum(x => x.TotalRounds)))
+            .ToListAsync(cancellationToken);
+
+        var topPlayers = mapFacts
+            .GroupBy(f => f.PlayerName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new
+            {
+                PlayerName = g.Key,
+                TotalKills = g.Sum(x => x.TotalKills)
+            })
+            .OrderByDescending(x => x.TotalKills)
+            .Take(40)
+            .Select(x => x.PlayerName)
+            .ToList();
+
+        if (topPlayers.Count == 0)
+        {
+            return mapFacts;
+        }
+
+        var extraFacts = await query
+            .Where(m => topPlayers.Contains(m.PlayerName) && !mapNames.Contains(m.MapName))
+            .GroupBy(m => new { m.PlayerName, m.MapName })
+            .Select(g => new PlayerMapFact(
+                g.Key.PlayerName,
+                g.Key.MapName,
+                g.Sum(x => x.TotalKills),
+                g.Sum(x => x.TotalDeaths),
+                g.Sum(x => x.TotalScore),
+                g.Sum(x => x.TotalPlayTimeMinutes),
+                g.Sum(x => x.TotalRounds)))
+            .ToListAsync(cancellationToken);
+
+        return mapFacts.Concat(extraFacts).ToList();
+    }
+
+    private async Task AddMapScopedTriviaQuestionsAsync(
+        List<TriviaQuestionInternal> pool,
+        CancellationToken cancellationToken)
+    {
+        var processedMaps = pool
+            .Where(q => !string.IsNullOrWhiteSpace(q.TargetMapName))
+            .Select(q => q.TargetMapName!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Query PlayerSessions for additional maps if PlayerMapStats was sparse
         if (processedMaps.Count < 10)
@@ -2256,18 +2278,5 @@ public class ArcadeService(
 
     private sealed record TriviaQuizTokenPayload(
         List<TriviaAnswerPayload> Questions
-    );
-
-    private sealed record TriviaQuestionInternal(
-        string Id,
-        string Category,
-        string Question,
-        List<string> Options,
-        string CorrectAnswer,
-        string Explanation,
-        string? TargetPlayerName = null,
-        string? TargetRoundId = null,
-        string? TargetMapName = null,
-        string? TargetServerName = null
     );
 }
