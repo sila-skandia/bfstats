@@ -723,7 +723,8 @@ try
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Redis connection failed, continuing without Redis event publishing");
+            logger.LogWarning("Redis connection failed, continuing without Redis event publishing ({ExceptionType}: {Message})",
+                ex.GetType().Name, ex.Message);
             // Return a null multiplexer that will be handled gracefully
             return null!;
         }
@@ -978,7 +979,8 @@ try
     }
     catch (Exception ex)
     {
-        host.Logger.LogWarning(ex, "Failed to initialize tournament image serving. This feature will be disabled.");
+        host.Logger.LogWarning("Failed to initialize tournament image serving. This feature will be disabled ({ExceptionType}: {Message})",
+            ex.GetType().Name, ex.Message);
     }
 
     static SecurityKey CreateRsaKey(string pem)

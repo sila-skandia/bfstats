@@ -573,7 +573,8 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get achievements for round {RoundId}", roundId);
+            logger.LogWarning("Failed to get achievements for round {RoundId} ({ExceptionType}: {Message})",
+                roundId, ex.GetType().Name, ex.Message);
         }
 
         return new SessionRoundReport
