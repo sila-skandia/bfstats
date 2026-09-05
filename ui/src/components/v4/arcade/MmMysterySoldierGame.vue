@@ -15,7 +15,7 @@ const props = defineProps<{
   serverName?: string
 }>()
 
-const { isMuted, toggleMute, playRoger, playNegative, playGoGoGo } = useArcadeAudio()
+const { isMuted, toggleMute, playRoger, playNegative } = useArcadeAudio()
 
 const mode = ref<'daily' | 'random'>('daily')
 const dossier = ref<MysteryDossier | null>(null)
@@ -83,13 +83,13 @@ const makeGuess = async (guessedName: string) => {
       isVictorious.value = true
       isGameOver.value = true
       identifiedTarget.value = res.targetPlayerName || res.guessedPlayerName
-      playGoGoGo()
-    } else if (guesses.value.length >= maxGuesses.value) {
-      isGameOver.value = true
-      identifiedTarget.value = res.targetPlayerName || 'Classified'
-      playNegative()
-    } else {
       playRoger()
+    } else {
+      if (guesses.value.length >= maxGuesses.value) {
+        isGameOver.value = true
+        identifiedTarget.value = res.targetPlayerName || 'Classified'
+      }
+      playNegative()
     }
   } catch {
     /* guess error */
