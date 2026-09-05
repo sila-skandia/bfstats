@@ -124,11 +124,22 @@ public sealed class StatsCollectionBackgroundService(
                     }
                     break; // Completed successfully
                 }
-                catch (Exception ex) when (attempt < maxAttempts && IsSqliteBusyException(ex))
+                catch (Exception ex) when (attempt < maxAttempts && SqliteBusy.IsBusy(ex))
                 {
-                    logger.LogWarning(ex, "Stats collection cycle #{Cycle} encountered database lock on attempt {Attempt}/{MaxAttempts}; retrying in 1s...",
-                        currentCycle, attempt, maxAttempts);
+                    // Seq's bfstats/Exceptions signal matches `@Exception is not null`, so
+                    // attaching the exception here pages on every handled retry. Overnight
+                    // aggregate/wrapped writers make this lock expected; the cycle retries.
+                    logger.LogWarning(
+                        "Stats collection cycle #{Cycle} encountered database lock on attempt {Attempt}/{MaxAttempts} ({SqliteError}); retrying in 1s...",
+                        currentCycle, attempt, maxAttempts, SqliteBusy.Describe(ex));
                     await Task.Delay(1000);
+                }
+                catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+                {
+                    logger.LogWarning(
+                        "Stats collection cycle #{Cycle} skipped after {MaxAttempts} database-lock retries ({SqliteError})",
+                        currentCycle, maxAttempts, SqliteBusy.Describe(ex));
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -239,16 +250,5 @@ public sealed class StatsCollectionBackgroundService(
         }
 
         await dbContext.SaveChangesAsync();
-    }
-
-    private static bool IsSqliteBusyException(Exception ex)
-    {
-        if (ex is Microsoft.Data.Sqlite.SqliteException sqliteEx && (sqliteEx.SqliteErrorCode == 5 || sqliteEx.SqliteErrorCode == 6 || sqliteEx.Message.Contains("database is locked", StringComparison.OrdinalIgnoreCase)))
-            return true;
-
-        if (ex.InnerException != null)
-            return IsSqliteBusyException(ex.InnerException);
-
-        return false;
     }
 }

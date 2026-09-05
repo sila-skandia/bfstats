@@ -298,6 +298,10 @@ playertracker.db-wal
 # Tournament images uploaded via FileBrowser in local development
 tournament-images/
 
+# Extracted BF1942 spawn maps. Volume / FileBrowser only — never ship in the UI image.
+ui/public/arcade/
+api/assets/arcade/
+
 # Map previews extracted from a BF1942 install (bf1942-map-images skill).
 # These live on the assets volume served by FileBrowser, never in git.
 maps/

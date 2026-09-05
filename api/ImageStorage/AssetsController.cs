@@ -40,6 +40,18 @@ public class AssetsController(
     }
 
     /// <summary>
+    /// Spawn-screen maps for Field Lore theater recon.
+    /// Path is relative to the arcade folder, e.g. "maps/wake/ingame.webp".
+    /// </summary>
+    [HttpGet("arcade/{*path}")]
+    public async Task<IActionResult> GetArcadeAsset(string path)
+    {
+        var basePath = Path.Combine(TournamentImagesConfig.ResolveBasePath(), "arcade");
+        var result = await assetServingService.GetAssetAsync(basePath, path);
+        return HandleAssetResult(result);
+    }
+
+    /// <summary>
     /// Get the preview image for a map, addressed the way bflist reports it:
     /// /stats/assets/maps/{gameId}/{mapName}. Map names may be given with spaces or
     /// underscores and in any case ("fhsw/Operation Coronet-1946" works).

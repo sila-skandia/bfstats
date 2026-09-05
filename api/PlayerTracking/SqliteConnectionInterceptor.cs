@@ -53,7 +53,8 @@ public class SqliteConnectionInterceptor(ILogger<SqliteConnectionInterceptor> lo
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to configure SQLite PRAGMA settings on connection");
+            logger.LogWarning("Failed to configure SQLite PRAGMA settings on connection ({ExceptionType}: {Message})",
+                ex.GetType().Name, ex.Message);
         }
     }
 }

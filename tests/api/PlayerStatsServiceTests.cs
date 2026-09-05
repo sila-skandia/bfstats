@@ -199,6 +199,121 @@ public sealed class PlayerStatsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetAllPlayersWithPaging_WhenPlayerHasTwoActiveSessions_UsesMostRecentlySeenServer()
+    {
+        dbContext.Servers.AddRange(
+            new GameServer { Guid = "srv-old", Name = "Old Server", GameId = "bf1942" },
+            new GameServer { Guid = "srv-new", Name = "New Server", GameId = "bf1942" });
+
+        dbContext.Players.Add(new Player
+        {
+            Name = "BATTLER",
+            TotalPlayTimeMinutes = 100,
+            AiBot = false,
+            LastSeen = DateTime.UtcNow
+        });
+
+        var older = DateTime.UtcNow.AddMinutes(-10);
+        var newer = DateTime.UtcNow;
+        dbContext.PlayerSessions.AddRange(
+            new PlayerSession
+            {
+                SessionId = 21,
+                PlayerName = "BATTLER",
+                ServerGuid = "srv-old",
+                IsActive = true,
+                MapName = "Kursk",
+                StartTime = older.AddMinutes(-20),
+                LastSeenTime = older,
+                TotalKills = 1,
+                TotalDeaths = 1
+            },
+            new PlayerSession
+            {
+                SessionId = 22,
+                PlayerName = "BATTLER",
+                ServerGuid = "srv-new",
+                IsActive = true,
+                MapName = "Wake Island",
+                StartTime = newer.AddMinutes(-5),
+                LastSeenTime = newer,
+                TotalKills = 8,
+                TotalDeaths = 2
+            });
+
+        await dbContext.SaveChangesAsync();
+
+        var result = await service.GetAllPlayersWithPaging(
+            page: 1,
+            pageSize: 50,
+            sortBy: "isactive",
+            sortOrder: "desc");
+
+        var player = Assert.Single(result.Items);
+        Assert.Equal("BATTLER", player.PlayerName);
+        Assert.True(player.IsActive);
+        Assert.NotNull(player.CurrentServer);
+        Assert.Equal("srv-new", player.CurrentServer!.ServerGuid);
+        Assert.Equal("New Server", player.CurrentServer.ServerName);
+        Assert.Equal("Wake Island", player.CurrentServer.MapName);
+        Assert.Equal(8, player.CurrentServer.SessionKills);
+    }
+
+    [Fact]
+    public async Task SearchPlayersAsync_WhenPlayerHasTwoActiveSessions_UsesMostRecentlySeenServer()
+    {
+        dbContext.Servers.AddRange(
+            new GameServer { Guid = "srv-old", Name = "Old Server", GameId = "bf1942" },
+            new GameServer { Guid = "srv-new", Name = "New Server", GameId = "bf1942" });
+
+        dbContext.Players.Add(new Player
+        {
+            Name = "BATTLER",
+            TotalPlayTimeMinutes = 100,
+            AiBot = false,
+            LastSeen = DateTime.UtcNow
+        });
+
+        var older = DateTime.UtcNow.AddMinutes(-10);
+        var newer = DateTime.UtcNow;
+        dbContext.PlayerSessions.AddRange(
+            new PlayerSession
+            {
+                SessionId = 31,
+                PlayerName = "BATTLER",
+                ServerGuid = "srv-old",
+                IsActive = true,
+                MapName = "Kursk",
+                StartTime = older.AddMinutes(-20),
+                LastSeenTime = older,
+                TotalKills = 1,
+                TotalDeaths = 1
+            },
+            new PlayerSession
+            {
+                SessionId = 32,
+                PlayerName = "BATTLER",
+                ServerGuid = "srv-new",
+                IsActive = true,
+                MapName = "Wake Island",
+                StartTime = newer.AddMinutes(-5),
+                LastSeenTime = newer,
+                TotalKills = 8,
+                TotalDeaths = 2
+            });
+
+        await dbContext.SaveChangesAsync();
+
+        var result = await service.SearchPlayersAsync("BATTLER", page: 1, pageSize: 10);
+
+        var player = Assert.Single(result.Items);
+        Assert.True(player.IsActive);
+        Assert.NotNull(player.CurrentServer);
+        Assert.Equal("New Server", player.CurrentServer!.ServerName);
+        Assert.Equal("Wake Island", player.CurrentServer.MapName);
+    }
+
+    [Fact]
     public async Task GetPlayerStatistics_CalculatesServerRankings_BatchedQuery()
     {
         var server1 = new GameServer { Guid = "srv-1", Name = "Server Alpha", GameId = "bf1942" };
