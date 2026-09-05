@@ -9,6 +9,7 @@ import {
 } from '@/services/arcadeService'
 
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
+import MmEmphasizedText from '@/components/v4/arcade/MmEmphasizedText.vue'
 
 const props = defineProps<{
   serverGuid?: string
@@ -221,7 +222,10 @@ onMounted(() => {
         class="mm-hl__question"
         data-testid="hl-prompt-detail"
       >
-        {{ promptDetail }}
+        <MmEmphasizedText
+          :text="promptDetail"
+          :terms="[currentQuestion.mapName, serverName]"
+        />
       </h2>
 
       <div class="mm-hl__arena">

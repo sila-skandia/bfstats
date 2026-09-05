@@ -86,6 +86,7 @@ Base path: `/stats/arcade`
 
 - Hosted at `/v4/arcade`.
 - Designed with `.mm` Neutral Depth tokens (`--mm-*`).
+- Field Lore and Higher/Lower prompts emphasize interpolated entities (player names, maps, servers, month/year) as mono callsign marks so sentence-like names do not blend into the question.
 - Audio toggle (Mute / Sound On) utilizing authentic BF1942 radio comms in `/radio-sounds`.
 - Fully responsive on mobile (≤640px) and desktop (≥881px).
 - No emojis — status and feedback use PrimeIcons, CSS indicators, and country micro-badges.

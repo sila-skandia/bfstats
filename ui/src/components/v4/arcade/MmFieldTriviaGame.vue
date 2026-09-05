@@ -11,6 +11,7 @@ import {
 } from '@/services/arcadeService'
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
 import MmRoundReportSlideover from '@/components/v4/arcade/MmRoundReportSlideover.vue'
+import MmEmphasizedText from '@/components/v4/arcade/MmEmphasizedText.vue'
 
 const props = defineProps<{
   serverGuid?: string
@@ -140,6 +141,11 @@ const submitQuiz = async () => {
   }
 }
 
+const questionTerms = (
+  highlights?: string[],
+  ...entities: Array<string | null | undefined>
+) => [...(highlights ?? []), ...entities, props.orbitPlayer]
+
 onMounted(() => {
   loadQuiz()
 })
@@ -257,8 +263,19 @@ onMounted(() => {
       </div>
 
       <!-- Question Text -->
-      <h2 class="mm-trivia__question">
-        {{ currentQuestion.question }}
+      <h2
+        class="mm-trivia__question"
+        data-testid="trivia-question"
+      >
+        <MmEmphasizedText
+          :text="currentQuestion.question"
+          :terms="questionTerms(
+            currentQuestion.highlights,
+            currentQuestion.targetPlayerName,
+            currentQuestion.targetMapName,
+            currentQuestion.targetServerName
+          )"
+        />
       </h2>
 
       <!-- Options Grid -->
@@ -279,7 +296,7 @@ onMounted(() => {
           @click="handleSelectOption(opt)"
         >
           <span class="mm-trivia__opt-letter">{{ ['A', 'B', 'C', 'D'][oIdx] }}</span>
-          <span class="mm-trivia__opt-text">{{ opt }}</span>
+          <span class="mm-trivia__opt-text">{{ $pn(opt) }}</span>
           <span
             v-if="currentRevealed && answers[currentQuestion.id] === opt"
             class="mm-trivia__opt-tag"
@@ -314,7 +331,15 @@ onMounted(() => {
           </span>
         </div>
         <p class="mm-trivia__intel-text">
-          {{ currentRevealed.explanation }}
+          <MmEmphasizedText
+            :text="currentRevealed.explanation"
+            :terms="questionTerms(
+              currentRevealed.highlights ?? currentQuestion.highlights,
+              currentRevealed.targetPlayerName,
+              currentRevealed.targetMapName,
+              currentRevealed.targetServerName
+            )"
+          />
         </p>
 
         <!-- Contextual Entity Links -->
@@ -330,7 +355,7 @@ onMounted(() => {
             class="mm-entity-link"
           >
             <i class="pi pi-user" />
-            <span>View {{ currentRevealed.targetPlayerName }}'s Profile &rarr;</span>
+            <span>View {{ $pn(currentRevealed.targetPlayerName) }}'s Profile &rarr;</span>
           </router-link>
 
           <button
@@ -435,7 +460,15 @@ onMounted(() => {
           </div>
 
           <h4 class="mm-trivia__rev-question">
-            {{ q.question }}
+            <MmEmphasizedText
+              :text="q.question"
+              :terms="questionTerms(
+                q.highlights,
+                q.targetPlayerName,
+                q.targetMapName,
+                q.targetServerName
+              )"
+            />
           </h4>
 
           <div class="mm-trivia__rev-answers">
@@ -445,7 +478,7 @@ onMounted(() => {
                 class="mm-trivia__rev-ans-val"
                 :class="q.isCorrect ? 'mm-trivia__rev-ans-val--correct' : 'mm-trivia__rev-ans-val--wrong'"
               >
-                {{ q.selectedAnswer || '(Unanswered)' }}
+                {{ q.selectedAnswer ? $pn(q.selectedAnswer) : '(Unanswered)' }}
               </span>
             </div>
 
@@ -455,7 +488,7 @@ onMounted(() => {
             >
               <span class="mm-eyebrow">Correct Answer:</span>
               <span class="mm-trivia__rev-ans-val mm-trivia__rev-ans-val--actual">
-                {{ q.correctAnswer }}
+                {{ $pn(q.correctAnswer) }}
               </span>
             </div>
           </div>
@@ -463,7 +496,15 @@ onMounted(() => {
           <div class="mm-trivia__rev-fact">
             <span class="mm-eyebrow">Context:</span>
             <p class="mm-trivia__rev-fact-text">
-              {{ q.explanation }}
+              <MmEmphasizedText
+                :text="q.explanation"
+                :terms="questionTerms(
+                  q.highlights,
+                  q.targetPlayerName,
+                  q.targetMapName,
+                  q.targetServerName
+                )"
+              />
             </p>
 
             <div
@@ -479,7 +520,7 @@ onMounted(() => {
                 class="mm-entity-link"
               >
                 <i class="pi pi-user" />
-                <span>View {{ q.targetPlayerName }}'s Profile &rarr;</span>
+                <span>View {{ $pn(q.targetPlayerName) }}'s Profile &rarr;</span>
               </router-link>
 
               <button
