@@ -5,9 +5,11 @@ Interactive, replayable mini-games powered directly by real BF1942 player sessio
 ## Game Modes
 
 ### 1. Higher or Lower (Stat Showdown)
-Two active combatants face off. Card 1 shows a soldier's verified stat (e.g. 14,200 kills or 350 hours played). Card 2 shows another soldier: is their stat **Higher** or **Lower**?
+Two combatants face off. The prompt is a full-width bar so the question is never hidden in the VS gutter. Card 1 shows a verified stat; card 2 is masked: is their value **Higher** or **Lower**?
+- **Shared-map matchups first**: when both players have enough time on the same map, the round compares that map (kills, score, hours, K/D, rounds, or kill rate) instead of repeating career totals.
+- Career kills / score / hours / K/D are the fallback when no shared map qualifies.
 - **Audio Feedback**: Authentic BF1942 radio cues (`roger.mp3` for correct, `negative.mp3` for incorrect).
-- **Streak & Promotion Ladder**: Private -> Corporal -> Sergeant -> Lieutenant -> Captain -> Major -> Colonel -> General of the Army.
+- **Streak**: tracked in the HUD; best streak is stored locally.
 
 ### 2. Mystery Soldier (Classified Dossier)
 A daily (or endless/practice) guessing challenge inspired by Wordle / Poeltl:
@@ -45,7 +47,7 @@ A 5-question tactical quiz dynamically generated **only** from live and historic
 ### 4. Community Server Filtering
 Minigames can be scoped to any community server (e.g. MoonGamers, SiMPLE, etc.):
 - **Server Selector**: Quick pills for top community servers + searchable popover for all tracked servers.
-- **Server-Specific Matchups**: Higher or Lower compares regulars using stats earned specifically on that server (`PlayerServerStats`).
+- **Server-Specific Matchups**: Higher or Lower compares regulars using that server's `PlayerMapStats` when they share a map, otherwise `PlayerServerStats` career totals.
 - **Server Dossiers**: Mystery Soldier selects notable veterans and regulars of that server, with a multiple-choice suspect roster drawn from that server's candidate pool.
 - **Server-Specific Lore**: Trivia asks about the server's most contested maps, single-round score record holders (`PlayerBestScores`), map-scoped top killers on the server, longest average round maps, and faction win balances (`ServerMapStats.Team1Victories` vs `Team2Victories`).
 
@@ -63,7 +65,7 @@ Base path: `/stats/arcade`
 | Endpoint | Method | Description |
 |---|---|---|
 | `/stats/arcade/servers` | GET | Returns active servers with player counts and candidate counts. |
-| `/stats/arcade/higher-lower/next` | GET | Returns a pair of combatants for a randomly chosen metric (kills, score, hours, kd), optionally scoped to `?serverGuid=`. Target value is hidden. |
+| `/stats/arcade/higher-lower/next` | GET | Returns a pair of combatants. Prefers a shared-map metric (kills, score, hours, kd, rounds, kill rate) and falls back to career totals. Includes `prompt` and optional `mapName`. Target value is hidden. |
 | `/stats/arcade/higher-lower/reveal` | POST | Validates user guess ('higher' or 'lower') against round token, returning revealed value, result, and next card candidate. |
 | `/stats/arcade/mystery/today` | GET | Returns the daily classified dossier with `candidateOptions` suspect roster (redacted name, seed based on UTC date), optionally scoped to `?serverGuid=`. |
 | `/stats/arcade/mystery/random` | GET | Returns a random classified dossier with `candidateOptions` for practice/endless mode, optionally scoped to `?serverGuid=`. |
@@ -76,7 +78,6 @@ Base path: `/stats/arcade`
 
 - Hosted at `/v4/arcade`.
 - Designed with `.mm` Neutral Depth tokens (`--mm-*`).
-- **Theater of Operations** (`MmTheaterScope`): PPI radar that plots the arcade server list as phosphor contacts by region. Locking a contact scopes every minigame to that server; HQ returns to the global network. Live contacts pulse; an intercept ticker scrolls current populations. Audio: `roger` on lock/release.
 - Audio toggle (Mute / Sound On) utilizing authentic BF1942 radio comms in `/radio-sounds`.
 - Fully responsive on mobile (≤640px) and desktop (≥881px).
 - No emojis — status and feedback use PrimeIcons, CSS indicators, and country micro-badges.

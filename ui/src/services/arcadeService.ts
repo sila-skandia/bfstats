@@ -23,11 +23,13 @@ export interface HigherLowerQuestion {
   playerA: Combatant
   playerB: Combatant
   roundToken: string
+  prompt?: string
+  mapName?: string | null
 }
 
 export interface HigherLowerRevealRequest {
   roundToken: string
-  guess: 'higher' | 'lower'
+  guess: 'playerA' | 'playerB' | 'higher' | 'lower' | string
 }
 
 export interface HigherLowerRevealResult {
@@ -35,6 +37,7 @@ export interface HigherLowerRevealResult {
   playerAValue: number
   playerBValue: number
   formattedPlayerBValue: string
+  formattedPlayerAValue?: string
   message: string
   nextQuestion?: HigherLowerQuestion | null
 }

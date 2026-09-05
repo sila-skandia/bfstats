@@ -503,25 +503,85 @@ public class ArcadeTests : IDisposable
         var question = await _service.GetNextHigherLowerQuestionAsync("srv-1");
 
         Assert.NotNull(question);
-        Assert.Contains("on Simple 24/7 Wake", question.MetricLabel);
+        Assert.NotEmpty(question.MetricLabel);
+        Assert.NotEmpty(question.Prompt);
         Assert.NotEmpty(question.PlayerA.Name);
         Assert.NotEmpty(question.PlayerB.Name);
+        Assert.NotEqual(question.PlayerA.Name, question.PlayerB.Name);
+        if (question.MapName != null)
+        {
+            Assert.Equal("Wake Island", question.MapName);
+            Assert.Contains("Wake Island", question.MetricLabel, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Wake Island", question.Prompt, StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+            Assert.Contains("Simple 24/7 Wake", question.MetricLabel);
+        }
     }
 
     [Fact]
-    public async Task GetNextHigherLowerQuestion_Global_ReturnsValidPairWithMaskedB()
+    public async Task GetNextHigherLowerQuestion_Global_ReturnsValidPairWithBothMasked()
     {
         var question = await _service.GetNextHigherLowerQuestionAsync();
 
         Assert.NotNull(question);
         Assert.NotEmpty(question.Metric);
         Assert.NotEmpty(question.MetricLabel);
+        Assert.NotEmpty(question.Prompt);
         Assert.NotEmpty(question.PlayerA.Name);
-        Assert.NotNull(question.PlayerA.Value);
+        Assert.Null(question.PlayerA.Value);
         Assert.NotEmpty(question.PlayerB.Name);
         Assert.Null(question.PlayerB.Value);
         Assert.NotEmpty(question.RoundToken);
         Assert.NotEqual(question.PlayerA.Name, question.PlayerB.Name);
+    }
+
+    [Fact]
+    public async Task GetNextHigherLowerQuestion_PrefersSharedMapMatchups()
+    {
+        var mapQuestions = 0;
+        var signatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < 16; i++)
+        {
+            var question = await _service.GetNextHigherLowerQuestionAsync();
+            signatures.Add($"{question.Metric}:{question.MapName}");
+            if (string.IsNullOrWhiteSpace(question.MapName))
+            {
+                continue;
+            }
+
+            mapQuestions++;
+            Assert.Contains(question.MapName, new[] { "Wake Island", "Stalingrad" });
+            Assert.Contains(question.MapName, question.MetricLabel, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(question.MapName, question.Prompt, StringComparison.OrdinalIgnoreCase);
+            Assert.Null(question.PlayerA.Value);
+            Assert.Null(question.PlayerB.Value);
+        }
+
+        Assert.True(mapQuestions >= 12, $"Expected mostly map-scoped matchups, got {mapQuestions}/16");
+        Assert.True(signatures.Count >= 2, "Matchups should vary metric or map instead of repeating one career stat");
+    }
+
+    [Fact]
+    public async Task RevealHigherLower_MapMatchup_MentionsSharedMap()
+    {
+        HigherLowerQuestionDto? mapped = null;
+        for (var i = 0; i < 12 && mapped == null; i++)
+        {
+            var question = await _service.GetNextHigherLowerQuestionAsync();
+            if (!string.IsNullOrWhiteSpace(question.MapName))
+            {
+                mapped = question;
+            }
+        }
+
+        Assert.NotNull(mapped);
+        var reveal = await _service.RevealHigherLowerAsync(new HigherLowerRevealRequest(mapped.RoundToken, "higher"));
+        Assert.Contains(mapped.MapName!, reveal.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(reveal.NextQuestion);
+        Assert.NotEmpty(reveal.NextQuestion!.Prompt);
     }
 
     [Fact]
@@ -534,6 +594,8 @@ public class ArcadeTests : IDisposable
 
         Assert.NotNull(revealHigh);
         Assert.NotNull(revealLow);
+        Assert.NotNull(revealHigh.FormattedPlayerAValue);
+        Assert.NotNull(revealLow.FormattedPlayerAValue);
 
         var actualBHigher = revealHigh.PlayerBValue >= revealHigh.PlayerAValue;
         Assert.Equal(actualBHigher, revealHigh.IsCorrect);
@@ -542,6 +604,53 @@ public class ArcadeTests : IDisposable
         var winner = actualBHigher ? revealHigh : revealLow;
         Assert.True(winner.IsCorrect);
         Assert.NotNull(winner.NextQuestion);
+    }
+
+    [Fact]
+    public async Task RevealHigherLower_GuessByPlayerAOrPlayerB_EvaluatesCorrectly()
+    {
+        var question = await _service.GetNextHigherLowerQuestionAsync();
+
+        var revealA = await _service.RevealHigherLowerAsync(new HigherLowerRevealRequest(question.RoundToken, "playerA"));
+        var revealB = await _service.RevealHigherLowerAsync(new HigherLowerRevealRequest(question.RoundToken, "playerB"));
+
+        Assert.NotNull(revealA);
+        Assert.NotNull(revealB);
+        Assert.NotEmpty(revealA.FormattedPlayerAValue!);
+        Assert.NotEmpty(revealA.FormattedPlayerBValue);
+
+        var actualAHigher = revealA.PlayerAValue >= revealA.PlayerBValue;
+        Assert.Equal(actualAHigher, revealA.IsCorrect);
+        var actualBHigher = revealB.PlayerBValue >= revealB.PlayerAValue;
+        Assert.Equal(actualBHigher, revealB.IsCorrect);
+    }
+
+    [Fact]
+    public async Task RevealHigherLower_GuessByPlayerName_EvaluatesCorrectly()
+    {
+        var question = await _service.GetNextHigherLowerQuestionAsync();
+
+        var revealNameA = await _service.RevealHigherLowerAsync(new HigherLowerRevealRequest(question.RoundToken, question.PlayerA.Name));
+        Assert.NotNull(revealNameA);
+        var actualAHigher = revealNameA.PlayerAValue >= revealNameA.PlayerBValue;
+        Assert.Equal(actualAHigher, revealNameA.IsCorrect);
+    }
+
+    [Fact]
+    public async Task RevealHigherLower_NextQuestion_DoesNotAnchorRightPlayerToLeft()
+    {
+        var matchedCarriedCount = 0;
+        for (var i = 0; i < 20; i++)
+        {
+            var q = await _service.GetNextHigherLowerQuestionAsync();
+            var rev = await _service.RevealHigherLowerAsync(new HigherLowerRevealRequest(q.RoundToken, "playerA"));
+            if (rev.NextQuestion != null && string.Equals(rev.NextQuestion.PlayerA.Name, q.PlayerB.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                matchedCarriedCount++;
+            }
+        }
+
+        Assert.True(matchedCarriedCount < 10, $"Expected freshly randomized candidates, but PlayerB was carried to PlayerA {matchedCarriedCount}/20 times");
     }
 
     [Fact]
@@ -647,6 +756,24 @@ public class ArcadeTests : IDisposable
         Assert.Contains(quiz.Questions, q => q.Question.Contains("Simple 24/7 Wake"));
         Assert.All(quiz.Questions, q => Assert.DoesNotContain("V - 1", q.Question, StringComparison.OrdinalIgnoreCase));
         Assert.All(quiz.Questions, q => Assert.DoesNotContain("commo-rose", q.Question, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GenerateTriviaQuiz_RoundSpecificQuestion_ProvidesTargetRoundId()
+    {
+        var quiz = await _service.GenerateTriviaQuizAsync("srv-1");
+
+        Assert.NotNull(quiz);
+        var roundQuestion = quiz.Questions.FirstOrDefault(q => !string.IsNullOrEmpty(q.TargetRoundId));
+        Assert.NotNull(roundQuestion);
+        Assert.Equal("rnd-123", roundQuestion.TargetRoundId);
+
+        var verifyResult = await _service.VerifyTriviaQuestionAsync(new TriviaVerifyQuestionRequest(
+            quiz.QuizToken,
+            roundQuestion.Id,
+            "ApexSoldier"
+        ));
+        Assert.Equal("rnd-123", verifyResult.TargetRoundId);
     }
 
     [Fact]
@@ -835,6 +962,31 @@ public class ArcadeTests : IDisposable
     }
 
     [Fact]
+    public async Task GenerateTriviaQuiz_ServerScoped_MultipleGenerations_ProvidesVariety()
+    {
+        var allQuestionIds = new HashSet<string>();
+        var firstQuestionIds = new HashSet<string>();
+
+        for (var i = 0; i < 5; i++)
+        {
+            var quiz = await _service.GenerateTriviaQuizAsync("srv-1");
+            Assert.NotNull(quiz);
+            Assert.Equal(5, quiz.Questions.Count);
+
+            firstQuestionIds.Add(quiz.Questions[0].Id);
+            foreach (var q in quiz.Questions)
+            {
+                allQuestionIds.Add(q.Id);
+            }
+        }
+
+        // Multiple distinct generations draw varied questions from the server pool rather than a fixed 5
+        Assert.True(allQuestionIds.Count > 5, $"Expected more than 5 distinct question IDs across 5 server runs, got {allQuestionIds.Count}");
+        // Q1 must not always be the exact same question
+        Assert.True(firstQuestionIds.Count > 1, $"Expected Q1 to vary across server runs, got only {firstQuestionIds.Count} distinct ID(s): {string.Join(", ", firstQuestionIds)}");
+    }
+
+    [Fact]
     public void TriviaQuestionComposer_BuildsPlayerBestMapAndMapKdQuestions()
     {
         var facts = new List<PlayerMapFact>
@@ -871,5 +1023,120 @@ public class ArcadeTests : IDisposable
         Assert.Contains(questions, q => q.Id.StartsWith("player_map_", StringComparison.Ordinal));
         Assert.Contains(questions, q => q.Id.StartsWith("map_player_", StringComparison.Ordinal));
         Assert.True(questions.Count > 8, $"Expected a combinatorial pool, got {questions.Count}");
+    }
+
+    [Fact]
+    public async Task GenerateTriviaQuiz_ServerScoped_FactionBalance_HasOnlyTwoOptionsFromStats()
+    {
+        TriviaQuizDto? quizWithBalance = null;
+        TriviaQuestionDto? balanceQuestion = null;
+
+        for (var i = 0; i < 20; i++)
+        {
+            var quiz = await _service.GenerateTriviaQuizAsync("srv-1");
+            balanceQuestion = quiz.Questions.FirstOrDefault(x => x.Id.StartsWith("srv_team_balance_"));
+            if (balanceQuestion != null)
+            {
+                quizWithBalance = quiz;
+                break;
+            }
+        }
+
+        Assert.NotNull(balanceQuestion);
+        Assert.NotNull(quizWithBalance);
+
+        // Exactly 2 options representing the competing sides on that map
+        Assert.Equal(2, balanceQuestion.Options.Count);
+        Assert.Contains("Imperial Navy", balanceQuestion.Options);
+        Assert.True(balanceQuestion.Options.Contains("US Marines") || balanceQuestion.Options.Contains("US Navy"));
+
+        // No hallucinated distractors
+        Assert.DoesNotContain("Allies", balanceQuestion.Options);
+        Assert.DoesNotContain("Axis", balanceQuestion.Options);
+
+        var verifyResult = await _service.VerifyTriviaQuestionAsync(new TriviaVerifyQuestionRequest(
+            quizWithBalance.QuizToken,
+            balanceQuestion.Id,
+            balanceQuestion.Options[0]
+        ));
+        Assert.NotNull(verifyResult);
+        Assert.Contains(verifyResult.CorrectAnswer, balanceQuestion.Options);
+    }
+
+    [Fact]
+    public async Task GenerateTriviaQuiz_ServerScoped_FactionBalance_ResolvesThreeFactionsToTwoHighest()
+    {
+        _dbContext.Servers.Add(new GameServer
+        {
+            Guid = "srv-multi-faction",
+            Name = "Multi Faction Server",
+            Country = "US",
+            Game = "bf1942",
+            IsOnline = true
+        });
+
+        _dbContext.ServerMapStats.AddRange(
+            new ServerMapStats
+            {
+                ServerGuid = "srv-multi-faction",
+                MapName = "Bocage",
+                Year = 2026,
+                Month = 8,
+                TotalRounds = 120,
+                TotalPlayTimeMinutes = 3000,
+                Team1Victories = 60,
+                Team2Victories = 50,
+                Team1Label = "Axis",
+                Team2Label = "Allied"
+            },
+            new ServerMapStats
+            {
+                ServerGuid = "srv-multi-faction",
+                MapName = "Bocage",
+                Year = 2026,
+                Month = 9,
+                TotalRounds = 100,
+                TotalPlayTimeMinutes = 2500,
+                Team1Victories = 40,
+                Team2Victories = 30,
+                Team1Label = "Axis",
+                Team2Label = "Allied"
+            },
+            new ServerMapStats
+            {
+                ServerGuid = "srv-multi-faction",
+                MapName = "Bocage",
+                Year = 2026,
+                Month = 7,
+                TotalRounds = 10,
+                TotalPlayTimeMinutes = 200,
+                Team1Victories = 5,
+                Team2Victories = 2,
+                Team1Label = "RogueFaction",
+                Team2Label = "Allied"
+            }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var quiz = await _service.GenerateTriviaQuizAsync("srv-multi-faction");
+        Assert.NotNull(quiz);
+
+        var balanceQuestion = quiz.Questions.FirstOrDefault(q => q.Id == "srv_team_balance_bocage");
+        Assert.NotNull(balanceQuestion);
+
+        // Only the 2 highest factions are presented; RogueFaction is excluded
+        Assert.Equal(2, balanceQuestion.Options.Count);
+        Assert.Contains("Axis", balanceQuestion.Options);
+        Assert.Contains("Allied", balanceQuestion.Options);
+        Assert.DoesNotContain("RogueFaction", balanceQuestion.Options);
+
+        var verify = await _service.VerifyTriviaQuestionAsync(new TriviaVerifyQuestionRequest(
+            quiz.QuizToken,
+            balanceQuestion.Id,
+            "Axis"
+        ));
+        Assert.True(verify.IsCorrect);
+        Assert.Equal("Axis", verify.CorrectAnswer);
+        Assert.Contains("100 wins versus Allied's 82 wins", verify.Explanation);
     }
 }
