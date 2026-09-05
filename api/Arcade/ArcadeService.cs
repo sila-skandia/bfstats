@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -1384,7 +1385,14 @@ public class ArcadeService(
         CancellationToken cancellationToken,
         string? serverName = null)
     {
+        var loadTimer = Stopwatch.StartNew();
         var facts = await LoadPlayerMapFactsAsync(serverGuid, cancellationToken);
+        logger.LogInformation(
+            "Arcade trivia loaded {FactCount} player-map facts for {PlayerCount} soldiers in {ElapsedMs}ms",
+            facts.Count,
+            facts.Select(f => f.PlayerName).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            loadTimer.ElapsedMilliseconds);
+
         if (facts.Count == 0)
         {
             return;
@@ -1409,7 +1417,13 @@ public class ArcadeService(
                 .ToList();
         }
 
+        var composeTimer = Stopwatch.StartNew();
         var composed = TriviaQuestionComposer.Compose(facts, distractorMaps);
+        logger.LogInformation(
+            "Arcade trivia composed {QuestionCount} combinatorial questions from {FactCount} facts in {ElapsedMs}ms",
+            composed.Count,
+            facts.Count,
+            composeTimer.ElapsedMilliseconds);
         if (!string.IsNullOrWhiteSpace(serverName))
         {
             composed = composed.Select(q => q with { TargetServerName = serverName }).ToList();
@@ -1445,33 +1459,11 @@ public class ArcadeService(
             return [];
         }
 
-        var mapFacts = await query
+        // Resolve the roster in SQL (LIMIT 40) before materializing facts.
+        // Loading every soldier on the top maps made Compose() the cold-path bottleneck.
+        var topPlayers = await query
             .Where(m => mapNames.Contains(m.MapName))
-            .GroupBy(m => new { m.PlayerName, m.MapName })
-            .Select(g => new PlayerMapFact(
-                g.Key.PlayerName,
-                g.Key.MapName,
-                g.Sum(x => x.TotalKills),
-                g.Sum(x => x.TotalDeaths),
-                g.Sum(x => x.TotalScore),
-                g.Sum(x => x.TotalPlayTimeMinutes),
-                g.Sum(x => x.TotalRounds)))
-            .ToListAsync(cancellationToken);
-
-        var mapsWithEnoughPlayers = mapFacts
-            .GroupBy(f => f.MapName, StringComparer.OrdinalIgnoreCase)
-            .Where(g => g.Select(f => f.PlayerName).Distinct(StringComparer.OrdinalIgnoreCase).Count() >= 2)
-            .Select(g => g.Key)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        mapFacts = mapFacts.Where(f => mapsWithEnoughPlayers.Contains(f.MapName)).ToList();
-        if (mapFacts.Count == 0)
-        {
-            return [];
-        }
-
-        var topPlayers = mapFacts
-            .GroupBy(f => f.PlayerName, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(m => m.PlayerName)
             .Select(g => new
             {
                 PlayerName = g.Key,
@@ -1480,15 +1472,15 @@ public class ArcadeService(
             .OrderByDescending(x => x.TotalKills)
             .Take(TriviaTopPlayerCount)
             .Select(x => x.PlayerName)
-            .ToList();
+            .ToListAsync(cancellationToken);
 
         if (topPlayers.Count == 0)
         {
-            return mapFacts;
+            return [];
         }
 
-        var extraFacts = await query
-            .Where(m => topPlayers.Contains(m.PlayerName) && !mapNames.Contains(m.MapName))
+        return await query
+            .Where(m => topPlayers.Contains(m.PlayerName))
             .GroupBy(m => new { m.PlayerName, m.MapName })
             .Select(g => new PlayerMapFact(
                 g.Key.PlayerName,
@@ -1499,8 +1491,6 @@ public class ArcadeService(
                 g.Sum(x => x.TotalPlayTimeMinutes),
                 g.Sum(x => x.TotalRounds)))
             .ToListAsync(cancellationToken);
-
-        return mapFacts.Concat(extraFacts).ToList();
     }
 
     private async Task<List<string>> LoadTopMapNamesForTriviaAsync(
