@@ -37,6 +37,18 @@ public class AssetsController(IAssetServingService assetServingService) : Contro
         return HandleAssetResult(result);
     }
 
+    /// <summary>
+    /// Spawn-screen maps for Field Lore theater recon.
+    /// Path is relative to the arcade folder, e.g. "maps/wake/ingame.webp".
+    /// </summary>
+    [HttpGet("arcade/{*path}")]
+    public async Task<IActionResult> GetArcadeAsset(string path)
+    {
+        var basePath = Path.Combine(TournamentImagesConfig.ResolveBasePath(), "arcade");
+        var result = await assetServingService.GetAssetAsync(basePath, path);
+        return HandleAssetResult(result);
+    }
+
     private IActionResult HandleAssetResult(AssetResult result)
     {
         if (!result.IsSuccess)
