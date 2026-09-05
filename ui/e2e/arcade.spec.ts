@@ -68,3 +68,115 @@ test.describe('Trivia higher or lower', () => {
     await expect(error).not.toContainText('[DGJ]ProPeller')
   })
 })
+
+test.describe('Field Lore theater recon', () => {
+  test('loads a quiz after a server is chosen', async ({ page }) => {
+    await page.goto('/v4/arcade?game=trivia')
+    await page.waitForLoadState('networkidle')
+    await chooseArcadeServer(page)
+
+    await expect(page.getByTestId('trivia-question')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('trivia-option')).toHaveCount(4)
+  })
+
+  test('conceals a named theater behind spawn-screen art', async ({ page }) => {
+    await page.route('**/stats/arcade/trivia/quiz*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          quizToken: 'e2e-theater',
+          questions: [
+            {
+              id: 'q1',
+              category: 'Map Dominance',
+              question: 'On Wake Island, which combatant has recorded the most kills?',
+              options: ['Alpha Player', 'Bravo Player', 'Charlie', 'Xanadu'],
+              targetMapName: 'Wake Island',
+              highlights: ['Wake Island']
+            }
+          ]
+        })
+      })
+    })
+    await page.route('**/stats/arcade/trivia/verify-question*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          questionId: 'q1',
+          isCorrect: true,
+          selectedAnswer: 'Alpha Player',
+          correctAnswer: 'Alpha Player',
+          explanation: 'Alpha Player leads Wake Island with 12,000 confirmed kills.',
+          targetPlayerName: 'Alpha Player',
+          targetMapName: 'Wake Island',
+          highlights: ['Alpha Player', 'Wake Island']
+        })
+      })
+    })
+
+    await page.goto('/v4/arcade?game=trivia')
+    await page.waitForLoadState('networkidle')
+    await chooseArcadeServer(page)
+
+    const question = page.getByTestId('trivia-question')
+    await expect(page.getByTestId('trivia-theater')).toBeVisible({ timeout: 20_000 })
+    await expect(question).toContainText(/this theater/i)
+    await expect(question).not.toContainText('Wake Island')
+
+    await page.getByTestId('trivia-option').first().click()
+    await expect(question).toContainText('Wake Island')
+    await expect(page.getByTestId('trivia-theater')).toContainText('Wake Island')
+  })
+
+  test('renders map answers as unlabeled theater tiles', async ({ page }) => {
+    await page.route('**/stats/arcade/trivia/quiz*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          quizToken: 'e2e-tiles',
+          questions: [
+            {
+              id: 'q-map',
+              category: 'Soldier Theaters',
+              question: 'On which map has Alpha Player recorded the most kills?',
+              options: ['Wake Island', 'Stalingrad', 'El Alamein', 'Iwo Jima'],
+              targetMapName: 'Wake Island',
+              highlights: ['Alpha Player']
+            }
+          ]
+        })
+      })
+    })
+    await page.route('**/stats/arcade/trivia/verify-question*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          questionId: 'q-map',
+          isCorrect: true,
+          selectedAnswer: 'Wake Island',
+          correctAnswer: 'Wake Island',
+          explanation: 'Alpha Player has 8,000 kills on Wake Island, more than on any other recorded map.',
+          targetPlayerName: 'Alpha Player',
+          targetMapName: 'Wake Island',
+          highlights: ['Alpha Player', 'Wake Island']
+        })
+      })
+    })
+
+    await page.goto('/v4/arcade?game=trivia')
+    await page.waitForLoadState('networkidle')
+    await chooseArcadeServer(page)
+
+    const tiles = page.getByTestId('trivia-theater-options')
+    await expect(tiles).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('trivia-option')).toHaveCount(4)
+    await expect(tiles).not.toContainText('Wake Island')
+
+    await page.getByTestId('trivia-option').first().click()
+    await expect(tiles).toContainText('Wake Island')
+  })
+})
