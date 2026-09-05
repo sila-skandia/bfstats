@@ -62,7 +62,8 @@ public class ServerStatsPlugin(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get leaderboard for server: {ServerName}", serverName);
+            logger.LogWarning("Failed to get leaderboard for server: {ServerName} ({ExceptionType}: {Message})",
+                serverName, ex.GetType().Name, ex.Message);
             return $"Could not find leaderboard data for server '{serverName}'. The server may not exist or have no recent activity.";
         }
     }
@@ -123,7 +124,8 @@ public class ServerStatsPlugin(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get info for server: {ServerName}", serverName);
+            logger.LogWarning("Failed to get info for server: {ServerName} ({ExceptionType}: {Message})",
+                serverName, ex.GetType().Name, ex.Message);
             return $"Could not find information for server '{serverName}'. The server may not exist or have no recent activity.";
         }
     }
@@ -258,7 +260,8 @@ public class ServerStatsPlugin(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get map stats for server: {ServerName}", serverName);
+            logger.LogWarning("Failed to get map stats for server: {ServerName} ({ExceptionType}: {Message})",
+                serverName, ex.GetType().Name, ex.Message);
             return $"Could not find map statistics for server '{serverName}'.";
         }
     }
@@ -305,7 +308,8 @@ public class ServerStatsPlugin(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get top servers by current players");
+            logger.LogWarning("Failed to get top servers by current players ({ExceptionType}: {Message})",
+                ex.GetType().Name, ex.Message);
             return "Could not retrieve top servers by current player count.";
         }
     }
@@ -368,7 +372,8 @@ public class ServerStatsPlugin(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get maps on servers with min players: {MinPlayers}", minPlayers);
+            logger.LogWarning("Failed to get maps on servers with min players: {MinPlayers} ({ExceptionType}: {Message})",
+                minPlayers, ex.GetType().Name, ex.Message);
             return $"Could not retrieve maps on servers with at least {minPlayers} players.";
         }
     }
