@@ -24,6 +24,7 @@ import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
 import MmServerMapPopularity from '@/components/v4/MmServerMapPopularity.vue'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
+import MmMapThumb from '@/components/v4/MmMapThumb.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
 import MmServerActivityHeatmap from '@/components/v4/MmServerActivityHeatmap.vue'
 import { kdClass } from './mmTokens'
@@ -157,6 +158,9 @@ const hasLiveRoster = computed(() => !!liveServer.value && liveNumPlayers.value 
 
 // --- KPI-strip derived values (wide dashboard header) ---
 const liveMap = computed(() => liveServer.value?.mapName || null)
+// The live record is authoritative for which mod is running right now; the tracked
+// server row is the fallback for a server that is currently offline.
+const mapGameId = computed(() => liveServer.value?.gameId || details.value?.gameId || null)
 const liveMode = computed(() => liveServer.value?.gameType || '')
 const maxPlayers = computed(() => liveServer.value?.maxPlayers ?? null)
 const capacityPct = computed(() => {
@@ -452,9 +456,12 @@ watch(activeTab, (t) => {
         </div>
         <div class="mm-stats__cell">
           <div class="mm-stats__label">Now playing</div>
-          <div class="mm-stat__value mm-stat__value--small">
+          <div class="mm-stat__value mm-stat__value--small mm-server__now-playing">
             <span v-if="liveLoading" class="mm-skeleton" style="width: 80px; height: 1em; display: inline-block; vertical-align: middle" />
-            <template v-else>{{ liveMap || '—' }}</template>
+            <template v-else>
+              <MmMapThumb :game-id="mapGameId" :map-name="liveMap" :width="52" />
+              <span class="mm-server__now-playing-name">{{ liveMap || '—' }}</span>
+            </template>
           </div>
           <div class="mm-stat__delta">{{ liveLoading ? 'checking…' : (liveMode || 'server quiet') }}</div>
         </div>
@@ -1012,6 +1019,40 @@ watch(activeTab, (t) => {
 </template>
 
 <style scoped>
+/* "Now playing" pairs the map's preview image with its name. The name keeps the
+   KPI type scale and truncates, so a long map title can't wrap the cell taller
+   than its neighbours in the strip. */
+.mm-server__now-playing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mm-server__now-playing-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The KPI strip drops to two columns on mobile, leaving ~122px of content per
+   cell — not enough for a thumbnail and a readable name side by side. Stack them
+   and step the name down a size so it still reads as the cell's value. Cells in
+   the same grid row already share a height, so no min-height is needed. */
+@media (max-width: 720px) {
+  .mm-server__now-playing {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .mm-server__now-playing-name {
+    font-size: 17px;
+    max-width: 100%;
+  }
+}
+
 /* back link above the hero */
 .mm-server__back {
   display: inline-block;
