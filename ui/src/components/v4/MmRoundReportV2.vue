@@ -13,6 +13,7 @@ import MmBattleSummary from './round-report/MmBattleSummary.vue'
 import MmBattleHighlight from './round-report/MmBattleHighlight.vue'
 import MmBattleVisualizer from './round-report/MmBattleVisualizer.vue'
 import MmPlaybackControls from './round-report/MmPlaybackControls.vue'
+import MmMapThumb from './MmMapThumb.vue'
 import { kdClass } from '@/views/v4/mmTokens'
 
 const router = useRouter()
@@ -379,6 +380,13 @@ onUnmounted(() => {
 
       <!-- Header: map name + server + scoreboard -->
       <header class="mm-rr__head">
+        <MmMapThumb
+          class="mm-rr__map"
+          :game-id="roundReport.round.gameId"
+          :map-name="roundReport.round.mapName"
+          kind="minimap"
+          :width="112"
+        />
         <div class="mm-rr__head-text">
           <div class="mm-eyebrow mm-eyebrow--strong">{{ roundReport.round.gameType }}</div>
           <h1 class="mm-display mm-rr__title">{{ roundReport.round.mapName }}</h1>
@@ -605,8 +613,16 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.mm-rr__head-text { min-width: 0; }
+.mm-rr__head-text { min-width: 0; flex: 1 1 260px; }
 .mm-rr__title { margin: 4px 0 0; }
+
+/* The minimap sits ahead of the title, not in the ticket group, so the header
+   still reads title-first when the map has no art and nothing renders. */
+.mm-rr__map { margin-top: 2px; }
+
+@media (max-width: 640px) {
+  .mm-rr__map { width: 72px !important; height: 72px !important; }
+}
 
 .mm-rr__server-link {
   cursor: pointer;

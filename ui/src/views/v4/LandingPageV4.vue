@@ -10,6 +10,7 @@ import MmInstallationLinks from '@/components/v4/MmInstallationLinks.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
 import MmTeamLadderRoster from '@/components/v4/MmTeamLadderRoster.vue'
+import MmMapThumb from '@/components/v4/MmMapThumb.vue'
 import LandingColumnFilterPanel from './LandingColumnFilterPanel.vue'
 import { formatTimeRemaining, formatRelativeTime, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
 import {
@@ -1307,7 +1308,10 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
 
                     <!-- Map -->
                     <template v-else-if="k === 'map'">
-                      <span class="lb-text-cell">{{ s.mapName || '—' }}</span>
+                      <div class="lb-map-cell">
+                        <MmMapThumb :game-id="s.gameId" :map-name="s.mapName" :width="44" />
+                        <span class="lb-text-cell lb-map-name">{{ s.mapName || '—' }}</span>
+                      </div>
                     </template>
 
                     <!-- Game Mode -->
@@ -2278,6 +2282,25 @@ td {
 .lb-text-cell {
   font-family: var(--mm-font-display);
   font-size: 14px;
+}
+
+.lb-map-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  /* Match the 44x33 thumbnail so rows keep a uniform height whether or not the
+     map has art — roughly 15% of live servers run community maps that ship none. */
+  min-height: 33px;
+}
+
+/* The thumbnail is decorative; the name keeps the full remaining width and
+   truncates rather than wrapping the row taller. */
+.lb-map-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lb-region-cell {
