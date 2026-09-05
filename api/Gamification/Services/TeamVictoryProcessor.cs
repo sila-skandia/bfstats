@@ -1,6 +1,7 @@
 using System.Text.Json;
 using api.Gamification.Models;
 using api.PlayerTracking;
+using api.StatsCollectors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -207,6 +208,10 @@ public class TeamVictoryProcessor
             _logger.LogDebug("Generated {Count} team victory achievements from {TotalRounds} rounds since {Since}",
                 allAchievements.Count, totalProcessed, sinceUtc);
             return allAchievements;
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {

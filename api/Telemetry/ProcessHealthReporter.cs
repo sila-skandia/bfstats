@@ -83,7 +83,8 @@ public sealed class ProcessHealthReporter(ILogger<ProcessHealthReporter> logger)
             catch (Exception ex)
             {
                 // Never let a sampling failure take down the host — the gauges just go stale.
-                logger.LogWarning(ex, "Failed to sample process health");
+                logger.LogWarning("Failed to sample process health ({ExceptionType}: {Message})",
+                    ex.GetType().Name, ex.Message);
             }
         }
     }

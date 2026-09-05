@@ -2,6 +2,7 @@ using api.Data.Entities;
 using api.Gamification.Models;
 using api.PlayerTracking;
 using api.Analytics.Models;
+using api.StatsCollectors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NodaTime;
@@ -141,9 +142,15 @@ public class SqliteGamificationService(
             logger.LogDebug("Last processed timestamp for achievements: {Timestamp}", lastProcessed);
             return lastProcessed;
         }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get last processed timestamp, returning minimum date");
+            logger.LogWarning(
+                "Failed to get last processed timestamp ({ExceptionType}: {Message}), returning minimum date",
+                ex.GetType().Name, ex.Message);
             return DateTime.MinValue;
         }
     }
@@ -163,9 +170,15 @@ public class SqliteGamificationService(
             logger.LogDebug("Last processed timestamp for placements: {Timestamp}", lastProcessed);
             return lastProcessed;
         }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get last placement processed timestamp, returning minimum date");
+            logger.LogWarning(
+                "Failed to get last placement processed timestamp ({ExceptionType}: {Message}), returning minimum date",
+                ex.GetType().Name, ex.Message);
             return DateTime.MinValue;
         }
     }
@@ -186,9 +199,15 @@ public class SqliteGamificationService(
             logger.LogDebug("Last processed timestamp for team victories: {Timestamp}", lastProcessed);
             return lastProcessed;
         }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get last team victory processed timestamp, returning minimum date");
+            logger.LogWarning(
+                "Failed to get last team victory processed timestamp ({ExceptionType}: {Message}), returning minimum date",
+                ex.GetType().Name, ex.Message);
             return DateTime.MinValue;
         }
     }
@@ -543,6 +562,10 @@ public class SqliteGamificationService(
                 sessions.Count, sinceTime, rounds.Count);
 
             return rounds;
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {

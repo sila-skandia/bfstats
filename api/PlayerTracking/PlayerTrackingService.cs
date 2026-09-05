@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using api.Bflist.Models;
 using api.Services;
+using api.StatsCollectors;
 using System.Text.Json;
 using api.Servers;
 using api.DiscordNotifications;
@@ -45,8 +46,9 @@ public class PlayerTrackingService(
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error publishing server map change event for {ServerName}: {OldMap} -> {NewMap}. Continuing with stats collection.",
-                    server.Name, serverMapChangeOldMap, server.MapName);
+                _logger.LogWarning(
+                    "Error publishing server map change event for {ServerName}: {OldMap} -> {NewMap} ({ExceptionType}: {Message}). Continuing with stats collection.",
+                    server.Name, serverMapChangeOldMap, server.MapName, ex.GetType().Name, ex.Message);
             }
         }
 
@@ -250,7 +252,9 @@ public class PlayerTrackingService(
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error publishing player events for {ServerName}. Stats collection completed successfully.", server.Name);
+                    _logger.LogWarning(
+                        "Error publishing player events for {ServerName} ({ExceptionType}: {Message}). Stats collection completed successfully.",
+                        server.Name, ex.GetType().Name, ex.Message);
                 }
             }
             catch (Exception)
@@ -383,6 +387,10 @@ public class PlayerTrackingService(
                 await dbContext.SaveChangesAsync();
             }
         }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error closing timed out player sessions");
@@ -409,6 +417,10 @@ public class PlayerTrackingService(
                 Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] Marked {serversToMarkOffline.Count} servers as offline");
                 await dbContext.SaveChangesAsync();
             }
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -523,10 +535,15 @@ public class PlayerTrackingService(
                     : null;
             }
         }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to calculate average ping for {SessionCount} sessions", sessionsList.Count);
-            // Set all sessions to null on error
+            _logger.LogWarning(
+                "Failed to calculate average ping for {SessionCount} sessions ({ExceptionType}: {Message})",
+                sessionsList.Count, ex.GetType().Name, ex.Message);
             foreach (var session in sessionsList)
             {
                 session.AveragePing = null;
@@ -768,7 +785,9 @@ public class PlayerTrackingService(
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error publishing player event for {PlayerName} on {ServerName}", eventData.PlayerInfo.Name, server.Name);
+                _logger.LogWarning(
+                    "Error publishing player event for {PlayerName} on {ServerName} ({ExceptionType}: {Message})",
+                    eventData.PlayerInfo.Name, server.Name, ex.GetType().Name, ex.Message);
             }
         }
     }
@@ -792,7 +811,9 @@ public class PlayerTrackingService(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error publishing server map change event for {ServerName}: {OldMap} -> {NewMap}", server.Name, oldMapName, server.MapName);
+            _logger.LogWarning(
+                "Error publishing server map change event for {ServerName}: {OldMap} -> {NewMap} ({ExceptionType}: {Message})",
+                server.Name, oldMapName, server.MapName, ex.GetType().Name, ex.Message);
         }
     }
 }
