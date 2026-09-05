@@ -808,6 +808,8 @@ try
     // Register ImageStorage Services
     builder.Services.AddScoped<api.ImageStorage.IImageIndexingService, api.ImageStorage.ImageIndexingService>();
     builder.Services.AddScoped<api.ImageStorage.IAssetServingService, api.ImageStorage.AssetServingService>();
+    // Singleton: caches the map image manifest across requests
+    builder.Services.AddSingleton<api.ImageStorage.IMapImageResolver, api.ImageStorage.MapImageResolver>();
 
     // Register PlayerBanners (forum signature) services
     builder.Services.AddSingleton<api.PlayerBanners.BannerFonts>();
