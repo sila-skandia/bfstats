@@ -129,7 +129,8 @@ public sealed class ServerBannerService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to resolve activity timeline for {ServerGuid}", serverGuid);
+            logger.LogWarning("Failed to resolve activity timeline for {ServerGuid} ({ExceptionType}: {Message})",
+                serverGuid, ex.GetType().Name, ex.Message);
             return null;
         }
     }
@@ -179,7 +180,8 @@ public sealed class ServerBannerService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to resolve live tickets for {Ip}:{Port} ({Game})", ip, port, game);
+            logger.LogWarning("Failed to resolve live tickets for {Ip}:{Port} ({Game}) ({ExceptionType}: {Message})",
+                ip, port, game, ex.GetType().Name, ex.Message);
             return null;
         }
     }
