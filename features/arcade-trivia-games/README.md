@@ -76,6 +76,7 @@ Base path: `/stats/arcade`
 
 - Hosted at `/v4/arcade`.
 - Designed with `.mm` Neutral Depth tokens (`--mm-*`).
+- **Theater of Operations** (`MmTheaterScope`): PPI radar that plots the arcade server list as phosphor contacts by region. Locking a contact scopes every minigame to that server; HQ returns to the global network. Live contacts pulse; an intercept ticker scrolls current populations. Audio: `roger` on lock/release.
 - Audio toggle (Mute / Sound On) utilizing authentic BF1942 radio comms in `/radio-sounds`.
 - Fully responsive on mobile (≤640px) and desktop (≥881px).
 - No emojis — status and feedback use PrimeIcons, CSS indicators, and country micro-badges.
