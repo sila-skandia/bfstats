@@ -195,6 +195,7 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 50,
                 TotalKills = 15000,
+                TotalDeaths = 8000,
                 TotalScore = 25000,
                 TotalPlayTimeMinutes = 12000
             },
@@ -207,6 +208,7 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 40,
                 TotalKills = 9000,
+                TotalDeaths = 4000,
                 TotalScore = 16000,
                 TotalPlayTimeMinutes = 8000
             },
@@ -219,6 +221,7 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 60,
                 TotalKills = 12000,
+                TotalDeaths = 10000,
                 TotalScore = 21000,
                 TotalPlayTimeMinutes = 10000
             },
@@ -231,6 +234,7 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 30,
                 TotalKills = 4000,
+                TotalDeaths = 3500,
                 TotalScore = 7000,
                 TotalPlayTimeMinutes = 4500
             },
@@ -243,8 +247,9 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 20,
                 TotalKills = 5000,
+                TotalDeaths = 4000,
                 TotalScore = 9000,
-                TotalPlayTimeMinutes = 4000
+                TotalPlayTimeMinutes = 5000
             },
             new PlayerMapStats
             {
@@ -255,6 +260,7 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 25,
                 TotalKills = 7000,
+                TotalDeaths = 2800,
                 TotalScore = 12000,
                 TotalPlayTimeMinutes = 5500
             },
@@ -267,6 +273,7 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 45,
                 TotalKills = 18000,
+                TotalDeaths = 12000,
                 TotalScore = 32000,
                 TotalPlayTimeMinutes = 14000
             },
@@ -279,6 +286,7 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 18,
                 TotalKills = 3500,
+                TotalDeaths = 3000,
                 TotalScore = 6000,
                 TotalPlayTimeMinutes = 3200
             },
@@ -291,6 +299,7 @@ public class ArcadeTests : IDisposable
                 Month = 9,
                 TotalRounds = 80,
                 TotalKills = 22000,
+                TotalDeaths = 11000,
                 TotalScore = 38000,
                 TotalPlayTimeMinutes = 16000
             }
@@ -650,9 +659,11 @@ public class ArcadeTests : IDisposable
 
         var scoped = quiz.Questions.Where(q =>
             q.Id.StartsWith("map_player_", StringComparison.Ordinal)
+            || q.Id.StartsWith("player_map_", StringComparison.Ordinal)
             || q.Id.StartsWith("period_", StringComparison.Ordinal)
             || q.Id.StartsWith("map_best_", StringComparison.Ordinal)
             || q.Question.Contains("On ", StringComparison.Ordinal)
+            || q.Question.Contains("On which map", StringComparison.Ordinal)
             || q.Question.Contains("In ", StringComparison.Ordinal)
             || q.Question.Contains("During ", StringComparison.Ordinal)).ToList();
 
@@ -667,7 +678,10 @@ public class ArcadeTests : IDisposable
             || q.Question.Contains("October 2024", StringComparison.OrdinalIgnoreCase)
             || q.Question.Contains("September 2026", StringComparison.OrdinalIgnoreCase)
             || q.Question.Contains("During ", StringComparison.OrdinalIgnoreCase)
-            || q.Question.Contains("highest single-round score", StringComparison.OrdinalIgnoreCase));
+            || q.Question.Contains("highest single-round score", StringComparison.OrdinalIgnoreCase)
+            || q.Question.Contains("On which map", StringComparison.OrdinalIgnoreCase)
+            || q.Question.Contains("Kill/Death", StringComparison.OrdinalIgnoreCase)
+            || q.Question.Contains("kill rate", StringComparison.OrdinalIgnoreCase));
 
         Assert.True(mapOrPeriodWording, "Expected at least one map- or period-scoped trivia question.");
     }
@@ -818,5 +832,44 @@ public class ArcadeTests : IDisposable
 
         // Multiple distinct generations draw varied questions from the pool rather than a fixed 5
         Assert.True(allQuestionIds.Count > 5, $"Expected more than 5 distinct question IDs across 5 runs, got {allQuestionIds.Count}");
+    }
+
+    [Fact]
+    public void TriviaQuestionComposer_BuildsPlayerBestMapAndMapKdQuestions()
+    {
+        var facts = new List<PlayerMapFact>
+        {
+            new("ApexSoldier", "Wake Island", 15000, 8000, 25000, 12000, 50),
+            new("ApexSoldier", "Stalingrad", 5000, 4000, 9000, 5000, 20),
+            new("EagleEye", "Wake Island", 9000, 4000, 16000, 8000, 40),
+            new("EagleEye", "Stalingrad", 7000, 2800, 12000, 5500, 25),
+            new("PanzerGeneral", "Wake Island", 12000, 10000, 21000, 10000, 60),
+            new("PanzerGeneral", "Stalingrad", 18000, 12000, 32000, 14000, 45),
+            new("PanzerGeneral", "Bocage", 22000, 11000, 38000, 16000, 80),
+            new("Valkyrie", "Wake Island", 4000, 3500, 7000, 4500, 30),
+            new("Valkyrie", "Stalingrad", 3500, 3000, 6000, 3200, 18)
+        };
+        var maps = new[] { "Wake Island", "Stalingrad", "Bocage", "Midway" };
+
+        var questions = TriviaQuestionComposer.Compose(facts, maps);
+
+        var apexKillsMap = questions.Single(q => q.Id == "player_map_kills_apexsoldier");
+        Assert.Equal("Wake Island", apexKillsMap.CorrectAnswer);
+        Assert.Contains("On which map has ApexSoldier recorded the most kills?", apexKillsMap.Question);
+        Assert.Equal(4, apexKillsMap.Options.Count);
+
+        var apexKillRate = questions.Single(q => q.Id == "player_map_killrate_apexsoldier");
+        Assert.Equal("Wake Island", apexKillRate.CorrectAnswer);
+
+        var wakeKd = questions.Single(q => q.Id == "map_player_kd_wake_island");
+        Assert.Equal("EagleEye", wakeKd.CorrectAnswer);
+        Assert.Contains("Kill/Death", wakeKd.Question);
+
+        var wakeKillRate = questions.Single(q => q.Id == "map_player_killrate_wake_island");
+        Assert.Equal("ApexSoldier", wakeKillRate.CorrectAnswer);
+
+        Assert.Contains(questions, q => q.Id.StartsWith("player_map_", StringComparison.Ordinal));
+        Assert.Contains(questions, q => q.Id.StartsWith("map_player_", StringComparison.Ordinal));
+        Assert.True(questions.Count > 8, $"Expected a combinatorial pool, got {questions.Count}");
     }
 }
