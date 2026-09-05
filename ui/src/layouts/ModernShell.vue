@@ -7,6 +7,8 @@ import MmOmnisearchModal from '@/components/v4/MmOmnisearchModal.vue'
 import { useAuth } from '@/composables/useAuth'
 import { isNavigating } from '@/composables/useNavProgress'
 import '../styles/modern-minimal.css'
+import radioHudIcon from '@/assets/radio-hud.webp'
+import arcadeHudIcon from '@/assets/arcade-hud-icon.webp'
 
 const MmRadioCommoRose = defineAsyncComponent(() => import('@/components/v4/MmRadioCommoRose.vue'))
 
@@ -15,6 +17,7 @@ const baseNavItems: NavItem[] = [
   { label: 'Servers', to: '/v4/servers/bf1942', key: 'servers' },
   { label: 'Players', to: '/v4/players', key: 'players' },
   { label: 'Leaderboard', to: '/v4/leaderboard', key: 'leaderboard', notice: true },
+  { label: 'Arcade', to: '/v4/arcade', key: 'arcade' },
   // Rounds is deliberately not a top-level destination — the round report is only
   // meaningful when you arrive at a specific round from a player's session list or
   // achievement. The /v4/rounds routes and every inbound link to them still work.
@@ -58,6 +61,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/v4/servers')) return 'servers'
   if (path.startsWith('/v4/players')) return 'players'
   if (path.startsWith('/v4/leaderboard')) return 'leaderboard'
+  if (path.startsWith('/v4/arcade')) return 'arcade'
   if (path.startsWith('/v4/rounds')) return 'rounds'
   return ''
 })
@@ -81,6 +85,7 @@ const resolveCrumbTarget = (segs: string[]): string | null => {
     if (segs[0] === 'servers') return '/v4/servers/bf1942'
     if (segs[0] === 'players') return '/v4/players'
     if (segs[0] === 'leaderboard') return '/v4/leaderboard'
+    if (segs[0] === 'arcade') return '/v4/arcade'
     if (segs[0] === 'rounds') return '/v4/rounds'
     // system-stats / map-popularity / communities are terminal-only; no
     // section landing exists, so the segment isn't linkable on its own.
@@ -146,7 +151,7 @@ const openOmnisearch = () => {
   showOmnisearch.value = true
 }
 
-// Global ⌘K / Ctrl+K opens omnisearch, and 'r'/'R' opens BF1942 Radio Commo-Rose.
+// Global ⌘K / Ctrl+K opens omnisearch, and 'r'/'R' or 'F8'/'F7' toggles BF1942 Radio Commo-Rose.
 const onGlobalKeydown = (e: KeyboardEvent) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
@@ -156,7 +161,7 @@ const onGlobalKeydown = (e: KeyboardEvent) => {
 
   const target = e.target as HTMLElement | null
   const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-  if (!isInput && (e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+  if (!isInput && (e.key === 'r' || e.key === 'R' || e.key === 'F8' || e.key === 'F7') && !e.metaKey && !e.ctrlKey && !e.altKey) {
     e.preventDefault()
     showRadio.value = !showRadio.value
   }
@@ -193,10 +198,24 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
             'mm-nav__link--active': activeKey === item.key,
             'mm-nav__link--admin': item.admin,
             'mm-nav__link--new': item.notice && showLeaderboardNotice,
+            'mm-nav__link--arcade': item.key === 'arcade',
           }"
-          :aria-label="item.notice && showLeaderboardNotice ? `${item.label}, new` : undefined"
+          :aria-label="item.key === 'arcade' ? item.label : (item.notice && showLeaderboardNotice ? `${item.label}, new` : undefined)"
+          :title="item.key === 'arcade' ? item.label : undefined"
         >
-          {{ item.label }}<span
+          <img
+            v-if="item.key === 'arcade'"
+            :src="arcadeHudIcon"
+            alt="Arcade"
+            class="mm-nav__arcade-icon"
+            width="56"
+            height="20"
+            draggable="false"
+          >
+          <template v-else>
+            {{ item.label }}
+          </template>
+          <span
             v-if="item.notice && showLeaderboardNotice"
             class="mm-nav__pip"
             aria-hidden="true"
@@ -235,11 +254,18 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
       <button
         type="button"
         class="mm-radio-trigger-btn"
-        title="BF1942 F8 Radio (Press R)"
-        aria-label="Open BF1942 F8 Radio"
+        title="BF1942 Radio Comms (Press R or F8)"
+        aria-label="Open BF1942 Radio"
         @click="showRadio = !showRadio"
       >
-        <span class="mm-radio-trigger-btn__text">F8</span>
+        <img
+          :src="radioHudIcon"
+          alt="BF1942 Radio"
+          class="mm-radio-trigger-btn__icon"
+          width="75"
+          height="21"
+          draggable="false"
+        />
         <span class="mm-radio-trigger-btn__hint">R</span>
       </button>
 
@@ -277,7 +303,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         title="BF1942 Radio Comms"
         @click="showRadio = true"
       >
-        F8 (R)
+        Radio (R / F8)
       </button>
     </footer>
 
@@ -287,38 +313,80 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 </template>
 
 <style scoped>
+.mm-nav__link--arcade {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mm-nav__arcade-icon {
+  display: block;
+  height: 18px;
+  width: auto;
+  image-rendering: pixelated;
+  border-radius: 3px;
+  pointer-events: none;
+  opacity: 0.88;
+  transition: opacity 0.12s ease, filter 0.12s ease;
+}
+
+.mm-nav__link--arcade:hover .mm-nav__arcade-icon,
+.mm-nav__link--arcade.mm-nav__link--active .mm-nav__arcade-icon {
+  opacity: 1;
+  filter: brightness(1.12);
+}
+
 .mm-radio-trigger-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--mm-surface);
-  border: 1px solid var(--mm-line);
-  color: var(--mm-ink);
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 3px;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 2px 4px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
   flex-shrink: 0;
 }
 
 .mm-radio-trigger-btn:hover {
-  background: var(--mm-ink);
-  color: var(--mm-bg);
+  background: var(--mm-bg-soft);
+  border-color: var(--mm-rule);
+}
+
+.mm-radio-trigger-btn__icon {
+  display: block;
+  height: 21px;
+  width: auto;
+  image-rendering: pixelated;
+  vertical-align: middle;
+  border-radius: 3px;
+  pointer-events: none;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+
+.mm-radio-trigger-btn:hover .mm-radio-trigger-btn__icon {
+  filter: brightness(1.2) drop-shadow(0 0 5px rgba(125, 163, 76, 0.45));
+}
+
+.mm-radio-trigger-btn:active .mm-radio-trigger-btn__icon {
+  transform: translateY(1px);
+  filter: brightness(0.95);
 }
 
 .mm-radio-trigger-btn__hint {
+  font-family: var(--mm-font-mono);
   font-size: 9px;
   color: var(--mm-ink-muted);
-  border: 1px solid var(--mm-line);
-  padding: 0 4px;
+  border: 1px solid var(--mm-rule);
+  padding: 1px 4px;
   border-radius: 2px;
+  line-height: 1.2;
 }
 
 .mm-radio-trigger-btn:hover .mm-radio-trigger-btn__hint {
-  color: var(--mm-bg);
-  border-color: var(--mm-bg-mute);
+  color: var(--mm-ink);
+  border-color: var(--mm-ink-muted);
 }
 
 .mm-foot__link-btn {
@@ -338,7 +406,9 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 }
 
 @media (max-width: 640px) {
-  .mm-radio-trigger-btn__text,
+  .mm-radio-trigger-btn {
+    padding: 2px;
+  }
   .mm-radio-trigger-btn__hint {
     display: none;
   }

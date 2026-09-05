@@ -35,6 +35,7 @@ const PlayerMapDetailV4 = () => import('../views/v4/PlayerMapDetailV4.vue')
 const PlayerComparisonV4 = () => import('../views/v4/PlayerComparisonV4.vue')
 const DashboardV4 = () => import('../views/v4/DashboardV4.vue')
 const LeaderboardV4 = () => import('../views/v4/LeaderboardV4.vue')
+const ArcadeV4 = () => import('../views/v4/ArcadeV4.vue')
 const ServerWrappedV4 = () => import('../views/v4/ServerWrappedV4.vue')
 const PlayerWrappedV4 = () => import('../views/v4/PlayerWrappedV4.vue')
 
@@ -78,6 +79,8 @@ const routes: RouteRecordRaw[] = [
     },
     { path: '/players', redirect: '/v4/players' },
     { path: '/leaderboard', redirect: '/v4/leaderboard' },
+    { path: '/arcade', redirect: '/v4/arcade' },
+    { path: '/trivia', redirect: '/v4/arcade' },
     { path: '/players/compare', redirect: to => ({ path: '/v4/players/compare', query: to.query }) },
     // Legacy wrapped URLs — now live under the player route as
     // /v4/players/:playerName/wrapped/:year
@@ -434,6 +437,15 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: 'Leaderboard · bfstats.io',
             description: 'Global Battlefield 1942 player leaderboard and raw statistics explorer.'
+          }
+        },
+        {
+          path: 'arcade',
+          name: 'v4-arcade',
+          component: ArcadeV4,
+          meta: {
+            title: 'Arcade & Trivia · bfstats.io',
+            description: 'Battlefield 1942 minigames, trivia, and stat showdowns.'
           }
         },
         {
