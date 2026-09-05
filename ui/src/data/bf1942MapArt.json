@@ -1,0 +1,587 @@
+{
+  "maps": [
+    {
+      "slug": "aberdeen",
+      "folder": "Aberdeen",
+      "displayName": "Aberdeen",
+      "ingame": "/stats/assets/arcade/maps/aberdeen/ingame.webp",
+      "aliases": [
+        "aberdeen"
+      ]
+    },
+    {
+      "slug": "anzio",
+      "folder": "Anzio",
+      "displayName": "Anzio",
+      "ingame": "/stats/assets/arcade/maps/anzio/ingame.webp",
+      "aliases": [
+        "anzio"
+      ]
+    },
+    {
+      "slug": "battle_of_britain",
+      "folder": "Battle_of_Britain",
+      "displayName": "Battle of Britain",
+      "ingame": "/stats/assets/arcade/maps/battle_of_britain/ingame.webp",
+      "aliases": [
+        "battle of britain",
+        "battle_of_britain",
+        "battleofbritain"
+      ]
+    },
+    {
+      "slug": "battle_of_the_bulge",
+      "folder": "Battle_of_the_Bulge",
+      "displayName": "Battle of the Bulge",
+      "ingame": "/stats/assets/arcade/maps/battle_of_the_bulge/ingame.webp",
+      "aliases": [
+        "battle of the bulge",
+        "battle_of_the_bulge",
+        "battleofthebulge"
+      ]
+    },
+    {
+      "slug": "battleaxe",
+      "folder": "Battleaxe",
+      "displayName": "Battleaxe",
+      "ingame": "/stats/assets/arcade/maps/battleaxe/ingame.webp",
+      "aliases": [
+        "battleaxe"
+      ]
+    },
+    {
+      "slug": "baytown",
+      "folder": "baytown",
+      "displayName": "Operation Baytown",
+      "ingame": "/stats/assets/arcade/maps/baytown/ingame.webp",
+      "aliases": [
+        "baytown",
+        "operation baytown",
+        "operationbaytown"
+      ]
+    },
+    {
+      "slug": "berlin",
+      "folder": "Berlin",
+      "displayName": "Berlin",
+      "ingame": "/stats/assets/arcade/maps/berlin/ingame.webp",
+      "aliases": [
+        "berlin"
+      ]
+    },
+    {
+      "slug": "bocage",
+      "folder": "Bocage",
+      "displayName": "Bocage",
+      "ingame": "/stats/assets/arcade/maps/bocage/ingame.webp",
+      "aliases": [
+        "bocage"
+      ]
+    },
+    {
+      "slug": "cassino",
+      "folder": "cassino",
+      "displayName": "Monte Cassino",
+      "ingame": "/stats/assets/arcade/maps/cassino/ingame.webp",
+      "aliases": [
+        "cassino",
+        "monte cassino",
+        "montecassino"
+      ]
+    },
+    {
+      "slug": "coral_sea",
+      "folder": "Coral_sea",
+      "displayName": "Coral Sea",
+      "ingame": "/stats/assets/arcade/maps/coral_sea/ingame.webp",
+      "aliases": [
+        "coral sea",
+        "coral_sea",
+        "coralsea"
+      ]
+    },
+    {
+      "slug": "dc_al_nas",
+      "folder": "DC_Al_Nas",
+      "displayName": "DC Al Nas",
+      "ingame": "/stats/assets/arcade/maps/dc_al_nas/ingame.webp",
+      "aliases": [
+        "al nas",
+        "alnas",
+        "dc al nas",
+        "dc_al_nas",
+        "dcalnas"
+      ]
+    },
+    {
+      "slug": "dc_al_nas_day2",
+      "folder": "DC_Al_Nas_Day2",
+      "displayName": "DC Al Nas Day2",
+      "ingame": "/stats/assets/arcade/maps/dc_al_nas_day2/ingame.webp",
+      "aliases": [
+        "al nas day2",
+        "alnasday2",
+        "dc al nas day2",
+        "dc_al_nas_day2",
+        "dcalnasday2"
+      ]
+    },
+    {
+      "slug": "dc_basrahs_edge",
+      "folder": "DC_Basrahs_Edge",
+      "displayName": "DC Basrahs Edge",
+      "ingame": "/stats/assets/arcade/maps/dc_basrahs_edge/ingame.webp",
+      "aliases": [
+        "basrahs edge",
+        "basrahsedge",
+        "dc basrahs edge",
+        "dc_basrahs_edge",
+        "dcbasrahsedge"
+      ]
+    },
+    {
+      "slug": "dc_battle_of_73_easting",
+      "folder": "DC_Battle_of_73_Easting",
+      "displayName": "DC Battle of 73 Easting",
+      "ingame": "/stats/assets/arcade/maps/dc_battle_of_73_easting/ingame.webp",
+      "aliases": [
+        "battle of 73 easting",
+        "battleof73easting",
+        "dc battle of 73 easting",
+        "dc_battle_of_73_easting",
+        "dcbattleof73easting"
+      ]
+    },
+    {
+      "slug": "dc_bridge",
+      "folder": "DC_Bridge",
+      "displayName": "DC Bridge",
+      "ingame": "/stats/assets/arcade/maps/dc_bridge/ingame.webp",
+      "aliases": [
+        "bridge",
+        "dc bridge",
+        "dc_bridge",
+        "dcbridge"
+      ]
+    },
+    {
+      "slug": "dc_coastal_hammer",
+      "folder": "DC_Coastal_Hammer",
+      "displayName": "DC Coastal Hammer",
+      "ingame": "/stats/assets/arcade/maps/dc_coastal_hammer/ingame.webp",
+      "aliases": [
+        "coastal hammer",
+        "coastalhammer",
+        "dc coastal hammer",
+        "dc_coastal_hammer",
+        "dccoastalhammer"
+      ]
+    },
+    {
+      "slug": "dc_cornered",
+      "folder": "DC_Cornered",
+      "displayName": "DC Cornered",
+      "ingame": "/stats/assets/arcade/maps/dc_cornered/ingame.webp",
+      "aliases": [
+        "cornered",
+        "dc cornered",
+        "dc_cornered",
+        "dccornered"
+      ]
+    },
+    {
+      "slug": "dc_dustbowl",
+      "folder": "DC_DustBowl",
+      "displayName": "DC DustBowl",
+      "ingame": "/stats/assets/arcade/maps/dc_dustbowl/ingame.webp",
+      "aliases": [
+        "dc dustbowl",
+        "dc_dustbowl",
+        "dcdustbowl",
+        "dustbowl"
+      ]
+    },
+    {
+      "slug": "dc_first_light",
+      "folder": "DC_First_Light",
+      "displayName": "DC First Light",
+      "ingame": "/stats/assets/arcade/maps/dc_first_light/ingame.webp",
+      "aliases": [
+        "dc first light",
+        "dc_first_light",
+        "dcfirstlight",
+        "first light",
+        "firstlight"
+      ]
+    },
+    {
+      "slug": "dc_lostvillage",
+      "folder": "DC_LostVillage",
+      "displayName": "DC LostVillage",
+      "ingame": "/stats/assets/arcade/maps/dc_lostvillage/ingame.webp",
+      "aliases": [
+        "dc lostvillage",
+        "dc_lostvillage",
+        "dclostvillage",
+        "lostvillage"
+      ]
+    },
+    {
+      "slug": "dc_lostvillage_nopara",
+      "folder": "DC_LostVillage_nopara",
+      "displayName": "DC LostVillage nopara",
+      "ingame": "/stats/assets/arcade/maps/dc_lostvillage_nopara/ingame.webp",
+      "aliases": [
+        "dc lostvillage nopara",
+        "dc_lostvillage_nopara",
+        "dclostvillagenopara",
+        "lostvillage nopara",
+        "lostvillagenopara"
+      ]
+    },
+    {
+      "slug": "dc_medina_ridge",
+      "folder": "DC_Medina_Ridge",
+      "displayName": "DC Medina Ridge",
+      "ingame": "/stats/assets/arcade/maps/dc_medina_ridge/ingame.webp",
+      "aliases": [
+        "dc medina ridge",
+        "dc_medina_ridge",
+        "dcmedinaridge",
+        "medina ridge",
+        "medinaridge"
+      ]
+    },
+    {
+      "slug": "dc_no_fly_zone_day2",
+      "folder": "DC_No_Fly_Zone_Day2",
+      "displayName": "DC No Fly Zone Day2",
+      "ingame": "/stats/assets/arcade/maps/dc_no_fly_zone_day2/ingame.webp",
+      "aliases": [
+        "dc no fly zone day2",
+        "dc_no_fly_zone_day2",
+        "dcnoflyzoneday2",
+        "no fly zone day2",
+        "noflyzoneday2"
+      ]
+    },
+    {
+      "slug": "dc_sea_rigs",
+      "folder": "DC_Sea_Rigs",
+      "displayName": "DC Sea Rigs",
+      "ingame": "/stats/assets/arcade/maps/dc_sea_rigs/ingame.webp",
+      "aliases": [
+        "dc sea rigs",
+        "dc_sea_rigs",
+        "dcsearigs",
+        "sea rigs",
+        "searigs"
+      ]
+    },
+    {
+      "slug": "dc_twin_rivers",
+      "folder": "DC_Twin_Rivers",
+      "displayName": "DC Twin Rivers",
+      "ingame": "/stats/assets/arcade/maps/dc_twin_rivers/ingame.webp",
+      "aliases": [
+        "dc twin rivers",
+        "dc_twin_rivers",
+        "dctwinrivers",
+        "twin rivers",
+        "twinrivers"
+      ]
+    },
+    {
+      "slug": "dc_urban_siege",
+      "folder": "DC_Urban_Siege",
+      "displayName": "DC Urban Siege",
+      "ingame": "/stats/assets/arcade/maps/dc_urban_siege/ingame.webp",
+      "aliases": [
+        "dc urban siege",
+        "dc_urban_siege",
+        "dcurbansiege",
+        "urban siege",
+        "urbansiege"
+      ]
+    },
+    {
+      "slug": "dc_weapon_bunkers",
+      "folder": "DC_Weapon_Bunkers",
+      "displayName": "DC Weapon Bunkers",
+      "ingame": "/stats/assets/arcade/maps/dc_weapon_bunkers/ingame.webp",
+      "aliases": [
+        "dc weapon bunkers",
+        "dc_weapon_bunkers",
+        "dcweaponbunkers",
+        "weapon bunkers",
+        "weaponbunkers"
+      ]
+    },
+    {
+      "slug": "eagles_nest",
+      "folder": "Eagles_Nest",
+      "displayName": "Eagle's Nest",
+      "ingame": "/stats/assets/arcade/maps/eagles_nest/ingame.webp",
+      "aliases": [
+        "eagle's nest",
+        "eagles nest",
+        "eagles_nest",
+        "eaglesnest"
+      ]
+    },
+    {
+      "slug": "el_alamein",
+      "folder": "El_Alamein",
+      "displayName": "El Alamein",
+      "ingame": "/stats/assets/arcade/maps/el_alamein/ingame.webp",
+      "aliases": [
+        "el alamein",
+        "el_alamein",
+        "elalamein"
+      ]
+    },
+    {
+      "slug": "essen",
+      "folder": "Essen",
+      "displayName": "Essen",
+      "ingame": "/stats/assets/arcade/maps/essen/ingame.webp",
+      "aliases": [
+        "essen"
+      ]
+    },
+    {
+      "slug": "gazala",
+      "folder": "Gazala",
+      "displayName": "Gazala",
+      "ingame": "/stats/assets/arcade/maps/gazala/ingame.webp",
+      "aliases": [
+        "gazala"
+      ]
+    },
+    {
+      "slug": "gothic_line",
+      "folder": "Gothic_Line",
+      "displayName": "Gothic Line",
+      "ingame": "/stats/assets/arcade/maps/gothic_line/ingame.webp",
+      "aliases": [
+        "gothic line",
+        "gothic_line",
+        "gothicline"
+      ]
+    },
+    {
+      "slug": "guadalcanal",
+      "folder": "GuadalCanal",
+      "displayName": "Guadalcanal",
+      "ingame": "/stats/assets/arcade/maps/guadalcanal/ingame.webp",
+      "aliases": [
+        "guadal canal",
+        "guadalcanal"
+      ]
+    },
+    {
+      "slug": "hellendoorn",
+      "folder": "Hellendoorn",
+      "displayName": "Hellendoorn",
+      "ingame": "/stats/assets/arcade/maps/hellendoorn/ingame.webp",
+      "aliases": [
+        "hellendoorn"
+      ]
+    },
+    {
+      "slug": "husky",
+      "folder": "husky",
+      "displayName": "Operation Husky",
+      "ingame": "/stats/assets/arcade/maps/husky/ingame.webp",
+      "aliases": [
+        "husky",
+        "operation husky",
+        "operationhusky"
+      ]
+    },
+    {
+      "slug": "invasion_of_the_philippines",
+      "folder": "Invasion_of_the_Philippines",
+      "displayName": "Invasion of the Philippines",
+      "ingame": "/stats/assets/arcade/maps/invasion_of_the_philippines/ingame.webp",
+      "aliases": [
+        "invasion of the philippines",
+        "invasion_of_the_philippines",
+        "invasionofthephilippines"
+      ]
+    },
+    {
+      "slug": "iwo_jima",
+      "folder": "Iwo_Jima",
+      "displayName": "Iwo Jima",
+      "ingame": "/stats/assets/arcade/maps/iwo_jima/ingame.webp",
+      "aliases": [
+        "iwo jima",
+        "iwo_jima",
+        "iwojima"
+      ]
+    },
+    {
+      "slug": "kbely_airfield",
+      "folder": "Kbely_Airfield",
+      "displayName": "Kbely Airfield",
+      "ingame": "/stats/assets/arcade/maps/kbely_airfield/ingame.webp",
+      "aliases": [
+        "kbely airfield",
+        "kbely_airfield",
+        "kbelyairfield"
+      ]
+    },
+    {
+      "slug": "kharkov",
+      "folder": "Kharkov",
+      "displayName": "Kharkov",
+      "ingame": "/stats/assets/arcade/maps/kharkov/ingame.webp",
+      "aliases": [
+        "kharkov"
+      ]
+    },
+    {
+      "slug": "kursk",
+      "folder": "Kursk",
+      "displayName": "Kursk",
+      "ingame": "/stats/assets/arcade/maps/kursk/ingame.webp",
+      "aliases": [
+        "kursk"
+      ]
+    },
+    {
+      "slug": "liberation_of_caen",
+      "folder": "Liberation_of_Caen",
+      "displayName": "Liberation of Caen",
+      "ingame": "/stats/assets/arcade/maps/liberation_of_caen/ingame.webp",
+      "aliases": [
+        "liberation of caen",
+        "liberation_of_caen",
+        "liberationofcaen"
+      ]
+    },
+    {
+      "slug": "market_garden",
+      "folder": "Market_Garden",
+      "displayName": "Market Garden",
+      "ingame": "/stats/assets/arcade/maps/market_garden/ingame.webp",
+      "aliases": [
+        "market garden",
+        "market_garden",
+        "marketgarden"
+      ]
+    },
+    {
+      "slug": "midway",
+      "folder": "Midway",
+      "displayName": "Midway",
+      "ingame": "/stats/assets/arcade/maps/midway/ingame.webp",
+      "aliases": [
+        "midway"
+      ]
+    },
+    {
+      "slug": "mimoyecques",
+      "folder": "Mimoyecques",
+      "displayName": "Mimoyecques",
+      "ingame": "/stats/assets/arcade/maps/mimoyecques/ingame.webp",
+      "aliases": [
+        "mimoyecques"
+      ]
+    },
+    {
+      "slug": "omaha_beach",
+      "folder": "Omaha_Beach",
+      "displayName": "Omaha Beach",
+      "ingame": "/stats/assets/arcade/maps/omaha_beach/ingame.webp",
+      "aliases": [
+        "omaha beach",
+        "omaha_beach",
+        "omahabeach"
+      ]
+    },
+    {
+      "slug": "peenemunde",
+      "folder": "Peenemunde",
+      "displayName": "Peenemunde",
+      "ingame": "/stats/assets/arcade/maps/peenemunde/ingame.webp",
+      "aliases": [
+        "peenemunde"
+      ]
+    },
+    {
+      "slug": "raid_on_agheila",
+      "folder": "Raid_on_Agheila",
+      "displayName": "Raid on Agheila",
+      "ingame": "/stats/assets/arcade/maps/raid_on_agheila/ingame.webp",
+      "aliases": [
+        "raid on agheila",
+        "raid_on_agheila",
+        "raidonagheila"
+      ]
+    },
+    {
+      "slug": "salerno",
+      "folder": "salerno",
+      "displayName": "Battle of Salerno",
+      "ingame": "/stats/assets/arcade/maps/salerno/ingame.webp",
+      "aliases": [
+        "battle of salerno",
+        "battleofsalerno",
+        "salerno"
+      ]
+    },
+    {
+      "slug": "santo_croce",
+      "folder": "Santo_Croce",
+      "displayName": "Santo Croce",
+      "ingame": "/stats/assets/arcade/maps/santo_croce/ingame.webp",
+      "aliases": [
+        "santa croce",
+        "santacroce",
+        "santo croce",
+        "santo_croce",
+        "santocroce"
+      ]
+    },
+    {
+      "slug": "stalingrad",
+      "folder": "Stalingrad",
+      "displayName": "Stalingrad",
+      "ingame": "/stats/assets/arcade/maps/stalingrad/ingame.webp",
+      "aliases": [
+        "stalingrad"
+      ]
+    },
+    {
+      "slug": "telemark",
+      "folder": "Telemark",
+      "displayName": "Telemark",
+      "ingame": "/stats/assets/arcade/maps/telemark/ingame.webp",
+      "aliases": [
+        "telemark"
+      ]
+    },
+    {
+      "slug": "tobruk",
+      "folder": "Tobruk",
+      "displayName": "Tobruk",
+      "ingame": "/stats/assets/arcade/maps/tobruk/ingame.webp",
+      "aliases": [
+        "tobruk"
+      ]
+    },
+    {
+      "slug": "wake",
+      "folder": "Wake",
+      "displayName": "Wake Island",
+      "ingame": "/stats/assets/arcade/maps/wake/ingame.webp",
+      "aliases": [
+        "wake",
+        "wake island",
+        "wakeisland"
+      ]
+    }
+  ]
+}
