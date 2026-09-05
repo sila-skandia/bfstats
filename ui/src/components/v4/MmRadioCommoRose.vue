@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /* global Audio */
 import { ref, onMounted, onUnmounted } from 'vue'
+import 'primeicons/primeicons.css'
+import radioHudIcon from '@/assets/radio-hud.webp'
 
 const props = defineProps<{
   modelValue: boolean
@@ -13,16 +15,16 @@ const emit = defineEmits<{
 interface Faction {
   id: string
   name: string
-  flag: string
+  code: string
   side: 'Allies' | 'Axis'
 }
 
 const factions: Faction[] = [
-  { id: 'us', name: 'US Army', flag: '🇺🇸', side: 'Allies' },
-  { id: 'german', name: 'Wehrmacht', flag: '🇩🇪', side: 'Axis' },
-  { id: 'japanese', name: 'Imperial Navy', flag: '🇯🇵', side: 'Axis' },
-  { id: 'russian', name: 'Red Army', flag: '🇷🇺', side: 'Allies' },
-  { id: 'british', name: 'Royal Army', flag: '🇬🇧', side: 'Allies' },
+  { id: 'us', name: 'US Army', code: 'US', side: 'Allies' },
+  { id: 'german', name: 'Wehrmacht', code: 'DE', side: 'Axis' },
+  { id: 'japanese', name: 'Imperial Navy', code: 'JP', side: 'Axis' },
+  { id: 'russian', name: 'Red Army', code: 'RU', side: 'Allies' },
+  { id: 'british', name: 'Royal Army', code: 'GB', side: 'Allies' },
 ]
 
 const activeFaction = ref<string>('us')
@@ -34,11 +36,10 @@ interface RadioCommand {
   callout: string
   category: 'Spotting' | 'Requests' | 'Response' | 'Orders'
   sound: string
-  meme?: boolean
 }
 
 const commands: RadioCommand[] = [
-  { id: 'boat', hotkey: '1', label: 'Enemy boat spotted!', callout: 'Enemy boat spotted!', category: 'Spotting', sound: 'ships', meme: true },
+  { id: 'boat', hotkey: '1', label: 'Enemy boat spotted!', callout: 'Enemy boat spotted!', category: 'Spotting', sound: 'ships' },
   { id: 'sub', hotkey: '2', label: 'Enemy submarine spotted!', callout: 'Enemy submarine spotted!', category: 'Spotting', sound: 'submarine' },
   { id: 'armor', hotkey: '3', label: 'Enemy armor spotted!', callout: 'Enemy armor spotted!', category: 'Spotting', sound: 'armor' },
   { id: 'roger', hotkey: '4', label: 'Roger that!', callout: 'Roger that!', category: 'Response', sound: 'roger' },
@@ -56,20 +57,20 @@ const hudMessage = ref<string | null>(null)
 let hudTimer: number | null = null
 
 // Audio playback: downloads ONLY the single requested audio file per click (~15-25 KB)
-function playAuthenticRadioSound(soundName: string) {
+function playRadioSound(soundName: string) {
   const sound = new Audio(`/radio-sounds/${activeFaction.value}/${soundName}.mp3`)
   sound.volume = 0.95
-  sound.play().catch(err => {
-    console.error('Audio playback error:', err)
+  sound.play().catch(() => {
+    /* audio playback error */
   })
 }
 
 function triggerCommand(cmd: RadioCommand) {
-  playAuthenticRadioSound(cmd.sound)
+  playRadioSound(cmd.sound)
 
   // Show tactical HUD alert
   const currentFac = factions.find(f => f.id === activeFaction.value)?.name || 'HQ'
-  hudMessage.value = `${currentFac} ❯ "${cmd.callout.toUpperCase()}"`
+  hudMessage.value = `${currentFac} > "${cmd.callout.toUpperCase()}"`
   if (hudTimer) window.clearTimeout(hudTimer)
   hudTimer = window.setTimeout(() => {
     hudMessage.value = null
@@ -86,7 +87,8 @@ function close() {
 
 function onKeydown(e: KeyboardEvent) {
   if (!props.modelValue) return
-  if (e.key === 'Escape') {
+  if (e.key === 'Escape' || e.key === 'F8' || e.key === 'F7') {
+    e.preventDefault()
     close()
     return
   }
@@ -113,7 +115,10 @@ onUnmounted(() => {
     <!-- Tactical HUD Banner on Screen -->
     <Teleport to="body">
       <Transition name="hud-fade">
-        <div v-if="hudMessage" class="mm-hud-banner">
+        <div
+          v-if="hudMessage"
+          class="mm-hud-banner"
+        >
           <div class="mm-hud-banner__glow">
             <span class="mm-hud-banner__led">●</span>
             <span class="mm-hud-banner__tag">[RADIO TRANSMISSION]</span>
@@ -125,12 +130,27 @@ onUnmounted(() => {
 
     <!-- Commo-Rose Dialog Modal -->
     <Teleport to="body">
-      <div v-if="modelValue" class="mm-radio-backdrop" @click="close">
-        <div class="mm-radio-modal" @click.stop>
+      <div
+        v-if="modelValue"
+        class="mm-radio-backdrop"
+        @click="close"
+      >
+        <div
+          class="mm-radio-modal"
+          @click.stop
+        >
           <!-- Radio Header -->
           <div class="mm-radio-modal__head">
             <div class="mm-radio-modal__channel">
               <span class="mm-radio-modal__led" />
+              <img
+                :src="radioHudIcon"
+                alt="Radio HUD"
+                class="mm-radio-modal__hud-badge"
+                width="65"
+                height="18"
+                draggable="false"
+              >
               <span class="mm-radio-modal__freq">CH 24.2 MHz · F8 RADIO</span>
             </div>
             <span class="mm-radio-modal__hint">Press hotkey or click</span>
@@ -140,7 +160,7 @@ onUnmounted(() => {
               aria-label="Close radio"
               @click="close"
             >
-              ✕
+              <i class="pi pi-times" />
             </button>
           </div>
 
@@ -154,7 +174,7 @@ onUnmounted(() => {
               :class="{ 'mm-radio-fac-btn--active': activeFaction === fac.id }"
               @click="activeFaction = fac.id"
             >
-              <span class="mm-radio-fac-btn__flag">{{ fac.flag }}</span>
+              <span class="mm-country-badge">{{ fac.code }}</span>
               <span class="mm-radio-fac-btn__name">{{ fac.name }}</span>
             </button>
           </div>
@@ -166,7 +186,7 @@ onUnmounted(() => {
               <span class="mm-radio-tuner__marks">| · · · | · · · | · · · | · · · |</span>
             </div>
             <div class="mm-radio-tuner__station">
-              BAND: {{ factions.find(f => f.id === activeFaction)?.name.toUpperCase() }} (44kHz AUTHENTIC)
+              BAND: {{ factions.find(f => f.id === activeFaction)?.name.toUpperCase() }}
             </div>
           </div>
 
@@ -177,18 +197,16 @@ onUnmounted(() => {
               :key="cmd.id"
               type="button"
               class="mm-radio-btn"
-              :class="{ 'mm-radio-btn--meme': cmd.meme }"
               @click="triggerCommand(cmd)"
             >
               <span class="mm-radio-btn__key">[{{ cmd.hotkey }}]</span>
               <span class="mm-radio-btn__label">{{ cmd.label }}</span>
-              <span v-if="cmd.meme" class="mm-radio-btn__chip">MEME</span>
             </button>
           </div>
 
           <!-- Footer note -->
           <div class="mm-radio-modal__foot">
-            <span>5 Authentic Factions · Press <strong>R</strong> to toggle anywhere</span>
+            <span>Press <strong>R</strong> or <strong>F8</strong> to toggle · <strong>Esc</strong> to close</span>
           </div>
         </div>
       </div>
@@ -297,6 +315,18 @@ onUnmounted(() => {
   background: #7da34c;
   border-radius: 50%;
   box-shadow: 0 0 6px #7da34c;
+  flex-shrink: 0;
+}
+
+.mm-radio-modal__hud-badge {
+  display: inline-block;
+  height: 18px;
+  width: auto;
+  image-rendering: pixelated;
+  vertical-align: middle;
+  border-radius: 2px;
+  pointer-events: none;
+  flex-shrink: 0;
 }
 
 .mm-radio-modal__freq {
@@ -365,8 +395,21 @@ onUnmounted(() => {
   box-shadow: 0 0 6px rgba(125, 163, 76, 0.2);
 }
 
-.mm-radio-fac-btn__flag {
-  font-size: 12px;
+.mm-country-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #cfd8c1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid #4a5438;
+  border-radius: 3px;
+  line-height: 1;
 }
 
 .mm-radio-fac-btn__name {
@@ -440,14 +483,6 @@ onUnmounted(() => {
   transform: translateY(-1px);
 }
 
-.mm-radio-btn--meme {
-  border-color: rgba(226, 125, 60, 0.45);
-}
-
-.mm-radio-btn--meme:hover {
-  border-color: #e27d3c;
-}
-
 .mm-radio-btn__key {
   color: #8c977d;
   font-weight: 600;
@@ -459,15 +494,6 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.mm-radio-btn__chip {
-  font-size: 8px;
-  background: rgba(226, 125, 60, 0.25);
-  color: #e27d3c;
-  padding: 1px 4px;
-  border-radius: 2px;
-  font-weight: 600;
 }
 
 .mm-radio-modal__foot {
