@@ -6,5 +6,6 @@ public record HigherLowerRevealResultDto(
     double PlayerBValue,
     string FormattedPlayerBValue,
     string Message,
-    HigherLowerQuestionDto? NextQuestion
+    HigherLowerQuestionDto? NextQuestion,
+    string? FormattedPlayerAValue = null
 );
