@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import 'primeicons/primeicons.css'
 import {
+  arcadeLoadError,
   fetchHigherLowerNext,
   revealHigherLower,
   type HigherLowerQuestion,
@@ -81,8 +82,8 @@ const loadNext = async () => {
   selectedGuess.value = null
   try {
     currentQuestion.value = await fetchHigherLowerNext(props.serverGuid, undefined, props.orbitPlayer)
-  } catch {
-    error.value = 'Failed to load matchup. Retrying in a moment...'
+  } catch (err) {
+    error.value = arcadeLoadError(err, 'Failed to load matchup. Retrying in a moment...')
   } finally {
     loading.value = false
   }
@@ -198,6 +199,7 @@ onMounted(() => {
     <div
       v-if="error"
       class="mm-hl__error"
+      data-testid="arcade-error"
     >
       {{ error }}
       <button

@@ -147,6 +147,26 @@ export async function fetchArcadeServers(): Promise<ArcadeServer[]> {
   return res.data
 }
 
+const MAX_SAFE_ARCADE_ERROR = 180
+
+export function arcadeLoadError(err: unknown, fallback: string): string {
+  if (!axios.isAxiosError(err) || typeof err.response?.data !== 'string') {
+    return fallback
+  }
+
+  const text = err.response.data.trim()
+  if (!text || text.length > MAX_SAFE_ARCADE_ERROR || looksLikeRawException(text)) {
+    return fallback
+  }
+
+  return text
+}
+
+function looksLikeRawException(text: string): boolean {
+  if (text.includes('\n') || text.includes('\r')) return true
+  return /Exception:|stack trace|HEADERS\s*=+|at\s+\S+\.\S+\(/i.test(text)
+}
+
 function arcadeParams(serverGuid?: string, orbitPlayer?: string, extra?: Record<string, string>): Record<string, string> {
   const params: Record<string, string> = { ...extra }
   if (serverGuid) params.serverGuid = serverGuid

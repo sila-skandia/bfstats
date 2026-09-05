@@ -2,6 +2,7 @@ using api.Arcade;
 using api.Arcade.Models;
 using api.Data.Entities;
 using api.PlayerTracking;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -765,7 +766,7 @@ public class ArcadeTests : IDisposable
     public async Task GetRandomMysteryDossier_ExcludesSpecifiedPlayer()
     {
         // Sample repeatedly with exclusion to verify excluded player is never picked as target
-        var targetToExclude = "Sgt_Rock";
+        var targetToExclude = "ApexSoldier";
         for (var i = 0; i < 15; i++)
         {
             var dossier = await _service.GetRandomMysteryDossierAsync(null, null, targetToExclude);
@@ -810,6 +811,47 @@ public class ArcadeTests : IDisposable
         // Submitting this revealed target name as a guess should return IsCorrect == true
         var guessResult = await _service.GuessMysterySoldierAsync(new MysteryGuessRequest(dossier.DossierToken, concedeResult.TargetPlayerName));
         Assert.True(guessResult.IsCorrect);
+    }
+
+    [Fact]
+    public async Task GenerateTriviaQuiz_ServerScoped_IgnoresCasualMapLeadersOutsideRoster()
+    {
+        _dbContext.PlayerMapStats.Add(new PlayerMapStats
+        {
+            PlayerName = "CasualGrinder",
+            MapName = "Wake Island",
+            ServerGuid = "srv-1",
+            Year = 2026,
+            Month = 9,
+            TotalRounds = 5,
+            TotalKills = 999999,
+            TotalDeaths = 1,
+            TotalScore = 1,
+            TotalPlayTimeMinutes = 10
+        });
+        _dbContext.PlayerBestScores.Add(new PlayerBestScore
+        {
+            PlayerName = "CasualGrinder",
+            ServerGuid = "srv-1",
+            Period = "all_time",
+            Rank = 1,
+            FinalScore = 9999,
+            FinalKills = 9999,
+            FinalDeaths = 0,
+            MapName = "Wake Island",
+            RoundId = "rnd-casual"
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var quiz = await _service.GenerateTriviaQuizAsync("srv-1");
+
+        Assert.Equal(5, quiz.Questions.Count);
+        Assert.All(quiz.Questions, q =>
+        {
+            Assert.DoesNotContain("CasualGrinder", q.Question, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("CasualGrinder", string.Join(',', q.Options), StringComparison.OrdinalIgnoreCase);
+            Assert.NotEqual("rnd-casual", q.TargetRoundId);
+        });
     }
 
     [Fact]
@@ -961,6 +1003,125 @@ public class ArcadeTests : IDisposable
 
         Assert.Single(results);
         Assert.Equal("ApexSoldier", results[0].Name);
+    }
+
+    [Fact]
+    public async Task GetNextHigherLower_UnknownServer_ThrowsInsteadOfInventingPlayers()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _service.GetNextHigherLowerQuestionAsync("no-such-server"));
+    }
+
+    [Fact]
+    public async Task GetNextHigherLowerQuestion_DuplicatePlayerNameCasing_DoesNotThrow()
+    {
+        _dbContext.PlayerServerStats.AddRange(
+            new PlayerServerStats
+            {
+                PlayerName = "[DGJ]ProPeller",
+                ServerGuid = "srv-1",
+                Year = 2026,
+                Week = 35,
+                TotalKills = 3000,
+                TotalDeaths = 2000,
+                TotalScore = 5000,
+                TotalPlayTimeMinutes = 4000,
+                TotalRounds = 40
+            },
+            new PlayerServerStats
+            {
+                PlayerName = "[dgj]propeller",
+                ServerGuid = "srv-1",
+                Year = 2026,
+                Week = 35,
+                TotalKills = 3100,
+                TotalDeaths = 2100,
+                TotalScore = 5100,
+                TotalPlayTimeMinutes = 4100,
+                TotalRounds = 41
+            }
+        );
+        _dbContext.PlayerMapStats.AddRange(
+            new PlayerMapStats
+            {
+                PlayerName = "[DGJ]ProPeller",
+                MapName = "Wake Island",
+                ServerGuid = "srv-1",
+                Year = 2026,
+                Month = 9,
+                TotalRounds = 20,
+                TotalKills = 2000,
+                TotalDeaths = 1000,
+                TotalScore = 3000,
+                TotalPlayTimeMinutes = 2000
+            },
+            new PlayerMapStats
+            {
+                PlayerName = "[dgj]propeller",
+                MapName = "Wake Island",
+                ServerGuid = "srv-1",
+                Year = 2026,
+                Month = 9,
+                TotalRounds = 21,
+                TotalKills = 2100,
+                TotalDeaths = 1100,
+                TotalScore = 3100,
+                TotalPlayTimeMinutes = 2100
+            }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var question = await _service.GetNextHigherLowerQuestionAsync("srv-1");
+        Assert.NotNull(question);
+        Assert.False(string.Equals(question.PlayerA.Name, question.PlayerB.Name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GetNextHigherLower_UnexpectedException_ReturnsFriendlyErrorWithoutStack()
+    {
+        var failing = Substitute.For<IArcadeService>();
+        failing.GetNextHigherLowerQuestionAsync(
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<HigherLowerQuestionDto>(
+                new ArgumentException("An item with the same key has already been added. Key: [DGJ]ProPeller")));
+
+        var controller = new ArcadeController(failing, _controllerLogger);
+        var action = await controller.GetNextHigherLower(serverGuid: "srv-1");
+        var result = Assert.IsType<ObjectResult>(action.Result);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        var message = Assert.IsType<string>(result.Value);
+        Assert.Equal("Something went wrong loading this game. Please retry.", message);
+        Assert.DoesNotContain("ProPeller", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("at ", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetNextHigherLower_InsufficientRoster_ReturnsUnprocessableWithoutStack()
+    {
+        var action = await _controller.GetNextHigherLower(serverGuid: "no-such-server");
+        var result = Assert.IsType<UnprocessableEntityObjectResult>(action.Result);
+        var message = Assert.IsType<string>(result.Value);
+        Assert.Equal("Not enough tracked regulars on this server to play.", message);
+    }
+
+    [Theory]
+    [InlineData("System.ArgumentException: An item with the same key has already been added. Key: [DGJ]ProPeller\nat System.Collections.Generic.Dictionary", true)]
+    [InlineData("Not enough tracked regulars on this server to play.", false)]
+    [InlineData("Invalid or expired round token.", false)]
+    public void LooksLikeRawException_ClassifiesClientSafeMessages(string text, bool expected)
+    {
+        Assert.Equal(expected, ArcadeController.LooksLikeRawException(text));
+    }
+
+    [Fact]
+    public async Task SearchPlayers_UnknownServer_ReturnsEmpty()
+    {
+        var results = await _service.SearchPlayersAsync("Sgt", "no-such-server");
+        Assert.Empty(results);
     }
 
     [Fact]
