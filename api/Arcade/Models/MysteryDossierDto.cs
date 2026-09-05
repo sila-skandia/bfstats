@@ -10,5 +10,6 @@ public record MysteryDossierDto(
     string FavoriteServer,
     string? SignatureBadge,
     int TotalCandidates,
-    IReadOnlyList<string> CandidateOptions
+    IReadOnlyList<string> CandidateOptions,
+    IReadOnlyList<MysteryClueDto>? Attributes = null
 );

@@ -34,10 +34,11 @@ public class ArcadeController(
     public async Task<ActionResult<HigherLowerQuestionDto>> GetNextHigherLower(
         [FromQuery] string? serverGuid = null,
         [FromQuery] string? currentCandidate = null,
+        [FromQuery] string? orbitPlayer = null,
         CancellationToken cancellationToken = default)
     {
-        logger.LogDebug("Fetching next higher-lower matchup (server={ServerGuid}, current={Candidate})", serverGuid, currentCandidate);
-        var question = await arcadeService.GetNextHigherLowerQuestionAsync(serverGuid, currentCandidate, cancellationToken);
+        logger.LogDebug("Fetching next higher-lower matchup (server={ServerGuid}, current={Candidate}, orbit={Orbit})", serverGuid, currentCandidate, orbitPlayer);
+        var question = await arcadeService.GetNextHigherLowerQuestionAsync(serverGuid, currentCandidate, orbitPlayer, cancellationToken);
         return Ok(question);
     }
 
@@ -74,9 +75,10 @@ public class ArcadeController(
     [ProducesResponseType(typeof(MysteryDossierDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<MysteryDossierDto>> GetDailyMystery(
         [FromQuery] string? serverGuid = null,
+        [FromQuery] string? orbitPlayer = null,
         CancellationToken cancellationToken = default)
     {
-        var dossier = await arcadeService.GetDailyMysteryDossierAsync(serverGuid, cancellationToken);
+        var dossier = await arcadeService.GetDailyMysteryDossierAsync(serverGuid, orbitPlayer, cancellationToken);
         return Ok(dossier);
     }
 
@@ -87,9 +89,11 @@ public class ArcadeController(
     [ProducesResponseType(typeof(MysteryDossierDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<MysteryDossierDto>> GetRandomMystery(
         [FromQuery] string? serverGuid = null,
+        [FromQuery] string? orbitPlayer = null,
+        [FromQuery] string? exclude = null,
         CancellationToken cancellationToken = default)
     {
-        var dossier = await arcadeService.GetRandomMysteryDossierAsync(serverGuid, cancellationToken);
+        var dossier = await arcadeService.GetRandomMysteryDossierAsync(serverGuid, orbitPlayer, exclude, cancellationToken);
         return Ok(dossier);
     }
 
@@ -127,9 +131,10 @@ public class ArcadeController(
     [ProducesResponseType(typeof(TriviaQuizDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<TriviaQuizDto>> GenerateTriviaQuiz(
         [FromQuery] string? serverGuid = null,
+        [FromQuery] string? orbitPlayer = null,
         CancellationToken cancellationToken = default)
     {
-        var quiz = await arcadeService.GenerateTriviaQuizAsync(serverGuid, cancellationToken);
+        var quiz = await arcadeService.GenerateTriviaQuizAsync(serverGuid, orbitPlayer, cancellationToken);
         return Ok(quiz);
     }
 
