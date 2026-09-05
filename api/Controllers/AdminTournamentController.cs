@@ -3078,7 +3078,8 @@ public class AdminTournamentController(
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogWarning(ex, "Invalid operation when creating manual match result");
+            logger.LogWarning("Invalid operation when creating manual match result ({ExceptionType}: {Message})",
+                ex.GetType().Name, ex.Message);
             return BadRequest(new { message = ex.Message });
         }
         catch (Exception ex)
