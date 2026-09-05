@@ -9,6 +9,7 @@ import { fetchArcadeServers, type ArcadeServer } from '@/services/arcadeService'
 import { decodeServerName } from '@/utils/playerName'
 
 const ORBIT_STORAGE_KEY = 'bfstats:arcade-orbit-player'
+const SERVER_STORAGE_KEY = 'bfstats:arcade-server-guid'
 
 type ArcadeTab = 'higher-lower' | 'mystery' | 'trivia'
 
@@ -25,10 +26,21 @@ const initialTab = (): ArcadeTab => {
   return 'higher-lower'
 }
 
+const readStoredServerGuid = (): string => {
+  if (typeof window === 'undefined') return ''
+  return window.localStorage.getItem(SERVER_STORAGE_KEY)?.trim() || ''
+}
+
+const initialServerGuid = (): string => {
+  const fromQuery = typeof route.query.server === 'string' ? route.query.server.trim() : ''
+  if (fromQuery) return fromQuery
+  return readStoredServerGuid()
+}
+
 const activeTab = ref<ArcadeTab>(initialTab())
 const servers = ref<ArcadeServer[]>([])
 const serversLoading = ref(false)
-const selectedServerGuid = ref<string>((route.query.server as string) || '')
+const selectedServerGuid = ref<string>(initialServerGuid())
 const isPickerOpen = ref(false)
 const serverSearchQuery = ref('')
 const serverSearchInputRef = ref<HTMLInputElement | null>(null)
@@ -65,9 +77,12 @@ const selectedServer = computed(() => {
   return servers.value.find(s => s.guid === selectedServerGuid.value) ?? null
 })
 
+const hasServer = computed(() => Boolean(selectedServerGuid.value))
+
 // Top servers sorted by total play time (falling back to candidate pool count)
 const topServersByPlayTime = computed(() => {
   return servers.value
+    .filter(s => (s.totalCandidates || 0) >= 8 || (s.currentPlayers || 0) > 0)
     .slice()
     .sort((a, b) => {
       const aHours = a.totalPlayTimeHours || 0
@@ -122,16 +137,35 @@ const setTab = (tab: ArcadeTab) => {
   })
 }
 
-const setServer = (guid: string) => {
-  selectedServerGuid.value = guid
-  isPickerOpen.value = false
-  serverSearchQuery.value = ''
+const persistServerGuid = (guid: string) => {
+  if (typeof window !== 'undefined') {
+    if (guid) {
+      window.localStorage.setItem(SERVER_STORAGE_KEY, guid)
+    } else {
+      window.localStorage.removeItem(SERVER_STORAGE_KEY)
+    }
+  }
   router.replace({
     query: {
       ...route.query,
       server: guid || undefined,
     },
   })
+}
+
+const setServer = (guid: string) => {
+  const next = guid.trim()
+  if (!next) return
+  selectedServerGuid.value = next
+  isPickerOpen.value = false
+  serverSearchQuery.value = ''
+  persistServerGuid(next)
+}
+
+const syncServerToUrl = (guid: string) => {
+  if (!guid) return
+  selectedServerGuid.value = guid
+  persistServerGuid(guid)
 }
 
 const persistOrbitQuery = (name: string) => {
@@ -203,15 +237,21 @@ const closeOrbitPicker = () => {
   isOrbitOpen.value = false
 }
 
-const togglePicker = () => {
-  isPickerOpen.value = !isPickerOpen.value
+const openPicker = () => {
+  isPickerOpen.value = true
   isOrbitOpen.value = false
+  serverSearchQuery.value = ''
+  nextTick(() => {
+    serverSearchInputRef.value?.focus()
+  })
+}
+
+const togglePicker = () => {
   if (isPickerOpen.value) {
-    serverSearchQuery.value = ''
-    nextTick(() => {
-      serverSearchInputRef.value?.focus()
-    })
+    closePicker()
+    return
   }
+  openPicker()
 }
 
 const closePicker = () => {
@@ -242,7 +282,16 @@ watch(
 watch(
   () => route.query.server,
   (newServer) => {
-    selectedServerGuid.value = (newServer as string) || ''
+    const guid = typeof newServer === 'string' ? newServer.trim() : ''
+    if (!guid) {
+      if (selectedServerGuid.value) {
+        persistServerGuid(selectedServerGuid.value)
+      }
+      return
+    }
+    if (guid === selectedServerGuid.value) return
+    selectedServerGuid.value = guid
+    persistServerGuid(guid)
   }
 )
 
@@ -276,6 +325,9 @@ onMounted(async () => {
   serversLoading.value = true
   try {
     servers.value = await fetchArcadeServers()
+    if (selectedServerGuid.value && route.query.server !== selectedServerGuid.value) {
+      syncServerToUrl(selectedServerGuid.value)
+    }
   } finally {
     serversLoading.value = false
   }
@@ -295,13 +347,14 @@ onUnmounted(() => {
       class="mm-meta-row"
       style="margin-bottom: 12px"
     >
-      <span class="mm-chip"><span class="mm-chip__dot" />Arcade</span>
+      <span class="mm-chip"><span class="mm-chip__dot" />Trivia</span>
       <span class="mm-meta-row__sep">·</span>
       <span v-if="selectedServer">{{ $pn(selectedServer.name) }}</span>
-      <span v-else>Global Network</span>
+      <span v-else-if="hasServer">Your server</span>
+      <span v-else>Pick a server to begin</span>
       <template v-if="orbitPlayer">
         <span class="mm-meta-row__sep">·</span>
-        <span>Orbit: {{ $pn(orbitPlayer) }}</span>
+        <span>Playing as {{ $pn(orbitPlayer) }}</span>
       </template>
     </div>
 
@@ -310,10 +363,10 @@ onUnmounted(() => {
       class="mm-display"
       style="margin-bottom: 8px"
     >
-      Arcade
+      Trivia
     </h1>
     <p class="mm-arcade-prompt">
-      Choose a server, and optionally identify yourself so matchups lean toward soldiers you actually play with.
+      Three games about real Battlefield 1942 stats. Pick the server you play on, then choose a game. Add your soldier name if you want questions about people you actually play with.
     </p>
 
     <!-- Prominent Server Selector Card -->
@@ -330,16 +383,18 @@ onUnmounted(() => {
               type="button"
               class="arcade-picker-btn"
               :class="{
-                'arcade-picker-btn--active': Boolean(selectedServerGuid),
+                'arcade-picker-btn--active': hasServer,
+                'arcade-picker-btn--required': !hasServer,
                 'arcade-picker-btn--open': isPickerOpen
               }"
+              data-testid="arcade-server-trigger"
               aria-haspopup="listbox"
               :aria-expanded="isPickerOpen"
+              aria-required="true"
               @click="togglePicker"
             >
               <i
-                :class="selectedServer ? 'pi pi-server' : 'pi pi-globe'"
-                class="arcade-picker-icon"
+                class="pi pi-server arcade-picker-icon"
               />
               <template v-if="selectedServer">
                 <span class="mm-country-badge">{{ selectedServer.country || 'UN' }}</span>
@@ -351,23 +406,14 @@ onUnmounted(() => {
                   {{ selectedServer.currentPlayers }} live
                 </span>
               </template>
+              <template v-else-if="hasServer">
+                <span class="arcade-picker-text">Selected server</span>
+              </template>
               <template v-else>
-                <span class="arcade-picker-placeholder">Choose server…</span>
-                <span class="arcade-picker-scope">(Global)</span>
+                <span class="arcade-picker-placeholder">The server you play on</span>
+                <span class="arcade-picker-scope">start here</span>
               </template>
               <i class="pi pi-chevron-down arcade-picker-chevron" />
-            </button>
-
-            <!-- Clear button to reset to Global -->
-            <button
-              v-if="selectedServerGuid"
-              type="button"
-              class="arcade-picker-clear-btn"
-              title="Clear server filter (play Global)"
-              aria-label="Clear server filter"
-              @click.stop="setServer('')"
-            >
-              <span aria-hidden="true">×</span>
             </button>
 
             <!-- Search Popover / Sheet -->
@@ -379,6 +425,7 @@ onUnmounted(() => {
                 v-if="isPickerOpen"
                 class="mm arcade-popover"
                 :class="{ 'arcade-popover--sheet': isNarrow }"
+                data-server-picker
                 role="listbox"
                 aria-label="Select a server"
               >
@@ -386,10 +433,10 @@ onUnmounted(() => {
                 <div class="arcade-sheet-head">
                   <div>
                     <div class="mm-eyebrow">
-                      CHOOSE SERVER
+                      YOUR SERVER
                     </div>
                     <h2 class="arcade-sheet-title">
-                      Battleground
+                      Where do you play?
                     </h2>
                   </div>
                   <button
@@ -425,27 +472,12 @@ onUnmounted(() => {
 
                 <!-- Single-select Server Option List -->
                 <div class="arcade-server-list">
-                  <!-- All Servers (Global) Option -->
-                  <button
-                    type="button"
-                    class="arcade-server-option"
-                    :class="{ 'arcade-server-option--selected': !selectedServerGuid }"
-                    role="option"
-                    :aria-selected="!selectedServerGuid"
-                    @click="setServer('')"
+                  <div
+                    v-if="serversLoading"
+                    class="arcade-server-empty"
                   >
-                    <i class="pi pi-globe arcade-option-icon" />
-                    <div class="arcade-option-body">
-                      <span class="arcade-option-title">All Servers (Global Network)</span>
-                      <span class="arcade-option-sub">Play across all tracked players worldwide</span>
-                    </div>
-                    <i
-                      v-if="!selectedServerGuid"
-                      class="pi pi-check arcade-option-check"
-                    />
-                  </button>
-
-                  <!-- Server Items -->
+                    Loading servers…
+                  </div>
                   <button
                     v-for="s in filteredServers"
                     :key="s.guid"
@@ -453,6 +485,7 @@ onUnmounted(() => {
                     class="arcade-server-option"
                     :class="{ 'arcade-server-option--selected': selectedServerGuid === s.guid }"
                     role="option"
+                    data-testid="arcade-server-option"
                     :aria-selected="selectedServerGuid === s.guid"
                     @click="setServer(s.guid)"
                   >
@@ -461,7 +494,7 @@ onUnmounted(() => {
                       <span class="arcade-option-title">{{ $pn(s.name) }}</span>
                       <span class="arcade-option-sub">
                         <template v-if="s.totalPlayTimeHours">{{ formatHours(s.totalPlayTimeHours) }} played</template>
-                        <template v-else-if="s.totalCandidates">{{ s.totalCandidates }} candidate pool</template>
+                        <template v-else-if="s.totalCandidates">{{ s.totalCandidates }} regulars</template>
                         <template v-if="s.currentPlayers > 0"> · {{ s.currentPlayers }} online</template>
                       </span>
                     </div>
@@ -476,10 +509,10 @@ onUnmounted(() => {
                   </button>
 
                   <div
-                    v-if="filteredServers.length === 0"
+                    v-if="filteredServers.length === 0 && !serversLoading"
                     class="arcade-server-empty"
                   >
-                    No servers matching "{{ serverSearchQuery }}"
+                    {{ serverSearchQuery ? `No servers matching "${serverSearchQuery}"` : 'No servers available.' }}
                   </div>
                 </div>
               </div>
@@ -503,17 +536,16 @@ onUnmounted(() => {
               }"
               aria-haspopup="listbox"
               :aria-expanded="isOrbitOpen"
-              aria-label="Who am I? Identify yourself for orbit-biased matchups"
+              aria-label="Add your soldier name so questions include people you play with"
               @click="toggleOrbitPicker"
             >
               <i class="pi pi-user arcade-picker-icon" />
               <template v-if="orbitPlayer">
                 <span class="arcade-picker-text">{{ $pn(orbitPlayer) }}</span>
-                <span class="arcade-picker-scope">orbit</span>
               </template>
               <template v-else>
-                <span class="arcade-picker-placeholder">Who am I?</span>
-                <span class="arcade-picker-scope">(optional)</span>
+                <span class="arcade-picker-placeholder">Your soldier name</span>
+                <span class="arcade-picker-scope">optional</span>
               </template>
               <i class="pi pi-chevron-down arcade-picker-chevron" />
             </button>
@@ -522,8 +554,8 @@ onUnmounted(() => {
               v-if="orbitPlayer"
               type="button"
               class="arcade-picker-clear-btn"
-              title="Clear identity (play the global pool)"
-              aria-label="Clear identity"
+              title="Remove your name"
+              aria-label="Remove your name"
               @click.stop="setOrbitPlayer('')"
             >
               <span aria-hidden="true">×</span>
@@ -538,15 +570,15 @@ onUnmounted(() => {
                 class="mm arcade-popover"
                 :class="{ 'arcade-popover--sheet': isNarrow }"
                 role="listbox"
-                aria-label="Identify yourself"
+                aria-label="Add your soldier name"
               >
                 <div class="arcade-sheet-head">
                   <div>
                     <div class="mm-eyebrow">
-                      WHO AM I
+                      YOUR NAME
                     </div>
                     <h2 class="arcade-sheet-title">
-                      Your orbit
+                      Find your soldier
                     </h2>
                   </div>
                   <button
@@ -595,7 +627,7 @@ onUnmounted(() => {
                     <div class="arcade-option-body">
                       <span class="arcade-option-title">{{ $pn(player.playerName) }}</span>
                       <span class="arcade-option-sub">
-                        {{ player.isActive ? 'Online now' : 'Bias matchups toward your frequent co-players' }}
+                        {{ player.isActive ? 'Online now' : 'Questions will include people you play with' }}
                       </span>
                     </div>
                     <i
@@ -641,7 +673,8 @@ onUnmounted(() => {
               type="button"
               class="arcade-quick-btn"
               :class="{ 'arcade-quick-btn--active': selectedServerGuid === s.guid }"
-              :title="`Select ${$pn(s.name)} (${formatHours(s.totalPlayTimeHours) || `${s.totalCandidates} pool`})`"
+              data-testid="arcade-quick-server"
+              :title="`Play on ${$pn(s.name)}`"
               @click="setServer(s.guid)"
             >
               <span class="mm-country-badge">{{ s.country || 'UN' }}</span>
@@ -661,7 +694,7 @@ onUnmounted(() => {
     <!-- Mode Tabs: Site-standard .mm-tabs -->
     <nav
       class="mm-tabs"
-      aria-label="Arcade game modes"
+      aria-label="Trivia games"
       style="margin-top: 24px; margin-bottom: 28px"
     >
       <button
@@ -678,21 +711,44 @@ onUnmounted(() => {
 
     <!-- Active Game Arena -->
     <main class="mm-arcade-container">
+      <div
+        v-if="!hasServer"
+        class="arcade-server-gate"
+        data-testid="arcade-server-gate"
+      >
+        <div class="mm-eyebrow">
+          Before you play
+        </div>
+        <h2 class="arcade-server-gate__title">
+          Pick your server
+        </h2>
+        <p class="arcade-server-gate__copy">
+          Start with the community you play on. Then choose a game below, or tap a popular server above.
+        </p>
+        <button
+          type="button"
+          class="mm-cta-strip arcade-server-gate__cta"
+          data-testid="arcade-choose-server"
+          @click.stop="openPicker"
+        >
+          Choose server
+        </button>
+      </div>
       <MmHigherLowerGame
-        v-if="activeTab === 'higher-lower'"
-        :server-guid="selectedServerGuid || undefined"
+        v-else-if="activeTab === 'higher-lower'"
+        :server-guid="selectedServerGuid"
         :server-name="selectedServer ? selectedServer.name : undefined"
         :orbit-player="orbitPlayer || undefined"
       />
       <MmMysterySoldierGame
         v-else-if="activeTab === 'mystery'"
-        :server-guid="selectedServerGuid || undefined"
+        :server-guid="selectedServerGuid"
         :server-name="selectedServer ? selectedServer.name : undefined"
         :orbit-player="orbitPlayer || undefined"
       />
       <MmFieldTriviaGame
         v-else-if="activeTab === 'trivia'"
-        :server-guid="selectedServerGuid || undefined"
+        :server-guid="selectedServerGuid"
         :server-name="selectedServer ? selectedServer.name : undefined"
         :orbit-player="orbitPlayer || undefined"
       />
@@ -777,6 +833,11 @@ onUnmounted(() => {
 .arcade-picker-btn--active {
   border-color: var(--mm-accent, #7d8849);
   background: var(--mm-bg, #131313);
+}
+
+.arcade-picker-btn--required {
+  border-color: var(--mm-accent, #7d8849);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mm-accent, #7d8849) 35%, transparent);
 }
 
 .arcade-picker-btn--open {
@@ -1183,5 +1244,37 @@ onUnmounted(() => {
 /* Arena Container */
 .mm-arcade-container {
   min-height: 480px;
+}
+
+.arcade-server-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 36px 8px 16px;
+  max-width: 480px;
+}
+
+.arcade-server-gate__title {
+  margin: 0;
+  font-family: var(--mm-font-display, sans-serif);
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--mm-ink, #ffffff);
+  line-height: 1.15;
+}
+
+.arcade-server-gate__copy {
+  margin: 0;
+  font-family: var(--mm-font-display, sans-serif);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mm-ink-muted, #8a8a8a);
+}
+
+.arcade-server-gate__cta {
+  width: auto;
+  min-width: 180px;
+  margin: 8px 0 0;
 }
 </style>
