@@ -9,5 +9,6 @@ public record MysteryGuessResultDto(
     AttributeMatchDto FavoriteMap,
     AttributeMatchDto FavoriteServer,
     string? TargetPlayerName = null,
-    string? Message = null
+    string? Message = null,
+    IReadOnlyList<MysteryAttributeMatchDto>? Attributes = null
 );

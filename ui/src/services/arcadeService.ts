@@ -42,6 +42,13 @@ export interface HigherLowerRevealResult {
   nextQuestion?: HigherLowerQuestion | null
 }
 
+export interface MysteryClue {
+  key: string
+  label: string
+  value: string
+  category?: string
+}
+
 export interface MysteryDossier {
   dossierToken: string
   mode: 'daily' | 'random'
@@ -53,9 +60,18 @@ export interface MysteryDossier {
   signatureBadge?: string
   totalCandidates: number
   candidateOptions: string[]
+  attributes?: MysteryClue[]
 }
 
 export interface AttributeMatch {
+  value: string
+  isMatch: boolean
+  indicator?: 'match' | 'higher' | 'lower'
+}
+
+export interface MysteryAttributeMatch {
+  key: string
+  label: string
   value: string
   isMatch: boolean
   indicator?: 'match' | 'higher' | 'lower'
@@ -71,6 +87,7 @@ export interface MysteryGuessResult {
   favoriteServer: AttributeMatch
   targetPlayerName?: string
   message?: string
+  attributes?: MysteryAttributeMatch[]
 }
 
 export interface TriviaQuestion {
@@ -123,11 +140,23 @@ export async function fetchArcadeServers(): Promise<ArcadeServer[]> {
   return res.data
 }
 
-export async function fetchHigherLowerNext(serverGuid?: string, currentCandidate?: string): Promise<HigherLowerQuestion> {
-  const params: Record<string, string> = {}
+function arcadeParams(serverGuid?: string, orbitPlayer?: string, extra?: Record<string, string>): Record<string, string> {
+  const params: Record<string, string> = { ...extra }
   if (serverGuid) params.serverGuid = serverGuid
-  if (currentCandidate) params.currentCandidate = currentCandidate
-  const res = await axios.get<HigherLowerQuestion>('/stats/arcade/higher-lower/next', { params })
+  if (orbitPlayer) params.orbitPlayer = orbitPlayer
+  return params
+}
+
+export async function fetchHigherLowerNext(
+  serverGuid?: string,
+  currentCandidate?: string,
+  orbitPlayer?: string
+): Promise<HigherLowerQuestion> {
+  const extra: Record<string, string> = {}
+  if (currentCandidate) extra.currentCandidate = currentCandidate
+  const res = await axios.get<HigherLowerQuestion>('/stats/arcade/higher-lower/next', {
+    params: arcadeParams(serverGuid, orbitPlayer, extra)
+  })
   return res.data
 }
 
@@ -136,15 +165,23 @@ export async function revealHigherLower(request: HigherLowerRevealRequest): Prom
   return res.data
 }
 
-export async function fetchDailyMystery(serverGuid?: string): Promise<MysteryDossier> {
-  const params = serverGuid ? { serverGuid } : undefined
-  const res = await axios.get<MysteryDossier>('/stats/arcade/mystery/today', { params })
+export async function fetchDailyMystery(serverGuid?: string, orbitPlayer?: string): Promise<MysteryDossier> {
+  const res = await axios.get<MysteryDossier>('/stats/arcade/mystery/today', {
+    params: arcadeParams(serverGuid, orbitPlayer)
+  })
   return res.data
 }
 
-export async function fetchRandomMystery(serverGuid?: string): Promise<MysteryDossier> {
-  const params = serverGuid ? { serverGuid } : undefined
-  const res = await axios.get<MysteryDossier>('/stats/arcade/mystery/random', { params })
+export async function fetchRandomMystery(
+  serverGuid?: string,
+  orbitPlayer?: string,
+  exclude?: string
+): Promise<MysteryDossier> {
+  const extra: Record<string, string> = {}
+  if (exclude) extra.exclude = exclude
+  const res = await axios.get<MysteryDossier>('/stats/arcade/mystery/random', {
+    params: arcadeParams(serverGuid, orbitPlayer, extra)
+  })
   return res.data
 }
 
@@ -171,9 +208,10 @@ export interface TriviaQuestionVerification {
   targetServerName?: string
 }
 
-export async function fetchTriviaQuiz(serverGuid?: string): Promise<TriviaQuiz> {
-  const params = serverGuid ? { serverGuid } : undefined
-  const res = await axios.get<TriviaQuiz>('/stats/arcade/trivia/quiz', { params })
+export async function fetchTriviaQuiz(serverGuid?: string, orbitPlayer?: string): Promise<TriviaQuiz> {
+  const res = await axios.get<TriviaQuiz>('/stats/arcade/trivia/quiz', {
+    params: arcadeParams(serverGuid, orbitPlayer)
+  })
   return res.data
 }
 

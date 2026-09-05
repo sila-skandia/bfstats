@@ -12,23 +12,22 @@ Two combatants face off. The prompt is a full-width bar so the question is never
 - **Streak**: tracked in the HUD; best streak is stored locally.
 
 ### 2. Mystery Soldier (Classified Dossier)
-A daily (or endless/practice) guessing challenge inspired by Wordle / Poeltl:
+A daily (or endless/practice) guessing challenge inspired by Wordle / Poeltl with continuous play and dynamic variable stats:
 - A mystery veteran is selected from active players with substantial history.
-- Clues revealed in their classified dossier:
-  - Country of origin (ISO badge & name)
-  - Favorite / most played map
-  - Primary home server
-  - Playtime tier (hours)
-  - Career K/D bracket
-  - Signature achievement / badge
-- **Multiple-choice suspect roster**: each dossier includes 4-5 `CandidateOptions` (the secret target plus 3-4 distractors from the candidate pool). Players investigate suspects one at a time — no free-form search across the full player base.
-- Each incorrect investigation reveals match attributes and marks that suspect as eliminated:
-  - Country: Match / Mismatch
-  - Playtime: Match (within 20%) / Higher / Lower
-  - K/D Ratio: Match (within 0.15) / Higher / Lower
-  - Top Map: Match / Mismatch
-  - Top Server: Match / Mismatch
-- Use the comparison clues to narrow the remaining roster until the subject is confirmed.
+- **Dynamic Variable Attributes**: Rather than static fixed clues, each round dynamically selects 5-6 diverse stats tailored to the target soldier's profile, including:
+  - Career metrics: Total Kills bracket, Career K/D bracket, Playtime tier, Total Score bracket
+  - Map highlights: Map with Best Score, Highest Kill Rate Map, Most Kills Map, Most Played Map
+  - Social & Community: Top Squad Buddy (frequent co-player from Neo4j `PLAYED_WITH`), Primary Home Server
+  - Combat Persona: Signature Badge / Medal
+- **Multiple-choice suspect roster**: Each dossier includes 4-5 `CandidateOptions` (the secret target plus 3-4 distractors from the candidate pool). Players investigate suspects one at a time — no free-form search across the full player base.
+- **Dynamic Comparison Table**: Each investigation reveals match attributes corresponding to this mission's chosen columns:
+  - Numeric metrics (Kills, Time, K/D, Score): Match (within tolerance) / Higher / Lower directional indicators
+  - Text & Categorical metrics (Maps, Servers, Neo4j Buddy, Badge): Match / Mismatch
+- **Continuous Play & Streaks**:
+  - After solving or finishing (Daily or Random), players can immediately proceed to the next soldier via **"Next Soldier (Keep Going)"** / Enter shortcut.
+  - Solving Daily transitions smoothly into endless practice mode without leaving the page.
+  - Consecutive rounds automatically exclude the just-identified soldier (`?exclude=`) to avoid immediate repeats.
+  - Active session HUD tracks continuous Streak (🔥), Best Streak (🏆), and Total Solved (🎯).
 
 ### 3. Field Lore (Battlefield Trivia)
 A 5-question tactical quiz dynamically generated **only** from live and historical database statistics. There are no hardcoded lore, radio-key, or vehicle trivia questions.
@@ -44,7 +43,14 @@ A 5-question tactical quiz dynamically generated **only** from live and historic
 - Generic all-time career crowns are avoided when scoped map/period data is available (keeps quizzes challenging and unique)
 - Instant explanations with real database numbers
 
-### 4. Community Server Filtering
+### 4. Optional identity (Who am I)
+Players can optionally identify themselves at the top of Arcade. This does **not** change any stored stats. It only changes **who appears**:
+- The candidate pool becomes that soldier plus their top 100 Neo4j `PLAYED_WITH` neighbors (already cached, one indexed graph read).
+- If the orbit is too small, the usual top-score roster fills in so games still work.
+- Field Lore can add relationship questions built from that same neighbor list: most overlapping sessions (wingman), longest co-play history, and most recent shared round.
+- Opposite-team / "who opposed you" is **not** asked here. That answer is a heavy SQLite session scan (Wrapped yearly crunch), not a Neo4j property.
+
+### 5. Community Server Filtering
 Minigames can be scoped to any community server (e.g. MoonGamers, SiMPLE, etc.):
 - **Server Selector**: Quick pills for top community servers + searchable popover for all tracked servers.
 - **Server-Specific Matchups**: Higher or Lower compares regulars using that server's `PlayerMapStats` when they share a map, otherwise `PlayerServerStats` career totals.
@@ -65,12 +71,12 @@ Base path: `/stats/arcade`
 | Endpoint | Method | Description |
 |---|---|---|
 | `/stats/arcade/servers` | GET | Returns active servers with player counts and candidate counts. |
-| `/stats/arcade/higher-lower/next` | GET | Returns a pair of combatants. Prefers a shared-map metric (kills, score, hours, kd, rounds, kill rate) and falls back to career totals. Includes `prompt` and optional `mapName`. Target value is hidden. |
+| `/stats/arcade/higher-lower/next` | GET | Returns a pair of combatants. Prefers a shared-map metric (kills, score, hours, kd, rounds, kill rate) and falls back to career totals. Optional `?orbitPlayer=` biases the pool toward that soldier's Neo4j co-play orbit. |
 | `/stats/arcade/higher-lower/reveal` | POST | Validates user guess ('higher' or 'lower') against round token, returning revealed value, result, and next card candidate. |
-| `/stats/arcade/mystery/today` | GET | Returns the daily classified dossier with `candidateOptions` suspect roster (redacted name, seed based on UTC date), optionally scoped to `?serverGuid=`. |
-| `/stats/arcade/mystery/random` | GET | Returns a random classified dossier with `candidateOptions` for practice/endless mode, optionally scoped to `?serverGuid=`. |
+| `/stats/arcade/mystery/today` | GET | Returns the daily classified dossier with `candidateOptions` suspect roster (redacted name, seed based on UTC date), optionally scoped to `?serverGuid=` and `?orbitPlayer=`. |
+| `/stats/arcade/mystery/random` | GET | Returns a random classified dossier with `candidateOptions` for practice/endless mode, optionally scoped to `?serverGuid=`, `?orbitPlayer=`, and `?exclude=`. |
 | `/stats/arcade/mystery/guess` | POST | Submits a player name guess against a dossier token; returns comparative clue indicators. |
-| `/stats/arcade/trivia/quiz` | GET | Generates a 5-question trivia quiz from current stats (map/period scoped when data allows), customized to `?serverGuid=` when provided. |
+| `/stats/arcade/trivia/quiz` | GET | Generates a 5-question trivia quiz from current stats (map/period scoped when data allows), customized to `?serverGuid=` and `?orbitPlayer=` when provided. |
 | `/stats/arcade/trivia/verify` | POST | Validates trivia answers and returns explanations with real stats. |
 | `/stats/arcade/players/search` | GET | Fast autocomplete search across arcade candidate pool, optionally scoped to `?serverGuid=` (used by admin tooling; Mystery Soldier uses `candidateOptions` instead). |
 
