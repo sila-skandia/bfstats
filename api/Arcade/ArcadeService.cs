@@ -1466,26 +1466,24 @@ public class ArcadeService(
         string? serverGuid,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.PlayerMapStats.AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(serverGuid))
+        var mapNames = await LoadTopMapNamesForTriviaAsync(serverGuid, cancellationToken);
+        var query = await ArcadePlayerMapStatsQueryAsync(serverGuid, cancellationToken);
+
+        if (mapNames.Count == 0)
         {
-            query = query.Where(m => m.ServerGuid == serverGuid);
+            mapNames = await query
+                .GroupBy(m => m.MapName)
+                .Select(g => new
+                {
+                    MapName = g.Key,
+                    TotalKills = g.Sum(x => x.TotalKills)
+                })
+                .OrderByDescending(x => x.TotalKills)
+                .Take(TriviaTopMapCount)
+                .Select(x => x.MapName)
+                .ToListAsync(cancellationToken);
         }
 
-        var mapsWithPlayers = await query
-            .GroupBy(m => m.MapName)
-            .Select(g => new
-            {
-                MapName = g.Key,
-                PlayerCount = g.Select(x => x.PlayerName).Distinct().Count(),
-                TotalKills = g.Sum(x => x.TotalKills)
-            })
-            .Where(x => x.PlayerCount >= 2)
-            .OrderByDescending(x => x.TotalKills)
-            .Take(30)
-            .ToListAsync(cancellationToken);
-
-        var mapNames = mapsWithPlayers.Select(m => m.MapName).ToList();
         if (mapNames.Count == 0)
         {
             return [];
@@ -1504,6 +1502,18 @@ public class ArcadeService(
                 g.Sum(x => x.TotalRounds)))
             .ToListAsync(cancellationToken);
 
+        var mapsWithEnoughPlayers = mapFacts
+            .GroupBy(f => f.MapName, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Select(f => f.PlayerName).Distinct(StringComparer.OrdinalIgnoreCase).Count() >= 2)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        mapFacts = mapFacts.Where(f => mapsWithEnoughPlayers.Contains(f.MapName)).ToList();
+        if (mapFacts.Count == 0)
+        {
+            return [];
+        }
+
         var topPlayers = mapFacts
             .GroupBy(f => f.PlayerName, StringComparer.OrdinalIgnoreCase)
             .Select(g => new
@@ -1512,7 +1522,7 @@ public class ArcadeService(
                 TotalKills = g.Sum(x => x.TotalKills)
             })
             .OrderByDescending(x => x.TotalKills)
-            .Take(40)
+            .Take(TriviaTopPlayerCount)
             .Select(x => x.PlayerName)
             .ToList();
 
@@ -1537,93 +1547,66 @@ public class ArcadeService(
         return mapFacts.Concat(extraFacts).ToList();
     }
 
-    private async Task AddMapScopedTriviaQuestionsAsync(
-        List<TriviaQuestionInternal> pool,
+    private async Task<List<string>> LoadTopMapNamesForTriviaAsync(
+        string? serverGuid,
         CancellationToken cancellationToken)
     {
-        var processedMaps = pool
-            .Where(q => !string.IsNullOrWhiteSpace(q.TargetMapName))
-            .Select(q => q.TargetMapName!)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // Query PlayerSessions for additional maps if PlayerMapStats was sparse
-        if (processedMaps.Count < 10)
+        var serverMaps = dbContext.ServerMapStats.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(serverGuid))
         {
-            var sessionMaps = await dbContext.PlayerSessions
-                .AsNoTracking()
-                .Where(ps => ps.MapName.Length > 0 && !ps.IsDeleted)
-                .GroupBy(ps => ps.MapName)
-                .Select(g => new
-                {
-                    MapName = g.Key,
-                    PlayerCount = g.Select(x => x.PlayerName).Distinct().Count(),
-                    SessionCount = g.Count()
-                })
-                .Where(x => x.PlayerCount >= 4)
-                .OrderByDescending(x => x.SessionCount)
-                .Take(20)
-                .ToListAsync(cancellationToken);
-
-            foreach (var sm in sessionMaps)
-            {
-                if (processedMaps.Contains(sm.MapName)) continue;
-                processedMaps.Add(sm.MapName);
-
-                var sPlayers = await dbContext.PlayerSessions
-                    .AsNoTracking()
-                    .Where(ps => ps.MapName == sm.MapName && !ps.IsDeleted)
-                    .GroupBy(ps => ps.PlayerName)
-                    .Select(g => new
-                    {
-                        PlayerName = g.Key,
-                        TotalKills = g.Sum(x => x.TotalKills),
-                        TotalScore = g.Sum(x => x.TotalScore),
-                        SessionCount = g.Count()
-                    })
-                    .ToListAsync(cancellationToken);
-
-                if (sPlayers.Count < 4) continue;
-                var mapSlug = SanitizeTriviaId(sm.MapName);
-
-                var topKills = sPlayers.OrderByDescending(p => p.TotalKills).ToList();
-                if (topKills[0].TotalKills > topKills[1].TotalKills)
-                {
-                    var kOpts = topKills.Take(4).Select(p => p.PlayerName).Distinct().ToList();
-                    if (kOpts.Count == 4)
-                    {
-                        pool.Add(new TriviaQuestionInternal(
-                            $"map_player_kills_{mapSlug}",
-                            "Map Dominance",
-                            $"On {sm.MapName}, which combatant has recorded the most kills?",
-                            kOpts,
-                            topKills[0].PlayerName,
-                            $"{topKills[0].PlayerName} leads {sm.MapName} with {topKills[0].TotalKills:N0} confirmed kills.",
-                            TargetPlayerName: topKills[0].PlayerName,
-                            TargetMapName: sm.MapName
-                        ));
-                    }
-                }
-
-                var topScore = sPlayers.OrderByDescending(p => p.TotalScore).ToList();
-                if (topScore[0].TotalScore > topScore[1].TotalScore)
-                {
-                    var sOpts = topScore.Take(4).Select(p => p.PlayerName).Distinct().ToList();
-                    if (sOpts.Count == 4)
-                    {
-                        pool.Add(new TriviaQuestionInternal(
-                            $"map_player_score_{mapSlug}",
-                            "Map Scoreboard",
-                            $"On {sm.MapName}, which combatant holds the highest recorded total score?",
-                            sOpts,
-                            topScore[0].PlayerName,
-                            $"{topScore[0].PlayerName} leads {sm.MapName} with {topScore[0].TotalScore:N0} total score.",
-                            TargetPlayerName: topScore[0].PlayerName,
-                            TargetMapName: sm.MapName
-                        ));
-                    }
-                }
-            }
+            serverMaps = serverMaps.Where(s => s.ServerGuid == serverGuid);
         }
+
+        var fromServerMaps = await serverMaps
+            .GroupBy(s => s.MapName)
+            .Select(g => new
+            {
+                MapName = g.Key,
+                TotalRounds = g.Sum(x => x.TotalRounds)
+            })
+            .Where(x => x.TotalRounds > 0)
+            .OrderByDescending(x => x.TotalRounds)
+            .Take(TriviaTopMapCount)
+            .Select(x => x.MapName)
+            .ToListAsync(cancellationToken);
+
+        if (fromServerMaps.Count > 0)
+        {
+            return fromServerMaps;
+        }
+
+        var averages = dbContext.MapGlobalAverages.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(serverGuid))
+        {
+            averages = averages.Where(a => a.ServerGuid == serverGuid);
+        }
+        else
+        {
+            averages = averages.Where(a => a.ServerGuid == MapGlobalAverage.GlobalServerGuid);
+        }
+
+        return await averages
+            .OrderByDescending(a => a.SampleCount)
+            .Take(TriviaTopMapCount)
+            .Select(a => a.MapName)
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IQueryable<PlayerMapStats>> ArcadePlayerMapStatsQueryAsync(
+        string? serverGuid,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.PlayerMapStats.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(serverGuid))
+        {
+            return query.Where(m => m.ServerGuid == serverGuid);
+        }
+
+        var hasGlobal = await dbContext.PlayerMapStats.AsNoTracking()
+            .AnyAsync(m => m.ServerGuid == PlayerMapStats.GlobalServerGuid, cancellationToken);
+        return hasGlobal
+            ? query.Where(m => m.ServerGuid == PlayerMapStats.GlobalServerGuid)
+            : query.Where(m => m.ServerGuid != PlayerMapStats.GlobalServerGuid);
     }
 
     private async Task AddPeriodScopedTriviaQuestionsAsync(
@@ -2173,13 +2156,22 @@ public class ArcadeService(
             }
         }
 
-        var combatantCounts = await dbContext.PlayerServerStats
-            .AsNoTracking()
-            .GroupBy(pss => pss.ServerGuid)
-            .Select(g => new { ServerGuid = g.Key, Count = g.Select(x => x.PlayerName).Distinct().Count() })
-            .OrderByDescending(x => x.Count)
-            .Take(8)
-            .ToListAsync(cancellationToken);
+        var latestWeek = await TryGetLatestPlayerServerStatsWeekAsync(cancellationToken);
+        List<(string ServerGuid, int Count)> combatantCounts = [];
+        if (latestWeek != null)
+        {
+            var (year, week) = latestWeek.Value;
+            combatantCounts = (await dbContext.PlayerServerStats
+                    .AsNoTracking()
+                    .Where(pss => pss.Year == year && pss.Week == week)
+                    .GroupBy(pss => pss.ServerGuid)
+                    .Select(g => new { ServerGuid = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .Take(8)
+                    .ToListAsync(cancellationToken))
+                .Select(x => (x.ServerGuid, x.Count))
+                .ToList();
+        }
 
         if (combatantCounts.Count >= 4)
         {
@@ -2262,6 +2254,18 @@ public class ArcadeService(
 
         var date = new DateTime(year, month, 1);
         return date.ToString("MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private async Task<(int Year, int Week)?> TryGetLatestPlayerServerStatsWeekAsync(
+        CancellationToken cancellationToken)
+    {
+        var latest = await dbContext.PlayerServerStats
+            .AsNoTracking()
+            .OrderByDescending(p => p.Year)
+            .ThenByDescending(p => p.Week)
+            .Select(p => new { p.Year, p.Week })
+            .FirstOrDefaultAsync(cancellationToken);
+        return latest == null ? null : (latest.Year, latest.Week);
     }
 
     private static string SanitizeTriviaId(string value)
