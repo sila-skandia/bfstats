@@ -298,6 +298,10 @@ playertracker.db-wal
 # Tournament images uploaded via FileBrowser in local development
 tournament-images/
 
+# Map previews extracted from a BF1942 install (bf1942-map-images skill).
+# These live on the assets volume served by FileBrowser, never in git.
+maps/
+
 # JWT signing keys (local development)
 keys/
 
