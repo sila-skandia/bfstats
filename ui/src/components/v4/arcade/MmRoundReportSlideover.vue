@@ -68,7 +68,10 @@ onUnmounted(() => {
           </div>
         </header>
         <div class="slideover-body">
-          <MmRoundReportV2 :round-id="roundId" />
+          <MmRoundReportV2
+            :round-id="roundId"
+            :open-in-new-tab="true"
+          />
         </div>
       </div>
     </div>
