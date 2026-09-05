@@ -828,6 +828,9 @@ try
     builder.Services.AddScoped<api.DataExplorer.IDataExplorerService, api.DataExplorer.DataExplorerService>();
     builder.Services.AddScoped<api.DataExplorer.IMapPopularityService, api.DataExplorer.MapPopularityService>();
 
+    // Register Arcade & Trivia service
+    builder.Services.AddScoped<api.Arcade.IArcadeService, api.Arcade.ArcadeService>();
+
     // Register Admin Data Management service
     builder.Services.AddScoped<api.AdminData.AdminDataService>();
     builder.Services.AddScoped<api.AdminData.IAdminDataService>(sp => sp.GetRequiredService<api.AdminData.AdminDataService>());

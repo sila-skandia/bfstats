@@ -179,3 +179,11 @@ Server and player names are stored as raw mojibake (some clients/servers send cp
 - **C# server-rendered output** (banner images, Discord embeds, any other path that paints a name for human eyes): `api.Utils.PlayerNameDecoder.Decode(name)`.
 - **Do NOT decode** for: `router.push` / `:to=` URLs, search query strings, dictionary/Set keys, FK joins, `v-for :key`, or anything compared against a stored name. Those paths must keep using the raw name.
 - When adding a new component or template that surfaces a server or player name, default to `$pn(...)` unless the value is being used as an identifier.
+
+### No Emojis Policy
+- **NEVER use emojis anywhere in the codebase.** Emojis are a lazy shortcut for visual effects.
+- Always use a considered CSS approach with advanced animations, refined color palettes, typography, SVG vectors, or icon fonts (e.g. PrimeIcons `pi pi-*`).
+- Replace any flag emojis with styled ISO country badges (e.g. `<span class="mm-country-badge">US</span>`).
+- Replace emoji icons with SVGs or PrimeIcons.
+- Replace emoji streak/status indicators with CSS keyframe glows, pulses, and badges.
+- Keep copyable/shareable strings clean and structured with plain text symbols (e.g., `[+]`, `[-]`, `[WIN]`, `[MATCH]`) instead of emojis.
