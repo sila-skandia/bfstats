@@ -4,6 +4,60 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-05 22:39 UTC page
+
+32 minutes after the 22:07 page (`cursor/site-error-analysis-ff15`). That
+branch never opened a PR, so production still attaches `ex` on request-path
+handled fallbacks. Live site at 22:40 UTC was otherwise healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 22:40:00, 92 servers named/unique, 88 live players
+  (88 unique; no duplicate names)
+- Default `/stats/players` 200. Search for Ho-Chi Minh / jonas / BFSoldier /
+  Player / Nosferatu all 200. Prior Ho-Chi Minh and jonas collisions remain
+  cleared (`isActive: false`; lastSeen 12:55:08 / 19:18:38).
+- Arcade `/servers` 200 (3.6s). Trivia 200 but 29s; higher-lower 200 in 0.2s
+  (likely cached). That 29s trivia wait is consistent with SQLite lock
+  contention around the :35/:40 gamification window.
+- Wrapped 200 for MoonGamers.
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20`
+
+A :39 page is 4 minutes after the :35 gamification tick (same offset as the
+:34-after-:30 pages). Background-job `SQLITE_BUSY` should not page after
+PR #17. Best fit is the same leftover request-path `LogWarning(ex)` (player
+pages, arcade roster/trivia, banners, geo) during that lock window, or Seq
+re-notify of the 22:07 event. Not a 02:00 retry.
+
+This change re-lands `cursor/site-error-analysis-ff15` / `060b` so the
+leftover handled fallbacks stop paging.
+
+## 2026-09-05 22:07 UTC page
+
+33 minutes after the 21:34 page (`cursor/site-error-analysis-060b`). That
+branch never opened a PR, so production still attaches `ex` on request-path
+handled fallbacks. Live site at 22:07 UTC was otherwise healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 22:07:45, 92 servers named/unique, 119 live players
+  (117 unique; generic `BFSoldier` and `Player` on two servers each)
+- Default `/stats/players` 200. Search for Ho-Chi Minh / jonas / BFSoldier /
+  Player / Nosferatu all 200. Prior Ho-Chi Minh and jonas collisions remain
+  cleared (`isActive: false`; lastPlayed 12:55:08 / 19:18:38).
+- Arcade `/servers`, `/higher-lower/next`, `/mystery/today`, `/trivia/quiz` 200.
+  Spawn maps `wake` / `bocage` 200. Trivia 8.5s, higher-lower 8.8s.
+- Wrapped 200 for MoonGamers and `*NEW* SiMPLE | BF1942`. RtR+SW wrapped 404
+  (no cached wrap).
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20`
+
+A :07 page is 2 minutes after the :05 gamification tick and 7 minutes after
+hourly ranking/aggregate writers. Background-job `SQLITE_BUSY` should not page
+after PR #17. Best fit is the same leftover request-path `LogWarning(ex)`
+(player pages, arcade ~9s queries, banners, geo) during that lock window, or
+Seq re-notify of the 21:34 event. Not a 02:00 retry.
+
+This change re-lands `cursor/site-error-analysis-060b` so the leftover
+handled fallbacks stop paging.
+
 ## 2026-09-05 21:34 UTC page
 
 ~4 hours after the 17:34 page (`cursor/site-error-analysis-625f`). PR #17 from
