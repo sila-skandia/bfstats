@@ -5,6 +5,7 @@ import 'primeicons/primeicons.css'
 import MmHigherLowerGame from '@/components/v4/arcade/MmHigherLowerGame.vue'
 import MmMysterySoldierGame from '@/components/v4/arcade/MmMysterySoldierGame.vue'
 import MmFieldTriviaGame from '@/components/v4/arcade/MmFieldTriviaGame.vue'
+import MmTheaterScope from '@/components/v4/arcade/MmTheaterScope.vue'
 import { fetchArcadeServers, type ArcadeServer } from '@/services/arcadeService'
 import { decodeServerName } from '@/utils/playerName'
 
@@ -206,8 +207,15 @@ onUnmounted(() => {
       Arcade
     </h1>
     <p class="mm-arcade-prompt">
-      Choose your favourite server, and the game will begin
+      Plot a contact on the scope. The exercise follows.
     </p>
+
+    <MmTheaterScope
+      :servers="servers"
+      :selected-guid="selectedServerGuid"
+      :loading="serversLoading"
+      @select="setServer"
+    />
 
     <!-- Prominent Server Selector Card -->
     <div
