@@ -120,7 +120,7 @@ public class CommunitiesController(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error detecting communities");
+            logger.LogError("Error detecting communities: {Message}", ex.Message);
             return StatusCode(500, "An error occurred during community detection");
         }
     }
