@@ -15,6 +15,7 @@ import MmRoundReportSlideover from '@/components/v4/arcade/MmRoundReportSlideove
 const props = defineProps<{
   serverGuid?: string
   serverName?: string
+  orbitPlayer?: string
 }>()
 
 const { isMuted, toggleMute, playRoger, playNegative } = useArcadeAudio()
@@ -73,7 +74,7 @@ const loadQuiz = async () => {
   quizResult.value = null
 
   try {
-    quiz.value = await fetchTriviaQuiz(props.serverGuid)
+    quiz.value = await fetchTriviaQuiz(props.serverGuid, props.orbitPlayer)
   } catch {
     error.value = 'Failed to load reconnaissance quiz. Please retry.'
   } finally {
@@ -82,7 +83,7 @@ const loadQuiz = async () => {
 }
 
 watch(
-  () => props.serverGuid,
+  () => [props.serverGuid, props.orbitPlayer],
   () => {
     loadQuiz()
   }

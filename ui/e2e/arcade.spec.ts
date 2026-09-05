@@ -7,6 +7,8 @@ test.describe('Arcade higher or lower', () => {
 
     await expect(page.getByRole('heading', { name: 'Arcade', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Higher or Lower' })).toBeVisible()
+    await expect(page.getByTestId('arcade-orbit-picker')).toBeVisible()
+    await expect(page.getByRole('button', { name: /who am i/i })).toBeVisible()
 
     const prompt = page.getByTestId('hl-prompt')
     await expect(prompt).toBeVisible()

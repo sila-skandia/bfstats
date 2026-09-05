@@ -745,6 +745,57 @@ public class ArcadeTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDailyMysteryDossier_IncludesDynamicAttributes()
+    {
+        var dossier = await _service.GetDailyMysteryDossierAsync();
+
+        Assert.NotNull(dossier);
+        Assert.NotNull(dossier.Attributes);
+        Assert.NotEmpty(dossier.Attributes);
+        Assert.InRange(dossier.Attributes.Count, 4, 6);
+        Assert.All(dossier.Attributes, a =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(a.Key));
+            Assert.False(string.IsNullOrWhiteSpace(a.Label));
+            Assert.False(string.IsNullOrWhiteSpace(a.Value));
+        });
+    }
+
+    [Fact]
+    public async Task GetRandomMysteryDossier_ExcludesSpecifiedPlayer()
+    {
+        // Sample repeatedly with exclusion to verify excluded player is never picked as target
+        var targetToExclude = "Sgt_Rock";
+        for (var i = 0; i < 15; i++)
+        {
+            var dossier = await _service.GetRandomMysteryDossierAsync(null, null, targetToExclude);
+            var result = await _service.GuessMysterySoldierAsync(new MysteryGuessRequest(dossier.DossierToken, targetToExclude));
+            // If excluded, guessing targetToExclude should never be correct
+            Assert.False(result.IsCorrect);
+        }
+    }
+
+    [Fact]
+    public async Task GuessMysterySoldier_ReturnsDynamicAttributeMatches()
+    {
+        var dossier = await _service.GetDailyMysteryDossierAsync();
+        Assert.NotNull(dossier.Attributes);
+
+        var guess = dossier.CandidateOptions[0];
+        var result = await _service.GuessMysterySoldierAsync(new MysteryGuessRequest(dossier.DossierToken, guess));
+
+        Assert.NotNull(result.Attributes);
+        Assert.Equal(dossier.Attributes.Count, result.Attributes.Count);
+        Assert.Equal(dossier.Attributes.Select(a => a.Key), result.Attributes.Select(a => a.Key));
+        Assert.All(result.Attributes, a =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(a.Key));
+            Assert.False(string.IsNullOrWhiteSpace(a.Label));
+            Assert.False(string.IsNullOrWhiteSpace(a.Value));
+        });
+    }
+
+    [Fact]
     public async Task GenerateTriviaQuiz_ServerScoped_CreatesServerQuestions()
     {
         var quiz = await _service.GenerateTriviaQuizAsync("srv-1");
@@ -1139,4 +1190,99 @@ public class ArcadeTests : IDisposable
         Assert.Equal("Axis", verify.CorrectAnswer);
         Assert.Contains("100 wins versus Allied's 82 wins", verify.Explanation);
     }
+
+    [Fact]
+    public void RelationshipTrivia_BuildsUniqueWingmanLongestAndRecentQuestions()
+    {
+        var questions = ArcadeRelationshipTrivia.FromCoPlayers("ApexSoldier",
+        [
+            Rel("EagleEye", 80, new DateTime(2022, 1, 1), new DateTime(2026, 6, 1)),
+            Rel("OrbitBuddy", 40, new DateTime(2023, 5, 1), new DateTime(2026, 8, 1)),
+            Rel("Valkyrie", 20, new DateTime(2024, 2, 1), new DateTime(2026, 4, 1)),
+            Rel("ExtraFour", 10, new DateTime(2025, 3, 1), new DateTime(2026, 9, 1))
+        ]);
+
+        Assert.Equal(3, questions.Count);
+        Assert.Contains(questions, q => q.Id == "rel_wingman_apexsoldier" && q.CorrectAnswer == "EagleEye");
+        Assert.Contains(questions, q => q.Id == "rel_longest_apexsoldier" && q.CorrectAnswer == "EagleEye");
+        Assert.Contains(questions, q => q.Id == "rel_recent_apexsoldier" && q.CorrectAnswer == "ExtraFour");
+        Assert.All(questions, q => Assert.Equal(4, q.Options.Count));
+    }
+
+    [Fact]
+    public void RelationshipTrivia_SkipsTiedLeaders()
+    {
+        var questions = ArcadeRelationshipTrivia.FromCoPlayers("ApexSoldier",
+        [
+            Rel("EagleEye", 40, new DateTime(2022, 1, 1), new DateTime(2026, 6, 1)),
+            Rel("OrbitBuddy", 40, new DateTime(2022, 1, 1), new DateTime(2026, 6, 1)),
+            Rel("Valkyrie", 20, new DateTime(2024, 2, 1), new DateTime(2026, 4, 1)),
+            Rel("ExtraFour", 10, new DateTime(2025, 3, 1), new DateTime(2026, 4, 1))
+        ]);
+
+        Assert.DoesNotContain(questions, q => q.Id.StartsWith("rel_wingman_", StringComparison.Ordinal));
+        Assert.DoesNotContain(questions, q => q.Id.StartsWith("rel_longest_", StringComparison.Ordinal));
+        Assert.DoesNotContain(questions, q => q.Id.StartsWith("rel_recent_", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task OrbitPlayer_BiasesMysteryRosterAndAddsRelationshipTrivia()
+    {
+        _dbContext.PlayerStatsMonthly.AddRange(
+            new PlayerStatsMonthly
+            {
+                PlayerName = "OrbitBuddy",
+                Year = 2026,
+                Month = 9,
+                TotalKills = 12,
+                TotalDeaths = 10,
+                TotalScore = 20,
+                TotalPlayTimeMinutes = 40
+            },
+            new PlayerStatsMonthly
+            {
+                PlayerName = "ExtraFour",
+                Year = 2026,
+                Month = 9,
+                TotalKills = 8,
+                TotalDeaths = 8,
+                TotalScore = 15,
+                TotalPlayTimeMinutes = 30
+            });
+        await _dbContext.SaveChangesAsync();
+
+        var relationships = Substitute.For<api.PlayerRelationships.IPlayerRelationshipService>();
+        relationships.GetMostFrequentCoPlayersAsync("ApexSoldier", 100, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new List<api.PlayerRelationships.Models.PlayerRelationship>
+            {
+                Rel("EagleEye", 80, new DateTime(2022, 1, 1), new DateTime(2026, 6, 1)),
+                Rel("OrbitBuddy", 40, new DateTime(2023, 5, 1), new DateTime(2026, 8, 1)),
+                Rel("Valkyrie", 20, new DateTime(2024, 2, 1), new DateTime(2026, 4, 1)),
+                Rel("ExtraFour", 10, new DateTime(2025, 3, 1), new DateTime(2026, 9, 1))
+            }));
+
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(api.PlayerRelationships.IPlayerRelationshipService)).Returns(relationships);
+        var orbitService = new ArcadeService(_dbContext, _memoryCache, _serviceLogger, serviceProvider);
+
+        var dossier = await orbitService.GetRandomMysteryDossierAsync(orbitPlayer: "ApexSoldier");
+        Assert.Contains("OrbitBuddy", dossier.CandidateOptions, StringComparer.OrdinalIgnoreCase);
+
+        var quiz = await orbitService.GenerateTriviaQuizAsync(orbitPlayer: "ApexSoldier");
+        Assert.Contains(quiz.Questions, q => q.Id.StartsWith("rel_", StringComparison.Ordinal));
+    }
+
+    private static api.PlayerRelationships.Models.PlayerRelationship Rel(
+        string other,
+        int sessions,
+        DateTime first,
+        DateTime last)
+        => new()
+        {
+            Player1Name = "ApexSoldier",
+            Player2Name = other,
+            SessionCount = sessions,
+            FirstPlayedTogether = first,
+            LastPlayedTogether = last
+        };
 }
