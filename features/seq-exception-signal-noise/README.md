@@ -4,6 +4,36 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-05 02:21 UTC page
+
+~33 minutes after the 01:48 page, and 21 minutes after the nightly
+community-detection start. Live site at 02:21 UTC was healthy:
+
+- Homepage 200, liveservers `lastUpdated` 02:21:22, 93 servers named / unique
+- 61 live players / 61 unique
+- Default `/stats/players` **200** (50 unique). Search for lop|Zagros / tom /
+  Rick / Frankie / nico / Paciencia all 200. tom is live on MoonGamers with a
+  single IsActive session; the others are inactive with no duplicate open
+  sessions
+- bflist 200, Seq UI 200 / API 401, wrapped for MoonGamers / SiMPLE 200,
+  player atp 200
+- `/stats/communities` still 17,954 rows, all
+  `formationDate = 2026-08-20T02:00:05–08Z`
+
+**Nightly community detection still in flight at 02:21 overlapping the :20
+gamification tick and 30s stats collection** (`SQLITE_BUSY`), or Seq
+re-notify of the 01:48 event. A :21 page is 1 min after that gamification
+boundary / 21 min after hourly writers. After a failed 02:00 run the catch
+waits 5 min then the loop sleeps until tomorrow 02:00, so this is not a
+second detection attempt — it is the 02:00 run still holding SQLite / Neo4j
+while the :20 tick also writes, or a held earlier exception. Communities
+are still frozen since 2026-08-20.
+
+The 01:48 branch (`cursor/site-error-analysis-4185`) never opened a PR, so
+production still has the noisy `LogWarning(ex)` / `LogError(ex)` on handled
+`SQLITE_BUSY` and the `ToDictionary(PlayerName)` list crash. This
+change re-lands that work.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
