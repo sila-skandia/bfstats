@@ -189,6 +189,8 @@ export interface RoundInfo {
   tickets2?: number;
   team1Label?: string;
   team2Label?: string;
+  /** Mod the server runs (bf1942, fhsw, dc_final, ...). Addresses the map preview image. */
+  gameId?: string | null;
 }
 
 export interface SessionInfo {
