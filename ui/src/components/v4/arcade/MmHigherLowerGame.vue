@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import 'primeicons/primeicons.css'
 import {
   fetchHigherLowerNext,
@@ -7,6 +7,7 @@ import {
   type HigherLowerQuestion,
   type HigherLowerRevealResult,
 } from '@/services/arcadeService'
+
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
 
 const props = defineProps<{
@@ -20,6 +21,7 @@ const currentQuestion = ref<HigherLowerQuestion | null>(null)
 const revealResult = ref<HigherLowerRevealResult | null>(null)
 const loading = ref(false)
 const guessing = ref(false)
+const selectedGuess = ref<'playerA' | 'playerB' | null>(null)
 const error = ref<string | null>(null)
 
 const score = ref(0)
@@ -29,12 +31,54 @@ const bestStreak = ref(
   Number(localStorage.getItem('bfstats:arcade-hl-best') || '0')
 )
 
-const loadNext = async (carryCandidate?: string) => {
+const promptTitle = computed(() => currentQuestion.value?.metricLabel || '')
+const promptDetail = computed(() => {
+  const q = currentQuestion.value
+  if (!q) return ''
+  return q.prompt || `Who has more ${q.metricLabel.toLowerCase()}?`
+})
+const contestedMap = computed(() => currentQuestion.value?.mapName || '')
+
+const isChoiceA = computed(() => selectedGuess.value === 'playerA')
+const isChoiceB = computed(() => selectedGuess.value === 'playerB')
+
+const isWinnerA = computed(() => {
+  if (!revealResult.value) return false
+  return revealResult.value.playerAValue >= revealResult.value.playerBValue
+})
+
+const isWinnerB = computed(() => {
+  if (!revealResult.value) return false
+  return revealResult.value.playerBValue >= revealResult.value.playerAValue
+})
+
+const formattedPlayerA = computed(() => {
+  if (revealResult.value?.formattedPlayerAValue) {
+    return revealResult.value.formattedPlayerAValue
+  }
+  if (revealResult.value?.playerAValue !== undefined) {
+    return String(revealResult.value.playerAValue)
+  }
+  return ''
+})
+
+const formattedPlayerB = computed(() => {
+  if (revealResult.value?.formattedPlayerBValue) {
+    return revealResult.value.formattedPlayerBValue
+  }
+  if (revealResult.value?.playerBValue !== undefined) {
+    return String(revealResult.value.playerBValue)
+  }
+  return ''
+})
+
+const loadNext = async () => {
   loading.value = true
   error.value = null
   revealResult.value = null
+  selectedGuess.value = null
   try {
-    currentQuestion.value = await fetchHigherLowerNext(props.serverGuid, carryCandidate)
+    currentQuestion.value = await fetchHigherLowerNext(props.serverGuid)
   } catch {
     error.value = 'Failed to load matchup. Retrying in a moment...'
   } finally {
@@ -49,9 +93,10 @@ watch(
   }
 )
 
-const handleGuess = async (guess: 'higher' | 'lower') => {
+const handleGuess = async (guess: 'playerA' | 'playerB') => {
   if (!currentQuestion.value || guessing.value || revealResult.value) return
   guessing.value = true
+  selectedGuess.value = guess
   error.value = null
 
   try {
@@ -76,17 +121,17 @@ const handleGuess = async (guess: 'higher' | 'lower') => {
     }
   } catch {
     error.value = 'Failed to verify guess. Please try again.'
+    selectedGuess.value = null
   } finally {
     guessing.value = false
   }
 }
 
 const advanceRound = () => {
+  selectedGuess.value = null
   if (revealResult.value?.nextQuestion) {
     currentQuestion.value = revealResult.value.nextQuestion
     revealResult.value = null
-  } else if (currentQuestion.value) {
-    loadNext(currentQuestion.value.playerB.name)
   } else {
     loadNext()
   }
@@ -95,6 +140,7 @@ const advanceRound = () => {
 const restartGame = () => {
   streak.value = 0
   revealResult.value = null
+  selectedGuess.value = null
   loadNext()
 }
 
@@ -105,13 +151,15 @@ onMounted(() => {
 
 <template>
   <div class="mm-hl">
-    <!-- Header HUD / Scoreboard -->
     <div class="mm-hl__hud">
       <div class="mm-hl__hud-col">
         <span class="mm-eyebrow">Score</span>
         <div class="mm-hl__hud-stat">
           <span class="mm-hl__hud-value">{{ score }}</span>
-          <span v-if="totalAnswered > 0" class="mm-hl__hud-sub">/ {{ totalAnswered }}</span>
+          <span
+            v-if="totalAnswered > 0"
+            class="mm-hl__hud-sub"
+          >/ {{ totalAnswered }}</span>
         </div>
       </div>
 
@@ -145,7 +193,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Error Banner -->
     <div
       v-if="error"
       class="mm-hl__error"
@@ -160,161 +207,313 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Main Battlefield Arena -->
-    <div
-      v-if="currentQuestion"
-      class="mm-hl__arena"
-    >
-      <!-- Player A Card -->
-      <div class="mm-hl__card mm-hl__card--left">
-        <div class="mm-hl__card-header">
-          <span class="mm-eyebrow">Player</span>
-          <span
-            class="mm-country-badge"
-            :title="currentQuestion.playerA.country"
-          >
-            {{ currentQuestion.playerA.country || 'UN' }}
-          </span>
-        </div>
-
-        <h3 class="mm-hl__soldier-name">
-          <router-link
-            :to="`/v4/players/${encodeURIComponent(currentQuestion.playerA.name)}`"
-            class="mm-hl__player-link"
-            title="View player profile"
-          >
-            {{ $pn(currentQuestion.playerA.name) }}
-          </router-link>
-        </h3>
-
-        <div class="mm-hl__theater">
-          <span class="mm-eyebrow">Favorite Map</span>
-          <span class="mm-hl__theater-val">{{ currentQuestion.playerA.favoriteMap }}</span>
-        </div>
-
-        <div class="mm-hl__metric-box">
-          <span class="mm-eyebrow">{{ currentQuestion.metricLabel }}</span>
-          <div class="mm-hl__metric-val mm-hl__metric-val--verified">
-            {{ currentQuestion.playerA.formattedValue }}
-          </div>
-        </div>
-      </div>
-
-      <!-- VS / Divider Badge -->
-      <div class="mm-hl__vs">
-        <div class="mm-hl__vs-circle">
-          VS
-        </div>
-        <div class="mm-hl__metric-prompt">
-          Comparing <strong>{{ currentQuestion.metricLabel }}</strong>
-        </div>
-      </div>
-
-      <!-- Player B Card (Challenger) -->
+    <template v-if="currentQuestion">
       <div
-        class="mm-hl__card mm-hl__card--right"
-        :class="{
-          'mm-hl__card--correct': revealResult?.isCorrect,
-          'mm-hl__card--wrong': revealResult && !revealResult.isCorrect
-        }"
+        class="mm-section-bar mm-hl__prompt"
+        data-testid="hl-prompt"
       >
-        <div class="mm-hl__card-header">
-          <span class="mm-eyebrow">Challenger</span>
-          <span
-            class="mm-country-badge"
-            :title="currentQuestion.playerB.country"
+        <span>{{ promptTitle }}</span>
+        <span class="mm-section-bar__meta">Higher or Lower · Click a player to answer</span>
+      </div>
+
+      <h2
+        class="mm-hl__question"
+        data-testid="hl-prompt-detail"
+      >
+        {{ promptDetail }}
+      </h2>
+
+      <div class="mm-hl__arena">
+        <!-- Player A Card -->
+        <div
+          class="mm-hl__card mm-hl__card--left"
+          :class="{
+            'mm-hl__card--interactive': !revealResult && !guessing,
+            'mm-hl__card--chosen': selectedGuess === 'playerA',
+            'mm-hl__card--correct': revealResult && isChoiceA && revealResult.isCorrect,
+            'mm-hl__card--wrong': revealResult && isChoiceA && !revealResult.isCorrect,
+            'mm-hl__card--winner': revealResult && !isChoiceA && isWinnerA,
+            'mm-hl__card--dimmed': revealResult && !isChoiceA && !isWinnerA
+          }"
+          :role="!revealResult ? 'button' : undefined"
+          :tabindex="!revealResult ? 0 : undefined"
+          :aria-label="!revealResult ? `Pick ${currentQuestion.playerA.name}` : undefined"
+          @click="!revealResult && handleGuess('playerA')"
+          @keydown.enter="!revealResult && handleGuess('playerA')"
+          @keydown.space.prevent="!revealResult && handleGuess('playerA')"
+        >
+          <div class="mm-hl__card-header">
+            <span class="mm-eyebrow">Candidate A</span>
+            <div class="mm-hl__card-badges">
+              <span
+                class="mm-country-badge"
+                :title="currentQuestion.playerA.country"
+              >
+                {{ currentQuestion.playerA.country || 'UN' }}
+              </span>
+              <router-link
+                :to="`/v4/players/${encodeURIComponent(currentQuestion.playerA.name)}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="mm-hl__profile-link"
+                title="View player profile (opens in new tab)"
+                @click.stop
+              >
+                <i class="pi pi-external-link" />
+              </router-link>
+            </div>
+          </div>
+
+          <h3 class="mm-hl__soldier-name">
+            {{ $pn(currentQuestion.playerA.name) }}
+          </h3>
+
+          <div
+            v-if="contestedMap"
+            class="mm-hl__map-chip"
           >
-            {{ currentQuestion.playerB.country || 'UN' }}
-          </span>
-        </div>
-
-        <h3 class="mm-hl__soldier-name">
-          <router-link
-            :to="`/v4/players/${encodeURIComponent(currentQuestion.playerB.name)}`"
-            class="mm-hl__player-link"
-            title="View player profile"
+            <span class="mm-eyebrow">On this map</span>
+            <span class="mm-hl__map-name">{{ contestedMap }}</span>
+          </div>
+          <div
+            v-else-if="currentQuestion.playerA.favoriteMap"
+            class="mm-hl__map-chip"
           >
-            {{ $pn(currentQuestion.playerB.name) }}
-          </router-link>
-        </h3>
+            <span class="mm-eyebrow">Favorite Map</span>
+            <span class="mm-hl__map-name">{{ currentQuestion.playerA.favoriteMap }}</span>
+          </div>
 
-        <div class="mm-hl__theater">
-          <span class="mm-eyebrow">Favorite Map</span>
-          <span class="mm-hl__theater-val">{{ currentQuestion.playerB.favoriteMap }}</span>
-        </div>
+          <div class="mm-hl__metric-box">
+            <span class="mm-eyebrow">{{ currentQuestion.metricLabel }}</span>
+            <div
+              v-if="!revealResult"
+              class="mm-hl__unrevealed"
+            >
+              <span class="mm-hl__mystery-mark">???</span>
+            </div>
+            <div
+              v-else
+              class="mm-hl__metric-val"
+              :class="{ 'mm-hl__metric-val--winner': isWinnerA }"
+            >
+              {{ formattedPlayerA }}
+            </div>
+          </div>
 
-        <div class="mm-hl__metric-box">
-          <span class="mm-eyebrow">{{ currentQuestion.metricLabel }}</span>
-
-          <!-- Unrevealed vs Revealed State -->
+          <!-- Pick CTA or Post-reveal status tag -->
           <div
             v-if="!revealResult"
-            class="mm-hl__unrevealed"
+            class="mm-hl__pick-btn"
+            data-testid="hl-pick-a"
           >
-            <span class="mm-hl__mystery-mark">???</span>
-            <span class="mm-hl__mystery-sub">Higher or lower?</span>
+            <i class="pi pi-check" />
+            <span>Select {{ $pn(currentQuestion.playerA.name) }}</span>
           </div>
-
           <div
             v-else
-            class="mm-hl__metric-val mm-hl__metric-val--revealed"
+            class="mm-hl__status-row"
           >
-            {{ revealResult.formattedPlayerBValue }}
+            <span
+              v-if="isChoiceA && revealResult.isCorrect"
+              class="mm-hl__card-tag mm-hl__card-tag--correct"
+            >
+              <i class="pi pi-check" />
+              Your Pick · Correct
+            </span>
+            <span
+              v-else-if="isChoiceA && !revealResult.isCorrect"
+              class="mm-hl__card-tag mm-hl__card-tag--wrong"
+            >
+              <i class="pi pi-times" />
+              Your Pick
+            </span>
+            <span
+              v-else-if="isWinnerA"
+              class="mm-hl__card-tag mm-hl__card-tag--winner"
+            >
+              <i class="pi pi-star" />
+              Higher Value
+            </span>
           </div>
         </div>
 
-        <!-- HIGHER / LOWER Buttons -->
+        <!-- Center VS Divider -->
         <div
-          v-if="!revealResult"
-          class="mm-hl__actions"
+          class="mm-hl__vs"
+          aria-hidden="true"
         >
-          <button
-            type="button"
-            class="mm-hl__btn mm-hl__btn--higher"
-            :disabled="guessing"
-            @click="handleGuess('higher')"
-          >
-            <i class="pi pi-arrow-up mm-hl__btn-icon" />
-            <span class="mm-hl__btn-text">HIGHER</span>
-          </button>
-
-          <button
-            type="button"
-            class="mm-hl__btn mm-hl__btn--lower"
-            :disabled="guessing"
-            @click="handleGuess('lower')"
-          >
-            <i class="pi pi-arrow-down mm-hl__btn-icon" />
-            <span class="mm-hl__btn-text">LOWER</span>
-          </button>
+          <div class="mm-hl__vs-circle">
+            VS
+          </div>
         </div>
 
-        <!-- Reveal Outcome Banner & Next Round Button (Never ends the game!) -->
+        <!-- Player B Card -->
         <div
-          v-else
-          class="mm-hl__outcome"
-          :class="revealResult.isCorrect ? 'mm-hl__outcome--success' : 'mm-hl__outcome--miss'"
+          class="mm-hl__card mm-hl__card--right"
+          :class="{
+            'mm-hl__card--interactive': !revealResult && !guessing,
+            'mm-hl__card--chosen': selectedGuess === 'playerB',
+            'mm-hl__card--correct': revealResult && isChoiceB && revealResult.isCorrect,
+            'mm-hl__card--wrong': revealResult && isChoiceB && !revealResult.isCorrect,
+            'mm-hl__card--winner': revealResult && !isChoiceB && isWinnerB,
+            'mm-hl__card--dimmed': revealResult && !isChoiceB && !isWinnerB
+          }"
+          :role="!revealResult ? 'button' : undefined"
+          :tabindex="!revealResult ? 0 : undefined"
+          :aria-label="!revealResult ? `Pick ${currentQuestion.playerB.name}` : undefined"
+          @click="!revealResult && handleGuess('playerB')"
+          @keydown.enter="!revealResult && handleGuess('playerB')"
+          @keydown.space.prevent="!revealResult && handleGuess('playerB')"
         >
-          <div class="mm-hl__outcome-msg">
-            <i
-              :class="revealResult.isCorrect ? 'pi pi-check-circle' : 'pi pi-info-circle'"
-              class="mm-hl__outcome-icon"
-            />
-            <span>{{ revealResult.message }}</span>
+          <div class="mm-hl__card-header">
+            <span class="mm-eyebrow">Candidate B</span>
+            <div class="mm-hl__card-badges">
+              <span
+                class="mm-country-badge"
+                :title="currentQuestion.playerB.country"
+              >
+                {{ currentQuestion.playerB.country || 'UN' }}
+              </span>
+              <router-link
+                :to="`/v4/players/${encodeURIComponent(currentQuestion.playerB.name)}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="mm-hl__profile-link"
+                title="View player profile (opens in new tab)"
+                @click.stop
+              >
+                <i class="pi pi-external-link" />
+              </router-link>
+            </div>
           </div>
-          <button
-            type="button"
-            class="mm-hl__next-btn"
-            @click="advanceRound"
+
+          <h3 class="mm-hl__soldier-name">
+            {{ $pn(currentQuestion.playerB.name) }}
+          </h3>
+
+          <div
+            v-if="contestedMap"
+            class="mm-hl__map-chip"
           >
-            <span>Next Matchup</span>
-            <i class="pi pi-arrow-right" />
-          </button>
+            <span class="mm-eyebrow">On this map</span>
+            <span class="mm-hl__map-name">{{ contestedMap }}</span>
+          </div>
+          <div
+            v-else-if="currentQuestion.playerB.favoriteMap"
+            class="mm-hl__map-chip"
+          >
+            <span class="mm-eyebrow">Favorite Map</span>
+            <span class="mm-hl__map-name">{{ currentQuestion.playerB.favoriteMap }}</span>
+          </div>
+
+          <div class="mm-hl__metric-box">
+            <span class="mm-eyebrow">{{ currentQuestion.metricLabel }}</span>
+            <div
+              v-if="!revealResult"
+              class="mm-hl__unrevealed"
+            >
+              <span class="mm-hl__mystery-mark">???</span>
+            </div>
+            <div
+              v-else
+              class="mm-hl__metric-val"
+              :class="{ 'mm-hl__metric-val--winner': isWinnerB }"
+            >
+              {{ formattedPlayerB }}
+            </div>
+          </div>
+
+          <!-- Pick CTA or Post-reveal status tag -->
+          <div
+            v-if="!revealResult"
+            class="mm-hl__pick-btn"
+            data-testid="hl-pick-b"
+          >
+            <i class="pi pi-check" />
+            <span>Select {{ $pn(currentQuestion.playerB.name) }}</span>
+          </div>
+          <div
+            v-else
+            class="mm-hl__status-row"
+          >
+            <span
+              v-if="isChoiceB && revealResult.isCorrect"
+              class="mm-hl__card-tag mm-hl__card-tag--correct"
+            >
+              <i class="pi pi-check" />
+              Your Pick · Correct
+            </span>
+            <span
+              v-else-if="isChoiceB && !revealResult.isCorrect"
+              class="mm-hl__card-tag mm-hl__card-tag--wrong"
+            >
+              <i class="pi pi-times" />
+              Your Pick
+            </span>
+            <span
+              v-else-if="isWinnerB"
+              class="mm-hl__card-tag mm-hl__card-tag--winner"
+            >
+              <i class="pi pi-star" />
+              Higher Value
+            </span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Loading Skeleton -->
+      <!-- Action Row (Select player buttons for explicit button clicks / accessibility) -->
+      <div
+        v-if="!revealResult"
+        class="mm-hl__actions"
+        data-testid="hl-actions"
+      >
+        <button
+          type="button"
+          class="mm-hl__btn mm-hl__btn--choice"
+          :disabled="guessing"
+          @click="handleGuess('playerA')"
+        >
+          <i class="pi pi-user mm-hl__btn-icon" />
+          <span class="mm-hl__btn-text">{{ $pn(currentQuestion.playerA.name) }}</span>
+        </button>
+
+        <button
+          type="button"
+          class="mm-hl__btn mm-hl__btn--choice"
+          :disabled="guessing"
+          @click="handleGuess('playerB')"
+        >
+          <i class="pi pi-user mm-hl__btn-icon" />
+          <span class="mm-hl__btn-text">{{ $pn(currentQuestion.playerB.name) }}</span>
+        </button>
+      </div>
+
+      <!-- Outcome Banner -->
+      <div
+        v-else
+        class="mm-hl__outcome"
+        :class="revealResult.isCorrect ? 'mm-hl__outcome--success' : 'mm-hl__outcome--miss'"
+        data-testid="hl-outcome"
+      >
+        <div class="mm-hl__outcome-msg">
+          <i
+            :class="revealResult.isCorrect ? 'pi pi-check-circle' : 'pi pi-info-circle'"
+            class="mm-hl__outcome-icon"
+          />
+          <span>{{ revealResult.message }}</span>
+        </div>
+        <button
+          type="button"
+          class="mm-hl__next-btn"
+          data-testid="hl-next-btn"
+          @click="advanceRound"
+        >
+          <span>Next Matchup</span>
+          <i class="pi pi-arrow-right" />
+        </button>
+      </div>
+    </template>
+
     <div
       v-else-if="loading"
       class="mm-hl__loading"
@@ -331,10 +530,9 @@ onMounted(() => {
 .mm-hl {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
 }
 
-/* HUD */
 .mm-hl__hud {
   display: flex;
   align-items: center;
@@ -342,7 +540,7 @@ onMounted(() => {
   padding: 16px 20px;
   background: var(--mm-bg-soft);
   border: 1px solid var(--mm-rule);
-  border-radius: 6px;
+  border-radius: 2px;
 }
 
 .mm-hl__hud-col {
@@ -400,9 +598,6 @@ onMounted(() => {
   font-weight: 800;
   color: var(--mm-ink);
   line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .mm-hl__best {
@@ -423,10 +618,12 @@ onMounted(() => {
   color: var(--mm-ink-muted);
   cursor: pointer;
   padding: 4px 0;
+  min-height: 44px;
   transition: color 0.15s ease;
 }
 
-.mm-hl__sound-btn:hover {
+.mm-hl__sound-btn:hover,
+.mm-hl__sound-btn:focus-visible {
   color: var(--mm-ink);
 }
 
@@ -434,13 +631,64 @@ onMounted(() => {
   color: var(--mm-accent-soft);
 }
 
-/* Arena */
+.mm-hl__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--mm-danger);
+  background: rgba(214, 90, 90, 0.08);
+  color: var(--mm-ink-soft);
+  font-size: 13px;
+}
+
+.mm-hl__retry-btn {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--mm-rule-strong);
+  background: var(--mm-bg-mute);
+  color: var(--mm-ink);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mm-hl__prompt {
+  margin: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 14px 16px;
+}
+
+.mm-hl__prompt .mm-section-bar__meta {
+  opacity: 0.72;
+}
+
+.mm-hl__question {
+  margin: 0;
+  text-align: center;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--mm-ink);
+  font-weight: 700;
+  padding: 14px 20px;
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+}
+
 .mm-hl__arena {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: stretch;
   gap: 16px;
-  position: relative;
 }
 
 .mm-hl__card {
@@ -450,9 +698,28 @@ onMounted(() => {
   padding: 24px;
   background: var(--mm-bg-soft);
   border: 1px solid var(--mm-rule);
-  border-radius: 8px;
-  transition: all 0.25s ease;
-  position: relative;
+  border-radius: 2px;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  min-width: 0;
+}
+
+.mm-hl__card--interactive {
+  cursor: pointer;
+  user-select: none;
+}
+
+.mm-hl__card--interactive:hover {
+  border-color: var(--mm-accent-soft);
+  background: var(--mm-bg-mute);
+}
+
+.mm-hl__card--interactive:focus-visible {
+  outline: 2px solid var(--mm-accent);
+  outline-offset: 2px;
+}
+
+.mm-hl__card--chosen {
+  border-color: var(--mm-accent);
 }
 
 .mm-hl__card--correct {
@@ -465,10 +732,46 @@ onMounted(() => {
   background: rgba(214, 90, 90, 0.06);
 }
 
+.mm-hl__card--winner {
+  border-color: var(--mm-accent-soft);
+  background: rgba(224, 163, 46, 0.06);
+}
+
+.mm-hl__card--dimmed {
+  opacity: 0.65;
+}
+
 .mm-hl__card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.mm-hl__card-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mm-hl__profile-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--mm-ink-muted);
+  border: 1px solid var(--mm-rule);
+  border-radius: 2px;
+  background: var(--mm-bg);
+  font-size: 11px;
+  text-decoration: none;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.mm-hl__profile-link:hover,
+.mm-hl__profile-link:focus-visible {
+  color: var(--mm-accent-soft);
+  border-color: var(--mm-rule-strong);
 }
 
 .mm-hl__soldier-name {
@@ -477,27 +780,20 @@ onMounted(() => {
   font-weight: 700;
   color: var(--mm-ink);
   word-break: break-word;
+  line-height: 1.25;
 }
 
-.mm-hl__player-link {
-  color: inherit;
-  text-decoration: none;
-  transition: color 0.15s ease;
-}
-
-.mm-hl__player-link:hover {
+.mm-hl__card--interactive:hover .mm-hl__soldier-name {
   color: var(--mm-accent-soft);
-  text-decoration: underline;
-  text-underline-offset: 4px;
 }
 
-.mm-hl__theater {
+.mm-hl__map-chip {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.mm-hl__theater-val {
+.mm-hl__map-name {
   font-size: 14px;
   color: var(--mm-ink-soft);
 }
@@ -506,11 +802,13 @@ onMounted(() => {
   margin-top: auto;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   gap: 6px;
+  min-height: 92px;
   padding: 16px;
   background: var(--mm-bg);
   border: 1px solid var(--mm-rule);
-  border-radius: 6px;
+  border-radius: 2px;
 }
 
 .mm-hl__metric-val {
@@ -521,18 +819,14 @@ onMounted(() => {
   line-height: 1.1;
 }
 
-.mm-hl__metric-val--verified {
+.mm-hl__metric-val--winner {
   color: var(--mm-accent-soft);
-}
-
-.mm-hl__metric-val--revealed {
-  color: var(--mm-ink);
 }
 
 .mm-hl__unrevealed {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: flex-end;
+  min-height: 36px;
 }
 
 .mm-hl__mystery-mark {
@@ -541,20 +835,76 @@ onMounted(() => {
   font-weight: 800;
   color: var(--mm-ink-faint);
   letter-spacing: 0.1em;
+  line-height: 1.1;
 }
 
-.mm-hl__mystery-sub {
-  font-size: 12px;
-  color: var(--mm-ink-muted);
-}
-
-/* VS divider */
-.mm-hl__vs {
+.mm-hl__pick-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 6px;
+  min-height: 40px;
+  padding: 10px 14px;
+  background: var(--mm-bg);
+  border: 1px dashed var(--mm-rule-strong);
+  border-radius: 2px;
+  font-family: var(--mm-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--mm-ink-soft);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.mm-hl__card--interactive:hover .mm-hl__pick-btn {
+  background: var(--mm-accent);
+  color: var(--mm-highlight-ink);
+  border-style: solid;
+  border-color: var(--mm-accent);
+}
+
+.mm-hl__status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.mm-hl__card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 2px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.mm-hl__card-tag--correct {
+  background: rgba(125, 163, 76, 0.15);
+  border: 1px solid var(--mm-success);
+  color: var(--mm-success);
+}
+
+.mm-hl__card-tag--wrong {
+  background: rgba(214, 90, 90, 0.15);
+  border: 1px solid var(--mm-danger);
+  color: var(--mm-danger);
+}
+
+.mm-hl__card-tag--winner {
+  background: rgba(224, 163, 46, 0.15);
+  border: 1px solid var(--mm-accent-soft);
+  color: var(--mm-accent-soft);
+}
+
+.mm-hl__vs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 8px;
 }
 
@@ -573,19 +923,13 @@ onMounted(() => {
   color: var(--mm-ink-soft);
 }
 
-.mm-hl__metric-prompt {
-  font-family: var(--mm-font-mono);
-  font-size: 11px;
-  color: var(--mm-ink-muted);
-  text-align: center;
-  max-width: 140px;
-}
-
-/* Decision Buttons */
 .mm-hl__actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
+  max-width: 520px;
+  width: 100%;
+  margin: 4px auto 0;
 }
 
 .mm-hl__btn {
@@ -593,34 +937,28 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px 12px;
-  border-radius: 6px;
-  border: none;
+  min-height: 48px;
+  padding: 14px 16px;
+  border-radius: 2px;
   font-family: var(--mm-font-mono);
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-.mm-hl__btn--higher {
-  background: var(--mm-accent);
-  color: #000;
-}
-.mm-hl__btn--higher:hover:not(:disabled) {
-  background: var(--mm-accent-soft);
-  transform: translateY(-1px);
-}
-
-.mm-hl__btn--lower {
-  background: var(--mm-bg-mute);
+.mm-hl__btn--choice {
+  background: var(--mm-bg-soft);
   border: 1px solid var(--mm-rule-strong);
   color: var(--mm-ink);
 }
-.mm-hl__btn--lower:hover:not(:disabled) {
-  background: var(--mm-rule-strong);
-  transform: translateY(-1px);
+
+.mm-hl__btn--choice:hover:not(:disabled),
+.mm-hl__btn--choice:focus-visible:not(:disabled) {
+  background: var(--mm-accent);
+  color: var(--mm-highlight-ink);
+  border-color: var(--mm-accent);
 }
 
 .mm-hl__btn:disabled {
@@ -632,15 +970,18 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-width: 640px;
+  width: 100%;
+  margin: 4px auto 0;
 }
 
 .mm-hl__outcome-msg {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .mm-hl__outcome--success .mm-hl__outcome-msg {
@@ -661,11 +1002,12 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  min-height: 48px;
   padding: 12px 16px;
   background: var(--mm-accent);
-  color: #000;
+  color: var(--mm-highlight-ink);
   border: none;
-  border-radius: 6px;
+  border-radius: 2px;
   font-family: var(--mm-font-mono);
   font-size: 13px;
   font-weight: 700;
@@ -673,11 +1015,12 @@ onMounted(() => {
   cursor: pointer;
   transition: filter 0.15s ease;
 }
-.mm-hl__next-btn:hover {
+
+.mm-hl__next-btn:hover,
+.mm-hl__next-btn:focus-visible {
   filter: brightness(1.1);
 }
 
-/* Loading */
 .mm-hl__loading {
   display: flex;
   flex-direction: column;
@@ -700,7 +1043,6 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* Mobile responsive */
 @media (max-width: 720px) {
   .mm-hl__arena {
     grid-template-columns: 1fr;
@@ -708,14 +1050,38 @@ onMounted(() => {
   }
 
   .mm-hl__vs {
-    flex-direction: row;
-    padding: 8px 0;
+    padding: 0;
   }
 
   .mm-hl__vs-circle {
     width: 32px;
     height: 32px;
     font-size: 11px;
+  }
+
+  .mm-hl__prompt {
+    padding: 12px 14px;
+  }
+
+  .mm-hl__question {
+    font-size: 17px;
+    padding: 12px 14px;
+  }
+
+  .mm-hl__actions {
+    grid-template-columns: 1fr;
+    max-width: none;
+  }
+
+  .mm-hl__metric-val,
+  .mm-hl__mystery-mark {
+    font-size: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-hl__spinner {
+    animation: none;
   }
 }
 </style>

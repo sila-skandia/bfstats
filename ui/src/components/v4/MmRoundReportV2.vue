@@ -20,6 +20,7 @@ const router = useRouter()
 interface Props {
   roundId: string
   players?: string
+  openInNewTab?: boolean
 }
 
 const props = defineProps<Props>()
@@ -296,11 +297,19 @@ const goBack = () => {
 }
 
 const navigateToPlayerProfile = (playerName: string) => {
+  if (props.openInNewTab && typeof window !== 'undefined') {
+    window.open(`/v4/players/${encodeURIComponent(playerName)}`, '_blank', 'noopener,noreferrer')
+    return
+  }
   router.push(`/v4/players/${encodeURIComponent(playerName)}`)
 }
 
 const navigateToServer = (serverName?: string) => {
   if (!serverName) return
+  if (props.openInNewTab && typeof window !== 'undefined') {
+    window.open(`/v4/servers/detail/${encodeURIComponent(serverName)}`, '_blank', 'noopener,noreferrer')
+    return
+  }
   router.push(`/v4/servers/detail/${encodeURIComponent(serverName)}`)
 }
 

@@ -5,5 +5,7 @@ public record HigherLowerQuestionDto(
     string MetricLabel,
     CombatantDto PlayerA,
     CombatantDto PlayerB,
-    string RoundToken
+    string RoundToken,
+    string Prompt,
+    string? MapName = null
 );

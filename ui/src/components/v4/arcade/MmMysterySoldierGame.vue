@@ -302,7 +302,10 @@ onMounted(() => {
             <router-link
               v-if="identifiedTarget"
               :to="`/v4/players/${encodeURIComponent(identifiedTarget)}`"
+              target="_blank"
+              rel="noopener noreferrer"
               class="mm-mystery__player-link"
+              title="View player profile (opens in new tab)"
             >
               <strong>{{ $pn(identifiedTarget) }}</strong>
             </router-link>
@@ -314,6 +317,8 @@ onMounted(() => {
           <router-link
             v-if="identifiedTarget"
             :to="`/v4/players/${encodeURIComponent(identifiedTarget)}`"
+            target="_blank"
+            rel="noopener noreferrer"
             class="mm-mystery__res-btn mm-mystery__res-btn--primary"
           >
             <span>View Player Profile</span>
@@ -354,8 +359,10 @@ onMounted(() => {
           <div class="mm-mystery__cell mm-mystery__cell--name">
             <router-link
               :to="`/v4/players/${encodeURIComponent(g.guessedPlayerName)}`"
+              target="_blank"
+              rel="noopener noreferrer"
               class="mm-mystery__player-link"
-              title="View player profile"
+              title="View player profile (opens in new tab)"
             >
               {{ $pn(g.guessedPlayerName) }}
             </router-link>
