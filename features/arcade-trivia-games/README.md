@@ -61,8 +61,9 @@ Minigames can be scoped to any community server (e.g. MoonGamers, SiMPLE, etc.):
 ## Performance & Caching Strategy
 
 In accordance with single-node Hetzner constraints:
-- Candidate pool (top active players from `PlayerStatsMonthly` or `PlayerServerStats`, maps from `ServerMapStats` / `MapGlobalAverages`, servers from `GameServer`) is compiled into an in-memory cache (`IMemoryCache`) with a 30-minute sliding expiration per server scope (`Arcade:Candidates:{serverGuid ?? "global"}`).
-- Minigame requests do **not** perform expensive full-table scans for Higher/Lower and Mystery. Trivia map/period sampling queries only maps and months that already have enough distinct players (bounded top-N lists). Combinatorial trivia loads a bounded player-map fact set (top maps + top players) and instantiates templates in memory.
+- Candidate pool (top active players from `PlayerStatsMonthly` or `PlayerServerStats`, maps from `ServerMapStats` / `MapGlobalAverages`, servers from `GameServer`) is compiled into an in-memory cache (`IMemoryCache`) with a 30-minute sliding expiration per server scope (`Arcade:Roster:{serverGuid}:{orbit}`).
+- The server picker (`/servers`) ranks from `ServerMapStats` playtime and latest-week `PlayerServerStats` row counts. It does not `COUNT(DISTINCT)` the full weekly table.
+- Minigame requests do **not** perform expensive full-table scans for Higher/Lower and Mystery. Trivia never walks `PlayerMapStats` or `PlayerSessions` just to discover maps: top maps come from `ServerMapStats` (then `MapGlobalAverages`), and combinatorial facts load only those map names plus the top players' other maps.
 - Memory footprint is strictly bounded (< 2 MB for candidate records).
 
 ## API Endpoints
