@@ -88,6 +88,15 @@ public class AggregateCalculationService(
                         results.GetValueOrDefault("map"), currentYear, currentMonth, cycleStopwatch.ElapsedMilliseconds);
                 }
             }
+            catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+            {
+                cycleStopwatch.Stop();
+                activity?.SetTag("cycle_duration_ms", cycleStopwatch.ElapsedMilliseconds);
+                activity?.SetTag("error", ex.Message);
+                logger.LogWarning(
+                    "Aggregate calculation skipped due to database lock ({SqliteError})",
+                    SqliteBusy.Describe(ex));
+            }
             catch (Exception ex)
             {
                 cycleStopwatch.Stop();
@@ -177,14 +186,15 @@ public class AggregateCalculationService(
             await transaction.CommitAsync();
             return records.Count;
         }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync();
-            activity?.SetTag("error", ex.Message);
-            activity?.SetStatus(ActivityStatusCode.Error, $"Error calculating PlayerStatsMonthly: {ex.Message}");
-            logger.LogError(ex, "Error calculating PlayerStatsMonthly for {Year}-{Month}", year, monthString);
-            throw;
-        }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                activity?.SetTag("error", ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, $"Error calculating PlayerStatsMonthly: {ex.Message}");
+                if (!SqliteBusy.IsBusy(ex))
+                    logger.LogError(ex, "Error calculating PlayerStatsMonthly for {Year}-{Month}", year, monthString);
+                throw;
+            }
     }
 
     /// <summary>
@@ -255,14 +265,15 @@ public class AggregateCalculationService(
             await transaction.CommitAsync();
             return records.Count;
         }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync();
-            activity?.SetTag("error", ex.Message);
-            activity?.SetStatus(ActivityStatusCode.Error, $"Error calculating PlayerServerStats: {ex.Message}");
-            logger.LogError(ex, "Error calculating PlayerServerStats for {Year}-W{Week}", year, weekString);
-            throw;
-        }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                activity?.SetTag("error", ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, $"Error calculating PlayerServerStats: {ex.Message}");
+                if (!SqliteBusy.IsBusy(ex))
+                    logger.LogError(ex, "Error calculating PlayerServerStats for {Year}-W{Week}", year, weekString);
+                throw;
+            }
     }
 
     /// <summary>
@@ -360,14 +371,15 @@ public class AggregateCalculationService(
             await transaction.CommitAsync();
             return records.Count;
         }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync();
-            activity?.SetTag("error", ex.Message);
-            activity?.SetStatus(ActivityStatusCode.Error, $"Error calculating PlayerMapStats: {ex.Message}");
-            logger.LogError(ex, "Error calculating PlayerMapStats for {Year}-{Month}", year, monthString);
-            throw;
-        }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                activity?.SetTag("error", ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, $"Error calculating PlayerMapStats: {ex.Message}");
+                if (!SqliteBusy.IsBusy(ex))
+                    logger.LogError(ex, "Error calculating PlayerMapStats for {Year}-{Month}", year, monthString);
+                throw;
+            }
     }
 
     private async Task BulkInsertPlayerStatsMonthly(PlayerTrackerDbContext dbContext, List<PlayerStatsMonthly> records)
