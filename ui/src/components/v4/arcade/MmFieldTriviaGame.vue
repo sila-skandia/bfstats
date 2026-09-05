@@ -17,7 +17,7 @@ const props = defineProps<{
   serverName?: string
 }>()
 
-const { isMuted, toggleMute, playRoger, playNegative, playGoGoGo } = useArcadeAudio()
+const { isMuted, toggleMute, playRoger, playNegative } = useArcadeAudio()
 
 const quiz = ref<TriviaQuiz | null>(null)
 const loading = ref(false)
@@ -132,14 +132,6 @@ const submitQuiz = async () => {
   try {
     const res = await verifyTriviaQuiz(quiz.value.quizToken, answers.value)
     quizResult.value = res
-
-    if (res.scorePercentage >= 80) {
-      playGoGoGo()
-    } else if (res.scorePercentage >= 60) {
-      playRoger()
-    } else {
-      playNegative()
-    }
   } catch {
     error.value = 'Failed to compile debrief report. Please retry.'
   } finally {
@@ -247,8 +239,20 @@ onMounted(() => {
       </div>
 
       <div class="mm-trivia__meta-row">
-        <span class="mm-trivia__cat-badge">{{ currentQuestion.category }}</span>
-        <span class="mm-trivia__step-label">Question {{ currentIndex + 1 }} of {{ quiz?.questions.length }}</span>
+        <div class="mm-trivia__meta-left">
+          <span class="mm-trivia__cat-badge">{{ currentQuestion.category }}</span>
+          <span class="mm-trivia__step-label">Question {{ currentIndex + 1 }} of {{ quiz?.questions.length }}</span>
+        </div>
+        <button
+          v-if="currentQuestion.targetRoundId"
+          type="button"
+          class="mm-trivia__round-btn"
+          title="Inspect round report in slideover"
+          @click="activeSlideoverRoundId = currentQuestion.targetRoundId"
+        >
+          <i class="pi pi-file" />
+          <span>Round Report &rarr;</span>
+        </button>
       </div>
 
       <!-- Question Text -->
@@ -314,12 +318,14 @@ onMounted(() => {
 
         <!-- Contextual Entity Links -->
         <div
-          v-if="currentRevealed.targetPlayerName || currentRevealed.targetRoundId"
+          v-if="currentRevealed.targetPlayerName || currentRevealed.targetRoundId || currentQuestion.targetRoundId"
           class="mm-trivia__entity-actions"
         >
           <router-link
             v-if="currentRevealed.targetPlayerName"
             :to="`/v4/players/${encodeURIComponent(currentRevealed.targetPlayerName)}`"
+            target="_blank"
+            rel="noopener noreferrer"
             class="mm-entity-link"
           >
             <i class="pi pi-user" />
@@ -327,10 +333,10 @@ onMounted(() => {
           </router-link>
 
           <button
-            v-if="currentRevealed.targetRoundId"
+            v-if="currentRevealed.targetRoundId || currentQuestion.targetRoundId"
             type="button"
             class="mm-entity-btn"
-            @click="activeSlideoverRoundId = currentRevealed.targetRoundId"
+            @click="activeSlideoverRoundId = (currentRevealed.targetRoundId || currentQuestion.targetRoundId)!"
           >
             <i class="pi pi-file" />
             <span>View Round Report &rarr;</span>
@@ -467,6 +473,8 @@ onMounted(() => {
               <router-link
                 v-if="q.targetPlayerName"
                 :to="`/v4/players/${encodeURIComponent(q.targetPlayerName)}`"
+                target="_blank"
+                rel="noopener noreferrer"
                 class="mm-entity-link"
               >
                 <i class="pi pi-user" />
@@ -637,6 +645,38 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mm-trivia__meta-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mm-trivia__round-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--mm-bg, #131313);
+  border: 1px solid var(--mm-rule-strong, #3d3d3d);
+  border-radius: 2px;
+  font-family: var(--mm-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mm-ink, #ffffff);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+
+.mm-trivia__round-btn:hover {
+  border-color: var(--mm-accent, #7d8849);
+  color: var(--mm-accent-soft, #9aa666);
+  background: var(--mm-bg-mute, #222222);
 }
 
 .mm-trivia__cat-badge {
