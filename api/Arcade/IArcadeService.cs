@@ -10,6 +10,7 @@ public interface IArcadeService
     Task<MysteryDossierDto> GetDailyMysteryDossierAsync(string? serverGuid = null, string? orbitPlayer = null, CancellationToken cancellationToken = default);
     Task<MysteryDossierDto> GetRandomMysteryDossierAsync(string? serverGuid = null, string? orbitPlayer = null, string? exclude = null, CancellationToken cancellationToken = default);
     Task<MysteryGuessResultDto> GuessMysterySoldierAsync(MysteryGuessRequest request, CancellationToken cancellationToken = default);
+    Task<MysteryConcedeResultDto> ConcedeMysterySoldierAsync(MysteryConcedeRequest request, CancellationToken cancellationToken = default);
     Task<TriviaQuizDto> GenerateTriviaQuizAsync(string? serverGuid = null, string? orbitPlayer = null, CancellationToken cancellationToken = default);
     Task<TriviaQuestionVerificationDto> VerifyTriviaQuestionAsync(TriviaVerifyQuestionRequest request, CancellationToken cancellationToken = default);
     Task<TriviaQuizResultDto> VerifyTriviaQuizAsync(TriviaVerifyRequest request, CancellationToken cancellationToken = default);
