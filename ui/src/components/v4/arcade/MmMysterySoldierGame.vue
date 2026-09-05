@@ -245,25 +245,25 @@ onUnmounted(() => {
 
       <div class="mm-mystery__stats-hud">
         <div
-          class="mm-mystery__stat-chip"
+          class="mm-mystery__stat-chip mm-mystery__stat-chip--streak"
           title="Current continuous win streak"
         >
           <span class="mm-mystery__stat-label">Streak</span>
-          <span class="mm-mystery__stat-val">🔥 {{ streak }}</span>
+          <span class="mm-mystery__stat-val">{{ streak }}</span>
         </div>
         <div
-          class="mm-mystery__stat-chip"
+          class="mm-mystery__stat-chip mm-mystery__stat-chip--best"
           title="Best winning streak"
         >
           <span class="mm-mystery__stat-label">Best</span>
-          <span class="mm-mystery__stat-val">🏆 {{ bestStreak }}</span>
+          <span class="mm-mystery__stat-val">{{ bestStreak }}</span>
         </div>
         <div
-          class="mm-mystery__stat-chip"
+          class="mm-mystery__stat-chip mm-mystery__stat-chip--solved"
           title="Total mystery soldiers solved"
         >
           <span class="mm-mystery__stat-label">Solved</span>
-          <span class="mm-mystery__stat-val">🎯 {{ solvedCount }}</span>
+          <span class="mm-mystery__stat-val">{{ solvedCount }}</span>
         </div>
       </div>
 
@@ -590,7 +590,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 4px 9px;
   background: var(--mm-bg);
   border: 1px solid var(--mm-rule);
   border-radius: 4px;
@@ -599,15 +599,48 @@ onUnmounted(() => {
 }
 
 .mm-mystery__stat-label {
-  color: var(--mm-ink-muted);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  font-size: 10px;
 }
 
 .mm-mystery__stat-val {
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.mm-mystery__stat-chip--streak {
+  border-color: rgba(229, 169, 60, 0.4);
+  background: rgba(229, 169, 60, 0.08);
+}
+.mm-mystery__stat-chip--streak .mm-mystery__stat-label {
+  color: #e5a93c;
+}
+.mm-mystery__stat-chip--streak .mm-mystery__stat-val {
+  color: #f59e0b;
+}
+
+.mm-mystery__stat-chip--best {
+  border-color: rgba(125, 163, 76, 0.4);
+  background: rgba(125, 163, 76, 0.08);
+}
+.mm-mystery__stat-chip--best .mm-mystery__stat-label {
+  color: var(--mm-success, #7da34c);
+}
+.mm-mystery__stat-chip--best .mm-mystery__stat-val {
+  color: var(--mm-success, #7da34c);
+}
+
+.mm-mystery__stat-chip--solved {
+  border-color: var(--mm-rule-strong);
+  background: var(--mm-bg-soft);
+}
+.mm-mystery__stat-chip--solved .mm-mystery__stat-label {
+  color: var(--mm-ink-muted);
+}
+.mm-mystery__stat-chip--solved .mm-mystery__stat-val {
   color: var(--mm-ink);
-  font-weight: 700;
 }
 
 .mm-mystery__bar-actions {

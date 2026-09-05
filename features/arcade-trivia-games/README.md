@@ -27,7 +27,7 @@ A daily (or endless/practice) guessing challenge inspired by Wordle / Poeltl wit
   - After solving or finishing (Daily or Random), players can immediately proceed to the next soldier via **"Next Soldier (Keep Going)"** / Enter shortcut.
   - Solving Daily transitions smoothly into endless practice mode without leaving the page.
   - Consecutive rounds automatically exclude the just-identified soldier (`?exclude=`) to avoid immediate repeats.
-  - Active session HUD tracks continuous Streak (🔥), Best Streak (🏆), and Total Solved (🎯).
+  - Active session HUD tracks continuous Streak, Best Streak, and Total Solved using tactical color-coded badges (strictly no emojis).
 
 ### 3. Field Lore (Battlefield Trivia)
 A 5-question tactical quiz dynamically generated **only** from live and historical database statistics. There are no hardcoded lore, radio-key, or vehicle trivia questions.
