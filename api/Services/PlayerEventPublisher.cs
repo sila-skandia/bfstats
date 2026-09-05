@@ -54,8 +54,9 @@ public class PlayerEventPublisher : IPlayerEventPublisher
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error publishing player online event for {PlayerName} on {ServerName}",
-                playerName, serverName);
+            _logger.LogWarning(
+                "Error publishing player online event for {PlayerName} on {ServerName} ({ExceptionType}: {Message})",
+                playerName, serverName, ex.GetType().Name, ex.Message);
         }
     }
 
@@ -92,8 +93,9 @@ public class PlayerEventPublisher : IPlayerEventPublisher
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error publishing server map change event for {ServerName}",
-                serverName);
+            _logger.LogWarning(
+                "Error publishing server map change event for {ServerName} ({ExceptionType}: {Message})",
+                serverName, ex.GetType().Name, ex.Message);
         }
     }
 }

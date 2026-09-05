@@ -52,6 +52,14 @@ public class RankingCalculationService(IServiceProvider services, ILogger<Rankin
                     activity?.SetTag("cycle_duration_ms", cycleStopwatch.ElapsedMilliseconds);
                 }
             }
+            catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+            {
+                cycleStopwatch.Stop();
+                activity?.SetTag("cycle_duration_ms", cycleStopwatch.ElapsedMilliseconds);
+                activity?.SetTag("error", ex.Message);
+                logger.LogWarning("Ranking calculation listing skipped due to database lock ({SqliteError})",
+                    SqliteBusy.Describe(ex));
+            }
             catch (Exception ex)
             {
                 cycleStopwatch.Stop();
@@ -89,6 +97,13 @@ public class RankingCalculationService(IServiceProvider services, ILogger<Rankin
                 totalRankingsInserted += count;
                 serversProcessed++;
                 if (count > 0) serversWithData++;
+            }
+            catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+            {
+                serversWithErrors++;
+                logger.LogWarning(
+                    "Skipping ranking recalc for server {ServerGuid} due to database lock ({SqliteError})",
+                    serverGuid, SqliteBusy.Describe(ex));
             }
             catch (Exception ex)
             {

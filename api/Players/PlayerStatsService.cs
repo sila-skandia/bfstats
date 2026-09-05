@@ -164,11 +164,15 @@ public class PlayerStatsService(
                     s.MapName,
                     s.Server.GameId,
                     s.TotalKills,
-                    s.TotalDeaths
+                    s.TotalDeaths,
+                    s.LastSeenTime
                 })
                 .ToListAsync();
 
-            var activeLookup = activeSessions.ToDictionary(s => s.PlayerName);
+            // Names are not unique across servers — two people named BATTLER can both
+            // be online. The list DTO only has one CurrentServer, so keep the latest.
+            var activeLookup = LatestActiveSessionByPlayer(
+                activeSessions, s => s.PlayerName, s => s.LastSeenTime);
 
             // Get aggregate stats for all players in the current page
             var aggregateStats = await dbContext.PlayerServerStats
@@ -975,13 +979,15 @@ public class PlayerStatsService(
                     s.MapName,
                     s.Server.GameId,
                     s.TotalKills,
-                    s.TotalDeaths
+                    s.TotalDeaths,
+                    s.LastSeenTime
                 })
                 .ToListAsync();
 
             if (activeSessions.Count > 0)
             {
-                var activeLookup = activeSessions.ToDictionary(s => s.PlayerName);
+                var activeLookup = LatestActiveSessionByPlayer(
+                    activeSessions, s => s.PlayerName, s => s.LastSeenTime);
                 foreach (var p in results)
                 {
                     if (activeLookup.TryGetValue(p.PlayerName, out var session))
@@ -1009,6 +1015,16 @@ public class PlayerStatsService(
             TotalItems = totalItems,
             TotalPages = totalPages
         };
+    }
+
+    private static Dictionary<string, T> LatestActiveSessionByPlayer<T>(
+        IReadOnlyList<T> sessions,
+        Func<T, string> playerName,
+        Func<T, DateTime> lastSeen)
+    {
+        return sessions
+            .GroupBy(playerName)
+            .ToDictionary(g => g.Key, g => g.MaxBy(lastSeen)!);
     }
 }
 
