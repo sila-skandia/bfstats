@@ -61,7 +61,8 @@ public class AuthController(
         }
         catch (UnauthorizedAccessException ex)
         {
-            logger.LogWarning(ex, "Authentication failed");
+            logger.LogWarning("Authentication failed ({ExceptionType}: {Message})",
+                ex.GetType().Name, ex.Message);
             return Unauthorized(new { message = "Invalid authentication credentials" });
         }
         catch (Exception ex)

@@ -410,7 +410,8 @@ public class PlayerStatsService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get player stats for player: {PlayerName}", playerName);
+            logger.LogWarning("Failed to get player stats for player: {PlayerName} ({ExceptionType}: {Message})",
+                playerName, ex.GetType().Name, ex.Message);
         }
 
         // 3. Get server insights (SQLite)
@@ -424,7 +425,8 @@ public class PlayerStatsService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get server insights for player: {PlayerName}", playerName);
+            logger.LogWarning("Failed to get server insights for player: {PlayerName} ({ExceptionType}: {Message})",
+                playerName, ex.GetType().Name, ex.Message);
             serverInsights = [];
         }
 
@@ -436,7 +438,8 @@ public class PlayerStatsService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get best scores for player: {PlayerName}", playerName);
+            logger.LogWarning("Failed to get best scores for player: {PlayerName} ({ExceptionType}: {Message})",
+                playerName, ex.GetType().Name, ex.Message);
             bestScores = new PlayerBestScores();
         }
 
@@ -773,7 +776,8 @@ public class PlayerStatsService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get ping data from SQLite for player {PlayerName}", playerName);
+            logger.LogWarning("Failed to get ping data from SQLite for player {PlayerName} ({ExceptionType}: {Message})",
+                playerName, ex.GetType().Name, ex.Message);
             return new Dictionary<string, double>();
         }
     }
