@@ -1,7 +1,8 @@
 /* global Audio */
 import { ref } from 'vue'
 
-const isMuted = ref<boolean>(localStorage.getItem('bfstats:arcade-muted') === 'true')
+const storedMuted = typeof localStorage !== 'undefined' ? localStorage.getItem('bfstats:arcade-muted') : null
+const isMuted = ref<boolean>(storedMuted === null ? true : storedMuted === 'true')
 
 export function useArcadeAudio() {
   const toggleMute = () => {
