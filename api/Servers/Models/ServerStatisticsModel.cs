@@ -154,6 +154,13 @@ public class RoundReportInfo
     public int? Tickets2 { get; set; }
     public string? Team1Label { get; set; }
     public string? Team2Label { get; set; }
+
+    /// <summary>
+    /// The mod the server runs, as BFList reports it (bf1942, fhsw, dc_final, ...).
+    /// With MapName this addresses the map's preview image under /stats/assets/maps.
+    /// Null for rounds whose server record predates game id tracking.
+    /// </summary>
+    public string? GameId { get; set; }
 }
 
 public class RoundParticipant
