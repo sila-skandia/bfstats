@@ -10,5 +10,6 @@ internal sealed record TriviaQuestionInternal(
     string? TargetPlayerName = null,
     string? TargetRoundId = null,
     string? TargetMapName = null,
-    string? TargetServerName = null
+    string? TargetServerName = null,
+    IReadOnlyList<string>? Highlights = null
 );

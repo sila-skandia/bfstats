@@ -43,7 +43,8 @@ internal static class ArcadeRelationshipTrivia
                 options,
                 wingman.Player2Name,
                 $"{wingman.Player2Name} has overlapped with {orbitPlayer} in {wingman.SessionCount:N0} sessions — their most frequent recorded squadmate.",
-                TargetPlayerName: wingman.Player2Name
+                TargetPlayerName: wingman.Player2Name,
+                Highlights: [orbitPlayer]
             ));
         }
 
@@ -63,7 +64,8 @@ internal static class ArcadeRelationshipTrivia
                 options,
                 oldest.Player2Name,
                 $"{oldest.Player2Name} first overlapped with {orbitPlayer} on {oldest.FirstPlayedTogether:yyyy-MM-dd}, earlier than any other soldier in this orbit.",
-                TargetPlayerName: oldest.Player2Name
+                TargetPlayerName: oldest.Player2Name,
+                Highlights: [orbitPlayer]
             ));
         }
 
@@ -83,7 +85,8 @@ internal static class ArcadeRelationshipTrivia
                 options,
                 newest.Player2Name,
                 $"{newest.Player2Name} last overlapped with {orbitPlayer} on {newest.LastPlayedTogether:yyyy-MM-dd}.",
-                TargetPlayerName: newest.Player2Name
+                TargetPlayerName: newest.Player2Name,
+                Highlights: [orbitPlayer]
             ));
         }
 

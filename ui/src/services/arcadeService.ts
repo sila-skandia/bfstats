@@ -104,6 +104,7 @@ export interface TriviaQuestion {
   targetRoundId?: string
   targetMapName?: string
   targetServerName?: string
+  highlights?: string[]
 }
 
 export interface TriviaQuiz {
@@ -122,6 +123,7 @@ export interface TriviaQuestionResult {
   targetRoundId?: string
   targetMapName?: string
   targetServerName?: string
+  highlights?: string[]
 }
 
 export interface TriviaQuizResult {
@@ -220,6 +222,7 @@ export interface TriviaQuestionVerification {
   targetRoundId?: string
   targetMapName?: string
   targetServerName?: string
+  highlights?: string[]
 }
 
 export async function fetchTriviaQuiz(serverGuid?: string, orbitPlayer?: string): Promise<TriviaQuiz> {
