@@ -39,7 +39,7 @@ export const ALL_COLUMNS: ServerColumnDef[] = [
   { key: 'emptySlots', label: 'Empty', align: 'right', w: 80, kind: 'num', filter: 'number', group: 'live', defaultHidden: true },
   { key: 'humans', label: 'Humans', align: 'right', w: 90, kind: 'num', filter: 'number', group: 'live', defaultHidden: true },
   { key: 'bots', label: 'Bots', align: 'right', w: 72, kind: 'num', filter: 'number', group: 'live', defaultHidden: true },
-  { key: 'map', label: 'Map', align: 'left', w: 180, kind: 'custom', filter: 'text', group: 'match' },
+  { key: 'map', label: 'Map', align: 'left', w: 215, kind: 'custom', filter: 'text', group: 'match' },
   { key: 'gameType', label: 'Mode', align: 'left', w: 115, kind: 'custom', filter: 'text', group: 'match' },
   { key: 'gameMode', label: 'Game Mode', align: 'left', w: 110, kind: 'text', filter: 'text', group: 'match', defaultHidden: true },
   { key: 'region', label: 'Country', align: 'left', w: 155, kind: 'custom', filter: 'text', group: 'geo' },
