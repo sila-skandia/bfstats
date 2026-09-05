@@ -30,7 +30,9 @@ A daily (or endless/practice) guessing challenge inspired by Wordle / Poeltl:
 
 ### 3. Field Lore (Battlefield Trivia)
 A 5-question tactical quiz dynamically generated **only** from live and historical database statistics. There are no hardcoded lore, radio-key, or vehicle trivia questions.
-- **Map-scoped player records** (`PlayerMapStats`): e.g. "On Wake Island, which combatant has recorded the most kills?" / score / playtime
+- **Combinatorial player-map templates** (`TriviaQuestionComposer` + `PlayerMapStats`): metric templates (kills, kill rate, K/D, score, playtime, rounds) are crossed with players and maps at quiz time. No canned question rows are stored.
+  - Player → map: "On which map has ApexSoldier recorded the most kills?" / highest kill rate / highest K/D
+  - Map → player: "On Wake Island, which combatant has the highest Kill/Death ratio?"
 - **Period-scoped monthly records** (`PlayerStatsMonthly`): e.g. "In October 2024, which soldier topped the monthly leaderboard with the most kills?"
 - **Map-scoped single-round records** (`PlayerBestScores`): e.g. "On Stalingrad, who holds the record for highest single-round score?"
 - Map lethality (highest kill rate per minute from `MapGlobalAverages`)
@@ -51,7 +53,7 @@ Minigames can be scoped to any community server (e.g. MoonGamers, SiMPLE, etc.):
 
 In accordance with single-node Hetzner constraints:
 - Candidate pool (top active players from `PlayerStatsMonthly` or `PlayerServerStats`, maps from `ServerMapStats` / `MapGlobalAverages`, servers from `GameServer`) is compiled into an in-memory cache (`IMemoryCache`) with a 30-minute sliding expiration per server scope (`Arcade:Candidates:{serverGuid ?? "global"}`).
-- Minigame requests do **not** perform expensive full-table scans for Higher/Lower and Mystery. Trivia map/period sampling queries only maps and months that already have enough distinct players (bounded top-N lists).
+- Minigame requests do **not** perform expensive full-table scans for Higher/Lower and Mystery. Trivia map/period sampling queries only maps and months that already have enough distinct players (bounded top-N lists). Combinatorial trivia loads a bounded player-map fact set (top maps + top players) and instantiates templates in memory.
 - Memory footprint is strictly bounded (< 2 MB for candidate records).
 
 ## API Endpoints
