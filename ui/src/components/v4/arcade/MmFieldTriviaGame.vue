@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import 'primeicons/primeicons.css'
 import {
+  arcadeLoadError,
   fetchTriviaQuiz,
   verifyTriviaQuestion,
   verifyTriviaQuiz,
@@ -76,8 +77,8 @@ const loadQuiz = async () => {
 
   try {
     quiz.value = await fetchTriviaQuiz(props.serverGuid, props.orbitPlayer)
-  } catch {
-    error.value = 'Failed to load reconnaissance quiz. Please retry.'
+  } catch (err) {
+    error.value = arcadeLoadError(err, 'Failed to load reconnaissance quiz. Please retry.')
   } finally {
     loading.value = false
   }
@@ -221,6 +222,7 @@ onMounted(() => {
     <div
       v-else-if="error"
       class="mm-trivia__error"
+      data-testid="arcade-error"
     >
       {{ error }}
       <button

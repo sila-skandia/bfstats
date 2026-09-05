@@ -444,7 +444,7 @@ const routes: RouteRecordRaw[] = [
           name: 'v4-arcade',
           component: ArcadeV4,
           meta: {
-            title: 'Arcade & Trivia · bfstats.io',
+            title: 'Trivia · bfstats.io',
             description: 'Battlefield 1942 minigames, trivia, and stat showdowns.'
           }
         },

@@ -17,7 +17,7 @@ const baseNavItems: NavItem[] = [
   { label: 'Servers', to: '/v4/servers/bf1942', key: 'servers' },
   { label: 'Players', to: '/v4/players', key: 'players' },
   { label: 'Leaderboard', to: '/v4/leaderboard', key: 'leaderboard', notice: true },
-  { label: 'Arcade', to: '/v4/arcade', key: 'arcade' },
+  { label: 'Trivia', to: '/v4/arcade', key: 'arcade' },
   // Rounds is deliberately not a top-level destination — the round report is only
   // meaningful when you arrive at a specific round from a player's session list or
   // achievement. The /v4/rounds routes and every inbound link to them still work.
@@ -113,6 +113,7 @@ const crumbs = computed<Crumb[]>(() => {
     if (STRUCTURAL_SEGMENTS.has(seg)) continue
     let label = seg
     try { label = decodeURIComponent(seg) } catch { /* keep raw */ }
+    if (label === 'arcade') label = 'trivia'
     // Humanise dashed section names ("map-popularity" → "map popularity").
     if (/^[a-z-]+$/.test(label) && label.includes('-')) {
       label = label.replace(/-/g, ' ')
@@ -206,7 +207,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           <img
             v-if="item.key === 'arcade'"
             :src="arcadeHudIcon"
-            alt="Arcade"
+            alt="Trivia"
             class="mm-nav__arcade-icon"
             width="56"
             height="20"
