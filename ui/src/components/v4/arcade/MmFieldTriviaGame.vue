@@ -13,6 +13,15 @@ import {
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
 import MmRoundReportSlideover from '@/components/v4/arcade/MmRoundReportSlideover.vue'
 import MmEmphasizedText from '@/components/v4/arcade/MmEmphasizedText.vue'
+import {
+  THEATER_PLACEHOLDER,
+  concealMapName,
+  resolveMapArt,
+  hideBrokenTheaterImg,
+  shouldUseTheaterTiles,
+  stripMapHighlights,
+  theaterOptionArts,
+} from '@/utils/bf1942MapArt'
 
 const props = defineProps<{
   serverGuid?: string
@@ -142,10 +151,62 @@ const submitQuiz = async () => {
   }
 }
 
+const OPTION_LETTERS = ['A', 'B', 'C', 'D']
+
+const useTheaterTiles = computed(() => {
+  if (!currentQuestion.value) return false
+  return shouldUseTheaterTiles(currentQuestion.value.options)
+})
+
+const theaterBackdrop = computed(() => {
+  const question = currentQuestion.value
+  if (!question || useTheaterTiles.value) return null
+  const art = resolveMapArt(question.targetMapName)
+  if (!art) return null
+  if (concealMapName(question.question, question.targetMapName) === question.question) {
+    return null
+  }
+  return art
+})
+
+const optionTheaters = computed(() => {
+  if (!currentQuestion.value) return []
+  return theaterOptionArts(currentQuestion.value.options)
+})
+
+const concealTheater = computed(() => {
+  return !isCurrentAnswered.value && Boolean(theaterBackdrop.value || useTheaterTiles.value)
+})
+
+const displayQuestion = computed(() => {
+  const question = currentQuestion.value
+  if (!question) return ''
+  if (!concealTheater.value) return question.question
+  return concealMapName(question.question, question.targetMapName)
+})
+
 const questionTerms = (
   highlights?: string[],
   ...entities: Array<string | null | undefined>
 ) => [...(highlights ?? []), ...entities, props.orbitPlayer]
+
+const liveQuestionTerms = computed(() => {
+  const question = currentQuestion.value
+  if (!question) return []
+  if (concealTheater.value) {
+    return questionTerms(
+      [...stripMapHighlights(question.highlights), THEATER_PLACEHOLDER],
+      question.targetPlayerName,
+      question.targetServerName
+    )
+  }
+  return questionTerms(
+    question.highlights,
+    question.targetPlayerName,
+    question.targetMapName,
+    question.targetServerName
+  )
+})
 
 onMounted(() => {
   loadQuiz()
@@ -264,24 +325,91 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- Question Text -->
+      <div
+        v-if="theaterBackdrop"
+        class="mm-trivia__theater"
+        data-testid="trivia-theater"
+      >
+        <div class="mm-trivia__theater-frame">
+          <img
+            class="mm-trivia__theater-img"
+            :src="theaterBackdrop.ingame"
+            :alt="isCurrentAnswered ? theaterBackdrop.displayName : 'Theater recon'"
+            width="512"
+            height="512"
+            @error="hideBrokenTheaterImg"
+          >
+        </div>
+        <div class="mm-trivia__theater-caption">
+          <span class="mm-eyebrow">Theater recon</span>
+          <span
+            v-if="isCurrentAnswered"
+            class="mm-trivia__theater-name"
+          >{{ theaterBackdrop.displayName }}</span>
+          <span
+            v-else
+            class="mm-trivia__theater-name mm-trivia__theater-name--blind"
+          >Classify the theater</span>
+        </div>
+      </div>
+
       <h2
         class="mm-trivia__question"
         data-testid="trivia-question"
       >
         <MmEmphasizedText
-          :text="currentQuestion.question"
-          :terms="questionTerms(
-            currentQuestion.highlights,
-            currentQuestion.targetPlayerName,
-            currentQuestion.targetMapName,
-            currentQuestion.targetServerName
-          )"
+          :text="displayQuestion"
+          :terms="liveQuestionTerms"
         />
       </h2>
 
-      <!-- Options Grid -->
-      <div class="mm-trivia__options">
+      <div
+        v-if="useTheaterTiles"
+        class="mm-trivia__theaters"
+        data-testid="trivia-theater-options"
+      >
+        <button
+          v-for="(opt, oIdx) in currentQuestion.options"
+          :key="oIdx"
+          type="button"
+          class="mm-trivia__theater-tile"
+          :class="{
+            'mm-trivia__theater-tile--evaluating': evaluatingQuestionId === currentQuestion.id && answers[currentQuestion.id] === opt,
+            'mm-trivia__theater-tile--correct': currentRevealed && answers[currentQuestion.id] === opt && currentRevealed.isCorrect,
+            'mm-trivia__theater-tile--wrong': currentRevealed && answers[currentQuestion.id] === opt && !currentRevealed.isCorrect,
+            'mm-trivia__theater-tile--actual-correct': currentRevealed && !currentRevealed.isCorrect && opt === currentRevealed.correctAnswer,
+            'mm-trivia__theater-tile--dimmed': currentRevealed && opt !== answers[currentQuestion.id] && opt !== currentRevealed.correctAnswer
+          }"
+          :disabled="isCurrentAnswered || evaluatingQuestionId === currentQuestion.id"
+          :aria-label="isCurrentAnswered ? $pn(opt) : `Theater ${OPTION_LETTERS[oIdx]}`"
+          data-testid="trivia-option"
+          @click="handleSelectOption(opt)"
+        >
+          <img
+            v-if="optionTheaters[oIdx]"
+            class="mm-trivia__theater-tile-img"
+            :src="optionTheaters[oIdx]?.ingame"
+            :alt="isCurrentAnswered ? $pn(opt) : ''"
+            width="512"
+            height="512"
+            @error="hideBrokenTheaterImg"
+          >
+          <span
+            v-else
+            class="mm-trivia__theater-tile-fallback"
+          >{{ isCurrentAnswered ? $pn(opt) : `Theater ${OPTION_LETTERS[oIdx]}` }}</span>
+          <span class="mm-trivia__opt-letter mm-trivia__theater-letter">{{ OPTION_LETTERS[oIdx] }}</span>
+          <span
+            v-if="isCurrentAnswered"
+            class="mm-trivia__theater-tile-name"
+          >{{ $pn(opt) }}</span>
+        </button>
+      </div>
+
+      <div
+        v-else
+        class="mm-trivia__options"
+      >
         <button
           v-for="(opt, oIdx) in currentQuestion.options"
           :key="oIdx"
@@ -295,9 +423,10 @@ onMounted(() => {
             'mm-trivia__option-btn--dimmed': currentRevealed && opt !== answers[currentQuestion.id] && opt !== currentRevealed.correctAnswer
           }"
           :disabled="isCurrentAnswered || evaluatingQuestionId === currentQuestion.id"
+          data-testid="trivia-option"
           @click="handleSelectOption(opt)"
         >
-          <span class="mm-trivia__opt-letter">{{ ['A', 'B', 'C', 'D'][oIdx] }}</span>
+          <span class="mm-trivia__opt-letter">{{ OPTION_LETTERS[oIdx] }}</span>
           <span class="mm-trivia__opt-text">{{ $pn(opt) }}</span>
           <span
             v-if="currentRevealed && answers[currentQuestion.id] === opt"
@@ -736,6 +865,153 @@ onMounted(() => {
   font-family: var(--mm-font-mono);
   font-size: 12px;
   color: var(--mm-ink-muted);
+}
+
+.mm-trivia__theater {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, 100%, 48vh);
+}
+
+.mm-trivia__theater-frame {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  border: 1px solid var(--mm-rule);
+  background: var(--mm-bg);
+  overflow: hidden;
+}
+
+.mm-trivia__theater-img,
+.mm-trivia__theater-tile-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-position: center;
+}
+
+.mm-trivia__theater-img {
+  object-fit: contain;
+}
+
+.mm-trivia__theater-tile-img {
+  object-fit: cover;
+}
+
+.mm-trivia__theater-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mm-trivia__theater-name {
+  font-family: var(--mm-font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+}
+
+.mm-trivia__theater-name--blind {
+  color: var(--mm-accent-soft);
+}
+
+.mm-trivia__theaters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: min(440px, 100%);
+}
+
+.mm-trivia__theater-tile {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--mm-rule);
+  background: var(--mm-bg);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.mm-trivia__theater-tile:hover:not(:disabled) {
+  border-color: var(--mm-accent);
+}
+
+.mm-trivia__theater-tile:disabled {
+  cursor: default;
+}
+
+.mm-trivia__theater-tile--evaluating {
+  border-color: var(--mm-accent);
+}
+
+.mm-trivia__theater-tile--correct {
+  border-color: var(--mm-success);
+}
+
+.mm-trivia__theater-tile--wrong {
+  border-color: var(--mm-danger);
+}
+
+.mm-trivia__theater-tile--actual-correct {
+  border: 1.5px dashed var(--mm-success);
+}
+
+.mm-trivia__theater-tile--dimmed {
+  opacity: 0.42;
+}
+
+.mm-trivia__theater-tile-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  font-family: var(--mm-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+  background: var(--mm-bg-mute);
+}
+
+.mm-trivia__theater-letter {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+}
+
+.mm-trivia__theater-tile--correct .mm-trivia__theater-letter {
+  background: var(--mm-success);
+  color: var(--mm-highlight-ink);
+  border-color: var(--mm-success);
+}
+
+.mm-trivia__theater-tile--wrong .mm-trivia__theater-letter {
+  background: var(--mm-danger);
+  color: var(--mm-ink);
+  border-color: var(--mm-danger);
+}
+
+.mm-trivia__theater-tile-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 8px 10px 7px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+  background: color-mix(in srgb, var(--mm-bg) 82%, transparent);
 }
 
 .mm-trivia__question {

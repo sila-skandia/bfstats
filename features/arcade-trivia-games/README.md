@@ -32,6 +32,8 @@ A daily (or endless/practice) guessing challenge inspired by Wordle / Poeltl wit
 
 ### 3. Field Lore (Battlefield Trivia)
 A 5-question tactical quiz dynamically generated **only** from live and historical database statistics. There are no hardcoded lore, radio-key, or vehicle trivia questions.
+
+**Blind theater**: when a question is about a map (or the answers *are* maps) and official spawn-screen art exists, the map name is concealed. The UI shows the extracted BF1942 `InGameMap` instead — a briefing plate behind map-scoped questions, or a 2x2 spawn-select grid for map answers. Names print after the guess. Custom maps without art keep the text buttons. Spawn-screen WebPs are not in git and are not bundled in the UI image. They live on the assets volume (FileBrowser) and are served only at `/stats/assets/arcade/maps/{slug}/ingame.webp`. Extract locally with `scripts/extract-bf1942-map-art.py`; upload with `scripts/upload-arcade-map-art.sh`. Missing volume files hide the image — there is no UI fallback path.
 - **Combinatorial player-map templates** (`TriviaQuestionComposer` + `PlayerMapStats`): metric templates (kills, kill rate, K/D, score, playtime, rounds) are crossed with players and maps at quiz time. No canned question rows are stored.
   - Player → map: "On which map has ApexSoldier recorded the most kills?" / highest kill rate / highest K/D
   - Map → player: "On Wake Island, which combatant has the highest Kill/Death ratio?"
@@ -84,6 +86,7 @@ Base path: `/stats/arcade`
 | `/stats/arcade/mystery/guess` | POST | Submits a player name guess against a dossier token; returns comparative clue indicators. |
 | `/stats/arcade/trivia/quiz` | GET | Generates a 5-question trivia quiz from current stats (map/period scoped when data allows), customized to `?serverGuid=` and `?orbitPlayer=` when provided. |
 | `/stats/arcade/trivia/verify` | POST | Validates trivia answers and returns explanations with real stats. |
+| `/stats/assets/arcade/{path}` | GET | Spawn-screen WebP from the assets volume (`arcade/maps/{slug}/ingame.webp`). |
 | `/stats/arcade/players/search` | GET | Fast autocomplete search across arcade candidate pool, optionally scoped to `?serverGuid=` (used by admin tooling; Mystery Soldier uses `candidateOptions` instead). |
 
 ## UI & Design
@@ -91,6 +94,7 @@ Base path: `/stats/arcade`
 - Hosted at `/v4/arcade`.
 - Designed with `.mm` Neutral Depth tokens (`--mm-*`).
 - Field Lore and Higher/Lower prompts emphasize interpolated entities (player names, maps, servers, month/year) as mono callsign marks so sentence-like names do not blend into the question.
+- Field Lore theater recon loads spawn-screen maps only from `/stats/assets/arcade/maps/{slug}/ingame.webp` (assets volume / FileBrowser). There is no bundled `/arcade/maps` copy. Missing art falls back to the text option grid.
 - Audio toggle (Mute / Sound On) utilizing authentic BF1942 radio comms in `/radio-sounds`.
 - Fully responsive on mobile (≤640px) and desktop (≥881px).
 - No emojis — status and feedback use PrimeIcons, CSS indicators, and country micro-badges.

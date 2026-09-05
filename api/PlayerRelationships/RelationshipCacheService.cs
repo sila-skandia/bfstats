@@ -33,7 +33,8 @@ public class RelationshipCacheService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error getting cached value for key {Key}", key);
+            logger.LogWarning("Cache get failed for key {Key} ({ExceptionType}: {Message})",
+                key, ex.GetType().Name, ex.Message);
             return null;
         }
     }
@@ -54,8 +55,8 @@ public class RelationshipCacheService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error setting cached value for key {Key}", key);
-            // Don't throw - caching errors shouldn't break the application
+            logger.LogWarning("Cache set failed for key {Key} ({ExceptionType}: {Message})",
+                key, ex.GetType().Name, ex.Message);
         }
     }
 
@@ -68,7 +69,8 @@ public class RelationshipCacheService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error removing cached value for key {Key}", key);
+            logger.LogWarning("Cache remove failed for key {Key} ({ExceptionType}: {Message})",
+                key, ex.GetType().Name, ex.Message);
         }
     }
 
