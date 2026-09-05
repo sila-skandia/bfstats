@@ -565,7 +565,7 @@ public class ArcadeService(
         }
         else
         {
-        var balancedMap = topMaps.FirstOrDefault(m =>
+            var balancedMap = topMaps.FirstOrDefault(m =>
             m.Team1Wins > 0 && m.Team2Wins > 0 &&
             !string.IsNullOrEmpty(m.Team1Label) && !string.IsNullOrEmpty(m.Team2Label) &&
             m.Team1Wins != m.Team2Wins);
