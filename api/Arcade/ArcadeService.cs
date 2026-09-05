@@ -107,7 +107,8 @@ public class ArcadeService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to load arcade servers from database.");
+            logger.LogWarning("Failed to load arcade servers from database ({ExceptionType}: {Message})",
+                ex.GetType().Name, ex.Message);
             return [];
         }
     }
@@ -2363,7 +2364,8 @@ public class ArcadeService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to load arcade candidates for server {ServerGuid}.", serverGuid);
+            logger.LogWarning("Failed to load arcade candidates for server {ServerGuid} ({ExceptionType}: {Message})",
+                serverGuid, ex.GetType().Name, ex.Message);
             return EmptyRoster;
         }
     }
@@ -2391,7 +2393,8 @@ public class ArcadeService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Arcade relationship trivia skipped for {OrbitPlayer}.", orbit);
+            logger.LogWarning("Arcade relationship trivia skipped for {OrbitPlayer} ({ExceptionType}: {Message})",
+                orbit, ex.GetType().Name, ex.Message);
             return [];
         }
     }
@@ -2417,7 +2420,8 @@ public class ArcadeService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Arcade orbit lookup failed for {OrbitPlayer}; using default roster.", orbitPlayer);
+            logger.LogWarning("Arcade orbit lookup failed for {OrbitPlayer}; using default roster ({ExceptionType}: {Message})",
+                orbitPlayer, ex.GetType().Name, ex.Message);
             return baseline;
         }
 

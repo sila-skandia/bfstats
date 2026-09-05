@@ -748,7 +748,8 @@ public class PlayerTrackingService(
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to lookup geolocation for IP {IpAddress}", ip);
+            _logger.LogWarning("Failed to lookup geolocation for IP {IpAddress} ({ExceptionType}: {Message})",
+                ip, ex.GetType().Name, ex.Message);
             return null;
         }
         finally

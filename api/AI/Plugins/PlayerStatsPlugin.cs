@@ -219,7 +219,8 @@ public class PlayerStatsPlugin(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get top KD ratio players");
+            logger.LogWarning("Failed to get top KD ratio players ({ExceptionType}: {Message})",
+                ex.GetType().Name, ex.Message);
             return "Could not retrieve top K/D ratio players.";
         }
     }
@@ -301,7 +302,8 @@ public class PlayerStatsPlugin(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get top kill rate players");
+            logger.LogWarning("Failed to get top kill rate players ({ExceptionType}: {Message})",
+                ex.GetType().Name, ex.Message);
             return "Could not retrieve top kill rate players.";
         }
     }
