@@ -45,6 +45,7 @@
 - Handle exceptions appropriately
 - Use proper validation for API inputs
 - Follow existing naming conventions in the codebase
+- **NEVER use emojis anywhere in the codebase.** Emojis are forbidden in UI components, templates, styles, scripts, share messages, and docs. Always use considered CSS styling, animations, colors, SVGs, or icon fonts (PrimeIcons) instead.
 
 ## Project-Specific Context
 

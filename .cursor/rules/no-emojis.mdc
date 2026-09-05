@@ -1,0 +1,18 @@
+---
+description: Never use emojis in UI, code, or user-facing text; use CSS styling, animations, colors, SVGs, or icon fonts instead
+alwaysApply: true
+---
+
+# No Emojis Policy
+
+## Absolute Ban on Emojis
+- **NEVER use emojis anywhere in the codebase**, including UI components, templates, styles, script logic, notifications, user messages, share texts, or console output.
+- Emojis are considered a lazy shortcut for visual effects.
+- Always use a considered CSS approach with refined animations, colors, micro-badges, SVG vectors, or icon fonts (e.g. PrimeIcons `pi pi-*`).
+
+## Implementation Standards
+- **Icons**: Use SVG icons or icon fonts (`pi pi-*` from PrimeIcons) with precise sizing and color inheritance.
+- **Status & Streaks**: Use CSS glow animations, color transitions, keyframes (e.g., pulsing flame or streak badges), and semantic tokens.
+- **Indicators & Feedback**: Use dedicated CSS classes (e.g. `.mm-match-higher`, `.mm-match-lower`, `.mm-match-exact`) with subtle background tints and borders.
+- **Country Badges**: Use styled ISO two-letter text tags (e.g., `<span class="mm-country-badge">US</span>`) styled with micro-typography and subtle borders instead of flag emojis.
+- **Share & Export Text**: Use clean structured text (brackets, dividers, percentages, ratios) without emoji decorations.
