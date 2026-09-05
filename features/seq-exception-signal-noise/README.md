@@ -4,6 +4,34 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-05 08:18 UTC page
+
+~3 hours after the 05:11 page (`cursor/site-error-analysis-93c6`). Live site
+at 08:19 UTC was otherwise healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 08:19:18, 93 servers named/unique, 24 live players
+  (22 unique; `BFSoldier` AI bot on three servers)
+- Wrapped 200 for MoonGamers and `*NEW* SiMPLE | BF1942`
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20`
+
+A :18 page is 3 minutes after the :15 gamification tick / 18 minutes after
+hourly writers. Best fit is handled `SQLITE_BUSY` from that tick overlapping
+30s collection, or Seq re-notify of a held earlier event. Not a 02:00 retry
+(catch waits 5 min then sleeps until tomorrow).
+
+Separately, `GET /stats/players` and `GET /stats/players/search?query=jonas`
+returned 400 `An item with the same key has already been added. Key: jonas`.
+`jonas` hopped `*NEW* SiMPLE | BF1942` (session 3035815, lastSeen 08:18:48,
+still `IsActive`) to `*NEW* SiMPLE | RtR+SW` (session 3035847, started
+08:19:18). Live list showed only RtR+SW. The controller catches
+`ArgumentException` and returns 400 without logging, so this is **not** the
+Seq page — but the default list and exact-name search are broken while the
+stale row remains. The lookup now keeps the most recently seen session.
+
+Prior collisions (lop|Zagros / tom / Rick / Frankie / nico / Paciencia) are
+cleared. The 05:11 branch never merged, so this change re-lands that work.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
