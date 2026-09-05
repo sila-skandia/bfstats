@@ -1,4 +1,5 @@
 using api.PlayerRelationships.Models;
+using api.Services;
 using Microsoft.Extensions.Logging;
 
 namespace api.PlayerRelationships;
@@ -9,6 +10,7 @@ namespace api.PlayerRelationships;
 public class CachedPlayerRelationshipService(
     PlayerRelationshipService innerService,
     IRelationshipCacheService cacheService,
+    IAggregateConcurrencyService concurrency,
     ILogger<CachedPlayerRelationshipService> logger) : IPlayerRelationshipService
 {
     public async Task<List<PlayerRelationship>> GetMostFrequentCoPlayersAsync(
@@ -196,16 +198,18 @@ public class CachedPlayerRelationshipService(
 
     public async Task<string> DetectAndStoreCommunities(CancellationToken cancellationToken = default)
     {
-        // Invalidate community cache before detection
-        await cacheService.RemoveAsync("communities:all", cancellationToken);
-        
-        var result = await innerService.DetectAndStoreCommunities(cancellationToken);
-        
-        // Pre-populate the cache with fresh data
-        var communities = await innerService.GetCommunitiesAsync(cancellationToken: cancellationToken);
-        await cacheService.SetCommunitiesAsync(communities, cancellationToken);
-        
-        return result;
+        logger.LogInformation("Waiting for Neo4j relationship-sync lock before community detection");
+        return await concurrency.ExecuteWithNeo4jRelationshipSyncLockAsync(async ct =>
+        {
+            await cacheService.RemoveAsync("communities:all", ct);
+
+            var result = await innerService.DetectAndStoreCommunities(ct);
+
+            var communities = await innerService.GetCommunitiesAsync(cancellationToken: ct);
+            await cacheService.SetCommunitiesAsync(communities, ct);
+
+            return result;
+        }, cancellationToken);
     }
 
     public async Task<CommunityServerMap> GetCommunityServerMapAsync(
