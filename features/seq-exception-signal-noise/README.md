@@ -4,6 +4,28 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-05 09:21 UTC page
+
+~30 minutes after the 08:51 page (`cursor/site-error-analysis-54d3`). Live site
+at 09:22 UTC was otherwise healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 09:22:00, 94 servers named/unique, 39 live players
+  (39 unique; no duplicate names)
+- Default `/stats/players` 200. Search for Ho-Chi Minh / jonas / lop|Zagros /
+  tom / Rick / Frankie / nico / Paciencia / Aaa / Cosmik_Debris all 200.
+  `Ho-Chi Minh` collision from 08:51 is cleared (`isActive: false`, lastPlayed
+  08:49:18). `jonas` is live on `*NEW* SiMPLE | BF1942` with a single session.
+- Wrapped 200 for MoonGamers and `*NEW* SiMPLE | BF1942`. RtR+SW wrapped 404
+  (no cached wrap).
+- `/stats/communities` still 17,954 rows, all `formationDate = 2026-08-20`
+
+A :21 page at any hour other than 02:00 is 1 minute after the :20 gamification
+tick. Best fit is handled `SQLITE_BUSY` from that tick overlapping 30s
+collection, or Seq re-notify of a held earlier event. Not a 02:00 retry
+(catch waits 5 min then sleeps until tomorrow). The 08:51 / 08:18 / 05:11
+branches never merged, so this change re-lands that work.
+
 ## 2026-08-28 19:04 UTC page
 
 ~4 hours after the 15:02 page. Live site at 19:06 UTC was healthy:
