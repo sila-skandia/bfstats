@@ -96,7 +96,8 @@ public class CommunitiesController(
         }
         catch (ArgumentException ex)
         {
-            logger.LogWarning(ex, "Community {CommunityId} not found", communityId);
+            logger.LogWarning("Community {CommunityId} not found ({ExceptionType}: {Message})",
+                communityId, ex.GetType().Name, ex.Message);
             return NotFound($"Community {communityId} not found");
         }
         catch (Exception ex)

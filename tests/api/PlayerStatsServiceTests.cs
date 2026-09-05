@@ -361,6 +361,26 @@ public sealed class PlayerStatsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPlayerStatistics_Continues_WhenSqliteLookupsThrow()
+    {
+        dbContext.Players.Add(new Player { Name = "BusyPlayer", TotalPlayTimeMinutes = 100, AiBot = false, LastSeen = DateTime.UtcNow });
+        await dbContext.SaveChangesAsync();
+
+        sqlitePlayerStatsService.GetPlayerStatsAsync("BusyPlayer", lookBackDays: 0)
+            .Returns<PlayerLifetimeStats?>(_ => throw new SqliteException("database is locked", 5));
+        sqlitePlayerStatsService.GetPlayerServerInsightsAsync("BusyPlayer", lookBackDays: 0)
+            .Returns<List<ServerInsight>>(_ => throw new SqliteException("database is locked", 5));
+        sqlitePlayerStatsService.GetPlayerBestScoresAsync("BusyPlayer")
+            .Returns<PlayerBestScores>(_ => throw new SqliteException("database is locked", 5));
+
+        var stats = await service.GetPlayerStatistics("BusyPlayer");
+
+        Assert.NotNull(stats);
+        Assert.Equal(0, stats.TotalKills);
+        Assert.Empty(stats.Servers);
+    }
+
+    [Fact]
     public async Task GetPlayerStatistics_UsesCache_WhenAvailable()
     {
         var cacheMock = Substitute.For<ICacheService>();
