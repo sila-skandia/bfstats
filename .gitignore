@@ -304,7 +304,7 @@ api/assets/arcade/
 
 # Map previews extracted from a BF1942 install (bf1942-map-images skill).
 # These live on the assets volume served by FileBrowser, never in git.
-maps/
+/maps/
 
 # JWT signing keys (local development)
 keys/

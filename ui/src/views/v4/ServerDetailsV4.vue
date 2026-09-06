@@ -27,6 +27,7 @@ import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
 import MmServerActivityHeatmap from '@/components/v4/MmServerActivityHeatmap.vue'
+import { BfLoadingBar } from '@/components/common'
 import { kdClass } from './mmTokens'
 
 const route = useRoute()
@@ -437,6 +438,13 @@ watch(activeTab, (t) => {
           <span class="mm-skeleton" style="width: 180px; height: 1em; display: inline-block; vertical-align: middle" />
         </template>
       </div>
+
+      <!-- In-game loading bar during live data fetches -->
+      <BfLoadingBar
+        v-if="loading"
+        indeterminate
+        style="margin-top: 16px; margin-bottom: 8px"
+      />
 
       <!-- KPI strip -->
       <div class="mm-stats" style="margin-top: 24px">
