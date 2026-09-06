@@ -212,7 +212,17 @@ onMounted(() => {
       </button>
     </div>
 
-    <template v-if="currentQuestion">
+    <!-- Loading wins over currentQuestion. loadNext() leaves the previous matchup in place
+         while the next one is in flight, so ordering these the other way round meant the
+         loading branch was unreachable on every load but the first — switching server just
+         sat on the old matchup with no indication anything was happening. -->
+    <MmArcadeSkeleton
+      v-if="loading"
+      variant="headToHead"
+      label="Loading matchup"
+    />
+
+    <template v-else-if="currentQuestion">
       <div
         class="mm-section-bar mm-hl__prompt"
         data-testid="hl-prompt"
@@ -521,12 +531,6 @@ onMounted(() => {
         </button>
       </div>
     </template>
-
-    <MmArcadeSkeleton
-      v-else-if="loading"
-      variant="headToHead"
-      label="Loading matchup"
-    />
   </div>
 </template>
 
