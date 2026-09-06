@@ -456,19 +456,9 @@ public class PlayerRelationshipService(
 
         if (allyNames.Count > 1)
         {
-            var pairs = new List<object>(allyNames.Count * (allyNames.Count - 1) / 2);
-            for (var i = 0; i < allyNames.Count; i++)
-            {
-                for (var j = i + 1; j < allyNames.Count; j++)
-                {
-                    var a = allyNames[i];
-                    var b = allyNames[j];
-                    if (string.CompareOrdinal(a, b) < 0)
-                        pairs.Add(new { a, b });
-                    else
-                        pairs.Add(new { a = b, b = a });
-                }
-            }
+            var pairs = NetworkGraphPairBuilder.BuildUniquePairs(allyNames)
+                .Select(pair => new { a = pair.A, b = pair.B })
+                .ToList();
 
             var allyEdgesQuery = @"
                 UNWIND $pairs AS pair
