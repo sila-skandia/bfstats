@@ -62,6 +62,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/v4/players')) return 'players'
   if (path.startsWith('/v4/leaderboard')) return 'leaderboard'
   if (path.startsWith('/v4/arcade')) return 'arcade'
+  if (path.startsWith('/v4/armoury')) return 'armoury'
   if (path.startsWith('/v4/rounds')) return 'rounds'
   return ''
 })
@@ -86,6 +87,7 @@ const resolveCrumbTarget = (segs: string[]): string | null => {
     if (segs[0] === 'players') return '/v4/players'
     if (segs[0] === 'leaderboard') return '/v4/leaderboard'
     if (segs[0] === 'arcade') return '/v4/arcade'
+    if (segs[0] === 'armoury') return '/v4/armoury'
     if (segs[0] === 'rounds') return '/v4/rounds'
     // system-stats / map-popularity / communities are terminal-only; no
     // section landing exists, so the segment isn't linkable on its own.

@@ -52,6 +52,42 @@ public class AssetsController(
     }
 
     /// <summary>
+    /// In-game HUD icons, class badges, and loading animation frames.
+    /// Path is relative to the hud folder, e.g. "classes/assault.png".
+    /// </summary>
+    [HttpGet("hud/{*path}")]
+    public async Task<IActionResult> GetHudAsset(string path)
+    {
+        var basePath = Path.Combine(TournamentImagesConfig.ResolveBasePath(), "hud");
+        var result = await assetServingService.GetAssetAsync(basePath, path);
+        return HandleAssetResult(result);
+    }
+
+    /// <summary>
+    /// Full-resolution theater loading artwork.
+    /// Path is relative to the theaters folder, e.g. "pacific.webp".
+    /// </summary>
+    [HttpGet("theaters/{*path}")]
+    public async Task<IActionResult> GetTheaterAsset(string path)
+    {
+        var basePath = Path.Combine(TournamentImagesConfig.ResolveBasePath(), "theaters");
+        var result = await assetServingService.GetAssetAsync(basePath, path);
+        return HandleAssetResult(result);
+    }
+
+    /// <summary>
+    /// 3D WebGL models in binary glTF (.glb) format.
+    /// Path is relative to the models folder, e.g. "tiger.glb".
+    /// </summary>
+    [HttpGet("models/{*path}")]
+    public async Task<IActionResult> GetModelAsset(string path)
+    {
+        var basePath = Path.Combine(TournamentImagesConfig.ResolveBasePath(), "models");
+        var result = await assetServingService.GetAssetAsync(basePath, path);
+        return HandleAssetResult(result);
+    }
+
+    /// <summary>
     /// Get the preview image for a map, addressed the way bflist reports it:
     /// /stats/assets/maps/{gameId}/{mapName}. Map names may be given with spaces or
     /// underscores and in any case ("fhsw/Operation Coronet-1946" works).
