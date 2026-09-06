@@ -4,6 +4,34 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-06 08:33 UTC page
+
+~1 hour 36 minutes after the 06:57 page (`cursor/site-error-analysis-1268`).
+That leftover logging silence never opened a PR. GitHub `main` is still
+`5a7fe73` (Armoury parked at 05:47). Live site at 08:34 UTC was otherwise
+healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 08:33:33, 91 servers named/unique, 32 live players
+  (31 unique; only generic `BFSoldier` on two servers)
+- Default `/stats/players` 200. Search for Ho-Chi Minh / jonas / BFSoldier /
+  Player / Nosferatu / Brisdahl all 200. Player Brisdahl 200.
+- Arcade servers 200. Trivia 200 in 0.19s. Higher-lower 200 in 0.19s.
+  Mystery 200 in 0.38s.
+- Map thumbs kursk/bocage 200; kursk_custom 404 expected. `/armoury` SPA HTML
+  (parked). Wrapped MoonGamers 200.
+- `/stats/communities` is **27 rows**, all `formationDate = 2026-09-06T02:17:49Z`.
+  Not a 02:00 retry — detection succeeded at 02:17.
+
+A :33 page is 3 minutes after the :30 gamification tick. Best fit is the
+same leftover `LogWarning(ex)` overlapping that lock window. PR #17 already
+silenced background-job `SQLITE_BUSY`, so this is request-path fallbacks
+and/or trivia warmup/refresh still attaching `ex`. Seq re-notify of a held
+earlier event is the other possibility.
+
+This change rebases 1268 onto current main. No `LogWarning(ex)` left in the
+API after it lands.
+
 ## 2026-09-06 03:57 UTC page
 
 ~2 hours 48 minutes after the 01:09 page (`cursor/site-error-analysis-08fb`).
@@ -143,13 +171,13 @@ aggregate, and gamification all write SQLite around this time of day.
 
 ## Fixes in this change
 
-1. Re-land `cursor/site-error-analysis-08fb` (and the 060b/ff15/52b1/b5a1
-   leftover) onto current main: request-path handled fallbacks no longer
-   attach `ex` (player stats, arcade roster/orbit, banners, geo, AI
-   plugins, auth 401, community 404, Redis/tournament-image startup).
-2. The new trivia warmup and background-refresh paths (from `9bae956`)
-   also no longer attach `ex` on a handled failure. A failed warm still
-   retries next interval; the request path can still build the pool.
+1. Re-land `cursor/site-error-analysis-1268` (and the 08fb/ad3c/c087 leftover)
+   onto current main: request-path handled fallbacks no longer attach `ex`
+   (player stats, arcade roster/orbit, banners, geo, AI plugins, auth 401,
+   community 404, Redis/tournament-image startup).
+2. Trivia warmup and background-refresh paths (from `9bae956`) also no
+   longer attach `ex` on a handled failure. A failed warm still retries
+   next interval; the request path can still build the pool.
 
 Real failures still `LogError(ex)` and will still page.
 
