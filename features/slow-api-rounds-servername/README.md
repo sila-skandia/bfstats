@@ -1,20 +1,27 @@
 # Slow `GET /stats/rounds` — ServerName `instr()` scan
 
-Seq signal `bfstats/Slow as fuck (>= 10 seconds)` at 2026-09-06 09:32:51Z.
+Seq signal `bfstats/Slow as fuck (>= 10 seconds)`. Recurring on live main because
+the ServerGuid rewrite was written on 1444 / 7ac4 / 7852 / 023c and never merged.
 
-## Trace
+## Traces
 
-`GET /stats/rounds?page=1&pageSize=25&sortBy=startTime&sortOrder=desc&includeTopPlayers=true&serverName=MoonGamers.com+|Est.+2004`
+`GET /stats/rounds?page=1&pageSize=25&sortBy=startTime&sortOrder=desc&includeTopPlayers=true&serverName=*NEW*+SiMPLE+%7C+BF1942`
 
-TraceId `07743645c00b69a5a522a82136d49963`. Bot (`is_bot=true`), HTTP 200, **61.7s**.
+TraceId `a3a39e151bb6fc91ab277d8f23c2fdb3` at 2026-09-06 13:26:41–17Z. HTTP 200, **35.7s**.
+StatsCollection.Cycle (4.1s) finished at 13:27:19 — overlapped the tail, not the cause.
 
 | span | cost | SQL |
 |---|---|---|
-| COUNT | **31,538ms** | `SELECT COUNT(*) FROM Rounds WHERE instr(ServerName, @name) > 0` |
-| page | **30,107ms** | same `instr` + `ORDER BY StartTime DESC LIMIT 25` |
-| top players | 1ms | `PlayerSessions` for the 25 round ids |
+| COUNT | **35,217ms** | `SELECT COUNT(*) FROM Rounds WHERE instr(ServerName, @name) > 0` |
+| page | **348ms** | same `instr` + `ORDER BY StartTime DESC LIMIT 25` |
+| top players | 2ms | `PlayerSessions` for the 25 round ids |
 
-Same shape on 2026-09-05 22:28 for `*NEW* SiMPLE | BF1942` (COUNT 37s). This path has been 6–55s for many exact server names since at least 09-03.
+The page is cheap when the server has recent rounds (StartTime DESC can stop after 25
+matches). COUNT still walks the whole table.
+
+Same path at 09:32:51Z for `MoonGamers.com+|Est.+2004` (TraceId
+`07743645c00b69a5a522a82136d49963`, **61.7s**, COUNT 31.5s + page 30.1s) and on
+2026-09-05 22:28 for `*NEW* SiMPLE | BF1942` (COUNT 37s). 6–55s since at least 09-03.
 
 ## Cause
 
