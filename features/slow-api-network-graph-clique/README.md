@@ -1,16 +1,28 @@
 # Slow API: network-graph clique edges after PR #18
 
-Seq signal `bfstats/Slow as fuck` (>= 10s) fired at 12:22 UTC on 2026-09-06.
+Seq signal `bfstats/Slow as fuck` (>= 10s) fired again at 14:10 UTC on 2026-09-06
+(same leftover as Phoenix at 12:22). Production still runs the PR #18 pairwise
+clique because this rewrite is not merged yet.
 
 ## What paged
 
 | Time (UTC) | Path | Elapsed |
 |---|---|---|
+| 14:10:43 | `GET /stats/relationships/players/Lt.  Tommy Gunn/network-graph?depth=2&maxNodes=120` | **15.7s** |
 | 12:21:57 | `GET /stats/relationships/players/Phoenix/network-graph?depth=2&maxNodes=120` | **17.5s** |
 
-Trace `c0211c2672db2de5328c29a589047d02`: start 12:21:39, debug, finish 12:21:57. HTTP 200. The whole span is the Neo4j read — no SQLite.
+Trace `af11db6419af5dd9a0cf025ac9d8e059` (Tommy Gunn): start 14:10:27, debug,
+finish 14:10:43. HTTP 200. Four Seq events, all in the request span — Neo4j
+read, no SQLite. Live cache-warm payload afterwards was **70 nodes / 1278
+edges** (52% of a 2415-pair clique). Depth 1 for the same player is 30 nodes /
+29 edges and ~180ms.
 
-Same window: `jozefciezniak` depth 1 = **24ms**, depth 2 = **6.5s**. Cost is the two-hop edge materialisation, not the node or the player.
+Trace `c0211c2672db2de5328c29a589047d02` (Phoenix): start 12:21:39, debug,
+finish 12:21:57. HTTP 200. Live payload **40 nodes / 780 edges** — a complete
+clique (`40 * 39 / 2 = 780`).
+
+Same window as Phoenix: `jozefciezniak` depth 1 = **24ms**, depth 2 = **6.5s**.
+Cost is the two-hop edge materialisation, not the node or the player.
 
 ## Why PR #18 was not enough
 
