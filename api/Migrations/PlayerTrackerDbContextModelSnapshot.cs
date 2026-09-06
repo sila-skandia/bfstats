@@ -325,7 +325,13 @@ namespace api.Migrations
 
                     b.HasIndex("PlayerName", "AchievedAt");
 
+                    b.HasIndex("PlayerName", "AchievementName")
+                        .HasDatabaseName("IX_PlayerAchievements_PlayerName_AchievementName");
+
                     b.HasIndex("RoundId", "PlayerName");
+
+                    b.HasIndex("AchievementType", "PlayerName", "AchievementId")
+                        .HasDatabaseName("IX_PlayerAchievements_AchievementType_PlayerName_AchievementId");
 
                     b.HasIndex("PlayerName", "AchievementId", "AchievedAt")
                         .IsUnique();
@@ -470,6 +476,9 @@ namespace api.Migrations
                     b.HasIndex("ServerGuid");
 
                     b.HasIndex("Year", "Week");
+
+                    b.HasIndex("PlayerName", "ServerGuid", "TotalRounds")
+                        .HasDatabaseName("IX_PlayerServerStats_PlayerName_ServerGuid_TotalRounds");
 
                     b.HasIndex("ServerGuid", "Year", "Week");
 
