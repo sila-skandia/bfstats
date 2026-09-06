@@ -59,8 +59,18 @@ public class NotificationHub : Hub
 
         if (exception != null)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
-            _logger.LogError(exception, "User disconnected due to error: {ConnectionId}", Context.ConnectionId);
+            if (SignalRDisconnectClassifier.IsExpectedIdleDisconnect(exception))
+            {
+                activity?.SetTag("disconnect.reason", "client_timeout");
+                _logger.LogInformation(
+                    "User disconnected after idle timeout: {ConnectionId}",
+                    Context.ConnectionId);
+            }
+            else
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+                _logger.LogError(exception, "User disconnected due to error: {ConnectionId}", Context.ConnectionId);
+            }
         }
 
         await base.OnDisconnectedAsync(exception);
