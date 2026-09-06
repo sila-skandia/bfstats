@@ -186,8 +186,9 @@ public class PlayerRelationshipsController(
     {
         try
         {
-            // Limit depth to prevent expensive queries
-            depth = Math.Min(depth, 3);
+            // Depth 2 is the implemented two-hop query. Depth 3 was accepted but
+            // still ran the same 2-hop Cypher, so cap at what the service actually does.
+            depth = Math.Clamp(depth, 1, 2);
             maxNodes = Math.Min(maxNodes, 200);
 
             var graph = await relationshipService.GetPlayerNetworkGraphAsync(
