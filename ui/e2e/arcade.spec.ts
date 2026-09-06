@@ -258,3 +258,93 @@ test.describe('Arcade loading skeletons', () => {
     await expect(page.getByTestId('arcade-skeleton')).toHaveCount(0)
   })
 })
+
+test.describe('Arcade loading state when content is already on screen', () => {
+  // Regression for the reported bug: switching server left the previous server's content up
+  // with no indication anything was loading. loadNext()/loadQuiz() keep the old content while
+  // the next request is in flight, and both games ordered their template branches so the
+  // already-populated branch won — making the loading branch unreachable on every load but
+  // the first.
+  //
+  // The E2E fixture seeds a single server, so these drive the identical
+  // reload-with-content-already-rendered condition through the in-game reload controls.
+
+  test('head-to-head indicates loading when a new matchup is fetched', async ({ page }) => {
+    let hold: Promise<void> = Promise.resolve()
+    let requests = 0
+    await page.route('**/stats/arcade/higher-lower/next*', async route => {
+      requests++
+      await hold
+      await route.continue()
+    })
+
+    await page.goto('/v4/arcade')
+    await page.waitForLoadState('networkidle')
+    await chooseArcadeServer(page)
+
+    await expect(page.getByTestId('hl-prompt')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('arcade-skeleton')).toHaveCount(0)
+
+    await page.getByTestId('hl-pick-a').click()
+    await expect(page.getByTestId('hl-outcome')).toBeVisible()
+
+    const before = requests
+    let release: () => void = () => {}
+    hold = new Promise<void>(resolve => { release = resolve })
+    await page.getByTestId('hl-next-btn').click()
+
+    // advanceRound() serves a prefetched nextQuestion without a request when it has one.
+    // Only a real round trip should produce a loading state — assert on the case that fetches.
+    await page.waitForTimeout(500)
+    if (requests > before) {
+      await expect(page.getByTestId('arcade-skeleton')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByTestId('hl-prompt')).toHaveCount(0)
+    }
+
+    release()
+    await expect(page.getByTestId('hl-prompt-detail')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('arcade-skeleton')).toHaveCount(0)
+  })
+
+  test('trivia swaps stale pips for skeleton pips while replaying', async ({ page }) => {
+    let hold: Promise<void> = Promise.resolve()
+    await page.route('**/stats/arcade/trivia/quiz*', async route => {
+      await hold
+      await route.continue()
+    })
+
+    await page.goto('/v4/arcade?game=trivia')
+    await page.waitForLoadState('networkidle')
+    await chooseArcadeServer(page)
+
+    await expect(page.getByTestId('trivia-question')).toBeVisible({ timeout: 20_000 })
+    const realPips = page.locator('.mm-trivia__step-pip')
+    await expect(realPips.first()).toBeVisible()
+
+    // Answer every question to reach the debrief, which offers Play Again — a reload with a
+    // quiz already on screen, the same condition a server switch creates.
+    const nextQuestion = page.getByRole('button', { name: 'Next Question' })
+    for (;;) {
+      await page.getByTestId('trivia-option').first().click()
+      if (!(await nextQuestion.isVisible().catch(() => false))) break
+      await nextQuestion.click()
+      await expect(page.getByTestId('trivia-question')).toBeVisible()
+    }
+    await page.getByRole('button', { name: 'View Results' }).click()
+
+    const playAgain = page.getByRole('button', { name: /play again/i })
+    await expect(playAgain).toBeVisible({ timeout: 20_000 })
+
+    let release: () => void = () => {}
+    hold = new Promise<void>(resolve => { release = resolve })
+    await playAgain.click()
+
+    // The old quiz's pips must not linger next to a loading body.
+    await expect(realPips).toHaveCount(0)
+    await expect(page.locator('.mm-askel__pip').first()).toBeVisible({ timeout: 20_000 })
+
+    release()
+    await expect(page.getByTestId('trivia-question')).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('.mm-askel__pip')).toHaveCount(0)
+  })
+})

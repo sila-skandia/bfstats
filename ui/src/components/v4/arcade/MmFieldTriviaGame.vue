@@ -237,8 +237,11 @@ onMounted(() => {
     <div class="mm-trivia__top-bar">
       <div class="mm-trivia__status">
         <span class="mm-eyebrow">Field Lore</span>
+        <!-- `quiz` holds the previous quiz until the next one lands, so these have to be
+             gated on !loading too. Otherwise switching server leaves the old pips up,
+             complete with their correct/wrong marks, next to a loading body. -->
         <div
-          v-if="quiz"
+          v-if="quiz && !loading"
           class="mm-trivia__step-tracker"
         >
           <span
@@ -271,7 +274,7 @@ onMounted(() => {
           label="Loading trivia questions"
         />
         <span
-          v-if="quiz"
+          v-if="quiz && !loading"
           class="mm-trivia__score-pill"
         >
           Confirmed: {{ correctCount }} / {{ answeredCount }}
