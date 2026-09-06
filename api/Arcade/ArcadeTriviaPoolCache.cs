@@ -157,7 +157,9 @@ public sealed class ArcadeTriviaPoolCache(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Background refresh of arcade trivia pool {PoolKey} failed.", key);
+                logger.LogWarning(
+                    "Background refresh of arcade trivia pool {PoolKey} failed ({ExceptionType}: {Message})",
+                    key, ex.GetType().Name, ex.Message);
             }
             finally
             {
