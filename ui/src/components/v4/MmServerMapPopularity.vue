@@ -24,11 +24,14 @@ interface Props {
   serverGuid: string
   serverName?: string
   standalone?: boolean
+  /** bflist gameId (the mod), passed through to the map drill-in for its level briefing. */
+  gameId?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   serverName: '',
   standalone: false,
+  gameId: null,
 })
 
 const router = useRouter()
@@ -563,6 +566,7 @@ const $pn = decodePlayerName
       :server-guid="serverGuid"
       :map-name="selectedMap"
       :server-name="localServerName"
+      :game-id="gameId"
       @close="closeDrillIn"
     />
   </div>
