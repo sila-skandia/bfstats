@@ -350,67 +350,85 @@ public class PlayerRelationshipService(
                 };
             }
 
-            // 2-Hop Network: Focus player -> Direct Allies (up to 15) -> Top 5 Allies for each ally
-            var twoHopQuery = @"
+            var allyLimit = Math.Clamp(maxNodes / 6, 8, 15);
+            var fofPerAlly = 5;
+
+            var alliesQuery = @"
                 MATCH (p:Player {name: $playerName})-[r:PLAYED_WITH]-(ally:Player)
-                WITH p, ally, r ORDER BY r.sessionCount DESC LIMIT 15
-                OPTIONAL MATCH (ally)-[r2:PLAYED_WITH]-(fof:Player)
-                WHERE fof.name <> $playerName
-                WITH p, ally, r, fof, r2 ORDER BY ally.name, r2.sessionCount DESC
-                WITH p, ally, r, collect(fof.name)[0..5] AS topFofNames
                 RETURN ally.name AS allyName,
                        r.sessionCount AS allyWeight,
-                       topFofNames AS fofNames";
+                       r.lastPlayedTogether AS lastPlayed
+                ORDER BY r.sessionCount DESC
+                LIMIT $allyLimit";
 
             var nodesMap = new Dictionary<string, NetworkNode>(StringComparer.OrdinalIgnoreCase)
             {
                 [playerName] = new NetworkNode { Id = playerName, Label = playerName, Degree = 0, Weight = 0 }
             };
+            var finalEdges = new List<NetworkEdge>();
+            var allyNames = new List<string>();
 
-            var twoHopCursor = await tx.RunAsync(twoHopQuery, new { playerName });
-            await foreach (var rec in twoHopCursor)
+            var alliesCursor = await tx.RunAsync(alliesQuery, new { playerName, allyLimit });
+            await foreach (var rec in alliesCursor)
             {
-                if (rec["allyName"] == null) continue;
                 var allyName = rec["allyName"].As<string>();
-                var allyWeight = rec["allyWeight"].As<int>();
-                nodesMap[allyName] = new NetworkNode { Id = allyName, Label = allyName, Degree = 1, Weight = allyWeight };
+                if (string.IsNullOrWhiteSpace(allyName)) continue;
 
-                var fofNames = rec["fofNames"].As<List<string>>() ?? [];
-                foreach (var fof in fofNames)
+                var allyWeight = rec["allyWeight"].As<int>();
+                var lastPlayed = ToNullableDateTime(rec["lastPlayed"]) ?? DateTime.MinValue;
+                nodesMap[allyName] = new NetworkNode { Id = allyName, Label = allyName, Degree = 1, Weight = allyWeight };
+                allyNames.Add(allyName);
+                finalEdges.Add(new NetworkEdge
                 {
-                    if (!string.IsNullOrWhiteSpace(fof) && !nodesMap.ContainsKey(fof))
-                    {
-                        nodesMap[fof] = new NetworkNode { Id = fof, Label = fof, Degree = 2, Weight = 0 };
-                    }
-                }
+                    Source = playerName,
+                    Target = allyName,
+                    Weight = allyWeight,
+                    LastInteraction = lastPlayed
+                });
             }
 
-            // Now fetch all edges among all discovered nodes in our network
-            var allPlayerNames = nodesMap.Keys.ToList();
-            var finalEdges = new List<NetworkEdge>();
-
-            if (allPlayerNames.Count > 1)
+            if (allyNames.Count > 0)
             {
-                var edgesQuery = @"
-                    UNWIND $allPlayerNames AS p1Name
-                    MATCH (p1:Player {name: p1Name})-[r:PLAYED_WITH]-(p2:Player)
-                    WHERE p2.name IN $allPlayerNames AND p1.name < p2.name
-                    RETURN p1.name AS player1,
-                           p2.name AS player2,
-                           r.sessionCount AS sessionCount,
-                           r.lastPlayedTogether AS lastPlayed
-                    ORDER BY r.sessionCount DESC";
+                var fofQuery = @"
+                    UNWIND $allyNames AS allyName
+                    MATCH (ally:Player {name: allyName})
+                    CALL {
+                        WITH ally
+                        MATCH (ally)-[r2:PLAYED_WITH]-(fof:Player)
+                        WHERE fof.name <> $playerName AND NOT fof.name IN $allyNames
+                        RETURN fof.name AS fofName,
+                               r2.sessionCount AS fofWeight,
+                               r2.lastPlayedTogether AS fofLastPlayed
+                        ORDER BY r2.sessionCount DESC
+                        LIMIT $fofPerAlly
+                    }
+                    RETURN allyName, fofName, fofWeight, fofLastPlayed";
 
-                var edgeCursor = await tx.RunAsync(edgesQuery, new { allPlayerNames });
-
-                await foreach (var edgeRecord in edgeCursor)
+                var fofCursor = await tx.RunAsync(fofQuery, new { playerName, allyNames, fofPerAlly });
+                await foreach (var rec in fofCursor)
                 {
+                    var allyName = rec["allyName"].As<string>();
+                    var fofName = rec["fofName"].As<string>();
+                    if (string.IsNullOrWhiteSpace(fofName) || string.IsNullOrWhiteSpace(allyName))
+                        continue;
+
+                    if (!nodesMap.ContainsKey(fofName))
+                    {
+                        nodesMap[fofName] = new NetworkNode
+                        {
+                            Id = fofName,
+                            Label = fofName,
+                            Degree = 2,
+                            Weight = rec["fofWeight"].As<int>()
+                        };
+                    }
+
                     finalEdges.Add(new NetworkEdge
                     {
-                        Source = edgeRecord["player1"].As<string>(),
-                        Target = edgeRecord["player2"].As<string>(),
-                        Weight = edgeRecord["sessionCount"].As<int>(),
-                        LastInteraction = ToNullableDateTime(edgeRecord["lastPlayed"]) ?? DateTime.MinValue
+                        Source = allyName,
+                        Target = fofName,
+                        Weight = rec["fofWeight"].As<int>(),
+                        LastInteraction = ToNullableDateTime(rec["fofLastPlayed"]) ?? DateTime.MinValue
                     });
                 }
             }
