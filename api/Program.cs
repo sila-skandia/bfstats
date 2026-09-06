@@ -811,6 +811,12 @@ try
     // Singleton: caches the map image manifest across requests
     builder.Services.AddSingleton<api.ImageStorage.IMapImageResolver, api.ImageStorage.MapImageResolver>();
 
+    // Register MapDossiers services
+    // Singletons: both cache filesystem indexes (the dossier manifest, the HUD icon set)
+    // that would otherwise be re-read on every request
+    builder.Services.AddSingleton<api.MapDossiers.IMapDossierResolver, api.MapDossiers.MapDossierResolver>();
+    builder.Services.AddSingleton<api.MapDossiers.IMapDossierService, api.MapDossiers.MapDossierService>();
+
     // Register PlayerBanners (forum signature) services
     builder.Services.AddSingleton<api.PlayerBanners.BannerFonts>();
     builder.Services.AddSingleton<api.PlayerBanners.BannerRenderer>();
