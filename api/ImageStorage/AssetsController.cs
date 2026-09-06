@@ -76,18 +76,6 @@ public class AssetsController(
     }
 
     /// <summary>
-    /// 3D WebGL models in binary glTF (.glb) format.
-    /// Path is relative to the models folder, e.g. "tiger.glb".
-    /// </summary>
-    [HttpGet("models/{*path}")]
-    public async Task<IActionResult> GetModelAsset(string path)
-    {
-        var basePath = Path.Combine(TournamentImagesConfig.ResolveBasePath(), "models");
-        var result = await assetServingService.GetAssetAsync(basePath, path);
-        return HandleAssetResult(result);
-    }
-
-    /// <summary>
     /// Get the preview image for a map, addressed the way bflist reports it:
     /// /stats/assets/maps/{gameId}/{mapName}. Map names may be given with spaces or
     /// underscores and in any case ("fhsw/Operation Coronet-1946" works).
