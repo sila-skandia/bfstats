@@ -23,7 +23,7 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg", ".jpeg", ".png", ".gif", ".webp",
-        ".pdf", ".zip", ".txt", ".json", ".glb"
+        ".pdf", ".zip", ".txt", ".json"
     };
 
     public async Task<AssetResult> GetAssetAsync(string basePath, string relativePath)
@@ -218,7 +218,6 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
             ".zip" => "application/zip",
             ".txt" => "text/plain; charset=utf-8",
             ".json" => "application/json; charset=utf-8",
-            ".glb" => "model/gltf-binary",
             _ => "application/octet-stream"
         };
     }
