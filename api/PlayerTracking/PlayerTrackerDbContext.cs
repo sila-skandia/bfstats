@@ -1122,12 +1122,20 @@ public class PlayerTrackerDbContext : DbContext
 
         // Covers ArcadeService.LoadSignatureBadgesAsync — one badge per roster player.
         // AchievementName appears in no other index, so the lookup had to fetch the table row
-        // for every achievement the roster had ever earned: ~8,700 random reads, 12.04s of a
-        // 29.2s request, to produce 150 strings. With this the MIN() per player is answered
-        // from the index alone.
+        // for every achievement the roster had ever earned. Measured twice in production:
+        // 12.04s of a 29.2s trivia request on the global path, 8.57s of an 11.2s higher-lower
+        // request on the server path.
+        //
+        // ServerGuid sits in the middle because the server-scoped variant filters
+        // "ServerGuid = @guid OR ServerGuid = ''". Leaving it out of the index — as the first
+        // attempt did — means SQLite seeks PlayerName and then fetches a table row per
+        // candidate purely to test that predicate, which is exactly the cost being removed.
+        // With it, the two ServerGuid values are two seeks per player and nothing touches the
+        // table. The unfiltered global callers still seek on PlayerName alone and scan a
+        // covering range.
         modelBuilder.Entity<PlayerAchievement>()
-            .HasIndex(pa => new { pa.PlayerName, pa.AchievementName })
-            .HasDatabaseName("IX_PlayerAchievements_PlayerName_AchievementName");
+            .HasIndex(pa => new { pa.PlayerName, pa.ServerGuid, pa.AchievementName })
+            .HasDatabaseName("IX_PlayerAchievements_PlayerName_ServerGuid_AchievementName");
 
         // Supports the Wrapped "Relations" lookup (WrappedService), which joins/filters
         // PlayerAchievements by (RoundId, PlayerName) to find who won a given round. Without
