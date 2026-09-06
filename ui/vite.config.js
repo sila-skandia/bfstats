@@ -80,9 +80,6 @@ export default defineConfig(({ mode }) => ({
           // Split Chart.js and related libs - only loads when charts are used
           'chart-vendor': ['chart.js', 'vue-chartjs', 'chartjs-plugin-annotation'],
 
-          // Split Three.js 3D WebGL engine - only loads when 3D viewer is used
-          'three-vendor': ['three'],
-
           // Split PrimeVue into its own chunk
           'primevue-vendor': ['primevue'],
 
