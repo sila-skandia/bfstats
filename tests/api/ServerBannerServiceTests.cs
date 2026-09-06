@@ -1,4 +1,5 @@
 using api.Bflist;
+using api.Bflist.Models;
 using api.GameTrends;
 using api.PlayerTracking;
 using api.ServerBanners;
@@ -84,6 +85,98 @@ public sealed class ServerBannerServiceTests : IDisposable
 
         Assert.NotNull(stats);
         Assert.Equal(0, stats.NumPlayers);
+    }
+
+    [Fact]
+    public async Task ResolveStatsAsync_PrefersOnlineRow_WhenDuplicateNamesHaveStaleIp()
+    {
+        dbContext.Servers.AddRange(
+            new GameServer
+            {
+                Guid = "chasaba-old",
+                Name = "CHASABA Main BF1942 Server",
+                Game = "bf1942",
+                Ip = "153.223.78.15",
+                Port = 14567,
+                MaxPlayers = 64,
+                CurrentNumPlayers = 0,
+                MapName = "old map",
+                IsOnline = false,
+                LastSeenTime = DateTime.UtcNow.AddDays(-2)
+            },
+            new GameServer
+            {
+                Guid = "chasaba-live",
+                Name = "CHASABA Main BF1942 Server",
+                Game = "bf1942",
+                Ip = "153.207.118.175",
+                Port = 14567,
+                MaxPlayers = 64,
+                CurrentNumPlayers = 66,
+                MapName = "flak tower-1945",
+                IsOnline = true,
+                LastSeenTime = DateTime.UtcNow
+            });
+        await dbContext.SaveChangesAsync();
+
+        var stats = await service.ResolveStatsAsync(
+            "CHASABA Main BF1942 Server",
+            ServerBannerStyle.Reticle,
+            showTickets: false,
+            CancellationToken.None);
+
+        Assert.NotNull(stats);
+        Assert.Equal("153.207.118.175:14567", stats.IpPort);
+        Assert.Equal(66, stats.NumPlayers);
+        Assert.True(stats.IsOnline);
+    }
+
+    [Fact]
+    public async Task ResolveStatsAsync_UsesLiveSnapshotForTickets_WithoutSingleServerCall()
+    {
+        dbContext.Servers.Add(new GameServer
+        {
+            Guid = "chasaba-old",
+            Name = "CHASABA Main BF1942 Server",
+            Game = "bf1942",
+            Ip = "153.223.78.15",
+            Port = 14567,
+            MaxPlayers = 64,
+            CurrentNumPlayers = 12,
+            MapName = "old map",
+            IsOnline = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        bfListApiService.TryGetCachedServerByNameAsync("bf1942", "CHASABA Main BF1942 Server")
+            .Returns(new ServerSummary
+            {
+                Name = "CHASABA Main BF1942 Server",
+                Ip = "153.207.118.175",
+                Port = 14567,
+                Tickets1 = 650,
+                Tickets2 = 436,
+                Teams =
+                [
+                    new TeamInfo { Index = 1, Label = "Axis", Tickets = 650 },
+                    new TeamInfo { Index = 2, Label = "Allied", Tickets = 436 }
+                ]
+            });
+
+        var stats = await service.ResolveStatsAsync(
+            "CHASABA Main BF1942 Server",
+            ServerBannerStyle.Reticle,
+            showTickets: true,
+            CancellationToken.None);
+
+        Assert.NotNull(stats);
+        Assert.Equal("153.207.118.175:14567", stats.IpPort);
+        Assert.NotNull(stats.Tickets);
+        Assert.Equal(650, stats.Tickets.Team1Tickets);
+        Assert.Equal(436, stats.Tickets.Team2Tickets);
+        Assert.Equal("AXIS", stats.Tickets.Team1Label);
+        Assert.Equal("ALLIED", stats.Tickets.Team2Label);
+        await bfListApiService.DidNotReceiveWithAnyArgs().FetchSingleServerSummaryAsync(default!, default!);
     }
 
     public void Dispose()

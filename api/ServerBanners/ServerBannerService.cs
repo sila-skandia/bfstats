@@ -41,6 +41,8 @@ public sealed class ServerBannerService(
     {
         var server = await dbContext.Servers
             .Where(s => s.Name == serverName)
+            .OrderByDescending(s => s.IsOnline)
+            .ThenByDescending(s => s.LastSeenTime)
             .Select(s => new
             {
                 s.Guid,
@@ -69,8 +71,20 @@ public sealed class ServerBannerService(
             ? currentRound.MapName
             : server.MapName;
 
+        // Duplicate name rows keep the old IP after a host move. Prefer the warm
+        // live snapshot (no extra BFList call) so tickets and the painted address
+        // match what the landing page already shows.
+        var live = string.IsNullOrWhiteSpace(server.Game)
+            ? null
+            : await bfListApiService.TryGetCachedServerByNameAsync(server.Game, server.Name);
+
+        var ip = !string.IsNullOrWhiteSpace(live?.Ip) ? live.Ip : server.Ip;
+        var port = live is { Port: > 0 } ? live.Port : server.Port;
+
         var tickets = showTickets
-            ? await ResolveTicketsAsync(server.Game, server.Ip, server.Port, cancellationToken)
+            ? live != null
+                ? TicketsFrom(live)
+                : await ResolveTicketsAsync(server.Game, ip, port, cancellationToken)
             : null;
 
         // Only the Waveform style renders the population timeline, so skip the extra
@@ -81,7 +95,7 @@ public sealed class ServerBannerService(
 
         return new ServerBannerStats(
             ServerName: server.Name,
-            IpPort: $"{server.Ip}:{server.Port}",
+            IpPort: $"{ip}:{port}",
             Map: map,
             GameMode: currentRound?.GameType,
             NumPlayers: server.CurrentNumPlayers,
@@ -153,35 +167,39 @@ public sealed class ServerBannerService(
 
         try
         {
-            var summary = await bfListApiService.FetchSingleServerSummaryAsync(game, $"{ip}:{port}");
-            if (summary is null)
-            {
-                return null;
-            }
-
-            var team1 = summary.Teams?.FirstOrDefault(t => t.Index == 1);
-            var team2 = summary.Teams?.FirstOrDefault(t => t.Index == 2);
-
-            var t1 = team1?.Tickets ?? summary.Tickets1;
-            var t2 = team2?.Tickets ?? summary.Tickets2;
-
-            // No live ticket data (e.g. between rounds, or a game that doesn't report it).
-            if (t1 <= 0 && t2 <= 0)
-            {
-                return null;
-            }
-
-            return new ServerBannerTickets(
-                Team1Label: Label(team1?.Label, "AXIS"),
-                Team2Label: Label(team2?.Label, "ALLIES"),
-                Team1Tickets: Math.Max(0, t1),
-                Team2Tickets: Math.Max(0, t2));
+            return TicketsFrom(await bfListApiService.FetchSingleServerSummaryAsync(game, $"{ip}:{port}"));
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to resolve live tickets for {Ip}:{Port} ({Game})", ip, port, game);
             return null;
         }
+    }
+
+    private static ServerBannerTickets? TicketsFrom(api.Bflist.Models.ServerSummary? summary)
+    {
+        if (summary is null)
+        {
+            return null;
+        }
+
+        var team1 = summary.Teams?.FirstOrDefault(t => t.Index == 1);
+        var team2 = summary.Teams?.FirstOrDefault(t => t.Index == 2);
+
+        var t1 = team1?.Tickets ?? summary.Tickets1;
+        var t2 = team2?.Tickets ?? summary.Tickets2;
+
+        // No live ticket data (e.g. between rounds, or a game that doesn't report it).
+        if (t1 <= 0 && t2 <= 0)
+        {
+            return null;
+        }
+
+        return new ServerBannerTickets(
+            Team1Label: Label(team1?.Label, "AXIS"),
+            Team2Label: Label(team2?.Label, "ALLIES"),
+            Team1Tickets: Math.Max(0, t1),
+            Team2Tickets: Math.Max(0, t2));
     }
 
     private static string Label(string? raw, string fallback) =>

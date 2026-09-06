@@ -16,6 +16,13 @@ public interface IBfListApiService
     Task<object?> FetchSingleServerAsync(string game, string serverIdentifier);
 
     /// <summary>
+    /// Peeks the warm live-server snapshot (same 30s cache as the landing page) for a
+    /// name match. Does not call BFList. Used by the banner so a stale <c>Servers.Ip</c>
+    /// from a duplicate-name row does not 404 against an address BFList no longer lists.
+    /// </summary>
+    Task<Models.ServerSummary?> TryGetCachedServerByNameAsync(string game, string serverName);
+
+    /// <summary>
     /// Read-path variant of <see cref="FetchAllServersAsync"/>: same hot cache, but if the
     /// upstream fetch fails and the hot cache is empty, falls back to the last successful
     /// snapshot (raw_servers:{game}:last_good) instead of throwing. Never used by the stats
@@ -287,6 +294,15 @@ public class BfListApiService(
         try
         {
             var response = await httpClient.GetAsync(baseUrl);
+            // Offline / IP-changed servers are a normal 404 from BFList, not a transport
+            // failure. EnsureSuccessStatusCode would throw and the HttpClient span would
+            // still be ERROR; treat NotFound as "not listed" so callers can fall back.
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                logger.LogDebug("BFList has no listing for {ServerIdentifier}", serverIdentifier);
+                return null;
+            }
+
             response.EnsureSuccessStatusCode();
             var content = await response.Content.ReadAsStringAsync();
 
@@ -297,6 +313,19 @@ public class BfListApiService(
             logger.LogWarning("Failed to fetch single server {ServerIdentifier}: {Error}", serverIdentifier, ex.Message);
             return null;
         }
+    }
+
+    public async Task<Models.ServerSummary?> TryGetCachedServerByNameAsync(string game, string serverName)
+    {
+        if (string.IsNullOrWhiteSpace(game) || string.IsNullOrWhiteSpace(serverName))
+        {
+            return null;
+        }
+
+        var snapshot = await GetSnapshotAsync(RawServersCacheKey(game), TimeSpan.FromSeconds(ServerListCacheSeconds));
+        var match = snapshot?.Servers.FirstOrDefault(s =>
+            string.Equals(s.Name, serverName, StringComparison.Ordinal));
+        return match == null ? null : MapToSummary(match);
     }
 
     // Helper methods for UI that need ServerSummary
@@ -320,27 +349,45 @@ public class BfListApiService(
     public async Task<Models.ServerSummary?> FetchSingleServerSummaryAsync(string game, string serverIdentifier)
     {
         var cacheKey = $"server:{game}:{serverIdentifier}";
-        var cachedResult = await cacheService.GetAsync<Models.ServerSummary>(cacheKey);
+        var cachedResult = await cacheService.GetAsync<CachedSingleServer>(cacheKey);
 
         if (cachedResult != null)
         {
-            logger.LogDebug("Cache hit for server {Game}:{ServerIdentifier}", game, serverIdentifier);
-            return cachedResult;
+            logger.LogDebug("Cache hit for server {Game}:{ServerIdentifier} (found={Found})",
+                game, serverIdentifier, cachedResult.Found);
+            return cachedResult.Found ? cachedResult.Server : null;
         }
 
         logger.LogDebug("Cache miss for server {Game}:{ServerIdentifier}", game, serverIdentifier);
         var server = await FetchSingleServerAsync(game, serverIdentifier);
 
-        if (server == null) return null;
-
         if (server is Bf1942ServerInfo bf1942Server)
         {
             var summary = MapToSummary(bf1942Server);
-            await cacheService.SetAsync(cacheKey, summary, TimeSpan.FromSeconds(SingleServerCacheSeconds));
+            await cacheService.SetAsync(
+                cacheKey,
+                new CachedSingleServer { Found = true, Server = summary },
+                TimeSpan.FromSeconds(SingleServerCacheSeconds));
             return summary;
         }
 
+        // Remember a miss so a Discord/forum embed refreshing the banner does not
+        // re-hit BFList (and re-page Seq) every few seconds for a dead IP.
+        await cacheService.SetAsync(
+            cacheKey,
+            new CachedSingleServer { Found = false },
+            TimeSpan.FromSeconds(SingleServerCacheSeconds));
         return null;
+    }
+
+    /// <summary>
+    /// Single-server cache entry. <see cref="Found"/> is false when BFList returned 404
+    /// so the miss can be reused for the same TTL as a hit.
+    /// </summary>
+    public sealed class CachedSingleServer
+    {
+        public bool Found { get; set; }
+        public Models.ServerSummary? Server { get; set; }
     }
 
     private Models.ServerSummary[] ConvertToServerSummaries(object[] servers)
