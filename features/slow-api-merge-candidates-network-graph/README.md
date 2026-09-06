@@ -56,6 +56,6 @@ On a well-connected soldier that is tens of thousands of relationships. Neo4j on
 
 - First query: top N direct allies only (same shape as depth 1).
 - Second query: per-ally `CALL { ... ORDER BY sessionCount DESC LIMIT 5 }` so FoF expansion is capped in the planner, not after materialisation.
-- Edges are the hop edges we already have. No all-neighbours expand.
+- Third query: edges among the discovered names only, via pairwise `Player.name` seeks (`UNWIND` × `UNWIND` + `MATCH (p1 {name: a})-[r]-(p2 {name: b})`). That restores ally cliques and hover edges in `MmPlayerNetworkVisualizer` without expanding every `PLAYED_WITH` neighbour and filtering with `IN`.
 
 Cache remains 15 minutes (`CachedPlayerRelationshipService`).

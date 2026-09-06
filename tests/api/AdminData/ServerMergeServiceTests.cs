@@ -312,4 +312,46 @@ public class ServerMergeServiceTests : IDisposable
         Assert.Equal(2, candidate.Guids.Count);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task FindDuplicateCandidates_WhenGameIsBlank_ReturnsEveryGame(string? game)
+    {
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "bf1", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "bf1942" },
+            new GameServer { Guid = "bf2", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "bf1942" },
+            new GameServer { Guid = "fh1", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "fh2" },
+            new GameServer { Guid = "fh2", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "fh2" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FindDuplicateCandidatesAsync(game);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, c => c.Game == "bf1942");
+        Assert.Contains(result, c => c.Game == "fh2");
+    }
+
+    [Fact]
+    public async Task FindDuplicateCandidates_DuplicateIdentityWithNoSessions_ReturnsZeroTotals()
+    {
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "a", Name = "Empty", Ip = "9.9.9.9", Port = 14567, Game = "bf1942" },
+            new GameServer { Guid = "b", Name = "Empty", Ip = "9.9.9.9", Port = 14567, Game = "bf1942" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FindDuplicateCandidatesAsync("bf1942");
+
+        var candidate = Assert.Single(result);
+        Assert.Equal(0, candidate.TotalSessions);
+        Assert.Equal(0, candidate.TotalPlaytimeMinutes);
+        Assert.All(candidate.Guids, g =>
+        {
+            Assert.Equal(0, g.SessionCount);
+            Assert.Equal(0, g.PlaytimeMinutes);
+            Assert.Null(g.FirstSession);
+            Assert.Null(g.LastSession);
+        });
+    }
+
 }
