@@ -22,56 +22,94 @@ public class ServerMergeService(
     {
         var gameParam = string.IsNullOrWhiteSpace(game) ? "" : game.Trim().ToLowerInvariant();
 
-        // SQLite julianday() handles ISO-8601 timestamps; PlayerSessions.StartTime/LastSeenTime
-        // are stored as TEXT in that format.
-        const string sql = @"
+        var serversQuery = dbContext.Servers.AsNoTracking();
+        if (gameParam.Length > 0)
+        {
+            serversQuery = serversQuery.Where(s => s.Game == gameParam);
+        }
+
+        var servers = await serversQuery
+            .Select(s => new
+            {
+                s.Guid,
+                s.Name,
+                s.Ip,
+                s.Port,
+                s.Game,
+                s.IsOnline,
+                s.LastSeenTime
+            })
+            .ToListAsync();
+
+        var duplicateGroups = servers
+            .GroupBy(s => (s.Game, s.Ip, s.Port, s.Name))
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (duplicateGroups.Count == 0)
+        {
+            return [];
+        }
+
+        var candidateGuids = duplicateGroups
+            .SelectMany(g => g.Select(s => s.Guid))
+            .Distinct()
+            .ToList();
+
+        // Session totals are only displayed for duplicate identities. Seeking
+        // ServerGuid (indexed) keeps the walk off the rest of PlayerSessions.
+        var placeholders = string.Join(",", candidateGuids.Select((_, i) => $"@p{i}"));
+        var sql = $@"
             SELECT
-                s.Guid AS ServerGuid,
-                s.Name AS Name,
-                s.Ip AS Ip,
-                s.Port AS Port,
-                s.Game AS Game,
-                s.IsOnline AS IsOnline,
-                s.LastSeenTime AS LastSeenTime,
+                ps.ServerGuid AS ServerGuid,
                 COUNT(ps.SessionId) AS SessionCount,
                 CAST(COALESCE(SUM((julianday(ps.LastSeenTime) - julianday(ps.StartTime)) * 1440.0), 0) AS INTEGER) AS PlaytimeMinutes,
                 MIN(ps.StartTime) AS FirstSession,
                 MAX(ps.LastSeenTime) AS LastSession
-            FROM Servers s
-            LEFT JOIN PlayerSessions ps ON ps.ServerGuid = s.Guid AND ps.IsDeleted = 0
-            WHERE @p0 = '' OR s.Game = @p0
-            GROUP BY s.Guid";
+            FROM PlayerSessions ps
+            WHERE ps.IsDeleted = 0
+              AND ps.ServerGuid IN ({placeholders})
+            GROUP BY ps.ServerGuid";
 
-        var rows = await dbContext.Database
-            .SqlQueryRaw<CandidateGuidRow>(sql, gameParam)
+        var stats = await dbContext.Database
+            .SqlQueryRaw<CandidateGuidStatsRow>(sql, candidateGuids.Cast<object>().ToArray())
             .ToListAsync();
 
-        return rows
-            .GroupBy(r => new { r.Game, r.Ip, r.Port, r.Name })
-            .Where(g => g.Count() > 1)
-            .Select(g => new ServerMergeCandidate(
-                Game: g.Key.Game,
-                Ip: g.Key.Ip,
-                Port: g.Key.Port,
-                Name: g.Key.Name,
-                TotalSessions: g.Sum(r => r.SessionCount),
-                TotalPlaytimeMinutes: g.Sum(r => r.PlaytimeMinutes),
-                FirstSeen: g.Min(r => r.FirstSession),
-                LastSeen: g.Max(r => r.LastSession),
-                Guids: g
+        var statsByGuid = stats.ToDictionary(s => s.ServerGuid, StringComparer.Ordinal);
+
+        return duplicateGroups
+            .Select(g =>
+            {
+                var guids = g
+                    .Select(s =>
+                    {
+                        statsByGuid.TryGetValue(s.Guid, out var st);
+                        return new ServerMergeCandidateGuid(
+                            ServerGuid: s.Guid,
+                            SessionCount: st?.SessionCount ?? 0,
+                            PlaytimeMinutes: st?.PlaytimeMinutes ?? 0,
+                            FirstSession: st?.FirstSession,
+                            LastSession: st?.LastSession,
+                            IsOnline: s.IsOnline,
+                            LastSeenTime: s.LastSeenTime
+                        );
+                    })
                     .OrderByDescending(r => r.PlaytimeMinutes)
                     .ThenByDescending(r => r.SessionCount)
-                    .Select(r => new ServerMergeCandidateGuid(
-                        ServerGuid: r.ServerGuid,
-                        SessionCount: r.SessionCount,
-                        PlaytimeMinutes: r.PlaytimeMinutes,
-                        FirstSession: r.FirstSession,
-                        LastSession: r.LastSession,
-                        IsOnline: r.IsOnline,
-                        LastSeenTime: r.LastSeenTime
-                    ))
-                    .ToList()
-            ))
+                    .ToList();
+
+                return new ServerMergeCandidate(
+                    Game: g.Key.Game,
+                    Ip: g.Key.Ip,
+                    Port: g.Key.Port,
+                    Name: g.Key.Name,
+                    TotalSessions: guids.Sum(r => r.SessionCount),
+                    TotalPlaytimeMinutes: guids.Sum(r => r.PlaytimeMinutes),
+                    FirstSeen: guids.Min(r => r.FirstSession),
+                    LastSeen: guids.Max(r => r.LastSession),
+                    Guids: guids
+                );
+            })
             .OrderByDescending(c => c.Guids.Count)
             .ThenByDescending(c => c.TotalPlaytimeMinutes)
             .ToList();
@@ -375,15 +413,9 @@ public class ServerMergeService(
     }
 
     // SqlQueryRaw row type — public class so the EF Core projection can construct it.
-    public class CandidateGuidRow
+    public class CandidateGuidStatsRow
     {
         public string ServerGuid { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string Ip { get; set; } = "";
-        public int Port { get; set; }
-        public string Game { get; set; } = "";
-        public bool IsOnline { get; set; }
-        public DateTime LastSeenTime { get; set; }
         public int SessionCount { get; set; }
         public long PlaytimeMinutes { get; set; }
         public DateTime? FirstSession { get; set; }

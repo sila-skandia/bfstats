@@ -162,4 +162,62 @@ public class ServerMergeServiceTests : IDisposable
         Assert.Equal(200, primaryCount.SampleCount);
     }
 
+    [Fact]
+    public async Task FindDuplicateCandidates_ReturnsEmpty_WhenEveryIdentityIsUnique()
+    {
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "a", Name = "Alpha", Ip = "1.1.1.1", Port = 1, Game = "bf1942" },
+            new GameServer { Guid = "b", Name = "Bravo", Ip = "1.1.1.1", Port = 1, Game = "bf1942" },
+            new GameServer { Guid = "c", Name = "Alpha", Ip = "2.2.2.2", Port = 1, Game = "bf1942" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FindDuplicateCandidatesAsync("bf1942");
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task FindDuplicateCandidates_GroupsOnlySharedIdentity_AndIgnoresDeletedSessions()
+    {
+        var seen = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "live", Name = "SiMPLE", Ip = "9.9.9.9", Port = 14567, Game = "bf1942", IsOnline = true, LastSeenTime = seen },
+            new GameServer { Guid = "old", Name = "SiMPLE", Ip = "9.9.9.9", Port = 14567, Game = "bf1942", IsOnline = false, LastSeenTime = seen.AddDays(-30) },
+            new GameServer { Guid = "other", Name = "Other", Ip = "8.8.8.8", Port = 14567, Game = "bf1942" },
+            new GameServer { Guid = "fh2-a", Name = "SiMPLE", Ip = "9.9.9.9", Port = 14567, Game = "fh2" },
+            new GameServer { Guid = "fh2-b", Name = "SiMPLE", Ip = "9.9.9.9", Port = 14567, Game = "fh2" });
+        _dbContext.Players.Add(new Player { Name = "alice" });
+
+        var start = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        _dbContext.PlayerSessions.AddRange(
+            new PlayerSession { PlayerName = "alice", ServerGuid = "live", StartTime = start, LastSeenTime = start.AddMinutes(60), IsActive = false },
+            new PlayerSession { PlayerName = "alice", ServerGuid = "old", StartTime = start.AddDays(-10), LastSeenTime = start.AddDays(-10).AddMinutes(30), IsActive = false },
+            new PlayerSession { PlayerName = "alice", ServerGuid = "old", StartTime = start.AddDays(-9), LastSeenTime = start.AddDays(-9).AddMinutes(15), IsActive = false, IsDeleted = true },
+            new PlayerSession { PlayerName = "alice", ServerGuid = "other", StartTime = start, LastSeenTime = start.AddMinutes(90), IsActive = false });
+        await _dbContext.SaveChangesAsync();
+
+        var allGames = await _service.FindDuplicateCandidatesAsync(null);
+        Assert.Equal(2, allGames.Count);
+
+        var result = await _service.FindDuplicateCandidatesAsync("bf1942");
+        var group = Assert.Single(result);
+        Assert.Equal("bf1942", group.Game);
+        Assert.Equal("9.9.9.9", group.Ip);
+        Assert.Equal(14567, group.Port);
+        Assert.Equal("SiMPLE", group.Name);
+        Assert.Equal(2, group.Guids.Count);
+        Assert.Equal(2, group.TotalSessions);
+        Assert.Equal(90, group.TotalPlaytimeMinutes);
+
+        Assert.Equal("live", group.Guids[0].ServerGuid);
+        Assert.Equal(1, group.Guids[0].SessionCount);
+        Assert.Equal(60, group.Guids[0].PlaytimeMinutes);
+        Assert.True(group.Guids[0].IsOnline);
+
+        Assert.Equal("old", group.Guids[1].ServerGuid);
+        Assert.Equal(1, group.Guids[1].SessionCount);
+        Assert.Equal(30, group.Guids[1].PlaytimeMinutes);
+        Assert.False(group.Guids[1].IsOnline);
+    }
+
 }

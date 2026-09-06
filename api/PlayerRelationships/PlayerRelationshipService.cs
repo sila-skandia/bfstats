@@ -350,14 +350,23 @@ public class PlayerRelationshipService(
                 };
             }
 
-            // 2-Hop Network: Focus player -> Direct Allies (up to 15) -> Top 5 Allies for each ally
+            // 2-Hop Network: Focus player -> Direct Allies (up to 15) -> Top 5 Allies for each ally.
+            // Per-ally CALL + LIMIT 5 so Neo4j never materialises every PLAYED_WITH edge of
+            // those 15 allies before taking the top five.
             var twoHopQuery = @"
                 MATCH (p:Player {name: $playerName})-[r:PLAYED_WITH]-(ally:Player)
-                WITH p, ally, r ORDER BY r.sessionCount DESC LIMIT 15
-                OPTIONAL MATCH (ally)-[r2:PLAYED_WITH]-(fof:Player)
-                WHERE fof.name <> $playerName
-                WITH p, ally, r, fof, r2 ORDER BY ally.name, r2.sessionCount DESC
-                WITH p, ally, r, collect(fof.name)[0..5] AS topFofNames
+                WITH p, ally, r
+                ORDER BY r.sessionCount DESC
+                LIMIT 15
+                CALL {
+                    WITH ally, p
+                    MATCH (ally)-[r2:PLAYED_WITH]-(fof:Player)
+                    WHERE fof <> p
+                    WITH fof, r2.sessionCount AS sc
+                    ORDER BY sc DESC
+                    LIMIT 5
+                    RETURN collect(fof.name) AS topFofNames
+                }
                 RETURN ally.name AS allyName,
                        r.sessionCount AS allyWeight,
                        topFofNames AS fofNames";
