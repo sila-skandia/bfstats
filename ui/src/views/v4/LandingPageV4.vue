@@ -11,6 +11,7 @@ import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
 import MmTeamLadderRoster from '@/components/v4/MmTeamLadderRoster.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
+import { BfLoadingBar } from '@/components/common'
 import LandingColumnFilterPanel from './LandingColumnFilterPanel.vue'
 import { formatTimeRemaining, formatRelativeTime, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
 import {
@@ -1074,6 +1075,10 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
 
     <!-- Loading / Error / Empty States -->
     <div v-if="loading && servers.length === 0" style="padding: 48px 0">
+      <BfLoadingBar
+        indeterminate
+        style="max-width: 540px; margin: 0 auto 32px"
+      />
       <div v-for="i in 8" :key="i" class="mm-skeleton" style="margin-bottom: 14px; height: 36px;" />
     </div>
 

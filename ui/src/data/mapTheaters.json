@@ -1,0 +1,1140 @@
+{
+  "version": 1,
+  "theaters": {
+    "pacific": {
+      "key": "pacific",
+      "title": "Pacific Theater — Carrier Battles",
+      "category": "Pacific",
+      "image": "pacific.webp",
+      "imageUrl": "/stats/assets/theaters/pacific.webp",
+      "pngUrl": "/stats/assets/theaters/pacific.png"
+    },
+    "pacific2": {
+      "key": "pacific2",
+      "title": "Pacific Theater — Island Assault",
+      "category": "Pacific",
+      "image": "pacific2.webp",
+      "imageUrl": "/stats/assets/theaters/pacific2.webp",
+      "pngUrl": "/stats/assets/theaters/pacific2.png"
+    },
+    "desert": {
+      "key": "desert",
+      "title": "North African Campaign",
+      "category": "North Africa",
+      "image": "desert.webp",
+      "imageUrl": "/stats/assets/theaters/desert.webp",
+      "pngUrl": "/stats/assets/theaters/desert.png"
+    },
+    "eastern": {
+      "key": "eastern",
+      "title": "Eastern Front — Siege & Winter",
+      "category": "Eastern Front",
+      "image": "eastern.webp",
+      "imageUrl": "/stats/assets/theaters/eastern.webp",
+      "pngUrl": "/stats/assets/theaters/eastern.png"
+    },
+    "eastern2": {
+      "key": "eastern2",
+      "title": "Eastern Front — Armor Clash",
+      "category": "Eastern Front",
+      "image": "eastern2.webp",
+      "imageUrl": "/stats/assets/theaters/eastern2.webp",
+      "pngUrl": "/stats/assets/theaters/eastern2.png"
+    },
+    "western": {
+      "key": "western",
+      "title": "Western Europe — Atlantic Wall",
+      "category": "Western Europe",
+      "image": "western.webp",
+      "imageUrl": "/stats/assets/theaters/western.webp",
+      "pngUrl": "/stats/assets/theaters/western.png"
+    },
+    "western2": {
+      "key": "western2",
+      "title": "Western Europe — Liberation",
+      "category": "Western Europe",
+      "image": "western2.webp",
+      "imageUrl": "/stats/assets/theaters/western2.webp",
+      "pngUrl": "/stats/assets/theaters/western2.png"
+    },
+    "britain_load": {
+      "key": "britain_load",
+      "title": "Battle of Britain — Channel Air Defense",
+      "category": "Western Europe",
+      "image": "britain_load.webp",
+      "imageUrl": "/stats/assets/theaters/britain_load.webp",
+      "pngUrl": "/stats/assets/theaters/britain_load.png"
+    },
+    "caen_load": {
+      "key": "caen_load",
+      "title": "Western Europe — Battle for Caen",
+      "category": "Western Europe",
+      "image": "caen_load.webp",
+      "imageUrl": "/stats/assets/theaters/caen_load.webp",
+      "pngUrl": "/stats/assets/theaters/caen_load.png"
+    },
+    "philippines_load": {
+      "key": "philippines_load",
+      "title": "Pacific Theater — Philippines Campaign",
+      "category": "Pacific",
+      "image": "philippines_load.webp",
+      "imageUrl": "/stats/assets/theaters/philippines_load.webp",
+      "pngUrl": "/stats/assets/theaters/philippines_load.png"
+    },
+    "italytower": {
+      "key": "italytower",
+      "title": "Italian Campaign — Mountain & Coastal Assault",
+      "category": "Mediterranean",
+      "image": "italytower.webp",
+      "imageUrl": "/stats/assets/theaters/italytower.webp",
+      "pngUrl": "/stats/assets/theaters/italytower.png"
+    },
+    "scout_antitank": {
+      "key": "scout_antitank",
+      "title": "Italian Campaign — Gustav Line Defense",
+      "category": "Mediterranean",
+      "image": "scout_antitank.webp",
+      "imageUrl": "/stats/assets/theaters/scout_antitank.webp",
+      "pngUrl": "/stats/assets/theaters/scout_antitank.png"
+    },
+    "sturm_guy": {
+      "key": "sturm_guy",
+      "title": "Italian Campaign — Beachhead Counterattack",
+      "category": "Mediterranean",
+      "image": "sturm_guy.webp",
+      "imageUrl": "/stats/assets/theaters/sturm_guy.webp",
+      "pngUrl": "/stats/assets/theaters/sturm_guy.png"
+    },
+    "calliope": {
+      "key": "calliope",
+      "title": "Secret Weapons — Rocket Artillery & Strongholds",
+      "category": "Secret Weapons",
+      "image": "calliope.webp",
+      "imageUrl": "/stats/assets/theaters/calliope.webp",
+      "pngUrl": "/stats/assets/theaters/calliope.png"
+    },
+    "goblin": {
+      "key": "goblin",
+      "title": "Secret Weapons — Experimental Flight & Superguns",
+      "category": "Secret Weapons",
+      "image": "goblin.webp",
+      "imageUrl": "/stats/assets/theaters/goblin.webp",
+      "pngUrl": "/stats/assets/theaters/goblin.png"
+    },
+    "xpack2_sturm": {
+      "key": "xpack2_sturm",
+      "title": "Secret Weapons — Industrial Heartland",
+      "category": "Secret Weapons",
+      "image": "xpack2_sturm.webp",
+      "imageUrl": "/stats/assets/theaters/xpack2_sturm.webp",
+      "pngUrl": "/stats/assets/theaters/xpack2_sturm.png"
+    },
+    "xpack2_winter": {
+      "key": "xpack2_winter",
+      "title": "Secret Weapons — Northern Sabotage",
+      "category": "Secret Weapons",
+      "image": "xpack2_winter.webp",
+      "imageUrl": "/stats/assets/theaters/xpack2_winter.webp",
+      "pngUrl": "/stats/assets/theaters/xpack2_winter.png"
+    },
+    "agheila_load": {
+      "key": "agheila_load",
+      "title": "North Africa — Desert Commando Strike",
+      "category": "North Africa",
+      "image": "agheila_load.webp",
+      "imageUrl": "/stats/assets/theaters/agheila_load.webp",
+      "pngUrl": "/stats/assets/theaters/agheila_load.png"
+    },
+    "dc_apache": {
+      "key": "dc_apache",
+      "title": "Desert Combat — Rotary Close Air Support",
+      "category": "Desert Combat",
+      "image": "dc_apache.webp",
+      "imageUrl": "/stats/assets/theaters/dc_apache.webp",
+      "pngUrl": "/stats/assets/theaters/dc_apache.png"
+    },
+    "dc_scud": {
+      "key": "dc_scud",
+      "title": "Desert Combat — Tactical Ballistic Missiles",
+      "category": "Desert Combat",
+      "image": "dc_scud.webp",
+      "imageUrl": "/stats/assets/theaters/dc_scud.webp",
+      "pngUrl": "/stats/assets/theaters/dc_scud.png"
+    },
+    "dc_tanks": {
+      "key": "dc_tanks",
+      "title": "Desert Combat — Modern Armored Warfare",
+      "category": "Desert Combat",
+      "image": "dc_tanks.webp",
+      "imageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "pngUrl": "/stats/assets/theaters/dc_tanks.png"
+    },
+    "dc_f15": {
+      "key": "dc_f15",
+      "title": "Desert Combat — Air Superiority",
+      "category": "Desert Combat",
+      "image": "dc_f15.webp",
+      "imageUrl": "/stats/assets/theaters/dc_f15.webp",
+      "pngUrl": "/stats/assets/theaters/dc_f15.png"
+    },
+    "dc_blackhawk": {
+      "key": "dc_blackhawk",
+      "title": "Desert Combat — Airborne Insertion",
+      "category": "Desert Combat",
+      "image": "dc_blackhawk.webp",
+      "imageUrl": "/stats/assets/theaters/dc_blackhawk.webp",
+      "pngUrl": "/stats/assets/theaters/dc_blackhawk.png"
+    },
+    "dc_harrier": {
+      "key": "dc_harrier",
+      "title": "Desert Combat — Naval Aviation & VTOL Strike",
+      "category": "Desert Combat",
+      "image": "dc_harrier.webp",
+      "imageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "pngUrl": "/stats/assets/theaters/dc_harrier.png"
+    },
+    "dc_gazelle": {
+      "key": "dc_gazelle",
+      "title": "Desert Combat — Rotary Reconnaissance",
+      "category": "Desert Combat",
+      "image": "dc_gazelle.webp",
+      "imageUrl": "/stats/assets/theaters/dc_gazelle.webp",
+      "pngUrl": "/stats/assets/theaters/dc_gazelle.png"
+    },
+    "dc_night": {
+      "key": "dc_night",
+      "title": "Desert Combat — Night Operations",
+      "category": "Desert Combat",
+      "image": "dc_night.webp",
+      "imageUrl": "/stats/assets/theaters/dc_night.webp",
+      "pngUrl": "/stats/assets/theaters/dc_night.png"
+    },
+    "closequarters": {
+      "key": "closequarters",
+      "title": "Desert Combat — Urban & Industrial CQB",
+      "category": "Desert Combat",
+      "image": "closequarters.webp",
+      "imageUrl": "/stats/assets/theaters/closequarters.webp",
+      "pngUrl": "/stats/assets/theaters/closequarters.png"
+    }
+  },
+  "maps": {
+    "wake": {
+      "slug": "wake",
+      "mapName": "Wake Island",
+      "theaterKey": "pacific2",
+      "theaterCategory": "Pacific",
+      "theaterTitle": "Pacific Theater — Island Assault",
+      "image": "pacific2.webp",
+      "imageUrl": "/stats/assets/theaters/pacific2.webp",
+      "pngUrl": "/stats/assets/theaters/pacific2.png",
+      "aliases": [
+        "wake",
+        "wake island",
+        "wakeisland"
+      ],
+      "dcTheaterKey": "dc_harrier",
+      "dcImageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "dcTheaterTitle": "Desert Combat — Naval Aviation & VTOL Strike",
+      "loadPicture": "Load/DC_Harrier.tga"
+    },
+    "midway": {
+      "slug": "midway",
+      "mapName": "Battle of Midway",
+      "theaterKey": "pacific",
+      "theaterCategory": "Pacific",
+      "theaterTitle": "Pacific Theater — Carrier Battles",
+      "image": "pacific.webp",
+      "imageUrl": "/stats/assets/theaters/pacific.webp",
+      "pngUrl": "/stats/assets/theaters/pacific.png",
+      "aliases": [
+        "battle of midway",
+        "battleofmidway",
+        "midway"
+      ],
+      "dcTheaterKey": "dc_harrier",
+      "dcImageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "dcTheaterTitle": "Desert Combat — Naval Aviation & VTOL Strike",
+      "loadPicture": "Load/DC_Harrier.tga"
+    },
+    "guadalcanal": {
+      "slug": "guadalcanal",
+      "mapName": "Guadalcanal",
+      "theaterKey": "pacific",
+      "theaterCategory": "Pacific",
+      "theaterTitle": "Pacific Theater — Carrier Battles",
+      "image": "pacific.webp",
+      "imageUrl": "/stats/assets/theaters/pacific.webp",
+      "pngUrl": "/stats/assets/theaters/pacific.png",
+      "aliases": [
+        "guadalcanal"
+      ],
+      "dcTheaterKey": "dc_harrier",
+      "dcImageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "dcTheaterTitle": "Desert Combat — Naval Aviation & VTOL Strike",
+      "loadPicture": "Load/DC_Harrier.tga"
+    },
+    "iwo_jima": {
+      "slug": "iwo_jima",
+      "mapName": "Iwo Jima",
+      "theaterKey": "pacific2",
+      "theaterCategory": "Pacific",
+      "theaterTitle": "Pacific Theater — Island Assault",
+      "image": "pacific2.webp",
+      "imageUrl": "/stats/assets/theaters/pacific2.webp",
+      "pngUrl": "/stats/assets/theaters/pacific2.png",
+      "aliases": [
+        "iwo jima",
+        "iwo_jima",
+        "iwojima"
+      ],
+      "dcTheaterKey": "dc_harrier",
+      "dcImageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "dcTheaterTitle": "Desert Combat — Naval Aviation & VTOL Strike",
+      "loadPicture": "Load/DC_Harrier.tga"
+    },
+    "coral_sea": {
+      "slug": "coral_sea",
+      "mapName": "Coral Sea",
+      "theaterKey": "pacific2",
+      "theaterCategory": "Pacific",
+      "theaterTitle": "Pacific Theater — Island Assault",
+      "image": "pacific2.webp",
+      "imageUrl": "/stats/assets/theaters/pacific2.webp",
+      "pngUrl": "/stats/assets/theaters/pacific2.png",
+      "aliases": [
+        "coral sea",
+        "coral_sea",
+        "coralsea"
+      ],
+      "dcTheaterKey": "dc_harrier",
+      "dcImageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "dcTheaterTitle": "Desert Combat — Naval Aviation & VTOL Strike",
+      "loadPicture": "Load/DC_Harrier.tga"
+    },
+    "invasion_of_the_philippines": {
+      "slug": "invasion_of_the_philippines",
+      "mapName": "Invasion of the Philippines",
+      "theaterKey": "philippines_load",
+      "theaterCategory": "Pacific",
+      "theaterTitle": "Pacific Theater — Philippines Campaign",
+      "image": "philippines_load.webp",
+      "imageUrl": "/stats/assets/theaters/philippines_load.webp",
+      "pngUrl": "/stats/assets/theaters/philippines_load.png",
+      "aliases": [
+        "invasion of the philippines",
+        "invasion_of_the_philippines",
+        "invasionofthephilippines"
+      ],
+      "dcTheaterKey": "dc_gazelle",
+      "dcImageUrl": "/stats/assets/theaters/dc_gazelle.webp",
+      "dcTheaterTitle": "Desert Combat — Rotary Reconnaissance",
+      "loadPicture": "Load/DC_Gazelle.tga"
+    },
+    "el_alamein": {
+      "slug": "el_alamein",
+      "mapName": "El Alamein",
+      "theaterKey": "desert",
+      "theaterCategory": "North Africa",
+      "theaterTitle": "North African Campaign",
+      "image": "desert.webp",
+      "imageUrl": "/stats/assets/theaters/desert.webp",
+      "pngUrl": "/stats/assets/theaters/desert.png",
+      "aliases": [
+        "el alamein",
+        "el_alamein",
+        "elalamein"
+      ],
+      "dcTheaterKey": "dc_tanks",
+      "dcImageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "dcTheaterTitle": "Desert Combat — Modern Armored Warfare",
+      "loadPicture": "Load/DC_Tanks.tga"
+    },
+    "tobruk": {
+      "slug": "tobruk",
+      "mapName": "Tobruk",
+      "theaterKey": "desert",
+      "theaterCategory": "North Africa",
+      "theaterTitle": "North African Campaign",
+      "image": "desert.webp",
+      "imageUrl": "/stats/assets/theaters/desert.webp",
+      "pngUrl": "/stats/assets/theaters/desert.png",
+      "aliases": [
+        "tobruk"
+      ],
+      "dcTheaterKey": "dc_tanks",
+      "dcImageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "dcTheaterTitle": "Desert Combat — Modern Armored Warfare",
+      "loadPicture": "Load/DC_Tanks.tga"
+    },
+    "gazala": {
+      "slug": "gazala",
+      "mapName": "Gazala",
+      "theaterKey": "desert",
+      "theaterCategory": "North Africa",
+      "theaterTitle": "North African Campaign",
+      "image": "desert.webp",
+      "imageUrl": "/stats/assets/theaters/desert.webp",
+      "pngUrl": "/stats/assets/theaters/desert.png",
+      "aliases": [
+        "gazala"
+      ],
+      "dcTheaterKey": "dc_scud",
+      "dcImageUrl": "/stats/assets/theaters/dc_scud.webp",
+      "dcTheaterTitle": "Desert Combat — Tactical Ballistic Missiles",
+      "loadPicture": "Load/DC_Scud.tga"
+    },
+    "battleaxe": {
+      "slug": "battleaxe",
+      "mapName": "Battleaxe",
+      "theaterKey": "desert",
+      "theaterCategory": "North Africa",
+      "theaterTitle": "North African Campaign",
+      "image": "desert.webp",
+      "imageUrl": "/stats/assets/theaters/desert.webp",
+      "pngUrl": "/stats/assets/theaters/desert.png",
+      "aliases": [
+        "battleaxe"
+      ],
+      "dcTheaterKey": "dc_tanks",
+      "dcImageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "dcTheaterTitle": "Desert Combat — Modern Armored Warfare",
+      "loadPicture": "Load/Desert.tga"
+    },
+    "aberdeen": {
+      "slug": "aberdeen",
+      "mapName": "Aberdeen",
+      "theaterKey": "desert",
+      "theaterCategory": "North Africa",
+      "theaterTitle": "North African Campaign",
+      "image": "desert.webp",
+      "imageUrl": "/stats/assets/theaters/desert.webp",
+      "pngUrl": "/stats/assets/theaters/desert.png",
+      "aliases": [
+        "aberdeen"
+      ],
+      "dcTheaterKey": "dc_tanks",
+      "dcImageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "dcTheaterTitle": "Desert Combat — Modern Armored Warfare",
+      "loadPicture": "Load/DC_Tanks.tga"
+    },
+    "stalingrad": {
+      "slug": "stalingrad",
+      "mapName": "Stalingrad",
+      "theaterKey": "eastern",
+      "theaterCategory": "Eastern Front",
+      "theaterTitle": "Eastern Front — Siege & Winter",
+      "image": "eastern.webp",
+      "imageUrl": "/stats/assets/theaters/eastern.webp",
+      "pngUrl": "/stats/assets/theaters/eastern.png",
+      "aliases": [
+        "stalingrad"
+      ],
+      "dcTheaterKey": "dc_night",
+      "dcImageUrl": "/stats/assets/theaters/dc_night.webp",
+      "dcTheaterTitle": "Desert Combat — Night Operations",
+      "loadPicture": "Load/DC_Night.tga"
+    },
+    "kursk": {
+      "slug": "kursk",
+      "mapName": "Kursk",
+      "theaterKey": "eastern2",
+      "theaterCategory": "Eastern Front",
+      "theaterTitle": "Eastern Front — Armor Clash",
+      "image": "eastern2.webp",
+      "imageUrl": "/stats/assets/theaters/eastern2.webp",
+      "pngUrl": "/stats/assets/theaters/eastern2.png",
+      "aliases": [
+        "kursk"
+      ],
+      "dcTheaterKey": "dc_apache",
+      "dcImageUrl": "/stats/assets/theaters/dc_apache.webp",
+      "dcTheaterTitle": "Desert Combat — Rotary Close Air Support",
+      "loadPicture": "Load/DC_Apache.tga"
+    },
+    "kharkov": {
+      "slug": "kharkov",
+      "mapName": "Kharkov",
+      "theaterKey": "eastern2",
+      "theaterCategory": "Eastern Front",
+      "theaterTitle": "Eastern Front — Armor Clash",
+      "image": "eastern2.webp",
+      "imageUrl": "/stats/assets/theaters/eastern2.webp",
+      "pngUrl": "/stats/assets/theaters/eastern2.png",
+      "aliases": [
+        "kharkov"
+      ],
+      "dcTheaterKey": "dc_apache",
+      "dcImageUrl": "/stats/assets/theaters/dc_apache.webp",
+      "dcTheaterTitle": "Desert Combat — Rotary Close Air Support",
+      "loadPicture": "Load/DC_Apache.tga"
+    },
+    "berlin": {
+      "slug": "berlin",
+      "mapName": "Berlin",
+      "theaterKey": "eastern",
+      "theaterCategory": "Eastern Front",
+      "theaterTitle": "Eastern Front — Siege & Winter",
+      "image": "eastern.webp",
+      "imageUrl": "/stats/assets/theaters/eastern.webp",
+      "pngUrl": "/stats/assets/theaters/eastern.png",
+      "aliases": [
+        "berlin"
+      ],
+      "dcTheaterKey": "closequarters",
+      "dcImageUrl": "/stats/assets/theaters/closequarters.webp",
+      "dcTheaterTitle": "Desert Combat — Urban & Industrial CQB",
+      "loadPicture": "Load/CloseQuarters.tga"
+    },
+    "omaha_beach": {
+      "slug": "omaha_beach",
+      "mapName": "Omaha Beach",
+      "theaterKey": "western",
+      "theaterCategory": "Western Europe",
+      "theaterTitle": "Western Europe — Atlantic Wall",
+      "image": "western.webp",
+      "imageUrl": "/stats/assets/theaters/western.webp",
+      "pngUrl": "/stats/assets/theaters/western.png",
+      "aliases": [
+        "omaha beach",
+        "omaha_beach",
+        "omahabeach"
+      ],
+      "dcTheaterKey": "closequarters",
+      "dcImageUrl": "/stats/assets/theaters/closequarters.webp",
+      "dcTheaterTitle": "Desert Combat — Urban & Industrial CQB",
+      "loadPicture": "Load/CloseQuarters.tga"
+    },
+    "bocage": {
+      "slug": "bocage",
+      "mapName": "Bocage",
+      "theaterKey": "western2",
+      "theaterCategory": "Western Europe",
+      "theaterTitle": "Western Europe — Liberation",
+      "image": "western2.webp",
+      "imageUrl": "/stats/assets/theaters/western2.webp",
+      "pngUrl": "/stats/assets/theaters/western2.png",
+      "aliases": [
+        "bocage"
+      ],
+      "dcTheaterKey": "dc_gazelle",
+      "dcImageUrl": "/stats/assets/theaters/dc_gazelle.webp",
+      "dcTheaterTitle": "Desert Combat — Rotary Reconnaissance",
+      "loadPicture": "Load/DC_Gazelle.tga"
+    },
+    "market_garden": {
+      "slug": "market_garden",
+      "mapName": "Market Garden",
+      "theaterKey": "western2",
+      "theaterCategory": "Western Europe",
+      "theaterTitle": "Western Europe — Liberation",
+      "image": "western2.webp",
+      "imageUrl": "/stats/assets/theaters/western2.webp",
+      "pngUrl": "/stats/assets/theaters/western2.png",
+      "aliases": [
+        "market garden",
+        "market_garden",
+        "marketgarden"
+      ],
+      "dcTheaterKey": "dc_gazelle",
+      "dcImageUrl": "/stats/assets/theaters/dc_gazelle.webp",
+      "dcTheaterTitle": "Desert Combat — Rotary Reconnaissance",
+      "loadPicture": "Load/DC_Gazelle.tga"
+    },
+    "battle_of_the_bulge": {
+      "slug": "battle_of_the_bulge",
+      "mapName": "Battle of the Bulge",
+      "theaterKey": "eastern",
+      "theaterCategory": "Eastern Front",
+      "theaterTitle": "Eastern Front — Siege & Winter",
+      "image": "eastern.webp",
+      "imageUrl": "/stats/assets/theaters/eastern.webp",
+      "pngUrl": "/stats/assets/theaters/eastern.png",
+      "aliases": [
+        "battle of the bulge",
+        "battle_of_the_bulge",
+        "battleofthebulge"
+      ],
+      "dcTheaterKey": "dc_apache",
+      "dcImageUrl": "/stats/assets/theaters/dc_apache.webp",
+      "dcTheaterTitle": "Desert Combat — Rotary Close Air Support",
+      "loadPicture": "Load/DC_Apache.tga"
+    },
+    "battle_of_britain": {
+      "slug": "battle_of_britain",
+      "mapName": "Battle of Britain",
+      "theaterKey": "britain_load",
+      "theaterCategory": "Western Europe",
+      "theaterTitle": "Battle of Britain — Channel Air Defense",
+      "image": "britain_load.webp",
+      "imageUrl": "/stats/assets/theaters/britain_load.webp",
+      "pngUrl": "/stats/assets/theaters/britain_load.png",
+      "aliases": [
+        "battle of britain",
+        "battle_of_britain",
+        "battleofbritain"
+      ],
+      "dcTheaterKey": "dc_harrier",
+      "dcImageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "dcTheaterTitle": "Desert Combat — Naval Aviation & VTOL Strike",
+      "loadPicture": "Load/DC_Harrier.tga"
+    },
+    "liberation_of_caen": {
+      "slug": "liberation_of_caen",
+      "mapName": "Liberation of Caen",
+      "theaterKey": "caen_load",
+      "theaterCategory": "Western Europe",
+      "theaterTitle": "Western Europe — Battle for Caen",
+      "image": "caen_load.webp",
+      "imageUrl": "/stats/assets/theaters/caen_load.webp",
+      "pngUrl": "/stats/assets/theaters/caen_load.png",
+      "aliases": [
+        "liberation of caen",
+        "liberation_of_caen",
+        "liberationofcaen"
+      ],
+      "dcTheaterKey": "closequarters",
+      "dcImageUrl": "/stats/assets/theaters/closequarters.webp",
+      "dcTheaterTitle": "Desert Combat — Urban & Industrial CQB",
+      "loadPicture": "Load/CloseQuarters.tga"
+    },
+    "baytown": {
+      "slug": "baytown",
+      "mapName": "Operation Baytown",
+      "theaterKey": "italytower",
+      "theaterCategory": "Mediterranean",
+      "theaterTitle": "Italian Campaign — Mountain & Coastal Assault",
+      "image": "italytower.webp",
+      "imageUrl": "/stats/assets/theaters/italytower.webp",
+      "pngUrl": "/stats/assets/theaters/italytower.png",
+      "aliases": [
+        "baytown",
+        "operation baytown",
+        "operationbaytown"
+      ],
+      "loadPicture": "Load/ItalyTower.tga"
+    },
+    "salerno": {
+      "slug": "salerno",
+      "mapName": "Battle of Salerno",
+      "theaterKey": "sturm_guy",
+      "theaterCategory": "Mediterranean",
+      "theaterTitle": "Italian Campaign — Beachhead Counterattack",
+      "image": "sturm_guy.webp",
+      "imageUrl": "/stats/assets/theaters/sturm_guy.webp",
+      "pngUrl": "/stats/assets/theaters/sturm_guy.png",
+      "aliases": [
+        "battle of salerno",
+        "battleofsalerno",
+        "salerno"
+      ],
+      "loadPicture": "Load/Sturm-Guy.tga"
+    },
+    "anzio": {
+      "slug": "anzio",
+      "mapName": "Anzio",
+      "theaterKey": "sturm_guy",
+      "theaterCategory": "Mediterranean",
+      "theaterTitle": "Italian Campaign — Beachhead Counterattack",
+      "image": "sturm_guy.webp",
+      "imageUrl": "/stats/assets/theaters/sturm_guy.webp",
+      "pngUrl": "/stats/assets/theaters/sturm_guy.png",
+      "aliases": [
+        "anzio"
+      ],
+      "loadPicture": "Load/Sturm-Guy.tga"
+    },
+    "cassino": {
+      "slug": "cassino",
+      "mapName": "Monte Cassino",
+      "theaterKey": "scout_antitank",
+      "theaterCategory": "Mediterranean",
+      "theaterTitle": "Italian Campaign — Gustav Line Defense",
+      "image": "scout_antitank.webp",
+      "imageUrl": "/stats/assets/theaters/scout_antitank.webp",
+      "pngUrl": "/stats/assets/theaters/scout_antitank.png",
+      "aliases": [
+        "cassino",
+        "monte cassino",
+        "montecassino"
+      ],
+      "loadPicture": "Load/Scout_AntiTank.tga"
+    },
+    "santo_croce": {
+      "slug": "santo_croce",
+      "mapName": "Santo Croce",
+      "theaterKey": "scout_antitank",
+      "theaterCategory": "Mediterranean",
+      "theaterTitle": "Italian Campaign — Gustav Line Defense",
+      "image": "scout_antitank.webp",
+      "imageUrl": "/stats/assets/theaters/scout_antitank.webp",
+      "pngUrl": "/stats/assets/theaters/scout_antitank.png",
+      "aliases": [
+        "santo croce",
+        "santo_croce",
+        "santocroce"
+      ],
+      "loadPicture": "Load/Scout_AntiTank.tga"
+    },
+    "husky": {
+      "slug": "husky",
+      "mapName": "Operation Husky",
+      "theaterKey": "italytower",
+      "theaterCategory": "Mediterranean",
+      "theaterTitle": "Italian Campaign — Mountain & Coastal Assault",
+      "image": "italytower.webp",
+      "imageUrl": "/stats/assets/theaters/italytower.webp",
+      "pngUrl": "/stats/assets/theaters/italytower.png",
+      "aliases": [
+        "husky",
+        "operation husky",
+        "operationhusky"
+      ],
+      "loadPicture": "Load/ItalyTower.tga"
+    },
+    "eagles_nest": {
+      "slug": "eagles_nest",
+      "mapName": "Eagle's Nest",
+      "theaterKey": "calliope",
+      "theaterCategory": "Secret Weapons",
+      "theaterTitle": "Secret Weapons — Rocket Artillery & Strongholds",
+      "image": "calliope.webp",
+      "imageUrl": "/stats/assets/theaters/calliope.webp",
+      "pngUrl": "/stats/assets/theaters/calliope.png",
+      "aliases": [
+        "eagle's nest",
+        "eagles nest",
+        "eagles_nest",
+        "eaglesnest"
+      ],
+      "loadPicture": "Load/PlaceHolder_Calliope.tga"
+    },
+    "essen": {
+      "slug": "essen",
+      "mapName": "Essen",
+      "theaterKey": "xpack2_sturm",
+      "theaterCategory": "Secret Weapons",
+      "theaterTitle": "Secret Weapons — Industrial Heartland",
+      "image": "xpack2_sturm.webp",
+      "imageUrl": "/stats/assets/theaters/xpack2_sturm.webp",
+      "pngUrl": "/stats/assets/theaters/xpack2_sturm.png",
+      "aliases": [
+        "essen"
+      ],
+      "loadPicture": "Load/PlaceHolder_Sturm.tga"
+    },
+    "gothic_line": {
+      "slug": "gothic_line",
+      "mapName": "Gothic Line",
+      "theaterKey": "calliope",
+      "theaterCategory": "Secret Weapons",
+      "theaterTitle": "Secret Weapons — Rocket Artillery & Strongholds",
+      "image": "calliope.webp",
+      "imageUrl": "/stats/assets/theaters/calliope.webp",
+      "pngUrl": "/stats/assets/theaters/calliope.png",
+      "aliases": [
+        "gothic line",
+        "gothic_line",
+        "gothicline"
+      ],
+      "loadPicture": "Load/PlaceHolder_Calliope.tga"
+    },
+    "hellendoorn": {
+      "slug": "hellendoorn",
+      "mapName": "Hellendoorn",
+      "theaterKey": "xpack2_winter",
+      "theaterCategory": "Secret Weapons",
+      "theaterTitle": "Secret Weapons — Northern Sabotage",
+      "image": "xpack2_winter.webp",
+      "imageUrl": "/stats/assets/theaters/xpack2_winter.webp",
+      "pngUrl": "/stats/assets/theaters/xpack2_winter.png",
+      "aliases": [
+        "hellendoorn"
+      ],
+      "loadPicture": "Load/PlaceHolder_Winter.tga"
+    },
+    "kbely_airfield": {
+      "slug": "kbely_airfield",
+      "mapName": "Kbely Airfield",
+      "theaterKey": "xpack2_sturm",
+      "theaterCategory": "Secret Weapons",
+      "theaterTitle": "Secret Weapons — Industrial Heartland",
+      "image": "xpack2_sturm.webp",
+      "imageUrl": "/stats/assets/theaters/xpack2_sturm.webp",
+      "pngUrl": "/stats/assets/theaters/xpack2_sturm.png",
+      "aliases": [
+        "kbely airfield",
+        "kbely_airfield",
+        "kbelyairfield"
+      ],
+      "loadPicture": "Load/PlaceHolder_Sturm.tga"
+    },
+    "mimoyecques": {
+      "slug": "mimoyecques",
+      "mapName": "Mimoyecques",
+      "theaterKey": "goblin",
+      "theaterCategory": "Secret Weapons",
+      "theaterTitle": "Secret Weapons — Experimental Flight & Superguns",
+      "image": "goblin.webp",
+      "imageUrl": "/stats/assets/theaters/goblin.webp",
+      "pngUrl": "/stats/assets/theaters/goblin.png",
+      "aliases": [
+        "mimoyecques"
+      ],
+      "loadPicture": "Load/PlaceHolder_Goblin.tga"
+    },
+    "peenemunde": {
+      "slug": "peenemunde",
+      "mapName": "Peenemünde",
+      "theaterKey": "goblin",
+      "theaterCategory": "Secret Weapons",
+      "theaterTitle": "Secret Weapons — Experimental Flight & Superguns",
+      "image": "goblin.webp",
+      "imageUrl": "/stats/assets/theaters/goblin.webp",
+      "pngUrl": "/stats/assets/theaters/goblin.png",
+      "aliases": [
+        "peenemnde",
+        "peenemunde",
+        "peenemünde"
+      ],
+      "loadPicture": "Load/PlaceHolder_Goblin.tga"
+    },
+    "raid_on_agheila": {
+      "slug": "raid_on_agheila",
+      "mapName": "Raid on Agheila",
+      "theaterKey": "agheila_load",
+      "theaterCategory": "North Africa",
+      "theaterTitle": "North Africa — Desert Commando Strike",
+      "image": "agheila_load.webp",
+      "imageUrl": "/stats/assets/theaters/agheila_load.webp",
+      "pngUrl": "/stats/assets/theaters/agheila_load.png",
+      "aliases": [
+        "raid on agheila",
+        "raid_on_agheila",
+        "raidonagheila"
+      ],
+      "loadPicture": "../../bf1942/levels/Raid_on_Agheila/menu/texture/Load/Loading_Screen.tga"
+    },
+    "telemark": {
+      "slug": "telemark",
+      "mapName": "Telemark",
+      "theaterKey": "xpack2_winter",
+      "theaterCategory": "Secret Weapons",
+      "theaterTitle": "Secret Weapons — Northern Sabotage",
+      "image": "xpack2_winter.webp",
+      "imageUrl": "/stats/assets/theaters/xpack2_winter.webp",
+      "pngUrl": "/stats/assets/theaters/xpack2_winter.png",
+      "aliases": [
+        "telemark"
+      ],
+      "loadPicture": "Load/PlaceHolder_Winter.tga"
+    },
+    "dc_battle_of_73_easting": {
+      "slug": "dc_battle_of_73_easting",
+      "mapName": "Battle of 73 Easting",
+      "theaterKey": "dc_tanks",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Modern Armored Warfare",
+      "image": "dc_tanks.webp",
+      "imageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "pngUrl": "/stats/assets/theaters/dc_tanks.png",
+      "aliases": [
+        "battle of 73 easting",
+        "battleof73easting",
+        "dc battle of 73 easting",
+        "dc_battle_of_73_easting",
+        "dcbattleof73easting"
+      ],
+      "loadPicture": "Load/DC_Tanks.tga"
+    },
+    "dc_medina_ridge": {
+      "slug": "dc_medina_ridge",
+      "mapName": "Medina Ridge",
+      "theaterKey": "dc_blackhawk",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Airborne Insertion",
+      "image": "dc_blackhawk.webp",
+      "imageUrl": "/stats/assets/theaters/dc_blackhawk.webp",
+      "pngUrl": "/stats/assets/theaters/dc_blackhawk.png",
+      "aliases": [
+        "dc medina ridge",
+        "dc_medina_ridge",
+        "dcmedinaridge",
+        "medina ridge",
+        "medinaridge"
+      ],
+      "loadPicture": "Load/DC_Blackhawk.tga"
+    },
+    "dc_al_nas": {
+      "slug": "dc_al_nas",
+      "mapName": "Al Nas",
+      "theaterKey": "closequarters",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Urban & Industrial CQB",
+      "image": "closequarters.webp",
+      "imageUrl": "/stats/assets/theaters/closequarters.webp",
+      "pngUrl": "/stats/assets/theaters/closequarters.png",
+      "aliases": [
+        "al nas",
+        "alnas",
+        "dc al nas",
+        "dc_al_nas",
+        "dcalnas"
+      ],
+      "loadPicture": "Load/CloseQuarters.tga"
+    },
+    "dc_al_nas_day2": {
+      "slug": "dc_al_nas_day2",
+      "mapName": "Al Nas (Day 2)",
+      "theaterKey": "closequarters",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Urban & Industrial CQB",
+      "image": "closequarters.webp",
+      "imageUrl": "/stats/assets/theaters/closequarters.webp",
+      "pngUrl": "/stats/assets/theaters/closequarters.png",
+      "aliases": [
+        "al nas (day 2)",
+        "al nas day2",
+        "alnasday2",
+        "dc al nas day2",
+        "dc_al_nas_day2",
+        "dcalnasday2"
+      ],
+      "loadPicture": "Load/CloseQuarters.tga"
+    },
+    "dc_basrahs_edge": {
+      "slug": "dc_basrahs_edge",
+      "mapName": "Basrah's Edge",
+      "theaterKey": "dc_blackhawk",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Airborne Insertion",
+      "image": "dc_blackhawk.webp",
+      "imageUrl": "/stats/assets/theaters/dc_blackhawk.webp",
+      "pngUrl": "/stats/assets/theaters/dc_blackhawk.png",
+      "aliases": [
+        "basrah's edge",
+        "basrahs edge",
+        "basrahsedge",
+        "dc basrahs edge",
+        "dc_basrahs_edge",
+        "dcbasrahsedge"
+      ],
+      "loadPicture": "Load/DC_BlackHawk.tga"
+    },
+    "dc_bridge": {
+      "slug": "dc_bridge",
+      "mapName": "DC Bridge",
+      "theaterKey": "dc_night",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Night Operations",
+      "image": "dc_night.webp",
+      "imageUrl": "/stats/assets/theaters/dc_night.webp",
+      "pngUrl": "/stats/assets/theaters/dc_night.png",
+      "aliases": [
+        "bridge",
+        "dc bridge",
+        "dc_bridge",
+        "dcbridge"
+      ],
+      "loadPicture": "Load/DC_Night.tga"
+    },
+    "dc_coastal_hammer": {
+      "slug": "dc_coastal_hammer",
+      "mapName": "Coastal Hammer",
+      "theaterKey": "dc_harrier",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Naval Aviation & VTOL Strike",
+      "image": "dc_harrier.webp",
+      "imageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "pngUrl": "/stats/assets/theaters/dc_harrier.png",
+      "aliases": [
+        "coastal hammer",
+        "coastalhammer",
+        "dc coastal hammer",
+        "dc_coastal_hammer",
+        "dccoastalhammer"
+      ],
+      "loadPicture": "../../bf1942/levels/DC_Coastal_Hammer/Coastal_Hammer.tga"
+    },
+    "dc_cornered": {
+      "slug": "dc_cornered",
+      "mapName": "DC Cornered",
+      "theaterKey": "dc_scud",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Tactical Ballistic Missiles",
+      "image": "dc_scud.webp",
+      "imageUrl": "/stats/assets/theaters/dc_scud.webp",
+      "pngUrl": "/stats/assets/theaters/dc_scud.png",
+      "aliases": [
+        "cornered",
+        "dc cornered",
+        "dc_cornered",
+        "dccornered"
+      ],
+      "loadPicture": "Load/DC_Scud.tga"
+    },
+    "dc_dustbowl": {
+      "slug": "dc_dustbowl",
+      "mapName": "DC Dustbowl",
+      "theaterKey": "dc_tanks",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Modern Armored Warfare",
+      "image": "dc_tanks.webp",
+      "imageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "pngUrl": "/stats/assets/theaters/dc_tanks.png",
+      "aliases": [
+        "dc dustbowl",
+        "dc_dustbowl",
+        "dcdustbowl",
+        "dustbowl"
+      ],
+      "loadPicture": "Load/DC_Tanks.tga"
+    },
+    "dc_first_light": {
+      "slug": "dc_first_light",
+      "mapName": "DC First Light",
+      "theaterKey": "dc_tanks",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Modern Armored Warfare",
+      "image": "dc_tanks.webp",
+      "imageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "pngUrl": "/stats/assets/theaters/dc_tanks.png",
+      "aliases": [
+        "dc first light",
+        "dc_first_light",
+        "dcfirstlight",
+        "first light",
+        "firstlight"
+      ],
+      "loadPicture": "Load/DC_Tanks.tga"
+    },
+    "dc_lostvillage": {
+      "slug": "dc_lostvillage",
+      "mapName": "DC Lost Village",
+      "theaterKey": "dc_blackhawk",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Airborne Insertion",
+      "image": "dc_blackhawk.webp",
+      "imageUrl": "/stats/assets/theaters/dc_blackhawk.webp",
+      "pngUrl": "/stats/assets/theaters/dc_blackhawk.png",
+      "aliases": [
+        "dc lost village",
+        "dc lostvillage",
+        "dc_lostvillage",
+        "dclostvillage",
+        "lostvillage"
+      ],
+      "loadPicture": "Load/DC_Blackhawk.tga"
+    },
+    "dc_lostvillage_nopara": {
+      "slug": "dc_lostvillage_nopara",
+      "mapName": "DC Lost Village (No Para)",
+      "theaterKey": "dc_blackhawk",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Airborne Insertion",
+      "image": "dc_blackhawk.webp",
+      "imageUrl": "/stats/assets/theaters/dc_blackhawk.webp",
+      "pngUrl": "/stats/assets/theaters/dc_blackhawk.png",
+      "aliases": [
+        "dc lost village (no para)",
+        "dc lostvillage nopara",
+        "dc_lostvillage_nopara",
+        "dclostvillagenopara",
+        "lostvillage nopara",
+        "lostvillagenopara"
+      ],
+      "loadPicture": "Load/DC_Blackhawk.tga"
+    },
+    "dc_no_fly_zone_day2": {
+      "slug": "dc_no_fly_zone_day2",
+      "mapName": "DC No Fly Zone (Day 2)",
+      "theaterKey": "dc_f15",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Air Superiority",
+      "image": "dc_f15.webp",
+      "imageUrl": "/stats/assets/theaters/dc_f15.webp",
+      "pngUrl": "/stats/assets/theaters/dc_f15.png",
+      "aliases": [
+        "dc no fly zone (day 2)",
+        "dc no fly zone day2",
+        "dc_no_fly_zone_day2",
+        "dcnoflyzoneday2",
+        "no fly zone day2",
+        "noflyzoneday2"
+      ],
+      "loadPicture": "Load/DC_F15.tga"
+    },
+    "dc_sea_rigs": {
+      "slug": "dc_sea_rigs",
+      "mapName": "DC Sea Rigs",
+      "theaterKey": "dc_harrier",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Naval Aviation & VTOL Strike",
+      "image": "dc_harrier.webp",
+      "imageUrl": "/stats/assets/theaters/dc_harrier.webp",
+      "pngUrl": "/stats/assets/theaters/dc_harrier.png",
+      "aliases": [
+        "dc sea rigs",
+        "dc_sea_rigs",
+        "dcsearigs",
+        "sea rigs",
+        "searigs"
+      ],
+      "loadPicture": "Load/DC_Harrier.tga"
+    },
+    "dc_twin_rivers": {
+      "slug": "dc_twin_rivers",
+      "mapName": "DC Twin Rivers",
+      "theaterKey": "dc_tanks",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Modern Armored Warfare",
+      "image": "dc_tanks.webp",
+      "imageUrl": "/stats/assets/theaters/dc_tanks.webp",
+      "pngUrl": "/stats/assets/theaters/dc_tanks.png",
+      "aliases": [
+        "dc twin rivers",
+        "dc_twin_rivers",
+        "dctwinrivers",
+        "twin rivers",
+        "twinrivers"
+      ],
+      "loadPicture": "Load/DC_tanks.tga"
+    },
+    "dc_urban_siege": {
+      "slug": "dc_urban_siege",
+      "mapName": "DC Urban Siege",
+      "theaterKey": "dc_gazelle",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Rotary Reconnaissance",
+      "image": "dc_gazelle.webp",
+      "imageUrl": "/stats/assets/theaters/dc_gazelle.webp",
+      "pngUrl": "/stats/assets/theaters/dc_gazelle.png",
+      "aliases": [
+        "dc urban siege",
+        "dc_urban_siege",
+        "dcurbansiege",
+        "urban siege",
+        "urbansiege"
+      ],
+      "loadPicture": "Load/DC_Gazelle.tga"
+    },
+    "dc_weapon_bunkers": {
+      "slug": "dc_weapon_bunkers",
+      "mapName": "DC Weapon Bunkers",
+      "theaterKey": "closequarters",
+      "theaterCategory": "Desert Combat",
+      "theaterTitle": "Desert Combat — Urban & Industrial CQB",
+      "image": "closequarters.webp",
+      "imageUrl": "/stats/assets/theaters/closequarters.webp",
+      "pngUrl": "/stats/assets/theaters/closequarters.png",
+      "aliases": [
+        "dc weapon bunkers",
+        "dc_weapon_bunkers",
+        "dcweaponbunkers",
+        "weapon bunkers",
+        "weaponbunkers"
+      ],
+      "loadPicture": "Load/CloseQuarters.tga"
+    }
+  }
+}
