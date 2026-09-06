@@ -2,12 +2,12 @@
 
 ## Trigger
 
-Seq `bfstats/Slow as fuck (>= 10 seconds)` at 2026-09-06 09:12 UTC.
+Seq `bfstats/Slow as fuck (>= 10 seconds)` at 2026-09-06 09:56 UTC (recurring; still undeployed).
 
-- `GET /stats/relationships/players/maskitou/network-graph?depth=2&maxNodes=120`
-- 12,580 ms, HTTP 200
-- TraceId `1ff628d2393d2ddecd7dffdb8d0faf6d`
-- Applebot. Same path has been 13–56s all morning for other player names.
+- `GET /stats/relationships/players/ningokboy/network-graph?depth=2&maxNodes=120`
+- 12,254 ms, HTTP 200
+- TraceId `9b11494f501929fa9c07114e4724b4cf`
+- Same path as 09:12 (`maskitou`, 12,580 ms, TraceId `1ff628d2393d2ddecd7dffdb8d0faf6d`) and all morning (13–56s for other names).
 
 A second path the same hour:
 
