@@ -2647,7 +2647,7 @@ public class ArcadeService(
             .ToListAsync(cancellationToken);
         var serverDict = servers.ToDictionary(s => s.Guid, s => s);
 
-        var topBadgeByPlayer = await LoadSignatureBadgesAsync(playerNames, cancellationToken);
+        var topBadgeByPlayer = await LoadSignatureBadgesAsync(playerNames, null, cancellationToken);
 
         var result = new List<ArcadeCandidate>();
         foreach (var p in rows)
@@ -2726,16 +2726,7 @@ public class ArcadeService(
         var mapsByPlayer = await LoadMapSnapshotsAsync(playerNames, serverGuid, cancellationToken);
         var topMapByPlayer = FavoriteMapByPlayer(mapsByPlayer);
 
-        var badges = await dbContext.PlayerAchievements
-            .AsNoTracking()
-            .Where(a => playerNames.Contains(a.PlayerName) && (a.ServerGuid == serverGuid || a.ServerGuid == ""))
-            .Select(a => new { a.PlayerName, a.AchievementName })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        var topBadgeByPlayer = badges
-            .GroupBy(b => b.PlayerName)
-            .ToDictionary(g => g.Key, g => g.First().AchievementName);
+        var topBadgeByPlayer = await LoadSignatureBadgesAsync(playerNames, serverGuid, cancellationToken);
 
         var result = new List<ArcadeCandidate>();
         foreach (var p in serverPlayers)
@@ -2836,7 +2827,7 @@ public class ArcadeService(
 
         var serverDict = servers.ToDictionary(s => s.Guid, s => s);
 
-        var topBadgeByPlayer = await LoadSignatureBadgesAsync(playerNames, cancellationToken);
+        var topBadgeByPlayer = await LoadSignatureBadgesAsync(playerNames, null, cancellationToken);
 
         var result = new List<ArcadeCandidate>();
         foreach (var p in monthlyPlayers)
@@ -3218,22 +3209,29 @@ public class ArcadeService(
     }
 
     /// <summary>
-    /// One signature badge per player, chosen in SQL rather than in memory.
+    /// One signature badge per player, chosen in SQL rather than in memory. Pass a
+    /// <paramref name="serverGuid"/> to restrict to badges earned on that server (plus the
+    /// global ones, which carry an empty ServerGuid).
     ///
-    /// This used to select every distinct (PlayerName, AchievementName) pair for the whole
-    /// roster and then keep an arbitrary one per player. AchievementName is in no index, so
-    /// SQLite had to visit the table row for every achievement those 150 players had ever
-    /// earned — ~8,700 random reads at the data volume's ~1.38ms latency. Measured in
-    /// production: the command reported 3ms and the reader then took 12.04s to drain, 41%
-    /// of a 29s trivia request, to produce 150 strings.
+    /// Every caller used to select every distinct (PlayerName, AchievementName) pair for the
+    /// whole roster and then keep an arbitrary one per player. AchievementName is in no index,
+    /// so SQLite had to visit the table row for every achievement those 150 players had ever
+    /// earned. Measured in production twice: 12.04s draining on the global path (41% of a 29s
+    /// trivia request) and 8.57s on the server path (76% of an 11.2s higher-lower request), to
+    /// produce 150 strings.
     ///
     /// MIN() pushes the pick down so the aggregate is one entry per player, and
-    /// IX_PlayerAchievements_PlayerName_AchievementName covers it — the query never touches
-    /// the table. The chosen badge was already effectively arbitrary; it is now the
-    /// alphabetically first, which is at least stable between calls.
+    /// IX_PlayerAchievements_PlayerName_ServerGuid_AchievementName covers both shapes — the
+    /// query never touches the table. ServerGuid has to be *inside* the index rather than
+    /// filtered after it, or the server-scoped variant fetches a row per candidate just to
+    /// test the predicate, which is the whole cost it is trying to avoid.
+    ///
+    /// The chosen badge was already effectively arbitrary; it is now the alphabetically first,
+    /// which is at least stable between calls.
     /// </summary>
     private async Task<Dictionary<string, string>> LoadSignatureBadgesAsync(
         IReadOnlyCollection<string> playerNames,
+        string? serverGuid,
         CancellationToken cancellationToken)
     {
         if (playerNames.Count == 0)
@@ -3241,9 +3239,16 @@ public class ArcadeService(
             return [];
         }
 
-        var badges = await dbContext.PlayerAchievements
+        var query = dbContext.PlayerAchievements
             .AsNoTracking()
-            .Where(a => playerNames.Contains(a.PlayerName))
+            .Where(a => playerNames.Contains(a.PlayerName));
+
+        if (!string.IsNullOrWhiteSpace(serverGuid))
+        {
+            query = query.Where(a => a.ServerGuid == serverGuid || a.ServerGuid == "");
+        }
+
+        var badges = await query
             .GroupBy(a => a.PlayerName)
             .Select(g => new { PlayerName = g.Key, AchievementName = g.Min(x => x.AchievementName) })
             .ToListAsync(cancellationToken);
