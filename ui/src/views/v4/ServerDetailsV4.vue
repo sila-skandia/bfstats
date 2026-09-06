@@ -22,6 +22,7 @@ import MmServerSignatureBuilder from '@/components/v4/MmServerSignatureBuilder.v
 import MmForecastModal from '@/components/v4/MmForecastModal.vue'
 import MmPingProximityOrbit from '@/components/v4/MmPingProximityOrbit.vue'
 import MmServerMapPopularity from '@/components/v4/MmServerMapPopularity.vue'
+import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
@@ -162,6 +163,8 @@ const liveMap = computed(() => liveServer.value?.mapName || null)
 // The live record is authoritative for which mod is running right now; the tracked
 // server row is the fallback for a server that is currently offline.
 const mapGameId = computed(() => liveServer.value?.gameId || details.value?.gameId || null)
+
+const dossierOpen = ref(false)
 const liveMode = computed(() => liveServer.value?.gameType || '')
 const maxPlayers = computed(() => liveServer.value?.maxPlayers ?? null)
 const capacityPct = computed(() => {
@@ -467,8 +470,18 @@ watch(activeTab, (t) => {
           <div class="mm-stat__value mm-stat__value--small mm-server__now-playing">
             <span v-if="liveLoading" class="mm-skeleton" style="width: 80px; height: 1em; display: inline-block; vertical-align: middle" />
             <template v-else>
-              <MmMapThumb :game-id="mapGameId" :map-name="liveMap" :width="52" />
-              <span class="mm-server__now-playing-name">{{ liveMap || '—' }}</span>
+              <button
+                v-if="liveMap"
+                type="button"
+                class="mm-server__now-playing-btn"
+                data-testid="open-map-dossier"
+                :title="`Level briefing for ${liveMap}`"
+                @click="dossierOpen = true"
+              >
+                <MmMapThumb :game-id="mapGameId" :map-name="liveMap" :width="52" />
+                <span class="mm-server__now-playing-name">{{ liveMap }}</span>
+              </button>
+              <span v-else class="mm-server__now-playing-name">—</span>
             </template>
           </div>
           <div class="mm-stat__delta">{{ liveLoading ? 'checking…' : (liveMode || 'server quiet') }}</div>
@@ -1005,6 +1018,7 @@ watch(activeTab, (t) => {
           v-if="details?.serverGuid"
           :server-guid="details.serverGuid"
           :server-name="serverName"
+          :game-id="mapGameId"
         />
         <div v-else-if="loading" style="padding: 32px 0">
           <div v-for="i in 6" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />
@@ -1016,6 +1030,8 @@ watch(activeTab, (t) => {
 
       <!-- always-visible: comments -->
       <MmServerComments :server-name="serverName" />
+
+    <MmMapDossierModal v-model="dossierOpen" :game-id="mapGameId" :map-name="liveMap" />
 
     <MmForecastModal
       v-model="showForecast"
@@ -1035,6 +1051,26 @@ watch(activeTab, (t) => {
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+.mm-server__now-playing-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mm-server__now-playing-btn:hover .mm-server__now-playing-name,
+.mm-server__now-playing-btn:focus-visible .mm-server__now-playing-name {
+  color: var(--mm-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .mm-server__now-playing-name {

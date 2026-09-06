@@ -298,13 +298,62 @@ def encode_png(width: int, height: int, rgba: bytes, drop_alpha: bool = False) -
 # Extraction Driver
 # --------------------------------------------------------------------------- #
 
+def decode_tga(data: bytes) -> tuple[int, int, bytes]:
+    """Decode the uncompressed and RLE 24/32-bit TGAs the menu archives use.
+
+    A handful of icons (IconBlk_Medal, IconHoHa) ship as TGA rather than DDS, so the
+    vehicle set is incomplete without this.
+    """
+    id_len, colour_map_type, image_type = data[0], data[1], data[2]
+    if colour_map_type != 0 or image_type not in (2, 10):
+        raise ValueError(f"unsupported TGA image type {image_type}")
+    width, height = struct.unpack_from("<HH", data, 12)
+    depth, descriptor = data[16], data[17]
+    if depth not in (24, 32):
+        raise ValueError(f"unsupported TGA bit depth {depth}")
+
+    stride = depth // 8
+    offset = 18 + id_len
+    pixels = bytearray()
+
+    if image_type == 2:
+        pixels += data[offset:offset + width * height * stride]
+    else:
+        while len(pixels) < width * height * stride:
+            packet = data[offset]
+            offset += 1
+            count = (packet & 0x7F) + 1
+            if packet & 0x80:  # run-length packet: one pixel repeated
+                pixels += data[offset:offset + stride] * count
+                offset += stride
+            else:
+                pixels += data[offset:offset + count * stride]
+                offset += count * stride
+
+    # TGA stores BGR(A); rows run bottom-up unless bit 5 of the descriptor is set.
+    rgba = bytearray(width * height * 4)
+    for i in range(width * height):
+        b, g, r = pixels[i * stride], pixels[i * stride + 1], pixels[i * stride + 2]
+        a = pixels[i * stride + 3] if stride == 4 else 255
+        rgba[i * 4:i * 4 + 4] = bytes((r, g, b, a))
+    if not descriptor & 0x20:
+        row = width * 4
+        rgba = bytearray(b"".join(
+            bytes(rgba[y * row:(y + 1) * row]) for y in range(height - 1, -1, -1)
+        ))
+    return width, height, bytes(rgba)
+
+
 def extract_and_save(
     archive: RfaArchive, entry_key: str, dest_path: Path, drop_alpha: bool = False
 ) -> bool:
-    """Read a DDS texture from archive, decode, and write as PNG."""
+    """Read a texture from archive, decode, and write as PNG."""
     try:
-        raw_dds = archive.read(entry_key)
-        w, h, rgba = decode_dds(raw_dds)
+        raw = archive.read(entry_key)
+        if entry_key.lower().endswith(".tga"):
+            w, h, rgba = decode_tga(raw)
+        else:
+            w, h, rgba = decode_dds(raw)
         png_bytes = encode_png(w, h, rgba, drop_alpha=drop_alpha)
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         dest_path.write_bytes(png_bytes)
@@ -314,13 +363,237 @@ def extract_and_save(
         return False
 
 
+# --------------------------------------------------------------------------- #
+# Vehicle and weapon icons
+# --------------------------------------------------------------------------- #
+
+def icon_key(entry_name: str) -> str:
+    """`menu/Texture/Vehicle/icon_dai-hatsu.dds` -> `daihatsu`.
+
+    The key has to land on the same string the map dossiers put in their `icon` field,
+    which is the object or kit template name with punctuation removed. Icon files wrap
+    that in some spelling of "icon"/"kit" and a "_selected" suffix, so strip those and
+    flatten the rest.
+    """
+    stem = Path(entry_name).stem
+    stem = re.sub(r"^(icon|kit)[_\s-]*", "", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"[_\s-]*selected$", "", stem, flags=re.IGNORECASE)
+    return re.sub(r"[^a-z0-9]+", "", stem.lower())
+
+
+def find_archives_dir(mod_dir: Path) -> Path | None:
+    if not mod_dir.is_dir():
+        return None
+    for child in mod_dir.iterdir():
+        if child.is_dir() and child.name.lower() == "archives":
+            return child
+    return None
+
+
+def mod_search_path(mod_dir: Path) -> list[str]:
+    """Search path declared in init.con, or [mod_name, 'bf1942']."""
+    chain = [mod_dir.name.lower()]
+    init_con = mod_dir / "init.con"
+    if not init_con.is_file():
+        init_con = mod_dir / "Init.con"
+    if init_con.is_file():
+        try:
+            text = init_con.read_text(encoding="latin-1", errors="ignore")
+            for line in text.splitlines():
+                m = re.match(r"^\s*game\.addModPath\s+Mods/([^/\s]+)", line, re.IGNORECASE)
+                if m:
+                    target = m.group(1).lower()
+                    if target not in chain:
+                        chain.append(target)
+        except Exception:
+            pass
+    if "bf1942" not in chain:
+        chain.append("bf1942")
+    return chain
+
+
+def extract_icon_set(game_dir: Path, out_dir: Path) -> int:
+    """Pull every mod's vehicle, weapon and kit icons into hud/<kind>/<mod>/<key>.png.
+
+    Icons stay namespaced by mod because mods redraw them: FHSW ships its own Sherman
+    over the base game's, and its own 502 kit icons for a class system that looks
+    nothing like the stock five. The API resolves which mod's copy to serve by walking
+    the same content inheritance chain the engine does.
+    """
+    mods_dir = game_dir / "Mods"
+    if not mods_dir.is_dir():
+        print(f"  [WARN] no Mods folder under {game_dir}, skipping icon set", file=sys.stderr)
+        return 0
+
+    mod_dirs = {p.name.lower(): p for p in mods_dir.iterdir() if p.is_dir()}
+
+    # 1. Pre-index all menu textures across all mods: mod_name -> { lookup_key: (archive_path, entry) }
+    menu_textures: dict[str, dict[str, tuple[Path, str]]] = {}
+
+    for mod_name, mod_dir in mod_dirs.items():
+        arc_dir = find_archives_dir(mod_dir)
+        if not arc_dir:
+            continue
+        textures: dict[str, tuple[Path, str]] = {}
+        for archive_path in sorted(arc_dir.glob("*.rfa")):
+            if not archive_path.name.lower().startswith("menu"):
+                continue
+            try:
+                archive = RfaArchive(archive_path)
+            except Exception as exc:
+                print(f"  [WARN] {archive_path.name}: {exc}", file=sys.stderr)
+                continue
+            with archive:
+                for entry in archive.entries:
+                    lowered = entry.lower()
+                    if not lowered.endswith((".dds", ".tga")):
+                        continue
+                    textures[lowered] = (archive_path, entry)
+                    if "texture/" in lowered:
+                        sub = lowered.split("texture/", 1)[1]
+                        textures[sub] = (archive_path, entry)
+                        textures[os.path.splitext(sub)[0]] = (archive_path, entry)
+        if textures:
+            menu_textures[mod_name] = textures
+
+    total = 0
+
+    # 2. Extract standard vehicle, weapon, and direct kit icons from menu archives
+    for mod_name, mod_dir in sorted(mod_dirs.items()):
+        arc_dir = find_archives_dir(mod_dir)
+        if not arc_dir:
+            continue
+        written = 0
+        for archive_path in sorted(arc_dir.glob("*.rfa")):
+            if not archive_path.name.lower().startswith("menu"):
+                continue
+            try:
+                archive = RfaArchive(archive_path)
+            except Exception as exc:
+                print(f"  [WARN] {archive_path.name}: {exc}", file=sys.stderr)
+                continue
+            with archive:
+                for kind, marker in (("vehicles", "/vehicle/"), ("weapons", "/weapon/"),
+                                     ("kits", "/kits/")):
+                    for entry in archive.entries:
+                        lowered = entry.lower()
+                        if marker not in lowered or not lowered.endswith((".dds", ".tga")):
+                            continue
+                        key = icon_key(entry)
+                        if not key:
+                            continue
+                        if extract_and_save(archive, entry, out_dir / kind / mod_name / f"{key}.png"):
+                            written += 1
+                        # Handle vehicle aliases
+                        if kind == "vehicles":
+                            if key.startswith("stationary") and len(key) > 10:
+                                short_key = key[10:]
+                                if extract_and_save(archive, entry, out_dir / kind / mod_name / f"{short_key}.png"):
+                                    written += 1
+                            if key == "dshk":
+                                extract_and_save(archive, entry, out_dir / kind / mod_name / "stationarydshk.png")
+                        # For kits with faction subfolder (e.g. menu/Texture/Kits/Vietcong/rifleman_selected.dds)
+                        elif kind == "kits" and "/kits/" in lowered:
+                            sub = lowered.split("/kits/", 1)[1]
+                            parts = [p for p in sub.split("/") if p]
+                            if len(parts) > 1:
+                                folder = re.sub(r"[^a-z0-9]+", "", parts[0])
+                                full_key = folder + key
+                                if extract_and_save(archive, entry, out_dir / kind / mod_name / f"{full_key}.png"):
+                                    written += 1
+
+        if written:
+            print(f"  {mod_name:14s} {written:5d} vehicle/weapon/kit icons")
+            total += written
+
+    # 3. Extract kit icons defined in objects.rfa (mapped to template names)
+    for mod_name, mod_dir in sorted(mod_dirs.items()):
+        arc_dir = find_archives_dir(mod_dir)
+        if not arc_dir:
+            continue
+
+        kits: dict[str, str] = {}
+        for archive_path in sorted(arc_dir.glob("*.rfa")):
+            if not archive_path.name.lower().startswith("objects"):
+                continue
+            try:
+                obj_archive = RfaArchive(archive_path)
+            except Exception:
+                continue
+            with obj_archive:
+                for entry in obj_archive.entries:
+                    if "kit" in entry.lower() and entry.lower().endswith(".con"):
+                        try:
+                            text = obj_archive.read(entry).decode("latin-1")
+                        except Exception:
+                            continue
+                        cur = None
+                        for line in text.splitlines():
+                            m = re.match(r"^\s*ObjectTemplate\.create\s+Kit\s+(\S+)", line, re.IGNORECASE)
+                            if m:
+                                cur = m.group(1)
+                                continue
+                            if not cur:
+                                continue
+                            m_icon = re.match(r"^\s*ObjectTemplate\.setKitIcon\s+\S+\s+[\"\x27]?([^\x22\x27\s]+)", line, re.IGNORECASE)
+                            if m_icon:
+                                kits[cur] = m_icon.group(1)
+
+        if not kits:
+            continue
+
+        search_chain = [m.lower() for m in mod_search_path(mod_dir)]
+        kit_written = 0
+
+        # Cache open archives for extraction
+        open_archives: dict[Path, RfaArchive] = {}
+        try:
+            for kit_name, raw_icon in kits.items():
+                norm_key = re.sub(r"[^a-z0-9]+", "", kit_name.lower())
+                if not norm_key:
+                    continue
+
+                raw = raw_icon.lower().replace("\\", "/")
+                raw_no_ext = os.path.splitext(raw)[0]
+                candidates = [raw, raw_no_ext, "kits/" + raw, "kits/" + raw_no_ext]
+
+                target_tuple = None
+                for s_mod in search_chain:
+                    textures = menu_textures.get(s_mod, {})
+                    for cand in candidates:
+                        if cand in textures:
+                            target_tuple = textures[cand]
+                            break
+                    if target_tuple:
+                        break
+
+                if target_tuple:
+                    arch_path, entry = target_tuple
+                    if arch_path not in open_archives:
+                        open_archives[arch_path] = RfaArchive(arch_path)
+                    dest = out_dir / "kits" / mod_name / f"{norm_key}.png"
+                    if not dest.exists():
+                        if extract_and_save(open_archives[arch_path], entry, dest):
+                            kit_written += 1
+        finally:
+            for arc in open_archives.values():
+                arc.close()
+
+        if kit_written:
+            print(f"  {mod_name:14s} {kit_written:5d} kit template icons mapped from objects")
+            total += kit_written
+
+    return total
+
+
 def copy_or_link(src_file: Path, target_file: Path):
     """Ensure target_file exists with same content as src_file."""
     target_file.parent.mkdir(parents=True, exist_ok=True)
     target_file.write_bytes(src_file.read_bytes())
 
 
-def run_extraction(menu_rfa_path: Path, out_dir: Path) -> int:
+def run_extraction(menu_rfa_path: Path, out_dir: Path,
+                   game_dir: Path = DEFAULT_GAME_ROOT) -> int:
     if not menu_rfa_path.is_file():
         print(f"Error: menu.rfa not found at {menu_rfa_path}", file=sys.stderr)
         return 1
@@ -490,6 +763,12 @@ def run_extraction(menu_rfa_path: Path, out_dir: Path) -> int:
                 loading_dir / "loading_full.png",
             )
 
+        # ------------------------------------------------------------------- #
+        # 5. Vehicle and weapon icons, across every installed mod
+        # ------------------------------------------------------------------- #
+        print(f"\n--- Extracting Vehicle, Weapon & Kit Icons -> {out_dir.relative_to(REPO_ROOT)}/{{vehicles,weapons,kits}} ---")
+        total_extracted += extract_icon_set(game_dir, out_dir)
+
         print(f"\n[DONE] Successfully extracted {total_extracted} assets into {out_dir.relative_to(REPO_ROOT)}/")
 
     return 0
@@ -504,13 +783,19 @@ def main() -> int:
         help=f"Path to menu.rfa (default: {DEFAULT_MENU_RFA})",
     )
     parser.add_argument(
+        "--game-dir",
+        type=Path,
+        default=DEFAULT_GAME_ROOT,
+        help=f"Install root, walked for every mod's icons (default: {DEFAULT_GAME_ROOT})",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=DEFAULT_OUT,
         help=f"Destination directory (default: {DEFAULT_OUT})",
     )
     args = parser.parse_args()
-    return run_extraction(args.menu_rfa, args.out)
+    return run_extraction(args.menu_rfa, args.out, args.game_dir)
 
 
 if __name__ == "__main__":
