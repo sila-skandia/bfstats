@@ -11,6 +11,7 @@ import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
 import MmTeamLadderRoster from '@/components/v4/MmTeamLadderRoster.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
+import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
 import { BfLoadingBar } from '@/components/common'
 import LandingColumnFilterPanel from './LandingColumnFilterPanel.vue'
 import { formatTimeRemaining, formatRelativeTime, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
@@ -152,6 +153,18 @@ const resetAll = () => {
 }
 
 const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
+
+// Level briefing for a map named in the table.
+const dossierOpen = ref(false)
+const dossierGameId = ref<string | null>(null)
+const dossierMapName = ref<string | null>(null)
+
+function openDossier(gameId: string | null | undefined, mapName: string | null | undefined) {
+  if (!mapName) return
+  dossierGameId.value = gameId ?? null
+  dossierMapName.value = mapName
+  dossierOpen.value = true
+}
 let narrowMql: MediaQueryList | null = null
 const onNarrowChange = (e: MediaQueryListEvent) => { isNarrow.value = e.matches }
 
@@ -1314,8 +1327,20 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                     <!-- Map -->
                     <template v-else-if="k === 'map'">
                       <div class="lb-map-cell">
-                        <MmMapThumb :game-id="s.gameId" :map-name="s.mapName" :width="44" />
-                        <span class="lb-text-cell lb-map-name">{{ s.mapName || '—' }}</span>
+                        <!-- .stop so opening the briefing does not also fire the row's
+                             navigation to the server. -->
+                        <button
+                          v-if="s.mapName"
+                          type="button"
+                          class="lb-map-btn"
+                          data-testid="open-map-dossier"
+                          :title="`Level briefing for ${s.mapName}`"
+                          @click.stop="openDossier(s.gameId, s.mapName)"
+                        >
+                          <MmMapThumb :game-id="s.gameId" :map-name="s.mapName" :width="44" />
+                          <span class="lb-text-cell lb-map-name">{{ s.mapName }}</span>
+                        </button>
+                        <span v-else class="lb-text-cell lb-map-name">—</span>
                       </div>
                     </template>
 
@@ -1476,9 +1501,38 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
       </div>
     </Transition>
   </Teleport>
+
+  <MmMapDossierModal
+    v-model="dossierOpen"
+    :game-id="dossierGameId"
+    :map-name="dossierMapName"
+  />
 </template>
 
 <style scoped>
+/* The map cell is a control now; it should read as one without shouting in a
+   table where most cells are inert. */
+.lb-map-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lb-map-btn:hover .lb-map-name,
+.lb-map-btn:focus-visible .lb-map-name {
+  color: var(--mm-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .lb-container {
   display: flex;
   flex-direction: column;
