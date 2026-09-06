@@ -11,6 +11,7 @@ import {
 
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
 import MmEmphasizedText from '@/components/v4/arcade/MmEmphasizedText.vue'
+import MmArcadeSkeleton from '@/components/v4/arcade/MmArcadeSkeleton.vue'
 
 const props = defineProps<{
   serverGuid?: string
@@ -521,15 +522,11 @@ onMounted(() => {
       </div>
     </template>
 
-    <div
+    <MmArcadeSkeleton
       v-else-if="loading"
-      class="mm-hl__loading"
-    >
-      <div class="mm-hl__spinner" />
-      <p class="mm-eyebrow">
-        Loading matchup...
-      </p>
-    </div>
+      variant="headToHead"
+      label="Loading matchup"
+    />
   </div>
 </template>
 
@@ -1028,28 +1025,6 @@ onMounted(() => {
   filter: brightness(1.1);
 }
 
-.mm-hl__loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  gap: 16px;
-}
-
-.mm-hl__spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--mm-rule);
-  border-top-color: var(--mm-accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 @media (max-width: 720px) {
   .mm-hl__arena {
     grid-template-columns: 1fr;
@@ -1083,12 +1058,6 @@ onMounted(() => {
   .mm-hl__metric-val,
   .mm-hl__mystery-mark {
     font-size: 28px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mm-hl__spinner {
-    animation: none;
   }
 }
 </style>
