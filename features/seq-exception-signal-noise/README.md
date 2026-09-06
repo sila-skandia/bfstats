@@ -4,6 +4,34 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-06 06:57 UTC page
+
+~2 hours 15 minutes after the 04:42 page (`cursor/site-error-investigation-c087`).
+That leftover never opened a PR, and main moved to `5a7fe73` at 05:47 UTC
+(Armoury parked on `feat/3d-armoury`). Live site at 06:58 UTC was otherwise
+healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 06:57:49, 91 servers named/unique, 13 live players /
+  13 unique (no dups)
+- Default `/stats/players` 200. Search for Ho-Chi Minh / jonas / BFSoldier /
+  Player / Nosferatu / Brisdahl all 200. Prior collisions remain cleared
+  (`isActive: false`; lastSeen 12:55:08 / 19:18:38 on 09-05).
+- Arcade servers 200. Trivia 200 in 0.19s. Higher-lower 200 in 0.19s. Mystery
+  200 in 1.3s.
+- Map thumbs kursk/bocage 200; kursk_custom 404 expected.
+- Wrapped MoonGamers 200. `/armoury` is SPA HTML (feature parked).
+- `/stats/communities` still 27 rows, all `formationDate = 2026-09-06T02:17:49Z`.
+
+A :57 page is 2 minutes after the :55 gamification tick. Best fit is the same
+handled `LogWarning(ex)` leftover (request-path fallbacks plus trivia
+warmup/refresh overlapping the lock). Not a 02:00 retry — detection already
+succeeded at 02:17. Seq re-notify of a held earlier event is the other
+possibility.
+
+This change cherry-picks the c087 logging silence onto `5a7fe73`. There is
+no `LogWarning(ex)` left in the API.
+
 ## 2026-09-06 03:57 UTC page
 
 ~2 hours 48 minutes after the 01:09 page (`cursor/site-error-analysis-08fb`).
@@ -143,13 +171,14 @@ aggregate, and gamification all write SQLite around this time of day.
 
 ## Fixes in this change
 
-1. Re-land `cursor/site-error-analysis-08fb` (and the 060b/ff15/52b1/b5a1
-   leftover) onto current main: request-path handled fallbacks no longer
-   attach `ex` (player stats, arcade roster/orbit, banners, geo, AI
-   plugins, auth 401, community 404, Redis/tournament-image startup).
-2. The new trivia warmup and background-refresh paths (from `9bae956`)
-   also no longer attach `ex` on a handled failure. A failed warm still
-   retries next interval; the request path can still build the pool.
+1. Re-land `cursor/site-error-investigation-c087` (and the
+   060b/ff15/52b1/b5a1/08fb/ad3c leftover) onto current main (`5a7fe73`):
+   request-path handled fallbacks no longer attach `ex` (player stats,
+   arcade roster/orbit, banners, geo, AI plugins, auth 401, community 404,
+   Redis/tournament-image startup).
+2. Trivia warmup and background-refresh paths (from `9bae956`) also no
+   longer attach `ex` on a handled failure. A failed warm still retries
+   next interval; the request path can still build the pool.
 
 Real failures still `LogError(ex)` and will still page.
 
