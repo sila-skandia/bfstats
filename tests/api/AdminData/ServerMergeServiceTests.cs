@@ -209,6 +209,12 @@ public class ServerMergeServiceTests : IDisposable
                 LastSeenTime = new DateTime(2026, 9, 6, 7, 0, 0, DateTimeKind.Utc)
             });
 
+        _dbContext.Players.AddRange(
+            new Player { Name = "alice" },
+            new Player { Name = "bob" },
+            new Player { Name = "carol" },
+            new Player { Name = "deleted" });
+
         _dbContext.PlayerSessions.AddRange(
             new PlayerSession
             {
