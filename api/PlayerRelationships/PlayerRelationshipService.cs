@@ -356,8 +356,7 @@ public class PlayerRelationshipService(
             var alliesQuery = @"
                 MATCH (p:Player {name: $playerName})-[r:PLAYED_WITH]-(ally:Player)
                 RETURN ally.name AS allyName,
-                       r.sessionCount AS allyWeight,
-                       r.lastPlayedTogether AS lastPlayed
+                       r.sessionCount AS allyWeight
                 ORDER BY r.sessionCount DESC
                 LIMIT $allyLimit";
 
@@ -365,7 +364,6 @@ public class PlayerRelationshipService(
             {
                 [playerName] = new NetworkNode { Id = playerName, Label = playerName, Degree = 0, Weight = 0 }
             };
-            var finalEdges = new List<NetworkEdge>();
             var allyNames = new List<string>();
 
             var alliesCursor = await tx.RunAsync(alliesQuery, new { playerName, allyLimit });
@@ -374,17 +372,14 @@ public class PlayerRelationshipService(
                 var allyName = rec["allyName"].As<string>();
                 if (string.IsNullOrWhiteSpace(allyName)) continue;
 
-                var allyWeight = rec["allyWeight"].As<int>();
-                var lastPlayed = ToNullableDateTime(rec["lastPlayed"]) ?? DateTime.MinValue;
-                nodesMap[allyName] = new NetworkNode { Id = allyName, Label = allyName, Degree = 1, Weight = allyWeight };
-                allyNames.Add(allyName);
-                finalEdges.Add(new NetworkEdge
+                nodesMap[allyName] = new NetworkNode
                 {
-                    Source = playerName,
-                    Target = allyName,
-                    Weight = allyWeight,
-                    LastInteraction = lastPlayed
-                });
+                    Id = allyName,
+                    Label = allyName,
+                    Degree = 1,
+                    Weight = rec["allyWeight"].As<int>()
+                };
+                allyNames.Add(allyName);
             }
 
             if (allyNames.Count > 0)
@@ -397,38 +392,54 @@ public class PlayerRelationshipService(
                         MATCH (ally)-[r2:PLAYED_WITH]-(fof:Player)
                         WHERE fof.name <> $playerName AND NOT fof.name IN $allyNames
                         RETURN fof.name AS fofName,
-                               r2.sessionCount AS fofWeight,
-                               r2.lastPlayedTogether AS fofLastPlayed
+                               r2.sessionCount AS fofWeight
                         ORDER BY r2.sessionCount DESC
                         LIMIT $fofPerAlly
                     }
-                    RETURN allyName, fofName, fofWeight, fofLastPlayed";
+                    RETURN allyName, fofName, fofWeight";
 
                 var fofCursor = await tx.RunAsync(fofQuery, new { playerName, allyNames, fofPerAlly });
                 await foreach (var rec in fofCursor)
                 {
-                    var allyName = rec["allyName"].As<string>();
                     var fofName = rec["fofName"].As<string>();
-                    if (string.IsNullOrWhiteSpace(fofName) || string.IsNullOrWhiteSpace(allyName))
+                    if (string.IsNullOrWhiteSpace(fofName) || nodesMap.ContainsKey(fofName))
                         continue;
 
-                    if (!nodesMap.ContainsKey(fofName))
+                    nodesMap[fofName] = new NetworkNode
                     {
-                        nodesMap[fofName] = new NetworkNode
-                        {
-                            Id = fofName,
-                            Label = fofName,
-                            Degree = 2,
-                            Weight = rec["fofWeight"].As<int>()
-                        };
-                    }
+                        Id = fofName,
+                        Label = fofName,
+                        Degree = 2,
+                        Weight = rec["fofWeight"].As<int>()
+                    };
+                }
+            }
 
+            // Pairwise seeks on the unique Player.name constraint. Expanding every
+            // PLAYED_WITH neighbour and filtering with IN is what 10s+ cache misses did.
+            var finalEdges = new List<NetworkEdge>();
+            var names = nodesMap.Keys.ToList();
+            if (names.Count > 1)
+            {
+                var edgesQuery = @"
+                    UNWIND $names AS a
+                    UNWIND $names AS b
+                    WITH a, b WHERE a < b
+                    MATCH (p1:Player {name: a})-[r:PLAYED_WITH]-(p2:Player {name: b})
+                    RETURN p1.name AS player1,
+                           p2.name AS player2,
+                           r.sessionCount AS sessionCount,
+                           r.lastPlayedTogether AS lastPlayed";
+
+                var edgeCursor = await tx.RunAsync(edgesQuery, new { names });
+                await foreach (var edgeRecord in edgeCursor)
+                {
                     finalEdges.Add(new NetworkEdge
                     {
-                        Source = allyName,
-                        Target = fofName,
-                        Weight = rec["fofWeight"].As<int>(),
-                        LastInteraction = ToNullableDateTime(rec["fofLastPlayed"]) ?? DateTime.MinValue
+                        Source = edgeRecord["player1"].As<string>(),
+                        Target = edgeRecord["player2"].As<string>(),
+                        Weight = edgeRecord["sessionCount"].As<int>(),
+                        LastInteraction = ToNullableDateTime(edgeRecord["lastPlayed"]) ?? DateTime.MinValue
                     });
                 }
             }
