@@ -162,4 +162,196 @@ public class ServerMergeServiceTests : IDisposable
         Assert.Equal(200, primaryCount.SampleCount);
     }
 
+    [Fact]
+    public async Task FindDuplicateCandidates_ReturnsEmpty_WhenIdentitiesAreUnique()
+    {
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "a", Name = "Alpha", Ip = "1.1.1.1", Port = 14567, Game = "bf1942" },
+            new GameServer { Guid = "b", Name = "Bravo", Ip = "1.1.1.1", Port = 14567, Game = "bf1942" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FindDuplicateCandidatesAsync("bf1942");
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task FindDuplicateCandidates_GroupsOnlyDuplicateIdentities_AndIgnoresUnrelatedSessions()
+    {
+        _dbContext.Servers.AddRange(
+            new GameServer
+            {
+                Guid = "primary",
+                Name = "Night Host",
+                Ip = "10.0.0.5",
+                Port = 14567,
+                Game = "bf1942",
+                IsOnline = true,
+                LastSeenTime = new DateTime(2026, 9, 6, 8, 0, 0, DateTimeKind.Utc)
+            },
+            new GameServer
+            {
+                Guid = "dupe",
+                Name = "Night Host",
+                Ip = "10.0.0.5",
+                Port = 14567,
+                Game = "bf1942",
+                IsOnline = false,
+                LastSeenTime = new DateTime(2026, 9, 5, 3, 0, 0, DateTimeKind.Utc)
+            },
+            new GameServer
+            {
+                Guid = "unique",
+                Name = "Unique",
+                Ip = "8.8.8.8",
+                Port = 14567,
+                Game = "bf1942",
+                LastSeenTime = new DateTime(2026, 9, 6, 7, 0, 0, DateTimeKind.Utc)
+            });
+
+        _dbContext.Players.AddRange(
+            new Player { Name = "alice" },
+            new Player { Name = "bob" },
+            new Player { Name = "carol" },
+            new Player { Name = "deleted" });
+
+        _dbContext.PlayerSessions.AddRange(
+            new PlayerSession
+            {
+                PlayerName = "alice",
+                ServerGuid = "primary",
+                StartTime = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+                LastSeenTime = new DateTime(2026, 9, 1, 1, 0, 0, DateTimeKind.Utc),
+                MapName = "kursk"
+            },
+            new PlayerSession
+            {
+                PlayerName = "bob",
+                ServerGuid = "dupe",
+                StartTime = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc),
+                LastSeenTime = new DateTime(2026, 8, 1, 0, 30, 0, DateTimeKind.Utc),
+                MapName = "kursk"
+            },
+            new PlayerSession
+            {
+                PlayerName = "carol",
+                ServerGuid = "unique",
+                StartTime = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+                LastSeenTime = new DateTime(2026, 7, 1, 3, 0, 0, DateTimeKind.Utc),
+                MapName = "kursk"
+            },
+            new PlayerSession
+            {
+                PlayerName = "deleted",
+                ServerGuid = "primary",
+                StartTime = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+                LastSeenTime = new DateTime(2026, 6, 1, 4, 0, 0, DateTimeKind.Utc),
+                MapName = "kursk",
+                IsDeleted = true
+            });
+
+        _dbContext.PlayerServerStats.AddRange(
+            new PlayerServerStats
+            {
+                PlayerName = "alice",
+                ServerGuid = "primary",
+                Year = 2026,
+                Week = 36,
+                TotalPlayTimeMinutes = 120,
+                UpdatedAt = Instant.FromUtc(2026, 9, 6, 0, 0)
+            },
+            new PlayerServerStats
+            {
+                PlayerName = "bob",
+                ServerGuid = "dupe",
+                Year = 2026,
+                Week = 30,
+                TotalPlayTimeMinutes = 15,
+                UpdatedAt = Instant.FromUtc(2026, 8, 1, 0, 0)
+            },
+            new PlayerServerStats
+            {
+                PlayerName = "carol",
+                ServerGuid = "unique",
+                Year = 2026,
+                Week = 20,
+                TotalPlayTimeMinutes = 9999,
+                UpdatedAt = Instant.FromUtc(2026, 7, 1, 0, 0)
+            });
+
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FindDuplicateCandidatesAsync("bf1942");
+
+        var candidate = Assert.Single(result);
+        Assert.Equal("Night Host", candidate.Name);
+        Assert.Equal(2, candidate.Guids.Count);
+        Assert.Equal(2, candidate.TotalSessions);
+        Assert.Equal(135, candidate.TotalPlaytimeMinutes);
+        Assert.Equal("primary", candidate.Guids[0].ServerGuid);
+        Assert.Equal(120, candidate.Guids[0].PlaytimeMinutes);
+        Assert.Equal(1, candidate.Guids[0].SessionCount);
+        Assert.Equal("dupe", candidate.Guids[1].ServerGuid);
+        Assert.DoesNotContain(result, c => c.Name == "Unique");
+    }
+
+    [Fact]
+    public async Task FindDuplicateCandidates_FiltersByGame()
+    {
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "bf1", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "bf1942" },
+            new GameServer { Guid = "bf2", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "bf1942" },
+            new GameServer { Guid = "fh1", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "fh2" },
+            new GameServer { Guid = "fh2", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "fh2" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FindDuplicateCandidatesAsync("bf1942");
+
+        var candidate = Assert.Single(result);
+        Assert.Equal("bf1942", candidate.Game);
+        Assert.Equal(2, candidate.Guids.Count);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task FindDuplicateCandidates_WhenGameIsBlank_ReturnsEveryGame(string? game)
+    {
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "bf1", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "bf1942" },
+            new GameServer { Guid = "bf2", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "bf1942" },
+            new GameServer { Guid = "fh1", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "fh2" },
+            new GameServer { Guid = "fh2", Name = "Same", Ip = "1.1.1.1", Port = 1, Game = "fh2" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FindDuplicateCandidatesAsync(game);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, c => c.Game == "bf1942");
+        Assert.Contains(result, c => c.Game == "fh2");
+    }
+
+    [Fact]
+    public async Task FindDuplicateCandidates_DuplicateIdentityWithNoSessions_ReturnsZeroTotals()
+    {
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "a", Name = "Empty", Ip = "9.9.9.9", Port = 14567, Game = "bf1942" },
+            new GameServer { Guid = "b", Name = "Empty", Ip = "9.9.9.9", Port = 14567, Game = "bf1942" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FindDuplicateCandidatesAsync("bf1942");
+
+        var candidate = Assert.Single(result);
+        Assert.Equal(0, candidate.TotalSessions);
+        Assert.Equal(0, candidate.TotalPlaytimeMinutes);
+        Assert.All(candidate.Guids, g =>
+        {
+            Assert.Equal(0, g.SessionCount);
+            Assert.Equal(0, g.PlaytimeMinutes);
+            Assert.Null(g.FirstSession);
+            Assert.Null(g.LastSession);
+        });
+    }
+
 }
