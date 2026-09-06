@@ -87,8 +87,9 @@ public class ArcadeTriviaWarmupBackgroundService(
         {
             // A failed warm is not fatal — the request path can still build the pool itself,
             // and the next interval will try again.
-            logger.LogWarning(ex,
-                "Arcade trivia pool warm failed after {ElapsedMs}ms", timer.ElapsedMilliseconds);
+            logger.LogWarning(
+                "Arcade trivia pool warm failed after {ElapsedMs}ms ({ExceptionType}: {Message})",
+                timer.ElapsedMilliseconds, ex.GetType().Name, ex.Message);
         }
     }
 }

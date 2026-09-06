@@ -4,6 +4,36 @@ Webhook payload is always sparse (`Level=Error`, `Message=Alert condition
 triggered by bfstats/Exceptions`, `Description=An exception has been logged`).
 Seq API is 401 without a key, so `@Exception` is unknown on every page.
 
+## 2026-09-06 03:57 UTC page
+
+~2 hours 48 minutes after the 01:09 page (`cursor/site-error-analysis-08fb`).
+That leftover request-path fix never opened a PR. `9bae956` (arcade trivia
+pool off the request path, plus three covering indexes) landed on main at
+03:35 UTC and is live — trivia is now 0.22s. Live site at 03:57 UTC was
+otherwise healthy:
+
+- Homepage 200, Seq UI 200 / API 401, bflist `api.bflist.io/v2/bf1942/servers` 200
+- Liveservers `lastUpdated` 03:57:47, 91 servers named/unique, 63 live players /
+  63 unique (no dups)
+- Default `/stats/players` 200. Search for Ho-Chi Minh / jonas / BFSoldier /
+  Player / Nosferatu all 200. Prior collisions remain cleared.
+- Arcade servers 200. Trivia 200 in 0.22s (was 14.7s at 01:10). Higher-lower
+  200 in 0.20s. Mystery 200 in 2.4s.
+- Wrapped MoonGamers 200.
+- `/stats/communities` is now **27 rows**, all `formationDate = 2026-09-06T02:17:49Z`.
+  The 02:00 community-detection job **succeeded** tonight (was stuck on
+  2026-08-20 / 17,954 rows). A later :57 page is not a 02:00 retry.
+
+A :57 page is 2 minutes after the :55 gamification tick. Best fit is handled
+`LogWarning(ex)` during that lock window: leftover request-path fallbacks
+(08fb never merged) and/or the new trivia warmup/refresh `LogWarning(ex)`
+overlapping the same tick after the 03:35 deploy (migration builds three
+full-table indexes, warmup starts 45s after the pod is up). Seq re-notify of
+a held earlier event is the other possibility.
+
+This change rebases 08fb onto current main and also strips `ex` from the new
+trivia warmup / background-refresh fallbacks.
+
 ## 2026-09-05 21:34 UTC page
 
 ~4 hours after the 17:34 page (`cursor/site-error-analysis-625f`). PR #17 from
@@ -113,19 +143,13 @@ aggregate, and gamification all write SQLite around this time of day.
 
 ## Fixes in this change
 
-1. Land the two previous investigation branches that never merged:
-   - stats-collection `SQLITE_BUSY` retries no longer attach `ex`
-   - nightly community detection takes the Neo4j relationship-sync lock,
-     batches `communityId` assignment, and does not wipe communities on
-     failure (still stale since 2026-08-20)
-2. Stop attaching exceptions on other **handled** fallbacks that page the
-   same signal: BFList last-known-good, Redis cache get/set/remove,
-   process-health sampling, `PRAGMA optimize`, connection PRAGMAs,
-   Redis player-event publish, average-ping fallback.
-3. Ranking / aggregate / gamification treat `SQLITE_BUSY` as a warning
-   without `ex` instead of `LogError(ex)` (and ranking no longer logs the
-   same failure twice). Inner gamification layers rethrow busy instead of
-   logging-and-swallowing it.
+1. Re-land `cursor/site-error-analysis-08fb` (and the 060b/ff15/52b1/b5a1
+   leftover) onto current main: request-path handled fallbacks no longer
+   attach `ex` (player stats, arcade roster/orbit, banners, geo, AI
+   plugins, auth 401, community 404, Redis/tournament-image startup).
+2. The new trivia warmup and background-refresh paths (from `9bae956`)
+   also no longer attach `ex` on a handled failure. A failed warm still
+   retries next interval; the request path can still build the pool.
 
 Real failures still `LogError(ex)` and will still page.
 
@@ -135,6 +159,5 @@ Real failures still `LogError(ex)` and will still page.
 - Seq webhook body should include `@Exception`, `@Message`, `SourceContext`
 - Consider changing the signal to `@Level in ['Error','Fatal']` so a future
   `LogWarning(ex)` cannot page
-- Merge and deploy this follow-up; PR #17 is already live and stopped the
-  background-job `SQLITE_BUSY` pages, but request-path fallbacks still attach
-  `ex` until this lands
+- Merge and deploy this follow-up; until then production will keep paging
+  on handled request-path / trivia-warmup lock contention
