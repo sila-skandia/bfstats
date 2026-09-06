@@ -2,12 +2,12 @@
 
 ## Trigger
 
-Seq `bfstats/Slow as fuck (>= 10 seconds)` at 2026-09-06 09:12 UTC.
+Seq `bfstats/Slow as fuck (>= 10 seconds)` at 2026-09-06 10:19 UTC (still undeployed).
 
-- `GET /stats/relationships/players/maskitou/network-graph?depth=2&maxNodes=120`
-- 12,580 ms, HTTP 200
-- TraceId `1ff628d2393d2ddecd7dffdb8d0faf6d`
-- Applebot. Same path has been 13–56s all morning for other player names.
+- `GET /stats/relationships/players/BFSoldierEmanuel/network-graph?depth=2&maxNodes=120`
+- 27,248 ms, HTTP 200
+- TraceId `f5460d52a3223cdfc95700d56eb811c8`
+- Applebot. Same undeployed hop explosion as 09:56 (`ningokboy`, 12.3s), 09:12 (`maskitou`, 12.6s), and all morning (13–56s).
 
 A second path the same hour:
 
