@@ -21,7 +21,7 @@ export type BfFactionType =
 
 export type BfBadgeSize = 'sm' | 'md' | 'lg' | number
 export type BfFactionVariant = 'roundel' | 'badge' | 'icon-only' | 'pill'
-export type BfFlagType = 'roundel' | 'flag' | 'auto'
+export type BfFlagType = 'roundel' | 'flag' | 'ensign' | 'auto'
 
 const props = withDefaults(
   defineProps<{
@@ -33,7 +33,14 @@ const props = withDefaults(
     showLabel?: boolean
     /** Visual display variant */
     variant?: BfFactionVariant
-    /** Flag display style: 'roundel' (circular baseflag), 'flag' (rectangular), or 'auto' */
+    /**
+     * Flag display style: 'roundel' (circular baseflag), 'flag' (16px rectangle),
+     * 'ensign' (64px waving national flag on a pole), or 'auto'.
+     *
+     * Prefer 'ensign' wherever a nation needs to be told apart at a glance — the
+     * roundels are the game's control-point markers and read as near-identical red
+     * discs at badge sizes, whatever the nation.
+     */
     flagType?: BfFlagType
   }>(),
   {
@@ -141,6 +148,9 @@ const primarySrc = computed(() => {
   }
   if (props.flagType === 'roundel') {
     return `/stats/assets/hud/flags/baseflag_conp_${f}.png`
+  }
+  if (props.flagType === 'ensign') {
+    return `/stats/assets/hud/flags/icon_flag_${f}.png`
   }
   // Auto defaults to canonical roundel flag
   return `/stats/assets/hud/flags/${f}.png`

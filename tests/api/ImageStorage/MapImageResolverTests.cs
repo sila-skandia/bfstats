@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace api.tests.ImageStorage;
 
+[Collection(SharedAssetsPath.Name)]
 public sealed class MapImageResolverTests : IDisposable
 {
     private readonly string assetsRoot;
