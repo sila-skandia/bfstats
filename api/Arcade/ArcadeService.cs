@@ -16,14 +16,25 @@ namespace api.Arcade;
 public class ArcadeService(
     PlayerTrackerDbContext dbContext,
     IMemoryCache memoryCache,
+    ArcadeTriviaPoolCache triviaPoolCache,
     ILogger<ArcadeService> logger,
-    IServiceProvider? serviceProvider = null) : IArcadeService
+    IServiceProvider? serviceProvider = null) : IArcadeService, IArcadeTriviaPoolBuilder
 {
     private const string ServerListCacheKey = "Arcade:Servers";
     private const int OrbitCoPlayerLimit = 100;
     private const int MinOrbitPoolSize = 4;
     private const int TriviaTopPlayerCount = 40;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// The roster — top 150 players plus their per-map, per-server and badge detail — is the
+    /// expensive half of a trivia pool build and is shared by every arcade game. It is held
+    /// longer than <see cref="CacheDuration"/> because it is derived entirely from monthly and
+    /// career aggregates, which the aggregate jobs move slowly, and because the pool cache
+    /// above it refreshes on a 30-minute cycle: a roster that expired on the same cycle would
+    /// put the full cold load back on whichever refresh raced it.
+    /// </summary>
+    private static readonly TimeSpan RosterCacheDuration = TimeSpan.FromHours(6);
 
     private readonly IPlayerRelationshipService? _relationships =
         serviceProvider?.GetService(typeof(IPlayerRelationshipService)) as IPlayerRelationshipService;
@@ -541,16 +552,36 @@ public class ArcadeService(
         return new TriviaQuizDto(quizToken, dtoList);
     }
 
-    private async Task<IReadOnlyList<TriviaQuestionInternal>> GetGlobalTriviaPoolAsync(CancellationToken cancellationToken)
-    {
-        const string cacheKey = "Arcade:Trivia:MasterPool";
-        if (memoryCache.TryGetValue(cacheKey, out IReadOnlyList<TriviaQuestionInternal>? cached) && cached != null && cached.Count > 0)
-        {
-            return cached;
-        }
+    private Task<IReadOnlyList<TriviaQuestionInternal>> GetGlobalTriviaPoolAsync(CancellationToken cancellationToken)
+        => triviaPoolCache.GetOrBuildAsync(null, this, cancellationToken);
 
+    private Task<IReadOnlyList<TriviaQuestionInternal>> GetServerTriviaPoolAsync(
+        string serverGuid,
+        CancellationToken cancellationToken)
+        => triviaPoolCache.GetOrBuildAsync(serverGuid, this, cancellationToken);
+
+    /// <summary>
+    /// Builds a pool from scratch. Only <see cref="ArcadeTriviaPoolCache"/> should call this —
+    /// go through <see cref="GetGlobalTriviaPoolAsync"/> or
+    /// <see cref="GetServerTriviaPoolAsync"/> so the build is cached and single-flighted.
+    /// </summary>
+    async Task<IReadOnlyList<TriviaQuestionInternal>> IArcadeTriviaPoolBuilder.BuildTriviaPoolAsync(
+        string? serverGuid,
+        CancellationToken cancellationToken)
+        => string.IsNullOrWhiteSpace(serverGuid)
+            ? await BuildGlobalTriviaPoolAsync(cancellationToken)
+            : await BuildServerTriviaPoolAsync(serverGuid, cancellationToken);
+
+    private async Task<IReadOnlyList<TriviaQuestionInternal>> BuildGlobalTriviaPoolAsync(CancellationToken cancellationToken)
+    {
         var pool = new List<TriviaQuestionInternal>();
-        var candidates = (await LoadGlobalRosterFromDbAsync(cancellationToken)).Candidates;
+
+        // Must go through GetArcadeCandidatesAsync, not LoadGlobalRosterFromDbAsync. The
+        // latter bypasses the roster cache and never seeds it, so every builder below that
+        // asks for the roster — AddCombinatorialMapTriviaQuestionsAsync first — missed and
+        // rebuilt the whole thing a second time. Two identical six-query roster loads per
+        // pool build, the second costing 1.33s even with the pages already warm.
+        var candidates = await GetArcadeCandidatesAsync(null, null, cancellationToken);
 
         await AddCombinatorialMapTriviaQuestionsAsync(pool, null, cancellationToken);
         await AddPeriodScopedTriviaQuestionsAsync(pool, cancellationToken);
@@ -560,23 +591,13 @@ public class ArcadeService(
         await AddServerNetworkTriviaQuestionsAsync(pool, cancellationToken);
         AddCareerMilestoneTriviaQuestions(pool, candidates);
 
-        var distinctPool = pool.DistinctBy(q => q.Id).ToList();
-
-        memoryCache.Set(cacheKey, (IReadOnlyList<TriviaQuestionInternal>)distinctPool, TimeSpan.FromMinutes(20));
-
-        return distinctPool;
+        return pool.DistinctBy(q => q.Id).ToList();
     }
 
-    private async Task<IReadOnlyList<TriviaQuestionInternal>> GetServerTriviaPoolAsync(
+    private async Task<IReadOnlyList<TriviaQuestionInternal>> BuildServerTriviaPoolAsync(
         string serverGuid,
         CancellationToken cancellationToken)
     {
-        var cacheKey = $"Arcade:Trivia:ServerPool:{serverGuid}";
-        if (memoryCache.TryGetValue(cacheKey, out IReadOnlyList<TriviaQuestionInternal>? cached) && cached != null && cached.Count > 0)
-        {
-            return cached;
-        }
-
         var server = await dbContext.Servers.AsNoTracking().FirstOrDefaultAsync(s => s.Guid == serverGuid, cancellationToken);
         if (server == null)
         {
@@ -594,14 +615,7 @@ public class ArcadeService(
         await AddServerAchievementTriviaQuestionsAsync(pool, serverGuid, serverName, cancellationToken);
         await AddServerActivityPatternTriviaQuestionsAsync(pool, serverGuid, serverName, cancellationToken);
 
-        var distinctPool = pool.DistinctBy(q => q.Id).ToList();
-
-        if (distinctPool.Count > 0)
-        {
-            memoryCache.Set(cacheKey, (IReadOnlyList<TriviaQuestionInternal>)distinctPool, TimeSpan.FromMinutes(20));
-        }
-
-        return distinctPool;
+        return pool.DistinctBy(q => q.Id).ToList();
     }
 
     private async Task AddServerMapStatTriviaQuestionsAsync(
@@ -1478,13 +1492,29 @@ public class ArcadeService(
             .Take(24)
             .ToListAsync(cancellationToken);
 
-        foreach (var month in months)
+        if (months.Count == 0)
         {
-            var players = await dbContext.PlayerStatsMonthly
+            return;
+        }
+
+        // One read for every month rather than one per month. This loop used to issue a
+        // PlayerStatsMonthly query per iteration — 16 round trips costing 1.32s in
+        // production — purely to rank players within each month.
+        //
+        // The filter is expressed as a range over (Year, Month) rather than an IN list of
+        // packed Year*100+Month keys on purpose: an arithmetic expression is opaque to the
+        // planner and would scan the table, while the range seeks IX_PlayerStatsMonthly_Year_Month.
+        // `months` is ordered newest first, so the last entry bounds the range. It may pull a
+        // few months that were filtered out for having under four players; those simply never
+        // get looked up below.
+        var oldest = months[^1];
+        var playersByMonth = (await dbContext.PlayerStatsMonthly
                 .AsNoTracking()
-                .Where(p => p.Year == month.Year && p.Month == month.Month)
+                .Where(p => p.Year > oldest.Year || (p.Year == oldest.Year && p.Month >= oldest.Month))
                 .Select(p => new
                 {
+                    p.Year,
+                    p.Month,
                     p.PlayerName,
                     p.TotalKills,
                     p.TotalScore,
@@ -1492,9 +1522,16 @@ public class ArcadeService(
                     p.TotalRounds,
                     p.KdRatio
                 })
-                .ToListAsync(cancellationToken);
+                .ToListAsync(cancellationToken))
+            .GroupBy(p => (p.Year, p.Month))
+            .ToDictionary(g => g.Key, g => g.ToList());
 
-            if (players.Count < 4) continue;
+        foreach (var month in months)
+        {
+            if (!playersByMonth.TryGetValue((month.Year, month.Month), out var players) || players.Count < 4)
+            {
+                continue;
+            }
 
             var periodLabel = FormatMonthYear(month.Year, month.Month);
             var periodSlug = $"{month.Year}_{month.Month:D2}";
@@ -2356,7 +2393,7 @@ public class ArcadeService(
 
             if (roster.Candidates.Count > 0)
             {
-                memoryCache.Set(cacheKey, roster, CacheDuration);
+                memoryCache.Set(cacheKey, roster, RosterCacheDuration);
             }
 
             return roster;
@@ -2610,15 +2647,7 @@ public class ArcadeService(
             .ToListAsync(cancellationToken);
         var serverDict = servers.ToDictionary(s => s.Guid, s => s);
 
-        var badges = await dbContext.PlayerAchievements
-            .AsNoTracking()
-            .Where(a => playerNames.Contains(a.PlayerName))
-            .Select(a => new { a.PlayerName, a.AchievementName })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        var topBadgeByPlayer = badges
-            .GroupBy(b => b.PlayerName)
-            .ToDictionary(g => g.Key, g => g.First().AchievementName);
+        var topBadgeByPlayer = await LoadSignatureBadgesAsync(playerNames, cancellationToken);
 
         var result = new List<ArcadeCandidate>();
         foreach (var p in rows)
@@ -2807,16 +2836,7 @@ public class ArcadeService(
 
         var serverDict = servers.ToDictionary(s => s.Guid, s => s);
 
-        var badges = await dbContext.PlayerAchievements
-            .AsNoTracking()
-            .Where(a => playerNames.Contains(a.PlayerName))
-            .Select(a => new { a.PlayerName, a.AchievementName })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        var topBadgeByPlayer = badges
-            .GroupBy(b => b.PlayerName)
-            .ToDictionary(g => g.Key, g => g.First().AchievementName);
+        var topBadgeByPlayer = await LoadSignatureBadgesAsync(playerNames, cancellationToken);
 
         var result = new List<ArcadeCandidate>();
         foreach (var p in monthlyPlayers)
@@ -3195,6 +3215,42 @@ public class ArcadeService(
             roundToken,
             prompt,
             matchup.MapName);
+    }
+
+    /// <summary>
+    /// One signature badge per player, chosen in SQL rather than in memory.
+    ///
+    /// This used to select every distinct (PlayerName, AchievementName) pair for the whole
+    /// roster and then keep an arbitrary one per player. AchievementName is in no index, so
+    /// SQLite had to visit the table row for every achievement those 150 players had ever
+    /// earned — ~8,700 random reads at the data volume's ~1.38ms latency. Measured in
+    /// production: the command reported 3ms and the reader then took 12.04s to drain, 41%
+    /// of a 29s trivia request, to produce 150 strings.
+    ///
+    /// MIN() pushes the pick down so the aggregate is one entry per player, and
+    /// IX_PlayerAchievements_PlayerName_AchievementName covers it — the query never touches
+    /// the table. The chosen badge was already effectively arbitrary; it is now the
+    /// alphabetically first, which is at least stable between calls.
+    /// </summary>
+    private async Task<Dictionary<string, string>> LoadSignatureBadgesAsync(
+        IReadOnlyCollection<string> playerNames,
+        CancellationToken cancellationToken)
+    {
+        if (playerNames.Count == 0)
+        {
+            return [];
+        }
+
+        var badges = await dbContext.PlayerAchievements
+            .AsNoTracking()
+            .Where(a => playerNames.Contains(a.PlayerName))
+            .GroupBy(a => a.PlayerName)
+            .Select(g => new { PlayerName = g.Key, AchievementName = g.Min(x => x.AchievementName) })
+            .ToListAsync(cancellationToken);
+
+        return badges
+            .Where(b => b.AchievementName != null)
+            .ToDictionary(b => b.PlayerName, b => b.AchievementName!);
     }
 
     private async Task<IReadOnlyDictionary<string, IReadOnlyList<PlayerMapSnapshot>>> LoadMapSnapshotsAsync(

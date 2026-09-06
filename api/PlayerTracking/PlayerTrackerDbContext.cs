@@ -906,6 +906,16 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerServerStats>()
             .HasIndex(pss => new { pss.ServerGuid, pss.Year, pss.Week });
 
+        // Covers the "which server does this player play on most" rollup the arcade roster
+        // builds — SUM(TotalRounds) GROUP BY (PlayerName, ServerGuid) over the roster names.
+        // The primary key already orders by (PlayerName, ServerGuid) so the grouping was free,
+        // but TotalRounds is not in it, meaning one random row fetch per week per player: the
+        // command reported 5ms and the reader took 2.13s to drain in production. Carrying
+        // TotalRounds makes it index-only.
+        modelBuilder.Entity<PlayerServerStats>()
+            .HasIndex(pss => new { pss.PlayerName, pss.ServerGuid, pss.TotalRounds })
+            .HasDatabaseName("IX_PlayerServerStats_PlayerName_ServerGuid_TotalRounds");
+
         modelBuilder.Entity<PlayerServerStats>()
             .Property(pss => pss.UpdatedAt)
             .HasConversion(
@@ -1096,6 +1106,28 @@ public class PlayerTrackerDbContext : DbContext
         // Note: the kill-streak leaderboard scan needs no new index. It was slow because
         // LIKE 'kill\_streak\_%' can't use one at all; rewritten as a range over AchievementId it
         // uses the existing IX_PlayerAchievements_AchievementId (measured 156ms -> 6ms).
+
+        // Serves the arcade trivia leader tallies in
+        // ArcadeService.AddPlayerAchievementTriviaQuestionsAsync, all shaped
+        // "AchievementType = ? AND PlayerName IN (150 roster names) GROUP BY PlayerName".
+        // The index above cannot help them: ServerGuid sits at position 2 and these queries
+        // don't constrain it, so PlayerName is unreachable for seeking and the planner falls
+        // back to walking every row of the type. Four such queries cost 6.8s of a 29.2s
+        // request in production. Leading (AchievementType, PlayerName) makes each roster name
+        // a seek; AchievementId is carried so the round_placement_1 variant filters and the
+        // COUNT(*) aggregates complete without ever visiting the table.
+        modelBuilder.Entity<PlayerAchievement>()
+            .HasIndex(pa => new { pa.AchievementType, pa.PlayerName, pa.AchievementId })
+            .HasDatabaseName("IX_PlayerAchievements_AchievementType_PlayerName_AchievementId");
+
+        // Covers ArcadeService.LoadSignatureBadgesAsync — one badge per roster player.
+        // AchievementName appears in no other index, so the lookup had to fetch the table row
+        // for every achievement the roster had ever earned: ~8,700 random reads, 12.04s of a
+        // 29.2s request, to produce 150 strings. With this the MIN() per player is answered
+        // from the index alone.
+        modelBuilder.Entity<PlayerAchievement>()
+            .HasIndex(pa => new { pa.PlayerName, pa.AchievementName })
+            .HasDatabaseName("IX_PlayerAchievements_PlayerName_AchievementName");
 
         // Supports the Wrapped "Relations" lookup (WrappedService), which joins/filters
         // PlayerAchievements by (RoundId, PlayerName) to find who won a given round. Without

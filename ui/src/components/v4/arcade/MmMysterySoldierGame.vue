@@ -12,6 +12,7 @@ import {
   type MysteryAttributeMatch,
 } from '@/services/arcadeService'
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
+import MmArcadeSkeleton from '@/components/v4/arcade/MmArcadeSkeleton.vue'
 
 const props = defineProps<{
   serverGuid?: string
@@ -342,15 +343,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div
+    <MmArcadeSkeleton
       v-if="loading"
-      class="mm-mystery__loading"
-    >
-      <div class="mm-mystery__spinner" />
-      <p class="mm-eyebrow">
-        Loading mystery player...
-      </p>
-    </div>
+      variant="dossier"
+      label="Loading mystery player"
+    />
 
     <div
       v-else-if="error"
@@ -1223,28 +1220,6 @@ onUnmounted(() => {
 .mm-mystery__arrow--down {
   color: #3b82f6;
   background: rgba(59, 130, 246, 0.15);
-}
-
-.mm-mystery__loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  gap: 16px;
-}
-
-.mm-mystery__spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--mm-rule);
-  border-top-color: var(--mm-accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .mm-mystery__error {

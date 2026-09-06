@@ -13,6 +13,7 @@ import {
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
 import MmRoundReportSlideover from '@/components/v4/arcade/MmRoundReportSlideover.vue'
 import MmEmphasizedText from '@/components/v4/arcade/MmEmphasizedText.vue'
+import MmArcadeSkeleton from '@/components/v4/arcade/MmArcadeSkeleton.vue'
 import {
   THEATER_PLACEHOLDER,
   concealMapName,
@@ -75,6 +76,21 @@ const answeredCount = computed(() => {
   return Object.keys(revealedAnswers.value).length
 })
 
+// Shape of the last quiz rendered, used to draw the loading skeleton. Seeded with what the
+// endpoint always returns — five questions, four options — so the very first load is already
+// the right shape; after that, switching server or replaying skeletons into the layout the
+// user is actually about to get rather than a generic one.
+const skeletonQuestionCount = ref(5)
+const skeletonOptionCount = ref(4)
+const skeletonTiles = ref(false)
+
+const rememberQuizShape = (loaded: TriviaQuiz) => {
+  if (loaded.questions.length === 0) return
+  skeletonQuestionCount.value = loaded.questions.length
+  skeletonOptionCount.value = loaded.questions[0].options.length
+  skeletonTiles.value = shouldUseTheaterTiles(loaded.questions[0].options)
+}
+
 const loadQuiz = async () => {
   loading.value = true
   error.value = null
@@ -85,7 +101,9 @@ const loadQuiz = async () => {
   quizResult.value = null
 
   try {
-    quiz.value = await fetchTriviaQuiz(props.serverGuid, props.orbitPlayer)
+    const loaded = await fetchTriviaQuiz(props.serverGuid, props.orbitPlayer)
+    quiz.value = loaded
+    rememberQuizShape(loaded)
   } catch (err) {
     error.value = arcadeLoadError(err, 'Failed to load reconnaissance quiz. Please retry.')
   } finally {
@@ -246,6 +264,12 @@ onMounted(() => {
             <span v-else>{{ idx + 1 }}</span>
           </span>
         </div>
+        <MmArcadeSkeleton
+          v-else-if="loading"
+          variant="pips"
+          :question-count="skeletonQuestionCount"
+          label="Loading trivia questions"
+        />
         <span
           v-if="quiz"
           class="mm-trivia__score-pill"
@@ -269,15 +293,14 @@ onMounted(() => {
     </div>
 
     <!-- Loading State -->
-    <div
+    <MmArcadeSkeleton
       v-if="loading"
-      class="mm-trivia__loading"
-    >
-      <div class="mm-trivia__spinner" />
-      <p class="mm-eyebrow">
-        Loading trivia questions...
-      </p>
-    </div>
+      variant="quiz"
+      :question-count="skeletonQuestionCount"
+      :option-count="skeletonOptionCount"
+      :tiles="skeletonTiles"
+      label="Loading trivia questions"
+    />
 
     <!-- Error State -->
     <div
@@ -1491,25 +1514,6 @@ onMounted(() => {
   font-size: 13px;
   color: var(--mm-ink-soft);
   line-height: 1.4;
-}
-
-/* Loading */
-.mm-trivia__loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  gap: 16px;
-}
-
-.mm-trivia__spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--mm-rule);
-  border-top-color: var(--mm-accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
 }
 
 @media (max-width: 720px) {

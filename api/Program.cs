@@ -830,8 +830,22 @@ try
     builder.Services.AddScoped<api.DataExplorer.IDataExplorerService, api.DataExplorer.DataExplorerService>();
     builder.Services.AddScoped<api.DataExplorer.IMapPopularityService, api.DataExplorer.MapPopularityService>();
 
-    // Register Arcade & Trivia service
-    builder.Services.AddScoped<api.Arcade.IArcadeService, api.Arcade.ArcadeService>();
+    // Register Arcade & Trivia service.
+    // ArcadeService is also the IArcadeTriviaPoolBuilder, resolved from the same scoped
+    // instance so a pool build reuses the caller's DbContext. The pool cache is a singleton:
+    // it holds the built pools for the life of the process and single-flights builds across
+    // concurrent requests.
+    builder.Services.AddScoped<api.Arcade.ArcadeService>();
+    builder.Services.AddScoped<api.Arcade.IArcadeService>(sp => sp.GetRequiredService<api.Arcade.ArcadeService>());
+    builder.Services.AddScoped<api.Arcade.IArcadeTriviaPoolBuilder>(sp => sp.GetRequiredService<api.Arcade.ArcadeService>());
+    builder.Services.AddSingleton<api.Arcade.ArcadeTriviaPoolCache>();
+
+    // Keeps the global trivia pool built so no visitor absorbs the cost. Gated with the other
+    // background work: it only reads, but a maintenance copy should see an idle database.
+    if (!disableBackgroundProcessing)
+    {
+        builder.Services.AddHostedService<api.Arcade.ArcadeTriviaWarmupBackgroundService>();
+    }
 
     // Register Admin Data Management service
     builder.Services.AddScoped<api.AdminData.AdminDataService>();

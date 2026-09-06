@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -19,8 +20,19 @@ public class ArcadeTests : IDisposable
     private readonly IMemoryCache _memoryCache;
     private readonly ILogger<ArcadeService> _serviceLogger;
     private readonly ILogger<ArcadeController> _controllerLogger;
+    private readonly ArcadeTriviaPoolCache _triviaPoolCache;
     private readonly ArcadeService _service;
     private readonly ArcadeController _controller;
+
+    /// <summary>
+    /// A pool cache scoped to one test. Each test gets its own so a pool built by one cannot
+    /// leak into another — the cache retains entries for hours by design in production.
+    /// The scope factory is only used for background refreshes, which these tests never reach:
+    /// they always start from an empty cache and take the synchronous build path.
+    /// </summary>
+    private static ArcadeTriviaPoolCache NewTriviaPoolCache() => new(
+        Substitute.For<IServiceScopeFactory>(),
+        Substitute.For<ILogger<ArcadeTriviaPoolCache>>());
 
     public ArcadeTests()
     {
@@ -37,8 +49,9 @@ public class ArcadeTests : IDisposable
         _memoryCache = new MemoryCache(new MemoryCacheOptions());
         _serviceLogger = Substitute.For<ILogger<ArcadeService>>();
         _controllerLogger = Substitute.For<ILogger<ArcadeController>>();
+        _triviaPoolCache = NewTriviaPoolCache();
 
-        _service = new ArcadeService(_dbContext, _memoryCache, _serviceLogger);
+        _service = new ArcadeService(_dbContext, _memoryCache, _triviaPoolCache, _serviceLogger);
         _controller = new ArcadeController(_service, _controllerLogger);
 
         SeedSampleData();
@@ -1479,7 +1492,7 @@ public class ArcadeTests : IDisposable
 
         var serviceProvider = Substitute.For<IServiceProvider>();
         serviceProvider.GetService(typeof(api.PlayerRelationships.IPlayerRelationshipService)).Returns(relationships);
-        var orbitService = new ArcadeService(_dbContext, _memoryCache, _serviceLogger, serviceProvider);
+        var orbitService = new ArcadeService(_dbContext, _memoryCache, NewTriviaPoolCache(), _serviceLogger, serviceProvider);
 
         var dossier = await orbitService.GetRandomMysteryDossierAsync(orbitPlayer: "ApexSoldier");
         Assert.Contains("OrbitBuddy", dossier.CandidateOptions, StringComparer.OrdinalIgnoreCase);
