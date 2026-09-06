@@ -5,11 +5,19 @@ import MmWinStatsBar from './MmWinStatsBar.vue'
 import MmActivityHeatmap from './MmActivityHeatmap.vue'
 import MmRecentSessionsList from './MmRecentSessionsList.vue'
 import MmMapRankingsPanel from '@/components/v4/MmMapRankingsPanel.vue'
+import MmMapDossier from '@/components/v4/MmMapDossier.vue'
 
 const props = defineProps<{
   serverGuid: string
   mapName: string
   playerName?: string
+  /**
+   * bflist gameId — the mod the server runs, which is what addresses the game
+   * archives. Callers that only know the game family can leave it off; the level
+   * briefing then falls back to the family, which is the right mod for the
+   * roughly half of live servers running stock BF1942.
+   */
+  gameId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -26,6 +34,8 @@ const error = ref<string | null>(null)
 const selectedDays = ref(60)
 
 const activityPatternsForHeatmap = computed(() => detail.value?.activityPatterns ?? [])
+
+const dossierGameId = computed(() => props.gameId || detail.value?.game || null)
 
 const getGameLabel = (game: string): string => {
   switch (game.toLowerCase()) {
@@ -95,6 +105,8 @@ watch(() => [props.serverGuid, props.mapName], () => loadData(false))
       </header>
 
       <hr class="mm-rule" />
+
+      <MmMapDossier :game-id="dossierGameId" :map-name="mapName" />
 
       <section class="mm-smdp__section">
         <div class="mm-eyebrow mm-eyebrow--strong">Traffic intelligence</div>
