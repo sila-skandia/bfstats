@@ -16,3 +16,11 @@ run = "./scripts/verify.sh --skip-e2e"
 [tasks."e2e-env"]
 description = "Print the isolation slot this worktree prefers (does not lock)"
 run = "./scripts/e2e-env.sh --print"
+
+[tasks.ideas]
+description = "Show idea-miner timers and inbox"
+run = "./scripts/idea-miner/status.sh"
+
+[tasks."ideas-install"]
+description = "Install Cursor/Claude/Antigravity idea-miner timers"
+run = "./scripts/idea-miner/install.sh"

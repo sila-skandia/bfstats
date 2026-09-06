@@ -14,6 +14,7 @@ import MmBattleHighlight from './round-report/MmBattleHighlight.vue'
 import MmBattleVisualizer from './round-report/MmBattleVisualizer.vue'
 import MmPlaybackControls from './round-report/MmPlaybackControls.vue'
 import MmMapThumb from './MmMapThumb.vue'
+import { BfLoadingBar } from '@/components/common'
 import { kdClass } from '@/views/v4/mmTokens'
 
 const router = useRouter()
@@ -356,7 +357,11 @@ onUnmounted(() => {
 
 <template>
   <div class="mm-container mm-section mm-rr">
-    <div v-if="loading" class="mm-rr__state">
+    <div v-if="loading" class="mm-rr__state" style="padding: 48px 0; text-align: center;">
+      <BfLoadingBar
+        indeterminate
+        style="max-width: 500px; margin: 0 auto 24px;"
+      />
       <div v-for="i in 4" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />
     </div>
 
