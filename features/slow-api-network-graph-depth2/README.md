@@ -2,12 +2,14 @@
 
 ## Trigger
 
-Seq `bfstats/Slow as fuck (>= 10 seconds)` at 2026-09-06 09:12 UTC.
+Seq `bfstats/Slow as fuck (>= 10 seconds)` at 2026-09-06 11:07 UTC (still undeployed).
 
-- `GET /stats/relationships/players/maskitou/network-graph?depth=2&maxNodes=120`
-- 12,580 ms, HTTP 200
-- TraceId `1ff628d2393d2ddecd7dffdb8d0faf6d`
-- Applebot. Same path has been 13–56s all morning for other player names.
+- `GET /stats/relationships/players/BurgervonBickMack/network-graph?depth=2&maxNodes=120`
+- 11,923 ms, HTTP 200
+- TraceId `b068e1af71e4928490ca905a99fba006`
+- Applebot (`17.166.21.202`). Same undeployed hop explosion as 10:19 (`BFSoldierEmanuel`, 27.2s), 09:56 (`ningokboy`, 12.3s), 09:12 (`maskitou`, 12.6s), and all morning (13–56s).
+
+Same player, same second: `depth=1` returned in **8.9ms**. The cost is the unbounded 2-hop expand, not the node or SQLite.
 
 A second path the same hour:
 
