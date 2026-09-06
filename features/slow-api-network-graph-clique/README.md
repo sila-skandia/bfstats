@@ -6,11 +6,14 @@ Seq signal `bfstats/Slow as fuck` (>= 10s) keeps paging `GET /stats/relationship
 
 | Time (UTC) | Player | Elapsed | TraceId | Client |
 |---|---|---|---|---|
+| 22:14:33–43 | `AJesuitPriest` | **10.5s** | `f974ff4bfeb91b57930a0fed455880d1` | Applebot `17.166.155.199` (`is_bot=True`) |
 | 22:00:12–25 | `M43238` | **12.9s** | `112d1be1fe05c735079ab4d0be830496` | Applebot `17.166.150.211` (`is_bot=True`) |
 
-Four Seq events: request start, debug `Getting network graph for M43238 with depth 2`, finish HTTP 200, OTel GET span. The whole 12.9s is the Neo4j read — no SQLite.
+AJesuitPriest: request start, debug `Getting network graph for AJesuitPriest with depth 2`, finish HTTP 200. Whole 10.5s is the Neo4j read — no SQLite.
 
-Cache-warm immediately after: **41 nodes / 816 edges in 0.20s**. Complete clique is `41 * 40 / 2 = 820`.
+Cache-warm immediately after: **42 nodes / 858 edges in 0.22s**. Complete clique is `42 * 41 / 2 = 861`.
+
+M43238 cache-warm (from the 22:00 run): **41 nodes / 816 edges**. Complete clique is `41 * 40 / 2 = 820`.
 
 ## Same leftover, same day
 
@@ -18,6 +21,7 @@ Applebot (Safari 17.4, `17.166.*`) walks a new soldier after the 15-minute graph
 
 | Time (UTC) | Player | Elapsed | Nodes / edges (cache-warm) |
 |---|---|---|---|
+| 22:14 | AJesuitPriest | 10.5s | 42 / 858 |
 | 22:00 | M43238 | 12.9s | 41 / 816 |
 | 21:41 | Brazil_Player | 13.4s | 44 / 930 |
 | 20:47 | SuPa da soldier | 12.1s | 42 / 810 |
