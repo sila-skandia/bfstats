@@ -1,0 +1,51 @@
+name: Claude Assistant
+
+# On-demand Claude, triggered by mentioning @claude in an issue, a PR comment,
+# or a review comment. This is the follow-up path after the automatic pass in
+# claude-cursor-review.yml - e.g. "@claude have another look now that I've
+# pushed a fix".
+#
+# Previously lived at ui/.github/workflows/claude.yml, where GitHub never ran it:
+# workflows are only picked up from .github/workflows at the repository root.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude-response:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          # Subscription auth (Pro/Max). See claude-cursor-review.yml for how
+          # the CLAUDE_CODE_OAUTH_TOKEN secret is generated.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # See claude-cursor-review.yml - avoids depending on the Claude
+          # GitHub App being installed. Drop it to use the app instead.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Optional: custom trigger phrase (default: @claude)
+          # trigger_phrase: "/claude"
+          # Optional: assignee trigger for issues
+          # assignee_trigger: "claude"
+          # Optional: let bot-authored comments trigger the action
+          # allowed_bots: "dependabot[bot]"
