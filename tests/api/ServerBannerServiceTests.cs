@@ -61,7 +61,7 @@ public sealed class ServerBannerServiceTests : IDisposable
 
         Assert.NotNull(stats);
         Assert.Equal(14, stats.NumPlayers);
-        await bfListApiService.DidNotReceiveWithAnyArgs().FetchSingleServerSummaryAsync(default!, default!);
+        Assert.Null(stats.Tickets);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class ServerBannerServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolveStatsAsync_DoesNotReadRounds_UsesStoredMap()
+    public async Task ResolveStatsAsync_DoesNotReadRounds_FallsBackToStoredMap_WhenBfListHasNothing()
     {
         dbContext.Servers.Add(new GameServer
         {
@@ -120,7 +120,45 @@ public sealed class ServerBannerServiceTests : IDisposable
         Assert.NotNull(stats);
         Assert.Equal("Gazala", stats.Map);
         Assert.Null(stats.GameMode);
-        await bfListApiService.DidNotReceiveWithAnyArgs().FetchSingleServerSummaryAsync(default!, default!);
+        Assert.Null(stats.Tickets);
+    }
+
+    [Fact]
+    public async Task ResolveStatsAsync_ShowsLiveGameMode_WhenTicketsAreHiddenByUser()
+    {
+        // The "Show live team tickets" toggle only controls the scoreboard; the
+        // renderer paints GameMode in that same slot when tickets are off
+        // (ServerBannerRenderer.DrawBottomRow), so the live fetch must not be
+        // skipped just because showTickets is false.
+        dbContext.Servers.Add(new GameServer
+        {
+            Guid = "srv-5",
+            Name = "Quiet Mode",
+            Game = "bf1942",
+            Ip = "3.3.3.3",
+            Port = 14567,
+            MaxPlayers = 64,
+            CurrentNumPlayers = 8,
+            MapName = "Wake",
+            IsOnline = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        bfListApiService.FetchSingleServerSummaryAsync("bf1942", "3.3.3.3:14567")
+            .Returns(new ServerSummary
+            {
+                MapName = "Iwo Jima",
+                GameType = "gpm_cq",
+                Tickets1 = 200,
+                Tickets2 = 150
+            });
+
+        var stats = await service.ResolveStatsAsync("Quiet Mode", ServerBannerStyle.Reticle, showTickets: false, CancellationToken.None);
+
+        Assert.NotNull(stats);
+        Assert.Equal("Iwo Jima", stats.Map);
+        Assert.Equal("gpm_cq", stats.GameMode);
+        Assert.Null(stats.Tickets);
     }
 
     [Fact]
