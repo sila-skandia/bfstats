@@ -44,4 +44,16 @@ public sealed class NetworkGraphPairBuilderTests
         Assert.Equal(105, allyPairs.Count);
         Assert.True(allPairs.Count > allyPairs.Count * 10);
     }
+
+    [Fact]
+    public void BuildUniquePairs_FiftySevenNodes_MatchesLittleCarmineCartesian()
+    {
+        var allNodes = Enumerable.Range(0, 57).Select(i => $"n{i:D2}").ToList();
+
+        var allPairs = NetworkGraphPairBuilder.BuildUniquePairs(allNodes);
+        var allyPairs = NetworkGraphPairBuilder.BuildUniquePairs(allNodes.Take(15).ToList());
+
+        Assert.Equal(1596, allPairs.Count);
+        Assert.Equal(105, allyPairs.Count);
+    }
 }
