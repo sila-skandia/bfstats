@@ -158,11 +158,28 @@ const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-wi
 const dossierOpen = ref(false)
 const dossierGameId = ref<string | null>(null)
 const dossierMapName = ref<string | null>(null)
+const dossierLiveTickets = ref<{ tickets1?: number | null; tickets2?: number | null } | null>(null)
+const dossierIsLive = ref(false)
 
-function openDossier(gameId: string | null | undefined, mapName: string | null | undefined) {
+function openDossier(gameId: string | null | undefined, mapName: string | null | undefined, server?: ServerSummary | null) {
   if (!mapName) return
   dossierGameId.value = gameId ?? null
   dossierMapName.value = mapName
+  if (server) {
+    const t1 = server.tickets1
+    const t2 = server.tickets2
+    if (t1 != null && t2 != null && (t1 > 0 || t2 > 0)) {
+      dossierLiveTickets.value = { tickets1: t1, tickets2: t2 }
+    } else if (server.teams && server.teams.length >= 2 && (server.teams[0].tickets > 0 || server.teams[1].tickets > 0)) {
+      dossierLiveTickets.value = { tickets1: server.teams[0].tickets, tickets2: server.teams[1].tickets }
+    } else {
+      dossierLiveTickets.value = null
+    }
+    dossierIsLive.value = true
+  } else {
+    dossierLiveTickets.value = null
+    dossierIsLive.value = false
+  }
   dossierOpen.value = true
 }
 let narrowMql: MediaQueryList | null = null
@@ -1335,7 +1352,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                           class="lb-map-btn"
                           data-testid="open-map-dossier"
                           :title="`Level briefing for ${s.mapName}`"
-                          @click.stop="openDossier(s.gameId, s.mapName)"
+                          @click.stop="openDossier(s.gameId, s.mapName, s)"
                         >
                           <MmMapThumb :game-id="s.gameId" :map-name="s.mapName" :width="44" />
                           <span class="lb-text-cell lb-map-name">{{ s.mapName }}</span>
@@ -1506,6 +1523,8 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
     v-model="dossierOpen"
     :game-id="dossierGameId"
     :map-name="dossierMapName"
+    :live-tickets="dossierLiveTickets"
+    :is-live="dossierIsLive"
   />
 </template>
 

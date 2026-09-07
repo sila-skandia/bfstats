@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import MmBaseModal from '@/components/v4/MmBaseModal.vue'
-import MmMapDossier from '@/components/v4/MmMapDossier.vue'
+import MmMapDossier, { type DossierLiveTickets } from '@/components/v4/MmMapDossier.vue'
 
 /**
  * The level briefing for a map, opened from wherever a map is named — a row on the
@@ -16,8 +16,12 @@ const props = withDefaults(
     /** bflist gameId — the mod folder, e.g. "bf1942", "dc_final", "fhsw". */
     gameId?: string | null
     mapName?: string | null
+    /** Live tickets from the server currently running this map. */
+    liveTickets?: DossierLiveTickets | null
+    /** Whether this briefing is opened for a live server round. */
+    isLive?: boolean
   }>(),
-  { gameId: null, mapName: null },
+  { gameId: null, mapName: null, liveTickets: null, isLive: false },
 )
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
@@ -45,6 +49,8 @@ const subtitle = computed(() =>
       :key="`${gameId}/${mapName}`"
       :game-id="gameId"
       :map-name="mapName"
+      :live-tickets="liveTickets"
+      :is-live="isLive"
       show-placeholders
       hide-heading
     />

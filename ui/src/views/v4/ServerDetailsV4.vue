@@ -191,6 +191,19 @@ const teamTickets = computed<{ label: string; tickets: number }[]>(() => {
   }
   return []
 })
+
+const liveMapTickets = computed(() => {
+  const t1 = liveServer.value?.tickets1
+  const t2 = liveServer.value?.tickets2
+  if (t1 != null && t2 != null && (t1 > 0 || t2 > 0)) {
+    return { tickets1: t1, tickets2: t2 }
+  }
+  const teams = liveServer.value?.teams ?? []
+  if (teams.length >= 2 && (teams[0].tickets > 0 || teams[1].tickets > 0)) {
+    return { tickets1: teams[0].tickets, tickets2: teams[1].tickets }
+  }
+  return null
+})
 // Regional-indicator flag emoji from the ISO country code.
 const countryFlag = computed(() => {
   const cc = details.value?.countryCode
@@ -1031,7 +1044,13 @@ watch(activeTab, (t) => {
       <!-- always-visible: comments -->
       <MmServerComments :server-name="serverName" />
 
-    <MmMapDossierModal v-model="dossierOpen" :game-id="mapGameId" :map-name="liveMap" />
+    <MmMapDossierModal
+      v-model="dossierOpen"
+      :game-id="mapGameId"
+      :map-name="liveMap"
+      :live-tickets="liveMapTickets"
+      :is-live="true"
+    />
 
     <MmForecastModal
       v-model="showForecast"
