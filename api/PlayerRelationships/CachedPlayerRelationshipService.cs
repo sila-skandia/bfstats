@@ -122,7 +122,7 @@ public class CachedPlayerRelationshipService(
         }
 
         var result = await innerService.GetPlayerNetworkGraphAsync(playerName, depth, maxNodes, cancellationToken);
-        await cacheService.SetAsync(cacheKey, result, TimeSpan.FromMinutes(15), cancellationToken);
+        await cacheService.SetAsync(cacheKey, result, TimeSpan.FromHours(1), cancellationToken);
         
         return result;
     }
