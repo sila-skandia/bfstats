@@ -1138,8 +1138,12 @@ public class DataExplorerService(
         sqlParams.Add(Math.Max(1, minRounds));
         paramOffset++;
 
-        // Count total matching players (for pagination)
-        // Must use same HAVING filter as data query to get accurate count
+        // Count total matching players (for pagination).
+        // Must use the same HAVING filter as the data query to get an accurate count.
+        // Driven by IX_PlayerMapStats_MapRanking_Covering — MapName/ServerGuid seek,
+        // PlayerName GROUP BY, and every SUM column including TotalRounds, so this
+        // stays off the table. Production COUNT without those extra covering columns
+        // was 7,261ms (TraceId 812b686b6cf5dbe3aad2e0ccbf300311).
         var countSql = $@"
             SELECT COUNT(*) as Value
             FROM (
@@ -1232,7 +1236,7 @@ public class DataExplorerService(
             .ToListAsync();
 
         var rankingDtos = rankings.Select(r => new MapPlayerRankingDto(
-            Rank: (int)r.Rank + offset, // Adjust rank for pagination
+            Rank: (int)r.Rank,
             PlayerName: r.PlayerName,
             TotalScore: r.TotalScore,
             TotalKills: r.TotalKills,
