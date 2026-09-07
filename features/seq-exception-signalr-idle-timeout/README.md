@@ -23,3 +23,11 @@ page.
 Trace `091e527be2a123a08476a3cfd77694e8`: connect 13:19:22, disconnect
 13:19:52 (exactly 30s). Hub cleaned the Redis connection mapping. Not a
 site outage.
+
+## 2026-09-07 07:05 UTC page
+
+Trace `26a62b343270d474186c08fff93328b5`: connect 07:04:39Z, disconnect
+07:05:25Z (`ClientTimeoutInterval`). `RemoveUserConnection` succeeded;
+`GET /hub` finished OK. Live site was healthy (homepage 0.13s, 92 BF1942
+servers `lastUpdated` 07:07:16Z). Same idle-client class; still on main
+until this lands.
