@@ -163,9 +163,20 @@ that used to work starts failing.
 
 ## Status
 
-Setup is complete and the workflow is on `main`. Verified working end to end
-except for the Claude credential itself: run 34106128355 exercised trigger,
-checkout and dispatch correctly and failed only at authentication.
+Working end to end as of 2026-09-07. Run 34106870476 reviewed PR #19 and
+posted an APPROVE verdict.
+
+That run confirmed the prompt does what it is meant to, not just that the
+plumbing works. The review picked one of the three outcomes and acted on it,
+stated up front that tests were not run, checked specifically for
+`SqliteConnectionInterceptor` changes, new pragmas and memory-sized settings,
+and answered the recurring-pattern-versus-one-off question by citing a sibling
+`cursor/*` branch and the earlier covering-index migration. It also caught a
+real correctness bug the alert had nothing to do with: `Rank + offset` double
+counted, because `ROW_NUMBER()` is evaluated before `LIMIT`/`OFFSET`.
+
+Getting there took two fixes, both recorded above: the workflow was in the
+wrong directory, and the first `CLAUDE_CODE_OAUTH_TOKEN` was invalid.
 
 ## Verification
 
