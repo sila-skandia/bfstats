@@ -21,6 +21,13 @@ import { isKnownMissing, mapImageKey, mapImageUrl, rememberMissing } from '@/uti
  * "Allied". Community maps ship no level archive, so rendering nothing at all is the
  * ordinary outcome rather than an error.
  */
+export interface DossierLiveTickets {
+  tickets1?: number | null
+  tickets2?: number | null
+  team1?: number | null
+  team2?: number | null
+}
+
 const props = withDefaults(
   defineProps<{
     /** bflist gameId — the mod folder, e.g. "bf1942", "dc_final", "fhsw". */
@@ -35,9 +42,29 @@ const props = withDefaults(
     showPlaceholders?: boolean
     /** Drop the internal heading where the surrounding surface already names this. */
     hideHeading?: boolean
+    /**
+     * Live tickets for the current round on this server. When provided, live ticket counts
+     * are shown. When omitted, default ticket counts from level files are hidden
+     * because servers almost certainly override them.
+     */
+    liveTickets?: DossierLiveTickets | null
+    /** True when this briefing is opened in the context of an active live server match. */
+    isLive?: boolean
   }>(),
-  { gameId: null, mapName: null, showPlaceholders: false, hideHeading: false },
+  { gameId: null, mapName: null, showPlaceholders: false, hideHeading: false, liveTickets: null, isLive: false },
 )
+
+function liveTicketsFor(teamIndex: number): number | null {
+  if (!props.liveTickets) return null
+  const t1 = props.liveTickets.tickets1 ?? props.liveTickets.team1 ?? null
+  const t2 = props.liveTickets.tickets2 ?? props.liveTickets.team2 ?? null
+  if (t1 == null && t2 == null) return null
+  if ((t1 ?? 0) <= 0 && (t2 ?? 0) <= 0) return null
+
+  if (teamIndex === 1) return t1 != null && t1 >= 0 ? t1 : null
+  if (teamIndex === 2) return t2 != null && t2 >= 0 ? t2 : null
+  return null
+}
 
 const dossier = ref<MapDossier | null>(null)
 const loading = ref(false)
@@ -202,9 +229,12 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
           </div>
         </div>
 
-        <div v-if="team.tickets != null" class="mm-dossier__tickets">
-          <span class="mm-headline-rank">{{ team.tickets }}</span>
-          <span class="mm-dossier__tickets-unit">tickets</span>
+        <div v-if="liveTicketsFor(team.index) != null" class="mm-dossier__tickets">
+          <span class="mm-headline-rank">{{ liveTicketsFor(team.index) }}</span>
+          <span class="mm-dossier__tickets-unit">
+            <span class="mm-chip__dot" aria-hidden="true" />
+            live tickets
+          </span>
         </div>
 
         <div v-if="team.ticketLossPerMin != null" class="mm-dossier__bleed">
@@ -212,8 +242,15 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
         </div>
 
         <ul v-if="team.kits.length" class="mm-dossier__kits">
-          <li v-for="kit in team.kits" :key="kit.template" :title="kit.name">
-            <!-- The level's own kit art, resolved through the mod's content chain. -->
+          <li
+            v-for="kit in team.kits"
+            :key="kit.template"
+            class="mm-dossier__kit-item"
+            :class="{ 'mm-dossier__kit-item--has-art': Boolean(kit.iconPath || kit.role) }"
+            tabindex="0"
+            :aria-label="kit.name"
+          >
+            <!-- Thumbnail in the flow: kept steady so layout never shifts or collapses -->
             <img
               v-if="kit.iconPath"
               class="mm-dossier__kit-img"
@@ -231,6 +268,30 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
               variant="icon-only"
             />
             <span v-else class="mm-dossier__kit-text">{{ kit.name }}</span>
+
+            <!-- Enlarged hover preview: scales proportionally with source image dimensions -->
+            <div
+              v-if="kit.iconPath || kit.role"
+              class="mm-dossier__kit-popover"
+              aria-hidden="true"
+            >
+              <div class="mm-dossier__kit-popover-name">{{ kit.name }}</div>
+              <img
+                v-if="kit.iconPath"
+                class="mm-dossier__kit-popover-img"
+                :src="hudIconUrl(kit.iconPath)!"
+                :alt="kit.name"
+                loading="lazy"
+                decoding="async"
+              >
+              <BfClassBadge
+                v-else-if="kit.role"
+                :class-type="kit.role"
+                :faction="sideOf(team) === 'axis' ? 'axis' : 'allies'"
+                :size="56"
+                variant="icon-only"
+              />
+            </div>
           </li>
         </ul>
       </article>
@@ -244,6 +305,16 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
       on the clock: {{ bleedStory.rate }} tickets a minute against
       {{ bleedStory.other }} once the flags go the other way.
     </p>
+
+    <div v-if="isLive" class="mm-dossier__live-notice">
+      <span class="mm-chip mm-chip--live">
+        <span class="mm-chip__dot" />
+        Live match
+      </span>
+      <span class="mm-dossier__live-notice-text">
+        Showing map defaults. Server configuration may override spawn points and arsenal.
+      </span>
+    </div>
 
     <!-- The ground: flags stamped onto the in-game minimap -->
     <div
@@ -303,7 +374,10 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
 
     <!-- Arsenal: what each side can put in the field -->
     <div v-if="dossier.arsenal.length" class="mm-dossier__arsenal">
-      <div class="mm-eyebrow mm-eyebrow--strong">Arsenal</div>
+      <div class="mm-dossier__section-header">
+        <div class="mm-eyebrow mm-eyebrow--strong">Arsenal</div>
+        <div class="mm-dossier__section-hint">Default loadout · servers can override spawns</div>
+      </div>
       <div class="mm-dossier__arsenal-grid">
         <section
           v-for="team in teams"
@@ -384,6 +458,25 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
   color: var(--mm-ink-faint);
 }
 
+.mm-dossier__live-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--mm-ink) 3%, var(--mm-bg-soft));
+  border: 1px solid var(--mm-rule);
+  border-left: 3px solid var(--mm-accent);
+  border-radius: 2px;
+}
+
+.mm-dossier__live-notice-text {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  color: var(--mm-ink-muted);
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+}
+
 /* ---------- order of battle ---------- */
 
 .mm-dossier__battle {
@@ -450,11 +543,30 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
 .mm-dossier__army--right .mm-dossier__tickets { justify-content: flex-end; }
 
 .mm-dossier__tickets-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--mm-font-mono);
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--mm-ink-muted);
+}
+
+.mm-dossier__section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mm-dossier__section-hint {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  color: var(--mm-ink-faint);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .mm-dossier__bleed {
@@ -464,21 +576,50 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
   color: var(--mm-ink-muted);
 }
 
-.mm-dossier__kits :deep(.bf-class-img),
-.mm-dossier__kit-img {
-  transition: transform 140ms ease;
+.mm-dossier__kits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.mm-dossier__kits li:hover :deep(.bf-class-img),
-.mm-dossier__kits li:hover .mm-dossier__kit-img {
-  transform: scale(2.2);
+.mm-dossier__army--right .mm-dossier__kits { flex-direction: row-reverse; }
+
+.mm-dossier__kit-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mm-dossier__kit-item--has-art {
+  min-width: 28px;
+  height: 28px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--mm-ink) 4%, transparent);
+  cursor: default;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.mm-dossier__kit-item--has-art:hover,
+.mm-dossier__kit-item--has-art:focus-visible {
+  border-color: var(--mm-rule-strong);
+  background: color-mix(in srgb, var(--mm-ink) 9%, transparent);
+  z-index: 10;
+  outline: none;
 }
 
 .mm-dossier__kit-img {
   display: block;
-  width: 26px;
-  height: 26px;
+  height: 22px;
+  width: auto;
+  max-width: 44px;
   object-fit: contain;
+  opacity: 0.92;
 }
 
 /* A kit the game draws nothing for still deserves its name. */
@@ -494,21 +635,68 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
   white-space: nowrap;
 }
 
-.mm-dossier__kits li {
-  position: relative;
-}
-
-.mm-dossier__kits li:hover { z-index: 5; }
-
-.mm-dossier__kits {
+/* Hover preview: promotes the kit art at a scale matching its natural resolution,
+   from 64x64 icons to full 256x64 and 512x128 weapon loadout banners. */
+.mm-dossier__kit-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
+  padding: 8px 10px;
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 20;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 48px));
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
 }
 
-.mm-dossier__army--right .mm-dossier__kits { flex-direction: row-reverse; }
+.mm-dossier__army--right .mm-dossier__kit-popover {
+  left: auto;
+  right: 0;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.mm-dossier__kit-item:hover .mm-dossier__kit-popover,
+.mm-dossier__kit-item:focus-visible .mm-dossier__kit-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.mm-dossier__kit-popover-name {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.mm-dossier__kit-popover-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(400px, calc(100vw - 72px));
+  max-height: 110px;
+  min-width: 56px;
+  min-height: 48px;
+  object-fit: contain;
+  opacity: 1;
+}
 
 /* Centre rule with the matchup marker sitting on it. */
 .mm-dossier__versus {
@@ -830,6 +1018,13 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
     flex-direction: row;
   }
 
+  .mm-dossier__army--right .mm-dossier__kit-popover {
+    left: 0;
+    right: auto;
+    align-items: flex-start;
+    text-align: left;
+  }
+
   /* The centre rule only reads as a divide when the armies sit side by side. */
   .mm-dossier__versus { display: none; }
 
@@ -841,8 +1036,8 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
 @media (prefers-reduced-motion: reduce) {
   .mm-dossier__flag,
   .mm-dossier__flag-label { transition: none; }
-  .mm-dossier__kits :deep(.bf-class-img),
-  .mm-dossier__kit-img { transition: none; }
+  .mm-dossier__kit-item,
+  .mm-dossier__kit-popover { transition: none; }
 }
 
 /* Coarse pointers have no hover state to enter, and a tap that enlarges an icon in
@@ -859,7 +1054,6 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
     border: 0;
   }
 
-  .mm-dossier__kits li:hover :deep(.bf-class-img),
-  .mm-dossier__kits li:hover .mm-dossier__kit-img { transform: none; }
+  .mm-dossier__kit-popover { display: none; }
 }
 </style>
