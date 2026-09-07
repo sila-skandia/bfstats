@@ -62,11 +62,11 @@ public sealed class ServerBannerService(
             return null;
         }
 
-        // Map/mode come from Servers + the BFList snapshot already fetched for tickets.
-        // Touching Rounds on this path contends with the 30s collector on the volume.
-        var live = showTickets
-            ? await TryFetchLiveSummaryAsync(server.Game, server.Ip, server.Port)
-            : null;
+        // Map/mode come from Servers + a live BFList snapshot - fetched regardless of
+        // showTickets, since the renderer shows GameMode in the tickets' slot when the
+        // scoreboard is off. Touching Rounds on this path contends with the 30s
+        // collector on the volume, so it's never queried here.
+        var live = await TryFetchLiveSummaryAsync(server.Game, server.Ip, server.Port);
 
         var map = FirstNonEmpty(live?.MapName, server.CurrentMap, server.MapName);
         var gameMode = FirstNonEmpty(live?.GameType, live?.GameMode);

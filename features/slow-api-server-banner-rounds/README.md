@@ -29,10 +29,16 @@ The 12:41 request overlapped `StatsCollection.Cycle` (finished 12:41:49). Other 
 Stop reading `Rounds` on the banner path.
 
 - Map: live BFList `MapName`, else `Servers.CurrentMap`, else `Servers.MapName`
-- Game mode: BFList `GameType` / `GameMode` (only when tickets are requested, which already hits BFList)
-- Tickets: unchanged, same BFList snapshot
+- Game mode: BFList `GameType` / `GameMode`, fetched unconditionally
+- Tickets: unchanged, same BFList snapshot, only built when `tickets=true`
 
-`tickets=false` still skips BFList (existing contract) and omits game mode.
+The live BFList fetch is no longer gated on `tickets`: the renderer paints
+`GameMode` in the same bottom-row slot as the ticket scoreboard when tickets
+are off (`ServerBannerRenderer.DrawBottomRow`), so skipping the fetch for
+`tickets=false` silently dropped the game-mode label the "Show live team
+tickets" toggle is supposed to leave alone. The fetch is a cached BFList call,
+not `Rounds`, so calling it unconditionally doesn't reintroduce the
+regression this fix is for.
 
 ## Not this alert
 
