@@ -385,27 +385,29 @@ onUnmounted(() => {
 
       <!-- Header: map name + server + scoreboard -->
       <header class="mm-rr__head">
-        <MmMapThumb
-          class="mm-rr__map"
-          :game-id="roundReport.round.gameId"
-          :map-name="roundReport.round.mapName"
-          kind="minimap"
-          :width="112"
-        />
-        <div class="mm-rr__head-text">
-          <div class="mm-eyebrow mm-eyebrow--strong">{{ roundReport.round.gameType }}</div>
-          <h1 class="mm-display mm-rr__title">{{ roundReport.round.mapName }}</h1>
-          <div class="mm-meta-row" style="margin-top: 8px">
-            <a class="mm-meta-row__strong mm-rr__server-link" @click="navigateToServer(roundReport.round.serverName)">
-              {{ $pn(roundReport.round.serverName) }}
-            </a>
-            <span class="mm-meta-row__sep">·</span>
-            <span>{{ roundReport.round.totalParticipants }} players</span>
-            <span v-if="roundReport.round.isActive" class="mm-meta-row__sep">·</span>
-            <span v-if="roundReport.round.isActive" class="mm-chip" style="margin-left: 4px">
-              <span class="mm-chip__dot" />
-              Live
-            </span>
+        <div class="mm-rr__head-main">
+          <MmMapThumb
+            class="mm-rr__map"
+            :game-id="roundReport.round.gameId"
+            :map-name="roundReport.round.mapName"
+            kind="minimap"
+            :width="112"
+          />
+          <div class="mm-rr__head-text">
+            <div class="mm-eyebrow mm-eyebrow--strong">{{ roundReport.round.gameType }}</div>
+            <h1 class="mm-display mm-rr__title">{{ roundReport.round.mapName }}</h1>
+            <div class="mm-meta-row" style="margin-top: 8px">
+              <a class="mm-meta-row__strong mm-rr__server-link" @click="navigateToServer(roundReport.round.serverName)">
+                {{ $pn(roundReport.round.serverName) }}
+              </a>
+              <span class="mm-meta-row__sep">·</span>
+              <span>{{ roundReport.round.totalParticipants }} players</span>
+              <span v-if="roundReport.round.isActive" class="mm-meta-row__sep">·</span>
+              <span v-if="roundReport.round.isActive" class="mm-chip" style="margin-left: 4px">
+                <span class="mm-chip__dot" />
+                Live
+              </span>
+            </div>
           </div>
         </div>
 
@@ -615,10 +617,17 @@ onUnmounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  flex-wrap: wrap;
 }
 
-.mm-rr__head-text { min-width: 0; flex: 1 1 260px; }
+.mm-rr__head-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mm-rr__head-text { min-width: 0; flex: 1 1 auto; }
 .mm-rr__title { margin: 4px 0 0; }
 
 /* The minimap sits ahead of the title, not in the ticket group, so the header
@@ -626,6 +635,7 @@ onUnmounted(() => {
 .mm-rr__map { margin-top: 2px; }
 
 @media (max-width: 640px) {
+  .mm-rr__head-main { gap: 14px; }
   .mm-rr__map { width: 72px !important; height: 72px !important; }
 }
 
@@ -786,6 +796,9 @@ onUnmounted(() => {
 
 @media (max-width: 880px) {
   .mm-rr__dashboard { grid-template-columns: 1fr; }
-  .mm-rr__head { flex-direction: column; }
+  .mm-rr__head {
+    flex-direction: column;
+    gap: 16px;
+  }
 }
 </style>
