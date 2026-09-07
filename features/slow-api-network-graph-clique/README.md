@@ -1,19 +1,24 @@
 # Slow API: player network-graph clique seeks
 
-Seq signal `bfstats/Slow as fuck` (>= 10s) fired at 03:13 UTC and 01:32 UTC on 2026-09-07.
+Seq signal `bfstats/Slow as fuck` (>= 10s) fired at 03:56 UTC, 03:13 UTC and 01:32 UTC on 2026-09-07.
 
 ## What paged
 
 | Time (UTC) | Path | Elapsed | Client |
 |---|---|---|---|
+| 03:56:58 | `GET /stats/relationships/players/conquer.mlody/network-graph?depth=2&maxNodes=120` | **36.9s** | Applebot |
 | 03:13:14 | `GET /stats/relationships/players/little CARMINE/network-graph?depth=2&maxNodes=120` | **56.5s** | Applebot |
 | 01:32:14 | `GET /stats/relationships/players/Childhood Memory/network-graph?depth=2&maxNodes=120` | **19.5s** | Applebot |
 | 00:32:18 | `GET /stats/relationships/players/Sweet Potatoes!/network-graph?depth=2&maxNodes=120` | **12.0s** | Applebot |
 | 00:01:11 | `GET /stats/relationships/players/Emmanuel Macron/network-graph?depth=2&maxNodes=120` | **18.7s** | Chrome |
 
+Trace for the 03:56 page: `c33e658d67e406d039b05c8f3b2b8fdb`. Request start 03:56:22, `Getting network graph` (cache miss), finish 03:56:58 HTTP 200.
+
+A cache-warm repeat of conquer.mlody after the miss was **0.19s** with **36 nodes / 613 edges** (C(36,2)=**630** seeks; 613/630 is a near-clique). The site was otherwise healthy (homepage 0.19s, 95 live servers `lastUpdated` 03:59:19Z, players 0.60s).
+
 Trace for the 03:13 page: `3871322047ff33cab79009e1fd3bf5b6`. Request start 03:12:18, `Getting network graph` (cache miss), finish 03:13:14 HTTP 200.
 
-A cache-warm repeat of little CARMINE after the miss was **0.20s** with **57 nodes / 1097 edges**. The site was otherwise healthy (homepage 0.16s, 95 live servers `lastUpdated` 03:15:16Z, players 1.14s).
+A cache-warm repeat of little CARMINE after the miss was **0.20s** with **57 nodes / 1097 edges**.
 
 Every `ElapsedMilliseconds >= 10000` event since 18:21 UTC 09-06 is this endpoint at `depth=2`, except leftover `/stats/rounds?serverName=` scans that belong on `dad2`.
 
@@ -28,7 +33,7 @@ WITH a, b WHERE a < b
 MATCH (p1:Player {name: a})-[r:PLAYED_WITH]-(p2:Player {name: b})
 ```
 
-`$names` is **every discovered node** (center + 15 allies + FoF). Childhood Memory is 53 names: **1,378** Neo4j seeks. little CARMINE is 57 names: **1,596** seeks, **56.5s** cold. Those players form a near-clique (1,097 edges / 1,596 possible on little CARMINE; 1,237 / 1,378 on Childhood Memory), so most seeks hit a relationship. Neo4j lives on the same network-attached volume as SQLite (512Mi pagecache). Cold, that cartesian is 10–56s. Warm, the same payload is 0.2s.
+`$names` is **every discovered node** (center + 15 allies + FoF). conquer.mlody is 36 names: **630** seeks, **36.9s** cold. Childhood Memory is 53 names: **1,378** Neo4j seeks. little CARMINE is 57 names: **1,596** seeks, **56.5s** cold. Those players form a near-clique (613 edges / 630 possible on conquer.mlody; 1,097 / 1,596 on little CARMINE; 1,237 / 1,378 on Childhood Memory), so most seeks hit a relationship. Neo4j lives on the same network-attached volume as SQLite (512Mi pagecache). Cold, that cartesian is 10–56s. Warm, the same payload is 0.2s.
 
 ## Fix
 
