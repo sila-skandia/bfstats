@@ -733,6 +733,13 @@ test.describe('Leaderboard Page', () => {
   })
 })
 
+/**
+ * The narrow layout renders a compact table (.lbm-table), not the card list the
+ * wide layout falls back to. One helper so the three mobile specs agree on it.
+ */
+const ROWS = (page: import('@playwright/test').Page) =>
+  page.locator('.lbm-table tbody tr.lbm-tr')
+
 test.describe('Leaderboard Page — Mobile', () => {
   test.use({ viewport: { width: 393, height: 851 } })
 
@@ -792,9 +799,12 @@ test.describe('Leaderboard Page — Mobile', () => {
   test('shows stacked filter chips that open full-screen sheets, not the desktop table', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
-    const periodBtn = page.locator('[data-lbmenu="period"] .lb-server-dropdown-btn')
-    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
-    const mapBtn = page.locator('[data-lbmenu="map"] .lb-server-dropdown-btn')
+    // The narrow layout has its own filter strip. The [data-lbmenu] controls
+    // these once targeted live inside .lb-filter-wrapper, which is desktop-only.
+    const strip = page.locator('.lbm-filter-strip')
+    const periodBtn = strip.getByRole('button', { name: /^Period/ })
+    const serverBtn = strip.getByRole('button', { name: /^Server/ })
+    const mapBtn = strip.getByRole('button', { name: /^Map/ })
 
     await expect(periodBtn).toBeVisible()
     await expect(serverBtn).toBeVisible()
@@ -804,7 +814,7 @@ test.describe('Leaderboard Page — Mobile', () => {
     await expect(page.locator('.lb-btn', { hasText: /COLUMNS/i })).toBeHidden()
     await expect(page.locator('.lb-btn', { hasText: /^CSV$/ })).toBeHidden()
 
-    const cards = page.locator('.lb-mobile-list .mm-session-row')
+    const cards = ROWS(page)
     await expect(cards).toHaveCount(4)
     await expect(cards.first()).toContainText('Rommel_44')
     await expect(cards.first()).toContainText('3.00')
@@ -843,8 +853,9 @@ test.describe('Leaderboard Page — Mobile', () => {
   test('lets you clear a map after a server filter yields no results', async ({ page }) => {
     await page.goto('/v4/leaderboard')
 
-    const serverBtn = page.locator('[data-lbmenu="server"] .lb-server-dropdown-btn')
-    const mapBtn = page.locator('[data-lbmenu="map"] .lb-server-dropdown-btn')
+    const strip = page.locator('.lbm-filter-strip')
+    const serverBtn = strip.getByRole('button', { name: /^Server/ })
+    const mapBtn = strip.getByRole('button', { name: /^Map/ })
     const sheet = page.locator('.lb-server-popover--sheet')
 
     await mapBtn.click()
@@ -852,7 +863,7 @@ test.describe('Leaderboard Page — Mobile', () => {
     await sheet.locator('.lb-server-item', { hasText: /Bocage/i }).click()
     await sheet.locator('.lb-sheet-done').click()
     await expect(sheet).toBeHidden()
-    await expect(page.locator('.lb-mobile-list .mm-session-row')).toHaveCount(2)
+    await expect(ROWS(page)).toHaveCount(2)
 
     await serverBtn.click()
     await expect(sheet).toBeVisible()
@@ -860,11 +871,18 @@ test.describe('Leaderboard Page — Mobile', () => {
     await sheet.locator('.lb-sheet-done').click()
 
     await expect(page.locator('.lb-state-box')).toContainText('NO PLAYERS MATCH')
-    await expect(page.locator('[data-lbmenu="map"] .lb-server-clear-btn')).toBeVisible()
-    await expect(page.locator('.lb-active-filters .lb-empty-chip', { hasText: /Bocage/i })).toBeVisible()
+    // The pill keeps advertising the stranded filter, which is the affordance
+    // that tells you what to undo.
+    await expect(mapBtn).toContainText(/Bocage/i)
 
-    await page.locator('[data-lbmenu="map"] .lb-server-clear-btn').click()
-    await expect(page.locator('.lb-mobile-list .mm-session-row')).toHaveCount(2)
-    await expect(page.locator('.lb-mobile-list .mm-session-row').first()).toContainText('Patton_USA')
+    // Clearing happens inside the sheet on narrow screens — .lb-server-clear-btn
+    // sits next to the desktop dropdown and is not reachable here.
+    await mapBtn.click()
+    await expect(sheet).toBeVisible()
+    await sheet.locator('.lb-sheet-clear').click()
+    await expect(sheet).toBeHidden()
+
+    await expect(ROWS(page)).toHaveCount(2)
+    await expect(ROWS(page).first()).toContainText('Patton_USA')
   })
 })
