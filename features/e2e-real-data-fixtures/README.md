@@ -318,7 +318,7 @@ not fixture-related:
 
 ## Running in CI
 
-`.github/workflows/e2e.yml` runs the same `./scripts/verify.sh` developers run,
+`.github/workflows/claude-cursor-review.yml` runs the same `./scripts/verify.sh` developers run,
 so a CI failure reproduces locally with one command.
 
 The repository is public, which cuts both ways. Standard GitHub-hosted runners
