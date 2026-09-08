@@ -11,6 +11,14 @@ checkouts can verify at once without sharing `playertracker.db` or colliding
 on `:9222` / `:5173`. See `features/isolated-e2e-worktrees/README.md`.
 Interactive `dotnet run` / `npm run dev` is unchanged.
 
+If `~/.cache/bfstats-e2e/template.db` exists, every run starts from a copy of
+that real-data fixture (real players, servers and aggregates) instead of the
+7-player synthetic seed — `E2eDatabaseSeed` still runs on top, so keep asserting
+against its fixed handles rather than real player names. `E2E_NEO4J=1` also gives
+the run a private graph on `7690+slot`. Build both artifacts with
+`scripts/make-e2e-fixture.sh` then `scripts/make-e2e-graph.sh`; see
+`features/e2e-real-data-fixtures/README.md`.
+
 ### Feature to Test Mapping
 - **Players/Search**: `e2e/player-search.spec.ts`, `e2e/players-extended.spec.ts`
 - **Servers/Landing**: `e2e/landing.spec.ts`, `e2e/server-details.spec.ts`

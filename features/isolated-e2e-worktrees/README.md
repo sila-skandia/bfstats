@@ -98,6 +98,12 @@ required for the current suite: landing/server-details talk to bflist, the
 leaderboard and trend inspector mock their APIs, and tournament tests create
 their own rows.
 
+That follow-up has since been spiked out in
+`features/e2e-real-data-fixtures/` — a 347 MB real-data SQLite fixture plus a
+39 MB per-slot Neo4j dump, with measurements. `VACUUM INTO` turned out to be the
+wrong mechanism (it cannot subset `PlayerObservations`, which is ~78% of the
+file); the spike builds a schema-only target and `INSERT … SELECT`s into it.
+
 ## Escape hatches
 
 | Env | Effect |

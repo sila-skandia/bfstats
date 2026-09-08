@@ -25,7 +25,13 @@ const allBrowsers = !!process.env.PW_ALL_BROWSERS;
  * Browsers all talk to one dev server and one SQLite-backed API, so this trades
  * off against backend contention rather than CPU. Override with PW_WORKERS.
  */
-const workers = process.env.PW_WORKERS ?? '50%';
+// Playwright accepts a number or a percentage string, so a bare "4" from the
+// environment has to be coerced — passed through as a string it fails config
+// validation outright, which made the documented PW_WORKERS override unusable.
+const workersEnv = process.env.PW_WORKERS;
+const workers = workersEnv
+  ? (/^\d+$/.test(workersEnv) ? Number(workersEnv) : workersEnv)
+  : '50%';
 
 export default defineConfig({
   testDir: './e2e',
