@@ -1046,7 +1046,7 @@ try
                 // worktrees often carry pending model changes that make MigrateAsync
                 // refuse to run, and the file is discarded after the suite anyway.
                 //
-                // A fixture carved from a production backup (scripts/make-e2e-fixture.sh)
+                // A fixture carved from a production backup (the bfstats-backup-both runbook)
                 // already carries production's schema and its __EFMigrationsHistory, so
                 // it wants the migration chain to bring it up to this branch's head.
                 // EnsureCreated would silently no-op on it and leave columns missing.
