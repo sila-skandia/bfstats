@@ -70,14 +70,24 @@ public class GamificationBackgroundService(IServiceProvider services, ILogger<Ga
                     "Gamification cycle skipped due to database lock ({SqliteError})",
                     SqliteBusy.Describe(ex));
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 activity?.SetStatus(ActivityStatusCode.Error, $"Gamification cycle failed: {ex.Message}");
                 logger.LogError(ex, "Error during gamification processing cycle");
             }
 
-            // Wait 5 minutes before next processing
-            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
 
         logger.LogInformation("Gamification background service stopped");
