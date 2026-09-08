@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -1023,13 +1024,33 @@ try
         {
             if (string.Equals(Environment.GetEnvironmentVariable("E2E_SEED"), "true", StringComparison.OrdinalIgnoreCase))
             {
-                // Throwaway fixture: build schema from the current model rather than
-                // the migration chain. Worktrees often have pending model changes that
-                // make MigrateAsync refuse to run, and this database is discarded after
-                // the suite anyway.
-                await dbContext.Database.EnsureCreatedAsync();
+                // Two shapes of throwaway database arrive here.
+                //
+                // An empty file wants the schema built straight from the current model:
+                // worktrees often carry pending model changes that make MigrateAsync
+                // refuse to run, and the file is discarded after the suite anyway.
+                //
+                // A fixture carved from a production backup (scripts/make-e2e-fixture.sh)
+                // already carries production's schema and its __EFMigrationsHistory, so
+                // it wants the migration chain to bring it up to this branch's head.
+                // EnsureCreated would silently no-op on it and leave columns missing.
+                // Fully qualified: an unqualified `using Microsoft.EntityFrameworkCore.Storage`
+                // collides with StackExchange.Redis on IDatabase.
+                var creator = dbContext.Database
+                    .GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>();
+                if (await creator.HasTablesAsync())
+                {
+                    await dbContext.Database.MigrateAsync();
+                    logger.LogInformation("E2E sqlite fixture migrated to current head");
+                }
+                else
+                {
+                    await dbContext.Database.EnsureCreatedAsync();
+                    logger.LogInformation("E2E sqlite schema created from current model");
+                }
+
                 await api.E2e.E2eDatabaseSeed.ApplyAsync(dbContext);
-                logger.LogInformation("E2E sqlite schema created and seed applied");
+                logger.LogInformation("E2E seed applied");
             }
             else
             {
@@ -1081,14 +1102,59 @@ try
 
     }
 
+    // One-shot mode for scripts/make-e2e-graph.sh: rebuild the relationship graph
+    // from this database, then exit without ever listening. The HTTP equivalent
+    // (POST stats/admin/jobs/neo4j-relationships-backfill) is admin-authed and
+    // fire-and-forget, so a build script can neither call it nor wait on it.
+    if (string.Equals(Environment.GetEnvironmentVariable("E2E_BUILD_GRAPH"), "true", StringComparison.OrdinalIgnoreCase))
+    {
+        using var scope = host.Services.CreateScope();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var etl = scope.ServiceProvider.GetService<api.PlayerRelationships.PlayerRelationshipEtlService>();
+
+        if (etl is null)
+        {
+            logger.LogError("E2E_BUILD_GRAPH set but Neo4j is not configured — set Neo4j__Uri");
+            return 1;
+        }
+
+        // The fixture inherits production's SyncedToNeo4jAt stamps, so every round
+        // already looks synced. Clearing the watermark is what makes the ETL
+        // reconsider them against an empty graph.
+        var since = DateTime.SpecifyKind(
+            DateTime.Parse(Environment.GetEnvironmentVariable("E2E_GRAPH_FROM") ?? "2000-01-01",
+                System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeKind.Utc);
+
+        using var bulkScope = api.Telemetry.BulkOperationContext.Begin();
+        var (roundsReset, sessionsReset) = await etl.ResetNeo4jSyncWatermarkAsync(since);
+        logger.LogInformation("Graph build: reset watermark for {Rounds} rounds, {Sessions} sessions",
+            roundsReset, sessionsReset);
+
+        var result = await etl.SyncPendingRelationshipsAsync(fromDate: since);
+        await etl.SyncPlayerServerRelationshipsAsync(fromDate: since);
+
+        logger.LogInformation("Graph build complete: {Rounds} rounds, {Relationships} relationships in {Seconds}s",
+            result.RoundsProcessed, result.RelationshipsProcessed, result.Duration.TotalSeconds);
+
+        await Log.CloseAndFlushAsync();
+        return 0;
+    }
+
     Log.Information("Application started successfully");
     await host.RunAsync();
 }
 catch (Exception ex)
 {
     Log.Fatal(ex, "Application terminated unexpectedly");
+    return 1;
 }
 finally
 {
     await Log.CloseAndFlushAsync();
 }
+
+// Reached when the host shuts down normally. The E2E_BUILD_GRAPH branch above
+// returns before ever listening, which is what makes the exit code meaningful
+// to scripts/make-e2e-graph.sh.
+return 0;
