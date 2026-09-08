@@ -16,9 +16,11 @@ public interface IBfListApiService
     Task<object?> FetchSingleServerAsync(string game, string serverIdentifier);
 
     /// <summary>
-    /// Peeks the warm live-server snapshot (same 30s cache as the landing page) for a
-    /// name match. Does not call BFList. Used by the banner so a stale <c>Servers.Ip</c>
-    /// from a duplicate-name row does not 404 against an address BFList no longer lists.
+    /// Peeks the warm live-server snapshot (same 30s cache as the landing page), then
+    /// last-good, for a name match. Does not call BFList. Used by the banner so a stale
+    /// <c>Servers.Ip</c> from a duplicate-name row does not 404 against an address BFList
+    /// no longer lists, and so a hot-cache miss during an upstream outage still paints
+    /// tickets from last-known-good instead of waiting on Polly.
     /// </summary>
     Task<Models.ServerSummary?> TryGetCachedServerByNameAsync(string game, string serverName);
 
@@ -329,8 +331,11 @@ public class BfListApiService(
 
             return JsonSerializer.Deserialize<Bf1942ServerInfo>(content, CaseInsensitiveJson);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex)
         {
+            // Polly TimeoutRejectedException / BrokenCircuitException are not
+            // HttpRequestException. Treat any upstream failure as "not listed" so
+            // the server-details poll and banner tickets degrade instead of 500.
             logger.LogWarning("Failed to fetch single server {ServerIdentifier}: {Error}", serverIdentifier, ex.Message);
             return null;
         }
@@ -343,11 +348,33 @@ public class BfListApiService(
             return null;
         }
 
-        var snapshot = await GetSnapshotAsync(RawServersCacheKey(game), TimeSpan.FromSeconds(ServerListCacheSeconds));
-        var match = snapshot?.Servers.FirstOrDefault(s =>
-            string.Equals(s.Name, serverName, StringComparison.Ordinal));
-        return match == null ? null : MapToSummary(match);
+        var snapshot = await GetCachedSnapshotAsync(game);
+        return FindInSnapshot(snapshot, s => string.Equals(s.Name, serverName, StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// Hot 30s snapshot if present, otherwise last-good. Never fetches BFList.
+    /// Same read-path preference as <see cref="FetchAllServersWithMetaAsync"/>.
+    /// </summary>
+    private async Task<RawServerSnapshot?> GetCachedSnapshotAsync(string game)
+    {
+        var hot = await GetSnapshotAsync(RawServersCacheKey(game), TimeSpan.FromSeconds(ServerListCacheSeconds));
+        if (hot != null)
+        {
+            return hot;
+        }
+
+        return await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
+    }
+
+    private Models.ServerSummary? FindInSnapshot(RawServerSnapshot? snapshot, Func<Bf1942ServerInfo, bool> match)
+    {
+        var found = snapshot?.Servers.FirstOrDefault(match);
+        return found == null ? null : MapToSummary(found);
+    }
+
+    private static bool MatchesIdentifier(Bf1942ServerInfo server, string serverIdentifier) =>
+        string.Equals($"{server.Ip}:{server.Port}", serverIdentifier, StringComparison.OrdinalIgnoreCase);
 
     // Helper methods for UI that need ServerSummary
     public async Task<Models.ServerSummary[]> FetchServerSummariesAsync(string game, int perPage = 100, string? cursor = null, string? after = null)
@@ -377,6 +404,17 @@ public class BfListApiService(
             logger.LogDebug("Cache hit for server {Game}:{ServerIdentifier} (found={Found})",
                 game, serverIdentifier, cachedResult.Found);
             return cachedResult.Found ? cachedResult.Server : null;
+        }
+
+        // Same last-good-first rule as the landing-page list: if we already have this
+        // IP:port in the hot or last-good snapshot, do not wait on Polly. A BFList hang
+        // here is an 18s 500 on /stats/liveservers/{game}/{ip}/{port} and an extra 8s+
+        // on banner tickets after the Rounds lookup.
+        var fromSnapshot = FindInSnapshot(await GetCachedSnapshotAsync(game), s => MatchesIdentifier(s, serverIdentifier));
+        if (fromSnapshot != null)
+        {
+            logger.LogDebug("Snapshot hit for server {Game}:{ServerIdentifier}; skipping BFList", game, serverIdentifier);
+            return fromSnapshot;
         }
 
         logger.LogDebug("Cache miss for server {Game}:{ServerIdentifier}", game, serverIdentifier);

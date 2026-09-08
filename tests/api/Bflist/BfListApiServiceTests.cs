@@ -203,6 +203,98 @@ public sealed class BfListApiServiceTests
     }
 
     [Fact]
+    public async Task TryGetCachedServerByName_LastGoodHit_DoesNotCallUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddHours(-2),
+            Servers =
+            [
+                new Bf1942ServerInfo
+                {
+                    Name = "MoonGamers.com | Est. 2004",
+                    Ip = "51.81.48.224",
+                    Port = 14567,
+                    Tickets1 = 412,
+                    Tickets2 = 380
+                }
+            ]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var found = await service.TryGetCachedServerByNameAsync(Game, "MoonGamers.com | Est. 2004");
+
+        Assert.NotNull(found);
+        Assert.Equal("51.81.48.224", found.Ip);
+        Assert.Equal(412, found.Tickets1);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_LastGoodHit_SkipsUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddHours(-2),
+            Servers =
+            [
+                new Bf1942ServerInfo
+                {
+                    Guid = "mg",
+                    Name = "MoonGamers.com | Est. 2004",
+                    Ip = "51.81.48.224",
+                    Port = 14567,
+                    Tickets1 = 412,
+                    Tickets2 = 380
+                }
+            ]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "51.81.48.224:14567");
+
+        Assert.NotNull(result);
+        Assert.Equal("MoonGamers.com | Est. 2004", result.Name);
+        Assert.Equal(412, result.Tickets1);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_UpstreamThrows_NoSnapshot_ReturnsNull()
+    {
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+        cacheService.GetAsync<RawServerSnapshot>(Arg.Any<string>()).Returns((RawServerSnapshot?)null);
+
+        var handler = FakeHttpMessageHandler.Throwing(new TimeoutException("simulated Polly timeout"));
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "51.81.48.224:14567");
+
+        Assert.Null(result);
+        Assert.Equal(1, handler.CallCount);
+        await cacheService.Received().SetAsync(
+            "server:bf1942:51.81.48.224:14567",
+            Arg.Is<BfListApiService.CachedSingleServer>(c => !c.Found && c.Server == null),
+            TimeSpan.FromSeconds(8));
+    }
+
+    [Fact]
     public async Task FetchSingleServerSummary_NotFound_IsCachedAndDoesNotThrow()
     {
         var cacheService = Substitute.For<ICacheService>();
@@ -313,7 +405,10 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
         new(_ => new HttpResponseMessage(statusCode));
 
     public static FakeHttpMessageHandler Throwing() =>
-        new(_ => throw new InvalidOperationException("Upstream should not have been called"));
+        Throwing(new InvalidOperationException("Upstream should not have been called"));
+
+    public static FakeHttpMessageHandler Throwing(Exception exception) =>
+        new(_ => throw exception);
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
