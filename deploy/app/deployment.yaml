@@ -96,7 +96,7 @@ spec:
             - name: Jwt__Audience
               value: "https://bfstats.io"
             - name: Cors__AllowedOrigins
-              value: "https://bfstats.io"
+              value: "https://bfstats.io,https://staging.bfstats.io"
             # Bot Detection Configuration
             - name: BotDetection__DefaultPlayerNames__0
               value: "BFPlayer"

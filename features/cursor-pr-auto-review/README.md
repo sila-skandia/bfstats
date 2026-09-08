@@ -122,9 +122,61 @@ independent reason the old `ui/` workflow could never have worked: it referenced
 `ANTHROPIC_API_KEY`, which did not exist. Even in the right directory it would
 have failed at the Claude step.
 
-Setup is complete. The workflows now only need to reach `main` - GitHub
-schedules `pull_request` workflows from the base branch, so nothing fires until
-they are merged there.
+## Troubleshooting
+
+### A failed review says only `is_error:true`
+
+The action runs Claude with output hidden ("full output hidden for security"),
+so an authentication or model failure surfaces as nothing but
+`is_error:true`. Rerunning with `gh run rerun --debug` does **not** unhide it.
+
+The `Explain Claude failure` step exists for this. It reads the execution log
+the action already writes (`claude-execution-output.json`, exposed as the
+`execution_file` step output) and prints only the diagnostic scalars - error
+text, result subtype, denial count. It deliberately does not print assistant
+message content, which is what `show_full_output: true` would do, and this is a
+public repo.
+
+### `401 OAuth access token is invalid`
+
+The `CLAUDE_CODE_OAUTH_TOKEN` secret is not a valid token. Seen on the first
+live run (PR #19, 2026-09-07): the workflow itself was fine - trigger gating,
+PR resolution, checkout, git identity and tool config all worked - and Claude
+initialised on `claude-sonnet-5` before failing in 2s with an empty
+`modelUsage`, which is the signature of the very first API call being rejected.
+
+Regenerate and re-set the secret:
+
+```
+claude setup-token
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo sila-skandia/bfstats
+```
+
+The value must be the whole token and nothing else - it looks like
+`sk-ant-oat01-...`. A truncated paste, a stray newline, or wrapping quotes all
+produce this same 401. `claude setup-token` also needs the local CLI to be on a
+Pro/Max subscription; if it is signed in some other way, check `/status` in
+`claude` first.
+
+An expired token gives the same error, so this is also the fix when a workflow
+that used to work starts failing.
+
+## Status
+
+Working end to end as of 2026-09-07. Run 34106870476 reviewed PR #19 and
+posted an APPROVE verdict.
+
+That run confirmed the prompt does what it is meant to, not just that the
+plumbing works. The review picked one of the three outcomes and acted on it,
+stated up front that tests were not run, checked specifically for
+`SqliteConnectionInterceptor` changes, new pragmas and memory-sized settings,
+and answered the recurring-pattern-versus-one-off question by citing a sibling
+`cursor/*` branch and the earlier covering-index migration. It also caught a
+real correctness bug the alert had nothing to do with: `Rank + offset` double
+counted, because `ROW_NUMBER()` is evaluated before `LIMIT`/`OFFSET`.
+
+Getting there took two fixes, both recorded above: the workflow was in the
+wrong directory, and the first `CLAUDE_CODE_OAUTH_TOKEN` was invalid.
 
 ## Verification
 
