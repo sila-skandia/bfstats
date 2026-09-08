@@ -11,7 +11,8 @@ namespace api.StatsCollectors;
 
 public class RankingCalculationService(IServiceProvider services, ILogger<RankingCalculationService> logger) : BackgroundService
 {
-    private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(3);
+    internal TimeSpan StartupDelay { get; init; } = TimeSpan.FromMinutes(3);
+    internal TimeSpan CycleInterval { get; init; } = TimeSpan.FromHours(1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -21,8 +22,16 @@ public class RankingCalculationService(IServiceProvider services, ILogger<Rankin
 
         logger.LogInformation("RankingCalculationService started, waiting {Delay} before first run", StartupDelay);
 
-        // Delay startup to avoid blocking Kestrel initialization
-        await Task.Delay(StartupDelay, stoppingToken);
+        try
+        {
+            // Delay startup to avoid blocking Kestrel initialization
+            await Task.Delay(StartupDelay, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            logger.LogInformation("RankingCalculationService stopped");
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -60,6 +69,12 @@ public class RankingCalculationService(IServiceProvider services, ILogger<Rankin
                 logger.LogWarning("Ranking calculation listing skipped due to database lock ({SqliteError})",
                     SqliteBusy.Describe(ex));
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                cycleStopwatch.Stop();
+                activity?.SetTag("cycle_duration_ms", cycleStopwatch.ElapsedMilliseconds);
+                break;
+            }
             catch (Exception ex)
             {
                 cycleStopwatch.Stop();
@@ -69,8 +84,17 @@ public class RankingCalculationService(IServiceProvider services, ILogger<Rankin
                 logger.LogError(ex, "Error calculating rankings");
             }
 
-            await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+            try
+            {
+                await Task.Delay(CycleInterval, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
+
+        logger.LogInformation("RankingCalculationService stopped");
     }
 
     private async Task CalculateRankingsForAllServers(
@@ -104,6 +128,10 @@ public class RankingCalculationService(IServiceProvider services, ILogger<Rankin
                 logger.LogWarning(
                     "Skipping ranking recalc for server {ServerGuid} due to database lock ({SqliteError})",
                     serverGuid, SqliteBusy.Describe(ex));
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

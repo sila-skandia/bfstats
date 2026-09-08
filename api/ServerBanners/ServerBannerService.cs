@@ -173,7 +173,7 @@ public sealed class ServerBannerService(
         }
     }
 
-    private static ServerBannerTickets? TicketsFrom(ServerSummary? summary)
+    private static ServerBannerTickets? TicketsFrom(api.Bflist.Models.ServerSummary? summary)
     {
         if (summary is null)
         {
@@ -201,6 +201,7 @@ public sealed class ServerBannerService(
 
     private static string? FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
 
     private static string Label(string? raw, string fallback) =>
         string.IsNullOrWhiteSpace(raw) ? fallback : raw.Trim().ToUpperInvariant();

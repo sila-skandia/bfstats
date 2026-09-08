@@ -96,7 +96,7 @@ spec:
             - name: Jwt__Audience
               value: "https://1942.munyard.dev"
             - name: Cors__AllowedOrigins
-              value: "https://1942.munyard.dev"
+              value: "https://bfstats.io,https://staging.bfstats.io"
             # Bot Detection Configuration
             - name: BotDetection__DefaultPlayerNames__0
               value: "BFPlayer"
@@ -129,7 +129,7 @@ spec:
             - name: RefreshToken__CookieName
               value: "rt"
             - name: RefreshToken__CookieDomain
-              value: "1942.munyard.dev"
+              value: "bfstats.io"
             - name: RefreshToken__CookiePath
               value: "/stats"
             - name: RefreshToken__Days
