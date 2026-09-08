@@ -34,18 +34,20 @@ public class BuddyApiService(HttpClient httpClient, ILogger<BuddyApiService> log
                 logger.LogInformation("Found {Count} users with buddy {BuddyName}", count, buddyPlayerName);
                 return userEmails ?? Enumerable.Empty<string>();
             }
-            else
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, $"API call failed with status {response.StatusCode}");
-                logger.LogWarning("API call failed with status {StatusCode} for buddy {BuddyName}", response.StatusCode, buddyPlayerName);
-                return Enumerable.Empty<string>();
-            }
+
+            logger.LogWarning("API call failed with status {StatusCode} for buddy {BuddyName}", response.StatusCode, buddyPlayerName);
+            return [];
+        }
+        catch (Exception ex) when (ApiConnectionFailureClassifier.IsTransient(ex))
+        {
+            logger.LogWarning("API unreachable for buddy {BuddyName}: {Error}", buddyPlayerName, ex.Message);
+            return [];
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogError(ex, "Error getting users with buddy {BuddyName}", buddyPlayerName);
-            return Enumerable.Empty<string>();
+            return [];
         }
     }
 
@@ -69,12 +71,14 @@ public class BuddyApiService(HttpClient httpClient, ILogger<BuddyApiService> log
                 logger.LogDebug("Found {Count} users with favourite server {ServerGuid}", count, serverGuid);
                 return userEmails ?? Enumerable.Empty<string>();
             }
-            else
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, $"API call failed with status {response.StatusCode}");
-                logger.LogWarning("API call failed with status {StatusCode} for favourite server {ServerGuid}", response.StatusCode, serverGuid);
-                return [];
-            }
+
+            logger.LogWarning("API call failed with status {StatusCode} for favourite server {ServerGuid}", response.StatusCode, serverGuid);
+            return [];
+        }
+        catch (Exception ex) when (ApiConnectionFailureClassifier.IsTransient(ex))
+        {
+            logger.LogWarning("API unreachable for favourite server {ServerGuid}: {Error}", serverGuid, ex.Message);
+            return [];
         }
         catch (Exception ex)
         {
