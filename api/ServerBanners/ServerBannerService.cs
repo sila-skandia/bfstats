@@ -42,6 +42,8 @@ public sealed class ServerBannerService(
     {
         var server = await dbContext.Servers
             .Where(s => s.Name == serverName)
+            .OrderByDescending(s => s.IsOnline)
+            .ThenByDescending(s => s.LastSeenTime)
             .Select(s => new
             {
                 s.Guid,
@@ -62,14 +64,25 @@ public sealed class ServerBannerService(
             return null;
         }
 
-        // Map/mode come from Servers + a live BFList snapshot - fetched regardless of
-        // showTickets, since the renderer shows GameMode in the tickets' slot when the
-        // scoreboard is off. Touching Rounds on this path contends with the 30s
+        // Map/mode/tickets come from Servers + the warm BFList snapshot, looked up by
+        // name (so a duplicate-name row's stale IP doesn't matter) - fetched regardless
+        // of showTickets, since the renderer paints GameMode in the tickets' slot when
+        // the scoreboard is off. Touching Rounds on this path contends with the 30s
         // collector on the volume, so it's never queried here.
-        var live = await TryFetchLiveSummaryAsync(server.Game, server.Ip, server.Port);
+        var live = string.IsNullOrWhiteSpace(server.Game)
+            ? null
+            : await bfListApiService.TryGetCachedServerByNameAsync(server.Game, server.Name);
 
+        var ip = !string.IsNullOrWhiteSpace(live?.Ip) ? live.Ip : server.Ip;
+        var port = live is { Port: > 0 } ? live.Port : server.Port;
         var map = FirstNonEmpty(live?.MapName, server.CurrentMap, server.MapName);
         var gameMode = FirstNonEmpty(live?.GameType, live?.GameMode);
+
+        var tickets = showTickets
+            ? live != null
+                ? TicketsFrom(live)
+                : await ResolveTicketsAsync(server.Game, ip, port, cancellationToken)
+            : null;
 
         // Only the Waveform style renders the population timeline, so skip the extra
         // query for the other three.
@@ -79,13 +92,13 @@ public sealed class ServerBannerService(
 
         return new ServerBannerStats(
             ServerName: server.Name,
-            IpPort: $"{server.Ip}:{server.Port}",
+            IpPort: $"{ip}:{port}",
             Map: map,
             GameMode: gameMode,
             NumPlayers: server.CurrentNumPlayers,
             MaxPlayers: server.MaxPlayers ?? 0,
             IsOnline: server.IsOnline,
-            Tickets: showTickets ? ToTickets(live) : null,
+            Tickets: tickets,
             Activity: activity);
     }
 
@@ -133,11 +146,17 @@ public sealed class ServerBannerService(
     }
 
     /// <summary>
-    /// Live BFList snapshot for the banner overlay (map, mode, tickets). Best-effort:
-    /// any failure just drops the live fields and the renderer falls back to stored state.
+    /// Cache-miss fallback: pulls the live team ticket scoreboard directly from the
+    /// BFList feed when the warm name-keyed snapshot didn't have this server. Best-
+    /// effort - any failure just drops the tickets from the banner.
     /// </summary>
-    private async Task<ServerSummary?> TryFetchLiveSummaryAsync(string? game, string ip, int port)
+    private async Task<ServerBannerTickets?> ResolveTicketsAsync(
+        string? game,
+        string ip,
+        int port,
+        CancellationToken cancellationToken)
     {
+        _ = cancellationToken;
         if (string.IsNullOrWhiteSpace(game) || string.IsNullOrWhiteSpace(ip))
         {
             return null;
@@ -145,16 +164,16 @@ public sealed class ServerBannerService(
 
         try
         {
-            return await bfListApiService.FetchSingleServerSummaryAsync(game, $"{ip}:{port}");
+            return TicketsFrom(await bfListApiService.FetchSingleServerSummaryAsync(game, $"{ip}:{port}"));
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to resolve live overlay for {Ip}:{Port} ({Game})", ip, port, game);
+            logger.LogWarning(ex, "Failed to resolve live tickets for {Ip}:{Port} ({Game})", ip, port, game);
             return null;
         }
     }
 
-    private static ServerBannerTickets? ToTickets(ServerSummary? summary)
+    private static ServerBannerTickets? TicketsFrom(ServerSummary? summary)
     {
         if (summary is null)
         {

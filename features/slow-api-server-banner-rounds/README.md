@@ -40,6 +40,20 @@ tickets" toggle is supposed to leave alone. The fetch is a cached BFList call,
 not `Rounds`, so calling it unconditionally doesn't reintroduce the
 regression this fix is for.
 
+### Merged with the duplicate-name / stale-IP fix
+
+`main` picked up an unrelated fix (`api/Bflist/BfListApiService.cs`,
+`TryGetCachedServerByNameAsync`) for duplicate-name server rows keeping a
+stale IP after a host move: the banner now orders candidate rows
+`OrderByDescending(IsOnline).ThenByDescending(LastSeenTime)` and prefers the
+warm BFList snapshot's IP/port (looked up by name, not by the stored IP) over
+`Servers.Ip`/`Servers.Port`. That fix still read `Rounds` for map/mode. This
+PR's `Rounds` removal and that fix both touch `ResolveStatsAsync`, so they've
+been combined: the name-keyed cached snapshot lookup now also supplies
+Map/GameMode (with the same `Servers.CurrentMap`/`MapName` fallback chain),
+and the `FetchSingleServerSummaryAsync` ip:port fallback is kept for tickets
+only, for the case where the snapshot cache doesn't have this server yet.
+
 ## Not this alert
 
 `network-graph?depth=2` leftover (Phoenix 17.5s at 12:21) is the unmerged clique rewrite on `cursor/api-performance-and-exceptions-dea5`. `/stats/rounds?serverName=` (61s at 09:32) is the unmerged `ServerGuid` rewrite on `023c` / `7852`.
