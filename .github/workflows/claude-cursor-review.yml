@@ -84,6 +84,12 @@ jobs:
           git config user.name "claude[bot]"
           git config user.email "claude[bot]@users.noreply.github.com"
 
+      - name: Verify build
+        working-directory: ${{ github.workspace }}
+        run: |
+          dotnet build api/api.csproj -c Release
+          npm --prefix ui run build
+
       - name: Review with Claude
         id: claude
         uses: anthropics/claude-code-action@v1
