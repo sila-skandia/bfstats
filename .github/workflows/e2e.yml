@@ -66,6 +66,16 @@ jobs:
       - name: Start Redis
         run: docker run -d --name bf1942-redis -p 6379:6379 redis:7-alpine
 
+      # Locally this comes from user-secrets. Without it the API starts but every
+      # request through the auth middleware — including /health — returns 500, so
+      # verify.sh waits for a readiness check that can never pass. Generated fresh
+      # per run: it signs nothing that outlives the job, so there is no reason to
+      # hold a real key in repository secrets.
+      - name: Generate an ephemeral JWT signing key
+        run: |
+          openssl genrsa -out "$RUNNER_TEMP/jwt-e2e.pem" 2048
+          echo "Jwt__PrivateKeyPath=$RUNNER_TEMP/jwt-e2e.pem" >> "$GITHUB_ENV"
+
       # Not fatal: a missing release just means the synthetic seed is used.
       - name: Fetch real-data fixture
         id: fixture
@@ -92,7 +102,12 @@ jobs:
       - name: Verify (unit tests + Playwright)
         env:
           # Empty means "use the fixture if one is present"; 1 forces the seed.
-          E2E_SYNTHETIC: ${{ steps.fixture.outcome == 'success' && '' || '1' }}
+          #
+          # Written as "!= success && '1'" rather than "== success && '' || '1'"
+          # on purpose: GitHub's &&/|| idiom falls through to the right-hand side
+          # whenever the left result is falsy, and '' is falsy — so the natural
+          # phrasing silently always yields '1'.
+          E2E_SYNTHETIC: ${{ steps.fixture.outcome != 'success' && '1' || '' }}
           E2E_NEO4J: ${{ inputs.graph && '1' || '' }}
         run: ./scripts/verify.sh
 
