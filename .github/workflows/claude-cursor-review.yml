@@ -85,6 +85,7 @@ jobs:
           git config user.email "claude[bot]@users.noreply.github.com"
 
       - name: Review with Claude
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           # Subscription auth (Pro/Max), not a metered API key. Generate the
@@ -182,3 +183,29 @@ jobs:
           claude_args: |
             --allowedTools "Read,Edit,Write,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(git:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr edit:*),Bash(gh pr close:*)"
             --max-turns 40
+
+      # The action hides Claude's output by default, so a failure surfaces only
+      # as "is_error:true" with no reason. This pulls the error fields out of the
+      # execution log without dumping the whole conversation into the public run
+      # log, which is what `show_full_output: true` would do.
+      - name: Explain Claude failure
+        if: failure() && steps.claude.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          set -uo pipefail
+          if [ ! -f "$EXECUTION_FILE" ]; then
+            echo "No execution log at $EXECUTION_FILE"
+            exit 0
+          fi
+          echo "::group::Claude error detail"
+          # Emit only diagnostic scalars - error text, result subtype, usage -
+          # never assistant message content.
+          jq -r '
+            [.. | objects
+               | select(has("error") or has("is_error") or .type == "result")
+               | {type, subtype, is_error, error, result, permission_denials_count}
+               | with_entries(select(.value != null))]
+            | unique | .[] | tostring
+          ' "$EXECUTION_FILE" 2>/dev/null || cat "$EXECUTION_FILE"
+          echo "::endgroup::"

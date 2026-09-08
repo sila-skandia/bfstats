@@ -268,6 +268,22 @@ try
                 });
                 tracing.AddHttpClientInstrumentation(options =>
                 {
+                    // BFList 404s a single-server lookup when the host moved or went
+                    // offline. That is expected; leaving the client span as ERROR pages
+                    // the Seq Exceptions signal (@Exception is not null) on every banner refresh.
+                    options.EnrichWithHttpResponseMessage = (activity, response) =>
+                    {
+                        if (response.StatusCode != System.Net.HttpStatusCode.NotFound)
+                        {
+                            return;
+                        }
+
+                        var host = response.RequestMessage?.RequestUri?.Host;
+                        if (string.Equals(host, "api.bflist.io", StringComparison.OrdinalIgnoreCase))
+                        {
+                            activity.SetStatus(ActivityStatusCode.Unset);
+                        }
+                    };
                     // Only trace HTTP calls from API requests, not background services
                     options.FilterHttpRequestMessage = (httpRequestMessage) =>
                     {
@@ -419,14 +435,14 @@ try
     builder.Services.AddScoped<api.Auth.IDiscordAuthService, api.Auth.DiscordAuthService>();
 
     // CORS
-    var allowedOrigin = builder.Configuration["Cors:AllowedOrigins"];
+    var allowedOrigins = CorsOriginMatcher.Parse(builder.Configuration["Cors:AllowedOrigins"]);
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("default", policy =>
         {
-            if (!string.IsNullOrEmpty(allowedOrigin))
+            if (allowedOrigins.Length > 0)
             {
-                policy.WithOrigins(allowedOrigin)
+                policy.WithOrigins(allowedOrigins)
                       .AllowAnyHeader()
                       .AllowAnyMethod()
                       .WithExposedHeaders("WWW-Authenticate")
