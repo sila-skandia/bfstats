@@ -105,10 +105,75 @@ public sealed class BfListApiServiceTests
         Assert.True(result.IsFallback);
         Assert.Equal(lastGood.FetchedAtUtc, result.FetchedAtUtc);
         Assert.Same(lastGood.Servers, result.Servers);
+        Assert.Equal(0, handler.CallCount);
 
         // The returned snapshot must be a copy — mutating IsFallback must never leak back
         // into the object the cache still holds, or every future recovery would be corrupted.
         Assert.False(lastGood.IsFallback);
+    }
+
+    [Fact]
+    public async Task WithMeta_HotMiss_FreshLastGood_DoesNotCallUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddSeconds(-35),
+            Servers = [new Bf1942ServerInfo { Guid = "srv-1", Name = "Test Server" }]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchAllServersWithMetaAsync(Game);
+
+        Assert.False(result.IsFallback);
+        Assert.Same(lastGood, result);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task WithMeta_LastGoodPresent_DoesNotWaitBehindInFlightLiveFetch()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddSeconds(-40),
+            Servers = [new Bf1942ServerInfo { Guid = "srv-1", Name = "Test Server" }]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hang = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = FakeHttpMessageHandler.Hanging(entered, hang.Task);
+
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var service = BuildService(cacheService, memoryCache, handler);
+
+        var collectorTask = service.FetchAllServersAsync(Game);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = await service.FetchAllServersWithMetaAsync(Game);
+            sw.Stop();
+
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(1), $"landing page waited {sw.Elapsed.TotalMilliseconds:F0}ms behind the live fetch");
+            Assert.Same(lastGood, result);
+            Assert.False(collectorTask.IsCompleted);
+        }
+        finally
+        {
+            hang.TrySetResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        }
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => collectorTask);
     }
 
     [Fact]
@@ -269,12 +334,12 @@ public sealed class BfListApiServiceTests
 }
 
 /// <summary>Minimal configurable HttpMessageHandler for exercising BfListApiService without a real network call.</summary>
-public sealed class FakeHttpMessageHandler : HttpMessageHandler
+public class FakeHttpMessageHandler : HttpMessageHandler
 {
     private readonly Func<HttpRequestMessage, HttpResponseMessage> responder;
-    public int CallCount { get; private set; }
+    public int CallCount { get; protected set; }
 
-    private FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder)
+    protected FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder)
     {
         this.responder = responder;
     }
@@ -291,9 +356,32 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
     public static FakeHttpMessageHandler Throwing() =>
         new(_ => throw new InvalidOperationException("Upstream should not have been called"));
 
+    public static FakeHttpMessageHandler Hanging(TaskCompletionSource entered, Task<HttpResponseMessage> completion) =>
+        new HangingHandler(entered, completion);
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         CallCount++;
         return Task.FromResult(responder(request));
+    }
+
+    private sealed class HangingHandler : FakeHttpMessageHandler
+    {
+        private readonly TaskCompletionSource entered;
+        private readonly Task<HttpResponseMessage> completion;
+
+        public HangingHandler(TaskCompletionSource entered, Task<HttpResponseMessage> completion)
+            : base(_ => throw new InvalidOperationException("Hanging handler should not use the sync responder"))
+        {
+            this.entered = entered;
+            this.completion = completion;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            entered.TrySetResult();
+            return completion.WaitAsync(cancellationToken);
+        }
     }
 }

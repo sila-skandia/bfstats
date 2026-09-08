@@ -2,8 +2,9 @@ namespace api.Bflist.Models;
 
 /// <summary>
 /// A cached poll of the upstream BFList server list, with the time it was actually fetched.
-/// IsFallback is never itself cached — it's set on the copy returned when a live fetch fails
-/// and a last-known-good snapshot is served in its place.
+/// IsFallback is never itself cached — it's set on the copy returned when the read path
+/// serves last-known-good because the hot cache is empty (and the snapshot is older than
+/// the landing page's freshness window).
 /// </summary>
 public class RawServerSnapshot
 {
