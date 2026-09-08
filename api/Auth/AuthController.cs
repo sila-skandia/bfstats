@@ -117,6 +117,10 @@ public class AuthController(
             refreshTokenService.ClearCookie(Response);
             return NoContent();
         }
+        catch (UnauthorizedAccessException)
+        {
+            return Unauthorized(new { message = "Invalid request" });
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Logout error");
@@ -136,16 +140,15 @@ public class AuthController(
 
     private void EnforceCsrfForCookieEndpoints()
     {
-        var origin = Request.Headers["Origin"].FirstOrDefault();
-        var referer = Request.Headers["Referer"].FirstOrDefault();
-        var allowedOrigin = configuration["Cors:AllowedOrigins"];
-        if (!string.IsNullOrEmpty(allowedOrigin))
+        var origin = Request.Headers.Origin.FirstOrDefault();
+        var referer = Request.Headers.Referer.FirstOrDefault();
+        if (!CorsOriginMatcher.IsAllowed(
+                configuration["Cors:AllowedOrigins"],
+                origin,
+                referer,
+                Request.Host.Host))
         {
-            if (!string.Equals(origin, allowedOrigin, StringComparison.OrdinalIgnoreCase) &&
-                !(referer != null && referer.StartsWith(allowedOrigin, StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new UnauthorizedAccessException("CSRF");
-            }
+            throw new UnauthorizedAccessException("CSRF");
         }
     }
 
