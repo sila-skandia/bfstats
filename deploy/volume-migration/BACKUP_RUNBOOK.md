@@ -399,66 +399,52 @@ scp -i ~/.ssh/hetzner root@77.42.38.148:/mnt/bfstats-data/backups/* ~/bfstats-ba
 
 ---
 
-## Appendix B — Prune the backup into an E2E fixture
+## Appendix B — The E2E fixture
 
-Run this every time you take a backup. It turns the ~24 G file into the ~210 MB
-of rows the E2E suite actually needs (28 MB compressed), and it is the only
-artifact developers have to move around. Reads the source read-only, writes a
-fresh file, safe to re-run.
+**Nothing to do here any more.** Pruning the backup into the E2E fixture used to
+be a manual `scp` the script up / run it / `scp` the result down loop; it is now
+the last phase of the `bfstats-backup-both` runbook in **home-server-mgr**, which
+is also what takes the backup in Appendix A. Every backup republishes the
+fixture to the `e2e-fixture` GitHub release, so CI is never carved off a snapshot
+older than the last backup.
 
-Do it **on the server**, against the backup copy — the extraction reads through
-indexes rather than scanning, so it takes seconds, and it means you transfer
-210 MB instead of 24 G. `sqlite3` is already installed (Step 5 uses it).
+It runs on the server against the checkpointed copy the backup already made —
+the extraction reads through indexes rather than scanning, so a ~25 G source
+yields a ~176 MB fixture in about 20 s, and 176 MB is what moves instead of 25 G.
+The phase runs *after* both Azure uploads, so a fixture failure can never cost
+you a backup.
 
-Copy the script up alongside the backup:
+Its safety properties are unchanged, and they matter because the target repo is
+public:
 
-```bash
-scp -i ~/.ssh/hetzner scripts/make-e2e-fixture.sh root@77.42.38.148:/root/
-```
+- Emails are always redacted to `user{Id}@e2e.invalid`, backed by a
+  schema-driven sweep across every `%email%` column that aborts the publish on
+  any address it does not recognise.
+- `UserPlayerNames` / `UserBuddies` / `UserFavoriteServers` — the
+  account-to-gamertag mapping, the one part of the fixture not already on the
+  public site — are dropped for every user except `E2E_KEEP_PROFILES` (default
+  `1`, the owner's).
+- Dangling foreign keys and an empty tier are hard failures, so a fixture that
+  looks built but is not never reaches the release.
 
-Then, on the server:
-
-```bash
-bash /root/make-e2e-fixture.sh /mnt/bfstats-data/backups/playertracker-$(date +%F).db \
-  --out /mnt/bfstats-data/backups/e2e-template.db --keep-profiles 1 --force
-```
-
-`--keep-profiles` matters: the fixture is published to a public GitHub release,
-and the account-to-gamertag mapping in `UserPlayerNames` is the one part of it
-that is not already on the public site. Without the flag every linked profile is
-dropped; `1` keeps only the owner's. Emails are always redacted, and the script
-refuses to finish if it finds an address it does not know how to redact.
-
-It refuses to run against a source with a non-empty `-wal` (the checkpoint in
-Appendix A is what makes that safe), and it hard-fails on dangling foreign keys
-or an empty tier rather than publishing a fixture that looks built but is not.
-
-Pull the result down:
+To pull the current pair down for local work:
 
 ```bash
-scp -i ~/.ssh/hetzner \
-  root@77.42.38.148:/mnt/bfstats-data/backups/e2e-template.\{db,meta\} \
-  ~/.cache/bfstats-e2e/
-mv ~/.cache/bfstats-e2e/e2e-template.db   ~/.cache/bfstats-e2e/template.db
-mv ~/.cache/bfstats-e2e/e2e-template.meta ~/.cache/bfstats-e2e/template.meta
+gh release download e2e-fixture --dir ~/.cache/bfstats-e2e --clobber
+zstd -d ~/.cache/bfstats-e2e/*.zst --rm
 ```
 
-Then rebuild the paired graph locally — it derives from the fixture, so the
-Neo4j backup above is not involved:
+The paired Neo4j graph is *not* built on the server — it is rebuilt from the
+fixture by the app's own ETL, so it stays a local step. Refresh it when a schema
+or ETL change makes the published one wrong:
 
 ```bash
-./scripts/make-e2e-graph.sh --force
+./scripts/make-e2e-graph.sh --force     # derives neo4j.dump from template.db
+./scripts/publish-e2e-fixture.sh        # uploads the graph half only
 ```
 
-`verify.sh` picks both up automatically. To refresh what CI runs against, push
-the pair to the `e2e-fixture` release:
-
-```bash
-./scripts/publish-e2e-fixture.sh
-```
-
-Knobs (`--fact-days`, `--obs-rounds`) and the reasoning behind the slice are in
-`features/e2e-real-data-fixtures/README.md`.
+Knobs (`E2E_FACT_DAYS`, `E2E_OBS_ROUNDS`) are runbook params; the reasoning
+behind the slice is in `features/e2e-real-data-fixtures/README.md`.
 
 ---
 

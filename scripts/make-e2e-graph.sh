@@ -9,6 +9,13 @@
 # relational data agree — a 3 GB production graph paired with a 350 MB SQLite
 # slice would not.
 #
+# The fixture itself is no longer built here. It is carved off the production
+# backup by the `bfstats-backup-both` runbook in home-server-mgr and published to
+# the `e2e-fixture` release, so get the current one with:
+#
+#   gh release download e2e-fixture --dir ~/.cache/bfstats-e2e --clobber
+#   zstd -d ~/.cache/bfstats-e2e/*.zst --rm
+#
 # Run this from a checkout of the branch you want the template to carry
 # (normally main): the fixture is migrated to this branch's head as a side
 # effect, and that schema ships inside template.db.
@@ -41,7 +48,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -f "$TEMPLATE" ]] || die "no fixture at $TEMPLATE — run scripts/make-e2e-fixture.sh first"
+[[ -f "$TEMPLATE" ]] || die "no fixture at $TEMPLATE. Fetch the one the last backup published:
+     gh release download e2e-fixture --dir $CACHE --clobber && zstd -d $CACHE/*.zst --rm"
 [[ -f "$OUT" && -z "$FORCE" ]] && die "$OUT exists. Pass --force to replace it."
 command -v docker >/dev/null || die "docker is required"
 command -v sqlite3 >/dev/null || die "sqlite3 is required"
@@ -152,3 +160,4 @@ note "wrote $OUT ($(du -h "$OUT" | cut -f1))"
 note "republished $TEMPLATE with matching sync watermarks"
 echo
 echo "Both artifacts are in $CACHE. verify.sh will pick them up automatically."
+echo "To refresh the graph CI ships with — scripts/publish-e2e-fixture.sh"
