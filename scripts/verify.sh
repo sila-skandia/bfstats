@@ -212,6 +212,13 @@ else
     # shellcheck source=e2e-env.sh
     source "$REPO_ROOT/scripts/e2e-env.sh"
 
+    # The slot's Redis db is namespaced against other worktrees but persists
+    # between runs of this one, and responses are cached for up to an hour. A
+    # fixture change would otherwise be invisible behind a response cached by an
+    # earlier run — which looks exactly like the new data never being read.
+    docker exec bf1942-redis redis-cli -n "${E2E_SLOT}" FLUSHDB >/dev/null 2>&1 \
+      || echo "⚠️  Could not flush redis db ${E2E_SLOT}; cached responses may be stale"
+
     # Kick Neo4j off first — its ~8s boot then overlaps the sqlite copy and the
     # API start rather than adding to them.
     start_e2e_neo4j || exit 1
