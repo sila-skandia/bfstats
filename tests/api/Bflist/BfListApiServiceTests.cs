@@ -203,6 +203,40 @@ public sealed class BfListApiServiceTests
     }
 
     [Fact]
+    public async Task TryGetCachedServerByName_LastGoodHit_DoesNotCallUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            Servers =
+            [
+                new Bf1942ServerInfo
+                {
+                    Name = "MoonGamers.com | Est. 2004",
+                    Ip = "51.81.48.224",
+                    Port = 14567,
+                    Tickets1 = 312,
+                    Tickets2 = 198
+                }
+            ]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var found = await service.TryGetCachedServerByNameAsync(Game, "MoonGamers.com | Est. 2004");
+
+        Assert.NotNull(found);
+        Assert.Equal("51.81.48.224", found.Ip);
+        Assert.Equal(312, found.Tickets1);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
     public async Task FetchSingleServerSummary_NotFound_IsCachedAndDoesNotThrow()
     {
         var cacheService = Substitute.For<ICacheService>();
@@ -220,6 +254,95 @@ public sealed class BfListApiServiceTests
             "server:bf1942:153.223.78.15:14567",
             Arg.Is<BfListApiService.CachedSingleServer>(c => !c.Found && c.Server == null),
             TimeSpan.FromSeconds(8));
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_LastGoodHit_SkipsUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            Servers =
+            [
+                new Bf1942ServerInfo
+                {
+                    Guid = "moon",
+                    Name = "MoonGamers.com | Est. 2004",
+                    Ip = "51.81.48.224",
+                    Port = 14567,
+                    NumPlayers = 22,
+                    Tickets1 = 400,
+                    Tickets2 = 250
+                }
+            ]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "51.81.48.224:14567");
+
+        Assert.NotNull(result);
+        Assert.Equal("moon", result.Guid);
+        Assert.Equal(22, result.NumPlayers);
+        Assert.Equal(400, result.Tickets1);
+        Assert.Equal(0, handler.CallCount);
+        await cacheService.Received().SetAsync(
+            "server:bf1942:51.81.48.224:14567",
+            Arg.Is<BfListApiService.CachedSingleServer>(c => c.Found && c.Server != null),
+            TimeSpan.FromSeconds(8));
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_LastGoodMissingServer_SkipsUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            Servers = [new Bf1942ServerInfo { Ip = "1.2.3.4", Port = 14567, Name = "Other" }]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "51.81.48.224:14567");
+
+        Assert.Null(result);
+        Assert.Equal(0, handler.CallCount);
+        await cacheService.Received().SetAsync(
+            "server:bf1942:51.81.48.224:14567",
+            Arg.Is<BfListApiService.CachedSingleServer>(c => !c.Found && c.Server == null),
+            TimeSpan.FromSeconds(8));
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_NoSnapshot_UpstreamThrows_ReturnsNull()
+    {
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+        cacheService.GetAsync<RawServerSnapshot>(Arg.Any<string>())
+            .Returns((RawServerSnapshot?)null);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "51.81.48.224:14567");
+
+        Assert.Null(result);
+        Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]
