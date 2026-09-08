@@ -76,16 +76,11 @@ jobs:
           openssl genrsa -out "$RUNNER_TEMP/jwt-e2e.pem" 2048
           echo "Jwt__PrivateKeyPath=$RUNNER_TEMP/jwt-e2e.pem" >> "$GITHUB_ENV"
 
-      # DiscordAuthService reads these in field initialisers and throws when they
-      # are missing, so AuthController cannot be constructed and POST /auth/login
-      # 500s — before it ever reaches the DevBypass branch the suite's
-      # loginAsAdmin() relies on. That branch never contacts Discord, so these
-      # only have to exist. Real credentials live in user-secrets locally and are
-      # deliberately not needed here.
-      - name: Stub Discord OAuth config
-        run: |
-          echo "DiscordOAuth__ClientId=e2e-not-a-real-client" >> "$GITHUB_ENV"
-          echo "DiscordOAuth__ClientSecret=e2e-not-a-real-secret" >> "$GITHUB_ENV"
+      # No Discord config is set on purpose. The suite authenticates through the
+      # DevBypass branch of POST /auth/login, which never contacts Discord, and
+      # DiscordAuthService now resolves its credentials on use rather than in a
+      # field initialiser — so the absence of OAuth secrets is not a problem
+      # until something actually tries to exchange a code.
 
       # Not fatal: a missing release just means the synthetic seed is used.
       - name: Fetch real-data fixture
