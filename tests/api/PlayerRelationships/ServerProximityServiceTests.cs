@@ -142,10 +142,12 @@ public sealed class ServerProximityServiceTests : IDisposable
         var closeOnly = await service.GetAsync(server, minPing: 0, maxPing: 80, limit: 50);
         Assert.Single(closeOnly.Players);
         Assert.Equal("Close", closeOnly.Players[0].PlayerName);
+        Assert.Equal(1, closeOnly.TotalRegulars);
 
         var farOnly = await service.GetAsync(server, minPing: 150, maxPing: 250, limit: 50);
         Assert.Single(farOnly.Players);
         Assert.Equal("Far", farOnly.Players[0].PlayerName);
+        Assert.Equal(1, farOnly.TotalRegulars);
     }
 
     [Fact]
