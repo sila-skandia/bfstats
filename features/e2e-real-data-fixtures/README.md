@@ -20,8 +20,7 @@ it deliberately deferred:
 Goal: every worktree gets its own SQLite **and** its own Neo4j, both carrying
 real production data, cheap enough to rebuild on every `verify.sh` run.
 
-Every number below was measured on this machine, not estimated. Method and
-caveats are in [MEASUREMENTS.md](MEASUREMENTS.md).
+Every number below was measured on this machine, not estimated.
 
 ---
 
