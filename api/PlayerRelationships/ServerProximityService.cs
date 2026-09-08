@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using api.PlayerRelationships.Models;
 using api.PlayerTracking;
 using Microsoft.Data.Sqlite;
@@ -73,6 +75,12 @@ public class ServerProximityService(
         LIMIT @limit
         """;
 
+    /// <summary>
+    /// Parsed once rather than on every call — the statement is built twice per
+    /// request and <see cref="SessionCte"/> never changes (CA1863).
+    /// </summary>
+    private static readonly CompositeFormat SessionCteFormat = CompositeFormat.Parse(SessionCte);
+
     public async Task<ServerProximityResponse> GetAsync(
         string serverGuid,
         int minPing,
@@ -145,17 +153,25 @@ public class ServerProximityService(
             cmd.Parameters.Add(new SqliteParameter("@maxPing", maxPing));
             cmd.Parameters.Add(new SqliteParameter("@limit", limit));
 
+            // CA2100/CA3001 flag these two assignments because the statement is
+            // composed with string.Format. The only interpolated text is the
+            // "@p0, @p1, …" placeholder list, generated from the loop index —
+            // every value, playerNames included, is bound as a SqliteParameter
+            // below, so no caller-supplied text ever reaches the SQL.
+#pragma warning disable CA2100, CA3001
             if (playerNames.Count > 0)
             {
                 var placeholders = string.Join(", ", playerNames.Select((_, i) => $"@p{i}"));
-                cmd.CommandText = string.Format(SessionCte, $"AND PlayerName IN ({placeholders})");
+                cmd.CommandText = string.Format(
+                    CultureInfo.InvariantCulture, SessionCteFormat, $"AND PlayerName IN ({placeholders})");
                 for (var i = 0; i < playerNames.Count; i++)
                     cmd.Parameters.Add(new SqliteParameter($"@p{i}", playerNames[i]));
             }
             else
             {
-                cmd.CommandText = string.Format(SessionCte, "");
+                cmd.CommandText = string.Format(CultureInfo.InvariantCulture, SessionCteFormat, "");
             }
+#pragma warning restore CA2100, CA3001
 
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
