@@ -7,6 +7,8 @@ interface Props {
   serverGuid: string
   mapName: string | null
   serverName?: string
+  /** bflist gameId (the mod), used by the level briefing to address the game archives. */
+  gameId?: string | null
 }
 
 const props = defineProps<Props>()
@@ -121,6 +123,7 @@ onUnmounted(() => {
             <MmServerMapDetailPanel
               :server-guid="serverGuid"
               :map-name="mapName"
+              :game-id="gameId"
               @close="handleClose"
             />
           </div>
