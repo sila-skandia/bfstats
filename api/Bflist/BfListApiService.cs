@@ -24,9 +24,10 @@ public interface IBfListApiService
 
     /// <summary>
     /// Read-path variant of <see cref="FetchAllServersAsync"/>: same hot cache, but if the
-    /// upstream fetch fails and the hot cache is empty, falls back to the last successful
-    /// snapshot (raw_servers:{game}:last_good) instead of throwing. Never used by the stats
-    /// collector — session tracking must never be fed a stale/fallback snapshot.
+    /// hot cache is empty, returns the last successful snapshot
+    /// (raw_servers:{game}:last_good) immediately instead of waiting on BFList. A live
+    /// fetch runs only when no snapshot exists at all (cold start). Never used by the
+    /// stats collector — session tracking must never be fed a stale/fallback snapshot.
     /// </summary>
     Task<Models.RawServerSnapshot> FetchAllServersWithMetaAsync(string game);
 
@@ -128,6 +129,20 @@ public class BfListApiService(
             return cached;
         }
 
+        // The 30s hot key expires during a BFList outage while last-good stays in memory
+        // for 24h. Waiting on Polly's 30s total timeout (and the per-game fetch lock the
+        // collector also takes) before reading last-good is what turns an upstream hang
+        // into a 10s+ landing-page request. Serve last-good immediately; the collector is
+        // the only path that should block on a live poll.
+        var lastGood = await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
+        if (lastGood != null)
+        {
+            logger.LogDebug(
+                "Hot cache miss for game {Game}; serving last-known-good snapshot from {FetchedAtUtc} without waiting on BFList",
+                game, lastGood.FetchedAtUtc);
+            return CopyAsFallback(lastGood);
+        }
+
         try
         {
             return await FetchAndCacheServersAsync(game);
@@ -137,24 +152,28 @@ public class BfListApiService(
             logger.LogWarning(
                 "Live fetch failed for game {Game} ({ExceptionType}: {Message}); falling back to last-known-good snapshot",
                 game, ex.GetType().Name, ex.Message);
-            var lastGood = await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
+            lastGood = await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
             if (lastGood == null)
             {
                 throw;
             }
 
-            // Never hand back a cache-owned instance with IsFallback flipped — IMemoryCache
-            // returns the same shared reference on every read (unlike Redis, which
-            // deserializes a fresh object per call), so mutating it here would corrupt what
-            // every other reader — and every future recovery — sees from the same entry.
-            return new RawServerSnapshot
-            {
-                FetchedAtUtc = lastGood.FetchedAtUtc,
-                Servers = lastGood.Servers,
-                IsFallback = true
-            };
+            return CopyAsFallback(lastGood);
         }
     }
+
+    /// <summary>
+    /// Never hand back a cache-owned instance with IsFallback flipped — IMemoryCache
+    /// returns the same shared reference on every read (unlike Redis, which deserializes
+    /// a fresh object per call), so mutating it in place would corrupt what every other
+    /// reader — and every future recovery — sees from the same entry.
+    /// </summary>
+    private static RawServerSnapshot CopyAsFallback(RawServerSnapshot lastGood) => new()
+    {
+        FetchedAtUtc = lastGood.FetchedAtUtc,
+        Servers = lastGood.Servers,
+        IsFallback = true
+    };
 
     /// <summary>
     /// Checks the in-process L1 cache first, then the Redis-backed L2 (backfilling L1 on a
