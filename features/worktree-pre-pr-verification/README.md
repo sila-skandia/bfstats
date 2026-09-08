@@ -233,16 +233,35 @@ on a rejected token; that string appears in no run. Run 4 is the positive proof
 the generated key works: that spec creates a tournament through the admin API
 with a token signed by `.e2e/jwt-e2e.pem`.
 
-**`data-explorer.spec.ts:52`** is a real bug, not load flakiness — it failed on
-clean `main` (run 5) after 8 retries over 10.7 s. `/explore/players/Xanadu` never
-leaves that URL, though the sibling redirect `/explore/players` → `/v4/players`
-passes. The route looks correct
-([ui/src/router/index.ts:121](../../ui/src/router/index.ts:121) has a per-player
-redirect function), so the fault is in why it never fires. Out of scope here and
-left untouched.
+**`data-explorer.spec.ts:52`** is the one to be careful about, and the first read
+of it here was wrong. It failed on clean `main` (run 5) while its siblings
+passed, which looked like a specific broken route — the per-player redirect at
+[ui/src/router/index.ts:121](../../ui/src/router/index.ts:121) never firing.
+
+A sixth run on the merged tree, taken while the machine was at **load average
+50–66**, failed the *entire* legacy-redirect family together: `/explore`,
+`/explore/servers`, `/explore/servers/:guid`,
+`/explore/servers/:guid/maps/:map` and `:52`. They all assert on a URL that only
+changes once the SPA has booted and the router has resolved, so what they really
+measure is whether Vue hydrates inside the assertion timeout. Under load it does
+not.
+
+So `:52` is best read as *the most timing-sensitive member of a timing-sensitive
+family* rather than a dead route — it is the only one that also needs a
+`:playerName` param resolved. Whether there is a genuine slow path underneath is
+open; it is not established, and nothing here touches it.
 
 **`arcade.spec.ts:73`** appeared in one run of five and passed in the other four,
-including on main. That one does read as parallel-load flakiness at 10 workers.
+including on main. Parallel-load flakiness at 10 workers.
+
+### A caveat on all of these numbers
+
+Every run above is on one developer machine that is also running the developer's
+editor and browser. Run 6 is the illustration: the same suite that had just gone
+140/1 fell apart at 8 failures and climbing once `electron` was taking 200%+ CPU.
+A full run here is worth something only when the box is quiet, and a single red
+spec on a busy machine should be re-run before it is believed. The CI job does
+not have this problem — a fresh runner does nothing else.
 
 API unit tests: **311 passed, 0 failed** in every run.
 
