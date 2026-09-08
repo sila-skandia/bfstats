@@ -267,6 +267,22 @@ try
                 });
                 tracing.AddHttpClientInstrumentation(options =>
                 {
+                    // BFList 404s a single-server lookup when the host moved or went
+                    // offline. That is expected; leaving the client span as ERROR pages
+                    // the Seq Exceptions signal (@Exception is not null) on every banner refresh.
+                    options.EnrichWithHttpResponseMessage = (activity, response) =>
+                    {
+                        if (response.StatusCode != System.Net.HttpStatusCode.NotFound)
+                        {
+                            return;
+                        }
+
+                        var host = response.RequestMessage?.RequestUri?.Host;
+                        if (string.Equals(host, "api.bflist.io", StringComparison.OrdinalIgnoreCase))
+                        {
+                            activity.SetStatus(ActivityStatusCode.Unset);
+                        }
+                    };
                     // Only trace HTTP calls from API requests, not background services
                     options.FilterHttpRequestMessage = (httpRequestMessage) =>
                     {
