@@ -399,6 +399,69 @@ scp -i ~/.ssh/hetzner root@77.42.38.148:/mnt/bfstats-data/backups/* ~/bfstats-ba
 
 ---
 
+## Appendix B — Prune the backup into an E2E fixture
+
+Run this every time you take a backup. It turns the ~24 G file into the ~210 MB
+of rows the E2E suite actually needs (28 MB compressed), and it is the only
+artifact developers have to move around. Reads the source read-only, writes a
+fresh file, safe to re-run.
+
+Do it **on the server**, against the backup copy — the extraction reads through
+indexes rather than scanning, so it takes seconds, and it means you transfer
+210 MB instead of 24 G. `sqlite3` is already installed (Step 5 uses it).
+
+Copy the script up alongside the backup:
+
+```bash
+scp -i ~/.ssh/hetzner scripts/make-e2e-fixture.sh root@77.42.38.148:/root/
+```
+
+Then, on the server:
+
+```bash
+bash /root/make-e2e-fixture.sh /mnt/bfstats-data/backups/playertracker-$(date +%F).db \
+  --out /mnt/bfstats-data/backups/e2e-template.db --keep-profiles 1 --force
+```
+
+`--keep-profiles` matters: the fixture is published to a public GitHub release,
+and the account-to-gamertag mapping in `UserPlayerNames` is the one part of it
+that is not already on the public site. Without the flag every linked profile is
+dropped; `1` keeps only the owner's. Emails are always redacted, and the script
+refuses to finish if it finds an address it does not know how to redact.
+
+It refuses to run against a source with a non-empty `-wal` (the checkpoint in
+Appendix A is what makes that safe), and it hard-fails on dangling foreign keys
+or an empty tier rather than publishing a fixture that looks built but is not.
+
+Pull the result down:
+
+```bash
+scp -i ~/.ssh/hetzner \
+  root@77.42.38.148:/mnt/bfstats-data/backups/e2e-template.\{db,meta\} \
+  ~/.cache/bfstats-e2e/
+mv ~/.cache/bfstats-e2e/e2e-template.db   ~/.cache/bfstats-e2e/template.db
+mv ~/.cache/bfstats-e2e/e2e-template.meta ~/.cache/bfstats-e2e/template.meta
+```
+
+Then rebuild the paired graph locally — it derives from the fixture, so the
+Neo4j backup above is not involved:
+
+```bash
+./scripts/make-e2e-graph.sh --force
+```
+
+`verify.sh` picks both up automatically. To refresh what CI runs against, push
+the pair to the `e2e-fixture` release:
+
+```bash
+./scripts/publish-e2e-fixture.sh
+```
+
+Knobs (`--fact-days`, `--obs-rounds`) and the reasoning behind the slice are in
+`features/e2e-real-data-fixtures/README.md`.
+
+---
+
 ## Gotchas
 
 - **Don't run a Jenkins deploy during any of this.** Re-applying the manifests
