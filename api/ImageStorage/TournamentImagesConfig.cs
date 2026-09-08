@@ -42,6 +42,24 @@ public static class TournamentImagesConfig
     }
 
     /// <summary>
+    /// Resolves the path to the per-map battle intel extracted from the game's level
+    /// archives (under dossiers/), laid out as dossiers/&lt;gameId&gt;/&lt;mapName&gt;.json
+    /// </summary>
+    public static string ResolveDossiersPath()
+    {
+        return Path.Combine(ResolveBasePath(), "dossiers");
+    }
+
+    /// <summary>
+    /// Resolves the path to the in-game HUD icon set (under hud/), which holds the
+    /// vehicle and weapon icons the dossiers reference as hud/vehicles/&lt;mod&gt;/&lt;key&gt;.png
+    /// </summary>
+    public static string ResolveHudPath()
+    {
+        return Path.Combine(ResolveBasePath(), "hud");
+    }
+
+    /// <summary>
     /// Legacy method for backward compatibility - returns tournaments path
     /// </summary>
     public static string ResolvePath() => ResolveTournamentsPath();

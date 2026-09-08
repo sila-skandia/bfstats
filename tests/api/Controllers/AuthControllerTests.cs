@@ -345,4 +345,72 @@ public class AuthControllerTests
         var response = Assert.IsType<LoginResponse>(okResult.Value);
         Assert.Equal("admin@bfstats.io", response.User.Email);
     }
+
+    [Fact]
+    public async Task Logout_MatchingOrigin_ClearsCookie()
+    {
+        var (controller, refreshTokenService) = CreateLogoutController(
+            allowedOrigins: "https://bfstats.io",
+            origin: "https://bfstats.io",
+            host: "bfstats.io");
+
+        var result = await controller.Logout();
+
+        Assert.IsType<NoContentResult>(result);
+        refreshTokenService.Received(1).ClearCookie(Arg.Any<HttpResponse>());
+    }
+
+    [Fact]
+    public async Task Logout_MismatchedOrigin_ReturnsUnauthorized()
+    {
+        var (controller, refreshTokenService) = CreateLogoutController(
+            allowedOrigins: "https://bfstats.io",
+            origin: "https://evil.example",
+            host: "bfstats.io");
+
+        var result = await controller.Logout();
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+        refreshTokenService.DidNotReceive().ClearCookie(Arg.Any<HttpResponse>());
+    }
+
+    [Fact]
+    public async Task Logout_SameOriginHost_AllowsWhenCorsConfigIsStale()
+    {
+        var (controller, refreshTokenService) = CreateLogoutController(
+            allowedOrigins: "https://1942.munyard.dev",
+            origin: "https://bfstats.io",
+            host: "bfstats.io");
+
+        var result = await controller.Logout();
+
+        Assert.IsType<NoContentResult>(result);
+        refreshTokenService.Received(1).ClearCookie(Arg.Any<HttpResponse>());
+    }
+
+    private (AuthController Controller, IRefreshTokenService RefreshTokenService) CreateLogoutController(
+        string allowedOrigins,
+        string origin,
+        string host)
+    {
+        var config = Substitute.For<IConfiguration>();
+        config["Cors:AllowedOrigins"].Returns(allowedOrigins);
+        var refreshTokenService = Substitute.For<IRefreshTokenService>();
+        var controller = new AuthController(
+            _dbContext,
+            Substitute.For<IDiscordAuthService>(),
+            Substitute.For<ILogger<AuthController>>(),
+            Substitute.For<ITokenService>(),
+            refreshTokenService,
+            config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
+        controller.HttpContext.Request.Headers.Origin = origin;
+        controller.HttpContext.Request.Host = new HostString(host);
+        return (controller, refreshTokenService);
+    }
 }
