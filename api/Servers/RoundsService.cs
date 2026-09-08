@@ -19,15 +19,13 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
     {
         var query = dbContext.Rounds.AsNoTracking();
 
-        // Apply filters
-        if (!string.IsNullOrWhiteSpace(filters.ServerName))
-        {
-            query = query.Where(r => r.ServerName.Contains(filters.ServerName));
-        }
-
         if (!string.IsNullOrWhiteSpace(filters.ServerGuid))
         {
             query = query.Where(r => r.ServerGuid == filters.ServerGuid);
+        }
+        else if (!string.IsNullOrWhiteSpace(filters.ServerName))
+        {
+            query = await ApplyServerNameFilterAsync(query, filters.ServerName);
         }
 
         if (!string.IsNullOrWhiteSpace(filters.MapName))
@@ -492,6 +490,27 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         }
 
         return Math.Round(closenessScore * 0.5 + fillRate * 0.25 + populationWeight * 0.15 + urgency * 0.10, 4);
+    }
+
+    // Rounds.ServerName.Contains compiles to instr() and cannot use
+    // IX_Rounds (ServerGuid, StartTime). Resolve the name on the small Servers
+    // table, then filter rounds by guid. Callers (sessions page, bots) send
+    // the current server name, so a miss is an empty page rather than a
+    // 30s+ table scan.
+    private async Task<IQueryable<Round>> ApplyServerNameFilterAsync(IQueryable<Round> query, string serverName)
+    {
+        var matchingGuids = await dbContext.Servers
+            .AsNoTracking()
+            .Where(s => s.Name == serverName || s.Name.Contains(serverName))
+            .Select(s => s.Guid)
+            .ToListAsync();
+
+        if (matchingGuids.Count == 0)
+        {
+            return query.Where(_ => false);
+        }
+
+        return query.Where(r => matchingGuids.Contains(r.ServerGuid));
     }
 
     // Hard ceiling on the per-round snapshot timeline. A round left IsActive with no
