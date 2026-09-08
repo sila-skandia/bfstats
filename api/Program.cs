@@ -434,14 +434,14 @@ try
     builder.Services.AddScoped<api.Auth.IDiscordAuthService, api.Auth.DiscordAuthService>();
 
     // CORS
-    var allowedOrigin = builder.Configuration["Cors:AllowedOrigins"];
+    var allowedOrigins = CorsOriginMatcher.Parse(builder.Configuration["Cors:AllowedOrigins"]);
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("default", policy =>
         {
-            if (!string.IsNullOrEmpty(allowedOrigin))
+            if (allowedOrigins.Length > 0)
             {
-                policy.WithOrigins(allowedOrigin)
+                policy.WithOrigins(allowedOrigins)
                       .AllowAnyHeader()
                       .AllowAnyMethod()
                       .WithExposedHeaders("WWW-Authenticate")
