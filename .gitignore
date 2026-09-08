@@ -295,6 +295,16 @@ playertracker.db-wal
 # Per-worktree throwaway E2E sqlite (see features/isolated-e2e-worktrees/)
 .e2e/
 
+# Production backups dropped in the working tree to build E2E fixtures from.
+# These are 24 GB / 3.5 GB — never let them near a commit.
+# See features/e2e-real-data-fixtures/.
+bfstats-sqlite-*.db
+bfstats-sqlite-*.db-shm
+bfstats-sqlite-*.db-wal
+bfstats-sqlite-*.db.zst
+bfstats-neo4j-*.tar
+bfstats-neo4j-*.tar.zst
+
 # Tournament images uploaded via FileBrowser in local development
 tournament-images/
 
