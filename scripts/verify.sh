@@ -22,6 +22,10 @@ set -e
 #   E2E_NEO4J=1        start a private Neo4j for this slot (default: off; only
 #                      needed by specs that read graph-backed pages)
 #
+# A fresh worktree needs `./scripts/bootstrap-worktree.sh` once first — it pulls
+# node_modules, the real-data fixture and the Playwright image, and generates the
+# throwaway JWT signing key this script hands the API.
+#
 # Isolation: each run binds unique API/UI ports and a throwaway sqlite copy so
 # parallel worktrees do not share playertracker.db or collide on 9222/5173.
 # See features/isolated-e2e-worktrees/README.md.
@@ -37,7 +41,10 @@ cd "$REPO_ROOT"
 # 1. Check Infrastructure
 echo "🔍 Checking infrastructure..."
 if ! docker ps | grep -q "bf1942-redis"; then
-    echo "❌ Docker containers are not running. Run 'docker-compose up -d' first."
+    echo "❌ Redis is not running. In a fresh worktree run:"
+    echo "     ./scripts/bootstrap-worktree.sh"
+    echo "   or start it alone with:"
+    echo "     docker compose -f docker-compose.dev.yml up -d redis"
     exit 1
 fi
 
@@ -208,9 +215,21 @@ else
         echo "❌ sqlite3 is required to copy the E2E fixture. Install sqlite."
         exit 1
     fi
+    if [ ! -d "$REPO_ROOT/ui/node_modules" ]; then
+        echo "❌ ui/node_modules is missing — Playwright has nothing to run."
+        echo "   Bootstrap this worktree: ./scripts/bootstrap-worktree.sh"
+        exit 1
+    fi
     # Isolation env holds a flock on fd 9 until this script exits.
     # shellcheck source=e2e-env.sh
     source "$REPO_ROOT/scripts/e2e-env.sh"
+
+    # A throwaway RS256 key per worktree. Passed explicitly below rather than
+    # left to `dotnet user-secrets`, which only exists on a machine somebody has
+    # already set up by hand — and which CI, by definition, never has.
+    # shellcheck source=e2e-secrets.sh
+    source "$REPO_ROOT/scripts/e2e-secrets.sh"
+    ensure_e2e_secrets "$REPO_ROOT" || exit 1
 
     # The slot's Redis db is namespaced against other worktrees but persists
     # between runs of this one, and responses are cached for up to an hour. A
@@ -252,6 +271,8 @@ else
         ASSETS_STORAGE_PATH='$REPO_ROOT/tournament-images' \
         Jwt__Issuer='http://127.0.0.1:${API_PORT}' \
         Jwt__Audience='${PLAYWRIGHT_BASE_URL}' \
+        Jwt__PrivateKey='${E2E_JWT_PRIVATE_KEY_B64}' \
+        RefreshToken__Secret='${E2E_REFRESH_SECRET}' \
         Neo4j__Uri='${E2E_NEO4J_URI}' \
         Neo4j__Username=neo4j \
         Neo4j__Password=bf1942stats \
