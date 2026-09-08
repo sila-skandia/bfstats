@@ -14,6 +14,10 @@ fi
 E2E_SLOT_COUNT=16
 E2E_API_PORT_BASE=9300
 E2E_UI_PORT_BASE=5273
+# Neo4j Community allows exactly one user database per instance — CREATE DATABASE
+# is rejected — so a private graph means a private container, not a private
+# database name. 7690+ stays clear of the dev instance on 7687.
+E2E_NEO4J_PORT_BASE=7690
 
 _e2e_repo_root() {
   local here
@@ -42,8 +46,11 @@ _e2e_print_exports() {
 E2E_SLOT=${E2E_SLOT}
 API_PORT=${API_PORT}
 UI_PORT=${UI_PORT}
+NEO4J_PORT=${NEO4J_PORT}
 PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}
 DB_PATH=${DB_PATH}
+NEO4J_DATA_DIR=${NEO4J_DATA_DIR}
+NEO4J_CONTAINER=${NEO4J_CONTAINER}
 REDIS_CONNECTION_STRING=${REDIS_CONNECTION_STRING}
 REDIS_INSTANCE_NAME=${REDIS_INSTANCE_NAME}
 E2E_API_LOG=${E2E_API_LOG}
@@ -57,8 +64,11 @@ _e2e_apply_slot() {
   E2E_SLOT="$slot"
   API_PORT=$((E2E_API_PORT_BASE + slot))
   UI_PORT=$((E2E_UI_PORT_BASE + slot))
+  NEO4J_PORT=$((E2E_NEO4J_PORT_BASE + slot))
   PLAYWRIGHT_BASE_URL="http://127.0.0.1:${UI_PORT}"
   DB_PATH="${root}/.e2e/run/playertracker.db"
+  NEO4J_DATA_DIR="${root}/.e2e/run/neo4j"
+  NEO4J_CONTAINER="bfstats-e2e-neo4j-${slot}"
   REDIS_CONNECTION_STRING="localhost:6379,defaultDatabase=${slot}"
   REDIS_INSTANCE_NAME="e2e-${slot}"
   E2E_API_LOG="/tmp/bfstats-e2e-${slot}-api.log"
@@ -91,7 +101,9 @@ for offset in $(seq 0 $((E2E_SLOT_COUNT - 1))); do
   fi
   api_port=$((E2E_API_PORT_BASE + candidate))
   ui_port=$((E2E_UI_PORT_BASE + candidate))
-  if _e2e_port_in_use "$api_port" || _e2e_port_in_use "$ui_port"; then
+  neo4j_port=$((E2E_NEO4J_PORT_BASE + candidate))
+  if _e2e_port_in_use "$api_port" || _e2e_port_in_use "$ui_port" \
+     || _e2e_port_in_use "$neo4j_port"; then
     flock -u 9 || true
     continue
   fi
@@ -106,9 +118,10 @@ if [[ "$LOCK_ACQUIRED" -ne 1 ]]; then
   return 1 2>/dev/null || exit 1
 fi
 
-export E2E_SLOT API_PORT UI_PORT PLAYWRIGHT_BASE_URL DB_PATH
+export E2E_SLOT API_PORT UI_PORT NEO4J_PORT PLAYWRIGHT_BASE_URL DB_PATH
+export NEO4J_DATA_DIR NEO4J_CONTAINER
 export REDIS_CONNECTION_STRING REDIS_INSTANCE_NAME
 export E2E_API_LOG E2E_UI_LOG E2E_UI_BUILD_LOG
 export E2E_SLOT_LOCKED=1
 
-echo "🔒 E2E isolation slot ${E2E_SLOT}  API :${API_PORT}  UI :${UI_PORT}  redis db ${E2E_SLOT}  db ${DB_PATH}"
+echo "🔒 E2E isolation slot ${E2E_SLOT}  API :${API_PORT}  UI :${UI_PORT}  neo4j :${NEO4J_PORT}  redis db ${E2E_SLOT}  db ${DB_PATH}"
