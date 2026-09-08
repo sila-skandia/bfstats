@@ -39,10 +39,20 @@ then grouped twice (per-player stats + peak hour). `IX_PlayerSessions_ServerGuid
 
 ## Change
 
-1. Count and rank regulars from `PlayerServerStats` (weekly, indexed on `ServerGuid`).
-2. Load ping / peak hour / last played from `PlayerSessions` only for those names so the planner can use `PlayerName + ServerGuid`.
-3. If a server has no weekly rows yet, keep the old session scan — that is a quiet server.
+1. Rank regulars from `PlayerServerStats` (weekly, indexed on `ServerGuid`) and take the
+   top `MaxRegularCandidates` (200) by rounds played.
+2. Load ping / peak hour / last played from `PlayerSessions`, binding those names as
+   individual `IN (...)` parameters (well under SQLite's variable limit) rather than
+   scanning the whole server, so the planner can use `PlayerName + ServerGuid`. One round
+   trip either way — no temp table.
+3. If a server has no weekly rows yet, the candidate list is empty and the query falls
+   back to scanning every session — that is a quiet server, there isn't much to scan.
 
 No new `PlayerSessions` index and no pragma change.
 
-`TotalRegulars` is now the distinct weekly-regular count, not "how many of the scanned sessions passed the ping HAVING". The orbit still plots the ping-filtered top-N.
+`TotalRegulars` keeps its original meaning — how many of the *considered* players had an
+average ping inside `[minPing, maxPing]` — computed in the same query via the same `total`
+CTE the old single-scan query used. It's now bounded by the 200-candidate cap instead of
+every regular on the server, so on a server with more than 200 weekly regulars it can
+undercount slightly. That trade favors the ping-filtered count staying meaningful (and
+responsive to the slider) over exactness for an edge case this project doesn't have yet.
