@@ -66,15 +66,18 @@ jobs:
       - name: Start Redis
         run: docker run -d --name bf1942-redis -p 6379:6379 redis:7-alpine
 
-      # Locally this comes from user-secrets. Without it the API starts but every
-      # request through the auth middleware — including /health — returns 500, so
-      # verify.sh waits for a readiness check that can never pass. Generated fresh
-      # per run: it signs nothing that outlives the job, so there is no reason to
-      # hold a real key in repository secrets.
-      - name: Generate an ephemeral JWT signing key
+      # Both come from user-secrets locally and are absent on a runner. Without the
+      # JWT key the API starts but every request through the auth middleware —
+      # including /health — returns 500, so verify.sh waits on a readiness check
+      # that can never pass. Without the refresh-token secret, login itself 500s.
+      #
+      # Generated fresh per run rather than held in repository secrets: they sign
+      # nothing that outlives the job.
+      - name: Generate ephemeral signing keys
         run: |
           openssl genrsa -out "$RUNNER_TEMP/jwt-e2e.pem" 2048
           echo "Jwt__PrivateKeyPath=$RUNNER_TEMP/jwt-e2e.pem" >> "$GITHUB_ENV"
+          echo "RefreshToken__Secret=$(openssl rand -base64 48)" >> "$GITHUB_ENV"
 
       # No Discord config is set on purpose. The suite authenticates through the
       # DevBypass branch of POST /auth/login, which never contacts Discord, and
