@@ -6,6 +6,14 @@ After making any code changes, you **must** run the verification script. This sc
 - **Fast Logic Check**: `./scripts/verify.sh --skip-e2e`
 - **Targeted E2E**: `./scripts/verify.sh e2e/relevant-test.spec.ts --project=chromium`
 
+In a **fresh worktree**, run `./scripts/bootstrap-worktree.sh` (or `mise run
+bootstrap`) once first. `git worktree add` gives you the source and nothing
+else, and it installs `ui/node_modules`, generates the throwaway JWT signing key
+the E2E API needs, starts the `bf1942-redis` container, downloads the real-data
+fixture from the `e2e-fixture` release, and pre-pulls the Playwright image. It is
+idempotent and it is the same script CI runs, so a local pass and a CI pass mean
+the same thing. See `features/worktree-pre-pr-verification/README.md`.
+
 E2E binds unique API/UI ports and a slim sqlite copy per worktree, so two
 checkouts can verify at once without sharing `playertracker.db` or colliding
 on `:9222` / `:5173`. See `features/isolated-e2e-worktrees/README.md`.
