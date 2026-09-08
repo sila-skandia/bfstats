@@ -73,7 +73,9 @@ downloads the tree from Hetzner if you have no game install.
 Ask Claude for the `bf1942-map-images` skill — it covers extraction flags, the output
 layout, and the `kubectl --context hetzner` upload into `/mnt/data/assets/maps`.
 
-## Not done yet
+## Consumers
 
-No UI surface consumes the endpoint. Wiring it into server cards or the round view is a
-separate change.
+- `MmMapThumb.vue` — the preview image on server cards and the server detail page.
+- `MmMapDossier.vue` — plots a map's control points over its minimap. See
+  [map-dossier](../map-dossier/README.md), which extracts the level configuration
+  sitting in the same archives and is addressed by the same `(gameId, mapName)` pair.
