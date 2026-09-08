@@ -1,0 +1,211 @@
+name: Claude Review - Cursor SRE PRs
+
+# Auto-reviews pull requests raised by the Cursor site-reliability agent, which
+# opens branches named cursor/* in response to Seq threshold alerts.
+#
+# Claude runs in "agent mode" (a `prompt` is supplied, so no @claude mention is
+# needed) and is allowed to push fixes straight to the PR branch.
+#
+# Loop safety: we deliberately do NOT trigger on `synchronize`. Claude pushes
+# commits to the PR branch, and a `synchronize` trigger would re-invoke this
+# workflow on its own commit. Follow-up passes are on-demand: comment
+# "@claude ..." on the PR (handled by claude.yml) or run this workflow manually.
+
+on:
+  pull_request:
+    types: [opened, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review"
+        required: true
+        type: string
+
+# Review runs bill against the Claude subscription, shared with interactive use.
+# One review per PR at a time; a re-trigger supersedes the run in flight.
+concurrency:
+  group: claude-cursor-review-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # commit review fixes to the PR branch
+  pull-requests: write # post reviews, edit/close the PR
+  issues: write # PR comments go through the issues API
+  id-token: write # OIDC exchange for the Claude GitHub App token
+
+jobs:
+  review:
+    # Only cursor/* branches on automatic runs; manual dispatch is always explicit.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.head_ref, 'cursor/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Resolve target PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pr_number }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+          EVENT_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Validate: digits only, so it cannot be smuggled into later shell.
+            case "$INPUT_PR" in
+              ''|*[!0-9]*) echo "pr_number must be numeric" >&2; exit 1 ;;
+            esac
+            number="$INPUT_PR"
+            ref="$(gh pr view "$number" --json headRefName -q .headRefName)"
+          else
+            number="$EVENT_PR"
+            ref="$EVENT_REF"
+          fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Reviewing PR #$number (branch $ref)"
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          # Check out the branch itself (not the detached merge ref) so Claude
+          # can commit and push fixes back to the PR.
+          ref: ${{ steps.pr.outputs.ref }}
+          # Full history so Claude can diff against main and read the blame /
+          # incident history that CLAUDE.md points at.
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "claude[bot]"
+          git config user.email "claude[bot]@users.noreply.github.com"
+
+      - name: Review with Claude
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Subscription auth (Pro/Max), not a metered API key. Generate the
+          # token locally with `claude setup-token` and store it as the repo
+          # secret CLAUDE_CODE_OAUTH_TOKEN. It expires periodically and has to
+          # be regenerated - a 401 from this step is the usual symptom.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # GitHub auth, separate from the Claude credential above. Passing this
+          # explicitly means the action does not depend on the Claude GitHub App
+          # being installed - the built-in token already carries the permissions
+          # declared above. Side benefit: pushes made with GITHUB_TOKEN do not
+          # trigger further workflow runs, which is extra insurance against the
+          # review loop described at the top of this file.
+          #
+          # Drop this line to use the Claude GitHub App instead (via the OIDC
+          # exchange that `id-token: write` enables). Comments then come from
+          # claude[bot] rather than github-actions[bot], but the app has to be
+          # installed on the repo for it to work.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Supplying `prompt` puts the action in agent mode: it runs on the
+          # `pull_request` event directly, with no @claude mention required.
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ steps.pr.outputs.number }}
+            BRANCH: ${{ steps.pr.outputs.ref }}
+
+            Review this PR from the site reliability agent, which is responding
+            to threshold alerts triggered from Seq. Not all events require
+            investigation so if the change looks too specific and not going to
+            solve a bigger problem it can be rejected. If you have changes you
+            want to make, just edit the PR in place.
+
+            ## Context
+
+            The PR branch is already checked out in the working directory, with
+            full history. `git diff origin/main...HEAD` shows the change.
+
+            Read CLAUDE.md before forming an opinion. The parts that matter most
+            for this kind of PR:
+
+            - Production is a SINGLE Hetzner node (4000m CPU, 7741Mi memory)
+              running everything. There is no spare capacity to grow into.
+            - `deploy/PRODUCTION_ISSUES.md` records changes that have actually
+              taken production down. `deploy/NODE_TUNING.md` records host tuning
+              that no manifest captures.
+            - `api/PlayerTracking/SqliteConnectionInterceptor.cs` applies to
+              EVERY connection in the process. SQLite pragmas there are
+              per-connection across a pooled set, and a tuning change made for
+              one feature lands on all of them. This file has already caused one
+              node outage - treat any change to it as high risk.
+            - Any memory-sized setting must be multiplied out against the 7741Mi
+              budget, leaving ~1.5Gi for the OS and k3s.
+
+            ## What to weigh
+
+            1. Does this address a real, recurring problem, or is it a narrow
+               patch for one alert firing once? Narrow one-off patches are the
+               main thing to push back on.
+            2. Does the fix match the actual cause, or does it just suppress the
+               symptom that Seq alerted on?
+            3. Blast radius - especially shared/global code paths, resource
+               limits, SQLite pragmas, and the hourly background sweeps
+               (AggregateCalculationService, RankingCalculationService).
+            4. Correctness of the change itself, and whether it follows the
+               conventions in CLAUDE.md (feature-first folders, records for
+               DTOs, NodaTime Instant, no emojis, $pn/decode rules for player
+               and server names).
+            5. Test coverage for the changed behaviour.
+
+            ## How to respond
+
+            You cannot run the test suite here - `./scripts/verify.sh` needs
+            Docker, the .NET SDK and a SQLite snapshot that this runner does not
+            have. Do not try. Review statically, and say plainly in your summary
+            that tests were not run.
+
+            Pick exactly one outcome and act on it:
+
+            - APPROVE - sound and worth keeping. Post a short review saying so.
+            - EDIT IN PLACE - right idea, wrong details. Make the changes
+              yourself: edit the files, `git commit`, and `git push origin
+              HEAD:${{ steps.pr.outputs.ref }}`. Then post a comment listing
+              what you changed and why.
+            - REJECT - too specific, or does not solve a bigger problem. Post a
+              comment explaining the reasoning, then `gh pr close` it. Be
+              concrete about what would make a version of this worth merging.
+
+            Use `gh pr comment` for the top-level verdict. Use
+            `mcp__github_inline_comment__create_inline_comment` (with
+            `confirmed: true`) for specific lines. Post your findings to GitHub
+            - do not leave them only in the run log.
+
+          claude_args: |
+            --allowedTools "Read,Edit,Write,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(git:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr edit:*),Bash(gh pr close:*)"
+            --max-turns 40
+
+      # The action hides Claude's output by default, so a failure surfaces only
+      # as "is_error:true" with no reason. This pulls the error fields out of the
+      # execution log without dumping the whole conversation into the public run
+      # log, which is what `show_full_output: true` would do.
+      - name: Explain Claude failure
+        if: failure() && steps.claude.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          set -uo pipefail
+          if [ ! -f "$EXECUTION_FILE" ]; then
+            echo "No execution log at $EXECUTION_FILE"
+            exit 0
+          fi
+          echo "::group::Claude error detail"
+          # Emit only diagnostic scalars - error text, result subtype, usage -
+          # never assistant message content.
+          jq -r '
+            [.. | objects
+               | select(has("error") or has("is_error") or .type == "result")
+               | {type, subtype, is_error, error, result, permission_denials_count}
+               | with_entries(select(.value != null))]
+            | unique | .[] | tostring
+          ' "$EXECUTION_FILE" 2>/dev/null || cat "$EXECUTION_FILE"
+          echo "::endgroup::"
