@@ -146,6 +146,75 @@ public sealed class BfListApiServiceTests
     }
 
     [Fact]
+    public async Task TryGetCachedServerByName_MemoryHit_DoesNotCallUpstream()
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        memoryCache.Set(HotKey, new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow,
+            Servers =
+            [
+                new Bf1942ServerInfo
+                {
+                    Name = "CHASABA Main BF1942 Server",
+                    Ip = "153.207.118.175",
+                    Port = 14567,
+                    Tickets1 = 650,
+                    Tickets2 = 436
+                }
+            ]
+        }, TimeSpan.FromSeconds(30));
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(Substitute.For<ICacheService>(), memoryCache, handler);
+
+        var found = await service.TryGetCachedServerByNameAsync(Game, "CHASABA Main BF1942 Server");
+        var missing = await service.TryGetCachedServerByNameAsync(Game, "No Such Server");
+
+        Assert.NotNull(found);
+        Assert.Equal("153.207.118.175", found.Ip);
+        Assert.Equal(650, found.Tickets1);
+        Assert.Null(missing);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_NotFound_IsCachedAndDoesNotThrow()
+    {
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+
+        var handler = FakeHttpMessageHandler.ReturningStatus(HttpStatusCode.NotFound);
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var first = await service.FetchSingleServerSummaryAsync(Game, "153.223.78.15:14567");
+        Assert.Null(first);
+        Assert.Equal(1, handler.CallCount);
+
+        await cacheService.Received().SetAsync(
+            "server:bf1942:153.223.78.15:14567",
+            Arg.Is<BfListApiService.CachedSingleServer>(c => !c.Found && c.Server == null),
+            TimeSpan.FromSeconds(8));
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_CachedMiss_SkipsUpstream()
+    {
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>("server:bf1942:153.223.78.15:14567")
+            .Returns(new BfListApiService.CachedSingleServer { Found = false });
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "153.223.78.15:14567");
+
+        Assert.Null(result);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
     public void MapToSummary_CopiesAllBfListHostFields()
     {
         var service = BuildService(Substitute.For<ICacheService>());
