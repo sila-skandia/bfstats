@@ -3,8 +3,16 @@
 **Status: built and validated end to end against a real 24 GB production backup**
 (`bfstats-sqlite-latest.db`, data current to 2026-09-08 10:46, 1,413,668 rounds).
 
-    scripts/make-e2e-fixture.sh bfstats-sqlite-latest.db --force   # 208 MB, 2 s
-    scripts/make-e2e-graph.sh --force                              # 33 MB, 2 min
+    gh release download e2e-fixture --dir ~/.cache/bfstats-e2e --clobber
+    zstd -d ~/.cache/bfstats-e2e/*.zst --rm
+    scripts/make-e2e-graph.sh --force        # only when the graph needs rebuilding
+
+The SQLite carve is no longer run by hand from this repo — it moved to the
+`bfstats-backup-both` runbook in **home-server-mgr** and now runs as the last
+phase of every production backup, publishing straight to the `e2e-fixture`
+release. "Publishing the fixture" below describes the split. The measurements
+in this document are from the original local runs and still hold: 176 MB in
+21 s against a 25 G source, on the server.
 
 Full suite on the result: **138 passed, 3 failed** — the same three that fail on
 the old synthetic seed, so the fixture is a clean drop-in. One caveat with
@@ -162,7 +170,11 @@ Then `ANALYZE` (the app relies on `sqlite_stat1`; see
 Read DDL from `sqlite_master`, **not** `.schema` — index DDL here spans multiple
 lines and a line-oriented split tears statements in half.
 
-The shipping script is [scripts/make-e2e-fixture.sh](../../scripts/make-e2e-fixture.sh).
+The shipping implementation is the `build_e2e_fixture` phase of
+`config/scripts/bfstats-backup-both.sh` in home-server-mgr. It started life here
+as `scripts/make-e2e-fixture.sh`; the SQL below is that script's, unchanged. It
+moved because the only input it ever wanted is the checkpointed copy the backup
+already makes, so running it anywhere else meant moving 25 G first.
 
 ---
 
@@ -296,7 +308,7 @@ boot overlaps `dotnet run`, so in practice it is closer to free.
 
 | | |
 |---|---|
-| `scripts/make-e2e-fixture.sh` | Carves the fixture. `foreign_key_check` and per-tier row counts are hard gates; writes `template.meta`. |
+| `bfstats-backup-both` runbook | Carves the fixture and publishes it, as the last phase of every backup. `foreign_key_check` and per-tier row counts are hard gates; writes `template.meta`. Lives in home-server-mgr. |
 | `scripts/make-e2e-graph.sh` | Builds `neo4j.dump` from the fixture and republishes the fixture with matching watermarks. |
 | `api/Program.cs` | `E2E_BUILD_GRAPH=true` one-shot ETL mode; `E2E_SEED` now migrates a real fixture instead of no-opping `EnsureCreated` on it. |
 | `scripts/e2e-env.sh` | Adds `NEO4J_PORT` (`7690+slot`), data dir and container name to the slot. |
@@ -333,19 +345,37 @@ scores. What is not, and how it is handled:
 |---|---|
 | `RefreshTokens`, `AdminPins`, `AdminAuditLogs` | never extracted |
 | `Users.Email` | redacted to `user{Id}@e2e.invalid` |
-| `UserPlayerNames`, `UserBuddies`, `UserFavoriteServers` | dropped unless `--keep-profiles` names the user id |
+| `UserPlayerNames`, `UserBuddies`, `UserFavoriteServers` | dropped unless `E2E_KEEP_PROFILES` names the user id |
 
-`--keep-profiles` exists because those three are leaf tables — nothing has a
+`E2E_KEEP_PROFILES` exists because those three are leaf tables — nothing has a
 foreign key into them — so they can be emptied without dangling anything, while
 `Users` itself has to stay as an FK target for tournaments and comments. Keeping
 exactly one real profile gives the profile pages something to render without
-publishing everybody's account-to-gamertag mapping:
+publishing everybody's account-to-gamertag mapping. It defaults to `1` — the
+owner's — in the runbook.
 
-```bash
-scripts/make-e2e-fixture.sh bfstats-sqlite-latest.db --keep-profiles 1 --force
-scripts/make-e2e-graph.sh --force
-scripts/publish-e2e-fixture.sh          # prompts before uploading
-```
+There is no `--keep-emails` equivalent any more. It existed for local debugging
+and was a hard stop on publish; now that the same code path both carves *and*
+publishes unattended, the safe option is the only option.
+
+**Two publishers, one release.** The halves are refreshed on different clocks
+and each owns its own assets:
+
+| Asset | Published by | When |
+|---|---|---|
+| `template.db.zst`, `template.meta` | `bfstats-backup-both` runbook (home-server-mgr) | every production backup |
+| `neo4j.dump.zst` | `scripts/publish-e2e-fixture.sh` | by hand, after `make-e2e-graph.sh` |
+
+That split is why `publish-e2e-fixture.sh` no longer uploads the SQLite half:
+two writers for one asset is how a release ends up describing data it is not
+carrying. It gates on `graph_built=` in `template.meta` so a dump can only be
+published alongside the fixture it was actually built from.
+
+CI is served entirely by the SQLite half — the workflow never sets `E2E_NEO4J=1`,
+so it downloads `neo4j.dump` and never loads it. A graph that lags the fixture
+therefore degrades local graph-backed specs only, and degrades them quietly:
+`template.db` inherits production's `SyncedToNeo4jAt` stamps, so a stale graph
+under-reports edges rather than re-running the ETL and double-counting.
 
 Distribution is a **GitHub Release asset** on the `e2e-fixture` tag — a storage
 tag carrying no code. `zstd -19` takes the pair from 243 MB to **60 MB**

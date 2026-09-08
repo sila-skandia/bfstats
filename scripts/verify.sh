@@ -26,9 +26,9 @@ set -e
 # parallel worktrees do not share playertracker.db or collide on 9222/5173.
 # See features/isolated-e2e-worktrees/README.md.
 #
-# Data: if this machine has a real-data fixture in ~/.cache/bfstats-e2e (built by
-# scripts/make-e2e-fixture.sh), every run starts from a copy of it. Otherwise the
-# API builds the small synthetic seed as before.
+# Data: if this machine has a real-data fixture in ~/.cache/bfstats-e2e (fetch it
+# with `gh release download e2e-fixture`), every run starts from a copy of it.
+# Otherwise the API builds the small synthetic seed as before.
 # See features/e2e-real-data-fixtures/README.md.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

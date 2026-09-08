@@ -15,8 +15,11 @@ If `~/.cache/bfstats-e2e/template.db` exists, every run starts from a copy of
 that real-data fixture (real players, servers and aggregates) instead of the
 7-player synthetic seed — `E2eDatabaseSeed` still runs on top, so keep asserting
 against its fixed handles rather than real player names. `E2E_NEO4J=1` also gives
-the run a private graph on `7690+slot`. Build both artifacts with
-`scripts/make-e2e-fixture.sh` then `scripts/make-e2e-graph.sh`; see
+the run a private graph on `7690+slot`. Get both artifacts with
+`gh release download e2e-fixture --dir ~/.cache/bfstats-e2e --clobber && zstd -d
+~/.cache/bfstats-e2e/*.zst --rm` — the SQLite half is republished by the
+`bfstats-backup-both` runbook in home-server-mgr on every production backup, and
+the graph by `scripts/make-e2e-graph.sh` + `scripts/publish-e2e-fixture.sh`. See
 `features/e2e-real-data-fixtures/README.md`.
 
 ### Feature to Test Mapping
