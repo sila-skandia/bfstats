@@ -5,6 +5,10 @@
 #
 # Install: curl https://mise.run | sh
 
+[tasks.bootstrap]
+description = "Make a fresh worktree runnable: redis, signing key, node_modules, fixture"
+run = "./scripts/bootstrap-worktree.sh {{args}}"
+
 [tasks.e2e]
 description = "API unit tests + isolated Playwright E2E (safe across worktrees)"
 run = "./scripts/verify.sh {{args}}"
