@@ -32,8 +32,16 @@ public class AggregateCalculationService(
 
         logger.LogInformation("AggregateCalculationService started, waiting {Delay} before first run", StartupDelay);
 
-        // Delay startup to avoid blocking Kestrel initialization
-        await Task.Delay(StartupDelay, stoppingToken);
+        try
+        {
+            // Delay startup to avoid blocking Kestrel initialization
+            await Task.Delay(StartupDelay, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            logger.LogInformation("AggregateCalculationService stopped");
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -97,6 +105,12 @@ public class AggregateCalculationService(
                     "Aggregate calculation skipped due to database lock ({SqliteError})",
                     SqliteBusy.Describe(ex));
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                cycleStopwatch.Stop();
+                activity?.SetTag("cycle_duration_ms", cycleStopwatch.ElapsedMilliseconds);
+                break;
+            }
             catch (Exception ex)
             {
                 cycleStopwatch.Stop();
@@ -106,8 +120,17 @@ public class AggregateCalculationService(
                 logger.LogError(ex, "Error during aggregate calculation");
             }
 
-            await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
+
+        logger.LogInformation("AggregateCalculationService stopped");
     }
 
     /// <summary>
