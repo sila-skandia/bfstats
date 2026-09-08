@@ -331,7 +331,10 @@ not fixture-related:
 ## Running in CI
 
 `.github/workflows/claude-cursor-review.yml` runs the same `./scripts/verify.sh` developers run,
-so a CI failure reproduces locally with one command.
+so a CI failure reproduces locally with one command. Since
+`features/worktree-pre-pr-verification/`, it also gets there the same way: the
+E2E job's only setup step is `./scripts/bootstrap-worktree.sh`, which is what a
+developer runs in a fresh worktree.
 
 The repository is public, which cuts both ways. Standard GitHub-hosted runners
 are free with no minute cap, and release storage and bandwidth are free — but

@@ -1,5 +1,10 @@
 # Isolated E2E runs across git worktrees
 
+This covers making concurrent worktrees safe to *run*. Making a fresh worktree
+runnable at all — node_modules, Redis, the fixture, a JWT signing key — is
+`./scripts/bootstrap-worktree.sh`, documented in
+`features/worktree-pre-pr-verification/`. Run that once after `git worktree add`.
+
 ## Problem
 
 `./scripts/verify.sh` used to pin the API to `:9222`, the UI to `:5173`, and
