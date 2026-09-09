@@ -38,6 +38,8 @@ const LeaderboardV4 = () => import('../views/v4/LeaderboardV4.vue')
 const ArcadeV4 = () => import('../views/v4/ArcadeV4.vue')
 const ServerWrappedV4 = () => import('../views/v4/ServerWrappedV4.vue')
 const PlayerWrappedV4 = () => import('../views/v4/PlayerWrappedV4.vue')
+const TermsV4 = () => import('../views/v4/TermsV4.vue')
+const PrivacyV4 = () => import('../views/v4/PrivacyV4.vue')
 
 // Wrapped URLs carry the year as a path segment (`.../wrapped/2026`). The
 // year-less form redirects here so `/wrapped` always resolves to "this year".
@@ -600,6 +602,28 @@ const routes: RouteRecordRaw[] = [
         {
           path: 'admin/tournaments/:id/:tab',
           redirect: to => `/v4/manage/tournaments/${to.params.id}/${to.params.tab}`
+        },
+        // Legal pages keep short, stable, top-level URLs (absolute child paths)
+        // because they get pasted into third-party consoles — Discord's
+        // developer portal wants a Terms and a Privacy URL — and those
+        // registrations outlive any internal route reshuffle.
+        {
+          path: '/terms',
+          name: 'terms',
+          component: TermsV4,
+          meta: {
+            title: 'Terms of Service · bfstats.io',
+            description: 'The terms that apply to using bfstats.io.'
+          }
+        },
+        {
+          path: '/privacy',
+          name: 'privacy',
+          component: PrivacyV4,
+          meta: {
+            title: 'Privacy Policy · bfstats.io',
+            description: 'What data bfstats.io holds, why, and how to export or delete it.'
+          }
         }
       ]
     }
