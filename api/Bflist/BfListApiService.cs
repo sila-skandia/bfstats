@@ -16,7 +16,7 @@ public interface IBfListApiService
     Task<object?> FetchSingleServerAsync(string game, string serverIdentifier);
 
     /// <summary>
-    /// Peeks the warm live-server snapshot (same 30s cache as the landing page) for a
+    /// Peeks the warm live-server snapshot (hot, then last-known-good) for a
     /// name match. Does not call BFList. Used by the banner so a stale <c>Servers.Ip</c>
     /// from a duplicate-name row does not 404 against an address BFList no longer lists.
     /// </summary>
@@ -24,8 +24,9 @@ public interface IBfListApiService
 
     /// <summary>
     /// Read-path variant of <see cref="FetchAllServersAsync"/>: same hot cache, but if the
-    /// upstream fetch fails and the hot cache is empty, falls back to the last successful
-    /// snapshot (raw_servers:{game}:last_good) instead of throwing. Never used by the stats
+    /// hot cache is empty, prefers the last successful snapshot
+    /// (raw_servers:{game}:last_good) over waiting on a live BFList round-trip. Only
+    /// fetches upstream when no snapshot exists at all. Never used by the stats
     /// collector — session tracking must never be fed a stale/fallback snapshot.
     /// </summary>
     Task<Models.RawServerSnapshot> FetchAllServersWithMetaAsync(string game);
@@ -64,6 +65,10 @@ public class BfListApiService(
     // Read-path safety net: kept far longer than the hot cache so a sustained BFList outage
     // degrades to "last known status, clearly stale" instead of an empty landing page.
     private static readonly TimeSpan LastGoodCacheDuration = TimeSpan.FromHours(24);
+
+    // Same 90s grace as LiveServersController.StaleDataThreshold. Last-good younger than
+    // this is the previous hot snapshot (hot TTL is 30s); older than this is a real outage.
+    private static readonly TimeSpan LastGoodFreshThreshold = TimeSpan.FromSeconds(90);
 
     private static string RawServersCacheKey(string game) => $"raw_servers:{game}";
     private static string RawServersLastGoodCacheKey(string game) => $"raw_servers:{game}:last_good";
@@ -128,6 +133,16 @@ public class BfListApiService(
             return cached;
         }
 
+        // Serve last-known-good before touching BFList. Polly's 8s attempt / 30s total
+        // timeouts plus the per-game fetch lock turn an upstream stall into a 30s
+        // homepage, and TimeoutRejectedException pages Seq Exceptions even after we
+        // fall back to 200. The collector refreshes last-good via FetchAllServersAsync.
+        var lastGood = await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
+        if (lastGood != null)
+        {
+            return AsReadPathSnapshot(lastGood);
+        }
+
         try
         {
             return await FetchAndCacheServersAsync(game);
@@ -135,25 +150,31 @@ public class BfListApiService(
         catch (Exception ex)
         {
             logger.LogWarning(
-                "Live fetch failed for game {Game} ({ExceptionType}: {Message}); falling back to last-known-good snapshot",
+                "Live fetch failed for game {Game} ({ExceptionType}: {Message}); no last-known-good snapshot to fall back to",
                 game, ex.GetType().Name, ex.Message);
-            var lastGood = await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
-            if (lastGood == null)
-            {
-                throw;
-            }
-
-            // Never hand back a cache-owned instance with IsFallback flipped — IMemoryCache
-            // returns the same shared reference on every read (unlike Redis, which
-            // deserializes a fresh object per call), so mutating it here would corrupt what
-            // every other reader — and every future recovery — sees from the same entry.
-            return new RawServerSnapshot
-            {
-                FetchedAtUtc = lastGood.FetchedAtUtc,
-                Servers = lastGood.Servers,
-                IsFallback = true
-            };
+            throw;
         }
+    }
+
+    /// <summary>
+    /// Last-good younger than <see cref="LastGoodFreshThreshold"/> is the previous hot
+    /// snapshot and can be returned as-is. Older than that is a real outage: copy with
+    /// <see cref="RawServerSnapshot.IsFallback"/> so the landing page disables edge cache.
+    /// Never mutate the cache-owned instance — IMemoryCache returns the same reference.
+    /// </summary>
+    private static RawServerSnapshot AsReadPathSnapshot(RawServerSnapshot lastGood)
+    {
+        if (DateTime.UtcNow - lastGood.FetchedAtUtc <= LastGoodFreshThreshold)
+        {
+            return lastGood;
+        }
+
+        return new RawServerSnapshot
+        {
+            FetchedAtUtc = lastGood.FetchedAtUtc,
+            Servers = lastGood.Servers,
+            IsFallback = true
+        };
     }
 
     /// <summary>
@@ -308,9 +329,13 @@ public class BfListApiService(
 
             return JsonSerializer.Deserialize<Bf1942ServerInfo>(content, CaseInsensitiveJson);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex)
         {
-            logger.LogWarning("Failed to fetch single server {ServerIdentifier}: {Error}", serverIdentifier, ex.Message);
+            // Polly timeout / circuit-open are not HttpRequestException. Callers treat
+            // null as not-listed; throwing would 500 GetServer after the hang.
+            logger.LogWarning(
+                "Failed to fetch single server {ServerIdentifier} ({ExceptionType}: {Message})",
+                serverIdentifier, ex.GetType().Name, ex.Message);
             return null;
         }
     }
@@ -322,11 +347,24 @@ public class BfListApiService(
             return null;
         }
 
-        var snapshot = await GetSnapshotAsync(RawServersCacheKey(game), TimeSpan.FromSeconds(ServerListCacheSeconds));
+        var snapshot = await TryPeekSnapshotAsync(game);
         var match = snapshot?.Servers.FirstOrDefault(s =>
             string.Equals(s.Name, serverName, StringComparison.Ordinal));
         return match == null ? null : MapToSummary(match);
     }
+
+    /// <summary>
+    /// Hot snapshot, then last-known-good. Never calls BFList. Same peek the landing
+    /// page uses so a Recreate (empty process cache) still serves Redis last-good.
+    /// </summary>
+    private async Task<RawServerSnapshot?> TryPeekSnapshotAsync(string game)
+    {
+        return await GetSnapshotAsync(RawServersCacheKey(game), TimeSpan.FromSeconds(ServerListCacheSeconds))
+            ?? await GetSnapshotAsync(RawServersLastGoodCacheKey(game), LastGoodCacheDuration);
+    }
+
+    private static bool MatchesServerIdentifier(Bf1942ServerInfo server, string serverIdentifier) =>
+        string.Equals($"{server.Ip}:{server.Port}", serverIdentifier, StringComparison.OrdinalIgnoreCase);
 
     // Helper methods for UI that need ServerSummary
     public async Task<Models.ServerSummary[]> FetchServerSummariesAsync(string game, int perPage = 100, string? cursor = null, string? after = null)
@@ -359,6 +397,34 @@ public class BfListApiService(
         }
 
         logger.LogDebug("Cache miss for server {Game}:{ServerIdentifier}", game, serverIdentifier);
+
+        // Same last-good-first rule as the landing-page list: if the collector (or a
+        // previous live fetch) already has a snapshot, do not wait on BFList. GetServer
+        // and banner tickets otherwise eat Polly's 8s attempt timeout twice, then 500.
+        var snapshot = await TryPeekSnapshotAsync(game);
+        if (snapshot != null)
+        {
+            var listed = snapshot.Servers.FirstOrDefault(s => MatchesServerIdentifier(s, serverIdentifier));
+            if (listed != null)
+            {
+                var fromSnapshot = MapToSummary(listed);
+                await cacheService.SetAsync(
+                    cacheKey,
+                    new CachedSingleServer { Found = true, Server = fromSnapshot },
+                    TimeSpan.FromSeconds(SingleServerCacheSeconds));
+                return fromSnapshot;
+            }
+
+            logger.LogDebug(
+                "Server {ServerIdentifier} is not in the cached live snapshot; skipping BFList",
+                serverIdentifier);
+            await cacheService.SetAsync(
+                cacheKey,
+                new CachedSingleServer { Found = false },
+                TimeSpan.FromSeconds(SingleServerCacheSeconds));
+            return null;
+        }
+
         var server = await FetchSingleServerAsync(game, serverIdentifier);
 
         if (server is Bf1942ServerInfo bf1942Server)

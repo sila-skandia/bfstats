@@ -1,4 +1,5 @@
 using System.Globalization;
+using api.Authorization;
 using api.Data.Entities;
 using api.PlayerTracking;
 using Microsoft.EntityFrameworkCore;
@@ -131,7 +132,55 @@ public static class E2eDatabaseSeed
             }
         }
 
-        if (!await db.Users.AnyAsync(u => u.Email == AdminEmail, cancellationToken))
+        // A full 7x24 grid for the E2E server. MmServerActivityHeatmap renders a
+        // muted placeholder instead of its grid when patternData.slots is empty
+        // — and the Chrono-Wave ribbon lives inside that grid — so without these
+        // rows the golden-hour spec can only ever see the header controls.
+        //
+        // Shaped like a real server rather than filled with a constant: a
+        // European evening peak, a small hours trough, and busier weekends, so
+        // the Activity/Momentum/Ceiling overlays have something to differentiate.
+        if (!await db.ServerHourlyPatterns.AnyAsync(p => p.ServerGuid == ServerGuid, cancellationToken))
+        {
+            var patternUpdatedAt = Instant.FromDateTimeUtc(DateTime.SpecifyKind(now, DateTimeKind.Utc));
+            for (var day = 0; day < 7; day++)
+            {
+                var weekendBoost = day is 0 or 6 ? 1.4 : 1.0;
+                for (var hour = 0; hour < 24; hour++)
+                {
+                    // Peaks around 20:00 UTC, troughs around 05:00.
+                    var hoursFromPeak = Math.Min(Math.Abs(hour - 20), 24 - Math.Abs(hour - 20));
+                    var avg = Math.Round((4 + (18 * Math.Max(0, 1 - (hoursFromPeak / 9.0)))) * weekendBoost, 2);
+
+                    db.ServerHourlyPatterns.Add(new ServerHourlyPattern
+                    {
+                        ServerGuid = ServerGuid,
+                        DayOfWeek = day,
+                        HourOfDay = hour,
+                        AvgPlayers = avg,
+                        MinPlayers = Math.Round(avg * 0.4, 2),
+                        Q25Players = Math.Round(avg * 0.7, 2),
+                        MedianPlayers = avg,
+                        Q75Players = Math.Round(avg * 1.2, 2),
+                        Q90Players = Math.Round(avg * 1.4, 2),
+                        MaxPlayers = Math.Round(avg * 1.6, 2),
+                        DataPoints = 24,
+                        UpdatedAt = patternUpdatedAt,
+                    });
+                }
+            }
+        }
+
+        // Role matters. TokenService falls back to AppRoles.User when it is null,
+        // so without it the suite's token said role=User and the tournament specs
+        // only passed because AdminTournamentController also accepts the
+        // tournament's creator — they were exercising ownership, never the Admin
+        // policy. Anything behind [Authorize(Policy = "Admin")] was untestable.
+        //
+        // Updated in place as well as created: a fixture carved from production
+        // already carries this user with a null role.
+        var admin = await db.Users.FirstOrDefaultAsync(u => u.Email == AdminEmail, cancellationToken);
+        if (admin is null)
         {
             db.Users.Add(new User
             {
@@ -139,7 +188,12 @@ public static class E2eDatabaseSeed
                 CreatedAt = now.AddDays(-1),
                 LastLoggedIn = now.AddHours(-1),
                 IsActive = true,
+                Role = AppRoles.Admin,
             });
+        }
+        else if (admin.Role != AppRoles.Admin)
+        {
+            admin.Role = AppRoles.Admin;
         }
 
         await db.SaveChangesAsync(cancellationToken);

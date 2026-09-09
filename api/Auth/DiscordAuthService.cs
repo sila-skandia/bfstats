@@ -17,8 +17,16 @@ public class DiscordAuthService(
     IHttpClientFactory httpClientFactory) : IDiscordAuthService
 {
     private readonly HttpClient _httpClient = httpClientFactory.CreateClient();
-    private readonly string _clientId = configuration["DiscordOAuth:ClientId"] ?? throw new InvalidOperationException("DiscordOAuth:ClientId not configured");
-    private readonly string _clientSecret = configuration["DiscordOAuth:ClientSecret"] ?? throw new InvalidOperationException("DiscordOAuth:ClientSecret not configured");
+    // Resolved on use, not in a field initialiser. As fields these threw while the
+    // service was being constructed, which took AuthController down with it — so
+    // POST /auth/login returned 500 even for the DevBypass path, which never
+    // contacts Discord. That made the E2E suite's admin login impossible without
+    // real OAuth credentials on the machine. Failing here instead still surfaces
+    // missing config on the first request that genuinely needs it.
+    private string ClientId => configuration["DiscordOAuth:ClientId"]
+        ?? throw new InvalidOperationException("DiscordOAuth:ClientId not configured");
+    private string ClientSecret => configuration["DiscordOAuth:ClientSecret"]
+        ?? throw new InvalidOperationException("DiscordOAuth:ClientSecret not configured");
 
     public async Task<DiscordUserPayload> ExchangeCodeForUserAsync(string code, string redirectUri, string? ipAddress = null)
     {
@@ -63,8 +71,8 @@ public class DiscordAuthService(
     {
         var formData = new Dictionary<string, string>
         {
-            { "client_id", _clientId },
-            { "client_secret", _clientSecret },
+            { "client_id", ClientId },
+            { "client_secret", ClientSecret },
             { "grant_type", "authorization_code" },
             { "code", code },
             { "redirect_uri", redirectUri }
