@@ -16,6 +16,8 @@ public class AuthControllerTests
     private readonly PlayerTrackerDbContext _dbContext;
     private readonly AuthController _controller;
     private readonly User _user;
+    private readonly IAccountService _accountService = Substitute.For<IAccountService>();
+    private readonly IRefreshTokenService _refreshTokenService = Substitute.For<IRefreshTokenService>();
 
     public AuthControllerTests()
     {
@@ -38,7 +40,6 @@ public class AuthControllerTests
         var discordAuthService = Substitute.For<IDiscordAuthService>();
         var logger = Substitute.For<ILogger<AuthController>>();
         var tokenService = Substitute.For<ITokenService>();
-        var refreshTokenService = Substitute.For<IRefreshTokenService>();
         var configuration = Substitute.For<IConfiguration>();
 
         _controller = new AuthController(
@@ -46,7 +47,8 @@ public class AuthControllerTests
             discordAuthService,
             logger,
             tokenService,
-            refreshTokenService,
+            _refreshTokenService,
+            _accountService,
             configuration)
         {
             ControllerContext = new ControllerContext
@@ -64,6 +66,70 @@ public class AuthControllerTests
 
     private void SeedPlayer(string name) =>
         _dbContext.Players.Add(new Player { Name = name, FirstSeen = DateTime.UtcNow, LastSeen = DateTime.UtcNow });
+
+    private static AccountDeletionSummary EmptySummary =>
+        new(0, 0, 0, 0, 0, 0, 0, 0);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("delete")]      // case matters
+    [InlineData("DELETE ME")]
+    [InlineData("yes")]
+    public async Task DeleteAccount_RefusesWithoutTheExactConfirmationPhrase(string? confirm)
+    {
+        var result = await _controller.DeleteAccount(new DeleteAccountRequest { Confirm = confirm });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        await _accountService.DidNotReceiveWithAnyArgs().DeleteAsync(default);
+    }
+
+    [Fact]
+    public async Task DeleteAccount_ErasesAndClearsTheRefreshCookie()
+    {
+        _accountService.DeleteAsync(_user.Id).Returns(EmptySummary);
+
+        var result = await _controller.DeleteAccount(new DeleteAccountRequest { Confirm = "DELETE" });
+
+        Assert.IsType<OkObjectResult>(result);
+        await _accountService.Received(1).DeleteAsync(_user.Id);
+        // Without this the browser keeps presenting a token that no longer
+        // resolves to anything, which surfaces as a confusing 401 loop.
+        _refreshTokenService.Received(1).ClearCookie(_controller.Response);
+    }
+
+    [Fact]
+    public async Task DeleteAccount_Returns404WhenTheAccountIsAlreadyErased()
+    {
+        _accountService.DeleteAsync(_user.Id).Returns((AccountDeletionSummary?)null);
+
+        var result = await _controller.DeleteAccount(new DeleteAccountRequest { Confirm = "DELETE" });
+
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ExportAccount_ReturnsTheExport()
+    {
+        var export = new AccountExport(
+            "2026-09-10T00:00:00Z",
+            new AccountExportProfile(_user.Id, _user.Email, null, DateTime.UtcNow, DateTime.UtcNow, true),
+            [], [], [], [], [], [], []);
+        _accountService.ExportAsync(_user.Id).Returns(export);
+
+        var result = await _controller.ExportAccount();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Same(export, ok.Value);
+    }
+
+    [Fact]
+    public async Task ExportAccount_Returns404WhenTheAccountIsErased()
+    {
+        _accountService.ExportAsync(_user.Id).Returns((AccountExport?)null);
+
+        Assert.IsType<NotFoundObjectResult>(await _controller.ExportAccount());
+    }
 
     [Fact]
     public async Task AddPlayerNamesBulk_AddsAllValidNames()
@@ -311,7 +377,7 @@ public class AuthControllerTests
         var logger = Substitute.For<ILogger<AuthController>>();
         var discordAuth = Substitute.For<IDiscordAuthService>();
 
-        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, config)
+        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, Substitute.For<IAccountService>(), config)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -334,7 +400,7 @@ public class AuthControllerTests
         var logger = Substitute.For<ILogger<AuthController>>();
         var discordAuth = Substitute.For<IDiscordAuthService>();
 
-        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, config)
+        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, Substitute.For<IAccountService>(), config)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -402,6 +468,7 @@ public class AuthControllerTests
             Substitute.For<ILogger<AuthController>>(),
             Substitute.For<ITokenService>(),
             refreshTokenService,
+            Substitute.For<IAccountService>(),
             config)
         {
             ControllerContext = new ControllerContext
