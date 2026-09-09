@@ -173,7 +173,7 @@ public sealed class ServerBannerService(
         }
     }
 
-    private static ServerBannerTickets? TicketsFrom(api.Bflist.Models.ServerSummary? summary)
+    private static ServerBannerTickets? TicketsFrom(ServerSummary? summary)
     {
         if (summary is null)
         {
