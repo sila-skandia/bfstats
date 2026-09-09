@@ -206,7 +206,8 @@ public class PlayerTrackerDbContext : DbContext
         // Serves "WHERE ServerGuid IN (...) AND IsActive" as EF actually emits it. SQLite
         // will only pick the partial index above when the SQL contains a literal
         // "IsActive = 1", and EF renders `r.IsActive` as a bare boolean, so that index is
-        // unreachable from LINQ. This composite covers the live-servers and banner queries.
+        // unreachable from LINQ. Live-servers uses FromSqlRaw with the literal; keep this
+        // composite for any remaining LINQ callers.
         modelBuilder.Entity<Round>()
             .HasIndex(r => new { r.ServerGuid, r.IsActive });
 
