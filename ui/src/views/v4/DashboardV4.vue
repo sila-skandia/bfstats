@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { fetchDashboardData, type DashboardResponse, type OnlineBuddy, type FavoriteServer } from '@/services/dashboardService'
-import { statsService, type UserPlayerNameEntry } from '@/services/statsService'
+import { statsService, DELETE_ACCOUNT_CONFIRM_PHRASE, type UserPlayerNameEntry } from '@/services/statsService'
 import { adminTournamentService, type TournamentListItem, type CopyTournamentRequest } from '@/services/adminTournamentService'
 import { kdClass, loadClass } from './mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
@@ -263,6 +263,65 @@ const deleteInvalidAliases = async () => {
 const handleSignOut = () => {
   logout()
   router.push('/v4/servers/bf1942')
+}
+
+// ---- Account data: export + erasure -------------------------------------
+// Both are self-service by design: the Privacy Policy promises you don't have
+// to ask a human to get your data out or to delete it.
+
+const exporting = ref(false)
+const exportError = ref<string | null>(null)
+
+const handleExportData = async () => {
+  exporting.value = true
+  exportError.value = null
+  try {
+    const payload = await statsService.exportAccount()
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `bfstats-account-export-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+  } catch {
+    exportError.value = 'Could not export your data. Try again, or ask in Discord.'
+  } finally {
+    exporting.value = false
+  }
+}
+
+const showDeleteAccount = ref(false)
+const deleteConfirmText = ref('')
+const deleting = ref(false)
+const deleteError = ref<string | null>(null)
+
+const canConfirmDelete = computed(() => deleteConfirmText.value.trim() === DELETE_ACCOUNT_CONFIRM_PHRASE)
+
+const openDeleteAccount = () => {
+  deleteConfirmText.value = ''
+  deleteError.value = null
+  showDeleteAccount.value = true
+}
+
+const handleDeleteAccount = async () => {
+  if (!canConfirmDelete.value || deleting.value) return
+  deleting.value = true
+  deleteError.value = null
+  try {
+    await statsService.deleteAccount()
+    // The API has already dropped every refresh token and cleared the cookie;
+    // this clears the client-side copy and sends them somewhere that doesn't
+    // require an account.
+    showDeleteAccount.value = false
+    logout()
+    router.push('/v4/servers/bf1942')
+  } catch {
+    deleteError.value = 'Could not delete your account. Try again, or ask in Discord.'
+    deleting.value = false
+  }
 }
 </script>
 
@@ -567,7 +626,7 @@ const handleSignOut = () => {
         </div>
       </section>
 
-      <!-- Account footer (sign out) -->
+      <!-- Account footer (sign out, data export, erasure) -->
       <section class="mm-dash__account">
         <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 10px">Account</div>
         <div class="mm-dash__account-row">
@@ -577,8 +636,103 @@ const handleSignOut = () => {
           </div>
           <button type="button" class="mm-btn" @click="handleSignOut">Sign out →</button>
         </div>
+
+        <div class="mm-dash__data-rights">
+          <div class="mm-dash__data-rights-row">
+            <div class="mm-dash__data-rights-copy">
+              <div class="mm-dash__data-rights-title">Download your data</div>
+              <p>
+                Everything this account holds, as a JSON file. Public gameplay
+                statistics aren't included — they're collected from public game
+                servers, not from your account.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="mm-btn"
+              :disabled="exporting"
+              @click="handleExportData"
+            >{{ exporting ? 'Preparing…' : 'Export' }}</button>
+          </div>
+          <div v-if="exportError" class="mm-dash__data-rights-error">{{ exportError }}</div>
+
+          <div class="mm-dash__data-rights-row">
+            <div class="mm-dash__data-rights-copy">
+              <div class="mm-dash__data-rights-title">Delete your account</div>
+              <p>
+                Permanently erases your email address, linked aliases, buddies,
+                favourite servers, sessions and comments. This can't be undone.
+                <router-link to="/privacy#deleting">What deletion removes</router-link>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="mm-btn mm-dash__danger-btn"
+              @click="openDeleteAccount"
+            >Delete account</button>
+          </div>
+        </div>
       </section>
     </template>
+
+    <!-- Erasure confirmation. Typing the phrase is deliberate friction: this is
+         the one control on the site with no undo. -->
+    <MmBaseModal
+      v-model="showDeleteAccount"
+      title="Delete your account"
+      subtitle="This cannot be undone"
+      size="md"
+      @close="showDeleteAccount = false"
+    >
+      <div class="mm-dash__delete-body">
+        <div v-if="deleteError" class="mm-dash__delete-error">{{ deleteError }}</div>
+
+        <p class="mm-dash__delete-lead">Deleting <strong>{{ user?.email ?? 'this account' }}</strong> permanently removes:</p>
+        <ul class="mm-dash__delete-list">
+          <li>Your email address and any moderator role</li>
+          <li>Your linked player names, buddies and favourite servers</li>
+          <li>Every sign-in session, including stored IP addresses</li>
+          <li>Every comment you've posted</li>
+        </ul>
+
+        <p class="mm-dash__delete-lead">What stays:</p>
+        <ul class="mm-dash__delete-list">
+          <li>
+            Public gameplay statistics for any in-game name — these come from
+            public game servers, not your account, and other players' match
+            histories reference the same rounds
+          </li>
+          <li>
+            Tournaments you created and rosters you appear on, so other players
+            keep their results. Your email is erased from them
+          </li>
+        </ul>
+
+        <label class="mm-dash__delete-label" for="delete-confirm">
+          Type <strong>{{ DELETE_ACCOUNT_CONFIRM_PHRASE }}</strong> to confirm
+        </label>
+        <input
+          id="delete-confirm"
+          v-model="deleteConfirmText"
+          type="text"
+          class="mm-dash__delete-input"
+          autocomplete="off"
+          spellcheck="false"
+          :placeholder="DELETE_ACCOUNT_CONFIRM_PHRASE"
+          @keyup.enter="handleDeleteAccount"
+        />
+      </div>
+
+      <template #footer>
+        <button type="button" class="mm-btn" @click="showDeleteAccount = false">Cancel</button>
+        <button
+          type="button"
+          class="mm-btn mm-dash__danger-btn mm-btn--strong"
+          :disabled="!canConfirmDelete || deleting"
+          @click="handleDeleteAccount"
+        >{{ deleting ? 'Deleting…' : 'Delete permanently' }}</button>
+      </template>
+    </MmBaseModal>
 
     <MmAddBuddyModal v-if="showAddBuddy" @close="showAddBuddy = false" @added="onBuddyAdded" />
     <MmAddServerModal v-if="showAddServer" @close="showAddServer = false" @added="onServerAdded" />
@@ -933,6 +1087,142 @@ const handleSignOut = () => {
 .mm-dash__alias-row:last-child { border-bottom: 0; }
 
 .mm-dash__alias-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+/* ---- Data rights (export / erasure) ---- */
+
+.mm-dash__data-rights {
+  margin-top: 20px;
+  border-top: 1px solid var(--mm-rule);
+}
+
+.mm-dash__data-rights-row {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--mm-rule);
+}
+.mm-dash__data-rights-row:last-child { border-bottom: 0; }
+
+.mm-dash__data-rights-copy { min-width: 0; max-width: 62ch; }
+
+.mm-dash__data-rights-title {
+  font-family: var(--mm-font-display);
+  font-size: 14px;
+  color: var(--mm-ink);
+  margin-bottom: 4px;
+}
+
+.mm-dash__data-rights-copy p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--mm-ink-muted);
+}
+.mm-dash__data-rights-copy a {
+  color: var(--mm-accent-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--mm-rule-strong);
+  white-space: nowrap;
+}
+.mm-dash__data-rights-copy a:hover { text-decoration-color: var(--mm-accent-soft); }
+
+.mm-dash__data-rights-error {
+  font-size: 12.5px;
+  color: var(--mm-danger);
+  padding-bottom: 12px;
+}
+
+/* Destructive actions carry the danger tint only on hover/intent, so the
+   dashboard doesn't sit there permanently shouting red at the reader. */
+.mm-dash__danger-btn {
+  border-color: var(--mm-rule-strong);
+  color: var(--mm-ink-soft);
+}
+.mm-dash__danger-btn:hover:not(:disabled) {
+  border-color: var(--mm-danger);
+  color: var(--mm-danger);
+}
+.mm-dash__danger-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .mm-dash__data-rights-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .mm-dash__data-rights-row > button { align-self: flex-start; }
+}
+
+/* ---- Erasure confirmation modal ---- */
+
+.mm-dash__delete-body {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--mm-ink-soft);
+}
+
+.mm-dash__delete-error {
+  border-left: 2px solid var(--mm-danger);
+  background: var(--mm-bg-mute);
+  color: var(--mm-danger);
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 12.5px;
+}
+
+.mm-dash__delete-lead {
+  margin: 0 0 8px;
+  color: var(--mm-ink);
+}
+.mm-dash__delete-lead strong {
+  font-weight: 500;
+  font-family: var(--mm-font-mono);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+.mm-dash__delete-list {
+  margin: 0 0 20px;
+  padding-left: 18px;
+  color: var(--mm-ink-muted);
+  font-size: 13px;
+}
+.mm-dash__delete-list li { margin-bottom: 5px; }
+.mm-dash__delete-list li::marker { color: var(--mm-ink-faint); }
+
+.mm-dash__delete-label {
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+.mm-dash__delete-label strong { color: var(--mm-danger); font-weight: 400; }
+
+.mm-dash__delete-input {
+  width: 100%;
+  background: var(--mm-bg);
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  padding: 9px 12px;
+  font-family: var(--mm-font-mono);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--mm-ink);
+}
+.mm-dash__delete-input::placeholder { color: var(--mm-ink-faint); }
+.mm-dash__delete-input:focus {
+  outline: none;
+  border-color: var(--mm-accent);
+}
 
 .mm-dash__offline-list {
   list-style: none;

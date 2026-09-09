@@ -306,6 +306,10 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
       >
         Radio (R / F8)
       </button>
+      <span>·</span>
+      <router-link to="/terms">Terms</router-link>
+      <span>·</span>
+      <router-link to="/privacy">Privacy</router-link>
     </footer>
 
     <MmOmnisearchModal v-model="showOmnisearch" />
