@@ -50,7 +50,11 @@ public class DiscordAuthService(
                 throw new UnauthorizedAccessException("Discord account does not have a verified email");
             }
 
-            logger.LogInformation("Successful Discord authentication for email: {Email}", userPayload.Email);
+            // No email in this line. Sign-in logs outlive the account — an
+            // address left here would survive an erasure request and quietly
+            // undo it. AuthController logs the user id straight after, which is
+            // what's actually useful for tracing a session anyway.
+            logger.LogInformation("Successful Discord authentication");
             return userPayload;
         }
         catch (HttpRequestException ex)
