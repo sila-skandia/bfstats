@@ -1,5 +1,10 @@
 # Isolated E2E runs across git worktrees
 
+This covers making concurrent worktrees safe to *run*. Making a fresh worktree
+runnable at all — node_modules, Redis, the fixture, a JWT signing key — is
+`./scripts/bootstrap-worktree.sh`, documented in
+`features/worktree-pre-pr-verification/`. Run that once after `git worktree add`.
+
 ## Problem
 
 `./scripts/verify.sh` used to pin the API to `:9222`, the UI to `:5173`, and
@@ -97,6 +102,12 @@ is a possible follow-up if a new spec needs historical aggregates. It is not
 required for the current suite: landing/server-details talk to bflist, the
 leaderboard and trend inspector mock their APIs, and tournament tests create
 their own rows.
+
+That follow-up has since been spiked out in
+`features/e2e-real-data-fixtures/` — a 347 MB real-data SQLite fixture plus a
+39 MB per-slot Neo4j dump, with measurements. `VACUUM INTO` turned out to be the
+wrong mechanism (it cannot subset `PlayerObservations`, which is ~78% of the
+file); the spike builds a schema-only target and `INSERT … SELECT`s into it.
 
 ## Escape hatches
 

@@ -1,5 +1,10 @@
 pipeline {
   agent none
+  options {
+    // Recreate of bf42-stats takes the only API replica down. Two builds
+    // restarting at once flip ReplicaSets and page Seq with connection refused.
+    disableConcurrentBuilds()
+  }
   parameters {
     booleanParam(name: 'BUILD_ALL', defaultValue: false, description: 'Build and deploy all services, ignoring changeset detection')
   }
@@ -21,7 +26,6 @@ pipeline {
           checkout scm
           
           def changedFiles = []
-          // 1. Try to get changes from changeSets (standard Jenkins way for SCM-triggered builds)
           for (int i = 0; i < currentBuild.changeSets.size(); i++) {
               def entries = currentBuild.changeSets[i].items
               for (int j = 0; j < entries.length; j++) {
@@ -29,28 +33,27 @@ pipeline {
                   changedFiles.addAll(entry.affectedPaths)
               }
           }
-          
-          // 2. Fallback to git diff if changeSets is empty (e.g. manual build or logic gap)
-          if (!changedFiles) {
-              echo "No changes detected via changeSets. Falling back to git diff."
-              try {
-                  def prevCommit = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT ?: sh(script: 'git rev-parse HEAD~1', returnStdout: true).trim()
-                  def changes = sh(script: "git diff --name-only ${prevCommit}..HEAD", returnStdout: true).trim()
-                  changedFiles = changes ? changes.split('\n').toList() : []
-              } catch (Exception e) {
-                  echo "Error during git diff fallback: ${e.message}"
-              }
-          }
 
-          if (changedFiles) {
-              echo "Detected changed files: ${changedFiles.unique().join(', ')}"
+          // Do not diff against GIT_PREVIOUS_SUCCESSFUL_COMMIT. A timed-out
+          // Recreate leaves that pointer stale, so pollSCM would rebuild api/
+          // every 5 minutes and bounce the live replica.
+          if (!changedFiles && params.BUILD_ALL) {
+              echo "BUILD_ALL set with empty changeSets; deploying all services."
+          } else if (!changedFiles) {
+              echo "No SCM changeSets and BUILD_ALL is false; skipping builds."
           } else {
-              echo "No changed files detected."
+              echo "Detected changed files: ${changedFiles.unique().join(', ')}"
           }
 
-          env.API_CHANGED = changedFiles.any { it.startsWith('api/') } ? 'true' : 'false'
-          env.UI_CHANGED = changedFiles.any { it.startsWith('ui/') } ? 'true' : 'false'
-          env.NOTIFICATIONS_CHANGED = changedFiles.any { it.startsWith('notifications/') } ? 'true' : 'false'
+          if (params.BUILD_ALL) {
+              env.API_CHANGED = 'true'
+              env.UI_CHANGED = 'true'
+              env.NOTIFICATIONS_CHANGED = 'true'
+          } else {
+              env.API_CHANGED = changedFiles.any { it.startsWith('api/') } ? 'true' : 'false'
+              env.UI_CHANGED = changedFiles.any { it.startsWith('ui/') } ? 'true' : 'false'
+              env.NOTIFICATIONS_CHANGED = changedFiles.any { it.startsWith('notifications/') } ? 'true' : 'false'
+          }
           
           echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}"
         }
@@ -118,8 +121,12 @@ pipeline {
                         --from-file=jwt-private-key="$TMPDIR/jwt-private.pem" \
                         --from-literal=refresh-token-secret="$REFRESH_TOKEN_SECRET" \
                         --dry-run=client -o yaml | kubectl apply -f -
+                      # Recreate + imagePullPolicy Always can exceed 120s (Docker Hub
+                      # pull + process start). A second restart during that window
+                      # flips ReplicaSets. Wait out any in-flight rollout first.
+                      kubectl -n bf42-stats rollout status deployment/bf42-stats --timeout=300s || true
                       kubectl -n bf42-stats rollout restart deployment/bf42-stats
-                      kubectl -n bf42-stats rollout status deployment/bf42-stats --timeout=120s
+                      kubectl -n bf42-stats rollout status deployment/bf42-stats --timeout=300s
                     '''
                   }
                 }

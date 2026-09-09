@@ -13,6 +13,7 @@ using System.Security.Cryptography;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Exporter;
+using System.Diagnostics;
 
 // Early configuration for telemetry endpoints
 var earlyConfig = new ConfigurationBuilder()
@@ -119,7 +120,26 @@ try
                     };
                     options.RecordException = true;
                 });
-                tracing.AddHttpClientInstrumentation();
+                tracing.AddHttpClientInstrumentation(options =>
+                {
+                    // Recreate of the single API replica refuses connections for a
+                    // window. That is expected; leaving the client span as ERROR pages
+                    // bfstats/Exceptions on every map-change during a rollout.
+                    options.EnrichWithException = (activity, exception) =>
+                    {
+                        if (ApiConnectionFailureClassifier.IsTransient(exception))
+                        {
+                            activity.SetStatus(ActivityStatusCode.Unset);
+                        }
+                    };
+                    options.EnrichWithHttpResponseMessage = (activity, response) =>
+                    {
+                        if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+                        {
+                            activity.SetStatus(ActivityStatusCode.Unset);
+                        }
+                    };
+                });
 
                 tracing.AddOtlpExporter(opt =>
                 {
@@ -203,7 +223,9 @@ try
     builder.Services.AddSingleton<IDatabase>(sp => sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase());
 
     // Register services
-    builder.Services.AddHttpClient<IBuddyApiService, BuddyApiService>();
+    builder.Services.AddTransient<TransientApiUnreachableHandler>();
+    builder.Services.AddHttpClient<IBuddyApiService, BuddyApiService>()
+        .AddHttpMessageHandler<TransientApiUnreachableHandler>();
     builder.Services.AddSingleton<IBuddyNotificationService, BuddyNotificationService>();
     builder.Services.AddHostedService<PlayerEventConsumer>();
 

@@ -18,10 +18,22 @@ set -e
 #                      spawning an isolated stack. Do not use across worktrees.
 #   E2E_SLOT=N         force isolation slot 0-15
 #   E2E_RESET_TEMPLATE=1  remigrate the slim sqlite fixture
+#   E2E_SYNTHETIC=1    ignore the real-data fixture and use the 7-player seed
+#   E2E_NEO4J=1        start a private Neo4j for this slot (default: off; only
+#                      needed by specs that read graph-backed pages)
+#
+# A fresh worktree needs `./scripts/bootstrap-worktree.sh` once first — it pulls
+# node_modules, the real-data fixture and the Playwright image, and generates the
+# throwaway JWT signing key this script hands the API.
 #
 # Isolation: each run binds unique API/UI ports and a throwaway sqlite copy so
 # parallel worktrees do not share playertracker.db or collide on 9222/5173.
 # See features/isolated-e2e-worktrees/README.md.
+#
+# Data: if this machine has a real-data fixture in ~/.cache/bfstats-e2e (fetch it
+# with `gh release download e2e-fixture`), every run starts from a copy of it.
+# Otherwise the API builds the small synthetic seed as before.
+# See features/e2e-real-data-fixtures/README.md.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -29,7 +41,10 @@ cd "$REPO_ROOT"
 # 1. Check Infrastructure
 echo "🔍 Checking infrastructure..."
 if ! docker ps | grep -q "bf1942-redis"; then
-    echo "❌ Docker containers are not running. Run 'docker-compose up -d' first."
+    echo "❌ Redis is not running. In a fresh worktree run:"
+    echo "     ./scripts/bootstrap-worktree.sh"
+    echo "   or start it alone with:"
+    echo "     docker compose -f docker-compose.dev.yml up -d redis"
     exit 1
 fi
 
@@ -66,6 +81,60 @@ API_PID=""
 UI_PID=""
 E2E_NEED_TEMPLATE=""
 MIGRATIONS_HASH=""
+E2E_FIXTURE=synthetic
+NEO4J_STARTED=""
+E2E_CACHE="${BFSTATS_E2E_CACHE:-$HOME/.cache/bfstats-e2e}"
+NEO4J_IMAGE="${NEO4J_IMAGE:-neo4j:5.15-community}"
+
+# Neo4j Community allows one user database per instance, so an isolated graph
+# means an isolated container. It costs ~9s and ~1GB, so it is opt-in: most
+# specs never load a graph-backed page, and the API treats Neo4j as optional
+# (Program.cs only registers the services when Neo4j:Uri is set).
+start_e2e_neo4j() {
+    [ -n "${E2E_NEO4J:-}" ] || return 0
+
+    if [ ! -f "$E2E_CACHE/neo4j.dump" ]; then
+        echo "⚠️  E2E_NEO4J=1 but no graph template at $E2E_CACHE/neo4j.dump"
+        echo "   Build one: scripts/make-e2e-graph.sh"
+        return 1
+    fi
+
+    echo "🕸  Loading graph template into slot ${E2E_SLOT} (:${NEO4J_PORT})..."
+    docker rm -f "$NEO4J_CONTAINER" >/dev/null 2>&1 || true
+    docker run --rm -v "$NEO4J_DATA_DIR":/w alpine:latest rm -rf /w/data >/dev/null 2>&1 || true
+    mkdir -p "$NEO4J_DATA_DIR/data"
+    chmod -R 777 "$NEO4J_DATA_DIR"
+
+    docker run --rm -v "$NEO4J_DATA_DIR/data":/data -v "$E2E_CACHE":/dumps:ro \
+        "$NEO4J_IMAGE" \
+        neo4j-admin database load neo4j --from-path=/dumps --overwrite-destination=true \
+        >/dev/null 2>&1 || { echo "❌ neo4j-admin load failed"; return 1; }
+
+    docker run -d --name "$NEO4J_CONTAINER" -p "${NEO4J_PORT}:7687" \
+        -v "$NEO4J_DATA_DIR/data":/data \
+        -e NEO4J_AUTH=neo4j/bf1942stats \
+        -e NEO4J_server_memory_heap_max__size=512m \
+        -e NEO4J_server_memory_pagecache_size=256m \
+        "$NEO4J_IMAGE" >/dev/null || return 1
+
+    NEO4J_STARTED=1
+    return 0
+}
+
+wait_for_e2e_neo4j() {
+    [ -n "$NEO4J_STARTED" ] || return 0
+    local deadline=$(( $(date +%s) + 120 ))
+    until docker exec "$NEO4J_CONTAINER" \
+            cypher-shell -u neo4j -p bf1942stats "RETURN 1;" >/dev/null 2>&1; do
+        sleep 1
+        if [ "$(date +%s)" -gt "$deadline" ]; then
+            echo "❌ Slot Neo4j did not come up."
+            docker logs --tail 20 "$NEO4J_CONTAINER" 2>&1 | sed 's/^/   /'
+            return 1
+        fi
+    done
+    echo "✅ Slot Neo4j ready on :${NEO4J_PORT}"
+}
 
 migrations_hash() {
     {
@@ -98,6 +167,19 @@ prepare_e2e_db() {
     rm -f "$REPO_ROOT/.e2e/run/playertracker.db" \
           "$REPO_ROOT/.e2e/run/playertracker.db-wal" \
           "$REPO_ROOT/.e2e/run/playertracker.db-shm"
+
+    # A real-data fixture, if this machine has one, wins over the synthetic seed.
+    # It is schema-versioned by its own __EFMigrationsHistory rather than by
+    # MIGRATIONS_HASH: the API migrates it up to this branch's head on boot, so a
+    # worktree that is ahead of the fixture does not need it rebuilt.
+    if [ -z "${E2E_SYNTHETIC:-}" ] && [ -f "$E2E_CACHE/template.db" ]; then
+        sqlite3 "$E2E_CACHE/template.db" ".backup '$DB_PATH'"
+        E2E_FIXTURE=real
+        local anchor
+        anchor="$(sed -n 's/^anchor=//p' "$E2E_CACHE/template.meta" 2>/dev/null | cut -c1-10)"
+        echo "📦 Real-data fixture ($(du -h "$E2E_CACHE/template.db" | awk '{print $1}')${anchor:+, data to $anchor})"
+        return
+    fi
 
     MIGRATIONS_HASH="$(migrations_hash)"
     local template="$REPO_ROOT/.e2e/template.db"
@@ -133,10 +215,43 @@ else
         echo "❌ sqlite3 is required to copy the E2E fixture. Install sqlite."
         exit 1
     fi
+    if [ ! -d "$REPO_ROOT/ui/node_modules" ]; then
+        echo "❌ ui/node_modules is missing — Playwright has nothing to run."
+        echo "   Bootstrap this worktree: ./scripts/bootstrap-worktree.sh"
+        exit 1
+    fi
     # Isolation env holds a flock on fd 9 until this script exits.
     # shellcheck source=e2e-env.sh
     source "$REPO_ROOT/scripts/e2e-env.sh"
+
+    # A throwaway RS256 key per worktree. Passed explicitly below rather than
+    # left to `dotnet user-secrets`, which only exists on a machine somebody has
+    # already set up by hand — and which CI, by definition, never has.
+    # shellcheck source=e2e-secrets.sh
+    source "$REPO_ROOT/scripts/e2e-secrets.sh"
+    ensure_e2e_secrets "$REPO_ROOT" || exit 1
+
+    # The slot's Redis db is namespaced against other worktrees but persists
+    # between runs of this one, and responses are cached for up to an hour. A
+    # fixture change would otherwise be invisible behind a response cached by an
+    # earlier run — which looks exactly like the new data never being read.
+    docker exec bf1942-redis redis-cli -n "${E2E_SLOT}" FLUSHDB >/dev/null 2>&1 \
+      || echo "⚠️  Could not flush redis db ${E2E_SLOT}; cached responses may be stale"
+
+    # Kick Neo4j off first — its ~8s boot then overlaps the sqlite copy and the
+    # API start rather than adding to them.
+    start_e2e_neo4j || exit 1
     prepare_e2e_db
+
+    # Point the API at this slot's graph, or at nothing. An empty Neo4j:Uri makes
+    # Program.cs skip the graph services entirely, which is what keeps the
+    # default run cheap; pointing at the shared dev instance instead would let
+    # concurrent worktrees write each other's graph.
+    if [ -n "$NEO4J_STARTED" ]; then
+        E2E_NEO4J_URI="bolt://127.0.0.1:${NEO4J_PORT}"
+    else
+        E2E_NEO4J_URI=""
+    fi
 
     echo "🚀 Starting isolated API on :${API_PORT}..."
     mkdir -p "$(dirname "$DB_PATH")"
@@ -156,7 +271,9 @@ else
         ASSETS_STORAGE_PATH='$REPO_ROOT/tournament-images' \
         Jwt__Issuer='http://127.0.0.1:${API_PORT}' \
         Jwt__Audience='${PLAYWRIGHT_BASE_URL}' \
-        Neo4j__Uri='bolt://localhost:7687' \
+        Jwt__PrivateKey='${E2E_JWT_PRIVATE_KEY_B64}' \
+        RefreshToken__Secret='${E2E_REFRESH_SECRET}' \
+        Neo4j__Uri='${E2E_NEO4J_URI}' \
         Neo4j__Username=neo4j \
         Neo4j__Password=bf1942stats \
         Neo4j__Database=neo4j \
@@ -194,6 +311,9 @@ cleanup() {
         [ -n "$API_PID" ] && kill -- "-$API_PID" 2>/dev/null || true
         [ -n "$UI_PID" ] && kill -- "-$UI_PID" 2>/dev/null || true
     fi
+    if [ -n "$NEO4J_STARTED" ]; then
+        docker rm -f "$NEO4J_CONTAINER" >/dev/null 2>&1 || true
+    fi
 }
 trap cleanup EXIT
 
@@ -213,6 +333,8 @@ while ! curl -sf "http://127.0.0.1:${API_PORT}/health" > /dev/null \
     fi
 done
 echo "✅ Services are up!"
+
+wait_for_e2e_neo4j || exit 1
 
 if [ -n "$E2E_NEED_TEMPLATE" ]; then
     cache_e2e_template "$DB_PATH"

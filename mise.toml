@@ -5,6 +5,10 @@
 #
 # Install: curl https://mise.run | sh
 
+[tasks.bootstrap]
+description = "Make a fresh worktree runnable: redis, signing key, node_modules, fixture"
+run = "./scripts/bootstrap-worktree.sh {{args}}"
+
 [tasks.e2e]
 description = "API unit tests + isolated Playwright E2E (safe across worktrees)"
 run = "./scripts/verify.sh {{args}}"
@@ -16,6 +20,14 @@ run = "./scripts/verify.sh --skip-e2e"
 [tasks."e2e-env"]
 description = "Print the isolation slot this worktree prefers (does not lock)"
 run = "./scripts/e2e-env.sh --print"
+
+[tasks."e2e-fixture"]
+description = "Carve the real-data E2E fixture from a production SQLite backup"
+run = "./scripts/make-e2e-fixture.sh {{args}}"
+
+[tasks."e2e-graph"]
+description = "Build the Neo4j graph template from the E2E fixture"
+run = "./scripts/make-e2e-graph.sh {{args}}"
 
 [tasks.ideas]
 description = "Show idea-miner timers and inbox"

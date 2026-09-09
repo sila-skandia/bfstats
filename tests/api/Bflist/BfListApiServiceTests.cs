@@ -11,10 +11,10 @@ namespace api.tests.Bflist;
 
 /// <summary>
 /// Covers the read-path resilience layering added for the landing page's live-server
-/// snapshot: L1 memory cache in front of L2 Redis (ICacheService), a last-known-good
-/// fallback when BFList itself is unreachable, and the guarantee that the stats collector's
-/// own path (FetchAllServersAsync) never silently serves stale/fallback data into session
-/// tracking.
+/// snapshot: L1 memory cache in front of L2 Redis (ICacheService), last-known-good
+/// served immediately on a hot miss (no live BFList wait), and the guarantee that the
+/// stats collector's own path (FetchAllServersAsync) never silently serves stale/fallback
+/// data into session tracking.
 /// </summary>
 public sealed class BfListApiServiceTests
 {
@@ -85,7 +85,7 @@ public sealed class BfListApiServiceTests
     }
 
     [Fact]
-    public async Task WithMeta_CacheMiss_LiveFetchFails_FallsBackToRedisLastGood()
+    public async Task WithMeta_HotMiss_StaleLastGood_SkipsLiveFetch()
     {
         var lastGood = new RawServerSnapshot
         {
@@ -97,7 +97,7 @@ public sealed class BfListApiServiceTests
         cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
         cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
 
-        var handler = FakeHttpMessageHandler.ReturningStatus(HttpStatusCode.ServiceUnavailable);
+        var handler = FakeHttpMessageHandler.Throwing();
         var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
 
         var result = await service.FetchAllServersWithMetaAsync(Game);
@@ -105,10 +105,34 @@ public sealed class BfListApiServiceTests
         Assert.True(result.IsFallback);
         Assert.Equal(lastGood.FetchedAtUtc, result.FetchedAtUtc);
         Assert.Same(lastGood.Servers, result.Servers);
+        Assert.Equal(0, handler.CallCount);
 
         // The returned snapshot must be a copy — mutating IsFallback must never leak back
         // into the object the cache still holds, or every future recovery would be corrupted.
         Assert.False(lastGood.IsFallback);
+    }
+
+    [Fact]
+    public async Task WithMeta_HotMiss_RecentLastGood_IsNotMarkedFallback()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddSeconds(-15),
+            Servers = [new Bf1942ServerInfo { Guid = "srv-1", Name = "Fresh" }]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchAllServersWithMetaAsync(Game);
+
+        Assert.False(result.IsFallback);
+        Assert.Same(lastGood, result);
+        Assert.Equal(0, handler.CallCount);
     }
 
     [Fact]
@@ -179,6 +203,40 @@ public sealed class BfListApiServiceTests
     }
 
     [Fact]
+    public async Task TryGetCachedServerByName_LastGoodHit_DoesNotCallUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            Servers =
+            [
+                new Bf1942ServerInfo
+                {
+                    Name = "MoonGamers.com | Est. 2004",
+                    Ip = "51.81.48.224",
+                    Port = 14567,
+                    Tickets1 = 312,
+                    Tickets2 = 198
+                }
+            ]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var found = await service.TryGetCachedServerByNameAsync(Game, "MoonGamers.com | Est. 2004");
+
+        Assert.NotNull(found);
+        Assert.Equal("51.81.48.224", found.Ip);
+        Assert.Equal(312, found.Tickets1);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
     public async Task FetchSingleServerSummary_NotFound_IsCachedAndDoesNotThrow()
     {
         var cacheService = Substitute.For<ICacheService>();
@@ -196,6 +254,95 @@ public sealed class BfListApiServiceTests
             "server:bf1942:153.223.78.15:14567",
             Arg.Is<BfListApiService.CachedSingleServer>(c => !c.Found && c.Server == null),
             TimeSpan.FromSeconds(8));
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_LastGoodHit_SkipsUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            Servers =
+            [
+                new Bf1942ServerInfo
+                {
+                    Guid = "moon",
+                    Name = "MoonGamers.com | Est. 2004",
+                    Ip = "51.81.48.224",
+                    Port = 14567,
+                    NumPlayers = 22,
+                    Tickets1 = 400,
+                    Tickets2 = 250
+                }
+            ]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "51.81.48.224:14567");
+
+        Assert.NotNull(result);
+        Assert.Equal("moon", result.Guid);
+        Assert.Equal(22, result.NumPlayers);
+        Assert.Equal(400, result.Tickets1);
+        Assert.Equal(0, handler.CallCount);
+        await cacheService.Received().SetAsync(
+            "server:bf1942:51.81.48.224:14567",
+            Arg.Is<BfListApiService.CachedSingleServer>(c => c.Found && c.Server != null),
+            TimeSpan.FromSeconds(8));
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_LastGoodMissingServer_SkipsUpstream()
+    {
+        var lastGood = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            Servers = [new Bf1942ServerInfo { Ip = "1.2.3.4", Port = 14567, Name = "Other" }]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns((RawServerSnapshot?)null);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns(lastGood);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "51.81.48.224:14567");
+
+        Assert.Null(result);
+        Assert.Equal(0, handler.CallCount);
+        await cacheService.Received().SetAsync(
+            "server:bf1942:51.81.48.224:14567",
+            Arg.Is<BfListApiService.CachedSingleServer>(c => !c.Found && c.Server == null),
+            TimeSpan.FromSeconds(8));
+    }
+
+    [Fact]
+    public async Task FetchSingleServerSummary_NoSnapshot_UpstreamThrows_ReturnsNull()
+    {
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<BfListApiService.CachedSingleServer>(Arg.Any<string>())
+            .Returns((BfListApiService.CachedSingleServer?)null);
+        cacheService.GetAsync<RawServerSnapshot>(Arg.Any<string>())
+            .Returns((RawServerSnapshot?)null);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, new MemoryCache(new MemoryCacheOptions()), handler);
+
+        var result = await service.FetchSingleServerSummaryAsync(Game, "51.81.48.224:14567");
+
+        Assert.Null(result);
+        Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]

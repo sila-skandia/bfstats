@@ -32,7 +32,12 @@ Automatic review pass.
   detached merge ref), `permissions: contents: write` is granted, and
   `Bash(git:*)` is allowlisted, so Claude can commit and push to the PR branch.
 - **Three outcomes**, one of which the prompt forces Claude to pick: approve,
-  edit in place, or reject-and-close with reasoning.
+  edit in place, or reject-and-close with reasoning. Each one applies a
+  `claude:*` label, which is what gates the E2E job.
+- **Two jobs.** `review` runs `dotnet build` + API unit tests and then Claude;
+  `e2e` runs the full `./scripts/verify.sh` afterwards, and only for PRs the
+  review left open. Rationale and the cost comparison are in
+  `features/worktree-pre-pr-verification/`.
 
 ### `.github/workflows/claude.yml`
 
@@ -54,10 +59,14 @@ alert. So the prompt points explicitly at the single-node deployment budget,
 that has already caused a node outage, and which applies to every connection in
 the process.
 
-**Claude is told not to run the test suite.** `./scripts/verify.sh` needs
-Docker, the .NET SDK and a SQLite snapshot that a stock runner does not have.
-Without saying so, it burns turns discovering that. It is told to review
-statically and to state in its summary that tests were not run.
+**Claude sees build and unit test results, but not E2E.** `dotnet build` and
+`dotnet test` run before the review as `continue-on-error` steps and their
+outcomes are injected into the prompt, so a red build is a review finding Claude
+can act on rather than a gate that stops it running. The Playwright suite runs
+*after* the verdict, so the prompt says so explicitly and tells Claude not to
+claim it passed. (Originally Claude was told not to run tests at all; then the
+full suite ran before it. The current ordering is explained in
+`features/worktree-pre-pr-verification/`.)
 
 **No PR-authored text is interpolated into the prompt.** Only the repo name, PR
 number and branch are passed. PR title and body are untrusted input; the action

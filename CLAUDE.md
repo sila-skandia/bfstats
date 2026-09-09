@@ -6,10 +6,29 @@ After making any code changes, you **must** run the verification script. This sc
 - **Fast Logic Check**: `./scripts/verify.sh --skip-e2e`
 - **Targeted E2E**: `./scripts/verify.sh e2e/relevant-test.spec.ts --project=chromium`
 
+In a **fresh worktree**, run `./scripts/bootstrap-worktree.sh` (or `mise run
+bootstrap`) once first. `git worktree add` gives you the source and nothing
+else, and it installs `ui/node_modules`, generates the throwaway JWT signing key
+the E2E API needs, starts the `bf1942-redis` container, downloads the real-data
+fixture from the `e2e-fixture` release, and pre-pulls the Playwright image. It is
+idempotent and it is the same script CI runs, so a local pass and a CI pass mean
+the same thing. See `features/worktree-pre-pr-verification/README.md`.
+
 E2E binds unique API/UI ports and a slim sqlite copy per worktree, so two
 checkouts can verify at once without sharing `playertracker.db` or colliding
 on `:9222` / `:5173`. See `features/isolated-e2e-worktrees/README.md`.
 Interactive `dotnet run` / `npm run dev` is unchanged.
+
+If `~/.cache/bfstats-e2e/template.db` exists, every run starts from a copy of
+that real-data fixture (real players, servers and aggregates) instead of the
+7-player synthetic seed — `E2eDatabaseSeed` still runs on top, so keep asserting
+against its fixed handles rather than real player names. `E2E_NEO4J=1` also gives
+the run a private graph on `7690+slot`. Get both artifacts with
+`gh release download e2e-fixture --dir ~/.cache/bfstats-e2e --clobber && zstd -d
+~/.cache/bfstats-e2e/*.zst --rm` — the SQLite half is republished by the
+`bfstats-backup-both` runbook in home-server-mgr on every production backup, and
+the graph by `scripts/make-e2e-graph.sh` + `scripts/publish-e2e-fixture.sh`. See
+`features/e2e-real-data-fixtures/README.md`.
 
 ### Feature to Test Mapping
 - **Players/Search**: `e2e/player-search.spec.ts`, `e2e/players-extended.spec.ts`
