@@ -539,7 +539,9 @@ test.describe('Server Details Page', () => {
           await cells.first().click();
           const inspector = heatmap.locator('.mm-slot-inspector');
           await expect(inspector).toBeVisible();
-          await expect(inspector.getByText(/Recent 14d Avg|Historical Baseline/)).toBeVisible();
+          // Both labels render once the slot has trend data, so match the first
+          // rather than tripping strict mode on a two-element result.
+          await expect(inspector.getByText(/Recent 14d Avg|Historical Baseline/).first()).toBeVisible();
 
           // Close inspector
           await inspector.locator('.mm-slot-inspector__close').click();

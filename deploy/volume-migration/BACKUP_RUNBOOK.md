@@ -399,6 +399,55 @@ scp -i ~/.ssh/hetzner root@77.42.38.148:/mnt/bfstats-data/backups/* ~/bfstats-ba
 
 ---
 
+## Appendix B — The E2E fixture
+
+**Nothing to do here any more.** Pruning the backup into the E2E fixture used to
+be a manual `scp` the script up / run it / `scp` the result down loop; it is now
+the last phase of the `bfstats-backup-both` runbook in **home-server-mgr**, which
+is also what takes the backup in Appendix A. Every backup republishes the
+fixture to the `e2e-fixture` GitHub release, so CI is never carved off a snapshot
+older than the last backup.
+
+It runs on the server against the checkpointed copy the backup already made —
+the extraction reads through indexes rather than scanning, so a ~25 G source
+yields a ~176 MB fixture in about 20 s, and 176 MB is what moves instead of 25 G.
+The phase runs *after* both Azure uploads, so a fixture failure can never cost
+you a backup.
+
+Its safety properties are unchanged, and they matter because the target repo is
+public:
+
+- Emails are always redacted to `user{Id}@e2e.invalid`, backed by a
+  schema-driven sweep across every `%email%` column that aborts the publish on
+  any address it does not recognise.
+- `UserPlayerNames` / `UserBuddies` / `UserFavoriteServers` — the
+  account-to-gamertag mapping, the one part of the fixture not already on the
+  public site — are dropped for every user except `E2E_KEEP_PROFILES` (default
+  `1`, the owner's).
+- Dangling foreign keys and an empty tier are hard failures, so a fixture that
+  looks built but is not never reaches the release.
+
+To pull the current pair down for local work:
+
+```bash
+gh release download e2e-fixture --dir ~/.cache/bfstats-e2e --clobber
+zstd -d ~/.cache/bfstats-e2e/*.zst --rm
+```
+
+The paired Neo4j graph is *not* built on the server — it is rebuilt from the
+fixture by the app's own ETL, so it stays a local step. Refresh it when a schema
+or ETL change makes the published one wrong:
+
+```bash
+./scripts/make-e2e-graph.sh --force     # derives neo4j.dump from template.db
+./scripts/publish-e2e-fixture.sh        # uploads the graph half only
+```
+
+Knobs (`E2E_FACT_DAYS`, `E2E_OBS_ROUNDS`) are runbook params; the reasoning
+behind the slice is in `features/e2e-real-data-fixtures/README.md`.
+
+---
+
 ## Gotchas
 
 - **Don't run a Jenkins deploy during any of this.** Re-applying the manifests
