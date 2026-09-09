@@ -178,6 +178,42 @@ export function formatRelativeTime(dateString: string): string {
 }
 
 /**
+ * Format an already-computed elapsed duration (ms) as a relative label,
+ * with second granularity: "3 seconds ago", "1 minute ago", "2 hours ago".
+ *
+ * Two differences from formatRelativeTime, both for live/polled data:
+ * it keeps seconds instead of collapsing everything under a minute to
+ * "Just now", and it takes an age rather than a timestamp so a caller with
+ * its own ticking `now` gets a label that recomputes in step with it.
+ */
+export function formatAgo(ageMs: number): string {
+  const seconds = Math.max(0, Math.floor(ageMs / 1000));
+  if (seconds < 1) return 'just now';
+  if (seconds < 60) return seconds === 1 ? '1 second ago' : `${seconds} seconds ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? '1 day ago' : `${days} days ago`;
+}
+
+/**
+ * Same reading as formatAgo, abbreviated: "12s ago", "3m ago", "2h ago", "1d ago".
+ * For narrow layouts where the spelled-out form would wrap its row.
+ */
+export function formatAgoShort(ageMs: number): string {
+  const seconds = Math.max(0, Math.floor(ageMs / 1000));
+  if (seconds < 1) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/**
  * Format a UTC timestamp as a compact relative time string
  * e.g., "2y", "3mo", "5d", "2h", "30m", "now"
  */
