@@ -14,7 +14,7 @@ import MmMapThumb from '@/components/v4/MmMapThumb.vue'
 import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
 import { BfLoadingBar } from '@/components/common'
 import LandingColumnFilterPanel from './LandingColumnFilterPanel.vue'
-import { formatTimeRemaining, formatRelativeTime, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
+import { formatTimeRemaining, formatAgo, formatAgoShort, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
 import {
   ALL_COLUMNS,
   COLUMN_GROUPS,
@@ -505,25 +505,47 @@ const toggleRowExpand = (guid: string) => {
 const game = ref<GameKey>('bf1942')
 const servers = ref<ServerSummary[]>([])
 const loading = ref(true)
+const isRefreshing = ref(false)
 const error = ref<string | null>(null)
-let refreshTimer: number | undefined
 let tickTimer: number | undefined
 
+// Whatever we last fetched is what we show — there is no "data is stale" state to
+// announce, only a last-refreshed label and a poll that tries harder when the data
+// starts to age.
 const REFRESH_INTERVAL_MS = 30_000
-const nextRefreshAt = ref(Date.now() + REFRESH_INTERVAL_MS)
+
+// The API's snapshot only advances every ~30s (background collector poll, plus a 30s
+// edge cache), so data being up to a minute old is normal and healthy. Past a minute,
+// chase it — see noteAttempt for how a chase that finds nothing fresher gives ground
+// back to the normal cadence.
+const CHASE_AFTER_MS = 60_000
+const CHASE_MIN_INTERVAL_MS = 5_000
+
 const now = ref(Date.now())
 const lastUpdated = ref<string | null>(null)
-const STALE_THRESHOLD_MS = 90_000
+const lastAttemptAt = ref(0)
+const chaseIntervalMs = ref(CHASE_MIN_INTERVAL_MS)
 
-const dataAgeMs = computed(() => {
-  if (!lastUpdated.value) return Infinity
+const snapshotAgeAt = (at: number) => {
+  if (!lastUpdated.value) return 0
   const fetchedAt = parseUtc(lastUpdated.value).getTime()
-  if (Number.isNaN(fetchedAt)) return Infinity
-  return Math.max(0, now.value - fetchedAt)
+  if (Number.isNaN(fetchedAt)) return 0
+  return Math.max(0, at - fetchedAt)
+}
+
+const dataAgeMs = computed(() => snapshotAgeAt(now.value))
+const isChasing = computed(() => Boolean(lastUpdated.value) && dataAgeMs.value >= CHASE_AFTER_MS)
+const refreshIntervalMs = computed(() => (isChasing.value ? chaseIntervalMs.value : REFRESH_INTERVAL_MS))
+const nextRefreshAt = computed(() => lastAttemptAt.value + refreshIntervalMs.value)
+const lastUpdatedLabel = computed(() => (lastUpdated.value ? formatAgo(dataAgeMs.value) : ''))
+// Spelled out, the label wraps the meta row on a phone — and wraps it back a few
+// seconds later, which reflows the page under the reader's thumb. Narrow gets the
+// abbreviation; the aria-label and tooltip keep the full wording either way.
+const lastUpdatedChip = computed(() => {
+  if (!lastUpdated.value) return ''
+  return isNarrow.value ? formatAgoShort(dataAgeMs.value) : formatAgo(dataAgeMs.value)
 })
-const isDataStale = computed(() => dataAgeMs.value >= STALE_THRESHOLD_MS)
-const staleSince = computed(() => (lastUpdated.value ? formatRelativeTime(lastUpdated.value) : ''))
-const hasRevalidated = ref(false)
+const lastUpdatedTooltip = computed(() => (lastUpdated.value ? formatLocalTooltip(lastUpdated.value) : ''))
 
 const trendOpen = ref(false)
 
@@ -550,9 +572,23 @@ if (cached && cached.servers.length > 0) {
   loading.value = false
 }
 
+// An attempt that ends with the snapshot still over a minute old means the upstream
+// itself is behind, not that we asked too seldom — so each such attempt stretches the
+// gap before the next one, up to the normal cadence. Ending with fresh data (the common
+// case: the tab was asleep, one fetch catches us up) resets to the short interval, ready
+// to chase hard the next time the data ages out.
+const noteAttempt = () => {
+  const stillOld = Boolean(lastUpdated.value) && snapshotAgeAt(Date.now()) >= CHASE_AFTER_MS
+  chaseIntervalMs.value = stillOld
+    ? Math.min(chaseIntervalMs.value * 2, REFRESH_INTERVAL_MS)
+    : CHASE_MIN_INTERVAL_MS
+}
+
 const load = async (showSpinner = false) => {
+  if (isRefreshing.value) return
+  isRefreshing.value = true
+  lastAttemptAt.value = Date.now()
   if (showSpinner && servers.value.length === 0) loading.value = true
-  error.value = null
   try {
     const result = await fetchAllServers(game.value)
     if (result.servers && result.servers.length > 0) {
@@ -561,13 +597,26 @@ const load = async (showSpinner = false) => {
       servers.value = []
     }
     lastUpdated.value = result.lastUpdated
+    error.value = null
   } catch {
-    error.value = 'Server feed temporarily unavailable.'
+    // Keep painting the last snapshot we got. A failed background refresh is not a
+    // reason to throw the list away; only a page with nothing on it has to say so.
+    if (servers.value.length === 0) error.value = 'Server feed temporarily unavailable.'
   } finally {
+    noteAttempt()
     loading.value = false
-    hasRevalidated.value = true
-    nextRefreshAt.value = Date.now() + REFRESH_INTERVAL_MS
+    isRefreshing.value = false
   }
+}
+
+// One ticker drives both the relative "last refreshed" label and the poll, so the
+// cadence can react to the data's actual age instead of a fixed interval that keeps
+// running while the tab is hidden.
+const tick = () => {
+  now.value = Date.now()
+  if (isRefreshing.value) return
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+  if (now.value >= nextRefreshAt.value) void load(false)
 }
 
 const onKeydown = (e: KeyboardEvent) => {
@@ -609,8 +658,11 @@ watch([trendOpen, filtersOpen], () => {
 onMounted(() => {
   applyUrlState()
   void load(servers.value.length === 0)
-  refreshTimer = window.setInterval(() => void load(false), REFRESH_INTERVAL_MS)
-  tickTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
+  tickTimer = window.setInterval(tick, 1000)
+  // Coming back to a backgrounded tab: the interval was throttled while hidden, so
+  // catch up immediately rather than waiting out the next tick.
+  document.addEventListener('visibilitychange', tick)
+  window.addEventListener('focus', tick)
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
@@ -622,10 +674,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (refreshTimer) window.clearInterval(refreshTimer)
   if (tickTimer) window.clearInterval(tickTimer)
   if (urlSyncTimer) window.clearTimeout(urlSyncTimer)
   if (copyToastTimer) window.clearTimeout(copyToastTimer)
+  document.removeEventListener('visibilitychange', tick)
+  window.removeEventListener('focus', tick)
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
@@ -638,7 +691,7 @@ onUnmounted(() => {
 
 const refreshProgress = computed(() => {
   const remaining = Math.max(0, nextRefreshAt.value - now.value)
-  return 1 - Math.min(1, remaining / REFRESH_INTERVAL_MS)
+  return 1 - Math.min(1, remaining / refreshIntervalMs.value)
 })
 const secondsUntilRefresh = computed(() =>
   Math.max(0, Math.ceil((nextRefreshAt.value - now.value) / 1000)),
@@ -858,12 +911,20 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
           View trend →
         </button>
         <span class="mm-meta-row__sep">·</span>
-        <span
+        <button
+          type="button"
           class="mm-refresh-ring"
-          :title="`Next refresh in ${secondsUntilRefresh}s`"
-          :aria-label="`Next refresh in ${secondsUntilRefresh} seconds`"
+          data-testid="landing-last-updated"
+          :title="isRefreshing
+            ? 'Refreshing live servers…'
+            : `Live data from ${lastUpdatedTooltip} · next refresh in ${secondsUntilRefresh}s · click to refresh now`"
+          :aria-label="isRefreshing
+            ? 'Refreshing live servers'
+            : `Live data updated ${lastUpdatedLabel}. Click to refresh now.`"
+          :disabled="isRefreshing"
+          @click="load(false)"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" :class="{ 'mm-spin': isRefreshing }">
             <circle cx="8" cy="8" r="6" fill="none" stroke="var(--mm-rule)" stroke-width="1.5" />
             <circle
               cx="8"
@@ -878,23 +939,12 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
               transform="rotate(-90 8 8)"
             />
           </svg>
-          <span class="mm-refresh-ring__label">{{ secondsUntilRefresh }}s</span>
-        </span>
+          <span class="mm-refresh-ring__label">
+            {{ isRefreshing ? 'refreshing…' : (lastUpdatedChip || 'not yet loaded') }}
+          </span>
+        </button>
       </div>
       <MmInstallationLinks />
-    </div>
-
-    <!-- Stale data banner -->
-    <div v-if="hasRevalidated && isDataStale && !loading && servers.length > 0" class="mm-landing__stale-banner" role="status">
-      <svg class="mm-landing__stale-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-      </svg>
-      <span class="mm-landing__stale-text">
-        Live server data is temporarily unavailable — showing data from <strong>{{ staleSince }}</strong>.
-      </span>
-      <router-link to="/v4/servers/search" class="mm-landing__stale-link">
-        Search all tracked servers →
-      </router-link>
     </div>
 
     <!-- Toolbar & Slicers -->
@@ -1112,11 +1162,23 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
       <div v-for="i in 8" :key="i" class="mm-skeleton" style="margin-bottom: 14px; height: 36px;" />
     </div>
 
-    <div v-else-if="error" class="mm-empty">{{ error }}</div>
+    <!-- Only ever reached with nothing to paint: a failed refresh over existing rows
+         leaves those rows alone and just lets the last-refreshed label age. -->
+    <div v-else-if="error && servers.length === 0" class="mm-empty mm-landing__empty">
+      <span>{{ error }}</span>
+      <button
+        type="button"
+        class="lb-btn"
+        style="margin-top: 8px;"
+        @click="load(true)"
+      >
+        Retry
+      </button>
+    </div>
 
     <div v-else-if="servers.length === 0" class="mm-empty mm-landing__empty">
       <span>No {{ GAME_LABEL }} servers reporting in right now.</span>
-      <router-link to="/v4/servers/search" class="mm-landing__stale-link">
+      <router-link to="/v4/servers/search" class="mm-landing__empty-link">
         Search all tracked servers →
       </router-link>
     </div>
@@ -1594,36 +1656,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
   .mm-landing__meta-extra { display: none; }
 }
 
-/* Staleness banner */
-.mm-landing__stale-banner {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  margin-bottom: 16px;
-  padding: 11px 16px;
-  border: 1px solid var(--mm-danger);
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--mm-danger) 14%, var(--mm-bg-mute));
-}
-
-.mm-landing__stale-icon {
-  flex: 0 0 auto;
-  color: var(--mm-danger);
-}
-
-.mm-landing__stale-text {
-  flex: 1 1 240px;
-  font-size: 13px;
-  color: var(--mm-ink-soft);
-}
-
-.mm-landing__stale-text strong {
-  color: var(--mm-ink);
-  font-weight: 600;
-}
-
-.mm-landing__stale-link {
+.mm-landing__empty-link {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -1638,8 +1671,17 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
   transition: color 0.15s ease;
 }
 
-.mm-landing__stale-link:hover {
+.mm-landing__empty-link:hover {
   color: var(--mm-accent);
+}
+
+.mm-refresh-ring svg.mm-spin {
+  animation: mm-spin 0.8s linear infinite;
+}
+
+@keyframes mm-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .mm-landing__empty {
@@ -2641,6 +2683,21 @@ td {
   font-family: var(--mm-font-mono);
   font-size: 11.5px;
   letter-spacing: 0.04em;
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.mm-refresh-ring:hover:not(:disabled) {
+  color: var(--mm-ink);
+  background: var(--mm-bg-mute);
+}
+
+.mm-refresh-ring:disabled {
+  cursor: default;
 }
 
 .mm-refresh-ring svg {
@@ -2654,6 +2711,7 @@ td {
 .mm-refresh-ring__label {
   min-width: 24px;
   text-align: left;
+  white-space: nowrap;
 }
 
 .mm-trend-launch {

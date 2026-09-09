@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 test.describe('Landing Page - Server Browser', () => {
   test('should load the servers page', async ({ page }) => {
@@ -510,5 +510,108 @@ test.describe('Landing Page - Server Browser', () => {
     await expect(page.getByRole('link', { name: 'BerlinAce' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'WakeAce' })).toHaveCount(0);
   });
-});
 
+  // The landing page shows whatever snapshot it last got, and never tells the viewer
+  // the data is old — it just keeps trying to replace it. These three cover that
+  // contract: chase quietly, hold the last snapshot when a refresh fails, and say how
+  // old the data is in the meta row.
+
+  const liveServer = (name: string, numPlayers: number) => ({
+    guid: 'srv-1',
+    name,
+    ip: '10.0.0.1',
+    port: 14567,
+    numPlayers,
+    maxPlayers: 64,
+    mapName: 'Wake Island',
+    gameType: 'Conquest',
+    joinLink: 'bf1942://10.0.0.1:14567',
+    country: 'US',
+    password: false,
+    gameVersion: '1.61',
+  });
+
+  const row = (page: Page, name: string) =>
+    page.locator('tr.lb-row', { has: page.getByRole('link', { name }) });
+
+  test('data older than a minute is chased without warning the viewer', async ({ page }) => {
+    let fetchCount = 0;
+    const anHourAgo = new Date(Date.now() - 3_600_000).toISOString();
+
+    await page.route('**/stats/liveservers/bf1942/servers**', async (route) => {
+      fetchCount++;
+      const first = fetchCount === 1;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          servers: [liveServer(first ? 'Old Snapshot Server' : 'Fresh Server', first ? 2 : 5)],
+          lastUpdated: first ? anHourAgo : new Date().toISOString(),
+        }),
+      });
+    });
+
+    await page.goto('/servers/bf1942');
+    await expect(row(page, 'Old Snapshot Server')).toBeVisible();
+
+    // Data an hour old: the page refetches on its own, well inside the 30s steady-state
+    // cadence, and swaps in the fresh snapshot.
+    await expect(row(page, 'Fresh Server')).toBeVisible({ timeout: 15_000 });
+
+    // Nothing about staleness was ever said out loud.
+    await expect(page.locator('body')).not.toContainText(/temporarily unavailable/i);
+  });
+
+  test('a failed refresh keeps the last snapshot on screen', async ({ page }) => {
+    let fetchCount = 0;
+    const fiveMinutesAgo = new Date(Date.now() - 300_000).toISOString();
+
+    await page.route('**/stats/liveservers/bf1942/servers**', async (route) => {
+      fetchCount++;
+      if (fetchCount > 1) {
+        await route.abort('failed');
+        return;
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          servers: [liveServer('Last Good Host', 7)],
+          lastUpdated: fiveMinutesAgo,
+        }),
+      });
+    });
+
+    await page.goto('/servers/bf1942');
+    await expect(row(page, 'Last Good Host')).toBeVisible();
+
+    // The snapshot is old enough to be chased, so a retry runs and fails. The rows it
+    // failed to replace stay exactly where they were.
+    await expect.poll(() => fetchCount, { timeout: 15_000 }).toBeGreaterThan(1);
+    await expect(row(page, 'Last Good Host')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(/temporarily unavailable/i);
+  });
+
+  test('meta row reports how old the live data is and refreshes on click', async ({ page }) => {
+    let fetchCount = 0;
+
+    await page.route('**/stats/liveservers/bf1942/servers**', async (route) => {
+      fetchCount++;
+      const first = fetchCount === 1;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          servers: [liveServer(first ? 'Initial Server' : 'Woken Up Server', first ? 3 : 10)],
+          lastUpdated: new Date().toISOString(),
+        }),
+      });
+    });
+
+    await page.goto('/servers/bf1942');
+    await expect(row(page, 'Initial Server')).toBeVisible();
+
+    const lastUpdated = page.getByTestId('landing-last-updated');
+    await expect(lastUpdated).toContainText(/just now|seconds? ago|minutes? ago/);
+
+    await lastUpdated.click();
+    await expect(row(page, 'Woken Up Server')).toBeVisible({ timeout: 10_000 });
+  });
+});
