@@ -61,7 +61,7 @@ public sealed class ServerBannerServiceTests : IDisposable
 
         Assert.NotNull(stats);
         Assert.Equal(14, stats.NumPlayers);
-        await bfListApiService.DidNotReceiveWithAnyArgs().FetchSingleServerSummaryAsync(default!, default!);
+        Assert.Null(stats.Tickets);
     }
 
     [Fact]
@@ -85,6 +85,126 @@ public sealed class ServerBannerServiceTests : IDisposable
 
         Assert.NotNull(stats);
         Assert.Equal(0, stats.NumPlayers);
+    }
+
+    [Fact]
+    public async Task ResolveStatsAsync_DoesNotReadRounds_FallsBackToStoredMap_WhenBfListHasNothing()
+    {
+        dbContext.Servers.Add(new GameServer
+        {
+            Guid = "srv-3",
+            Name = "SiMPLE",
+            Game = "bf1942",
+            Ip = "1.2.3.4",
+            Port = 14567,
+            MaxPlayers = 64,
+            CurrentNumPlayers = 12,
+            MapName = "Wake",
+            CurrentMap = "Gazala",
+            IsOnline = true
+        });
+        dbContext.Rounds.Add(new Round
+        {
+            RoundId = "round-stale",
+            ServerGuid = "srv-3",
+            ServerName = "SiMPLE",
+            MapName = "Battleaxe",
+            GameType = "gpm_cq",
+            StartTime = DateTime.UtcNow.AddHours(-1),
+            IsActive = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        var stats = await service.ResolveStatsAsync("SiMPLE", ServerBannerStyle.Reticle, showTickets: false, CancellationToken.None);
+
+        Assert.NotNull(stats);
+        Assert.Equal("Gazala", stats.Map);
+        Assert.Null(stats.GameMode);
+        Assert.Null(stats.Tickets);
+    }
+
+    [Fact]
+    public async Task ResolveStatsAsync_ShowsLiveGameMode_WhenTicketsAreHiddenByUser()
+    {
+        // The "Show live team tickets" toggle only controls the scoreboard; the
+        // renderer paints GameMode in that same slot when tickets are off
+        // (ServerBannerRenderer.DrawBottomRow), so the live fetch must not be
+        // skipped just because showTickets is false.
+        dbContext.Servers.Add(new GameServer
+        {
+            Guid = "srv-5",
+            Name = "Quiet Mode",
+            Game = "bf1942",
+            Ip = "3.3.3.3",
+            Port = 14567,
+            MaxPlayers = 64,
+            CurrentNumPlayers = 8,
+            MapName = "Wake",
+            IsOnline = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        bfListApiService.TryGetCachedServerByNameAsync("bf1942", "Quiet Mode")
+            .Returns(new ServerSummary
+            {
+                MapName = "Iwo Jima",
+                GameType = "gpm_cq",
+                Tickets1 = 200,
+                Tickets2 = 150
+            });
+
+        var stats = await service.ResolveStatsAsync("Quiet Mode", ServerBannerStyle.Reticle, showTickets: false, CancellationToken.None);
+
+        Assert.NotNull(stats);
+        Assert.Equal("Iwo Jima", stats.Map);
+        Assert.Equal("gpm_cq", stats.GameMode);
+        Assert.Null(stats.Tickets);
+    }
+
+    [Fact]
+    public async Task ResolveStatsAsync_UsesLiveMapModeAndTickets_IgnoresActiveRound()
+    {
+        dbContext.Servers.Add(new GameServer
+        {
+            Guid = "srv-4",
+            Name = "Apex",
+            Game = "bf1942",
+            Ip = "9.9.9.9",
+            Port = 14567,
+            MaxPlayers = 64,
+            CurrentNumPlayers = 22,
+            MapName = "Wake",
+            IsOnline = true
+        });
+        dbContext.Rounds.Add(new Round
+        {
+            RoundId = "round-other",
+            ServerGuid = "srv-4",
+            ServerName = "Apex",
+            MapName = "Battleaxe",
+            GameType = "gpm_ctf",
+            StartTime = DateTime.UtcNow.AddMinutes(-20),
+            IsActive = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        bfListApiService.TryGetCachedServerByNameAsync("bf1942", "Apex")
+            .Returns(new ServerSummary
+            {
+                MapName = "El Alamein",
+                GameType = "gpm_cq",
+                Tickets1 = 142,
+                Tickets2 = 69
+            });
+
+        var stats = await service.ResolveStatsAsync("Apex", ServerBannerStyle.Reticle, showTickets: true, CancellationToken.None);
+
+        Assert.NotNull(stats);
+        Assert.Equal("El Alamein", stats.Map);
+        Assert.Equal("gpm_cq", stats.GameMode);
+        Assert.NotNull(stats.Tickets);
+        Assert.Equal(142, stats.Tickets.Team1Tickets);
+        Assert.Equal(69, stats.Tickets.Team2Tickets);
     }
 
     [Fact]
