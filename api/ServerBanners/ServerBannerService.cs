@@ -1,4 +1,5 @@
 using api.Bflist;
+using api.Bflist.Models;
 using api.GameTrends;
 using api.PlayerTracking;
 using api.ServerBanners.Models;
@@ -53,6 +54,7 @@ public sealed class ServerBannerService(
                 s.MaxPlayers,
                 s.CurrentNumPlayers,
                 s.MapName,
+                s.CurrentMap,
                 s.IsOnline
             })
             .FirstOrDefaultAsync(cancellationToken);
@@ -62,24 +64,19 @@ public sealed class ServerBannerService(
             return null;
         }
 
-        var currentRound = await dbContext.Rounds
-            .Where(r => r.ServerGuid == server.Guid && r.IsActive)
-            .Select(r => new { r.MapName, r.GameType })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var map = !string.IsNullOrWhiteSpace(currentRound?.MapName)
-            ? currentRound.MapName
-            : server.MapName;
-
-        // Duplicate name rows keep the old IP after a host move. Prefer the warm
-        // live snapshot (no extra BFList call) so tickets and the painted address
-        // match what the landing page already shows.
+        // Map/mode/tickets come from Servers + the warm BFList snapshot, looked up by
+        // name (so a duplicate-name row's stale IP doesn't matter) - fetched regardless
+        // of showTickets, since the renderer paints GameMode in the tickets' slot when
+        // the scoreboard is off. Touching Rounds on this path contends with the 30s
+        // collector on the volume, so it's never queried here.
         var live = string.IsNullOrWhiteSpace(server.Game)
             ? null
             : await bfListApiService.TryGetCachedServerByNameAsync(server.Game, server.Name);
 
         var ip = !string.IsNullOrWhiteSpace(live?.Ip) ? live.Ip : server.Ip;
         var port = live is { Port: > 0 } ? live.Port : server.Port;
+        var map = FirstNonEmpty(live?.MapName, server.CurrentMap, server.MapName);
+        var gameMode = FirstNonEmpty(live?.GameType, live?.GameMode);
 
         var tickets = showTickets
             ? live != null
@@ -97,7 +94,7 @@ public sealed class ServerBannerService(
             ServerName: server.Name,
             IpPort: $"{ip}:{port}",
             Map: map,
-            GameMode: currentRound?.GameType,
+            GameMode: gameMode,
             NumPlayers: server.CurrentNumPlayers,
             MaxPlayers: server.MaxPlayers ?? 0,
             IsOnline: server.IsOnline,
@@ -149,9 +146,9 @@ public sealed class ServerBannerService(
     }
 
     /// <summary>
-    /// Pulls the live team ticket scoreboard from the BFList feed. Best-effort: any
-    /// failure (upstream down, server offline, no ticket data) just drops the tickets
-    /// from the banner rather than failing the whole render.
+    /// Cache-miss fallback: pulls the live team ticket scoreboard directly from the
+    /// BFList feed when the warm name-keyed snapshot didn't have this server. Best-
+    /// effort - any failure just drops the tickets from the banner.
     /// </summary>
     private async Task<ServerBannerTickets?> ResolveTicketsAsync(
         string? game,
@@ -201,6 +198,10 @@ public sealed class ServerBannerService(
             Team1Tickets: Math.Max(0, t1),
             Team2Tickets: Math.Max(0, t2));
     }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
 
     private static string Label(string? raw, string fallback) =>
         string.IsNullOrWhiteSpace(raw) ? fallback : raw.Trim().ToUpperInvariant();
