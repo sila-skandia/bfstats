@@ -56,6 +56,10 @@ hours and indirectly blanked live player counts site-wide.
 
 ## Follow-ups (not done here)
 
+- [x] **Bound the observation SQL** — the snapshot cap did not help
+  `dc6659fb35e806ac8a9a` on 2026-09-10: leftover sessions still carried that
+  `RoundId`, and `PlayerObservations` was loaded unbounded (155s, 499).
+  See `features/slow-api-round-report-observations/README.md`.
 - [ ] Wire a `stale-rounds-watchdog` job in home-server-mgr:
   `bfstats-stale-rounds` (check, exits 1) → `bfstats-close-stale-rounds`
   (remediate) + ntfy alert.
