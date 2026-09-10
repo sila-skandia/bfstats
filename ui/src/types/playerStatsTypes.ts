@@ -445,6 +445,7 @@ export interface MapPerformanceTimelineResponse {
 
 export interface PlayerMapStatEntry { 
   mapName: string; 
+  gameId?: string;
   totalScore: number; 
   totalKills: number; 
   totalDeaths: number; 

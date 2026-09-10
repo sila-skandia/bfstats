@@ -2266,30 +2266,43 @@ public class DataExplorerService(
             })
             .ToListAsync();
 
-        // Get server names
+        // Get server names and game IDs
         var serverGuids = serverBreakdown.Select(s => s.ServerGuid).ToList();
-        var serverNames = await dbContext.Servers
+        var serverInfos = await dbContext.Servers
             .Where(s => serverGuids.Contains(s.Guid))
-            .Select(s => new { s.Guid, s.Name })
-            .ToDictionaryAsync(s => s.Guid, s => s.Name);
+            .Select(s => new { s.Guid, s.Name, s.GameId })
+            .ToDictionaryAsync(s => s.Guid);
 
         var serverBreakdownList = serverBreakdown
-            .Select(s => new PlayerMapServerBreakdown(
-                ServerGuid: s.ServerGuid,
-                ServerName: serverNames.GetValueOrDefault(s.ServerGuid, s.ServerGuid),
-                Score: s.Score,
-                Kills: s.Kills,
-                Deaths: s.Deaths,
-                Rounds: s.Rounds,
-                PlayTime: s.PlayTime
-            ))
+            .Select(s =>
+            {
+                serverInfos.TryGetValue(s.ServerGuid, out var sInfo);
+                var sGameId = PlayerStats.SqlitePlayerStatsService.CanonicalizeMod(sInfo?.GameId, mapName);
+                return new PlayerMapServerBreakdown(
+                    ServerGuid: s.ServerGuid,
+                    ServerName: sInfo?.Name ?? s.ServerGuid,
+                    Score: s.Score,
+                    Kills: s.Kills,
+                    Deaths: s.Deaths,
+                    Rounds: s.Rounds,
+                    PlayTime: s.PlayTime,
+                    GameId: sGameId
+                );
+            })
             .OrderByDescending(s => s.Score)
             .ToList();
+
+        var canonicalGame = normalizedGame;
+        if (canonicalGame == "bf1942")
+        {
+            var detectedMod = serverBreakdownList.FirstOrDefault(s => s.GameId != "bf1942")?.GameId;
+            canonicalGame = detectedMod ?? PlayerStats.SqlitePlayerStatsService.CanonicalizeMod(null, mapName);
+        }
 
         return new PlayerMapDetailResponse(
             PlayerName: playerName,
             MapName: mapName,
-            Game: normalizedGame,
+            Game: canonicalGame,
             AggregatedStats: aggregatedStats,
             ServerBreakdown: serverBreakdownList,
             DateRange: new DateRangeDto(days, cutoffDate, DateTime.UtcNow)
