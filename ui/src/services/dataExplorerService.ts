@@ -322,53 +322,6 @@ export interface PlayerSearchResponse {
   query: string;
 }
 
-// Player Map Rankings Types
-
-export interface PlayerOverallStats {
-  totalScore: number;
-  totalKills: number;
-  totalDeaths: number;
-  kdRatio: number;
-  totalRounds: number;
-  uniqueServers: number;
-  uniqueMaps: number;
-}
-
-export interface PlayerServerStats {
-  serverGuid: string;
-  serverName: string;
-  totalScore: number;
-  totalKills: number;
-  totalDeaths: number;
-  kdRatio: number;
-  totalRounds: number;
-  rank: number;
-}
-
-export interface PlayerMapGroup {
-  mapName: string;
-  aggregatedScore: number;
-  serverStats: PlayerServerStats[];
-  bestRank: number | null;
-  bestRankServer: string | null;
-}
-
-export interface NumberOneRanking {
-  mapName: string;
-  serverName: string;
-  serverGuid: string;
-  totalScore: number;
-}
-
-export interface PlayerMapRankingsResponse {
-  playerName: string;
-  game: string;
-  overallStats: PlayerOverallStats;
-  mapGroups: PlayerMapGroup[];
-  numberOneRankings: NumberOneRanking[];
-  dateRange: DateRange;
-}
-
 export interface ServerMapDetail {
   serverGuid: string;
   serverName: string;
@@ -447,43 +400,6 @@ export async function searchPlayers(
   } catch (err) {
     console.error('Error searching players:', err);
     throw new Error('Failed to search players');
-  }
-}
-
-/**
- * Fetches player map rankings with per-server breakdown
- * @param playerName - The player name
- * @param game - Game filter: bf1942 (default)
- * @param days - Number of days to look back (default 60)
- * @param serverGuid - Optional server GUID to filter results to a specific server
- */
-export async function fetchPlayerMapRankings(
-  playerName: string,
-  game: GameType = 'bf1942',
-  days: number = 60,
-  serverGuid?: string
-): Promise<PlayerMapRankingsResponse> {
-  try {
-    const params: Record<string, string | number> = { game, days };
-    if (serverGuid) {
-      params.serverGuid = serverGuid;
-    }
-    
-    const response = await axios.get<PlayerMapRankingsResponse>(
-      `/stats/data-explorer/players/${encodeURIComponent(playerName)}/maps`,
-      { params }
-    );
-    return response.data;
-  } catch (err: any) {
-    console.error('Error fetching player map rankings:', err);
-
-    // Check if it's a 404 (player not found/no data)
-    if (err.response?.status === 404) {
-      throw new Error('PLAYER_NOT_FOUND');
-    }
-
-    // For other errors, throw the original error message
-    throw new Error('Failed to get player map rankings');
   }
 }
 
