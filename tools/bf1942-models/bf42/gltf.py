@@ -31,6 +31,7 @@ class Primitive:
     indices: list[int]
     normals: list[tuple[float, float, float]] | None = None
     uvs: list[tuple[float, float]] | None = None
+    uvs2: list[tuple[float, float]] | None = None
     material: int | None = None
     extras: dict | None = None
 
@@ -193,6 +194,8 @@ class GlbBuilder:
                 attrs["NORMAL"] = self._vec3_accessor(normals, bounds=False)
             if prim.uvs:
                 attrs["TEXCOORD_0"] = self._vec2_accessor(prim.uvs)
+            if prim.uvs2:
+                attrs["TEXCOORD_1"] = self._vec2_accessor(prim.uvs2)
 
             flipped: list[int] = []
             for i in range(0, len(prim.indices) - 2, 3):

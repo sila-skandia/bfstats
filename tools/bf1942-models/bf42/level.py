@@ -9,6 +9,7 @@ template, but each record is an instance already placed in the world.
 from __future__ import annotations
 
 import math
+import re
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -379,6 +380,47 @@ def decode_heightmap(data: bytes, world_size: float, y_scale: float) -> Heightma
     samples = list(struct.unpack(f"<{samples_n}H", data))
     spacing = world_size / dim
     return Heightmap(dim=dim, spacing=spacing, y_scale=y_scale, samples=samples)
+
+
+_LIGHTMAP_NAME = re.compile(
+    r"(?P<stem>[^/\\]+)_(?P<x>-?\d+)-(?P<y>-?\d+)-(?P<z>-?\d+)\.(?:tga|dds)$",
+    re.IGNORECASE,
+)
+
+
+def parse_object_lightmap_name(path: str) -> tuple[str, int, int, int] | None:
+    """`barack_m1_1703-67-547.tga` -> mesh stem plus truncated world position."""
+    leaf = path.replace("\\", "/").rsplit("/", 1)[-1]
+    match = _LIGHTMAP_NAME.search(leaf)
+    if match is None:
+        return None
+    return (
+        match.group("stem").lower(),
+        int(match.group("x")),
+        int(match.group("y")),
+        int(match.group("z")),
+    )
+
+
+def object_lightmap_key(mesh_file: str, position: tuple[float, float, float],
+                        ) -> tuple[str, int, int, int]:
+    stem = mesh_file.replace("\\", "/").rsplit("/", 1)[-1]
+    if stem.lower().endswith(".sm"):
+        stem = stem[:-3]
+    x, y, z = position
+    return stem.lower(), int(x), int(y), int(z)
+
+
+def index_object_lightmaps(files: "LevelFiles") -> dict[tuple[str, int, int, int], str]:
+    """Archive path for each baked object lightmap, keyed by mesh and position."""
+    out: dict[tuple[str, int, int, int], str] = {}
+    for name in files.names():
+        if "objectlightmap" not in name.lower():
+            continue
+        parsed = parse_object_lightmap_name(name)
+        if parsed is not None:
+            out[parsed] = name
+    return out
 
 
 def tile_world_origin(tex_offset_x: int, tex_offset_y: int,

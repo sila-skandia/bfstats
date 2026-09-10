@@ -84,6 +84,14 @@ class Material:
         v = self.vertices
         return [tuple(v[i * n + 6: i * n + 8]) for i in range(self.vertex_count)]
 
+    def uvs2(self) -> list[tuple[float, float]] | None:
+        """Lightmap channel. Stride 40 is position/normal/uv/uv2."""
+        if self.stride < 40:
+            return None
+        n = self.floats_per_vertex
+        v = self.vertices
+        return [tuple(v[i * n + 8: i * n + 10]) for i in range(self.vertex_count)]
+
     def triangles(self) -> list[tuple[int, int, int]]:
         idx = self.indices
         if self.primitive == PRIM_TRIANGLE_STRIP:

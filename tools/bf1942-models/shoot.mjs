@@ -153,8 +153,33 @@ for (const model of models) {
         const damageLabels = await page.locator(
           '#impact-label, .hp-loss span:last-child',
         ).allTextContents();
-        if (damageLabels[0] !== 'Damage' || damageLabels[1] !== 'not calculable yet') {
+        if (damageLabels[0] !== 'Damage' || damageLabels[1] !== 'select a weapon') {
           throw new Error(`${current.model} collision damage labels are unclear`);
+        }
+        // With the damage tables present, a weapon turns the reading into hit
+        // points; the model's own heaviest gun is the natural first choice.
+        const damage = await page.evaluate(() => {
+          const inspector = window.__modelInspector;
+          const tables = inspector.getDamageTables();
+          if (!tables) return null;
+          const own = inspector.manifest.find(entry => entry.name === inspector.getCurrent().model)?.weapons || [];
+          const baseOf = name => {
+            const weapon = tables.weapons.find(candidate => candidate.name === name);
+            return tables.materials[weapon?.material]?.damage ?? -1;
+          };
+          const weapon = [...own].sort((a, b) => baseOf(b) - baseOf(a))[0] || inspector.getWeapons()[0];
+          if (!weapon) return null;
+          inspector.setWeapon(weapon);
+          return inspector.getDamage();
+        });
+        if (damage && damage.base == null) {
+          throw new Error(`${current.model}: ${damage.weapon} has no materialDamage in the tables`);
+        }
+        if (damage) {
+          const reading = await page.locator('#impact-value').textContent();
+          if (!/^\d/.test(reading.trim())) {
+            throw new Error(`${current.model} did not show hit points for ${damage.weapon}`);
+          }
         }
         const handle = await page.evaluate(
           () => window.__modelInspector.getCollision().handle,
