@@ -19,18 +19,14 @@ const emit = defineEmits<{
   summary: [payload: { peak: number; avg: number }]
 }>()
 
-export type OverlayMode = 'activity' | 'momentum' | 'ceiling'
-
 const loading = ref(true)
 const error = ref<string | null>(null)
 const patternData = ref<ServerWeeklyPatternResponse | null>(null)
 const trendPoints = ref<PlayerTrendPoint[]>([])
 const useLocalTime = ref(true)
 
-// Overlay controls
-const activeOverlayMode = ref<OverlayMode>('activity')
+// Heatmap controls & interaction
 const showTrendWave = ref(true)
-const showMicroVectors = ref(false)
 const selectedDay = ref<number | null>(null)
 const hoveredHour = ref<number | null>(null)
 const selectedSlot = ref<{
@@ -263,58 +259,29 @@ function getCellStyle(displayDay: number, displayHour: number) {
   const slot = getSlotForDisplay(displayDay, displayHour)
   const trend = getTrendForDisplay(displayDay, displayHour)
 
-  if (activeOverlayMode.value === 'momentum') {
-    if (!slot || slot.avgPlayers <= 0) {
-      return { backgroundColor: 'var(--mm-bg-mute)' }
-    }
-    if (trend) {
-      if (trend.momentumStatus === 'surging') {
-        const intensity = Math.min(1, 0.4 + (trend.pctChange / 100) * 0.6)
-        return {
-          backgroundColor: `rgba(125, 163, 76, ${intensity})`,
-          boxShadow: 'inset 0 0 0 1px rgba(125, 163, 76, 0.4)',
-        }
-      }
-      if (trend.momentumStatus === 'cooling') {
-        const intensity = Math.min(1, 0.35 + Math.abs(trend.pctChange / 100) * 0.5)
-        return {
-          backgroundColor: `rgba(214, 90, 90, ${intensity})`,
-          boxShadow: 'inset 0 0 0 1px rgba(214, 90, 90, 0.35)',
-        }
-      }
-    }
-    const intensity = Math.min(1, slot.avgPlayers / Math.max(maxAvgPlayers.value, 15))
-    return { backgroundColor: `rgba(138, 138, 106, ${0.2 + intensity * 0.5})` }
-  }
-
-  if (activeOverlayMode.value === 'ceiling') {
-    if (!slot || slot.maxPlayers <= 0) {
-      return { backgroundColor: 'var(--mm-bg-mute)' }
-    }
-    const intensity = Math.min(1, slot.maxPlayers / Math.max(maxPeakPlayers.value, 20))
-    let opacity: number
-    if (intensity <= 0.2) opacity = 0.25
-    else if (intensity <= 0.4) opacity = 0.48
-    else if (intensity <= 0.6) opacity = 0.68
-    else if (intensity <= 0.8) opacity = 0.86
-    else opacity = 1.0
-    return { backgroundColor: `rgba(201, 147, 59, ${opacity})` }
-  }
-
-  // Standard 'activity' mode
   if (!slot || slot.avgPlayers <= 0) {
     return { backgroundColor: 'var(--mm-bg-mute)' }
   }
 
-  const intensity = Math.min(1, slot.avgPlayers / Math.max(maxAvgPlayers.value, 15))
-  let opacity: number
-  if (intensity <= 0.2) opacity = 0.22
-  else if (intensity <= 0.4) opacity = 0.42
-  else if (intensity <= 0.6) opacity = 0.62
-  else if (intensity <= 0.8) opacity = 0.82
-  else opacity = 1.0
+  if (trend) {
+    if (trend.momentumStatus === 'surging') {
+      const intensity = Math.min(1, 0.4 + (trend.pctChange / 100) * 0.6)
+      return {
+        backgroundColor: `rgba(125, 163, 76, ${intensity})`,
+        boxShadow: 'inset 0 0 0 1px rgba(125, 163, 76, 0.4)',
+      }
+    }
+    if (trend.momentumStatus === 'cooling') {
+      const intensity = Math.min(1, 0.35 + Math.abs(trend.pctChange / 100) * 0.5)
+      return {
+        backgroundColor: `rgba(214, 90, 90, ${intensity})`,
+        boxShadow: 'inset 0 0 0 1px rgba(214, 90, 90, 0.35)',
+      }
+    }
+  }
 
-  return { backgroundColor: `rgba(125, 136, 73, ${opacity})` }
+  const intensity = Math.min(1, slot.avgPlayers / Math.max(maxAvgPlayers.value, 15))
+  return { backgroundColor: `rgba(138, 138, 106, ${0.2 + intensity * 0.5})` }
 }
 
 function formatHourRange(hour: number) {
@@ -521,40 +488,9 @@ watch(() => props.serverGuid, loadData)
         </div>
       </div>
 
-      <!-- Tactical View Mode & Tooling Controls -->
+      <!-- Tactical View Controls -->
       <div class="mm-server-heat__controls-cluster">
-        <!-- View Mode Segmented Control -->
-        <div class="mm-mode-selector" role="group" aria-label="Overlay mode selection">
-          <button
-            type="button"
-            class="mm-mode-btn"
-            :class="{ 'mm-mode-btn--active': activeOverlayMode === 'activity' }"
-            @click="activeOverlayMode = 'activity'"
-            title="Standard density heatmap"
-          >
-            Activity
-          </button>
-          <button
-            type="button"
-            class="mm-mode-btn mm-mode-btn--momentum"
-            :class="{ 'mm-mode-btn--active': activeOverlayMode === 'momentum' }"
-            @click="activeOverlayMode = 'momentum'"
-            title="Highlight slots surging or cooling in the last 30 days"
-          >
-            Momentum ↗
-          </button>
-          <button
-            type="button"
-            class="mm-mode-btn"
-            :class="{ 'mm-mode-btn--active': activeOverlayMode === 'ceiling' }"
-            @click="activeOverlayMode = 'ceiling'"
-            title="Max recorded player capacity per slot"
-          >
-            Ceiling
-          </button>
-        </div>
-
-        <!-- Wave / Vector toggles -->
+        <!-- Wave toggle -->
         <div class="mm-aux-toggles">
           <button
             type="button"
@@ -564,15 +500,6 @@ watch(() => props.serverGuid, loadData)
             title="Toggle 24-hour diurnal trend wave"
           >
             ∿ Wave
-          </button>
-          <button
-            type="button"
-            class="mm-aux-btn"
-            :class="{ 'mm-aux-btn--active': showMicroVectors }"
-            @click="showMicroVectors = !showMicroVectors"
-            title="Toggle micro trend arrows in cells"
-          >
-            ↗ Vectors
           </button>
         </div>
 
@@ -700,7 +627,7 @@ watch(() => props.serverGuid, loadData)
           >
             <!-- In-cell micro trend vector indicator -->
             <span
-              v-if="(showMicroVectors || activeOverlayMode === 'momentum') && getTrendForDisplay(dayIdx, hour - 1)"
+              v-if="getTrendForDisplay(dayIdx, hour - 1)"
               class="mm-cell-vector"
               :class="`mm-cell-vector--${getTrendForDisplay(dayIdx, hour - 1)?.momentumStatus}`"
             >
@@ -908,34 +835,13 @@ watch(() => props.serverGuid, loadData)
       <!-- Legend & stats row -->
       <div class="mm-server-heat__foot">
         <div class="mm-server-heat__legend">
-          <template v-if="activeOverlayMode === 'activity'">
-            <span class="mm-server-heat__legend-label">Activity:</span>
-            <span class="mm-server-heat__legend-swatch" style="background: var(--mm-bg-mute)" title="Quiet" />
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(125, 136, 73, 0.25)" />
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(125, 136, 73, 0.55)" />
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(125, 136, 73, 0.85)" />
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(125, 136, 73, 1.0)" title="Peak" />
-            <span class="mm-server-heat__legend-label">Peak</span>
-          </template>
-
-          <template v-else-if="activeOverlayMode === 'momentum'">
-            <span class="mm-server-heat__legend-label">Momentum:</span>
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(214, 90, 90, 0.8)" title="Cooling (<= -15%)" />
-            <span class="mm-server-heat__legend-label">Cooling</span>
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(138, 138, 106, 0.4)" title="Steady (-14% to +14%)" />
-            <span class="mm-server-heat__legend-label">Steady</span>
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(125, 163, 76, 0.9)" title="Surging (>= +15%)" />
-            <span class="mm-server-heat__legend-label">Surging</span>
-          </template>
-
-          <template v-else-if="activeOverlayMode === 'ceiling'">
-            <span class="mm-server-heat__legend-label">Max Record:</span>
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(201, 147, 59, 0.25)" />
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(201, 147, 59, 0.55)" />
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(201, 147, 59, 0.85)" />
-            <span class="mm-server-heat__legend-swatch" style="background: rgba(201, 147, 59, 1.0)" title="Record" />
-            <span class="mm-server-heat__legend-label">High Watermark</span>
-          </template>
+          <span class="mm-server-heat__legend-label">Momentum:</span>
+          <span class="mm-server-heat__legend-swatch" style="background: rgba(214, 90, 90, 0.8)" title="Cooling (<= -15%)" />
+          <span class="mm-server-heat__legend-label">Cooling</span>
+          <span class="mm-server-heat__legend-swatch" style="background: rgba(138, 138, 106, 0.4)" title="Steady (-14% to +14%)" />
+          <span class="mm-server-heat__legend-label">Steady</span>
+          <span class="mm-server-heat__legend-swatch" style="background: rgba(125, 163, 76, 0.9)" title="Surging (>= +15%)" />
+          <span class="mm-server-heat__legend-label">Surging</span>
         </div>
 
         <div class="mm-server-heat__meta">
@@ -1065,48 +971,6 @@ watch(() => props.serverGuid, loadData)
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-/* Mode Selector */
-.mm-mode-selector {
-  display: inline-flex;
-  align-items: center;
-  background: var(--mm-bg-soft);
-  border: 1px solid var(--mm-line);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.mm-mode-btn {
-  background: transparent;
-  border: none;
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  padding: 4px 10px;
-  color: var(--mm-ink-muted);
-  cursor: pointer;
-  transition: all 0.12s ease;
-  white-space: nowrap;
-}
-
-.mm-mode-btn:not(:last-child) {
-  border-right: 1px solid var(--mm-line-subtle);
-}
-
-.mm-mode-btn:hover {
-  color: var(--mm-ink);
-}
-
-.mm-mode-btn--active {
-  background: var(--mm-ink);
-  color: var(--mm-bg) !important;
-  font-weight: 600;
-}
-
-.mm-mode-btn--momentum.mm-mode-btn--active {
-  background: #7da34c;
-  color: #131313 !important;
 }
 
 /* Aux toggles */
@@ -1247,6 +1111,7 @@ watch(() => props.serverGuid, loadData)
   flex-direction: column;
   gap: 2px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 2px;
 }
 
@@ -1299,7 +1164,7 @@ watch(() => props.serverGuid, loadData)
 
 .mm-server-heat__row--selected {
   outline: 1px dashed rgba(180, 192, 96, 0.4);
-  outline-offset: 1px;
+  outline-offset: -1px;
   border-radius: 2px;
 }
 
@@ -1309,22 +1174,22 @@ watch(() => props.serverGuid, loadData)
   min-height: 16px;
   border-radius: 1px;
   cursor: pointer;
-  transition: outline 0.12s ease, transform 0.1s ease;
+  transition: outline 0.12s ease, filter 0.12s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .mm-server-heat__cell:hover {
-  outline: 1.5px solid var(--mm-accent);
-  outline-offset: -1px;
-  transform: scale(1.18);
+  outline: 1.5px solid var(--mm-accent-soft, #9aa666);
+  outline-offset: -1.5px;
+  filter: brightness(1.25);
   z-index: 4;
 }
 
 .mm-server-heat__cell--current {
   outline: 1.5px solid #c9933b;
-  outline-offset: -1px;
+  outline-offset: -1.5px;
 }
 
 .mm-server-heat__cell--col-hover {
@@ -1333,7 +1198,7 @@ watch(() => props.serverGuid, loadData)
 
 .mm-server-heat__cell--selected {
   outline: 2px solid #b4c060 !important;
-  outline-offset: -1px;
+  outline-offset: -2px;
   z-index: 3;
 }
 
