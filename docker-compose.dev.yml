@@ -88,7 +88,7 @@ services:
       retries: 3
 
   neo4j:
-    image: neo4j:5.15-community
+    image: neo4j:5-community
     container_name: bf1942-neo4j
     ports:
       - "7474:7474"   # HTTP web interface
