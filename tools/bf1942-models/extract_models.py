@@ -23,14 +23,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import con as con_mod
+from bf42 import damage as damage_mod
 from bf42.assemble import Assembler
-from bf42.rfa import ArchivePool, find_archives_dir
+from bf42.rfa import ArchivePool, find_archives_dir, find_game_dir, find_levels_dir
 
 DEFAULT_GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
 
 MESH_ARCHIVES = ("standardmesh", "treemesh", "animations")  # animations: GeometryTemplate.setSkin
 TEXTURE_ARCHIVES = ("texture",)
 OBJECT_ARCHIVES = ("objects",)
+# `Game.rfa` lives under `Archives/bf1942/`, next to `levels/`, because that is the
+# path prefix of its contents. The executable's archive list names it `Bf1942/game.rfa`.
+GAME_ARCHIVES = ("game",)
 
 # Where `objects.rfa` files a template tells you what the thing is.
 CATEGORY_PREFIXES = {
@@ -81,8 +85,9 @@ def mod_chain(game_dir: Path, mod: str) -> list[Path]:
     return chain
 
 
-def build_pools(chain: list[Path], extra_texture_mods: list[Path]) -> tuple[ArchivePool, ArchivePool, ArchivePool]:
-    meshes, textures, objects = ArchivePool(), ArchivePool(), ArchivePool()
+def build_pools(chain: list[Path], extra_texture_mods: list[Path],
+                ) -> tuple[ArchivePool, ArchivePool, ArchivePool, ArchivePool]:
+    meshes, textures, objects, game = ArchivePool(), ArchivePool(), ArchivePool(), ArchivePool()
     for mod_dir in chain:
         archives = find_archives_dir(mod_dir)
         if archives is None:
@@ -90,12 +95,31 @@ def build_pools(chain: list[Path], extra_texture_mods: list[Path]) -> tuple[Arch
         meshes.add_dir(archives, MESH_ARCHIVES)
         textures.add_dir(archives, TEXTURE_ARCHIVES)
         objects.add_dir(archives, OBJECT_ARCHIVES)
+        game_dir = find_game_dir(archives)
+        if game_dir is not None:
+            game.add_dir(game_dir, GAME_ARCHIVES)
     # Appended last so they only ever fill gaps the real chain left.
     for mod_dir in extra_texture_mods:
         archives = find_archives_dir(mod_dir)
         if archives is not None:
             textures.add_dir(archives, TEXTURE_ARCHIVES)
-    return meshes, textures, objects
+    return meshes, textures, objects, game
+
+
+def load_damage_tables(game: ArchivePool) -> damage_mod.DamageTables:
+    """Replay the MaterialManager scripts the way the engine does at startup."""
+    def resolve(name: str) -> bytes | None:
+        return game.read(name) if name in game else None
+    return damage_mod.load_tables(resolve)
+
+
+def collect_weapons(objects: ArchivePool) -> list[damage_mod.Weapon]:
+    scripts = {
+        name: objects.read(name).decode("latin-1")
+        for name in objects.names()
+        if name.lower().endswith(".con")
+    }
+    return damage_mod.collect_weapons(scripts)
 
 
 def discover_level_textures(chain: list[Path]) -> list[tuple[str, Path]]:
@@ -111,8 +135,8 @@ def discover_level_textures(chain: list[Path]) -> list[tuple[str, Path]]:
         archives = find_archives_dir(mod_dir)
         if archives is None:
             continue
-        levels_dir = archives / mod_dir.name / "levels"
-        if not levels_dir.is_dir():
+        levels_dir = find_levels_dir(archives)
+        if levels_dir is None:
             continue
         for child in sorted(levels_dir.iterdir()):
             if not child.is_file() or child.suffix.lower() != ".rfa":
@@ -127,7 +151,7 @@ def discover_level_textures(chain: list[Path]) -> list[tuple[str, Path]]:
                 continue
             has_tex = any(
                 len(parts := e.split("/")) >= 5
-                and parts[3].lower() in ("alttextures", "texture")
+                and parts[3].lower() in ("alttextures", "texture", "textures", "custom textures")
                 and not any(p.lower() in ("menu", "objectlightmaps") for p in parts)
                 for e in rfa.entries
             )
@@ -273,8 +297,10 @@ def main() -> int:
 
     chain = mod_chain(game_dir, args.mod)
     fallbacks = [game_dir / "Mods" / name for name in args.texture_fallback]
-    meshes, base_textures, objects = build_pools(chain, fallbacks)
+    meshes, base_textures, objects, game = build_pools(chain, fallbacks)
     library = build_library(objects)
+    damage_tables = load_damage_tables(game)
+    weapons = collect_weapons(objects)
 
     # -- level archives with vehicle textures --------------------------------
     if args.level_all:
@@ -283,8 +309,8 @@ def main() -> int:
         levels_dir = None
         for mod_dir in chain:
             archives = find_archives_dir(mod_dir)
-            if archives and (archives / mod_dir.name / "levels").is_dir():
-                levels_dir = archives / mod_dir.name / "levels"
+            if archives and (found := find_levels_dir(archives)) is not None:
+                levels_dir = found
                 break
         level_sources = []
         if levels_dir:
@@ -300,6 +326,16 @@ def main() -> int:
           f"{len(objects.names())} object entries", file=sys.stderr)
     print(f"templates:  {len(library.objects)} objects, {len(library.geometries)} geometries",
           file=sys.stderr)
+    if damage_tables.scripts:
+        print(f"damage:     {len(damage_tables.materials)} materials, "
+              f"{len(damage_tables.modifiers)} att/def modifiers from "
+              f"{len(damage_tables.scripts)} scripts, {len(weapons)} weapons"
+              + (f", {len(damage_tables.missing_scripts)} run targets absent"
+                 if damage_tables.missing_scripts else ""),
+              file=sys.stderr)
+    else:
+        print("WARNING: no Game.rfa in the mod chain — armour damage will not be calculable.",
+              file=sys.stderr)
     if level_sources:
         print(f"levels:     {', '.join(n for n, _ in level_sources)}", file=sys.stderr)
     if not base_textures.names() and not level_sources:
@@ -396,12 +432,43 @@ def main() -> int:
             "texturesResolved": best["texturesResolved"],
             "texturesMissing": best["texturesMissing"],
             "textureFallbacks": args.texture_fallback,
+            "weapons": sorted(own_weapons(library, name, weapons)),
             "variants": variants,
         })
 
     # The viewer reads this to populate its model list.
     (args.out / "models.json").write_text(json.dumps(manifest, indent=2))
+    # ...and this to turn a clicked collision face into hit points.
+    (args.out / "damage.json").write_text(json.dumps({
+        "mod": args.mod,
+        **damage_tables.as_dict(),
+        "weapons": [weapon.as_dict() for weapon in weapons],
+    }, indent=2))
     return 1 if failures else 0
+
+
+def own_weapons(library: con_mod.ObjectLibrary, root: str,
+                weapons: list[damage_mod.Weapon]) -> set[str]:
+    """Launcher templates that sit somewhere in this object's template tree."""
+    by_name = {weapon.name.lower() for weapon in weapons}
+    found: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(name: str, depth: int = 0) -> None:
+        key = name.lower()
+        if key in visited or depth > 24:
+            return
+        visited.add(key)
+        if key in by_name:
+            found.add(next(w.name for w in weapons if w.name.lower() == key))
+        template = library.object(name)
+        if template is None:
+            return
+        for child in template.children:
+            visit(child.template, depth + 1)
+
+    visit(root)
+    return found
 
 
 if __name__ == "__main__":

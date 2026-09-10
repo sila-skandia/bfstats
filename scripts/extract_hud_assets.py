@@ -299,21 +299,77 @@ def encode_png(width: int, height: int, rgba: bytes, drop_alpha: bool = False) -
 # --------------------------------------------------------------------------- #
 
 def decode_tga(data: bytes) -> tuple[int, int, bytes]:
-    """Decode the uncompressed and RLE 24/32-bit TGAs the menu archives use.
+    """Decode TGA used by menu icons and object lightmaps.
 
-    A handful of icons (IconBlk_Medal, IconHoHa) ship as TGA rather than DDS, so the
-    vehicle set is incomplete without this.
+    Truecolor 24/32-bit (types 2 and 10) plus paletted 8-bit (types 1 and 9).
+    BF1942 object lightmaps are type 1 with a 256-entry 24-bit colour map.
     """
     id_len, colour_map_type, image_type = data[0], data[1], data[2]
-    if colour_map_type != 0 or image_type not in (2, 10):
-        raise ValueError(f"unsupported TGA image type {image_type}")
+    cmap_first, cmap_len, cmap_bits = struct.unpack_from("<HHB", data, 3)
     width, height = struct.unpack_from("<HH", data, 12)
     depth, descriptor = data[16], data[17]
+    offset = 18 + id_len
+
+    def flip_bottom_up(rgba: bytearray) -> bytes:
+        if descriptor & 0x20:
+            return bytes(rgba)
+        row = width * 4
+        return b"".join(
+            bytes(rgba[y * row:(y + 1) * row]) for y in range(height - 1, -1, -1)
+        )
+
+    if image_type in (1, 9):
+        if colour_map_type != 1 or cmap_len == 0:
+            raise ValueError("indexed TGA missing colour map")
+        entry_stride = (cmap_bits + 7) // 8
+        cmap_end = offset + cmap_len * entry_stride
+        cmap_bytes = data[offset:cmap_end]
+        offset = cmap_end
+        palette = [(0, 0, 0, 255)] * 256
+        for i in range(cmap_len):
+            entry = cmap_bytes[i * entry_stride:(i + 1) * entry_stride]
+            slot = cmap_first + i
+            if slot >= 256:
+                break
+            if entry_stride >= 3:
+                b, g, r = entry[0], entry[1], entry[2]
+                a = entry[3] if entry_stride >= 4 else 255
+            elif entry_stride == 2:
+                val = entry[0] | (entry[1] << 8)
+                r = ((val >> 10) & 31) << 3
+                g = ((val >> 5) & 31) << 3
+                b = (val & 31) << 3
+                a = 255
+            else:
+                raise ValueError(f"unsupported TGA colour map size {cmap_bits}")
+            palette[slot] = (r, g, b, a)
+        count = width * height
+        if image_type == 1:
+            indices = data[offset:offset + count]
+        else:
+            indices_buf = bytearray()
+            while len(indices_buf) < count:
+                packet = data[offset]
+                offset += 1
+                run = (packet & 0x7F) + 1
+                if packet & 0x80:
+                    indices_buf += bytes([data[offset]]) * run
+                    offset += 1
+                else:
+                    indices_buf += data[offset:offset + run]
+                    offset += run
+            indices = bytes(indices_buf[:count])
+        rgba = bytearray(count * 4)
+        for i, idx in enumerate(indices):
+            rgba[i * 4:i * 4 + 4] = bytes(palette[idx])
+        return width, height, flip_bottom_up(rgba)
+
+    if colour_map_type != 0 or image_type not in (2, 10):
+        raise ValueError(f"unsupported TGA image type {image_type}")
     if depth not in (24, 32):
         raise ValueError(f"unsupported TGA bit depth {depth}")
 
     stride = depth // 8
-    offset = 18 + id_len
     pixels = bytearray()
 
     if image_type == 2:
@@ -323,25 +379,19 @@ def decode_tga(data: bytes) -> tuple[int, int, bytes]:
             packet = data[offset]
             offset += 1
             count = (packet & 0x7F) + 1
-            if packet & 0x80:  # run-length packet: one pixel repeated
+            if packet & 0x80:
                 pixels += data[offset:offset + stride] * count
                 offset += stride
             else:
                 pixels += data[offset:offset + count * stride]
                 offset += count * stride
 
-    # TGA stores BGR(A); rows run bottom-up unless bit 5 of the descriptor is set.
     rgba = bytearray(width * height * 4)
     for i in range(width * height):
         b, g, r = pixels[i * stride], pixels[i * stride + 1], pixels[i * stride + 2]
         a = pixels[i * stride + 3] if stride == 4 else 255
         rgba[i * 4:i * 4 + 4] = bytes((r, g, b, a))
-    if not descriptor & 0x20:
-        row = width * 4
-        rgba = bytearray(b"".join(
-            bytes(rgba[y * row:(y + 1) * row]) for y in range(height - 1, -1, -1)
-        ))
-    return width, height, bytes(rgba)
+    return width, height, flip_bottom_up(rgba)
 
 
 def extract_and_save(

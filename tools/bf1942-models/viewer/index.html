@@ -207,6 +207,152 @@
     text-transform: uppercase;
   }
   .hp-loss span:last-child { color: var(--warn); text-align: right; }
+  .hp-loss.hp-loss-known span:last-child { color: var(--text); }
+  .hp-loss.hp-loss-lethal span:last-child { color: var(--bad); }
+  .hp-loss.hp-loss-immune span:last-child { color: var(--muted); }
+  .weapon-field { margin: 6px 0 0; }
+  .weapon-summary {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .weapon-summary:empty { display: none; }
+  .weapon-summary strong { color: var(--text); font-weight: 500; }
+  .material-chip small { color: var(--text); font-size: 9px; }
+  .material-chip[data-immune="true"] { border-style: dashed; }
+  .distance-control { margin-top: 8px; }
+  .distance-control label { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
+  .distance-control output { color: var(--text); }
+  .distance-control input { width: 100%; margin: 4px 0 0; accent-color: var(--accent); }
+  #versus[hidden] { display: none; }
+  #versus {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(420px, calc(100% - 32px));
+    padding: 18px 18px 14px;
+    border: 1px solid rgba(230, 228, 217, .16);
+    background:
+      linear-gradient(180deg, rgba(12, 13, 9, .08), rgba(12, 13, 9, .22)),
+      rgba(16, 17, 12, .78);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, .45),
+      0 18px 50px rgba(0, 0, 0, .45);
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+    z-index: 3;
+  }
+  #versus::before {
+    content: "";
+    position: absolute;
+    inset: 8px auto 8px 50%;
+    width: 1px;
+    background: linear-gradient(180deg, transparent, rgba(230, 228, 217, .28), transparent);
+    pointer-events: none;
+  }
+  .vs-head {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 12px;
+  }
+  .vs-side { min-width: 0; }
+  .vs-side.vs-them { text-align: right; }
+  .vs-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 700 28px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .vs-them .vs-name { color: #e8c4a0; }
+  .vs-hp {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .vs-side select {
+    width: 100%;
+    margin-top: 7px;
+    padding: 4px 20px 4px 6px;
+    border: 1px solid var(--line);
+    background: #15170f;
+    color: var(--text);
+    font: inherit;
+    font-size: 10px;
+  }
+  .vs-mark {
+    align-self: center;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(230, 228, 217, .28);
+    background: #14150f;
+    color: var(--text);
+    font: 700 15px/1 Impact, "Arial Narrow", sans-serif;
+    letter-spacing: .08em;
+  }
+  .vs-lanes { display: grid; gap: 9px; }
+  .vs-lane {
+    display: grid;
+    grid-template-columns: 32px 1fr 58px 1fr 32px;
+    gap: 8px;
+    align-items: center;
+  }
+  .vs-face {
+    text-align: center;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .vs-shots {
+    font: 700 18px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .vs-shots-them { text-align: right; }
+  .vs-lane[data-immune-us="true"] .vs-shots-us,
+  .vs-lane[data-immune-them="true"] .vs-shots-them { color: var(--muted); }
+  .vs-bar {
+    height: 11px;
+    background: rgba(255, 255, 255, .06);
+    overflow: hidden;
+  }
+  .vs-bar-us { display: flex; justify-content: flex-end; }
+  .vs-bar i {
+    display: block;
+    height: 100%;
+    width: calc(var(--fill, 0) * 100%);
+    transform-origin: center;
+    animation: vs-fill 280ms ease;
+  }
+  .vs-bar-us i { background: var(--accent); }
+  .vs-bar-them i { background: #c98a3e; }
+  .vs-lane[data-win="us"] .vs-shots-us { color: var(--accent); }
+  .vs-lane[data-win="them"] .vs-shots-them { color: #e0a25a; }
+  @keyframes vs-fill {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  .vs-bar-us i { transform-origin: right; }
+  .vs-bar-them i { transform-origin: left; }
+  .vs-foot {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-align: center;
+    text-transform: uppercase;
+  }
   .angle-control label { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
   .angle-control output { color: var(--text); }
   .angle-control input { width: 100%; margin: 4px 0 0; accent-color: var(--warn); }
@@ -288,17 +434,23 @@
     <label class="toggle"><input type="checkbox" id="doubleside"> force double-sided</label>
   </details>
 
+  <h2>Compare</h2>
+  <label class="variant-field weapon-field"><span>Opponent</span><select id="opponent"></select></label>
+  <div class="collision-note">Parks a second vehicle and opens a VS column between them. Armour inspection stays on Weapon.</div>
+
   <h2>Armour</h2>
   <label class="toggle"><input type="checkbox" id="collision"> show armour regions</label>
+  <label class="variant-field weapon-field"><span>Weapon</span><select id="weapon"></select></label>
+  <div id="weapon-summary" class="weapon-summary"></div>
   <div id="collision-legend" hidden>
     <div class="legend-labels"><span>more vulnerable</span><span>more protected</span></div>
     <div class="legend-scale"><span></span><span></span><span></span><span></span><span></span></div>
     <div id="legend-materials"></div>
-    <div class="legend-hint">Select a material to isolate it; select it again to show all.</div>
+    <div class="legend-hint" id="legend-hint">Select a material to isolate it; select it again to show all.</div>
   </div>
-  <div class="collision-note">
-    Colours show inferred relative protection. Exact damage depends on the
-    weapon table. Click a region, then drag the shot arrow or use the angle control.
+  <div class="collision-note" id="collision-note">
+    Colours show inferred relative protection. Pick a weapon to colour by its
+    actual damage table. Click a region, then drag the shot arrow or use the angle control.
   </div>
   <div id="hit-details" aria-live="polite">
     <div class="empty">No collision face selected.</div>
@@ -319,6 +471,7 @@
 </aside>
 <main>
   <div id="banner" hidden></div>
+  <div id="versus" hidden></div>
   <div id="hud">drag to orbit &middot; scroll to zoom &middot; right-drag to pan</div>
 </main>
 
@@ -454,6 +607,17 @@ function disposeModel(root) {
 
 function setCameraView(index, total = 3) {
   if (!framing) return;
+  if (framing.pair) {
+    const distance = framing.radius * 1.2;
+    camera.position.set(
+      framing.centre.x - framing.radius * .55,
+      framing.centre.y + framing.radius * .32,
+      framing.centre.z + distance,
+    );
+    controls.target.copy(framing.centre);
+    controls.update();
+    return;
+  }
   const angle = -Math.PI * .22 + (Math.PI * 2 * index / Math.max(total, 1));
   const distance = framing.radius * 1.85;
   camera.position.set(
@@ -533,7 +697,490 @@ function startAnimating() {
 const collisionCheckbox = document.getElementById('collision');
 const collisionLegend = document.getElementById('collision-legend');
 const legendMaterials = document.getElementById('legend-materials');
+const weaponSelect = document.getElementById('weapon');
+const weaponSummary = document.getElementById('weapon-summary');
+const opponentSelect = document.getElementById('opponent');
+const versusPanel = document.getElementById('versus');
 const isCollisionMesh = obj => obj.isMesh && obj.geometry?.userData?.collision;
+
+// The MaterialManager tables out of Game.rfa, written by the extractor as
+// damage.json. Direct damage is materialDamage(att) * damageMod(att, def) *
+// cos(angle) * distanceMod; splash swaps in material2 and a radius term. A
+// pair with no damageMod entry is one the engine ignores entirely.
+const damageTables = await fetch(`models/damage.json?t=${Date.now()}`)
+  .then(response => (response.ok ? response.json() : null))
+  .catch(() => null);
+const weaponsByName = new Map(
+  (damageTables?.weapons || []).map(weapon => [weapon.name.toLowerCase(), weapon]),
+);
+let currentReport = null;
+const damageState = { weapon: null, distance: 0 };
+
+function attGroup(material) {
+  return damageTables?.materials?.[material]?.attGroup ?? material;
+}
+
+function defGroup(material) {
+  return damageTables?.materials?.[material]?.defGroup ?? material;
+}
+
+function baseDamage(material) {
+  const defined = damageTables?.materials?.[material];
+  return defined ? defined.damage : null;
+}
+
+function damageMod(attMaterial, defMaterial) {
+  if (attMaterial == null || defMaterial == null) return null;
+  const value = damageTables?.modifiers?.[attGroup(attMaterial)]?.[defGroup(defMaterial)];
+  return value === undefined ? null : value;
+}
+
+function distanceMod(weapon, distance) {
+  if (!weapon || weapon.minDamage == null || weapon.distToStartLoseDamage == null
+      || weapon.distToMinDamage == null) return 1;
+  if (distance <= weapon.distToStartLoseDamage) return 1;
+  if (distance >= weapon.distToMinDamage
+      || weapon.distToMinDamage <= weapon.distToStartLoseDamage) return weapon.minDamage;
+  const span = weapon.distToMinDamage - weapon.distToStartLoseDamage;
+  return weapon.minDamage + (1 - weapon.minDamage) * (weapon.distToMinDamage - distance) / span;
+}
+
+function hasDistanceFalloff(weapon) {
+  return Boolean(weapon && weapon.minDamage != null && weapon.distToMinDamage != null);
+}
+
+function headOnFor(weapon, material) {
+  if (!weapon || weapon.material == null || material == null) return null;
+  const base = baseDamage(weapon.material);
+  const mod = damageMod(weapon.material, material);
+  if (base == null || mod == null) return null;
+  return base * mod;
+}
+
+// Head-on direct damage of the selected weapon against a collision material,
+// or null when the table has no entry (the round does nothing to that face).
+function headOnDamage(material) {
+  return headOnFor(damageState.weapon, material);
+}
+
+function heaviestWeapon(entry) {
+  const names = entry?.weapons || [];
+  let best = null;
+  let bestBase = -1;
+  for (const name of names) {
+    const weapon = weaponsByName.get(name.toLowerCase());
+    if (!weapon || weapon.material == null) continue;
+    const base = baseDamage(weapon.material) ?? -1;
+    if (base > bestBase) {
+      best = weapon;
+      bestBase = base;
+    }
+  }
+  return best;
+}
+
+function regionFace(material) {
+  if (material === 50) return 'rear';
+  if (material === 51) return 'side';
+  if (material === 52) return 'side / nose';
+  if (material === 53) return 'front';
+  if (material === 54) return 'glacis';
+  return null;
+}
+
+function regionLabel(material) {
+  const face = regionFace(material);
+  const cls = collisionMaterialClass(material);
+  return face ? `${cls} ${face}` : cls;
+}
+
+function strikeRows(report, weapon) {
+  if (!report || !weapon) return [];
+  const hp = report.armor?.hitpoints ?? report.armor?.maxHitpoints ?? null;
+  const materials = [...new Set(report.collisionMaterials || [])].sort((a, b) => a - b);
+  return materials.map(material => {
+    const headOn = headOnFor(weapon, material);
+    const shots = hp != null && headOn > 0 ? shotsFor(hp, headOn) : null;
+    return {
+      material,
+      label: regionLabel(material),
+      headOn,
+      shots,
+      immune: !(headOn > 0),
+      kill: hp != null && headOn >= hp,
+    };
+  });
+}
+
+function splashAtCentre(report) {
+  const weapon = damageState.weapon;
+  const splashMaterial = report?.armor?.splashMaterial;
+  if (!weapon || weapon.material2 == null || splashMaterial == null) return null;
+  const base = baseDamage(weapon.material2);
+  const mod = damageMod(weapon.material2, splashMaterial);
+  if (base == null || mod == null) return null;
+  return base * mod;
+}
+
+function shotsFor(hitpoints, perShot) {
+  if (!(perShot > 0) || !(hitpoints > 0)) return null;
+  return Math.ceil(hitpoints / perShot - 1e-9);
+}
+
+function formatHp(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function weaponLabel(weapon) {
+  return weapon.owner && weapon.owner.toLowerCase() !== weapon.name.toLowerCase()
+    ? `${weapon.owner} · ${weapon.name}`
+    : weapon.name;
+}
+
+function buildWeaponSelect(entry) {
+  const previous = damageState.weapon?.name;
+  weaponSelect.innerHTML = '';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = damageTables ? 'none (relative ranking)' : 'no damage tables extracted';
+  weaponSelect.appendChild(none);
+  weaponSelect.disabled = !damageTables;
+  if (!damageTables) return;
+
+  const own = new Set((entry?.weapons || []).map(name => name.toLowerCase()));
+  const groups = new Map();
+  if (own.size) groups.set('this vehicle', []);
+  for (const weapon of damageTables.weapons) {
+    if (weapon.material == null) continue;
+    const key = own.has(weapon.name.toLowerCase()) ? 'this vehicle' : weapon.category;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(weapon);
+  }
+  for (const [label, weapons] of groups) {
+    if (!weapons.length) continue;
+    const group = document.createElement('optgroup');
+    group.label = label;
+    for (const weapon of weapons) {
+      const option = document.createElement('option');
+      option.value = weapon.name;
+      option.textContent = weaponLabel(weapon);
+      group.appendChild(option);
+    }
+    weaponSelect.appendChild(group);
+  }
+  weaponSelect.value = previous && weaponsByName.has(previous.toLowerCase()) ? previous : '';
+  if (!weaponSelect.value) damageState.weapon = null;
+}
+
+function renderWeaponSummary() {
+  const weapon = damageState.weapon;
+  if (!weapon) {
+    weaponSummary.innerHTML = '';
+    return;
+  }
+  const base = baseDamage(weapon.material);
+  const label = damageTables.materials?.[weapon.material]?.label;
+  const parts = [
+    `<strong>${weapon.projectile}</strong> material ${weapon.material}` +
+      (label ? ` (${label})` : '') +
+      (base != null ? `, base damage ${formatHp(base)}` : ', base damage undefined'),
+  ];
+  if (weapon.material2 != null) {
+    const splashBase = baseDamage(weapon.material2);
+    parts.push(`splash material ${weapon.material2}` +
+      (splashBase != null ? `, base ${formatHp(splashBase)}` : '') +
+      (weapon.radius != null ? `, radius ${weapon.radius} m` : ''));
+  }
+  if (hasDistanceFalloff(weapon)) {
+    parts.push(`falls to ${Math.round(weapon.minDamage * 100)}% between ` +
+      `${weapon.distToStartLoseDamage} m and ${weapon.distToMinDamage} m`);
+  }
+  weaponSummary.innerHTML = parts.join('<br>');
+}
+
+function setWeapon(name) {
+  const weapon = name ? weaponsByName.get(String(name).toLowerCase()) || null : null;
+  damageState.weapon = weapon;
+  damageState.distance = 0;
+  weaponSelect.value = weapon ? weapon.name : '';
+  renderWeaponSummary();
+  if (currentReport) {
+    configureCollisionLegend(currentReport);
+    applyCollisionState();
+  }
+  if (lastHit) renderHitPanel();
+  invalidate();
+}
+
+weaponSelect.addEventListener('change', () => setWeapon(weaponSelect.value));
+
+const FACE_ORDER = [50, 51, 52, 53, 54];
+const FACE_SHORT = { 50: 'rear', 51: 'side', 52: 'nose', 53: 'front', 54: 'glacis' };
+
+const compare = {
+  entry: null,
+  report: null,
+  root: null,
+  targets: [],
+  ourGun: null,
+  theirGun: null,
+};
+
+function hideOpponentCollision() {
+  for (const obj of compare.targets) obj.visible = false;
+}
+
+function clearOpponent() {
+  if (compare.root) {
+    scene.remove(compare.root);
+    disposeModel(compare.root);
+  }
+  compare.entry = null;
+  compare.report = null;
+  compare.root = null;
+  compare.targets = [];
+  compare.ourGun = null;
+  compare.theirGun = null;
+  opponentSelect.value = '';
+  versusPanel.hidden = true;
+  versusPanel.innerHTML = '';
+}
+
+function buildOpponentSelect(entry) {
+  const previous = compare.entry?.name;
+  opponentSelect.innerHTML = '';
+  opponentSelect.appendChild(new Option('none', ''));
+  for (const other of manifest) {
+    if (other.name === entry?.name) continue;
+    opponentSelect.appendChild(new Option(other.name, other.name));
+  }
+  opponentSelect.disabled = opponentSelect.options.length < 2;
+  if (previous && [...opponentSelect.options].some(option => option.value === previous)) {
+    opponentSelect.value = previous;
+  } else if (compare.entry) {
+    clearOpponent();
+  }
+}
+
+function parkOpponent() {
+  if (!compare.root || !current) return;
+  current.updateMatrixWorld(true);
+  compare.root.position.set(0, 0, 0);
+  compare.root.updateMatrixWorld(true);
+  const here = new THREE.Box3().setFromObject(current);
+  const there = new THREE.Box3().setFromObject(compare.root);
+  const gap = Math.max(here.getSize(new THREE.Vector3()).x, there.getSize(new THREE.Vector3()).x) * 1.15;
+  compare.root.position.set(
+    here.max.x - there.min.x + gap,
+    here.min.y - there.min.y,
+    here.getCenter(new THREE.Vector3()).z - there.getCenter(new THREE.Vector3()).z,
+  );
+  compare.root.updateMatrixWorld(true);
+  const union = here.clone().union(new THREE.Box3().setFromObject(compare.root));
+  const size = union.getSize(new THREE.Vector3());
+  framing = {
+    centre: union.getCenter(new THREE.Vector3()),
+    radius: Math.max(size.x, size.y, size.z),
+    pair: true,
+  };
+  grid.position.y = union.min.y;
+}
+
+function reportHp(report) {
+  return report?.armor?.hitpoints ?? report?.armor?.maxHitpoints ?? null;
+}
+
+function versusFaces(usReport, themReport) {
+  const have = new Set([
+    ...(usReport?.collisionMaterials || []),
+    ...(themReport?.collisionMaterials || []),
+  ]);
+  const faces = FACE_ORDER.filter(material => have.has(material));
+  return faces.length ? faces : [...have].sort((a, b) => a - b);
+}
+
+function versusRow(rows, material) {
+  return rows.find(row => row.material === material) || { immune: true, headOn: null, shots: null };
+}
+
+function versusFill(row, hp) {
+  if (!row || row.immune || !(row.headOn > 0) || !(hp > 0)) return 0;
+  return Math.min(1, row.headOn / hp);
+}
+
+function versusShots(row) {
+  if (!row || row.immune || row.shots == null) return '—';
+  return String(row.shots);
+}
+
+function versusWin(us, them) {
+  if (us.immune && them.immune) return '';
+  if (us.immune) return 'them';
+  if (them.immune) return 'us';
+  if (us.shots == null || them.shots == null) return '';
+  if (us.shots < them.shots) return 'us';
+  if (them.shots < us.shots) return 'them';
+  return '';
+}
+
+function fillVersusGunSelect(select, selected, entry) {
+  const previous = selected || select.value;
+  select.innerHTML = '';
+  select.appendChild(new Option('none', ''));
+  if (!damageTables) return;
+  const own = new Set((entry?.weapons || []).map(name => name.toLowerCase()));
+  const groups = new Map();
+  if (own.size) groups.set('this vehicle', []);
+  for (const weapon of damageTables.weapons) {
+    if (weapon.material == null) continue;
+    const key = own.has(weapon.name.toLowerCase()) ? 'this vehicle' : (weapon.category || 'other');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(weapon);
+  }
+  for (const [label, weapons] of groups) {
+    if (!weapons.length) continue;
+    const group = document.createElement('optgroup');
+    group.label = label;
+    for (const weapon of weapons) {
+      group.appendChild(new Option(weaponLabel(weapon), weapon.name));
+    }
+    select.appendChild(group);
+  }
+  select.value = previous && [...select.options].some(option => option.value === previous)
+    ? previous
+    : '';
+}
+
+function bindVersusGuns() {
+  const ourSelect = versusPanel.querySelector('#versus-our-gun');
+  const theirSelect = versusPanel.querySelector('#versus-their-gun');
+  if (!ourSelect || ourSelect.dataset.bound) return;
+  ourSelect.dataset.bound = 'true';
+  theirSelect.dataset.bound = 'true';
+  ourSelect.addEventListener('change', () => {
+    compare.ourGun = ourSelect.value
+      ? weaponsByName.get(ourSelect.value.toLowerCase()) || null
+      : null;
+    renderVersusLanes();
+  });
+  theirSelect.addEventListener('change', () => {
+    compare.theirGun = theirSelect.value
+      ? weaponsByName.get(theirSelect.value.toLowerCase()) || null
+      : null;
+    renderVersusLanes();
+  });
+}
+
+function renderVersusLanes() {
+  const lanes = versusPanel.querySelector('#versus-lanes');
+  if (!lanes || !currentReport || !compare.report) return;
+  const ourHp = reportHp(currentReport);
+  const theirHp = reportHp(compare.report);
+  const atThem = strikeRows(compare.report, compare.ourGun);
+  const atUs = strikeRows(currentReport, compare.theirGun);
+  lanes.innerHTML = versusFaces(currentReport, compare.report).map(material => {
+    const ours = versusRow(atThem, material);
+    const theirs = versusRow(atUs, material);
+    const win = versusWin(ours, theirs);
+    const ourTip = ours.immune ? 'no effect' : `${formatHp(ours.headOn)} HP`;
+    const theirTip = theirs.immune ? 'no effect' : `${formatHp(theirs.headOn)} HP`;
+    return `<div class="vs-lane" data-win="${win}" data-immune-us="${ours.immune}" data-immune-them="${theirs.immune}">` +
+      `<div class="vs-shots vs-shots-us" title="${ourTip}">${versusShots(ours)}</div>` +
+      `<div class="vs-bar vs-bar-us" title="${ourTip}"><i style="--fill:${versusFill(ours, theirHp)}"></i></div>` +
+      `<div class="vs-face">${FACE_SHORT[material] || regionFace(material) || material}</div>` +
+      `<div class="vs-bar vs-bar-them" title="${theirTip}"><i style="--fill:${versusFill(theirs, ourHp)}"></i></div>` +
+      `<div class="vs-shots vs-shots-them" title="${theirTip}">${versusShots(theirs)}</div>` +
+      `</div>`;
+  }).join('');
+}
+
+function renderVersus() {
+  if (!compare.entry || !currentEntry || !currentReport || !compare.report) {
+    versusPanel.hidden = true;
+    versusPanel.innerHTML = '';
+    return;
+  }
+  const ourHp = reportHp(currentReport);
+  const theirHp = reportHp(compare.report);
+  versusPanel.hidden = false;
+  if (!versusPanel.querySelector('.vs-head')) {
+    versusPanel.innerHTML =
+      `<div class="vs-head">` +
+      `<div class="vs-side vs-us"><div class="vs-name"></div><div class="vs-hp"></div><select id="versus-our-gun"></select></div>` +
+      `<div class="vs-mark">VS</div>` +
+      `<div class="vs-side vs-them"><div class="vs-name"></div><div class="vs-hp"></div><select id="versus-their-gun"></select></div>` +
+      `</div><div class="vs-lanes" id="versus-lanes"></div>` +
+      `<div class="vs-foot">shots to kill · a full bar is a one-shot</div>`;
+    bindVersusGuns();
+  }
+  versusPanel.querySelector('.vs-us .vs-name').textContent = currentEntry.name;
+  versusPanel.querySelector('.vs-them .vs-name').textContent = compare.entry.name;
+  versusPanel.querySelector('.vs-us .vs-hp').textContent = ourHp != null ? `${ourHp} HP` : 'HP unknown';
+  versusPanel.querySelector('.vs-them .vs-hp').textContent = theirHp != null ? `${theirHp} HP` : 'HP unknown';
+  fillVersusGunSelect(versusPanel.querySelector('#versus-our-gun'), compare.ourGun?.name, currentEntry);
+  fillVersusGunSelect(versusPanel.querySelector('#versus-their-gun'), compare.theirGun?.name, compare.entry);
+  renderVersusLanes();
+}
+
+async function setOpponent(name) {
+  if (!name) {
+    clearOpponent();
+    if (current) {
+      const box = new THREE.Box3().setFromObject(current);
+      const size = box.getSize(new THREE.Vector3());
+      framing = { centre: box.getCenter(new THREE.Vector3()), radius: Math.max(size.x, size.y, size.z) };
+      grid.position.y = box.min.y;
+      setCameraView(0);
+    }
+    invalidate();
+    return;
+  }
+  const entry = manifest.find(item => item.name === name);
+  if (!entry) return;
+  const variant = entry.variants.find(item => item.glb === entry.glb) || entry.variants[0];
+  const [gltf, report] = await Promise.all([
+    loader.loadAsync(`models/${variant.glb}${bust()}`),
+    fetch(`models/${variant.report}${bust()}`).then(response => {
+      if (!response.ok) throw new Error(`opponent report ${response.status}`);
+      return response.json();
+    }),
+  ]);
+  if (compare.root) {
+    scene.remove(compare.root);
+    disposeModel(compare.root);
+  }
+  compare.entry = entry;
+  compare.report = report;
+  compare.root = gltf.scene;
+  compare.targets = [];
+  compare.ourGun = heaviestWeapon(currentEntry);
+  compare.theirGun = heaviestWeapon(entry);
+  compare.root.traverse(node => {
+    if (node.isMesh && !isCollisionMesh(node)) {
+      for (const material of [node.material].flat().filter(Boolean)) {
+        material.transparent = true;
+        material.opacity = .42;
+        material.needsUpdate = true;
+      }
+    }
+    if (!node.userData?.collision) return;
+    node.traverse(obj => {
+      if (!isCollisionMesh(obj)) return;
+      obj.userData.collisionRoot = node;
+      obj.visible = false;
+      compare.targets.push(obj);
+    });
+  });
+  scene.add(compare.root);
+  opponentSelect.value = entry.name;
+  parkOpponent();
+  hideOpponentCollision();
+  renderVersus();
+  setCameraView(0);
+  invalidate();
+}
+
+opponentSelect.addEventListener('change', () => void setOpponent(opponentSelect.value));
 
 function clearHit() {
   lastHit = null;
@@ -584,27 +1231,67 @@ function configureCollisionLegend(report) {
   collisionStyles.clear();
   const allMaterials = [...new Set(report.collisionMaterials || [])]
     .sort((a, b) => a - b);
-  const materials = allMaterials
-    .filter(isRankedArmorMaterial)
-    .sort((a, b) => a - b);
-  materials.forEach((material, index) => {
-    const position = materials.length === 1 ? 0 : index / (materials.length - 1);
-    collisionStyles.set(material, {
-      color: vulnerabilityColor(position),
-      label: materials.length === 1
-        ? 'Only classified armour region'
-        : index === 0
-          ? 'Most vulnerable region'
-          : index === materials.length - 1
-            ? 'Most protected region'
-            : 'Intermediate armour region',
+  const weapon = damageState.weapon;
+  const legendHint = document.getElementById('legend-hint');
+  const note = document.getElementById('collision-note');
+
+  if (weapon) {
+    // Rank by what this round actually does to each face. Equal damage gets
+    // equal colour, and a face with no table entry is immune to it.
+    const damages = new Map(allMaterials.map(material => [material, headOnDamage(material)]));
+    const distinct = [...new Set([...damages.values()].filter(value => value > 0))]
+      .sort((a, b) => b - a);
+    for (const material of allMaterials) {
+      const damage = damages.get(material);
+      if (damage == null || !(damage > 0)) {
+        collisionStyles.set(material, {
+          color: new THREE.Color(0x666a61),
+          label: damage == null
+            ? `No ${weapon.name} entry (immune)`
+            : `${weapon.name} is tabled at 0 HP here`,
+          damage,
+          immune: true,
+        });
+        continue;
+      }
+      const position = distinct.length === 1 ? 0 : distinct.indexOf(damage) / (distinct.length - 1);
+      collisionStyles.set(material, {
+        color: vulnerabilityColor(position),
+        label: `${formatHp(damage)} HP head-on from ${weapon.name}`,
+        damage,
+        immune: false,
+      });
+    }
+    if (legendHint) legendHint.textContent = 'Chips show head-on damage per hit. Select a material to isolate it.';
+    if (note) note.textContent = `Colours rank each region by ${weapon.name} damage from the MaterialManager tables. Click a region for the shot.`;
+  } else {
+    const materials = allMaterials
+      .filter(isRankedArmorMaterial)
+      .sort((a, b) => a - b);
+    materials.forEach((material, index) => {
+      const position = materials.length === 1 ? 0 : index / (materials.length - 1);
+      collisionStyles.set(material, {
+        color: vulnerabilityColor(position),
+        label: materials.length === 1
+          ? 'Only classified armour region'
+          : index === 0
+            ? 'Most vulnerable region'
+            : index === materials.length - 1
+              ? 'Most protected region'
+              : 'Intermediate armour region',
+      });
     });
-  });
-  for (const material of allMaterials.filter(id => !isRankedArmorMaterial(id))) {
-    collisionStyles.set(material, {
-      color: new THREE.Color(0x666a61),
-      label: 'Unclassified collision region',
-    });
+    for (const material of allMaterials.filter(id => !isRankedArmorMaterial(id))) {
+      collisionStyles.set(material, {
+        color: new THREE.Color(0x666a61),
+        label: 'Unclassified collision region',
+      });
+    }
+    if (legendHint) legendHint.textContent = 'Select a material to isolate it; select it again to show all.';
+    if (note) {
+      note.textContent = 'Colours show inferred relative protection. Pick a weapon to colour by its '
+        + 'actual damage table. Click a region, then drag the shot arrow or use the angle control.';
+    }
   }
 
   for (const obj of collisionTargets) {
@@ -620,12 +1307,18 @@ function configureCollisionLegend(report) {
   legendMaterials.innerHTML = allMaterials.length
     ? allMaterials.map(material => {
       const style = collisionStyles.get(material);
-      const classification = isRankedArmorMaterial(material)
-        ? ''
-        : ' unclassified';
-      return `<button type="button" class="material-chip" data-material="${material}" ` +
+      let suffix = '';
+      if (weapon) {
+        suffix = style.damage == null
+          ? ' <small>immune</small>'
+          : ` <small>${formatHp(style.damage)} HP</small>`;
+      } else if (!isRankedArmorMaterial(material)) {
+        suffix = ' unclassified';
+      }
+      const immune = weapon && style.immune ? ' data-immune="true"' : '';
+      return `<button type="button" class="material-chip" data-material="${material}"${immune} ` +
         `aria-pressed="false" title="${style.label} · ${collisionMaterialClass(material)}" ` +
-        `style="--chip:#${style.color.getHexString()}"><i></i>${material}${classification}</button>`;
+        `style="--chip:#${style.color.getHexString()}"><i></i>${material}${suffix}</button>`;
     }).join('')
     : '<span class="collision-note">No ranked armour materials.</span>';
 }
@@ -648,6 +1341,7 @@ function applyCollisionState() {
   legendMaterials.dataset.filtered = String(state.collisionMaterial !== null);
   main.dataset.collision = String(state.collision);
   collisionLegend.hidden = !state.collision || !collisionRoots.length;
+  hideOpponentCollision();
   if (!state.collision) clearHit();
 }
 
@@ -686,6 +1380,44 @@ function collectCollisions(root, report) {
   applyCollisionState();
 }
 
+// Everything the tables say about the selected weapon hitting the selected face,
+// at the current angle and distance. `direct` is null when the pair has no entry.
+function computeHitDamage() {
+  if (!lastHit) return null;
+  const weapon = damageState.weapon;
+  const report = currentReport;
+  if (!weapon || !report) return null;
+  const base = baseDamage(weapon.material);
+  const mod = damageMod(weapon.material, lastHit.material);
+  const angleFactor = lastHit.angleFactor;
+  const distance = distanceMod(weapon, damageState.distance);
+  const headOn = base != null && mod != null ? base * mod : null;
+  const direct = headOn == null ? null : headOn * angleFactor * distance;
+  const hitpoints = report.armor?.hitpoints ?? report.armor?.maxHitpoints ?? null;
+  const critical = report.armor?.criticalDamage ?? null;
+  const splash = splashAtCentre(report);
+  return {
+    weapon: weapon.name,
+    projectile: weapon.projectile,
+    attMaterial: weapon.material,
+    defMaterial: lastHit.material,
+    base,
+    mod,
+    angleFactor,
+    distanceMod: distance,
+    headOn,
+    direct,
+    hitpoints,
+    critical,
+    shotsToDestroy: hitpoints != null ? shotsFor(hitpoints, direct) : null,
+    shotsToCritical: hitpoints != null && critical != null
+      ? shotsFor(hitpoints - critical, direct) : null,
+    splashAtCentre: splash,
+    splashMaterial: report.armor?.splashMaterial ?? null,
+    splashRadius: weapon.radius ?? null,
+  };
+}
+
 function updateHitPanel() {
   if (!lastHit) return;
   const angle = Math.abs(lastHit.angle);
@@ -694,15 +1426,104 @@ function updateHitPanel() {
   const range = document.getElementById('angle-range');
   const reading = document.getElementById('impact-value');
   const label = document.getElementById('impact-label');
+  const basis = document.getElementById('damage-basis');
   const formula = document.getElementById('impact-formula');
+  const hpLoss = document.getElementById('hp-loss');
+  const hpNote = document.getElementById('hp-note');
   if (output) output.value = `${angle.toFixed(1)}°`;
   if (range) range.value = String(angle);
-  if (reading) reading.textContent = `${(multiplier * 100).toFixed(1)}%`;
-  if (label) label.textContent = 'Damage';
+
+  const damage = computeHitDamage();
+  lastHit.damage = damage;
+  if (!damage) {
+    if (reading) reading.textContent = `${(multiplier * 100).toFixed(1)}%`;
+    if (label) label.textContent = 'Damage';
+    if (basis) basis.textContent = 'of this region\u2019s head-on damage';
+    if (hpLoss) {
+      hpLoss.className = 'hp-loss';
+      hpLoss.innerHTML = '<span>HP loss</span><span>select a weapon</span>';
+    }
+    if (hpNote) {
+      hpNote.textContent = damageTables
+        ? 'Pick a weapon above to turn this into hit points.'
+        : 'Run the extractor with Game.rfa in the mod chain to get the damage tables.';
+    }
+    if (formula) {
+      formula.textContent =
+        `cos(${angle.toFixed(1)}°) = ${multiplier.toFixed(3)}. ` +
+        'Orange is the shot path; white is the surface normal.';
+    }
+    return;
+  }
+
+  if (damage.direct == null || !(damage.headOn > 0)) {
+    const noEntry = damage.direct == null;
+    if (reading) reading.textContent = '0';
+    if (label) label.textContent = 'HP';
+    if (basis) {
+      basis.textContent = noEntry
+        ? `${damage.weapon} has no entry against material ${damage.defMaterial}`
+        : `${damage.weapon} is tabled at zero against material ${damage.defMaterial}`;
+    }
+    if (hpLoss) {
+      hpLoss.className = 'hp-loss hp-loss-immune';
+      hpLoss.innerHTML = '<span>HP loss</span><span>immune</span>';
+    }
+    if (hpNote) {
+      hpNote.textContent = noEntry
+        ? 'No damageMod for this attack/defence pair; the engine applies nothing.'
+        : `damageMod ${damage.mod} for this pair, so no angle or range changes it.`;
+    }
+    if (formula) {
+      formula.textContent = noEntry
+        ? `attGroup ${attGroup(damage.attMaterial)} x defGroup ${defGroup(damage.defMaterial)}: no damageMod.`
+        : `${formatHp(damage.base)} materialDamage x ${damage.mod} damageMod`
+          + ` (att ${attGroup(damage.attMaterial)} vs def ${defGroup(damage.defMaterial)}) = 0 HP`;
+    }
+    return;
+  }
+
+  const hp = damage.hitpoints;
+  if (reading) reading.textContent = formatHp(damage.direct);
+  if (label) label.textContent = hp != null ? `HP of ${formatHp(hp)}` : 'HP';
+  if (basis) {
+    basis.textContent = `${formatHp(damage.headOn)} head-on x cos(${angle.toFixed(1)}°)`
+      + (damage.distanceMod !== 1 ? ` x ${damage.distanceMod.toFixed(3)} range` : '');
+  }
+  if (hpLoss) {
+    const lethal = hp != null && damage.direct >= hp - 1e-9;
+    hpLoss.className = `hp-loss ${lethal ? 'hp-loss-lethal' : 'hp-loss-known'}`;
+    const rows = [];
+    if (hp != null) {
+      rows.push(['shots to destroy', lethal ? '1' : String(damage.shotsToDestroy)]);
+      if (damage.critical != null) {
+        rows.push(['shots to critical', damage.shotsToCritical == null ? '0' : String(damage.shotsToCritical)]);
+      }
+    } else {
+      rows.push(['hit points', 'not declared']);
+    }
+    hpLoss.innerHTML = rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+  }
+  if (hpNote) {
+    const bits = [];
+    if (damage.critical != null) {
+      bits.push(`Critical at ${formatHp(damage.critical)} HP, then ${formatHp(currentReport.armor?.hpLostWhileCriticalDamage ?? 0)} HP/s burns.`);
+    }
+    if (damage.splashAtCentre != null) {
+      bits.push(`Splash at centre ${formatHp(damage.splashAtCentre)} HP against splash material ${damage.splashMaterial}`
+        + (damage.splashRadius != null ? `, falling to 0 at ${damage.splashRadius} m.` : '.'));
+    } else if (damage.splashMaterial != null && damageState.weapon.material2 != null) {
+      bits.push(`No splash entry against material ${damage.splashMaterial}.`);
+    }
+    hpNote.textContent = bits.join(' ');
+  }
   if (formula) {
     formula.textContent =
-      `cos(${angle.toFixed(1)}°) = ${multiplier.toFixed(3)}. ` +
-      'Orange is the shot path; white is the surface normal.';
+      `${formatHp(damage.base)} materialDamage x ${damage.mod} damageMod`
+      + ` (att ${attGroup(damage.attMaterial)} vs def ${defGroup(damage.defMaterial)})`
+      + ` x cos(${angle.toFixed(1)}°) = ${multiplier.toFixed(3)}`
+      + (damage.distanceMod !== 1 ? ` x ${damage.distanceMod.toFixed(3)}` : '')
+      + ` = ${damage.direct.toFixed(2)} HP`;
   }
 }
 
@@ -775,27 +1596,43 @@ function renderHitPanel() {
   const style = collisionStyles.get(lastHit.material) || {
     label: 'Collision region',
   };
+  const weapon = damageState.weapon;
+  const distanceControl = hasDistanceFalloff(weapon)
+    ? '<div class="distance-control">' +
+      `<label for="distance-range"><span>Range</span><output id="distance-output">${damageState.distance.toFixed(0)} m</output></label>` +
+      `<input id="distance-range" type="range" min="0" max="${Math.ceil(weapon.distToMinDamage * 1.25)}" step="1" value="${damageState.distance}">` +
+      '</div>'
+    : '';
+  const technical = [
+    ['material ID', lastHit.material],
+    ['def group', defGroup(lastHit.material)],
+    ['part', lastHit.template],
+    ['geometry', lastHit.geometry],
+    ['position', lastHit.point.map(value => value.toFixed(2)).join(' / ')],
+  ];
+  if (weapon) {
+    technical.push(['weapon', weapon.name], ['projectile', weapon.projectile],
+      ['att material', `${weapon.material} (group ${attGroup(weapon.material)})`]);
+    if (weapon.material2 != null) technical.push(['splash material', weapon.material2]);
+    if (weapon.velocity != null) technical.push(['muzzle velocity', `${weapon.velocity} m/s`]);
+  }
   document.getElementById('hit-details').innerHTML =
     `<div class="hit-region">${style.label}</div>` +
     `<div class="hit-class">${collisionMaterialClass(lastHit.material)}</div>` +
     '<div class="impact-reading"><strong id="impact-value">100.0%</strong>' +
     '<span id="impact-label">Damage</span></div>' +
-    '<div class="damage-basis">of this region&rsquo;s head-on damage</div>' +
-    '<div class="hp-loss"><span>HP loss</span><span>not calculable yet</span></div>' +
-    '<div class="formula">Requires the selected weapon, material modifier and range.</div>' +
+    '<div class="damage-basis" id="damage-basis">of this region&rsquo;s head-on damage</div>' +
+    '<div class="hp-loss" id="hp-loss"><span>HP loss</span><span>select a weapon</span></div>' +
+    '<div class="formula" id="hp-note"></div>' +
     '<div class="angle-control">' +
     '<label for="angle-range"><span>Impact angle</span><output id="angle-output">0.0°</output></label>' +
     '<input id="angle-range" type="range" min="0" max="85" step="0.5" value="0">' +
     '</div>' +
+    distanceControl +
     '<div class="formula">Drag the orange arrow handle or use the slider.</div>' +
     '<div class="formula" id="impact-formula"></div>' +
     '<details class="hit-technical"><summary>Technical details</summary>' +
-    [
-      ['material ID', lastHit.material],
-      ['part', lastHit.template],
-      ['geometry', lastHit.geometry],
-      ['position', lastHit.point.map(value => value.toFixed(2)).join(' / ')],
-    ].map(([label, value]) =>
+    technical.map(([label, value]) =>
       `<div class="stat"><span>${label}</span><span>${value}</span></div>`
     ).join('') +
     '</details>';
@@ -803,7 +1640,13 @@ function renderHitPanel() {
   document.getElementById('angle-range').addEventListener('input', event => {
     setHitAngle(Number(event.target.value));
   });
-  setHitAngle(0);
+  document.getElementById('distance-range')?.addEventListener('input', event => {
+    damageState.distance = Number(event.target.value);
+    const output = document.getElementById('distance-output');
+    if (output) output.value = `${damageState.distance.toFixed(0)} m`;
+    updateHitPanel();
+  });
+  setHitAngle(lastHit.angle || 0);
   document.getElementById('hit-details').scrollIntoView({ block: 'nearest' });
 }
 
@@ -1339,20 +2182,29 @@ async function show(entry, variant, button) {
     }
   }
   scene.add(current);
+  currentReport = report;
+  buildWeaponSelect(entry);
+  renderWeaponSummary();
   collectCollisions(current, report);
   collectScrolling(current);
+  buildOpponentSelect(entry);
   buildRigPanel();
   applyState();
 
   const box = new THREE.Box3().setFromObject(current);
   const size = box.getSize(new THREE.Vector3());
-  const centre = box.getCenter(new THREE.Vector3());
-  const radius = Math.max(size.x, size.y, size.z);
-  framing = { centre, radius };
+  if (compare.entry) {
+    compare.ourGun = heaviestWeapon(entry) || compare.ourGun;
+    parkOpponent();
+    hideOpponentCollision();
+    renderVersus();
+  } else {
+    framing = { centre: box.getCenter(new THREE.Vector3()), radius: Math.max(size.x, size.y, size.z) };
+    grid.position.y = box.min.y;
+  }
   setCameraView(0);
-  camera.near = radius / 200; camera.far = radius * 60;
+  camera.near = framing.radius / 200; camera.far = framing.radius * 60;
   camera.updateProjectionMatrix();
-  grid.position.y = box.min.y;
 
   document.getElementById('stats').innerHTML = [
     ['build', configurationLabel(variant.configuration)],
@@ -1364,6 +2216,7 @@ async function show(entry, variant, button) {
     ['hit points', report.armor?.maxHitpoints ?? 'not declared'],
     ['critical at', report.armor?.criticalDamage ?? 'not declared'],
     ['splash material', report.armor?.splashMaterial ?? 'not declared'],
+    ['weapons', (entry.weapons || []).join(', ') || 'none'],
     ['textures bound', report.texturesResolved ? Object.keys(report.texturesResolved).length : 0],
     ['size', `${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} m`],
   ].map(([k, v]) => `<div class="stat"><span>${k}</span><span>${v}</span></div>`).join('');
@@ -1461,6 +2314,38 @@ window.__modelInspector = {
   },
   setImpactAngle: setHitAngle,
   setCollisionMaterial,
+  setWeapon,
+  setOpponent,
+  pickCenterHit: () => {
+    const visible = collisionTargets.filter(obj => obj.visible);
+    if (!visible.length) return null;
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    let hits = raycaster.intersectObjects(visible, false);
+    if (!hits.length && current) {
+      const aim = new THREE.Box3().setFromObject(current).getCenter(new THREE.Vector3());
+      raycaster.set(camera.position, aim.sub(camera.position).normalize());
+      hits = raycaster.intersectObjects(visible, false);
+    }
+    const hit = hits.find(candidate => {
+      const normal = candidate.face.normal.clone().transformDirection(candidate.object.matrixWorld);
+      return Math.abs(normal.y) < .7;
+    }) || hits[0];
+    if (!hit?.face) return null;
+    selectCollisionHit(hit);
+    return lastHit;
+  },
+  getOpponent: () => compare.entry ? compare.entry.name : null,
+  getDuel: () => (compare.entry && currentEntry && currentReport && compare.report) ? {
+    us: currentEntry.name,
+    them: compare.entry.name,
+    theirGun: compare.theirGun?.name || null,
+    ourGun: compare.ourGun?.name || null,
+    atUs: strikeRows(currentReport, compare.theirGun),
+    atThem: strikeRows(compare.report, compare.ourGun),
+  } : null,
+  getWeapons: () => (damageTables?.weapons || []).map(weapon => weapon.name),
+  getDamageTables: () => damageTables,
+  getDamage: computeHitDamage,
   getCollision: () => {
     let handle = null;
     if (angleHandle.visible) {

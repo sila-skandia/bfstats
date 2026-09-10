@@ -211,5 +211,21 @@ water.color 0.63/0.59/0.33
         self.assertEqual((0.63, 0.59, 0.33), info.water_color)
 
 
+class ObjectLightmapTests(unittest.TestCase):
+    def test_filename_encodes_mesh_and_truncated_position(self) -> None:
+        from bf42.level import object_lightmap_key, parse_object_lightmap_name
+
+        self.assertEqual(
+            ("bunker1_m1", 1969, 80, 835),
+            parse_object_lightmap_name(
+                "bf1942/levels/Tobruk/ObjectLightmaps/bunker1_M1_1969-80-835.tga"),
+        )
+        self.assertIsNone(parse_object_lightmap_name("ObjectLightmaps/Palette.pal"))
+        self.assertEqual(
+            ("bunker1_m1", 1969, 80, 835),
+            object_lightmap_key("bunker1_M1.sm", (1969.56, 80.39, 835.095)),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
