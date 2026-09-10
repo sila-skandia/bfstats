@@ -320,3 +320,7 @@ api/assets/arcade/
 keys/
 
 
+
+# Claude Code local session state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
