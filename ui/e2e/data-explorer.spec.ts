@@ -22,7 +22,6 @@ test.describe('Data Explorer legacy redirects', () => {
     '/explore/servers/some-server-guid',
     '/explore/servers/some-server-guid/maps/Wake%20Island',
     '/explore/maps',
-    '/explore/maps/Wake%20Island',
   ];
 
   // These assert the redirect contract, so they wait on the URL itself rather
@@ -39,6 +38,13 @@ test.describe('Data Explorer legacy redirects', () => {
       expect(page.url()).not.toContain('/explore');
     });
   }
+
+  test('should redirect /explore/maps/Wake%20Island to the map detail page', async ({ page }) => {
+    await page.goto('/explore/maps/Wake%20Island');
+
+    await expect(page).toHaveURL(/\/v4\/maps\/Wake(%20| )Island/);
+    expect(page.url()).not.toContain('/explore');
+  });
 
   test('should redirect /explore/players to the players page', async ({ page }) => {
     await page.goto('/explore/players');

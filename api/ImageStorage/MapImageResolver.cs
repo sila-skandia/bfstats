@@ -49,33 +49,100 @@ public class MapImageResolver(ILogger<MapImageResolver> logger) : IMapImageResol
             return null;
 
         var normalizedGame = gameId.Trim().ToLowerInvariant();
-        var normalizedMap = mapName.Trim().ToLowerInvariant().Replace(' ', '_');
+        var normalizedMap = NormalizeMap(mapName);
         var suffix = kind == MapImageKind.Minimap ? ".map.png" : ".png";
+        var wanted = kind == MapImageKind.Minimap ? "minimap" : "thumbnail";
 
         var manifest = LoadManifest();
         if (manifest is null)
         {
             // No manifest: probe the direct path only, no inheritance information available.
             var direct = Path.Combine(normalizedGame, normalizedMap + suffix);
-            return File.Exists(Path.Combine(TournamentImagesConfig.ResolveMapsPath(), direct)) ? direct : null;
+            if (File.Exists(Path.Combine(TournamentImagesConfig.ResolveMapsPath(), direct)))
+                return direct;
+
+            var mapsPath = TournamentImagesConfig.ResolveMapsPath();
+            if (Directory.Exists(mapsPath))
+            {
+                foreach (var dir in Directory.GetDirectories(mapsPath))
+                {
+                    var fallback = Path.Combine(Path.GetFileName(dir), normalizedMap + suffix);
+                    if (File.Exists(Path.Combine(mapsPath, fallback)))
+                        return fallback;
+                }
+            }
+            return null;
         }
 
-        if (!manifest.Mods.TryGetValue(normalizedGame, out var mod))
-            return null;
-
-        var wanted = kind == MapImageKind.Minimap ? "minimap" : "thumbnail";
-        var searchPath = mod.SearchPath.Count > 0 ? mod.SearchPath : [normalizedGame];
-
-        foreach (var candidateMod in searchPath)
+        // Try resolving in requested mod's searchPath
+        if (manifest.Mods.TryGetValue(normalizedGame, out var mod) ||
+            manifest.Mods.TryGetValue(CanonicalizeMod(normalizedGame), out mod))
         {
-            if (!manifest.Mods.TryGetValue(candidateMod, out var candidate))
-                continue;
-            if (!candidate.Maps.TryGetValue(normalizedMap, out var kinds))
-                continue;
-            if (!kinds.Contains(wanted))
-                continue;
+            var searchPath = mod.SearchPath.Count > 0 ? mod.SearchPath : [normalizedGame];
 
-            return Path.Combine(candidateMod, normalizedMap + suffix);
+            foreach (var candidateMod in searchPath)
+            {
+                if (!manifest.Mods.TryGetValue(candidateMod, out var candidate))
+                    continue;
+                if (!candidate.Maps.TryGetValue(normalizedMap, out var kinds))
+                    continue;
+                if (!kinds.Contains(wanted))
+                    continue;
+
+                return Path.Combine(candidateMod, normalizedMap + suffix);
+            }
+        }
+
+        // If not found in the requested mod (e.g. server rotated mod and reports wrong gameId),
+        // ignore the mod and find the first matching mod.
+        return FallbackScan(manifest, normalizedMap, suffix, wanted);
+    }
+
+    private static string NormalizeMap(string mapName)
+    {
+        var trimmed = mapName.Trim();
+        if (trimmed.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed[..^4];
+        var lower = trimmed.ToLowerInvariant().Replace(' ', '_');
+        return lower switch
+        {
+            "wake_island" => "wake",
+            "huskies" => "husky",
+            "santa_croce" => "santo_croce",
+            _ => lower
+        };
+    }
+
+    private static string CanonicalizeMod(string mod) => mod switch
+    {
+        "fhsweurope" or "sks_fhsw" => "fhsw",
+        "dc2" or "dc_extended" or "dc_realism" => "dc_final",
+        "desertcombat" => "desertcombat",
+        "eodp" => "eod",
+        "xmas1918" => "bf1918",
+        "battlegroup42" => "bg42",
+        _ => mod
+    };
+
+    private static string? FallbackScan(MapManifest manifest, string normalizedMap, string suffix, string wanted)
+    {
+        string[] priorityMods = ["bf1942", "xpack1", "xpack2", "dc_final", "desertcombat", "fhsw", "fh", "eod", "bf1918", "gcmod", "interstate"];
+        foreach (var candidateMod in priorityMods)
+        {
+            if (manifest.Mods.TryGetValue(candidateMod, out var candidate) &&
+                candidate.Maps.TryGetValue(normalizedMap, out var kinds) &&
+                kinds.Contains(wanted))
+            {
+                return Path.Combine(candidateMod, normalizedMap + suffix);
+            }
+        }
+
+        foreach (var (modName, candidate) in manifest.Mods)
+        {
+            if (candidate.Maps.TryGetValue(normalizedMap, out var kinds) && kinds.Contains(wanted))
+            {
+                return Path.Combine(modName, normalizedMap + suffix);
+            }
         }
 
         return null;

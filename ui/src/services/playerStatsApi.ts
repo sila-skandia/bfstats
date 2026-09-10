@@ -367,3 +367,57 @@ export async function fetchPlayerMapStats(
     throw new Error('Failed to get player map stats');
   }
 }
+
+export interface PlayerMapServerBreakdown {
+  serverGuid: string;
+  serverName: string;
+  gameId?: string;
+  score: number;
+  kills: number;
+  deaths: number;
+  rounds: number;
+  playTime: number;
+}
+
+export interface PlayerMapDetailResponse {
+  playerName: string;
+  mapName: string;
+  game: string;
+  aggregatedStats: {
+    totalScore: number;
+    totalKills: number;
+    totalDeaths: number;
+    totalRounds: number;
+    playTimeMinutes: number;
+  };
+  serverBreakdown: PlayerMapServerBreakdown[];
+  dateRange: {
+    startDate: string;
+    endDate: string;
+    days: number;
+  };
+}
+
+/**
+ * Fetches player's detailed statistics for a specific map, including per-server breakdown.
+ */
+export async function fetchPlayerMapDetail(
+  playerName: string,
+  mapName: string,
+  game: string = 'bf1942',
+  days: number = 365
+): Promise<PlayerMapDetailResponse | null> {
+  try {
+    const response = await axios.get<PlayerMapDetailResponse>(
+      `/stats/data-explorer/players/${encodeURIComponent(playerName)}/map-stats/${encodeURIComponent(mapName)}`,
+      { params: { game, days } }
+    );
+    return response.data;
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      return null;
+    }
+    console.error('Error fetching player map detail:', err);
+    return null;
+  }
+}
