@@ -9,6 +9,7 @@ public class RoundListItem
     public string ServerGuid { get; set; } = string.Empty;
     public string MapName { get; set; } = string.Empty;
     public string? GameType { get; set; }
+    public string? GameId { get; set; }
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
     public int DurationMinutes { get; set; }

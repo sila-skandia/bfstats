@@ -20,6 +20,10 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
+import MmMapThumb from '@/components/v4/MmMapThumb.vue'
+import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
+import type { DossierLiveTickets } from '@/components/v4/MmMapDossier.vue'
+
 interface Props {
   playerName?: string
   serverName?: string
@@ -49,6 +53,7 @@ interface RoundData {
   serverGuid: string
   mapName: string
   gameType: string
+  gameId?: string
   startTime: string
   endTime: string
   durationMinutes: number
@@ -72,6 +77,34 @@ const currentPage = ref(1)
 const pageSize = ref(25)
 const totalItems = ref(0)
 const totalPages = ref(0)
+
+// Level briefing dossier modal state
+const dossierOpen = ref(false)
+const dossierGameId = ref<string | null>(null)
+const dossierMapName = ref<string | null>(null)
+const dossierLiveTickets = ref<DossierLiveTickets | null>(null)
+const dossierIsLive = ref(false)
+
+function openDossier(
+  gameId: string | null | undefined,
+  mapName: string | null | undefined,
+  round?: RoundData | null,
+) {
+  if (!mapName) return
+  dossierGameId.value = gameId ?? 'bf1942'
+  dossierMapName.value = mapName
+  if (round && (round.team1Points != null || round.team2Points != null)) {
+    dossierLiveTickets.value = {
+      tickets1: round.team1Points ?? null,
+      tickets2: round.team2Points ?? null,
+    }
+    dossierIsLive.value = Boolean(round.isActive)
+  } else {
+    dossierLiveTickets.value = null
+    dossierIsLive.value = false
+  }
+  dossierOpen.value = true
+}
 
 const showFilters = ref(false)
 // On the global rounds index (no player/server context), default to hiding
@@ -681,7 +714,17 @@ const paginationRange = computed(() => {
             <span class="mm-card-list__time" :title="formatLocalTooltip(round.startTime)">{{ formatTime(round.startTime) }}</span>
           </div>
           <div class="mm-card-list__sub">
-            <span>{{ round.mapName }}</span>
+            <button
+              v-if="round.mapName"
+              type="button"
+              class="mm-map-btn mm-map-btn--card"
+              :title="`Level briefing for ${round.mapName}`"
+              @click.stop="openDossier(round.gameId, round.mapName, round)"
+            >
+              <MmMapThumb :game-id="round.gameId || 'bf1942'" :map-name="round.mapName" :width="32" />
+              <span class="mm-map-name">{{ round.mapName }}</span>
+            </button>
+            <span v-else>—</span>
             <span class="mm-meta-row__sep">·</span>
             <span>{{ formatDuration(round.durationMinutes) }}</span>
             <span v-if="round.isActive" class="mm-chip" style="margin-left: 2px"><span class="mm-chip__dot" />Live</span>
@@ -722,7 +765,7 @@ const paginationRange = computed(() => {
         <thead>
           <tr>
             <th>Round · server</th>
-            <th>Map</th>
+            <th class="mm-sessions__col--map">Map</th>
             <th class="mm-sessions__col--top">Top players</th>
             <th v-if="playerName">{{ contextLabel }}</th>
             <th class="is-num">Duration</th>
@@ -750,7 +793,22 @@ const paginationRange = computed(() => {
                 </span>
               </div>
             </td>
-            <td data-cell-label="Map">{{ round.mapName }}</td>
+            <td class="mm-sessions__col--map" data-cell-label="Map">
+              <div class="mm-map-cell">
+                <button
+                  v-if="round.mapName"
+                  type="button"
+                  class="mm-map-btn"
+                  data-testid="open-map-dossier"
+                  :title="`Level briefing for ${round.mapName}`"
+                  @click.stop="openDossier(round.gameId, round.mapName, round)"
+                >
+                  <MmMapThumb :game-id="round.gameId || 'bf1942'" :map-name="round.mapName" :width="44" />
+                  <span class="mm-map-name">{{ round.mapName }}</span>
+                </button>
+                <span v-else class="mm-map-name">—</span>
+              </div>
+            </td>
             <td class="mm-sessions__col--top" data-cell-label="Top players">
               <ol v-if="roundTopPlayers[round.roundId]?.length" class="mm-sessions__top">
                 <li
@@ -804,6 +862,14 @@ const paginationRange = computed(() => {
       <button type="button" class="mm-btn mm-btn--inline" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">›</button>
     </div>
   </div>
+
+  <MmMapDossierModal
+    v-model="dossierOpen"
+    :game-id="dossierGameId"
+    :map-name="dossierMapName"
+    :live-tickets="dossierLiveTickets"
+    :is-live="dossierIsLive"
+  />
 </template>
 
 <style scoped>
@@ -930,8 +996,49 @@ const paginationRange = computed(() => {
   color: var(--mm-ink-muted);
 }
 
+.mm-sessions__col--map { min-width: 170px; }
 .mm-sessions__col--top { min-width: 220px; }
 .mm-sessions__col--mine { min-width: 200px; }
+
+.mm-map-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 33px;
+}
+
+.mm-map-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mm-map-btn:hover .mm-map-name,
+.mm-map-btn:focus-visible .mm-map-name {
+  color: var(--mm-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mm-map-btn--card {
+  gap: 6px;
+}
+
+.mm-map-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .mm-sessions__mine {
   display: inline-flex;

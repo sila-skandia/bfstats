@@ -147,6 +147,31 @@ public sealed class RoundsServiceFilterTests : IDisposable
         Assert.Empty(substring.Items);
     }
 
+    [Fact]
+    public async Task GetRounds_PopulatesGameIdFromGameServer()
+    {
+        _dbContext.Servers.Add(new GameServer
+        {
+            Guid = "fhsw-guid",
+            Name = "FHSW European Server",
+            Game = "bf1942",
+            GameId = "fhsw",
+            Ip = "1.2.3.4",
+            Port = 14567
+        });
+        SeedRound("r-fhsw", "fhsw-guid", "FHSW European Server", new DateTime(2026, 9, 6, 12, 0, 0, DateTimeKind.Utc), "operation_coronet");
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 5, "startTime", "desc",
+            new RoundFilters { ServerGuid = "fhsw-guid" });
+
+        var round = Assert.Single(result.Items);
+        Assert.Equal("r-fhsw", round.RoundId);
+        Assert.Equal("fhsw", round.GameId);
+        Assert.Equal("operation_coronet", round.MapName);
+    }
+
     private void SeedServer(string guid, string name)
     {
         _dbContext.Servers.Add(new GameServer
