@@ -31,7 +31,9 @@ python3 extract_map.py Tobruk \
 
 Open `http://127.0.0.1:5273/map.html`. Click the map (or the fly button) to capture
 the pointer; the sidebar stays clickable. WASD flies along the look direction
-(pitch included), Ctrl speeds up, Shift slows down. Vehicles start hidden
+(pitch included) at cruise speed, Shift slows down, and Q/E (or the mouse
+wheel / trackpad scroll) change altitude. Mouse and trackpad look around;
+click-drag still looks if pointer lock is unavailable. Vehicles start hidden
 and the viewer only draws objects inside ~700 m unless **render entire map**
 is on. Terrain tiles live in the level archive and face +Y after export, with
 the sand `detail.dds` multiplied in. The sky is the level's `ENVMAP_G_.rcm`
@@ -262,20 +264,28 @@ rules keep those parts from stacking:
   close-up face. Negative lod values are skipped so the two heads do not occupy
   the same neck.
 
-The meshes already live in bind-pose skeleton space, so stacking them at the
-origin produces a complete figure without decoding `.ske`/`.skn`. Those meshes
-stand along Refractor +Z (3ds Max Biped), so the exporter pitches the soldier
-root onto glTF +Y — otherwise a browse camera sees a body lying on its back.
-The 3P body is an idle pose with arms at the sides; the hand meshes sit in a
-different bind, so a stack at the origin leaves one hand at the hip and the
-other floating off the chest. Until `.skn` skinning is applied, each 3P hand
-is translated so its centroid meets the matching sleeve opening — the extreme
-±X of the body *above the hips*. A waist-height band looks plausible because
-the coat is as wide as the arms, but those vertices are the jacket hem, not
-the arm holes. Helmets are kit parts, not children of the soldier, so the
-exported figure is bareheaded. `GeometryTemplate.setSkin` and `createSkeleton`
-are recorded on the report for the later animation pass; `.baf` clips are
-still unused.
+The 3P body and head already live in the same bind, so they stack at the origin
+and the exporter only has to pitch the soldier root from Refractor +Z onto glTF
++Y — otherwise a browse camera sees a body lying on its back. That stack is
+true for the idle body (arms at the sides) and the head (verts already on the
+neck). It is **not** true for the hands. They are `SimpleObject` + `AnimatedMesh`
+siblings with their own `GeometryTemplate.setSkin` (`BritLeftHand.skn` /
+`BritRightHand.skn`); they are not `bindToSkeletonPart` objects. Each hand `.sm`
+was exported in a different bind than the body, so a stack at the origin leaves
+one hand at the hip and the other off the chest. Snapping the mesh centroid to
+a sleeve vertex is the wrong fix — a waist band picks the coat hem, an
+upper-body extreme picks the shoulder. The structural map is the shared forearm
+bone: the `.skn` stores rest-pose positions identical to the `.sm` plus a
+bone-local offset per influence, so `rest = R * offset + T` recovers each bone's
+bind, and the rigid transform between the hand's `Bip01 L Forearm` and the
+body's is what parents the hand onto the sleeve. The left supporting hand is
+authored with the wrist cocked ~140 deg off that bone (weapon grip), so a
+second rotation swings `Bip01 L Hand` onto the forearm's length axis — the
+fingers continue out of the cuff instead of sitting perpendicular to it. The
+right trigger hand is only ~40 deg off and is left as authored. Helmets are kit parts, not
+children of the soldier, so the exported figure is bareheaded. `createSkeleton`
+and `.baf` clips are still unused; this pass only applies the bind-pose rigid
+align, not a full skin.
 
 `--list` now includes the eight vanilla `objects/soldiers/` templates alongside
 land, air and sea vehicles. Mods keep soldier textures under nested folders
@@ -466,7 +476,7 @@ until the relevant MaterialManager attack/defence table is resolved.
 The parser regression suite is installation-independent. It covers the line-scoped
 command parser, child placement, geometry aliases, input scoping and numeric ids,
 rate-versus-pose classification, soldier first-person / random-head selection,
-`createInvisible` physics parts, soldier sleeve-cuff hand placement,
+`createInvisible` physics parts, `.skn` bind recovery and forearm hand alignment,
 first-person High/Low distance LOD fallback,
 both shader forms, collision geometry and face-material export, triangle-strip
 soldier meshes, basename texture fallback, multi-LOD StandardMesh parsing,
@@ -485,10 +495,10 @@ the Build and Skin comparison explicit.
 
 ## Not yet used
 
-- **`animations.rfa`** — `.ske` skeletons and `.skn` skins referenced by
-  `GeometryTemplate.setSkin`. Paths are reported and soldier parts export in
-  bind pose with hands snapped to the 3P sleeve openings, but the belt geometry
-  remains rigid and `.baf` clips are not applied.
+- **`animations.rfa`** — `.skn` skins referenced by `GeometryTemplate.setSkin`
+  are parsed for soldier hands: shared forearm bones align each hand mesh into
+  the body's bind. `.ske` skeletons and `.baf` clips are still unused, so track
+  belts stay rigid and the figure does not play idle animation.
 - **`.baf` soldier clips and vehicle IK**, which animate occupants rather than the
   vehicle assembly. Helmets and other kit parts are also still separate objects.
 - **The coastline mesh**, which some levels name in `StaticObjects.con` without
