@@ -10,7 +10,6 @@ import {
   type RoundSummary,
 } from '@/utils/battleEventGenerator'
 import MmBattleSummary from './round-report/MmBattleSummary.vue'
-import MmBattleHighlight from './round-report/MmBattleHighlight.vue'
 import MmBattleVisualizer from './round-report/MmBattleVisualizer.vue'
 import MmPlaybackControls from './round-report/MmPlaybackControls.vue'
 import MmMapThumb from './MmMapThumb.vue'
@@ -31,7 +30,7 @@ const props = defineProps<Props>()
 const roundReport = ref<RoundReport | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const showBriefing = ref(true)
+const showBriefing = ref(false)
 const isPlaying = ref(false)
 const playbackInterval = ref<NodeJS.Timeout | null>(null)
 const playbackSpeed = ref(250)
@@ -79,6 +78,14 @@ const filteredBattleEvents = computed(() =>
   }),
 )
 
+const isEmptyRound = computed(() => {
+  if (!roundReport.value) return false
+  if (roundReport.value.round?.totalParticipants === 0) return true
+  const snaps = roundReport.value.leaderboardSnapshots
+  if (!snaps || snaps.length === 0) return true
+  return snaps.every(s => !s.entries || s.entries.length === 0)
+})
+
 const fetchData = async () => {
   if (!props.roundId) return
   loading.value = true
@@ -86,17 +93,16 @@ const fetchData = async () => {
   try {
     const data = await fetchRoundReport(props.roundId)
     roundReport.value = data
-
-    if (!data.leaderboardSnapshots || data.leaderboardSnapshots.length === 0 ||
-        (data.leaderboardSnapshots.length === 1 && data.leaderboardSnapshots[0].entries.length === 0)) {
-      error.value = 'This round was empty — no players participated.'
-      return
-    }
-
-    processBattleReport()
-    visibleEventIndex.value = batchUpdateEvents.value.length - 1
     updatePageTitle()
-    if (props.players) trackedPlayer.value = props.players
+
+    // Show briefing by default for empty rounds; collapse by default when there are players to get straight to match replay
+    showBriefing.value = isEmptyRound.value
+
+    if (!isEmptyRound.value) {
+      processBattleReport()
+      visibleEventIndex.value = batchUpdateEvents.value.length - 1
+      if (props.players) trackedPlayer.value = props.players
+    }
   } catch (err) {
     console.error('Error fetching round report:', err)
     error.value = 'Failed to fetch round report'
@@ -325,11 +331,79 @@ const shouldShowTickets = computed(() => {
 
 const visibleHighlights = computed(() => {
   if (!battleHighlights.value.length || !batchUpdateEvents.value.length) return []
+  if (visibleEventIndex.value >= batchUpdateEvents.value.length - 1) {
+    return battleHighlights.value
+  }
   const currentBatch = batchUpdateEvents.value[visibleEventIndex.value]
   if (!currentBatch) return []
   const cutoff = new Date(currentBatch.timestamp).getTime()
   return battleHighlights.value.filter(h => new Date(h.timestamp).getTime() <= cutoff)
 })
+
+interface PlayerBadge {
+  id: string
+  icon: string
+  label: string
+  title: string
+}
+
+const playerBadgesMap = computed(() => {
+  const map = new Map<string, PlayerBadge[]>()
+  if (!roundReport.value) return map
+
+  const sourceHighlights = showLiveLadder.value ? visibleHighlights.value : battleHighlights.value
+
+  // 1. MVP
+  const mvpHighlight = sourceHighlights.find(h => h.type === 'mvp')
+  const mvpPlayer = mvpHighlight?.playerName || (!showLiveLadder.value ? roundSummary.value?.mvp?.playerName : null)
+  if (mvpPlayer) {
+    if (!map.has(mvpPlayer)) map.set(mvpPlayer, [])
+    map.get(mvpPlayer)!.push({
+      id: 'mvp',
+      icon: '🏆',
+      label: 'MVP',
+      title: 'Round MVP',
+    })
+  }
+
+  // 2. First Blood
+  const fb = sourceHighlights.find(h => h.type === 'first_blood')
+  if (fb && fb.playerName) {
+    if (!map.has(fb.playerName)) map.set(fb.playerName, [])
+    map.get(fb.playerName)!.push({
+      id: 'first_blood',
+      icon: '🩸',
+      label: 'First Blood',
+      title: `${fb.playerName} drew first blood`,
+    })
+  }
+
+  // 3. Best Killing Spree
+  const sprees = new Map<string, { maxStreak: number; icon: string }>()
+  for (const h of sourceHighlights) {
+    if (h.type === 'killing_spree' && typeof h.value === 'number') {
+      const current = sprees.get(h.playerName)
+      if (!current || h.value > current.maxStreak) {
+        sprees.set(h.playerName, { maxStreak: h.value, icon: h.icon || '🔥' })
+      }
+    }
+  }
+  for (const [pName, spree] of sprees.entries()) {
+    if (!map.has(pName)) map.set(pName, [])
+    map.get(pName)!.push({
+      id: 'spree',
+      icon: spree.icon,
+      label: `${spree.maxStreak} Streak`,
+      title: `${spree.maxStreak} kill streak`,
+    })
+  }
+
+  return map
+})
+
+const getPlayerBadges = (playerName: string): PlayerBadge[] => {
+  return playerBadgesMap.value.get(playerName) || []
+}
 
 const updatePageTitle = () => {
   if (!roundReport.value?.round) return
@@ -483,169 +557,163 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- Playback controls -->
-      <MmPlaybackControls
-        :is-playing="isPlaying"
-        :playback-speed="playbackSpeed"
-        :selected-snapshot-index="visibleEventIndex"
-        :total-snapshots="batchUpdateEvents.length"
-        :current-elapsed-time="currentElapsedTime"
-        :snapshot-timeline="snapshotTimeline"
-        @toggle-playback="togglePlayback"
-        @reset-playback="resetPlayback"
-        @set-playback-speed="setPlaybackSpeed"
-        @start-drag="startDrag"
-        @handle-dot-click="handleDotClick"
-      />
+      <!-- Empty round message (replaces interactive round controls & console) -->
+      <div v-if="isEmptyRound" class="mm-empty" style="margin: 24px 0">
+        This round was empty — no players participated.
+      </div>
 
-      <!-- Main dashboard: console + ladder -->
-      <div class="mm-rr__dashboard">
-        <!-- Left: console / visualizer -->
-        <section class="mm-rr__panel mm-rr__panel--console">
-          <header class="mm-rr__panel-head">
-            <div class="mm-eyebrow mm-eyebrow--strong">Battle feed</div>
-            <div class="mm-rr__panel-controls">
-              <input
-                v-model="trackedPlayer"
-                type="text"
-                placeholder="Pin a player…"
-                class="mm-rr__pin-input"
+      <template v-else>
+        <!-- Playback controls -->
+        <MmPlaybackControls
+          :is-playing="isPlaying"
+          :playback-speed="playbackSpeed"
+          :selected-snapshot-index="visibleEventIndex"
+          :total-snapshots="batchUpdateEvents.length"
+          :current-elapsed-time="currentElapsedTime"
+          :snapshot-timeline="snapshotTimeline"
+          @toggle-playback="togglePlayback"
+          @reset-playback="resetPlayback"
+          @set-playback-speed="setPlaybackSpeed"
+          @start-drag="startDrag"
+          @handle-dot-click="handleDotClick"
+        />
+
+        <!-- Main dashboard: console + ladder -->
+        <div class="mm-rr__dashboard">
+          <!-- Left: console / visualizer -->
+          <section class="mm-rr__panel mm-rr__panel--console">
+            <header class="mm-rr__panel-head">
+              <div class="mm-eyebrow mm-eyebrow--strong">Battle feed</div>
+              <div class="mm-rr__panel-controls">
+                <input
+                  v-model="trackedPlayer"
+                  type="text"
+                  placeholder="Pin a player…"
+                  class="mm-rr__pin-input"
+                />
+                <div class="mm-subtabs">
+                  <button
+                    type="button"
+                    class="mm-subtab"
+                    :class="{ 'mm-subtab--active': !showGraphicalView }"
+                    @click="showGraphicalView = false"
+                  >Console</button>
+                  <button
+                    type="button"
+                    class="mm-subtab"
+                    :class="{ 'mm-subtab--active': showGraphicalView }"
+                    @click="showGraphicalView = true"
+                  >Visualizer</button>
+                </div>
+              </div>
+            </header>
+
+            <!-- Visualizer canvas mode -->
+            <div v-if="showGraphicalView" class="mm-rr__visualizer">
+              <MmBattleVisualizer
+                :round-report="roundReport"
+                :battle-events="battleEvents"
+                :current-time-index="visibleEventIndex"
+                :batch-update-events="batchUpdateEvents"
+                :tracked-player="trackedPlayer"
+                :round-summary="roundSummary"
               />
+            </div>
+
+            <!-- Console mode -->
+            <div v-else ref="consoleElement" class="mm-rr__console">
+              <div
+                v-for="(event, i) in visibleEventsReversed"
+                :key="`${event.timestamp}-${i}`"
+                :class="eventRowClass(event, visibleEventsReversed.length - 1 - i)"
+              >
+                <span class="mm-rr__line-time">{{ formatTimeOffset(event.timestamp) }}</span>
+                <span class="mm-rr__line-msg">{{ event.message }}</span>
+              </div>
+              <div v-if="visibleEventsReversed.length === 0" class="mm-empty" style="border: 0">
+                No events at this moment.
+              </div>
+            </div>
+          </section>
+
+          <!-- Right: live ladder -->
+          <section class="mm-rr__panel mm-rr__panel--ladder">
+            <header class="mm-rr__panel-head">
+              <div class="mm-eyebrow mm-eyebrow--strong">Ladder</div>
               <div class="mm-subtabs">
                 <button
                   type="button"
                   class="mm-subtab"
-                  :class="{ 'mm-subtab--active': !showGraphicalView }"
-                  @click="showGraphicalView = false"
-                >Console</button>
+                  :class="{ 'mm-subtab--active': showLiveLadder }"
+                  @click="showLiveLadder = true"
+                >Live</button>
                 <button
                   type="button"
                   class="mm-subtab"
-                  :class="{ 'mm-subtab--active': showGraphicalView }"
-                  @click="showGraphicalView = true"
-                >Visualizer</button>
+                  :class="{ 'mm-subtab--active': !showLiveLadder }"
+                  @click="showLiveLadder = false"
+                >Final</button>
+              </div>
+            </header>
+
+            <div class="mm-rr__ladder">
+              <div
+                v-for="team in teamGroups"
+                :key="team.teamName"
+                class="mm-rr__team"
+              >
+                <div class="mm-eyebrow mm-eyebrow--strong mm-rr__team-head">
+                  <span>{{ team.teamName }}</span>
+                  <span class="mm-meta-row__sep">·</span>
+                  <span>{{ team.totalScore }} pts</span>
+                </div>
+                <table class="mm-list mm-list--dense">
+                  <thead>
+                    <tr>
+                      <th class="mm-list__rank">#</th>
+                      <th>Player</th>
+                      <th class="is-num">Score</th>
+                      <th class="is-num">K / D</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="p in team.players"
+                      :key="p.playerName"
+                      @click="navigateToPlayerProfile(p.playerName)"
+                    >
+                      <td class="mm-list__rank">{{ p.rank }}</td>
+                      <td class="mm-list__name-cell">
+                        <div class="mm-list__name">
+                          <span class="mm-list__name-primary mm-rr__player-name">
+                            <span class="mm-rr__player-name-text">{{ $pn(p.playerName) }}</span>
+                            <span
+                              v-for="badge in getPlayerBadges(p.playerName)"
+                              :key="badge.id"
+                              class="mm-player-badge"
+                              :class="`mm-player-badge--${badge.id}`"
+                              :title="badge.title"
+                            >
+                              <span class="mm-player-badge__icon">{{ badge.icon }}</span>
+                              <span class="mm-player-badge__label">{{ badge.label }}</span>
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td class="is-num" data-cell-label="Score">{{ p.score }}</td>
+                      <td class="is-num" :class="kdClass(p.deaths > 0 ? p.kills / p.deaths : p.kills)" data-cell-label="K / D">
+                        <span class="mm-num--kill">{{ p.kills }}</span>
+                        <span class="mm-num__sep">/</span>
+                        <span class="mm-num--death">{{ p.deaths }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-          </header>
-
-          <div class="mm-rr__panel-filters">
-            <label>
-              <input v-model="displayFilters.showJoinEvents" type="checkbox" />
-              <span>Joins</span>
-            </label>
-            <label>
-              <input v-model="displayFilters.showDeathEvents" type="checkbox" />
-              <span>Deaths</span>
-            </label>
-            <label>
-              <input v-model="displayFilters.highlightsOnly" type="checkbox" />
-              <span>Highlights only</span>
-            </label>
-          </div>
-
-          <MmBattleVisualizer
-            v-if="showGraphicalView"
-            :round-report="roundReport"
-            :battle-events="battleEvents"
-            :current-time-index="visibleEventIndex"
-            :batch-update-events="batchUpdateEvents"
-            :tracked-player="trackedPlayer"
-            :round-summary="roundSummary"
-          />
-
-          <div v-else ref="consoleElement" class="mm-rr__console">
-            <div
-              v-for="(event, idx) in visibleEventsReversed"
-              :key="`${event.timestamp}-${idx}`"
-              :class="eventRowClass(event, idx)"
-            >
-              <span class="mm-rr__line-time">{{ formatTimeOffset(event.timestamp) }}</span>
-              <span class="mm-rr__line-msg">{{ event.message }}</span>
-            </div>
-            <div v-if="visibleEventsReversed.length === 0" class="mm-empty" style="border: 0">
-              No events at this moment.
-            </div>
-          </div>
-        </section>
-
-        <!-- Right: live ladder -->
-        <section class="mm-rr__panel mm-rr__panel--ladder">
-          <header class="mm-rr__panel-head">
-            <div class="mm-eyebrow mm-eyebrow--strong">Ladder</div>
-            <div class="mm-subtabs">
-              <button
-                type="button"
-                class="mm-subtab"
-                :class="{ 'mm-subtab--active': showLiveLadder }"
-                @click="showLiveLadder = true"
-              >Live</button>
-              <button
-                type="button"
-                class="mm-subtab"
-                :class="{ 'mm-subtab--active': !showLiveLadder }"
-                @click="showLiveLadder = false"
-              >Final</button>
-            </div>
-          </header>
-
-          <div class="mm-rr__ladder">
-            <div
-              v-for="team in teamGroups"
-              :key="team.teamName"
-              class="mm-rr__team"
-            >
-              <div class="mm-eyebrow mm-eyebrow--strong mm-rr__team-head">
-                <span>{{ team.teamName }}</span>
-                <span class="mm-meta-row__sep">·</span>
-                <span>{{ team.totalScore }} pts</span>
-              </div>
-              <table class="mm-list mm-list--dense">
-                <thead>
-                  <tr>
-                    <th class="mm-list__rank">#</th>
-                    <th>Player</th>
-                    <th class="is-num">Score</th>
-                    <th class="is-num">K / D</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="p in team.players"
-                    :key="p.playerName"
-                    @click="navigateToPlayerProfile(p.playerName)"
-                  >
-                    <td class="mm-list__rank">{{ p.rank }}</td>
-                    <td class="mm-list__name-cell">
-                      <div class="mm-list__name">
-                        <span class="mm-list__name-primary">{{ $pn(p.playerName) }}</span>
-                      </div>
-                    </td>
-                    <td class="is-num" data-cell-label="Score">{{ p.score }}</td>
-                    <td class="is-num" :class="kdClass(p.deaths > 0 ? p.kills / p.deaths : p.kills)" data-cell-label="K / D">
-                      <span class="mm-num--kill">{{ p.kills }}</span>
-                      <span class="mm-num__sep">/</span>
-                      <span class="mm-num--death">{{ p.deaths }}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <!-- Key events highlights row -->
-      <section v-if="visibleHighlights.length > 0" class="mm-rr__highlights">
-        <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 12px">Tactical intelligence</div>
-        <div class="mm-rr__highlights-grid">
-          <MmBattleHighlight
-            v-for="(h, i) in visibleHighlights"
-            :key="`${h.timestamp}-${i}`"
-            :highlight="h"
-            :format-time-offset="formatTimeOffset"
-          />
+          </section>
         </div>
-      </section>
+      </template>
     </template>
   </div>
 </template>
@@ -896,12 +964,60 @@ onUnmounted(() => {
   padding: 4px 16px 8px;
 }
 
-.mm-rr__highlights { padding: 24px 0; }
+.mm-rr__player-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 
-.mm-rr__highlights-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 10px;
+.mm-rr__player-name-text {
+  white-space: nowrap;
+}
+
+.mm-player-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 2px;
+  border: 1px solid var(--mm-rule-strong);
+  background: var(--mm-surface-2, rgba(255, 255, 255, 0.05));
+  color: var(--mm-ink);
+  line-height: 1.35;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.mm-player-badge--mvp {
+  border-color: rgba(234, 179, 8, 0.45);
+  background: rgba(234, 179, 8, 0.12);
+  color: #fbbf24;
+}
+
+.mm-player-badge--first_blood {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
+.mm-player-badge--spree {
+  border-color: rgba(249, 115, 22, 0.45);
+  background: rgba(249, 115, 22, 0.12);
+  color: #fb923c;
+}
+
+.mm-player-badge__icon {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.mm-player-badge__label {
+  text-transform: uppercase;
 }
 
 @media (max-width: 880px) {
