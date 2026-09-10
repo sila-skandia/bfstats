@@ -63,6 +63,19 @@ const normalizedFaction = computed<string>(() => {
   if (f === 'russia' || f === 'russian' || f === 'soviet' || f === 'ussr' || f === 'ru' || f === 'rus') return 'rus'
   if (f === 'britain' || f === 'british' || f === 'uk' || f === 'gb' || f === 'england' || f === 'brit') return 'brit'
   if (f === 'canada' || f === 'canadian' || f === 'ca' || f === 'can') return 'can'
+  if (f === 'finland' || f === 'finnish' || f === 'fin') return 'fin'
+  if (f === 'australia' || f === 'australian' || f === 'aus') return 'aus'
+  if (f === 'netherlands' || f === 'dutch' || f === 'knil' || f === 'nl') return 'nl'
+  if (f === 'france' || f === 'french' || f === 'fra' || f === 'freefrance' || f === 'freefrench') return 'fra'
+  if (f === 'italy' || f === 'italian' || f === 'ita' || f === 'it') return 'ita'
+  if (f === 'greece' || f === 'greek' || f === 'gre') return 'gre'
+  if (f === 'hungary' || f === 'hungarian' || f === 'hun') return 'hun'
+  if (f === 'yugoslavia' || f === 'serbia' || f === 'serb' || f === 'yug') return 'yug'
+  if (f === 'china' || f === 'chinese' || f === 'chi') return 'chi'
+  if (f === 'red' || f === 'redpirate' || f === 'redpirates') return 'red'
+  if (f === 'blue' || f === 'bluepirate' || f === 'bluepirates') return 'blue'
+  if (f === 'national' || f === 'nationalarmy') return 'national'
+  if (f === 'royal' || f === 'royalarmy') return 'royal'
   return f
 })
 
@@ -107,6 +120,110 @@ const factionMeta = computed(() => {
         accentColor: '#b53535',
         bgTint: 'rgba(181, 53, 53, 0.15)',
         borderColor: '#5e1e1e',
+      }
+    case 'fin':
+      return {
+        code: 'FIN',
+        label: 'Finland',
+        accentColor: '#36648b',
+        bgTint: 'rgba(54, 100, 139, 0.15)',
+        borderColor: '#1e3850',
+      }
+    case 'aus':
+      return {
+        code: 'AUS',
+        label: 'Australia',
+        accentColor: '#2d6a4f',
+        bgTint: 'rgba(45, 106, 79, 0.15)',
+        borderColor: '#1b4332',
+      }
+    case 'nl':
+      return {
+        code: 'NLD',
+        label: 'Netherlands',
+        accentColor: '#d97706',
+        bgTint: 'rgba(217, 119, 6, 0.15)',
+        borderColor: '#78350f',
+      }
+    case 'fra':
+      return {
+        code: 'FRA',
+        label: 'France',
+        accentColor: '#2563eb',
+        bgTint: 'rgba(37, 99, 235, 0.15)',
+        borderColor: '#1e40af',
+      }
+    case 'ita':
+      return {
+        code: 'ITA',
+        label: 'Italy',
+        accentColor: '#16a34a',
+        bgTint: 'rgba(22, 163, 74, 0.15)',
+        borderColor: '#166534',
+      }
+    case 'gre':
+      return {
+        code: 'GRC',
+        label: 'Greece',
+        accentColor: '#0284c7',
+        bgTint: 'rgba(2, 132, 199, 0.15)',
+        borderColor: '#0369a1',
+      }
+    case 'hun':
+      return {
+        code: 'HUN',
+        label: 'Hungary',
+        accentColor: '#b91c1c',
+        bgTint: 'rgba(185, 28, 28, 0.15)',
+        borderColor: '#7f1d1d',
+      }
+    case 'yug':
+      return {
+        code: 'YUG',
+        label: 'Yugoslavia',
+        accentColor: '#1d4ed8',
+        bgTint: 'rgba(29, 78, 216, 0.15)',
+        borderColor: '#1e3a8a',
+      }
+    case 'chi':
+      return {
+        code: 'CHN',
+        label: 'China',
+        accentColor: '#dc2626',
+        bgTint: 'rgba(220, 38, 38, 0.15)',
+        borderColor: '#991b1b',
+      }
+    case 'red':
+      return {
+        code: 'RED',
+        label: 'Red Pirates',
+        accentColor: '#b91c1c',
+        bgTint: 'rgba(185, 28, 28, 0.15)',
+        borderColor: '#7f1d1d',
+      }
+    case 'blue':
+      return {
+        code: 'BLU',
+        label: 'Blue Pirates',
+        accentColor: '#1d4ed8',
+        bgTint: 'rgba(29, 78, 216, 0.15)',
+        borderColor: '#1e3a8a',
+      }
+    case 'national':
+      return {
+        code: 'NAT',
+        label: 'National Army',
+        accentColor: '#9c4444',
+        bgTint: 'rgba(156, 68, 68, 0.15)',
+        borderColor: '#542828',
+      }
+    case 'royal':
+      return {
+        code: 'ROY',
+        label: 'Royal Army',
+        accentColor: '#456ca6',
+        bgTint: 'rgba(69, 108, 166, 0.15)',
+        borderColor: '#263e61',
       }
     case 'us':
     default:

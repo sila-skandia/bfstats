@@ -34,6 +34,14 @@
       <button
         type="button"
         class="mm-admin-tab"
+        :class="{ 'mm-admin-tab--active': activeTab === 'maps' }"
+        @click="switchTab('maps')"
+      >
+        Map intel
+      </button>
+      <button
+        type="button"
+        class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'audit' }"
         @click="switchTab('audit')"
       >
@@ -150,6 +158,10 @@
       />
     </div>
 
+    <div v-show="activeTab === 'maps'">
+      <MmAdminMapsTab ref="mapsTabRef" />
+    </div>
+
     <div v-show="activeTab === 'audit'">
       <MmAdminAuditTab ref="auditTabRef" />
     </div>
@@ -184,6 +196,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MmAdminQueryTab from '@/components/v4/admin/MmAdminQueryTab.vue'
+import MmAdminMapsTab from '@/components/v4/admin/MmAdminMapsTab.vue'
 import MmAdminAuditTab from '@/components/v4/admin/MmAdminAuditTab.vue'
 import MmAdminCronTab from '@/components/v4/admin/MmAdminCronTab.vue'
 import MmAdminMergeTab from '@/components/v4/admin/MmAdminMergeTab.vue'
@@ -194,7 +207,7 @@ import AdminTournamentsV4 from '@/views/v4/AdminTournamentsV4.vue'
 import { useAuth } from '@/composables/useAuth'
 import '@/styles/mm-admin.css'
 
-type TabName = 'query' | 'audit' | 'cron' | 'merge' | 'access' | 'notice' | 'ai-feedback' | 'tournaments'
+type TabName = 'query' | 'maps' | 'audit' | 'cron' | 'merge' | 'access' | 'notice' | 'ai-feedback' | 'tournaments'
 
 const route = useRoute()
 const router = useRouter()
@@ -206,12 +219,13 @@ const gameTypes = [
   { id: 'bf1942', label: 'BF1942' },
 ]
 
-const VALID_TABS: TabName[] = ['query', 'audit', 'cron', 'merge', 'access', 'notice', 'ai-feedback', 'tournaments']
+const VALID_TABS: TabName[] = ['query', 'maps', 'audit', 'cron', 'merge', 'access', 'notice', 'ai-feedback', 'tournaments']
 
 const activeTab = ref<TabName>('query')
 const activeGameFilter = ref<string>('bf1942')
 const showPostDeleteAggregateHint = ref(false)
 const showPostUndeleteAggregateHint = ref(false)
+const mapsTabRef = ref<InstanceType<typeof MmAdminMapsTab> & { load?: () => void } | null>(null)
 const auditTabRef = ref<InstanceType<typeof MmAdminAuditTab> | null>(null)
 const accessTabRef = ref<InstanceType<typeof MmAdminAccessTab> & { load?: () => void } | null>(null)
 const noticeTabRef = ref<InstanceType<typeof MmAdminNoticeTab> & { load?: () => void } | null>(null)
@@ -233,7 +247,8 @@ function switchTab(tab: TabName) {
   }
 
   // Trigger load callbacks for tab components when selected
-  if (tab === 'audit') auditTabRef.value?.load?.()
+  if (tab === 'maps') mapsTabRef.value?.load?.()
+  else if (tab === 'audit') auditTabRef.value?.load?.()
   else if (tab === 'merge') mergeTabRef.value?.load?.()
   else if (tab === 'access') accessTabRef.value?.load?.()
   else if (tab === 'notice') noticeTabRef.value?.load?.()

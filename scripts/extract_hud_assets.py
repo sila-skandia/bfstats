@@ -586,6 +586,67 @@ def extract_icon_set(game_dir: Path, out_dir: Path) -> int:
     return total
 
 
+def extract_mod_flags(game_dir: Path, flags_dir: Path) -> int:
+    """Extract mod-specific faction flags from all installed mods' menu archives."""
+    mods_dir = game_dir / "Mods"
+    if not mods_dir.is_dir():
+        return 0
+    extracted = 0
+    flag_aliases = {
+        "dutch.png": "nl.png",
+        "netherlands.png": "nl.png",
+        "fre.png": "fra.png",
+        "france.png": "fra.png",
+        "french.png": "fra.png",
+        "greek.png": "gre.png",
+        "greece.png": "gre.png",
+        "hungary.png": "hun.png",
+        "it.png": "ita.png",
+        "italy.png": "ita.png",
+        "italian.png": "ita.png",
+        "serb.png": "yug.png",
+        "yugoslavia.png": "yug.png",
+        "finland.png": "fin.png",
+        "finnish.png": "fin.png",
+        "australia.png": "aus.png",
+        "auss.png": "aus.png",
+        "china.png": "chi.png",
+        "chinese.png": "chi.png",
+    }
+    for mod_dir in sorted(p for p in mods_dir.iterdir() if p.is_dir()):
+        arc_dir = find_archives_dir(mod_dir)
+        if not arc_dir:
+            continue
+        for archive_path in sorted(arc_dir.glob("*.rfa")):
+            if not archive_path.name.lower().startswith("menu"):
+                continue
+            try:
+                with RfaArchive(archive_path) as arch:
+                    for entry in arch.entries:
+                        lowered = entry.lower()
+                        if "menu/texture/" in lowered and any(x in lowered for x in ["baseflag_conp_", "flag_", "icon_flag_"]) and lowered.endswith((".dds", ".tga")):
+                            stem = Path(entry).stem.lower()
+                            dest = flags_dir / f"{stem}.png"
+                            if not dest.exists():
+                                if extract_and_save(arch, entry, dest):
+                                    extracted += 1
+                            # Canonical roundel mappings
+                            if "baseflag_conp_" in stem:
+                                code = stem.replace("baseflag_conp_", "")
+                                target_code = flag_aliases.get(f"{code}.png", f"{code}.png")
+                                canonical_dest = flags_dir / target_code
+                                if not canonical_dest.exists() and dest.exists():
+                                    copy_or_link(dest, canonical_dest)
+            except Exception:
+                continue
+    for alias_name, target_name in flag_aliases.items():
+        src_f = flags_dir / target_name
+        dst_f = flags_dir / alias_name
+        if src_f.exists() and not dst_f.exists():
+            copy_or_link(src_f, dst_f)
+    return extracted
+
+
 def copy_or_link(src_file: Path, target_file: Path):
     """Ensure target_file exists with same content as src_file."""
     target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -701,6 +762,9 @@ def run_extraction(menu_rfa_path: Path, out_dir: Path,
             dst_f = flags_dir / alias_name
             if src_f.exists() and not dst_f.exists():
                 copy_or_link(src_f, dst_f)
+
+        # Mod-specific faction flags
+        total_extracted += extract_mod_flags(game_dir, flags_dir)
 
         # ------------------------------------------------------------------- #
         # 3. Medals: menu/Texture/Debriefing/medals/*.dds

@@ -98,9 +98,26 @@ NATION_STEMS: list[tuple[str, str]] = [
     ("canadian", "can"),
     ("italian", "ita"),
     ("french", "fra"),
+    ("freefrench", "fra"),
     ("polish", "pol"),
     ("finnish", "fin"),
     ("chinese", "chi"),
+    ("australian", "aus"),
+    ("aus", "aus"),
+    ("dutch", "nl"),
+    ("knil", "nl"),
+    ("greek", "gre"),
+    ("hun", "hun"),
+    ("yugoslav", "yug"),
+    ("serb", "yug"),
+    ("fin", "fin"),
+    ("rus", "rus"),
+    ("redpirate", "red"),
+    ("bluepirate", "blue"),
+    ("turbojet", "national"),
+    ("rippinrocket", "royal"),
+    ("national", "national"),
+    ("royal", "royal"),
 ]
 
 NATION_LABELS = {
@@ -115,6 +132,15 @@ NATION_LABELS = {
     "pol": "Poland",
     "fin": "Finland",
     "chi": "China",
+    "aus": "Australia",
+    "nl": "Netherlands",
+    "gre": "Greece",
+    "hun": "Hungary",
+    "yug": "Yugoslavia",
+    "red": "Red Pirates",
+    "blue": "Blue Pirates",
+    "national": "National Army",
+    "royal": "Royal Army",
 }
 
 # The base game has five kit roles and mods do not. FHSW alone declares 571 distinct
@@ -308,7 +334,11 @@ def nation_of_skin(skin: str) -> str | None:
 def nation_of_kits(kits: list[str]) -> str | None:
     """Fallback when setTeamSkin is absent: the kit templates carry the nation too."""
     for kit in kits:
-        head = kit.split("_", 1)[0]
+        head = kit.split("_", 1)[0].lower()
+        if head == "na":
+            return "national"
+        if head == "ra":
+            return "royal"
         code = nation_of_skin(head)
         if code:
             return code
@@ -637,8 +667,9 @@ def parse_teams(files: LevelFiles, kit_types: dict[str, str] | None = None) -> l
     for index in (1, 2):
         skin = skins.get(index, "")
         nation = nation_of_skin(skin) if skin else None
-        if not nation:
-            nation = nation_of_kits(kits[index])
+        kit_nat = nation_of_kits(kits[index])
+        if kit_nat and (not nation or (skin.lower().startswith("german") and kit_nat != "ger") or (skin.lower().startswith("british") and kit_nat != "brit")):
+            nation = kit_nat
         seen: set[str] = set()
         loadout = []
         for kit in kits[index]:
@@ -993,12 +1024,21 @@ def main() -> int:
         return 1
 
     args.out.mkdir(parents=True, exist_ok=True)
+    manifest_path = args.out / "manifest.json"
+    existing_mods = {}
+    if manifest_path.is_file():
+        try:
+            old_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            existing_mods = old_manifest.get("mods", {})
+        except Exception:
+            pass
+    merged_mods = {**existing_mods, **manifest_mods}
     manifest = {
         "version": 1,
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "mods": manifest_mods,
+        "mods": merged_mods,
     }
-    (args.out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
 
     print(f"\n{totals['written']} written, {totals['skipped']} already present, "
           f"{totals['empty']} levels with nothing to report -> {args.out}")
