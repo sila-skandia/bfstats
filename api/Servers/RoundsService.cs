@@ -154,6 +154,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
 
         // Apply pagination and get rounds
         var rounds = await query
+            .Include(r => r.GameServer)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
@@ -166,6 +167,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             ServerGuid = round.ServerGuid,
             MapName = round.MapName,
             GameType = round.GameType,
+            GameId = round.GameServer != null ? round.GameServer.GameId : null,
             StartTime = round.StartTime,
             EndTime = round.EndTime ?? DateTime.UtcNow,
             DurationMinutes = round.DurationMinutes ?? 0,
@@ -175,6 +177,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             Team2Label = round.Team2Label,
             Team1Points = round.Tickets1,
             Team2Points = round.Tickets2,
+            RoundTimeRemain = round.RoundTimeRemain,
             Players = new List<SessionListItem>()
         }).ToList();
 

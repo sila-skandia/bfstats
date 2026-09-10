@@ -14,6 +14,7 @@ import MmBattleHighlight from './round-report/MmBattleHighlight.vue'
 import MmBattleVisualizer from './round-report/MmBattleVisualizer.vue'
 import MmPlaybackControls from './round-report/MmPlaybackControls.vue'
 import MmMapThumb from './MmMapThumb.vue'
+import MmMapDossier from './MmMapDossier.vue'
 import { BfLoadingBar } from '@/components/common'
 import { kdClass } from '@/views/v4/mmTokens'
 
@@ -30,6 +31,7 @@ const props = defineProps<Props>()
 const roundReport = ref<RoundReport | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const showBriefing = ref(true)
 const isPlaying = ref(false)
 const playbackInterval = ref<NodeJS.Timeout | null>(null)
 const playbackSpeed = ref(250)
@@ -386,13 +388,20 @@ onUnmounted(() => {
       <!-- Header: map name + server + scoreboard -->
       <header class="mm-rr__head">
         <div class="mm-rr__head-main">
-          <MmMapThumb
-            class="mm-rr__map"
-            :game-id="roundReport.round.gameId"
-            :map-name="roundReport.round.mapName"
-            kind="minimap"
-            :width="112"
-          />
+          <button
+            type="button"
+            class="mm-rr__map-btn"
+            :title="showBriefing ? 'Hide level briefing' : 'Show level briefing'"
+            @click="showBriefing = !showBriefing"
+          >
+            <MmMapThumb
+              class="mm-rr__map"
+              :game-id="roundReport.round.gameId"
+              :map-name="roundReport.round.mapName"
+              kind="minimap"
+              :width="112"
+            />
+          </button>
           <div class="mm-rr__head-text">
             <div class="mm-eyebrow mm-eyebrow--strong">{{ roundReport.round.gameType }}</div>
             <h1 class="mm-display mm-rr__title">{{ roundReport.round.mapName }}</h1>
@@ -407,6 +416,14 @@ onUnmounted(() => {
                 <span class="mm-chip__dot" />
                 Live
               </span>
+              <span class="mm-meta-row__sep">·</span>
+              <button
+                type="button"
+                class="mm-rr__briefing-toggle-btn"
+                @click="showBriefing = !showBriefing"
+              >
+                {{ showBriefing ? 'Hide briefing ↑' : 'Map briefing ↓' }}
+              </button>
             </div>
           </div>
         </div>
@@ -429,6 +446,41 @@ onUnmounted(() => {
       <!-- Round summary stats + MVP -->
       <section v-if="roundSummary" class="mm-rr__section">
         <MmBattleSummary :summary="roundSummary" />
+      </section>
+
+      <!-- Level Briefing & Tactical Intelligence Section -->
+      <section class="mm-card mm-map-briefing-panel">
+        <header class="mm-map-briefing-panel__head">
+          <div>
+            <div class="mm-eyebrow mm-eyebrow--strong">Level Briefing &amp; Spawn Points</div>
+            <p class="mm-card__hint">
+              Control points, order of battle, and vehicle arsenal from level archives
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="mm-btn mm-btn--inline"
+            @click="showBriefing = !showBriefing"
+          >
+            {{ showBriefing ? '[HIDE BRIEFING ↑]' : '[SHOW BRIEFING ↓]' }}
+          </button>
+        </header>
+
+        <div
+          v-if="showBriefing"
+          class="mm-map-briefing-panel__body"
+        >
+          <MmMapDossier
+            :key="`${roundReport.round.gameId || 'bf1942'}/${roundReport.round.mapName}`"
+            :game-id="roundReport.round.gameId || 'bf1942'"
+            :map-name="roundReport.round.mapName"
+            :live-tickets="shouldShowTickets ? { tickets1: roundReport.round.tickets1, tickets2: roundReport.round.tickets2 } : null"
+            :is-live="roundReport.round.isActive"
+            show-placeholders
+            hide-heading
+          />
+        </div>
       </section>
 
       <!-- Playback controls -->
@@ -633,6 +685,64 @@ onUnmounted(() => {
 /* The minimap sits ahead of the title, not in the ticket group, so the header
    still reads title-first when the map has no art and nothing renders. */
 .mm-rr__map { margin-top: 2px; }
+
+.mm-rr__map-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: block;
+  line-height: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.mm-rr__map-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.mm-rr__briefing-toggle-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--mm-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mm-rr__briefing-toggle-btn:hover {
+  color: var(--mm-accent-hover, var(--mm-accent));
+}
+
+.mm-map-briefing-panel {
+  background: var(--mm-surface);
+  border: 1px solid var(--mm-border);
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.mm-map-briefing-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.mm-map-briefing-panel__body {
+  padding-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .mm-map-briefing-panel {
+    padding: 16px;
+  }
+}
 
 @media (max-width: 640px) {
   .mm-rr__head-main { gap: 14px; }

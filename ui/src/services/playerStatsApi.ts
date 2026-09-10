@@ -106,6 +106,7 @@ interface RoundWithPlayers {
   serverGuid: string;
   mapName: string;
   gameType: string;
+  gameId?: string;
   startTime: string;
   endTime: string;
   durationMinutes: number;
