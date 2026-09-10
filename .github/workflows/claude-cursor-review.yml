@@ -176,6 +176,17 @@ jobs:
           # installed on the repo for it to work.
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+          # The action refuses to run for a non-User actor unless the bot is
+          # listed here - and the whole point of this workflow is to review PRs
+          # the cursor agent opened, so every automatic run has actor `cursor`.
+          # Without this the step fails with "Workflow initiated by non-human
+          # actor: cursor (type: Bot)". Matching is case-insensitive and a
+          # trailing `[bot]` is stripped from both sides, so this one entry
+          # covers `cursor` and `cursor[bot]`. Deliberately not `*`: that would
+          # let any App that can open a PR here run Claude with a prompt it
+          # partly controls.
+          allowed_bots: "cursor"
+
           # Supplying `prompt` puts the action in agent mode: it runs on the
           # `pull_request` event directly, with no @claude mention required.
           prompt: |
@@ -423,6 +434,69 @@ jobs:
       - name: Verify (unit tests + Playwright E2E)
         run: ./scripts/verify.sh
 
+      # Upload the test results
+      - name: Publish Playwright report to home-server-mgr
+        if: failure()
+        continue-on-error: true
+        env:
+          HSM_URL: ${{ secrets.HSM_REPORTS_URL }}
+          HSM_TOKEN: ${{ secrets.HSM_REPORTS_TOKEN }}
+          # The node the app under test actually runs on, so the report lands in
+          # that node's detail view in the dashboard.
+          HSM_NODE: hetzner/bfstats
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.review.outputs.number }}
+          BRANCH: ${{ needs.review.outputs.ref }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ -z "${HSM_URL:-}" ] || [ -z "${HSM_TOKEN:-}" ]; then
+            echo "::notice::HSM_REPORTS_* secrets not set; skipping report publish"
+            exit 0
+          fi
+          if [ ! -d ui/playwright-report ]; then
+            echo "::warning::no ui/playwright-report to publish"
+            exit 0
+          fi
+
+          tar czf /tmp/playwright-report.tar.gz -C ui playwright-report
+          size=$(stat -c%s /tmp/playwright-report.tar.gz)
+          echo "report tarball: $((size / 1024)) KiB"
+
+          # Cloudflare rejects request bodies over 100MB on the free plan, so a
+          # bigger report would fail at the edge with an opaque error. Skip
+          # loudly instead and let the artifact cover it.
+          if [ "$size" -gt 104857600 ]; then
+            echo "::warning::report is $((size / 1048576))MB, over the 100MB upload cap; skipping publish"
+            exit 0
+          fi
+
+          q="node=$(printf %s "$HSM_NODE" | jq -sRr @uri)"
+          q="$q&repo=$(printf %s "$REPO" | jq -sRr @uri)"
+          q="$q&pr=$(printf %s "$PR_NUMBER" | jq -sRr @uri)"
+          q="$q&branch=$(printf %s "$BRANCH" | jq -sRr @uri)"
+          q="$q&sha=$(printf %s "$SHA" | jq -sRr @uri)"
+          q="$q&run=$(printf %s "$RUN_URL" | jq -sRr @uri)"
+          q="$q&status=failed"
+
+          if ! resp=$(curl -sS --max-time 300 --fail-with-body \
+            -H "Authorization: Bearer $HSM_TOKEN" \
+            -H 'Content-Type: application/gzip' \
+            --data-binary @/tmp/playwright-report.tar.gz \
+            "${HSM_URL%/}/api/reports/ingest?$q"); then
+            echo "::warning::report publish failed: $resp"
+            exit 0
+          fi
+
+          url=$(printf %s "$resp" | jq -r '.url // empty')
+          if [ -n "$url" ]; then
+            # Read by the PR-comment step below.
+            echo "REPORT_URL=$url" >> "$GITHUB_ENV"
+            echo "[View the Playwright report]($url)" >> "$GITHUB_STEP_SUMMARY"
+            echo "published: $url"
+          fi
+
       - name: Report E2E result on the PR
         if: always()
         env:
@@ -440,8 +514,15 @@ jobs:
               "E2E verification passed on the reviewed branch (review verdict: \`$VERDICT\`). [Run]($RUN_URL)"
           else
             gh pr edit "$PR_NUMBER" --add-label "e2e:failed" >/dev/null 2>&1 || true
+            # REPORT_URL is set by the publish step above, and only when the
+            # upload actually succeeded — so the hosted link never appears
+            # unless it works. The artifacts are always mentioned.
+            hosted=""
+            if [ -n "${REPORT_URL:-}" ]; then
+              hosted=" **[View the report]($REPORT_URL)** (hosted — videos playable in the browser)."
+            fi
             gh pr comment "$PR_NUMBER" --body \
-              "E2E verification **failed** after the review (verdict was \`$VERDICT\`). The Playwright report and API log are attached to the run as artifacts. [Run]($RUN_URL)"
+              "E2E verification **failed** after the review (verdict was \`$VERDICT\`).$hosted The Playwright report and API log are also attached to the run as artifacts. [Run]($RUN_URL)"
           fi
 
       - name: Upload Playwright report
