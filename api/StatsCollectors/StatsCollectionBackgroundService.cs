@@ -217,10 +217,11 @@ public sealed class StatsCollectionBackgroundService(
         logger.LogInformation("Stats collection service stopping");
         _timer?.Change(Timeout.Infinite, 0);
 
+        await _stoppingCts.CancelAsync();
+
         Task inFlight;
         lock (_cycleGate)
         {
-            _stoppingCts.Cancel();
             inFlight = _inFlight;
         }
 
@@ -242,8 +243,8 @@ public sealed class StatsCollectionBackgroundService(
     }
 
     private bool IsHostShutdown(Exception ex) =>
-        ex is ObjectDisposedException
-        || (ex is OperationCanceledException && _stoppingCts.IsCancellationRequested);
+        _stoppingCts.IsCancellationRequested
+        && ex is ObjectDisposedException or OperationCanceledException;
 
     private static async Task UpsertServerOnlineCountsAsync(
         PlayerTrackerDbContext dbContext,
