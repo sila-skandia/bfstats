@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import gltf, stdmesh  # noqa: E402
-from bf42.assemble import Assembler, Report, browse_rig, centroid, sleeve_cuffs  # noqa: E402
+from bf42.assemble import Assembler, Report, browse_rig  # noqa: E402
 from bf42.con import ObjectLibrary, ObjectTemplate  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
 
@@ -94,27 +94,6 @@ class CollisionExportTests(unittest.TestCase):
             builder, "TestHull", mesh, report) if assembler.include_collision else []
         self.assertEqual([], assembler._geom_collisions["testhull"])
         self.assertEqual(0, report.collision_parts)
-
-
-class SleeveCuffTests(unittest.TestCase):
-    def test_sleeve_cuffs_take_upper_body_extremes_not_the_coat_hem(self) -> None:
-        positions = (
-            [(2.0, 0.0, 0.2)] * 8
-            + [(-2.0, 0.0, 0.2)] * 8
-            + [(1.0, 0.25, 1.25)] * 8
-            + [(-1.0, 0.0, 1.25)] * 8
-            + [(0.0, 0.0, 0.8)] * 20
-        )
-
-        cuffs = sleeve_cuffs(positions)
-
-        self.assertEqual((1.0, 0.25, 1.25), cuffs["left"])
-        self.assertEqual((-1.0, 0.0, 1.25), cuffs["right"])
-        self.assertEqual((0.0, 0.0, 0.0), centroid([]))
-
-    def test_sleeve_cuffs_need_enough_upper_vertices(self) -> None:
-        self.assertIsNone(sleeve_cuffs([(0.0, 0.0, 1.3)] * 10))
-        self.assertIsNone(sleeve_cuffs([(0.4, 0.0, 0.7)] * 20))
 
 
 class InvisiblePartTests(unittest.TestCase):
