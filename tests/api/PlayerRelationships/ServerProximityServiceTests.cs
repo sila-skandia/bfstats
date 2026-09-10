@@ -1,3 +1,4 @@
+using System.Globalization;
 using api.Data.Entities;
 using api.PlayerRelationships;
 using api.PlayerRelationships.Models;
@@ -74,20 +75,21 @@ public sealed class ServerProximityServiceTests : IDisposable
         });
     }
 
-    private void AddWeeklyStats(string player, string serverGuid, int rounds, int week = 35)
+    private void AddWeeklyStats(string player, string serverGuid, int rounds, int? year = null, int? week = null)
     {
+        var now = DateTime.UtcNow;
         dbContext.PlayerServerStats.Add(new PlayerServerStats
         {
             PlayerName = player,
             ServerGuid = serverGuid,
-            Year = 2026,
-            Week = week,
+            Year = year ?? ISOWeek.GetYear(now),
+            Week = week ?? ISOWeek.GetWeekOfYear(now),
             TotalRounds = rounds,
             TotalKills = rounds * 4,
             TotalDeaths = rounds * 2,
             TotalScore = rounds * 10,
             TotalPlayTimeMinutes = rounds * 15,
-            UpdatedAt = Instant.FromUtc(2026, 9, 1, 0, 0)
+            UpdatedAt = Instant.FromUtc(now.Year, now.Month, Math.Min(now.Day, 28), 0, 0)
         });
     }
 
@@ -95,7 +97,7 @@ public sealed class ServerProximityServiceTests : IDisposable
     public async Task GetAsync_RanksByWeeklyRounds_AndIgnoresOneOffSessions()
     {
         const string server = "simple";
-        var monday = new DateTime(2026, 8, 31, 14, 0, 0, DateTimeKind.Utc);
+        var monday = DateTime.UtcNow.AddHours(-18);
 
         AddWeeklyStats("Regular", server, rounds: 40);
         AddWeeklyStats("Visitor", server, rounds: 2);
@@ -127,7 +129,7 @@ public sealed class ServerProximityServiceTests : IDisposable
     public async Task GetAsync_FiltersByAveragePingWindow()
     {
         const string server = "simple";
-        var start = new DateTime(2026, 8, 31, 10, 0, 0, DateTimeKind.Utc);
+        var start = DateTime.UtcNow.AddHours(-10);
 
         AddWeeklyStats("Close", server, 10);
         AddWeeklyStats("Far", server, 10);
@@ -154,7 +156,7 @@ public sealed class ServerProximityServiceTests : IDisposable
     public async Task GetAsync_ComputesPeakHourFromNamedSessions()
     {
         const string server = "simple";
-        var day = new DateTime(2026, 8, 31, 0, 0, 0, DateTimeKind.Utc);
+        var day = DateTime.UtcNow.Date.AddDays(-2);
 
         AddWeeklyStats("NightOwl", server, 5);
         AddSession("NightOwl", server, day.AddHours(3), ping: 50);
@@ -173,7 +175,7 @@ public sealed class ServerProximityServiceTests : IDisposable
     public async Task GetAsync_SkipsDeletedAndNullPingSessions()
     {
         const string server = "simple";
-        var start = new DateTime(2026, 8, 31, 12, 0, 0, DateTimeKind.Utc);
+        var start = DateTime.UtcNow.AddHours(-8);
 
         AddWeeklyStats("OnlyLive", server, 4);
         AddSession("OnlyLive", server, start, ping: 60);
@@ -192,7 +194,7 @@ public sealed class ServerProximityServiceTests : IDisposable
     public async Task GetAsync_FallsBackToSessions_WhenWeeklyStatsAreEmpty()
     {
         const string server = "brand-new";
-        var start = new DateTime(2026, 8, 31, 16, 0, 0, DateTimeKind.Utc);
+        var start = DateTime.UtcNow.AddHours(-6);
 
         AddSession("Pioneer", server, start, ping: 25);
         AddSession("Pioneer", server, start.AddHours(1), ping: 35);
@@ -210,7 +212,7 @@ public sealed class ServerProximityServiceTests : IDisposable
     public async Task GetAsync_RespectsLimit()
     {
         const string server = "simple";
-        var start = new DateTime(2026, 8, 31, 9, 0, 0, DateTimeKind.Utc);
+        var start = DateTime.UtcNow.AddHours(-9);
 
         for (var i = 0; i < 6; i++)
         {
@@ -226,6 +228,50 @@ public sealed class ServerProximityServiceTests : IDisposable
         Assert.Equal(6, result.TotalRegulars);
         Assert.Equal(3, result.Players.Count);
         Assert.Equal(["P0", "P1", "P2"], result.Players.Select(p => p.PlayerName).ToList());
+    }
+
+    [Fact]
+    public async Task GetAsync_IgnoresSessionsOlderThanLookback()
+    {
+        const string server = "simple";
+        var recent = DateTime.UtcNow.AddDays(-2);
+        var stale = DateTime.UtcNow.AddDays(-(ServerProximityService.SessionLookbackDays + 10));
+
+        AddWeeklyStats("Regular", server, 20);
+        AddSession("Regular", server, recent, ping: 40);
+        AddSession("Regular", server, recent.AddHours(1), ping: 50);
+        for (var i = 0; i < 20; i++)
+            AddSession("Regular", server, stale.AddHours(i), ping: 200);
+
+        await dbContext.SaveChangesAsync();
+
+        var result = await service.GetAsync(server, 0, 250, 10);
+        Assert.Single(result.Players);
+        Assert.Equal(2, result.Players[0].SessionCount);
+        Assert.Equal(45, result.Players[0].AvgPing, 1);
+    }
+
+    [Fact]
+    public async Task GetAsync_RanksByRecentWeeksOnly()
+    {
+        const string server = "simple";
+        var recent = DateTime.UtcNow.AddHours(-4);
+        var cutoff = DateTime.UtcNow.AddDays(-7 * (ServerProximityService.CandidateLookbackWeeks + 4));
+
+        AddWeeklyStats("Current", server, 8);
+        AddWeeklyStats("Retired", server, 400, year: ISOWeek.GetYear(cutoff), week: ISOWeek.GetWeekOfYear(cutoff));
+
+        AddSession("Current", server, recent, ping: 30);
+        AddSession("Current", server, recent.AddHours(1), ping: 40);
+        AddSession("Retired", server, recent, ping: 20);
+        AddSession("Retired", server, recent.AddHours(1), ping: 25);
+
+        await dbContext.SaveChangesAsync();
+
+        var result = await service.GetAsync(server, 0, 250, 10);
+        Assert.Single(result.Players);
+        Assert.Equal("Current", result.Players[0].PlayerName);
+        Assert.DoesNotContain(result.Players, p => p.PlayerName == "Retired");
     }
 
     [Fact]

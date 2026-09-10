@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using api.PlayerRelationships.Models;
@@ -24,6 +25,20 @@ public class ServerProximityService(
     /// </summary>
     internal const int MaxRegularCandidates = 200;
 
+    /// <summary>
+    /// All-time session history on a busy server is tens of thousands of
+    /// random page fetches on the volume. Peak hour and average ping only
+    /// need recent play. Aligns with IX_PlayerSessions_PlayerName_LastSeenTime.
+    /// </summary>
+    internal const int SessionLookbackDays = 28;
+
+    /// <summary>
+    /// Rank regulars from recent ISO weeks only. All-time SUM pulls veterans
+    /// who have not played in years, then the session query still has to
+    /// prove they have no recent rows.
+    /// </summary>
+    internal const int CandidateLookbackWeeks = 8;
+
     private const string SessionCte = """
         WITH sessions AS (
             SELECT
@@ -34,6 +49,7 @@ public class ServerProximityService(
             FROM PlayerSessions
             WHERE ServerGuid = @serverGuid
               AND IsDeleted = 0
+              AND LastSeenTime >= @since
               AND AveragePing IS NOT NULL
               AND AveragePing > 0
               AND AveragePing <= @maxPing
@@ -102,9 +118,13 @@ public class ServerProximityService(
         }
 
         var candidateCap = Math.Min(MaxRegularCandidates, Math.Max(limit * 4, limit));
+        var cutoff = DateTime.UtcNow.AddDays(-7 * CandidateLookbackWeeks);
+        var cutoffYear = ISOWeek.GetYear(cutoff);
+        var cutoffWeek = ISOWeek.GetWeekOfYear(cutoff);
         var candidateNames = await dbContext.PlayerServerStats
             .AsNoTracking()
-            .Where(s => s.ServerGuid == serverGuid)
+            .Where(s => s.ServerGuid == serverGuid
+                        && (s.Year > cutoffYear || (s.Year == cutoffYear && s.Week >= cutoffWeek)))
             .GroupBy(s => s.PlayerName)
             .Select(g => new { PlayerName = g.Key, Rounds = g.Sum(x => x.TotalRounds) })
             .OrderByDescending(x => x.Rounds)
@@ -124,11 +144,12 @@ public class ServerProximityService(
 
     /// <summary>
     /// Ping, peak hour and last-played still live on PlayerSessions. Restricting
-    /// to named regulars lets the planner use PlayerName+ServerGuid instead of
-    /// walking every session on a busy server. <paramref name="playerNames"/> is
-    /// bound as individual parameters (bounded by <see cref="MaxRegularCandidates"/>,
-    /// well under SQLite's variable limit) rather than a temp table, so this is a
-    /// single round trip either way.
+    /// to named regulars plus <see cref="SessionLookbackDays"/> lets the planner
+    /// use PlayerName+LastSeenTime instead of walking every historical session
+    /// on a busy server. <paramref name="playerNames"/> is bound as individual
+    /// parameters (bounded by <see cref="MaxRegularCandidates"/>, well under
+    /// SQLite's variable limit) rather than a temp table, so this is a single
+    /// round trip either way.
     /// </summary>
     private async Task<(List<ServerProximityEntry> Players, int TotalRegulars)> LoadFromSessionsAsync(
         string serverGuid,
@@ -152,6 +173,7 @@ public class ServerProximityService(
             cmd.Parameters.Add(new SqliteParameter("@minPing", minPing));
             cmd.Parameters.Add(new SqliteParameter("@maxPing", maxPing));
             cmd.Parameters.Add(new SqliteParameter("@limit", limit));
+            cmd.Parameters.Add(new SqliteParameter("@since", DateTime.UtcNow.AddDays(-SessionLookbackDays)));
 
             // CA2100/CA3001 flag these two assignments because the statement is
             // composed with string.Format. The only interpolated text is the
@@ -173,6 +195,7 @@ public class ServerProximityService(
             }
 #pragma warning restore CA2100, CA3001
 
+            var queryTimer = Stopwatch.StartNew();
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -184,6 +207,11 @@ public class ServerProximityService(
                     LastPlayed: DateTime.SpecifyKind(reader.GetDateTime(4), DateTimeKind.Utc)));
                 totalRegulars = reader.GetInt32(5);
             }
+
+            queryTimer.Stop();
+            logger.LogInformation(
+                "Proximity sessions query for {ServerGuid} considered {CandidateCount} names in {ElapsedMs}ms and returned {PlayerCount}",
+                serverGuid, playerNames.Count, queryTimer.ElapsedMilliseconds, players.Count);
         }
         finally
         {
