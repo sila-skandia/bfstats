@@ -79,7 +79,8 @@ public class MapDossierService(
         if (dossier is null)
             return null;
 
-        var searchPath = resolver.SearchPath(gameId);
+        var hostMod = Path.GetDirectoryName(relativePath) ?? gameId;
+        var searchPath = resolver.SearchPath(hostMod);
         return dossier with
         {
             Arsenal = ResolveArsenal(dossier.Arsenal, searchPath),

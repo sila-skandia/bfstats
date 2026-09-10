@@ -38,6 +38,8 @@ const LeaderboardV4 = () => import('../views/v4/LeaderboardV4.vue')
 const ArcadeV4 = () => import('../views/v4/ArcadeV4.vue')
 const ServerWrappedV4 = () => import('../views/v4/ServerWrappedV4.vue')
 const PlayerWrappedV4 = () => import('../views/v4/PlayerWrappedV4.vue')
+const TermsV4 = () => import('../views/v4/TermsV4.vue')
+const PrivacyV4 = () => import('../views/v4/PrivacyV4.vue')
 
 // Wrapped URLs carry the year as a path segment (`.../wrapped/2026`). The
 // year-less form redirects here so `/wrapped` always resolves to "this year".
@@ -79,6 +81,13 @@ const routes: RouteRecordRaw[] = [
     },
     { path: '/players', redirect: '/v4/players' },
     { path: '/leaderboard', redirect: '/v4/leaderboard' },
+    {
+      path: '/maps/:mapName',
+      redirect: to => ({
+        path: `/v4/maps/${encodeURIComponent(String(to.params.mapName))}`,
+        query: to.query,
+      }),
+    },
     { path: '/arcade', redirect: '/v4/arcade' },
     { path: '/trivia', redirect: '/v4/arcade' },
     { path: '/players/compare', redirect: to => ({ path: '/v4/players/compare', query: to.query }) },
@@ -115,7 +124,13 @@ const routes: RouteRecordRaw[] = [
     { path: '/explore/servers/:serverGuid', redirect: '/v4/servers/bf1942' },
     { path: '/explore/servers/:serverGuid/maps/:mapName', redirect: '/v4/servers/bf1942' },
     { path: '/explore/maps', redirect: '/v4/servers/bf1942' },
-    { path: '/explore/maps/:mapName', redirect: '/v4/servers/bf1942' },
+    {
+      path: '/explore/maps/:mapName',
+      redirect: to => ({
+        path: `/v4/maps/${encodeURIComponent(String(to.params.mapName))}`,
+        query: to.query,
+      }),
+    },
     { path: '/explore/players', redirect: '/v4/players' },
     {
       path: '/explore/players/:playerName',
@@ -258,7 +273,7 @@ const routes: RouteRecordRaw[] = [
       path: '/v4',
       component: ModernShell,
       meta: {
-        title: 'bfstats.io · Battlefield 1942 stats',
+        title: 'Battlefield 1942 player and server stats',
         description: 'Live Battlefield 1942 server and player statistics.'
       },
       children: [
@@ -274,7 +289,7 @@ const routes: RouteRecordRaw[] = [
           component: LandingPageV4,
           props: true,
           meta: {
-            title: 'bfstats.io | Battlefield 1942 player and server stats',
+            title: 'Battlefield 1942 player and server stats',
             description: 'Live Battlefield 1942 server list and player counts.'
           }
         },
@@ -326,6 +341,16 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: (route: RouteLocationNormalized) => `${route.params.mapName} · ${decodePlayerName(String(route.params.playerName))} · bfstats.io`,
             description: 'Rankings on a single map for this player.'
+          }
+        },
+        {
+          path: 'maps/:mapName',
+          name: 'v4-map-detail',
+          component: PlayerMapDetailV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.mapName} · Leaderboard · bfstats.io`,
+            description: 'Global leaderboard and tactical intel for this combat sector.'
           }
         },
         {
@@ -600,6 +625,28 @@ const routes: RouteRecordRaw[] = [
         {
           path: 'admin/tournaments/:id/:tab',
           redirect: to => `/v4/manage/tournaments/${to.params.id}/${to.params.tab}`
+        },
+        // Legal pages keep short, stable, top-level URLs (absolute child paths)
+        // because they get pasted into third-party consoles — Discord's
+        // developer portal wants a Terms and a Privacy URL — and those
+        // registrations outlive any internal route reshuffle.
+        {
+          path: '/terms',
+          name: 'terms',
+          component: TermsV4,
+          meta: {
+            title: 'Terms of Service · bfstats.io',
+            description: 'The terms that apply to using bfstats.io.'
+          }
+        },
+        {
+          path: '/privacy',
+          name: 'privacy',
+          component: PrivacyV4,
+          meta: {
+            title: 'Privacy Policy · bfstats.io',
+            description: 'What data bfstats.io holds, why, and how to export or delete it.'
+          }
         }
       ]
     }
@@ -617,9 +664,9 @@ const router = createRouter({
   //  - everything else (different path) → top of page
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) return savedPosition
-    if (to.hash) return { el: to.hash, behavior: 'smooth' as ScrollBehavior }
+    if (to.hash) return { el: to.hash, behavior: 'smooth' as const }
     if (to.path === from.path) return false
-    return { top: 0, behavior: 'auto' as ScrollBehavior }
+    return { top: 0, behavior: 'auto' as const }
   },
 })
 

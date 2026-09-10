@@ -113,6 +113,24 @@ public sealed class MapImageResolverTests : IDisposable
         Assert.Null(resolver.Resolve("gcn_mario_kart", "wii drydry ruins", MapImageKind.Thumbnail));
     }
 
+    [Fact]
+    public void Falls_back_across_all_mods_when_requested_as_generic_bf1942()
+    {
+        // operation_coronet-1946 is only in fhsw, but caller asked for "bf1942"
+        Assert.Equal(Path.Combine("fhsw", "operation_coronet-1946.png"),
+            resolver.Resolve("bf1942", "operation_coronet-1946", MapImageKind.Thumbnail));
+    }
+
+    [Fact]
+    public void Falls_back_across_all_mods_when_mod_is_mismatched_or_rotated()
+    {
+        // Server rotated to xpack1 or bg42, but map is fhsw or vanilla wake
+        Assert.Equal(Path.Combine("fhsw", "operation_coronet-1946.png"),
+            resolver.Resolve("xpack1", "operation_coronet-1946", MapImageKind.Thumbnail));
+        Assert.Equal(Path.Combine("bf1942", "wake.png"),
+            resolver.Resolve("bg42", "wake", MapImageKind.Thumbnail));
+    }
+
     [Theory]
     [InlineData("", "wake")]
     [InlineData("bf1942", "")]
