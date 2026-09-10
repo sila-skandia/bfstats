@@ -79,10 +79,10 @@ const goPlayer = (otherName: string) => {
 </script>
 
 <template>
-  <section class="mm-panel mm-rivals">
-    <div class="mm-pbar">
-      <span class="mm-pbar__t"># Rivals & Battle Dossier</span>
-      <span class="mm-pbar__m">co-play & head-to-head encounter history</span>
+  <section class="mm-panel mm-panel--combat mm-rivals">
+    <div class="mm-pbar mm-pbar--combat">
+      <span class="mm-pbar__t"># Rivals</span>
+      <span class="mm-pbar__m">encounter history</span>
     </div>
 
     <div v-if="loading" class="mm-panel__body">
@@ -425,5 +425,26 @@ const goPlayer = (otherName: string) => {
 .mm-btn--xs {
   font-size: 9.5px;
   padding: 2px 7px;
+}
+
+/* Combat Dossier Panel Tier */
+.mm-panel--combat {
+  border-color: rgba(220, 38, 38, 0.3);
+  border-left: 3px solid rgba(220, 38, 38, 0.7);
+}
+
+.mm-pbar--combat {
+  background: #201313;
+  border-bottom: 1px solid rgba(220, 38, 38, 0.35);
+}
+
+.mm-pbar--combat .mm-pbar__t {
+  color: #f87171;
+  letter-spacing: 0.16em;
+}
+
+.mm-pbar--combat .mm-pbar__m {
+  color: #fca5a5;
+  opacity: 0.8;
 }
 </style>
