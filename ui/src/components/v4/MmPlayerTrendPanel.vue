@@ -373,7 +373,7 @@ const expandIcon = [
                 aria-label="Exit full screen"
                 @click="closeFullscreen"
               >
-                ✕ Exit (Esc)
+                Exit (Esc)
               </button>
             </div>
           </header>

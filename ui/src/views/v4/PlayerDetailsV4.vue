@@ -13,7 +13,6 @@ import type {
 } from '@/types/playerStatsTypes'
 import { decodePlayerName } from '@/utils/playerName'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
-import MmBars from '@/components/v4/MmBars.vue'
 import MmPlayerTrendPanel from '@/components/v4/MmPlayerTrendPanel.vue'
 import MmPlayerComments from '@/components/v4/MmPlayerComments.vue'
 import MmPlayerSignatureBuilder from '@/components/v4/MmPlayerSignatureBuilder.vue'
@@ -21,15 +20,15 @@ import MmCommunityCard from '@/components/v4/MmCommunityCard.vue'
 import MmPlayerActivityHeatmap from '@/components/v4/MmPlayerActivityHeatmap.vue'
 import MmPlayerMapPreference from '@/components/v4/MmPlayerMapPreference.vue'
 import MmPlayerAchievementHeroBadges from '@/components/v4/MmPlayerAchievementHeroBadges.vue'
-import MmPlayerRecentRoundsCompact from '@/components/v4/MmPlayerRecentRoundsCompact.vue'
 import MmPlayerAchievementSummary from '@/components/v4/MmPlayerAchievementSummary.vue'
 import MmPlayerServerMapStats from '@/components/v4/MmPlayerServerMapStats.vue'
 import MmMapPerformanceRace from '@/components/v4/data-explorer/MmMapPerformanceRace.vue'
 import MmPlayerAllyOrbit from '@/components/v4/MmPlayerAllyOrbit.vue'
 import MmPlayerRivalsDossier from '@/components/v4/MmPlayerRivalsDossier.vue'
+import MmPlayerFormMathModal, { type FormInsight, type FormContributingSession } from '@/components/v4/MmPlayerFormMathModal.vue'
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { kdClass, streakClass } from './mmTokens'
-import { parseUtc, formatLocalTooltip, utcHourToLocalHour } from '@/utils/timeUtils'
+import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,6 +44,7 @@ const stats = ref<PlayerTimeStatistics | null>(null)
 const mapStats = ref<PlayerMapStatEntry[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const showFormMathModal = ref(false)
 
 const achievementGroups = ref<PlayerAchievementGroup[]>([])
 const achievementsLoading = ref(false)
@@ -173,6 +173,135 @@ const sessionsCount = computed(() => stats.value?.totalSessions ?? 0)
 
 const recentSessions = computed<Session[]>(() => stats.value?.recentSessions ?? [])
 
+const currentForm = computed<FormInsight | null>(() => {
+  if (!stats.value) return null
+  const lifetimeKd = kd.value
+  const lifetimeKills = totalKills.value
+  const lifetimeDeaths = totalDeaths.value
+  const sessions = recentSessions.value
+
+  const lastPlayedDate = stats.value.lastPlayed ? parseUtc(stats.value.lastPlayed) : null
+  const daysSincePlayed = lastPlayedDate && !isNaN(lastPlayedDate.getTime())
+    ? Math.max(0, (Date.now() - lastPlayedDate.getTime()) / (1000 * 60 * 60 * 24))
+    : 999
+
+  if (sessions.length === 0 || !stats.value.lastPlayed) {
+    return {
+      status: 'dormant',
+      badge: '[DORMANT]',
+      label: 'Inactive',
+      deltaPercent: 0,
+      recentKd: 0,
+      detail: 'no recent combat',
+      lifetimeKd,
+      lifetimeKills,
+      lifetimeDeaths,
+      sampleKills: 0,
+      sampleDeaths: 0,
+      sampleSize: 0,
+      daysSincePlayed,
+      contributingSessions: [],
+    }
+  }
+
+  if (daysSincePlayed > 30) {
+    return {
+      status: 'dormant',
+      badge: '[DORMANT]',
+      label: 'Dormant',
+      deltaPercent: 0,
+      recentKd: 0,
+      detail: `last seen ${Math.round(daysSincePlayed)}d ago`,
+      lifetimeKd,
+      lifetimeKills,
+      lifetimeDeaths,
+      sampleKills: 0,
+      sampleDeaths: 0,
+      sampleSize: 0,
+      daysSincePlayed,
+      contributingSessions: [],
+    }
+  }
+
+  const sample = sessions.slice(0, 10)
+  const sampleKills = sample.reduce((sum, s) => sum + (s.totalKills ?? 0), 0)
+  const sampleDeaths = sample.reduce((sum, s) => sum + (s.totalDeaths ?? 0), 0)
+
+  const contributingSessions: FormContributingSession[] = sample.map(s => {
+    const k = s.totalKills ?? 0
+    const d = s.totalDeaths ?? 0
+    const skd = d === 0 ? k : Number((k / d).toFixed(2))
+    const sDelta = lifetimeKd > 0 ? Math.round(((skd - lifetimeKd) / lifetimeKd) * 100) : 0
+    return {
+      sessionId: s.sessionId,
+      roundId: s.roundId,
+      date: s.startTime ? (parseUtc(s.startTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) : '—',
+      mapName: s.mapName || 'Unknown Map',
+      kills: k,
+      deaths: d,
+      kd: skd,
+      deltaPercent: sDelta,
+      teamResult: s.teamResult || 'unknown',
+    }
+  })
+
+  if (sampleKills === 0 && sampleDeaths === 0) {
+    return {
+      status: 'steady',
+      badge: '[STEADY]',
+      label: 'Steady',
+      deltaPercent: 0,
+      recentKd: lifetimeKd,
+      detail: 'nominal pacing',
+      lifetimeKd,
+      lifetimeKills,
+      lifetimeDeaths,
+      sampleKills,
+      sampleDeaths,
+      sampleSize: sample.length,
+      daysSincePlayed,
+      contributingSessions,
+    }
+  }
+
+  const recentKd = sampleDeaths === 0 ? sampleKills : Number((sampleKills / sampleDeaths).toFixed(2))
+  const deltaPercent = lifetimeKd > 0 ? Math.round(((recentKd - lifetimeKd) / lifetimeKd) * 100) : 0
+
+  let status: 'surge' | 'slump' | 'steady' = 'steady'
+  let badge = '[STEADY]'
+  let label = 'Steady'
+  let detail = `${deltaPercent >= 0 ? '+' : ''}${deltaPercent}% vs lifetime (${recentKd.toFixed(2)} recent)`
+
+  if (deltaPercent >= 15) {
+    status = 'surge'
+    badge = '[SURGE]'
+    label = 'Surging'
+    detail = `+${deltaPercent}% vs lifetime (${recentKd.toFixed(2)} recent)`
+  } else if (deltaPercent <= -15) {
+    status = 'slump'
+    badge = '[SLUMP]'
+    label = 'Cold Spell'
+    detail = `${deltaPercent}% vs lifetime (${recentKd.toFixed(2)} recent)`
+  }
+
+  return {
+    status,
+    badge,
+    label,
+    deltaPercent,
+    recentKd,
+    detail,
+    lifetimeKd,
+    lifetimeKills,
+    lifetimeDeaths,
+    sampleKills,
+    sampleDeaths,
+    sampleSize: sample.length,
+    daysSincePlayed,
+    contributingSessions,
+  }
+})
+
 const firstSeen = computed(() => stats.value?.firstPlayed ?? null)
 const firstSeenDate = computed(() => {
   if (!firstSeen.value) return '—'
@@ -270,30 +399,9 @@ const topMaps = computed<MapAgg[]>(() => {
     })
 })
 
-// ---------- richer overview data ----------
-
-// Activity rhythm — 24-hour bars. API delivers UTC-bucketed counts;
-// remap to viewer's local hour so the axis matches their wall clock.
-const activityHours = computed<number[]>(() => {
-  const a = stats.value?.insights?.activityByHour ?? []
-  if (a.length === 0) return []
-  const buckets = Array(24).fill(0)
-  for (const slot of a) {
-    if (typeof slot.hour === 'number' && slot.hour >= 0 && slot.hour < 24) {
-      const localHour = utcHourToLocalHour(slot.hour)
-      buckets[localHour] += slot.minutesActive ?? 0
-    }
-  }
-  return buckets
-})
-const peakHour = computed(() => {
-  const v = activityHours.value
-  if (v.length === 0) return null
-  const max = Math.max(...v)
-  if (max === 0) return null
-  const i = v.indexOf(max)
-  return { hour: i, minutes: max }
-})
+// Accolades subtab state (achievements | bestScores | rankings)
+type AccoladeSection = 'achievements' | 'bestScores' | 'rankings'
+const activeAccoladeTab = ref<AccoladeSection>('achievements')
 
 const kdTrend = computed(() => stats.value?.recentStats?.kdRatioTrend ?? [])
 const killRateTrend = computed(() => stats.value?.recentStats?.killRateTrend ?? [])
@@ -306,23 +414,24 @@ const allServerRankings = computed<ServerRanking[]>(() => {
 
 // Best scores — show top 3 for each window
 const bestScores = computed(() => stats.value?.bestScores ?? null)
-const hasAnyBestScores = computed(() => {
-  const b = bestScores.value
-  if (!b) return false
-  return (b.thisWeek?.length ?? 0) > 0 || (b.last30Days?.length ?? 0) > 0 || (b.allTime?.length ?? 0) > 0
-})
-
-// Best-score window picker. Mirrors the per-map tab/table pattern — a
-// tab row at the top, a sortable table beneath, each row pinned to a
-// gold/silver/bronze tint for the top three.
 type ScoreWindow = 'thisWeek' | 'last30Days' | 'allTime'
-const scoreWindows: { id: ScoreWindow; label: string }[] = [
-  { id: 'thisWeek', label: 'This week' },
-  { id: 'last30Days', label: 'Last 30 days' },
-  { id: 'allTime', label: 'All-time' },
-]
 const activeScoreWindow = ref<ScoreWindow>('thisWeek')
 const currentBestScores = computed<BestScoreEntry[]>(() => bestScores.value?.[activeScoreWindow.value] ?? [])
+
+const topThisWeekScore = computed<BestScoreEntry | null>(() => bestScores.value?.thisWeek?.[0] ?? null)
+const topLast30DaysScore = computed<BestScoreEntry | null>(() => bestScores.value?.last30Days?.[0] ?? null)
+const topAllTimeScore = computed<BestScoreEntry | null>(() => bestScores.value?.allTime?.[0] ?? null)
+
+// Highest most recent score (prioritizing thisWeek if available, else last30Days, else allTime)
+const highestRecentScore = computed<BestScoreEntry | null>(() => {
+  if (topThisWeekScore.value) return topThisWeekScore.value
+  if (topLast30DaysScore.value) return topLast30DaysScore.value
+  if (topAllTimeScore.value) return topAllTimeScore.value
+  return null
+})
+
+// Up to 10 latest rounds for the hero direct-link ribbon
+const heroSessions = computed(() => recentSessions.value.slice(0, 10))
 
 const scoreKd = (e: BestScoreEntry): number => {
   if (e.deaths === 0) return e.kills
@@ -421,10 +530,44 @@ const signatureServers = computed(() => {
 
           <h1 class="mm-display mm-player__name">{{ displayName }}</h1>
 
-          <div class="mm-meta-row mm-player__where">
+          <div v-if="!loading && isOnline && currentServer" class="mm-live-deployment">
+            <div class="mm-live-deployment__status">
+              <span class="mm-live-deployment__radar">
+                <span class="mm-live-deployment__ping" />
+                <span class="mm-live-deployment__core" />
+              </span>
+              <span class="mm-live-deployment__tag">Currently playing on ..</span>
+            </div>
+            <div class="mm-live-deployment__info">
+              <a
+                class="mm-live-deployment__server"
+                @click="goServer(currentServer.serverName)"
+              >
+                {{ $pn(currentServer.serverName) }}
+              </a>
+              <span v-if="currentServer.mapName" class="mm-live-deployment__map">
+                {{ currentServer.mapName }}
+              </span>
+              <span v-if="currentServer.gameId" class="mm-live-deployment__mode">
+                {{ currentServer.gameId.toUpperCase() }}
+              </span>
+              <span v-if="currentServer.sessionKills !== undefined" class="mm-live-deployment__stats">
+                Round: <span class="mm-num--kill">{{ currentServer.sessionKills }}</span> k / <span class="mm-num--death">{{ currentServer.sessionDeaths }}</span> d
+              </span>
+            </div>
+            <button
+              type="button"
+              class="mm-live-deployment__cta"
+              @click="goServer(currentServer.serverName)"
+            >
+              Server Intel & Join →
+            </button>
+          </div>
+
+          <div v-else class="mm-meta-row mm-player__where">
             <span v-if="loading" class="mm-skeleton" style="width: 260px; height: 1em; display: inline-block; vertical-align: middle" />
             <template v-else-if="currentServer">
-              currently on
+              last seen on
               <a
                 class="mm-meta-row__strong"
                 style="text-decoration: underline; text-underline-offset: 3px; cursor: pointer"
@@ -433,14 +576,62 @@ const signatureServers = computed(() => {
               <template v-if="currentServer.mapName">
                 <span class="mm-meta-row__sep">·</span><span>{{ currentServer.mapName }}</span>
               </template>
+              <span class="mm-meta-row__sep">·</span>
+              <span :title="stats?.lastPlayed ? formatLocalTooltip(stats.lastPlayed) : ''">{{ stats?.lastPlayed ? formatRelative(stats.lastPlayed) : '—' }}</span>
             </template>
             <template v-else>
               last seen <span class="mm-meta-row__strong" :title="stats?.lastPlayed ? formatLocalTooltip(stats.lastPlayed) : ''">{{ stats?.lastPlayed ? formatRelative(stats.lastPlayed) : '—' }}</span>
             </template>
           </div>
 
-          <div style="margin-top: 16px">
+          <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap">
             <MmPlayerAchievementHeroBadges :player-name="rawName" :total-count="achievementGroups.length" />
+
+            <!-- Latest Sessions L / W in Player Hero (direct to round report) -->
+            <div v-if="heroSessions.length > 0" class="mm-hero-sessions">
+              <span class="mm-hero-sessions__label">RECENT:</span>
+              <div class="mm-hero-sessions__squares">
+                <div
+                  v-for="s in heroSessions"
+                  :key="s.sessionId"
+                  class="mm-hero-match-wrap"
+                >
+                  <router-link
+                    :to="s.roundId ? { path: `/v4/rounds/${encodeURIComponent(s.roundId)}/report`, query: { players: rawName } } : '#'"
+                    class="mm-match-sq"
+                    :class="`mm-match-sq--${s.teamResult}`"
+                  >
+                    {{ s.teamResult === 'win' ? 'W' : s.teamResult === 'loss' ? 'L' : s.teamResult === 'tie' ? 'D' : '?' }}
+                  </router-link>
+
+                  <!-- Tactical hover tooltip -->
+                  <div class="mm-hero-tooltip" role="tooltip">
+                    <div class="mm-hero-tooltip__top">
+                      <span
+                        class="mm-hero-tooltip__tag"
+                        :class="`mm-hero-tooltip__tag--${s.teamResult}`"
+                      >
+                        {{ s.teamResult === 'win' ? '[VICTORY]' : s.teamResult === 'loss' ? '[DEFEAT]' : s.teamResult === 'tie' ? '[DRAW]' : '[ROUND]' }}
+                      </span>
+                      <span v-if="s.startTime" class="mm-hero-tooltip__time">
+                        {{ formatRelative(s.startTime) }}
+                      </span>
+                    </div>
+                    <div class="mm-hero-tooltip__map">{{ s.mapName || 'Unknown Map' }}</div>
+                    <div class="mm-hero-tooltip__meta">
+                      <span class="mm-num--kill">{{ s.totalKills }} k</span>
+                      <span class="mm-num__sep">/</span>
+                      <span class="mm-num--death">{{ s.totalDeaths }} d</span>
+                      <span class="mm-num__sep">·</span>
+                      <span :class="kdClass(s.totalDeaths === 0 ? s.totalKills : s.totalKills / s.totalDeaths)">
+                        {{ (s.totalDeaths === 0 ? s.totalKills : s.totalKills / s.totalDeaths).toFixed(2) }} K/D
+                      </span>
+                    </div>
+                    <div class="mm-hero-tooltip__hint">Click for round report [-&gt;]</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -502,6 +693,37 @@ const signatureServers = computed(() => {
             <div class="mm-stat__delta">{{ bestStreak ? `${bestStreak.count}× recorded` : 'no streaks logged' }}</div>
           </template>
         </div>
+        <div
+          class="mm-stats__cell mm-stats__cell--clickable"
+          tabindex="0"
+          role="button"
+          :aria-expanded="showFormMathModal"
+          aria-haspopup="dialog"
+          aria-label="Inspect Current Form Telemetry & Mathematics"
+          title="Click to view mathematical breakdown and telemetry formula"
+          @click="showFormMathModal = true"
+          @keydown.enter="showFormMathModal = true"
+          @keydown.space.prevent="showFormMathModal = true"
+        >
+          <div class="mm-stats__label-wrap">
+            <span class="mm-stats__label" style="margin-bottom: 0">Current form</span>
+            <span class="mm-stats__math-hint">Formula [-&gt;]</span>
+          </div>
+          <template v-if="loading">
+            <div class="mm-skeleton mm-skeleton--lg" style="width: 50%" />
+          </template>
+          <template v-else-if="currentForm">
+            <div class="mm-stat__value mm-form-badge" :class="`mm-form--${currentForm.status}`">
+              <span class="mm-form-dot" />
+              {{ currentForm.badge }}
+            </div>
+            <div class="mm-stat__delta">{{ currentForm.detail }}</div>
+          </template>
+          <template v-else>
+            <div class="mm-stat__value is-muted">—</div>
+            <div class="mm-stat__delta">no telemetry</div>
+          </template>
+        </div>
       </div>
 
       <!-- tabs -->
@@ -518,36 +740,10 @@ const signatureServers = computed(() => {
 
       <!-- ===================== OVERVIEW ===================== -->
       <div v-if="activeTab === 'overview'" style="margin-top: 22px">
-        <!-- main grid: sessions | charts | achievements + rankings -->
-        <div class="mm-dash-grid" style="grid-template-columns: 1.5fr 0.85fr 1fr">
-          <section class="mm-panel">
-            <div class="mm-pbar">
-              <span class="mm-pbar__t"># Latest sessions</span>
-              <span class="mm-pbar__m">tap for full debrief</span>
-            </div>
-            <div class="mm-panel__body">
-              <template v-if="loading">
-                <div v-for="i in 5" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
-              </template>
-              <MmPlayerRecentRoundsCompact v-else :sessions="recentSessions" :player-name="rawName" />
-            </div>
-          </section>
-
+        <!-- main 2-column grid: trends | accolades (achievements, best scores, rankings) -->
+        <div class="mm-dash-grid" style="grid-template-columns: 1.15fr 1fr">
+          <!-- Column 1: Performance trends -->
           <div class="mm-dash-col">
-            <section class="mm-panel"><div class="mm-panel__body">
-              <span class="mm-eyebrow mm-eyebrow--strong">Activity rhythm</span>
-              <div class="mm-card__hint">your local hours · last 30d</div>
-              <div v-if="activityHours.length > 0" style="margin-top: 10px">
-                <MmBars :values="activityHours" :labels="['00', '06', '12', '18', '23']" :height="56" />
-              </div>
-              <div v-else-if="loading" class="mm-skeleton" style="margin-top: 10px; height: 56px" />
-              <div v-else class="mm-card__empty">No activity recorded.</div>
-              <div v-if="peakHour" class="mm-card__foot">
-                Peak around <span class="mm-meta-row__strong">{{ String(peakHour.hour).padStart(2, '0') }}:00</span>
-                · {{ formatDuration(peakHour.minutes) }}
-              </div>
-            </div></section>
-
             <MmPlayerTrendPanel
               :kd-trend="kdTrend"
               :kill-rate-trend="killRateTrend"
@@ -557,101 +753,162 @@ const signatureServers = computed(() => {
             />
           </div>
 
+          <!-- Column 2: Accolades (Achievements, Best Scores, Server Rankings) -->
           <div class="mm-dash-col">
-            <section class="mm-panel">
-              <div class="mm-pbar"><span class="mm-pbar__t"># Recent achievements</span></div>
-              <div class="mm-panel__body">
-                <div v-if="achievementsLoading" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px">
-                  <div v-for="i in 4" :key="i" class="mm-skeleton mm-skeleton--lg" />
-                </div>
-                <div v-else-if="achievementsError" class="mm-empty" style="border: 0; padding: 12px 0">{{ achievementsError }}</div>
-                <div v-else-if="achievementsForGrid.length === 0" class="mm-empty" style="border: 0; padding: 12px 0">No achievements yet.</div>
-                <div v-else class="mm-ach-mini">
-                  <div v-for="g in achievementsForGrid.slice(0, 6)" :key="g.achievementId" class="mm-ach-mini__item">
-                    <img
-                      :src="getAchievementImage(g.achievementId, g.tier)"
-                      :alt="friendlyAchievementName(g)"
-                      loading="lazy"
-                      class="mm-ach-mini__img"
-                    />
-                    <span class="mm-ach-mini__label">{{ friendlyAchievementName(g) }}</span>
-                  </div>
-                </div>
-                <button
-                  v-if="achievementsForGrid.length > 6"
-                  type="button"
-                  class="mm-btn"
-                  style="margin-top: 14px"
-                  @click="activeTab = 'achievements'"
-                >View all →</button>
+            <section class="mm-panel mm-panel--trophy">
+              <div class="mm-pbar mm-pbar--trophy">
+                <span class="mm-pbar__t"># Accolades</span>
+                <span class="mm-pbar__m">records &amp; rankings</span>
               </div>
-            </section>
-
-            <section class="mm-panel">
-              <div class="mm-pbar"><span class="mm-pbar__t"># Server rankings</span></div>
-              <div style="padding: 4px 6px 6px">
-                <div
-                  v-for="r in allServerRankings"
-                  :key="r.serverGuid"
-                  class="mm-rrow mm-srank"
-                  @click="goServer(r.serverName)"
-                >
-                  <span class="mm-srank__rank">#{{ r.rank }}</span>
-                  <span class="mm-srank__body">
-                    <span class="mm-srank__name">{{ truncate($pn(r.serverName), 30) }}</span>
-                    <span class="mm-srank__sub">of {{ formatNumber(r.totalRankedPlayers) }} players</span>
-                  </span>
-                  <span class="mm-srank__ping">{{ r.averagePing }}ms</span>
+              <div style="padding: 10px 12px 12px">
+                <!-- Color-coded Accolade Tabs -->
+                <div class="mm-accolade-tabs">
+                  <button
+                    type="button"
+                    class="mm-accolade-tab mm-accolade-tab--achievements"
+                    :class="{ 'mm-accolade-tab--active': activeAccoladeTab === 'achievements' }"
+                    @click="activeAccoladeTab = 'achievements'"
+                  >
+                    Achievements
+                    <span v-if="achievementsForGrid.length" class="mm-accolade-badge">
+                      {{ achievementsForGrid.length }}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="mm-accolade-tab mm-accolade-tab--scores"
+                    :class="{ 'mm-accolade-tab--active': activeAccoladeTab === 'bestScores' }"
+                    @click="activeAccoladeTab = 'bestScores'"
+                  >
+                    Best scores
+                    <span v-if="highestRecentScore" class="mm-accolade-badge mm-accolade-badge--cyan">
+                      {{ highestRecentScore.score }}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="mm-accolade-tab mm-accolade-tab--rankings"
+                    :class="{ 'mm-accolade-tab--active': activeAccoladeTab === 'rankings' }"
+                    @click="activeAccoladeTab = 'rankings'"
+                  >
+                    Rankings
+                    <span v-if="allServerRankings.length" class="mm-accolade-badge mm-accolade-badge--violet">
+                      {{ allServerRankings.length }}
+                    </span>
+                  </button>
                 </div>
-                <div v-if="allServerRankings.length === 0" class="mm-empty" style="border: 0; padding: 12px">No server rankings yet.</div>
+
+                <!-- 1. Achievements view -->
+                <div v-if="activeAccoladeTab === 'achievements'">
+                  <div v-if="achievementsLoading" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px">
+                    <div v-for="i in 4" :key="i" class="mm-skeleton mm-skeleton--lg" />
+                  </div>
+                  <div v-else-if="achievementsError" class="mm-empty" style="border: 0; padding: 12px 0">{{ achievementsError }}</div>
+                  <div v-else-if="achievementsForGrid.length === 0" class="mm-empty" style="border: 0; padding: 12px 0">No achievements yet.</div>
+                  <div v-else class="mm-ach-mini">
+                    <div v-for="g in achievementsForGrid.slice(0, 6)" :key="g.achievementId" class="mm-ach-mini__item">
+                      <img
+                        :src="getAchievementImage(g.achievementId, g.tier)"
+                        :alt="friendlyAchievementName(g)"
+                        loading="lazy"
+                        class="mm-ach-mini__img"
+                      />
+                      <span class="mm-ach-mini__label">{{ friendlyAchievementName(g) }}</span>
+                    </div>
+                  </div>
+                  <button
+                    v-if="achievementsForGrid.length > 6"
+                    type="button"
+                    class="mm-btn"
+                    style="margin-top: 14px"
+                    @click="activeTab = 'achievements'"
+                  >View all →</button>
+                </div>
+
+                <!-- 2. Best scores view -->
+                <div v-else-if="activeAccoladeTab === 'bestScores'">
+                  <!-- 3 Time-Horizon Window Buttons -->
+                  <div class="mm-score-windows">
+                    <button
+                      type="button"
+                      class="mm-score-win-btn"
+                      :class="{ 'mm-score-win-btn--active': activeScoreWindow === 'thisWeek' }"
+                      @click="activeScoreWindow = 'thisWeek'"
+                    >
+                      <span class="mm-score-win-btn__title">This week</span>
+                      <span class="mm-score-win-btn__score">{{ topThisWeekScore ? topThisWeekScore.score : '—' }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="mm-score-win-btn"
+                      :class="{ 'mm-score-win-btn--active': activeScoreWindow === 'last30Days' }"
+                      @click="activeScoreWindow = 'last30Days'"
+                    >
+                      <span class="mm-score-win-btn__title">Last 30d</span>
+                      <span class="mm-score-win-btn__score">{{ topLast30DaysScore ? topLast30DaysScore.score : '—' }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="mm-score-win-btn"
+                      :class="{ 'mm-score-win-btn--active': activeScoreWindow === 'allTime' }"
+                      @click="activeScoreWindow = 'allTime'"
+                    >
+                      <span class="mm-score-win-btn__title">All-time</span>
+                      <span class="mm-score-win-btn__score">{{ topAllTimeScore ? topAllTimeScore.score : '—' }}</span>
+                    </button>
+                  </div>
+
+                  <!-- Best scores list for active window -->
+                  <div v-if="currentBestScores.length > 0" class="mm-bestrail">
+                    <div
+                      v-for="(s, i) in currentBestScores"
+                      :key="`bsc-${s.roundId}-${i}`"
+                      class="mm-rrow mm-bestrail__row"
+                      :class="rankTintClass(i)"
+                      @click="openScoreRound(s)"
+                    >
+                      <span class="mm-bestrail__idx">{{ rankNum(i) }}</span>
+                      <span class="mm-bestrail__score">{{ formatNumber(s.score) }}</span>
+                      <span class="mm-bestrail__body">
+                        <span class="mm-bestrail__map">{{ s.mapName }}</span>
+                        <span class="mm-bestrail__server">{{ truncate($pn(s.serverName), 28) }}</span>
+                      </span>
+                      <span class="mm-bestrail__stats">
+                        <span class="mm-num--kill">{{ s.kills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.deaths }}</span>
+                        · <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div v-else class="mm-empty" style="border: 0; padding: 20px 0">No scores in this window yet.</div>
+                </div>
+
+                <!-- 3. Server rankings view -->
+                <div v-else-if="activeAccoladeTab === 'rankings'">
+                  <div v-if="allServerRankings.length > 0" style="padding: 2px 0">
+                    <div
+                      v-for="r in allServerRankings"
+                      :key="r.serverGuid"
+                      class="mm-rrow mm-srank"
+                      @click="goServer(r.serverName)"
+                    >
+                      <span class="mm-srank__rank">#{{ r.rank }}</span>
+                      <span class="mm-srank__body">
+                        <span class="mm-srank__name">{{ truncate($pn(r.serverName), 28) }}</span>
+                        <span class="mm-srank__sub">of {{ formatNumber(r.totalRankedPlayers) }} players</span>
+                      </span>
+                      <span class="mm-srank__ping">{{ r.averagePing }}ms</span>
+                    </div>
+                  </div>
+                  <div v-else class="mm-empty" style="border: 0; padding: 20px 0">No server rankings yet.</div>
+                </div>
               </div>
             </section>
           </div>
         </div>
 
-        <!-- weekly heatmap + best scores -->
-        <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1.3fr 1fr; margin-top: 20px">
+        <!-- weekly activity rhythm heatmap -->
+        <div style="margin-top: 20px">
           <MmPlayerActivityHeatmap :player-name="rawName" :game="primaryGameId" />
-
-          <section v-if="hasAnyBestScores" class="mm-panel">
-            <div class="mm-pbar">
-              <span class="mm-pbar__t"># Best scores</span>
-              <span class="mm-pbar__m">your local time</span>
-            </div>
-            <div style="padding: 12px 14px 6px">
-              <div class="mm-subtabs" style="margin-bottom: 10px">
-                <button
-                  v-for="w in scoreWindows"
-                  :key="w.id"
-                  type="button"
-                  class="mm-subtab"
-                  :class="{ 'mm-subtab--active': activeScoreWindow === w.id }"
-                  @click="activeScoreWindow = w.id"
-                >{{ w.label }}</button>
-              </div>
-              <div v-if="currentBestScores.length > 0" class="mm-bestrail">
-                <div
-                  v-for="(s, i) in currentBestScores"
-                  :key="`bsc-${s.roundId}-${i}`"
-                  class="mm-rrow mm-bestrail__row"
-                  :class="rankTintClass(i)"
-                  @click="openScoreRound(s)"
-                >
-                  <span class="mm-bestrail__idx">{{ rankNum(i) }}</span>
-                  <span class="mm-bestrail__score">{{ formatNumber(s.score) }}</span>
-                  <span class="mm-bestrail__body">
-                    <span class="mm-bestrail__map">{{ s.mapName }}</span>
-                    <span class="mm-bestrail__server">{{ truncate($pn(s.serverName), 32) }}</span>
-                  </span>
-                  <span class="mm-bestrail__stats">
-                    <span class="mm-num--kill">{{ s.kills }}</span><span class="mm-num__sep">/</span><span class="mm-num--death">{{ s.deaths }}</span>
-                    · <span :class="kdClass(scoreKd(s))">{{ scoreKd(s).toFixed(2) }}</span>
-                  </span>
-                </div>
-              </div>
-              <div v-else class="mm-empty" style="border: 0; padding: 24px 0">No scores in this window yet.</div>
-            </div>
-          </section>
         </div>
 
         <!-- per-map statistics -->
@@ -670,8 +927,8 @@ const signatureServers = computed(() => {
         </div>
 
         <!-- ally proximity orbit -->
-        <section class="mm-panel" style="margin-top: 24px">
-          <div class="mm-pbar">
+        <section class="mm-panel mm-panel--social" style="margin-top: 24px">
+          <div class="mm-pbar mm-pbar--social">
             <span class="mm-pbar__t"># Ally proximity orbit</span>
             <span class="mm-pbar__m">{{ displayName }}</span>
           </div>
@@ -953,6 +1210,13 @@ const signatureServers = computed(() => {
       <div style="margin-top: 24px">
         <MmPlayerComments :player-name="rawName" />
       </div>
+
+      <!-- Current Form Mathematics & Telemetry Modal -->
+      <MmPlayerFormMathModal
+        v-model="showFormMathModal"
+        :player-name="displayName"
+        :form="currentForm"
+      />
     </template>
   </div>
 </template>
@@ -1016,8 +1280,12 @@ const signatureServers = computed(() => {
     flex-direction: column;
     gap: 16px;
   }
+  .mm-player-hero__main {
+    flex: none;
+    width: 100%;
+  }
   .mm-player-hero__nav {
-    padding-top: 4px;
+    padding-top: 0;
     gap: 14px 20px;
   }
 }
@@ -1249,5 +1517,587 @@ const signatureServers = computed(() => {
   color: var(--mm-ink-faint);
   margin-bottom: 8px;
   font-size: 10px;
+}
+
+.mm-subtab--active,
+.mm-subtab--active:hover,
+.mm-subtab--active:focus {
+  background: var(--mm-ink) !important;
+  color: var(--mm-bg) !important;
+}
+
+/* Live combat deployment banner in player hero */
+.mm-live-deployment {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #141c10;
+  border: 1px solid rgba(125, 163, 76, 0.35);
+  border-left: 3px solid var(--mm-success);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.mm-live-deployment__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mm-live-deployment__radar {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mm-live-deployment__core {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mm-success);
+  position: relative;
+  z-index: 2;
+}
+
+.mm-live-deployment__ping {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--mm-success);
+  opacity: 0.75;
+  animation: mmRadarPing 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes mmRadarPing {
+  0% { transform: scale(0.8); opacity: 0.9; }
+  80%, 100% { transform: scale(2.4); opacity: 0; }
+}
+
+.mm-live-deployment__tag {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--mm-success);
+  font-weight: 600;
+}
+
+.mm-live-deployment__info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mm-font-display);
+  font-size: 13px;
+  color: var(--mm-ink);
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+.mm-live-deployment__server {
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  color: var(--mm-ink);
+}
+
+.mm-live-deployment__server:hover {
+  color: var(--mm-accent-soft);
+}
+
+.mm-live-deployment__map {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 7px;
+  border-radius: 2px;
+  color: var(--mm-ink-soft);
+}
+
+.mm-live-deployment__mode {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--mm-ink-muted);
+}
+
+.mm-live-deployment__stats {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  color: var(--mm-ink-muted);
+}
+
+.mm-live-deployment__cta {
+  background: transparent;
+  border: 1px solid rgba(125, 163, 76, 0.5);
+  color: var(--mm-success);
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.15s ease;
+}
+
+.mm-live-deployment__cta:hover {
+  background: var(--mm-success);
+  color: #000;
+}
+
+/* 5-up stat strip override */
+.mm-stats {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+@media (max-width: 1024px) {
+  .mm-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .mm-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.mm-stats__cell--clickable {
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.mm-stats__cell--clickable:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mm-stats__cell--clickable:hover .mm-stats__math-hint {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.4);
+}
+
+.mm-stats__cell--clickable:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: -2px;
+}
+
+.mm-stats__label-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mm-stats__math-hint {
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--mm-ink-muted);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 1px 5px;
+  border-radius: 2px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+/* Current form / momentum badge */
+.mm-form-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mm-font-mono);
+  font-size: 20px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-form-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.mm-form--surge {
+  color: var(--mm-success);
+}
+.mm-form--surge .mm-form-dot {
+  background: var(--mm-success);
+  box-shadow: 0 0 7px var(--mm-success);
+  animation: mmPulse 1.8s ease-in-out infinite;
+}
+
+.mm-form--slump {
+  color: var(--mm-danger);
+}
+.mm-form--slump .mm-form-dot {
+  background: var(--mm-danger);
+}
+
+.mm-form--steady {
+  color: var(--mm-ink);
+}
+.mm-form--steady .mm-form-dot {
+  background: var(--mm-ink-soft);
+}
+
+.mm-form--dormant {
+  color: var(--mm-ink-muted);
+}
+.mm-form--dormant .mm-form-dot {
+  background: var(--mm-ink-faint);
+}
+
+@keyframes mmPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* Trophy & Accolades Tier (Best Scores, Achievements) */
+.mm-panel--trophy {
+  border-color: rgba(245, 158, 11, 0.28);
+  border-left: 3px solid rgba(245, 158, 11, 0.7);
+}
+.mm-pbar--trophy {
+  background: #231b0e;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+}
+.mm-pbar--trophy .mm-pbar__t {
+  color: #f59e0b;
+  letter-spacing: 0.16em;
+}
+.mm-pbar--trophy .mm-pbar__m {
+  color: #fbbf24;
+  opacity: 0.75;
+}
+
+/* Social Graph Tier (Ally Orbit) */
+.mm-panel--social {
+  border-color: rgba(99, 102, 241, 0.25);
+  border-left: 3px solid rgba(99, 102, 241, 0.65);
+}
+.mm-pbar--social {
+  background: #131724;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.3);
+}
+.mm-pbar--social .mm-pbar__t {
+  color: #a5b4fc;
+  letter-spacing: 0.16em;
+}
+.mm-pbar--social .mm-pbar__m {
+  color: #c7d2fe;
+  opacity: 0.75;
+}
+
+/* Hero Sessions ribbon */
+.mm-hero-sessions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.mm-hero-sessions__label {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--mm-ink-muted);
+}
+.mm-hero-sessions__squares {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+.mm-hero-match-wrap {
+  position: relative;
+}
+.mm-match-sq {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 2px;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.mm-match-sq:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.25);
+  z-index: 10;
+}
+.mm-match-sq--win {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.6);
+  color: #4ade80;
+}
+.mm-match-sq--loss {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  color: #f87171;
+}
+.mm-match-sq--tie {
+  background: rgba(234, 179, 8, 0.2);
+  border: 1px solid rgba(234, 179, 8, 0.6);
+  color: #facc15;
+}
+.mm-match-sq--unknown {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--mm-ink-muted);
+}
+
+/* Hero match tactical hover tooltip */
+.mm-hero-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 190px;
+  background: #141414;
+  border: 1px solid #333333;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.7);
+  padding: 8px 10px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 100;
+}
+.mm-hero-match-wrap:hover .mm-hero-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-2px);
+}
+.mm-hero-tooltip__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  margin-bottom: 4px;
+}
+.mm-hero-tooltip__tag--win {
+  color: #4ade80;
+  font-weight: 700;
+}
+.mm-hero-tooltip__tag--loss {
+  color: #f87171;
+  font-weight: 700;
+}
+.mm-hero-tooltip__tag--tie {
+  color: #facc15;
+  font-weight: 700;
+}
+.mm-hero-tooltip__time {
+  color: var(--mm-ink-muted);
+}
+.mm-hero-tooltip__map {
+  font-family: var(--mm-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mm-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
+}
+.mm-hero-tooltip__meta {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  color: var(--mm-ink-muted);
+}
+.mm-hero-tooltip__hint {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid #262626;
+  font-family: var(--mm-font-mono);
+  font-size: 9px;
+  color: #38bdf8;
+  letter-spacing: 0.04em;
+}
+
+/* Color-coded Accolade Tabs */
+.mm-accolade-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.mm-accolade-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  background: transparent;
+  border: 1px solid var(--mm-rule, #333);
+  color: var(--mm-ink-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-radius: 2px;
+}
+.mm-accolade-tab:hover {
+  color: var(--mm-ink);
+  border-color: #555;
+}
+.mm-accolade-tab--achievements.mm-accolade-tab--active {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
+  color: #f59e0b;
+  font-weight: 600;
+}
+.mm-accolade-tab--scores.mm-accolade-tab--active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  font-weight: 600;
+}
+.mm-accolade-tab--rankings.mm-accolade-tab--active {
+  background: rgba(167, 139, 250, 0.15);
+  border-color: #a78bfa;
+  color: #a78bfa;
+  font-weight: 600;
+}
+.mm-accolade-badge {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  font-weight: 700;
+}
+.mm-accolade-badge--cyan {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+}
+.mm-accolade-badge--violet {
+  background: rgba(167, 139, 250, 0.2);
+  color: #a78bfa;
+}
+
+/* Highest Recent Score Spotlight Card */
+.mm-score-spotlight {
+  background: #17202a;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-left: 3px solid #38bdf8;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mm-score-spotlight:hover {
+  background: #1c2734;
+  border-color: #38bdf8;
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.15);
+}
+.mm-score-spotlight__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+}
+.mm-score-spotlight__tag {
+  color: #38bdf8;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.mm-score-spotlight__date {
+  color: var(--mm-ink-muted);
+}
+.mm-score-spotlight__body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mm-score-spotlight__val {
+  font-family: var(--mm-font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1;
+}
+.mm-score-spotlight__pts {
+  font-size: 10px;
+  color: #38bdf8;
+  margin-left: 3px;
+  font-weight: 600;
+}
+.mm-score-spotlight__meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 140px;
+}
+.mm-score-spotlight__map {
+  font-family: var(--mm-font-display);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--mm-ink);
+}
+.mm-score-spotlight__server {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  color: var(--mm-ink-muted);
+}
+.mm-score-spotlight__kd {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+}
+
+/* 3 Time-Horizon Window Buttons */
+.mm-score-windows {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.mm-score-win-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  background: var(--mm-bg-soft, #161616);
+  border: 1px solid var(--mm-rule, #333);
+  color: var(--mm-ink-muted);
+  font-family: var(--mm-font-mono);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-radius: 2px;
+}
+.mm-score-win-btn:hover {
+  border-color: #555;
+  color: var(--mm-ink);
+}
+.mm-score-win-btn--active {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: #38bdf8;
+  color: var(--mm-ink);
+}
+.mm-score-win-btn__title {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mm-score-win-btn__score {
+  font-size: 13px;
+  font-weight: 700;
+  color: #38bdf8;
 }
 </style>
