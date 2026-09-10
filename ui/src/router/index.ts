@@ -260,7 +260,7 @@ const routes: RouteRecordRaw[] = [
       path: '/v4',
       component: ModernShell,
       meta: {
-        title: 'bfstats.io · Battlefield 1942 stats',
+        title: 'Battlefield 1942 player and server stats',
         description: 'Live Battlefield 1942 server and player statistics.'
       },
       children: [
@@ -276,7 +276,7 @@ const routes: RouteRecordRaw[] = [
           component: LandingPageV4,
           props: true,
           meta: {
-            title: 'bfstats.io | Battlefield 1942 player and server stats',
+            title: 'Battlefield 1942 player and server stats',
             description: 'Live Battlefield 1942 server list and player counts.'
           }
         },
