@@ -81,6 +81,13 @@ const routes: RouteRecordRaw[] = [
     },
     { path: '/players', redirect: '/v4/players' },
     { path: '/leaderboard', redirect: '/v4/leaderboard' },
+    {
+      path: '/maps/:mapName',
+      redirect: to => ({
+        path: `/v4/maps/${encodeURIComponent(String(to.params.mapName))}`,
+        query: to.query,
+      }),
+    },
     { path: '/arcade', redirect: '/v4/arcade' },
     { path: '/trivia', redirect: '/v4/arcade' },
     { path: '/players/compare', redirect: to => ({ path: '/v4/players/compare', query: to.query }) },
@@ -117,7 +124,13 @@ const routes: RouteRecordRaw[] = [
     { path: '/explore/servers/:serverGuid', redirect: '/v4/servers/bf1942' },
     { path: '/explore/servers/:serverGuid/maps/:mapName', redirect: '/v4/servers/bf1942' },
     { path: '/explore/maps', redirect: '/v4/servers/bf1942' },
-    { path: '/explore/maps/:mapName', redirect: '/v4/servers/bf1942' },
+    {
+      path: '/explore/maps/:mapName',
+      redirect: to => ({
+        path: `/v4/maps/${encodeURIComponent(String(to.params.mapName))}`,
+        query: to.query,
+      }),
+    },
     { path: '/explore/players', redirect: '/v4/players' },
     {
       path: '/explore/players/:playerName',
@@ -328,6 +341,16 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: (route: RouteLocationNormalized) => `${route.params.mapName} · ${decodePlayerName(String(route.params.playerName))} · bfstats.io`,
             description: 'Rankings on a single map for this player.'
+          }
+        },
+        {
+          path: 'maps/:mapName',
+          name: 'v4-map-detail',
+          component: PlayerMapDetailV4,
+          props: true,
+          meta: {
+            title: (route: RouteLocationNormalized) => `${route.params.mapName} · Leaderboard · bfstats.io`,
+            description: 'Global leaderboard and tactical intel for this combat sector.'
           }
         },
         {
@@ -641,9 +664,9 @@ const router = createRouter({
   //  - everything else (different path) → top of page
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) return savedPosition
-    if (to.hash) return { el: to.hash, behavior: 'smooth' as ScrollBehavior }
+    if (to.hash) return { el: to.hash, behavior: 'smooth' as const }
     if (to.path === from.path) return false
-    return { top: 0, behavior: 'auto' as ScrollBehavior }
+    return { top: 0, behavior: 'auto' as const }
   },
 })
 
