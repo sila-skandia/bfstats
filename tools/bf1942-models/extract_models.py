@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Extract Battlefield 1942 vehicles as textured glTF, straight from the .rfa archives.
+"""Extract Battlefield 1942 vehicles and soldiers as textured glTF, straight from the .rfa archives.
 
     python3 extract_models.py --list
-    python3 extract_models.py Sherman Willy --out ./out
+    python3 extract_models.py Sherman Stuka Elco80 BritishSoldier --out ./out
 
-Each vehicle comes out as a single `.glb` — the whole template tree, every sub-part
+Each template comes out as a single `.glb` — the whole template tree, every sub-part
 positioned the way `Objects.con` places it, materials bound through the `.rs` shaders
 to the textures in `texture.rfa`. Alongside it goes a `.report.json` naming every
 lookup that did not resolve, which is the only way to tell "this model has no texture"
@@ -28,7 +28,7 @@ from bf42.rfa import ArchivePool, find_archives_dir
 
 DEFAULT_GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
 
-MESH_ARCHIVES = ("standardmesh", "treemesh")
+MESH_ARCHIVES = ("standardmesh", "treemesh", "animations")
 TEXTURE_ARCHIVES = ("texture",)
 OBJECT_ARCHIVES = ("objects",)
 
@@ -37,6 +37,7 @@ CATEGORY_PREFIXES = {
     "objects/vehicles/land/": "land",
     "objects/vehicles/air/": "air",
     "objects/vehicles/sea/": "sea",
+    "objects/soldiers/": "soldier",
     "objects/stationary_weapons/": "emplacement",
     "objects/handweapons/": "handweapon",
 }
@@ -143,36 +144,79 @@ def build_library(objects: ArchivePool) -> con_mod.ObjectLibrary:
     return library
 
 
+def spawn_folder(source: str) -> str:
+    """Directory that contains this `.con` — the spawnable object's name.
+
+    Vehicles nest one level deeper than soldiers (`Vehicles/Land/Sherman` vs
+    `Soldiers/BritishSoldier`), so a fixed path index picks `Objects.con` for
+    the latter. The parent of the script file is the folder in both layouts.
+    """
+    parts = source.replace("\\", "/").rstrip("/").split("/")
+    if len(parts) >= 2 and parts[-1].lower().endswith(".con"):
+        return parts[-2]
+    return parts[-1] if parts else ""
+
+
 def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary) -> list[tuple[str, str, str]]:
-    """Every template declared in a folder that identifies it as a real vehicle."""
+    """Every template declared in a folder that identifies it as a spawnable object."""
     out: list[tuple[str, str, str]] = []
     for template in library.objects.values():
         source = template.source.lower()
         category = next((v for k, v in CATEGORY_PREFIXES.items() if source.startswith(k)), None)
         if category is None:
             continue
-        # The vehicle a player spawns is the one named after its own folder.
-        folder = template.source.split("/")[3] if template.source.count("/") >= 3 else ""
+        if category == "soldier" and template.kind.lower() != "bfsoldier":
+            continue
+        folder = spawn_folder(template.source)
         if folder and template.name.lower() == folder.lower():
             out.append((template.name, category, template.source))
     return sorted(out, key=lambda r: (r[1], r[0].lower()))
 
 
+def template_category(library: con_mod.ObjectLibrary, name: str) -> str:
+    template = library.object(name)
+    if template is None:
+        return "object"
+    source = template.source.lower()
+    return next((v for k, v in CATEGORY_PREFIXES.items() if source.startswith(k)), "object")
+
+
+def variant_suffix(configuration: str, lod: int, level_label: str | None) -> str:
+    tokens: list[str] = []
+    if configuration != "complex":
+        tokens.append(configuration)
+    if lod:
+        tokens.append(f"lod{lod}")
+    if level_label:
+        tokens.append(level_label)
+    return f".{'.'.join(tokens)}" if tokens else ""
+
+
 def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                objects: ArchivePool, library: con_mod.ObjectLibrary, *,
-               lod: int, max_texture: int, out: Path,
-               suffix: str = "", level_label: str | None = None,
+               configuration: str, lod: int, max_texture: int, out: Path,
+               level_label: str | None = None,
                ) -> dict | None:
     """Export a single vehicle variant, returning a manifest fragment or None."""
     assembler = Assembler(meshes, textures, objects, library,
-                          lod=lod, max_texture=max_texture)
+                          lod=lod, max_texture=max_texture,
+                          configuration=configuration)
+    suffix = variant_suffix(configuration, lod, level_label)
+    file_stem = f"{name}{suffix}"
     try:
         glb, report = assembler.export(name)
     except ValueError as exc:
         print(f"  {name}{suffix}: {exc}", file=sys.stderr)
         return None
 
-    file_stem = f"{name}{suffix}"
+    if level_label is not None and not any(
+        source.split(":", 1)[0].casefold() == level_label.casefold()
+        for source in report.resolved_textures.values()
+    ):
+        print(f"  {file_stem}: no matching vehicle textures; skipping",
+              file=sys.stderr)
+        return None
+
     target = out / f"{file_stem}.glb"
     target.write_bytes(glb)
     report_name = f"{file_stem}.report.json"
@@ -188,6 +232,10 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
         "glb": target.name,
         "report": report_name,
         "level": level_label,
+        "configuration": configuration,
+        "lod": lod,
+        "parts": report.parts,
+        "triangles": report.triangles,
         "texturesResolved": len(report.resolved_textures),
         "texturesMissing": sorted(set(report.missing_textures)),
     }
@@ -200,7 +248,13 @@ def main() -> int:
     ap.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--out", type=Path, default=Path(__file__).resolve().parent / "out")
-    ap.add_argument("--lod", type=int, default=0, help="LOD index to export (0 = highest detail)")
+    ap.add_argument("--lod", type=int, default=0,
+                    help="mesh LOD index to export (default: 0)")
+    ap.add_argument("--configuration", dest="configurations", action="append",
+                    choices=con_mod.MODEL_CONFIGURATIONS,
+                    help="vehicle alternative to export; repeatable (default: complex)")
+    ap.add_argument("--configuration-all", action="store_true",
+                    help="export both Complex and Wreck alternatives when available")
     ap.add_argument("--max-texture", type=int, default=1024, help="downscale textures above this, 0 to keep")
     ap.add_argument("--texture-fallback", action="append", default=[],
                     help="mod folder to borrow textures from when the chain lacks them "
@@ -210,7 +264,7 @@ def main() -> int:
                          "each produces a separate .glb variant with that level's theatre skins")
     ap.add_argument("--level-all", action="store_true",
                     help="auto-discover and include all level archives that carry vehicle textures")
-    ap.add_argument("--list", action="store_true", help="list extractable vehicle templates and exit")
+    ap.add_argument("--list", action="store_true", help="list extractable templates and exit")
     args = ap.parse_args()
 
     game_dir = args.game_dir.expanduser()
@@ -260,58 +314,85 @@ def main() -> int:
     if not args.templates:
         ap.error("give at least one template name, or --list")
 
+    if args.lod < 0:
+        ap.error("--lod must be zero or greater")
+
     args.out.mkdir(parents=True, exist_ok=True)
     failures = 0
     manifest: list[dict] = []
 
     for name in args.templates:
         variants: list[dict] = []
+        available_configurations = library.available_configurations(name)
+        requested_configurations = (
+            available_configurations
+            if args.configuration_all
+            else list(dict.fromkeys(args.configurations or ["complex"]))
+        )
+        configurations = [
+            configuration for configuration in requested_configurations
+            if configuration in available_configurations
+        ]
+        unavailable = [
+            configuration for configuration in requested_configurations
+            if configuration not in available_configurations
+        ]
+        for configuration in unavailable:
+            print(f"  {name}: no {configuration} configuration; skipping",
+                  file=sys.stderr)
 
-        # --- base variant (mod-chain textures only, no level archive) -------
-        base = export_one(name, meshes, base_textures, objects, library,
-                          lod=args.lod, max_texture=args.max_texture, out=args.out)
-        if base is None:
+        for configuration in configurations:
+            base = export_one(
+                name, meshes, base_textures, objects, library,
+                configuration=configuration, lod=args.lod,
+                max_texture=args.max_texture, out=args.out,
+            )
+            if base is None:
+                failures += 1
+                continue
+            variants.append(base)
+
+            for level_name, level_path in level_sources:
+                level_textures = ArchivePool()
+                try:
+                    added = level_textures.add_level(level_path, label=level_name)
+                except Exception as exc:
+                    print(f"  {name}.{level_name}: cannot read level archive ({exc})",
+                          file=sys.stderr)
+                    continue
+                if not added:
+                    continue
+                level_textures.extend_from(base_textures)
+
+                variant = export_one(
+                    name, meshes, level_textures, objects, library,
+                    configuration=configuration, lod=args.lod,
+                    max_texture=args.max_texture, out=args.out,
+                    level_label=level_name,
+                )
+                if variant:
+                    variants.append(variant)
+
+        if not variants:
             failures += 1
             continue
-        variants.append(base)
 
-        # --- one variant per level that carries textures --------------------
-        for level_name, level_path in level_sources:
-            level_textures = ArchivePool()
-            # Level textures take priority — add them first.
-            try:
-                added = level_textures.add_level(level_path, label=level_name)
-            except Exception as exc:
-                print(f"  {name}.{level_name}: cannot read level archive ({exc})",
-                      file=sys.stderr)
-                continue
-            if not added:
-                continue
-            # Then fall back to the base mod-chain textures.
-            for label, archive in base_textures.archives:
-                level_textures._archives.append((label, archive))
-                for entry_name in archive.entries:
-                    key = entry_name.lower()
-                    if key not in level_textures._index:
-                        level_textures._index[key] = (label, archive, entry_name)
-
-            variant = export_one(
-                name, meshes, level_textures, objects, library,
-                lod=args.lod, max_texture=args.max_texture, out=args.out,
-                suffix=f".{level_name}", level_label=level_name,
-            )
-            if variant:
-                variants.append(variant)
-
-        # Pick the best variant as the default (fewest missing textures).
-        best = min(variants, key=lambda v: len(v["texturesMissing"]))
+        default_variants = [
+            variant for variant in variants
+            if variant["configuration"] == "complex"
+        ] or variants
+        best = min(default_variants, key=lambda v: len(v["texturesMissing"]))
         manifest.append({
             "name": name,
             "mod": args.mod,
+            "category": template_category(library, name),
             "glb": best["glb"],
             "report": best["report"],
-            "parts": 0,       # filled from report by viewer
-            "triangles": 0,
+            "configuration": best["configuration"],
+            "lod": best["lod"],
+            "level": best["level"],
+            "parts": best["parts"],
+            "triangles": best["triangles"],
             "texturesResolved": best["texturesResolved"],
             "texturesMissing": best["texturesMissing"],
             "textureFallbacks": args.texture_fallback,

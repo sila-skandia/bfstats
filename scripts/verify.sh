@@ -38,6 +38,11 @@ set -e
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Model extraction parsers use small synthetic fixtures and do not require a
+# Battlefield installation, so they belong in every verification run.
+echo "Running BF1942 model extraction tests..."
+python3 -m unittest discover -s tools/bf1942-models/tests -v
+
 # 1. Check Infrastructure
 echo "🔍 Checking infrastructure..."
 if ! docker ps | grep -q "bf1942-redis"; then

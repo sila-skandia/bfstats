@@ -6,11 +6,67 @@ viewer to be judged in. Tooling lives in [`tools/bf1942-models/`](../../tools/bf
 ```bash
 cd tools/bf1942-models
 python3 extract_models.py --list
-python3 extract_models.py Sherman Willy PanzerIV --out ./viewer/models
+python3 extract_models.py Sherman Willy PanzerIV Stuka Elco80 BritishSoldier \
+    --out ./viewer/models \
+    --texture-fallback WarFront \
+    --texture-fallback FH \
+    --level-all \
+    --configuration-all
 ```
 
 Then start the `model-viewer` launch config (serves `tools/bf1942-models/viewer`
-on :5273), or render stills headlessly with `node shoot.mjs --views 3`.
+on :5273). The inspector can switch each vehicle's Build and Skin without
+re-extracting it. `map.html` on the same server is the level flythrough.
+
+A level is the same pipeline pointed at a different archive. Tobruk's heightmap,
+48 terrain tiles, 750 static objects, conquest vehicle spawners and the env
+cubemap come out as one scene:
+
+```bash
+python3 extract_map.py Tobruk \
+    --texture-fallback WarFront \
+    --texture-fallback FH \
+    --out ./viewer/maps
+```
+
+Open `http://127.0.0.1:5273/map.html`. Click the map (or the fly button) to capture
+the pointer; the sidebar stays clickable. WASD flies along the look direction
+(pitch included), Ctrl speeds up, Shift slows down. Vehicles start hidden
+and the viewer only draws objects inside ~700 m unless **render entire map**
+is on. Terrain tiles live in the level archive and face +Y after export, with
+the sand `detail.dds` multiplied in. The sky is the level's `ENVMAP_G_.rcm`
+cubemap. Buildings and palms still need vanilla `texture.rfa` (or a fallback
+that happens to carry `afrhouse_*` / `PAHILE_C`). Vegetation is TreeMesh;
+buildings are the same StandardMesh assembler as the vehicles. Collision meshes
+are omitted from the map scene. `coastline` is the one StaticObjects name that
+has no template.
+
+Render deterministic stills of the defaults, or every exported combination:
+
+```bash
+node shoot.mjs --views 3
+node shoot.mjs --variants --views 3 --out shots-variants
+node shoot.mjs --variants --rig --only Sherman --out shots-rig
+node shoot.mjs --collision --only Sherman --views 3 --out shots-collision
+```
+
+Screenshot names include model, configuration and skin. `--rig` reloads the
+model before each input position so one control cannot contaminate the next shot.
+`--collision` enables the detailed hit mesh, requires a selectable face at the
+centre of each view and records the selected-point marker.
+
+## Review dimensions
+
+The manifest keeps two independent dimensions so the viewer never has to stack
+mutually exclusive geometry:
+
+- **Build**: `Complex` is the complete external vehicle and `Wreck` is the
+  destroyed root `LodObject` alternative.
+- **Skin**: the base mod-chain textures or one theatre-specific level overlay.
+
+The viewer uses the highest-detail mesh. The default remains Complex with whichever
+skin has the fewest unresolved textures. `--configuration-all` exports Complex and
+Wreck when both exist.
 
 ## Why earlier extractions came out broken
 
@@ -134,12 +190,19 @@ the mods it is mostly used for.
 
 ### Level archives are a texture source too
 
-Separately, and not yet used by the extractor: level archives carry textures, and
-the engine resolves against the loaded level before the mod chain. Across the 53
-vanilla level archives there are 2,763 texture entries — mostly `objectlightmaps/`
-(1,605) and terrain `textures/` (879), but also 129 in `alttextures/` on
-Kasserine_Pass and 77 in a plain `texture/` folder. That is the mechanism behind
-theatre-specific vehicle skins, and FHSW leans on it heavily.
+Level archives carry textures, and the engine resolves against the loaded level
+before the mod chain. Across the 53 vanilla level archives there are 2,763 texture
+entries — mostly `objectlightmaps/` (1,605) and terrain `textures/` (879), but also
+129 in `alttextures/` on Kasserine_Pass and 77 in a plain `texture/` folder. That
+is the mechanism behind theatre-specific vehicle skins, and FHSW leans on it
+heavily.
+
+The extractor now reproduces the vehicle-skin part of that lookup with `--level`
+or `--level-all`. A level becomes a manifest variant only when it supplies at least
+one texture referenced by that model and build, so the viewer's Skin selector does
+not fill with unrelated maps or duplicate the base render. Level
+`objectlightmaps/` remain excluded because they require a separate shader stage and
+UV channel.
 
 ## How a mesh binds to a texture
 
@@ -177,10 +240,48 @@ u32 lodCount     -- 1 for a simple part, 6 for a full LOD chain
 u32 cid   u32 csize + csize bytes
 ```
 
-Vertices are stride 32 throughout vanilla: `position(3f) normal(3f) uv(2f)`,
-indexed triangle lists. Refractor is left-handed with +Z forward, so the exporter
-negates Z on positions, normals and translations, reverses winding, and flips the
-sign of yaw and pitch but not roll.
+Vertices are stride 32 throughout vanilla: `position(3f) normal(3f) uv(2f)`.
+Vehicle parts are indexed triangle lists (`primitive == 4`); soldier parts are
+triangle strips (`primitive == 5`). Refractor is left-handed with +Z forward, so
+the exporter negates Z on positions, normals and translations, reverses winding,
+and flips the sign of yaw and pitch but not roll.
+
+## How a soldier is assembled
+
+A `BFSoldier` is still a template tree over StandardMesh `.sm` files — the body,
+head and hands are separate parts, same as a tank's hull and turret. Three extra
+rules keep those parts from stacking:
+
+- **`setIsFirstPersonPart 1` is an alternative view, not an extra limb.** The 1P
+  body and arms sit in the same bind pose as the 3P mesh; drawing both puts a
+  second torso inside the first. Skip them for a third-person browse model.
+- **`setRandomGeometries 3` on `BritSoldierComplexHead` means pick among
+  `BritSoldierComplexHead1`..`3`.** The unsuffixed name is not a template. The
+  extractor takes variant 1.
+- **`setLodValue -0.01` on the simple head is the distant stand-in** for that
+  close-up face. Negative lod values are skipped so the two heads do not occupy
+  the same neck.
+
+The meshes already live in bind-pose skeleton space, so stacking them at the
+origin produces a complete figure without decoding `.ske`/`.skn`. Those meshes
+stand along Refractor +Z (3ds Max Biped), so the exporter pitches the soldier
+root onto glTF +Y — otherwise a browse camera sees a body lying on its back.
+The 3P body is an idle pose with arms at the sides; the hand meshes sit in a
+different bind, so a stack at the origin leaves one hand at the hip and the
+other floating off the chest. Until `.skn` skinning is applied, each 3P hand
+is translated so its centroid meets the matching sleeve opening — the extreme
+±X of the body *above the hips*. A waist-height band looks plausible because
+the coat is as wide as the arms, but those vertices are the jacket hem, not
+the arm holes. Helmets are kit parts, not children of the soldier, so the
+exported figure is bareheaded. `GeometryTemplate.setSkin` and `createSkeleton`
+are recorded on the report for the later animation pass; `.baf` clips are
+still unused.
+
+`--list` now includes the eight vanilla `objects/soldiers/` templates alongside
+land, air and sea vehicles. Mods keep soldier textures under nested folders
+(`Texture/ItalyBritts/britt1_r.dds`) rather than `texture/britt1_r`; the texture
+pool fills that gap by basename after an exact path miss, which is how
+`--texture-fallback` actually paints a British soldier from this install.
 
 ## How vehicles move
 
@@ -217,9 +318,12 @@ Three rules are easy to get wrong, and all three produced visible bugs here:
   kind.** `WillyEngine` declares roll ±5000° on `c_PIThrottle` — not an angle to
   interpolate to but a drivetrain accumulator, integrated over time. `ShermanEngine`
   declares yaw and roll of ±1°, which is a body lean and must be held. Both are
-  `Engine`, so keying off the kind spins that 1° lean forever; and because a tank's
-  tracks and road wheels are children of its Engine, the entire running gear orbits
-  the hull.
+  `Engine`, so keying off the kind spins that 1° lean forever.
+- **A rate-driven car Engine is a controller, not the visual rotation target.**
+  Willy's four wheel `Spring` templates are descendants of `WillyEngine`. Rotating
+  the Engine node moves all four translated wheel positions around the jeep. The
+  viewer instead applies the shared accumulated rate to each Spring's local pitch,
+  preserving the steering parent and every wheel's local position.
 
   Across the 68 engine axes in vanilla the two populations do not overlap and nothing
   falls between them:
@@ -230,6 +334,19 @@ Three rules are easy to get wrong, and all three produced visible bugs here:
   | 2 | 29 axes: tracked and half-track hulls (Sherman, Tiger, T34, PanzerIV, Hanomag, Chi-ha) | ±1° lean |
 
   A threshold of 360° sits safely in that gap.
+
+Boats reuse the same wheel Springs as a hidden drivetrain.
+`ObjectTemplate.createInvisible 1` on Elco80's `PT_*Wheel` templates (and two
+KettenKrad back springs) means the engine still steers them but does not draw
+the mesh — the game shows a water effect instead. The exporter drops those
+templates, and any parent left with nothing to draw. Steer and throttle also
+have a High/Low `DistanceSelector` pair whose High child is a `1P_...`
+cockpit mesh; a browse model takes the Low (third-person) helm and levers
+instead. Those remaining RotationalBundles are not put on the Rig panel when
+the vehicle has no visible Springs left to drive — otherwise the sliders
+would pose a tiny helm with no running gear. Aircraft Engines keep throttle
+anyway (that is the propeller). A Willy still has visible wheels, so its
+steering wheel stays bound to Steer.
 
 The other three mechanisms, in descending order of how much they matter:
 
@@ -279,17 +396,119 @@ scaled to per-second at 60 Hz and multiplied by throttle — a stationary tank h
 stationary tread. Nothing in the `.rs` marks *which* material animates, so all three
 of the track node's materials scroll, bogies included.
 
+## Collision and armour inspection
+
+A StandardMesh collision block is not opaque. BfMeshView's `modStdMesh.bas` and
+the BF1942 Damage System tutorial agree on the useful front of the block:
+
+```text
+u32 blockSize
+u32 unknown[2]
+u32 vertexCount
+vertexCount * (f32 x, y, z, unknown)
+u32 faceCount
+faceCount * (i16 vertex[3], u8 material, u8 flags)
+```
+
+The block continues with acceleration data that the inspector does not need.
+The exporter reads the vertices and faces, preserves each face's material and
+skips only that trailing data. Empty placeholder triangles are discarded.
+
+BF1942 normally tests a projectile against a coarse collision mesh and then a
+more detailed one. The parser retains both for research, but the exporter and
+viewer expose only the final non-empty detailed layer; the coarse engine
+optimization adds no useful feedback. Collision nodes remain children of their
+original object-template node, so a turret or wheel hit mesh follows the same
+placement and input-driven rotation as the visible part.
+
+The face material is the location-specific defence lookup. For example, the
+Sherman hull's detailed layer uses materials 50, 51 and 52. The official tutorial
+identifies 50 as the Sherman's rear armour and says the tank range 50–54 generally
+increases in protection or represents less vital regions. The root
+`ObjectTemplate.material 50` has a different role: it is the general defence
+material used for splash damage, not the material of every direct hit.
+
+Direct projectile damage includes an angle term:
+
+```text
+damage = MaterialDamage * DamageMod * cos(impact angle) * DistanceMod
+```
+
+That is documented Refractor engine behaviour, not an assumption based on real
+armour and not a value inferred from vehicle physics. The angle is measured from
+the struck collision face's normal: a square hit is 0 degrees and keeps a factor
+of 1; a grazing hit approaches 90 degrees and 0. `ObjectTemplate.angleMod` is a
+separate control used by physical object-on-object collision damage.
+
+Enable **show armour regions** in the viewer. The legend ranks the model's known
+defence materials from red (inferred most vulnerable) through yellow and green to
+blue (inferred most protected); numeric material IDs remain visible in the legend.
+IDs outside the documented armour ranges remain neutral grey and are labelled
+unclassified. This is a relative reading of BF1942's documented material ranges,
+not a replacement for each weapon's attack/defence table. Select a material ID in
+the legend to paint only that region; select it again to restore all regions.
+
+Clicking a coloured face selects the object part and starts with a square 0-degree
+shot. The **Damage** percentage is the angular share of that region's head-on
+damage: 100% at 0 degrees, falling with `cos(angle)`. It is not vehicle HP loss.
+Calculating HP loss requires a selected weapon's base damage, its modifier against
+the face material and distance falloff; vehicle health by itself is insufficient.
+
+The orange shot arrow points into the selected face and the white arrow is its
+surface normal. Drag the orange handle directly or use the angle slider to
+approach a grazing hit. Source geometry, collision material and world position
+remain under **Technical details**; health, critical threshold and splash material
+come from the root vehicle's `Objects.con`. Exact direct-hit points remain unknown
+until the relevant MaterialManager attack/defence table is resolved.
+
+## Verification
+
+The parser regression suite is installation-independent. It covers the line-scoped
+command parser, child placement, geometry aliases, input scoping and numeric ids,
+rate-versus-pose classification, soldier first-person / random-head selection,
+`createInvisible` physics parts, soldier sleeve-cuff hand placement,
+first-person High/Low distance LOD fallback,
+both shader forms, collision geometry and face-material export, triangle-strip
+soldier meshes, basename texture fallback, multi-LOD StandardMesh parsing,
+heightmap scale, terrain tile origin (including negative `texOffsetY`),
+terrain facing +Y, spawn-template team lookup, cubemap Z remap, and
+TreeMesh collision sentinels:
+
+```bash
+python3 -m unittest discover -s tools/bf1942-models/tests -v
+./scripts/verify.sh --skip-e2e
+```
+
+For visual review, run the extraction command at the top, start `model-viewer`, and
+capture the matrix with `node shoot.mjs --variants --views 3`. The filenames make
+the Build and Skin comparison explicit.
+
 ## Not yet used
 
-Extraction stops at static geometry. Still on the table:
-
 - **`animations.rfa`** — `.ske` skeletons and `.skn` skins referenced by
-  `GeometryTemplate.setSkin`. Track belts are `AnimatedMesh`, and their scroll is
-  `ObjectTemplate.setAnimatedTextureSpeed`, so tracks currently render static.
-- **Collision meshes**, already located inside each `.sm` and skipped.
-- **LOD chains** — every LOD is parsed; only index 0 is exported (`--lod`).
-- **Wreck and interior variants** — `ShermanWreck`, and the `1P_*` cockpit meshes
-  the LOD rule discards.
-- **`treeMesh.rfa`** for vegetation, which is a different mesh format.
-- **Per-level lightmaps** in `bf1942/levels/<map>/ObjectLightmaps/`, which is how
-  static objects get their baked shading in-game.
+  `GeometryTemplate.setSkin`. Paths are reported and soldier parts export in
+  bind pose with hands snapped to the 3P sleeve openings, but the belt geometry
+  remains rigid and `.baf` clips are not applied.
+- **`.baf` soldier clips and vehicle IK**, which animate occupants rather than the
+  vehicle assembly. Helmets and other kit parts are also still separate objects.
+- **The coastline mesh**, which some levels name in `StaticObjects.con` without
+  an object template.
+- **Per-level object lightmaps** in `bf1942/levels/<map>/ObjectLightmaps/`,
+  which need a second UV channel and a multiply stage the glTF materials do
+  not carry.
+
+The next vehicle milestone is still `.ske/.skn`. Map work after that is object
+lightmaps so the town matches a loading-screen still.
+
+## Requires deep dive
+
+- **Runtime location of the vanilla game rules.** The extractor has not resolved
+  the expected `Game.rfa` at `Mods/bf1942/Archives`, but that is not evidence that
+  the data is absent: this installation launches and plays. Determine the runtime
+  search order and inspect patch archives, alternate install containers and Wine
+  paths before adding a game-rule archive pool.
+- **Exact weapon-versus-armour values.** `MaterialManagerDefine.con`,
+  `MaterialManagerSettings.con` and `Game/damage_system/*.con` provide the base
+  weapon damage and attack/defence multipliers. Once their runtime source is found,
+  connect projectile `material` and `material2` to the clicked collision material
+  and report direct damage, splash damage, shots to critical and shots to destroy.
