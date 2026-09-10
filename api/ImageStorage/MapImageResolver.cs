@@ -11,6 +11,11 @@ public interface IMapImageResolver
     /// or null when no image exists for that map.
     /// </summary>
     string? Resolve(string gameId, string mapName, MapImageKind kind);
+
+    /// <summary>
+    /// Returns the collection of mods recognized/installed in manifest.json (or the maps directory).
+    /// </summary>
+    IReadOnlyCollection<string> GetKnownMods();
 }
 
 public enum MapImageKind
@@ -42,6 +47,24 @@ public class MapImageResolver(ILogger<MapImageResolver> logger) : IMapImageResol
     private MapManifest? _manifest;
     private DateTime _lastLoadUtc = DateTime.MinValue;
     private DateTime _manifestWriteTimeUtc = DateTime.MinValue;
+
+    public IReadOnlyCollection<string> GetKnownMods()
+    {
+        var manifest = LoadManifest();
+        if (manifest is not null)
+            return manifest.Mods.Keys;
+
+        var mapsPath = TournamentImagesConfig.ResolveMapsPath();
+        if (Directory.Exists(mapsPath))
+        {
+            return Directory.GetDirectories(mapsPath)
+                .Select(Path.GetFileName)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .ToList()!;
+        }
+
+        return Array.Empty<string>();
+    }
 
     public string? Resolve(string gameId, string mapName, MapImageKind kind)
     {
@@ -113,7 +136,7 @@ public class MapImageResolver(ILogger<MapImageResolver> logger) : IMapImageResol
         };
     }
 
-    private static string CanonicalizeMod(string mod) => mod switch
+    public static string CanonicalizeMod(string mod) => mod switch
     {
         "fhsweurope" or "sks_fhsw" => "fhsw",
         "dc2" or "dc_extended" or "dc_realism" => "dc_final",
@@ -121,12 +144,14 @@ public class MapImageResolver(ILogger<MapImageResolver> logger) : IMapImageResol
         "eodp" => "eod",
         "xmas1918" => "bf1918",
         "battlegroup42" => "bg42",
+        "warfront1" => "warfront",
+        "bfpirates" => "pirates",
         _ => mod
     };
 
     private static string? FallbackScan(MapManifest manifest, string normalizedMap, string suffix, string wanted)
     {
-        string[] priorityMods = ["bf1942", "xpack1", "xpack2", "dc_final", "desertcombat", "fhsw", "fh", "eod", "bf1918", "gcmod", "interstate"];
+        string[] priorityMods = ["bf1942", "xpack1", "xpack2", "dc_final", "desertcombat", "fhsw", "fh", "eod", "bf1918", "gcmod", "interstate", "bg42", "warfront", "finnwars", "pirates", "bfheroes"];
         foreach (var candidateMod in priorityMods)
         {
             if (manifest.Mods.TryGetValue(candidateMod, out var candidate) &&

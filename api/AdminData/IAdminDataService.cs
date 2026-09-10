@@ -18,6 +18,11 @@ public interface IAdminDataService
     Task SetAppDataAsync(string key, string value);
     /// <summary>Delete a key-value entry. Invalidates initial-data cache when key is site_notice.</summary>
     Task DeleteAppDataAsync(string key);
+
+    /// <summary>
+    /// Generates a map coverage report identifying maps missing icons, rotating servers, and mod details.
+    /// </summary>
+    Task<MapReportResponse> GetMapReportAsync(MapReportRequest request, CancellationToken ct = default);
 }
 
 public record AppDataRow(string Id, string Value, DateTime UpdatedAt);
