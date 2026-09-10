@@ -20,10 +20,10 @@ import MmCommunityCard from '@/components/v4/MmCommunityCard.vue'
 import MmPlayerActivityHeatmap from '@/components/v4/MmPlayerActivityHeatmap.vue'
 import MmPlayerMapsTab from '@/components/v4/MmPlayerMapsTab.vue'
 import MmPlayerAchievementHeroBadges from '@/components/v4/MmPlayerAchievementHeroBadges.vue'
-import MmPlayerServerMapStats from '@/components/v4/MmPlayerServerMapStats.vue'
 import MmPlayerAllyOrbit from '@/components/v4/MmPlayerAllyOrbit.vue'
 import MmPlayerRivalsDossier from '@/components/v4/MmPlayerRivalsDossier.vue'
 import MmPlayerFormMathModal, { type FormInsight, type FormContributingSession } from '@/components/v4/MmPlayerFormMathModal.vue'
+import MmPlayerAchievementsSlideover from '@/components/v4/MmPlayerAchievementsSlideover.vue'
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { kdClass, streakClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
@@ -375,9 +375,15 @@ const friendlyAchievementName = (g: PlayerAchievementGroup) => {
   return t ? `${g.achievementName} — ${t}` : g.achievementName
 }
 
-// Accolades subtab state (achievements | bestScores | servers)
+// Accolades subtab state (servers | bestScores | achievements) — Servers
+// is the default landing view; Achievements has its own full drill-in
+// (the slideover below) so it sits last.
 type AccoladeSection = 'achievements' | 'bestScores' | 'servers'
-const activeAccoladeTab = ref<AccoladeSection>(legacyTab === 'servers' ? 'servers' : 'achievements')
+const activeAccoladeTab = ref<AccoladeSection>('servers')
+
+// Achievements "View all" opens a slide-in panel (same pattern as the
+// round report slideover) instead of navigating to the full page.
+const achievementsSlideoverOpen = ref(false)
 
 const kdTrend = computed(() => stats.value?.recentStats?.kdRatioTrend ?? [])
 const killRateTrend = computed(() => stats.value?.recentStats?.killRateTrend ?? [])
@@ -490,7 +496,7 @@ const goSessions = () => {
   router.push(`/v4/players/${encodeURIComponent(rawName.value)}/sessions`)
 }
 const goAchievements = () => {
-  router.push(`/v4/players/${encodeURIComponent(rawName.value)}/achievements`)
+  achievementsSlideoverOpen.value = true
 }
 const goNetwork = () => {
   router.push(`/v4/players/${encodeURIComponent(rawName.value)}/network`)
@@ -950,16 +956,16 @@ const signatureServers = computed(() => {
                 <div class="mm-accolade-tabs">
                   <button
                     type="button"
-                    class="mm-accolade-tab mm-accolade-tab--achievements"
-                    :class="{ 'mm-accolade-tab--active': activeAccoladeTab === 'achievements' }"
-                    @click="activeAccoladeTab = 'achievements'"
+                    class="mm-accolade-tab mm-accolade-tab--rankings"
+                    :class="{ 'mm-accolade-tab--active': activeAccoladeTab === 'servers' }"
+                    @click="activeAccoladeTab = 'servers'"
                   >
-                    Achievements
+                    Servers
                     <span
-                      v-if="achievementsForGrid.length"
-                      class="mm-accolade-badge"
+                      v-if="serverRoster.length"
+                      class="mm-accolade-badge mm-accolade-badge--violet"
                     >
-                      {{ achievementsForGrid.length }}
+                      {{ serverRoster.length }}
                     </span>
                   </button>
                   <button
@@ -978,73 +984,67 @@ const signatureServers = computed(() => {
                   </button>
                   <button
                     type="button"
-                    class="mm-accolade-tab mm-accolade-tab--rankings"
-                    :class="{ 'mm-accolade-tab--active': activeAccoladeTab === 'servers' }"
-                    @click="activeAccoladeTab = 'servers'"
+                    class="mm-accolade-tab mm-accolade-tab--achievements"
+                    :class="{ 'mm-accolade-tab--active': activeAccoladeTab === 'achievements' }"
+                    @click="activeAccoladeTab = 'achievements'"
                   >
-                    Servers
+                    Achievements
                     <span
-                      v-if="serverRoster.length"
-                      class="mm-accolade-badge mm-accolade-badge--violet"
+                      v-if="achievementsForGrid.length"
+                      class="mm-accolade-badge"
                     >
-                      {{ serverRoster.length }}
+                      {{ achievementsForGrid.length }}
                     </span>
                   </button>
                 </div>
 
-                <!-- 1. Achievements view -->
-                <div v-if="activeAccoladeTab === 'achievements'">
+                <!-- 1. Servers view — standing plus the per-server record
+                     that used to live in its own tab. -->
+                <div v-if="activeAccoladeTab === 'servers'">
                   <div
-                    v-if="achievementsLoading"
-                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px"
+                    v-if="serverRoster.length > 0"
+                    style="padding: 2px 0"
                   >
                     <div
-                      v-for="i in 4"
-                      :key="i"
-                      class="mm-skeleton mm-skeleton--lg"
-                    />
-                  </div>
-                  <div
-                    v-else-if="achievementsError"
-                    class="mm-empty"
-                    style="border: 0; padding: 12px 0"
-                  >
-                    {{ achievementsError }}
-                  </div>
-                  <div
-                    v-else-if="achievementsForGrid.length === 0"
-                    class="mm-empty"
-                    style="border: 0; padding: 12px 0"
-                  >
-                    No achievements yet.
+                      v-for="s in serverRoster"
+                      :key="s.serverGuid"
+                      class="mm-rrow mm-srank"
+                      @click="goServer(s.serverName)"
+                    >
+                      <span
+                        v-if="s.rank !== null"
+                        class="mm-srank__rank"
+                      >#{{ s.rank }}</span>
+                      <span
+                        v-else
+                        class="mm-srank__rank mm-srank__rank--unranked"
+                      >—</span>
+                      <span class="mm-srank__body">
+                        <span class="mm-srank__name">{{ truncate($pn(s.serverName), 28) }}</span>
+                        <span class="mm-srank__sub">{{ serverSubLine(s) }}</span>
+                      </span>
+                      <span class="mm-srank__record">
+                        <span
+                          v-if="s.totalRounds > 0"
+                          class="mm-srank__kd"
+                          :class="kdClass(s.kdRatio)"
+                        >{{ s.kdRatio.toFixed(2) }}</span>
+                        <span class="mm-srank__meta">
+                          <template v-if="s.totalRounds > 0">
+                            <span class="mm-num--kill">{{ formatNumber(s.totalKills) }}</span> k
+                          </template>
+                          <template v-else-if="s.averagePing">{{ Math.round(s.averagePing) }}ms</template>
+                        </span>
+                      </span>
+                    </div>
                   </div>
                   <div
                     v-else
-                    class="mm-ach-mini"
+                    class="mm-empty"
+                    style="border: 0; padding: 20px 0"
                   >
-                    <div
-                      v-for="g in achievementsForGrid.slice(0, 6)"
-                      :key="g.achievementId"
-                      class="mm-ach-mini__item"
-                    >
-                      <img
-                        :src="getAchievementImage(g.achievementId, g.tier)"
-                        :alt="friendlyAchievementName(g)"
-                        loading="lazy"
-                        class="mm-ach-mini__img"
-                      >
-                      <span class="mm-ach-mini__label">{{ friendlyAchievementName(g) }}</span>
-                    </div>
+                    No server history yet.
                   </div>
-                  <button
-                    v-if="achievementsForGrid.length > 6"
-                    type="button"
-                    class="mm-btn"
-                    style="margin-top: 14px"
-                    @click="goAchievements"
-                  >
-                    View all →
-                  </button>
                 </div>
 
                 <!-- 2. Best scores view -->
@@ -1113,74 +1113,76 @@ const signatureServers = computed(() => {
                   </div>
                 </div>
 
-                <!-- 3. Servers view — standing plus the per-server record
-                     that used to live in its own tab. -->
-                <div v-else-if="activeAccoladeTab === 'servers'">
+                <!-- 3. Achievements view -->
+                <div v-else-if="activeAccoladeTab === 'achievements'">
                   <div
-                    v-if="serverRoster.length > 0"
-                    style="padding: 2px 0"
+                    v-if="achievementsLoading"
+                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px"
                   >
                     <div
-                      v-for="s in serverRoster"
-                      :key="s.serverGuid"
-                      class="mm-rrow mm-srank"
-                      @click="goServer(s.serverName)"
-                    >
-                      <span
-                        v-if="s.rank !== null"
-                        class="mm-srank__rank"
-                      >#{{ s.rank }}</span>
-                      <span
-                        v-else
-                        class="mm-srank__rank mm-srank__rank--unranked"
-                      >—</span>
-                      <span class="mm-srank__body">
-                        <span class="mm-srank__name">{{ truncate($pn(s.serverName), 28) }}</span>
-                        <span class="mm-srank__sub">{{ serverSubLine(s) }}</span>
-                      </span>
-                      <span class="mm-srank__record">
-                        <span
-                          v-if="s.totalRounds > 0"
-                          class="mm-srank__kd"
-                          :class="kdClass(s.kdRatio)"
-                        >{{ s.kdRatio.toFixed(2) }}</span>
-                        <span class="mm-srank__meta">
-                          <template v-if="s.totalRounds > 0">
-                            <span class="mm-num--kill">{{ formatNumber(s.totalKills) }}</span> k
-                          </template>
-                          <template v-else-if="s.averagePing">{{ Math.round(s.averagePing) }}ms</template>
-                        </span>
-                      </span>
-                    </div>
+                      v-for="i in 4"
+                      :key="i"
+                      class="mm-skeleton mm-skeleton--lg"
+                    />
+                  </div>
+                  <div
+                    v-else-if="achievementsError"
+                    class="mm-empty"
+                    style="border: 0; padding: 12px 0"
+                  >
+                    {{ achievementsError }}
+                  </div>
+                  <div
+                    v-else-if="achievementsForGrid.length === 0"
+                    class="mm-empty"
+                    style="border: 0; padding: 12px 0"
+                  >
+                    No achievements yet.
                   </div>
                   <div
                     v-else
-                    class="mm-empty"
-                    style="border: 0; padding: 20px 0"
+                    class="mm-ach-mini"
                   >
-                    No server history yet.
+                    <div
+                      v-for="g in achievementsForGrid.slice(0, 6)"
+                      :key="g.achievementId"
+                      class="mm-ach-mini__item"
+                    >
+                      <img
+                        :src="getAchievementImage(g.achievementId, g.tier)"
+                        :alt="friendlyAchievementName(g)"
+                        loading="lazy"
+                        class="mm-ach-mini__img"
+                      >
+                      <span class="mm-ach-mini__label">{{ friendlyAchievementName(g) }}</span>
+                    </div>
                   </div>
+                  <button
+                    v-if="achievementsForGrid.length > 6"
+                    type="button"
+                    class="mm-btn"
+                    style="margin-top: 14px"
+                    @click="goAchievements"
+                  >
+                    View all →
+                  </button>
                 </div>
               </div>
             </section>
           </div>
         </div>
 
+        <MmPlayerAchievementsSlideover
+          :open="achievementsSlideoverOpen"
+          :player-name="rawName"
+          @close="achievementsSlideoverOpen = false"
+        />
+
         <!-- weekly activity rhythm heatmap -->
         <div style="margin-top: 20px">
           <MmPlayerActivityHeatmap
             :player-name="rawName"
             :game="primaryGameId"
-          />
-        </div>
-
-        <!-- per-map statistics -->
-        <div style="margin-top: 24px">
-          <MmPlayerServerMapStats
-            :player-name="rawName"
-            :game="primaryGameId"
-            @open-rankings="openMapRankings"
-            @open-map-detail="openMapRankings"
           />
         </div>
 

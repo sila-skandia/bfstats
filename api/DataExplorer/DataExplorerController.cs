@@ -196,40 +196,6 @@ public class DataExplorerController(
     }
 
     /// <summary>
-    /// Get player map rankings with per-server breakdown and rank information.
-    /// </summary>
-    /// <param name="playerName">The player name</param>
-    /// <param name="game">Game filter: bf1942 (default)</param>
-    /// <param name="days">Number of days to look back (default 60)</param>
-    /// <param name="serverGuid">Optional server GUID to filter results to a specific server</param>
-    [HttpGet("players/{playerName}/maps")]
-    [ResponseCache(Duration = 600, Location = ResponseCacheLocation.Any)]
-    [ProducesResponseType(typeof(PlayerMapRankingsResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<PlayerMapRankingsResponse>> GetPlayerMapRankings(
-        string playerName,
-        [FromQuery] string game = "bf1942",
-        [FromQuery] int days = 60,
-        [FromQuery] string? serverGuid = null)
-    {
-        // URL decode the player name
-        playerName = Uri.UnescapeDataString(playerName);
-
-        logger.LogDebug("Getting player map rankings for {PlayerName} with game: {Game}, days: {Days}, serverGuid: {ServerGuid}",
-            playerName, game, days, serverGuid ?? "all");
-
-        var result = await dataExplorerService.GetPlayerMapRankingsAsync(playerName, game, days, serverGuid);
-
-        if (result == null)
-        {
-            logger.LogWarning("Player not found or no data: {PlayerName} for game: {Game}", playerName, game);
-            return NotFound($"No data found for player '{playerName}' in game '{game}'");
-        }
-
-        return Ok(result);
-    }
-
-    /// <summary>
     /// Get activity patterns for a specific map showing when it's typically played.
     /// Returns hourly patterns grouped by day of week for heatmap visualization.
     /// </summary>
