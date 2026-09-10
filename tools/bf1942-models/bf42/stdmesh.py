@@ -8,7 +8,15 @@ Layout below follows the reference implementation in BfMeshView's `modStdMesh.ba
     f32   boundsMin[3]
     f32   boundsMax[3]
     u8    qflag                version > 9 only
-    u32   colCount             collision meshes, each a u32 size + that many bytes
+    u32   colCount
+      per collision layer:
+        u32 blockSize
+        u32 unknown[2]
+        u32 vertexCount
+          per vertex: f32 position[3], f32 unknown
+        u32 faceCount
+          per face: i16 vertex[3], u8 defensiveMaterial, u8 flags
+        remaining acceleration data up to blockSize
     u32   lodCount             1 for a simple part, 6 for a full LOD chain
       per lod:
         u32 materialCount
@@ -21,8 +29,8 @@ Layout below follows the reference implementation in BfMeshView's `modStdMesh.ba
     u32   csize + csize bytes
 
 Vertices at the universal stride of 32 bytes are position(3f) normal(3f) uv(2f).
-The engine draws them as an indexed triangle list (`primitive == 4`); nothing in
-vanilla uses the strip form.
+The engine draws vehicle parts as an indexed triangle list (`primitive == 4`);
+soldier parts use the strip form (`primitive == 5`).
 
 Refractor is left-handed with +X right, +Y up, +Z forward. glTF is right-handed,
 so exporting negates Z (see `gltf.py`) rather than mangling anything here.
@@ -98,14 +106,37 @@ class Lod:
         return sum(len(m.triangles()) for m in self.materials)
 
 
+@dataclass(frozen=True)
+class CollisionFace:
+    vertices: tuple[int, int, int]
+    material_id: int
+    flags: int
+
+
+@dataclass
+class CollisionLayer:
+    unknown: tuple[int, int]
+    vertices: list[tuple[float, float, float]]
+    vertex_unknown: list[float]
+    faces: list[CollisionFace]
+
+    @property
+    def triangle_count(self) -> int:
+        return len(self.faces)
+
+
 @dataclass
 class StandardMesh:
     name: str
     version: int
     bounds_min: tuple[float, float, float]
     bounds_max: tuple[float, float, float]
-    collision_blocks: int
+    collision_layers: list[CollisionLayer]
     lods: list[Lod]
+
+    @property
+    def collision_blocks(self) -> int:
+        return len(self.collision_layers)
 
     @property
     def lod0(self) -> Lod | None:
@@ -168,9 +199,56 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
         c.u8()  # qflag
 
     col_count = c.u32()
-    for _ in range(col_count):
+    collision_layers: list[CollisionLayer] = []
+    for layer_index in range(col_count):
         size = c.u32()
-        c.pos += size  # collision geometry: not needed for display
+        block_end = c.pos + size
+        if size < 16 or block_end > len(data):
+            raise MeshError(
+                f"{name}: bad collision layer {layer_index} size {size} at {c.pos - 4}")
+
+        unknown = (c.u32(), c.u32())
+        vertex_count = c.u32()
+        if vertex_count > (block_end - c.pos) // 16:
+            raise MeshError(
+                f"{name}: collision layer {layer_index} has implausible "
+                f"vertex count {vertex_count}")
+        vertices: list[tuple[float, float, float]] = []
+        vertex_unknown: list[float] = []
+        for _ in range(vertex_count):
+            x, y, z, w = struct.unpack_from("<4f", data, c.pos)
+            c.pos += 16
+            vertices.append((x, y, z))
+            vertex_unknown.append(w)
+
+        if c.pos + 4 > block_end:
+            raise MeshError(f"{name}: truncated collision layer {layer_index}")
+        face_count = c.u32()
+        if face_count > (block_end - c.pos) // 8:
+            raise MeshError(
+                f"{name}: collision layer {layer_index} has implausible "
+                f"face count {face_count}")
+        faces: list[CollisionFace] = []
+        for _ in range(face_count):
+            a, b, d, material_id, flags = struct.unpack_from("<3hBB", data, c.pos)
+            c.pos += 8
+            if min(a, b, d) < 0 or max(a, b, d) >= vertex_count:
+                raise MeshError(
+                    f"{name}: collision layer {layer_index} face references "
+                    f"a vertex outside 0..{vertex_count - 1}")
+            faces.append(CollisionFace(
+                vertices=(a, b, d),
+                material_id=material_id,
+                flags=flags,
+            ))
+
+        collision_layers.append(CollisionLayer(
+            unknown=unknown,
+            vertices=vertices,
+            vertex_unknown=vertex_unknown,
+            faces=faces,
+        ))
+        c.pos = block_end
 
     lod_count = c.u32()
     if lod_count > 64:
@@ -204,5 +282,5 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
 
     return StandardMesh(
         name=name, version=version, bounds_min=bmin, bounds_max=bmax,
-        collision_blocks=col_count, lods=lods,
+        collision_layers=collision_layers, lods=lods,
     )

@@ -20,7 +20,7 @@
   html, body { height: 100%; margin: 0; }
   body {
     display: grid;
-    grid-template-columns: 300px 1fr;
+    grid-template-columns: 320px 1fr;
     background: var(--bg);
     color: var(--text);
     font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
@@ -64,6 +64,39 @@
   button.model:hover { border-color: var(--accent); }
   button.model[aria-pressed="true"] { background: var(--accent); color: #14150f; border-color: var(--accent); }
   button.model small { display: block; opacity: .75; font-size: 11px; }
+  #variant-panel[hidden] { display: none; }
+  .variant-grid { display: grid; gap: 8px; }
+  .variant-field { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; }
+  .variant-field span {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .variant-field select {
+    min-width: 0;
+    width: 100%;
+    padding: 6px 24px 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #15170f;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+  .variant-field select:hover,
+  .variant-field select:focus-visible { border-color: var(--accent); outline: none; }
+  .variant-field select:disabled { color: var(--muted); cursor: default; opacity: .7; }
+  #variant-summary {
+    margin-top: 9px;
+    padding: 7px 8px;
+    border-left: 2px solid var(--accent);
+    background: rgba(154, 171, 90, .06);
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  #variant-summary strong { color: var(--text); font-weight: 500; }
   label.toggle { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
   .stat { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
   .stat span:last-child { color: var(--accent); }
@@ -75,10 +108,137 @@
   .rig-input .driven { font-size: 10px; color: var(--muted); line-height: 1.5; }
   .rig-none { font-size: 11px; color: var(--muted); }
   .seat { display: block; color: var(--accent); opacity: .65; }
+  .collision-note {
+    margin: 8px 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  #collision-legend {
+    margin: 9px 0 0;
+    padding: 8px;
+    border: 1px solid var(--line);
+    background: rgba(0, 0, 0, .12);
+  }
+  #collision-legend[hidden] { display: none; }
+  .legend-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .legend-scale {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    height: 5px;
+    margin-bottom: 8px;
+  }
+  .legend-scale span:nth-child(1) { background: #c24d43; }
+  .legend-scale span:nth-child(2) { background: #d47a38; }
+  .legend-scale span:nth-child(3) { background: #d1ad3e; }
+  .legend-scale span:nth-child(4) { background: #7d9f50; }
+  .legend-scale span:nth-child(5) { background: #3d7894; }
+  #legend-materials { display: flex; flex-wrap: wrap; gap: 4px; }
+  .material-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 5px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 9px;
+    cursor: pointer;
+    transition: border-color 100ms ease, color 100ms ease, opacity 100ms ease;
+  }
+  .material-chip:hover,
+  .material-chip:focus-visible { border-color: var(--chip); color: var(--text); outline: none; }
+  .material-chip[aria-pressed="true"] {
+    border-color: var(--chip);
+    box-shadow: inset 0 -2px var(--chip);
+    color: var(--text);
+  }
+  #legend-materials[data-filtered="true"] .material-chip:not([aria-pressed="true"]) { opacity: .35; }
+  .material-chip i {
+    display: block;
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--chip);
+  }
+  .legend-hint { margin-top: 6px; color: var(--muted); font-size: 9px; }
+  #hit-details {
+    margin-top: 10px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--warn);
+    background: rgba(201, 138, 62, .05);
+    font-size: 11px;
+  }
+  #hit-details .empty { color: var(--muted); }
+  .hit-region {
+    color: var(--text);
+    font-size: 12px;
+  }
+  .hit-class { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+  .impact-reading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 10px 0 6px;
+  }
+  .impact-reading strong { color: var(--accent); font-size: 20px; font-weight: 500; }
+  .impact-reading span { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+  .damage-basis { margin-top: -6px; color: var(--muted); font-size: 9px; }
+  .hp-loss {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 9px;
+    text-transform: uppercase;
+  }
+  .hp-loss span:last-child { color: var(--warn); text-align: right; }
+  .angle-control label { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
+  .angle-control output { color: var(--text); }
+  .angle-control input { width: 100%; margin: 4px 0 0; accent-color: var(--warn); }
+  #hit-details .formula {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+  .hit-technical { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+  .hit-technical summary { color: var(--muted); cursor: pointer; font-size: 10px; }
+  .hit-technical[open] summary { margin-bottom: 4px; }
+  .panel-details { margin-top: 7px; }
+  .panel-details > summary {
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 10px;
+    list-style-position: outside;
+  }
+  .panel-details[open] > summary { margin-bottom: 6px; }
+  .detail-label {
+    margin: 10px 0 4px;
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
   #tree { font-size: 11px; line-height: 1.7; white-space: pre; overflow-x: auto; color: var(--muted); }
   #tree b { color: var(--text); font-weight: 400; }
   main { position: relative; }
   canvas { display: block; }
+  main[data-collision="true"] canvas { cursor: crosshair; }
+  main[data-angle-drag="true"] canvas { cursor: grabbing; }
   #hud {
     position: absolute; left: 16px; bottom: 16px;
     background: rgba(20,21,15,.82);
@@ -99,6 +259,8 @@
     font-size: 11px;
   }
   #banner[hidden] { display: none; }
+  main[data-load-state="loading"] canvas { opacity: .55; }
+  canvas { transition: opacity 120ms ease; }
 </style>
 </head>
 <body>
@@ -106,25 +268,54 @@
   <h1>BF1942 model inspector</h1>
   <div class="model-list" id="models"></div>
 
+  <section id="variant-panel" hidden>
+    <h2>Variant</h2>
+    <div class="variant-grid">
+      <label class="variant-field"><span>Build</span><select id="configuration"></select></label>
+      <label class="variant-field"><span>Skin</span><select id="skin"></select></label>
+    </div>
+    <div id="variant-summary"></div>
+  </section>
+
   <h2>Display</h2>
-  <label class="toggle"><input type="checkbox" id="wireframe"> wireframe</label>
-  <label class="toggle"><input type="checkbox" id="untextured"> flat grey (ignore textures)</label>
-  <label class="toggle"><input type="checkbox" id="explode"> explode parts</label>
-  <label class="toggle"><input type="checkbox" id="axes" checked> axes + ground grid</label>
-  <label class="toggle"><input type="checkbox" id="doubleside"> force double-sided</label>
   <label class="toggle"><input type="checkbox" id="spin"> auto-rotate</label>
+  <details class="panel-details">
+    <summary>Technical display options</summary>
+    <label class="toggle"><input type="checkbox" id="wireframe"> wireframe</label>
+    <label class="toggle"><input type="checkbox" id="untextured"> flat grey (ignore textures)</label>
+    <label class="toggle"><input type="checkbox" id="explode"> explode parts</label>
+    <label class="toggle"><input type="checkbox" id="axes" checked> axes + ground grid</label>
+    <label class="toggle"><input type="checkbox" id="doubleside"> force double-sided</label>
+  </details>
+
+  <h2>Armour</h2>
+  <label class="toggle"><input type="checkbox" id="collision"> show armour regions</label>
+  <div id="collision-legend" hidden>
+    <div class="legend-labels"><span>more vulnerable</span><span>more protected</span></div>
+    <div class="legend-scale"><span></span><span></span><span></span><span></span><span></span></div>
+    <div id="legend-materials"></div>
+    <div class="legend-hint">Select a material to isolate it; select it again to show all.</div>
+  </div>
+  <div class="collision-note">
+    Colours show inferred relative protection. Exact damage depends on the
+    weapon table. Click a region, then drag the shot arrow or use the angle control.
+  </div>
+  <div id="hit-details" aria-live="polite">
+    <div class="empty">No collision face selected.</div>
+  </div>
 
   <h2>Rig</h2>
   <div id="rig"></div>
 
   <h2>Model</h2>
-  <div id="stats"></div>
-
-  <h2>Missing textures</h2>
-  <ul class="missing" id="missing"></ul>
-
-  <h2>Part tree</h2>
-  <div id="tree"></div>
+  <details class="panel-details">
+    <summary>Model details</summary>
+    <div id="stats"></div>
+    <div class="detail-label">Missing textures</div>
+    <ul class="missing" id="missing"></ul>
+    <div class="detail-label">Part tree</div>
+    <div id="tree"></div>
+  </details>
 </aside>
 <main>
   <div id="banner" hidden></div>
@@ -154,6 +345,7 @@ scene.background = new THREE.Color(0x14150f);
 const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 2000);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.addEventListener('change', () => startAnimating());
 
 // Neutral three-point rig: nothing here should flatter the asset, the point is
 // to see what the extraction actually produced.
@@ -167,25 +359,502 @@ helpers.add(grid, new THREE.AxesHelper(2));
 scene.add(helpers);
 
 let current = null;
-const state = { wireframe: false, untextured: false, explode: false, doubleside: false };
+let currentEntry = null;
+let currentVariant = null;
+let currentButton = null;
+let framing = null;
+let loadSequence = 0;
+const state = {
+  wireframe: false,
+  untextured: false,
+  explode: false,
+  doubleside: false,
+  collision: false,
+  collisionMaterial: null,
+};
+const collisionRoots = [];
+const collisionTargets = [];
+let lastHit = null;
+let hitState = null;
+let angleDragging = false;
+let angleDragStart = null;
 
 // Material.clone() deep-copies userData through JSON, so a Texture parked there
 // comes back as a plain object and the renderer chokes on its missing matrix.
 // Keep the bookkeeping outside the material.
 const originalMap = new WeakMap();
+const vulnerabilityStops = [
+  new THREE.Color(0xc24d43),
+  new THREE.Color(0xd47a38),
+  new THREE.Color(0xd1ad3e),
+  new THREE.Color(0x7d9f50),
+  new THREE.Color(0x3d7894),
+];
+const collisionStyles = new Map();
+const hitMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xf4efe1, depthTest: false }),
+);
+const hitNormal = new THREE.ArrowHelper(
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(),
+  1,
+  0xf4efe1,
+);
+const shotArrow = new THREE.ArrowHelper(
+  new THREE.Vector3(0, -1, 0),
+  new THREE.Vector3(),
+  1,
+  0xf0a12b,
+);
+const shotShaft = new THREE.Mesh(
+  new THREE.CylinderGeometry(1, 1, 1, 8),
+  new THREE.MeshBasicMaterial({ color: 0xf0a12b, depthTest: false }),
+);
+const angleHandle = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xf0a12b, depthTest: false }),
+);
+const angleArc = new THREE.Line(
+  new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({ color: 0xd1ad3e, depthTest: false }),
+);
+hitMarker.renderOrder = 100;
+for (const arrow of [hitNormal, shotArrow]) {
+  arrow.line.material.depthTest = false;
+  arrow.cone.material.depthTest = false;
+  arrow.line.renderOrder = 100;
+  arrow.cone.renderOrder = 100;
+}
+angleHandle.renderOrder = 101;
+shotShaft.renderOrder = 100;
+angleArc.renderOrder = 100;
+hitMarker.visible = false;
+hitNormal.visible = false;
+shotArrow.visible = false;
+shotShaft.visible = false;
+angleHandle.visible = false;
+angleArc.visible = false;
+scene.add(hitMarker, hitNormal, shotArrow, shotShaft, angleHandle, angleArc);
+
+function disposeModel(root) {
+  if (!root) return;
+  const materials = new Set();
+  const textures = new Set();
+  root.traverse(obj => {
+    obj.geometry?.dispose();
+    for (const material of [obj.material].flat().filter(Boolean)) {
+      materials.add(material);
+      if (material.map) textures.add(material.map);
+    }
+  });
+  textures.forEach(texture => texture.dispose());
+  materials.forEach(material => material.dispose());
+}
+
+function setCameraView(index, total = 3) {
+  if (!framing) return;
+  const angle = -Math.PI * .22 + (Math.PI * 2 * index / Math.max(total, 1));
+  const distance = framing.radius * 1.85;
+  camera.position.set(
+    framing.centre.x + Math.cos(angle) * distance,
+    framing.centre.y + framing.radius * .72,
+    framing.centre.z + Math.sin(angle) * distance,
+  );
+  controls.target.copy(framing.centre);
+  controls.update();
+}
 
 function resize() {
   const w = main.clientWidth, h = main.clientHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  invalidate();
 }
 addEventListener('resize', resize);
+
+// --- On-demand rendering ---------------------------------------------------
+//
+// Instead of spinning the GPU every frame, we render only when something has
+// actually changed. invalidate() schedules a single render frame. For
+// continuous animations (damping, auto-rotate, rate-driven rig parts, track
+// scrolling) startAnimating() runs a self-terminating rAF loop that stops when
+// every continuous source reports idle.
+
+const clock = new THREE.Clock();
+let renderScheduled = false;
+let animating = false;
+
+/** Schedule a single render on the next frame. Safe to call many times. */
+function invalidate() {
+  if (renderScheduled || animating) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => {
+    renderScheduled = false;
+    controls.update();
+    renderer.render(scene, camera);
+  });
+}
+
+/**
+ * Kick off a continuous rAF loop for animations that need every-frame updates.
+ * The loop self-terminates once no continuous source is active.
+ */
+function startAnimating() {
+  if (animating) return;
+  animating = true;
+  renderScheduled = false;          // superseded by the continuous loop
+  clock.getDelta();                 // reset the clock so the first dt is clean
+  (function tick() {
+    const dt = Math.min(clock.getDelta(), 0.1);
+    advanceRates(dt);
+    advanceScroll(dt);
+    // controls.update() returns true while damping or auto-rotate is still
+    // moving the camera, false once it has settled.
+    const controlsMoving = controls.update();
+    renderer.render(scene, camera);
+
+    // Keep animating only while at least one continuous source is active.
+    const hasRates = rigged.some(part =>
+      Object.entries(part.axes).some(([, spec]) =>
+        spec.driver === 'rate' && (inputValues.get(keyOf(part.control, spec.input)) ?? 0) !== 0));
+    const hasScroll = scrolling.some(part =>
+      (inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
+
+    if (hasRates || hasScroll || controlsMoving) {
+      requestAnimationFrame(tick);
+    } else {
+      animating = false;
+    }
+  })();
+}
+
+const collisionCheckbox = document.getElementById('collision');
+const collisionLegend = document.getElementById('collision-legend');
+const legendMaterials = document.getElementById('legend-materials');
+const isCollisionMesh = obj => obj.isMesh && obj.geometry?.userData?.collision;
+
+function clearHit() {
+  lastHit = null;
+  hitState = null;
+  angleDragging = false;
+  angleDragStart = null;
+  controls.enabled = true;
+  main.dataset.angleDrag = 'false';
+  hitMarker.visible = false;
+  hitNormal.visible = false;
+  shotArrow.visible = false;
+  shotShaft.visible = false;
+  angleHandle.visible = false;
+  angleArc.visible = false;
+  document.getElementById('hit-details').innerHTML =
+    '<div class="empty">No collision face selected.</div>';
+  invalidate();
+}
+
+function collisionMaterialClass(material) {
+  if (material >= 40 && material <= 42) return 'soldier hit region';
+  if (material >= 43 && material <= 47) return 'light armour or structure';
+  if (material >= 50 && material <= 54) return 'tank armour';
+  if (material >= 55 && material <= 59) return 'naval armour';
+  if (material >= 60 && material <= 62) return 'aircraft region';
+  if (material === 66) return 'wooden deck';
+  return 'other collision surface';
+}
+
+function isRankedArmorMaterial(material) {
+  return (material >= 40 && material <= 47)
+    || (material >= 50 && material <= 62)
+    || material === 66;
+}
+
+function vulnerabilityColor(position) {
+  const scaled = THREE.MathUtils.clamp(position, 0, 1) * (vulnerabilityStops.length - 1);
+  const lower = Math.floor(scaled);
+  const upper = Math.min(lower + 1, vulnerabilityStops.length - 1);
+  return vulnerabilityStops[lower].clone().lerp(
+    vulnerabilityStops[upper],
+    scaled - lower,
+  );
+}
+
+function configureCollisionLegend(report) {
+  state.collisionMaterial = null;
+  collisionStyles.clear();
+  const allMaterials = [...new Set(report.collisionMaterials || [])]
+    .sort((a, b) => a - b);
+  const materials = allMaterials
+    .filter(isRankedArmorMaterial)
+    .sort((a, b) => a - b);
+  materials.forEach((material, index) => {
+    const position = materials.length === 1 ? 0 : index / (materials.length - 1);
+    collisionStyles.set(material, {
+      color: vulnerabilityColor(position),
+      label: materials.length === 1
+        ? 'Only classified armour region'
+        : index === 0
+          ? 'Most vulnerable region'
+          : index === materials.length - 1
+            ? 'Most protected region'
+            : 'Intermediate armour region',
+    });
+  });
+  for (const material of allMaterials.filter(id => !isRankedArmorMaterial(id))) {
+    collisionStyles.set(material, {
+      color: new THREE.Color(0x666a61),
+      label: 'Unclassified collision region',
+    });
+  }
+
+  for (const obj of collisionTargets) {
+    const materialId = obj.geometry.userData.defenseMaterial;
+    const color = collisionStyles.get(materialId)?.color || new THREE.Color(0x666a61);
+    for (const material of [obj.material].flat()) {
+      material.color.copy(color);
+      if (material.emissive) material.emissive.copy(color).multiplyScalar(.12);
+      material.needsUpdate = true;
+    }
+  }
+
+  legendMaterials.innerHTML = allMaterials.length
+    ? allMaterials.map(material => {
+      const style = collisionStyles.get(material);
+      const classification = isRankedArmorMaterial(material)
+        ? ''
+        : ' unclassified';
+      return `<button type="button" class="material-chip" data-material="${material}" ` +
+        `aria-pressed="false" title="${style.label} · ${collisionMaterialClass(material)}" ` +
+        `style="--chip:#${style.color.getHexString()}"><i></i>${material}${classification}</button>`;
+    }).join('')
+    : '<span class="collision-note">No ranked armour materials.</span>';
+}
+
+function applyCollisionState() {
+  for (const root of collisionRoots) {
+    root.visible = state.collision;
+  }
+  for (const target of collisionTargets) {
+    target.visible = state.collision
+      && (state.collisionMaterial === null
+        || target.geometry.userData.defenseMaterial === state.collisionMaterial);
+  }
+  for (const button of legendMaterials.querySelectorAll('[data-material]')) {
+    button.setAttribute(
+      'aria-pressed',
+      String(Number(button.dataset.material) === state.collisionMaterial),
+    );
+  }
+  legendMaterials.dataset.filtered = String(state.collisionMaterial !== null);
+  main.dataset.collision = String(state.collision);
+  collisionLegend.hidden = !state.collision || !collisionRoots.length;
+  if (!state.collision) clearHit();
+}
+
+function setCollisionMaterial(material) {
+  state.collisionMaterial = material === null ? null : Number(material);
+  clearHit();
+  applyCollisionState();
+  invalidate();
+}
+
+function collectCollisions(root, report) {
+  clearHit();
+  collisionRoots.length = 0;
+  collisionTargets.length = 0;
+  root.traverse(node => {
+    if (!node.userData?.collision) return;
+    collisionRoots.push(node);
+    node.traverse(obj => {
+      if (!isCollisionMesh(obj)) return;
+      obj.userData.collisionRoot = node;
+      obj.renderOrder = 20;
+      for (const material of [obj.material].flat()) {
+        material.transparent = true;
+        material.opacity = .58;
+        material.depthWrite = false;
+        material.side = THREE.DoubleSide;
+        material.needsUpdate = true;
+      }
+      collisionTargets.push(obj);
+    });
+  });
+  collisionCheckbox.disabled = !collisionRoots.length;
+  if (!collisionRoots.length) state.collision = false;
+  collisionCheckbox.checked = state.collision;
+  configureCollisionLegend(report);
+  applyCollisionState();
+}
+
+function updateHitPanel() {
+  if (!lastHit) return;
+  const angle = Math.abs(lastHit.angle);
+  const multiplier = lastHit.angleFactor;
+  const output = document.getElementById('angle-output');
+  const range = document.getElementById('angle-range');
+  const reading = document.getElementById('impact-value');
+  const label = document.getElementById('impact-label');
+  const formula = document.getElementById('impact-formula');
+  if (output) output.value = `${angle.toFixed(1)}°`;
+  if (range) range.value = String(angle);
+  if (reading) reading.textContent = `${(multiplier * 100).toFixed(1)}%`;
+  if (label) label.textContent = 'Damage';
+  if (formula) {
+    formula.textContent =
+      `cos(${angle.toFixed(1)}°) = ${multiplier.toFixed(3)}. ` +
+      'Orange is the shot path; white is the surface normal.';
+  }
+}
+
+function setHitAngle(signedDegrees) {
+  if (!hitState || !lastHit) return;
+  const angle = THREE.MathUtils.clamp(signedDegrees, -85, 85);
+  const radians = THREE.MathUtils.degToRad(angle);
+  const sourceDirection = hitState.normal.clone()
+    .multiplyScalar(Math.cos(radians))
+    .addScaledVector(hitState.tangent, Math.sin(radians))
+    .normalize();
+  const incoming = sourceDirection.clone().negate();
+  const tail = hitState.point.clone()
+    .addScaledVector(sourceDirection, hitState.arrowLength);
+
+  shotArrow.position.copy(tail);
+  shotArrow.setDirection(incoming);
+  shotArrow.setLength(
+    hitState.arrowLength,
+    hitState.markerSize * 3,
+    hitState.markerSize * 1.6,
+  );
+  shotArrow.visible = true;
+  shotShaft.position.lerpVectors(tail, hitState.point, .5);
+  shotShaft.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    incoming,
+  );
+  shotShaft.scale.set(
+    hitState.markerSize * .2,
+    hitState.arrowLength,
+    hitState.markerSize * .2,
+  );
+  shotShaft.visible = true;
+  angleHandle.position.copy(tail);
+  angleHandle.scale.setScalar(hitState.markerSize * 1.45);
+  angleHandle.visible = true;
+
+  hitNormal.position.copy(hitState.point);
+  hitNormal.setDirection(hitState.normal);
+  hitNormal.setLength(
+    hitState.arrowLength * .7,
+    hitState.markerSize * 2.4,
+    hitState.markerSize * 1.2,
+  );
+  hitNormal.visible = true;
+
+  const arcPoints = [];
+  const arcRadius = hitState.arrowLength * .32;
+  const steps = 18;
+  for (let step = 0; step <= steps; step++) {
+    const theta = radians * step / steps;
+    arcPoints.push(hitState.point.clone().add(
+      hitState.normal.clone()
+        .multiplyScalar(Math.cos(theta) * arcRadius)
+        .addScaledVector(hitState.tangent, Math.sin(theta) * arcRadius),
+    ));
+  }
+  angleArc.geometry.dispose();
+  angleArc.geometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
+  angleArc.visible = Math.abs(angle) >= .5;
+
+  lastHit.angle = angle;
+  lastHit.angleFactor = Math.cos(Math.abs(radians));
+  updateHitPanel();
+  invalidate();
+}
+
+function renderHitPanel() {
+  const style = collisionStyles.get(lastHit.material) || {
+    label: 'Collision region',
+  };
+  document.getElementById('hit-details').innerHTML =
+    `<div class="hit-region">${style.label}</div>` +
+    `<div class="hit-class">${collisionMaterialClass(lastHit.material)}</div>` +
+    '<div class="impact-reading"><strong id="impact-value">100.0%</strong>' +
+    '<span id="impact-label">Damage</span></div>' +
+    '<div class="damage-basis">of this region&rsquo;s head-on damage</div>' +
+    '<div class="hp-loss"><span>HP loss</span><span>not calculable yet</span></div>' +
+    '<div class="formula">Requires the selected weapon, material modifier and range.</div>' +
+    '<div class="angle-control">' +
+    '<label for="angle-range"><span>Impact angle</span><output id="angle-output">0.0°</output></label>' +
+    '<input id="angle-range" type="range" min="0" max="85" step="0.5" value="0">' +
+    '</div>' +
+    '<div class="formula">Drag the orange arrow handle or use the slider.</div>' +
+    '<div class="formula" id="impact-formula"></div>' +
+    '<details class="hit-technical"><summary>Technical details</summary>' +
+    [
+      ['material ID', lastHit.material],
+      ['part', lastHit.template],
+      ['geometry', lastHit.geometry],
+      ['position', lastHit.point.map(value => value.toFixed(2)).join(' / ')],
+    ].map(([label, value]) =>
+      `<div class="stat"><span>${label}</span><span>${value}</span></div>`
+    ).join('') +
+    '</details>';
+
+  document.getElementById('angle-range').addEventListener('input', event => {
+    setHitAngle(Number(event.target.value));
+  });
+  setHitAngle(0);
+  document.getElementById('hit-details').scrollIntoView({ block: 'nearest' });
+}
+
+function selectCollisionHit(hit) {
+  const root = hit.object.userData.collisionRoot;
+  const normal = hit.face.normal.clone()
+    .transformDirection(hit.object.matrixWorld)
+    .normalize();
+  if (normal.dot(raycaster.ray.direction) > 0) normal.negate();
+
+  const cameraRight = new THREE.Vector3(1, 0, 0)
+    .applyQuaternion(camera.quaternion);
+  const tangent = cameraRight.clone()
+    .addScaledVector(normal, -normal.dot(cameraRight));
+  if (tangent.lengthSq() < 1e-6) {
+    const cameraUp = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(camera.quaternion);
+    tangent.copy(cameraUp)
+      .addScaledVector(normal, -normal.dot(cameraUp));
+  }
+  tangent.normalize();
+
+  const markerSize = Math.max((framing?.radius || 1) * .012, .015);
+  const arrowLength = Math.max((framing?.radius || 1) * .3, .45);
+  hitState = {
+    point: hit.point.clone(),
+    normal,
+    tangent,
+    markerSize,
+    arrowLength,
+  };
+
+  hitMarker.position.copy(hit.point);
+  hitMarker.scale.setScalar(markerSize);
+  hitMarker.visible = true;
+  lastHit = {
+    template: root.userData.sourceTemplate,
+    geometry: root.userData.sourceGeometry,
+    material: hit.object.geometry.userData.defenseMaterial,
+    angle: 0,
+    angleFactor: 1,
+    point: hit.point.toArray(),
+  };
+  renderHitPanel();
+}
 
 function applyState() {
   if (!current) return;
   current.traverse(obj => {
     if (!obj.isMesh) return;
+    if (isCollisionMesh(obj)) return;
     for (const m of [obj.material].flat()) {
       m.wireframe = state.wireframe;
       if (state.untextured) {
@@ -205,6 +874,8 @@ function applyState() {
       obj.position.set(h.x * k, h.y * k, h.z * k);
     }
   });
+  applyCollisionState();
+  invalidate();
 }
 
 for (const id of ['wireframe', 'untextured', 'explode', 'doubleside']) {
@@ -213,10 +884,93 @@ for (const id of ['wireframe', 'untextured', 'explode', 'doubleside']) {
     applyState();
   });
 }
-document.getElementById('axes').addEventListener('change', e => { helpers.visible = e.target.checked; });
+document.getElementById('axes').addEventListener('change', e => { helpers.visible = e.target.checked; invalidate(); });
 document.getElementById('spin').addEventListener('change', e => {
   controls.autoRotate = e.target.checked;
   controls.autoRotateSpeed = 1.6;
+  if (e.target.checked) startAnimating(); else invalidate();
+});
+collisionCheckbox.addEventListener('change', e => {
+  state.collision = e.target.checked;
+  applyCollisionState();
+  invalidate();
+});
+legendMaterials.addEventListener('click', event => {
+  const button = event.target.closest('[data-material]');
+  if (!button) return;
+  const material = Number(button.dataset.material);
+  setCollisionMaterial(
+    material === state.collisionMaterial ? null : material,
+  );
+});
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let pointerStart = null;
+
+function setPointer(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+}
+
+renderer.domElement.addEventListener('pointerdown', event => {
+  if (!state.collision || !hitState || !angleHandle.visible) return;
+  setPointer(event);
+  if (!raycaster.intersectObject(angleHandle, false).length) return;
+  angleDragging = true;
+  angleDragStart = { x: event.clientX, angle: lastHit.angle };
+  pointerStart = null;
+  controls.enabled = false;
+  main.dataset.angleDrag = 'true';
+  renderer.domElement.setPointerCapture(event.pointerId);
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+renderer.domElement.addEventListener('pointermove', event => {
+  if (!angleDragging || !angleDragStart) return;
+  setHitAngle(
+    angleDragStart.angle + (event.clientX - angleDragStart.x) * .35,
+  );
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+renderer.domElement.addEventListener('pointerup', event => {
+  if (!angleDragging) return;
+  angleDragging = false;
+  angleDragStart = null;
+  controls.enabled = true;
+  main.dataset.angleDrag = 'false';
+  renderer.domElement.releasePointerCapture(event.pointerId);
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+renderer.domElement.addEventListener('pointerdown', event => {
+  pointerStart = { x: event.clientX, y: event.clientY };
+});
+renderer.domElement.addEventListener('pointerup', event => {
+  if (!state.collision || !pointerStart) return;
+  const movement = Math.hypot(
+    event.clientX - pointerStart.x,
+    event.clientY - pointerStart.y,
+  );
+  pointerStart = null;
+  if (movement > 4) return;
+
+  setPointer(event);
+  const targets = collisionTargets.filter(
+    obj => obj.visible && obj.userData.collisionRoot?.visible);
+  const hit = raycaster.intersectObjects(targets, false)[0];
+  if (!hit?.face) {
+    clearHit();
+    return;
+  }
+
+  selectCollisionHit(hit);
 });
 
 // --- Refractor rig ---------------------------------------------------------
@@ -337,12 +1091,15 @@ function advanceScroll(dt) {
 // Rate-driven parts keep turning for as long as the input is held.
 function advanceRates(dt) {
   let moved = false;
+  const advanced = new Set();
   for (const part of rigged) {
     for (const [axis, spec] of Object.entries(part.axes)) {
       if (spec.driver !== 'rate') continue;
       const t = inputValues.get(keyOf(part.control, spec.input)) ?? 0;
       if (!t) continue;
       const k = `${keyOf(part.control, spec.input)}/${axis}`;
+      if (advanced.has(k)) continue;
+      advanced.add(k);
       rateAngle.set(k, (rateAngle.get(k) ?? 0) + t * 360 * dt);
       moved = true;
     }
@@ -381,11 +1138,12 @@ function buildRigPanel() {
       `<div class="driven">${seat}${g.driven.join('<br>')}</div>`;
     const slider = wrap.querySelector('input');
     const out = wrap.querySelector('[data-out]');
-    const reset = () => { slider.value = '0'; inputValues.set(key, 0); out.textContent = '0.00'; applyRig(); };
+    const reset = () => { slider.value = '0'; inputValues.set(key, 0); out.textContent = '0.00'; applyRig(); invalidate(); };
     slider.addEventListener('input', () => {
       inputValues.set(key, Number(slider.value));
       out.textContent = Number(slider.value).toFixed(2);
       applyRig();
+      if (g.rate && Number(slider.value) !== 0) startAnimating(); else invalidate();
     });
     // A throttle is held, not aimed: let it spring back like the real control.
     if (g.rate) slider.addEventListener('dblclick', reset);
@@ -397,26 +1155,191 @@ const loader = new GLTFLoader();
 // Iteration tool: the models are regenerated constantly, so never serve a cached one.
 const bust = () => `?t=${Date.now()}`;
 
-async function show(entry, button) {
-  document.querySelectorAll('button.model').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+const configurationSelect = document.getElementById('configuration');
+const skinSelect = document.getElementById('skin');
 
-  if (current) { scene.remove(current); }
-  const gltf = await loader.loadAsync(`models/${entry.glb}${bust()}`);
-  current = gltf.scene;
+const configurationLabel = value => ({
+  complex: 'Complex',
+  wreck: 'Wreck',
+})[value] || value;
+const skinValue = variant => variant.level || '';
+const skinLabel = value => value || 'Base archives';
+
+function variantKey(variant) {
+  return `${variant.configuration || 'complex'}|${variant.level || ''}`;
+}
+
+function normalizeVariants(entry) {
+  const source = entry.variants?.length ? entry.variants : [entry];
+  return source.map((variant, index) => ({
+    ...variant,
+    configuration: variant.configuration || 'complex',
+    lod: variant.lod ?? 0,
+    level: variant.level || null,
+    index,
+  }));
+}
+
+function unique(values) {
+  return [...new Set(values)];
+}
+
+function setOptions(select, values, selected, label) {
+  select.replaceChildren(...values.map(value => new Option(label(value), String(value))));
+  select.value = String(selected);
+  select.disabled = values.length < 2;
+}
+
+function syncVariantControls(entry, selected) {
+  const variants = entry.variants;
+  const configurationVariants = variants.filter(
+    variant => variant.configuration === selected.configuration);
+  setOptions(
+    configurationSelect,
+    unique(variants.map(variant => variant.configuration)),
+    selected.configuration,
+    configurationLabel,
+  );
+  setOptions(
+    skinSelect,
+    unique(configurationVariants.map(skinValue)),
+    skinValue(selected),
+    skinLabel,
+  );
+  document.getElementById('variant-panel').hidden =
+    entry.variants.length === 1;
+  document.getElementById('variant-summary').innerHTML =
+    `<strong>${configurationLabel(selected.configuration)}</strong> / ` +
+    skinLabel(skinValue(selected));
+}
+
+function selectedFromControls() {
+  if (!currentEntry) return null;
+  const wanted = `${configurationSelect.value}|${skinSelect.value}`;
+  return currentEntry.variants.find(variant => variantKey(variant) === wanted)
+    || currentEntry.variants.find(
+      variant => variant.configuration === configurationSelect.value)
+    || currentEntry.variants[0];
+}
+
+async function show(entry, variant, button) {
+  const sequence = ++loadSequence;
+  let report;
+  main.dataset.loadState = 'loading';
+  document.querySelectorAll('button.model').forEach(
+    modelButton => modelButton.setAttribute('aria-pressed', String(modelButton === button)));
+  syncVariantControls(entry, variant);
+
+  try {
+    const loaded = await Promise.all([
+      loader.loadAsync(`models/${variant.glb}${bust()}`),
+      fetch(`models/${variant.report}${bust()}`).then(response => {
+        if (!response.ok) throw new Error(`report returned ${response.status}`);
+        return response.json();
+      }),
+    ]);
+    const gltf = loaded[0];
+    report = loaded[1];
+    if (sequence !== loadSequence) {
+      disposeModel(gltf.scene);
+      return false;
+    }
+
+    if (current) {
+      scene.remove(current);
+      disposeModel(current);
+    }
+    currentEntry = entry;
+    currentVariant = variant;
+    currentButton = button;
+    current = gltf.scene;
+    main.dataset.model = entry.name;
+    main.dataset.variant = variantKey(variant);
+    main.dataset.loadState = 'ready';
+    main.dataset.variantIndex = String(variant.index);
+    main.dataset.modelIndex = String(entry.index);
+  } catch (error) {
+    if (sequence === loadSequence) {
+      main.dataset.loadState = 'error';
+      const banner = document.getElementById('banner');
+      banner.hidden = false;
+      banner.textContent = `Could not load ${variant.glb}: ${error.message}`;
+    }
+    throw error;
+  }
+
   rigged.length = 0;
   inputValues.clear();
   rateAngle.clear();
+  const drivetrains = [];
   current.traverse(obj => {
     // Remember authored positions so the explode slider can scale them.
     obj.userData.home = obj.position.clone();
     if (obj.isMesh) for (const m of [obj.material].flat()) originalMap.set(m, m.map);
     const rig = obj.userData?.rig;
-    if (rig?.axes) rigged.push({ node: obj, base: obj.quaternion.clone(), axes: rig.axes,
-                                 control: rig.control || 'vehicle' });
+    if (!rig?.axes) return;
+
+    const axes = Object.entries(rig.axes);
+    const rateAxes = Object.fromEntries(
+      axes.filter(([, specification]) => specification.driver === 'rate'));
+    const poseAxes = Object.fromEntries(
+      axes.filter(([, specification]) => specification.driver !== 'rate'));
+    const isDrivetrain = obj.userData.templateKind?.toLowerCase() === 'engine'
+      && Object.keys(rateAxes).length;
+
+    if (isDrivetrain) {
+      drivetrains.push({
+        node: obj,
+        axes: rateAxes,
+        control: rig.control || 'vehicle',
+      });
+      if (Object.keys(poseAxes).length) {
+        rigged.push({
+          node: obj,
+          base: obj.quaternion.clone(),
+          axes: poseAxes,
+          control: rig.control || 'vehicle',
+        });
+      }
+    } else {
+      rigged.push({
+        node: obj,
+        base: obj.quaternion.clone(),
+        axes: rig.axes,
+        control: rig.control || 'vehicle',
+      });
+    }
   });
+  for (const drivetrain of drivetrains) {
+    const springs = [];
+    drivetrain.node.traverse(node => {
+      if (node !== drivetrain.node
+          && node.userData.templateKind?.toLowerCase() === 'spring'
+          && node.userData.geometry) {
+        springs.push(node);
+      }
+    });
+    if (springs.length) {
+      const wheelAxis = Object.values(drivetrain.axes)[0];
+      for (const spring of springs) {
+        rigged.push({
+          node: spring,
+          base: spring.quaternion.clone(),
+          axes: { pitch: wheelAxis },
+          control: drivetrain.control,
+        });
+      }
+    } else if (drivetrain.node.userData.geometry) {
+      rigged.push({
+        node: drivetrain.node,
+        base: drivetrain.node.quaternion.clone(),
+        axes: drivetrain.axes,
+        control: drivetrain.control,
+      });
+    }
+  }
   scene.add(current);
-  // Handles for the headless checks in shoot.mjs and the scratch probes.
-  window.__scene = scene; window.__camera = camera; window.__controls = controls;
+  collectCollisions(current, report);
   collectScrolling(current);
   buildRigPanel();
   applyState();
@@ -425,16 +1348,22 @@ async function show(entry, button) {
   const size = box.getSize(new THREE.Vector3());
   const centre = box.getCenter(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z);
-  controls.target.copy(centre);
-  camera.position.set(centre.x + radius * 1.3, centre.y + radius * 0.75, centre.z + radius * 1.5);
+  framing = { centre, radius };
+  setCameraView(0);
   camera.near = radius / 200; camera.far = radius * 60;
   camera.updateProjectionMatrix();
   grid.position.y = box.min.y;
 
-  const report = await fetch(`models/${entry.report}${bust()}`).then(r => r.json());
   document.getElementById('stats').innerHTML = [
+    ['build', configurationLabel(variant.configuration)],
+    ['skin', skinLabel(skinValue(variant))],
     ['parts', report.parts],
     ['triangles', report.triangles.toLocaleString()],
+    ['collision triangles', (report.collisionTriangles || 0).toLocaleString()],
+    ['collision materials', (report.collisionMaterials || []).join(', ') || 'none'],
+    ['hit points', report.armor?.maxHitpoints ?? 'not declared'],
+    ['critical at', report.armor?.criticalDamage ?? 'not declared'],
+    ['splash material', report.armor?.splashMaterial ?? 'not declared'],
     ['textures bound', report.texturesResolved ? Object.keys(report.texturesResolved).length : 0],
     ['size', `${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} m`],
   ].map(([k, v]) => `<div class="stat"><span>${k}</span><span>${v}</span></div>`).join('');
@@ -452,37 +1381,111 @@ async function show(entry, button) {
   if (entry.textureFallbacks && entry.textureFallbacks.length) {
     banner.hidden = false;
     banner.textContent =
-      `Vanilla texture.rfa is missing from the install — textures shown are borrowed from ${entry.textureFallbacks.join(', ')} and may not match the vanilla UV layout.`;
+      `The extractor did not resolve vanilla texture.rfa from the current archive layout — textures shown are borrowed from ${entry.textureFallbacks.join(', ')} and may not match the vanilla UV layout.`;
   } else if (missing.length) {
     banner.hidden = false;
     banner.textContent = `${missing.length} texture(s) could not be resolved in this mod chain.`;
   } else {
     banner.hidden = true;
   }
+  return true;
 }
 
-const manifest = await fetch(`models/models.json${bust()}`).then(r => r.json());
+const rawManifest = await fetch(`models/models.json${bust()}`).then(response => {
+  if (!response.ok) throw new Error(`manifest returned ${response.status}`);
+  return response.json();
+});
+const manifest = rawManifest.map((entry, index) => ({
+  ...entry,
+  index,
+  variants: normalizeVariants(entry),
+}));
 const list = document.getElementById('models');
-manifest.forEach((entry, i) => {
+const buttons = [];
+
+async function showVariant(modelIndex, variantIndex = null) {
+  const entry = manifest[modelIndex];
+  if (!entry) throw new Error(`unknown model index ${modelIndex}`);
+  const selected = variantIndex === null
+    ? entry.variants.find(variant => variant.glb === entry.glb) || entry.variants[0]
+    : entry.variants[variantIndex];
+  if (!selected) throw new Error(`unknown variant index ${variantIndex} for ${entry.name}`);
+  return show(entry, selected, buttons[modelIndex]);
+}
+
+manifest.forEach((entry, index) => {
   const b = document.createElement('button');
   b.className = 'model';
   b.setAttribute('aria-pressed', 'false');
-  const variants = entry.variants?.length ?? 1;
-  b.innerHTML = `${entry.name}<small>${entry.texturesResolved} tex bound &middot; ${entry.texturesMissing.length} missing${variants > 1 ? ` &middot; ${variants} skins` : ''}</small>`;
-  b.addEventListener('click', () => show(entry, b));
+  b.dataset.modelIndex = String(index);
+  const configurations = unique(entry.variants.map(variant => variant.configuration)).length;
+  const skins = unique(entry.variants.map(skinValue)).length;
+  const dimensions = [
+    configurations > 1 ? `${configurations} builds` : null,
+    skins > 1 ? `${skins} skins` : null,
+  ].filter(Boolean).join(' · ');
+  const category = entry.category ? `${entry.category} · ` : '';
+  b.innerHTML = `${entry.name}<small>${category}${entry.texturesResolved} tex bound · ${entry.texturesMissing.length} missing${dimensions ? ` · ${dimensions}` : ''}</small>`;
+  b.addEventListener('click', () => void showVariant(index));
   list.appendChild(b);
-  if (i === 0) show(entry, b);
+  buttons.push(b);
 });
 
+for (const select of [configurationSelect, skinSelect]) {
+  select.addEventListener('change', () => {
+    const selected = selectedFromControls();
+    if (selected) void show(currentEntry, selected, currentButton);
+  });
+}
+
+window.__scene = scene;
+window.__camera = camera;
+window.__controls = controls;
+window.__modelInspector = {
+  manifest,
+  showVariant,
+  getCurrent: () => currentVariant ? {
+    model: currentEntry.name,
+    modelIndex: currentEntry.index,
+    variantIndex: currentVariant.index,
+    configuration: currentVariant.configuration,
+    level: currentVariant.level,
+    lod: currentVariant.lod,
+  } : null,
+  setView: setCameraView,
+  setCollision: enabled => {
+    state.collision = Boolean(enabled);
+    collisionCheckbox.checked = state.collision;
+    applyCollisionState();
+    invalidate();
+  },
+  setImpactAngle: setHitAngle,
+  setCollisionMaterial,
+  getCollision: () => {
+    let handle = null;
+    if (angleHandle.visible) {
+      const projected = angleHandle.position.clone().project(camera);
+      const rect = renderer.domElement.getBoundingClientRect();
+      handle = {
+        x: rect.left + (projected.x + 1) * rect.width / 2,
+        y: rect.top + (1 - projected.y) * rect.height / 2,
+      };
+    }
+    return {
+      enabled: state.collision,
+      roots: collisionRoots.length,
+      targets: collisionTargets.length,
+      visibleTargets: collisionTargets.filter(target => target.visible).length,
+      selectedMaterial: state.collisionMaterial,
+      hit: lastHit,
+      handle,
+    };
+  },
+};
+
+if (manifest.length) await showVariant(0);
+
 resize();
-const clock = new THREE.Clock();
-renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.1);
-  advanceRates(dt);
-  advanceScroll(dt);
-  controls.update();
-  renderer.render(scene, camera);
-});
 </script>
 </body>
 </html>
