@@ -30,6 +30,7 @@
     width: 100%;
     height: 100%;
     z-index: 0;
+    touch-action: none;
   }
   #hud, #gate, #side {
     position: absolute;
@@ -114,7 +115,7 @@
     <a href="./index.html">vehicle inspector</a>
   </div>
 </aside>
-<div id="hud">click the map to fly &middot; WASD look-steer &middot; Ctrl faster &middot; Shift slower &middot; Esc release</div>
+<div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; Esc</div>
 <div id="gate"><span>Click to fly</span></div>
 
 <script type="importmap">
@@ -125,8 +126,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 
 const DEFAULT_DRAW = 700;
-const FLY_FAST = 3.5;
-const FLY_SLOW = 0.28;
+const FLY_SPEED = 140;
+const FLY_SLOW = 0.25;
+const LOOK_SENS = 0.0022;
+const FLY_KEYS = new Set([
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE',
+  'ShiftLeft', 'ShiftRight',
+]);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -151,10 +157,13 @@ const look = { yaw: 0, pitch: -0.15 };
 const cull = [];
 let spawnersRoot = null;
 let captured = false;
+let lockHeld = false;
+let dragging = false;
+let lastPointerX = 0;
+let lastPointerY = 0;
 let currentRoot = null;
 let extras = {};
 let skybox = null;
-let speed = 40;
 
 const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
@@ -166,6 +175,20 @@ function uiFocused() {
   return t && (t.tagName === 'SELECT' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
 }
 
+function isSlow() {
+  return keys.has('ShiftLeft') || keys.has('ShiftRight');
+}
+
+function flySpeed() {
+  return FLY_SPEED * (isSlow() ? FLY_SLOW : 1);
+}
+
+function lookDelta(dx, dy) {
+  if (!dx && !dy) return;
+  look.yaw -= dx * LOOK_SENS;
+  look.pitch = Math.max(-1.2, Math.min(1.2, look.pitch - dy * LOOK_SENS));
+}
+
 addEventListener('keydown', e => {
   if (e.code === 'Escape') {
     release();
@@ -173,32 +196,78 @@ addEventListener('keydown', e => {
   }
   if (uiFocused()) return;
   keys.add(e.code);
-  if (captured) e.preventDefault();
+  if (captured && FLY_KEYS.has(e.code)) e.preventDefault();
 });
 addEventListener('keyup', e => keys.delete(e.code));
 
 const gate = document.getElementById('gate');
+function setFly(on) {
+  captured = on;
+  gate.hidden = on;
+  if (!on) {
+    dragging = false;
+    lockHeld = false;
+    if (document.pointerLockElement === renderer.domElement) {
+      document.exitPointerLock();
+    }
+  }
+}
 function capture() {
+  setFly(true);
   renderer.domElement.requestPointerLock();
 }
 function release() {
-  if (document.pointerLockElement) document.exitPointerLock();
+  setFly(false);
 }
 gate.querySelector('span').addEventListener('click', e => {
   e.stopPropagation();
   capture();
 });
-renderer.domElement.addEventListener('click', capture);
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  dragging = true;
+  lastPointerX = e.clientX;
+  lastPointerY = e.clientY;
+  renderer.domElement.setPointerCapture(e.pointerId);
+  capture();
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  dragging = false;
+  if (renderer.domElement.hasPointerCapture(e.pointerId)) {
+    renderer.domElement.releasePointerCapture(e.pointerId);
+  }
+});
+renderer.domElement.addEventListener('pointercancel', () => { dragging = false; });
 document.getElementById('side').addEventListener('pointerdown', () => release());
 document.addEventListener('pointerlockchange', () => {
-  captured = document.pointerLockElement === renderer.domElement;
-  gate.hidden = captured;
+  if (document.pointerLockElement === renderer.domElement) {
+    lockHeld = true;
+    dragging = false;
+    setFly(true);
+    return;
+  }
+  if (lockHeld) {
+    lockHeld = false;
+    setFly(false);
+  }
 });
-document.addEventListener('mousemove', e => {
+document.addEventListener('pointermove', e => {
   if (!captured) return;
-  look.yaw -= e.movementX * 0.0022;
-  look.pitch = Math.max(-1.2, Math.min(1.2, look.pitch - e.movementY * 0.0022));
+  if (document.pointerLockElement === renderer.domElement) {
+    lookDelta(e.movementX, e.movementY);
+    return;
+  }
+  if (!dragging) return;
+  lookDelta(e.clientX - lastPointerX, e.clientY - lastPointerY);
+  lastPointerX = e.clientX;
+  lastPointerY = e.clientY;
 });
+document.addEventListener('wheel', e => {
+  if (!captured) return;
+  e.preventDefault();
+  const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 80 : 1;
+  camera.position.y -= e.deltaY * scale * 0.12 * (isSlow() ? FLY_SLOW : 1);
+}, { passive: false });
 
 function lookVector() {
   const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw);
@@ -217,16 +286,14 @@ function applyLook() {
 
 function fly(dt) {
   if (!captured) return;
-  let mul = 1;
-  if (keys.has('ControlLeft') || keys.has('ControlRight')) mul = FLY_FAST;
-  else if (keys.has('ShiftLeft') || keys.has('ShiftRight')) mul = FLY_SLOW;
-  const step = speed * mul * dt;
+  const step = flySpeed() * dt;
   const fwd = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
   const strafe = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+  const vert = (keys.has('KeyE') ? 1 : 0) - (keys.has('KeyQ') ? 1 : 0);
   const d = lookVector();
-  camera.position.x += (d.x * fwd + d.cy * strafe) * step;
-  camera.position.y += d.y * fwd * step;
-  camera.position.z += (d.z * fwd - d.sy * strafe) * step;
+  camera.position.x += (d.x * fwd - d.cy * strafe) * step;
+  camera.position.y += (d.y * fwd + vert) * step;
+  camera.position.z += (d.z * fwd + d.sy * strafe) * step;
 }
 
 function resize() {
