@@ -457,7 +457,9 @@ public class SqliteGamificationService(
             // Apply filters
             if (!string.IsNullOrWhiteSpace(playerName))
             {
-                query = query.Where(pa => pa.PlayerName.Contains(playerName));
+                // Equality so IX_PlayerAchievements_PlayerName_* can serve COUNT and
+                // the sorted page. Contains compiles to instr() and walks the table.
+                query = query.Where(pa => pa.PlayerName == playerName);
             }
 
             if (!string.IsNullOrWhiteSpace(achievementType))
@@ -467,7 +469,7 @@ public class SqliteGamificationService(
 
             if (!string.IsNullOrWhiteSpace(achievementId))
             {
-                query = query.Where(pa => pa.AchievementId.Contains(achievementId));
+                query = query.Where(pa => pa.AchievementId == achievementId);
             }
 
             if (!string.IsNullOrWhiteSpace(tier))
