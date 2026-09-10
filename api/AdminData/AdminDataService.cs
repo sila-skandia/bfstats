@@ -11,6 +11,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NodaTime;
 
+using api.ImageStorage;
+using api.MapDossiers;
+
 namespace api.AdminData;
 
 public class AdminDataService(
@@ -18,7 +21,9 @@ public class AdminDataService(
     IServiceScopeFactory scopeFactory,
     IClock clock,
     ICacheService cacheService,
-    ILogger<AdminDataService> logger
+    ILogger<AdminDataService> logger,
+    IMapImageResolver? mapImageResolver = null,
+    IMapDossierResolver? mapDossierResolver = null
 ) : IAdminDataService
 {
     public async Task<PagedResult<SuspiciousSessionResponse>> QuerySuspiciousSessionsAsync(QuerySuspiciousSessionsRequest request)
@@ -512,4 +517,482 @@ public class AdminDataService(
         }
     }
 
+    private const string MapReportCacheKey = "admin:map_coverage_report:base_v4";
+    private static readonly TimeSpan MapReportCacheDuration = TimeSpan.FromMinutes(5);
+
+    private static readonly HashSet<string> IgnoredGames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "fh2",
+        "bfvietnam",
+        "bfv"
+    };
+
+    private static bool IsIgnoredGame(string? game, string? gameId)
+    {
+        return (!string.IsNullOrWhiteSpace(game) && IgnoredGames.Contains(game.Trim())) ||
+               (!string.IsNullOrWhiteSpace(gameId) && IgnoredGames.Contains(gameId.Trim()));
+    }
+
+    public async Task<MapReportResponse> GetMapReportAsync(MapReportRequest request, CancellationToken ct = default)
+    {
+        var baseReport = await cacheService.GetAsync<CachedBaseMapReport>(MapReportCacheKey, ct);
+        if (baseReport == null)
+        {
+            baseReport = await BuildBaseMapReportAsync(ct);
+            await cacheService.SetAsync(MapReportCacheKey, baseReport, MapReportCacheDuration, ct);
+        }
+
+        var items = baseReport.AllMaps.AsEnumerable();
+
+        // Status filter
+        var status = request.Status?.Trim().ToLowerInvariant() ?? "missing";
+        if (status == "missing")
+        {
+            items = items.Where(m => !m.HasThumbnail);
+        }
+        else if (status == "has_icon")
+        {
+            items = items.Where(m => m.HasThumbnail);
+        }
+
+        // Mod filter
+        if (!string.IsNullOrWhiteSpace(request.Mod))
+        {
+            var targetMod = request.Mod.Trim();
+            items = items.Where(m => m.Servers.Any(s => string.Equals(s.GameId, targetMod, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        // Search filter (map name, normalized name, or server name)
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var search = request.Search.Trim();
+            items = items.Where(m =>
+                m.MapName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                m.NormalizedMapName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                m.Servers.Any(s => s.ServerName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                                   s.GameId.Contains(search, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        // Sorting
+        var sortBy = request.SortBy?.Trim().ToLowerInvariant() ?? "rounds";
+        var sortDesc = request.SortDesc;
+
+        items = (sortBy, sortDesc) switch
+        {
+            ("rounds", true) => items.OrderByDescending(m => m.TotalRounds).ThenBy(m => m.MapName),
+            ("rounds", false) => items.OrderBy(m => m.TotalRounds).ThenBy(m => m.MapName),
+            ("name", true) => items.OrderByDescending(m => m.MapName),
+            ("name", false) => items.OrderBy(m => m.MapName),
+            ("lastseen", true) => items.OrderByDescending(m => m.LastSeen ?? Instant.MinValue),
+            ("lastseen", false) => items.OrderBy(m => m.LastSeen ?? Instant.MinValue),
+            ("servers", true) => items.OrderByDescending(m => m.ServerCount).ThenByDescending(m => m.TotalRounds),
+            ("servers", false) => items.OrderBy(m => m.ServerCount).ThenBy(m => m.TotalRounds),
+            _ => items.OrderByDescending(m => m.TotalRounds)
+        };
+
+        var itemList = items.ToList();
+        var totalMatching = itemList.Count;
+        var page = Math.Max(1, request.Page);
+        var pageSize = Math.Clamp(request.PageSize, 1, 1000);
+        var pagedItems = itemList.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        List<MapReportModGroup>? modGroups = null;
+        if (string.Equals(request.GroupBy, "mod", StringComparison.OrdinalIgnoreCase))
+        {
+            var modMapDict = new Dictionary<string, List<MapReportItem>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in itemList)
+            {
+                var itemMods = item.Servers
+                    .Select(s => MapImageResolver.CanonicalizeMod(s.GameId))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (itemMods.Count == 0)
+                {
+                    itemMods.Add("bf1942");
+                }
+
+                foreach (var m in itemMods)
+                {
+                    if (!modMapDict.TryGetValue(m, out var list))
+                    {
+                        list = [];
+                        modMapDict[m] = list;
+                    }
+                    list.Add(item);
+                }
+            }
+
+            var modSummaryDict = baseReport.Mods.ToDictionary(m => m.GameId, StringComparer.OrdinalIgnoreCase);
+
+            modGroups = modMapDict
+                .Select(kvp =>
+                {
+                    var modId = kvp.Key;
+                    var modMaps = kvp.Value.OrderByDescending(m => m.TotalRounds).ToList();
+                    modSummaryDict.TryGetValue(modId, out var ms);
+
+                    var isInstalled = ms?.IsInstalled ?? false;
+                    var totalRounds = modMaps.Sum(m => m.TotalRounds);
+                    var missingCount = modMaps.Count(m => !m.HasThumbnail);
+                    var hasIconCount = modMaps.Count - missingCount;
+                    var serverCount = ms?.ServerCount ?? modMaps.SelectMany(m => m.Servers).Select(s => s.ServerGuid).Distinct().Count();
+                    var sampleServers = ms?.SampleServers ?? modMaps.SelectMany(m => m.Servers).Select(s => s.ServerName).Distinct().Take(3).ToList();
+
+                    return new MapReportModGroup(
+                        modId,
+                        isInstalled,
+                        modMaps.Count,
+                        missingCount,
+                        hasIconCount,
+                        totalRounds,
+                        serverCount,
+                        sampleServers,
+                        modMaps
+                    );
+                })
+                .OrderBy(g => g.IsInstalled ? 1 : 0)
+                .ThenByDescending(g => g.MissingMaps)
+                .ThenByDescending(g => g.TotalRounds)
+                .ToList();
+        }
+
+        return new MapReportResponse(
+            baseReport.Summary,
+            baseReport.Mods,
+            pagedItems,
+            totalMatching,
+            page,
+            pageSize,
+            modGroups
+        );
+    }
+
+    private async Task<CachedBaseMapReport> BuildBaseMapReportAsync(CancellationToken ct)
+    {
+        var rawServers = await dbContext.Servers
+            .AsNoTracking()
+            .Select(s => new
+            {
+                s.Guid,
+                s.Name,
+                s.Game,
+                s.GameId,
+                s.Ip,
+                s.Port,
+                s.IsOnline,
+                s.LastSeenTime,
+                s.CurrentMap
+            })
+            .ToListAsync(ct);
+
+        // Filter out legacy unsupported games (fh2, bfvietnam, bfv)
+        var servers = rawServers
+            .Where(s => !IsIgnoredGame(s.Game, s.GameId))
+            .ToDictionary(s => s.Guid, StringComparer.OrdinalIgnoreCase);
+
+        var mapStats = await dbContext.ServerMapStats
+            .AsNoTracking()
+            .Select(sms => new
+            {
+                sms.ServerGuid,
+                sms.MapName,
+                sms.TotalRounds,
+                sms.TotalPlayTimeMinutes,
+                sms.UpdatedAt
+            })
+            .ToListAsync(ct);
+
+        var knownMods = mapImageResolver?.GetKnownMods() ?? [];
+        var knownModsSet = new HashSet<string>(knownMods, StringComparer.OrdinalIgnoreCase);
+
+        var mapDict = new Dictionary<string, MapAccumulator>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var stat in mapStats)
+        {
+            if (string.IsNullOrWhiteSpace(stat.MapName)) continue;
+            // Exclude stats from servers belonging to ignored games (fh2, bfv) or unknown servers
+            if (!servers.TryGetValue(stat.ServerGuid, out var serverInfo)) continue;
+
+            var norm = NormalizeMapName(stat.MapName);
+            if (!mapDict.TryGetValue(norm, out var acc))
+            {
+                acc = new MapAccumulator(stat.MapName, norm);
+                mapDict[norm] = acc;
+            }
+
+            var serverName = serverInfo.Name;
+            var gameId = string.IsNullOrWhiteSpace(serverInfo.GameId) ? "bf1942" : serverInfo.GameId.Trim().ToLowerInvariant();
+            var ip = serverInfo.Ip ?? "";
+            var port = serverInfo.Port;
+            var isOnline = serverInfo.IsOnline;
+
+            acc.AddServerStat(stat.ServerGuid, serverName, gameId, ip, port, isOnline,
+                stat.TotalRounds, stat.TotalPlayTimeMinutes, stat.UpdatedAt);
+        }
+
+        // Include any currently active maps from Servers.CurrentMap
+        foreach (var server in servers.Values)
+        {
+            if (string.IsNullOrWhiteSpace(server.CurrentMap)) continue;
+
+            var norm = NormalizeMapName(server.CurrentMap);
+            if (!mapDict.TryGetValue(norm, out var acc))
+            {
+                acc = new MapAccumulator(server.CurrentMap, norm);
+                mapDict[norm] = acc;
+            }
+
+            var gameId = string.IsNullOrWhiteSpace(server.GameId) ? "bf1942" : server.GameId.Trim().ToLowerInvariant();
+            var lastSeen = Instant.FromDateTimeUtc(DateTime.SpecifyKind(server.LastSeenTime, DateTimeKind.Utc));
+            acc.EnsureServer(server.Guid, server.Name, gameId, server.Ip, server.Port, server.IsOnline, lastSeen);
+        }
+
+        var allMaps = new List<MapReportItem>(mapDict.Count);
+        var modAggregates = new Dictionary<string, ModAccumulator>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var acc in mapDict.Values)
+        {
+            var serverMods = acc.Servers.Values.Select(s => s.GameId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (serverMods.Count == 0) serverMods.Add("bf1942");
+
+            bool hasThumb = false;
+            bool hasMinimap = false;
+            bool hasDossier = false;
+            string? resolvedMod = null;
+
+            if (mapImageResolver != null)
+            {
+                foreach (var mod in serverMods)
+                {
+                    var thumbPath = mapImageResolver.Resolve(mod, acc.NormalizedName, MapImageKind.Thumbnail);
+                    if (thumbPath != null)
+                    {
+                        hasThumb = true;
+                        resolvedMod = Path.GetDirectoryName(thumbPath)?.Replace('\\', '/');
+                        break;
+                    }
+                }
+
+                if (!hasThumb)
+                {
+                    var thumbPath = mapImageResolver.Resolve("bf1942", acc.NormalizedName, MapImageKind.Thumbnail);
+                    if (thumbPath != null)
+                    {
+                        hasThumb = true;
+                        resolvedMod = Path.GetDirectoryName(thumbPath)?.Replace('\\', '/');
+                    }
+                }
+
+                foreach (var mod in serverMods)
+                {
+                    if (mapImageResolver.Resolve(mod, acc.NormalizedName, MapImageKind.Minimap) != null)
+                    {
+                        hasMinimap = true;
+                        break;
+                    }
+                }
+                if (!hasMinimap && mapImageResolver.Resolve("bf1942", acc.NormalizedName, MapImageKind.Minimap) != null)
+                {
+                    hasMinimap = true;
+                }
+            }
+
+            if (mapDossierResolver != null)
+            {
+                foreach (var mod in serverMods)
+                {
+                    if (mapDossierResolver.Resolve(mod, acc.NormalizedName) != null)
+                    {
+                        hasDossier = true;
+                        break;
+                    }
+                }
+            }
+
+            var serverList = acc.Servers.Values
+                .OrderByDescending(s => s.Rounds)
+                .ThenByDescending(s => s.LastSeen ?? Instant.MinValue)
+                .Select(s => new MapReportServerItem(
+                    s.ServerGuid,
+                    s.ServerName,
+                    s.GameId,
+                    s.Rounds,
+                    s.TotalPlayTimeMinutes,
+                    s.LastSeen,
+                    s.IsOnline,
+                    s.Ip,
+                    s.Port
+                ))
+                .ToList();
+
+            var mapItem = new MapReportItem(
+                acc.DisplayName,
+                acc.NormalizedName,
+                hasThumb,
+                hasMinimap,
+                hasDossier,
+                resolvedMod,
+                acc.TotalRounds,
+                acc.TotalPlayTimeMinutes,
+                acc.LastSeen,
+                serverList.Count,
+                serverList
+            );
+
+            allMaps.Add(mapItem);
+
+            foreach (var s in serverList)
+            {
+                var mod = MapImageResolver.CanonicalizeMod(s.GameId);
+                if (!modAggregates.TryGetValue(mod, out var modAcc))
+                {
+                    var isInstalled = knownModsSet.Contains(mod);
+                    modAcc = new ModAccumulator(mod, isInstalled);
+                    modAggregates[mod] = modAcc;
+                }
+
+                modAcc.AddObservation(acc.NormalizedName, hasThumb, s.Rounds, s.ServerName);
+            }
+        }
+
+        var mods = modAggregates.Values
+            .OrderByDescending(m => m.TotalRounds)
+            .ThenByDescending(m => m.TotalMaps)
+            .Select(m => new MapReportModSummary(
+                m.GameId,
+                m.IsInstalled,
+                m.Maps.Count,
+                m.Maps.Count(k => !k.Value),
+                m.Maps.Count(k => k.Value),
+                m.TotalRounds,
+                m.Servers.Count,
+                m.Servers.Take(3).ToList()
+            ))
+            .ToList();
+
+        var totalMaps = allMaps.Count;
+        var missingIconMaps = allMaps.Count(m => !m.HasThumbnail);
+        var hasIconMaps = totalMaps - missingIconMaps;
+        var totalMods = mods.Count;
+        var uninstalledMods = mods.Count(m => !m.IsInstalled);
+
+        var summary = new MapReportSummary(
+            totalMaps,
+            missingIconMaps,
+            hasIconMaps,
+            totalMods,
+            uninstalledMods
+        );
+
+        return new CachedBaseMapReport(summary, mods, allMaps);
+    }
+
+    private static string NormalizeMapName(string mapName)
+    {
+        var trimmed = mapName.Trim();
+        if (trimmed.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed[..^4];
+        var lower = trimmed.ToLowerInvariant().Replace(' ', '_');
+        return lower switch
+        {
+            "wake_island" => "wake",
+            "huskies" => "husky",
+            "santa_croce" => "santo_croce",
+            _ => lower
+        };
+    }
+
+    private class MapAccumulator(string initialRawName, string normalizedName)
+    {
+        public string DisplayName { get; set; } = initialRawName;
+        public string NormalizedName { get; } = normalizedName;
+        public int TotalRounds { get; set; }
+        public int TotalPlayTimeMinutes { get; set; }
+        public Instant? LastSeen { get; set; }
+        public Dictionary<string, ServerAccumulator> Servers { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public void AddServerStat(string guid, string name, string gameId, string ip, int port, bool isOnline,
+            int rounds, int playTime, Instant updatedAt)
+        {
+            TotalRounds += rounds;
+            TotalPlayTimeMinutes += playTime;
+            if (LastSeen == null || updatedAt > LastSeen.Value)
+            {
+                LastSeen = updatedAt;
+            }
+
+            if (!Servers.TryGetValue(guid, out var s))
+            {
+                s = new ServerAccumulator(guid, name, gameId, ip, port, isOnline);
+                Servers[guid] = s;
+            }
+            s.Rounds += rounds;
+            s.TotalPlayTimeMinutes += playTime;
+            if (s.LastSeen == null || updatedAt > s.LastSeen.Value)
+            {
+                s.LastSeen = updatedAt;
+            }
+        }
+
+        public void EnsureServer(string guid, string name, string gameId, string ip, int port, bool isOnline, Instant lastSeen)
+        {
+            if (!Servers.TryGetValue(guid, out var s))
+            {
+                s = new ServerAccumulator(guid, name, gameId, ip, port, isOnline);
+                Servers[guid] = s;
+            }
+            if (s.LastSeen == null || lastSeen > s.LastSeen.Value)
+            {
+                s.LastSeen = lastSeen;
+            }
+            if (LastSeen == null || lastSeen > LastSeen.Value)
+            {
+                LastSeen = lastSeen;
+            }
+        }
+    }
+
+    private class ServerAccumulator(string guid, string name, string gameId, string ip, int port, bool isOnline)
+    {
+        public string ServerGuid { get; } = guid;
+        public string ServerName { get; } = name;
+        public string GameId { get; } = gameId;
+        public string Ip { get; } = ip;
+        public int Port { get; } = port;
+        public bool IsOnline { get; } = isOnline;
+        public int Rounds { get; set; }
+        public int TotalPlayTimeMinutes { get; set; }
+        public Instant? LastSeen { get; set; }
+    }
+
+    private class ModAccumulator(string gameId, bool isInstalled)
+    {
+        public string GameId { get; } = gameId;
+        public bool IsInstalled { get; } = isInstalled;
+        public int TotalRounds { get; set; }
+        public Dictionary<string, bool> Maps { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Servers { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public int TotalMaps => Maps.Count;
+
+        public void AddObservation(string mapNorm, bool hasThumb, int rounds, string serverName)
+        {
+            TotalRounds += rounds;
+            if (!string.IsNullOrWhiteSpace(serverName))
+            {
+                Servers.Add(serverName);
+            }
+            if (!Maps.TryGetValue(mapNorm, out var current) || (!current && hasThumb))
+            {
+                Maps[mapNorm] = hasThumb;
+            }
+        }
+    }
 }
+
+public record CachedBaseMapReport(
+    MapReportSummary Summary,
+    List<MapReportModSummary> Mods,
+    List<MapReportItem> AllMaps
+);

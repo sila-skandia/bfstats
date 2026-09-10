@@ -383,6 +383,18 @@ public class AdminDataController(
         var (roundsReset, sessionsReset) = await relationshipEtlService.ResetNeo4jSyncWatermarkAsync(fromDate, ct);
         return Ok(new { roundsReset, sessionsReset });
     }
+
+    /// <summary>
+    /// Map coverage and mod discovery report.
+    /// Lists maps missing icons, along with the rotating servers and their mods.
+    /// </summary>
+    [HttpGet("maps/report")]
+    public async Task<ActionResult<MapReportResponse>> GetMapReport(
+        [FromQuery] MapReportRequest request, CancellationToken ct)
+    {
+        var report = await adminDataService.GetMapReportAsync(request, ct);
+        return Ok(report);
+    }
 }
 
 public class SetAppDataRequest
