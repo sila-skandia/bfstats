@@ -32,6 +32,65 @@ public class BuddyApiServiceTests
             Arg.Any<Func<object, Exception?, string>>());
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("   ")]
+    [InlineData("\t")]
+    public async Task GetUsersWithBuddy_ReturnsEmpty_WithoutCallingApi_WhenNameIsWhitespace(string buddyPlayerName)
+    {
+        var logger = Substitute.For<ILogger<BuddyApiService>>();
+        var configuration = Substitute.For<IConfiguration>();
+        configuration["ApiBaseUrl"].Returns("http://bf42-stats-service.bf42-stats:8080");
+        var httpClient = new HttpClient(new FailIfCalledHandler());
+        var service = new BuddyApiService(httpClient, logger, configuration);
+
+        var result = await service.GetUsersWithBuddy(buddyPlayerName);
+
+        Assert.Empty(result);
+        logger.DidNotReceive().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+        logger.DidNotReceive().Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("   ")]
+    public async Task GetUsersWithFavouriteServer_ReturnsEmpty_WithoutCallingApi_WhenGuidIsWhitespace(string serverGuid)
+    {
+        var logger = Substitute.For<ILogger<BuddyApiService>>();
+        var configuration = Substitute.For<IConfiguration>();
+        configuration["ApiBaseUrl"].Returns("http://bf42-stats-service.bf42-stats:8080");
+        var httpClient = new HttpClient(new FailIfCalledHandler());
+        var service = new BuddyApiService(httpClient, logger, configuration);
+
+        var result = await service.GetUsersWithFavouriteServer(serverGuid);
+
+        Assert.Empty(result);
+        logger.DidNotReceive().Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+        logger.DidNotReceive().Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
     [Fact]
     public async Task GetUsersWithFavouriteServer_ReturnsEmpty_OnServiceUnavailable()
     {
@@ -75,6 +134,16 @@ public class BuddyApiServiceTests
             {
                 RequestMessage = request
             });
+        }
+    }
+
+    private sealed class FailIfCalledHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException($"HTTP should not be called for {request.RequestUri}");
         }
     }
 }
