@@ -111,6 +111,32 @@ public sealed class StatsCollectionBackgroundServiceTests : IDisposable
         await service.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task Cycle_ObjectDisposedExceptionWithoutShutdown_StillLogsError()
+    {
+        // A disposed dependency unrelated to host shutdown (e.g. a genuine bug) must not
+        // be swallowed as "stopped during host shutdown" just because the exception type
+        // matches - only StopAsync's cancellation should qualify for that treatment.
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bfList = Substitute.For<IBfListApiService>();
+        bfList.FetchAllServersAsync(Arg.Any<string>()).Returns(_ =>
+        {
+            entered.TrySetResult();
+            return Task.FromException<object[]>(new ObjectDisposedException("SomeUnrelatedDependency"));
+        });
+
+        var logger = new CollectingLogger();
+        using var service = CreateService(bfList, logger);
+
+        await service.StartAsync(CancellationToken.None);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitUntil(() => logger.Errors.Count > 0);
+
+        Assert.Contains(logger.Errors, m => m.Contains("Error in stats collection cycle", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Informations, m => m.Contains("stopped during host shutdown", StringComparison.Ordinal));
+        await service.StopAsync(CancellationToken.None);
+    }
+
     private StatsCollectionBackgroundService CreateService(
         IBfListApiService bfList,
         ILogger<StatsCollectionBackgroundService> logger)
