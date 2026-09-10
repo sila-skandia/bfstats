@@ -33,5 +33,6 @@ public record PlayerMapServerBreakdown(
     int Kills,
     int Deaths,
     int Rounds,
-    double PlayTime
+    double PlayTime,
+    string GameId = "bf1942"
 );
