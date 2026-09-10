@@ -329,6 +329,14 @@ public class SqlitePlayerStatsService(PlayerTrackerDbContext dbContext) : ISqlit
                 return "gcmod";
             case "bg42" or "battlegroup42":
                 return "bg42";
+            case "warfront" or "warfront1":
+                return "warfront";
+            case "pirates" or "bfpirates":
+                return "pirates";
+            case "finnwars":
+                return "finnwars";
+            case "bfheroes":
+                return "bfheroes";
         }
 
         // Road to Rome expansion (xpack1) maps

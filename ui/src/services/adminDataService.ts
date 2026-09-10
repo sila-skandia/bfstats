@@ -180,6 +180,84 @@ export interface AIChatFeedbackResponse {
   pageSize: number;
 }
 
+export interface MapReportRequest {
+  status?: 'missing' | 'has_icon' | 'all';
+  mod?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: 'rounds' | 'name' | 'lastSeen' | 'servers';
+  sortDesc?: boolean;
+  groupBy?: 'none' | 'mod';
+}
+
+export interface MapReportSummary {
+  totalMaps: number;
+  missingIconMaps: number;
+  hasIconMaps: number;
+  totalMods: number;
+  uninstalledMods: number;
+}
+
+export interface MapReportModSummary {
+  gameId: string;
+  isInstalled: boolean;
+  totalMaps: number;
+  missingMaps: number;
+  hasIconMaps: number;
+  totalRounds: number;
+  serverCount: number;
+  sampleServers: string[];
+}
+
+export interface MapReportModGroup {
+  gameId: string;
+  isInstalled: boolean;
+  totalMaps: number;
+  missingMaps: number;
+  hasIconMaps: number;
+  totalRounds: number;
+  serverCount: number;
+  sampleServers: string[];
+  maps: MapReportItem[];
+}
+
+export interface MapReportServerItem {
+  serverGuid: string;
+  serverName: string;
+  gameId: string;
+  rounds: number;
+  totalPlayTimeMinutes: number;
+  lastSeen?: string;
+  isOnline: boolean;
+  ip: string;
+  port: number;
+}
+
+export interface MapReportItem {
+  mapName: string;
+  normalizedMapName: string;
+  hasThumbnail: boolean;
+  hasMinimap: boolean;
+  hasDossier: boolean;
+  resolvedMod?: string;
+  totalRounds: number;
+  totalPlayTimeMinutes: number;
+  lastSeen?: string;
+  serverCount: number;
+  servers: MapReportServerItem[];
+}
+
+export interface MapReportResponse {
+  summary: MapReportSummary;
+  mods: MapReportModSummary[];
+  items: MapReportItem[];
+  totalMatching: number;
+  page: number;
+  pageSize: number;
+  modGroups?: MapReportModGroup[];
+}
+
 class AdminDataService {
   private baseUrl = '/stats/admin/data';
 
@@ -395,6 +473,20 @@ class AdminDataService {
       method: 'PUT',
       body: JSON.stringify({ role }),
     });
+  }
+
+  async getMapReport(request: MapReportRequest = {}): Promise<MapReportResponse> {
+    const params = new URLSearchParams();
+    if (request.status) params.set('status', request.status);
+    if (request.mod) params.set('mod', request.mod);
+    if (request.search) params.set('search', request.search);
+    if (request.page) params.set('page', String(request.page));
+    if (request.pageSize) params.set('pageSize', String(request.pageSize));
+    if (request.sortBy) params.set('sortBy', request.sortBy);
+    if (request.sortDesc !== undefined) params.set('sortDesc', String(request.sortDesc));
+    if (request.groupBy) params.set('groupBy', request.groupBy);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<MapReportResponse>(`/maps/report${qs}`, { method: 'GET' });
   }
 }
 

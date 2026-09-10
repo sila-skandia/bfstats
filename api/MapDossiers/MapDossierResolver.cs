@@ -99,12 +99,14 @@ public class MapDossierResolver(ILogger<MapDossierResolver> logger) : IMapDossie
         "eodp" => "eod",
         "xmas1918" => "bf1918",
         "battlegroup42" => "bg42",
+        "warfront1" => "warfront",
+        "bfpirates" => "pirates",
         _ => mod
     };
 
     private static string? FallbackScan(DossierManifest manifest, string normalizedMap)
     {
-        string[] priorityMods = ["bf1942", "xpack1", "xpack2", "dc_final", "desertcombat", "fhsw", "fh", "eod", "bf1918", "gcmod", "interstate"];
+        string[] priorityMods = ["bf1942", "xpack1", "xpack2", "dc_final", "desertcombat", "fhsw", "fh", "eod", "bf1918", "gcmod", "interstate", "bg42", "warfront", "finnwars", "pirates", "bfheroes"];
         foreach (var candidateMod in priorityMods)
         {
             if (manifest.Mods.TryGetValue(candidateMod, out var candidate) &&
@@ -130,7 +132,7 @@ public class MapDossierResolver(ILogger<MapDossierResolver> logger) : IMapDossie
         if (string.IsNullOrWhiteSpace(gameId))
             return [];
 
-        var normalizedGame = Normalize(gameId);
+        var normalizedGame = CanonicalizeMod(Normalize(gameId));
         var loaded = LoadManifest();
         if (loaded is null || !loaded.Mods.TryGetValue(normalizedGame, out var mod))
             return [normalizedGame];
