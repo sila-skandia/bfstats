@@ -19,6 +19,14 @@ public class BuddyApiService(HttpClient httpClient, ILogger<BuddyApiService> log
         using var activity = ActivitySources.Http.StartActivity("GetUsersWithBuddy");
         activity?.SetTag("buddy.player_name", buddyPlayerName);
 
+        // BF1942 allows space-only names. The API 400s those, and OTel marks the
+        // HttpClient span ERROR, which pages Seq (@Exception is not null).
+        if (string.IsNullOrWhiteSpace(buddyPlayerName))
+        {
+            logger.LogDebug("Skipping buddy lookup for empty player name");
+            return [];
+        }
+
         try
         {
             logger.LogInformation("Getting users with buddy {BuddyName} from API", buddyPlayerName);
@@ -55,6 +63,12 @@ public class BuddyApiService(HttpClient httpClient, ILogger<BuddyApiService> log
     {
         using var activity = ActivitySources.Http.StartActivity("GetUsersWithFavouriteServer");
         activity?.SetTag("server.guid", serverGuid);
+
+        if (string.IsNullOrWhiteSpace(serverGuid))
+        {
+            logger.LogDebug("Skipping favourite-server lookup for empty server guid");
+            return [];
+        }
 
         try
         {
