@@ -185,7 +185,7 @@ public class BfListApiService(
     /// </summary>
     private async Task<RawServerSnapshot?> GetSnapshotAsync(string cacheKey, TimeSpan memoryTtl)
     {
-        if (memoryCache.TryGetValue<RawServerSnapshot>(cacheKey, out var memoryHit) && memoryHit != null)
+        if (TryGetMemorySnapshot(cacheKey, out var memoryHit) && memoryHit != null)
         {
             logger.LogDebug("Memory cache hit for {CacheKey}", cacheKey);
             return memoryHit;
@@ -195,10 +195,39 @@ public class BfListApiService(
         if (redisHit != null)
         {
             logger.LogDebug("Redis cache hit for {CacheKey}", cacheKey);
-            memoryCache.Set(cacheKey, redisHit, memoryTtl);
+            TrySetMemorySnapshot(cacheKey, redisHit, memoryTtl);
         }
 
         return redisHit;
+    }
+
+    /// <summary>
+    /// IMemoryCache is disposed with the host. Recreate can tear it down while a
+    /// collection cycle or in-flight request still reads L1; treat that as a miss
+    /// so Redis / last-good can still serve.
+    /// </summary>
+    private bool TryGetMemorySnapshot(string cacheKey, out RawServerSnapshot? snapshot)
+    {
+        try
+        {
+            return memoryCache.TryGetValue(cacheKey, out snapshot) && snapshot != null;
+        }
+        catch (ObjectDisposedException)
+        {
+            snapshot = null;
+            return false;
+        }
+    }
+
+    private void TrySetMemorySnapshot(string cacheKey, RawServerSnapshot snapshot, TimeSpan memoryTtl)
+    {
+        try
+        {
+            memoryCache.Set(cacheKey, snapshot, memoryTtl);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     /// <summary>
@@ -234,8 +263,8 @@ public class BfListApiService(
                 Servers = typedServers
             };
 
-            memoryCache.Set(RawServersCacheKey(game), snapshot, TimeSpan.FromSeconds(ServerListCacheSeconds));
-            memoryCache.Set(RawServersLastGoodCacheKey(game), snapshot, LastGoodCacheDuration);
+            TrySetMemorySnapshot(RawServersCacheKey(game), snapshot, TimeSpan.FromSeconds(ServerListCacheSeconds));
+            TrySetMemorySnapshot(RawServersLastGoodCacheKey(game), snapshot, LastGoodCacheDuration);
             await cacheService.SetAsync(RawServersCacheKey(game), snapshot, TimeSpan.FromSeconds(ServerListCacheSeconds));
             await cacheService.SetAsync(RawServersLastGoodCacheKey(game), snapshot, LastGoodCacheDuration);
 
