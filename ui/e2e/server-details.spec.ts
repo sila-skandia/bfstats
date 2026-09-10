@@ -495,32 +495,18 @@ test.describe('Server Details Page', () => {
   });
 
   test.describe('Golden Hour Activity & Player Trend Overlay', () => {
-    test('renders golden hour grid with trend overlay modes and Chrono-Wave', async ({ page }) => {
+    test('renders golden hour grid with momentum trends and Chrono-Wave', async ({ page }) => {
       await page.goto('/v4/servers/detail/E2E%20Test%20Server');
       await expect(page.locator('h1')).toBeVisible({ timeout: 15_000 });
 
       const heatmap = page.getByTestId('golden-hour-heatmap');
       if (await heatmap.isVisible()) {
-        // Overlay mode buttons
-        const activityBtn = heatmap.getByRole('button', { name: 'Activity' });
-        const momentumBtn = heatmap.getByRole('button', { name: /Momentum/ });
-        const ceilingBtn = heatmap.getByRole('button', { name: 'Ceiling' });
-
-        await expect(activityBtn).toBeVisible();
-        await expect(momentumBtn).toBeVisible();
-        await expect(ceilingBtn).toBeVisible();
-
-        // Switch to Momentum mode
-        await momentumBtn.click();
-        await expect(momentumBtn).toHaveClass(/mm-mode-btn--active/);
-
-        // Switch to Ceiling mode
-        await ceilingBtn.click();
-        await expect(ceilingBtn).toHaveClass(/mm-mode-btn--active/);
-
-        // Switch back to Activity
-        await activityBtn.click();
-        await expect(activityBtn).toHaveClass(/mm-mode-btn--active/);
+        // Verify Momentum legend
+        const legend = heatmap.locator('.mm-server-heat__legend');
+        await expect(legend).toBeVisible();
+        await expect(legend).toContainText('Momentum:');
+        await expect(legend).toContainText('Surging');
+        await expect(legend).toContainText('Cooling');
 
         // Verify Chrono-Wave ribbon is visible
         const wave = heatmap.locator('.mm-chrono-wave');

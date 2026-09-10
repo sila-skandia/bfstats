@@ -497,6 +497,7 @@ try
     // DI for auth services
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+    builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(c =>
     {

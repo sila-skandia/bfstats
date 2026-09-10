@@ -61,6 +61,57 @@ export interface BulkAddPlayerNamesResponse {
   warnings: BulkPlayerNameWarning[];
 }
 
+/** Must match `DeleteAccountRequest.RequiredPhrase` on the API. */
+export const DELETE_ACCOUNT_CONFIRM_PHRASE = 'DELETE';
+
+export interface AccountDeletionSummary {
+  aliasesRemoved: number;
+  favouriteServersRemoved: number;
+  buddiesRemoved: number;
+  sessionsRevoked: number;
+  commentsRemoved: number;
+  teamRegistrationsUnlinked: number;
+  tournamentsAnonymised: number;
+  tournamentPostsAnonymised: number;
+}
+
+export interface AccountExport {
+  exportedAtUtc: string;
+  profile: {
+    id: number;
+    email: string;
+    role: string | null;
+    createdAt: string;
+    lastLoggedIn: string;
+    isActive: boolean;
+  };
+  linkedPlayerNames: { playerName: string; linkedAt: string }[];
+  favouriteServers: { serverGuid: string; serverName: string | null; addedAt: string }[];
+  buddies: { buddyPlayerName: string; addedAt: string }[];
+  sessions: {
+    createdAt: string;
+    expiresAt: string;
+    revokedAt: string | null;
+    ipAddress: string | null;
+    userAgent: string | null;
+  }[];
+  comments: {
+    kind: string;
+    subject: string;
+    postedAsPlayerName: string;
+    content: string;
+    createdAtUtc: string;
+    updatedAtUtc: string;
+  }[];
+  tournaments: { id: number; name: string; createdAtUtc: string }[];
+  tournamentTeamMemberships: {
+    playerName: string;
+    teamName: string;
+    isTeamLeader: boolean;
+    joinedAtUtc: string;
+  }[];
+}
+
 class StatsService {
   private baseUrl = '/stats';
 
@@ -194,6 +245,26 @@ class StatsService {
   async removeBuddy(id: number): Promise<void> {
     await this.request(`/auth/buddies/${id}`, {
       method: 'DELETE',
+    });
+  }
+
+  /**
+   * Right of access / portability — everything the account holds, as JSON.
+   * Public gameplay stats are not part of this: they're observed from public
+   * game servers rather than supplied by the account holder.
+   */
+  async exportAccount(): Promise<AccountExport> {
+    return this.request<AccountExport>('/auth/account/export');
+  }
+
+  /**
+   * Irreversible. The backend requires the literal confirmation phrase so a
+   * mis-wired client can't erase an account by accident.
+   */
+  async deleteAccount(): Promise<AccountDeletionSummary> {
+    return this.request<AccountDeletionSummary>('/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ confirm: DELETE_ACCOUNT_CONFIRM_PHRASE }),
     });
   }
 }

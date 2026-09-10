@@ -142,9 +142,68 @@ public class SqlitePlayerStatsService(PlayerTrackerDbContext dbContext) : ISqlit
             _ => throw new ArgumentOutOfRangeException(nameof(period), period, "Unsupported time period")
         };
 
-        // SUM across monthly buckets within the requested period
-        var mapStats = await dbContext.PlayerMapStats
-            .Where(p => p.PlayerName == playerName && p.ServerGuid == targetServerGuid)
+        if (!string.IsNullOrEmpty(serverGuid))
+        {
+            var server = await dbContext.Servers.AsNoTracking().FirstOrDefaultAsync(s => s.Guid == serverGuid);
+            var serverGameId = server?.GameId;
+
+            var mapStats = await dbContext.PlayerMapStats
+                .Where(p => p.PlayerName == playerName && p.ServerGuid == serverGuid)
+                .Where(p =>
+                    (p.Year > startYear || (p.Year == startYear && p.Month >= startMonth)) &&
+                    (p.Year < endYear || (p.Year == endYear && p.Month <= endMonth)))
+                .GroupBy(p => p.MapName)
+                .Select(g => new
+                {
+                    MapName = g.Key,
+                    TotalScore = g.Sum(p => p.TotalScore),
+                    TotalKills = g.Sum(p => p.TotalKills),
+                    TotalDeaths = g.Sum(p => p.TotalDeaths),
+                    TotalRounds = g.Sum(p => p.TotalRounds),
+                    TotalPlayTimeMinutes = g.Sum(p => p.TotalPlayTimeMinutes)
+                })
+                .OrderByDescending(p => p.TotalKills)
+                .ToListAsync();
+
+            stopwatch.Stop();
+            activity?.SetTag("result.row_count", mapStats.Count);
+            activity?.SetTag("result.duration_ms", stopwatch.ElapsedMilliseconds);
+            activity?.SetTag("result.table", "PlayerMapStats");
+
+            return mapStats.Select(m => new ServerStatistics
+            {
+                MapName = m.MapName,
+                GameId = CanonicalizeMod(serverGameId, m.MapName),
+                TotalScore = m.TotalScore,
+                TotalKills = m.TotalKills,
+                TotalDeaths = m.TotalDeaths,
+                SessionsPlayed = m.TotalRounds,
+                TotalPlayTimeMinutes = (int)m.TotalPlayTimeMinutes
+            }).ToList();
+        }
+
+        // Cross-server map stats: stitch together the mod from server records so maps are split by mod
+        var serverRows = await (
+            from pms in dbContext.PlayerMapStats.AsNoTracking()
+            where pms.PlayerName == playerName && pms.ServerGuid != ""
+               && (pms.Year > startYear || (pms.Year == startYear && pms.Month >= startMonth))
+               && (pms.Year < endYear || (pms.Year == endYear && pms.Month <= endMonth))
+            join s in dbContext.Servers.AsNoTracking() on pms.ServerGuid equals s.Guid into sGroup
+            from s in sGroup.DefaultIfEmpty()
+            select new
+            {
+                pms.MapName,
+                ServerGameId = s != null ? s.GameId : null,
+                pms.TotalScore,
+                pms.TotalKills,
+                pms.TotalDeaths,
+                pms.TotalRounds,
+                pms.TotalPlayTimeMinutes
+            }
+        ).ToListAsync();
+
+        var globalRows = await dbContext.PlayerMapStats.AsNoTracking()
+            .Where(p => p.PlayerName == playerName && p.ServerGuid == "")
             .Where(p =>
                 (p.Year > startYear || (p.Year == startYear && p.Month >= startMonth)) &&
                 (p.Year < endYear || (p.Year == endYear && p.Month <= endMonth)))
@@ -158,23 +217,136 @@ public class SqlitePlayerStatsService(PlayerTrackerDbContext dbContext) : ISqlit
                 TotalRounds = g.Sum(p => p.TotalRounds),
                 TotalPlayTimeMinutes = g.Sum(p => p.TotalPlayTimeMinutes)
             })
-            .OrderByDescending(p => p.TotalKills)
             .ToListAsync();
 
+        // Group server rows by (MapName, Mod)
+        var modGroups = new Dictionary<(string MapName, string GameId), (int Score, int Kills, int Deaths, int Rounds, double PlayTime)>();
+
+        foreach (var row in serverRows)
+        {
+            var mod = CanonicalizeMod(row.ServerGameId, row.MapName);
+            var key = (row.MapName, mod);
+            if (modGroups.TryGetValue(key, out var current))
+            {
+                modGroups[key] = (
+                    current.Score + row.TotalScore,
+                    current.Kills + row.TotalKills,
+                    current.Deaths + row.TotalDeaths,
+                    current.Rounds + row.TotalRounds,
+                    current.PlayTime + row.TotalPlayTimeMinutes
+                );
+            }
+            else
+            {
+                modGroups[key] = (row.TotalScore, row.TotalKills, row.TotalDeaths, row.TotalRounds, row.TotalPlayTimeMinutes);
+            }
+        }
+
+        // Reconcile with global rows (ensuring no legacy/merged data is lost)
+        foreach (var gRow in globalRows)
+        {
+            var matchingEntries = modGroups.Where(kv => kv.Key.MapName == gRow.MapName).ToList();
+            if (matchingEntries.Count == 0)
+            {
+                var mod = CanonicalizeMod(null, gRow.MapName);
+                modGroups[(gRow.MapName, mod)] = (gRow.TotalScore, gRow.TotalKills, gRow.TotalDeaths, gRow.TotalRounds, gRow.TotalPlayTimeMinutes);
+            }
+            else
+            {
+                var serverSumKills = matchingEntries.Sum(e => e.Value.Kills);
+                var serverSumPlayTime = matchingEntries.Sum(e => e.Value.PlayTime);
+                if (gRow.TotalKills > serverSumKills || gRow.TotalPlayTimeMinutes > serverSumPlayTime)
+                {
+                    var primary = matchingEntries.OrderByDescending(e => e.Value.PlayTime).First();
+                    var deltaScore = Math.Max(0, gRow.TotalScore - matchingEntries.Sum(e => e.Value.Score));
+                    var deltaKills = Math.Max(0, gRow.TotalKills - serverSumKills);
+                    var deltaDeaths = Math.Max(0, gRow.TotalDeaths - matchingEntries.Sum(e => e.Value.Deaths));
+                    var deltaRounds = Math.Max(0, gRow.TotalRounds - matchingEntries.Sum(e => e.Value.Rounds));
+                    var deltaPlayTime = Math.Max(0, gRow.TotalPlayTimeMinutes - serverSumPlayTime);
+
+                    modGroups[primary.Key] = (
+                        primary.Value.Score + deltaScore,
+                        primary.Value.Kills + deltaKills,
+                        primary.Value.Deaths + deltaDeaths,
+                        primary.Value.Rounds + deltaRounds,
+                        primary.Value.PlayTime + deltaPlayTime
+                    );
+                }
+            }
+        }
+
+        var results = modGroups.Select(kv => new ServerStatistics
+        {
+            MapName = kv.Key.MapName,
+            GameId = kv.Key.GameId,
+            TotalScore = kv.Value.Score,
+            TotalKills = kv.Value.Kills,
+            TotalDeaths = kv.Value.Deaths,
+            SessionsPlayed = kv.Value.Rounds,
+            TotalPlayTimeMinutes = (int)kv.Value.PlayTime
+        })
+        .OrderByDescending(s => s.TotalPlayTimeMinutes)
+        .ThenByDescending(s => s.TotalKills)
+        .ToList();
+
         stopwatch.Stop();
-        activity?.SetTag("result.row_count", mapStats.Count);
+        activity?.SetTag("result.row_count", results.Count);
         activity?.SetTag("result.duration_ms", stopwatch.ElapsedMilliseconds);
         activity?.SetTag("result.table", "PlayerMapStats");
 
-        return mapStats.Select(m => new ServerStatistics
+        return results;
+    }
+
+    /// <summary>
+    /// Canonicalizes a mod identifier from server telemetry or determines the native mod for expansion/mod maps.
+    /// </summary>
+    public static string CanonicalizeMod(string? mod, string mapName)
+    {
+        var normMap = mapName.Trim().ToLowerInvariant().Replace(' ', '_');
+        var normMod = string.IsNullOrWhiteSpace(mod) ? "" : mod.Trim().ToLowerInvariant();
+
+        switch (normMod)
         {
-            MapName = m.MapName,
-            TotalScore = m.TotalScore,
-            TotalKills = m.TotalKills,
-            TotalDeaths = m.TotalDeaths,
-            SessionsPlayed = m.TotalRounds,
-            TotalPlayTimeMinutes = (int)m.TotalPlayTimeMinutes
-        }).ToList();
+            case "dc_final" or "dc2" or "dc_extended" or "dc_realism":
+                return "dc_final";
+            case "desertcombat":
+                return "desertcombat";
+            case "xpack1":
+                return "xpack1";
+            case "xpack2":
+                return "xpack2";
+            case "fhsw" or "fhsweurope" or "sks_fhsw":
+                return "fhsw";
+            case "fh":
+                return "fh";
+            case "bf1918" or "xmas1918":
+                return "bf1918";
+            case "eod" or "eodp":
+                return "eod";
+            case "interstate":
+                return "interstate";
+            case "gcmod":
+                return "gcmod";
+            case "bg42" or "battlegroup42":
+                return "bg42";
+        }
+
+        // Road to Rome expansion (xpack1) maps
+        if (normMap is "baytown" or "cassino" or "salerno" or "anzio" or "monte_santa_croce" or "santo_croce" or "husky")
+            return "xpack1";
+
+        // Secret Weapons of WWII expansion (xpack2) maps
+        if (normMap is "eagles_nest" or "essen" or "gothic_line" or "hellendoorn" or "kbely_airfield" or "mimoyecques" or "peenemunde" or "telemark")
+            return "xpack2";
+
+        // Desert Combat maps
+        if (normMap.StartsWith("dc_") || normMap is "desert_pursuit" || normMap is "sea_rigs" || normMap is "urban_siege" || normMap is "weapon_bunkers" || normMap is "al_nas" || normMap is "basrahs_edge" || normMap is "medina_ridge")
+            return "dc_final";
+
+        if (!string.IsNullOrEmpty(normMod) && normMod != "bf1942")
+            return normMod;
+
+        return "bf1942";
     }
 
     /// <inheritdoc/>

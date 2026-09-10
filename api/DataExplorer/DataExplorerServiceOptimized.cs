@@ -870,208 +870,6 @@ public class DataExplorerService(
         return new PlayerSearchResponse(results, results.Count, query);
     }
 
-    public async Task<PlayerMapRankingsResponse?> GetPlayerMapRankingsAsync(string playerName, string game = "bf1942", int days = 60, string? serverGuid = null)
-    {
-        var normalizedGame = NormalizeGame(game);
-
-        // Calculate date range
-        var toDate = DateTime.UtcNow;
-        var fromDate = toDate.AddDays(-days);
-        var cutoffYear = fromDate.Year;
-        var cutoffMonth = fromDate.Month;
-
-        // Get server GUIDs and names for the specified game
-        var serversQuery = dbContext.Servers
-            .AsNoTracking()
-            .Where(s => s.Game == normalizedGame);
-
-        // Filter to specific server if provided
-        if (!string.IsNullOrEmpty(serverGuid))
-        {
-            serversQuery = serversQuery.Where(s => s.Guid == serverGuid);
-        }
-
-        var servers = await serversQuery
-            .Select(s => new { s.Guid, s.Name })
-            .ToListAsync();
-
-        if (servers.Count == 0)
-            return null;
-
-        var serverGuids = servers.Select(s => s.Guid).ToList();
-        var serverNameLookup = servers.ToDictionary(s => s.Guid, s => s.Name);
-
-        // Build parameterized IN clause for server GUIDs
-        var guidParams = string.Join(", ", serverGuids.Select((_, i) => $"@p{i + 3}"));
-
-        // Query player stats grouped by map and server
-        var playerStatsSql = $@"
-            SELECT
-                MapName,
-                ServerGuid,
-                SUM(TotalScore) as TotalScore,
-                SUM(TotalKills) as TotalKills,
-                SUM(TotalDeaths) as TotalDeaths,
-                CASE WHEN SUM(TotalDeaths) > 0
-                     THEN ROUND(CAST(SUM(TotalKills) AS REAL) / SUM(TotalDeaths), 2)
-                     ELSE CAST(SUM(TotalKills) AS REAL) END as KdRatio,
-                SUM(TotalRounds) as TotalRounds
-            FROM PlayerMapStats
-            WHERE PlayerName = @p0
-              AND ((Year > @p1) OR (Year = @p1 AND Month >= @p2))
-              AND ServerGuid IN ({guidParams})
-            GROUP BY MapName, ServerGuid
-            ORDER BY MapName, SUM(TotalScore) DESC";
-
-        var sqlParams = new List<object> { playerName, cutoffYear, cutoffMonth };
-        sqlParams.AddRange(serverGuids.Cast<object>());
-
-        var playerStats = await dbContext.Database
-            .SqlQueryRaw<PlayerMapServerStatsQueryResult>(playerStatsSql, sqlParams.ToArray())
-            .ToListAsync();
-
-        if (playerStats.Count == 0)
-            return null;
-
-        // Get rankings for each map/server combination
-        // We need to calculate the player's rank on each server for each map
-        //
-        // Scope this to the servers the player actually appears on, not every server for
-        // the game. playerStats above is already exactly that set. Ranking any other
-        // server only builds partitions the player is absent from, which are discarded by
-        // the final PlayerName filter — they cannot change a rank, only cost scan time.
-        // It also lets the planner use two columns of IX_PlayerMapStats_MapRanking_Covering
-        // (MapName, ServerGuid) instead of seeking on MapName alone.
-        // Measured on production: 690 servers -> 7 for a typical player, 52.0s -> 24.7s,
-        // identical rows. Same shape as the 90-parameter IN scan fixed in f15f9cd.
-        var rankedGuids = playerStats.Select(ps => ps.ServerGuid).Distinct().ToList();
-
-        // Build separate guidParams for this query (starts at @p2 since we have year, month first)
-        var rankingGuidParams = string.Join(", ", rankedGuids.Select((_, i) => $"@p{i + 2}"));
-        var playerNameParamIndex = 2 + rankedGuids.Count;
-
-        // PlayerMaps restricts the ranking to the maps this player has actually played.
-        // The result is filtered to one PlayerName and rank is partitioned by
-        // (MapName, ServerGuid), so no other map can contribute a row — but without the
-        // restriction every player on every map of every server for this game gets
-        // aggregated and ranked first. Narrowing by MapName cannot change a rank within
-        // a partition it doesn't remove. Measured on production data: 219ms -> 66ms,
-        // identical rows.
-        var rankingSql = $@"
-            WITH PlayerMaps AS (
-                SELECT DISTINCT MapName
-                FROM PlayerMapStats
-                WHERE PlayerName = @p{playerNameParamIndex}
-                  AND ((Year > @p0) OR (Year = @p0 AND Month >= @p1))
-                  AND ServerGuid IN ({rankingGuidParams})
-            ),
-            PlayerRankings AS (
-                SELECT
-                    MapName,
-                    ServerGuid,
-                    PlayerName,
-                    SUM(TotalScore) as TotalScore,
-                    ROW_NUMBER() OVER (PARTITION BY MapName, ServerGuid ORDER BY SUM(TotalScore) DESC) as Rank
-                FROM PlayerMapStats
-                WHERE ((Year > @p0) OR (Year = @p0 AND Month >= @p1))
-                  AND ServerGuid IN ({rankingGuidParams})
-                  AND MapName IN (SELECT MapName FROM PlayerMaps)
-                GROUP BY MapName, ServerGuid, PlayerName
-            )
-            SELECT MapName, ServerGuid, Rank
-            FROM PlayerRankings
-            WHERE PlayerName = @p{playerNameParamIndex}";
-
-        var rankingParams = new List<object> { cutoffYear, cutoffMonth };
-        rankingParams.AddRange(rankedGuids.Cast<object>());
-        rankingParams.Add(playerName);
-
-        var rankings = await dbContext.Database
-            .SqlQueryRaw<PlayerMapRankingQueryResult>(rankingSql, rankingParams.ToArray())
-            .ToListAsync();
-
-        var rankingLookup = rankings.ToDictionary(
-            r => (r.MapName, r.ServerGuid),
-            r => (int)r.Rank
-        );
-
-        // Build map groups with server stats
-        var mapGroups = playerStats
-            .GroupBy(ps => ps.MapName)
-            .Select(mapGroup =>
-            {
-                var serverStats = mapGroup.Select(ps =>
-                {
-                    rankingLookup.TryGetValue((ps.MapName, ps.ServerGuid), out var rank);
-                    return new PlayerServerStatsDto(
-                        ServerGuid: ps.ServerGuid,
-                        ServerName: serverNameLookup.GetValueOrDefault(ps.ServerGuid, ps.ServerGuid),
-                        TotalScore: ps.TotalScore,
-                        TotalKills: ps.TotalKills,
-                        TotalDeaths: ps.TotalDeaths,
-                        KdRatio: ps.KdRatio,
-                        TotalRounds: ps.TotalRounds,
-                        Rank: rank
-                    );
-                })
-                .OrderBy(ss => ss.Rank)
-                .ToList();
-
-                var bestServer = serverStats.MinBy(ss => ss.Rank);
-
-                return new PlayerMapGroupDto(
-                    MapName: mapGroup.Key,
-                    AggregatedScore: mapGroup.Sum(ps => ps.TotalScore),
-                    ServerStats: serverStats,
-                    BestRank: bestServer?.Rank,
-                    BestRankServer: bestServer?.ServerName
-                );
-            })
-            .OrderByDescending(mg => mg.AggregatedScore)
-            .ToList();
-
-        // Build #1 rankings list
-        var numberOneRankings = mapGroups
-            .SelectMany(mg => mg.ServerStats
-                .Where(ss => ss.Rank == 1)
-                .Select(ss => new NumberOneRankingDto(
-                    MapName: mg.MapName,
-                    ServerName: ss.ServerName,
-                    ServerGuid: ss.ServerGuid,
-                    TotalScore: ss.TotalScore
-                )))
-            .OrderByDescending(r => r.TotalScore)
-            .ToList();
-
-        // Calculate overall stats
-        var overallStats = new PlayerOverallStatsDto(
-            TotalScore: playerStats.Sum(ps => ps.TotalScore),
-            TotalKills: playerStats.Sum(ps => ps.TotalKills),
-            TotalDeaths: playerStats.Sum(ps => ps.TotalDeaths),
-            KdRatio: playerStats.Sum(ps => ps.TotalDeaths) > 0
-                ? Math.Round((double)playerStats.Sum(ps => ps.TotalKills) / playerStats.Sum(ps => ps.TotalDeaths), 2)
-                : playerStats.Sum(ps => ps.TotalKills),
-            TotalRounds: playerStats.Sum(ps => ps.TotalRounds),
-            UniqueServers: playerStats.Select(ps => ps.ServerGuid).Distinct().Count(),
-            UniqueMaps: playerStats.Select(ps => ps.MapName).Distinct().Count()
-        );
-
-        var dateRange = new DateRangeDto(
-            Days: days,
-            FromDate: fromDate,
-            ToDate: toDate
-        );
-
-        return new PlayerMapRankingsResponse(
-            PlayerName: playerName,
-            Game: normalizedGame,
-            OverallStats: overallStats,
-            MapGroups: mapGroups,
-            NumberOneRankings: numberOneRankings,
-            DateRange: dateRange
-        );
-    }
-
     public async Task<MapPlayerRankingsResponse?> GetMapPlayerRankingsAsync(
         string mapName,
         string game = "bf1942",
@@ -1410,17 +1208,6 @@ public class DataExplorerService(
         public int UniqueServers { get; set; }
     }
 
-    private class PlayerMapServerStatsQueryResult
-    {
-        public string MapName { get; set; } = "";
-        public string ServerGuid { get; set; } = "";
-        public int TotalScore { get; set; }
-        public int TotalKills { get; set; }
-        public int TotalDeaths { get; set; }
-        public double KdRatio { get; set; }
-        public int TotalRounds { get; set; }
-    }
-
     private class PlayerRankingQueryResult
     {
         public string PlayerName { get; set; } = "";
@@ -1449,13 +1236,6 @@ public class DataExplorerService(
         public double PlayTimeMinutes { get; set; }
         public int UniqueServers { get; set; }
         public int TotalWins { get; set; }
-    }
-
-    private class PlayerMapRankingQueryResult
-    {
-        public string MapName { get; set; } = "";
-        public string ServerGuid { get; set; } = "";
-        public long Rank { get; set; }
     }
 
     /// <inheritdoc/>
@@ -2266,30 +2046,43 @@ public class DataExplorerService(
             })
             .ToListAsync();
 
-        // Get server names
+        // Get server names and game IDs
         var serverGuids = serverBreakdown.Select(s => s.ServerGuid).ToList();
-        var serverNames = await dbContext.Servers
+        var serverInfos = await dbContext.Servers
             .Where(s => serverGuids.Contains(s.Guid))
-            .Select(s => new { s.Guid, s.Name })
-            .ToDictionaryAsync(s => s.Guid, s => s.Name);
+            .Select(s => new { s.Guid, s.Name, s.GameId })
+            .ToDictionaryAsync(s => s.Guid);
 
         var serverBreakdownList = serverBreakdown
-            .Select(s => new PlayerMapServerBreakdown(
-                ServerGuid: s.ServerGuid,
-                ServerName: serverNames.GetValueOrDefault(s.ServerGuid, s.ServerGuid),
-                Score: s.Score,
-                Kills: s.Kills,
-                Deaths: s.Deaths,
-                Rounds: s.Rounds,
-                PlayTime: s.PlayTime
-            ))
+            .Select(s =>
+            {
+                serverInfos.TryGetValue(s.ServerGuid, out var sInfo);
+                var sGameId = PlayerStats.SqlitePlayerStatsService.CanonicalizeMod(sInfo?.GameId, mapName);
+                return new PlayerMapServerBreakdown(
+                    ServerGuid: s.ServerGuid,
+                    ServerName: sInfo?.Name ?? s.ServerGuid,
+                    Score: s.Score,
+                    Kills: s.Kills,
+                    Deaths: s.Deaths,
+                    Rounds: s.Rounds,
+                    PlayTime: s.PlayTime,
+                    GameId: sGameId
+                );
+            })
             .OrderByDescending(s => s.Score)
             .ToList();
+
+        var canonicalGame = normalizedGame;
+        if (canonicalGame == "bf1942")
+        {
+            var detectedMod = serverBreakdownList.FirstOrDefault(s => s.GameId != "bf1942")?.GameId;
+            canonicalGame = detectedMod ?? PlayerStats.SqlitePlayerStatsService.CanonicalizeMod(null, mapName);
+        }
 
         return new PlayerMapDetailResponse(
             PlayerName: playerName,
             MapName: mapName,
-            Game: normalizedGame,
+            Game: canonicalGame,
             AggregatedStats: aggregatedStats,
             ServerBreakdown: serverBreakdownList,
             DateRange: new DateRangeDto(days, cutoffDate, DateTime.UtcNow)
