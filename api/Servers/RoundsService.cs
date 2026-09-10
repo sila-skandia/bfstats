@@ -505,21 +505,32 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
     // the current server name, so a miss is an empty page rather than a
     // 30s+ table scan.
     //
-    // Prefer an exact name match. `Name.Contains` of a full live name can
-    // also hit a second server (longer name, same prefix), and
-    // `ServerGuid IN (g1, g2) ORDER BY StartTime DESC` cannot use the
-    // composite index — that page is ~13s on the volume.
+    // Prefer an exact name match, and collapse duplicate exact names to one
+    // guid. `ServerGuid IN (g1, g2) ORDER BY StartTime DESC` cannot use the
+    // composite index — that page is ~12-14s on the volume even when COUNT
+    // of the same IN-list is ~20ms. Equality (`ServerGuid = @g`) lets SQLite
+    // walk (ServerGuid, StartTime) backwards and stop after pageSize rows.
+    // The live / most-populated / most-recent row is the sessions-page
+    // namesake; leftover same-name GUIDs belong in an admin merge.
     private async Task<IQueryable<Round>> ApplyServerNameFilterAsync(IQueryable<Round> query, string serverName)
     {
-        var exactGuids = await dbContext.Servers
+        var exactMatches = await dbContext.Servers
             .AsNoTracking()
             .Where(s => s.Name == serverName)
-            .Select(s => s.Guid)
+            .Select(s => new ServerNameMatch(s.Guid, s.IsOnline, s.LastSeenTime, s.CurrentNumPlayers))
             .ToListAsync();
 
-        if (exactGuids.Count > 0)
+        if (exactMatches.Count > 0)
         {
-            return query.Where(r => exactGuids.Contains(r.ServerGuid));
+            var guid = PickCanonicalServerGuid(exactMatches);
+            if (exactMatches.Count > 1)
+            {
+                logger.LogInformation(
+                    "Resolved serverName {ServerName} to {ServerGuid}; dropped {DroppedCount} same-name guid(s) so Rounds can use IX_Rounds_ServerGuid_StartTime",
+                    serverName, guid, exactMatches.Count - 1);
+            }
+
+            return query.Where(r => r.ServerGuid == guid);
         }
 
         var matchingGuids = await dbContext.Servers
@@ -533,8 +544,29 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             return query.Where(_ => false);
         }
 
+        if (matchingGuids.Count == 1)
+        {
+            var guid = matchingGuids[0];
+            return query.Where(r => r.ServerGuid == guid);
+        }
+
         return query.Where(r => matchingGuids.Contains(r.ServerGuid));
     }
+
+    private readonly record struct ServerNameMatch(
+        string Guid,
+        bool IsOnline,
+        DateTime LastSeenTime,
+        int CurrentNumPlayers);
+
+    private static string PickCanonicalServerGuid(IReadOnlyList<ServerNameMatch> matches) =>
+        matches
+            .OrderByDescending(s => s.IsOnline)
+            .ThenByDescending(s => s.CurrentNumPlayers)
+            .ThenByDescending(s => s.LastSeenTime)
+            .ThenBy(s => s.Guid, StringComparer.Ordinal)
+            .First()
+            .Guid;
 
     // Hard ceiling on the per-round snapshot timeline. A round left IsActive with no
     // EndTime (e.g. a pre-merge orphan) would otherwise make the minute loop span
