@@ -17,6 +17,7 @@ public class AuthController(
     ILogger<AuthController> logger,
     ITokenService tokenService,
     IRefreshTokenService refreshTokenService,
+    IAccountService accountService,
     IConfiguration configuration) : ControllerBase
 {
     private const int MaxBulkPlayerNames = 1000;
@@ -213,6 +214,70 @@ public class AuthController(
         {
             logger.LogError(ex, "Error retrieving user profile");
             return StatusCode(500, new { message = "Error retrieving profile" });
+        }
+    }
+
+    /// <summary>
+    /// Right of access / portability: hands back everything the account holds,
+    /// as a downloadable JSON file. Public gameplay statistics are not included —
+    /// they are observed from public game servers, not account data.
+    /// </summary>
+    [HttpGet("account/export")]
+    [Authorize]
+    public async Task<IActionResult> ExportAccount()
+    {
+        try
+        {
+            var user = await GetCurrentUserAsync();
+            if (user == null)
+                return Unauthorized(new { message = "Not signed in" });
+
+            var export = await accountService.ExportAsync(user.Id);
+            if (export == null)
+                return NotFound(new { message = "Account not found" });
+
+            return Ok(export);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error exporting account data");
+            return StatusCode(500, new { message = "Error exporting account data" });
+        }
+    }
+
+    /// <summary>
+    /// Right of erasure. Deletes the account's personal data and signs the
+    /// caller out. Irreversible — signing in again with the same Discord account
+    /// produces a brand-new, empty account.
+    /// </summary>
+    [HttpDelete("account")]
+    [Authorize]
+    public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountRequest request)
+    {
+        try
+        {
+            if (!string.Equals(request?.Confirm, DeleteAccountRequest.RequiredPhrase, StringComparison.Ordinal))
+                return BadRequest(new { message = $"Confirmation phrase must be '{DeleteAccountRequest.RequiredPhrase}'" });
+
+            var user = await GetCurrentUserAsync();
+            if (user == null)
+                return Unauthorized(new { message = "Not signed in" });
+
+            var summary = await accountService.DeleteAsync(user.Id);
+            if (summary == null)
+                return NotFound(new { message = "Account not found" });
+
+            // DeleteAsync already dropped every refresh token row; clearing the
+            // cookie stops the browser from presenting a token that can no
+            // longer be validated.
+            refreshTokenService.ClearCookie(Response);
+
+            return Ok(summary);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error deleting account");
+            return StatusCode(500, new { message = "Error deleting account" });
         }
     }
 
@@ -734,14 +799,15 @@ public class AuthController(
                 IsActive = true
             };
             context.Users.Add(user);
-            logger.LogInformation("Creating new user with email: {Email}", email);
+            await context.SaveChangesAsync();
+            // Log the id, never the address — see DiscordAuthService.
+            logger.LogInformation("Created new user {UserId}", user.Id);
+            return user;
         }
-        else
-        {
-            user.LastLoggedIn = now;
-            user.IsActive = true;
-            logger.LogDebug("Updating last login for user: {Email}", email);
-        }
+
+        user.LastLoggedIn = now;
+        user.IsActive = true;
+        logger.LogDebug("Updating last login for user {UserId}", user.Id);
 
         await context.SaveChangesAsync();
         return user;

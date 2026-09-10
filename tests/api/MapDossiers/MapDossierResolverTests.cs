@@ -101,7 +101,23 @@ public sealed class MapDossierResolverTests : IDisposable
     public void Resolve_ReturnsNull_ForUnknownMapOrMod()
     {
         Assert.Null(resolver.Resolve("bf1942", "kursk_custom"));
-        Assert.Null(resolver.Resolve("bg42", "wake"));
+        Assert.Null(resolver.Resolve("bg42", "kursk_custom"));
+    }
+
+    [Fact]
+    public void Resolve_FallsBackAcrossAllMods_WhenServerRotatedToDifferentMod()
+    {
+        // When a server rotates mod and reports the wrong gameId, ignore mod and find the first matching map
+        Assert.Equal(Combine("bf1942", "wake.json"), resolver.Resolve("bg42", "wake"));
+        Assert.Equal(Combine("fhsw", "operation_coronet-1946.json"), resolver.Resolve("xpack1", "operation_coronet-1946"));
+    }
+
+    [Fact]
+    public void Resolve_FallsBackAcrossAllMods_WhenGenericBf1942Requested()
+    {
+        // operation_coronet-1946 is only in fhsw, but caller asked for "bf1942"
+        Assert.Equal(Combine("fhsw", "operation_coronet-1946.json"),
+            resolver.Resolve("bf1942", "operation_coronet-1946"));
     }
 
     [Theory]
