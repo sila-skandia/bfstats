@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "ui"],
       "port": 5173
+    },
+    {
+      "name": "model-viewer",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "5273", "--directory", "tools/bf1942-models/viewer"],
+      "port": 5273
     }
   ]
 }
