@@ -124,6 +124,22 @@ class StandardMeshTests(unittest.TestCase):
         self.assertEqual([(0, 1, 2), (1, 3, 2)], strip.triangles())
         self.assertEqual([], degenerate.triangles())
 
+    def test_stride_40_exposes_lightmap_uvs(self) -> None:
+        material = stdmesh.Material(
+            name="lm",
+            primitive=stdmesh.PRIM_TRIANGLE_LIST,
+            flags=0,
+            stride=40,
+            vertex_count=1,
+            index_count=0,
+            unknown=(0, 0, 0, 0),
+            vertices=[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.25, 0.5, 0.1, 0.9],
+        )
+
+        self.assertEqual((0.25, 0.5), material.uvs()[0])
+        self.assertEqual((0.1, 0.9), material.uvs2()[0])
+        self.assertIsNone(stdmesh.parse(standard_mesh_fixture()).lod0.materials[0].uvs2())
+
 
 if __name__ == "__main__":
     unittest.main()

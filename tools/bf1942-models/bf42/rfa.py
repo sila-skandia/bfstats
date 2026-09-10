@@ -9,6 +9,7 @@ and a mod resolves that name against its own archives before its parents'.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -23,14 +24,38 @@ except ImportError:  # pragma: no cover - developer environment guard
     )
 
 
-def find_archives_dir(mod_dir: Path) -> Path | None:
-    """`Archives` under a mod, whatever case that mod happened to use."""
-    if not mod_dir.is_dir():
+def _child_dir(parent: Path, name: str) -> Path | None:
+    if not parent.is_dir():
         return None
-    for child in mod_dir.iterdir():
-        if child.is_dir() and child.name.lower() == "archives":
+    for child in parent.iterdir():
+        if child.is_dir() and child.name.lower() == name:
             return child
     return None
+
+
+def find_archives_dir(mod_dir: Path) -> Path | None:
+    """`Archives` under a mod, whatever case that mod happened to use."""
+    return _child_dir(mod_dir, "archives")
+
+
+def find_game_dir(archives_dir: Path) -> Path | None:
+    """`Archives/bf1942/`, which holds `Game.rfa` and `levels/`.
+
+    Refractor mounts an archive at the directory its internal paths start with,
+    and both `Game.rfa` (`Bf1942/Game/...`) and every level (`bf1942/levels/...`)
+    start with `bf1942/`. That is why they live one folder below `objects.rfa` —
+    and why the folder is called `bf1942` in every mod, not after the mod.
+    """
+    return _child_dir(archives_dir, "bf1942")
+
+
+def find_levels_dir(archives_dir: Path) -> Path | None:
+    game_dir = find_game_dir(archives_dir)
+    return _child_dir(game_dir, "levels") if game_dir else None
+
+
+LEVEL_TEXTURE_DIRS = ("alttextures", "texture", "textures", "custom textures")
+_TERRAIN_TILE = re.compile(r"^tx\d+x\d+$", re.IGNORECASE)
 
 
 class ArchivePool:
@@ -99,11 +124,13 @@ class ArchivePool:
             if len(parts) < 5:
                 continue
             subdir = parts[3].lower()
-            if subdir not in ("alttextures", "texture"):
+            if subdir not in LEVEL_TEXTURE_DIRS:
                 continue
             basename = parts[-1]
-            # Skip menu icons, lightmaps, terrain textures
+            # Skip menu icons, lightmaps, terrain tiles
             if any(p.lower() in ("menu", "objectlightmaps") for p in parts):
+                continue
+            if _TERRAIN_TILE.match(Path(basename).stem):
                 continue
             # Register as texture/<basename> so it resolves the same way
             # the engine does when a shader asks for texture/X.
@@ -179,6 +206,13 @@ class ArchivePool:
             hit = self._basename.get(leaf + ext)
             if hit:
                 return hit[2]
+        # FH/EoD often prefix a vanilla name (`FH_pahile_c` for `pahile_c`).
+        for ext in exts:
+            target = leaf + ext
+            for prefix in ("fh_", "fw_", "eod_"):
+                hit = self._basename.get(prefix + target)
+                if hit:
+                    return hit[2]
         return None
 
     def names(self) -> list[str]:

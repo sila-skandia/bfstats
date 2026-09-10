@@ -20,6 +20,7 @@ from pathlib import Path
 
 from . import con as con_mod
 from . import gltf, rs, skin, stdmesh, treemesh
+from .level import object_lightmap_key
 from .rfa import ArchivePool
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
@@ -120,7 +121,8 @@ class Assembler:
                  objects: ArchivePool, library: con_mod.ObjectLibrary, *,
                  lod: int = 0, max_texture: int = 1024,
                  configuration: str = "complex",
-                 include_collision: bool = True):
+                 include_collision: bool = True,
+                 lightmaps: dict[tuple[str, int, int, int], str] | None = None):
         if configuration not in con_mod.MODEL_CONFIGURATIONS:
             raise ValueError(f"unknown model configuration: {configuration}")
         self.meshes = meshes
@@ -131,6 +133,7 @@ class Assembler:
         self.max_texture = max_texture
         self.configuration = configuration
         self.include_collision = include_collision
+        self.lightmaps = lightmaps or {}
         self._visible_springs = True
         self._shader_cache: dict[str, dict[str, rs.Shader]] = {}
         self._texture_cache: dict[str, int | None] = {}
@@ -367,6 +370,7 @@ class Assembler:
                 positions=material.positions(),
                 normals=material.normals(),
                 uvs=material.uvs(),
+                uvs2=material.uvs2(),
                 indices=[i for tri in tris for i in tri],
                 material=self._material_index(builder, shader, material.name, report),
             ))
@@ -493,6 +497,16 @@ class Assembler:
         ]
         return [selected]
 
+    def _lightmap_rel(self, template: con_mod.ObjectTemplate,
+                      world_origin: tuple[float, float, float]) -> str | None:
+        if not self.lightmaps or not template.geometry:
+            return None
+        geom = self.library.geometry(template.geometry)
+        mesh_file = geom.mesh_file if geom else template.geometry
+        if not mesh_file:
+            return None
+        return self.lightmaps.get(object_lightmap_key(mesh_file, world_origin))
+
     def _has_visible_spring(self, template_name: str, *,
                             depth: int = 0,
                             stack: frozenset[str] = frozenset()) -> bool:
@@ -534,9 +548,12 @@ class Assembler:
                    depth: int = 0, stack: frozenset[str] = frozenset(),
                    control: str = "",
                    body_skin: skin.Skin | None = None,
+                   world_origin: tuple[float, float, float] | None = None,
                    ) -> int | None:
         if depth > 24:
             return None
+        if world_origin is None:
+            world_origin = position
         template = self.library.object(template_name)
         if template is None:
             report.unresolved_templates.append(template_name)
@@ -582,6 +599,7 @@ class Assembler:
                 position=ref.position, rotation=ref.rotation,
                 depth=depth + 1, stack=stack, control=control,
                 body_skin=body_skin,
+                world_origin=world_origin,
             )
             if child is not None:
                 child_indices.append(child)
@@ -657,6 +675,8 @@ class Assembler:
             # "forward". Every animated texture in vanilla is a track, declared as
             # `<u>/0`, so only U needs it.
             extras["animatedTextureSpeed"] = [-u, v]
+        if rel := self._lightmap_rel(template, world_origin):
+            extras["lightmap"] = rel
 
         return builder.add_node(gltf.Node(
             name=template.name,

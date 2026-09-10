@@ -49,6 +49,16 @@ class ArchivePoolTests(unittest.TestCase):
         )
         self.assertEqual("Texture/foo.dds", primary._basename["foo.dds"][2])
 
+    def test_mod_prefix_fills_a_vanilla_basename_miss(self) -> None:
+        pool = ArchivePool()
+        nested = ("fh", None, "texture/FH_pahile_c.dds")
+        pool._basename["fh_pahile_c.dds"] = nested
+
+        self.assertEqual(
+            "texture/FH_pahile_c.dds",
+            pool.resolve_ext("texture/PAHILE_C", (".dds", ".tga")),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
