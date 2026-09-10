@@ -124,6 +124,46 @@ public sealed class RoundsServiceFilterTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRounds_DuplicateExactServerName_UsesLiveServerGuidOnly()
+    {
+        SeedServer("stale-guid", "*NEW* SiMPLE | BF1942", isOnline: false,
+            lastSeenTime: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), currentNumPlayers: 0);
+        SeedServer("live-guid", "*NEW* SiMPLE | BF1942", isOnline: true,
+            lastSeenTime: new DateTime(2026, 9, 10, 20, 0, 0, DateTimeKind.Utc), currentNumPlayers: 58);
+        SeedRound("r-stale", "stale-guid", "*NEW* SiMPLE | BF1942", new DateTime(2026, 9, 10, 19, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-live", "live-guid", "*NEW* SiMPLE | BF1942", new DateTime(2026, 9, 10, 18, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { ServerName = "*NEW* SiMPLE | BF1942" });
+
+        Assert.Equal(1, result.TotalItems);
+        var round = Assert.Single(result.Items);
+        Assert.Equal("r-live", round.RoundId);
+        Assert.Equal("live-guid", round.ServerGuid);
+    }
+
+    [Fact]
+    public async Task GetRounds_DuplicateExactServerName_BothOffline_UsesMostRecentlySeen()
+    {
+        SeedServer("older-guid", "*NEW* SiMPLE | BF1942", isOnline: false,
+            lastSeenTime: new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc));
+        SeedServer("newer-guid", "*NEW* SiMPLE | BF1942", isOnline: false,
+            lastSeenTime: new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-older", "older-guid", "*NEW* SiMPLE | BF1942", new DateTime(2026, 9, 10, 11, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-newer", "newer-guid", "*NEW* SiMPLE | BF1942", new DateTime(2026, 9, 10, 10, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { ServerName = "*NEW* SiMPLE | BF1942" });
+
+        Assert.Equal(1, result.TotalItems);
+        Assert.Equal("r-newer", Assert.Single(result.Items).RoundId);
+    }
+
+    [Fact]
     public async Task GetRounds_FiltersByExactMapName_NotSubstring()
     {
         SeedServer("simple-guid", "*NEW* SiMPLE | BF1942");
@@ -172,7 +212,12 @@ public sealed class RoundsServiceFilterTests : IDisposable
         Assert.Equal("operation_coronet", round.MapName);
     }
 
-    private void SeedServer(string guid, string name)
+    private void SeedServer(
+        string guid,
+        string name,
+        bool isOnline = true,
+        DateTime? lastSeenTime = null,
+        int currentNumPlayers = 0)
     {
         _dbContext.Servers.Add(new GameServer
         {
@@ -181,7 +226,10 @@ public sealed class RoundsServiceFilterTests : IDisposable
             Game = "bf1942",
             GameId = "bf1942",
             Ip = "1.2.3.4",
-            Port = 14567
+            Port = 14567,
+            IsOnline = isOnline,
+            LastSeenTime = lastSeenTime ?? new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+            CurrentNumPlayers = currentNumPlayers
         });
     }
 
