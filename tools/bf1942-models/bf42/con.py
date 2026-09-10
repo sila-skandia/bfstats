@@ -73,6 +73,8 @@ PLAYER_INPUTS = {
     "5": "c_PIMouseLookY",
 }
 
+MODEL_CONFIGURATIONS = ("complex", "wreck")
+
 
 def vec3(token: str) -> tuple[float, float, float]:
     parts = token.replace(",", "/").split("/")
@@ -87,6 +89,58 @@ class ChildRef:
     template: str
     position: tuple[float, float, float] = (0.0, 0.0, 0.0)
     rotation: tuple[float, float, float] = (0.0, 0.0, 0.0)   # yaw / pitch / roll, degrees
+    first_person_part: int | None = None
+    random_geometries: int | None = None
+    lod_value: float | None = None
+
+
+def lod_alternative_role(template_name: str) -> str | None:
+    """The semantic role encoded in a LodObject child's conventional name."""
+    name = template_name.lower()
+    # Buildings use Interior/Exterior; vehicles use Internal/External/Complex.
+    # "interior" is checked before "complex" so a name cannot match both.
+    if "interior" in name or "internal" in name:
+        return "interior"
+    if "wreck" in name:
+        return "wreck"
+    if "simple" in name:
+        return "simple"
+    if "complex" in name or "external" in name or "exterior" in name:
+        return "complex"
+    return None
+
+
+def select_lod_alternative(children: list[ChildRef], configuration: str) -> ChildRef:
+    """Choose one LodObject alternative without ever stacking its siblings."""
+    if not children:
+        raise ValueError("cannot select from an empty LodObject")
+    if configuration not in MODEL_CONFIGURATIONS:
+        raise ValueError(f"unknown model configuration: {configuration}")
+
+    return next(
+        (child for child in children if lod_alternative_role(child.template) == configuration),
+        children[0],
+    )
+
+
+def instance_template_name(ref: ChildRef, lookup) -> str | None:
+    """The template to instantiate for a child, or None if this instance is hidden.
+
+    Soldiers declare first-person arms and a distant simple head as siblings of
+    the third-person body. Those are alternatives, not extra parts — stacking
+    them is the same class of bug as drawing Complex and Wreck together.
+    `setRandomGeometries N` means the engine picks among `<name>1`..`<name>N`;
+    the named template itself is often absent.
+    """
+    if ref.first_person_part not in (None, 0):
+        return None
+    if ref.lod_value is not None and ref.lod_value < 0:
+        return None
+    if lookup(ref.template) is not None:
+        return ref.template
+    if ref.random_geometries:
+        return f"{ref.template}1"
+    return ref.template
 
 
 @dataclass
@@ -108,11 +162,23 @@ class ObjectTemplate:
     inputs: dict[str, str] = field(default_factory=dict)   # yaw|pitch|roll -> input name
     automatic_reset: bool = False
     skeleton: str | None = None
+    invisible: bool = False
     animated_texture_speed: tuple[float, float] | None = None
+    has_armor: bool = False
+    hitpoints: float | None = None
+    max_hitpoints: float | None = None
+    material: int | None = None
+    critical_damage: float | None = None
+    hp_lost_while_critical_damage: float | None = None
 
     @property
     def is_lod_selector(self) -> bool:
         return self.kind.lower() == "lodobject"
+
+    def control_scope(self, inherited: str) -> str:
+        if self.kind.lower() == "playercontrolobject":
+            return self.name
+        return inherited
 
     def rig(self) -> dict | None:
         """The declared, input-driven motion of this part, if it has any.
@@ -161,6 +227,7 @@ class GeometryTemplate:
     name: str
     kind: str            # StandardMesh / AnimatedMesh / TreeMesh / ...
     file: str | None = None
+    skin: str | None = None
     source: str = ""
 
     @property
@@ -235,10 +302,52 @@ class ObjectLibrary:
                     obj.automatic_reset = args.strip().startswith("1")
                 elif cmd == "createskeleton":
                     obj.skeleton = args.split()[0] if args else None
+                elif cmd == "createinvisible":
+                    obj.invisible = args.strip().startswith("1")
                 elif cmd == "setanimatedtexturespeed":
                     try:
                         u, v = args.split()[0].replace(",", "/").split("/")[:2]
                         obj.animated_texture_speed = (float(u), float(v))
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "hasarmor":
+                    obj.has_armor = args.strip().startswith("1")
+                elif cmd == "material":
+                    try:
+                        obj.material = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd in (
+                    "hitpoints",
+                    "maxhitpoints",
+                    "criticaldamage",
+                    "hplostwhilecriticaldamage",
+                ):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "hitpoints": "hitpoints",
+                        "maxhitpoints": "max_hitpoints",
+                        "criticaldamage": "critical_damage",
+                        "hplostwhilecriticaldamage": "hp_lost_while_critical_damage",
+                    }[cmd], value)
+                elif child is None:
+                    continue
+                elif cmd == "setisfirstpersonpart":
+                    try:
+                        child.first_person_part = int(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "setrandomgeometries":
+                    try:
+                        child.random_geometries = int(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "setlodvalue":
+                    try:
+                        child.lod_value = float(args.split()[0])
                     except (ValueError, IndexError):
                         continue
 
@@ -252,6 +361,8 @@ class ObjectLibrary:
                     self.geometry_dir.setdefault(parts[1].lower(), folder)
                 elif geom is not None and cmd == "file":
                     geom.file = args.split()[0] if args else None
+                elif geom is not None and cmd == "setskin":
+                    geom.skin = args.split()[0] if args else None
 
     def object(self, name: str) -> ObjectTemplate | None:
         return self.objects.get(name.lower())
@@ -262,3 +373,32 @@ class ObjectLibrary:
     def art_dir(self, geometry_name: str) -> str | None:
         folder = self.geometry_dir.get(geometry_name.lower())
         return f"{folder}/Art" if folder else None
+
+    def available_configurations(self, root_name: str) -> list[str]:
+        """Configurations represented by LodObject alternatives below a root."""
+        if self.object(root_name) is None:
+            return []
+
+        available = {"complex"}
+        visited: set[str] = set()
+
+        def visit(template_name: str, depth: int = 0) -> None:
+            if depth > 24:
+                return
+            template = self.object(template_name)
+            if template is None:
+                return
+            key = template.name.lower()
+            if key in visited:
+                return
+            visited.add(key)
+            if template.is_lod_selector:
+                for child in template.children:
+                    role = lod_alternative_role(child.template)
+                    if role is not None:
+                        available.add(role)
+            for child in template.children:
+                visit(child.template, depth + 1)
+
+        visit(root_name)
+        return [name for name in MODEL_CONFIGURATIONS if name in available]

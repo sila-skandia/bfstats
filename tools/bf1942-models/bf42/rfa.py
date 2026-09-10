@@ -43,15 +43,24 @@ class ArchivePool:
     def __init__(self) -> None:
         self._archives: list[tuple[str, RfaArchive]] = []
         self._index: dict[str, tuple[str, RfaArchive, str]] = {}
+        # Filename -> first archive entry with that basename. Consulted only
+        # after an exact `texture/X` miss, so a nested fallback such as
+        # `Texture/ItalyBritts/britt1_r.dds` can fill a missing vanilla file
+        # without stealing a real `Texture/britt1_r.dds`.
+        self._basename: dict[str, tuple[str, RfaArchive, str]] = {}
 
     def add(self, path: Path, label: str | None = None) -> None:
         archive = RfaArchive(path)
         label = label or path.name
         self._archives.append((label, archive))
         for name in archive.entries:
+            entry = (label, archive, name)
             key = name.lower()
             if key not in self._index:
-                self._index[key] = (label, archive, name)
+                self._index[key] = entry
+            base = name.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            if base not in self._basename:
+                self._basename[base] = entry
 
     def add_dir(self, archives_dir: Path, patterns: tuple[str, ...]) -> None:
         """Every archive in a directory matching any of `patterns`, base before patch.
@@ -106,7 +115,35 @@ class ArchivePool:
                 # has to look up; index it under itself too or every level texture
                 # resolves and then fails to load.
                 self._index.setdefault(name.lower(), entry)
+                leaf = basename.lower()
+                if leaf not in self._basename:
+                    self._basename[leaf] = entry
                 added += 1
+        return added
+
+    def extend_from(self, other: "ArchivePool") -> None:
+        """Append another pool as a lower-priority fallback, keeping first hits."""
+        self._archives.extend(other._archives)
+        for key, entry in other._index.items():
+            self._index.setdefault(key, entry)
+        for key, entry in other._basename.items():
+            self._basename.setdefault(key, entry)
+
+    def absorb_images(self, other: "ArchivePool") -> int:
+        """Index another pool's DDS/TGA files so shaders can resolve them by basename.
+
+        TreeMesh billboards live in `treeMesh.rfa`, not `texture.rfa`. First hits
+        in this pool still win.
+        """
+        added = 0
+        for key, entry in other._index.items():
+            if not key.endswith((".dds", ".tga")):
+                continue
+            if key not in self._index:
+                self._index[key] = entry
+                added += 1
+            leaf = key.replace("\\", "/").rsplit("/", 1)[-1]
+            self._basename.setdefault(leaf, entry)
         return added
 
     def __contains__(self, name: str) -> bool:
@@ -137,6 +174,11 @@ class ArchivePool:
             key = f"{stem.lower()}{ext}"
             if key in self._index:
                 return self._index[key][2]
+        leaf = stem.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        for ext in exts:
+            hit = self._basename.get(leaf + ext)
+            if hit:
+                return hit[2]
         return None
 
     def names(self) -> list[str]:

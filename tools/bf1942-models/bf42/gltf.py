@@ -32,6 +32,7 @@ class Primitive:
     normals: list[tuple[float, float, float]] | None = None
     uvs: list[tuple[float, float]] | None = None
     material: int | None = None
+    extras: dict | None = None
 
 
 @dataclass
@@ -57,6 +58,40 @@ def quat_from_ypr(yaw_deg: float, pitch_deg: float, roll_deg: float) -> tuple[fl
     qx = (math.sin(p), 0.0, 0.0, math.cos(p))
     qz = (0.0, 0.0, math.sin(r), math.cos(r))
     return _qmul(_qmul(qy, qx), qz)
+
+
+def quat_mul(a, b):
+    return _qmul(a, b)
+
+
+def quat_from_matrix(rotation: tuple[tuple[float, float, float], ...]) -> tuple[float, float, float, float]:
+    """A Refractor 3x3 (row-major, R * v) as a glTF quaternion, Z-mirrored.
+
+    Exporting p' = (x, y, -z) conjugates rotations: R' = S R S with S = diag(1,1,-1).
+    """
+    r00, r01, r02 = rotation[0]
+    r10, r11, r12 = rotation[1]
+    r20, r21, r22 = rotation[2]
+    return _quat_from_rows(
+        r00, r01, -r02,
+        r10, r11, -r12,
+        -r20, -r21, r22,
+    )
+
+
+def _quat_from_rows(m00, m01, m02, m10, m11, m12, m20, m21, m22):
+    trace = m00 + m11 + m22
+    if trace > 0.0:
+        s = 0.5 / math.sqrt(trace + 1.0)
+        return ((m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s, 0.25 / s)
+    if m00 > m11 and m00 > m22:
+        s = 2.0 * math.sqrt(1.0 + m00 - m11 - m22)
+        return (0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s)
+    if m11 > m22:
+        s = 2.0 * math.sqrt(1.0 + m11 - m00 - m22)
+        return ((m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s)
+    s = 2.0 * math.sqrt(1.0 + m22 - m00 - m11)
+    return ((m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s)
 
 
 def _qmul(a, b):
@@ -171,6 +206,8 @@ class GlbBuilder:
             entry: dict = {"attributes": attrs, "indices": index_acc, "mode": 4}
             if prim.material is not None:
                 entry["material"] = prim.material
+            if prim.extras:
+                entry["extras"] = prim.extras
             out.append(entry)
 
         self._meshes.append({"name": name, "primitives": out})

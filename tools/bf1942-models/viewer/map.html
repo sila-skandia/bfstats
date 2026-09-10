@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>BF1942 map flythrough</title>
+<style>
+  :root {
+    --bg: #14150f;
+    --panel: #1c1e16cc;
+    --line: #2e3125;
+    --text: #e6e4d9;
+    --muted: #8d8f7e;
+    --accent: #9aab5a;
+    --warn: #c98a3e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+  }
+  #hud, #gate, #side {
+    position: absolute;
+    pointer-events: none;
+  }
+  #side {
+    pointer-events: auto;
+    z-index: 3;
+    top: 16px; left: 16px;
+    width: 260px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 14px;
+    backdrop-filter: blur(8px);
+  }
+  h1 {
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  select {
+    width: 100%;
+    margin: 0 0 12px;
+    padding: 6px 8px;
+    background: #14150f;
+    color: var(--text);
+    border: 1px solid var(--line);
+    font: inherit;
+  }
+  .stat { color: var(--muted); font-size: 12px; }
+  .stat strong { color: var(--text); font-weight: 500; }
+  label.opt {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  #hud {
+    z-index: 2;
+    left: 50%; bottom: 18px;
+    transform: translateX(-50%);
+    color: var(--muted);
+    text-align: center;
+    text-shadow: 0 1px 4px #000;
+  }
+  #gate {
+    z-index: 1;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    color: var(--text);
+  }
+  #gate[hidden] { display: none; }
+  #gate span {
+    pointer-events: auto;
+    cursor: pointer;
+    border: 1px solid var(--accent);
+    padding: 10px 16px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-size: 11px;
+    background: var(--panel);
+  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<aside id="side">
+  <h1>Map flythrough</h1>
+  <select id="maps" aria-label="Level"></select>
+  <div id="stats" class="stat">extract a level first</div>
+  <label class="opt"><input type="checkbox" id="game-fog"> game fog distance</label>
+  <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
+  <label class="opt"><input type="checkbox" id="vehicles"> vehicles</label>
+  <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
+  <div class="stat" style="margin-top:12px">
+    <a href="./index.html">vehicle inspector</a>
+  </div>
+</aside>
+<div id="hud">click the map to fly &middot; WASD look-steer &middot; Ctrl faster &middot; Shift slower &middot; Esc release</div>
+<div id="gate"><span>Click to fly</span></div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+
+const DEFAULT_DRAW = 700;
+const FLY_FAST = 3.5;
+const FLY_SLOW = 0.28;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 8000);
+camera.position.set(0, 80, 0);
+
+const hemi = new THREE.HemisphereLight(0xe8dcc0, 0x5a4a32, 1.35);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff1d0, 2.4);
+scene.add(sun);
+
+const loader = new GLTFLoader();
+const cubeLoader = new THREE.CubeTextureLoader();
+const bust = () => `?t=${Date.now()}`;
+
+const keys = new Set();
+const look = { yaw: 0, pitch: -0.15 };
+const cull = [];
+let spawnersRoot = null;
+let captured = false;
+let currentRoot = null;
+let extras = {};
+let skybox = null;
+let speed = 40;
+
+const optGameFog = document.getElementById('game-fog');
+const optWire = document.getElementById('wire');
+const optVehicles = document.getElementById('vehicles');
+const optEntire = document.getElementById('entire-map');
+
+function uiFocused() {
+  const t = document.activeElement;
+  return t && (t.tagName === 'SELECT' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+}
+
+addEventListener('keydown', e => {
+  if (e.code === 'Escape') {
+    release();
+    return;
+  }
+  if (uiFocused()) return;
+  keys.add(e.code);
+  if (captured) e.preventDefault();
+});
+addEventListener('keyup', e => keys.delete(e.code));
+
+const gate = document.getElementById('gate');
+function capture() {
+  renderer.domElement.requestPointerLock();
+}
+function release() {
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+gate.querySelector('span').addEventListener('click', e => {
+  e.stopPropagation();
+  capture();
+});
+renderer.domElement.addEventListener('click', capture);
+document.getElementById('side').addEventListener('pointerdown', () => release());
+document.addEventListener('pointerlockchange', () => {
+  captured = document.pointerLockElement === renderer.domElement;
+  gate.hidden = captured;
+});
+document.addEventListener('mousemove', e => {
+  if (!captured) return;
+  look.yaw -= e.movementX * 0.0022;
+  look.pitch = Math.max(-1.2, Math.min(1.2, look.pitch - e.movementY * 0.0022));
+});
+
+function lookVector() {
+  const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw);
+  const cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
+  return { x: sy * cp, y: sp, z: cy * cp, cy, sy };
+}
+
+function applyLook() {
+  const d = lookVector();
+  camera.lookAt(
+    camera.position.x + d.x,
+    camera.position.y + d.y,
+    camera.position.z + d.z,
+  );
+}
+
+function fly(dt) {
+  if (!captured) return;
+  let mul = 1;
+  if (keys.has('ControlLeft') || keys.has('ControlRight')) mul = FLY_FAST;
+  else if (keys.has('ShiftLeft') || keys.has('ShiftRight')) mul = FLY_SLOW;
+  const step = speed * mul * dt;
+  const fwd = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+  const strafe = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+  const d = lookVector();
+  camera.position.x += (d.x * fwd + d.cy * strafe) * step;
+  camera.position.y += d.y * fwd * step;
+  camera.position.z += (d.z * fwd - d.sy * strafe) * step;
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+function dispose(root) {
+  if (!root) return;
+  root.traverse(obj => {
+    obj.geometry?.dispose();
+    for (const m of [obj.material].flat().filter(Boolean)) {
+      m.map?.dispose();
+      m.dispose();
+    }
+  });
+  scene.remove(root);
+}
+
+function disposeSky() {
+  if (!skybox) return;
+  skybox.dispose();
+  skybox = null;
+}
+
+function drawDistance() {
+  return extras.drawDistance || DEFAULT_DRAW;
+}
+
+function applyFar() {
+  const world = extras.worldSize || 2048;
+  const draw = drawDistance();
+  camera.far = optEntire.checked
+    ? Math.max(4000, world * 1.5)
+    : Math.max(draw * 1.6, 900);
+  camera.updateProjectionMatrix();
+}
+
+function applyFog() {
+  const color = extras.fogColor || [0.8, 0.72, 0.53];
+  const draw = drawDistance();
+  let start, end;
+  if (optGameFog.checked) {
+    start = extras.fogStart || 150;
+    end = extras.fogEnd || 300;
+  } else if (!optEntire.checked) {
+    start = draw * 0.55;
+    end = draw;
+  } else {
+    start = 250;
+    end = Math.max(1400, extras.worldSize || 2000);
+  }
+  const fogColor = new THREE.Color().setRGB(color[0], color[1], color[2]);
+  scene.fog = new THREE.Fog(fogColor, start, end);
+  scene.background = skybox || fogColor;
+}
+
+function isCollision(obj) {
+  return Boolean(obj.userData?.collision) || /collision/i.test(obj.name || '');
+}
+
+function kindOf(obj) {
+  return obj.userData?.kind || '';
+}
+
+function tagCull(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const sphere = new THREE.Sphere();
+  box.getBoundingSphere(sphere);
+  obj.userData.cullCenter = sphere.center.clone();
+  obj.userData.cullRadius = sphere.radius;
+}
+
+function indexScene(root) {
+  cull.length = 0;
+  spawnersRoot = null;
+  root.traverse(obj => {
+    if (isCollision(obj)) obj.visible = false;
+  });
+  root.updateMatrixWorld(true);
+  root.traverse(obj => {
+    if (obj === root) return;
+    if (kindOf(obj) === 'spawners' || obj.name === 'spawners') {
+      spawnersRoot = obj;
+    }
+  });
+  for (const child of root.children) {
+    if (child === spawnersRoot) {
+      for (const vehicle of child.children) tagCull(vehicle);
+      continue;
+    }
+    if (kindOf(child) === 'water') continue;
+    tagCull(child);
+    cull.push(child);
+  }
+}
+
+function inRange(obj, cam, limit) {
+  const c = obj.userData.cullCenter;
+  const r = obj.userData.cullRadius || 0;
+  if (!c) return true;
+  const dx = c.x - cam.x, dy = c.y - cam.y, dz = c.z - cam.z;
+  const reach = limit + r;
+  return dx * dx + dy * dy + dz * dz <= reach * reach;
+}
+
+function applyVisibility() {
+  const entire = optEntire.checked;
+  const cam = camera.position;
+  const limit = drawDistance();
+  for (const obj of cull) obj.visible = entire || inRange(obj, cam, limit);
+  if (!spawnersRoot) return;
+  spawnersRoot.visible = optVehicles.checked;
+  if (!optVehicles.checked) return;
+  for (const vehicle of spawnersRoot.children) {
+    vehicle.visible = entire || inRange(vehicle, cam, limit);
+  }
+}
+
+function placeCamera() {
+  const cam = extras.camera;
+  if (cam) {
+    camera.position.set(cam[0], cam[1] + 55, cam[2]);
+  } else {
+    camera.position.set(0, 80, 0);
+  }
+  look.yaw = Math.PI;
+  look.pitch = -0.22;
+  applyLook();
+}
+
+function wireframe(on) {
+  if (!currentRoot) return;
+  currentRoot.traverse(obj => {
+    if (!obj.isMesh || isCollision(obj)) return;
+    for (const m of [obj.material].flat()) m.wireframe = on;
+  });
+}
+
+async function loadSky(entry) {
+  disposeSky();
+  const faces = extras.skybox;
+  if (!faces || faces.length !== 6) return;
+  const dir = entry.glb.replace(/\/[^/]+$/, '');
+  const tex = await cubeLoader.loadAsync(
+    faces.map(f => `./maps/${dir}/${f}${bust()}`),
+  );
+  tex.colorSpace = THREE.SRGBColorSpace;
+  skybox = tex;
+}
+
+async function show(entry) {
+  const report = await fetch(`./maps/${entry.report}${bust()}`).then(r => r.json());
+  extras = report;
+  const gltf = await loader.loadAsync(`./maps/${entry.glb}${bust()}`);
+  dispose(currentRoot);
+  currentRoot = gltf.scene;
+  scene.add(currentRoot);
+  if (extras.sunDirection) {
+    sun.position.set(
+      extras.sunDirection[0] * -400,
+      extras.sunDirection[1] * 400,
+      extras.sunDirection[2] * -400,
+    );
+  }
+  indexScene(currentRoot);
+  applyFar();
+  await loadSky(entry);
+  applyFog();
+  placeCamera();
+  wireframe(optWire.checked);
+  applyVisibility();
+  const t = extras.terrain || {};
+  const o = extras.objects || {};
+  document.getElementById('stats').innerHTML =
+    `<strong>${extras.level || entry.name}</strong><br>` +
+    `world ${extras.worldSize || '?'} m<br>` +
+    `terrain ${t.triangles || 0} tris / ${t.tiles || 0} tiles` +
+    (t.detail ? ' + detail' : '') + `<br>` +
+    `objects ${o.placed || 0} placed` +
+    (o.spawners ? ` / ${o.spawners} vehicles` : '') +
+    (o.skipped?.length ? ` / ${o.skipped.length} skipped` : '');
+}
+
+optGameFog.addEventListener('change', applyFog);
+optWire.addEventListener('change', e => wireframe(e.target.checked));
+optVehicles.addEventListener('change', applyVisibility);
+optEntire.addEventListener('change', () => {
+  applyFar();
+  applyFog();
+  applyVisibility();
+});
+
+const manifest = await fetch(`./maps/maps.json${bust()}`)
+  .then(r => r.ok ? r.json() : [])
+  .catch(() => []);
+const select = document.getElementById('maps');
+if (!manifest.length) {
+  select.hidden = true;
+  document.getElementById('stats').textContent =
+    'No maps yet. From tools/bf1942-models run: python3 extract_map.py Tobruk';
+} else {
+  for (const entry of manifest) {
+    select.appendChild(new Option(entry.name, entry.name));
+  }
+  select.addEventListener('change', () => {
+    const entry = manifest.find(e => e.name === select.value);
+    if (entry) show(entry);
+  });
+  await show(manifest[0]);
+}
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  fly(dt);
+  applyLook();
+  applyVisibility();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
