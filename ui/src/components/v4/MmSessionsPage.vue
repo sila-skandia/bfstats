@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchSessions, type PlayerContextInfo } from '@/services/playerStatsService'
-import { kdClass, MM_CHART, teamColor, teamFill } from '@/views/v4/mmTokens'
+import { kdClass, MM_CHART } from '@/views/v4/mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import { Line } from 'vue-chartjs'
@@ -286,109 +286,6 @@ const showCharts = ref(true)
 // stay consistent across every V4 chart.
 const { inkSoft: MM_INK_SOFT, inkMuted: MM_INK_MUTED, grid: MM_RULE, accent: MM_ACCENT, kill: MM_KILL } = MM_CHART
 
-// Rounds with team scores, chronological (oldest → newest)
-const roundsWithScores = computed(() =>
-  [...rounds.value]
-    .filter(r => r.team1Points !== undefined && r.team2Points !== undefined && r.team1Label && r.team2Label)
-    .reverse(),
-)
-
-const teamLabels = computed(() => {
-  const data = roundsWithScores.value
-  if (data.length === 0) return { team1: '', team2: '' }
-  return { team1: data[0].team1Label!, team2: data[0].team2Label! }
-})
-
-const scoreLineChartData = computed(() => {
-  const data = roundsWithScores.value
-  const { team1, team2 } = teamLabels.value
-  if (!team1 || !team2) return { labels: [], datasets: [] }
-
-  const labels = data.map(r => {
-    const d = parseUtc(r.startTime)
-    return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${r.mapName}`
-  })
-
-  const team1Scores: (number | null)[] = []
-  const team2Scores: (number | null)[] = []
-  for (const r of data) {
-    if (r.team1Label === team1) {
-      team1Scores.push(r.team1Points!)
-      team2Scores.push(r.team2Points!)
-    } else if (r.team2Label === team1) {
-      team1Scores.push(r.team2Points!)
-      team2Scores.push(r.team1Points!)
-    } else {
-      team1Scores.push(r.team1Points!)
-      team2Scores.push(r.team2Points!)
-    }
-  }
-
-  return {
-    labels,
-    datasets: [
-      {
-        label: team1,
-        data: team1Scores,
-        borderColor: teamColor(team1),
-        backgroundColor: teamFill(team1, 0.12),
-        borderWidth: 2,
-        pointRadius: 2,
-        pointHoverRadius: 5,
-        tension: 0.3,
-        fill: false,
-      },
-      {
-        label: team2,
-        data: team2Scores,
-        borderColor: teamColor(team2),
-        backgroundColor: teamFill(team2, 0.12),
-        borderWidth: 2,
-        pointRadius: 2,
-        pointHoverRadius: 5,
-        tension: 0.3,
-        fill: false,
-      },
-    ],
-  }
-})
-
-const scoreLineChartOptions = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: { mode: 'index' as const, intersect: false },
-  plugins: {
-    legend: {
-      display: true,
-      position: 'top' as const,
-      labels: { color: MM_INK_SOFT, font: { size: 11 }, boxWidth: 12, padding: 14 },
-    },
-    tooltip: {
-      backgroundColor: MM_CHART.surfaceSoft,
-      titleColor: MM_CHART.ink,
-      bodyColor: MM_CHART.inkSoft,
-      borderColor: MM_CHART.gridStrong,
-      borderWidth: 1,
-      callbacks: {
-        title: (items: any[]) => {
-          const idx = items[0]?.dataIndex
-          if (idx === undefined) return ''
-          const r = roundsWithScores.value[idx]
-          return r ? `${r.mapName} — ${decodePlayerName(r.serverName)}` : ''
-        },
-      },
-    },
-  },
-  scales: {
-    x: { display: false },
-    y: {
-      ticks: { color: MM_INK_MUTED, font: { size: 10 } },
-      grid: { color: MM_RULE },
-      title: { display: true, text: 'Tickets', color: MM_INK_MUTED, font: { size: 10 } },
-    },
-  },
-}))
-
 // Player performance worm (player context only)
 const playerPerformanceRounds = computed(() => {
   if (!props.playerName) return []
@@ -658,8 +555,8 @@ const paginationRange = computed(() => {
         </div>
       </div>
 
-      <!-- Charts (collapsible) -->
-      <div v-if="rounds.length > 1" class="mm-sessions__charts">
+      <!-- Charts (collapsible, player context only) -->
+      <div v-if="playerName && playerPerformanceRounds.length > 1" class="mm-sessions__charts">
         <button
           type="button"
           class="mm-sessions__charts-toggle"
@@ -669,7 +566,7 @@ const paginationRange = computed(() => {
           <span style="font-family: var(--mm-font-mono); font-size: 11px; color: var(--mm-ink-muted)">{{ showCharts ? '−' : '+' }}</span>
         </button>
         <div v-if="showCharts" class="mm-sessions__charts-body">
-          <div v-if="playerName && playerPerformanceRounds.length > 1">
+          <div>
             <div class="mm-eyebrow" style="margin-bottom: 8px">
               {{ contextLabel }} performance
               <span style="text-transform: none; letter-spacing: 0.02em; color: var(--mm-ink-muted); margin-left: 6px">
@@ -681,16 +578,6 @@ const paginationRange = computed(() => {
                 :key="`player-perf-${playerPerformanceRounds.length}`"
                 :data="playerPerformanceChartData"
                 :options="playerPerformanceChartOptions"
-              />
-            </div>
-          </div>
-          <div v-if="roundsWithScores.length > 1" style="margin-top: 24px">
-            <div class="mm-eyebrow" style="margin-bottom: 8px">Team scores over time</div>
-            <div style="height: 200px">
-              <Line
-                :key="`scores-${roundsWithScores.length}`"
-                :data="scoreLineChartData"
-                :options="scoreLineChartOptions"
               />
             </div>
           </div>
