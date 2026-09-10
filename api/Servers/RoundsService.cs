@@ -30,7 +30,11 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
 
         if (!string.IsNullOrWhiteSpace(filters.MapName))
         {
-            query = query.Where(r => r.MapName.Contains(filters.MapName));
+            // MapName.Contains compiles to instr() and cannot use IX_Rounds_MapName
+            // or (ServerGuid, StartTime). Callers (map drill-in, sessions filter,
+            // tournament link) send the stored map name, so equality keeps COUNT
+            // on the B-tree. Substring search would scan Rounds on the volume.
+            query = query.Where(r => r.MapName == filters.MapName);
         }
 
         if (!string.IsNullOrWhiteSpace(filters.GameType))
@@ -497,11 +501,27 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
     // table, then filter rounds by guid. Callers (sessions page, bots) send
     // the current server name, so a miss is an empty page rather than a
     // 30s+ table scan.
+    //
+    // Prefer an exact name match. `Name.Contains` of a full live name can
+    // also hit a second server (longer name, same prefix), and
+    // `ServerGuid IN (g1, g2) ORDER BY StartTime DESC` cannot use the
+    // composite index — that page is ~13s on the volume.
     private async Task<IQueryable<Round>> ApplyServerNameFilterAsync(IQueryable<Round> query, string serverName)
     {
+        var exactGuids = await dbContext.Servers
+            .AsNoTracking()
+            .Where(s => s.Name == serverName)
+            .Select(s => s.Guid)
+            .ToListAsync();
+
+        if (exactGuids.Count > 0)
+        {
+            return query.Where(r => exactGuids.Contains(r.ServerGuid));
+        }
+
         var matchingGuids = await dbContext.Servers
             .AsNoTracking()
-            .Where(s => s.Name == serverName || s.Name.Contains(serverName))
+            .Where(s => s.Name.Contains(serverName))
             .Select(s => s.Guid)
             .ToListAsync();
 
