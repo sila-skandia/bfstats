@@ -7,7 +7,10 @@
 Terrain tiles come from the level archive (so they texture even when vanilla
 `texture.rfa` is missing). Buildings, sandbags and vegetation are the same
 object templates the vehicle extractor already assembles; TreeMesh plants
-are included. Open `viewer/map.html` through the model-viewer launch config.
+are included. Sibling level archives and other installed mods fill object
+textures the missing vanilla `texture.rfa` would have supplied. Object
+lightmaps are written next to the glb and multiplied in the viewer.
+Open `viewer/map.html` through the model-viewer launch config.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR,
     build_library,
     build_pools,
+    discover_level_textures,
     mod_chain,
 )
 
@@ -30,6 +34,7 @@ from bf42 import gltf  # noqa: E402
 from bf42.assemble import Assembler, Report  # noqa: E402
 from bf42.level import (  # noqa: E402
     LevelInfo,
+    index_object_lightmaps,
     decode_heightmap,
     find_level_archives,
     load_level_files,
@@ -40,10 +45,71 @@ from bf42.level import (  # noqa: E402
     parse_terrain_con,
     spawn_vehicle,
 )
+from bf42.rfa import find_archives_dir  # noqa: E402
 from bf42.terrain import apply_detail, tile_mesh, water_mesh  # noqa: E402
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 from extract_map_images import decode_dds, downscale, encode_png  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from extract_hud_assets import decode_tga  # noqa: E402
+
+# Vanilla `texture.rfa` is missing on this install; these mods still carry
+# afrhouse / palm / stone maps under the same basenames.
+TEXTURE_GAP_MODS = ("WarFront", "FH", "bf1918", "bg42", "FinnWars")
+
+
+def _mod_dirs(game_dir: Path, names: list[str]) -> list[Path]:
+    mods = game_dir / "Mods"
+    if not mods.is_dir():
+        return []
+    by_lower = {d.name.lower(): d for d in mods.iterdir() if d.is_dir()}
+    out: list[Path] = []
+    seen: set[str] = set()
+    for name in names:
+        hit = by_lower.get(name.lower())
+        if hit is None or hit.name.lower() in seen:
+            continue
+        seen.add(hit.name.lower())
+        out.append(hit)
+    return out
+
+
+def _vanilla_texture_rfa_present(chain: list[Path]) -> bool:
+    for mod_dir in chain:
+        if mod_dir.name.lower() != "bf1942":
+            continue
+        archives = find_archives_dir(mod_dir)
+        if archives is None:
+            continue
+        for child in archives.iterdir():
+            if child.is_file() and child.name.lower() == "texture.rfa":
+                return True
+    return False
+
+
+def write_object_lightmaps(files, out_dir: Path) -> dict[tuple[str, int, int, int], str]:
+    indexed = index_object_lightmaps(files)
+    if not indexed:
+        return {}
+    dest = out_dir / "lightmaps"
+    dest.mkdir(parents=True, exist_ok=True)
+    mapping: dict[tuple[str, int, int, int], str] = {}
+    for key, src in indexed.items():
+        stem, x, y, z = key
+        png_name = f"{stem}_{x}-{y}-{z}.png"
+        try:
+            raw = files.read(src)
+            if src.lower().endswith(".dds"):
+                width, height, rgba = decode_dds(raw)
+            else:
+                width, height, rgba = decode_tga(raw)
+            (dest / png_name).write_bytes(
+                encode_png(width, height, rgba, drop_alpha=True))
+            mapping[key] = f"lightmaps/{png_name}"
+        except Exception:
+            continue
+    return mapping
 
 
 def _read_text(files, relative: str) -> str:
@@ -98,6 +164,7 @@ def _place_template(assembler: Assembler, builder, name: str, inst, report,
     node = assembler.build_node(
         builder, name, report,
         position=inst.position, rotation=inst.rotation,
+        world_origin=inst.position,
     )
     if node is None:
         seen_fail.add(key)
@@ -106,7 +173,9 @@ def _place_template(assembler: Assembler, builder, name: str, inst, report,
 
 
 def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
-                 *, max_texture: int, include_objects: bool) -> tuple[bytes, dict]:
+                 *, max_texture: int, include_objects: bool,
+                 lightmaps: dict[tuple[str, int, int, int], str] | None = None,
+                 ) -> tuple[bytes, dict]:
     builder = gltf.GlbBuilder(generator="bfstats bf1942 level extractor")
     roots: list[int] = []
     tiles = files.tiles()
@@ -208,6 +277,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         object_report["texturesMissing"] = sorted(set(report.missing_textures))
         object_report["unresolvedTemplates"] = sorted(set(report.unresolved_templates))
         object_report["missingMeshes"] = sorted(set(report.missing_meshes))
+        object_report["lightmaps"] = len(lightmaps or {})
 
     extras = {
         "level": info.name,
@@ -257,23 +327,33 @@ def main() -> int:
           f"{len(info.spawn_objects)} spawners", file=sys.stderr)
 
     assembler = None
+    lightmaps: dict[tuple[str, int, int, int], str] = {}
+    out_dir = args.out / info.name.lower()
+    out_dir.mkdir(parents=True, exist_ok=True)
     if not args.terrain_only:
         chain = mod_chain(game_dir, args.mod)
-        fallbacks = [game_dir / "Mods" / name for name in args.texture_fallback]
-        meshes, textures, objects = build_pools(chain, fallbacks)
+        extra_names = list(args.texture_fallback)
+        if not _vanilla_texture_rfa_present(chain):
+            extra_names += list(TEXTURE_GAP_MODS)
+        fallbacks = _mod_dirs(game_dir, extra_names)
+        meshes, textures, objects, _game = build_pools(chain, fallbacks)
         textures.absorb_images(meshes)
+        for level_name, level_path in discover_level_textures(chain):
+            textures.add_level(level_path, label=level_name)
+        for path in paths:
+            textures.add_level(path, label=info.name)
         library = build_library(objects)
+        lightmaps = write_object_lightmaps(files, out_dir)
         assembler = Assembler(
             meshes, textures, objects, library,
-            lod=0, max_texture=args.max_texture, include_collision=False)
+            lod=0, max_texture=args.max_texture, include_collision=False,
+            lightmaps=lightmaps)
 
     glb, extras = build_scene(
         files, info, heightmap, assembler,
         max_texture=args.max_texture, include_objects=not args.terrain_only,
+        lightmaps=lightmaps,
     )
-
-    out_dir = args.out / info.name.lower()
-    out_dir.mkdir(parents=True, exist_ok=True)
     extras["skybox"] = write_skybox(files, out_dir)
     (out_dir / "scene.glb").write_bytes(glb)
     (out_dir / "scene.json").write_text(json.dumps(extras, indent=2))
@@ -302,7 +382,9 @@ def main() -> int:
           f"{len(files.tiles())} tiles"
           f"{' + detail' if extras['terrain'].get('detail') else ''}; "
           f"objects {obj['placed']} placed ({obj.get('spawners', 0)} spawners), "
-          f"{len(obj['skipped'])} skipped; "
+          f"{obj.get('lightmaps', 0)} lightmaps, "
+          f"{len(obj['skipped'])} skipped, "
+          f"{len(obj.get('texturesMissing') or [])} tex missing; "
           f"{len(glb) // 1024} KB -> {out_dir / 'scene.glb'}", file=sys.stderr)
     return 0
 

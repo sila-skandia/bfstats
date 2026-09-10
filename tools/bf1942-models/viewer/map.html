@@ -127,7 +127,7 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 
 const DEFAULT_DRAW = 700;
 const FLY_SPEED = 140;
-const FLY_SLOW = 0.25;
+const FLY_SLOW = 0.02;
 const LOOK_SENS = 0.0022;
 const FLY_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE',
@@ -150,7 +150,9 @@ scene.add(sun);
 
 const loader = new GLTFLoader();
 const cubeLoader = new THREE.CubeTextureLoader();
+const texLoader = new THREE.TextureLoader();
 const bust = () => `?t=${Date.now()}`;
+const lmCache = new Map();
 
 const keys = new Set();
 const look = { yaw: 0, pitch: -0.15 };
@@ -306,6 +308,8 @@ addEventListener('resize', resize);
 resize();
 
 function dispose(root) {
+  for (const tex of lmCache.values()) tex.dispose();
+  lmCache.clear();
   if (!root) return;
   root.traverse(obj => {
     obj.geometry?.dispose();
@@ -315,6 +319,44 @@ function dispose(root) {
     }
   });
   scene.remove(root);
+}
+
+function bindLightmaps(root, dir) {
+  root.traverse(obj => {
+    const rel = obj.userData?.lightmap;
+    if (!rel || !obj.isMesh) return;
+    const url = `./maps/${dir}/${rel}${bust()}`;
+    let tex = lmCache.get(url);
+    if (!tex) {
+      tex = texLoader.load(url);
+      tex.channel = 1;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      lmCache.set(url, tex);
+    }
+    const source = Array.isArray(obj.material) ? obj.material : [obj.material];
+    const bound = source.map(m => {
+      const mat = m.clone();
+      mat.lightMap = tex;
+      mat.lightMapIntensity = 1;
+      const prev = mat.onBeforeCompile;
+      mat.onBeforeCompile = (shader, renderer) => {
+        if (prev) prev(shader, renderer);
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            '#include <map_fragment>',
+            `#include <map_fragment>
+             #ifdef USE_LIGHTMAP
+             diffuseColor.rgb *= texture2D( lightMap, vLightMapUv ).rgb;
+             #endif`,
+          )
+          .replace('#include <lightmap_fragment>', '');
+      };
+      mat.needsUpdate = true;
+      return mat;
+    });
+    obj.material = Array.isArray(obj.material) ? bound : bound[0];
+  });
 }
 
 function disposeSky() {
@@ -456,6 +498,7 @@ async function show(entry) {
   dispose(currentRoot);
   currentRoot = gltf.scene;
   scene.add(currentRoot);
+  bindLightmaps(currentRoot, entry.glb.replace(/\/[^/]+$/, ''));
   if (extras.sunDirection) {
     sun.position.set(
       extras.sunDirection[0] * -400,
@@ -479,6 +522,7 @@ async function show(entry) {
     (t.detail ? ' + detail' : '') + `<br>` +
     `objects ${o.placed || 0} placed` +
     (o.spawners ? ` / ${o.spawners} vehicles` : '') +
+    (o.lightmaps ? ` / ${o.lightmaps} lightmaps` : '') +
     (o.skipped?.length ? ` / ${o.skipped.length} skipped` : '');
 }
 

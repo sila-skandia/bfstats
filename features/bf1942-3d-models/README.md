@@ -6,7 +6,7 @@ viewer to be judged in. Tooling lives in [`tools/bf1942-models/`](../../tools/bf
 ```bash
 cd tools/bf1942-models
 python3 extract_models.py --list
-python3 extract_models.py Sherman Willy PanzerIV Stuka Elco80 BritishSoldier \
+python3 extract_models.py Sherman Willy PanzerIV Tiger Stuka Elco80 BritishSoldier \
     --out ./viewer/models \
     --texture-fallback WarFront \
     --texture-fallback FH \
@@ -32,13 +32,17 @@ python3 extract_map.py Tobruk \
 Open `http://127.0.0.1:5273/map.html`. Click the map (or the fly button) to capture
 the pointer; the sidebar stays clickable. WASD flies along the look direction
 (pitch included) at cruise speed, Shift slows down, and Q/E (or the mouse
-wheel / trackpad scroll) change altitude. Mouse and trackpad look around;
-click-drag still looks if pointer lock is unavailable. Vehicles start hidden
+wheel / trackpad scroll) change altitude. A strafes left, D right. Mouse and
+trackpad look around; click-drag still looks if pointer lock is unavailable.
+Vehicles start hidden
 and the viewer only draws objects inside ~700 m unless **render entire map**
 is on. Terrain tiles live in the level archive and face +Y after export, with
 the sand `detail.dds` multiplied in. The sky is the level's `ENVMAP_G_.rcm`
-cubemap. Buildings and palms still need vanilla `texture.rfa` (or a fallback
-that happens to carry `afrhouse_*` / `PAHILE_C`). Vegetation is TreeMesh;
+cubemap. Object lightmaps (the per-instance `ObjectLightmaps/*.tga` bake) are
+multiplied on meshes that carry a second UV set. Building and palm textures
+that vanilla `texture.rfa` would have supplied are filled from sibling level
+archives and from mods that still ship those basenames (`bf1918`, `bg42`,
+`FinnWars`, plus the existing WarFront/FH fallbacks). Vegetation is TreeMesh;
 buildings are the same StandardMesh assembler as the vehicles. Collision meshes
 are omitted from the map scene. `coastline` is the one StaticObjects name that
 has no template.
@@ -450,26 +454,155 @@ the struck collision face's normal: a square hit is 0 degrees and keeps a factor
 of 1; a grazing hit approaches 90 degrees and 0. `ObjectTemplate.angleMod` is a
 separate control used by physical object-on-object collision damage.
 
-Enable **show armour regions** in the viewer. The legend ranks the model's known
-defence materials from red (inferred most vulnerable) through yellow and green to
-blue (inferred most protected); numeric material IDs remain visible in the legend.
-IDs outside the documented armour ranges remain neutral grey and are labelled
-unclassified. This is a relative reading of BF1942's documented material ranges,
-not a replacement for each weapon's attack/defence table. Select a material ID in
-the legend to paint only that region; select it again to restore all regions.
+Enable **show armour regions** in the viewer. With no weapon selected the legend
+ranks the model's known defence materials from red (inferred most vulnerable)
+through yellow and green to blue (inferred most protected) by the documented id
+ranges; ids outside those ranges are neutral grey and labelled unclassified.
+Select a material id in the legend to paint only that region; select it again to
+restore all regions.
+
+Pick a **Weapon** and the colours stop being inferred. Each region is ranked by
+the head-on hit points that round actually does to it, read from the
+MaterialManager tables (below), and the chip shows the number. A face the weapon
+has no table entry for, or is tabled at zero against, is grey and marked immune.
+The model's own guns are listed first; the rest are grouped by category.
 
 Clicking a coloured face selects the object part and starts with a square 0-degree
-shot. The **Damage** percentage is the angular share of that region's head-on
-damage: 100% at 0 degrees, falling with `cos(angle)`. It is not vehicle HP loss.
-Calculating HP loss requires a selected weapon's base damage, its modifier against
-the face material and distance falloff; vehicle health by itself is insufficient.
+shot. Without a weapon the reading is the angular share of head-on damage, 100% at
+0 degrees falling with `cos(angle)`. With a weapon it is hit points against the
+vehicle's `hitpoints`, with **shots to destroy** and **shots to critical** from the
+root `Objects.con` health and `criticalDamage`, the splash figure at the blast
+centre against the vehicle's splash material, and a **Range** slider for the few
+weapons that declare distance fall-off. The formula line spells out every factor.
 
 The orange shot arrow points into the selected face and the white arrow is its
 surface normal. Drag the orange handle directly or use the angle slider to
-approach a grazing hit. Source geometry, collision material and world position
-remain under **Technical details**; health, critical threshold and splash material
-come from the root vehicle's `Objects.con`. Exact direct-hit points remain unknown
-until the relevant MaterialManager attack/defence table is resolved.
+approach a grazing hit. Source geometry, collision material, def group and — with
+a weapon — projectile, att material and muzzle velocity are under **Technical
+details**.
+
+**Compare** is separate from armour inspection. Opponent parks a ghosted second
+vehicle to the right and opens a Street Fighter-style VS column between the
+hulls. Each side picks its own gun (defaults to that vehicle's heaviest); a
+vertical spine of plates (rear / side / nose / front / glacis) grows a tug-of-war
+bar from the centre. Fill is head-on damage over the target's HP — a one-shot
+fills the lane — and the number is shots-to-kill. The sidebar **Weapon** control
+is left alone, so inspecting a face still uses the orange shot arrow and the
+selected inspect weapon. Tiger is in the default extract set for the Panzer
+matchup (125 HP, plates 51/53/54 against the Panzer's 100 HP and 50/51/52).
+
+## Where the game rules live
+
+The extractor had been looking for `Game.rfa` in `Mods/bf1942/Archives/` beside
+`objects.rfa`, not finding it, and treating the damage tables as unresolved. The
+archive is there, one folder down:
+
+```
+Mods/bf1942/Archives/bf1942/Game.rfa          106,635 bytes, Jan 2004 (patch 1.6)
+Mods/bf1942/Archives/bf1942/levels/*.rfa
+```
+
+Refractor mounts an archive at the directory its internal paths start with.
+`objects.rfa` holds `Objects/...` so it sits at the top; `Game.rfa` holds
+`Bf1942/Game/...` and every level holds `bf1942/levels/<map>/...`, so both live
+under `Archives/bf1942/`. The folder is called `bf1942` in every mod — `FHSW`,
+`DC_Final`, `XPack1` all use it — because it is the content prefix, not the mod's
+name. `BF1942.exe` confirms the layout: its hard-coded archive list reads
+`menu.rfa`, `Bf1942/game.rfa`, `standardMesh.rfa`, `texture.rfa`, `objects.rfa`...
+and it also names `Bf1942/Game/MaterialManagerSettings.con` and
+`Bf1942/Game/Init.con` directly, which is why no `.con` anywhere references the
+settings file: the engine runs it itself.
+
+Vanilla `Game.rfa` has 70 entries. The ones that matter here:
+
+| Path | Role |
+|---|---|
+| `Game/materialManagerdefine.con` | 158 `MaterialManager.material N` blocks: `materialAttGroup`, `materialDefGroup`, `materialDamage` |
+| `Game/materialManagerSettings.con` | `Run`s the define file, 1,076 terrain modifiers, then `run damage_system/<weapon>` x 50 and `run Collision_Armor/*` x 5 |
+| `Game/damage_system/*.con` | per weapon: `attGroup A` / `defGroup D` / `damageMod X` / `setEffectTemplate` |
+| `Game/collision_Armor/*.con` | the same shape for object-on-object collision damage |
+
+Ten of the fifty `run damage_system/...` lines name files that are not in vanilla
+`Game.rfa` — `GrenadeAxis`, `BF110`, `Carro_Armato_Gun`, `Grant_Gun`,
+`Sturmgeschutz`, `Bayonet` and four more. They ship in `XPack1` and `XPack2`
+(`Mods/XPack1/Archives/Bf1942/Game.rfa` is 14 entries, eleven of them damage
+files). The 1.6 settings file is shared across base game and expansions and the
+engine silently skips a `run` it cannot resolve. The loader does the same and
+records them as `missingScripts`.
+
+The third piece is in `Objects.rfa`. Every `Projectile` template carries its
+attack material, and the template that fires it is the name a player knows:
+
+```con
+ObjectTemplate.create FireArms ShermanGunBarrel
+ObjectTemplate.projectileTemplate ShermanProjectile
+
+ObjectTemplate.create Projectile ShermanProjectile
+ObjectTemplate.material 236        -- direct hit: attGroup 236, "ALLIED LIGHT TANK"
+ObjectTemplate.material2 206       -- splash
+```
+
+Vanilla has 73 projectiles and 100 launchers. The join is by
+`projectileTemplate`; rifle and pistol bullets are all declared in
+`Objects/HandWeapons/Common/Weapons.con`, so a bullet's owner is the folder of
+the gun that fires it, not the file it was declared in.
+
+### The formula, with the numbers filled in
+
+From the Damage System tutorial in the Mod Development Toolkit, which the
+archive contents match line for line:
+
+```text
+direct = materialDamage(att) * damageMod(att, def) * cos(angle) * distanceMod
+splash = materialDamage(att2) * damageMod(att2, splashMaterial) * (1 - d / radius)
+```
+
+`att` is the projectile's `material`, `def` the struck collision face's material,
+both mapped through their groups (every vanilla definition sets group = id). A
+pair with no `damageMod` line does nothing. `distanceMod` is 1 for every weapon
+except pistols and submachine guns, which declare `minDamage 0.5` between
+`distToStartLoseDamage` and `distToMinDamage` (20–40 m for the Colt and P38,
+40–80 m or 50–100 m for the SMGs); tank and AT rounds have no range term at all.
+
+The Sherman's hull collision faces are materials 50, 51, 52 (plus 46 on the
+wheels), and its `Objects.con` says `hitpoints 100`, `criticalDamage 12`:
+
+| Weapon | att, base | vs 50 rear | vs 51 side | vs 52 front | vs 46 wheels |
+|---|---|---|---|---|---|
+| Sherman gun | 236, 10 | 10 x 10 = **100** | 5 x 10 = 50 | 4 x 10 = 40 | 35 |
+| Tiger gun | 239, 11 | 12 x 11 = **132** | 7 x 11 = 77 | 4 x 11 = 44 | 88 |
+| Bazooka | 226, 10 | **100** | 35 | 26 | 50 |
+| Browning MG | 224, 7 | 0 | 0 | 0 | 2.4 |
+
+A rear shot from any tank gun is a one-shot kill; a Tiger two-shots a Sherman
+from the side and three-shots it from the front. That is how the game plays, so
+the chain is right. Tank-shell splash (`material2 206`) has entries only against
+infantry, scout cars and aircraft — it does nothing to another tank, which the
+viewer reports as "no splash entry against material 50".
+
+One more thing the tables settled: the Sherman's fifth collision material, 178,
+is a single stray face on each of four road wheels. It appears on 22 vanilla
+meshes (bullets, bombs, a hut door), is not defined in the define file and has
+no `defGroup 178` line anywhere, so a hit on it does nothing. It is an export
+artefact, not armour.
+
+### What the extractor writes
+
+`build_pools` now registers `Archives/bf1942/Game.rfa` for every mod in the
+chain (patch archives first, as with the others), and level discovery uses the
+same `bf1942/` rule instead of assuming the mod's own name, which was wrong for
+FHSW and DC_Final. Each run writes `damage.json` beside `models.json`:
+materials, `modifiers[attGroup][defGroup]`, the scripts replayed, the `run`
+targets that were absent, and the 100 weapons with projectile, owner, category,
+materials, radius, `damageType`, fall-off and rate of fire. Each manifest entry
+also lists the launcher templates in its own tree (`Sherman`: `ShermanGunBarrel`,
+`Coaxial_browning`, `Browning`). The viewer loads `damage.json` if it exists and
+falls back to the inferred ranking if it does not. Reader in
+[`bf42/damage.py`](../../tools/bf1942-models/bf42/damage.py).
+
+Not modelled: collision damage (`Collision_Armor/*`, which has a velocity term),
+`damageType 4` proximity fuses, splash line-of-sight blocking for soldiers, and
+repair rates.
 
 ## Verification
 
@@ -478,10 +611,15 @@ command parser, child placement, geometry aliases, input scoping and numeric ids
 rate-versus-pose classification, soldier first-person / random-head selection,
 `createInvisible` physics parts, `.skn` bind recovery and forearm hand alignment,
 first-person High/Low distance LOD fallback,
-both shader forms, collision geometry and face-material export, triangle-strip
+both shader forms, collision geometry and face-material export, the
+MaterialManager `run` chain with absent targets recorded, material group
+aliasing, the direct/splash/distance formulas, the projectile-to-launcher join
+and the `Archives/bf1942/` layout rule, triangle-strip
 soldier meshes, basename texture fallback, multi-LOD StandardMesh parsing,
 heightmap scale, terrain tile origin (including negative `texOffsetY`),
-terrain facing +Y, spawn-template team lookup, cubemap Z remap, and
+terrain facing +Y, spawn-template team lookup, cubemap Z remap, StandardMesh
+lightmap UVs (stride 40), object-lightmap filename keys, paletted TGA
+lightmaps, mod-prefix texture fallback, and
 TreeMesh collision sentinels:
 
 ```bash
@@ -503,22 +641,14 @@ the Build and Skin comparison explicit.
   vehicle assembly. Helmets and other kit parts are also still separate objects.
 - **The coastline mesh**, which some levels name in `StaticObjects.con` without
   an object template.
-- **Per-level object lightmaps** in `bf1942/levels/<map>/ObjectLightmaps/`,
-  which need a second UV channel and a multiply stage the glTF materials do
-  not carry.
 
-The next vehicle milestone is still `.ske/.skn`. Map work after that is object
-lightmaps so the town matches a loading-screen still.
+The next vehicle milestone is still `.ske/.skn`. Map work after that is still
+the coastline mesh and restoring a real vanilla `texture.rfa` so palms and
+houses do not have to borrow from other mods.
 
 ## Requires deep dive
 
-- **Runtime location of the vanilla game rules.** The extractor has not resolved
-  the expected `Game.rfa` at `Mods/bf1942/Archives`, but that is not evidence that
-  the data is absent: this installation launches and plays. Determine the runtime
-  search order and inspect patch archives, alternate install containers and Wine
-  paths before adding a game-rule archive pool.
-- **Exact weapon-versus-armour values.** `MaterialManagerDefine.con`,
-  `MaterialManagerSettings.con` and `Game/damage_system/*.con` provide the base
-  weapon damage and attack/defence multipliers. Once their runtime source is found,
-  connect projectile `material` and `material2` to the clicked collision material
-  and report direct damage, splash damage, shots to critical and shots to destroy.
+- **Collision damage.** `Collision_Armor/*.con` is parsed into the same tables but
+  the viewer does not apply it: the documented formula adds a velocity-squared
+  term and a height term for falling soldiers, and needs a relative speed the
+  inspector has no source for.
