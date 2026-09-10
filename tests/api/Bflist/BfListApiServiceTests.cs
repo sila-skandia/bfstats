@@ -413,6 +413,73 @@ public sealed class BfListApiServiceTests
         Assert.Equal("https://example.test/join", mapped.JoinLinkWeb);
         Assert.Equal("bf1942://1.2.3.4:14567", mapped.JoinLink);
     }
+
+    [Fact]
+    public async Task WithMeta_DisposedMemoryCache_FallsThroughToRedis()
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var cached = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow.AddSeconds(-10),
+            Servers = [new Bf1942ServerInfo { Guid = "srv-redis", Name = "From Redis" }]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns(cached);
+        cacheService.GetAsync<RawServerSnapshot>(LastGoodKey).Returns((RawServerSnapshot?)null);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, memoryCache, handler);
+        memoryCache.Dispose();
+
+        var result = await service.FetchAllServersWithMetaAsync(Game);
+
+        Assert.Same(cached, result);
+        Assert.Equal(0, handler.CallCount);
+        await cacheService.Received(1).GetAsync<RawServerSnapshot>(HotKey);
+    }
+
+    [Fact]
+    public async Task FetchAllServersAsync_DisposedMemoryCache_FallsThroughToRedis()
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var cached = new RawServerSnapshot
+        {
+            FetchedAtUtc = DateTime.UtcNow,
+            Servers = [new Bf1942ServerInfo { Guid = "srv-hot", Name = "Collector Redis" }]
+        };
+
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(HotKey).Returns(cached);
+
+        var handler = FakeHttpMessageHandler.Throwing();
+        var service = BuildService(cacheService, memoryCache, handler);
+        memoryCache.Dispose();
+
+        var result = await service.FetchAllServersAsync(Game);
+
+        Assert.Single(result);
+        Assert.Equal(0, handler.CallCount);
+        await cacheService.DidNotReceive().GetAsync<RawServerSnapshot>(LastGoodKey);
+    }
+
+    [Fact]
+    public async Task WithMeta_DisposedMemoryCache_LiveFetchDoesNotThrowOnSet()
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var cacheService = Substitute.For<ICacheService>();
+        cacheService.GetAsync<RawServerSnapshot>(Arg.Any<string>()).Returns((RawServerSnapshot?)null);
+
+        var service = BuildService(cacheService, memoryCache);
+        memoryCache.Dispose();
+
+        var result = await service.FetchAllServersWithMetaAsync(Game);
+
+        Assert.False(result.IsFallback);
+        Assert.Single(result.Servers);
+        await cacheService.Received(1).SetAsync(HotKey, Arg.Any<RawServerSnapshot>(), TimeSpan.FromSeconds(30));
+        await cacheService.Received(1).SetAsync(LastGoodKey, Arg.Any<RawServerSnapshot>(), TimeSpan.FromHours(24));
+    }
 }
 
 /// <summary>Minimal configurable HttpMessageHandler for exercising BfListApiService without a real network call.</summary>
