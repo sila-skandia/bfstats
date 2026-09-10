@@ -54,23 +54,72 @@ public class MapDossierResolver(ILogger<MapDossierResolver> logger) : IMapDossie
         {
             // No manifest: probe the direct path only, with no inheritance to fall back on.
             var direct = Path.Combine(normalizedGame, normalizedMap + ".json");
-            return File.Exists(Path.Combine(TournamentImagesConfig.ResolveDossiersPath(), direct))
-                ? direct
-                : null;
+            if (File.Exists(Path.Combine(TournamentImagesConfig.ResolveDossiersPath(), direct)))
+                return direct;
+
+            var dossiersPath = TournamentImagesConfig.ResolveDossiersPath();
+            if (Directory.Exists(dossiersPath))
+            {
+                foreach (var dir in Directory.GetDirectories(dossiersPath))
+                {
+                    var fallback = Path.Combine(Path.GetFileName(dir), normalizedMap + ".json");
+                    if (File.Exists(Path.Combine(dossiersPath, fallback)))
+                        return fallback;
+                }
+            }
+            return null;
         }
 
-        if (!loaded.Mods.TryGetValue(normalizedGame, out var mod))
-            return null;
-
-        var searchPath = mod.SearchPath.Count > 0 ? mod.SearchPath : [normalizedGame];
-        foreach (var candidateMod in searchPath)
+        // Try resolving in requested mod's searchPath
+        if (loaded.Mods.TryGetValue(normalizedGame, out var mod) ||
+            loaded.Mods.TryGetValue(CanonicalizeMod(normalizedGame), out mod))
         {
-            if (!loaded.Mods.TryGetValue(candidateMod, out var candidate))
-                continue;
-            if (!candidate.Maps.Contains(normalizedMap, StringComparer.OrdinalIgnoreCase))
-                continue;
+            var searchPath = mod.SearchPath.Count > 0 ? mod.SearchPath : [normalizedGame];
+            foreach (var candidateMod in searchPath)
+            {
+                if (!loaded.Mods.TryGetValue(candidateMod, out var candidate))
+                    continue;
+                if (!candidate.Maps.Contains(normalizedMap, StringComparer.OrdinalIgnoreCase))
+                    continue;
 
-            return Path.Combine(candidateMod, normalizedMap + ".json");
+                return Path.Combine(candidateMod, normalizedMap + ".json");
+            }
+        }
+
+        // If not found in the requested mod (e.g. server rotated mod and reports wrong gameId),
+        // ignore the mod and find the first matching mod.
+        return FallbackScan(loaded, normalizedMap);
+    }
+
+    private static string CanonicalizeMod(string mod) => mod switch
+    {
+        "fhsweurope" or "sks_fhsw" => "fhsw",
+        "dc2" or "dc_extended" or "dc_realism" => "dc_final",
+        "desertcombat" => "desertcombat",
+        "eodp" => "eod",
+        "xmas1918" => "bf1918",
+        "battlegroup42" => "bg42",
+        _ => mod
+    };
+
+    private static string? FallbackScan(DossierManifest manifest, string normalizedMap)
+    {
+        string[] priorityMods = ["bf1942", "xpack1", "xpack2", "dc_final", "desertcombat", "fhsw", "fh", "eod", "bf1918", "gcmod", "interstate"];
+        foreach (var candidateMod in priorityMods)
+        {
+            if (manifest.Mods.TryGetValue(candidateMod, out var candidate) &&
+                candidate.Maps.Contains(normalizedMap, StringComparer.OrdinalIgnoreCase))
+            {
+                return Path.Combine(candidateMod, normalizedMap + ".json");
+            }
+        }
+
+        foreach (var (modName, candidate) in manifest.Mods)
+        {
+            if (candidate.Maps.Contains(normalizedMap, StringComparer.OrdinalIgnoreCase))
+            {
+                return Path.Combine(modName, normalizedMap + ".json");
+            }
         }
 
         return null;
@@ -96,7 +145,14 @@ public class MapDossierResolver(ILogger<MapDossierResolver> logger) : IMapDossie
         var trimmed = mapName.Trim();
         if (trimmed.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
             trimmed = trimmed[..^5];
-        return trimmed.ToLowerInvariant().Replace(' ', '_');
+        var lower = trimmed.ToLowerInvariant().Replace(' ', '_');
+        return lower switch
+        {
+            "wake_island" => "wake",
+            "huskies" => "husky",
+            "santa_croce" => "santo_croce",
+            _ => lower
+        };
     }
 
     private DossierManifest? LoadManifest()
