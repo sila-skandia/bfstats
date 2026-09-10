@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>BF1942 model inspector</title>
+<style>
+  :root {
+    --bg: #14150f;
+    --panel: #1c1e16;
+    --line: #2e3125;
+    --text: #e6e4d9;
+    --muted: #8d8f7e;
+    --accent: #9aab5a;
+    --warn: #c98a3e;
+    --bad: #b8574a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+  }
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    padding: 16px;
+  }
+  h1 {
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 16px;
+  }
+  h2 {
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 20px 0 8px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+  h2:first-of-type { border-top: 0; padding-top: 0; }
+  .model-list { display: flex; flex-direction: column; gap: 4px; }
+  button.model {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button.model:hover { border-color: var(--accent); }
+  button.model[aria-pressed="true"] { background: var(--accent); color: #14150f; border-color: var(--accent); }
+  button.model small { display: block; opacity: .75; font-size: 11px; }
+  label.toggle { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+  .stat { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+  .stat span:last-child { color: var(--accent); }
+  ul.missing { margin: 0; padding-left: 16px; color: var(--bad); }
+  ul.missing li { font-size: 11px; }
+  .rig-input { margin-bottom: 12px; }
+  .rig-input label { display: flex; justify-content: space-between; font-size: 11px; color: var(--accent); }
+  .rig-input input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+  .rig-input .driven { font-size: 10px; color: var(--muted); line-height: 1.5; }
+  .rig-none { font-size: 11px; color: var(--muted); }
+  .seat { display: block; color: var(--accent); opacity: .65; }
+  #tree { font-size: 11px; line-height: 1.7; white-space: pre; overflow-x: auto; color: var(--muted); }
+  #tree b { color: var(--text); font-weight: 400; }
+  main { position: relative; }
+  canvas { display: block; }
+  #hud {
+    position: absolute; left: 16px; bottom: 16px;
+    background: rgba(20,21,15,.82);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  #banner {
+    position: absolute; left: 16px; top: 16px; right: 16px;
+    background: rgba(201,138,62,.14);
+    border: 1px solid var(--warn);
+    color: var(--warn);
+    border-radius: 3px;
+    padding: 8px 12px;
+    font-size: 11px;
+  }
+  #banner[hidden] { display: none; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>BF1942 model inspector</h1>
+  <div class="model-list" id="models"></div>
+
+  <h2>Display</h2>
+  <label class="toggle"><input type="checkbox" id="wireframe"> wireframe</label>
+  <label class="toggle"><input type="checkbox" id="untextured"> flat grey (ignore textures)</label>
+  <label class="toggle"><input type="checkbox" id="explode"> explode parts</label>
+  <label class="toggle"><input type="checkbox" id="axes" checked> axes + ground grid</label>
+  <label class="toggle"><input type="checkbox" id="doubleside"> force double-sided</label>
+  <label class="toggle"><input type="checkbox" id="spin"> auto-rotate</label>
+
+  <h2>Rig</h2>
+  <div id="rig"></div>
+
+  <h2>Model</h2>
+  <div id="stats"></div>
+
+  <h2>Missing textures</h2>
+  <ul class="missing" id="missing"></ul>
+
+  <h2>Part tree</h2>
+  <div id="tree"></div>
+</aside>
+<main>
+  <div id="banner" hidden></div>
+  <div id="hud">drag to orbit &middot; scroll to zoom &middot; right-drag to pan</div>
+</main>
+
+<!-- The vendored example loaders import three by bare specifier. -->
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { OrbitControls } from './vendor/controls/OrbitControls.js';
+
+const main = document.querySelector('main');
+// preserveDrawingBuffer lets the headless checks read the canvas back after a
+// render; without it the buffer is cleared on composite and reads come back blank.
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+main.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14150f);
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 2000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// Neutral three-point rig: nothing here should flatter the asset, the point is
+// to see what the extraction actually produced.
+scene.add(new THREE.HemisphereLight(0xbfc6d0, 0x2a2b20, 1.5));
+const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(4, 7, 5); scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, 0.7); fill.position.set(-5, 2, -4); scene.add(fill);
+
+const helpers = new THREE.Group();
+const grid = new THREE.GridHelper(20, 20, 0x3c4030, 0x24261c);
+helpers.add(grid, new THREE.AxesHelper(2));
+scene.add(helpers);
+
+let current = null;
+const state = { wireframe: false, untextured: false, explode: false, doubleside: false };
+
+// Material.clone() deep-copies userData through JSON, so a Texture parked there
+// comes back as a plain object and the renderer chokes on its missing matrix.
+// Keep the bookkeeping outside the material.
+const originalMap = new WeakMap();
+
+function resize() {
+  const w = main.clientWidth, h = main.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+function applyState() {
+  if (!current) return;
+  current.traverse(obj => {
+    if (!obj.isMesh) return;
+    for (const m of [obj.material].flat()) {
+      m.wireframe = state.wireframe;
+      if (state.untextured) {
+        if (!originalMap.has(m)) originalMap.set(m, m.map);
+        m.map = null;
+        m.color.setHex(0x9a9a90);
+      } else if (originalMap.has(m)) {
+        m.map = originalMap.get(m);
+        m.color.setHex(0xffffff);
+      }
+      if (state.doubleside) m.side = THREE.DoubleSide;
+      m.needsUpdate = true;
+    }
+    if (obj.userData.home) {
+      const h = obj.userData.home;
+      const k = state.explode ? 2.2 : 1;
+      obj.position.set(h.x * k, h.y * k, h.z * k);
+    }
+  });
+}
+
+for (const id of ['wireframe', 'untextured', 'explode', 'doubleside']) {
+  document.getElementById(id).addEventListener('change', e => {
+    state[id] = e.target.checked;
+    applyState();
+  });
+}
+document.getElementById('axes').addEventListener('change', e => { helpers.visible = e.target.checked; });
+document.getElementById('spin').addEventListener('change', e => {
+  controls.autoRotate = e.target.checked;
+  controls.autoRotateSpeed = 1.6;
+});
+
+// --- Refractor rig ---------------------------------------------------------
+//
+// A RotationalBundle is not an animation clip. It declares an axis, a range and a
+// player input, and the engine drives it every frame. Rebuilding that here is the
+// whole demonstration: one input can drive several parts on different axes.
+
+const AXIS = { yaw: 'y', pitch: 'x', roll: 'z' };
+
+// Same handedness fix the exporter applies to authored rotations: mirroring Z
+// conjugates rotations about X and Y, and leaves those about Z alone.
+const SIGN = { yaw: -1, pitch: -1, roll: 1 };
+
+const INPUT_LABEL = {
+  c_PIYaw: 'Steer (A / D)',
+  c_PIThrottle: 'Throttle (W / S)',
+  c_PIMouseLookX: 'Look X (traverse)',
+  c_PIMouseLookY: 'Look Y (elevate)',
+  c_PIPitch: 'Pitch',
+  c_PIRoll: 'Roll',
+};
+
+// An axis with no declared range traverses freely; show it over a full circle.
+const FREE_RANGE = 180;
+
+const rigged = [];              // { node, base:Quaternion, axes, driver, key }
+const inputValues = new Map();  // "<control>/<input>" -> -1..1
+const rateAngle = new Map();    // same key -> accumulated degrees, for Engines
+
+// A player input belongs to a seat. The commander's MG lives inside its own
+// PlayerControlObject, so its c_PIMouseLookY is a different mouse from the
+// gunner's — keying on the bare input name welds the two together.
+const keyOf = (control, input) => `${control}/${input}`;
+
+function applyRig() {
+  for (const part of rigged) {
+    const q = part.base.clone();
+    for (const [axis, spec] of Object.entries(part.axes)) {
+      const key = keyOf(part.control, spec.input);
+      let deg;
+      if (spec.driver === 'rate') {
+        // Throttle sets how fast the drivetrain turns, not where it stops.
+        deg = rateAngle.get(`${key}/${axis}`) ?? 0;
+      } else if (spec.free) {
+        deg = (inputValues.get(key) ?? 0) * FREE_RANGE;
+      } else {
+        const t = inputValues.get(key) ?? 0;
+        deg = t < 0 ? -t * spec.min : t * spec.max;
+      }
+      const e = new THREE.Euler(0, 0, 0);
+      e[AXIS[axis]] = THREE.MathUtils.degToRad(deg * SIGN[axis]);
+      q.multiply(new THREE.Quaternion().setFromEuler(e));
+    }
+    part.node.quaternion.copy(q);
+  }
+}
+
+// --- scrolling track textures ----------------------------------------------
+//
+// `ObjectTemplate.setAnimatedTextureSpeed -0.006/0` slides a mesh's UVs along U.
+// It is how a Sherman's tread appears to move: the belt geometry itself is static
+// (that needs the .ske/.skn skinned path), only the texture crawls over it.
+//
+// The declared figure is in UV units per engine tick, which is not a unit this
+// viewer has, so it is scaled to per-second at the engine's 60 Hz assumption and
+// multiplied by throttle — a stationary tank has stationary tracks.
+const TICKS_PER_SECOND = 60;
+
+const scrolling = [];   // { maps:[Texture], speed:[u,v], control }
+
+function collectScrolling(root) {
+  scrolling.length = 0;
+  root.traverse(carrier => {
+    const speed = carrier.userData?.animatedTextureSpeed;
+    if (!speed) return;
+    // A multi-material part arrives as a Group of Meshes, and the glTF node extras
+    // land on that Group — so the declaration and the materials are never on the
+    // same object. But the Group's direct children also include the part's *child
+    // nodes*: a Sherman's 11 road wheels hang off its track. Only the Group's own
+    // primitives may scroll, or the whole running gear's texture crawls with it.
+    // Our exporter stamps every real part node with templateKind, so anything
+    // carrying it is a separate part rather than one of this node's primitives.
+    const own = [carrier, ...carrier.children.filter(c => !c.userData?.templateKind)];
+    const maps = [];
+    own.forEach(obj => {
+      if (!obj.isMesh) return;
+      // Materials and textures are shared across parts by the exporter's cache and
+      // the loader's; offsetting one in place would scroll every part using it.
+      const cloned = [obj.material].flat().map(m => {
+        const clone = m.clone();
+        if (clone.map) {
+          clone.map = clone.map.clone();
+          clone.map.needsUpdate = true;
+          maps.push(clone.map);
+        }
+        return clone;
+      });
+      obj.material = cloned.length === 1 ? cloned[0] : cloned;
+      for (const m of cloned) originalMap.set(m, m.map);
+    });
+    if (maps.length) scrolling.push({ maps, speed, control: carrier.userData.control || 'vehicle' });
+  });
+}
+
+function advanceScroll(dt) {
+  for (const part of scrolling) {
+    const throttle = inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0;
+    if (!throttle) continue;
+    const [u, v] = part.speed;
+    for (const map of part.maps) {
+      map.offset.x += u * TICKS_PER_SECOND * throttle * dt;
+      map.offset.y += v * TICKS_PER_SECOND * throttle * dt;
+    }
+  }
+}
+
+// Rate-driven parts keep turning for as long as the input is held.
+function advanceRates(dt) {
+  let moved = false;
+  for (const part of rigged) {
+    for (const [axis, spec] of Object.entries(part.axes)) {
+      if (spec.driver !== 'rate') continue;
+      const t = inputValues.get(keyOf(part.control, spec.input)) ?? 0;
+      if (!t) continue;
+      const k = `${keyOf(part.control, spec.input)}/${axis}`;
+      rateAngle.set(k, (rateAngle.get(k) ?? 0) + t * 360 * dt);
+      moved = true;
+    }
+  }
+  if (moved) applyRig();
+}
+
+function buildRigPanel() {
+  const host = document.getElementById('rig');
+  host.innerHTML = '';
+  const groups = new Map();
+  for (const part of rigged) {
+    for (const [axis, spec] of Object.entries(part.axes)) {
+      const key = keyOf(part.control, spec.input);
+      if (!groups.has(key)) groups.set(key, { control: part.control, input: spec.input, driven: [], rate: false });
+      if (spec.driver === 'rate') groups.get(key).rate = true;
+      const range = spec.driver === 'rate' ? 'continuous'
+        : spec.free ? 'free 360°'
+        : `${spec.min}°..${spec.max}°`;
+      groups.get(key).driven.push(`${part.node.name} · ${axis} ${range}`);
+    }
+  }
+  if (!groups.size) {
+    host.innerHTML = '<div class="rig-none">no input-driven parts</div>';
+    return;
+  }
+  // Seat name only matters once a vehicle has more than one station.
+  const seats = new Set([...groups.values()].map(g => g.control));
+  for (const [key, g] of groups) {
+    const seat = seats.size > 1 ? `<span class="seat">${g.control}</span>` : '';
+    const wrap = document.createElement('div');
+    wrap.className = 'rig-input';
+    wrap.innerHTML =
+      `<label><span>${INPUT_LABEL[g.input] || g.input}${g.rate ? ' — rate' : ''}</span><span data-out>0.00</span></label>` +
+      `<input type="range" min="-1" max="1" step="0.01" value="0">` +
+      `<div class="driven">${seat}${g.driven.join('<br>')}</div>`;
+    const slider = wrap.querySelector('input');
+    const out = wrap.querySelector('[data-out]');
+    const reset = () => { slider.value = '0'; inputValues.set(key, 0); out.textContent = '0.00'; applyRig(); };
+    slider.addEventListener('input', () => {
+      inputValues.set(key, Number(slider.value));
+      out.textContent = Number(slider.value).toFixed(2);
+      applyRig();
+    });
+    // A throttle is held, not aimed: let it spring back like the real control.
+    if (g.rate) slider.addEventListener('dblclick', reset);
+    host.appendChild(wrap);
+  }
+}
+
+const loader = new GLTFLoader();
+// Iteration tool: the models are regenerated constantly, so never serve a cached one.
+const bust = () => `?t=${Date.now()}`;
+
+async function show(entry, button) {
+  document.querySelectorAll('button.model').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+
+  if (current) { scene.remove(current); }
+  const gltf = await loader.loadAsync(`models/${entry.glb}${bust()}`);
+  current = gltf.scene;
+  rigged.length = 0;
+  inputValues.clear();
+  rateAngle.clear();
+  current.traverse(obj => {
+    // Remember authored positions so the explode slider can scale them.
+    obj.userData.home = obj.position.clone();
+    if (obj.isMesh) for (const m of [obj.material].flat()) originalMap.set(m, m.map);
+    const rig = obj.userData?.rig;
+    if (rig?.axes) rigged.push({ node: obj, base: obj.quaternion.clone(), axes: rig.axes,
+                                 control: rig.control || 'vehicle' });
+  });
+  scene.add(current);
+  // Handles for the headless checks in shoot.mjs and the scratch probes.
+  window.__scene = scene; window.__camera = camera; window.__controls = controls;
+  collectScrolling(current);
+  buildRigPanel();
+  applyState();
+
+  const box = new THREE.Box3().setFromObject(current);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(size.x, size.y, size.z);
+  controls.target.copy(centre);
+  camera.position.set(centre.x + radius * 1.3, centre.y + radius * 0.75, centre.z + radius * 1.5);
+  camera.near = radius / 200; camera.far = radius * 60;
+  camera.updateProjectionMatrix();
+  grid.position.y = box.min.y;
+
+  const report = await fetch(`models/${entry.report}${bust()}`).then(r => r.json());
+  document.getElementById('stats').innerHTML = [
+    ['parts', report.parts],
+    ['triangles', report.triangles.toLocaleString()],
+    ['textures bound', report.texturesResolved ? Object.keys(report.texturesResolved).length : 0],
+    ['size', `${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} m`],
+  ].map(([k, v]) => `<div class="stat"><span>${k}</span><span>${v}</span></div>`).join('');
+
+  const missing = report.texturesNotFound || [];
+  document.getElementById('missing').innerHTML =
+    missing.length ? missing.map(t => `<li>${t}</li>`).join('') : '<li style="color:var(--muted)">none</li>';
+
+  document.getElementById('tree').innerHTML = (report.partTree || [])
+    .slice().reverse()
+    .map(l => l.replace(/\[(.*?)\]/, '<b>[$1]</b>'))
+    .join('\n');
+
+  const banner = document.getElementById('banner');
+  if (entry.textureFallbacks && entry.textureFallbacks.length) {
+    banner.hidden = false;
+    banner.textContent =
+      `Vanilla texture.rfa is missing from the install — textures shown are borrowed from ${entry.textureFallbacks.join(', ')} and may not match the vanilla UV layout.`;
+  } else if (missing.length) {
+    banner.hidden = false;
+    banner.textContent = `${missing.length} texture(s) could not be resolved in this mod chain.`;
+  } else {
+    banner.hidden = true;
+  }
+}
+
+const manifest = await fetch(`models/models.json${bust()}`).then(r => r.json());
+const list = document.getElementById('models');
+manifest.forEach((entry, i) => {
+  const b = document.createElement('button');
+  b.className = 'model';
+  b.setAttribute('aria-pressed', 'false');
+  const variants = entry.variants?.length ?? 1;
+  b.innerHTML = `${entry.name}<small>${entry.texturesResolved} tex bound &middot; ${entry.texturesMissing.length} missing${variants > 1 ? ` &middot; ${variants} skins` : ''}</small>`;
+  b.addEventListener('click', () => show(entry, b));
+  list.appendChild(b);
+  if (i === 0) show(entry, b);
+});
+
+resize();
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  advanceRates(dt);
+  advanceScroll(dt);
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
