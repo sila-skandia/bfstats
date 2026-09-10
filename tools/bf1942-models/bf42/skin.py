@@ -17,6 +17,7 @@ that puts a hand onto the sleeve it was skinned against.
 
 from __future__ import annotations
 
+import math
 import struct
 from dataclasses import dataclass
 
@@ -198,6 +199,107 @@ def relative_transform(source, target):
     return r_rel, t_rel
 
 
+_IDENTITY = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+
+# Skin offset space puts bone length along +X (child origin minus parent).
+# A supporting-hand mesh is authored with the wrist cocked; past this angle
+# the fingers stick out of the sleeve instead of continuing it.
+_STRAIGHTEN_COS = 0.5  # 60 degrees
+
+
+def _axis(rotation, index: int) -> tuple[float, float, float]:
+    return (rotation[0][index], rotation[1][index], rotation[2][index])
+
+
+def _dot(a, b) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a, b) -> tuple[float, float, float]:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _norm(v) -> tuple[float, float, float]:
+    mag = math.sqrt(_dot(v, v)) or 1.0
+    return (v[0] / mag, v[1] / mag, v[2] / mag)
+
+
+def rotation_between(source, target) -> tuple[tuple[float, float, float], ...]:
+    """Minimal rotation sending unit vector `source` onto `target`."""
+    a, b = _norm(source), _norm(target)
+    cosine = _dot(a, b)
+    if cosine > 0.999999:
+        return _IDENTITY
+    if cosine < -0.999999:
+        ortho = (1.0, 0.0, 0.0) if abs(a[0]) < 0.9 else (0.0, 1.0, 0.0)
+        axis = _norm(_cross(a, ortho))
+        return tuple(
+            tuple(2.0 * axis[i] * axis[j] - (1.0 if i == j else 0.0) for j in range(3))
+            for i in range(3)
+        )
+    v = _cross(a, b)
+    skew = (
+        (0.0, -v[2], v[1]),
+        (v[2], 0.0, -v[0]),
+        (-v[1], v[0], 0.0),
+    )
+    scale = (1.0 - cosine) / _dot(v, v)
+    vx2 = _mul(skew, skew)
+    return tuple(
+        tuple(_IDENTITY[i][j] + skew[i][j] + scale * vx2[i][j] for j in range(3))
+        for i in range(3)
+    )
+
+
+def _compose_about(r_rel, t_rel, extra, pivot):
+    """Apply `extra` about `pivot` after (r_rel, t_rel). Wrist stays put."""
+    r_out = _mul(extra, r_rel)
+    mapped_t = _apply_rot(extra, t_rel)
+    mapped_p = _apply_rot(extra, pivot)
+    t_out = (
+        mapped_t[0] + pivot[0] - mapped_p[0],
+        mapped_t[1] + pivot[1] - mapped_p[1],
+        mapped_t[2] + pivot[2] - mapped_p[2],
+    )
+    return r_out, t_out
+
+
+def _hand_bone(forearm: str, names) -> str | None:
+    side = "l " if " l " in f" {forearm.lower()} " else "r "
+    for name in names:
+        low = name.lower()
+        if "hand" in low and side in f" {low} " and "finger" not in low:
+            return name
+    return None
+
+
+def straighten_wrist(r_rel, t_rel, source_poses, target_forearm, forearm_name: str):
+    """Swing a cocked Hand bone onto the forearm's length axis.
+
+    Shared-forearm alignment preserves the hand file's own wrist. The left
+    supporting hand is authored ~140 deg off that axis (weapon grip), so the
+    fingers sit perpendicular to the hanging sleeve. The trigger hand is only
+    ~40 deg off and is left alone.
+    """
+    hand_name = _hand_bone(forearm_name, source_poses)
+    if hand_name is None:
+        return r_rel, t_rel
+    r_hand = _mul(r_rel, source_poses[hand_name][0])
+    along_hand = _axis(r_hand, 0)
+    along_sleeve = _axis(target_forearm[0], 0)
+    if _dot(_norm(along_hand), _norm(along_sleeve)) >= _STRAIGHTEN_COS:
+        return r_rel, t_rel
+    hx, hy, hz = source_poses[hand_name][1]
+    wrist = (
+        _apply_rot(r_rel, (hx, hy, hz))[0] + t_rel[0],
+        _apply_rot(r_rel, (hx, hy, hz))[1] + t_rel[1],
+        _apply_rot(r_rel, (hx, hy, hz))[2] + t_rel[2],
+    )
+    return _compose_about(
+        r_rel, t_rel, rotation_between(along_hand, along_sleeve), wrist,
+    )
+
+
 def _preference(name: str) -> tuple[int, str]:
     low = name.lower()
     for index, token in enumerate(_ALIGN_PREFERENCE):
@@ -218,4 +320,8 @@ def alignment(source: Skin, target: Skin):
         return None
     bone = min(shared, key=_preference)
     r_rel, t_rel = relative_transform(source_poses[bone], target_poses[bone])
+    if "forearm" in bone.lower():
+        r_rel, t_rel = straighten_wrist(
+            r_rel, t_rel, source_poses, target_poses[bone], bone,
+        )
     return r_rel, t_rel, bone

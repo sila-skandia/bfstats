@@ -28,7 +28,7 @@ from bf42.rfa import ArchivePool, find_archives_dir
 
 DEFAULT_GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
 
-MESH_ARCHIVES = ("standardmesh", "treemesh", "animations")
+MESH_ARCHIVES = ("standardmesh", "treemesh", "animations")  # animations: GeometryTemplate.setSkin
 TEXTURE_ARCHIVES = ("texture",)
 OBJECT_ARCHIVES = ("objects",)
 
