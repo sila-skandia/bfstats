@@ -21,7 +21,10 @@ public sealed class StatsCollectionBackgroundService(
     : IHostedService, IDisposable
 {
     private readonly TimeSpan _collectionInterval = TimeSpan.FromSeconds(configuration.GetValue<int?>("STATS_COLLECTION_INTERVAL_SECONDS") ?? 30);
+    private readonly CancellationTokenSource _stoppingCts = new();
+    private readonly object _cycleGate = new();
     private Timer? _timer;
+    private Task _inFlight = Task.CompletedTask;
     private int _isRunning = 0;
     private int _cycleCount = 0;
 
@@ -39,16 +42,29 @@ public sealed class StatsCollectionBackgroundService(
         return Task.CompletedTask;
     }
 
-    private async void ExecuteCollectionCycle(object? state)
+    private void ExecuteCollectionCycle(object? state)
     {
-        if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0)
+        lock (_cycleGate)
         {
-            // A skipped cycle widens the LastSeenTime gap past the live-servers
-            // 1-minute freshness window, making every server show 0 players.
-            logger.LogWarning("Skipping stats collection cycle #{Cycle}: previous cycle still running", _cycleCount);
-            return;
-        }
+            if (_stoppingCts.IsCancellationRequested)
+            {
+                return;
+            }
 
+            if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0)
+            {
+                // A skipped cycle widens the LastSeenTime gap past the live-servers
+                // 1-minute freshness window, making every server show 0 players.
+                logger.LogWarning("Skipping stats collection cycle #{Cycle}: previous cycle still running", _cycleCount);
+                return;
+            }
+
+            _inFlight = RunCollectionCycleAsync();
+        }
+    }
+
+    private async Task RunCollectionCycleAsync()
+    {
         // Clear any inherited activity context to prevent Timer callbacks from
         // accidentally correlating with unrelated HTTP request traces.
         Activity.Current = null;
@@ -88,7 +104,7 @@ public sealed class StatsCollectionBackgroundService(
                         await playerTrackingService.MarkOfflineServersAsync(DateTime.UtcNow);
 
                         // 2. Collect stats (bf1942 is the only tracked game)
-                        var bf1942Servers = await CollectBf1942ServerStatsAsync(bfListApiService, playerTrackingService, "bf1942", CancellationToken.None);
+                        var bf1942Servers = await CollectBf1942ServerStatsAsync(bfListApiService, playerTrackingService, "bf1942", _stoppingCts.Token);
 
                         // 3. Collect all servers
                         var allServers = new List<IGameServer>();
@@ -141,6 +157,16 @@ public sealed class StatsCollectionBackgroundService(
                         currentCycle, maxAttempts, SqliteBusy.Describe(ex));
                     break;
                 }
+                catch (Exception ex) when (IsHostShutdown(ex))
+                {
+                    // Seq's bfstats/Exceptions signal matches `@Exception is not null`.
+                    // Recreate disposes IMemoryCache after StopAsync if the timer
+                    // callback is still running; that is a stop, not a collection failure.
+                    logger.LogInformation(
+                        "Stats collection cycle #{Cycle} stopped during host shutdown ({ExceptionType})",
+                        currentCycle, ex.GetType().Name);
+                    break;
+                }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error in stats collection cycle #{Cycle}", currentCycle);
@@ -166,7 +192,7 @@ public sealed class StatsCollectionBackgroundService(
 
     private async Task<List<IGameServer>> CollectBf1942ServerStatsAsync(IBfListApiService bfListApiService, PlayerTrackingService playerTrackingService, string game, CancellationToken stoppingToken)
     {
-        _ = stoppingToken;
+        stoppingToken.ThrowIfCancellationRequested();
         var allServersObjects = await bfListApiService.FetchAllServersAsync(game);
         var allServers = allServersObjects.Cast<Bf1942ServerInfo>().ToList();
 
@@ -186,18 +212,39 @@ public sealed class StatsCollectionBackgroundService(
         return gameServerAdapters;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Stats collection service stopping");
         _timer?.Change(Timeout.Infinite, 0);
-        return Task.CompletedTask;
+
+        await _stoppingCts.CancelAsync();
+
+        Task inFlight;
+        lock (_cycleGate)
+        {
+            inFlight = _inFlight;
+        }
+
+        try
+        {
+            await inFlight.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("Stats collection cycle still running at host shutdown timeout");
+        }
     }
 
     public void Dispose()
     {
         _timer?.Dispose();
+        _stoppingCts.Dispose();
         GC.SuppressFinalize(this);
     }
+
+    private bool IsHostShutdown(Exception ex) =>
+        _stoppingCts.IsCancellationRequested
+        && ex is ObjectDisposedException or OperationCanceledException;
 
     private static async Task UpsertServerOnlineCountsAsync(
         PlayerTrackerDbContext dbContext,
