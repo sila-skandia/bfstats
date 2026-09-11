@@ -101,12 +101,26 @@ that local tree for the PVC mount.
 
 ## Memory
 
-Mesh nginx matches the UI budget: 32Mi request / 128Mi limit. Heavy bytes live
-on the PVC, not in the container image or the API process.
+16Mi request / 64Mi limit, which is smaller than the UI's 32/128 on purpose:
+this is nginx handing out static files while the client does every expensive
+thing. Heavy bytes live on the PVC, not in the container image or the API
+process.
 
-That limit is cheap, but it is not free, and the node it lands on is already
-past the budget in the root `CLAUDE.md`. Summing `limits.memory` over everything
-scheduled (`replicas: 1`; `filebrowser` and `sqlite-browser` sit at 0):
+The number is measured, not guessed. Serving concurrent 2.5MB `.glb` transfers,
+the container's cgroup sat at 19.6Mi and peaked at 23.2Mi — and that was with 22
+worker processes, where production gets at most 4 (the node has 4 cores, and the
+nginx image sizes `worker_processes` from the cgroup CPU quota, which is 200m
+here). 64Mi is roughly 3x the worst case.
+
+Page cache from reading the asset tree is charged to the same cgroup under
+cgroup v2, so a large `maps/` tree will push `memory.current` up. That is fine:
+page cache is reclaimable, so a tight limit costs eviction and a re-read, not an
+OOM kill. The measurement above already includes it — ~100MB was transferred to
+reach that 23.2Mi peak.
+
+It still lands on a node that is past the budget in the root `CLAUDE.md`.
+Summing `limits.memory` over everything scheduled (`replicas: 1`; `filebrowser`
+and `sqlite-browser` sit at 0):
 
 | | MiB |
 |---|---|
@@ -116,16 +130,17 @@ scheduled (`replicas: 1`; `filebrowser` and `sqlite-browser` sit at 0):
 | notifications | 384 |
 | redis | 256 |
 | ui / haproxy / cloudflared / redis-commander | 128 each |
-| **mesh** | **128** |
 | api `sqlite-tools` | 64 |
-| **total** | **6976** |
+| **mesh** | **64** |
+| **total** | **6912** |
 | node | 7741 |
-| **headroom** | **765 (0.75 Gi)** |
+| **headroom** | **829 (0.81 Gi)** |
 
-The invariant asks for ~1.5Gi. It was already missed at 0.87Gi before mesh;
-mesh takes it to 0.75Gi. Requests total only ~2.9Gi so the pod schedules
-comfortably — the exposure is simultaneous peak, not scheduling. Worth funding
-from the fat rather than from mesh: `seq` at 512Mi is the obvious candidate on a
-box where it is a debugging convenience, and dropping mesh to a 64Mi limit
-(ample for nginx serving static files — it idles near 15Mi) recovers another 64.
-Neither is done here; changing a production limit is its own decision.
+The invariant asks for ~1.5Gi, and it was already missed at 0.87Gi before mesh
+existed. Mesh costs 0.06Gi of that. The remaining gap is not a mesh problem:
+`seq` at 512Mi is the obvious candidate on a box where it is a debugging
+convenience. Requests total only ~2.9Gi, so scheduling is comfortable — the
+exposure is simultaneous peak.
+
+Note that scaling `filebrowser` up to upload assets temporarily adds its 256Mi
+limit on top. Scale it back to 0 when the upload is done.
