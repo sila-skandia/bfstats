@@ -60,6 +60,15 @@ public static class TournamentImagesConfig
     }
 
     /// <summary>
+    /// Resolves the path to extracted BF1942 mesh/level glTF (under mesh/),
+    /// laid out as mesh/models/ and mesh/maps/ for mesh.bfstats.io.
+    /// </summary>
+    public static string ResolveMeshPath()
+    {
+        return Path.Combine(ResolveBasePath(), "mesh");
+    }
+
+    /// <summary>
     /// Legacy method for backward compatibility - returns tournaments path
     /// </summary>
     public static string ResolvePath() => ResolveTournamentsPath();

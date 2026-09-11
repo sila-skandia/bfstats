@@ -23,3 +23,8 @@
 **/values.dev.yaml
 LICENSE
 README.md
+
+# Mesh viewer extracts — served from the assets PVC, not the image
+tools/bf1942-models/viewer/models/
+tools/bf1942-models/viewer/maps/
+tools/bf1942-models/shots*/

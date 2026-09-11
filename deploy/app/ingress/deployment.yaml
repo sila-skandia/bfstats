@@ -31,11 +31,15 @@ data:
 
       # ACL definitions
       acl host_staging_bfstats req.hdr(host) -i staging.bfstats.io
+      acl host_mesh_bfstats req.hdr(host) -i mesh.bfstats.io
       acl is_stats path_beg /stats
       acl is_hub path_beg /hub
 
       capture request header CF-Connecting-IP len 15
       log-format "%[capture.req.hdr(0)]\ %ci:%cp [%t] %ft %b/%s %Tq/%Tw/%Tc/%Tr/%Tt %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %sslv"
+
+      # Dedicated mesh viewer host — before the shared /stats and default UI routes
+      use_backend mesh_frontend if host_mesh_bfstats
 
       # Route /stats to stats API
       use_backend stats_api if is_stats
@@ -56,6 +60,9 @@ data:
 
     backend hub_api
       server hub bf42-notifications-service.bf42-stats:8080
+
+    backend mesh_frontend
+      server mesh bfstats-mesh-service.bf42-stats:80
 
     backend staging_frontend
       server staging bfstats-ui-service.bfstats-ui:80

@@ -76,6 +76,18 @@ public class AssetsController(
     }
 
     /// <summary>
+    /// BF1942 mesh/level glTF tree used by mesh.bfstats.io and (later) the main site.
+    /// Path is relative to the mesh folder, e.g. "models/Sherman_Complex_base.glb".
+    /// </summary>
+    [HttpGet("mesh/{*path}")]
+    public async Task<IActionResult> GetMeshAsset(string path)
+    {
+        var basePath = TournamentImagesConfig.ResolveMeshPath();
+        var result = await assetServingService.GetAssetAsync(basePath, path);
+        return HandleAssetResult(result);
+    }
+
+    /// <summary>
     /// Get the preview image for a map, addressed the way bflist reports it:
     /// /stats/assets/maps/{gameId}/{mapName}. Map names may be given with spaces or
     /// underscores and in any case ("fhsw/Operation Coronet-1946" works).
