@@ -1,0 +1,61 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bfstats-mesh
+  namespace: bf42-stats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bfstats-mesh
+  template:
+    metadata:
+      labels:
+        app: bfstats-mesh
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: mesh
+          image: anskia/bfstats-mesh:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            # Same PVC FileBrowser uses. subPath creates the dir if missing.
+            - name: assets-data
+              mountPath: /usr/share/nginx/html/models
+              subPath: assets/mesh/models
+              readOnly: true
+            - name: assets-data
+              mountPath: /usr/share/nginx/html/maps
+              subPath: assets/mesh/maps
+              readOnly: true
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+      volumes:
+        - name: assets-data
+          persistentVolumeClaim:
+            claimName: bf42-stats-pvc-v2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bfstats-mesh-service
+  namespace: bf42-stats
+spec:
+  selector:
+    app: bfstats-mesh
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      name: web
