@@ -35,4 +35,8 @@ Route DNS via the tunnel
 ```bash
 cloudflared tunnel route dns aks-tunnel bfstats.io
 cloudflared tunnel route dns aks-tunnel staging.bfstats.io
+cloudflared tunnel route dns aks-tunnel mesh.bfstats.io
 ```
+
+`mesh.bfstats.io` is the BF1942 model/level viewer — see
+[`features/mesh-site/README.md`](../../../features/mesh-site/README.md).

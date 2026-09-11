@@ -16,14 +16,15 @@ public interface IAssetServingService
 /// </summary>
 public class AssetServingService(ILogger<AssetServingService> logger) : IAssetServingService
 {
-    // Maximum file size: 100MB to prevent DOS
-    private const long MaxFileSizeBytes = 100 * 1024 * 1024;
+    // Maximum file size: level scenes (Tobruk-scale) land well above 100MB.
+    private const long MaxFileSizeBytes = 512 * 1024 * 1024;
 
     // Whitelist of allowed file extensions (security by explicit allowance)
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg", ".jpeg", ".png", ".gif", ".webp",
-        ".pdf", ".zip", ".txt", ".json"
+        ".pdf", ".zip", ".txt", ".json",
+        ".glb", ".gltf", ".bin",
     };
 
     public async Task<AssetResult> GetAssetAsync(string basePath, string relativePath)
@@ -218,6 +219,9 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
             ".zip" => "application/zip",
             ".txt" => "text/plain; charset=utf-8",
             ".json" => "application/json; charset=utf-8",
+            ".glb" => "model/gltf-binary",
+            ".gltf" => "model/gltf+json",
+            ".bin" => "application/octet-stream",
             _ => "application/octet-stream"
         };
     }
