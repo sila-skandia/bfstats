@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import con as con_mod
-from . import gltf, rs, skin, stdmesh, treemesh
+from . import gltf, rs, ske, skin, stdmesh, treemesh
 from .level import object_lightmap_key
 from .rfa import ArchivePool
 
@@ -85,6 +85,8 @@ class Report:
     part_tree: list[str] = field(default_factory=list)
     rigged_parts: list[str] = field(default_factory=list)
     skinned_parts: list[str] = field(default_factory=list)
+    bound_parts: list[str] = field(default_factory=list)
+    unreadable_skeletons: list[str] = field(default_factory=list)
     collision_parts: int = 0
     collision_triangles: int = 0
     collision_materials: list[int] = field(default_factory=list)
@@ -109,6 +111,8 @@ class Report:
             "partTree": self.part_tree,
             "riggedParts": self.rigged_parts,
             "skinnedParts": self.skinned_parts,
+            "boundParts": self.bound_parts,
+            "skeletonsNotRead": sorted(set(self.unreadable_skeletons)),
             "collisionParts": self.collision_parts,
             "collisionTriangles": self.collision_triangles,
             "collisionMaterials": sorted(set(self.collision_materials)),
@@ -142,6 +146,7 @@ class Assembler:
         self._geom_collisions: dict[str, list[tuple[int, int, str]]] = {}
         self._collision_material_cache: dict[int, int] = {}
         self._skin_cache: dict[str, skin.Skin | None] = {}
+        self._skeleton_cache: dict[str, ske.Skeleton | None] = {}
 
     # -- shaders ------------------------------------------------------------ #
 
@@ -474,6 +479,84 @@ class Assembler:
         aligned = skin.alignment(hand, body)
         return aligned
 
+    def _read_skeleton(self, path: str, report: Report) -> ske.Skeleton | None:
+        key = path.lower()
+        if key not in self._skeleton_cache:
+            entry = self.meshes.find(path) or self.meshes.resolve_ext(
+                path.rsplit(".", 1)[0], (".ske",))
+            parsed: ske.Skeleton | None = None
+            if entry:
+                try:
+                    parsed = ske.parse(self.meshes.read(entry), entry)
+                except (ske.SkeletonError, KeyError, struct.error):
+                    parsed = None
+            self._skeleton_cache[key] = parsed
+        found = self._skeleton_cache[key]
+        if found is None:
+            report.unreadable_skeletons.append(path)
+        return found
+
+    def _skeleton_scope(self, template: con_mod.ObjectTemplate,
+                        inherited: tuple[ske.Skeleton | None, int | None, str | None],
+                        report: Report,
+                        ) -> tuple[ske.Skeleton | None, int | None, str | None]:
+        """The skeleton, main bone and declared main name in force for the children.
+
+        `createSkeleton` and `useSkeletonPartAsMain` are declared on the root
+        `HandFireArms`, but the parts that bind to bones hang off the
+        `AnimatedBundle` two levels down, which re-declares only the skeleton.
+        Both therefore inherit.
+        """
+        skeleton, main_index, main_name = inherited
+        if template.skeleton_main:
+            main_name = template.skeleton_main
+        if template.skeleton:
+            skeleton = self._read_skeleton(template.skeleton, report)
+            main_index = (skeleton.main_index(main_name, template.geometry)
+                          if skeleton is not None else None)
+        return skeleton, main_index, main_name
+
+    def _declares_skin(self, template_name: str) -> bool:
+        child = self.library.object(template_name)
+        geom = self.library.geometry(child.geometry) if child and child.geometry else None
+        return bool(geom and geom.skin)
+
+    def _bind_pose(self, ref: con_mod.ChildRef, child_name: str,
+                   skeleton: ske.Skeleton | None, main_index: int | None,
+                   report: Report,
+                   ) -> tuple[ske.Matrix3, ske.Vector3, str] | None:
+        """Where `bindToSkeletonPart` puts this child, or None to leave it alone.
+
+        A rigid `StandardMesh` sub-part carries no placement of its own, so the
+        bone's rest pose *is* its placement — a bazooka rocket is modelled along
+        its own +Y at the origin and only the `rocket` bone swings it into the
+        tube. A mesh with its own `.skn` is the opposite case: its vertices are
+        already stored in the skeleton's bind world space, so at bind pose the
+        bone contributes nothing and re-applying it would throw the part a whole
+        bone chain off. That is every soldier's `ComplexHead`, bound to
+        `Bip01_Spine3` while its verts already sit on the neck.
+        """
+        if not ref.skeleton_part:
+            return None
+        if self._declares_skin(child_name):
+            report.bound_parts.append(
+                f"{child_name} -> {ref.skeleton_part} (skinned, bind pose is identity)")
+            return None
+        if skeleton is None:
+            report.bound_parts.append(
+                f"{child_name} -> {ref.skeleton_part} (no skeleton in scope)")
+            return None
+        index = skeleton.index(ref.skeleton_part)
+        if index is None:
+            report.bound_parts.append(
+                f"{child_name} -> {ref.skeleton_part} (no such bone)")
+            return None
+        rotation, translation = skeleton.relative(index, main_index)
+        main = skeleton.bones[main_index].name if main_index is not None else "root"
+        report.bound_parts.append(
+            f"{child_name} -> {skeleton.bones[index].name} (relative to {main})")
+        return rotation, translation, skeleton.bones[index].name
+
     def _geometry_is_first_person(self, template_name: str) -> bool:
         child = self.library.object(template_name)
         return geometry_is_first_person(child.geometry if child else None)
@@ -549,6 +632,9 @@ class Assembler:
                    control: str = "",
                    body_skin: skin.Skin | None = None,
                    world_origin: tuple[float, float, float] | None = None,
+                   bind: tuple[ske.Matrix3, ske.Vector3, str] | None = None,
+                   skeleton_scope: tuple[ske.Skeleton | None, int | None, str | None]
+                   = (None, None, None),
                    ) -> int | None:
         if depth > 24:
             return None
@@ -577,6 +663,8 @@ class Assembler:
         if template.kind.lower() == "bfsoldier":
             body_skin = self._soldier_body_skin(template)
 
+        skeleton_scope = self._skeleton_scope(template, skeleton_scope, report)
+
         mesh_index, triangles = (None, 0)
         collision_meshes: list[tuple[int, int, str]] = []
         if template.geometry and not geometry_is_first_person(template.geometry):
@@ -600,6 +688,9 @@ class Assembler:
                 depth=depth + 1, stack=stack, control=control,
                 body_skin=body_skin,
                 world_origin=world_origin,
+                bind=self._bind_pose(
+                    ref, child_name, skeleton_scope[0], skeleton_scope[1], report),
+                skeleton_scope=skeleton_scope,
             )
             if child is not None:
                 child_indices.append(child)
@@ -637,6 +728,13 @@ class Assembler:
             # +Y is what a browse camera expects, matching vehicles.
             pitch -= 90.0
         node_rotation = gltf.quat_from_ypr(yaw, pitch, roll)
+        if bind is not None:
+            r_bind, t_bind, bone = bind
+            px, py, pz = position
+            tx, ty, tz = t_bind
+            position = (px + tx, py + ty, pz + tz)
+            node_rotation = gltf.quat_mul(node_rotation, gltf.quat_from_matrix(r_bind))
+            extras["boundBone"] = bone
         if aligned := self._hand_alignment(template, body_skin):
             r_rel, t_rel, bone = aligned
             px, py, pz = position

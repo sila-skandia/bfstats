@@ -1,22 +1,101 @@
 # BF1942 3D model extraction
 
-Pulls vehicles out of the Refractor archives as textured glTF, and gives them a
-viewer to be judged in. Tooling lives in [`tools/bf1942-models/`](../../tools/bf1942-models).
+Pulls vehicles, soldiers and hand weapons out of the Refractor archives as
+textured glTF, and gives them a viewer to be judged in. Tooling lives in
+[`tools/bf1942-models/`](../../tools/bf1942-models).
 
 ```bash
 cd tools/bf1942-models
 python3 extract_models.py --list
-python3 extract_models.py Sherman Willy PanzerIV Tiger Stuka Elco80 BritishSoldier \
+python3 extract_models.py \
+    Sherman Willy PanzerIV Tiger T34 Stuka Elco80 \
+    BritishSoldier GermanSoldier \
+    Bazooka Panzershreck K98 No4 Colt WalterP38 \
+    ExpPack Landmine RepairPack Detonator \
     --out ./viewer/models \
-    --texture-fallback WarFront \
-    --texture-fallback FH \
+    --texture-fallback WarFront --texture-fallback FH --texture-fallback bg42 \
+    --texture-fallback bf1918 --texture-fallback FinnWars --texture-fallback interstate \
     --level-all \
     --configuration-all
+```
+
+That set is the anti-tank and engineer kits either side of the front — Bazooka
+and Panzershreck, the K98 and No4 the engineer carries, and the demo charge,
+mine, wrench and detonator — plus a soldier and a tank from each of two more
+nations. Six texture fallbacks rather than two because no single mod carries
+every vanilla basename: `bf1918` has the Colt and the wrench, `interstate` the
+demo charge, `bg42` the MG console and the mouth, `FinnWars` the T-34 hull.
+Four references in that set resolve from no installed mod at all
+(`GunMag_o`, `1p_ATrocket_h`, `demokit2_o`, `sherW2_f`), so the pistol
+magazines, the AT rocket and the detonator box render untextured.
+
+Then shoot the browse thumbnails, which also stamps their paths into the
+manifest:
+
+```bash
+node shoot.mjs --thumbs
 ```
 
 Then start the `model-viewer` launch config (serves `tools/bf1942-models/viewer`
 on :5273). The inspector can switch each vehicle's Build and Skin without
 re-extracting it. `map.html` on the same server is the level flythrough.
+
+## Finding a model
+
+A flat list stops working somewhere short of a hundred models, so picking one is
+its own surface. `/` or **Browse armoury** opens it; Esc closes it; Enter loads
+the top hit. Everything it filters on is derived from the archives at extraction
+time and written into `models.json` — see "Where the facets come from" below.
+
+- **Facet rail** — mod, class, side, faction, theatre, kit, build, skin, map, and
+  extraction health. Multi-select, and the counts are computed against every
+  *other* active facet, so a number says what ticking that box would give you
+  rather than what the unfiltered manifest holds.
+- **Grid** — thumbnail per model, tinted by side, flagged with its variant count
+  and any unresolved textures.
+- **Scale** — the whole filtered set drawn at one true scale against a metre
+  rule. This works because every thumbnail is shot at the same camera distance
+  measured in `maxExtent` — the longest side of the model's box, which is also
+  what `models.json` records — so a thumbnail drawn at a width proportional to
+  that number is on the same scale as every other. The two have to be the *same*
+  measurement: framing by longest side while scaling by, say, half the box
+  diagonal puts the lineup out by up to 8%, varying by shape. Filter to one class
+  before reading it — across all categories the extents span ~150x, and anything
+  below the floor is outlined to say it is drawn larger than scale.
+- **Plot** — any two of the recorded metrics against each other, sized by
+  triangle count and tinted by side. Hit points against heaviest gun damage is
+  the armour-vs-firepower view; length against triangles is the extraction-cost
+  view. Anything missing a value is listed under the plot rather than dropped.
+
+Sorting covers name, triangles, parts, size, hit points, map appearances,
+variants and unresolved textures — that last one is the extraction triage order.
+The loaded model is in the URL (`#Tiger/complex|Kasserine_Pass`), so a view is
+shareable and survives a reload.
+
+### Where the facets come from
+
+Nothing here is a hand-kept table of which army drove what. `bf42/roster.py`
+reads it back out of the game files:
+
+- **Kits.** `Objects/Items/<Nation>Kit/<Class>/Objects.con` names a nation and a
+  class in its path, then `addTemplate`s down to the weapons. Walking that tree
+  is what gives the Bazooka five Allied nations and an Anti-tank class.
+- **Levels.** `Init.con`'s `game.setTeamSkin <team> <soldier>` paired with
+  `Conquest/ObjectSpawnTemplates.con`'s `setObjectTemplate <team> <vehicle>` says
+  which side spawns what on each map. Sweeping all 20 vanilla level archives
+  gives vehicles their factions and their map list; the soldiers a map fields
+  also decide its theatre (desert kit means North Africa, Japanese or Marine
+  infantry the Pacific, Soviets the Eastern Front).
+
+`bf42/measure.py` supplies the dimensions, read back from each exported `.glb`
+via the POSITION accessor bounds — a Sherman measures 5.76 m and a Tiger 8.48 m,
+against 5.8 m and 8.45 m for the real things.
+
+A mod that fields its own armies therefore describes itself, with no code change.
+
+Production host for the same viewer is **mesh.bfstats.io** — static site on the
+bfstats cluster, models served from the FileBrowser assets volume. See
+[`features/mesh-site/README.md`](../mesh-site/README.md).
 
 A level is the same pipeline pointed at a different archive. Tobruk's heightmap,
 48 terrain tiles, 750 static objects, conquest vehicle spawners and the env
@@ -287,15 +366,121 @@ authored with the wrist cocked ~140 deg off that bone (weapon grip), so a
 second rotation swings `Bip01 L Hand` onto the forearm's length axis — the
 fingers continue out of the cuff instead of sitting perpendicular to it. The
 right trigger hand is only ~40 deg off and is left as authored. Helmets are kit parts, not
-children of the soldier, so the exported figure is bareheaded. `createSkeleton`
-and `.baf` clips are still unused; this pass only applies the bind-pose rigid
-align, not a full skin.
+children of the soldier, so the exported figure is bareheaded. `.baf` clips are
+still unused; this pass only applies the bind-pose rigid align, not a full skin.
 
 `--list` now includes the eight vanilla `objects/soldiers/` templates alongside
 land, air and sea vehicles. Mods keep soldier textures under nested folders
 (`Texture/ItalyBritts/britt1_r.dds`) rather than `texture/britt1_r`; the texture
 pool fills that gap by basename after an exact path miss, which is how
 `--texture-fallback` actually paints a British soldier from this install.
+
+## How a hand weapon is assembled
+
+A vehicle says where its turret goes with a `setPosition` after the
+`addTemplate`. A hand weapon says nothing at all:
+
+```con
+ObjectTemplate.create AnimatedBundle BazookaComplex
+ObjectTemplate.geometry Bazooka
+ObjectTemplate.createSkeleton animations/Bazooka.ske
+ObjectTemplate.addTemplate BazookaTrigger
+ObjectTemplate.bindToSkeletonPart trigger
+ObjectTemplate.addTemplate BazookaRocket
+ObjectTemplate.bindToSkeletonPart rocket
+```
+
+The bone *is* the placement, and until this pass `bindToSkeletonPart` was not
+parsed — so all 63 bound sub-parts across the 20 vanilla hand weapons collapsed
+onto the weapon's origin. It is not a subtle wrong: `1p_ATrocket_m1` is modelled
+along its own +Y at the origin, and only the `rocket` bone swings it down the
+tube.
+
+[`bf42/ske.py`](../../tools/bf1942-models/bf42/ske.py) reads the file. All 64
+vanilla `.ske` parse except one:
+
+```
+u32  version          1 throughout vanilla
+u32  boneCount
+  per bone: u16 nameLen (including the NUL), name, i16 parent (-1 = root),
+            f32 matrix[12]   -- row-major 3x4, rotation then translation per row
+```
+
+Four things have to be right on top of the layout.
+
+### The file is mirrored in Z against the mesh it poses
+
+The soldier shows it plainly: `UsSoldier.ske` puts `Bip01 Head` at z = -1.51
+while the head mesh it drives sits at z = +1.56..1.87. On weapons the cost is
+obvious rather than plain — every bound part lands on the wrong end of the gun,
+displaced by twice its distance from the origin. A K98's bolt ends up behind the
+butt plate; a Colt's magazine hangs off the back of the grip.
+
+Each weapon ships a `Shad_*`/`Shade_*` shadow mesh, which is the whole weapon as
+one part in the same space, and that makes this measurable rather than a matter
+of opinion. Reading the file as stored throws **15–60% of each part's area
+outside the silhouette of the weapon it belongs to**; mirroring brings every one
+of them under 3%:
+
+| | Colt | WalterP38 | K98 | No4 | Bazooka |
+|---|---|---|---|---|---|
+| as stored | 49.1% | 59.8% | 42.5% | 58.0% | 15.2% |
+| mirrored | 2.7% | 6.4% | 1.9% | 1.9% | 0.0% |
+
+A mirror is a change of basis, so it conjugates — `R -> S R S` and `t -> S t`
+with `S = diag(1, 1, -1)`, applied once at parse time. Mirroring only the
+translation lands the parts in nearly the same place, because most of these
+bones are rotated about X where conjugation barely shows, and it is tempting for
+exactly that reason. It is not a rigid transform of anything, and the pistols'
+front view is where it comes apart. This is separate from, and composes with,
+the Refractor-to-glTF mirror `gltf.py` applies on the way out.
+
+### The root is the hand, not the weapon
+
+Every weapon skeleton is rooted at `Bip01 R Hand` — where the thing attaches to
+a soldier, not where its own geometry is centred. `useSkeletonPartAsMain` names
+the bone the object's origin actually sits on, and each part is placed relative
+to *that*, which is what cancels the hand offset back out.
+
+The declared name is a hint rather than a key, because 17 of the 29 declarations
+do not match any bone in the skeleton they name. The K98 and the No4 both ask
+for a part named after the weapon while their skeletons call it `BaseK98` /
+`BaseNo4`; the RepairPack asks for `base` against a bone left at the exporter's
+default `Object01`. The engine draws all three correctly. Resolution is
+therefore the declared name, then `base<name>`, then the first bone hanging off
+the root — which is the weapon body in every vanilla skeleton, and lands all 29
+on the right bone.
+
+### A skinned mesh is already in bind space
+
+The same command means the opposite thing on a soldier. Every one of the eight
+binds its `ComplexHead` to `Bip01_Spine3`, and that head's vertices already sit
+on the neck. The discriminator is the geometry, not the template kind:
+
+- A rigid `StandardMesh` sub-part carries no bind of its own, so the bone's rest
+  pose is its placement.
+- A mesh with a `GeometryTemplate.setSkin` stores its vertices in the skeleton's
+  bind world space, so at bind pose the bone contributes nothing and applying it
+  would throw the part a whole bone chain off.
+
+That splits vanilla cleanly: all 63 weapon sub-parts are rigid, all 8 soldier
+heads are skinned. The declaration decides it — the `.skn` is never read here.
+
+### Names are matched loosely
+
+`.con` writes `bindToSkeletonPart Bip01_Spine3` where the `.ske` stores
+`Bip01 Spine3`, so underscores are spaces. The K98 and No4 both store their
+scope bone as `"SIKTE     "`, so trailing whitespace is stripped. Case is
+irrelevant, as everywhere else in Refractor.
+
+### `GrenadeAllies.ske` is corrupt
+
+One file of the 64 cannot be read: its header gives version 278 against 1
+everywhere else, and no byte offset yields a clean parse. Bone records start two
+bytes late and name lengths disagree with the gaps between names. Same shape as
+the truncated `Battle_of_the_Bulge.rfa` above, and the same likely cause. The
+loader records it under `skeletonsNotRead` and leaves that weapon's pin and
+spoon at the origin rather than failing the extraction.
 
 ## How vehicles move
 
@@ -482,14 +667,18 @@ a weapon — projectile, att material and muzzle velocity are under **Technical
 details**.
 
 **Compare** is separate from armour inspection. Opponent parks a ghosted second
-vehicle to the right and opens a Street Fighter-style VS column between the
-hulls. Each side picks its own gun (defaults to that vehicle's heaviest); a
-vertical spine of plates (rear / side / nose / front / glacis) grows a tug-of-war
-bar from the centre. Fill is head-on damage over the target's HP — a one-shot
-fills the lane — and the number is shots-to-kill. The sidebar **Weapon** control
-is left alone, so inspecting a face still uses the orange shot arrow and the
-selected inspect weapon. Tiger is in the default extract set for the Panzer
-matchup (125 HP, plates 51/53/54 against the Panzer's 100 HP and 50/51/52).
+vehicle to the right and opens a VS panel between the hulls. The panel answers
+one question first: **who is stronger**. The winner name is the hero line; under
+it a head-on duel scoreboard shows how many shots each side needs to kill the
+other through the decisive facing (front for tanks, or strongest shared armour
+when classes differ). Lower shots wins. Facings below that are a secondary
+breakdown — front / side / rear for tanks, hull for light vehicles, airframe
+for aircraft — each labelled you-stronger / them-stronger / even, with shot
+counts. Plate jargon (nose, glacis, …) stays in the tooltip, not the main
+readout. Each side picks its own gun (defaults to that vehicle's best against
+the opponent). The sidebar **Weapon** control is left alone for face inspection.
+Tiger is in the default extract set for the Panzer matchup (125 HP, plates
+51/53/54 against the Panzer's 100 HP and 50/51/52).
 
 ## Where the game rules live
 
@@ -619,8 +808,11 @@ soldier meshes, basename texture fallback, multi-LOD StandardMesh parsing,
 heightmap scale, terrain tile origin (including negative `texOffsetY`),
 terrain facing +Y, spawn-template team lookup, cubemap Z remap, StandardMesh
 lightmap UVs (stride 40), object-lightmap filename keys, paletted TGA
-lightmaps, mod-prefix texture fallback, and
-TreeMesh collision sentinels:
+lightmaps, mod-prefix texture fallback,
+TreeMesh collision sentinels, and the `.ske` bind pose — layout, the Z-mirror
+conjugation, rest accumulation down the parent chain, main-bone resolution
+through both fallbacks, underscore and trailing-space bone matching, and the
+skinned-mesh no-op that keeps a soldier's head on its neck:
 
 ```bash
 python3 -m unittest discover -s tools/bf1942-models/tests -v
@@ -633,17 +825,18 @@ the Build and Skin comparison explicit.
 
 ## Not yet used
 
-- **`animations.rfa`** — `.skn` skins referenced by `GeometryTemplate.setSkin`
-  are parsed for soldier hands: shared forearm bones align each hand mesh into
-  the body's bind. `.ske` skeletons and `.baf` clips are still unused, so track
-  belts stay rigid and the figure does not play idle animation.
+- **`.ske` beyond the bind pose.** The rest pose is now read and used to place
+  every `bindToSkeletonPart` sub-part, but only as a static pose. Nothing drives
+  those bones afterwards, so a weapon does not cycle its bolt and track belts
+  stay rigid.
 - **`.baf` soldier clips and vehicle IK**, which animate occupants rather than the
   vehicle assembly. Helmets and other kit parts are also still separate objects.
 - **The coastline mesh**, which some levels name in `StaticObjects.con` without
   an object template.
 
-The next vehicle milestone is still `.ske/.skn`. Map work after that is still
-the coastline mesh and restoring a real vanilla `texture.rfa` so palms and
+The next milestone is `.baf`: with `.ske` and `.skn` both read, the clips are
+what is left between a posed model and a moving one. Map work after that is
+still the coastline mesh and restoring a real vanilla `texture.rfa` so palms and
 houses do not have to borrow from other mods.
 
 ## Requires deep dive

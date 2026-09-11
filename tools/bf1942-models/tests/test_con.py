@@ -251,6 +251,62 @@ ObjectTemplate.createInvisible 0
         self.assertTrue(library.object("PT_FrontWheel").invisible)
         self.assertFalse(library.object("VisibleWheel").invisible)
 
+    def test_bind_to_skeleton_part_belongs_to_the_child_not_the_template(self) -> None:
+        """A hand weapon places its sub-parts with a bone name instead of an offset."""
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/HandWeapons/Test/Objects.con",
+            """
+ObjectTemplate.create AnimatedBundle TestComplex
+ObjectTemplate.geometry TestBody
+ObjectTemplate.createSkeleton animations/Test.ske
+ObjectTemplate.addTemplate TestTrigger
+ObjectTemplate.bindToSkeletonPart Trigger
+ObjectTemplate.addTemplate TestMag
+ObjectTemplate.bindToSkeletonPart mag
+""",
+        )
+
+        template = library.object("TestComplex")
+
+        self.assertEqual("animations/Test.ske", template.skeleton)
+        self.assertEqual(
+            [("TestTrigger", "Trigger"), ("TestMag", "mag")],
+            [(c.template, c.skeleton_part) for c in template.children])
+
+    def test_bind_to_skeleton_part_ignores_the_trailing_bone_index(self) -> None:
+        """Soldiers write `bindToSkeletonPart Bip01_Spine3 3`; only the name matters."""
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Soldiers/Test/Objects.con",
+            """
+ObjectTemplate.create BFSoldier TestSoldier
+ObjectTemplate.addTemplate TestComplexHead
+ObjectTemplate.bindToSkeletonPart Bip01_Spine3 3
+""",
+        )
+
+        self.assertEqual(
+            "Bip01_Spine3", library.object("TestSoldier").children[0].skeleton_part)
+
+    def test_use_skeleton_part_as_main_belongs_to_the_template(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/HandWeapons/Test/Objects.con",
+            """
+ObjectTemplate.create HandFireArms Test
+ObjectTemplate.createSkeleton animations/Test.ske
+ObjectTemplate.useSkeletonPartAsMain TestBody
+ObjectTemplate.addTemplate TestLod
+""",
+        )
+
+        template = library.object("Test")
+
+        self.assertEqual("TestBody", template.skeleton_main)
+        self.assertEqual("animations/Test.ske", template.skeleton)
+        self.assertIsNone(template.children[0].skeleton_part)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -92,6 +92,10 @@ class ChildRef:
     first_person_part: int | None = None
     random_geometries: int | None = None
     lod_value: float | None = None
+    # `bindToSkeletonPart <bone>` instead of a `setPosition`. Hand weapons place
+    # every sub-part this way: the trigger, magazine and loaded round carry no
+    # offset at all because the `.ske` bone they name already holds it.
+    skeleton_part: str | None = None
 
 
 def lod_alternative_role(template_name: str) -> str | None:
@@ -162,6 +166,11 @@ class ObjectTemplate:
     inputs: dict[str, str] = field(default_factory=dict)   # yaw|pitch|roll -> input name
     automatic_reset: bool = False
     skeleton: str | None = None
+    # Which bone of that skeleton the object's own origin sits on. Weapon
+    # skeletons are rooted at `Bip01 R Hand` — where the thing attaches to a
+    # soldier, not where its geometry is centred — so bound parts are measured
+    # against this bone rather than the root.
+    skeleton_main: str | None = None
     invisible: bool = False
     animated_texture_speed: tuple[float, float] | None = None
     has_armor: bool = False
@@ -302,6 +311,8 @@ class ObjectLibrary:
                     obj.automatic_reset = args.strip().startswith("1")
                 elif cmd == "createskeleton":
                     obj.skeleton = args.split()[0] if args else None
+                elif cmd == "useskeletonpartasmain":
+                    obj.skeleton_main = args.split()[0] if args else None
                 elif cmd == "createinvisible":
                     obj.invisible = args.strip().startswith("1")
                 elif cmd == "setanimatedtexturespeed":
@@ -350,6 +361,10 @@ class ObjectLibrary:
                         child.lod_value = float(args.split()[0])
                     except (ValueError, IndexError):
                         continue
+                elif cmd == "bindtoskeletonpart":
+                    # Soldiers write a trailing bone index (`Bip01_Spine3 3`);
+                    # only the name is load-bearing.
+                    child.skeleton_part = args.split()[0] if args else None
 
             elif ns == "geometrytemplate":
                 if cmd == "create":
