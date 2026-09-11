@@ -2,13 +2,14 @@
 //
 //   node shoot.mjs [--url http://localhost:5273] [--out shots] [--views 3] [--variants]
 //                  [--software]
+//   node shoot.mjs --thumbs        # browse-view thumbnails, straight into models/
 //
 // Uses the Playwright chromium already installed for the E2E suite. By default this
 // uses hardware-accelerated GPU rendering. Pass --software to fall back to SwiftShader
 // CPU rendering for CI environments that lack a GPU.
 
 import { chromium } from '../../ui/node_modules/playwright/index.mjs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const arg = (name, fallback) => {
   const index = process.argv.indexOf(`--${name}`);
@@ -22,6 +23,7 @@ const only = arg('only', null);
 const allVariants = process.argv.includes('--variants');
 const collision = process.argv.includes('--collision');
 const useSoftware = process.argv.includes('--software');
+const thumbs = process.argv.includes('--thumbs');
 
 const slug = value => String(value || 'base')
   .replace(/[^a-z0-9]+/gi, '-')
@@ -49,6 +51,47 @@ const models = await page.evaluate(() => window.__modelInspector.manifest.map(en
   ),
   variants: entry.variants.map(variant => variant.index),
 })));
+
+if (thumbs) {
+  // A square viewport, a fixed camera distance in bounding-sphere radii, and no
+  // per-model reframing: that combination is what lets the browse view's scale
+  // lineup draw these at a common scale by size alone.
+  await page.setViewportSize({ width: 820, height: 500 });
+  const dir = arg('out', 'viewer/models/thumbs');
+  await mkdir(dir, { recursive: true });
+  const canvas = page.locator('main canvas');
+  const written = [];
+
+  for (const model of models) {
+    if (only && model.name.toLowerCase() !== only.toLowerCase()) continue;
+    await page.evaluate(
+      ([modelIndex, variantIndex]) =>
+        window.__modelInspector.showVariant(modelIndex, variantIndex),
+      [model.index, model.defaultVariant],
+    );
+    await page.evaluate(() => window.__modelInspector.setPortrait(true));
+    await page.waitForTimeout(160);
+    const file = `${slug(model.name)}.png`;
+    await canvas.screenshot({ path: `${dir}/${file}`, omitBackground: false });
+    written.push([model.name, `thumbs/${file}`]);
+  }
+
+  await page.evaluate(() => window.__modelInspector.setPortrait(false));
+  await browser.close();
+
+  // Stamp the paths into the manifest so the viewer knows they exist. The
+  // extractor rewrites models.json wholesale, so this runs after extraction.
+  const manifestPath = 'viewer/models/models.json';
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  const byName = new Map(written);
+  for (const entry of manifest) {
+    const thumb = byName.get(entry.name);
+    if (thumb) entry.thumb = thumb;
+  }
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  console.log(`wrote ${written.length} thumbnails to ${dir}/ and stamped ${manifestPath}`);
+  process.exit(0);
+}
 
 for (const model of models) {
   if (only && model.name.toLowerCase() !== only.toLowerCase()) continue;
@@ -133,6 +176,10 @@ for (const model of models) {
         [view, views],
       );
       if (collision) {
+        // Each view asserts the unset baseline ("select a weapon") and then
+        // picks a weapon to read hit points from. Without clearing it here the
+        // second view inherits the first view's choice and the check fails.
+        await page.evaluate(() => window.__modelInspector.setWeapon(null));
         const canvas = page.locator('main canvas');
         const bounds = await canvas.boundingBox();
         await page.mouse.click(

@@ -48,22 +48,6 @@
     padding-top: 12px;
   }
   h2:first-of-type { border-top: 0; padding-top: 0; }
-  .model-list { display: flex; flex-direction: column; gap: 4px; }
-  button.model {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 8px 10px;
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    font: inherit;
-    cursor: pointer;
-  }
-  button.model:hover { border-color: var(--accent); }
-  button.model[aria-pressed="true"] { background: var(--accent); color: #14150f; border-color: var(--accent); }
-  button.model small { display: block; opacity: .75; font-size: 11px; }
   #variant-panel[hidden] { display: none; }
   .variant-grid { display: grid; gap: 8px; }
   .variant-field { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; }
@@ -231,12 +215,12 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: min(420px, calc(100% - 32px));
-    padding: 18px 18px 14px;
+    width: min(480px, calc(100% - 32px));
+    padding: 14px 16px 12px;
     border: 1px solid rgba(230, 228, 217, .16);
     background:
       linear-gradient(180deg, rgba(12, 13, 9, .08), rgba(12, 13, 9, .22)),
-      rgba(16, 17, 12, .78);
+      rgba(16, 17, 12, .88);
     box-shadow:
       0 0 0 1px rgba(0, 0, 0, .45),
       0 18px 50px rgba(0, 0, 0, .45);
@@ -244,20 +228,11 @@
     pointer-events: auto;
     z-index: 3;
   }
-  #versus::before {
-    content: "";
-    position: absolute;
-    inset: 8px auto 8px 50%;
-    width: 1px;
-    background: linear-gradient(180deg, transparent, rgba(230, 228, 217, .28), transparent);
-    pointer-events: none;
-  }
   .vs-head {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     gap: 10px;
     align-items: end;
-    margin-bottom: 12px;
   }
   .vs-side { min-width: 0; }
   .vs-side.vs-them { text-align: right; }
@@ -265,12 +240,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: 700 28px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
+    font: 700 22px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
     letter-spacing: .04em;
     text-transform: uppercase;
-    color: var(--text);
+    color: var(--muted);
+    transition: color 180ms ease;
   }
-  .vs-them .vs-name { color: #e8c4a0; }
+  .vs-them .vs-name { color: #9a8570; }
+  #versus[data-winner="us"] .vs-us .vs-name { color: var(--accent); }
+  #versus[data-winner="them"] .vs-them .vs-name { color: #f0c090; }
+  #versus[data-winner="even"] .vs-name { color: var(--text); }
   .vs-hp {
     margin-top: 3px;
     color: var(--muted);
@@ -287,6 +266,7 @@
     color: var(--text);
     font: inherit;
     font-size: 10px;
+    cursor: pointer;
   }
   .vs-mark {
     align-self: center;
@@ -300,58 +280,165 @@
     font: 700 15px/1 Impact, "Arial Narrow", sans-serif;
     letter-spacing: .08em;
   }
-  .vs-lanes { display: grid; gap: 9px; }
+  .vs-verdict {
+    margin: 14px 0 0;
+    text-align: center;
+  }
+  .vs-winner-label {
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  .vs-winner {
+    margin-top: 4px;
+    font: 700 34px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text);
+    animation: vs-stamp 320ms ease;
+  }
+  #versus[data-winner="us"] .vs-winner { color: var(--accent); }
+  #versus[data-winner="them"] .vs-winner { color: #e0a25a; }
+  #versus[data-winner="even"] .vs-winner { color: var(--text); }
+  .vs-winner-sub {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: .04em;
+  }
+  .vs-duel {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 12px;
+    align-items: center;
+    margin: 14px 0 0;
+    padding: 12px 10px;
+    border: 1px solid rgba(230, 228, 217, .12);
+    background: rgba(0, 0, 0, .22);
+  }
+  .vs-duel-side { min-width: 0; }
+  .vs-duel-them { text-align: right; }
+  .vs-duel-num {
+    font: 700 42px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    animation: vs-stamp 280ms ease;
+  }
+  .vs-duel-num.is-muted {
+    font-size: 18px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #versus[data-winner="us"] .vs-duel-us .vs-duel-num:not(.is-muted) { color: var(--accent); }
+  #versus[data-winner="them"] .vs-duel-them .vs-duel-num:not(.is-muted) { color: #e0a25a; }
+  .vs-duel-cap {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .vs-duel-mid {
+    color: var(--muted);
+    font: 700 12px/1 Impact, "Arial Narrow", sans-serif;
+    letter-spacing: .14em;
+  }
+  .vs-meter {
+    display: grid;
+    grid-template-columns: var(--us, 50%) var(--them, 50%);
+    height: 6px;
+    margin: 10px 0 0;
+    background: rgba(255, 255, 255, .06);
+    overflow: hidden;
+  }
+  .vs-meter span:first-child { background: var(--accent); }
+  .vs-meter span:last-child { background: #c98a3e; }
+  .vs-aspects-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 14px 0 6px;
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .vs-lanes { display: grid; gap: 4px; }
   .vs-lane {
     display: grid;
-    grid-template-columns: 32px 1fr 58px 1fr 32px;
-    gap: 8px;
+    grid-template-columns: 64px 1fr auto;
+    gap: 10px;
     align-items: center;
+    padding: 7px 8px;
+    border-left: 2px solid transparent;
+    background: rgba(255, 255, 255, .02);
+  }
+  .vs-lane[data-win="us"] { border-left-color: var(--accent); }
+  .vs-lane[data-win="them"] { border-left-color: #c98a3e; }
+  .vs-lane[data-decisive="true"] { background: rgba(154, 171, 90, .07); }
+  #versus[data-winner="them"] .vs-lane[data-decisive="true"] {
+    background: rgba(201, 138, 62, .08);
   }
   .vs-face {
-    text-align: center;
     color: var(--muted);
     font-size: 10px;
     letter-spacing: .12em;
     text-transform: uppercase;
   }
-  .vs-shots {
-    font: 700 18px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
+  .vs-edge {
+    font: 700 11px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .vs-lane[data-win="us"] .vs-edge { color: var(--accent); }
+  .vs-lane[data-win="them"] .vs-edge { color: #e0a25a; }
+  .vs-counts {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
     font-variant-numeric: tabular-nums;
     color: var(--text);
+    font-size: 12px;
   }
-  .vs-shots-them { text-align: right; }
-  .vs-lane[data-immune-us="true"] .vs-shots-us,
-  .vs-lane[data-immune-them="true"] .vs-shots-them { color: var(--muted); }
-  .vs-bar {
-    height: 11px;
-    background: rgba(255, 255, 255, .06);
-    overflow: hidden;
+  .vs-count {
+    display: inline-flex;
+    gap: 4px;
+    align-items: baseline;
   }
-  .vs-bar-us { display: flex; justify-content: flex-end; }
-  .vs-bar i {
-    display: block;
-    height: 100%;
-    width: calc(var(--fill, 0) * 100%);
-    transform-origin: center;
-    animation: vs-fill 280ms ease;
+  .vs-count strong {
+    font: 700 16px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
   }
-  .vs-bar-us i { background: var(--accent); }
-  .vs-bar-them i { background: #c98a3e; }
-  .vs-lane[data-win="us"] .vs-shots-us { color: var(--accent); }
-  .vs-lane[data-win="them"] .vs-shots-them { color: #e0a25a; }
-  @keyframes vs-fill {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
+  .vs-count span {
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
   }
-  .vs-bar-us i { transform-origin: right; }
-  .vs-bar-them i { transform-origin: left; }
+  .vs-count.is-muted strong {
+    font: 600 9px/1 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .vs-lane[data-win="us"] .vs-count-us:not(.is-muted) strong { color: var(--accent); }
+  .vs-lane[data-win="them"] .vs-count-them:not(.is-muted) strong { color: #e0a25a; }
+  @keyframes vs-stamp {
+    from { opacity: 0; transform: translateY(4px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vs-winner,
+    .vs-duel-num { animation: none; }
+  }
   .vs-foot {
     margin-top: 10px;
     color: var(--muted);
     font-size: 9px;
-    letter-spacing: .08em;
+    letter-spacing: .06em;
     text-align: center;
-    text-transform: uppercase;
+    line-height: 1.45;
   }
   .angle-control label { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
   .angle-control output { color: var(--text); }
@@ -381,7 +468,11 @@
   }
   #tree { font-size: 11px; line-height: 1.7; white-space: pre; overflow-x: auto; color: var(--muted); }
   #tree b { color: var(--text); font-weight: 400; }
-  main { position: relative; }
+  /* The canvas is taken out of flow: at its attribute size it would otherwise
+     prop `main` open, and a viewport that only ever grows can never shrink back
+     (setSize(w, h, false) deliberately leaves the element's style alone). */
+  main { position: relative; overflow: hidden; min-width: 0; }
+  main > canvas { position: absolute; inset: 0; }
   canvas { display: block; }
   main[data-collision="true"] canvas { cursor: crosshair; }
   main[data-angle-drag="true"] canvas { cursor: grabbing; }
@@ -407,12 +498,404 @@
   #banner[hidden] { display: none; }
   main[data-load-state="loading"] canvas { opacity: .55; }
   canvas { transition: opacity 120ms ease; }
+  /* Thumbnail shots: nothing over the canvas, and no half-faded loading state. */
+  body.is-portrait #hud,
+  body.is-portrait #banner,
+  body.is-portrait #versus { display: none; }
+  body.is-portrait canvas { opacity: 1; transition: none; }
+
+  /* --- Armoury browser ----------------------------------------------------
+     The sidebar list does not survive a few hundred models, so picking one is
+     its own surface: facets on the left, a layout switch across the top, and
+     three ways of looking at the same filtered set. */
+
+  .side-allied { --side-tint: #7fa3c9; }
+  .side-axis { --side-tint: #c07c5a; }
+  .side-mixed { --side-tint: #9c8fb5; }
+  .side-none { --side-tint: var(--line); }
+
+  #current {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  #current-card {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--side-tint, var(--line));
+    border-radius: 3px;
+    background: #15170f;
+  }
+  #current-thumb {
+    width: 64px; height: 64px;
+    object-fit: contain;
+    background: #101208;
+    border-radius: 2px;
+  }
+  #current-thumb[hidden] { display: none; }
+  #current-name { font-size: 14px; color: var(--text); }
+  #current-meta { font-size: 10px; color: var(--muted); line-height: 1.5; }
+  button.browse {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 10px;
+    background: rgba(154, 171, 90, .1);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    font: inherit;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  button.browse:hover { background: rgba(154, 171, 90, .2); }
+  button.browse kbd {
+    font: inherit;
+    font-size: 10px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 0 4px;
+    text-transform: none;
+  }
+
+  #browser {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: 232px 1fr;
+    grid-template-rows: auto 1fr;
+    background: rgba(10, 11, 7, .97);
+    backdrop-filter: blur(3px);
+  }
+  #browser[hidden] { display: none; }
+  .browser-head {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .browser-head h2 {
+    margin: 0;
+    border: 0;
+    padding: 0;
+    color: var(--accent);
+    font-size: 12px;
+    letter-spacing: .14em;
+    white-space: nowrap;
+  }
+  #browser-search {
+    flex: 1;
+    min-width: 0;
+    max-width: 420px;
+    padding: 8px 10px;
+    background: #15170f;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--text);
+    font: inherit;
+  }
+  #browser-search:focus-visible { border-color: var(--accent); outline: none; }
+  #browser-count { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .browser-head .spacer { flex: 1; }
+  .layout-switch { display: flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .layout-switch button {
+    padding: 7px 12px;
+    background: transparent;
+    border: 0;
+    border-left: 1px solid var(--line);
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .layout-switch button:first-child { border-left: 0; }
+  .layout-switch button[aria-pressed="true"] { background: var(--accent); color: #14150f; }
+  .browser-head select {
+    padding: 7px 8px;
+    background: #15170f;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  button.browser-close {
+    padding: 7px 12px;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  button.browser-close:hover { border-color: var(--bad); color: var(--bad); }
+
+  #facets {
+    overflow-y: auto;
+    padding: 14px 14px 40px;
+    border-right: 1px solid var(--line);
+  }
+  .facet { margin-bottom: 16px; }
+  .facet > h3 {
+    margin: 0 0 6px;
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .facet label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 0;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .facet label.is-empty { opacity: .32; }
+  .facet label input { accent-color: var(--accent); margin: 0; }
+  .facet label .facet-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .facet label .facet-count { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .facet label input:checked + .facet-name { color: var(--accent); }
+  .facet-more {
+    margin-top: 2px;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--accent);
+    font: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: .8;
+  }
+  #facet-reset {
+    width: 100%;
+    padding: 6px;
+    margin-bottom: 14px;
+    background: transparent;
+    border: 1px dashed var(--line);
+    border-radius: 3px;
+    color: var(--muted);
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  #facet-reset:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+  #facet-reset:disabled { opacity: .35; cursor: default; }
+
+  #browser-body { overflow-y: auto; padding: 16px 18px 48px; }
+  .browser-empty { color: var(--muted); padding: 40px 0; text-align: center; }
+
+  /* Grid ---------------------------------------------------------------- */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 10px;
+  }
+  button.card {
+    display: grid;
+    /* Both of these matter: min-width keeps the button from refusing to shrink
+       below its content, and the explicit column keeps the card's own grid from
+       sizing itself to the widest text and overflowing the box it just fit. */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    min-width: 0;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    text-align: left;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-top: 2px solid var(--side-tint, var(--line));
+    border-radius: 3px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button.card:hover, button.card:focus-visible {
+    border-color: var(--accent);
+    border-top-color: var(--side-tint, var(--accent));
+    outline: none;
+    transform: translateY(-1px);
+  }
+  button.card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--accent); }
+  .card-art {
+    position: relative;
+    /* Square, to match the thumbnails — a 4:3 well would letterbox them. */
+    aspect-ratio: 1;
+    background:
+      radial-gradient(ellipse at 50% 92%, rgba(154,171,90,.1), transparent 62%),
+      #101208;
+    display: grid;
+    place-items: center;
+  }
+  .card-art img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .card-art .no-art {
+    font-size: 9px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    opacity: .5;
+  }
+  /* Stacked, not wrapped: two badges side by side overflow a narrow card and
+     break mid-word. */
+  .card-flags {
+    position: absolute;
+    top: 5px; right: 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+  }
+  .card-flag {
+    white-space: nowrap;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: .05em;
+    background: rgba(20,21,15,.85);
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  .card-flag.is-warn { border-color: var(--warn); color: var(--warn); }
+  .card-body { padding: 7px 8px 8px; display: grid; gap: 3px; min-width: 0; }
+  .card-name {
+    font-size: 12px;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-sub {
+    font-size: 10px;
+    color: var(--muted);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .card-sub span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-sub .is-side { color: var(--side-tint, var(--muted)); }
+
+  /* Scale lineup -------------------------------------------------------- */
+  .scale-note { color: var(--muted); font-size: 10px; margin-bottom: 12px; line-height: 1.6; }
+  .scale-rule {
+    position: relative;
+    height: 18px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .scale-rule span {
+    position: absolute;
+    bottom: 0;
+    padding-left: 4px;
+    border-left: 1px solid var(--line);
+    font-size: 9px;
+    color: var(--muted);
+    line-height: 18px;
+    white-space: nowrap;
+  }
+  .scale-row {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    gap: 12px;
+    align-items: end;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(46,49,37,.5);
+  }
+  .scale-label { padding-bottom: 4px; }
+  .scale-label .scale-name { font-size: 11px; }
+  .scale-label .scale-dim { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  /* Square, because the thumbnails are square: any other aspect would letterbox
+     inside object-fit and silently shrink the model off the shared scale. */
+  /* The square frame is what carries the scale, but a model only fills a band
+     across its middle. The button is a window onto that band — same fraction of
+     every frame, so cropping costs nothing in accuracy and buys back the dead
+     space above and below. */
+  button.scale-figure {
+    display: block;
+    padding: 0;
+    background: none;
+    border: 0;
+    overflow: hidden;
+    cursor: pointer;
+    line-height: 0;
+    justify-self: start;
+  }
+  button.scale-figure img { display: block; object-fit: contain; }
+  button.scale-figure:hover { outline: 1px solid var(--accent); }
+  button.scale-figure.is-clamped { outline: 1px dotted var(--warn); }
+  button.scale-figure .scale-box {
+    width: 100%; height: 100%;
+    background: linear-gradient(180deg, transparent, rgba(154,171,90,.2));
+    border: 1px solid var(--side-tint, var(--line));
+  }
+  .scale-lane { min-width: 0; }
+
+  /* Scatter ------------------------------------------------------------- */
+  .plot-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .plot-controls label { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .plot-controls select {
+    padding: 5px 8px;
+    background: #15170f;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+  }
+  .plot-wrap { position: relative; }
+  .plot-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .plot-wrap .axis-line { stroke: var(--line); }
+  .plot-wrap .tick-line { stroke: rgba(46,49,37,.65); }
+  .plot-wrap text { fill: var(--muted); font: 10px ui-monospace, monospace; }
+  .plot-wrap .axis-title { fill: var(--accent); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+  .plot-dot { cursor: pointer; }
+  .plot-dot circle { fill: var(--side-tint, var(--muted)); fill-opacity: .55; stroke: var(--side-tint, var(--muted)); }
+  .plot-dot:hover circle, .plot-dot:focus-visible circle { fill-opacity: .95; stroke: var(--text); }
+  .plot-dot text { fill: var(--text); font-size: 9px; pointer-events: none; }
+  .plot-dot:hover text { fill: var(--accent); }
+  /* Labels that would have landed on a neighbour: still there, revealed on
+     hover, so a dense cluster stays legible one dot at a time. */
+  .plot-dot text.is-crowded { opacity: 0; }
+  .plot-dot:hover text.is-crowded,
+  .plot-dot:focus-visible text.is-crowded { opacity: 1; }
+  .plot-unplotted { margin-top: 10px; color: var(--muted); font-size: 10px; line-height: 1.6; }
 </style>
 </head>
 <body>
 <aside>
   <h1>BF1942 model inspector</h1>
-  <div class="model-list" id="models"></div>
+  <div id="current">
+    <div id="current-card" class="side-none">
+      <img id="current-thumb" alt="" hidden>
+      <div>
+        <div id="current-name">&mdash;</div>
+        <div id="current-meta"></div>
+      </div>
+    </div>
+    <button type="button" class="browse" id="browse-open">
+      <span>Browse armoury</span><kbd>/</kbd>
+    </button>
+  </div>
 
   <section id="variant-panel" hidden>
     <h2>Variant</h2>
@@ -436,7 +919,7 @@
 
   <h2>Compare</h2>
   <label class="variant-field weapon-field"><span>Opponent</span><select id="opponent"></select></label>
-  <div class="collision-note">Parks a second vehicle and opens a VS column between them. Armour inspection stays on Weapon.</div>
+  <div class="collision-note">Parks a second vehicle and answers who wins a head-on fight. Armour inspection stays on Weapon.</div>
 
   <h2>Armour</h2>
   <label class="toggle"><input type="checkbox" id="collision"> show armour regions</label>
@@ -474,6 +957,36 @@
   <div id="versus" hidden></div>
   <div id="hud">drag to orbit &middot; scroll to zoom &middot; right-drag to pan</div>
 </main>
+
+<div id="browser" hidden role="dialog" aria-modal="true" aria-label="Browse models">
+  <div class="browser-head">
+    <h2>ARMOURY</h2>
+    <input id="browser-search" type="search" placeholder="Search name, faction, map&hellip;"
+           autocomplete="off" spellcheck="false">
+    <span id="browser-count"></span>
+    <span class="spacer"></span>
+    <div class="layout-switch" id="layout-switch" role="group" aria-label="Layout">
+      <button type="button" data-layout="grid" aria-pressed="true">Grid</button>
+      <button type="button" data-layout="scale" aria-pressed="false">Scale</button>
+      <button type="button" data-layout="plot" aria-pressed="false">Plot</button>
+    </div>
+    <label>
+      <select id="browser-sort" aria-label="Sort">
+        <option value="name">Name</option>
+        <option value="triangles">Triangles</option>
+        <option value="parts">Parts</option>
+        <option value="length">Size</option>
+        <option value="hitpoints">Hit points</option>
+        <option value="levels">Map appearances</option>
+        <option value="variants">Variants</option>
+        <option value="missing">Unresolved textures</option>
+      </select>
+    </label>
+    <button type="button" class="browser-close" id="browse-close">Close <kbd>Esc</kbd></button>
+  </div>
+  <div id="facets"></div>
+  <div id="browser-body"></div>
+</div>
 
 <!-- The vendored example loaders import three by bare specifier. -->
 <script type="importmap">
@@ -514,7 +1027,6 @@ scene.add(helpers);
 let current = null;
 let currentEntry = null;
 let currentVariant = null;
-let currentButton = null;
 let framing = null;
 let loadSequence = 0;
 const state = {
@@ -603,6 +1115,35 @@ function disposeModel(root) {
   });
   textures.forEach(texture => texture.dispose());
   materials.forEach(material => material.dispose());
+}
+
+// Portrait camera distance, as a multiple of the model's longest box side.
+// Fixed on purpose: a constant multiple is what puts every thumbnail on one
+// scale, and `dimensions.maxExtent` in the manifest is the same measurement so
+// the browse view can reproduce it without loading any geometry.
+const PORTRAIT_DISTANCE = 2.4;
+// Three-quarter view. x and z scale with the camera distance, y with the extent
+// itself, so the eye sits a little above the model rather than above the scene.
+const PORTRAIT_OFFSET = { x: .62, y: .38, z: .47 };
+// What the camera's true distance works out to, in extents. The scale lineup
+// needs this to turn a thumbnail's pixel width back into metres.
+const PORTRAIT_EXTENTS = Math.hypot(
+  PORTRAIT_OFFSET.x * PORTRAIT_DISTANCE,
+  PORTRAIT_OFFSET.y,
+  PORTRAIT_OFFSET.z * PORTRAIT_DISTANCE,
+);
+
+/** Longest side of the visible box — collision hulls are not the silhouette. */
+function portraitExtent(root) {
+  const box = new THREE.Box3();
+  root.traverseVisible(object => {
+    if (!object.isMesh) return;
+    if (object.name && object.name.toLowerCase().includes('collision')) return;
+    box.expandByObject(object);
+  });
+  if (box.isEmpty()) return null;
+  const size = box.getSize(new THREE.Vector3());
+  return { centre: box.getCenter(new THREE.Vector3()), extent: Math.max(size.x, size.y, size.z) };
 }
 
 function setCameraView(index, total = 3) {
@@ -779,6 +1320,41 @@ function heaviestWeapon(entry) {
   return best;
 }
 
+function bestWeaponAgainst(entry, targetReport) {
+  const names = entry?.weapons || [];
+  const materials = [...new Set(targetReport?.collisionMaterials || [])];
+  if (!materials.length) return heaviestWeapon(entry);
+  let best = null;
+  let bestShots = Infinity;
+  let bestDamage = -1;
+  let bestVelocity = -1;
+  let fallback = null;
+  let fallbackBase = -1;
+  for (const name of names) {
+    const weapon = weaponsByName.get(name.toLowerCase());
+    if (!weapon || weapon.material == null) continue;
+    const base = baseDamage(weapon.material) ?? -1;
+    if (base > fallbackBase) {
+      fallback = weapon;
+      fallbackBase = base;
+    }
+    const strike = aspectStrike(targetReport, weapon, materials);
+    if (strike.immune || strike.shots == null) continue;
+    const damage = Math.max(0, ...strike.plates.map(plate => plate.headOn || 0));
+    const velocity = weapon.velocity || 0;
+    const better = strike.shots < bestShots
+      || (strike.shots === bestShots && velocity > bestVelocity)
+      || (strike.shots === bestShots && velocity === bestVelocity && damage > bestDamage);
+    if (better) {
+      best = weapon;
+      bestShots = strike.shots;
+      bestDamage = damage;
+      bestVelocity = velocity;
+    }
+  }
+  return best || fallback || heaviestWeapon(entry);
+}
+
 function regionFace(material) {
   if (material === 50) return 'rear';
   if (material === 51) return 'side';
@@ -914,8 +1490,20 @@ function setWeapon(name) {
 
 weaponSelect.addEventListener('change', () => setWeapon(weaponSelect.value));
 
-const FACE_ORDER = [50, 51, 52, 53, 54];
-const FACE_SHORT = { 50: 'rear', 51: 'side', 52: 'nose', 53: 'front', 54: 'glacis' };
+const FACE_SHORT = {
+  50: 'rear', 51: 'side', 52: 'nose', 53: 'front', 54: 'glacis',
+  55: 'rear', 56: 'side', 57: 'front', 58: 'front', 59: 'front',
+  60: 'airframe', 61: 'airframe', 62: 'airframe', 63: 'airframe',
+  43: 'hull', 44: 'hull', 45: 'hull', 46: 'wheels', 47: 'hull',
+};
+const ASPECT_DEFS = [
+  { id: 'front', label: 'front', materials: [52, 53, 54, 57, 58, 59] },
+  { id: 'side', label: 'side', materials: [51, 56] },
+  { id: 'rear', label: 'rear', materials: [50, 55] },
+  { id: 'airframe', label: 'airframe', materials: [60, 61, 62, 63] },
+  { id: 'hull', label: 'hull', materials: [43, 44, 45, 46, 47] },
+];
+const ASPECT_PRIORITY = ['front', 'side', 'rear', 'airframe', 'hull'];
 
 const compare = {
   entry: null,
@@ -990,36 +1578,254 @@ function reportHp(report) {
   return report?.armor?.hitpoints ?? report?.armor?.maxHitpoints ?? null;
 }
 
-function versusFaces(usReport, themReport) {
-  const have = new Set([
-    ...(usReport?.collisionMaterials || []),
-    ...(themReport?.collisionMaterials || []),
-  ]);
-  const faces = FACE_ORDER.filter(material => have.has(material));
-  return faces.length ? faces : [...have].sort((a, b) => a - b);
+function armorKind(materials) {
+  const have = new Set(materials || []);
+  if ([60, 61, 62, 63].some(id => have.has(id))) return 'air';
+  if ([55, 56, 57, 58, 59].some(id => have.has(id))) return 'naval';
+  if ([50, 51, 52, 53, 54].some(id => have.has(id))) return 'tank';
+  if ([43, 44, 45, 46, 47].some(id => have.has(id))) return 'light';
+  return 'other';
 }
 
-function versusRow(rows, material) {
-  return rows.find(row => row.material === material) || { immune: true, headOn: null, shots: null };
+function aspectsOf(report) {
+  const have = new Set(report?.collisionMaterials || []);
+  const skipHull = armorKind(have) !== 'light';
+  return ASPECT_DEFS.filter(def => {
+    if (def.id === 'hull' && skipHull) return false;
+    return def.materials.some(id => have.has(id));
+  }).map(def => ({
+    id: def.id,
+    label: def.label,
+    materials: def.materials.filter(id => have.has(id)),
+  }));
 }
 
-function versusFill(row, hp) {
-  if (!row || row.immune || !(row.headOn > 0) || !(hp > 0)) return 0;
-  return Math.min(1, row.headOn / hp);
+function aspectStrike(report, weapon, materials) {
+  if (!materials.length) {
+    return { hasPlate: false, noGun: false, immune: true, shots: null, shotsMax: null, plates: [], headOn: null };
+  }
+  if (!weapon) {
+    return { hasPlate: true, noGun: true, immune: true, shots: null, shotsMax: null, plates: [], headOn: null };
+  }
+  const hp = reportHp(report);
+  const plates = materials.map(material => {
+    const headOn = headOnFor(weapon, material);
+    const shots = hp != null && headOn > 0 ? shotsFor(hp, headOn) : null;
+    return {
+      material,
+      label: FACE_SHORT[material] || regionFace(material) || String(material),
+      headOn,
+      shots,
+      immune: !(headOn > 0),
+    };
+  });
+  const live = plates.filter(plate => !plate.immune && plate.shots != null);
+  if (!live.length) {
+    return { hasPlate: true, noGun: false, immune: true, shots: null, shotsMax: null, plates, headOn: 0 };
+  }
+  const easiest = live.reduce((best, plate) => (plate.shots < best.shots ? plate : best));
+  const hardest = live.reduce((best, plate) => (plate.shots > best.shots ? plate : best));
+  return {
+    hasPlate: true,
+    noGun: false,
+    immune: false,
+    shots: easiest.shots,
+    shotsMax: hardest.shots,
+    plates,
+    headOn: hardest.headOn,
+  };
 }
 
-function versusShots(row) {
-  if (!row || row.immune || row.shots == null) return '—';
-  return String(row.shots);
+function versusShots(strike) {
+  if (!strike?.hasPlate) return { text: '—', muted: true, kind: 'open' };
+  if (strike.noGun) return { text: 'no gun', muted: true, kind: 'nogun' };
+  if (strike.immune || strike.shots == null) return { text: 'no effect', muted: true, kind: 'immune' };
+  if (strike.shots !== strike.shotsMax) {
+    return { text: `${strike.shots}–${strike.shotsMax}`, muted: false, kind: 'range' };
+  }
+  return { text: String(strike.shots), muted: false, kind: 'shots' };
 }
 
-function versusWin(us, them) {
-  if (us.immune && them.immune) return '';
-  if (us.immune) return 'them';
-  if (them.immune) return 'us';
-  if (us.shots == null || them.shots == null) return '';
-  if (us.shots < them.shots) return 'us';
-  if (them.shots < us.shots) return 'them';
+function versusDecisiveShots(strike) {
+  if (!strike?.hasPlate) return { text: '—', muted: true, kind: 'open' };
+  if (strike.noGun) return { text: 'no gun', muted: true, kind: 'nogun' };
+  if (strike.immune || strike.shotsMax == null) return { text: 'no effect', muted: true, kind: 'immune' };
+  return { text: String(strike.shotsMax), muted: false, kind: 'shots' };
+}
+
+function versusTip(strike, hp, shooterName, targetName) {
+  if (!strike?.hasPlate) {
+    return `${targetName || 'target'} has no armour plate on this facing`;
+  }
+  if (strike.noGun) return `${shooterName || 'shooter'} has no gun selected`;
+  if (!strike.plates.length) return 'no effect';
+  const plates = strike.plates.map(plate => {
+    if (plate.immune) return `${plate.label}: no effect`;
+    const hpText = plate.headOn != null ? `${formatHp(plate.headOn)} HP per hit` : '';
+    const shotText = plate.shots != null ? `${plate.shots} shots to destroy` : '';
+    return `${plate.label}: ${[hpText, shotText].filter(Boolean).join(', ')}`;
+  }).join(' · ');
+  return plates + (hp != null ? ` · ${targetName || 'target'} has ${hp} HP` : '');
+}
+
+function laneEdge(win, ours, theirs) {
+  if (win === 'us') return 'you stronger';
+  if (win === 'them') return 'them stronger';
+  if (!ours.muted && !theirs.muted) return 'even';
+  if (ours.kind === 'open' || theirs.kind === 'open') return 'one-sided';
+  if (ours.kind === 'immune' || theirs.kind === 'immune') return 'one-sided';
+  return '—';
+}
+
+function duelShotCaption(strike, targetName, whose) {
+  if (!strike?.hasPlate) return whose === 'them' ? 'nothing for them to shoot' : 'nothing for you to shoot';
+  if (strike.noGun) return whose === 'them' ? 'no gun selected' : 'no gun selected';
+  if (strike.immune || strike.shotsMax == null) {
+    return whose === 'them' ? `cannot damage ${targetName}` : `cannot damage ${targetName}`;
+  }
+  return whose === 'them'
+    ? `their shots to kill ${targetName}`
+    : `your shots to kill ${targetName}`;
+}
+
+function versusWin(ours, theirs) {
+  if (!ours?.hasPlate || !theirs?.hasPlate) return '';
+  if (ours.immune && theirs.immune) return '';
+  if (ours.immune) return 'them';
+  if (theirs.immune) return 'us';
+  if (ours.shotsMax == null || theirs.shotsMax == null) return '';
+  if (ours.shotsMax < theirs.shotsMax) return 'us';
+  if (theirs.shotsMax < ours.shotsMax) return 'them';
+  return '';
+}
+
+function formatDecisiveNeed(strike) {
+  if (!strike?.hasPlate) return 'has no plate there';
+  if (strike.noGun) return 'has no gun';
+  if (strike.immune || strike.shotsMax == null) return 'cannot damage it';
+  return `${strike.shotsMax} shot${strike.shotsMax === 1 ? '' : 's'}`;
+}
+
+function meterShare(ours, theirs) {
+  const ourPower = ours?.immune || !(ours?.shotsMax > 0) ? 0 : 1 / ours.shotsMax;
+  const theirPower = theirs?.immune || !(theirs?.shotsMax > 0) ? 0 : 1 / theirs.shotsMax;
+  const total = ourPower + theirPower;
+  if (!(total > 0)) return { us: 0.5, them: 0.5 };
+  return { us: ourPower / total, them: theirPower / total };
+}
+
+function buildDuel() {
+  if (!compare.entry || !currentEntry || !currentReport || !compare.report) return null;
+  const ourHp = reportHp(currentReport);
+  const theirHp = reportHp(compare.report);
+  const ourAspects = new Map(aspectsOf(currentReport).map(aspect => [aspect.id, aspect]));
+  const theirAspects = new Map(aspectsOf(compare.report).map(aspect => [aspect.id, aspect]));
+  const ids = [...new Set([...ourAspects.keys(), ...theirAspects.keys()])]
+    .sort((a, b) => ASPECT_PRIORITY.indexOf(a) - ASPECT_PRIORITY.indexOf(b));
+  const lanes = ids.map(id => {
+    const label = ASPECT_DEFS.find(def => def.id === id)?.label || id;
+    const atThem = aspectStrike(compare.report, compare.ourGun, theirAspects.get(id)?.materials || []);
+    const atUs = aspectStrike(currentReport, compare.theirGun, ourAspects.get(id)?.materials || []);
+    return { id, label, atThem, atUs, win: versusWin(atThem, atUs) };
+  }).filter(lane => lane.atThem.shots != null || lane.atUs.shots != null
+    || (lane.atThem.hasPlate && lane.atUs.hasPlate));
+  const shared = lanes.filter(lane => lane.atThem.hasPlate && lane.atUs.hasPlate);
+  const ourKind = armorKind(currentReport.collisionMaterials);
+  const theirKind = armorKind(compare.report.collisionMaterials);
+  const sameClass = ourKind === theirKind && ourKind !== 'other';
+  const front = shared.find(lane => lane.id === 'front');
+  let decisive = null;
+  let winner = '';
+  if (front) {
+    decisive = front;
+    winner = front.win || shared.find(lane => lane.win)?.win || 'even';
+  } else if (sameClass && shared.length) {
+    decisive = shared.find(lane => lane.win) || shared[0];
+    winner = decisive.win || 'even';
+  } else {
+    const coverThem = aspectStrike(
+      compare.report,
+      compare.ourGun,
+      [...theirAspects.values()].flatMap(aspect => aspect.materials),
+    );
+    const coverUs = aspectStrike(
+      currentReport,
+      compare.theirGun,
+      [...ourAspects.values()].flatMap(aspect => aspect.materials),
+    );
+    decisive = {
+      id: 'overall',
+      label: sameClass ? (shared[0]?.label || 'armour') : 'strongest armour',
+      atThem: coverThem,
+      atUs: coverUs,
+      win: versusWin(coverThem, coverUs),
+    };
+    winner = decisive.win || 'even';
+  }
+  const story = duelStory(currentEntry.name, compare.entry.name, decisive, winner);
+  const share = meterShare(decisive?.atThem, decisive?.atUs);
+  return {
+    us: currentEntry.name,
+    them: compare.entry.name,
+    ourGun: compare.ourGun?.name || null,
+    theirGun: compare.theirGun?.name || null,
+    ourHp,
+    theirHp,
+    winner,
+    decisive: decisive?.id || null,
+    decisiveLabel: decisive?.label || null,
+    decisiveAtThem: decisive?.atThem || null,
+    decisiveAtUs: decisive?.atUs || null,
+    story,
+    share,
+    lanes,
+    atUs: strikeRows(currentReport, compare.theirGun),
+    atThem: strikeRows(compare.report, compare.ourGun),
+  };
+}
+
+function duelStory(usName, themName, decisive, winner) {
+  if (!decisive) return 'No comparable armour on these two vehicles.';
+  const facing = decisive.label && decisive.id !== 'overall' ? ` ${decisive.label}-on` : '';
+  const ours = decisive.atThem;
+  const theirs = decisive.atUs;
+  if (winner === 'even') {
+    if (ours.hasPlate && theirs.hasPlate && !ours.immune && !theirs.immune) {
+      return `Even${facing}: ${formatDecisiveNeed(ours)} either way.`;
+    }
+    return `Even match${facing}.`;
+  }
+  const winnerName = winner === 'us' ? usName : themName;
+  const loserName = winner === 'us' ? themName : usName;
+  const winnerStrike = winner === 'us' ? ours : theirs;
+  const loserStrike = winner === 'us' ? theirs : ours;
+  if (loserStrike.noGun) {
+    return `${loserName} has no gun in this matchup.`;
+  }
+  if (loserStrike.immune && !winnerStrike.immune) {
+    return `${winnerName} shrugs off ${loserName}'s gun${facing}, and kills in ${formatDecisiveNeed(winnerStrike)}.`;
+  }
+  if (!winnerStrike.hasPlate) {
+    return `${loserName} has no ${decisive.label} armour to shoot.`;
+  }
+  return `${winnerName} needs ${formatDecisiveNeed(winnerStrike)}${facing}; ${loserName} needs ${formatDecisiveNeed(loserStrike)}.`;
+}
+
+function winnerStamp(duel) {
+  if (!duel) return 'VS';
+  if (duel.winner === 'us') return duel.us;
+  if (duel.winner === 'them') return duel.them;
+  if (duel.winner === 'even') return 'even';
+  return 'VS';
+}
+
+function winnerSubline(duel) {
+  if (!duel) return '';
+  const facing = duel.decisiveLabel && duel.decisive !== 'overall'
+    ? ` ${duel.decisiveLabel}-on`
+    : '';
+  if (duel.winner === 'even') return `even match${facing}`;
+  if (duel.winner === 'us' || duel.winner === 'them') return `stronger${facing}`;
   return '';
 }
 
@@ -1061,65 +1867,114 @@ function bindVersusGuns() {
     compare.ourGun = ourSelect.value
       ? weaponsByName.get(ourSelect.value.toLowerCase()) || null
       : null;
-    renderVersusLanes();
+    renderVersus();
   });
   theirSelect.addEventListener('change', () => {
     compare.theirGun = theirSelect.value
       ? weaponsByName.get(theirSelect.value.toLowerCase()) || null
       : null;
-    renderVersusLanes();
+    renderVersus();
   });
 }
 
-function renderVersusLanes() {
+function attr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
+function renderVersusLanes(duel) {
   const lanes = versusPanel.querySelector('#versus-lanes');
-  if (!lanes || !currentReport || !compare.report) return;
-  const ourHp = reportHp(currentReport);
-  const theirHp = reportHp(compare.report);
-  const atThem = strikeRows(compare.report, compare.ourGun);
-  const atUs = strikeRows(currentReport, compare.theirGun);
-  lanes.innerHTML = versusFaces(currentReport, compare.report).map(material => {
-    const ours = versusRow(atThem, material);
-    const theirs = versusRow(atUs, material);
-    const win = versusWin(ours, theirs);
-    const ourTip = ours.immune ? 'no effect' : `${formatHp(ours.headOn)} HP`;
-    const theirTip = theirs.immune ? 'no effect' : `${formatHp(theirs.headOn)} HP`;
-    return `<div class="vs-lane" data-win="${win}" data-immune-us="${ours.immune}" data-immune-them="${theirs.immune}">` +
-      `<div class="vs-shots vs-shots-us" title="${ourTip}">${versusShots(ours)}</div>` +
-      `<div class="vs-bar vs-bar-us" title="${ourTip}"><i style="--fill:${versusFill(ours, theirHp)}"></i></div>` +
-      `<div class="vs-face">${FACE_SHORT[material] || regionFace(material) || material}</div>` +
-      `<div class="vs-bar vs-bar-them" title="${theirTip}"><i style="--fill:${versusFill(theirs, ourHp)}"></i></div>` +
-      `<div class="vs-shots vs-shots-them" title="${theirTip}">${versusShots(theirs)}</div>` +
+  if (!lanes || !duel) return;
+  lanes.innerHTML = duel.lanes.map(lane => {
+    const ours = versusShots(lane.atThem);
+    const theirs = versusShots(lane.atUs);
+    const ourTip = attr(versusTip(lane.atThem, duel.theirHp, duel.us, duel.them));
+    const theirTip = attr(versusTip(lane.atUs, duel.ourHp, duel.them, duel.us));
+    const edge = laneEdge(lane.win, ours, theirs);
+    const decisive = lane.id === duel.decisive ? 'true' : 'false';
+    return `<div class="vs-lane" data-win="${lane.win}" data-aspect="${lane.id}" data-decisive="${decisive}" title="${ourTip} | ${theirTip}">` +
+      `<div class="vs-face">${lane.label}</div>` +
+      `<div class="vs-edge">${edge}</div>` +
+      `<div class="vs-counts">` +
+      `<div class="vs-count vs-count-us${ours.muted ? ' is-muted' : ''}"><strong>${ours.text}</strong><span>you</span></div>` +
+      `<div class="vs-count vs-count-them${theirs.muted ? ' is-muted' : ''}"><strong>${theirs.text}</strong><span>them</span></div>` +
+      `</div>` +
       `</div>`;
   }).join('');
 }
 
+function renderVersusDuel(duel) {
+  const atThem = duel.decisiveAtThem;
+  const atUs = duel.decisiveAtUs;
+  const ours = versusDecisiveShots(atThem);
+  const theirs = versusDecisiveShots(atUs);
+  const ourNum = versusPanel.querySelector('#versus-duel-us');
+  const theirNum = versusPanel.querySelector('#versus-duel-them');
+  const ourCap = versusPanel.querySelector('#versus-duel-us-cap');
+  const theirCap = versusPanel.querySelector('#versus-duel-them-cap');
+  ourNum.textContent = ours.text;
+  theirNum.textContent = theirs.text;
+  ourNum.classList.toggle('is-muted', ours.muted);
+  theirNum.classList.toggle('is-muted', theirs.muted);
+  ourCap.textContent = duelShotCaption(atThem, duel.them, 'us');
+  theirCap.textContent = duelShotCaption(atUs, duel.us, 'them');
+  ourNum.title = versusTip(atThem, duel.theirHp, duel.us, duel.them);
+  theirNum.title = versusTip(atUs, duel.ourHp, duel.them, duel.us);
+}
+
 function renderVersus() {
-  if (!compare.entry || !currentEntry || !currentReport || !compare.report) {
+  const duel = buildDuel();
+  if (!duel) {
     versusPanel.hidden = true;
     versusPanel.innerHTML = '';
+    versusPanel.removeAttribute('data-winner');
     return;
   }
-  const ourHp = reportHp(currentReport);
-  const theirHp = reportHp(compare.report);
   versusPanel.hidden = false;
+  versusPanel.dataset.winner = duel.winner;
   if (!versusPanel.querySelector('.vs-head')) {
     versusPanel.innerHTML =
       `<div class="vs-head">` +
       `<div class="vs-side vs-us"><div class="vs-name"></div><div class="vs-hp"></div><select id="versus-our-gun"></select></div>` +
       `<div class="vs-mark">VS</div>` +
       `<div class="vs-side vs-them"><div class="vs-name"></div><div class="vs-hp"></div><select id="versus-their-gun"></select></div>` +
-      `</div><div class="vs-lanes" id="versus-lanes"></div>` +
-      `<div class="vs-foot">shots to kill · a full bar is a one-shot</div>`;
+      `</div>` +
+      `<div class="vs-verdict" aria-live="polite">` +
+      `<div class="vs-winner-label">stronger vehicle</div>` +
+      `<div class="vs-winner" id="versus-winner"></div>` +
+      `<div class="vs-winner-sub" id="versus-winner-sub"></div>` +
+      `</div>` +
+      `<div class="vs-duel" id="versus-duel">` +
+      `<div class="vs-duel-side vs-duel-us"><div class="vs-duel-num" id="versus-duel-us"></div><div class="vs-duel-cap" id="versus-duel-us-cap"></div></div>` +
+      `<div class="vs-duel-mid">VS</div>` +
+      `<div class="vs-duel-side vs-duel-them"><div class="vs-duel-num" id="versus-duel-them"></div><div class="vs-duel-cap" id="versus-duel-them-cap"></div></div>` +
+      `</div>` +
+      `<div class="vs-meter" id="versus-meter" aria-hidden="true"><span></span><span></span></div>` +
+      `<div class="vs-aspects-head"><span>by facing</span><span>you · them</span></div>` +
+      `<div class="vs-lanes" id="versus-lanes"></div>` +
+      `<div class="vs-foot" id="versus-foot"></div>`;
     bindVersusGuns();
   }
-  versusPanel.querySelector('.vs-us .vs-name').textContent = currentEntry.name;
-  versusPanel.querySelector('.vs-them .vs-name').textContent = compare.entry.name;
-  versusPanel.querySelector('.vs-us .vs-hp').textContent = ourHp != null ? `${ourHp} HP` : 'HP unknown';
-  versusPanel.querySelector('.vs-them .vs-hp').textContent = theirHp != null ? `${theirHp} HP` : 'HP unknown';
+  versusPanel.querySelector('.vs-us .vs-name').textContent = duel.us;
+  versusPanel.querySelector('.vs-them .vs-name').textContent = duel.them;
+  versusPanel.querySelector('.vs-us .vs-hp').textContent = duel.ourHp != null ? `${duel.ourHp} HP` : 'HP unknown';
+  versusPanel.querySelector('.vs-them .vs-hp').textContent = duel.theirHp != null ? `${duel.theirHp} HP` : 'HP unknown';
+  versusPanel.querySelector('#versus-winner').textContent = winnerStamp(duel);
+  versusPanel.querySelector('#versus-winner-sub').textContent = winnerSubline(duel);
+  const meter = versusPanel.querySelector('#versus-meter');
+  meter.style.setProperty('--us', `${(duel.share.us * 100).toFixed(1)}%`);
+  meter.style.setProperty('--them', `${(duel.share.them * 100).toFixed(1)}%`);
+  const facing = duel.decisiveLabel && duel.decisive !== 'overall'
+    ? `${duel.decisiveLabel}-on`
+    : 'best armour';
+  versusPanel.querySelector('#versus-foot').textContent =
+    `${duel.story} Fewer shots wins. ${facing} decides the headline; hover a row for plate detail.`;
   fillVersusGunSelect(versusPanel.querySelector('#versus-our-gun'), compare.ourGun?.name, currentEntry);
   fillVersusGunSelect(versusPanel.querySelector('#versus-their-gun'), compare.theirGun?.name, compare.entry);
-  renderVersusLanes();
+  renderVersusDuel(duel);
+  renderVersusLanes(duel);
 }
 
 async function setOpponent(name) {
@@ -1153,8 +2008,8 @@ async function setOpponent(name) {
   compare.report = report;
   compare.root = gltf.scene;
   compare.targets = [];
-  compare.ourGun = heaviestWeapon(currentEntry);
-  compare.theirGun = heaviestWeapon(entry);
+  compare.ourGun = bestWeaponAgainst(currentEntry, report);
+  compare.theirGun = bestWeaponAgainst(entry, currentReport);
   compare.root.traverse(node => {
     if (node.isMesh && !isCollisionMesh(node)) {
       for (const material of [node.material].flat().filter(Boolean)) {
@@ -2065,12 +2920,10 @@ function selectedFromControls() {
     || currentEntry.variants[0];
 }
 
-async function show(entry, variant, button) {
+async function show(entry, variant) {
   const sequence = ++loadSequence;
   let report;
   main.dataset.loadState = 'loading';
-  document.querySelectorAll('button.model').forEach(
-    modelButton => modelButton.setAttribute('aria-pressed', String(modelButton === button)));
   syncVariantControls(entry, variant);
 
   try {
@@ -2094,8 +2947,8 @@ async function show(entry, variant, button) {
     }
     currentEntry = entry;
     currentVariant = variant;
-    currentButton = button;
     current = gltf.scene;
+    markCurrent(entry, variant);
     main.dataset.model = entry.name;
     main.dataset.variant = variantKey(variant);
     main.dataset.loadState = 'ready';
@@ -2194,7 +3047,8 @@ async function show(entry, variant, button) {
   const box = new THREE.Box3().setFromObject(current);
   const size = box.getSize(new THREE.Vector3());
   if (compare.entry) {
-    compare.ourGun = heaviestWeapon(entry) || compare.ourGun;
+    compare.ourGun = bestWeaponAgainst(entry, compare.report) || compare.ourGun;
+    compare.theirGun = bestWeaponAgainst(compare.entry, currentReport) || compare.theirGun;
     parkOpponent();
     hideOpponentCollision();
     renderVersus();
@@ -2253,9 +3107,6 @@ const manifest = rawManifest.map((entry, index) => ({
   index,
   variants: normalizeVariants(entry),
 }));
-const list = document.getElementById('models');
-const buttons = [];
-
 async function showVariant(modelIndex, variantIndex = null) {
   const entry = manifest[modelIndex];
   if (!entry) throw new Error(`unknown model index ${modelIndex}`);
@@ -2263,33 +3114,654 @@ async function showVariant(modelIndex, variantIndex = null) {
     ? entry.variants.find(variant => variant.glb === entry.glb) || entry.variants[0]
     : entry.variants[variantIndex];
   if (!selected) throw new Error(`unknown variant index ${variantIndex} for ${entry.name}`);
-  return show(entry, selected, buttons[modelIndex]);
+  return show(entry, selected);
 }
-
-manifest.forEach((entry, index) => {
-  const b = document.createElement('button');
-  b.className = 'model';
-  b.setAttribute('aria-pressed', 'false');
-  b.dataset.modelIndex = String(index);
-  const configurations = unique(entry.variants.map(variant => variant.configuration)).length;
-  const skins = unique(entry.variants.map(skinValue)).length;
-  const dimensions = [
-    configurations > 1 ? `${configurations} builds` : null,
-    skins > 1 ? `${skins} skins` : null,
-  ].filter(Boolean).join(' · ');
-  const category = entry.category ? `${entry.category} · ` : '';
-  b.innerHTML = `${entry.name}<small>${category}${entry.texturesResolved} tex bound · ${entry.texturesMissing.length} missing${dimensions ? ` · ${dimensions}` : ''}</small>`;
-  b.addEventListener('click', () => void showVariant(index));
-  list.appendChild(b);
-  buttons.push(b);
-});
 
 for (const select of [configurationSelect, skinSelect]) {
   select.addEventListener('change', () => {
     const selected = selectedFromControls();
-    if (selected) void show(currentEntry, selected, currentButton);
+    if (selected) void show(currentEntry, selected);
   });
 }
+
+// --- Armoury browser -------------------------------------------------------
+//
+// One filtered set, three ways of reading it. The facet counts are computed
+// against every *other* active facet, so a count tells you what you would get by
+// ticking that box rather than what the unfiltered manifest holds — the usual
+// faceted-search contract, and the only version that stays honest once several
+// facets are on at once.
+
+const CATEGORY_LABELS = {
+  land: 'Land vehicle',
+  air: 'Aircraft',
+  sea: 'Naval',
+  soldier: 'Infantry',
+  handweapon: 'Hand weapon',
+  emplacement: 'Emplacement',
+  object: 'Object',
+};
+
+const FACETS = [
+  { id: 'mod', title: 'Mod', values: entry => [entry.mod].filter(Boolean) },
+  { id: 'category', title: 'Class', values: entry => [entry.category].filter(Boolean),
+    label: value => CATEGORY_LABELS[value] || value },
+  { id: 'side', title: 'Side', values: entry => entry.sides || [] },
+  { id: 'faction', title: 'Faction', values: entry => entry.factions || [] },
+  { id: 'theatre', title: 'Theatre', values: entry => entry.theatres || [] },
+  { id: 'kit', title: 'Kit', values: entry => entry.kitClasses || [] },
+  { id: 'build', title: 'Build',
+    values: entry => unique(entry.variants.map(variant => variant.configuration)),
+    label: configurationLabel },
+  { id: 'skin', title: 'Skin',
+    values: entry => unique(entry.variants.map(skinValue)).map(
+      value => value || 'Base archives'),
+    limit: 8 },
+  { id: 'map', title: 'Appears on', values: entry => entry.levels || [],
+    label: value => value.replace(/_/g, ' '), limit: 8 },
+  { id: 'health', title: 'Extraction',
+    values: entry => [entry.texturesMissing.length ? 'Unresolved textures' : 'Fully textured']
+      .concat(entry.rigged ? ['Rigged'] : []) },
+];
+
+const METRICS = {
+  triangles: { label: 'Triangles', of: entry => entry.triangles },
+  parts: { label: 'Parts', of: entry => entry.parts },
+  length: { label: 'Length (m)', of: entry => entry.dimensions?.length },
+  height: { label: 'Height (m)', of: entry => entry.dimensions?.height },
+  hitpoints: { label: 'Hit points', of: entry => entry.hitpoints },
+  levels: { label: 'Map appearances', of: entry => entry.levels?.length },
+  firepower: { label: 'Heaviest gun damage', of: entry => heaviestDamage(entry) },
+  missing: { label: 'Unresolved textures', of: entry => entry.texturesMissing.length },
+};
+
+const browser = document.getElementById('browser');
+const facetHost = document.getElementById('facets');
+const browserBody = document.getElementById('browser-body');
+const searchInput = document.getElementById('browser-search');
+const countLabel = document.getElementById('browser-count');
+const sortSelect = document.getElementById('browser-sort');
+const currentCard = document.getElementById('current-card');
+const currentThumb = document.getElementById('current-thumb');
+
+const browseState = {
+  layout: 'grid',
+  sort: 'name',
+  query: '',
+  selected: new Map(FACETS.map(facet => [facet.id, new Set()])),
+  expanded: new Set(),
+  plotX: 'length',
+  plotY: 'triangles',
+};
+
+/** Base damage of the biggest gun this thing carries, for the plot axis. */
+function heaviestDamage(entry) {
+  if (!damageTables || !entry.weapons?.length) return null;
+  const scores = entry.weapons
+    .map(name => damageTables.weapons.find(
+      weapon => weapon.name.toLowerCase() === name.toLowerCase()))
+    .map(weapon => damageTables.materials?.[weapon?.material]?.damage)
+    .filter(value => typeof value === 'number');
+  return scores.length ? Math.max(...scores) : null;
+}
+
+function sideClass(entry) {
+  const sides = entry.sides || [];
+  if (sides.length > 1) return 'side-mixed';
+  if (sides[0] === 'Allied') return 'side-allied';
+  if (sides[0] === 'Axis') return 'side-axis';
+  return 'side-none';
+}
+
+function thumbFor(entry) {
+  return entry.thumb ? `models/${entry.thumb}` : null;
+}
+
+/** Everything a free-text query should be able to hit. */
+function searchCorpus(entry) {
+  return [
+    entry.name, entry.mod, entry.category, CATEGORY_LABELS[entry.category],
+    ...(entry.factions || []), ...(entry.sides || []),
+    ...(entry.theatres || []), ...(entry.kitClasses || []),
+    ...(entry.weapons || []),
+    ...(entry.levels || []).map(level => level.replace(/_/g, ' ')),
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+// Built once: the corpus depends only on the manifest, and search runs on every
+// keystroke against every entry.
+for (const entry of manifest) entry.haystack = searchCorpus(entry);
+
+function matchesFacet(entry, facet, chosen) {
+  if (!chosen.size) return true;
+  return facet.values(entry).some(value => chosen.has(value));
+}
+
+function matchesQuery(entry) {
+  if (!browseState.query) return true;
+  return browseState.query.split(/\s+/).filter(Boolean)
+    .every(term => entry.haystack.includes(term));
+}
+
+/** Entries passing every facet except `skipId`, used for the "would yield" counts. */
+function passing(skipId) {
+  return manifest.filter(entry => matchesQuery(entry) && FACETS.every(
+    facet => facet.id === skipId
+      || matchesFacet(entry, facet, browseState.selected.get(facet.id))));
+}
+
+function filtered() {
+  return passing(null);
+}
+
+const SORTS = {
+  name: (a, b) => a.name.localeCompare(b.name),
+  triangles: (a, b) => b.triangles - a.triangles,
+  parts: (a, b) => b.parts - a.parts,
+  length: (a, b) => (b.dimensions?.length || 0) - (a.dimensions?.length || 0),
+  hitpoints: (a, b) => (b.hitpoints || 0) - (a.hitpoints || 0),
+  levels: (a, b) => (b.levels?.length || 0) - (a.levels?.length || 0),
+  variants: (a, b) => b.variants.length - a.variants.length,
+  missing: (a, b) => b.texturesMissing.length - a.texturesMissing.length,
+};
+
+function sorted(entries) {
+  const compare = SORTS[browseState.sort] || SORTS.name;
+  // Name is the stable tiebreak, so equal metrics never reorder between renders.
+  return [...entries].sort((a, b) => compare(a, b) || a.name.localeCompare(b.name));
+}
+
+function renderFacets() {
+  const anySelected = FACETS.some(facet => browseState.selected.get(facet.id).size);
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.id = 'facet-reset';
+  reset.textContent = anySelected ? 'Clear filters' : 'No filters';
+  reset.disabled = !anySelected;
+  reset.addEventListener('click', () => {
+    for (const chosen of browseState.selected.values()) chosen.clear();
+    renderBrowser();
+  });
+
+  const sections = FACETS.map(facet => {
+    const chosen = browseState.selected.get(facet.id);
+    const pool = passing(facet.id);
+    const counts = new Map();
+    for (const entry of manifest) {
+      for (const value of facet.values(entry)) {
+        if (!counts.has(value)) counts.set(value, 0);
+      }
+    }
+    for (const entry of pool) {
+      for (const value of facet.values(entry)) {
+        counts.set(value, (counts.get(value) || 0) + 1);
+      }
+    }
+    if (counts.size < 2 && !chosen.size) return null;
+
+    const section = document.createElement('div');
+    section.className = 'facet';
+    const heading = document.createElement('h3');
+    heading.textContent = facet.title;
+    section.appendChild(heading);
+
+    // Most-populated first, so the useful cuts are above any "show all" fold.
+    const values = [...counts.entries()].sort(
+      (a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+    const limit = facet.limit && !browseState.expanded.has(facet.id)
+      ? facet.limit : values.length;
+
+    for (const [value, count] of values.slice(0, limit)) {
+      const label = document.createElement('label');
+      label.classList.toggle('is-empty', count === 0 && !chosen.has(value));
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = chosen.has(value);
+      box.addEventListener('change', () => {
+        if (box.checked) chosen.add(value); else chosen.delete(value);
+        renderBrowser();
+      });
+      const name = document.createElement('span');
+      name.className = 'facet-name';
+      name.textContent = facet.label ? facet.label(value) : value;
+      name.title = name.textContent;
+      const tally = document.createElement('span');
+      tally.className = 'facet-count';
+      tally.textContent = String(count);
+      label.append(box, name, tally);
+      section.appendChild(label);
+    }
+
+    if (values.length > limit) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'facet-more';
+      more.textContent = `+${values.length - limit} more`;
+      more.addEventListener('click', () => {
+        browseState.expanded.add(facet.id);
+        renderBrowser();
+      });
+      section.appendChild(more);
+    }
+    return section;
+  }).filter(Boolean);
+
+  facetHost.replaceChildren(reset, ...sections);
+}
+
+function variantNote(entry) {
+  const builds = unique(entry.variants.map(variant => variant.configuration)).length;
+  const skins = unique(entry.variants.map(skinValue)).length;
+  return [
+    builds > 1 ? `${builds} builds` : null,
+    skins > 1 ? `${skins} skins` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+function renderGrid(entries) {
+  const grid = document.createElement('div');
+  grid.className = 'card-grid';
+  for (const entry of entries) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `card ${sideClass(entry)}`;
+    card.dataset.modelIndex = String(entry.index);
+    if (currentEntry && currentEntry.index === entry.index) {
+      card.setAttribute('aria-current', 'true');
+    }
+
+    const art = document.createElement('div');
+    art.className = 'card-art';
+    const source = thumbFor(entry);
+    if (source) {
+      const image = document.createElement('img');
+      image.src = source;
+      image.alt = '';
+      image.loading = 'lazy';
+      art.appendChild(image);
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.className = 'no-art';
+      placeholder.textContent = 'no thumbnail';
+      art.appendChild(placeholder);
+    }
+
+    const flags = document.createElement('div');
+    flags.className = 'card-flags';
+    const note = variantNote(entry);
+    if (note) {
+      const badge = document.createElement('span');
+      badge.className = 'card-flag';
+      badge.textContent = note;
+      flags.appendChild(badge);
+    }
+    if (entry.texturesMissing.length) {
+      const badge = document.createElement('span');
+      badge.className = 'card-flag is-warn';
+      badge.textContent = `${entry.texturesMissing.length} unresolved`;
+      badge.title = entry.texturesMissing.join('\n');
+      flags.appendChild(badge);
+    }
+    art.appendChild(flags);
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+    const name = document.createElement('div');
+    name.className = 'card-name';
+    name.textContent = entry.name;
+    const sub = document.createElement('div');
+    sub.className = 'card-sub';
+    const side = document.createElement('span');
+    side.className = 'is-side';
+    const factions = entry.factions || [];
+    // Engineer kit is carried by every army in the game; naming all seven reads
+    // as noise, so the count stands in and the full list is in the tooltip.
+    side.textContent = factions.length > 2 ? `${factions.length} nations`
+      : factions.join(', ')
+      || CATEGORY_LABELS[entry.category] || entry.category || '';
+    side.title = factions.join(', ');
+    const size = document.createElement('span');
+    size.textContent = entry.dimensions
+      ? `${entry.dimensions.length.toFixed(1)} m`
+      : `${entry.triangles.toLocaleString()} tris`;
+    sub.append(side, size);
+    body.append(name, sub);
+
+    card.append(art, body);
+    card.addEventListener('click', () => pick(entry));
+    grid.appendChild(card);
+  }
+  return grid;
+}
+
+function renderScale(entries) {
+  const wrap = document.createElement('div');
+  const measured = entries.filter(entry => entry.dimensions?.maxExtent > 0);
+  const note = document.createElement('div');
+  note.className = 'scale-note';
+  wrap.appendChild(note);
+  if (!measured.length) {
+    note.textContent = 'Nothing in this selection has been measured.';
+    return wrap;
+  }
+
+  // Every thumbnail is shot at the same camera distance in extents, so a
+  // thumbnail drawn at a width proportional to that extent puts the whole lineup
+  // on one true scale — no per-model fudging.
+  const ordered = [...measured].sort(
+    (a, b) => b.dimensions.maxExtent - a.dimensions.maxExtent);
+  const biggest = ordered[0];
+  // How many metres wide the shot frame is: the camera sits PORTRAIT_EXTENTS
+  // extents back, with the scene camera's vertical field of view.
+  const frameMetres = extent =>
+    2 * extent * PORTRAIT_EXTENTS * Math.tan(camera.fov * Math.PI / 360);
+  const across = frameMetres(biggest.dimensions.maxExtent);
+  const step = [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50].find(
+    candidate => across / candidate <= 10) || 100;
+
+  // Pixels rather than percentages: the widest row is square and a full-width
+  // one would be a thousand pixels tall.
+  const MAX = 300;
+  // Fraction of each square frame the lineup shows. Tall subjects — a standing
+  // soldier is the worst case — still have to fit inside it.
+  const CROP = 0.68;
+  const rule = document.createElement('div');
+  rule.className = 'scale-rule';
+  rule.style.marginLeft = '144px';
+  rule.style.width = `${MAX}px`;
+  for (let metres = 0; metres <= across; metres += step) {
+    const tick = document.createElement('span');
+    tick.style.left = `${((metres / across) * MAX).toFixed(1)}px`;
+    tick.textContent = `${Math.round(metres * 100) / 100}m`;
+    rule.appendChild(tick);
+  }
+  wrap.appendChild(rule);
+
+  // Across every category the radii span roughly 150x, so the smallest would
+  // render sub-pixel. Those get a floor and are flagged rather than quietly
+  // drawn at a scale they are not on.
+  const FLOOR = 6;
+  let clamped = 0;
+
+  for (const entry of ordered) {
+    const row = document.createElement('div');
+    row.className = `scale-row ${sideClass(entry)}`;
+
+    const label = document.createElement('div');
+    label.className = 'scale-label';
+    const name = document.createElement('div');
+    name.className = 'scale-name';
+    name.textContent = entry.name;
+    const dim = document.createElement('div');
+    dim.className = 'scale-dim';
+    dim.textContent = `${entry.dimensions.length.toFixed(2)} × `
+      + `${entry.dimensions.width.toFixed(2)} × ${entry.dimensions.height.toFixed(2)} m`;
+    label.append(name, dim);
+
+    const share = entry.dimensions.maxExtent / biggest.dimensions.maxExtent;
+    const isClamped = share * MAX < FLOOR;
+    if (isClamped) clamped++;
+
+    const lane = document.createElement('div');
+    lane.className = 'scale-lane';
+    const figure = document.createElement('button');
+    figure.type = 'button';
+    figure.className = `scale-figure${isClamped ? ' is-clamped' : ''}`;
+    const side = Math.max(FLOOR, share * MAX);
+    figure.style.width = `${side.toFixed(1)}px`;
+    figure.style.height = `${(side * CROP).toFixed(1)}px`;
+    figure.title = isClamped
+      ? `${entry.name} — ${entry.dimensions.length.toFixed(2)} m long (drawn larger than scale)`
+      : `${entry.name} — ${entry.dimensions.length.toFixed(2)} m long`;
+    const source = thumbFor(entry);
+    if (source) {
+      const image = document.createElement('img');
+      image.src = source;
+      image.alt = '';
+      image.loading = 'lazy';
+      // Full square, pulled up by half the cropped-off height, so the window
+      // sits over the middle of the frame where the model is.
+      image.style.width = `${side.toFixed(1)}px`;
+      image.style.height = `${side.toFixed(1)}px`;
+      image.style.marginTop = `${(-side * (1 - CROP) / 2).toFixed(1)}px`;
+      figure.appendChild(image);
+    } else {
+      const box = document.createElement('div');
+      box.className = 'scale-box';
+      figure.appendChild(box);
+    }
+    figure.addEventListener('click', () => pick(entry));
+    lane.appendChild(figure);
+
+    row.append(label, lane);
+    wrap.appendChild(row);
+  }
+
+  note.textContent = `True scale against ${biggest.name}. `
+    + (clamped
+      ? `${clamped} too small to draw at scale are floored and outlined — filter to one class to compare them properly.`
+      : 'Every model here is drawn at scale.');
+  return wrap;
+}
+
+function renderPlot(entries) {
+  const wrap = document.createElement('div');
+
+  const controls = document.createElement('div');
+  controls.className = 'plot-controls';
+  for (const [axis, stateKey] of [['X', 'plotX'], ['Y', 'plotY']]) {
+    const label = document.createElement('label');
+    label.textContent = axis;
+    const select = document.createElement('select');
+    for (const [key, metric] of Object.entries(METRICS)) {
+      select.appendChild(new Option(metric.label, key));
+    }
+    select.value = browseState[stateKey];
+    select.addEventListener('change', () => {
+      browseState[stateKey] = select.value;
+      renderBrowser();
+    });
+    label.appendChild(select);
+    controls.appendChild(label);
+  }
+  wrap.appendChild(controls);
+
+  const xMetric = METRICS[browseState.plotX];
+  const yMetric = METRICS[browseState.plotY];
+  const points = [];
+  const unplotted = [];
+  for (const entry of entries) {
+    const x = xMetric.of(entry);
+    const y = yMetric.of(entry);
+    if (typeof x === 'number' && typeof y === 'number') points.push({ entry, x, y });
+    else unplotted.push(entry);
+  }
+
+  if (!points.length) {
+    const empty = document.createElement('div');
+    empty.className = 'browser-empty';
+    empty.textContent = `Nothing in this selection has both ${xMetric.label} and ${yMetric.label}.`;
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  const width = 900, height = 520;
+  const pad = { left: 74, right: 28, top: 20, bottom: 52 };
+  const xs = points.map(point => point.x);
+  const ys = points.map(point => point.y);
+  // A zero floor keeps the axes readable as magnitudes rather than as a zoom
+  // into whatever narrow band the current filter happens to span.
+  const xMax = Math.max(...xs, 0) || 1;
+  const yMax = Math.max(...ys, 0) || 1;
+  const xAt = value => pad.left + (value / xMax) * (width - pad.left - pad.right);
+  const yAt = value => height - pad.bottom - (value / yMax) * (height - pad.top - pad.bottom);
+
+  const parts = [`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${xMetric.label} against ${yMetric.label}">`];
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i++) {
+    const y = yAt(yMax * i / ticks);
+    parts.push(`<line class="tick-line" x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}"/>`);
+    parts.push(`<text x="${pad.left - 8}" y="${y + 3}" text-anchor="end">${formatMetric(yMax * i / ticks)}</text>`);
+    const x = xAt(xMax * i / ticks);
+    parts.push(`<text x="${x}" y="${height - pad.bottom + 16}" text-anchor="middle">${formatMetric(xMax * i / ticks)}</text>`);
+  }
+  parts.push(`<line class="axis-line" x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}"/>`);
+  parts.push(`<line class="axis-line" x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}"/>`);
+  parts.push(`<text class="axis-title" x="${width - pad.right}" y="${height - 14}" text-anchor="end">${xMetric.label}</text>`);
+  parts.push(`<text class="axis-title" x="${pad.left}" y="${pad.top - 6}" text-anchor="start">${yMetric.label}</text>`);
+
+  const triangleRange = Math.max(...entries.map(entry => entry.triangles), 1);
+  const placed = [];
+  // Biggest first, so when a cluster can only take one label it is the dot most
+  // worth naming. The rest keep their hover title.
+  const drawOrder = [...points].sort(
+    (a, b) => b.entry.triangles - a.entry.triangles);
+  for (const point of drawOrder) {
+    const radius = 5 + 11 * Math.sqrt(point.entry.triangles / triangleRange);
+    const cx = xAt(point.x), cy = yAt(point.y);
+    // 9px monospace: a hair over 5px a character.
+    const half = point.entry.name.length * 2.7;
+    const top = cy - radius - 14;
+    const label = { x1: cx - half, x2: cx + half, y1: top, y2: top + 12 };
+    const clear = placed.every(other => label.x2 < other.x1 || label.x1 > other.x2
+      || label.y2 < other.y1 || label.y1 > other.y2);
+    if (clear) placed.push(label);
+    parts.push(
+      `<g class="plot-dot ${sideClass(point.entry)}" tabindex="0" role="button" `
+      + `data-model-index="${point.entry.index}" `
+      + `aria-label="${attr(point.entry.name)}">`
+      + `<title>${attr(point.entry.name)} — ${xMetric.label} ${formatMetric(point.x)}, `
+      + `${yMetric.label} ${formatMetric(point.y)}</title>`
+      + `<circle cx="${cx}" cy="${cy}" r="${radius.toFixed(1)}"/>`
+      + `<text class="${clear ? '' : 'is-crowded'}" x="${cx}" `
+      + `y="${(cy - radius - 5).toFixed(1)}" text-anchor="middle">${attr(point.entry.name)}</text>`
+      + '</g>');
+  }
+  parts.push('</svg>');
+
+  const plot = document.createElement('div');
+  plot.className = 'plot-wrap';
+  plot.innerHTML = parts.join('');
+  for (const dot of plot.querySelectorAll('.plot-dot')) {
+    const entry = manifest[Number(dot.dataset.modelIndex)];
+    dot.addEventListener('click', () => pick(entry));
+    dot.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        pick(entry);
+      }
+    });
+  }
+  wrap.appendChild(plot);
+
+  if (unplotted.length) {
+    const note = document.createElement('div');
+    note.className = 'plot-unplotted';
+    note.textContent = `${unplotted.length} not plotted (no `
+      + `${[!unplotted.every(e => typeof xMetric.of(e) === 'number') ? xMetric.label : null,
+           !unplotted.every(e => typeof yMetric.of(e) === 'number') ? yMetric.label : null]
+          .filter(Boolean).join(' or ')}): `
+      + unplotted.map(entry => entry.name).join(', ');
+    wrap.appendChild(note);
+  }
+  return wrap;
+}
+
+function formatMetric(value) {
+  if (value >= 1000) return `${Math.round(value / 100) / 10}k`;
+  if (value >= 10) return String(Math.round(value));
+  return String(Math.round(value * 10) / 10);
+}
+
+function renderBrowser() {
+  renderFacets();
+  const entries = sorted(filtered());
+  countLabel.textContent = entries.length === manifest.length
+    ? `${manifest.length} models`
+    : `${entries.length} of ${manifest.length}`;
+
+  for (const button of document.querySelectorAll('#layout-switch button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.layout === browseState.layout));
+  }
+
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'browser-empty';
+    empty.textContent = 'Nothing matches those filters.';
+    browserBody.replaceChildren(empty);
+    return;
+  }
+  const view = browseState.layout === 'scale' ? renderScale(entries)
+    : browseState.layout === 'plot' ? renderPlot(entries)
+    : renderGrid(entries);
+  browserBody.replaceChildren(view);
+}
+
+function pick(entry) {
+  closeBrowser();
+  void showVariant(entry.index);
+}
+
+function openBrowser() {
+  browser.hidden = false;
+  renderBrowser();
+  searchInput.focus();
+  searchInput.select();
+}
+
+function closeBrowser() {
+  browser.hidden = true;
+  document.getElementById('browse-open').focus();
+}
+
+/** Sidebar summary of whatever is loaded, so the browser can stay closed. */
+function markCurrent(entry, variant) {
+  currentCard.className = sideClass(entry);
+  document.getElementById('current-name').textContent = entry.name;
+  const source = thumbFor(entry);
+  currentThumb.hidden = !source;
+  if (source) currentThumb.src = source;
+  const bits = [
+    CATEGORY_LABELS[entry.category] || entry.category,
+    (entry.factions || []).join(', '),
+    entry.dimensions ? `${entry.dimensions.length.toFixed(2)} m` : null,
+    `${entry.triangles.toLocaleString()} tris`,
+  ].filter(Boolean);
+  document.getElementById('current-meta').textContent = bits.join(' · ');
+  if (!browser.hidden) renderBrowser();
+  location.replace(`#${encodeURIComponent(entry.name)}/${variantKey(variant)}`);
+}
+
+document.getElementById('browse-open').addEventListener('click', openBrowser);
+document.getElementById('browse-close').addEventListener('click', closeBrowser);
+searchInput.addEventListener('input', () => {
+  browseState.query = searchInput.value.trim().toLowerCase();
+  renderBrowser();
+});
+sortSelect.addEventListener('change', () => {
+  browseState.sort = sortSelect.value;
+  renderBrowser();
+});
+for (const button of document.querySelectorAll('#layout-switch button')) {
+  button.addEventListener('click', () => {
+    browseState.layout = button.dataset.layout;
+    renderBrowser();
+  });
+}
+addEventListener('keydown', event => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+  if (event.key === 'Escape' && !browser.hidden) {
+    event.preventDefault();
+    closeBrowser();
+  } else if (!typing && (event.key === '/' || (event.key === 'k' && (event.metaKey || event.ctrlKey)))) {
+    event.preventDefault();
+    if (browser.hidden) openBrowser(); else searchInput.focus();
+  } else if (event.key === 'Enter' && event.target === searchInput) {
+    event.preventDefault();
+    const first = sorted(filtered())[0];
+    if (first) pick(first);
+  }
+});
 
 window.__scene = scene;
 window.__camera = camera;
@@ -2306,6 +3778,28 @@ window.__modelInspector = {
     lod: currentVariant.lod,
   } : null,
   setView: setCameraView,
+  // Thumbnails are shot through here rather than through setView, because the
+  // scale lineup relies on every one of them being framed to the *same* multiple
+  // of the model's bounding sphere. Anything that reframes per-model — fitting
+  // the box, or trimming empty margin — breaks the common scale.
+  setPortrait: enabled => {
+    helpers.visible = !enabled;
+    // A class rather than `hidden`, because show() re-evaluates the banner on
+    // every load and would paint it straight back into the next thumbnail.
+    document.body.classList.toggle('is-portrait', Boolean(enabled));
+    const portrait = enabled && current ? portraitExtent(current) : null;
+    if (portrait) {
+      const distance = portrait.extent * PORTRAIT_DISTANCE;
+      camera.position.set(
+        portrait.centre.x + distance * PORTRAIT_OFFSET.x,
+        portrait.centre.y + portrait.extent * PORTRAIT_OFFSET.y,
+        portrait.centre.z + distance * PORTRAIT_OFFSET.z,
+      );
+      controls.target.copy(portrait.centre);
+      controls.update();
+    }
+    invalidate();
+  },
   setCollision: enabled => {
     state.collision = Boolean(enabled);
     collisionCheckbox.checked = state.collision;
@@ -2335,14 +3829,7 @@ window.__modelInspector = {
     return lastHit;
   },
   getOpponent: () => compare.entry ? compare.entry.name : null,
-  getDuel: () => (compare.entry && currentEntry && currentReport && compare.report) ? {
-    us: currentEntry.name,
-    them: compare.entry.name,
-    theirGun: compare.theirGun?.name || null,
-    ourGun: compare.ourGun?.name || null,
-    atUs: strikeRows(currentReport, compare.theirGun),
-    atThem: strikeRows(compare.report, compare.ourGun),
-  } : null,
+  getDuel: () => buildDuel(),
   getWeapons: () => (damageTables?.weapons || []).map(weapon => weapon.name),
   getDamageTables: () => damageTables,
   getDamage: computeHitDamage,
@@ -2368,7 +3855,22 @@ window.__modelInspector = {
   },
 };
 
-if (manifest.length) await showVariant(0);
+/** `#Sherman/wreck|Kasserine_Pass` — shareable, and survives a reload. */
+function fromHash() {
+  const raw = decodeURIComponent(location.hash.replace(/^#/, ''));
+  if (!raw) return null;
+  const [name, key] = raw.split('/');
+  const entry = manifest.find(
+    candidate => candidate.name.toLowerCase() === name.toLowerCase());
+  if (!entry) return null;
+  const variant = key && entry.variants.find(candidate => variantKey(candidate) === key);
+  return { entry, variantIndex: variant ? variant.index : null };
+}
+
+if (manifest.length) {
+  const deep = fromHash();
+  await showVariant(deep ? deep.entry.index : 0, deep ? deep.variantIndex : null);
+}
 
 resize();
 </script>
