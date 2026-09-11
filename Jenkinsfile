@@ -49,13 +49,17 @@ pipeline {
               env.API_CHANGED = 'true'
               env.UI_CHANGED = 'true'
               env.NOTIFICATIONS_CHANGED = 'true'
+              env.MESH_CHANGED = 'true'
           } else {
               env.API_CHANGED = changedFiles.any { it.startsWith('api/') } ? 'true' : 'false'
               env.UI_CHANGED = changedFiles.any { it.startsWith('ui/') } ? 'true' : 'false'
               env.NOTIFICATIONS_CHANGED = changedFiles.any { it.startsWith('notifications/') } ? 'true' : 'false'
+              env.MESH_CHANGED = changedFiles.any {
+                  it.startsWith('mesh/') || it.startsWith('tools/bf1942-models/viewer/')
+              } ? 'true' : 'false'
           }
           
-          echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}"
+          echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}, MESH_CHANGED=${env.MESH_CHANGED}"
         }
       }
     }
@@ -293,6 +297,87 @@ pipeline {
                         wait
                       fi
                       echo "Edge cache warming complete."
+                    '''
+                  }
+                }
+              }
+            }
+          }
+        }
+        stage('Mesh Pipeline') {
+          when { anyOf { expression { env.MESH_CHANGED == 'true' }; expression { params.BUILD_ALL } } }
+          stages {
+            stage('Build Mesh Docker Image') {
+              agent {
+                kubernetes {
+                  cloud 'Local k8s'
+                  yamlFile 'deploy/pod.yaml'
+                  nodeSelector 'kubernetes.io/hostname=bethany'
+                }
+              }
+              steps {
+                container('dind') {
+                  withCredentials([
+                    usernamePassword(credentialsId: 'jenkins-bf1942-stats-dockerhub-pat', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')
+                  ]) {
+                    sh '''
+                      echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+                      docker buildx create --name multiarch-builder-mesh --driver docker-container --use || true
+                      docker buildx use multiarch-builder-mesh
+
+                      DOCKER_BUILDKIT=1 docker buildx build -f mesh/Dockerfile . \
+                        --platform linux/arm64 \
+                        --build-arg BUILDKIT_PROGRESS=plain \
+                        --cache-from type=registry,ref=anskia/bfstats-mesh:buildcache \
+                        --cache-to type=registry,ref=anskia/bfstats-mesh:buildcache,mode=max \
+                        --push \
+                        -t anskia/bfstats-mesh:latest
+                    '''
+                  }
+                }
+              }
+            }
+            stage('Deploy Mesh') {
+              agent {
+                kubernetes {
+                  cloud 'Local k8s'
+                  yamlFile 'deploy/pod.yaml'
+                  nodeSelector 'kubernetes.io/hostname=bethany'
+                }
+              }
+              steps {
+                container('kubectl') {
+                  withCredentials([
+                    file(credentialsId: 'bf42-stats-k3s-kubeconfig', variable: 'KUBECONFIG_FILE'),
+                    string(credentialsId: 'bfstats-cloudflare-api-token', variable: 'CF_API_TOKEN'),
+                    string(credentialsId: 'bfstats-cloudflare-zone-id', variable: 'CF_ZONE_ID')
+                  ]) {
+                    sh '''
+                      set -euo pipefail
+                      export KUBECONFIG="$KUBECONFIG_FILE"
+                      kubectl -n bf42-stats apply -f deploy/app/mesh-deployment.yaml
+                      kubectl -n bf42-stats rollout restart deployment/bfstats-mesh
+                      kubectl -n bf42-stats rollout status deployment/bfstats-mesh --timeout=120s
+
+                      # The UI stage purges the whole zone, but it only runs when ui/
+                      # changed. Without this, a mesh-only build leaves the edge serving
+                      # the previous viewer — /vendor/ for up to seven days. Scoped to
+                      # the one host so a mesh deploy does not cold-start bfstats.io.
+                      echo "Purging Cloudflare cache for mesh.bfstats.io..."
+                      if command -v curl >/dev/null 2>&1; then
+                        curl -s -f -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+                          -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                          -H "Content-Type: application/json" \
+                          --data '{"hosts":["mesh.bfstats.io"]}'
+                      else
+                        wget -qO- \
+                          --header="Authorization: Bearer ${CF_API_TOKEN}" \
+                          --header="Content-Type: application/json" \
+                          --post-data='{"hosts":["mesh.bfstats.io"]}' \
+                          "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
+                      fi
+                      echo "Cloudflare cache purged for mesh.bfstats.io."
                     '''
                   }
                 }

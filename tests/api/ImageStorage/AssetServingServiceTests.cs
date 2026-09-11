@@ -45,6 +45,29 @@ public class AssetServingServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetAssetAsync_GlbMesh_ReturnsModelGltfBinary()
+    {
+        var service = new AssetServingService(NullLogger<AssetServingService>.Instance);
+        var root = CreateTempDir();
+        try
+        {
+            var file = Path.Combine(root, "models", "Sherman_Complex_base.glb");
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            await File.WriteAllBytesAsync(file, [0x67, 0x6C, 0x54, 0x46]);
+
+            var result = await service.GetAssetAsync(root, "models/Sherman_Complex_base.glb");
+            Assert.True(result.IsSuccess);
+            Assert.Equal("model/gltf-binary", result.ContentType);
+            Assert.Equal("Sherman_Complex_base.glb", result.FileName);
+            await result.FileStream!.DisposeAsync();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTempDir()
     {
         var path = Path.Combine(Path.GetTempPath(), "arcade-assets-" + Guid.NewGuid().ToString("N"));
