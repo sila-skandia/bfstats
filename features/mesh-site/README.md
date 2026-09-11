@@ -20,6 +20,18 @@ in `bf42-stats`. The mesh pod mounts the PVC the same way FileBrowser does, so
 `/models/` and `/maps/` are served as static files next to the viewer — no
 proxy hop through the API for every texture.
 
+`mesh.bfstats.io` rides its **own** tunnel (`787f3214…`), not the one carrying
+bfstats.io / staging / seq (`a363a103…`). That is forced rather than chosen: one
+cloudflared process runs exactly one tunnel, and a hostname's DNS CNAME points
+at a specific tunnel ID — so a second tunnel needs a second cloudflared.
+[`cloudflared-mesh-tunnel.yml`](../../deploy/app/ingress/cloudflared-mesh-tunnel.yml)
+is that deployment. Both forward to the same HAProxy, which routes on the Host
+header, so there is only one set of backend rules to reason about.
+
+The corollary is worth remembering when mesh looks broken but bfstats.io is
+fine: they share no failure domain upstream of HAProxy. Check
+`deployment/cloudflared-mesh`, not `deployment/cloudflared`.
+
 ```
 assets/                         # /mnt/data/assets on the PVC
 ├── maps/                       # map thumbnails (existing)
@@ -36,21 +48,32 @@ assets/                         # /mnt/data/assets on the PVC
 
 ## One-time cluster steps
 
-DNS via the existing tunnel (same as bfstats.io / staging):
+DNS is already routed to the mesh tunnel (`787f3214…`). The new tunnel needs its
+credentials in the cluster before cloudflared-mesh will start — it has no
+`credentials.json` otherwise and will crash-loop:
 
 ```bash
-cloudflared tunnel route dns aks-tunnel mesh.bfstats.io
+cloudflared tunnel token --cred-file mesh-creds.json <mesh-tunnel-name>
+kubectl --context hetzner -n cloudflared create secret generic \
+    tunnel-credentials-mesh --from-file=credentials.json=mesh-creds.json
 ```
 
-Apply the mesh Deployment/Service, then refresh HAProxy and cloudflared so the
-new hostname is routed:
+Then HAProxy (for the `mesh.bfstats.io` ACL and backend) and the mesh tunnel:
 
 ```bash
-kubectl --context hetzner apply -f deploy/app/mesh-deployment.yaml
 kubectl --context hetzner -n haproxy apply -f deploy/app/ingress/deployment.yaml
-kubectl --context hetzner -n cloudflared apply -f deploy/app/ingress/cloudflared-tunnel.yml
-kubectl --context hetzner -n cloudflared rollout restart deployment/cloudflared
+kubectl --context hetzner -n cloudflared apply -f deploy/app/ingress/cloudflared-mesh-tunnel.yml
 ```
+
+The mesh Deployment/Service is applied by the Jenkins Mesh Pipeline, which also
+builds the image — applying it by hand before the first push only gets you
+`ImagePullBackOff`, so let Jenkins go first.
+
+Re-applying the *shared* tunnel config is optional and cosmetic: the
+`mesh.bfstats.io` rule was dropped from it because that process runs a different
+tunnel and would never match the hostname. Nothing breaks either way, so it can
+ride along with the next ingress change rather than costing a cloudflared
+restart on the host serving bfstats.io.
 
 Jenkins RBAC already covers `bf42-stats`; mesh lives in that namespace so the
 existing `jenkins-deployer` Role is enough. After the first image push, a mesh
@@ -132,15 +155,17 @@ and `sqlite-browser` sit at 0):
 | ui / haproxy / cloudflared / redis-commander | 128 each |
 | api `sqlite-tools` | 64 |
 | **mesh** | **64** |
-| **total** | **6912** |
+| **cloudflared-mesh** | **64** |
+| **total** | **6976** |
 | node | 7741 |
-| **headroom** | **829 (0.81 Gi)** |
+| **headroom** | **765 (0.75 Gi)** |
 
-The invariant asks for ~1.5Gi, and it was already missed at 0.87Gi before mesh
-existed. Mesh costs 0.06Gi of that. The remaining gap is not a mesh problem:
-`seq` at 512Mi is the obvious candidate on a box where it is a debugging
-convenience. Requests total only ~2.9Gi, so scheduling is comfortable — the
-exposure is simultaneous peak.
+The invariant asks for ~1.5Gi, and it was already missed at 0.87Gi before any of
+this existed. mesh and its cloudflared cost 0.12Gi between them — both sized
+down from the 128Mi that copying the neighbouring deployments would have given
+them. The remaining gap is not a mesh problem: `seq` at 512Mi is the obvious
+candidate on a box where it is a debugging convenience. Requests total only
+~2.9Gi, so scheduling is comfortable — the exposure is simultaneous peak.
 
 Note that scaling `filebrowser` up to upload assets temporarily adds its 256Mi
 limit on top. Scale it back to 0 when the upload is done.
