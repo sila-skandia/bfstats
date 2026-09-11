@@ -24,6 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import con as con_mod
 from bf42 import damage as damage_mod
+from bf42 import measure as measure_mod
+from bf42 import roster as roster_mod
 from bf42.assemble import Assembler
 from bf42.rfa import ArchivePool, find_archives_dir, find_game_dir, find_levels_dir
 
@@ -157,6 +159,35 @@ def discover_level_textures(chain: list[Path]) -> list[tuple[str, Path]]:
             )
             if has_tex:
                 results.append((stem, child))
+    return results
+
+
+def discover_levels(chain: list[Path]) -> list[tuple[str, Path]]:
+    """Every level archive in the chain, textures or not.
+
+    `discover_level_textures` only wants maps that can reskin a vehicle. The
+    roster wants all of them, because a map with no custom textures still says
+    which army spawns what.
+    """
+    results: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+    for mod_dir in chain:
+        archives = find_archives_dir(mod_dir)
+        if archives is None:
+            continue
+        levels_dir = find_levels_dir(archives)
+        if levels_dir is None:
+            continue
+        for child in sorted(levels_dir.iterdir()):
+            if not child.is_file() or child.suffix.lower() != ".rfa":
+                continue
+            stem = child.stem
+            if "_" in stem and stem.rsplit("_", 1)[-1].isdigit():
+                continue
+            if stem.lower() in seen:
+                continue
+            seen.add(stem.lower())
+            results.append((stem, child))
     return results
 
 
@@ -338,6 +369,11 @@ def main() -> int:
               file=sys.stderr)
     if level_sources:
         print(f"levels:     {', '.join(n for n, _ in level_sources)}", file=sys.stderr)
+
+    # Browse facets: who fielded the thing, and on which maps.
+    roster, kit_count, level_count = roster_mod.build(library, discover_levels(chain))
+    print(f"roster:     {kit_count} kits, {level_count} levels -> "
+          f"{len(roster.factions)} templates with a faction", file=sys.stderr)
     if not base_textures.names() and not level_sources:
         print("WARNING: no texture source — models will export untextured.",
               file=sys.stderr)
@@ -418,6 +454,7 @@ def main() -> int:
             if variant["configuration"] == "complex"
         ] or variants
         best = min(default_variants, key=lambda v: len(v["texturesMissing"]))
+        report = json.loads((args.out / best["report"]).read_text())
         manifest.append({
             "name": name,
             "mod": args.mod,
@@ -433,6 +470,12 @@ def main() -> int:
             "texturesMissing": best["texturesMissing"],
             "textureFallbacks": args.texture_fallback,
             "weapons": sorted(own_weapons(library, name, weapons)),
+            # Facets and lineup metrics the browse view sorts on before it has
+            # loaded a single byte of geometry.
+            **roster.entry(name),
+            "dimensions": measure_mod.bounds(args.out / best["glb"]),
+            "hitpoints": (report.get("armor") or {}).get("hitpoints"),
+            "rigged": len(report.get("riggedParts") or []),
             "variants": variants,
         })
 
