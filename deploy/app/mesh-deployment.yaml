@@ -34,12 +34,18 @@ spec:
               mountPath: /usr/share/nginx/html/maps
               subPath: assets/mesh/maps
               readOnly: true
+          # nginx handing out static files; the client does all the WebGL work.
+          # Measured at 19.6Mi steady and 23.2Mi peak while serving concurrent
+          # 2.5MB .glb transfers — and that was with 22 workers, where this node's
+          # 4 cores (and the image's cgroup-quota worker tuning) give at most 4.
+          # Page cache from the asset tree lands in the same cgroup but is
+          # reclaimable, so it costs eviction rather than an OOM kill.
           resources:
             requests:
-              memory: "32Mi"
+              memory: "16Mi"
               cpu: "10m"
             limits:
-              memory: "128Mi"
+              memory: "64Mi"
               cpu: "200m"
       volumes:
         - name: assets-data
