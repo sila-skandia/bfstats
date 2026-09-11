@@ -15,8 +15,9 @@ data:
         service: http://haproxy-service.haproxy:80
       - hostname: staging.bfstats.io
         service: http://haproxy-service.haproxy:80
-      - hostname: mesh.bfstats.io
-        service: http://haproxy-service.haproxy:80
+      # mesh.bfstats.io is deliberately absent: its DNS points at a separate
+      # tunnel, served by cloudflared-mesh-tunnel.yml. A rule here would never
+      # match, because this process runs a different tunnel.
       - hostname: seq.bfstats.io
         service: http://seq-service.seq:5341
       - service: http_status:404

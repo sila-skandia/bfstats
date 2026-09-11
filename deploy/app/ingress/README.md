@@ -35,8 +35,16 @@ Route DNS via the tunnel
 ```bash
 cloudflared tunnel route dns aks-tunnel bfstats.io
 cloudflared tunnel route dns aks-tunnel staging.bfstats.io
-cloudflared tunnel route dns aks-tunnel mesh.bfstats.io
 ```
 
 `mesh.bfstats.io` is the BF1942 model/level viewer — see
-[`features/mesh-site/README.md`](../../../features/mesh-site/README.md).
+[`features/mesh-site/README.md`](../../../features/mesh-site/README.md). It is
+routed to a **separate** tunnel (`787f3214…`) and therefore runs a separate
+cloudflared, [`cloudflared-mesh-tunnel.yml`](./cloudflared-mesh-tunnel.yml),
+with its own `tunnel-credentials-mesh` secret.
+
+One cloudflared process serves exactly one tunnel, and DNS binds a hostname to a
+tunnel ID — so adding a hostname to the wrong config silently does nothing. If a
+host 1033s, check which tunnel its CNAME points at before touching ingress
+rules; both tunnels forward to the same HAProxy, so the backend config is shared
+and rarely the cause.
