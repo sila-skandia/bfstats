@@ -172,6 +172,60 @@ class Assembler:
 
     # -- textures ----------------------------------------------------------- #
 
+    @staticmethod
+    def _bleed_alpha(width: int, height: int, rgba: bytes, passes: int = 0) -> bytes:
+        """Dilate opaque colour into transparent texels.
+
+        Alpha-tested foliage stores nothing useful in the RGB of its cut-away
+        texels, and several vanilla leaf maps leave that RGB pure black
+        (`KE_leaf_T` transparent mean 0/0/0 against an opaque leaf of 58/49/30;
+        `KE_leaf2_T` is bled properly and looks right, which is why only some
+        vegetation went dark). Nothing samples a texel's alpha in isolation:
+        bilinear filtering mixes neighbours at every leaf edge and each mip
+        level averages four texels of the level above, so that black is pulled
+        into the visible colour and grows with distance until a shrub is a
+        black blob. Bleeding costs nothing at run time and is invisible where
+        the RGB was already sensible.
+
+        The whole image has to be filled, not a border around the leaves. Three
+        quarters of a leaf map is cut away, so the small mips - the ones a
+        distant shrub actually samples - average mostly transparent texels, and
+        a dilation stopped after a few rings leaves that interior black. A
+        breadth-first flood outward from the opaque texels fills every texel in
+        one linear pass instead, which is also what makes it cheap enough to run
+        over every texture in a level.
+        """
+        alpha = range(3, len(rgba), 4)
+        if not any(rgba[i] < 250 for i in alpha):
+            return rgba
+        out = bytearray(rgba)
+        queue = [i for i, a in enumerate(range(3, len(out), 4)) if out[a] >= 250]
+        if not queue:
+            return bytes(out)
+        seen = bytearray(width * height)
+        for index in queue:
+            seen[index] = 1
+        head = 0
+        while head < len(queue):
+            index = queue[head]
+            head += 1
+            x, y = index % width, index // width
+            src = index * 4
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < width and 0 <= ny < height):
+                    continue
+                j = ny * width + nx
+                if seen[j]:
+                    continue
+                seen[j] = 1
+                dst = j * 4
+                out[dst] = out[src]
+                out[dst + 1] = out[src + 1]
+                out[dst + 2] = out[src + 2]
+                queue.append(j)
+        return bytes(out)
+
     def _texture_index(self, builder: gltf.GlbBuilder, path: str, report: Report) -> int | None:
         if path in self._texture_cache:
             return self._texture_cache[path]
@@ -196,6 +250,9 @@ class Assembler:
         if self.max_texture and max(width, height) > self.max_texture:
             width, height, rgba = downscale(width, height, rgba, self.max_texture)
 
+        # After any downscale, so the bleed covers the texels actually shipped.
+        rgba = self._bleed_alpha(width, height, rgba)
+
         index = builder.add_image_png(
             encode_png(width, height, rgba, drop_alpha=False), name=found)
         report.resolved_textures[path] = f"{self.textures.source_of(found)}:{found}"
@@ -203,13 +260,16 @@ class Assembler:
         return index
 
     def _material_index(self, builder: gltf.GlbBuilder, shader: rs.Shader | None,
-                        material_name: str, report: Report) -> int | None:
+                        material_name: str, report: Report,
+                        unlit: bool = False,
+                        emissive_floor: float = 0.0) -> int | None:
         if shader is None:
             report.missing_shaders.append(material_name)
             return None
 
         texture_path = shader.base_texture
-        key = (texture_path, shader.twosided, shader.transparent, shader.alpha_test)
+        key = (texture_path, shader.twosided, shader.transparent,
+               shader.alpha_test, unlit, emissive_floor)
         if key in self._material_cache:
             return self._material_cache[key]
 
@@ -220,9 +280,23 @@ class Assembler:
             double_sided=shader.twosided,
             alpha_cutoff=shader.alpha_test,
             blend=shader.transparent and shader.alpha_test is None,
+            unlit=unlit,
+            emissive_floor=emissive_floor,
         )
         self._material_cache[key] = index
         return index
+
+    def material_for(self, builder: gltf.GlbBuilder, geometry_name: str,
+                     material_name: str, report: Report) -> int | None:
+        """Material index for one StandardMesh material, via the same
+        Art-override-then-StandardMesh `.rs` chain the tree walk uses. Public
+        because the posed-soldier exporter builds skinned primitives itself
+        but must paint them identically."""
+        geom = self.library.geometry(geometry_name)
+        mesh_file = geom.mesh_file if geom else geometry_name
+        shaders = self._shaders_for(mesh_file, geometry_name)
+        shader = rs.lookup(shaders, material_name)
+        return self._material_index(builder, shader, material_name, report)
 
     def _collision_material_index(self, builder: gltf.GlbBuilder,
                                   material_id: int) -> int:
@@ -413,12 +487,26 @@ class Assembler:
                 transparent=True,
                 alpha_test=0.4,
             )
+            # Only the camera-facing leaf sprites go out unlit. A branch card
+            # is placed at a real angle -- a palm is `branch` plus `trunk` and
+            # has no sprite at all -- so it takes the sun properly and lighting
+            # it is what gives the fronds their depth; flatten those too and the
+            # palms come out a uniform bright green. The bushes that rendered
+            # black are `sprite` plus `trunk`, so the split falls exactly on the
+            # label `treemesh.py` already writes.
+            foliage = part.name.startswith("sprite")
+            # Branch cards stay lit but get a translucency floor: a thin frond
+            # facing away from the sun reads as leaf-green with light through
+            # it, not black. 0.45 was judged against an in-game Tobruk palm.
+            floor = 0.45 if part.name.startswith("branch") else 0.0
             primitives.append(gltf.Primitive(
                 positions=part.positions,
                 normals=part.normals,
                 uvs=part.uvs,
                 indices=part.indices,
-                material=self._material_index(builder, shader, part.name, report),
+                material=self._material_index(
+                    builder, shader, part.name, report, unlit=foliage,
+                    emissive_floor=floor),
             ))
         if not primitives:
             return None, 0

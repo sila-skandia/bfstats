@@ -2,9 +2,20 @@
 
 Layout follows Ahrkylien's Blender importer (`tree_mesh.py`), which is the
 public description of the format. A file is one plant: a trunk, view-dependent
-branch cards, and camera-facing leaf sprites. We keep the trunk and one angle of
-the cards — eight angles exist so the engine can pick a silhouette, and stacking
-them is the same class of bug as drawing every LodObject alternative.
+branch cards, and camera-facing leaf sprites.
+
+The trunk and *all* angle sets of the branch cards are kept. An earlier pass
+kept one set, reasoning that the eight angles are alternatives like a
+LodObject's Complex/Wreck children and stacking them is the same class of bug.
+The analogy is wrong: LOD alternatives are the same content at different
+detail, so drawing all of them stacks a wreck inside a pristine hull, while
+angle sets are different card subsets each authored to look full from its own
+viewing band. One set alone reads thin and dark from every other direction -
+measured against an in-game screenshot, the real palm is visibly fuller than
+the single-set export - and the union is simply the whole canopy. The engine
+picks per angle to draw the cheapest sufficient set, not because the union is
+wrong. Leaf sprites still keep one block: they are camera-facing cards, and
+their angle blocks are near-identical quads that would z-fight.
 """
 
 from __future__ import annotations
@@ -97,10 +108,19 @@ def parse(data: bytes, name: str = "<mem>") -> TreeMesh:
         for mesh_i, (_index_start, num_faces, texture) in enumerate(meshes):
             faces_per = num_faces
             # Indices for this mesh were appended as angleCount blocks of
-            # num_faces for cards, one block for the trunk. Keep the first
-            # silhouette only.
+            # num_faces for cards, one block for the trunk. Branch cards keep
+            # every angle block: each set is a full silhouette only from its
+            # own authored viewing band, so a free camera sees one set edge-on
+            # from most directions and the tree reads thin and dark - the
+            # in-game palm is visibly fuller than the export was. Drawing all
+            # sets together costs overdraw and nothing else; the engine picks
+            # per view angle because it must render the cheapest correct set,
+            # not because the union is wrong. Leaf sprites keep the first block
+            # - they are camera-facing cards, and stacking their angle blocks
+            # piles near-identical quads.
             start = _consume_start(groups, kind, mesh_i, angle_count)
-            count = faces_per * 3
+            blocks = angle_count if kind == 0 else 1
+            count = faces_per * 3 * blocks
             if start + count > len(indices):
                 raise MeshError(f"{name}: face indices overrun at {kind}/{mesh_i}")
             face_idx = [i & 0xFFFF for i in indices[start:start + count]]
