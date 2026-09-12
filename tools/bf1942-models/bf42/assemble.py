@@ -224,6 +224,18 @@ class Assembler:
         self._material_cache[key] = index
         return index
 
+    def material_for(self, builder: gltf.GlbBuilder, geometry_name: str,
+                     material_name: str, report: Report) -> int | None:
+        """Material index for one StandardMesh material, via the same
+        Art-override-then-StandardMesh `.rs` chain the tree walk uses. Public
+        because the posed-soldier exporter builds skinned primitives itself
+        but must paint them identically."""
+        geom = self.library.geometry(geometry_name)
+        mesh_file = geom.mesh_file if geom else geometry_name
+        shaders = self._shaders_for(mesh_file, geometry_name)
+        shader = rs.lookup(shaders, material_name)
+        return self._material_index(builder, shader, material_name, report)
+
     def _collision_material_index(self, builder: gltf.GlbBuilder,
                                   material_id: int) -> int:
         if material_id in self._collision_material_cache:

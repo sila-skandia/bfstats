@@ -81,13 +81,18 @@ def worlds_by_name(skeleton: Skeleton, worlds: list[RT]) -> dict[str, RT]:
 def weapon_attachment(weapon_skeleton: Skeleton, main_index: int | None) -> RT:
     """The weapon object's origin relative to the soldier's hand bone.
 
-    The weapon skeleton's root *is* the hand; the object's origin sits on the
-    main bone. `rest(main)` is already relative to the root since the root is
-    the chain's top.
+    The weapon skeleton's root *is* the hand, but its rest transform is not
+    identity — it stores the hand's pose in the weapon's authoring rig,
+    relative to the forearm (that is where the (0.305, 0, 0) root translation
+    comes from). Grafting replaces that root with the soldier's posed hand,
+    so the root's own rest must be cancelled out of the chain:
+
+        attach = rest(root)^-1 * rest(main)
     """
     if main_index is None:
         main_index = 0
-    return weapon_skeleton.rest(main_index)
+    return _mul(_inverse(weapon_skeleton.rest(0)),
+                weapon_skeleton.rest(main_index))
 
 
 def refine_binds(skn: skin_mod.Skin,
