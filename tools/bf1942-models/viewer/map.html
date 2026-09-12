@@ -134,7 +134,12 @@ const FLY_KEYS = new Set([
   'ShiftLeft', 'ShiftRight',
 ]);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// ?shots keeps the drawing buffer so canvas.toDataURL() works for external
+// screenshot tooling; off by default because it costs a buffer copy per frame.
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  preserveDrawingBuffer: new URLSearchParams(location.search).has('shots'),
+});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
@@ -166,6 +171,14 @@ let lastPointerY = 0;
 let currentRoot = null;
 let extras = {};
 let skybox = null;
+let skyRoot = null;       // the level's SkyBox mesh, reparented to the scene
+let cloudMesh = null;
+let cloudUniforms = null;
+let waterUniforms = null;
+let waterAssets = [];     // textures owned by the water/cloud shaders
+let simTime = 0;
+
+const params = new URLSearchParams(location.search);
 
 const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
@@ -321,10 +334,20 @@ function dispose(root) {
   scene.remove(root);
 }
 
+function lightmapTargets(obj) {
+  // A multi-material part arrives from GLTFLoader as a Group whose direct
+  // Mesh children are its primitives — the same Group-vs-Mesh trap as
+  // setAnimatedTextureSpeed. Child *part* nodes carry their own userData
+  // (templateKind, lightmap, kind), synthesized primitive meshes carry none.
+  if (obj.isMesh) return [obj];
+  return obj.children.filter(
+    c => c.isMesh && Object.keys(c.userData || {}).length === 0);
+}
+
 function bindLightmaps(root, dir) {
-  root.traverse(obj => {
-    const rel = obj.userData?.lightmap;
-    if (!rel || !obj.isMesh) return;
+  root.traverse(node => {
+    const rel = node.userData?.lightmap;
+    if (!rel) return;
     const url = `./maps/${dir}/${rel}${bust()}`;
     let tex = lmCache.get(url);
     if (!tex) {
@@ -334,35 +357,356 @@ function bindLightmaps(root, dir) {
       tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
       lmCache.set(url, tex);
     }
-    const source = Array.isArray(obj.material) ? obj.material : [obj.material];
-    const bound = source.map(m => {
-      const mat = m.clone();
-      mat.lightMap = tex;
-      mat.lightMapIntensity = 1;
-      const prev = mat.onBeforeCompile;
-      mat.onBeforeCompile = (shader, renderer) => {
-        if (prev) prev(shader, renderer);
-        shader.fragmentShader = shader.fragmentShader
-          .replace(
-            '#include <map_fragment>',
-            `#include <map_fragment>
-             #ifdef USE_LIGHTMAP
-             diffuseColor.rgb *= texture2D( lightMap, vLightMapUv ).rgb;
-             #endif`,
-          )
-          .replace('#include <lightmap_fragment>', '');
-      };
-      mat.needsUpdate = true;
-      return mat;
-    });
-    obj.material = Array.isArray(obj.material) ? bound : bound[0];
+    for (const obj of lightmapTargets(node)) {
+      const source = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const bound = source.map(m => {
+        const mat = m.clone();
+        mat.lightMap = tex;
+        mat.lightMapIntensity = 1;
+        const prev = mat.onBeforeCompile;
+        mat.onBeforeCompile = (shader, renderer) => {
+          if (prev) prev(shader, renderer);
+          shader.fragmentShader = shader.fragmentShader
+            .replace(
+              '#include <map_fragment>',
+              `#include <map_fragment>
+               #ifdef USE_LIGHTMAP
+               diffuseColor.rgb *= texture2D( lightMap, vLightMapUv ).rgb;
+               #endif`,
+            )
+            .replace('#include <lightmap_fragment>', '');
+        };
+        mat.needsUpdate = true;
+        return mat;
+      });
+      obj.material = Array.isArray(obj.material) ? bound : bound[0];
+    }
   });
 }
 
 function disposeSky() {
-  if (!skybox) return;
-  skybox.dispose();
-  skybox = null;
+  if (skybox) {
+    skybox.dispose();
+    skybox = null;
+  }
+  if (skyRoot) {
+    skyRoot.traverse(obj => {
+      obj.geometry?.dispose();
+      for (const m of [obj.material].flat().filter(Boolean)) {
+        m.map?.dispose();
+        m.dispose();
+      }
+    });
+    scene.remove(skyRoot);
+    skyRoot = null;
+  }
+  if (cloudMesh) {
+    cloudMesh.geometry.dispose();
+    cloudMesh.material.dispose();
+    scene.remove(cloudMesh);
+    cloudMesh = null;
+    cloudUniforms = null;
+  }
+  for (const tex of waterAssets) tex.dispose();
+  waterAssets = [];
+  waterUniforms = null;
+}
+
+function srgb(rgb, fallback) {
+  const [r, g, b] = rgb || fallback;
+  // Level .con colours are display values from a pre-colour-managed engine.
+  return new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace);
+}
+
+// The engine draws the SkyBox mesh camera-centred with no fog and no lighting
+// (`lighting false` in every Sky_*.rs). Reparent it out of the level root so
+// distance culling never touches it, and swap its lit materials for unlit ones.
+function setupSky(root, dir) {
+  root.traverse(obj => {
+    if (obj.userData?.kind === 'sky') skyRoot = obj;
+  });
+  if (!skyRoot) return;
+  skyRoot.parent.remove(skyRoot);
+  scene.add(skyRoot);
+  skyRoot.traverse(obj => {
+    if (!obj.isMesh) return;
+    obj.frustumCulled = false;
+    obj.renderOrder = -100;
+    const mats = [obj.material].flat().map(m => new THREE.MeshBasicMaterial({
+      map: m.map || null,
+      color: m.map ? 0xffffff : 0x9db4c0,
+      fog: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }));
+    obj.material = Array.isArray(obj.material) ? mats : mats[0];
+  });
+  setupClouds(dir);
+}
+
+// `Sky.addCloud`: one alpha-blended layer scrolling at Cloud.setSpeed,
+// repeated Cloud.setTexScale times across the sky span. Drawn camera-locked
+// like the sky box, with a radial fade standing in for the engine's
+// cloud-distance falloff.
+function setupClouds(dir) {
+  const clouds = extras.sky?.clouds;
+  if (!clouds?.texture) return;
+  const tex = texLoader.load(`./maps/${dir}/${clouds.texture}${bust()}`);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  waterAssets.push(tex);
+  cloudUniforms = {
+    map: { value: tex },
+    uOffset: { value: new THREE.Vector2(0, 0) },
+    uSpan: { value: 500 },
+    uCam: { value: new THREE.Vector2(0, 0) },
+    uFadeStart: { value: 400 },
+    uFadeEnd: { value: 900 },
+  };
+  const material = new THREE.ShaderMaterial({
+    uniforms: cloudUniforms,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    vertexShader: `
+      varying vec3 vWorld;
+      void main() {
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vWorld = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: `
+      uniform sampler2D map;
+      uniform vec2 uOffset, uCam;
+      uniform float uSpan, uFadeStart, uFadeEnd;
+      varying vec3 vWorld;
+      void main() {
+        vec2 uv = vWorld.xz / uSpan + uOffset;
+        vec4 c = texture2D(map, uv);
+        float fade = 1.0 - smoothstep(uFadeStart, uFadeEnd, distance(vWorld.xz, uCam));
+        gl_FragColor = vec4(c.rgb, c.a * fade);
+        #include <colorspace_fragment>
+      }`,
+  });
+  cloudMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), material);
+  cloudMesh.frustumCulled = false;
+  cloudMesh.renderOrder = -99;
+  scene.add(cloudMesh);
+}
+
+// Everything the engine's PatchTerrain/Water shader does with the level's
+// `water.*` block: two scrolling colour layers combined modulate-2x, a
+// scrolling normal map feeding a sun specular, and colour/alpha ramps driven
+// by real water depth sampled from the exported heightmap-derived depth map.
+function setupWater(root, dir) {
+  const w = extras.water;
+  if (!w) return;
+  let waterObj = null;
+  root.traverse(obj => {
+    if (obj.userData?.kind === 'water' && obj.isMesh) waterObj = obj;
+  });
+  if (!waterObj) return;
+  const load = rel => {
+    const tex = texLoader.load(`./maps/${dir}/${rel}${bust()}`);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    waterAssets.push(tex);
+    return tex;
+  };
+  const texs = w.textures || {};
+  const layer1 = texs.layer1 ? load(texs.layer1) : null;
+  const layer2 = texs.layer2 ? load(texs.layer2) : null;
+  const normal = texs.normal ? load(texs.normal) : null;
+  const depth = texs.depth ? load(texs.depth) : null;
+  if (layer1) layer1.colorSpace = THREE.SRGBColorSpace;
+  if (layer2) layer2.colorSpace = THREE.SRGBColorSpace;
+  if (depth) depth.wrapS = depth.wrapT = THREE.ClampToEdgeWrapping;
+  // The engine reflects ENVMAP_G_.rcm off the water via the shader-manager
+  // envmap parameter; the same six faces feed the fresnel term here.
+  let env = null;
+  if (extras.envmap?.length === 6) {
+    env = cubeLoader.load(extras.envmap.map(f => `./maps/${dir}/${f}${bust()}`));
+    env.colorSpace = THREE.SRGBColorSpace;
+    waterAssets.push(env);
+  }
+  const ld = w.lightDirection || [-0.3, 0.5, 0.65];
+  waterUniforms = {
+    tLayer1: { value: layer1 },
+    tLayer2: { value: layer2 },
+    tNormal: { value: normal },
+    tDepth: { value: depth },
+    tEnv: { value: env },
+    uTime: { value: 0 },
+    uWorldSize: { value: w.worldSize || extras.worldSize || 2048 },
+    uMaxDepth: { value: w.maxDepth || 0 },
+    uDir1: { value: new THREE.Vector2(...(w.scrollDir1 || [1, 0])) },
+    uDir2: { value: new THREE.Vector2(...(w.scrollDir2 || [0, 1])) },
+    uDirN: { value: new THREE.Vector2(...(w.scrollDirNormal || [1, 1])) },
+    uScroll1: { value: w.scroll1 || 0 },
+    uScroll2: { value: w.scroll2 || 0 },
+    uScrollN: { value: w.scrollNormal || 0 },
+    uTile1: { value: w.tile1 || 0.5 },
+    uTile2: { value: w.tile2 || 0.5 },
+    uTileN: { value: w.tileNormal || 1 },
+    uShallow: { value: srgb(w.shallowColor, [0.4, 0.5, 0.55]) },
+    uDeep: { value: srgb(w.deepColor, [0.3, 0.38, 0.42]) },
+    uSpec: { value: srgb(w.specular ? w.specularColor : [0, 0, 0], [0, 0, 0]) },
+    uLightDir: { value: new THREE.Vector3(ld[0], ld[1], ld[2]).normalize() },
+    uShininess: { value: Math.min(120, Math.max(20, 0.06 / Math.max(w.streakFactor || 0.001, 1e-4))) },
+    uShallowAlpha: { value: w.shallowAlpha ?? 0.5 },
+    uAlphaDepth: { value: w.alphaDepth || 1.5 },
+    uColorDepth: { value: w.colorDepth || 10 },
+    fogColor: { value: new THREE.Color(0x808080) },
+    fogNear: { value: 400 },
+    fogFar: { value: 900 },
+  };
+  const material = new THREE.ShaderMaterial({
+    uniforms: waterUniforms,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    vertexShader: `
+      varying vec3 vWorld;
+      void main() {
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vWorld = world.xyz;
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }`,
+    fragmentShader: `
+      uniform sampler2D tLayer1, tLayer2, tNormal, tDepth;
+      uniform samplerCube tEnv;
+      uniform float uTime, uWorldSize, uMaxDepth;
+      uniform vec2 uDir1, uDir2, uDirN;
+      uniform float uScroll1, uScroll2, uScrollN, uTile1, uTile2, uTileN;
+      uniform vec3 uShallow, uDeep, uSpec, uLightDir;
+      uniform float uShininess, uShallowAlpha, uAlphaDepth, uColorDepth;
+      uniform vec3 fogColor;
+      uniform float fogNear, fogFar;
+      varying vec3 vWorld;
+      void main() {
+        vec2 wuv = vec2(vWorld.x, -vWorld.z);
+        vec3 tex = vec3(1.0);
+        #ifdef HAS_LAYERS
+        vec3 l1 = texture2D(tLayer1, wuv * uTile1 + uDir1 * uScroll1 * uTime).rgb;
+        vec3 l2 = texture2D(tLayer2, wuv * uTile2 + uDir2 * uScroll2 * uTime).rgb;
+        tex = l1 * l2 * 4.0;
+        #endif
+        float depth = uMaxDepth;
+        #ifdef HAS_DEPTH
+        depth = texture2D(tDepth, wuv / uWorldSize).r * uMaxDepth;
+        #endif
+        vec3 base = mix(uShallow, uDeep, clamp(depth / max(uColorDepth, 0.001), 0.0, 1.0));
+        vec3 col = base * tex;
+        vec3 N = vec3(0.0, 1.0, 0.0);
+        #ifdef HAS_NORMAL
+        // The DX8-era normal map is not 0.5-centred; two offset samples
+        // subtracted give a zero-mean, still-animated perturbation.
+        vec2 nuv = wuv * uTileN + uDirN * uScrollN * uTime;
+        vec2 dn = texture2D(tNormal, nuv).rg
+                - texture2D(tNormal, nuv * 1.31 + vec2(0.5)).rg;
+        N = normalize(vec3(dn.x * 0.6, 1.0, dn.y * 0.6));
+        #endif
+        vec3 V = normalize(cameraPosition - vWorld);
+        #ifdef HAS_ENV
+        vec3 R = reflect(-V, N);
+        R.y = abs(R.y);
+        vec3 sky = textureCube(tEnv, R).rgb;
+        float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+        col = mix(col, sky, clamp(fresnel * 1.6, 0.0, 1.0));
+        #endif
+        vec3 H = normalize(normalize(uLightDir) + V);
+        col += uSpec * pow(max(dot(N, H), 0.0), uShininess);
+        float alpha = mix(uShallowAlpha, 0.96, clamp(depth / max(uAlphaDepth, 0.001), 0.0, 1.0));
+        #ifdef HAS_ENV
+        alpha = max(alpha, clamp(fresnel * 1.6, 0.0, 1.0));
+        #endif
+        float fogF = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
+        col = mix(col, fogColor, fogF);
+        gl_FragColor = vec4(col, alpha);
+        #include <colorspace_fragment>
+      }`,
+    defines: {
+      ...(layer1 && layer2 ? { HAS_LAYERS: '' } : {}),
+      ...(normal ? { HAS_NORMAL: '' } : {}),
+      ...(depth ? { HAS_DEPTH: '' } : {}),
+      ...(env ? { HAS_ENV: '' } : {}),
+    },
+  });
+  waterObj.material.dispose();
+  waterObj.material = material;
+}
+
+function syncWaterFog() {
+  if (!waterUniforms || !scene.fog) return;
+  waterUniforms.fogColor.value.copy(scene.fog.color);
+  waterUniforms.fogNear.value = scene.fog.near;
+  waterUniforms.fogFar.value = scene.fog.far;
+}
+
+// The sky box is 4000 m across but our far plane is much closer, so it is
+// drawn scaled down around the camera — with depth writes off and everything
+// overdrawing it, only its angular content matters, and that is scale-free.
+function updateSky() {
+  if (skyRoot) {
+    const half = skyRoot.userData.halfExtent || 2000;
+    const s = camera.far * 0.95 / (half * 1.7320508);
+    skyRoot.scale.setScalar(s);
+    // changeOfsSkyHeight lowers the box so the painted horizon sits below
+    // eye level - Tobruk (150) shows sand-fade everywhere with the sign the
+    // other way, and Wake (0) is indifferent.
+    skyRoot.position.set(
+      camera.position.x,
+      camera.position.y - (extras.sky?.heightOffset || 0) * s,
+      camera.position.z,
+    );
+    if (cloudMesh && cloudUniforms) {
+      const clouds = extras.sky?.clouds || {};
+      const rise = ((clouds.height ?? 3500) - (clouds.ofsHeight ?? 0)) * s;
+      const span = 4 * half * s / (clouds.texScale || 8);
+      cloudMesh.scale.set(camera.far * 4, 1, camera.far * 4);
+      cloudMesh.position.set(
+        camera.position.x, camera.position.y + rise, camera.position.z);
+      cloudUniforms.uSpan.value = span;
+      cloudUniforms.uCam.value.set(camera.position.x, camera.position.z);
+      cloudUniforms.uFadeStart.value = camera.far * 1.2;
+      cloudUniforms.uFadeEnd.value = camera.far * 2.4;
+    }
+  }
+}
+
+function advanceSim(dt) {
+  simTime += dt;
+  if (waterUniforms) waterUniforms.uTime.value = simTime;
+  if (cloudUniforms) {
+    const speed = extras.sky?.clouds?.speed || [0, 0];
+    cloudUniforms.uOffset.value.set(simTime * speed[0], simTime * speed[1]);
+  }
+}
+
+function applyLighting() {
+  const light = extras.lighting;
+  if (!light) {
+    hemi.color.set(0xe8dcc0);
+    hemi.groundColor.set(0x5a4a32);
+    hemi.intensity = 1.35;
+    sun.color.set(0xfff1d0);
+    sun.intensity = 2.4;
+    return;
+  }
+  // renderer.diffuseColor is the sun's tint; keep overall exposure by
+  // normalising it and carrying the magnitude into intensity.
+  const diffuse = light.diffuse || [0.5, 0.5, 0.5];
+  const peak = Math.max(...diffuse, 0.01);
+  sun.color.setRGB(diffuse[0] / peak, diffuse[1] / peak, diffuse[2] / peak,
+                   THREE.SRGBColorSpace);
+  sun.intensity = 2.4 * Math.min(1.4, peak / 0.5);
+  const fog = extras.fogColor || [0.7, 0.7, 0.7];
+  hemi.color.setRGB(fog[0], fog[1], fog[2], THREE.SRGBColorSpace);
+  const ground = light.ambient || [0.2, 0.2, 0.2];
+  hemi.groundColor.setRGB(
+    Math.min(1, ground[0] * 2.5), Math.min(1, ground[1] * 2.5),
+    Math.min(1, ground[2] * 2.5), THREE.SRGBColorSpace);
+  hemi.intensity = 1.15;
 }
 
 function drawDistance() {
@@ -392,9 +736,12 @@ function applyFog() {
     start = 250;
     end = Math.max(1400, extras.worldSize || 2000);
   }
-  const fogColor = new THREE.Color().setRGB(color[0], color[1], color[2]);
+  // Declared fog colours are display values from a pre-colour-managed engine.
+  const fogColor = new THREE.Color().setRGB(
+    color[0], color[1], color[2], THREE.SRGBColorSpace);
   scene.fog = new THREE.Fog(fogColor, start, end);
   scene.background = skybox || fogColor;
+  syncWaterFog();
 }
 
 function isCollision(obj) {
@@ -460,6 +807,15 @@ function applyVisibility() {
 }
 
 function placeCamera() {
+  // ?cam=x,y,z,yaw,pitch pins the camera for reproducible screenshots.
+  const pinned = (params.get('cam') || '').split(',').map(Number);
+  if (pinned.length === 5 && pinned.every(Number.isFinite)) {
+    camera.position.set(pinned[0], pinned[1], pinned[2]);
+    look.yaw = pinned[3];
+    look.pitch = pinned[4];
+    applyLook();
+    return;
+  }
   const cam = extras.camera;
   if (cam) {
     camera.position.set(cam[0], cam[1] + 55, cam[2]);
@@ -496,10 +852,16 @@ async function show(entry) {
   extras = report;
   const gltf = await loader.loadAsync(`./maps/${entry.glb}${bust()}`);
   dispose(currentRoot);
+  disposeSky();
   currentRoot = gltf.scene;
   scene.add(currentRoot);
-  bindLightmaps(currentRoot, entry.glb.replace(/\/[^/]+$/, ''));
+  const dir = entry.glb.replace(/\/[^/]+$/, '');
+  bindLightmaps(currentRoot, dir);
+  setupSky(currentRoot, dir);
+  setupWater(currentRoot, dir);
+  applyLighting();
   if (extras.sunDirection) {
+    // The sun light points along -sunLightDirectionVec toward the origin.
     sun.position.set(
       extras.sunDirection[0] * -400,
       extras.sunDirection[1] * 400,
@@ -508,7 +870,7 @@ async function show(entry) {
   }
   indexScene(currentRoot);
   applyFar();
-  await loadSky(entry);
+  if (!skyRoot) await loadSky(entry);
   applyFog();
   placeCamera();
   wireframe(optWire.checked);
@@ -519,11 +881,15 @@ async function show(entry) {
     `<strong>${extras.level || entry.name}</strong><br>` +
     `world ${extras.worldSize || '?'} m<br>` +
     `terrain ${t.triangles || 0} tris / ${t.tiles || 0} tiles` +
+    (t.defaultTiles ? ` + ${t.defaultTiles} default` : '') +
     (t.detail ? ' + detail' : '') + `<br>` +
     `objects ${o.placed || 0} placed` +
     (o.spawners ? ` / ${o.spawners} vehicles` : '') +
     (o.lightmaps ? ` / ${o.lightmaps} lightmaps` : '') +
-    (o.skipped?.length ? ` / ${o.skipped.length} skipped` : '');
+    (o.skipped?.length ? ` / ${o.skipped.length} skipped` : '') + `<br>` +
+    `sky ${extras.sky ? extras.sky.mesh + (extras.sky.clouds ? ' + clouds' : '') :
+          (extras.skybox ? 'env cubemap' : 'fog colour')} / ` +
+    `water ${extras.water ? 'shader' : 'flat'}`;
 }
 
 optGameFog.addEventListener('change', applyFog);
@@ -551,17 +917,34 @@ if (!manifest.length) {
     const entry = manifest.find(e => e.name === select.value);
     if (entry) show(entry);
   });
-  await show(manifest[0]);
+  const wanted = (params.get('map') || '').toLowerCase();
+  const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
+  select.value = first.name;
+  await show(first);
 }
 
 const clock = new THREE.Clock();
-renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.1);
+function frame(dt) {
   fly(dt);
   applyLook();
   applyVisibility();
+  advanceSim(dt);
+  updateSky();
   renderer.render(scene, camera);
-});
+}
+renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
+if (params.has('shots')) {
+  // Screenshot tooling in a hidden tab gets no requestAnimationFrame ticks
+  // and reports a 0x0 window; let it force a sized, deterministic frame
+  // before reading the canvas back.
+  window.__renderOnce = (w = 1280, h = 800) => {
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    frame(1 / 60);
+    return true;
+  };
+}
 </script>
 </body>
 </html>
