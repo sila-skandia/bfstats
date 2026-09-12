@@ -1,0 +1,2367 @@
+{
+ "$schema": "./symbols.schema.md",
+ "binary": {
+  "name": "BF1942.exe",
+  "description": "Battlefield 1942 retail client, patched to 1.6x",
+  "sha256": "60c9452d1ddb6a09a7b2bd6aa49a8a5508504d0f0e458cc61f0aebff53cd3699",
+  "md5": "6f57155b01c3d9dabba99949d15d64e1",
+  "size_bytes": 5648384,
+  "pe_timestamp": "2004-10-19T19:02:28Z",
+  "image_base": "0x00400000",
+  "architecture": "x86:LE:32",
+  "compiler": "MSVC 7.0 (MSVCR70.DLL)",
+  "function_count": 16601,
+  "symbol_count": 37426,
+  "ghidra_project": "bf1942-mp-enabler",
+  "local_path": "~/.wine/drive_c/EA Games/Battlefield 1942/BF1942.exe",
+  "warning": "Every address in this file is valid ONLY for the binary with the sha256 above. Other BF1942 builds (1.0, 1.2, demo, SWoWWII standalone) relocate everything. Verify the hash before trusting an address."
+ },
+ "confidence_levels": {
+  "verified": "read out of the binary and recorded with evidence in this corpus",
+  "working": "used by shipping third-party code (bf42plus hooks it and the DLL functions)",
+  "inferred": "deduced from strings, xrefs or shape; the code has not been read",
+  "open": "hypothesis only - do not rely on it"
+ },
+ "symbols": [
+  {
+   "address": "0x00401000",
+   "name": "exe_text_start",
+   "kind": "range",
+   "subsystem": "system",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Executable Range"
+  },
+  {
+   "address": "0x00401290",
+   "name": "Map__func_401290",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00401784",
+   "name": "patch__serverlist_grey_version1",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x004017ce",
+   "name": "patch__serverlist_grey_version2",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x004067c0",
+   "name": "Game__func_4067C0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00406a20",
+   "name": "GameClient__func_406A20",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00407600",
+   "name": "GameClient__func_407600",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00407660",
+   "name": "GameClient__func_407660",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00408f80",
+   "name": "GameClient__scoreFunc1",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00408ff0",
+   "name": "GameClient__scoreFunc2",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00409060",
+   "name": "GameClient__scoreFunc3",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x0040bcf0",
+   "name": "GameClient__func_40BCF0",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x0040cd5e",
+   "name": "patch__cdkey_validation1",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x0040ecb0",
+   "name": "Game__addPlayerInput",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x0040f660",
+   "name": "setRotation",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x00411170",
+   "name": "patch__Game_load_static_objects",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004112bd",
+   "name": "patch__skip_static_objects_jmp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x00418de4",
+   "name": "ret__removeFromIgnoreList",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x00440790",
+   "name": "convertWorldPosToScreenPos",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer"
+  },
+  {
+   "address": "0x00440f90",
+   "name": "patch__lower_nametag_close",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x004411d0",
+   "name": "patch__nametag_buddy_color",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x0044153a",
+   "name": "patch__nametag_add_id_with_hp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x004416cb",
+   "name": "patch__nametag_add_id_no_hp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x00441aa7",
+   "name": "patch__enemy_nametag_soldier",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Enemy Nametag Patches"
+  },
+  {
+   "address": "0x00441af0",
+   "name": "patch__enemy_nametag_pco",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Enemy Nametag Patches"
+  },
+  {
+   "address": "0x00441b57",
+   "name": "patch__enemy_nametag_skip_jmp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Enemy Nametag Patches"
+  },
+  {
+   "address": "0x00443200",
+   "name": "ModList__getList",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00443f10",
+   "name": "getStringFromRegistry",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x004444c0",
+   "name": "Game__func_4444C0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00444500",
+   "name": "Mod__checkFunc",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x004452c0",
+   "name": "Game__func_4452C0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00445fa0",
+   "name": "Level__func_445FA0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00447980",
+   "name": "Map__func_447980",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x0044abc0",
+   "name": "Console__patchTarget",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Console"
+  },
+  {
+   "address": "0x0044c2b0",
+   "name": "Game__func_44C2B0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00454480",
+   "name": "Map__func_454480",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00454dd0",
+   "name": "Map__func_454DD0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x0045831d",
+   "name": "patch__cdkey_blacklist_disable",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x00459850",
+   "name": "Map__func_459850",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00459e20",
+   "name": "Map__validateFunc",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00459eed",
+   "name": "patch__cdkey_validation2",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x0045a100",
+   "name": "Map__func_45A100",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x0045ce60",
+   "name": "BfMenu__getLocalPlayer",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x0045d110",
+   "name": "BfMenu__func_45D110",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x0045d1a0",
+   "name": "BfMenu__stringToWide",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x0045dd69",
+   "name": "patch__menu_resolution",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Resolution / Display Patches"
+  },
+  {
+   "address": "0x0045f0c9",
+   "name": "patch__version_display_menu",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x0045fbd0",
+   "name": "patch__display_settings_string",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Resolution / Display Patches"
+  },
+  {
+   "address": "0x00460a92",
+   "name": "patch__texture_handler_registration",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer Patches"
+  },
+  {
+   "address": "0x004611d0",
+   "name": "Renderer__drawDebugText",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer"
+  },
+  {
+   "address": "0x00462826",
+   "name": "patch__showfps_precision1",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x004628e6",
+   "name": "patch__showfps_precision2",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x004634b2",
+   "name": "patch__screenshot_counter_init_disable",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer Patches"
+  },
+  {
+   "address": "0x004670a5",
+   "name": "patch__renderer_draw_hook",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer Patches"
+  },
+  {
+   "address": "0x004676b4",
+   "name": "patch__screenshot_name",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer Patches"
+  },
+  {
+   "address": "0x00467c10",
+   "name": "GameClient__func_467C10",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00468680",
+   "name": "BfMap__isPlayerIDInBuddyList",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x0046a2a0",
+   "name": "BfMap__addPlayerToBuddyListByID",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x0046b130",
+   "name": "ret__buddyColor_allied1",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x0046b165",
+   "name": "ret__buddyColor_axis1",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x0046b802",
+   "name": "ret__buddyColor_allied2",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x0046b852",
+   "name": "ret__buddyColor_axis2",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x0046f4c0",
+   "name": "Level__func_46F4C0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00473430",
+   "name": "MD5Digest",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x004869d0",
+   "name": "GameEvent__deallocate",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: GameEvent System"
+  },
+  {
+   "address": "0x0048a710",
+   "name": "Player__func_48A710",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x0048ffb6",
+   "name": "patch__debug_restart_code",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004904f0",
+   "name": "patch__drop_actions",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x00490750",
+   "name": "GameClient__func_490750",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00490f00",
+   "name": "GameClient__disconnect",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x00490f4c",
+   "name": "patch__GameClient_disconnect_udp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x00491180",
+   "name": "GameClient__createObject2",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00491980",
+   "name": "GameClient__getPlayerFromEvent",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00491c4d",
+   "name": "ret__GameClient_handleChatMessage",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x00492bc0",
+   "name": "GameClient__processCase0xC",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004930d0",
+   "name": "GameClient__createObject",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004931c5",
+   "name": "patch__CreateObjectEvent_crashfix1",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x00493271",
+   "name": "patch__CreateObjectEvent_crashfix2",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004932d2",
+   "name": "patch__CreateObjectEvent_crashfix3",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004933d0",
+   "name": "GameClient__processEvent",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: GameClient Event Processing"
+  },
+  {
+   "address": "0x00493b07",
+   "name": "GameClient__processEvent_afterCreatePlayer",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: GameClient Event Processing"
+  },
+  {
+   "address": "0x0049469e",
+   "name": "ret__setCenterKillMessage",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x004946ca",
+   "name": "patch__skip_spawn_screen_death",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x004946d4",
+   "name": "patch__skip_spawn_screen_death_jmp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x00494dfa",
+   "name": "patch__empty_maplist_fix",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x0049510a",
+   "name": "patch__cdkey_validation3",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x00495a24",
+   "name": "patch__hit_indicator_time",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Hit Indicator Patches"
+  },
+  {
+   "address": "0x00495fd2",
+   "name": "patch__force_disconnect_msg",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Hit Indicator Patches"
+  },
+  {
+   "address": "0x00499c40",
+   "name": "GameClient__func_499C40",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00499ce0",
+   "name": "GameClient__func_499CE0",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x00499cf0",
+   "name": "GameClient__func_499CF0",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004a55e0",
+   "name": "Level__func_4A55E0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x004a6290",
+   "name": "GameEvent__allocate",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: GameEvent System"
+  },
+  {
+   "address": "0x004a7bd0",
+   "name": "GameEvent__getEventMaker",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: GameEvent System"
+  },
+  {
+   "address": "0x004a7d70",
+   "name": "GameEvent__registerEventMaker",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: GameEvent System"
+  },
+  {
+   "address": "0x004b34b0",
+   "name": "GameEventManager__getNextRcvdEvent",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: GameEvent System"
+  },
+  {
+   "address": "0x004b3c90",
+   "name": "GameClient__syncFunc",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004b403f",
+   "name": "patch__GameEvent_invalid_id_crashfix",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004b4045",
+   "name": "patch__network_error_debug",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004b4800",
+   "name": "GameClient__func_4B4800",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004b4c20",
+   "name": "GameClient__processCase0x2B",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004b6f30",
+   "name": "BfMenu__func_4B6F30",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x004b6f6c",
+   "name": "patch__ping_interval",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004b6fc0",
+   "name": "RestartServerPinger__init",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Server List"
+  },
+  {
+   "address": "0x004b6ffd",
+   "name": "patch__server_ping",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004b77c7",
+   "name": "patch__mine_warning_fix",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004b7b70",
+   "name": "GameClient__func_4B7B70",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004b88e0",
+   "name": "GameClient__func_4B88E0",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004b8ce0",
+   "name": "GameClient__func_4B8CE0",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004f54a0",
+   "name": "Game__func_4F54A0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x004f7080",
+   "name": "Vehicle__func_4F7080",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x004f7910",
+   "name": "LinkedList__getFirst",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x004f85c7",
+   "name": "patch__glitchy_projectile_pickup_fix",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x00502e60",
+   "name": "calcStringHashValueNoCase",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x005389c9",
+   "name": "patch__Particle_handleUpdate_crashfix",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x00541f50",
+   "name": "Projectile__resetProjectile",
+   "kind": "function",
+   "subsystem": "object",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Object System"
+  },
+  {
+   "address": "0x00543110",
+   "name": "SupplyDepot__isHealing",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer"
+  },
+  {
+   "address": "0x005431b0",
+   "name": "SupplyDepot__isRepairing",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer"
+  },
+  {
+   "address": "0x005431e0",
+   "name": "SupplyDepot__isReloading",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Renderer"
+  },
+  {
+   "address": "0x005467e0",
+   "name": "Packet__func_5467E0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00580eb0",
+   "name": "Object__getName",
+   "kind": "function",
+   "subsystem": "object",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Object System"
+  },
+  {
+   "address": "0x00580ef0",
+   "name": "String__func_580EF0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x005810a0",
+   "name": "String__func_5810A0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00581520",
+   "name": "Locale__getAnsi",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x005815b0",
+   "name": "Locale__getWide",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x00581d90",
+   "name": "System__getMHZ",
+   "kind": "function",
+   "subsystem": "system",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: System"
+  },
+  {
+   "address": "0x005821a0",
+   "name": "Debug__logStream",
+   "kind": "function",
+   "subsystem": "debug",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Debug"
+  },
+  {
+   "address": "0x005821e0",
+   "name": "Debug__setDebugCallback",
+   "kind": "function",
+   "subsystem": "debug",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Debug"
+  },
+  {
+   "address": "0x00582270",
+   "name": "Debug__logStreamEnd",
+   "kind": "function",
+   "subsystem": "debug",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Debug"
+  },
+  {
+   "address": "0x00582470",
+   "name": "turnOffAllDebug",
+   "kind": "function",
+   "subsystem": "debug",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Debug"
+  },
+  {
+   "address": "0x00582610",
+   "name": "BitStream__readBits",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Network / BitStream"
+  },
+  {
+   "address": "0x005829c0",
+   "name": "BitStream__writeUnsigned",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Network / BitStream"
+  },
+  {
+   "address": "0x005829e0",
+   "name": "BitStream__readUnsigned",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Network / BitStream"
+  },
+  {
+   "address": "0x00582ab0",
+   "name": "BitStream__writeBool",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Network / BitStream"
+  },
+  {
+   "address": "0x00582af0",
+   "name": "BitStream__readBool",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Network / BitStream"
+  },
+  {
+   "address": "0x00582c90",
+   "name": "BitStream__writeFullVector",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Network / BitStream"
+  },
+  {
+   "address": "0x00583180",
+   "name": "BitStream__readFullVector",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Network / BitStream"
+  },
+  {
+   "address": "0x005ac970",
+   "name": "GameConsole__func1",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Console"
+  },
+  {
+   "address": "0x005acc30",
+   "name": "GameConsole__func2",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Console"
+  },
+  {
+   "address": "0x005b42d0",
+   "name": "StandardMeshTemplate_readMaterials",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x9c. Per-LOD material reader. Vertex payload is read as ONE flat blob of stride*count bytes and the index block as count*2; no per-component parsing happens at load. Creates GPU buffers via RendPCDX8_singleton +0x1c (vertex) and +0x20 (index)."
+  },
+  {
+   "address": "0x005b54e0",
+   "name": "StandardMeshTemplate_readLods",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x98. Loops the LOD count calling +0x9c (0x005b42d0) per LOD; +0xac participates in a fallback/skip decision."
+  },
+  {
+   "address": "0x005b5f50",
+   "name": "StandardMeshTemplate_readStream",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x88. Parse orchestrator: calls +0x90 header, +0x94, +0x98 LOD loop, then version-gated +0xa0/+0xa8 when version>8. Finally, if +0x40 is set, loads \"Texture/ObjectLightmaps/\"+name into member [99]."
+  },
+  {
+   "address": "0x005b6080",
+   "name": "StandardMeshTemplate_loadFile",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x8c. Appends \".sm\" (0x00905b70), opens a stream via the manager at DAT_009a2380, delegates the parse to vtable +0x88, releases the stream."
+  },
+  {
+   "address": "0x005b61f0",
+   "name": "StandardMeshTemplate_readHeader",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x90. Version at object +0x14 accepted when (7 < v < 0xb) - that is 8, 9 AND 10. An extra field is read only when v > 9. Our reader documents 9-or-10; the engine also accepts 8."
+  },
+  {
+   "address": "0x005b7660",
+   "name": "GeometryTemplate_dtor_sibling",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "ghidra-session",
+   "note": "Second destructor with the same member layout as 0x005d0140 (offsets 0x60-0x66, 0x34, 0x2f, 0x2b). Two instantiations of one template class."
+  },
+  {
+   "address": "0x005c1280",
+   "name": "File__CRC_func",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x005cd260",
+   "name": "StandardMeshTemplate_perLod_interfaceQuery",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "ghidra-session-2026-09-12",
+   "note": "Created by us at a prologue found in the 0x005cd258-0x005cda5f gap; 315 bytes. Iterates collections at +0x164/+0x174 issuing QueryInterface-style calls with tags 0x53ce75fe and 0xd0867dfb. NOT the vertex reader."
+  },
+  {
+   "address": "0x005d0140",
+   "name": "StandardMeshTemplate_dtor",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "ghidra-session-2026-09-12",
+   "note": "destructor-shaped: installs 4 vtable pointers then tears down members. Object is large (>=0x67 dwords). NOT the .sm loader."
+  },
+  {
+   "address": "0x005d06a2",
+   "name": "ref_GeometryTemplate_StandardMesh",
+   "kind": "address",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "sole xref to 0x00908a90. Ghidra has no function defined here - undefined code or a static initializer. Needs a function created before it can be decompiled."
+  },
+  {
+   "address": "0x00601664",
+   "name": "MemoryPool__alloc",
+   "kind": "function",
+   "subsystem": "system",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: System"
+  },
+  {
+   "address": "0x00632478",
+   "name": "patch__ForegroundLockTimeout",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x0063f00e",
+   "name": "RendPCDX8__getDisplaySettingID",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Resolution / Display Patches"
+  },
+  {
+   "address": "0x0063f018",
+   "name": "patch__screen_resolution_fix2",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Resolution / Display Patches"
+  },
+  {
+   "address": "0x0063f0c1",
+   "name": "patch__fpu_precision2",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Resolution / Display Patches"
+  },
+  {
+   "address": "0x0063f217",
+   "name": "patch__fpu_precision1",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Resolution / Display Patches"
+  },
+  {
+   "address": "0x0069f4ae",
+   "name": "patch__serverlist_mod_column",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x0069f971",
+   "name": "patch__serverlist_column_index",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x006a76b0",
+   "name": "BfMenu__setInfoMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a7d00",
+   "name": "BfMenu__outputConsole",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a7d80",
+   "name": "BfMenu__setStatusMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a7dd0",
+   "name": "BfMenu__clearStatusMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a7e90",
+   "name": "BfMenu__showDisconnectMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a7ee0",
+   "name": "BfMenu__hideDisconnectMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a87d0",
+   "name": "BfMenu__setServerMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a88b1",
+   "name": "patch__server_msg_output_disable",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Server Message Patches"
+  },
+  {
+   "address": "0x006a88ce",
+   "name": "patch__server_msg_output_disable_jmp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Server Message Patches"
+  },
+  {
+   "address": "0x006a88e0",
+   "name": "BfMenu__setCenterKillMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a89c0",
+   "name": "BfMenu__addChatMessageInternal",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a8a54",
+   "name": "patch__chat_buddy_color",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x006a8e10",
+   "name": "BfMenu__addPlayerChatMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a8f10",
+   "name": "BfMenu__addGameInfoMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a8f80",
+   "name": "BfMenu__addRadioChatMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a9020",
+   "name": "BfMenu__addKillMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Kill/Score Messages"
+  },
+  {
+   "address": "0x006a90b0",
+   "name": "BfMenu__removeFromIgnoreList",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a9de0",
+   "name": "BfMenu__func_6A9DE0",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Kill/Score Messages"
+  },
+  {
+   "address": "0x006ac21b",
+   "name": "ret__chatInput1",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x006ac488",
+   "name": "ret__chatInput2",
+   "kind": "address",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x006acb60",
+   "name": "BfMenu__func_6ACB60",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Kill/Score Messages"
+  },
+  {
+   "address": "0x006adf69",
+   "name": "patch__force_spawn_text",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Hit Indicator Patches"
+  },
+  {
+   "address": "0x006aeba8",
+   "name": "patch__hit_indicator_alpha",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Hit Indicator Patches"
+  },
+  {
+   "address": "0x006b0db0",
+   "name": "__changeResolution",
+   "kind": "function",
+   "subsystem": "system",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: System"
+  },
+  {
+   "address": "0x006b1083",
+   "name": "patch__screen_resolution_fix",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Resolution / Display Patches"
+  },
+  {
+   "address": "0x006b4030",
+   "name": "LoadingScreen__func_6B4030",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Loading Screen"
+  },
+  {
+   "address": "0x006b42f0",
+   "name": "LoadingScreen__showDisconnectMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Loading Screen"
+  },
+  {
+   "address": "0x006b4910",
+   "name": "LoadingScreen__func_6B4910",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Loading Screen"
+  },
+  {
+   "address": "0x006c57e0",
+   "name": "getInfantryInvert",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x006c5800",
+   "name": "getInfantrySensitivity",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x006c5820",
+   "name": "getLandSeaInvert",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x006c5840",
+   "name": "getLandSeaSensitivity",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x006ccbc0",
+   "name": "SpawnScreen__setSpawnMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006cce20",
+   "name": "SpawnScreenStuff__setVisible",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006cd610",
+   "name": "patch__skip_spawn_status_update",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x006cde8a",
+   "name": "patch__healthbar_fix",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006d2790",
+   "name": "SpawnScreen__func_6D2790",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn/Death Screen"
+  },
+  {
+   "address": "0x006d310b",
+   "name": "patch__radio_playvoice_crash",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006d316d",
+   "name": "patch__radio_playvoice_crash_jmp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006d3400",
+   "name": "SpawnScreen__func_6D3400",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn/Death Screen"
+  },
+  {
+   "address": "0x006d5340",
+   "name": "SpawnScreen__func_6D5340",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn/Death Screen"
+  },
+  {
+   "address": "0x006d6450",
+   "name": "SpawnScreen__func_6D6450",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn/Death Screen"
+  },
+  {
+   "address": "0x006d8060",
+   "name": "SpawnScreen__func_6D8060",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn/Death Screen"
+  },
+  {
+   "address": "0x006d8420",
+   "name": "patch__skip_briefing_jmp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x006d8461",
+   "name": "patch__skip_spawn_screen_join",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x006d846b",
+   "name": "patch__skip_spawn_screen_jmp",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x006d84a0",
+   "name": "SpawnScreen__func_6D84A0",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn/Death Screen"
+  },
+  {
+   "address": "0x006d8740",
+   "name": "patch__skip_briefing",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x006dfa7f",
+   "name": "patch__scoreboard_allied_col_width3",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006dfac0",
+   "name": "patch__scoreboard_allied_col_width1",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006dfacd",
+   "name": "patch__scoreboard_allied_col_width2",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006dfb3d",
+   "name": "patch__scoreboard_axis_col_width3",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006dfb7e",
+   "name": "patch__scoreboard_axis_col_width1",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006dfb8b",
+   "name": "patch__scoreboard_axis_col_width2",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x006dff74",
+   "name": "patch__scoreboard_add_buddy_btn",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x006e082a",
+   "name": "patch__scoreboard_buddy_color",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x006e4290",
+   "name": "Player__setAliveState",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x007444a0",
+   "name": "Packet__func_7444A0",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x007d42a0",
+   "name": "meme_ListBoxData__addColumnNoWidth",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Server List"
+  },
+  {
+   "address": "0x00804da6",
+   "name": "WinMain_call_in_DllMain",
+   "kind": "function",
+   "subsystem": "system",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: DllMain / Entry"
+  },
+  {
+   "address": "0x0081fa20",
+   "name": "Game__func_81FA20",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00838b5e",
+   "name": "crt_static_init_region",
+   "kind": "range",
+   "subsystem": "crt",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "495KB of undefined code, 0x00838b5e-0x008b191f: the CRT static-initializer block. Ten of the 17 refs to \"StandardMesh/\" live here and are just global std::string constructions. Rule them out when chasing a string."
+  },
+  {
+   "address": "0x008c3000",
+   "name": "exe_text_end",
+   "kind": "range",
+   "subsystem": "system",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Executable Range"
+  },
+  {
+   "address": "0x008c3134",
+   "name": "msvc_stl_func1",
+   "kind": "function",
+   "subsystem": "crt",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: STL / MSVC Runtime (in-binary CRT)"
+  },
+  {
+   "address": "0x008c3220",
+   "name": "msvc_stl_func2",
+   "kind": "function",
+   "subsystem": "crt",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: STL / MSVC Runtime (in-binary CRT)"
+  },
+  {
+   "address": "0x008c3520",
+   "name": "msvc_sprintf",
+   "kind": "function",
+   "subsystem": "crt",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: STL / MSVC Runtime (in-binary CRT)"
+  },
+  {
+   "address": "0x008d1990",
+   "name": "str_StandardMesh_dir",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "\"StandardMesh/\" archive path prefix; 17 xrefs"
+  },
+  {
+   "address": "0x008d297c",
+   "name": "g_ArchiveNameTable",
+   "kind": "data",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "contiguous ASCII table of mounted archive names: menu.rfa, Bf1942/game.rfa, standardMesh.rfa, treeMesh.rfa, texture.rfa, animations.rfa, sound.rfa, ai.rfa, aiMeshes.rfa, font.rfa and their _001 patch variants"
+  },
+  {
+   "address": "0x008d5a7c",
+   "name": "const_0_0333f",
+   "kind": "patch_site",
+   "subsystem": "patch",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Hit Indicator Patches"
+  },
+  {
+   "address": "0x008d5c30",
+   "name": "str_SubShaderBuilder_StandardMesh",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x009035dc",
+   "name": "str_GeometryTemplate_prefix",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00903a18",
+   "name": "str_Terrain_Null",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00903a34",
+   "name": "str_HeightMap_Null",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00905754",
+   "name": "str_StandardMeshTemplate",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "\"StandardMeshTemplate\"; xrefs reach FUN_005ad770, FUN_005afb10, FUN_005b7660, FUN_005d0140, FUN_0062a740, FUN_0062bb60"
+  },
+  {
+   "address": "0x0090576c",
+   "name": "str_StandardMesh",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "\"StandardMesh\" bare type name"
+  },
+  {
+   "address": "0x00905a90",
+   "name": "GeometryTemplate_vtable_A",
+   "kind": "vtable",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable installed by the destructor at 0x005b7660. Byte-identical in content to GeometryTemplate_vtable_B; both templates resolve every slot to the same implementations. Slots 0-3 are all 0x00804ae0 (stub). Implementation cluster is 0x005cdxxx + 0x005b5exx."
+  },
+  {
+   "address": "0x00908830",
+   "name": "GeometryTemplate_vtable_B",
+   "kind": "vtable",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable installed by the destructor at 0x005d0140. Byte-identical content to vtable_A - verified with read_memory against a control address."
+  },
+  {
+   "address": "0x009089dc",
+   "name": "str_GeometryTemplate_AnimatedMesh",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00908a0c",
+   "name": "str_GeometryTemplate_SkeletonCollisionMesh",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00908a60",
+   "name": "str_StandardMeshRenderer_Standard",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00908a90",
+   "name": "str_GeometryTemplate_StandardMesh",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00908ac0",
+   "name": "str_GeometryTemplate_SimpleGeom",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00908b10",
+   "name": "str_TreeRenderer_Standard",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00908b38",
+   "name": "str_GeometryTemplate_TreeMesh",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-12",
+   "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00957c30",
+   "name": "g_masterServerAddr1",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x00957df8",
+   "name": "g_masterServerAddr2",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x0095f8d4",
+   "name": "g_pIGame",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x00971eac",
+   "name": "g_pSetup",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x00973ab8",
+   "name": "BfMenu_singleton",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x0097d764",
+   "name": "pObjectManager",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x0097d768",
+   "name": "pObjectTemplateManager",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x0097d76c",
+   "name": "pPlayerManager",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009a2170",
+   "name": "g_Locale",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009a2320",
+   "name": "g_debug_callback",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009a9390",
+   "name": "g_pGameClient",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009a9428",
+   "name": "g_console_run_result",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009a99d4",
+   "name": "RendPCDX8_singleton",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009a99d8",
+   "name": "g_TextureManager",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009ab610",
+   "name": "ConsoleObjects_singleton",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009ab868",
+   "name": "pRenderView",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009c9bc0",
+   "name": "g_StandardMeshPath_string",
+   "kind": "data",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Global std::string constructed to \"StandardMesh/\" by the static initializer at 0x0085b8f0; its address is cached at 0x009c9c30. Only 3 xrefs, all within the init block - consumers reach it indirectly, not by address."
+  },
+  {
+   "address": "0x00a5c630",
+   "name": "g_MainUI",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x00a5f1a8",
+   "name": "SpawnScreen_singleton",
+   "kind": "data",
+   "subsystem": "globals",
+   "confidence": "working",
+   "source": "bf42plus",
+   "note": "bf42plus section: Global Data Pointers"
+  }
+ ]
+}
