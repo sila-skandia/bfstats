@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<title>BF1942 map flythrough</title>
+<title>BF1942 mesh &middot; maps</title>
+<link rel="stylesheet" href="./shell.css">
 <style>
   :root {
     --bg: #14150f;
@@ -18,9 +19,19 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
+    display: grid;
+    grid-template-rows: var(--nav-h) 1fr;
     background: var(--bg);
     color: var(--text);
     font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+    overflow: hidden;
+  }
+  /* The flythrough owns everything below the bar. Positioning it makes the
+     canvas and the three overlays resolve against the stage rather than the
+     viewport, so nothing has to know the bar's height. */
+  #stage {
+    position: relative;
+    min-height: 0;
     overflow: hidden;
   }
   canvas {
@@ -103,20 +114,28 @@
 </style>
 </head>
 <body>
-<aside id="side">
-  <h1>Map flythrough</h1>
-  <select id="maps" aria-label="Level"></select>
-  <div id="stats" class="stat">extract a level first</div>
-  <label class="opt"><input type="checkbox" id="game-fog" checked> fog</label>
-  <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
-  <label class="opt"><input type="checkbox" id="vehicles" checked> vehicles</label>
-  <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
-  <div class="stat" style="margin-top:12px">
-    <a href="./index.html">vehicle inspector</a>
-  </div>
-</aside>
-<div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; Esc</div>
-<div id="gate"><span>Click to fly</span></div>
+<nav class="shell-nav">
+  <span class="shell-brand"><b>BF1942</b> mesh</span>
+  <span class="shell-tabs">
+    <a href="./index.html">Models</a>
+    <a href="./map.html" aria-current="page">Maps</a>
+    <a href="./poses.html">Poses</a>
+  </span>
+  <span class="shell-sub">extracted levels &middot; terrain, lightmaps and sky</span>
+</nav>
+<div id="stage">
+  <aside id="side">
+    <h1>Map flythrough</h1>
+    <select id="maps" aria-label="Level"></select>
+    <div id="stats" class="stat">extract a level first</div>
+    <label class="opt"><input type="checkbox" id="game-fog" checked> fog</label>
+    <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
+    <label class="opt"><input type="checkbox" id="vehicles" checked> vehicles</label>
+    <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
+  </aside>
+  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; Esc</div>
+  <div id="gate"><span>Click to fly</span></div>
+</div>
 
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
@@ -143,7 +162,8 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-document.body.appendChild(renderer.domElement);
+const stage = document.getElementById('stage');
+stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 8000);
@@ -172,7 +192,10 @@ const NO_CACHE = DEV_ORIGIN || new URLSearchParams(location.search).has('nocache
 const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 const lmCache = new Map();
 
-const overlay = createLoadOverlay(document.body);
+// Hosted on the stage, not the body: .ld-overlay is inset:0 absolute, and
+// body is unpositioned, so on the body it would resolve against the viewport
+// and paint over the shared nav bar. #stage is the 3D view's positioned box.
+const overlay = createLoadOverlay(stage);
 
 const keys = new Set();
 const look = { yaw: 0, pitch: -0.15 };
@@ -327,7 +350,9 @@ function fly(dt) {
 }
 
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  // Stage, not window: the shared nav bar takes a grid row above it.
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -714,14 +739,23 @@ function setupWater(root, dir) {
         vec3 R = reflect(-V, N);
         R.y = abs(R.y);
         vec3 sky = textureCube(tEnv, R).rgb;
-        float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
-        col = mix(col, sky, clamp(fresnel * 1.6, 0.0, 1.0));
+        // A plain Schlick fresnel (exponent 5, scaled to reach 1.0) turned the
+        // lagoon into a near-perfect cloud mirror the moment the camera got low
+        // and the view raked across open water -- exactly the case a flythrough
+        // spends most of its time in, and not what the live-game reference
+        // screenshots show even at the shoreline: the water keeps its own
+        // shallow/deep tint and a soft sun-glint, not a crisp sky reflection.
+        // Steepening the exponent and capping the peak keeps the mirror term a
+        // rim highlight at true grazing incidence instead of the dominant term
+        // from ten degrees off horizontal outward.
+        float fresnel = 0.03 + 0.55 * pow(1.0 - max(dot(N, V), 0.0), 10.0);
+        col = mix(col, sky, clamp(fresnel, 0.0, 1.0));
         #endif
         vec3 H = normalize(normalize(uLightDir) + V);
         col += uSpec * pow(max(dot(N, H), 0.0), uShininess);
         float alpha = mix(uShallowAlpha, 0.96, clamp(depth / max(uAlphaDepth, 0.001), 0.0, 1.0));
         #ifdef HAS_ENV
-        alpha = max(alpha, clamp(fresnel * 1.6, 0.0, 1.0));
+        alpha = max(alpha, clamp(fresnel, 0.0, 1.0));
         #endif
         float fogF = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
         col = mix(col, fogColor, fogF);
