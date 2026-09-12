@@ -55,7 +55,7 @@ from bf42.level import (  # noqa: E402
 )
 from bf42.rfa import find_archives_dir  # noqa: E402
 from bf42.terrain import (  # noqa: E402
-    apply_detail,
+    DETAIL_REPEATS,
     default_patches,
     depth_map,
     patch_mesh,
@@ -326,6 +326,7 @@ def _place_template(assembler: Assembler, builder, name: str, inst, report,
 
 def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                  *, max_texture: int, include_objects: bool,
+                 out_dir: Path | None = None,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None,
                  sky_faces: list | None = None,
                  ) -> tuple[bytes, dict]:
@@ -341,8 +342,26 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             detail = _load_level_dds(files, info.terrain.detail_tex)
         except Exception:
             detail = None
+    # The detail pass is a *stage*, not something to bake into the colour map.
+    # Baking caps the grain at the tile map's own resolution: a 256 m patch at
+    # 1024px is 4 texels/m, and --max-texture 512 halves that again, against the
+    # 32 texels/m the engine gets by tiling a 512px detail map 16 times across
+    # the same patch. That 16x is the entire "our sand is blurry" gap, and it is
+    # a dropped shader stage rather than anything the browser cannot do -- an
+    # extra texture stage measures 0.3-0.5 ms against a 16.7 ms budget. The
+    # image ships alongside the tiles and `map.html` multiplies it in at its own
+    # frequency.
     if detail is not None:
         terrain_report["detail"] = True
+        if out_dir is not None:
+            dwidth, dheight, drgba = detail
+            detail_dir = out_dir / "terrain"
+            detail_dir.mkdir(parents=True, exist_ok=True)
+            (detail_dir / "detail.png").write_bytes(
+                encode_png(dwidth, dheight, drgba, drop_alpha=True))
+            # Repeats across one patch, so the viewer needs no world scale.
+            terrain_report["detailTexture"] = "terrain/detail.png"
+            terrain_report["detailRepeats"] = DETAIL_REPEATS
 
     for col, row, entry in tiles:
         primitive = tile_mesh(heightmap, info.terrain, col, row)
@@ -352,8 +371,6 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         material = None
         try:
             width, height, rgba = decode_dds(files.read(entry))
-            if detail is not None:
-                rgba = apply_detail(rgba, width, height, detail[2], detail[0], detail[1])
             if max_texture and max(width, height) > max_texture:
                 width, height, rgba = downscale(width, height, rgba, max_texture)
             tex = builder.add_image_png(
@@ -573,7 +590,7 @@ def main() -> int:
     glb, extras = build_scene(
         files, info, heightmap, assembler,
         max_texture=args.max_texture, include_objects=not args.terrain_only,
-        lightmaps=lightmaps, sky_faces=sky_faces,
+        lightmaps=lightmaps, sky_faces=sky_faces, out_dir=out_dir,
     )
     if sky_faces:
         extras["sky"] = {
