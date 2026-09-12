@@ -41,15 +41,37 @@ make the same least-squares problem `skin.recover_bind` already solves.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from . import skin as skin_mod
+from .baf import ROOT_ALIGN
 from .ske import Matrix3, Skeleton, Vector3, canonical, _inverse, _mul
 
 RT = tuple[Matrix3, Vector3]
 
 rt_mul = _mul
 rt_inverse = _inverse
+
+
+def align_clip_roots(skeleton: Skeleton, locals_by_name: dict[str, RT],
+                     ) -> dict[str, RT]:
+    """Carry clip-driven root transforms from clip world into mesh world.
+
+    A `.baf` root track is the one transform in a clip expressed in world
+    space rather than relative to another bone, so it alone picks up the
+    clip world's 180-degree yaw against mesh world (`baf.ROOT_ALIGN`).
+    Bones that fall back to their `.ske` rest are left alone — the rest
+    pose is already in mesh space.
+    """
+    out = dict(locals_by_name)
+    for bone in skeleton.bones:
+        if bone.parent >= 0:
+            continue
+        key = canonical(bone.name)
+        if key in out:
+            out[key] = rt_mul(ROOT_ALIGN, out[key])
+    return out
 
 
 def apply(rt: RT, point: Vector3) -> Vector3:
@@ -142,15 +164,31 @@ class SkinnedVertexGroup:
 
 
 def remap_influences(skn: skin_mod.Skin, skeleton: Skeleton,
+                     binds: dict[str, RT] | None = None,
                      ) -> tuple[list[str], str | None]:
     """Per skn-bone: the driving skeleton bone it maps to.
 
     Bones the skeleton knows drive themselves. Bones it does not — the face
-    rig's `Bone07..43`, `face`, the eyes — ride rigidly with the mesh's
-    anchor bone, the skeleton bone that dominates this skin's weights (the
-    head for every face). Vertices influenced by them then follow the anchor
-    with weight 1, which is exact as long as those bones are never animated —
-    and no body clip names them.
+    rig's `Bone39`, `face`, the eyes — ride rigidly with the mesh's anchor
+    bone, the skeleton bone that dominates this skin's weights (the head for
+    every face). Vertices influenced by them then follow the anchor with
+    weight 1, which is exact as long as those bones are never animated — and
+    no body clip names them.
+
+    A name match is necessary but not sufficient. The face skins and
+    `UsSoldier.ske` both carry bones named `Bone07..09` from the exporter's
+    default numbering — face bones in the skin, a forearm helper chain in
+    the skeleton, 0.5 m apart on different limbs. Driving one with the other
+    tears the face off the skull, so a matched bone must also pass a
+    geometric check when `binds` are supplied: walk its `.ske` parent chain
+    to the nearest bone that is also in this skin with a recovered bind, and
+    compare the bind-to-bind distance against the same distance at `.ske`
+    rest. For a direct parent that distance is the bone's length — invariant
+    across stances, which is what makes the check safe against the skins
+    being authored in different poses than the skeleton. A failed bone drags
+    every skin bone whose ancestor path runs through it (the rest of the
+    misnamed chain), and a bone with no recoverable bind anchors too — the
+    skinning paths need its bind to use it at all.
     """
     weight_per_bone = [0.0] * len(skn.bones)
     for vertex in skn.vertices:
@@ -159,12 +197,54 @@ def remap_influences(skn: skin_mod.Skin, skeleton: Skeleton,
     anchor: str | None = None
     best = -1.0
     for index, name in enumerate(skn.bones):
-        if skeleton.index(name) is not None and weight_per_bone[index] > best:
+        if skeleton.index(name) is None:
+            continue
+        if binds is not None and name not in binds:
+            continue
+        if weight_per_bone[index] > best:
             best = weight_per_bone[index]
             anchor = name
-    mapped = []
-    for name in skn.bones:
-        mapped.append(name if skeleton.index(name) is not None else anchor)
+
+    skn_by_canonical = {canonical(name): name for name in skn.bones}
+    rest_origin: dict[int, Vector3] = {}
+
+    def origin(index: int) -> Vector3:
+        if index not in rest_origin:
+            rest_origin[index] = skeleton.rest(index)[1]
+        return rest_origin[index]
+
+    verdicts: dict[str, bool] = {}  # skn bone name -> drives itself
+
+    def drives_itself(name: str) -> bool:
+        if name in verdicts:
+            return verdicts[name]
+        verdicts[name] = True  # break cycles optimistically
+        index = skeleton.index(name)
+        if index is None:
+            verdicts[name] = False
+            return False
+        if binds is None:
+            return True
+        if name not in binds:
+            verdicts[name] = False
+            return False
+        if name == anchor:
+            return True
+        parent = skeleton.bones[index].parent
+        while parent >= 0:
+            other = skn_by_canonical.get(canonical(skeleton.bones[parent].name))
+            if other is not None and other in binds:
+                if not drives_itself(other):
+                    verdicts[name] = False  # the misnamed chain continues
+                    return False
+                d_skn = math.dist(binds[name][1], binds[other][1])
+                d_ske = math.dist(origin(index), origin(parent))
+                verdicts[name] = abs(d_skn - d_ske) <= 0.05 + 0.2 * d_ske
+                return verdicts[name]
+            parent = skeleton.bones[parent].parent
+        return True  # nothing to test against
+
+    mapped = [name if drives_itself(name) else anchor for name in skn.bones]
     return mapped, anchor
 
 
