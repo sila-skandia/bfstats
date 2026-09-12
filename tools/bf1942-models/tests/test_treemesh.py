@@ -61,6 +61,41 @@ class TreeMeshTests(unittest.TestCase):
         self.assertEqual((0.0, 2.0, 0.0), part.positions[2])
         self.assertEqual([0, 1, 2], part.indices)
 
+    def test_branch_cards_keep_every_angle_block(self) -> None:
+        """One angle set alone is a full silhouette only from its own band.
+
+        A free camera sees any single set edge-on from most directions, so the
+        tree reads thin - the in-game palm is visibly fuller than a single-set
+        export. The union of all sets is the whole canopy.
+        """
+        data = bytearray()
+        data += struct.pack("<III", 3, 0, 2)  # angleCount 2
+        data += struct.pack("<6f", 0, 0, 0, 1, 2, 1)
+        data += struct.pack("<6f", 0, 0, 0, 1, 2, 1)
+        tex = b"texture/leaf"
+        data += struct.pack("<I", 1)  # one branch mesh
+        data += struct.pack("<II", 0, 1)  # indexStart, numFaces
+        data += struct.pack("<I", len(tex)) + tex
+        data += struct.pack("<I", 0)  # trunks
+        data += struct.pack("<I", 0)  # sprites
+        data += struct.pack("<I", 0)  # billboards
+        data += struct.pack("<I", 3)  # vertices
+        for i in range(3):
+            data += struct.pack("<3f", float(i), 0.0, 0.0)
+            data += struct.pack("<3f", 0, 1, 0)
+            data += struct.pack("<I", 0x80808080)
+            data += struct.pack("<2f", 0.0, 0.0)
+            data += struct.pack("<2f", 0.0, 0.0)
+        # Two angle blocks of one face each over the shared vertex pool.
+        data += struct.pack("<I", 6)
+        data += struct.pack("<6H", 0, 1, 2, 2, 1, 0)
+
+        tree = treemesh.parse(bytes(data), "bush.tm")
+
+        self.assertEqual(1, len(tree.parts))
+        # Both blocks, in file order - not just the first silhouette.
+        self.assertEqual([0, 1, 2, 2, 1, 0], tree.parts[0].indices)
+
 
 if __name__ == "__main__":
     unittest.main()
