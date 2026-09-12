@@ -44,7 +44,16 @@ def _grid_mesh(heightmap: Heightmap, x0: float, z0: float,
             wx = (ix0 + ix) * heightmap.spacing
             wz = (iz0 + iz) * heightmap.spacing
             positions.append((wx, heightmap.height_at(ix0 + ix, iz0 + iz), wz))
-            uvs.append((ix / cells * uv_repeats, (1.0 - iz / cells) * uv_repeats))
+            # DDS row 0 is the tile's *south* edge (z = z0), so world +z walks
+            # down the stored image and glTF V (0 = image top) runs with iz.
+            # Getting this backwards mirrors every tile north-south: featureless
+            # sand hides it, but baked road and shadow art lands mirrored inside
+            # its own 256 m tile - a base's ground shadow appears as the inverse
+            # of a base elsewhere - and every tile row boundary becomes a hard
+            # seam. Proven by stitching the raw tiles into a mosaic both ways
+            # against Tobruk's own InGameMap.dds: only this orientation is
+            # continuous across rows.
+            uvs.append((ix / cells * uv_repeats, iz / cells * uv_repeats))
 
     indices: list[int] = []
     for iz in range(cells):

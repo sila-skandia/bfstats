@@ -428,6 +428,30 @@ GeometryTemplate.texOffsetY 2
         self.assertNotIn((2, 2), missing)
         self.assertIn((0, 0), missing)
 
+    def test_tile_v_runs_south_to_north_down_the_image(self) -> None:
+        """DDS row 0 is a tile's south edge.
+
+        V mirrored puts every tile's texture north-south backwards: baked road
+        and shadow art lands mirrored inside its own 256 m tile and every row
+        boundary becomes a hard seam. The correct orientation was established
+        by stitching the raw Tobruk tiles into mosaics both ways and checking
+        which is continuous across rows (and matches InGameMap.dds).
+        """
+        data = struct.pack("<64H", *([10000] * 64))
+        heightmap = decode_heightmap(data, world_size=32.0, y_scale=0.6)
+        info = parse_terrain_con(
+            "GeometryTemplate.worldSize 32\nGeometryTemplate.yScale 0.6\n"
+            "GeometryTemplate.texOffsetX 0\nGeometryTemplate.texOffsetY 0\n")
+        primitive = tile_mesh(heightmap, info, 0, 0, patch=16.0)
+
+        south = [uv for p, uv in zip(primitive.positions, primitive.uvs)
+                 if p[2] == 0.0]
+        north = [uv for p, uv in zip(primitive.positions, primitive.uvs)
+                 if p[2] == 16.0]
+        # glTF V: 0 is the top of the image. South edge samples the top row.
+        self.assertTrue(all(v == 0.0 for _, v in south))
+        self.assertTrue(all(v == 1.0 for _, v in north))
+
     def test_patch_mesh_uvs_wrap_the_default_texture(self) -> None:
         data = struct.pack("<64H", *([10000] * 64))
         heightmap = decode_heightmap(data, world_size=32.0, y_scale=0.6)
