@@ -86,6 +86,42 @@ against `0x2000` reaching a lightmap path, not another constant hunt.
 
 It does **not** yet tell us whether layout comes from `flags` or `stride`.
 
+*Ghidra's analysis of this binary is badly incomplete.* `find_code_gaps` reports
+**4,574 undefined code regions** in `.text`. Of the 17 references to
+`"StandardMesh/"`, only one sits inside a defined function. Expect to create
+functions by hand; `read_memory` at a gap start shows the `0x90` padding and the
+MSVC prologue (`SUB ESP,imm` then `PUSH EBX/EBP/ESI/EDI`) that marks the entry.
+
+*Ten of those 17 references are a red herring.* They lie in a single 495 KB
+undefined span, `0x00838b5e-0x008b191f`, which is the CRT static-initializer
+block — each one is a global `std::string` being constructed:
+
+```
+68 90 19 8D 00    PUSH 0x008d1990        ; "StandardMesh/"
+B9 C0 9B 9C 00    MOV  ECX, 0x009c9bc0   ; the global
+FF 15 34 31 8C 00 CALL [0x008c3134]      ; std::string ctor
+```
+
+The constructed global `0x009c9bc0` has only three xrefs, all inside that block,
+so consumers reach the path indirectly. Chasing the string literal does not lead
+to the loader.
+
+*The template class is located.* Two near-identical destructors, `0x005b7660`
+and `0x005d0140`, share a member layout and install vtables at `0x00905a90` and
+`0x00908830` whose contents are byte-identical (verified against a control
+address — `read_memory` is not returning stale data). Two instantiations of one
+template. Their implementations cluster at `0x005cdxxx` and `0x005b5exx`.
+
+Slots examined so far are accessors and dispatch, not the reader:
+`0x005cd0a0` assigns a `std::string` to `+0x2c`; `0x005cd130` calls vtable slots
+`+0x80`/`+0x84`; `0x005cd260` (created by us, 315 bytes) walks collections at
+`+0x164`/`+0x174` issuing QueryInterface-style calls tagged `0x53ce75fe` and
+`0xd0867dfb`.
+
+**Next probe:** read the vtable past `+0x60` — the examined slots are all small,
+so the reader is at a higher index — and create functions across the rest of the
+`0x005cd258-0x005cda5f` gap.
+
 **To settle it.** Find the `.sm` loader and read how it lays out a vertex.
 Current position: `dice.ref2.geom.GeometryTemplate.StandardMesh` is at
 `0x00908a90` with a single xref at `0x005d06a2`, which Ghidra has not resolved
