@@ -419,6 +419,18 @@ function lightmapTargets(obj) {
 // palm shadows on walls included.
 function bindLightmaps(root, dir) {
   lightmapMaterials.length = 0;
+  // The bake is the sun term only. Its dark texels sit near zero, and the
+  // engine adds the level's declared ambient on top - drop that term and
+  // every shadow-side wall multiplies toward black, while sun-facing walls
+  // (bright texels) look right, which is exactly how the omission presents.
+  // Tobruk declares ambient 0.12/0.10/0.08 plus globalAmbient 0.2 and
+  // shadowColor 0.55; the ambient pair is the floor, inlined per level.
+  const lit = extras.lighting || {};
+  const amb = lit.ambient || [0.2, 0.2, 0.2];
+  const glob = lit.globalAmbient || [0.2, 0.2, 0.2];
+  const floor = [0, 1, 2].map(i =>
+    Math.min(1, (amb[i] || 0) + (glob[i] || 0)).toFixed(4));
+  const floorGlsl = `vec3( ${floor[0]}, ${floor[1]}, ${floor[2]} )`;
   root.traverse(node => {
     const rel = node.userData?.lightmap;
     if (!rel) return;
@@ -451,7 +463,8 @@ function bindLightmaps(root, dir) {
               `#include <map_fragment>
                #ifdef USE_LIGHTMAP
                diffuseColor.rgb *= mix( vec3( 1.0 ),
-                   min( vec3( 2.0 ), 2.0 * texture2D( lightMap, vLightMapUv ).rgb ),
+                   min( vec3( 2.0 ), ${floorGlsl}
+                       + 2.0 * texture2D( lightMap, vLightMapUv ).rgb ),
                    lightMapIntensity );
                #endif`,
             )
