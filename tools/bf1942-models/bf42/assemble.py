@@ -485,10 +485,14 @@ class Assembler:
                 transparent=True,
                 alpha_test=0.4,
             )
-            # Foliage cards go out unlit; the trunk is real geometry and keeps
-            # its shading. `treemesh.py` names the three kinds, so this reads
-            # the label it wrote rather than guessing from the texture.
-            foliage = part.name.startswith(("sprite", "branch"))
+            # Only the camera-facing leaf sprites go out unlit. A branch card
+            # is placed at a real angle -- a palm is `branch` plus `trunk` and
+            # has no sprite at all -- so it takes the sun properly and lighting
+            # it is what gives the fronds their depth; flatten those too and the
+            # palms come out a uniform bright green. The bushes that rendered
+            # black are `sprite` plus `trunk`, so the split falls exactly on the
+            # label `treemesh.py` already writes.
+            foliage = part.name.startswith("sprite")
             primitives.append(gltf.Primitive(
                 positions=part.positions,
                 normals=part.normals,

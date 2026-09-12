@@ -338,6 +338,52 @@ function dispose(root) {
 
 const lightmapMaterials = [];
 
+// The engine's second terrain stage, `base * detail * 2`.
+//
+// Baking it into the tile colour map at export caps the grain at that map's
+// resolution -- 4 texels/m for a 1024px tile over a 256 m patch, and 2 once
+// --max-texture 512 has run -- against the 32 texels/m the engine gets by
+// tiling a 512px detail map 16 times across the same patch. Sixteen times the
+// spatial frequency is the whole difference between crisp sand underfoot and a
+// smear, and it costs one extra texture read.
+function bindTerrainDetail(root, dir) {
+  const info = extras.terrain || {};
+  if (!info.detailTexture) return;
+  const repeats = info.detailRepeats || 16;
+  const tex = texLoader.load(`./maps/${dir}/${info.detailTexture}${bust()}`);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  root.traverse(node => {
+    if (node.userData?.kind !== 'terrain') return;
+    node.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      const source = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const bound = source.map(m => {
+        const mat = m.clone();
+        mat.userData = { ...mat.userData };
+        const prev = mat.onBeforeCompile;
+        mat.onBeforeCompile = (shader, renderer) => {
+          if (prev) prev(shader, renderer);
+          shader.uniforms.tDetail = { value: tex };
+          shader.uniforms.detailRepeats = { value: repeats };
+          shader.fragmentShader = shader.fragmentShader
+            .replace('void main() {',
+              `uniform sampler2D tDetail;
+               uniform float detailRepeats;
+               void main() {`)
+            .replace('#include <map_fragment>',
+              `#include <map_fragment>
+               diffuseColor.rgb = min( vec3( 1.0 ), diffuseColor.rgb * 2.0 *
+                   texture2D( tDetail, vMapUv * detailRepeats ).rgb );`);
+        };
+        mat.needsUpdate = true;
+        return mat;
+      });
+      obj.material = Array.isArray(obj.material) ? bound : bound[0];
+    });
+  });
+}
+
 function lightmapTargets(obj) {
   // A multi-material part arrives from GLTFLoader as a Group whose direct
   // Mesh children are its primitives — the same Group-vs-Mesh trap as
@@ -885,6 +931,7 @@ async function show(entry) {
   scene.add(currentRoot);
   const dir = entry.glb.replace(/\/[^/]+$/, '');
   bindLightmaps(currentRoot, dir);
+  bindTerrainDetail(currentRoot, dir);
   setupSky(currentRoot, dir);
   setupWater(currentRoot, dir);
   applyLighting();
