@@ -36,19 +36,33 @@ exactly, which is what pins the channel order and both scales.
 
 **A `.baf` transform replaces the bone's `.ske` local transform outright** —
 rotation as a quaternion, translation absolute in parent space, not an offset
-from rest. The stored values live in the same mirrored space as the `.ske`
-(see `ske.py`), but the quaternion follows the transposed (row-vector)
-convention, and the map into mesh space is the one that survives three
-measurements — the standing clip landing on the body skin's bind stance
-(2.2 cm mean across the feet), the figure upright and facing +Y, and the
-right hand on the character's right:
+from rest. Unlike the `.ske`, the stored values are not Z-mirrored: the
+translations are already in the axes the `.skn`/`.sm` meshes use, the
+quaternion follows the transposed (row-vector) convention, and the clip's
+world is yawed 180 degrees from mesh world:
 
-    quat (x, y, z, w)  ->  matrix of (x, -y, z, w)
-    pos  (x, y, z)     ->  (-x, y, -z)
+    quat (x, y, z, w)  ->  matrix of (-x, -y, -z, w)     (the conjugate)
+    pos  (x, y, z)     ->  (x, y, z)                     (as stored)
+    root track only    ->  left-multiplied by Ry180 = diag(-1, 1, -1)
+                           (`ROOT_ALIGN`, applied by `pose.align_clip_roots`
+                           because only the skeleton knows which bone is root)
 
-Getting the quaternion map wrong is not subtle: three of the eight sign
-choices still produce an upright, forward-facing soldier — mirrored left to
-right, which a symmetric body hides until the weapon lands in the wrong hand.
+Each piece is measured, not assumed. Skinning the body and both hands with
+candidate decodes and scoring `|posed edge - rest edge|` over every mesh
+edge (a skinned mesh must keep its triangle edges near rest length; a wrong
+convention tears the skin at bone boundaries) singles out the conjugate:
+body p95 9 mm, hands p95 0.4-7 mm, against 200-300 mm for the map that reads
+the quaternion as stored. That earlier map is this one's inverse — it poses
+every bone by the opposite rotation, which near-identity leg rotations
+absorb (the feet still landed within 2.2 cm of the body's bind stance, which
+is how it survived initial verification) and finger and wrist rotations
+expose as a shattered hand. The residual global transform between that
+rigid figure and mesh space, fitted over the lower-body bone origins
+against the body skin's own binds across all 48 signed axis permutations,
+is the proper rotation diag(-1, 1, -1) at 16 mm rms — the best improper
+(mirror) candidate fits 7x worse, which is what pins chirality: a mirrored
+decode also stands upright and face-forward, and only this measurement
+tells them apart.
 
 One vanilla file cannot be read: `Weapons/MedPack/MedPackFire.baf` opens with
 a stray `0x21` byte before what looks like a version-3 header and one bone
@@ -67,6 +81,15 @@ from dataclasses import dataclass
 from .ske import Matrix3, Vector3, canonical
 
 Quat = tuple[float, float, float, float]
+
+# Clip world -> mesh world: a 180-degree yaw. Only a skeleton root's local
+# transform is expressed in world space, so only root tracks need it; the
+# skeleton, not the clip, knows which bones those are, so the application
+# lives in `pose.align_clip_roots`.
+ROOT_ALIGN: tuple[Matrix3, Vector3] = (
+    ((-1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0)),
+    (0.0, 0.0, 0.0),
+)
 
 
 class AnimationError(ValueError):
@@ -192,15 +215,16 @@ def parse(data: bytes, name: str = "") -> Animation:
                     f"bone {bone_name!r} declares {declared} data words, "
                     f"holds {payload_words} in {where}")
             rotations = tuple(
-                # Stored transposed (row-vector convention): the matrix of
-                # (x, -y, z, w) is the mesh-space local rotation. See module doc.
-                (channels[0][f] * quat_scale, -channels[1][f] * quat_scale,
-                 channels[2][f] * quat_scale, channels[3][f] * quat_scale)
+                # Stored transposed (row-vector convention): the conjugate is
+                # the mesh-space local rotation. See the module docstring for
+                # the edge-stretch measurement that pins this.
+                (-channels[0][f] * quat_scale, -channels[1][f] * quat_scale,
+                 -channels[2][f] * quat_scale, channels[3][f] * quat_scale)
                 for f in range(frames)
             )
             translations = tuple(
-                (-channels[4][f] * pos_scale, channels[5][f] * pos_scale,
-                 -channels[6][f] * pos_scale)
+                (channels[4][f] * pos_scale, channels[5][f] * pos_scale,
+                 channels[6][f] * pos_scale)
                 for f in range(frames)
             )
             bones.append(BoneTrack(bone_name, rotations, translations))

@@ -204,7 +204,7 @@ def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
         return None
 
     binds = pose_mod.refine_binds(skn)
-    bone_map, anchor = pose_mod.remap_influences(skn, skeleton)
+    bone_map, anchor = pose_mod.remap_influences(skn, skeleton, binds)
     part_report.setdefault("anchors", {})[template.name] = anchor
 
     # The skin's joint list: every mapped bone in stable order.
@@ -224,6 +224,10 @@ def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
                 continue
             joints.append(slot[mapped])
             weights.append(inf.weight)
+        if not joints and anchor in slot:
+            # Every influence unmapped: ride the anchor rather than carry
+            # zero weight, which three.js "repairs" into joint 0, weight 1.
+            joints, weights = [slot[anchor]], [1.0]
         total = sum(weights) or 1.0
         weights = [w / total for w in weights]
         joints = (joints + [0, 0, 0, 0])[:4]
@@ -285,6 +289,7 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
 
     locals_map = resolve_pose(machine, meshes, weapon, state, frame)
     result["upperClip"] = locals_map.pop("__upper_clip__")
+    locals_map = pose_mod.align_clip_roots(skeleton, locals_map)
     worlds = pose_mod.posed_worlds(skeleton, locals_map)
     posed = pose_mod.worlds_by_name(skeleton, worlds)
 
