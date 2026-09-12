@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using api.Players.Models;
 using api.PlayerTracking;
 using api.Servers.Models;
@@ -583,12 +584,17 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         string TeamLabel,
         string PlayerName);
 
+    public static DateTime CapSnapshotEnd(DateTime roundStart, DateTime roundEnd)
+    {
+        var cap = roundStart.AddMinutes(MaxSnapshotMinutes);
+        return roundEnd < cap ? roundEnd : cap;
+    }
+
     public async Task<SessionRoundReport?> GetRoundReport(
         string roundId,
         Gamification.Services.SqliteGamificationService gamificationService,
         CancellationToken ct = default)
     {
-        // First, get just the round data we need
         var roundData = await dbContext.Rounds
             .AsNoTracking()
             .Where(r => r.RoundId == roundId)
@@ -608,20 +614,36 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 r.Team2Label,
                 // The mod the server runs (bf1942, fhsw, dc_final, ...). Together with
                 // MapName this addresses the map's preview image under /stats/assets/maps.
-                GameId = r.GameServer != null ? r.GameServer.GameId : null,
-                SessionIds = r.Sessions.Select(s => s.SessionId).ToList()
+                GameId = r.GameServer != null ? r.GameServer.GameId : null
             })
             .FirstOrDefaultAsync(ct);
 
         if (roundData == null)
             return null;
 
-        // Get all observations for the round with player names
-        var roundObservations = await dbContext.PlayerObservations
-            .Include(o => o.Session)
-            .Where(o => roundData.SessionIds.Contains(o.SessionId))
-            .OrderBy(o => o.Timestamp)
-            .Select(o => new SnapshotObservation(
+        var roundEnd = roundData.EndTime ?? DateTime.UtcNow;
+        var snapshotEnd = CapSnapshotEnd(roundData.StartTime, roundEnd);
+        if (roundEnd > snapshotEnd)
+        {
+            logger.LogWarning(
+                "Round {RoundId} spans {Minutes:F0} minutes — capping leaderboard snapshots at {Cap} minutes",
+                roundId, (roundEnd - roundData.StartTime).TotalMinutes, MaxSnapshotMinutes);
+        }
+
+        // A leftover RoundId from a stale-active orphan can still point at months of
+        // later sessions. Bound both the session set and observation timestamps to
+        // the snapshot window so the 101M-row observation table is never scanned.
+        var observationSw = Stopwatch.StartNew();
+        var roundObservations = await (
+            from o in dbContext.PlayerObservations.AsNoTracking()
+            join s in dbContext.PlayerSessions.AsNoTracking() on o.SessionId equals s.SessionId
+            where s.RoundId == roundId
+                  && s.StartTime <= snapshotEnd
+                  && s.LastSeenTime >= roundData.StartTime
+                  && o.Timestamp >= roundData.StartTime
+                  && o.Timestamp <= snapshotEnd
+            orderby o.Timestamp
+            select new SnapshotObservation(
                 o.Timestamp,
                 o.Score,
                 o.Kills,
@@ -629,24 +651,18 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 o.Ping,
                 o.Team,
                 o.TeamLabel,
-                o.Session.PlayerName))
-            .ToListAsync(ct);
-
-        var roundEnd = roundData.EndTime ?? DateTime.UtcNow;
-        if (roundEnd > roundData.StartTime.AddMinutes(MaxSnapshotMinutes))
-        {
-            logger.LogWarning(
-                "Round {RoundId} spans {Minutes:F0} minutes — capping leaderboard snapshots at {Cap} minutes",
-                roundId, (roundEnd - roundData.StartTime).TotalMinutes, MaxSnapshotMinutes);
-        }
+                s.PlayerName)
+        ).ToListAsync(ct);
+        logger.LogInformation(
+            "Round report observations for {RoundId}: {ObservationCount} rows in {ElapsedMs}ms (window {Start}..{End})",
+            roundId, roundObservations.Count, observationSw.ElapsedMilliseconds, roundData.StartTime, snapshotEnd);
 
         var leaderboardSnapshots = BuildLeaderboardSnapshots(roundData.StartTime, roundEnd, roundObservations, ct);
 
-        // Get achievements for this round using the dedicated method
         List<Gamification.Models.Achievement> achievements = new();
         try
         {
-            achievements = await gamificationService.GetRoundAchievementsAsync(roundId);
+            achievements = await gamificationService.GetRoundAchievementsAsync(roundId, ct);
         }
         catch (Exception ex)
         {
@@ -663,7 +679,12 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 ServerName = roundData.ServerName,
                 StartTime = roundData.StartTime,
                 EndTime = roundData.EndTime ?? DateTime.UtcNow,
-                TotalParticipants = roundData.ParticipantCount ?? roundData.SessionIds.Count,
+                TotalParticipants = roundData.ParticipantCount
+                    ?? await dbContext.PlayerSessions.AsNoTracking()
+                        .CountAsync(s =>
+                            s.RoundId == roundId
+                            && s.StartTime <= snapshotEnd
+                            && s.LastSeenTime >= roundData.StartTime, ct),
                 IsActive = roundData.IsActive,
                 Tickets1 = roundData.Tickets1,
                 Tickets2 = roundData.Tickets2,
@@ -689,8 +710,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         IReadOnlyList<SnapshotObservation> observations,
         CancellationToken ct = default)
     {
-        var cappedEnd = roundStart.AddMinutes(MaxSnapshotMinutes);
-        if (roundEnd < cappedEnd) cappedEnd = roundEnd;
+        var cappedEnd = CapSnapshotEnd(roundStart, roundEnd);
 
         var snapshots = new List<LeaderboardSnapshot>();
         var latestByPlayer = new Dictionary<string, SnapshotObservation>();
