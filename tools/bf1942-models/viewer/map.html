@@ -111,6 +111,7 @@
   <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
   <label class="opt"><input type="checkbox" id="vehicles"> vehicles</label>
   <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
+  <label class="opt"><input type="checkbox" id="lightmaps"> object lightmaps (broken: wrong UV1)</label>
   <div class="stat" style="margin-top:12px">
     <a href="./index.html">vehicle inspector</a>
   </div>
@@ -184,6 +185,7 @@ const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
 const optVehicles = document.getElementById('vehicles');
 const optEntire = document.getElementById('entire-map');
+const optLightmaps = document.getElementById('lightmaps');
 
 function uiFocused() {
   const t = document.activeElement;
@@ -334,6 +336,8 @@ function dispose(root) {
   scene.remove(root);
 }
 
+const lightmapMaterials = [];
+
 function lightmapTargets(obj) {
   // A multi-material part arrives from GLTFLoader as a Group whose direct
   // Mesh children are its primitives — the same Group-vs-Mesh trap as
@@ -344,7 +348,25 @@ function lightmapTargets(obj) {
     c => c.isMesh && Object.keys(c.userData || {}).length === 0);
 }
 
+// Off by default, and it must stay off until the UV1 export is fixed.
+//
+// The pass never once executed before -- `bindLightmaps` gated on `obj.isMesh`
+// while every `userData.lightmap` extra lands on a Group -- so switching it on
+// was the first time anyone saw its output, and its output is wrong. Buildings
+// render as burnt black shells with hard-edged grey rectangles across them.
+//
+// What has been ruled out: the meshes do carry a second UV set (393 of 405
+// primitives under a lightmap node have TEXCOORD_1); the atlases decode fine
+// and are plainly per-instance bakes, with each wall and the dome visible as a
+// separate patch; tagging the texture sRGB was wrong and is fixed here (it is a
+// multiplier, not a colour, so three must not decode it); and modulate-2x, the
+// blend these mid-grey-centred bakes look authored for, barely changes the
+// result. The rectangles are hard-edged and land across faces that should be
+// uniformly lit, which says UV1 indexes the wrong regions of the atlas rather
+// than that the blend is mis-scaled. Fixing it means going back to the
+// stride-40 StandardMesh lightmap UV read in bf42/stdmesh.py.
 function bindLightmaps(root, dir) {
+  lightmapMaterials.length = 0;
   root.traverse(node => {
     const rel = node.userData?.lightmap;
     if (!rel) return;
@@ -353,7 +375,11 @@ function bindLightmaps(root, dir) {
     if (!tex) {
       tex = texLoader.load(url);
       tex.channel = 1;
-      tex.colorSpace = THREE.SRGBColorSpace;
+      // A lightmap is a multiplier, not a colour. Tagging it sRGB makes three
+      // decode it to linear before the multiply, which squares the darkening:
+      // a mid-grey 0.25 texel lands at 0.05 and every lit building renders as
+      // a burnt black shell with the lit edges surviving as grey streaks.
+      tex.colorSpace = THREE.NoColorSpace;
       tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
       lmCache.set(url, tex);
     }
@@ -362,7 +388,7 @@ function bindLightmaps(root, dir) {
       const bound = source.map(m => {
         const mat = m.clone();
         mat.lightMap = tex;
-        mat.lightMapIntensity = 1;
+        mat.lightMapIntensity = optLightmaps.checked ? 1 : 0;
         const prev = mat.onBeforeCompile;
         mat.onBeforeCompile = (shader, renderer) => {
           if (prev) prev(shader, renderer);
@@ -371,12 +397,14 @@ function bindLightmaps(root, dir) {
               '#include <map_fragment>',
               `#include <map_fragment>
                #ifdef USE_LIGHTMAP
-               diffuseColor.rgb *= texture2D( lightMap, vLightMapUv ).rgb;
+               diffuseColor.rgb *= mix( vec3( 1.0 ),
+                   texture2D( lightMap, vLightMapUv ).rgb, lightMapIntensity );
                #endif`,
             )
             .replace('#include <lightmap_fragment>', '');
         };
         mat.needsUpdate = true;
+        lightmapMaterials.push(mat);
         return mat;
       });
       obj.material = Array.isArray(obj.material) ? bound : bound[0];
@@ -894,6 +922,9 @@ async function show(entry) {
 
 optGameFog.addEventListener('change', applyFog);
 optWire.addEventListener('change', e => wireframe(e.target.checked));
+optLightmaps.addEventListener('change', e => {
+  for (const mat of lightmapMaterials) mat.lightMapIntensity = e.target.checked ? 1 : 0;
+});
 optVehicles.addEventListener('change', applyVisibility);
 optEntire.addEventListener('change', () => {
   applyFar();
@@ -944,6 +975,11 @@ if (params.has('shots')) {
     frame(1 / 60);
     return true;
   };
+  // Scene handles for offline inspection: isolating one shader term is the
+  // only practical way to attribute an artefact to it.
+  window.__scene = scene;
+  window.__camera = camera;
+  window.__renderer = renderer;
 }
 </script>
 </body>
