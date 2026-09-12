@@ -107,11 +107,10 @@
   <h1>Map flythrough</h1>
   <select id="maps" aria-label="Level"></select>
   <div id="stats" class="stat">extract a level first</div>
-  <label class="opt"><input type="checkbox" id="game-fog"> game fog distance</label>
+  <label class="opt"><input type="checkbox" id="game-fog" checked> fog</label>
   <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
-  <label class="opt"><input type="checkbox" id="vehicles"> vehicles</label>
+  <label class="opt"><input type="checkbox" id="vehicles" checked> vehicles</label>
   <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
-  <label class="opt"><input type="checkbox" id="lightmaps" checked> object lightmaps</label>
   <div class="stat" style="margin-top:12px">
     <a href="./index.html">vehicle inspector</a>
   </div>
@@ -125,6 +124,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { createLoadOverlay } from './progress.js';
 
 const DEFAULT_DRAW = 700;
 const FLY_SPEED = 140;
@@ -155,10 +155,24 @@ const sun = new THREE.DirectionalLight(0xfff1d0, 2.4);
 scene.add(sun);
 
 const loader = new GLTFLoader();
-const cubeLoader = new THREE.CubeTextureLoader();
-const texLoader = new THREE.TextureLoader();
-const bust = () => `?t=${Date.now()}`;
+// Loose textures — lightmap atlases, terrain detail, sky, water — are queued
+// after the scene .glb resolves and finish well after it. Their own manager
+// turns that tail into a countable second phase of the progress bar instead of
+// a stretch where the map is up but still visibly filling in.
+const texManager = new THREE.LoadingManager();
+const cubeLoader = new THREE.CubeTextureLoader(texManager);
+const texLoader = new THREE.TextureLoader(texManager);
+// Cache-busting is an iteration aid, not a production behaviour: a 70 MB scene
+// re-fetched on every visit and every map switch is by far the slowest thing
+// this page can do, and it defeats the Cache-Control nginx already sets. Local
+// dev still bypasses the cache so a re-extract shows up without a hard refresh,
+// and ?nocache forces it anywhere.
+const DEV_ORIGIN = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
+const NO_CACHE = DEV_ORIGIN || new URLSearchParams(location.search).has('nocache');
+const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 const lmCache = new Map();
+
+const overlay = createLoadOverlay(document.body);
 
 const keys = new Set();
 const look = { yaw: 0, pitch: -0.15 };
@@ -185,7 +199,6 @@ const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
 const optVehicles = document.getElementById('vehicles');
 const optEntire = document.getElementById('entire-map');
-const optLightmaps = document.getElementById('lightmaps');
 
 function uiFocused() {
   const t = document.activeElement;
@@ -336,8 +349,6 @@ function dispose(root) {
   scene.remove(root);
 }
 
-const lightmapMaterials = [];
-
 // The engine's second terrain stage, `base * detail * 2`.
 //
 // Baking it into the tile colour map at export caps the grain at that map's
@@ -418,7 +429,6 @@ function lightmapTargets(obj) {
 // lightmapped mesh gets an unlit base material and the bake does the shading,
 // palm shadows on walls included.
 function bindLightmaps(root, dir) {
-  lightmapMaterials.length = 0;
   // The bake is the sun term only. Its dark texels sit near zero, and the
   // engine adds the level's declared ambient on top - drop that term and
   // every shadow-side wall multiplies toward black, while sun-facing walls
@@ -455,7 +465,6 @@ function bindLightmaps(root, dir) {
         });
         mat.name = m.name;
         mat.lightMap = tex;
-        mat.lightMapIntensity = optLightmaps.checked ? 1 : 0;
         mat.onBeforeCompile = (shader) => {
           shader.fragmentShader = shader.fragmentShader
             .replace(
@@ -471,7 +480,6 @@ function bindLightmaps(root, dir) {
             .replace('#include <lightmap_fragment>', '');
         };
         mat.needsUpdate = true;
-        lightmapMaterials.push(mat);
         return mat;
       });
       obj.material = Array.isArray(obj.material) ? bound : bound[0];
@@ -942,10 +950,60 @@ async function loadSky(entry) {
   skybox = tex;
 }
 
+// LoadingManager counters are cumulative for the life of the page and never
+// reset, so a per-load view has to be taken against a baseline captured when
+// that load starts.
+const tex = { total: 0, loaded: 0, baseTotal: 0, baseLoaded: 0, load: null };
+
+function texReport() {
+  if (!tex.load) return;
+  const total = tex.total - tex.baseTotal;
+  const done = tex.loaded - tex.baseLoaded;
+  tex.load.count('textures', done, total);
+  if (total > 0 && done >= total) {
+    tex.load.end();
+    tex.load = null;
+  }
+}
+
+texManager.onStart = (url, loaded, total) => {
+  tex.loaded = loaded;
+  tex.total = total;
+  texReport();
+};
+texManager.onProgress = (url, loaded, total) => {
+  tex.loaded = loaded;
+  tex.total = total;
+  texReport();
+};
+
 async function show(entry) {
-  const report = await fetch(`./maps/${entry.report}${bust()}`).then(r => r.json());
+  const load = overlay.begin(entry.name);
+  load.step('report', { label: 'level report', weight: 1 });
+  // Weighted by what the bytes actually are: one ~70 MB scene against a couple
+  // of MB of loose textures and a 2 KB report.
+  load.step('scene', { label: 'scene geometry', weight: 88 });
+  load.step('textures', { label: 'textures', weight: 11 });
+  tex.baseTotal = tex.total;
+  tex.baseLoaded = tex.loaded;
+  tex.load = load;
+
+  let report;
+  let gltf;
+  try {
+    report = await fetch(`./maps/${entry.report}${bust()}`).then(r => r.json());
+    load.finish('report');
+    gltf = await loader.loadAsync(
+      `./maps/${entry.glb}${bust()}`,
+      e => load.bytes('scene', e.loaded, e.lengthComputable ? e.total : 0),
+    );
+    load.finish('scene');
+  } catch (error) {
+    if (tex.load === load) tex.load = null;
+    load.fail(`could not load ${entry.name}: ${error.message}`);
+    throw error;
+  }
   extras = report;
-  const gltf = await loader.loadAsync(`./maps/${entry.glb}${bust()}`);
   dispose(currentRoot);
   disposeSky();
   currentRoot = gltf.scene;
@@ -986,13 +1044,20 @@ async function show(entry) {
     `sky ${extras.sky ? extras.sky.mesh + (extras.sky.clouds ? ' + clouds' : '') :
           (extras.skybox ? 'env cubemap' : 'fog colour')} / ` +
     `water ${extras.water ? 'shader' : 'flat'}`;
+
+  // Every texture this level needs has been queued by now, so a queue that is
+  // already drained (or was never filled) means the load is done — texReport
+  // alone would sit waiting for a callback that is not coming.
+  if (tex.total - tex.baseTotal <= tex.loaded - tex.baseLoaded) {
+    load.end();
+    if (tex.load === load) tex.load = null;
+  } else {
+    texReport();
+  }
 }
 
 optGameFog.addEventListener('change', applyFog);
 optWire.addEventListener('change', e => wireframe(e.target.checked));
-optLightmaps.addEventListener('change', e => {
-  for (const mat of lightmapMaterials) mat.lightMapIntensity = e.target.checked ? 1 : 0;
-});
 optVehicles.addEventListener('change', applyVisibility);
 optEntire.addEventListener('change', () => {
   applyFar();
