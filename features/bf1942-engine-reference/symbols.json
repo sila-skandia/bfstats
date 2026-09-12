@@ -1275,6 +1275,51 @@
    "note": "bf42plus section: Console"
   },
   {
+   "address": "0x005b42d0",
+   "name": "StandardMeshTemplate_readMaterials",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x9c. Per-LOD material reader. Vertex payload is read as ONE flat blob of stride*count bytes and the index block as count*2; no per-component parsing happens at load. Creates GPU buffers via RendPCDX8_singleton +0x1c (vertex) and +0x20 (index)."
+  },
+  {
+   "address": "0x005b54e0",
+   "name": "StandardMeshTemplate_readLods",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x98. Loops the LOD count calling +0x9c (0x005b42d0) per LOD; +0xac participates in a fallback/skip decision."
+  },
+  {
+   "address": "0x005b5f50",
+   "name": "StandardMeshTemplate_readStream",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x88. Parse orchestrator: calls +0x90 header, +0x94, +0x98 LOD loop, then version-gated +0xa0/+0xa8 when version>8. Finally, if +0x40 is set, loads \"Texture/ObjectLightmaps/\"+name into member [99]."
+  },
+  {
+   "address": "0x005b6080",
+   "name": "StandardMeshTemplate_loadFile",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x8c. Appends \".sm\" (0x00905b70), opens a stream via the manager at DAT_009a2380, delegates the parse to vtable +0x88, releases the stream."
+  },
+  {
+   "address": "0x005b61f0",
+   "name": "StandardMeshTemplate_readHeader",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable +0x90. Version at object +0x14 accepted when (7 < v < 0xb) - that is 8, 9 AND 10. An extra field is read only when v > 9. Our reader documents 9-or-10; the engine also accepts 8."
+  },
+  {
    "address": "0x005b7660",
    "name": "GeometryTemplate_dtor_sibling",
    "kind": "function",

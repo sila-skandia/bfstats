@@ -91,7 +91,11 @@ typedef struct {
 } bf42_vec3;
 
 typedef struct {
-    uint32_t   version;        /* 9 or 10                              [inferred] */
+    /* The engine accepts 8, 9 and 10: StandardMeshTemplate_readHeader at
+     * 0x005b61f0 gates on (7 < version < 0xb).  Our reader documents "9 or 10",
+     * which is narrower than the engine.  The extra header byte (`qflag`) is
+     * read only when version > 9.                                   [verified] */
+    uint32_t   version;
     uint32_t   reserved0;      /* 0 in every observed file             [observed] */
     bf42_vec3  bounds_min;
     bf42_vec3  bounds_max;
@@ -169,6 +173,23 @@ typedef struct {
 /* 0x005d0140  StandardMeshTemplate destructor (shape only - installs four
  *   vtables, tears down members, object is >= 0x67 dwords).       [inferred] */
 
-/* THE LOADER ITSELF IS NOT YET LOCATED.                                [open] */
+/* The load chain, off the template vtable at 0x00905a90:          [verified]
+ *
+ *   +0x8c  0x005b6080  loadFile        appends ".sm", opens stream, calls +0x88
+ *   +0x88  0x005b5f50  readStream      orchestrates; loads the object lightmap
+ *   +0x90  0x005b61f0  readHeader      version gate (7 < v < 0xb)
+ *   +0x98  0x005b54e0  readLods        loops LODs, calls +0x9c each
+ *   +0x9c  0x005b42d0  readMaterials   per-LOD material + payload reader
+ *
+ * readMaterials reads a material's vertices as ONE flat blob of
+ * stride * count bytes and its indices as count * 2, then hands both to
+ * RendPCDX8_singleton (DAT_009a99d4): +0x1c makes the vertex buffer, +0x20 the
+ * index buffer.  `stride` is used ONLY as a byte length.  Nothing on the load
+ * path decides where a position, normal or UV sits inside a vertex.
+ *
+ * CONSEQUENCE: the vertex layout question above cannot be settled in the
+ * loader.  It is decided at draw time when the vertex declaration or shader is
+ * built - StandardMeshRenderer / SubShaderBuilder - which is client-only code.
+ * See ../ledger.md rows SM-1 and SM-2.                                        */
 
 #endif /* BF42_GEOM_STDMESH_H */
