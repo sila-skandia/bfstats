@@ -177,12 +177,21 @@ class GlbBuilder:
     def add_material(self, name: str, texture: int | None = None, *,
                      double_sided: bool = False, alpha_cutoff: float | None = None,
                      blend: bool = False, base_color=(1.0, 1.0, 1.0, 1.0),
-                     unlit: bool = False) -> int:
+                     unlit: bool = False, emissive_floor: float = 0.0) -> int:
         pbr: dict = {"baseColorFactor": list(base_color),
                      "metallicFactor": 0.0, "roughnessFactor": 0.85}
         if texture is not None:
             pbr["baseColorTexture"] = {"index": texture}
         mat: dict = {"name": name, "pbrMetallicRoughness": pbr, "doubleSided": double_sided}
+        if emissive_floor > 0.0 and texture is not None:
+            # A translucency floor for thin foliage: the base texture feeds the
+            # emissive slot at a fraction, so a frond facing away from the sun
+            # still reads as leaf-green with light through it instead of going
+            # black under pure N.L, while the lit side keeps its shading. Plain
+            # glTF - emissiveTexture plus emissiveFactor - so every viewer
+            # honours it without knowing anything about trees.
+            mat["emissiveTexture"] = {"index": texture}
+            mat["emissiveFactor"] = [emissive_floor] * 3
         if alpha_cutoff is not None:
             mat["alphaMode"] = "MASK"
             mat["alphaCutoff"] = alpha_cutoff

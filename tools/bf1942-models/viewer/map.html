@@ -111,7 +111,7 @@
   <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
   <label class="opt"><input type="checkbox" id="vehicles"> vehicles</label>
   <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
-  <label class="opt"><input type="checkbox" id="lightmaps"> object lightmaps (broken: wrong UV1)</label>
+  <label class="opt"><input type="checkbox" id="lightmaps" checked> object lightmaps</label>
   <div class="stat" style="margin-top:12px">
     <a href="./index.html">vehicle inspector</a>
   </div>
@@ -394,25 +394,43 @@ function lightmapTargets(obj) {
     c => c.isMesh && Object.keys(c.userData || {}).length === 0);
 }
 
-// Off by default, and it must stay off until the UV1 export is fixed.
+// The engine's baked lighting for statics, and the pass with the longest
+// string of masked bugs in this viewer. Each hid the next:
 //
-// The pass never once executed before -- `bindLightmaps` gated on `obj.isMesh`
-// while every `userData.lightmap` extra lands on a Group -- so switching it on
-// was the first time anyone saw its output, and its output is wrong. Buildings
-// render as burnt black shells with hard-edged grey rectangles across them.
+// 1. It never executed -- gated on `obj.isMesh` while every `userData.lightmap`
+//    extra lands on a Group (the multi-material-part trap the README documents
+//    for setAnimatedTextureSpeed).
+// 2. First execution rendered burnt black shells. Partly the texture tagged
+//    sRGB -- a lightmap is a multiplier, not a colour, and decoding it to
+//    linear squares the darkening -- but mostly:
+// 3. The atlas was sampled upside down. Everything inside the glb arrives via
+//    GLTFLoader with flipY=false, the glTF convention. These atlases load
+//    through THREE.TextureLoader, whose default is flipY=true, so UV1 indexed
+//    the atlas mirrored in V -- hard-edged rectangles across faces that should
+//    be uniformly lit, which read as "the UV1 export is wrong" and cost a trip
+//    through the stride-40 StandardMesh reader that was blameless all along.
+//    Same class of bug as the terrain tile V mirror, one loader further down.
 //
-// What has been ruled out: the meshes do carry a second UV set (393 of 405
-// primitives under a lightmap node have TEXCOORD_1); the atlases decode fine
-// and are plainly per-instance bakes, with each wall and the dome visible as a
-// separate patch; tagging the texture sRGB was wrong and is fixed here (it is a
-// multiplier, not a colour, so three must not decode it); and modulate-2x, the
-// blend these mid-grey-centred bakes look authored for, barely changes the
-// result. The rectangles are hard-edged and land across faces that should be
-// uniformly lit, which says UV1 indexes the wrong regions of the atlas rather
-// than that the blend is mis-scaled. Fixing it means going back to the
-// stride-40 StandardMesh lightmap UV read in bf42/stdmesh.py.
+// With the atlas the right way up, the bake is self-evidently modulate-2x
+// (mid-grey neutral, bright texels overbright sun-facing walls) and it
+// *replaces* analytic lighting on statics rather than adding to it -- keep the
+// hemisphere and sun on a lightmapped wall and every face is lit twice. So a
+// lightmapped mesh gets an unlit base material and the bake does the shading,
+// palm shadows on walls included.
 function bindLightmaps(root, dir) {
   lightmapMaterials.length = 0;
+  // The bake is the sun term only. Its dark texels sit near zero, and the
+  // engine adds the level's declared ambient on top - drop that term and
+  // every shadow-side wall multiplies toward black, while sun-facing walls
+  // (bright texels) look right, which is exactly how the omission presents.
+  // Tobruk declares ambient 0.12/0.10/0.08 plus globalAmbient 0.2 and
+  // shadowColor 0.55; the ambient pair is the floor, inlined per level.
+  const lit = extras.lighting || {};
+  const amb = lit.ambient || [0.2, 0.2, 0.2];
+  const glob = lit.globalAmbient || [0.2, 0.2, 0.2];
+  const floor = [0, 1, 2].map(i =>
+    Math.min(1, (amb[i] || 0) + (glob[i] || 0)).toFixed(4));
+  const floorGlsl = `vec3( ${floor[0]}, ${floor[1]}, ${floor[2]} )`;
   root.traverse(node => {
     const rel = node.userData?.lightmap;
     if (!rel) return;
@@ -421,10 +439,7 @@ function bindLightmaps(root, dir) {
     if (!tex) {
       tex = texLoader.load(url);
       tex.channel = 1;
-      // A lightmap is a multiplier, not a colour. Tagging it sRGB makes three
-      // decode it to linear before the multiply, which squares the darkening:
-      // a mid-grey 0.25 texel lands at 0.05 and every lit building renders as
-      // a burnt black shell with the lit edges surviving as grey streaks.
+      tex.flipY = false;
       tex.colorSpace = THREE.NoColorSpace;
       tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
       lmCache.set(url, tex);
@@ -432,19 +447,25 @@ function bindLightmaps(root, dir) {
     for (const obj of lightmapTargets(node)) {
       const source = Array.isArray(obj.material) ? obj.material : [obj.material];
       const bound = source.map(m => {
-        const mat = m.clone();
+        const mat = new THREE.MeshBasicMaterial({
+          map: m.map || null,
+          side: m.side,
+          alphaTest: m.alphaTest || 0,
+          transparent: m.transparent,
+        });
+        mat.name = m.name;
         mat.lightMap = tex;
         mat.lightMapIntensity = optLightmaps.checked ? 1 : 0;
-        const prev = mat.onBeforeCompile;
-        mat.onBeforeCompile = (shader, renderer) => {
-          if (prev) prev(shader, renderer);
+        mat.onBeforeCompile = (shader) => {
           shader.fragmentShader = shader.fragmentShader
             .replace(
               '#include <map_fragment>',
               `#include <map_fragment>
                #ifdef USE_LIGHTMAP
                diffuseColor.rgb *= mix( vec3( 1.0 ),
-                   texture2D( lightMap, vLightMapUv ).rgb, lightMapIntensity );
+                   min( vec3( 2.0 ), ${floorGlsl}
+                       + 2.0 * texture2D( lightMap, vLightMapUv ).rgb ),
+                   lightMapIntensity );
                #endif`,
             )
             .replace('#include <lightmap_fragment>', '');

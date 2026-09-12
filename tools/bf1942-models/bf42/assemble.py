@@ -261,14 +261,15 @@ class Assembler:
 
     def _material_index(self, builder: gltf.GlbBuilder, shader: rs.Shader | None,
                         material_name: str, report: Report,
-                        unlit: bool = False) -> int | None:
+                        unlit: bool = False,
+                        emissive_floor: float = 0.0) -> int | None:
         if shader is None:
             report.missing_shaders.append(material_name)
             return None
 
         texture_path = shader.base_texture
         key = (texture_path, shader.twosided, shader.transparent,
-               shader.alpha_test, unlit)
+               shader.alpha_test, unlit, emissive_floor)
         if key in self._material_cache:
             return self._material_cache[key]
 
@@ -280,6 +281,7 @@ class Assembler:
             alpha_cutoff=shader.alpha_test,
             blend=shader.transparent and shader.alpha_test is None,
             unlit=unlit,
+            emissive_floor=emissive_floor,
         )
         self._material_cache[key] = index
         return index
@@ -493,13 +495,18 @@ class Assembler:
             # black are `sprite` plus `trunk`, so the split falls exactly on the
             # label `treemesh.py` already writes.
             foliage = part.name.startswith("sprite")
+            # Branch cards stay lit but get a translucency floor: a thin frond
+            # facing away from the sun reads as leaf-green with light through
+            # it, not black. 0.45 was judged against an in-game Tobruk palm.
+            floor = 0.45 if part.name.startswith("branch") else 0.0
             primitives.append(gltf.Primitive(
                 positions=part.positions,
                 normals=part.normals,
                 uvs=part.uvs,
                 indices=part.indices,
                 material=self._material_index(
-                    builder, shader, part.name, report, unlit=foliage),
+                    builder, shader, part.name, report, unlit=foliage,
+                    emissive_floor=floor),
             ))
         if not primitives:
             return None, 0
