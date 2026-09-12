@@ -34,6 +34,10 @@ class Primitive:
     uvs2: list[tuple[float, float]] | None = None
     material: int | None = None
     extras: dict | None = None
+    # Skinned primitives: four (joint, weight) slots per vertex. Joints index
+    # into the owning skin's joint list, not into the node array.
+    joints: list[tuple[int, int, int, int]] | None = None
+    weights: list[tuple[float, float, float, float]] | None = None
 
 
 @dataclass
@@ -44,6 +48,7 @@ class Node:
     mesh: int | None = None
     children: list[int] = field(default_factory=list)
     extras: dict | None = None
+    skin: int | None = None
 
 
 def quat_from_ypr(yaw_deg: float, pitch_deg: float, roll_deg: float) -> tuple[float, float, float, float]:
@@ -116,6 +121,7 @@ class GlbBuilder:
         self._images: list[dict] = []
         self._textures: list[dict] = []
         self._nodes: list[Node] = []
+        self._skins: list[dict] = []
         self._generator = generator
 
     # -- buffer plumbing ---------------------------------------------------- #
@@ -196,6 +202,17 @@ class GlbBuilder:
                 attrs["TEXCOORD_0"] = self._vec2_accessor(prim.uvs)
             if prim.uvs2:
                 attrs["TEXCOORD_1"] = self._vec2_accessor(prim.uvs2)
+            if prim.joints and prim.weights:
+                joint_view = self._view(
+                    b"".join(struct.pack("<4H", *j) for j in prim.joints),
+                    target=34962)
+                attrs["JOINTS_0"] = self._accessor(
+                    joint_view, COMPONENT_USHORT, len(prim.joints), "VEC4")
+                weight_view = self._view(
+                    b"".join(struct.pack("<4f", *w) for w in prim.weights),
+                    target=34962)
+                attrs["WEIGHTS_0"] = self._accessor(
+                    weight_view, COMPONENT_FLOAT, len(prim.weights), "VEC4")
 
             flipped: list[int] = []
             for i in range(0, len(prim.indices) - 2, 3):
@@ -220,6 +237,47 @@ class GlbBuilder:
         self._nodes.append(node)
         return len(self._nodes) - 1
 
+    def add_skin(self, joint_nodes: list[int],
+                 binds: list[tuple[tuple[tuple[float, float, float], ...],
+                                   tuple[float, float, float]]],
+                 name: str = "") -> int:
+        """A glTF skin over existing joint nodes.
+
+        `binds` are the joints' *forward* bind poses in Refractor space, one
+        per joint; the inverse and the Z-mirror conjugation happen here so the
+        caller stays in the same space as every other input to this builder.
+        """
+        matrix_data = bytearray()
+        for rotation, translation in binds:
+            # Rigid inverse first: R^T, -R^T t.
+            inv_rot = tuple(tuple(rotation[j][i] for j in range(3)) for i in range(3))
+            inv_t = tuple(
+                -sum(inv_rot[i][k] * translation[k] for k in range(3))
+                for i in range(3))
+            # Then conjugate into glTF space: M' = S M S with S = diag(1,1,-1),
+            # matching how positions and node transforms are exported.
+            r = [
+                [inv_rot[0][0], inv_rot[0][1], -inv_rot[0][2]],
+                [inv_rot[1][0], inv_rot[1][1], -inv_rot[1][2]],
+                [-inv_rot[2][0], -inv_rot[2][1], inv_rot[2][2]],
+            ]
+            t = (inv_t[0], inv_t[1], -inv_t[2])
+            # Column-major 4x4.
+            matrix_data += struct.pack(
+                "<16f",
+                r[0][0], r[1][0], r[2][0], 0.0,
+                r[0][1], r[1][1], r[2][1], 0.0,
+                r[0][2], r[1][2], r[2][2], 0.0,
+                t[0], t[1], t[2], 1.0,
+            )
+        view = self._view(bytes(matrix_data))
+        accessor = self._accessor(view, COMPONENT_FLOAT, len(binds), "MAT4")
+        skin: dict = {"joints": joint_nodes, "inverseBindMatrices": accessor}
+        if name:
+            skin["name"] = name
+        self._skins.append(skin)
+        return len(self._skins) - 1
+
     # -- output ------------------------------------------------------------- #
 
     def build(self, roots: list[int], extras: dict | None = None) -> bytes:
@@ -233,6 +291,8 @@ class GlbBuilder:
                 entry["rotation"] = list(n.rotation)
             if n.mesh is not None:
                 entry["mesh"] = n.mesh
+            if n.skin is not None:
+                entry["skin"] = n.skin
             if n.children:
                 entry["children"] = n.children
             if n.extras:
@@ -249,6 +309,8 @@ class GlbBuilder:
             "bufferViews": self._views,
             "buffers": [{"byteLength": len(self._blob)}],
         }
+        if self._skins:
+            doc["skins"] = self._skins
         if self._materials:
             doc["materials"] = self._materials
         if self._images:
