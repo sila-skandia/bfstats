@@ -48,6 +48,13 @@
     padding-top: 12px;
   }
   h2:first-of-type { border-top: 0; padding-top: 0; }
+  .page-nav {
+    margin-top: 20px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+    font-size: 11px;
+  }
+  .page-nav a { color: var(--accent); }
   #variant-panel[hidden] { display: none; }
   .variant-grid { display: grid; gap: 8px; }
   .variant-field { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; }
@@ -951,6 +958,11 @@
     <div class="detail-label">Part tree</div>
     <div id="tree"></div>
   </details>
+
+  <div class="page-nav">
+    <a href="./poses.html">grip inspector</a> &middot;
+    <a href="./map.html">map flythrough</a>
+  </div>
 </aside>
 <main>
   <div id="banner" hidden></div>
