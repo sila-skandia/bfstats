@@ -50,6 +50,22 @@ manifest:
 node shoot.mjs --thumbs
 ```
 
+`shoot.mjs` drives Playwright out of `ui/node_modules`, which a fresh worktree
+does not have — `npm install --prefix ui` (or `./scripts/bootstrap-worktree.sh`)
+first, or it exits on `ERR_MODULE_NOT_FOUND` before writing a single thumbnail.
+
+**Levels are a separate extraction, and the flythrough's map list is empty until
+you run it.** `extract_models.py` and `extract_all.py` write `viewer/models/`;
+neither one touches `viewer/maps/`, and `map.html` populates its dropdown purely
+from `viewer/maps/maps.json`. Both output directories are gitignored, so a fresh
+clone or worktree starts with no models *and* no maps however many times the
+catalogue has been extracted elsewhere:
+
+```bash
+python3 extract_map.py Tobruk --out ./viewer/maps
+python3 extract_map.py Wake   --out ./viewer/maps
+```
+
 Then start the `model-viewer` launch config (serves `tools/bf1942-models/viewer`
 on :5273). The inspector can switch each vehicle's Build and Skin without
 re-extracting it. `map.html` on the same server is the level flythrough.
