@@ -1275,6 +1275,15 @@
    "note": "bf42plus section: Console"
   },
   {
+   "address": "0x005b7660",
+   "name": "GeometryTemplate_dtor_sibling",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "ghidra-session",
+   "note": "Second destructor with the same member layout as 0x005d0140 (offsets 0x60-0x66, 0x34, 0x2f, 0x2b). Two instantiations of one template class."
+  },
+  {
    "address": "0x005c1280",
    "name": "File__CRC_func",
    "kind": "function",
@@ -1282,6 +1291,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x005cd260",
+   "name": "StandardMeshTemplate_perLod_interfaceQuery",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "ghidra-session-2026-09-12",
+   "note": "Created by us at a prologue found in the 0x005cd258-0x005cda5f gap; 315 bytes. Iterates collections at +0x164/+0x174 issuing QueryInterface-style calls with tags 0x53ce75fe and 0xd0867dfb. NOT the vertex reader."
   },
   {
    "address": "0x005d0140",
@@ -1923,6 +1941,15 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x00838b5e",
+   "name": "crt_static_init_region",
+   "kind": "range",
+   "subsystem": "crt",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "495KB of undefined code, 0x00838b5e-0x008b191f: the CRT static-initializer block. Ten of the 17 refs to \"StandardMesh/\" live here and are just global std::string constructions. Rule them out when chasing a string."
+  },
+  {
    "address": "0x008c3000",
    "name": "exe_text_end",
    "kind": "range",
@@ -2038,6 +2065,24 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-12",
    "note": "\"StandardMesh\" bare type name"
+  },
+  {
+   "address": "0x00905a90",
+   "name": "GeometryTemplate_vtable_A",
+   "kind": "vtable",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable installed by the destructor at 0x005b7660. Byte-identical in content to GeometryTemplate_vtable_B; both templates resolve every slot to the same implementations. Slots 0-3 are all 0x00804ae0 (stub). Implementation cluster is 0x005cdxxx + 0x005b5exx."
+  },
+  {
+   "address": "0x00908830",
+   "name": "GeometryTemplate_vtable_B",
+   "kind": "vtable",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable installed by the destructor at 0x005d0140. Byte-identical content to vtable_A - verified with read_memory against a control address."
   },
   {
    "address": "0x009089dc",
@@ -2245,6 +2290,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009c9bc0",
+   "name": "g_StandardMeshPath_string",
+   "kind": "data",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Global std::string constructed to \"StandardMesh/\" by the static initializer at 0x0085b8f0; its address is cached at 0x009c9c30. Only 3 xrefs, all within the init block - consumers reach it indirectly, not by address."
   },
   {
    "address": "0x00a5c630",
