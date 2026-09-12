@@ -521,12 +521,21 @@ function setupWater(root, dir) {
   if (layer1) layer1.colorSpace = THREE.SRGBColorSpace;
   if (layer2) layer2.colorSpace = THREE.SRGBColorSpace;
   if (depth) depth.wrapS = depth.wrapT = THREE.ClampToEdgeWrapping;
+  // The engine reflects ENVMAP_G_.rcm off the water via the shader-manager
+  // envmap parameter; the same six faces feed the fresnel term here.
+  let env = null;
+  if (extras.envmap?.length === 6) {
+    env = cubeLoader.load(extras.envmap.map(f => `./maps/${dir}/${f}${bust()}`));
+    env.colorSpace = THREE.SRGBColorSpace;
+    waterAssets.push(env);
+  }
   const ld = w.lightDirection || [-0.3, 0.5, 0.65];
   waterUniforms = {
     tLayer1: { value: layer1 },
     tLayer2: { value: layer2 },
     tNormal: { value: normal },
     tDepth: { value: depth },
+    tEnv: { value: env },
     uTime: { value: 0 },
     uWorldSize: { value: w.worldSize || extras.worldSize || 2048 },
     uMaxDepth: { value: w.maxDepth || 0 },
@@ -565,6 +574,7 @@ function setupWater(root, dir) {
       }`,
     fragmentShader: `
       uniform sampler2D tLayer1, tLayer2, tNormal, tDepth;
+      uniform samplerCube tEnv;
       uniform float uTime, uWorldSize, uMaxDepth;
       uniform vec2 uDir1, uDir2, uDirN;
       uniform float uScroll1, uScroll2, uScrollN, uTile1, uTile2, uTileN;
@@ -589,13 +599,27 @@ function setupWater(root, dir) {
         vec3 col = base * tex;
         vec3 N = vec3(0.0, 1.0, 0.0);
         #ifdef HAS_NORMAL
-        vec3 nm = texture2D(tNormal, wuv * uTileN + uDirN * uScrollN * uTime).rgb * 2.0 - 1.0;
-        N = normalize(vec3(nm.x * 0.4, 1.0, nm.y * 0.4));
+        // The DX8-era normal map is not 0.5-centred; two offset samples
+        // subtracted give a zero-mean, still-animated perturbation.
+        vec2 nuv = wuv * uTileN + uDirN * uScrollN * uTime;
+        vec2 dn = texture2D(tNormal, nuv).rg
+                - texture2D(tNormal, nuv * 1.31 + vec2(0.5)).rg;
+        N = normalize(vec3(dn.x * 0.6, 1.0, dn.y * 0.6));
         #endif
         vec3 V = normalize(cameraPosition - vWorld);
+        #ifdef HAS_ENV
+        vec3 R = reflect(-V, N);
+        R.y = abs(R.y);
+        vec3 sky = textureCube(tEnv, R).rgb;
+        float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+        col = mix(col, sky, clamp(fresnel * 1.6, 0.0, 1.0));
+        #endif
         vec3 H = normalize(normalize(uLightDir) + V);
         col += uSpec * pow(max(dot(N, H), 0.0), uShininess);
         float alpha = mix(uShallowAlpha, 0.96, clamp(depth / max(uAlphaDepth, 0.001), 0.0, 1.0));
+        #ifdef HAS_ENV
+        alpha = max(alpha, clamp(fresnel * 1.6, 0.0, 1.0));
+        #endif
         float fogF = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
         col = mix(col, fogColor, fogF);
         gl_FragColor = vec4(col, alpha);
@@ -605,6 +629,7 @@ function setupWater(root, dir) {
       ...(layer1 && layer2 ? { HAS_LAYERS: '' } : {}),
       ...(normal ? { HAS_NORMAL: '' } : {}),
       ...(depth ? { HAS_DEPTH: '' } : {}),
+      ...(env ? { HAS_ENV: '' } : {}),
     },
   });
   waterObj.material.dispose();
@@ -626,9 +651,12 @@ function updateSky() {
     const half = skyRoot.userData.halfExtent || 2000;
     const s = camera.far * 0.95 / (half * 1.7320508);
     skyRoot.scale.setScalar(s);
+    // changeOfsSkyHeight lowers the box so the painted horizon sits below
+    // eye level - Tobruk (150) shows sand-fade everywhere with the sign the
+    // other way, and Wake (0) is indifferent.
     skyRoot.position.set(
       camera.position.x,
-      camera.position.y + (extras.sky?.heightOffset || 0) * s,
+      camera.position.y - (extras.sky?.heightOffset || 0) * s,
       camera.position.z,
     );
     if (cloudMesh && cloudUniforms) {
