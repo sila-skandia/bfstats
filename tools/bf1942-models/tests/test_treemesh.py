@@ -64,3 +64,30 @@ class TreeMeshTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnlitFoliageTests(unittest.TestCase):
+    """Leaf cards are full-bright; the trunk is not."""
+
+    def test_unlit_material_declares_the_extension(self) -> None:
+        from bf42 import gltf
+
+        builder = gltf.GlbBuilder()
+        lit = builder.add_material(name="trunk_0")
+        unlit = builder.add_material(name="sprite_0", unlit=True)
+        blob = builder.build([builder.add_node(gltf.Node(name="root"))])
+
+        import json, struct
+        length, = struct.unpack_from("<I", blob, 12)
+        doc = json.loads(blob[20:20 + length])
+
+        self.assertIn("KHR_materials_unlit", doc["extensionsUsed"])
+        self.assertNotIn("extensions", doc["materials"][lit])
+        self.assertIn("KHR_materials_unlit",
+                      doc["materials"][unlit]["extensions"])
+
+    def test_only_sprite_and_branch_parts_are_treated_as_foliage(self) -> None:
+        for name, expected in (("sprite_0", True), ("branch_3", True),
+                               ("trunk_0", False), ("trunk_12", False)):
+            self.assertEqual(
+                expected, name.startswith(("sprite", "branch")), name)

@@ -197,3 +197,32 @@ class BrowseRigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AlphaBleedTests(unittest.TestCase):
+    """Foliage RGB must survive filtering into its transparent texels."""
+
+    def test_opaque_colour_dilates_into_transparent_texels(self) -> None:
+        from bf42.assemble import Assembler
+
+        # 3x1: one opaque green texel beside two transparent black ones.
+        rgba = bytes([0, 200, 0, 255]) + bytes([0, 0, 0, 0]) * 2
+        out = Assembler._bleed_alpha(3, 1, rgba, passes=2)
+
+        self.assertEqual((0, 200, 0, 255), tuple(out[0:4]))
+        # Neighbour takes the opaque colour; alpha is never touched.
+        self.assertEqual((0, 200, 0, 0), tuple(out[4:8]))
+        self.assertEqual(0, out[11])
+        self.assertNotEqual((0, 0, 0), tuple(out[8:11]))
+
+    def test_fully_opaque_image_is_returned_unchanged(self) -> None:
+        from bf42.assemble import Assembler
+
+        rgba = bytes([10, 20, 30, 255]) * 4
+        self.assertIs(rgba, Assembler._bleed_alpha(2, 2, rgba))
+
+    def test_fully_transparent_image_does_not_hang(self) -> None:
+        from bf42.assemble import Assembler
+
+        rgba = bytes([0, 0, 0, 0]) * 4
+        self.assertEqual(bytes(rgba), Assembler._bleed_alpha(2, 2, rgba))
