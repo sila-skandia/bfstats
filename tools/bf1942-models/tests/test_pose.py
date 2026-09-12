@@ -170,6 +170,38 @@ class RemapCollisionTests(unittest.TestCase):
         self.assertEqual(["Bip01 R Forearm", "Bip01 R Hand"], mapped)
 
 
+class WeaponAttachmentTests(unittest.TestCase):
+    """attach = rest(root)^-1 * rest(main); `clip_posed` folds in the
+    half-turn grip roll between the `.ske` hand frame and the frame a
+    `.baf` clip poses the hand in. The roll touches rotation only."""
+
+    def _weapon(self) -> ske.Skeleton:
+        yaw90 = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+        return ske.parse(pack_ske([
+            ("Bip01 R Hand", -1, yaw90, (0.305, 0.0, 0.0)),
+            ("Thompson", 0, IDENTITY, (0.05, 0.02, 0.0)),
+        ]), "w.ske")
+
+    def test_rest_attach_cancels_the_root(self) -> None:
+        rotation, translation = pose.weapon_attachment(self._weapon(), 1)
+        # Root's own rest must be gone: attach is main relative to root.
+        self.assertEqual(IDENTITY, rotation)
+        for got, want in zip(translation, (0.05, 0.02, 0.0)):
+            self.assertAlmostEqual(want, got)
+
+    def test_clip_posed_folds_in_the_grip_roll(self) -> None:
+        plain = pose.weapon_attachment(self._weapon(), 1)
+        rolled = pose.weapon_attachment(self._weapon(), 1, clip_posed=True)
+        # Rotation picks up exactly CLIP_GRIP_ROLL on the right...
+        for i in range(3):
+            for j in range(3):
+                want = sum(plain[0][i][k] * pose.CLIP_GRIP_ROLL[k][j]
+                           for k in range(3))
+                self.assertAlmostEqual(want, rolled[0][i][j])
+        # ...and the translation is untouched.
+        self.assertEqual(plain[1], rolled[1])
+
+
 class RestReconstructionTests(unittest.TestCase):
     def test_posing_at_the_skins_own_binds_reproduces_the_mesh(self) -> None:
         """With no animation applied - joints at the skin's recovered binds -
