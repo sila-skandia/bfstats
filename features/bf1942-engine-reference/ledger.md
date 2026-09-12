@@ -67,6 +67,25 @@ failure mode is silent — wrong UVs, not a crash.
 python3 features/bf1942-engine-reference/surveys/stride_vs_flags.py
 ```
 
+**Evidence so far (client, `BF1942.exe`).**
+
+*The client never mentions either format value as an immediate.* Scanning all
+1,314,071 instructions for an operand of `0x2411` returns **zero** matches;
+`0x411` returns 5, all of which are addresses in the `0x411xxx` range
+(`MOV dword ptr [ESP + 0x44], 0x411b40`), not the constant.
+
+```bash
+curl -s 'http://127.0.0.1:8089/search_instructions?operand_pattern=0x2411&limit=25'
+```
+
+That rules out one shape of answer: there is no `switch`/compare on known format
+values anywhere in the client. The flags word is never tested against a literal.
+It is either consumed opaquely (stored, or used as a table index), or bit-tested
+with masks that are not these composites — so the next probe is `TEST`/`AND`
+against `0x2000` reaching a lightmap path, not another constant hunt.
+
+It does **not** yet tell us whether layout comes from `flags` or `stride`.
+
 **To settle it.** Find the `.sm` loader and read how it lays out a vertex.
 Current position: `dice.ref2.geom.GeometryTemplate.StandardMesh` is at
 `0x00908a90` with a single xref at `0x005d06a2`, which Ghidra has not resolved
