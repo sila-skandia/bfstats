@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>BF1942 grip inspector</title>
+<style>
+  :root {
+    --bg: #14150f;
+    --panel: #1c1e16;
+    --line: #2e3125;
+    --text: #e6e4d9;
+    --muted: #8d8f7e;
+    --accent: #9aab5a;
+    --warn: #c98a3e;
+    --bad: #b8574a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+  }
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  h1 {
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 16px;
+  }
+  h2 {
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 20px 0 8px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+  a { color: var(--accent); }
+  .field { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .field span {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  select {
+    min-width: 0;
+    width: 100%;
+    padding: 6px 24px 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #15170f;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+  select:hover, select:focus-visible { border-color: var(--accent); outline: none; }
+  .steppers { display: flex; gap: 6px; margin-bottom: 4px; }
+  .steppers button {
+    flex: 1;
+    padding: 5px 0;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #15170f;
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .steppers button:hover { border-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 10px; line-height: 1.5; margin: 4px 0 0; }
+  label.toggle { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+  .views { display: flex; gap: 6px; margin-top: 8px; }
+  .views button {
+    flex: 1;
+    padding: 5px 0;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #15170f;
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .views button:hover { border-color: var(--accent); }
+  .views button.active { border-color: var(--accent); color: var(--accent); }
+  .stat { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+  .stat span:last-child { color: var(--accent); }
+  .stat span:last-child.warn { color: var(--warn); }
+  .stat span:last-child.bad { color: var(--bad); }
+  .stat span:last-child.muted { color: var(--muted); }
+  #clip {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  #note { color: var(--warn); font-size: 10px; line-height: 1.5; margin-top: 4px; }
+  #pairs {
+    margin-top: 8px;
+    border: 1px solid var(--line);
+    background: rgba(0, 0, 0, .12);
+    overflow-y: auto;
+    flex: 1;
+    min-height: 140px;
+  }
+  #pairs button {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 3px 8px;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+  }
+  #pairs button:hover { background: rgba(154, 171, 90, .08); }
+  #pairs button.current { background: rgba(154, 171, 90, .14); color: var(--accent); }
+  #pairs .palm { color: var(--accent); }
+  #pairs .palm.warn { color: var(--warn); }
+  #pairs .palm.bad { color: var(--bad); }
+  #pair-count { color: var(--muted); font-size: 10px; margin-top: 4px; }
+  #filter {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #15170f;
+    color: var(--text);
+    font: inherit;
+  }
+  #filter:focus-visible { border-color: var(--accent); outline: none; }
+  main { position: relative; min-width: 0; }
+  main canvas { display: block; width: 100%; height: 100%; }
+  #status {
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    color: var(--muted);
+    font-size: 11px;
+    pointer-events: none;
+  }
+  .nav { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 11px; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>BF1942 grip inspector</h1>
+
+  <div class="field"><span>Soldier</span><select id="soldier"></select></div>
+  <div class="field"><span>Weapon</span><select id="weapon"></select></div>
+  <div class="steppers">
+    <button type="button" id="prev-weapon" title="previous weapon">&larr; weapon</button>
+    <button type="button" id="next-weapon" title="next weapon">weapon &rarr;</button>
+  </div>
+  <div class="hint">Arrow keys: left/right steps the weapon, up/down the soldier.</div>
+
+  <h2>Weld</h2>
+  <div class="stat"><span>right palm to weapon</span><span id="palm-r">&mdash;</span></div>
+  <div class="stat"><span>left palm to weapon</span><span id="palm-l">&mdash;</span></div>
+  <div class="stat"><span>unwelded (at origin)</span><span id="palm-naive" class="muted">&mdash;</span></div>
+  <div id="clip"></div>
+  <div id="note" hidden></div>
+  <div class="hint">Left palm only lands on two-handed grips; rifles at StandAim
+  carry diagonally with the left arm down, so a large left number there is the
+  game's stance, not a weld error.</div>
+
+  <h2>Display</h2>
+  <label class="toggle"><input type="checkbox" id="spin"> auto-rotate</label>
+  <label class="toggle"><input type="checkbox" id="wireframe"> wireframe</label>
+  <label class="toggle"><input type="checkbox" id="skeleton"> skeleton</label>
+  <label class="toggle"><input type="checkbox" id="axes" checked> axes + ground grid</label>
+  <div class="views">
+    <button type="button" id="view-figure" class="active">figure</button>
+    <button type="button" id="view-grip">grip</button>
+  </div>
+
+  <h2>All pairs</h2>
+  <input id="filter" type="search" placeholder="filter pairs" aria-label="Filter pairs">
+  <label class="toggle"><input type="checkbox" id="sort-worst"> sort by worst weld</label>
+  <div id="pairs"></div>
+  <div id="pair-count"></div>
+
+  <div class="nav">
+    <a href="./index.html">model inspector</a> &middot;
+    <a href="./map.html">map flythrough</a>
+  </div>
+</aside>
+<main><div id="status">loading&hellip;</div></main>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { OrbitControls } from './vendor/controls/OrbitControls.js';
+
+const POSES_BASE = 'models/poses';
+const bust = () => `?t=${Date.now()}`;
+
+const main = document.querySelector('main');
+const statusLine = document.getElementById('status');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+main.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14150f);
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.02, 500);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.addEventListener('change', () => startAnimating());
+
+// Same neutral three-point rig as the model inspector: the point is to see
+// what the pose pipeline actually produced, not to flatter it.
+scene.add(new THREE.HemisphereLight(0xbfc6d0, 0x2a2b20, 1.5));
+const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(4, 7, 5); scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, 0.7); fill.position.set(-5, 2, -4); scene.add(fill);
+
+const helpers = new THREE.Group();
+helpers.add(new THREE.GridHelper(4, 8, 0x3c4030, 0x24261c), new THREE.AxesHelper(1));
+scene.add(helpers);
+
+const loader = new GLTFLoader();
+let current = null;
+let skeletonHelper = null;
+let framing = null;        // { centre, radius } of the whole figure
+let gripPoint = null;      // world position of Bip01 R Hand
+let viewMode = 'figure';
+let loadSequence = 0;
+
+function disposeModel(root) {
+  if (!root) return;
+  const materials = new Set();
+  const textures = new Set();
+  root.traverse(obj => {
+    obj.geometry?.dispose();
+    for (const material of [obj.material].flat().filter(Boolean)) {
+      materials.add(material);
+      if (material.map) textures.add(material.map);
+    }
+  });
+  textures.forEach(texture => texture.dispose());
+  materials.forEach(material => material.dispose());
+}
+
+function applyView() {
+  if (!framing) return;
+  if (viewMode === 'grip' && gripPoint) {
+    const d = Math.max(framing.radius * .45, .35);
+    camera.position.set(gripPoint.x + d * .8, gripPoint.y + d * .35, gripPoint.z + d);
+    controls.target.copy(gripPoint);
+  } else {
+    const d = framing.radius * 2.6;
+    camera.position.set(
+      framing.centre.x + d * .62,
+      framing.centre.y + framing.radius * .5,
+      framing.centre.z + d * .78,
+    );
+    controls.target.copy(framing.centre);
+  }
+  controls.update();
+  invalidate();
+}
+
+function applyWireframe() {
+  const on = document.getElementById('wireframe').checked;
+  current?.traverse(obj => {
+    for (const material of [obj.material].flat().filter(Boolean)) material.wireframe = on;
+  });
+  invalidate();
+}
+
+async function loadPair(pair) {
+  const sequence = ++loadSequence;
+  statusLine.textContent = `loading ${pair.soldier} + ${pair.weapon}…`;
+  const url = `${POSES_BASE}/${pair.soldier}__${pair.weapon}.pose.glb${bust()}`;
+  let gltf;
+  try {
+    gltf = await loader.loadAsync(url);
+  } catch {
+    if (sequence === loadSequence)
+      statusLine.textContent = `failed to load ${pair.soldier}__${pair.weapon}.pose.glb`;
+    return;
+  }
+  if (sequence !== loadSequence) { disposeModel(gltf.scene); return; }
+
+  disposeModel(current);
+  if (current) scene.remove(current);
+  if (skeletonHelper) { scene.remove(skeletonHelper); skeletonHelper = null; }
+
+  current = gltf.scene;
+  // Skinned meshes keep their rest-pose bounds; the posed figure can leave
+  // them, so culling by those bounds blanks parts of the body mid-orbit.
+  current.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
+  scene.add(current);
+  current.updateMatrixWorld(true);
+
+  // Frame off the posed joints, not Box3.setFromObject: a skinned mesh node
+  // sits at the scene root, so its object-level bounds are the bind-space
+  // figure lying along +Z, nowhere near the posed, pitched render.
+  const box = new THREE.Box3();
+  gripPoint = null;
+  current.traverse(obj => {
+    if (obj.isBone || obj.userData?.joint)
+      box.expandByPoint(obj.getWorldPosition(new THREE.Vector3()));
+    // GLTFLoader sanitizes node names, so "Bip01 R Hand" arrives with
+    // underscores for spaces.
+    if (!gripPoint && /^Bip01[_ ]R[_ ]Hand$/.test(obj.name))
+      gripPoint = obj.getWorldPosition(new THREE.Vector3());
+  });
+  box.expandByScalar(0.25);        // joints sit inside the flesh and the kit
+  const size = box.getSize(new THREE.Vector3());
+  framing = {
+    centre: box.getCenter(new THREE.Vector3()),
+    radius: Math.max(size.x, size.y, size.z) / 2 || 1,
+  };
+
+  const skinned = [];
+  current.traverse(obj => { if (obj.isSkinnedMesh) skinned.push(obj); });
+  if (skinned.length) {
+    skeletonHelper = new THREE.SkeletonHelper(skinned[0].skeleton.bones[0]);
+    skeletonHelper.visible = document.getElementById('skeleton').checked;
+    scene.add(skeletonHelper);
+  }
+
+  applyWireframe();
+  applyView();
+  statusLine.textContent = `${pair.soldier} holding ${pair.weapon}`;
+}
+
+// --- On-demand rendering: render only when something changed ---------------
+let renderScheduled = false;
+let animating = false;
+
+function invalidate() {
+  if (renderScheduled || animating) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => {
+    renderScheduled = false;
+    controls.update();
+    renderer.render(scene, camera);
+  });
+}
+
+function startAnimating() {
+  if (animating) return;
+  animating = true;
+  renderScheduled = false;
+  (function tick() {
+    const controlsMoving = controls.update();
+    renderer.render(scene, camera);
+    if (controlsMoving || controls.autoRotate) requestAnimationFrame(tick);
+    else animating = false;
+  })();
+}
+
+function resize() {
+  const w = main.clientWidth, h = main.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  invalidate();
+}
+addEventListener('resize', resize);
+resize();
+
+// --- Matrix + UI wiring -----------------------------------------------------
+
+const manifest = await fetch(`${POSES_BASE}/poses-matrix.json${bust()}`).then(response => {
+  if (!response.ok) throw new Error(`poses manifest returned ${response.status}`);
+  return response.json();
+}).catch(error => {
+  statusLine.textContent = `no poses extracted (${error.message})`;
+  return null;
+});
+
+if (manifest) {
+  const pairs = manifest.pairs.filter(pair => !pair.error);
+  const soldiers = manifest.soldiers;
+  const weapons = manifest.weapons;
+  const byKey = new Map(pairs.map(pair => [`${pair.soldier}|${pair.weapon}`, pair]));
+
+  const soldierSelect = document.getElementById('soldier');
+  const weaponSelect = document.getElementById('weapon');
+  for (const soldier of soldiers)
+    soldierSelect.add(new Option(soldier, soldier));
+  for (const weapon of weapons)
+    weaponSelect.add(new Option(weapon, weapon));
+
+  const palmClass = metres =>
+    metres == null ? 'muted' : metres <= 0.06 ? '' : metres <= 0.12 ? 'warn' : 'bad';
+  const centimetres = metres =>
+    metres == null ? '—' : `${(metres * 100).toFixed(1)} cm`;
+
+  function currentPair() {
+    return byKey.get(`${soldierSelect.value}|${weaponSelect.value}`) ?? null;
+  }
+
+  function showMetrics(pair) {
+    const palmR = document.getElementById('palm-r');
+    const palmL = document.getElementById('palm-l');
+    const naive = document.getElementById('palm-naive');
+    const metrics = pair?.metrics ?? {};
+    palmR.textContent = centimetres(metrics.palmR);
+    palmR.className = palmClass(metrics.palmR);
+    palmL.textContent = centimetres(metrics.palmL);
+    palmL.className = 'muted';
+    naive.textContent = centimetres(metrics.palmRNaive);
+    naive.className = 'muted';
+    document.getElementById('clip').textContent = pair?.upperClip ?? '';
+    const note = document.getElementById('note');
+    const warnings = [];
+    if (pair?.weaponSkeleton) warnings.push(`weapon skeleton ${pair.weaponSkeleton}`);
+    if (pair?.texturesMissing?.length)
+      warnings.push(`missing textures: ${pair.texturesMissing.join(', ')}`);
+    note.hidden = !warnings.length;
+    note.textContent = warnings.join(' · ');
+  }
+
+  const pairList = document.getElementById('pairs');
+  const pairCount = document.getElementById('pair-count');
+  const filterInput = document.getElementById('filter');
+  const sortWorst = document.getElementById('sort-worst');
+
+  function renderPairList() {
+    const query = filterInput.value.trim().toLowerCase();
+    let entries = pairs.filter(pair =>
+      `${pair.soldier} ${pair.weapon}`.toLowerCase().includes(query));
+    if (sortWorst.checked)
+      entries = entries.toSorted((a, b) =>
+        (b.metrics?.palmR ?? 0) - (a.metrics?.palmR ?? 0));
+    pairList.replaceChildren(...entries.map(pair => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      if (pair.soldier === soldierSelect.value && pair.weapon === weaponSelect.value)
+        button.classList.add('current');
+      const label = document.createElement('span');
+      label.textContent = `${pair.soldier} + ${pair.weapon}`;
+      const palm = document.createElement('span');
+      palm.className = `palm ${palmClass(pair.metrics?.palmR)}`.trim();
+      palm.textContent = centimetres(pair.metrics?.palmR);
+      button.append(label, palm);
+      button.addEventListener('click', () => {
+        soldierSelect.value = pair.soldier;
+        weaponSelect.value = pair.weapon;
+        selectionChanged();
+      });
+      return button;
+    }));
+    pairCount.textContent = entries.length === pairs.length
+      ? `${pairs.length} pairs`
+      : `${entries.length} of ${pairs.length}`;
+  }
+
+  function selectionChanged() {
+    const pair = currentPair();
+    showMetrics(pair);
+    renderPairList();
+    if (pair) loadPair(pair);
+    else statusLine.textContent =
+      `${soldierSelect.value} + ${weaponSelect.value}: no pose extracted`;
+  }
+
+  function step(select, delta) {
+    const options = [...select.options];
+    const index = (select.selectedIndex + delta + options.length) % options.length;
+    select.selectedIndex = index;
+    selectionChanged();
+  }
+
+  soldierSelect.addEventListener('change', selectionChanged);
+  weaponSelect.addEventListener('change', selectionChanged);
+  document.getElementById('prev-weapon').addEventListener('click', () => step(weaponSelect, -1));
+  document.getElementById('next-weapon').addEventListener('click', () => step(weaponSelect, 1));
+  filterInput.addEventListener('input', renderPairList);
+  sortWorst.addEventListener('change', renderPairList);
+
+  addEventListener('keydown', event => {
+    if (event.target.matches('input, select, textarea')) return;
+    if (event.key === 'ArrowLeft') { step(weaponSelect, -1); event.preventDefault(); }
+    else if (event.key === 'ArrowRight') { step(weaponSelect, 1); event.preventDefault(); }
+    else if (event.key === 'ArrowUp') { step(soldierSelect, -1); event.preventDefault(); }
+    else if (event.key === 'ArrowDown') { step(soldierSelect, 1); event.preventDefault(); }
+  });
+
+  document.getElementById('spin').addEventListener('change', event => {
+    controls.autoRotate = event.target.checked;
+    controls.autoRotateSpeed = 1.6;
+    if (event.target.checked) startAnimating(); else invalidate();
+  });
+  document.getElementById('wireframe').addEventListener('change', applyWireframe);
+  document.getElementById('skeleton').addEventListener('change', event => {
+    if (skeletonHelper) skeletonHelper.visible = event.target.checked;
+    invalidate();
+  });
+  document.getElementById('axes').addEventListener('change', event => {
+    helpers.visible = event.target.checked;
+    invalidate();
+  });
+  const figureButton = document.getElementById('view-figure');
+  const gripButton = document.getElementById('view-grip');
+  figureButton.addEventListener('click', () => {
+    viewMode = 'figure';
+    figureButton.classList.add('active');
+    gripButton.classList.remove('active');
+    applyView();
+  });
+  gripButton.addEventListener('click', () => {
+    viewMode = 'grip';
+    gripButton.classList.add('active');
+    figureButton.classList.remove('active');
+    applyView();
+  });
+
+  const params = new URLSearchParams(location.search);
+  if (soldiers.includes(params.get('soldier'))) soldierSelect.value = params.get('soldier');
+  if (weapons.includes(params.get('weapon'))) weaponSelect.value = params.get('weapon');
+  selectionChanged();
+}
+</script>
+</body>
+</html>
