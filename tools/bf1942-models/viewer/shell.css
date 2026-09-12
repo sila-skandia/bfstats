@@ -1,0 +1,74 @@
+/* Shared chrome for the three viewers: models (index.html), maps (map.html)
+   and poses (poses.html). Each page keeps its own layout and its own token
+   block; this file owns only the bar across the top, so switching feature
+   never looks like landing on a different site.
+
+   Every page reserves --nav-h as its first grid row, so the bar takes space
+   rather than floating over the canvas. That matters for the two pages whose
+   renderer sizes itself from a container: give it a row and the existing
+   clientHeight maths stays correct with no offset fudge. */
+:root {
+  --nav-h: 38px;
+}
+
+.shell-nav {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: var(--nav-h);
+  padding: 0 14px;
+  background: #101108;
+  border-bottom: 1px solid var(--line);
+  font: 11px/1 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+  position: relative;
+  z-index: 50;
+}
+
+.shell-brand {
+  color: var(--muted);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.shell-brand b { color: var(--accent); font-weight: 500; }
+
+.shell-tabs {
+  display: flex;
+  border: 1px solid var(--line);
+}
+.shell-tabs a {
+  display: block;
+  padding: 7px 15px;
+  color: var(--muted);
+  text-decoration: none;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  border-left: 1px solid var(--line);
+  transition: color .12s ease, background-color .12s ease;
+}
+.shell-tabs a:first-child { border-left: 0; }
+.shell-tabs a:hover { color: var(--text); background: #1c1e16; }
+.shell-tabs a:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.shell-tabs a[aria-current="page"] {
+  color: var(--bg);
+  background: var(--accent);
+}
+.shell-tabs a[aria-current="page"]:hover { color: var(--bg); background: var(--accent); }
+
+/* What the current page is for, so the tab label can stay one word. */
+.shell-sub {
+  color: var(--muted);
+  opacity: .7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 720px) {
+  .shell-sub { display: none; }
+}
+@media (max-width: 480px) {
+  .shell-brand { display: none; }
+  .shell-tabs a { padding: 7px 10px; }
+}
