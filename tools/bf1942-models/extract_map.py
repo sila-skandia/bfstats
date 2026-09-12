@@ -582,10 +582,12 @@ def main() -> int:
             "heightOffset": info.sky.height_offset,
             "clouds": write_cloud_assets(info, textures, out_dir),
         }
-    else:
-        # No sky box declared (or its faces unresolvable): fall back to the
-        # env-map cubemap, which is at least the right palette at 128px.
-        extras["skybox"] = write_skybox(files, out_dir)
+    # The ENVMAP_G_.rcm faces are the engine's water/glass reflection source
+    # (`ShaderManager.setTextureParam envmap`), exported always. Without a sky
+    # box they double as the background, which is at least the right palette.
+    extras["envmap"] = write_skybox(files, out_dir)
+    if not sky_faces:
+        extras["skybox"] = extras["envmap"]
     extras["water"] = write_water_assets(
         info, heightmap, textures, out_dir, args.max_texture)
     (out_dir / "scene.glb").write_bytes(glb)
