@@ -341,11 +341,14 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     part_report: dict = {}
     root_children = [node for (bone_index, node) in order
                      if skeleton.bones[bone_index].parent < 0]
+    # Skinned meshes are deliberately NOT parented under the pitched root; see
+    # the note on `skinned_roots` below.
+    skinned_roots: list[int] = []
     for template in parts:
         node = build_skinned_part(builder, assembler, meshes, skeleton,
                                   template, joint_nodes, report, part_report)
         if node is not None:
-            root_children.append(node)
+            skinned_roots.append(node)
 
     weapon_report = Report(root=weapon, configuration="complex", lod=0)
     weapon_node = assembler.build_node(builder, weapon, weapon_report)
@@ -360,7 +363,8 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
         builder._nodes[joint_nodes["bip01 r hand"]].children.append(wrapper)
 
     # Bind-pose soldier meshes stand along +Z; pitch the root onto +Y the
-    # same way the static soldier export does.
+    # same way the static soldier export does. The joints hang off this node,
+    # so the pose is pitched through their world transforms.
     root = builder.add_node(gltf.Node(
         name=f"{soldier} holding {weapon}",
         rotation=gltf.quat_from_ypr(0.0, -90.0, 0.0),
@@ -376,7 +380,19 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
 
     out.mkdir(parents=True, exist_ok=True)
     target = out / f"{soldier}__{weapon}.pose.glb"
-    target.write_bytes(builder.build([root], extras={
+    # A skinned mesh node sits at the scene root with no transform of its own,
+    # and never under `root`. glTF says a skinned mesh node's transform MUST be
+    # ignored -- vertices are already in skin space -- but three.js does not
+    # ignore it: GLTFLoader binds the skeleton with `mesh.matrixWorld` as the
+    # bind matrix and the renderer still applies the same matrix as the model
+    # matrix, so the node's world transform lands on the vertices *before*
+    # skinning. Parenting these under the pitched root therefore rotates every
+    # vertex 90 degrees out of skin space and the figure collapses, while the
+    # file still measures correct against the spec formula. The joints keep the
+    # pitch, which is what actually poses the mesh, so the render is upright
+    # either way -- identical under a spec-exact reader and under three.js.
+    roots = [root] + skinned_roots
+    target.write_bytes(builder.build(roots, extras={
         key: value for key, value in result.items() if key != "metrics"}))
     result["glb"] = target.name
     (out / f"{soldier}__{weapon}.pose.report.json").write_text(
