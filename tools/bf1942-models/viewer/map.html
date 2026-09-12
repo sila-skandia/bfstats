@@ -706,14 +706,23 @@ function setupWater(root, dir) {
         vec3 R = reflect(-V, N);
         R.y = abs(R.y);
         vec3 sky = textureCube(tEnv, R).rgb;
-        float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
-        col = mix(col, sky, clamp(fresnel * 1.6, 0.0, 1.0));
+        // A plain Schlick fresnel (exponent 5, scaled to reach 1.0) turned the
+        // lagoon into a near-perfect cloud mirror the moment the camera got low
+        // and the view raked across open water -- exactly the case a flythrough
+        // spends most of its time in, and not what the live-game reference
+        // screenshots show even at the shoreline: the water keeps its own
+        // shallow/deep tint and a soft sun-glint, not a crisp sky reflection.
+        // Steepening the exponent and capping the peak keeps the mirror term a
+        // rim highlight at true grazing incidence instead of the dominant term
+        // from ten degrees off horizontal outward.
+        float fresnel = 0.03 + 0.55 * pow(1.0 - max(dot(N, V), 0.0), 10.0);
+        col = mix(col, sky, clamp(fresnel, 0.0, 1.0));
         #endif
         vec3 H = normalize(normalize(uLightDir) + V);
         col += uSpec * pow(max(dot(N, H), 0.0), uShininess);
         float alpha = mix(uShallowAlpha, 0.96, clamp(depth / max(uAlphaDepth, 0.001), 0.0, 1.0));
         #ifdef HAS_ENV
-        alpha = max(alpha, clamp(fresnel * 1.6, 0.0, 1.0));
+        alpha = max(alpha, clamp(fresnel, 0.0, 1.0));
         #endif
         float fogF = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
         col = mix(col, fogColor, fogF);
