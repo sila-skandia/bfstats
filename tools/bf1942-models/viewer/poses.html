@@ -216,7 +216,12 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 
 const POSES_BASE = 'models/poses';
-const bust = () => `?t=${Date.now()}`;
+// Same rule as the other two viewers: bypass the cache while iterating on an
+// extract locally (or with ?nocache), let nginx's Cache-Control stand in
+// production rather than re-fetching every pose on every visit.
+const DEV_ORIGIN = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
+const NO_CACHE = DEV_ORIGIN || new URLSearchParams(location.search).has('nocache');
+const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 
 const main = document.querySelector('main');
 const statusLine = document.getElementById('status');
