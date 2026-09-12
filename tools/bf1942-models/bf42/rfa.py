@@ -73,6 +73,13 @@ class ArchivePool:
         # `Texture/ItalyBritts/britt1_r.dds` can fill a missing vanilla file
         # without stealing a real `Texture/britt1_r.dds`.
         self._basename: dict[str, tuple[str, RfaArchive, str]] = {}
+        # `textureManager.alternativePath Texture/Africa` — probed by basename
+        # before the path a shader wrote, which is how Tobruk turns every
+        # spawned Sherman desert-yellow without touching a single `.rs`.
+        self._alternative_dirs: list[str] = []
+
+    def set_alternative_paths(self, dirs: list[str]) -> None:
+        self._alternative_dirs = [d.replace("\\", "/").strip("/").lower() for d in dirs if d]
 
     def add(self, path: Path, label: str | None = None) -> None:
         archive = RfaArchive(path)
@@ -197,6 +204,12 @@ class ArchivePool:
         """
         if stem.lower() in self._index:
             return self._index[stem.lower()][2]
+        alt_leaf = stem.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        for alt in self._alternative_dirs:
+            for ext in exts:
+                hit = self._index.get(f"{alt}/{alt_leaf}{ext}")
+                if hit:
+                    return hit[2]
         for ext in exts:
             key = f"{stem.lower()}{ext}"
             if key in self._index:

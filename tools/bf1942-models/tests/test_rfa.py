@@ -49,6 +49,44 @@ class ArchivePoolTests(unittest.TestCase):
         )
         self.assertEqual("Texture/foo.dds", primary._basename["foo.dds"][2])
 
+    def test_alternative_path_wins_over_the_exact_texture(self) -> None:
+        # Tobruk's `textureManager.alternativePath Texture/Africa`: the desert
+        # repaint must beat the green `texture/sherma_i` a shader asks for.
+        pool = ArchivePool()
+        base = ("vanilla", None, "Texture/sherma_i.dds")
+        desert = ("vanilla", None, "Texture/Africa/sherma_i.dds")
+        pool._index["texture/sherma_i.dds"] = base
+        pool._index["texture/africa/sherma_i.dds"] = desert
+        pool.set_alternative_paths(["Texture/Africa"])
+
+        self.assertEqual(
+            "Texture/Africa/sherma_i.dds",
+            pool.resolve_ext("texture/sherma_i", (".dds", ".tga")),
+        )
+
+    def test_alternative_path_misses_fall_through(self) -> None:
+        pool = ArchivePool()
+        base = ("vanilla", None, "Texture/palm02_l.dds")
+        pool._index["texture/palm02_l.dds"] = base
+        pool.set_alternative_paths(["Texture/Africa"])
+
+        self.assertEqual(
+            "Texture/palm02_l.dds",
+            pool.resolve_ext("texture/palm02_l", (".dds", ".tga")),
+        )
+
+    def test_no_alternative_path_changes_nothing(self) -> None:
+        pool = ArchivePool()
+        desert = ("vanilla", None, "Texture/Africa/sherma_i.dds")
+        base = ("vanilla", None, "Texture/sherma_i.dds")
+        pool._index["texture/africa/sherma_i.dds"] = desert
+        pool._index["texture/sherma_i.dds"] = base
+
+        self.assertEqual(
+            "Texture/sherma_i.dds",
+            pool.resolve_ext("texture/sherma_i", (".dds", ".tga")),
+        )
+
     def test_mod_prefix_fills_a_vanilla_basename_miss(self) -> None:
         pool = ArchivePool()
         nested = ("fh", None, "texture/FH_pahile_c.dds")
