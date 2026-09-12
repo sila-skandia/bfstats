@@ -924,15 +924,27 @@ if (!manifest.length) {
 }
 
 const clock = new THREE.Clock();
-renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.1);
+function frame(dt) {
   fly(dt);
   applyLook();
   applyVisibility();
   advanceSim(dt);
   updateSky();
   renderer.render(scene, camera);
-});
+}
+renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
+if (params.has('shots')) {
+  // Screenshot tooling in a hidden tab gets no requestAnimationFrame ticks
+  // and reports a 0x0 window; let it force a sized, deterministic frame
+  // before reading the canvas back.
+  window.__renderOnce = (w = 1280, h = 800) => {
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    frame(1 / 60);
+    return true;
+  };
+}
 </script>
 </body>
 </html>
