@@ -4,12 +4,19 @@
     python3 extract_map.py Tobruk --out ./viewer/maps
     python3 extract_map.py Tobruk --terrain-only
 
-Terrain tiles come from the level archive (so they texture even when vanilla
-`texture.rfa` is missing). Buildings, sandbags and vegetation are the same
-object templates the vehicle extractor already assembles; TreeMesh plants
-are included. Sibling level archives and other installed mods fill object
-textures the missing vanilla `texture.rfa` would have supplied. Object
-lightmaps are written next to the glb and multiplied in the viewer.
+Terrain tiles come from the level archive; patches without a shipped tile are
+painted with the level's `terrainDefault.dds` the way the engine paints them.
+Buildings, sandbags and vegetation are the same object templates the vehicle
+extractor already assembles; TreeMesh plants are included. Object lightmaps
+are written next to the glb and multiplied in the viewer.
+
+The sky is the real thing: the `SkyBox` StandardMesh named in
+`Init/SkyAndSun.con` with its six 512px faces from `texture.rfa`, rotated by
+`Sky.setRotAngle`, plus the scrolling cloud layer's texture and parameters.
+Water exports its two scrolling layers, normal map, and a depth map derived
+from the heightmap so the viewer can reproduce the engine's shore-alpha and
+deep-colour ramps. `textureManager.alternativePath` (Texture/Africa on the
+desert maps) is honoured, which is what turns spawned vehicles desert-yellow.
 Open `viewer/map.html` through the model-viewer launch config.
 """
 
@@ -30,7 +37,8 @@ from extract_models import (  # noqa: E402
     mod_chain,
 )
 
-from bf42 import gltf  # noqa: E402
+from bf42 import gltf, stdmesh  # noqa: E402
+from bf42 import rs as rs_mod  # noqa: E402
 from bf42.assemble import Assembler, Report  # noqa: E402
 from bf42.level import (  # noqa: E402
     LevelInfo,
@@ -46,7 +54,15 @@ from bf42.level import (  # noqa: E402
     spawn_vehicle,
 )
 from bf42.rfa import find_archives_dir  # noqa: E402
-from bf42.terrain import apply_detail, tile_mesh, water_mesh  # noqa: E402
+from bf42.terrain import (  # noqa: E402
+    DETAIL_REPEATS,
+    default_patches,
+    depth_map,
+    patch_mesh,
+    sky_primitives,
+    tile_mesh,
+    water_mesh,
+)
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 from extract_map_images import decode_dds, downscale, encode_png  # noqa: E402
@@ -54,8 +70,10 @@ from extract_map_images import decode_dds, downscale, encode_png  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from extract_hud_assets import decode_tga  # noqa: E402
 
-# Vanilla `texture.rfa` is missing on this install; these mods still carry
-# afrhouse / palm / stone maps under the same basenames.
+# Only consulted when vanilla `texture.rfa` is genuinely absent (an interrupted
+# DataField42 sync once removed it — see the README). With the real archive on
+# disk these mods are never registered: a Forgotten Hope palm under a vanilla
+# basename is itself a parity bug.
 TEXTURE_GAP_MODS = ("WarFront", "FH", "bf1918", "bg42", "FinnWars")
 
 
@@ -156,6 +174,140 @@ def _load_level_dds(files, stem: str):
     return None
 
 
+def _decode_pool_image(textures, stem: str):
+    """Decode `texture/X` from the pool, probing `.dds` then `.tga`."""
+    resolved = textures.resolve_ext(stem, (".dds", ".tga"))
+    if resolved is None:
+        return None
+    raw = textures.read(resolved)
+    if resolved.lower().endswith(".tga"):
+        return decode_tga(raw)
+    return decode_dds(raw)
+
+
+def prepare_sky(info: LevelInfo, meshes, textures):
+    """The engine's sky box as `(material, primitive, image)` triples.
+
+    `Init/SkyAndSun.con` names the mesh; its `.rs` maps each one-quad material
+    to a `texture/Sky_<level>_NN` face. Faces are kept at native size (512px)
+    regardless of `--max-texture` — the sky is the single most visible texture
+    in the scene and the terrain budget does not apply to six images.
+    """
+    if not info.sky.mesh:
+        return None
+    stem = f"standardmesh/{info.sky.mesh}"
+    sm_name = meshes.find(f"{stem}.sm")
+    if sm_name is None:
+        return None
+    mesh = stdmesh.parse(meshes.read(sm_name), name=sm_name)
+    shaders = {}
+    rs_name = meshes.find(f"{stem}.rs")
+    if rs_name:
+        shaders = rs_mod.parse(meshes.read(rs_name).decode("latin-1"))
+    faces = []
+    for material_name, primitive in sky_primitives(mesh, info.sky.rot_angle):
+        image = None
+        shader = rs_mod.lookup(shaders, material_name)
+        if shader and shader.base_texture:
+            try:
+                image = _decode_pool_image(textures, shader.base_texture)
+            except Exception:
+                image = None
+        faces.append((material_name, primitive, image))
+    if not any(image for _, _, image in faces):
+        return None
+    return faces
+
+
+def write_cloud_assets(info: LevelInfo, textures, out_dir: Path) -> dict | None:
+    """The scrolling cloud layer's texture and parameters, or None."""
+    if not info.sky.has_cloud:
+        return None
+    try:
+        image = _decode_pool_image(textures, info.sky.cloud_texture)
+    except Exception:
+        image = None
+    if image is None:
+        return None
+    width, height, rgba = image
+    dest = out_dir / "sky"
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "cloud.png").write_bytes(encode_png(width, height, rgba, drop_alpha=False))
+    return {
+        "texture": "sky/cloud.png",
+        "speed": list(info.sky.cloud_speed),
+        "texScale": info.sky.cloud_tex_scale,
+        "height": info.sky.cloud_height,
+        "ofsHeight": info.sky.cloud_ofs_height,
+        "dist": info.sky.cloud_dist,
+    }
+
+
+def write_water_assets(info: LevelInfo, heightmap, textures, out_dir: Path,
+                       max_texture: int) -> dict | None:
+    """The engine water's inputs: scroll layers, normal map, depth ramp.
+
+    The depth map is the heightmap re-expressed as metres of water above each
+    sample, normalised to its own maximum — the viewer multiplies back by
+    `maxDepth`. It covers world 0..worldSize on both axes so the shader can
+    sample it straight from world position.
+    """
+    w = info.water
+    depth = depth_map(heightmap, info.terrain.water_level)
+    if not w.declared and depth is None:
+        return None
+    dest = out_dir / "water"
+    dest.mkdir(parents=True, exist_ok=True)
+    written: dict[str, str] = {}
+    for key, stem in (("layer1", w.tex_layer1), ("layer2", w.tex_layer2),
+                      ("normal", w.normal_map)):
+        if not stem:
+            continue
+        try:
+            image = _decode_pool_image(textures, stem)
+        except Exception:
+            image = None
+        if image is None:
+            continue
+        width, height, rgba = image
+        (dest / f"{key}.png").write_bytes(encode_png(width, height, rgba, drop_alpha=True))
+        written[key] = f"water/{key}.png"
+    max_depth = 0.0
+    if depth is not None:
+        dim, rgba, max_depth = depth
+        if max_texture and dim > max_texture:
+            dim2, _, rgba = downscale(dim, dim, rgba, max_texture)
+            dim = dim2
+        (dest / "depth.png").write_bytes(encode_png(dim, dim, rgba, drop_alpha=True))
+        written["depth"] = "water/depth.png"
+    base = w.color or w.shallow_color or info.water_color
+    return {
+        "level": info.terrain.water_level,
+        "color": list(base),
+        "deepColor": list(w.deep_color or base),
+        "shallowColor": list(w.shallow_color or base),
+        "shallowAlpha": w.shallow_alpha,
+        "alphaDepth": w.alpha_depth,
+        "colorDepth": w.color_depth,
+        "scrollDir1": list(w.scroll_dir1),
+        "scrollDir2": list(w.scroll_dir2),
+        "scrollDirNormal": list(w.scroll_dir_normal),
+        "scroll1": w.scroll1,
+        "scroll2": w.scroll2,
+        "scrollNormal": w.scroll_normal,
+        "tile1": w.tile1,
+        "tile2": w.tile2,
+        "tileNormal": w.tile_normal,
+        "specular": w.specular,
+        "specularColor": list(w.specular_color),
+        "streakFactor": w.streak_factor,
+        "lightDirection": _to_gltf_vec(w.light_direction),
+        "maxDepth": max_depth,
+        "worldSize": info.terrain.world_size,
+        "textures": written,
+    }
+
+
 def _place_template(assembler: Assembler, builder, name: str, inst, report,
                      seen_fail: set[str]) -> int | None:
     key = name.lower()
@@ -174,12 +326,15 @@ def _place_template(assembler: Assembler, builder, name: str, inst, report,
 
 def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                  *, max_texture: int, include_objects: bool,
+                 out_dir: Path | None = None,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None,
+                 sky_faces: list | None = None,
                  ) -> tuple[bytes, dict]:
     builder = gltf.GlbBuilder(generator="bfstats bf1942 level extractor")
     roots: list[int] = []
     tiles = files.tiles()
-    terrain_report = {"tiles": len(tiles), "triangles": 0, "missingTiles": [], "detail": False}
+    terrain_report = {"tiles": len(tiles), "triangles": 0, "missingTiles": [],
+                      "detail": False, "defaultTiles": 0}
 
     detail = None
     if info.terrain.detail_tex:
@@ -187,8 +342,26 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             detail = _load_level_dds(files, info.terrain.detail_tex)
         except Exception:
             detail = None
+    # The detail pass is a *stage*, not something to bake into the colour map.
+    # Baking caps the grain at the tile map's own resolution: a 256 m patch at
+    # 1024px is 4 texels/m, and --max-texture 512 halves that again, against the
+    # 32 texels/m the engine gets by tiling a 512px detail map 16 times across
+    # the same patch. That 16x is the entire "our sand is blurry" gap, and it is
+    # a dropped shader stage rather than anything the browser cannot do -- an
+    # extra texture stage measures 0.3-0.5 ms against a 16.7 ms budget. The
+    # image ships alongside the tiles and `map.html` multiplies it in at its own
+    # frequency.
     if detail is not None:
         terrain_report["detail"] = True
+        if out_dir is not None:
+            dwidth, dheight, drgba = detail
+            detail_dir = out_dir / "terrain"
+            detail_dir.mkdir(parents=True, exist_ok=True)
+            (detail_dir / "detail.png").write_bytes(
+                encode_png(dwidth, dheight, drgba, drop_alpha=True))
+            # Repeats across one patch, so the viewer needs no world scale.
+            terrain_report["detailTexture"] = "terrain/detail.png"
+            terrain_report["detailRepeats"] = DETAIL_REPEATS
 
     for col, row, entry in tiles:
         primitive = tile_mesh(heightmap, info.terrain, col, row)
@@ -198,8 +371,6 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         material = None
         try:
             width, height, rgba = decode_dds(files.read(entry))
-            if detail is not None:
-                rgba = apply_detail(rgba, width, height, detail[2], detail[0], detail[1])
             if max_texture and max(width, height) > max_texture:
                 width, height, rgba = downscale(width, height, rgba, max_texture)
             tex = builder.add_image_png(
@@ -216,7 +387,57 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         roots.append(builder.add_node(gltf.Node(
             name=f"Tx{col:02d}x{row:02d}", mesh=mesh, extras={"kind": "terrain"})))
 
-    water = water_mesh(info.terrain, [(c, r) for c, r, _ in tiles])
+    # Patches with no shipped tile are sea floor and out-of-area ground the
+    # engine paints with the level's default texture, not holes.
+    default_image = None
+    try:
+        default_image = _load_level_dds(files, "terrainDefault")
+    except Exception:
+        default_image = None
+    if default_image is not None:
+        width, height, rgba = default_image
+        tex = builder.add_image_png(
+            encode_png(width, height, rgba, drop_alpha=False), name="terrainDefault")
+        default_material = builder.add_material(
+            name="terrainDefault", texture=tex, double_sided=False)
+        for col, row in default_patches(info.terrain, [(c, r) for c, r, _ in tiles]):
+            primitive = patch_mesh(heightmap, col, row)
+            if primitive is None:
+                continue
+            primitive.material = default_material
+            terrain_report["triangles"] += len(primitive.indices) // 3
+            terrain_report["defaultTiles"] += 1
+            mesh = builder.add_mesh(f"Fill{col:02d}x{row:02d}", [primitive])
+            roots.append(builder.add_node(gltf.Node(
+                name=f"Fill{col:02d}x{row:02d}", mesh=mesh,
+                extras={"kind": "terrain"})))
+
+    if sky_faces:
+        prims = []
+        half = 0.0
+        for material_name, primitive, image in sky_faces:
+            material = None
+            if image is not None:
+                width, height, rgba = image
+                tex = builder.add_image_png(
+                    encode_png(width, height, rgba, drop_alpha=True),
+                    name=material_name)
+                material = builder.add_material(
+                    name=material_name, texture=tex, double_sided=True)
+            primitive.material = material
+            prims.append(primitive)
+            half = max(half, *(abs(c) for p in primitive.positions for c in p))
+        mesh = builder.add_mesh("sky", prims)
+        roots.append(builder.add_node(gltf.Node(
+            name="sky", mesh=mesh,
+            extras={"kind": "sky", "halfExtent": half,
+                    "heightOffset": info.sky.height_offset})))
+
+    # The engine's water covers the world grid, not just textured patches —
+    # Wake's lagoon and outer sea are mostly over default-tile sea floor.
+    water = water_mesh(
+        info.terrain, [(c, r) for c, r, _ in tiles],
+        bounds=(0.0, 0.0, info.terrain.world_size, info.terrain.world_size))
     if water is not None:
         r, g, b = info.water_color
         water.material = builder.add_material(
@@ -279,6 +500,16 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         object_report["missingMeshes"] = sorted(set(report.missing_meshes))
         object_report["lightmaps"] = len(lightmaps or {})
 
+    lighting = {}
+    if info.lighting.ambient_color:
+        lighting["ambient"] = list(info.lighting.ambient_color)
+    if info.lighting.diffuse_color:
+        lighting["diffuse"] = list(info.lighting.diffuse_color)
+    if info.lighting.global_ambient:
+        lighting["globalAmbient"] = list(info.lighting.global_ambient)
+    if info.lighting.shadow_color is not None:
+        lighting["shadowColor"] = info.lighting.shadow_color
+
     extras = {
         "level": info.name,
         "worldSize": info.terrain.world_size,
@@ -295,7 +526,10 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "terrain": terrain_report,
         "objects": object_report,
         "skybox": None,
-        "drawDistance": 700,
+        "sky": None,
+        "water": None,
+        "lighting": lighting or None,
+        "drawDistance": info.view_distance or 700,
     }
     if not roots:
         raise ValueError("nothing renderable in this level")
@@ -330,18 +564,21 @@ def main() -> int:
     lightmaps: dict[tuple[str, int, int, int], str] = {}
     out_dir = args.out / info.name.lower()
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    chain = mod_chain(game_dir, args.mod)
+    extra_names = list(args.texture_fallback)
+    if not _vanilla_texture_rfa_present(chain):
+        extra_names += list(TEXTURE_GAP_MODS)
+    fallbacks = _mod_dirs(game_dir, extra_names)
+    meshes, textures, objects, _game = build_pools(chain, fallbacks)
+    textures.absorb_images(meshes)
+    for level_name, level_path in discover_level_textures(chain):
+        textures.add_level(level_path, label=level_name)
+    for path in paths:
+        textures.add_level(path, label=info.name)
+    if info.texture_alternative_path:
+        textures.set_alternative_paths([info.texture_alternative_path])
     if not args.terrain_only:
-        chain = mod_chain(game_dir, args.mod)
-        extra_names = list(args.texture_fallback)
-        if not _vanilla_texture_rfa_present(chain):
-            extra_names += list(TEXTURE_GAP_MODS)
-        fallbacks = _mod_dirs(game_dir, extra_names)
-        meshes, textures, objects, _game = build_pools(chain, fallbacks)
-        textures.absorb_images(meshes)
-        for level_name, level_path in discover_level_textures(chain):
-            textures.add_level(level_path, label=level_name)
-        for path in paths:
-            textures.add_level(path, label=info.name)
         library = build_library(objects)
         lightmaps = write_object_lightmaps(files, out_dir)
         assembler = Assembler(
@@ -349,12 +586,27 @@ def main() -> int:
             lod=0, max_texture=args.max_texture, include_collision=False,
             lightmaps=lightmaps)
 
+    sky_faces = prepare_sky(info, meshes, textures)
     glb, extras = build_scene(
         files, info, heightmap, assembler,
         max_texture=args.max_texture, include_objects=not args.terrain_only,
-        lightmaps=lightmaps,
+        lightmaps=lightmaps, sky_faces=sky_faces, out_dir=out_dir,
     )
-    extras["skybox"] = write_skybox(files, out_dir)
+    if sky_faces:
+        extras["sky"] = {
+            "mesh": info.sky.mesh,
+            "rotAngle": info.sky.rot_angle,
+            "heightOffset": info.sky.height_offset,
+            "clouds": write_cloud_assets(info, textures, out_dir),
+        }
+    # The ENVMAP_G_.rcm faces are the engine's water/glass reflection source
+    # (`ShaderManager.setTextureParam envmap`), exported always. Without a sky
+    # box they double as the background, which is at least the right palette.
+    extras["envmap"] = write_skybox(files, out_dir)
+    if not sky_faces:
+        extras["skybox"] = extras["envmap"]
+    extras["water"] = write_water_assets(
+        info, heightmap, textures, out_dir, args.max_texture)
     (out_dir / "scene.glb").write_bytes(glb)
     (out_dir / "scene.json").write_text(json.dumps(extras, indent=2))
     maps_index = args.out / "maps.json"
@@ -378,15 +630,51 @@ def main() -> int:
     maps_index.write_text(json.dumps(listing, indent=2))
 
     obj = extras["objects"]
+    sky = extras.get("sky")
+    water = extras.get("water")
     print(f"  terrain {extras['terrain']['triangles']} tris, "
           f"{len(files.tiles())} tiles"
+          f" + {extras['terrain'].get('defaultTiles', 0)} default"
           f"{' + detail' if extras['terrain'].get('detail') else ''}; "
           f"objects {obj['placed']} placed ({obj.get('spawners', 0)} spawners), "
           f"{obj.get('lightmaps', 0)} lightmaps, "
           f"{len(obj['skipped'])} skipped, "
           f"{len(obj.get('texturesMissing') or [])} tex missing; "
           f"{len(glb) // 1024} KB -> {out_dir / 'scene.glb'}", file=sys.stderr)
+    print(f"  sky:    {sky['mesh'] if sky else 'env cubemap fallback'}"
+          f"{' + clouds' if sky and sky.get('clouds') else ''}; "
+          f"water:  "
+          f"{'layers ' + '/'.join(sorted(water['textures'])) if water else 'flat colour'}",
+          file=sys.stderr)
     return 0
+
+
+# Mirroring the world in Z does not just swap the two Z faces of a cube map --
+# it mirrors the *contents* of all six, each along whichever of its own axes
+# tracks world Z. Swap alone leaves every face internally back-to-front against
+# its neighbours, so the four side faces no longer agree along the edges they
+# share and the cube reads as six separate pictures. It is invisible while the
+# cube is only ever drawn as a distant background, which is why it survived
+# until the sky moved onto its own SkyBox mesh and the cube was left reflecting
+# off the water, where a discontinuity is a hard line across the bay.
+#
+# With `dir = (1, -v, -u)` for +X and `(u, 1, v)` for +Y (the glTF/GL
+# convention), substituting `M = diag(1, 1, -1)` gives: the X faces and the two
+# swapped Z faces mirror in u, and the Y faces mirror in v.
+_FACE_MIRROR = {"px": "u", "nx": "u", "py": "v", "ny": "v", "pz": "u", "nz": "u"}
+
+
+def _mirror_rgba(width: int, height: int, rgba: bytes, axis: str) -> bytes:
+    out = bytearray(len(rgba))
+    for y in range(height):
+        src_row = (height - 1 - y) if axis == "v" else y
+        base_dst = y * width * 4
+        base_src = src_row * width * 4
+        for x in range(width):
+            src_x = (width - 1 - x) if axis == "u" else x
+            out[base_dst + x * 4: base_dst + x * 4 + 4] = \
+                rgba[base_src + src_x * 4: base_src + src_x * 4 + 4]
+    return bytes(out)
 
 
 def write_skybox(files, out_dir: Path) -> list[str] | None:
@@ -411,6 +699,7 @@ def write_skybox(files, out_dir: Path) -> list[str] | None:
         if not path or not files.find(path):
             return None
         width, height, rgba = decode_dds(files.read(path))
+        rgba = _mirror_rgba(width, height, rgba, _FACE_MIRROR[face])
         (sky_dir / f"{face}.png").write_bytes(
             encode_png(width, height, rgba, drop_alpha=True))
         written.append(f"sky/{face}.png")
