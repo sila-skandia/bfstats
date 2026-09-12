@@ -38,13 +38,39 @@ cloudflared tunnel route dns aks-tunnel staging.bfstats.io
 ```
 
 `mesh.bfstats.io` is the BF1942 model/level viewer — see
-[`features/mesh-site/README.md`](../../../features/mesh-site/README.md). It is
-routed to a **separate** tunnel (`787f3214…`) and therefore runs a separate
-cloudflared, [`cloudflared-mesh-tunnel.yml`](./cloudflared-mesh-tunnel.yml),
-with its own `tunnel-credentials-mesh` secret.
+[`features/mesh-site/README.md`](../../../features/mesh-site/README.md). It
+rides this same tunnel and needs no cloudflared of its own:
+
+```bash
+cloudflared tunnel route dns a363a103-18d0-439f-afdc-b427e9e6a6ad mesh.bfstats.io
+```
+
+**Check which zone your `cert.pem` is scoped to before running that.**
+`~/.cloudflared/cert.pem` here has been scoped to `munyard.dev`, and
+`route dns` resolves the hostname *relative to the cert's zone* — so the command
+above quietly created `mesh.bfstats.io.munyard.dev` instead of touching the
+bfstats.io zone at all. It reports success, and the hostname you wanted stays
+NODATA. The giveaway is the fully-qualified name in the output or the error:
+
+```
+Failed to create record mesh.bfstats.io.munyard.dev
+```
+
+`--overwrite-dns` does not fix this — it overwrites the wrong-zone record and
+still leaves the real hostname missing. Either `cloudflared tunnel login` and
+pick the bfstats.io zone first, or add the CNAME by hand in the dashboard:
+name `mesh`, target `<tunnel-id>.cfargotunnel.com`, **proxied** (a
+`cfargotunnel.com` target resolves only through Cloudflare's proxy, so a
+grey-clouded record is dead).
+
+It briefly had a dedicated tunnel and a second cloudflared, on the belief that
+its CNAME already pointed elsewhere and could not be moved. The hostname had no
+DNS record at all, so that constraint never existed, and the deployment was
+dropped before it ever ran — worth knowing if an old branch reintroduces
+`cloudflared-mesh-tunnel.yml` or a `tunnel-credentials-mesh` secret.
 
 One cloudflared process serves exactly one tunnel, and DNS binds a hostname to a
 tunnel ID — so adding a hostname to the wrong config silently does nothing. If a
 host 1033s, check which tunnel its CNAME points at before touching ingress
-rules; both tunnels forward to the same HAProxy, so the backend config is shared
-and rarely the cause.
+rules; everything here forwards to the same HAProxy, so the backend config is
+shared and rarely the cause.

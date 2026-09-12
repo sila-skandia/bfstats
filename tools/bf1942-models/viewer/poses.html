@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<title>BF1942 grip inspector</title>
+<title>BF1942 mesh &middot; poses</title>
+<link rel="stylesheet" href="./shell.css">
 <style>
   :root {
     --bg: #14150f;
@@ -21,6 +22,7 @@
   body {
     display: grid;
     grid-template-columns: 320px 1fr;
+    grid-template-rows: var(--nav-h) 1fr;
     background: var(--bg);
     color: var(--text);
     font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
@@ -159,12 +161,20 @@
     font-size: 11px;
     pointer-events: none;
   }
-  .nav { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 11px; }
 </style>
 </head>
 <body>
+<nav class="shell-nav">
+  <span class="shell-brand"><b>BF1942</b> mesh</span>
+  <span class="shell-tabs">
+    <a href="./index.html">Models</a>
+    <a href="./map.html">Maps</a>
+    <a href="./poses.html" aria-current="page">Poses</a>
+  </span>
+  <span class="shell-sub">soldier animation states &middot; weapon grip welds</span>
+</nav>
 <aside>
-  <h1>BF1942 grip inspector</h1>
+  <h1>Grip inspector</h1>
 
   <div class="field"><span>Soldier</span><select id="soldier"></select></div>
   <div class="field"><span>Weapon</span><select id="weapon"></select></div>
@@ -199,11 +209,6 @@
   <label class="toggle"><input type="checkbox" id="sort-worst"> sort by worst weld</label>
   <div id="pairs"></div>
   <div id="pair-count"></div>
-
-  <div class="nav">
-    <a href="./index.html">model inspector</a> &middot;
-    <a href="./map.html">map flythrough</a>
-  </div>
 </aside>
 <main><div id="status">loading&hellip;</div></main>
 

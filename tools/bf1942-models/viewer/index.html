@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<title>BF1942 model inspector</title>
+<title>BF1942 mesh &middot; models</title>
+<link rel="stylesheet" href="./shell.css">
 <style>
   :root {
     --bg: #14150f;
@@ -21,6 +22,7 @@
   body {
     display: grid;
     grid-template-columns: 320px 1fr;
+    grid-template-rows: var(--nav-h) 1fr;
     background: var(--bg);
     color: var(--text);
     font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
@@ -48,13 +50,6 @@
     padding-top: 12px;
   }
   h2:first-of-type { border-top: 0; padding-top: 0; }
-  .page-nav {
-    margin-top: 20px;
-    border-top: 1px solid var(--line);
-    padding-top: 12px;
-    font-size: 11px;
-  }
-  .page-nav a { color: var(--accent); }
   #variant-panel[hidden] { display: none; }
   .variant-grid { display: grid; gap: 8px; }
   .variant-field { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; }
@@ -510,6 +505,17 @@
   body.is-portrait #banner,
   body.is-portrait #versus { display: none; }
   body.is-portrait canvas { opacity: 1; transition: none; }
+  /* The nav row goes too, and shoot.mjs gets its square canvas back: at the
+     820x500 shooting viewport the sidebar leaves exactly 500x500, and the
+     browse view's scale lineup reads size off a common aspect. Leaving the bar
+     in would silently reshape every regenerated thumbnail to 500x462. */
+  body.is-portrait { grid-template-rows: 0 1fr; }
+  body.is-portrait .shell-nav { display: none; }
+  /* Hiding the bar takes it out of the grid, so auto-placement would pull the
+     panel and viewport up into the collapsed first row. Pin them to the second
+     row, which is where they sit in both modes anyway. */
+  body.is-portrait > aside,
+  body.is-portrait > main { grid-row: 2; }
 
   /* --- Armoury browser ----------------------------------------------------
      The sidebar list does not survive a few hundred models, so picking one is
@@ -576,7 +582,9 @@
 
   #browser {
     position: fixed;
-    inset: 0;
+    /* Stops below the shared bar so the feature toggle stays reachable while
+       the armoury is open. */
+    inset: var(--nav-h) 0 0 0;
     z-index: 40;
     display: grid;
     grid-template-columns: 232px 1fr;
@@ -889,8 +897,17 @@
 </style>
 </head>
 <body>
+<nav class="shell-nav">
+  <span class="shell-brand"><b>BF1942</b> mesh</span>
+  <span class="shell-tabs">
+    <a href="./index.html" aria-current="page">Models</a>
+    <a href="./map.html">Maps</a>
+    <a href="./poses.html">Poses</a>
+  </span>
+  <span class="shell-sub">vehicles and weapons &middot; armour, damage and duels</span>
+</nav>
 <aside>
-  <h1>BF1942 model inspector</h1>
+  <h1>Model inspector</h1>
   <div id="current">
     <div id="current-card" class="side-none">
       <img id="current-thumb" alt="" hidden>
@@ -958,11 +975,6 @@
     <div class="detail-label">Part tree</div>
     <div id="tree"></div>
   </details>
-
-  <div class="page-nav">
-    <a href="./poses.html">grip inspector</a> &middot;
-    <a href="./map.html">map flythrough</a>
-  </div>
 </aside>
 <main>
   <div id="banner" hidden></div>

@@ -152,13 +152,43 @@ upload_via_kubectl() {
 
   kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" exec -c "$container" "$pod" -- mkdir -p "$dest_root"
 
+  # chown and chmod are both best-effort, and the run is judged on the state
+  # they were trying to reach rather than on their exit codes.
+  #
+  # FileBrowser's container runs as uid 1000, but the mesh directories on the
+  # volume are owned by root (mode 0777, setgid). uid 1000 therefore cannot
+  # chown or chmod those directories -- even though they already carry exactly
+  # the permissions we want. Both commands sat in an && chain, so each in turn
+  # aborted the run after tar had unpacked and before anything was verified,
+  # reporting failure on a tree that was in fact complete and servable.
+  #
+  # What actually has to hold is that the mesh pod, which mounts this tree
+  # read-only and serves it as the unprivileged `nginx` user, can read every
+  # file and traverse every directory. So: try to set it, then check it, and
+  # fail only when a file really would 403.
+  remote_unpack() {
+    local tarball="$1" dest="$2"
+    cat <<REMOTE
+tar xf '$tarball' -C '$dest' && rm -f '$tarball' || exit 1
+chown -R 1000:1000 '$dest' 2>/dev/null || true
+chmod -R a+rX '$dest' 2>/dev/null || true
+bad=\$(find '$dest' \\( -type f ! -perm -o=r \\) -o \\( -type d ! -perm -o=rx \\) 2>/dev/null | head -5)
+if [ -n "\$bad" ]; then
+  echo "unreadable to nginx, would 403:" >&2
+  echo "\$bad" >&2
+  exit 1
+fi
+find '$dest' -type f | wc -l
+REMOTE
+  }
+
   if [[ "$DO_MODELS" -eq 1 ]]; then
     archive="$(mktemp --suffix=.tar)"
     tar -C "$MODELS_DIR" -cf "$archive" .
     kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" exec -c "$container" "$pod" -- mkdir -p "$dest_root/models"
     kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" cp -c "$container" "$archive" "$pod:/tmp/mesh-models.tar"
     kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" exec -c "$container" "$pod" -- sh -c \
-      "tar xf /tmp/mesh-models.tar -C '$dest_root/models' && rm -f /tmp/mesh-models.tar && chown -R 1000:1000 '$dest_root/models' && chmod -R a+rX '$dest_root/models' && find '$dest_root/models' -type f | wc -l"
+      "$(remote_unpack /tmp/mesh-models.tar "$dest_root/models")"
     rm -f "$archive"
     echo "Copied models into $pod:$dest_root/models"
   fi
@@ -168,7 +198,7 @@ upload_via_kubectl() {
     kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" exec -c "$container" "$pod" -- mkdir -p "$dest_root/maps"
     kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" cp -c "$container" "$archive" "$pod:/tmp/mesh-maps.tar"
     kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" exec -c "$container" "$pod" -- sh -c \
-      "tar xf /tmp/mesh-maps.tar -C '$dest_root/maps' && rm -f /tmp/mesh-maps.tar && chown -R 1000:1000 '$dest_root/maps' && chmod -R a+rX '$dest_root/maps' && find '$dest_root/maps' -type f | wc -l"
+      "$(remote_unpack /tmp/mesh-maps.tar "$dest_root/maps")"
     rm -f "$archive"
     echo "Copied maps into $pod:$dest_root/maps"
   fi
