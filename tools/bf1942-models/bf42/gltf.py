@@ -122,6 +122,7 @@ class GlbBuilder:
         self._textures: list[dict] = []
         self._nodes: list[Node] = []
         self._skins: list[dict] = []
+        self._extensions_used: set[str] = set()
         self._generator = generator
 
     # -- buffer plumbing ---------------------------------------------------- #
@@ -175,7 +176,8 @@ class GlbBuilder:
 
     def add_material(self, name: str, texture: int | None = None, *,
                      double_sided: bool = False, alpha_cutoff: float | None = None,
-                     blend: bool = False, base_color=(1.0, 1.0, 1.0, 1.0)) -> int:
+                     blend: bool = False, base_color=(1.0, 1.0, 1.0, 1.0),
+                     unlit: bool = False) -> int:
         pbr: dict = {"baseColorFactor": list(base_color),
                      "metallicFactor": 0.0, "roughnessFactor": 0.85}
         if texture is not None:
@@ -186,6 +188,17 @@ class GlbBuilder:
             mat["alphaCutoff"] = alpha_cutoff
         elif blend:
             mat["alphaMode"] = "BLEND"
+        if unlit:
+            # A leaf sprite is a camera-facing card, and its normals point out
+            # along the card rather than at the sky: sampled on this bush they
+            # run (-1, 0, 0) and (0.98, 0.19, -0.04). Shade that with a sun and
+            # N.L falls to nothing, so every shrub renders as a black blob on
+            # lit sand. Refractor draws vegetation sprites full-bright, and
+            # KHR_materials_unlit is the same statement in glTF - GLTFLoader
+            # reads it and builds an unlit material without the viewer having to
+            # recognise anything by name.
+            mat.setdefault("extensions", {})["KHR_materials_unlit"] = {}
+            self._extensions_used.add("KHR_materials_unlit")
         self._materials.append(mat)
         return len(self._materials) - 1
 
@@ -311,6 +324,8 @@ class GlbBuilder:
         }
         if self._skins:
             doc["skins"] = self._skins
+        if self._extensions_used:
+            doc["extensionsUsed"] = sorted(self._extensions_used)
         if self._materials:
             doc["materials"] = self._materials
         if self._images:
