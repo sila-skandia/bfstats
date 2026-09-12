@@ -301,12 +301,13 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     if weapon_skeleton is not None:
         main_index = weapon_skeleton.main_index(
             weapon_template.skeleton_main, weapon)
-        attach = pose_mod.weapon_attachment(weapon_skeleton, main_index)
+        attach = pose_mod.weapon_attachment(weapon_skeleton, main_index,
+                                            clip_posed=True)
     else:
         # GrenadeAllies: its .ske is corrupt, so the grenade sits directly on
-        # the hand bone rather than at its base bone's offset from it.
-        attach = (((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
-                  (0.0, 0.0, 0.0))
+        # the hand bone rather than at its base bone's offset from it. The
+        # clip-frame roll still applies — the hand it welds to is clip-posed.
+        attach = (pose_mod.CLIP_GRIP_ROLL, (0.0, 0.0, 0.0))
         result["weaponSkeleton"] = "unreadable, attached at hand root"
 
     hand = posed.get("bip01 r hand")

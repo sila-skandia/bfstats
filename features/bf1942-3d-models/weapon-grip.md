@@ -8,7 +8,7 @@ game's own animation clips, weapon welded to the hand:
 cd tools/bf1942-models
 python3 extract_pose.py BritishSoldier Colt GermanSoldier K98 --out ./viewer/models
 python3 extract_pose.py --matrix            # every soldier against every weapon
-python3 -m unittest discover -s tests       # 189, installation-independent
+python3 -m unittest discover -s tests       # 198, installation-independent
 ```
 
 Each pair becomes `<Soldier>__<Weapon>.pose.glb`: body, one head variant and
@@ -81,7 +81,7 @@ clip, knows which bone is root.
 
 ## The traps
 
-Four of them, and each passed at least one plausible verification while
+Five of them, and each passed at least one plausible verification while
 wrong. The common thread: **a symmetric standing body absorbs enormous
 errors. Fingers, faces and renderers do not.**
 
@@ -151,6 +151,31 @@ collapsed the figure, while the file measured correct against the spec
 formula. The fix: skinned mesh nodes sit at the scene root with no transform,
 inherited or otherwise; the joints keep the pitch, and the render is
 identical under a spec-exact reader and under three.js.
+
+### The weld that every metric passed upside down
+
+The first full matrix welded every weapon 180 degrees rolled about the grip
+axis — sights down, magazine up — and **no numeric instrument saw it**. The
+hands are their own skins, so rigidly rolling the weapon leaves edge stretch
+at zero; palm-to-nearest-surface distance is roll-blind on a barrel-symmetric
+weapon, and it measured the same healthy 2–3 cm either way. Only an eyeball
+on the render caught it.
+
+The elimination that pinned it: the attach itself is right — welded onto the
+`.ske` **rest** stance the Thompson lands exactly where the rig's own
+`Thompson` prop bone says (4 mm, 1.6 degrees), and that rest-stance export
+renders a perfect hold. The weapon's own clips animate only internal bones
+(`trigger`, `flerp`), and the soldier clips carry no weapon bones, so no clip
+supplies the missing rotation. The clip's hand track is parent-relative (its
+translation is the rig's exact 0.305 m forearm-to-hand offset), killing the
+track-as-root theory. What remains is the frame convention itself: **the
+hand frame a `.baf` clip poses is rolled half a turn about the grip axis
+against the hand frame the `.ske` files agree on.** The correction —
+`pose.CLIP_GRIP_ROLL`, folded in by `weapon_attachment(..., clip_posed=True)`
+— was picked by rendering all three candidate half-turns; only Rz(180)
+post-multiplied on the attach puts the Thompson's sights up, muzzle forward,
+stock in the shoulder. It is one constant for every weapon because every
+weapon skeleton came off the same authoring rig.
 
 ### The reconstruction test that reports a stance as an error
 

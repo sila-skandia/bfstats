@@ -100,7 +100,22 @@ def worlds_by_name(skeleton: Skeleton, worlds: list[RT]) -> dict[str, RT]:
             for i, bone in enumerate(skeleton.bones)}
 
 
-def weapon_attachment(weapon_skeleton: Skeleton, main_index: int | None) -> RT:
+# The hand frame a `.baf` clip poses is rolled half a turn about the grip
+# axis against the hand frame the `.ske` files were authored in. Welding the
+# `.ske`-derived attach onto a clip-posed hand therefore needs a constant
+# 180-degree correction — without it every weapon renders upside down while
+# the same attach welds perfectly onto the `.ske` rest stance (the Thompson
+# prop bone agrees to 4 mm / 1.6 degrees). Measured, not derived: of the
+# three half-turns post-multiplied onto the attach, only this one puts the
+# Thompson's sights up, muzzle forward and stock in the shoulder; the flip
+# is uniform across all weapon rigs because they share one authoring rig.
+CLIP_GRIP_ROLL: Matrix3 = ((-1.0, 0.0, 0.0),
+                           (0.0, -1.0, 0.0),
+                           (0.0, 0.0, 1.0))
+
+
+def weapon_attachment(weapon_skeleton: Skeleton, main_index: int | None,
+                      clip_posed: bool = False) -> RT:
     """The weapon object's origin relative to the soldier's hand bone.
 
     The weapon skeleton's root *is* the hand, but its rest transform is not
@@ -110,11 +125,22 @@ def weapon_attachment(weapon_skeleton: Skeleton, main_index: int | None) -> RT:
     so the root's own rest must be cancelled out of the chain:
 
         attach = rest(root)^-1 * rest(main)
+
+    That attach is expressed against the `.ske` hand frame. A hand posed
+    from a `.baf` clip lives in a frame rolled 180 degrees about the grip
+    axis, so pass `clip_posed=True` to fold `CLIP_GRIP_ROLL` in; leave it
+    off when welding onto the `.ske` rest stance.
     """
     if main_index is None:
         main_index = 0
-    return _mul(_inverse(weapon_skeleton.rest(0)),
-                weapon_skeleton.rest(main_index))
+    rotation, translation = _mul(_inverse(weapon_skeleton.rest(0)),
+                                 weapon_skeleton.rest(main_index))
+    if clip_posed:
+        rotation = tuple(
+            tuple(sum(rotation[i][k] * CLIP_GRIP_ROLL[k][j] for k in range(3))
+                  for j in range(3))
+            for i in range(3))
+    return rotation, translation
 
 
 def refine_binds(skn: skin_mod.Skin,
