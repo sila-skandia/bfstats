@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<title>BF1942 map flythrough</title>
+<title>BF1942 mesh &middot; maps</title>
+<link rel="stylesheet" href="./shell.css">
 <style>
   :root {
     --bg: #14150f;
@@ -18,9 +19,19 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
+    display: grid;
+    grid-template-rows: var(--nav-h) 1fr;
     background: var(--bg);
     color: var(--text);
     font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+    overflow: hidden;
+  }
+  /* The flythrough owns everything below the bar. Positioning it makes the
+     canvas and the three overlays resolve against the stage rather than the
+     viewport, so nothing has to know the bar's height. */
+  #stage {
+    position: relative;
+    min-height: 0;
     overflow: hidden;
   }
   canvas {
@@ -103,21 +114,29 @@
 </style>
 </head>
 <body>
-<aside id="side">
-  <h1>Map flythrough</h1>
-  <select id="maps" aria-label="Level"></select>
-  <div id="stats" class="stat">extract a level first</div>
-  <label class="opt"><input type="checkbox" id="game-fog"> game fog distance</label>
-  <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
-  <label class="opt"><input type="checkbox" id="vehicles"> vehicles</label>
-  <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
-  <label class="opt"><input type="checkbox" id="lightmaps" checked> object lightmaps</label>
-  <div class="stat" style="margin-top:12px">
-    <a href="./index.html">vehicle inspector</a>
-  </div>
-</aside>
-<div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; Esc</div>
-<div id="gate"><span>Click to fly</span></div>
+<nav class="shell-nav">
+  <span class="shell-brand"><b>BF1942</b> mesh</span>
+  <span class="shell-tabs">
+    <a href="./index.html">Models</a>
+    <a href="./map.html" aria-current="page">Maps</a>
+    <a href="./poses.html">Poses</a>
+  </span>
+  <span class="shell-sub">extracted levels &middot; terrain, lightmaps and sky</span>
+</nav>
+<div id="stage">
+  <aside id="side">
+    <h1>Map flythrough</h1>
+    <select id="maps" aria-label="Level"></select>
+    <div id="stats" class="stat">extract a level first</div>
+    <label class="opt"><input type="checkbox" id="game-fog"> game fog distance</label>
+    <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
+    <label class="opt"><input type="checkbox" id="vehicles"> vehicles</label>
+    <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
+    <label class="opt"><input type="checkbox" id="lightmaps" checked> object lightmaps</label>
+  </aside>
+  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; Esc</div>
+  <div id="gate"><span>Click to fly</span></div>
+</div>
 
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
@@ -143,7 +162,8 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-document.body.appendChild(renderer.domElement);
+const stage = document.getElementById('stage');
+stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 8000);
@@ -314,7 +334,9 @@ function fly(dt) {
 }
 
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  // Stage, not window: the shared nav bar takes a grid row above it.
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();

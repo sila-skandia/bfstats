@@ -15,22 +15,53 @@ on its own cadence.
 | Public URL | `https://mesh.bfstats.io` |
 | Same assets for the main site | `GET /stats/assets/mesh/{*path}` on the API |
 
+## One site, three features
+
+`index.html`, `map.html` and `poses.html` are three independent three.js apps —
+different layouts, different asset trees, no shared runtime. What makes them one
+site is [`shell.css`](../../tools/bf1942-models/viewer/shell.css): a bar across
+the top of all three carrying the brand and a Models / Maps / Poses toggle, with
+the active tab marked by `aria-current="page"`.
+
+| Tab | Page | Serves from |
+|---|---|---|
+| Models | `index.html` | `models/` — vehicles, weapons, armour, damage, duels |
+| Maps | `map.html` | `maps/` — extracted levels, terrain, lightmaps, sky |
+| Poses | `poses.html` | `models/poses/` — soldier states and weapon grip welds |
+
+The nav is static markup in each page rather than injected by script, so it
+survives a module that fails to load — which on these pages is the case worth
+being able to navigate away from. Each page reserves `--nav-h` as its first grid
+row instead of floating the bar over the canvas, so the two renderers that size
+themselves from a container (`main.clientWidth` on models and poses,
+`#stage.clientWidth` on maps) keep working with no offset arithmetic. `map.html`
+gained a `#stage` wrapper for exactly that reason: its canvas and three overlays
+used to resolve against the viewport.
+
+Poses is not a separate asset tree — it reads `models/poses/`, so a
+`--models`-only upload publishes both the Models and Poses tabs.
+
 Cloudflare Tunnel → HAProxy (host `mesh.bfstats.io`) → `bfstats-mesh-service`
 in `bf42-stats`. The mesh pod mounts the PVC the same way FileBrowser does, so
 `/models/` and `/maps/` are served as static files next to the viewer — no
 proxy hop through the API for every texture.
 
-`mesh.bfstats.io` rides its **own** tunnel (`787f3214…`), not the one carrying
-bfstats.io / staging / seq (`a363a103…`). That is forced rather than chosen: one
-cloudflared process runs exactly one tunnel, and a hostname's DNS CNAME points
-at a specific tunnel ID — so a second tunnel needs a second cloudflared.
-[`cloudflared-mesh-tunnel.yml`](../../deploy/app/ingress/cloudflared-mesh-tunnel.yml)
-is that deployment. Both forward to the same HAProxy, which routes on the Host
-header, so there is only one set of backend rules to reason about.
+`mesh.bfstats.io` rides the **shared** tunnel (`a363a103…`), the one already
+carrying bfstats.io / staging / seq. It is one more `hostname:` rule in
+[`cloudflared-tunnel.yml`](../../deploy/app/ingress/cloudflared-tunnel.yml)
+pointing at the same HAProxy, which routes on the Host header.
 
-The corollary is worth remembering when mesh looks broken but bfstats.io is
-fine: they share no failure domain upstream of HAProxy. Check
-`deployment/cloudflared-mesh`, not `deployment/cloudflared`.
+An earlier revision gave mesh its own tunnel (`787f3214…`, listed as
+`aks-tunnel`) and a second cloudflared, reasoning that one cloudflared runs
+exactly one tunnel and mesh's CNAME already pointed at that ID. The second half
+was never true — `mesh.bfstats.io` had no DNS record whatsoever, so the hostname
+was free to be routed anywhere. Dropping that deployment removes a failure
+domain, a `tunnel-credentials-mesh` secret, and 64Mi of limit on a node that is
+already short of the headroom the root `CLAUDE.md` asks for.
+
+The tradeoff to know: mesh and bfstats.io now share an upstream. A cloudflared
+restart to add or change a hostname blips every host on the tunnel, so batch
+ingress edits rather than applying them one at a time.
 
 ```
 assets/                         # /mnt/data/assets on the PVC
@@ -50,30 +81,53 @@ assets/                         # /mnt/data/assets on the PVC
 
 **None of this has been run yet — the site is local-only.** `mesh.bfstats.io`
 resolves to nothing today (A, AAAA and CNAME all NODATA, checked 2026-09-12),
-so the hostname still needs its CNAME pointed at the mesh tunnel (`787f3214…`)
-as well as the steps below. Develop against the `model-viewer` launch config on
-:5273; treat this section as the go-live runbook rather than a description of
-what is deployed.
+which is exactly why it was free to be put on the shared tunnel. Develop against
+the `model-viewer` launch config on :5273; treat this section as the go-live
+runbook rather than a description of what is deployed.
 
-The new tunnel needs its credentials in the cluster before cloudflared-mesh will
-start — it has no `credentials.json` otherwise and will crash-loop:
+The assets are already published, though — `mesh/models` and `mesh/maps` on the
+volume are populated, so the site has something to serve the moment it is up.
 
-```bash
-cloudflared tunnel token --cred-file mesh-creds.json <mesh-tunnel-name>
-kubectl --context hetzner -n cloudflared create secret generic \
-    tunnel-credentials-mesh --from-file=credentials.json=mesh-creds.json
-```
+There is no credentials step and no new secret: the shared tunnel's
+`tunnel-credentials` is already mounted by the cloudflared that will serve mesh.
 
-Then HAProxy (for the `mesh.bfstats.io` ACL and backend) and the mesh tunnel:
+**1. Let Jenkins build the image first.** The Mesh Pipeline is gated on `mesh/`
+or `tools/bf1942-models/viewer/`, and it applies the mesh Deployment/Service
+itself. Applying `mesh-deployment.yaml` by hand before the first push only gets
+you `ImagePullBackOff`.
+
+**2. HAProxy and the shared tunnel.** The `mesh.bfstats.io` ACL and
+`mesh_frontend` backend are already in the HAProxy config; the tunnel ConfigMap
+now carries the matching `hostname:` rule. Applying the ConfigMap needs a
+restart for cloudflared to reread it, and that blips every host on the tunnel —
+seconds, but not zero:
 
 ```bash
 kubectl --context hetzner -n haproxy apply -f deploy/app/ingress/deployment.yaml
-kubectl --context hetzner -n cloudflared apply -f deploy/app/ingress/cloudflared-mesh-tunnel.yml
+kubectl --context hetzner -n cloudflared apply -f deploy/app/ingress/cloudflared-tunnel.yml
+kubectl --context hetzner -n cloudflared rollout restart deployment/cloudflared
 ```
 
-The mesh Deployment/Service is applied by the Jenkins Mesh Pipeline, which also
-builds the image — applying it by hand before the first push only gets you
-`ImagePullBackOff`, so let Jenkins go first.
+**3. DNS last**, once something is actually listening. Pointing the hostname at a
+tunnel with no origin behind it serves a Cloudflare 1033 rather than a useful
+error:
+
+```bash
+cloudflared tunnel route dns a363a103-18d0-439f-afdc-b427e9e6a6ad mesh.bfstats.io
+```
+
+That writes a proxied CNAME to
+`a363a103-18d0-439f-afdc-b427e9e6a6ad.cfargotunnel.com` in the bfstats.io zone.
+It has to stay orange-clouded: `cfargotunnel.com` targets resolve only through
+Cloudflare's proxy, so grey-clouding the record breaks the host entirely. Then
+`curl -sI https://mesh.bfstats.io/` should return 200.
+
+That command only works if `~/.cloudflared/cert.pem` is scoped to the bfstats.io
+zone. It has been scoped to `munyard.dev`, in which case `route dns` appends
+that zone and creates `mesh.bfstats.io.munyard.dev` — a stray record in an
+unrelated zone, while `mesh.bfstats.io` stays NODATA. See
+[the ingress README](../../deploy/app/ingress/README.md) for the symptom and the
+two ways out; `--overwrite-dns` is not one of them.
 
 Re-applying the *shared* tunnel config is optional and cosmetic: the
 `mesh.bfstats.io` rule was dropped from it because that process runs a different
@@ -98,6 +152,14 @@ FILEBROWSER_URL=http://filebrowser-hetzner:80 ./scripts/upload-mesh-assets.sh
 ./scripts/upload-mesh-assets.sh --kubectl
 ```
 
+The `chown -R 1000:1000` inside the kubectl path is best-effort. FileBrowser's
+container does not run as root, so it cannot chown a directory an earlier upload
+left behind — and while that `chown` sat in the middle of an `&&` chain, hitting
+it aborted the run *after* tar had unpacked and *before* the `chmod -R a+rX`,
+leaving a complete tree that nginx would answer 403 for. Ownership is cosmetic
+here; the world-readable bit is what makes a file servable through the read-only
+mount. Failing the chown no longer fails the upload.
+
 That writes into `mesh/models` and `mesh/maps` on the assets volume, walking the
 tree recursively — so `models/thumbs/` (the browse-view thumbnails from
 `node shoot.mjs --thumbs`) goes up with everything else. The mesh site picks it
@@ -105,6 +167,11 @@ all up immediately, no image rebuild. The API endpoint reads the same tree for
 anything on bfstats.io that wants a vehicle glb later.
 
 ## Caching
+
+The three pages and `shell.css` are `max-age=0, s-maxage=60`. Nothing in the
+browser cache outlives a deploy, which matters more now that they share a
+stylesheet: a stale `shell.css` against a fresh page is a broken nav, and the
+two only change together on an image build.
 
 `/models/` and `/maps/` are `max-age=300, s-maxage=86400`: a re-upload shows up
 in a browser within five minutes without a hard refresh, while the edge holds
@@ -161,17 +228,17 @@ and `sqlite-browser` sit at 0):
 | ui / haproxy / cloudflared / redis-commander | 128 each |
 | api `sqlite-tools` | 64 |
 | **mesh** | **64** |
-| **cloudflared-mesh** | **64** |
-| **total** | **6976** |
+| **total** | **6912** |
 | node | 7741 |
-| **headroom** | **765 (0.75 Gi)** |
+| **headroom** | **829 (0.81 Gi)** |
 
 The invariant asks for ~1.5Gi, and it was already missed at 0.87Gi before any of
-this existed. mesh and its cloudflared cost 0.12Gi between them — both sized
-down from the 128Mi that copying the neighbouring deployments would have given
-them. The remaining gap is not a mesh problem: `seq` at 512Mi is the obvious
-candidate on a box where it is a debugging convenience. Requests total only
-~2.9Gi, so scheduling is comfortable — the exposure is simultaneous peak.
+this existed. mesh costs 0.06Gi — sized down from the 128Mi that copying the
+neighbouring deployments would have given it, and half what this feature would
+have cost had it kept a cloudflared of its own. The remaining gap is not a mesh
+problem: `seq` at 512Mi is the obvious candidate on a box where it is a
+debugging convenience. Requests total only ~2.9Gi, so scheduling is comfortable
+— the exposure is simultaneous peak.
 
 Note that scaling `filebrowser` up to upload assets temporarily adds its 256Mi
 limit on top. Scale it back to 0 when the upload is done.
