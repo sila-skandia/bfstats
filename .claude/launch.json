@@ -4,13 +4,22 @@
     {
       "name": "ui",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "ui"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "ui"
+      ],
       "port": 5173
     },
     {
       "name": "model-viewer",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "5273", "--directory", "tools/bf1942-models/viewer"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "python3 -m http.server \"$PORT\" --directory tools/bf1942-models/viewer"
+      ],
+      "autoPort": true,
       "port": 5273
     }
   ]
