@@ -45,9 +45,25 @@ dice::bf::ai::AIMeshVertex::vertexFormat
 ```
 
 It has no renderer, but it does have the file-format readers — a dedicated
-server still loads meshes for collision and AI. For anything about *parsing*,
-name it in the server and carry the name across. For anything about *drawing*,
-the client is the only source.
+server still loads meshes for collision and AI. Confirmed: 461 `StandardMesh`
+symbols, the full class, and two adjacent globals named exactly after the fields
+in ledger row SM-1:
+
+```
+087473a4 D dice::ref2::geom::g_vertexFormat
+087473a8 D dice::ref2::geom::g_vertexStride
+```
+
+**Use it only for parsing questions.** There is no D3D8, no vertex buffer, no
+shader anywhere in it. Anything about *drawing* — and that includes how a
+material's components reach the GPU — can only come from the client.
+
+**It does not give you struct layouts.** The binary reports `with debug_info`,
+but the DWARF covers only the statically linked libstdc++ and libgcc
+(`locale.cc`, `eh_throw.cc`, `libgcc2.c`); there is not one DICE compilation
+unit in it. Checked 2026-09-12 — do not re-run it. What you get is the symbol
+table: names, addresses, and mangled signatures. Field offsets still have to be
+read out of the code.
 
 ---
 
