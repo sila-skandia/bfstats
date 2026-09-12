@@ -48,9 +48,15 @@ assets/                         # /mnt/data/assets on the PVC
 
 ## One-time cluster steps
 
-DNS is already routed to the mesh tunnel (`787f3214…`). The new tunnel needs its
-credentials in the cluster before cloudflared-mesh will start — it has no
-`credentials.json` otherwise and will crash-loop:
+**None of this has been run yet — the site is local-only.** `mesh.bfstats.io`
+resolves to nothing today (A, AAAA and CNAME all NODATA, checked 2026-09-12),
+so the hostname still needs its CNAME pointed at the mesh tunnel (`787f3214…`)
+as well as the steps below. Develop against the `model-viewer` launch config on
+:5273; treat this section as the go-live runbook rather than a description of
+what is deployed.
+
+The new tunnel needs its credentials in the cluster before cloudflared-mesh will
+start — it has no `credentials.json` otherwise and will crash-loop:
 
 ```bash
 cloudflared tunnel token --cred-file mesh-creds.json <mesh-tunnel-name>
