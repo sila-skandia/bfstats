@@ -632,6 +632,34 @@ def main() -> int:
     return 0
 
 
+# Mirroring the world in Z does not just swap the two Z faces of a cube map --
+# it mirrors the *contents* of all six, each along whichever of its own axes
+# tracks world Z. Swap alone leaves every face internally back-to-front against
+# its neighbours, so the four side faces no longer agree along the edges they
+# share and the cube reads as six separate pictures. It is invisible while the
+# cube is only ever drawn as a distant background, which is why it survived
+# until the sky moved onto its own SkyBox mesh and the cube was left reflecting
+# off the water, where a discontinuity is a hard line across the bay.
+#
+# With `dir = (1, -v, -u)` for +X and `(u, 1, v)` for +Y (the glTF/GL
+# convention), substituting `M = diag(1, 1, -1)` gives: the X faces and the two
+# swapped Z faces mirror in u, and the Y faces mirror in v.
+_FACE_MIRROR = {"px": "u", "nx": "u", "py": "v", "ny": "v", "pz": "u", "nz": "u"}
+
+
+def _mirror_rgba(width: int, height: int, rgba: bytes, axis: str) -> bytes:
+    out = bytearray(len(rgba))
+    for y in range(height):
+        src_row = (height - 1 - y) if axis == "v" else y
+        base_dst = y * width * 4
+        base_src = src_row * width * 4
+        for x in range(width):
+            src_x = (width - 1 - x) if axis == "u" else x
+            out[base_dst + x * 4: base_dst + x * 4 + 4] = \
+                rgba[base_src + src_x * 4: base_src + src_x * 4 + 4]
+    return bytes(out)
+
+
 def write_skybox(files, out_dir: Path) -> list[str] | None:
     seen: set[str] = set()
     mapping = None
@@ -654,6 +682,7 @@ def write_skybox(files, out_dir: Path) -> list[str] | None:
         if not path or not files.find(path):
             return None
         width, height, rgba = decode_dds(files.read(path))
+        rgba = _mirror_rgba(width, height, rgba, _FACE_MIRROR[face])
         (sky_dir / f"{face}.png").write_bytes(
             encode_png(width, height, rgba, drop_alpha=True))
         written.append(f"sky/{face}.png")
