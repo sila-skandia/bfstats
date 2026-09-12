@@ -10,7 +10,7 @@ from the weapon-independent `StandWalkRun/LowerBody/` clips.
     u16 boneCount
       per bone: u16 nameLen (includes the trailing NUL), name
     u32 frameCount
-    u8  precision         fraction bits: value = i16 / 2^precision
+    u8  precision         fraction bits for the position channels only
     per bone, in name order:
       u16 dataWords       redundant: the seven channels' payload words summed
       7 channels          quat x, y, z, w, then pos x, y, z
@@ -25,11 +25,14 @@ from the weapon-independent `StandWalkRun/LowerBody/` clips.
 A run length lives in 7 bits, so any span past 127 frames is just more
 segments — a constant channel over 231 frames is two holds (127 + 104), which
 is why "constant" cannot be read off the descriptor alone. Values are signed
-16-bit fixed point at `precision` fraction bits; 1,121 files use 15, and the
-handful of vehicle clips that need bone offsets past +-1 m drop to 14, 12
-or 11. Quaternion channels land at unit norm (within quantisation, ~1e-4)
-and position channels reproduce the skeleton's bone lengths exactly, which
-is what pins the channel order and the scale.
+16-bit fixed point. **The header precision applies to the position channels
+only; quaternions are always divided by 2^15.** 1,121 files say 15, where the
+two scales coincide and hide the distinction — the tell is the 33 clips that
+need bone offsets past +-1 m (dying, ladders, the parachute) and drop to 14,
+12 or 11: their position channels stay in range while their quaternions still
+land at unit norm only under /2^15 (at /2^precision they come out at exactly
+2, 8 and 16). Position channels reproduce the skeleton's bone lengths
+exactly, which is what pins the channel order and both scales.
 
 **A `.baf` transform replaces the bone's `.ske` local transform outright** —
 rotation as a quaternion, translation absolute in parent space, not an offset
@@ -47,9 +50,12 @@ Getting the quaternion map wrong is not subtle: three of the eight sign
 choices still produce an upright, forward-facing soldier — mirrored left to
 right, which a symmetric body hides until the weapon lands in the wrong hand.
 
-One vanilla file cannot be read: `Weapons/MedPack/MedPackFire.baf` declares a
-channel word count that runs 1.7 KB past its 142 bytes. Same truncation class
-as `GrenadeAllies.ske`; it surfaces as `AnimationError`.
+One vanilla file cannot be read: `Weapons/MedPack/MedPackFire.baf` opens with
+a stray `0x21` byte before what looks like a version-3 header and one bone
+named MEDKIT, and no offset yields a clean parse of the rest of its 142
+bytes. Same corruption class as `GrenadeAllies.ske`; it surfaces as
+`AnimationError` (version 801, which is that leading byte folded into the
+version word).
 """
 
 from __future__ import annotations
@@ -159,7 +165,10 @@ def parse(data: bytes, name: str = "") -> Animation:
             raise AnimationError(f"implausible frame count {frames} in {where}")
         precision = data[pos]
         pos += 1
-        scale = 1.0 / (1 << precision)
+        # Quaternions are always 1.15 fixed point; only positions use the
+        # declared precision. See the module docstring for the measurement.
+        quat_scale = 1.0 / 32768.0
+        pos_scale = 1.0 / (1 << precision)
 
         bones: list[BoneTrack] = []
         for bone_name in bone_names:
@@ -185,13 +194,13 @@ def parse(data: bytes, name: str = "") -> Animation:
             rotations = tuple(
                 # Stored transposed (row-vector convention): the matrix of
                 # (x, -y, z, w) is the mesh-space local rotation. See module doc.
-                (channels[0][f] * scale, -channels[1][f] * scale,
-                 channels[2][f] * scale, channels[3][f] * scale)
+                (channels[0][f] * quat_scale, -channels[1][f] * quat_scale,
+                 channels[2][f] * quat_scale, channels[3][f] * quat_scale)
                 for f in range(frames)
             )
             translations = tuple(
-                (-channels[4][f] * scale, channels[5][f] * scale,
-                 -channels[6][f] * scale)
+                (-channels[4][f] * pos_scale, channels[5][f] * pos_scale,
+                 -channels[6][f] * pos_scale)
                 for f in range(frames)
             )
             bones.append(BoneTrack(bone_name, rotations, translations))
