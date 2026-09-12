@@ -195,6 +195,30 @@ NegativeZ = bf1942\\levels\\Tobruk\\Textures\\env_Tobruk_03.dds
         self.assertEqual(
             "bf1942/levels/Tobruk/Textures/env_Tobruk_03.dds", faces["pz"])
 
+    def test_z_mirror_also_mirrors_each_face(self) -> None:
+        """Swapping the Z faces is only half of a Z mirror.
+
+        Leave the contents alone and neighbouring faces stop agreeing along
+        their shared edges, which draws a hard line across anything that
+        reflects the cube.
+        """
+        from extract_map import _FACE_MIRROR, _mirror_rgba
+
+        self.assertEqual(
+            {"px": "u", "nx": "u", "py": "v", "ny": "v", "pz": "u", "nz": "u"},
+            _FACE_MIRROR)
+
+        # 2x2, one distinct colour per texel, so a flip is unambiguous.
+        tl, tr = bytes([1, 1, 1, 255]), bytes([2, 2, 2, 255])
+        bl, br = bytes([3, 3, 3, 255]), bytes([4, 4, 4, 255])
+        image = tl + tr + bl + br
+
+        self.assertEqual(tr + tl + br + bl, _mirror_rgba(2, 2, image, "u"))
+        self.assertEqual(bl + br + tl + tr, _mirror_rgba(2, 2, image, "v"))
+        # Mirroring twice on the same axis is the identity.
+        self.assertEqual(
+            image, _mirror_rgba(2, 2, _mirror_rgba(2, 2, image, "u"), "u"))
+
 
 class InitConTests(unittest.TestCase):
     def test_combat_area_and_camera(self) -> None:
