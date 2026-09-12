@@ -86,8 +86,14 @@ class UnlitFoliageTests(unittest.TestCase):
         self.assertIn("KHR_materials_unlit",
                       doc["materials"][unlit]["extensions"])
 
-    def test_only_sprite_and_branch_parts_are_treated_as_foliage(self) -> None:
-        for name, expected in (("sprite_0", True), ("branch_3", True),
+    def test_only_leaf_sprites_are_unlit(self) -> None:
+        """A palm is branch + trunk and must keep its shading.
+
+        Branch cards sit at real angles and read as fronds when the sun hits
+        them; unlit they flatten to a uniform bright green. Only the
+        camera-facing sprites -- the bush parts whose normals point sideways --
+        are full-bright.
+        """
+        for name, expected in (("sprite_0", True), ("branch_3", False),
                                ("trunk_0", False), ("trunk_12", False)):
-            self.assertEqual(
-                expected, name.startswith(("sprite", "branch")), name)
+            self.assertEqual(expected, name.startswith("sprite"), name)
