@@ -6,6 +6,10 @@ description: >
   Use whenever inspecting, extracting, debugging, or extending asset pipelines for BF1942
   mods (Desert Combat, DC Final, Forgotten Hope, FHSW, Eve of Destruction, Galactic Conquest,
   BF1918, Interstate 82, Road to Rome, Secret Weapons).
+  Also use when a question about a Refractor file format needs settling against the game
+  itself -- "is this field really reserved", "what does the engine do with this value",
+  "x-ref BF42 source to verify X", "is our reader right about this" -- see section 8 for
+  the decompiled BF1942.exe reference corpus and the rule for when it is worth opening.
 ---
 
 # Battlefield 1942 & Mod Artifact Extraction Guide
@@ -155,3 +159,72 @@ All Refractor textures are stored as DDS or TGA:
   kubectl --context hetzner -n bf42-stats exec filebrowser-857667c845-vcqsv -- chmod -R a+rX /mnt/assets/dossiers /mnt/assets/hud
   ```
 - **Safety**: Never touch or overwrite `/mnt/assets/.filebrowser.db`.
+
+---
+
+## 8. Settling a Format Question Against the Game Binary
+
+Our readers reconstruct proprietary formats from observation, and observation of vanilla
+data is often right by coincidence and wrong on mods. The cross-reference corpus lives in
+the bfstats repo at `features/bf1942-engine-reference/`:
+
+- `symbols.json` — address to name, with a `confidence` field (`verified` / `working` /
+  `inferred` / `open`). Pinned to one binary: **BF1942.exe sha256 `60c9452d…cd3699`**.
+  Other builds relocate everything.
+- `ledger.md` — every assumption our readers make and its verification status. **Read this
+  first.** The question may already be answered, or already known to be a dead end.
+- `xref.py` — lookup plus a driver for the Ghidra bridge. `./xref.py check` verifies the
+  hash before you trust an address. Record findings with `./xref.py add` as you go.
+- `include/` — C stubs with per-field provenance, to diff against decompiler output.
+- `surveys/` — scripts that measure a claim across all installed mods.
+
+### Measure before you decompile
+
+**This is the rule that matters.** Before opening Ghidra, write a survey: parse every `.sm`
+across the ~14 installed mods under `~/.wine/drive_c/EA Games/Battlefield 1942/Mods/` and
+count how many files the question actually affects. `surveys/stride_vs_flags.py` is the
+template — it covers 33,038 meshes in one run.
+
+A survey is minutes and usually answers the question outright. Decompilation is hours.
+One past investigation burned a session on a field that turned out to affect **1 mesh in
+33,038**, and a second on an engine behaviour with **zero** occurrences in real data. A
+`Counter` would have caught both in thirty seconds.
+
+Open the binary when a model is *visibly* wrong and the data cannot explain why. Do not
+open it to satisfy curiosity about a reserved field.
+
+### Working with the binary
+
+Ghidra must be running with the project open and the GhidraMCP extension enabled; the
+bridge is a plain REST API on `127.0.0.1:8089` (`/mcp/schema` self-describes all 239
+endpoints). No MCP server is registered with Claude Code — `xref.py` wraps what matters.
+
+Hard-won specifics, all verified:
+
+- **The client is stripped.** Of 16,601 functions essentially all are `FUN_*`; the 262
+  recovered "classes" are DLL import groups and MSVC STL instantiations. Expect no names.
+- **Analysis is incomplete** — 4,574 undefined code regions in `.text`. String anchors
+  routinely land outside any defined function.
+- **Do not run a global re-analysis.** A vtable is an exact list of entry points: read it,
+  then `POST /create_function` at each target. That recovered 32 functions in one pass with
+  zero failures where a full reanalyse would have churned for a long time.
+- **Read past the end of a vtable.** `.rdata` continues into that class's string constants,
+  and those are far better anchors than a bare literal. `".sm"` and
+  `"Texture/ObjectLightmaps/"` sit immediately after the geometry template vtable and have
+  one xref each.
+- **Ignore `0x00838b5e`–`0x008b191f`.** 495 KB of CRT static-initializer thunks. Ten of the
+  seventeen references to `"StandardMesh/"` are in there, and every one is just a global
+  `std::string` being constructed. A string trail that leads here is a dead end.
+- **Function prologue** for hand-recovery: `0x90` padding, then `SUB ESP,imm` followed by
+  `PUSH EBX/EBP/ESI/EDI`.
+- **The `.sm` load chain is already mapped** (template vtable `0x00905a90`): `+0x8c`
+  loadFile, `+0x88` readStream, `+0x90` readHeader, `+0x98` readLods, `+0x9c`
+  readMaterials. Vertex payloads are read as one flat `stride * count` blob and handed to
+  `RendPCDX8_singleton` — **nothing on the load path interprets vertex layout**, so layout
+  questions belong to the renderer, not the loader.
+
+### Recording
+
+Anything worked out goes back into `symbols.json` and `ledger.md` in the same breath.
+Never promote a symbol without evidence, and never name a field on a plausible guess — an
+invented name is worse than `reserved`, because the next agent will trust it.

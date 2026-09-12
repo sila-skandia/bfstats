@@ -1008,6 +1008,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
+import { createLoadOverlay } from './progress.js';
 
 const main = document.querySelector('main');
 // preserveDrawingBuffer lets the headless checks read the canvas back after a
@@ -2005,13 +2006,27 @@ async function setOpponent(name) {
   const entry = manifest.find(item => item.name === name);
   if (!entry) return;
   const variant = entry.variants.find(item => item.glb === entry.glb) || entry.variants[0];
-  const [gltf, report] = await Promise.all([
-    loader.loadAsync(`models/${variant.glb}${bust()}`),
-    fetch(`models/${variant.report}${bust()}`).then(response => {
-      if (!response.ok) throw new Error(`opponent report ${response.status}`);
-      return response.json();
-    }),
-  ]);
+  const load = overlay.begin(`${entry.name} (opponent)`);
+  load.step('model', { label: 'model', weight: 40 });
+  load.step('report', { label: 'armour report', weight: 1 });
+  let gltf;
+  let report;
+  try {
+    [gltf, report] = await Promise.all([
+      loader.loadAsync(
+        `models/${variant.glb}${bust()}`,
+        e => load.bytes('model', e.loaded, e.lengthComputable ? e.total : 0),
+      ),
+      fetch(`models/${variant.report}${bust()}`).then(response => {
+        if (!response.ok) throw new Error(`opponent report ${response.status}`);
+        return response.json();
+      }).then(json => { load.finish('report'); return json; }),
+    ]);
+    load.end();
+  } catch (error) {
+    load.fail(error.message);
+    throw error;
+  }
   if (compare.root) {
     scene.remove(compare.root);
     disposeModel(compare.root);
@@ -2862,8 +2877,15 @@ function buildRigPanel() {
 }
 
 const loader = new GLTFLoader();
-// Iteration tool: the models are regenerated constantly, so never serve a cached one.
-const bust = () => `?t=${Date.now()}`;
+const overlay = createLoadOverlay(main);
+// Cache-busting is an iteration aid, not a production behaviour. The models are
+// regenerated constantly while extracting, so locally (and with ?nocache
+// anywhere) never serve a cached one — but on the deployed viewer it means
+// every swap back to a model already seen re-downloads several MB and throws
+// away the Cache-Control nginx sets.
+const DEV_ORIGIN = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
+const NO_CACHE = DEV_ORIGIN || new URLSearchParams(location.search).has('nocache');
+const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 
 const configurationSelect = document.getElementById('configuration');
 const skinSelect = document.getElementById('skin');
@@ -2937,14 +2959,22 @@ async function show(entry, variant) {
   let report;
   main.dataset.loadState = 'loading';
   syncVariantControls(entry, variant);
+  const load = overlay.begin(entry.name);
+  // Textures are embedded in the .glb here, so the model is the whole transfer
+  // and the report is a rounding error beside it.
+  load.step('model', { label: 'model', weight: 40 });
+  load.step('report', { label: 'armour report', weight: 1 });
 
   try {
     const loaded = await Promise.all([
-      loader.loadAsync(`models/${variant.glb}${bust()}`),
+      loader.loadAsync(
+        `models/${variant.glb}${bust()}`,
+        e => load.bytes('model', e.loaded, e.lengthComputable ? e.total : 0),
+      ),
       fetch(`models/${variant.report}${bust()}`).then(response => {
         if (!response.ok) throw new Error(`report returned ${response.status}`);
         return response.json();
-      }),
+      }).then(json => { load.finish('report'); return json; }),
     ]);
     const gltf = loaded[0];
     report = loaded[1];
@@ -2952,6 +2982,7 @@ async function show(entry, variant) {
       disposeModel(gltf.scene);
       return false;
     }
+    load.end();
 
     if (current) {
       scene.remove(current);
@@ -2969,6 +3000,7 @@ async function show(entry, variant) {
   } catch (error) {
     if (sequence === loadSequence) {
       main.dataset.loadState = 'error';
+      load.fail(error.message);
       const banner = document.getElementById('banner');
       banner.hidden = false;
       banner.textContent = `Could not load ${variant.glb}: ${error.message}`;
