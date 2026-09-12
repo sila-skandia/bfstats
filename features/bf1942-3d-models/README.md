@@ -4,30 +4,44 @@ Pulls vehicles, soldiers and hand weapons out of the Refractor archives as
 textured glTF, and gives them a viewer to be judged in. Tooling lives in
 [`tools/bf1942-models/`](../../tools/bf1942-models).
 
+This file is the format and assembly record. Four companion docs go deeper on
+work that came later, and each carries its own reproduce commands:
+
+| Doc | What it settles |
+|---|---|
+| [`weapon-grip.md`](weapon-grip.md) | How a soldier holds a weapon: the `.baf` clip format, the animation state machine, and the weld onto `Bip01 R Hand`. 224 of 224 soldier x weapon pairs. |
+| [`extraction-rollout.md`](extraction-rollout.md) | Extracting and *verifying* the whole catalogue without eyeballing a render. Texture coverage re-measured at 96%. |
+| [`map-parity.md`](map-parity.md) | Why an extracted level did not look like the game — sky, water and terrain textures — and what remains. |
+| [`rendering-technology.md`](rendering-technology.md) | Whether the browser is the limit. Measured: it is not. No WASM or WebGPU pivot. |
+
 ```bash
 cd tools/bf1942-models
 python3 extract_models.py --list
-python3 extract_models.py \
-    Sherman Willy PanzerIV Tiger T34 Stuka Elco80 \
-    BritishSoldier GermanSoldier \
-    Bazooka Panzershreck K98 No4 Colt WalterP38 \
-    ExpPack Landmine RepairPack Detonator \
-    --out ./viewer/models \
-    --texture-fallback WarFront --texture-fallback FH --texture-fallback bg42 \
-    --texture-fallback bf1918 --texture-fallback FinnWars --texture-fallback interstate \
-    --level-all \
-    --configuration-all
+python3 extract_all.py --level-all --configuration-all --verify
 ```
 
-That set is the anti-tank and engineer kits either side of the front — Bazooka
-and Panzershreck, the K98 and No4 the engineer carries, and the demo charge,
-mine, wrench and detonator — plus a soldier and a tank from each of two more
-nations. Six texture fallbacks rather than two because no single mod carries
-every vanilla basename: `bf1918` has the Colt and the wrench, `interstate` the
-demo charge, `bg42` the MG console and the mouth, `FinnWars` the T-34 hull.
-Four references in that set resolve from no installed mod at all
-(`GunMag_o`, `1p_ATrocket_h`, `demokit2_o`, `sherW2_f`), so the pistol
-magazines, the AT rocket and the detonator box render untextured.
+That is the whole vanilla catalogue — 96 templates, 94 of them exportable — and
+it needs no texture fallbacks at all. The template list is derived from the
+archives rather than pasted, so a new mod or a patched archive changes the set
+without anyone editing a script; `--verify` ends the run with a clean/degraded/
+broken verdict instead of a wall of per-model lines. See
+[`extraction-rollout.md`](extraction-rollout.md) for the triage table and the
+per-weapon measurements.
+
+A named subset still works the old way, and also no longer needs fallbacks:
+
+```bash
+python3 extract_models.py Sherman PanzerIV Tiger BritishSoldier GermanSoldier \
+    Thompson Sg44 Mp18 K98 Colt --out ./viewer/models
+```
+
+**The `--texture-fallback` flags that used to be mandatory here are not.** The
+install's vanilla `texture.rfa` was missing when this document was first
+written and has since been restored (98,885,015 bytes, 1,605 entries), taking
+vanilla texture resolution from 6.2% to **96.0%**. The history is kept below
+under "The install had no vanilla `texture.rfa`" because the failure mode is
+worth recognising again; the flag itself remains for mods whose own archives
+are genuinely incomplete.
 
 Then shoot the browse thumbnails, which also stamps their paths into the
 manifest:
@@ -208,17 +222,28 @@ at the sub-part's position and rotation:
 
 Parse `.con` a line at a time. See [`bf42/con.py`](../../tools/bf1942-models/bf42/con.py).
 
-### The install has no vanilla `texture.rfa`
+### The install had no vanilla `texture.rfa` — resolved
 
-`Mods/bf1942/Archives/` holds `texture_001.rfa` (99 entries, a patch) and no base
-`texture.rfa`. The ~170 MB base archive every vanilla model paints with is simply
-not on disk, so those models cannot be textured from this install at all — no
-amount of format work fixes it.
+**This is history now. The archive has been restored and vanilla textures
+resolve.** It is kept because the failure was diagnosed here in detail and the
+same shape will recur on any install synced by the same tool.
+
+`Mods/bf1942/Archives/` held `texture_001.rfa` (99 entries, a patch) and no base
+`texture.rfa`. The base archive every vanilla model paints with was simply not on
+disk, so those models could not be textured from this install at all — no amount
+of format work fixed it.
 
 `--texture-fallback <mod>` borrows from another mod's texture archive to fill the
-gap, and the viewer says so in a banner. It is a stopgap, not a fix: mods keep
-their own art under vanilla names, so Sherman comes out plausible via WarFront
-while PanzerIV stays white because no mod ships `texture/P4Main_f`.
+gap, and the viewer says so in a banner. It was a stopgap, not a fix: mods keep
+their own art under vanilla names, so Sherman came out plausible via WarFront
+while PanzerIV stayed white because no mod ships `texture/P4Main_f`.
+
+Re-running the sync restored `texture.rfa` (98,885,015 bytes, 1,605 entries) and
+`standardMesh.rfa` (40,426,408). PanzerIV — the worked example of an unfixable
+one — now textures fully, with no fallback flags anywhere. A borrowed texture was
+always a fidelity bug rather than a fix, which mattered most on levels: palms and
+houses were being painted from Forgotten Hope and WarFront art. See
+[`map-parity.md`](map-parity.md).
 
 ### Why it is missing: an interrupted DataField42 sync
 
@@ -258,20 +283,23 @@ installer (`bf1942-wwii-anthology-setup.exe`, an Inno Setup wrapper around
 ### Measured coverage
 
 How many of the texture references in a mod's own `.rs` files can actually be
-resolved from that mod's chain today:
+resolved from that mod's chain, before and after `texture.rfa` was restored.
+Re-measure with `python3 texture_coverage.py`:
 
-| Mod | Refs | Resolved | |
-|---|---|---|---|
-| **bf1942** | 1,392 | 86 | **6.2%** |
-| bg42 | 3,912 | 2,799 | 71.5% |
-| FH | 3,610 | 2,293 | 63.5% |
-| WarFront | 2,561 | 1,368 | 53.4% |
-| GCMOD | 2,404 | 1,045 | 43.5% |
-| FinnWars | 1,966 | 701 | 35.7% |
+| Mod | Refs | Resolved | | was |
+|---|---|---|---|---|
+| **bf1942** | 1,415 | 1,359 | **96.0%** | 6.2% |
+| bg42 | 3,935 | 3,859 | 98.1% | 71.5% |
+| FH | 3,642 | 3,509 | 96.3% | 63.5% |
+| WarFront | 2,584 | 2,452 | 94.9% | 53.4% |
+| GCMOD | 2,427 | 2,288 | 94.3% | 43.5% |
+| FinnWars | 1,989 | 1,880 | 94.5% | 35.7% |
 
-Vanilla at 6.2% cannot render a textured vehicle at all. Mods ship their own
-`texture.rfa` and are unaffected, which is why the install still looks correct in
-the mods it is mostly used for.
+Every chain rose, not just vanilla, because every mod inherits vanilla's archive
+at the end of its own chain — the mods were never as self-sufficient as their old
+figures implied. Of the 56 vanilla references still unresolved, only three reach
+an extracted model, and they ship in no install anywhere (`sherW2_f`, `B17Win_L`,
+and one empty `texture/`).
 
 ### Level archives are a texture source too
 
@@ -366,8 +394,14 @@ authored with the wrist cocked ~140 deg off that bone (weapon grip), so a
 second rotation swings `Bip01 L Hand` onto the forearm's length axis — the
 fingers continue out of the cuff instead of sitting perpendicular to it. The
 right trigger hand is only ~40 deg off and is left as authored. Helmets are kit parts, not
-children of the soldier, so the exported figure is bareheaded. `.baf` clips are
-still unused; this pass only applies the bind-pose rigid align, not a full skin.
+children of the soldier, so the exported figure is bareheaded.
+
+All of the above describes the **static browse model** — a rigid bind-pose
+align, no skin, arms at the sides. A soldier actually *holding* a weapon is a
+separate pipeline (`extract_pose.py`) that skins the body to the shared
+`UsSoldier.ske` posed by the weapon's own `.baf` clip, and it supersedes the
+hand-align reasoning above rather than extending it. See
+[`weapon-grip.md`](weapon-grip.md).
 
 `--list` now includes the eight vanilla `objects/soldiers/` templates alongside
 land, air and sea vehicles. Mods keep soldier textures under nested folders
@@ -814,10 +848,30 @@ conjugation, rest accumulation down the parent chain, main-bone resolution
 through both fallbacks, underscore and trailing-space bone matching, and the
 skinned-mesh no-op that keeps a soldier's head on its neck:
 
+It also covers the `.baf` decode contract (RLE runs, precision, the transposed
+quaternion convention, rejections) and the pose pipeline (root align, the
+rigid-versus-skinned discriminator including X-mirrored hand skins, and
+reconstruction identity).
+
 ```bash
-python3 -m unittest discover -s tools/bf1942-models/tests -v
+python3 -m unittest discover -s tools/bf1942-models/tests -v   # 189 tests
 ./scripts/verify.sh --skip-e2e
 ```
+
+**A green suite is not an extraction check.** The tests prove the parsers; they
+say nothing about whether a given `.glb` came out right. For that:
+
+```bash
+python3 verify_models.py --models ./viewer/models
+```
+
+Five checks — sub-part area outside the weapon's own shadow silhouette, parts
+piled on the origin, unresolved textures, exported length against real-world
+figures, and degenerate geometry. It exits non-zero on regression, and its
+thresholds are calibrated against reintroduced versions of the two historical
+bind bugs. What it deliberately does not check is listed in
+[`extraction-rollout.md`](extraction-rollout.md); read that before treating a
+clean run as more than it is.
 
 For visual review, run the extraction command at the top, start `model-viewer`, and
 capture the matrix with `node shoot.mjs --variants --views 3`. The filenames make
@@ -825,19 +879,19 @@ the Build and Skin comparison explicit.
 
 ## Not yet used
 
-- **`.ske` beyond the bind pose.** The rest pose is now read and used to place
-  every `bindToSkeletonPart` sub-part, but only as a static pose. Nothing drives
-  those bones afterwards, so a weapon does not cycle its bolt and track belts
-  stay rigid.
-- **`.baf` soldier clips and vehicle IK**, which animate occupants rather than the
-  vehicle assembly. Helmets and other kit parts are also still separate objects.
+- **`.baf` beyond a single frame.** The clips are read and one frame of
+  `Ub_StandAim<Weapon>` poses the soldier, but nothing plays them. A weapon
+  still does not cycle its bolt and track belts stay rigid.
+- **Vehicle IK** (`addSkeletonIK`), which pins an occupant's hands to a wheel as
+  it turns. Helmets and other kit parts are also still separate objects.
 - **The coastline mesh**, which some levels name in `StaticObjects.con` without
   an object template.
+- **`LightmapShadowBits.lsb`** — baked terrain shadows. Undocumented, and the
+  sizes rule out a naive bitfield (605,532 bytes against 131,072 expected). The
+  one map-parity item that is genuinely blocked on format work.
 
-The next milestone is `.baf`: with `.ske` and `.skn` both read, the clips are
-what is left between a posed model and a moving one. Map work after that is
-still the coastline mesh and restoring a real vanilla `texture.rfa` so palms and
-houses do not have to borrow from other mods.
+The next milestone is playback: with `.ske`, `.skn` and `.baf` all read, what is
+left between a posed model and a moving one is a timeline.
 
 ## Requires deep dive
 
