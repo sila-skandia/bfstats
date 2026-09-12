@@ -55,6 +55,77 @@ class SpawnTemplate:
 
 
 @dataclass
+class SkyInfo:
+    """The sky the engine actually draws: a StandardMesh box, not the env map.
+
+    `Init/SkyAndSun.con` creates a `SkyBox` geometry template, points it at a
+    `Sky_<level>_m1.sm` (six one-quad materials, one 512px texture per face) and
+    calls `Sky.initSky`. `ENVMAP_G_.rcm` is something else entirely — it is the
+    `ShaderManager.setTextureParam envmap` reflection source, six 128px faces.
+    """
+
+    mesh: str = ""                    # GeometryTemplate.file preceding Sky.initSky
+    rot_angle: float = 0.0            # Sky.setRotAngle, degrees about +Y
+    height_offset: float = 0.0        # sky.changeOfsSkyHeight, metres
+    has_cloud: bool = False           # Sky.addCloud
+    cloud_texture: str = "texture/cloud1"
+    cloud_speed: tuple[float, float] = (0.0, 0.0)   # Cloud.setSpeed u v (two tokens)
+    cloud_tex_scale: float = 8.0      # Cloud.setTexScale
+    cloud_height: float = 3500.0      # Cloud.setHeight, sky-mesh units
+    cloud_ofs_height: float = 0.0     # Sky.changeOfsCloudHeight
+    cloud_dist: float = 0.0           # Sky.changeOfsCloudDist
+
+
+@dataclass
+class WaterInfo:
+    """Every `water.*` console setting a level declares.
+
+    The engine's water is not a colour: `WaterShader.rs` at the level root is an
+    empty `"PatchTerrain/Water"` subshader, so the whole effect is driven by
+    these settings — two scrolling colour layers, a scrolling normal map, a
+    depth-based colour and alpha ramp, and a specular streak off the sun.
+    """
+
+    tex_layer1: str = ""
+    tex_layer2: str = ""
+    normal_map: str = ""
+    scroll_dir1: tuple[float, float] = (1.0, 0.0)
+    scroll_dir2: tuple[float, float] = (0.0, 1.0)
+    scroll_dir_normal: tuple[float, float] = (1.0, 1.0)
+    scroll1: float = 0.0
+    scroll2: float = 0.0
+    scroll_normal: float = 0.0
+    tile1: float = 0.5
+    tile2: float = 0.5
+    tile_normal: float = 1.0
+    specular: bool = False
+    specular_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    streak_factor: float = 0.0
+    light_direction: tuple[float, float, float] = (-0.3, 0.5, -0.65)
+    color: tuple[float, float, float] | None = None
+    deep_color: tuple[float, float, float] | None = None
+    shallow_color: tuple[float, float, float] | None = None
+    shallow_alpha: float = 1.0        # water.waterShallowAlpha
+    alpha_depth: float = 0.0          # water.waterAlphaDepth, metres to full alpha
+    color_depth: float = 10.0         # water.waterColordepth, metres to deep colour
+
+    @property
+    def declared(self) -> bool:
+        return bool(self.tex_layer1 or self.color or self.shallow_color)
+
+
+@dataclass
+class LightingInfo:
+    """`renderer.*` light colours a level sets in `Init.con`."""
+
+    ambient_color: tuple[float, float, float] | None = None
+    diffuse_color: tuple[float, float, float] | None = None
+    global_ambient: tuple[float, float, float] | None = None
+    specular_color: tuple[float, float, float] | None = None
+    shadow_color: float | None = None
+
+
+@dataclass
 class CombatArea:
     min_x: float
     min_z: float
@@ -84,6 +155,11 @@ class LevelInfo:
     static_objects: list[StaticInstance] = field(default_factory=list)
     spawn_templates: dict[str, SpawnTemplate] = field(default_factory=dict)
     spawn_objects: list[StaticInstance] = field(default_factory=list)
+    sky: SkyInfo = field(default_factory=SkyInfo)
+    water: WaterInfo = field(default_factory=WaterInfo)
+    lighting: LightingInfo = field(default_factory=LightingInfo)
+    view_distance: float | None = None      # renderer.setViewdistance
+    texture_alternative_path: str = ""      # textureManager.alternativePath
 
 
 @dataclass
@@ -334,10 +410,33 @@ def parse_cubemap_rcm(text: str) -> dict[str, str]:
     return faces
 
 
+def _color3(token: str) -> tuple[float, float, float]:
+    """`0.63/0.59/0.33` as a vec3; a bare `0.5` is grey (Wake's deepColor)."""
+    try:
+        return con_mod.vec3(token)
+    except ValueError:
+        v = float(token)
+        return (v, v, v)
+
+
+def _vec2(tokens: list[str]) -> tuple[float, float]:
+    """`1/0` in one token, or `-0.03 0.015` in two (Cloud.setSpeed)."""
+    if len(tokens) >= 2:
+        return (float(tokens[0]), float(tokens[1]))
+    a, _, b = tokens[0].partition("/")
+    return (float(a), float(b or 0.0))
+
+
 def parse_init_con(text: str, info: LevelInfo) -> None:
+    # `GeometryTemplate.file` is stateful: the file loaded right before
+    # `Sky.initSky` is the sky box mesh. Comment lines are already stripped, so
+    # the REM'd cloud geometry in vanilla SkyAndSun.con does not shadow it.
+    pending_geometry_file: str | None = None
     for ns, cmd, args in _commands(text):
         tokens = args.split()
-        if ns == "renderer":
+        if ns == "geometrytemplate" and cmd == "file" and tokens:
+            pending_geometry_file = tokens[0].replace("\\", "/").rsplit("/", 1)[-1]
+        elif ns == "renderer":
             if cmd == "fogcolorvec" and tokens:
                 try:
                     info.fog_color = con_mod.vec3(tokens[0])
@@ -347,11 +446,52 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 info.fog_start = float(tokens[0])
             elif cmd == "foglinearend" and tokens:
                 info.fog_end = float(tokens[0])
-        elif ns == "sky" and cmd == "sunlightdirectionvec" and tokens:
+            elif cmd == "setviewdistance" and tokens:
+                info.view_distance = float(tokens[0])
+            elif cmd == "ambientcolor" and tokens:
+                info.lighting.ambient_color = _color3(tokens[0])
+            elif cmd == "diffusecolor" and tokens:
+                info.lighting.diffuse_color = _color3(tokens[0])
+            elif cmd == "globalambientcolor" and tokens:
+                info.lighting.global_ambient = _color3(tokens[0])
+            elif cmd == "specularcolor" and tokens:
+                info.lighting.specular_color = _color3(tokens[0])
+        elif ns == "shadow" and cmd == "shadowcolor" and tokens:
             try:
-                info.sun_direction = con_mod.vec3(tokens[0])
+                info.lighting.shadow_color = float(tokens[0])
             except ValueError:
                 pass
+        elif ns == "texturemanager" and cmd == "alternativepath" and tokens:
+            info.texture_alternative_path = tokens[0].replace("\\", "/").strip("/")
+        elif ns == "sky":
+            if cmd == "sunlightdirectionvec" and tokens:
+                try:
+                    info.sun_direction = con_mod.vec3(tokens[0])
+                except ValueError:
+                    pass
+            elif cmd == "initsky":
+                if pending_geometry_file:
+                    info.sky.mesh = pending_geometry_file
+            elif cmd == "setrotangle" and tokens:
+                info.sky.rot_angle = float(tokens[0])
+            elif cmd == "changeofsskyheight" and tokens:
+                info.sky.height_offset = float(tokens[0])
+            elif cmd == "addcloud":
+                info.sky.has_cloud = True
+            elif cmd == "changeofscloudheight" and tokens:
+                info.sky.cloud_ofs_height = float(tokens[0])
+            elif cmd == "changeofsclouddist" and tokens:
+                info.sky.cloud_dist = float(tokens[0])
+        elif ns == "cloud":
+            if cmd == "setspeed" and tokens:
+                try:
+                    info.sky.cloud_speed = _vec2(tokens)
+                except ValueError:
+                    pass
+            elif cmd == "settexscale" and tokens:
+                info.sky.cloud_tex_scale = float(tokens[0])
+            elif cmd == "setheight" and tokens:
+                info.sky.cloud_height = float(tokens[0])
         elif ns == "game":
             if cmd == "setactivecombatarea" and len(tokens) >= 4:
                 info.combat = CombatArea(
@@ -363,11 +503,64 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                     info.camera = con_mod.vec3(tokens[1])
                 except (ValueError, IndexError):
                     pass
-        elif ns == "water" and cmd == "color" and tokens:
-            try:
-                info.water_color = con_mod.vec3(tokens[0])
-            except ValueError:
-                pass
+        elif ns == "water":
+            _parse_water(info, cmd, tokens)
+
+
+def _parse_water(info: LevelInfo, cmd: str, tokens: list[str]) -> None:
+    if not tokens:
+        if cmd == "specularenable":
+            info.water.specular = True
+        return
+    w = info.water
+    try:
+        if cmd == "color":
+            w.color = _color3(tokens[0])
+            info.water_color = w.color        # kept for older scene.json readers
+        elif cmd == "deepcolor":
+            w.deep_color = _color3(tokens[0])
+        elif cmd == "shallowcolor":
+            w.shallow_color = _color3(tokens[0])
+        elif cmd == "texlayer1":
+            w.tex_layer1 = tokens[0].replace("\\", "/")
+        elif cmd == "texlayer2":
+            w.tex_layer2 = tokens[0].replace("\\", "/")
+        elif cmd == "normalmap":
+            w.normal_map = tokens[0].replace("\\", "/")
+        elif cmd == "scrolldirection1":
+            w.scroll_dir1 = _vec2(tokens)
+        elif cmd == "scrolldirection2":
+            w.scroll_dir2 = _vec2(tokens)
+        elif cmd == "scrolldirectionnormalmap":
+            w.scroll_dir_normal = _vec2(tokens)
+        elif cmd == "scrolllayer1":
+            w.scroll1 = float(tokens[0])
+        elif cmd == "scrolllayer2":
+            w.scroll2 = float(tokens[0])
+        elif cmd == "scrollnormalmap":
+            w.scroll_normal = float(tokens[0])
+        elif cmd == "tilelayer1":
+            w.tile1 = float(tokens[0])
+        elif cmd == "tilelayer2":
+            w.tile2 = float(tokens[0])
+        elif cmd == "tilenormalmap":
+            w.tile_normal = float(tokens[0])
+        elif cmd == "specularenable":
+            w.specular = tokens[0].strip() not in ("0", "false")
+        elif cmd == "specularcolor":
+            w.specular_color = _color3(tokens[0])
+        elif cmd == "specularstreakfactor":
+            w.streak_factor = float(tokens[0])
+        elif cmd == "lightdirection":
+            w.light_direction = con_mod.vec3(tokens[0])
+        elif cmd == "watershallowalpha":
+            w.shallow_alpha = float(tokens[0])
+        elif cmd == "wateralphadepth":
+            w.alpha_depth = float(tokens[0])
+        elif cmd == "watercolordepth":
+            w.color_depth = float(tokens[0])
+    except ValueError:
+        pass
 
 
 def decode_heightmap(data: bytes, world_size: float, y_scale: float) -> Heightmap:
