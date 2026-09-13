@@ -83,6 +83,9 @@ def main() -> int:
                     help="pass through: export theatre skin variants from level archives")
     ap.add_argument("--configuration-all", action="store_true",
                     help="pass through: export Wreck alternatives where they exist")
+    ap.add_argument("--cockpit", action="store_true",
+                    help="pass through: export first-person interiors as "
+                         "`<Name>.cockpit.glb` for the templates that have one")
     ap.add_argument("--texture-fallback", action="append", default=[],
                     help="pass through: mod to borrow textures from (repeatable). "
                          "Vanilla needs none since texture.rfa was restored.")
@@ -142,6 +145,8 @@ def main() -> int:
         command.append("--level-all")
     if args.configuration_all:
         command.append("--configuration-all")
+    if args.cockpit:
+        command.append("--cockpit")
     for fallback in args.texture_fallback:
         command += ["--texture-fallback", fallback]
 

@@ -39,11 +39,70 @@ BLEED_CUTOUT_ALPHA = 16
 
 
 def geometry_is_first_person(geometry_name: str | None) -> bool:
-    """Cockpit / 1P view meshes are named `1P_...` (or `1PPT_...`, `1PBritBody`)."""
+    """Cockpit / 1P view meshes are named `1P_...` (or `1PPT_...`, `1PBritBody`).
+
+    The name is the only reliable tell. The *template* names are not: vanilla's
+    cockpit alternatives are called `...CockpitInternal` on 11 aircraft but
+    `bf109CockpitBlurred` on the bf109, `KatyushaInterior` on the Katyusha and
+    `...HighRSteering` on every steering wheel. The geometry name is uniform
+    across all 72 of them.
+
+    Why 1P geometry is skipped by default (both the mesh load in `build_node`
+    and the alternative steering in `_select_lod_children`), rather than merely
+    ranking below the 3P mesh:
+
+    * **It is an alternative, never an extra part.** A cockpit interior and the
+      hull that hides it are two alternatives of one LodObject, and a soldier's
+      1P body and hands are `addTemplate` siblings of the 3P body. Draw both
+      and you get an interior stacked inside a fuselage, or a pair of arms
+      floating through a soldier's chest.
+    * **The alternative order does not encode which is which.** Cockpit
+      `DistCompareSelector`s list the exterior first, but every `DistanceSelector`
+      pairing (the B17's gun models, and the Willy / Lynx / Katyusha /
+      KettenKrad / BlackMedal / Ho-Ha / Elco / Type38 steering wheels and
+      throttle levers) lists the 1P mesh *first*, because there it is the
+      near-LOD. `select_lod_alternative` falls back to `children[0]`, so
+      without this predicate a browse Willy would ship the first-person
+      steering wheel.
+    * **It is authored for a camera that is inside it.** These meshes have no
+      outside: `1P_Corsair` is a cockpit tub with no fuselage, single-sided and
+      normalled inward. It is correct only from the eye point it was drawn for.
+
+    So the skip is right for a browse model and for a level bake, and a cockpit
+    view needs the opposite export rather than a lifted guard — which is what
+    `Assembler(first_person=True)` is.
+    """
     if not geometry_name:
         return False
     base = geometry_name.replace("\\", "/").rsplit("/", 1)[-1]
     return base.lower().startswith("1p")
+
+
+def reaches_first_person(library: con_mod.ObjectLibrary, template_name: str, *,
+                         depth: int = 0,
+                         stack: frozenset[str] = frozenset()) -> bool:
+    """Whether anything below this template carries first-person geometry.
+
+    Every LodObject alternative counts, not the one a configuration would
+    select: the whole point of a cockpit export is to take the branch the
+    ordinary walk refuses.
+    """
+    if depth > 24:
+        return False
+    template = library.object(template_name)
+    if template is None or template.invisible:
+        return False
+    if geometry_is_first_person(template.geometry):
+        return True
+    key = template.name.lower()
+    if key in stack:
+        return False
+    stack = stack | {key}
+    return any(
+        (name := con_mod.instance_template_name(ref, library.object))
+        and reaches_first_person(library, name, depth=depth + 1, stack=stack)
+        for ref in template.children
+    )
 
 
 _DRIVETRAIN_INPUTS = frozenset({"c_PIYaw", "c_PIThrottle"})
@@ -125,6 +184,7 @@ class Report:
     root: str
     configuration: str
     lod: int
+    first_person: bool = False
     parts: int = 0
     triangles: int = 0
     missing_geometry_templates: list[str] = field(default_factory=list)
@@ -135,6 +195,9 @@ class Report:
     unresolved_templates: list[str] = field(default_factory=list)
     skipped_lod_alternatives: list[str] = field(default_factory=list)
     selected_lod_alternatives: list[str] = field(default_factory=list)
+    # Cockpit exports only: which LodObject node each 1P alternative grafts
+    # onto, and what it hides there.
+    cockpit_swaps: list[str] = field(default_factory=list)
     mesh_lods: dict[str, dict[str, int]] = field(default_factory=dict)
     part_tree: list[str] = field(default_factory=list)
     rigged_parts: list[str] = field(default_factory=list)
@@ -154,6 +217,7 @@ class Report:
             "root": self.root,
             "configuration": self.configuration,
             "lod": self.lod,
+            "firstPerson": self.first_person,
             "parts": self.parts,
             "triangles": self.triangles,
             "missingGeometryTemplates": sorted(set(self.missing_geometry_templates)),
@@ -164,6 +228,7 @@ class Report:
             "unresolvedTemplates": sorted(set(self.unresolved_templates)),
             "lodAlternativesSkipped": sorted(set(self.skipped_lod_alternatives)),
             "lodAlternativesSelected": self.selected_lod_alternatives,
+            "cockpitSwaps": self.cockpit_swaps,
             "meshLods": dict(sorted(self.mesh_lods.items())),
             "partTree": self.part_tree,
             "riggedParts": self.rigged_parts,
@@ -186,6 +251,7 @@ class Assembler:
                  lod: int = 0, max_texture: int = 1024,
                  configuration: str = "complex",
                  include_collision: bool = True,
+                 first_person: bool = False,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None):
         if configuration not in con_mod.MODEL_CONFIGURATIONS:
             raise ValueError(f"unknown model configuration: {configuration}")
@@ -197,6 +263,13 @@ class Assembler:
         self.max_texture = max_texture
         self.configuration = configuration
         self.include_collision = include_collision
+        # A cockpit export: take the first-person branch at every LodObject that
+        # has one, keep only the geometry authored for a camera inside the
+        # vehicle, and prune everything else away. The result is meant to be
+        # grafted onto an ordinary export of the same template, not viewed on
+        # its own — see `geometry_is_first_person` for why the two cannot share
+        # one file.
+        self.first_person = first_person
         self.lightmaps = lightmaps or {}
         self._visible_springs = True
         self._shader_cache: dict[str, dict[str, rs.Shader]] = {}
@@ -205,6 +278,7 @@ class Assembler:
         self._geom_mesh: dict[str, tuple[int | None, int]] = {}
         self._geom_collisions: dict[str, list[tuple[int, int, str]]] = {}
         self._collision_material_cache: dict[int, int] = {}
+        self._first_person_reach: dict[str, bool] = {}
         self._skin_cache: dict[str, skin.Skin | None] = {}
         self._skeleton_cache: dict[str, ske.Skeleton | None] = {}
         self._sprite_mesh_cache: dict[str, int | None] = {}
@@ -1050,11 +1124,29 @@ class Assembler:
         child = self.library.object(template_name)
         return geometry_is_first_person(child.geometry if child else None)
 
+    def _reaches_first_person(self, template_name: str) -> bool:
+        key = template_name.lower()
+        if key not in self._first_person_reach:
+            self._first_person_reach[key] = reaches_first_person(
+                self.library, template_name)
+        return self._first_person_reach[key]
+
     def _select_lod_children(self, children_refs: list[con_mod.ChildRef],
                              report: Report, template_name: str,
                              ) -> list[con_mod.ChildRef]:
         selected = con_mod.select_lod_alternative(children_refs, self.configuration)
-        if self._geometry_is_first_person(selected.template):
+        if self.first_person:
+            # The cockpit export wants exactly the alternative every other
+            # export refuses. Only the geometry name can find it: the exterior
+            # sits first under a cockpit `DistCompareSelector` and second under
+            # a steering wheel's `DistanceSelector`.
+            first_person = next(
+                (child for child in children_refs
+                 if self._geometry_is_first_person(child.template)),
+                None)
+            if first_person is not None:
+                selected = first_person
+        elif self._geometry_is_first_person(selected.template):
             third_person = next(
                 (child for child in children_refs
                  if child is not selected
@@ -1068,6 +1160,38 @@ class Assembler:
             child.template for child in children_refs if child is not selected
         ]
         return [selected]
+
+    def _lod_swap(self, template: con_mod.ObjectTemplate,
+                  children_refs: list[con_mod.ChildRef],
+                  selected: con_mod.ChildRef) -> dict | None:
+        """How a viewer turns this LodObject's 3P alternative into the 1P one.
+
+        A cockpit glb is grafted onto an ordinary export of the same vehicle, so
+        it has to say *where*: this rides the LodObject node, whose name is the
+        same in both files, and names the siblings the graft displaces.
+
+        The declared thresholds come along because they are the engine's own
+        rule and a viewer should not have to hardcode one. Read across all 33
+        vanilla cockpit `DistCompareSelector`s they are strikingly uniform:
+        every single one declares `addLodComparison 0.5` against a 0/1 scalar
+        with the exterior as alternative 0 and the interior as alternative 1,
+        while `addLodDistance` ranges from 0.5 m (M10) through 20 m (Corsair)
+        to 200 m (the battleship gun) and the Chi-ha's declares none at all.
+        A term that varies with the size of the object and can be omitted is
+        not the term that decides which alternative you see — the comparison
+        is. The distance reads as a precondition on the occupancy test, and it
+        can never veto for an observer sitting at the eye point.
+        """
+        if not self._geometry_is_first_person(selected.template):
+            return None
+        swap = {
+            "selected": selected.template,
+            "replaces": [child.template for child in children_refs
+                         if child is not selected],
+        }
+        if selector := self.library.selector(template.lod_selector):
+            swap.update(selector.as_dict())
+        return swap
 
     def _lightmap_rel(self, template: con_mod.ObjectTemplate,
                       world_origin: tuple[float, float, float]) -> str | None:
@@ -1205,23 +1329,38 @@ class Assembler:
 
         skeleton_scope = self._skeleton_scope(template, skeleton_scope, report)
 
+        # A cockpit export is the exact complement of an ordinary one: the only
+        # geometry it may carry is first person, and the only geometry every
+        # other export may carry is not. Neither ever draws both, because the
+        # two are alternatives of the same surface.
         mesh_index, triangles = (None, 0)
         collision_meshes: list[tuple[int, int, str]] = []
-        if template.geometry and not geometry_is_first_person(template.geometry):
+        if (template.geometry
+                and geometry_is_first_person(template.geometry) == self.first_person):
             mesh_index, triangles = self._mesh_index(builder, template.geometry, report)
             collision_meshes = self._geom_collisions.get(
                 template.geometry.lower(), [])
 
         children_refs = template.children
+        lod_swap: dict | None = None
         if template.is_lod_selector and children_refs:
-            children_refs = self._select_lod_children(
+            selected_refs = self._select_lod_children(
                 children_refs, report, template.name)
+            if self.first_person:
+                lod_swap = self._lod_swap(template, children_refs, selected_refs[0])
+            children_refs = selected_refs
 
         child_indices: list[int] = []
         built_children: list[tuple[con_mod.ChildRef, str, int]] = []
         for ref in children_refs:
             child_name = con_mod.instance_template_name(ref, self.library.object)
             if child_name is None:
+                continue
+            # Prune to the cockpit. Without this the walk would still descend
+            # the whole vehicle and emit a second, mesh-less copy of its
+            # drivetrain, guns and camera — nodes that already exist in the
+            # export this one gets grafted onto, under the same names.
+            if self.first_person and not self._reaches_first_person(child_name):
                 continue
             child = self.build_node(
                 builder, child_name, report,
@@ -1252,6 +1391,15 @@ class Assembler:
                     continue
                 if not self._spin_reaches_visible_mesh(child_name):
                     continue
+                # Stamp the decision on the node as well as baking it into a
+                # clip. A level bake carries no clips at all, so a viewer that
+                # drives the rig itself — the flythrough's pilot mode — has no
+                # other way to know the rule, and the obvious guess (rotate the
+                # Engine node, since that is where the rig is declared) drags
+                # every physics body with it: a Corsair's landing gear ends up
+                # orbiting its own propeller.
+                spun = builder.node(node_index)
+                spun.extras = {**(spun.extras or {}), "spinsWithEngine": True}
                 for axis, speed in spin_axes.items():
                     # `frame="parent"`: the spin happens about the Engine's
                     # axis, which the child sees as a pre-multiplied rotation
@@ -1310,6 +1458,11 @@ class Assembler:
                         "control": control or "vehicle"}
         if fire_extras is not None:
             extras["fireArms"] = fire_extras
+        if lod_swap is not None:
+            extras["lodAlternative"] = lod_swap
+            report.cockpit_swaps.append(
+                f"{template.name}: {lod_swap['selected']} replaces "
+                + ", ".join(lod_swap["replaces"]))
         if is_camera:
             extras["cameraView"] = {"control": control or "vehicle"}
             report.cameras.append(f"[{control or 'vehicle'}] {template.name}")
@@ -1455,6 +1608,7 @@ class Assembler:
             root=root_template,
             configuration=self.configuration,
             lod=self.lod,
+            first_person=self.first_person,
         )
         if template := self.library.object(root_template):
             report.armor = {

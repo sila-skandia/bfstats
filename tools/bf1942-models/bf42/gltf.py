@@ -315,6 +315,15 @@ class GlbBuilder:
         self._nodes.append(node)
         return len(self._nodes) - 1
 
+    def node(self, index: int) -> Node:
+        """An already-added node, for callers that learn something about it later.
+
+        Assembly discovers a child's placement before it discovers what its
+        parent does to it — an Engine decides which children its spin reaches
+        only once they all exist.
+        """
+        return self._nodes[index]
+
     def add_skin(self, joint_nodes: list[int],
                  binds: list[tuple[tuple[tuple[float, float, float], ...],
                                    tuple[float, float, float]]],
