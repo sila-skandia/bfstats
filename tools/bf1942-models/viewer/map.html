@@ -5,16 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <title>BF1942 mesh &middot; maps</title>
+<link rel="icon" href="./favicon.ico">
+<link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./shell.css">
 <style>
   :root {
-    --bg: #14150f;
-    --panel: #1c1e16cc;
-    --line: #2e3125;
-    --text: #e6e4d9;
-    --muted: #8d8f7e;
-    --accent: #9aab5a;
-    --warn: #c98a3e;
+    /* Neutral Depth, from tokens.css. The panel stays translucent: it floats
+       over the flythrough. */
+    --bg: var(--mm-bg);
+    --panel: rgba(19, 19, 19, .82);
+    --line: var(--mm-rule);
+    --text: var(--mm-ink-soft);
+    --muted: var(--mm-ink-muted);
+    --accent: var(--mm-accent-soft);
+    --warn: var(--mm-load-busy);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -23,7 +27,7 @@
     grid-template-rows: var(--nav-h) 1fr;
     background: var(--bg);
     color: var(--text);
-    font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+    font: 13px/1.5 var(--mm-font-mono);
     overflow: hidden;
   }
   /* The flythrough owns everything below the bar. Positioning it makes the
@@ -68,7 +72,7 @@
     width: 100%;
     margin: 0 0 12px;
     padding: 6px 8px;
-    background: #14150f;
+    background: var(--bg);
     color: var(--text);
     border: 1px solid var(--line);
     font: inherit;
@@ -115,13 +119,20 @@
 </head>
 <body>
 <nav class="shell-nav">
-  <span class="shell-brand"><b>BF1942</b> mesh</span>
-  <span class="shell-tabs">
-    <a href="./index.html">Models</a>
-    <a href="./map.html" aria-current="page">Maps</a>
-    <a href="./poses.html">Poses</a>
-  </span>
-  <span class="shell-sub">extracted levels &middot; terrain, lightmaps and sky</span>
+  <div class="shell-bar">
+    <span class="shell-brand"><img class="shell-brand-sigil" src="./bfstats-logo.webp" alt="bfstats.io" width="26" height="26"><b>mesh</b></span>
+    <span class="shell-tabs">
+      <a href="./index.html">Models</a>
+      <a href="./map.html" aria-current="page">Maps</a>
+      <a href="./poses.html">Poses</a>
+    </span>
+    <span class="shell-sub">extracted levels &middot; terrain, lightmaps and sky</span>
+    <span class="shell-spacer"></span>
+    <a class="shell-search" href="./index.html?browse">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>Search name, faction, map&hellip;</span><kbd>/</kbd>
+    </a>
+  </div>
 </nav>
 <div id="stage">
   <aside id="side">
@@ -132,6 +143,7 @@
     <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
     <label class="opt"><input type="checkbox" id="vehicles" checked> vehicles</label>
     <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
+    <label class="opt"><input type="checkbox" id="pilot"> pilot the plane</label>
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
     <label class="opt" style="display:flex;align-items:center;gap:6px;"><input type="range" id="sound-vol" min="0" max="1" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:var(--accent);"> vol</label>
   </aside>
@@ -147,6 +159,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
+import { Aircraft, findVehicle } from './flight.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -233,6 +246,9 @@ const optVehicles = document.getElementById('vehicles');
 const optEntire = document.getElementById('entire-map');
 const optSound = document.getElementById('sound');
 const optSoundVol = document.getElementById('sound-vol');
+const optPilot = document.getElementById('pilot');
+const hud = document.getElementById('hud');
+const HUD_FLY = hud.textContent;
 
 let audioListener = null;
 let audioLoader = null;
@@ -259,6 +275,13 @@ function flySpeed() {
 
 function lookDelta(dx, dy) {
   if (!dx && !dy) return;
+  if (optPilot.checked && aircraft) {
+    // The mouse is the stick, not a head. Y is inverted, which is the game's
+    // own default for aircraft.
+    stick.roll = Math.max(-1, Math.min(1, stick.roll + dx * STICK_SENS));
+    stick.pitch = Math.max(-1, Math.min(1, stick.pitch + dy * STICK_SENS));
+    return;
+  }
   look.yaw -= dx * LOOK_SENS;
   look.pitch = Math.max(-1.2, Math.min(1.2, look.pitch - dy * LOOK_SENS));
 }
@@ -270,7 +293,13 @@ addEventListener('keydown', e => {
   }
   if (uiFocused()) return;
   keys.add(e.code);
-  if (captured && FLY_KEYS.has(e.code)) e.preventDefault();
+  if (e.code === 'KeyR' && optPilot.checked && aircraft) {
+    aircraft.reset();
+    stick.roll = 0;
+    stick.pitch = 0;
+  }
+  if (captured && (FLY_KEYS.has(e.code)
+      || (optPilot.checked && AIR_KEYS.has(e.code)))) e.preventDefault();
 });
 addEventListener('keyup', e => keys.delete(e.code));
 
@@ -415,6 +444,10 @@ function unlightTerrain(root) {
       if (!obj.isMesh || !obj.material) return;
       const source = Array.isArray(obj.material) ? obj.material : [obj.material];
       const flat = source.map(m => {
+        // Ground is viewed at grazing angles for most of a flythrough, and
+        // three's default anisotropy of 1 mip-blurs the tile art into a smear
+        // a few metres out - the "low-frequency ground" gap against the game.
+        if (m.map) m.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
         const mat = new THREE.MeshBasicMaterial({
           map: m.map || null,
           side: m.side,
@@ -441,6 +474,9 @@ function bindTerrainDetail(root, dir) {
   const repeats = info.detailRepeats || 16;
   const tex = texLoader.load(`${MAPS_BASE}/${dir}/${info.detailTexture}${bust()}`);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  // Same grazing-angle story as the tile art: without anisotropy the detail
+  // grain vanishes into the first mip a few metres ahead of the camera.
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   // Raw texels, NOT sRGB-decoded: the engine's modulate-2x runs in 8-bit
   // display space, where the detail map's mid-grey 128 is the identity
   // (`apply_detail` in bf42/terrain.py is the same math at export). Decoding
@@ -897,20 +933,36 @@ function setupWater(root, dir) {
       uniform vec3 fogColor;
       uniform float fogNear, fogFar;
       varying vec3 vWorld;
+      vec3 bfToSrgb( vec3 c ) {
+        return mix( pow( c, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ),
+            c * 12.92, vec3( lessThanEqual( c, vec3( 0.0031308 ) ) ) );
+      }
+      vec3 bfFromSrgb( vec3 c ) {
+        return mix( pow( c * ( 1.0 / 1.055 ) + vec3( 0.055 / 1.055 ),
+                vec3( 2.4 ) ),
+            c * ( 1.0 / 12.92 ),
+            vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) );
+      }
       void main() {
         vec2 wuv = vec2(vWorld.x, -vWorld.z);
         vec3 tex = vec3(1.0);
         #ifdef HAS_LAYERS
-        vec3 l1 = texture2D(tLayer1, wuv * uTile1 + uDir1 * uScroll1 * uTime).rgb;
-        vec3 l2 = texture2D(tLayer2, wuv * uTile2 + uDir2 * uScroll2 * uTime).rgb;
-        tex = l1 * l2 * 4.0;
+        // The engine's fixed-function MODULATE2X runs in 8-bit DISPLAY space,
+        // like every other combine in this viewer (terrain detail, lightmaps,
+        // dynamic shading). The old l1*l2*4.0 did it in linear, which squares
+        // the layers' slight teal tint into the saturated turquoise the game
+        // never shows - the water07/08 texels are a near-neutral grey
+        // (mean 140/150/153).
+        vec3 l1 = bfToSrgb(texture2D(tLayer1, wuv * uTile1 + uDir1 * uScroll1 * uTime).rgb);
+        vec3 l2 = bfToSrgb(texture2D(tLayer2, wuv * uTile2 + uDir2 * uScroll2 * uTime).rgb);
+        tex = min(vec3(1.0), l1 * l2 * 2.0);
         #endif
         float depth = uMaxDepth;
         #ifdef HAS_DEPTH
         depth = texture2D(tDepth, wuv / uWorldSize).r * uMaxDepth;
         #endif
         vec3 base = mix(uShallow, uDeep, clamp(depth / max(uColorDepth, 0.001), 0.0, 1.0));
-        vec3 col = base * tex;
+        vec3 col = bfFromSrgb(min(vec3(1.0), bfToSrgb(base) * tex));
         vec3 N = vec3(0.0, 1.0, 0.0);
         #ifdef HAS_NORMAL
         // The DX8-era normal map is not 0.5-centred; two offset samples
@@ -924,7 +976,17 @@ function setupWater(root, dir) {
         #ifdef HAS_ENV
         vec3 R = reflect(-V, N);
         R.y = abs(R.y);
-        vec3 sky = textureCube(tEnv, R).rgb;
+        // Deliberately blurred (fixed coarse mip): the ENVMAP_G_.rcm faces
+        // bake the island and its clouds, and a sharp per-pixel lookup mirrors
+        // them as structured smudges marching across the mid-distance - shapes
+        // the in-game water never shows. What the reference shots do show is a
+        // soft brightness wash toward the horizon, which is exactly what the
+        // cubemap's low mip is. LOD 4 of a 128px face is 8px - directional
+        // light distribution kept, all structure gone. (A texture bias can't
+        // do this: MAX_TEXTURE_LOD_BIAS may clamp as low as 2.) Calibrated
+        // against the Wake defgun reference, same spirit as the fresnel
+        // shaping below - not a decompiled engine behaviour.
+        vec3 sky = textureLod(tEnv, R, 4.0).rgb;
         // A plain Schlick fresnel (exponent 5, scaled to reach 1.0) turned the
         // lagoon into a near-perfect cloud mirror the moment the camera got low
         // and the view raked across open water -- exactly the case a flythrough
@@ -943,7 +1005,13 @@ function setupWater(root, dir) {
         #ifdef HAS_ENV
         alpha = max(alpha, clamp(fresnel, 0.0, 1.0));
         #endif
-        float fogF = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
+        // LINEAR, not smoothstep: THREE.Fog on the terrain and the engine's
+        // DX8 vertex fog are both linear ramps. An S-curve here under-fogs
+        // the sea ahead of the midpoint and over-fogs it past it (up to ~9%
+        // of the ramp), so the waterline would read differently hazed than
+        // the shore it touches at the same distance.
+        float fogF = clamp((length(cameraPosition - vWorld) - fogNear)
+            / max(fogFar - fogNear, 0.001), 0.0, 1.0);
         col = mix(col, fogColor, fogF);
         gl_FragColor = vec4(col, alpha);
         #include <colorspace_fragment>
@@ -1231,9 +1299,17 @@ function drawDistance() {
 function applyFar() {
   const world = extras.worldSize || 2048;
   const draw = drawDistance();
+  // The engine's far plane IS the view distance: with fog saturating there,
+  // the world ends in a completed haze wall that meets the sky painting.
+  // Drawing past it (the old draw*1.6 with a 900 m floor) rasterised
+  // fog-saturated terrain as crisp silhouettes against the paler sky band —
+  // the "distant mountain ridge" the game never shows. Extend only to a
+  // declared fogEnd beyond the view distance (Gazala: fog 500-850 vs VD 500)
+  // so the wall always completes before the clip; 1.05 keeps the last
+  // fog-saturated metres from z-fighting the plane.
   camera.far = optEntire.checked
     ? Math.max(4000, world * 1.5)
-    : Math.max(draw * 1.6, 900);
+    : Math.max(draw, extras.fogEnd || 0) * 1.05;
   camera.updateProjectionMatrix();
 }
 
@@ -1319,6 +1395,113 @@ function applyVisibility() {
   for (const vehicle of spawnersRoot.children) {
     vehicle.visible = entire || inRange(vehicle, cam, limit);
   }
+}
+
+// --- piloting ---------------------------------------------------------------
+//
+// The map scene already ships real vehicles at their spawn points, assembled by
+// the same assembler the model browser uses and carrying a `rig` extra on every
+// input-driven part, plus an empty `<Vehicle>Camera` node at the pilot's eye
+// point. Piloting therefore adds no extraction: it drives what is already here.
+//
+// Control scheme is the game's own (`Settings/Default/Controls/Air.con`): the
+// mouse is the stick — X rolls, Y pitches, inverted — A/D is rudder and W/S is
+// throttle. Landing gear is deliberately not bound; in the real game it is
+// automatic on altitude thresholds, which `Aircraft.integrate` reproduces.
+
+let aircraft = null;
+const AIR_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR']);
+// Stick position, -1..1, decayed toward centre so a mouse that stops moving
+// lets the surfaces spring back the way `setAutomaticReset 1` does.
+const stick = { roll: 0, pitch: 0 };
+const STICK_SENS = 0.0065;
+const STICK_RETURN = 1.6;
+const cockpit = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+
+/**
+ * Ground height under a world (x, z), from the terrain mesh already in the scene.
+ *
+ * Raycasting the heightfield is honest and needs no extra data — the terrain is
+ * 16 tiles of 512x512 geometry, and one downward ray per frame against it costs
+ * nothing next to the render. The sea floor is the water level, because on Wake
+ * most of the map is ocean and ditching has to stop somewhere.
+ */
+const groundRay = new THREE.Raycaster();
+const DOWN = new THREE.Vector3(0, -1, 0);
+let terrainMeshes = [];
+
+function groundHeight(x, z) {
+  const sea = extras?.waterLevel ?? -Infinity;
+  if (!terrainMeshes.length) return sea;
+  groundRay.set(new THREE.Vector3(x, 2000, z), DOWN);
+  groundRay.far = 4000;
+  const hit = groundRay.intersectObjects(terrainMeshes, false)[0];
+  return hit ? Math.max(hit.point.y, sea) : sea;
+}
+
+function collectTerrain(root) {
+  // The exporter stamps `kind: "terrain"` on each of the 16 tile meshes itself,
+  // so this needs no name matching.
+  terrainMeshes = [];
+  root.traverse(obj => {
+    if (obj.isMesh && kindOf(obj) === 'terrain') terrainMeshes.push(obj);
+  });
+}
+
+function setPilot(on) {
+  if (on && !aircraft) {
+    const node = findVehicle(currentRoot, 'Corsair')
+      || findVehicle(currentRoot, 'Spitfire')
+      || findVehicle(currentRoot, 'Zero');
+    if (!node) {
+      optPilot.checked = false;
+      return;
+    }
+    aircraft = new Aircraft(node, currentRoot);
+    aircraft.groundHeight = groundHeight;
+    // The flown vehicle must outlive the vehicles toggle and the distance cull;
+    // reparenting out of `spawners` already took it off both lists, but the
+    // spawn pose puts it on the deck, so lift it clear of its own wheels.
+    aircraft.state.position.y += 0.2;
+  }
+  if (!on && aircraft) {
+    aircraft.reset();
+    aircraft.applyTransform();
+    aircraft.applyRig();
+  }
+  stick.roll = 0;
+  stick.pitch = 0;
+  hud.textContent = on
+    ? 'mouse stick (X roll, Y pitch) · W/S throttle · A/D rudder · R reset · Esc'
+    : HUD_FLY;
+}
+
+/** Read the keyboard and the accumulated stick into the aircraft's inputs. */
+function pilot(dt) {
+  if (!aircraft) return;
+  if (captured) {
+    const throttle = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+    if (throttle) {
+      aircraft.setInput('c_PIThrottle', Math.max(0, Math.min(1,
+        aircraft.input('c_PIThrottle') + throttle * dt)));
+    }
+    const rudder = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+    aircraft.setInput('c_PIYaw', rudder);
+  } else {
+    aircraft.setInput('c_PIYaw', 0);
+  }
+  // Centre the stick when the mouse is still. Refractor's own surfaces do this
+  // via setAutomaticReset; doing it here keeps the plane flyable with a mouse
+  // that has no spring.
+  const decay = Math.max(0, 1 - STICK_RETURN * dt);
+  stick.roll *= decay;
+  stick.pitch *= decay;
+  aircraft.setInput('c_PIRoll', stick.roll);
+  aircraft.setInput('c_PIPitch', stick.pitch);
+  aircraft.integrate(dt);
+  aircraft.cameraPose(cockpit);
+  camera.position.copy(cockpit.position);
+  camera.quaternion.copy(cockpit.quaternion);
 }
 
 function placeCamera() {
@@ -1449,6 +1632,10 @@ async function show(entry) {
     );
   }
   indexScene(currentRoot);
+  collectTerrain(currentRoot);
+  // A new level means a new scene graph; the old aircraft's node is gone.
+  aircraft = null;
+  if (optPilot.checked) setPilot(true);
   applyFar();
   if (!skyRoot) await loadSky(entry);
   applyFog();
@@ -1521,11 +1708,19 @@ optSoundVol.addEventListener('input', () => {
   ensureAudioContext();
   updateAudio();
 });
+optPilot.addEventListener('change', () => {
+  setPilot(optPilot.checked);
+  if (!optPilot.checked) placeCamera();
+});
 
 const clock = new THREE.Clock();
 function frame(dt) {
-  fly(dt);
-  applyLook();
+  if (optPilot.checked && aircraft) {
+    pilot(dt);
+  } else {
+    fly(dt);
+    applyLook();
+  }
   applyVisibility();
   advanceSim(dt);
   updateAudio();
@@ -1549,6 +1744,11 @@ if (params.has('shots')) {
   window.__scene = scene;
   window.__camera = camera;
   window.__renderer = renderer;
+  window.__THREE = THREE;
+  // Flight state for headless checks: the sim is deterministic under
+  // __renderOnce, so a test can step it frame by frame and read the result.
+  Object.defineProperty(window, '__aircraft', { get: () => aircraft });
+  window.__stick = stick;
   window.__getAudioState = () => ({
     audioListener,
     ambientAudio,

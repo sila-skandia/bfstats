@@ -67,8 +67,17 @@ class SkyInfo:
     mesh: str = ""                    # GeometryTemplate.file preceding Sky.initSky
     rot_angle: float = 0.0            # Sky.setRotAngle, degrees about +Y
     height_offset: float = 0.0        # sky.changeOfsSkyHeight, metres
+    # `Sky.addCloud` alone does NOT produce clouds: the layer draws the cloud
+    # geometry template, and every vanilla SkyAndSun.con REMs that template
+    # out (nor does any vanilla archive ship a cloud mesh — verified against
+    # standardMesh.rfa and the real game, which shows only the clouds painted
+    # into the Sky_*_m1 faces). Mods that want clouds (bf1918, FHSW, GCMOD,
+    # bfheroes, ...) create an ACTIVE `GeometryTemplate.create StandardMesh
+    # Cloud` + `GeometryTemplate.file <mesh>` and ship the mesh. So clouds are
+    # real only when both `has_cloud` and `cloud_mesh` are set.
     has_cloud: bool = False           # Sky.addCloud
-    cloud_texture: str = "texture/cloud1"
+    cloud_mesh: str | None = None     # active (non-REM) cloud GeometryTemplate.file
+    cloud_texture: str = "texture/cloud1"   # last-resort fallback only
     cloud_speed: tuple[float, float] = (0.0, 0.0)   # Cloud.setSpeed u v (two tokens)
     cloud_tex_scale: float = 8.0      # Cloud.setTexScale
     cloud_height: float = 3500.0      # Cloud.setHeight, sky-mesh units
@@ -191,8 +200,15 @@ class LevelInfo:
     terrain: TerrainInfo
     combat: CombatArea | None = None
     fog_color: tuple[float, float, float] = (0.7, 0.7, 0.7)
-    fog_start: float = 200.0
-    fog_end: float = 700.0
+    # None = the level declares no `renderer.fogLinearStart/End`. Only 5 of 23
+    # vanilla levels declare a range; the engine fogs the rest to their view
+    # distance (every level sets `vertexFogEnable 1`, and the in-game haze
+    # wall always sits at the far plane, which DICE matches by painting
+    # `fogColorVec` into the sky mesh's below-horizon band). The consumer
+    # derives an undeclared range from the view distance rather than
+    # inventing a fixed one.
+    fog_start: float | None = None
+    fog_end: float | None = None
     sun_direction: tuple[float, float, float] = (-0.4, 0.7, -0.4)
     water_color: tuple[float, float, float] = (0.4, 0.5, 0.55)
     camera: tuple[float, float, float] | None = None
@@ -202,7 +218,13 @@ class LevelInfo:
     sky: SkyInfo = field(default_factory=SkyInfo)
     water: WaterInfo = field(default_factory=WaterInfo)
     lighting: LightingInfo = field(default_factory=LightingInfo)
+    # `Game.setViewDistance` is the engine's real draw distance (declared by
+    # every vanilla level, 90-800 m; the video-settings slider scales it).
+    # `renderer.setViewdistance` is a raw renderer poke that exactly one
+    # vanilla level carries (Tobruk, 700) and the game overrides it there —
+    # the in-game far plane is Tobruk's `Game.setViewDistance 300`.
     view_distance: float | None = None      # renderer.setViewdistance
+    game_view_distance: float | None = None  # Game.setViewDistance
     texture_alternative_path: str = ""      # textureManager.alternativePath
     sounds: LevelSounds = field(default_factory=LevelSounds)
 
@@ -495,12 +517,21 @@ def _vec2(tokens: list[str]) -> tuple[float, float]:
 def parse_init_con(text: str, info: LevelInfo) -> None:
     # `GeometryTemplate.file` is stateful: the file loaded right before
     # `Sky.initSky` is the sky box mesh. Comment lines are already stripped, so
-    # the REM'd cloud geometry in vanilla SkyAndSun.con does not shadow it.
+    # the REM'd cloud geometry in vanilla SkyAndSun.con does not shadow it —
+    # which is also what makes `cloud_mesh` a reliable clouds-exist signal:
+    # only a mod that genuinely creates the cloud template (bf1918, FHSW, ...)
+    # leaves an active `GeometryTemplate.create ... Cloud` + `.file` pair.
     pending_geometry_file: str | None = None
+    pending_geometry_create: str | None = None
     for ns, cmd, args in _commands(text):
         tokens = args.split()
-        if ns == "geometrytemplate" and cmd == "file" and tokens:
+        if ns == "geometrytemplate" and cmd == "create" and len(tokens) >= 2:
+            pending_geometry_create = tokens[1]
+        elif ns == "geometrytemplate" and cmd == "file" and tokens:
             pending_geometry_file = tokens[0].replace("\\", "/").rsplit("/", 1)[-1]
+            if pending_geometry_create and pending_geometry_create.lower() == "cloud":
+                info.sky.cloud_mesh = pending_geometry_file
+            pending_geometry_create = None
         elif ns == "renderer":
             if cmd == "fogcolorvec" and tokens:
                 try:
@@ -558,7 +589,12 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
             elif cmd == "setheight" and tokens:
                 info.sky.cloud_height = float(tokens[0])
         elif ns == "game":
-            if cmd == "setactivecombatarea" and len(tokens) >= 4:
+            if cmd == "setviewdistance" and tokens:
+                try:
+                    info.game_view_distance = float(tokens[0])
+                except ValueError:
+                    pass
+            elif cmd == "setactivecombatarea" and len(tokens) >= 4:
                 info.combat = CombatArea(
                     float(tokens[0]), float(tokens[1]),
                     float(tokens[2]), float(tokens[3]),
