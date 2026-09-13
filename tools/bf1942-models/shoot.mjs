@@ -186,28 +186,25 @@ for (const model of models) {
     }
 
     if (process.argv.includes('--rig')) {
-      const labels = await page.$$eval(
-        '#rig .rig-input label span:first-child',
-        elements => elements.map(element => element.textContent),
-      );
-      for (let inputIndex = 0; inputIndex < labels.length; inputIndex++) {
-        for (const value of [-1, 0, 1]) {
+      // Every player input on every seat, driven through the inspector rather
+      // than the crew console: a traverse dial or a drive pad has no value
+      // attribute to set, and a pad drives two inputs that each deserve a shot.
+      const inputs = await page.evaluate(() => window.__modelInspector.getInputs());
+      for (const input of inputs) {
+        // Gear is a 0 (down) .. 1 (up) pose pair, not a signed input.
+        for (const value of input.gear ? [0, 1] : [-1, 0, 1]) {
           await page.evaluate(
             ([modelIndex, selectedVariant]) =>
               window.__modelInspector.showVariant(modelIndex, selectedVariant),
             [model.index, variantIndex],
           );
-          await page.$$eval(
-            '#rig input[type=range]',
-            (elements, [index, nextValue]) => {
-              elements[index].value = String(nextValue);
-              elements[index].dispatchEvent(new Event('input', { bubbles: true }));
-            },
-            [inputIndex, value],
+          await page.evaluate(
+            ([key, nextValue]) => window.__modelInspector.setInput(key, nextValue),
+            [input.key, value],
           );
           await page.waitForTimeout(250);
           await page.screenshot({
-            path: `${out}/${prefix}-rig-${slug(labels[inputIndex])}-${value}.png`,
+            path: `${out}/${prefix}-rig-${slug(input.label)}-${value}.png`,
           });
         }
       }

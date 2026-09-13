@@ -1,105 +1,215 @@
 /* Shared chrome for the three viewers: models (index.html), maps (map.html)
-   and poses (poses.html). Each page keeps its own layout and its own token
-   block; this file owns only the bar across the top, so switching feature
-   never looks like landing on a different site.
+   and poses (poses.html). Each page keeps its own layout; this file owns only
+   the bar across the top, so switching feature never looks like landing on a
+   different site. Colours and type come from tokens.css, which every page
+   links first.
 
    Every page reserves --nav-h as its first grid row, so the bar takes space
    rather than floating over the canvas. That matters for the two pages whose
    renderer sizes itself from a container: give it a row and the existing
-   clientHeight maths stays correct with no offset fudge. */
+   clientHeight maths stays correct with no offset fudge.
+
+   The bar is 46px. When a second mod has assets for the tab, mods.js adds the
+   olive mod strip under it and flips `shell-has-mods` on <html>, which grows
+   --nav-h to 76px before any renderer has measured its container. */
 :root {
-  --nav-h: 38px;
+  --nav-bar-h: 46px;
+  --nav-strip-h: 30px;
+  --nav-h: var(--nav-bar-h);
+}
+:root.shell-has-mods {
+  --nav-h: calc(var(--nav-bar-h) + var(--nav-strip-h));
 }
 
 .shell-nav {
   grid-column: 1 / -1;
   display: flex;
-  align-items: center;
-  gap: 18px;
+  flex-direction: column;
   height: var(--nav-h);
-  padding: 0 14px;
-  background: #101108;
-  border-bottom: 1px solid var(--line);
-  font: 11px/1 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+  min-width: 0;
+  background: var(--mm-bg);
+  font-family: var(--mm-font-mono);
   position: relative;
   z-index: 50;
 }
 
+.shell-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: none;
+  height: var(--nav-bar-h);
+  min-width: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--mm-rule);
+}
+
 .shell-brand {
-  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  color: var(--mm-ink-muted);
+  font-size: 11px;
   letter-spacing: .18em;
   text-transform: uppercase;
   white-space: nowrap;
 }
-.shell-brand b { color: var(--accent); font-weight: 500; }
+/* The same sigil as the bfstats.io header, so the mesh site reads as part of it. */
+.shell-brand-sigil {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+.shell-brand b { color: var(--mm-accent-soft); font-weight: 500; }
 
 .shell-tabs {
   display: flex;
-  border: 1px solid var(--line);
+  flex: none;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  overflow: hidden;
 }
 .shell-tabs a {
   display: block;
-  padding: 7px 15px;
-  color: var(--muted);
-  text-decoration: none;
+  padding: 7px 16px;
+  color: var(--mm-ink-muted);
+  font-size: 10.5px;
   letter-spacing: .12em;
+  text-decoration: none;
   text-transform: uppercase;
-  border-left: 1px solid var(--line);
-  transition: color .12s ease, background-color .12s ease;
+  border-left: 1px solid var(--mm-rule-strong);
+  transition: color .15s ease, background-color .15s ease;
 }
 .shell-tabs a:first-child { border-left: 0; }
-.shell-tabs a:hover { color: var(--text); background: #1c1e16; }
-.shell-tabs a:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
-.shell-tabs a[aria-current="page"] {
-  color: var(--bg);
-  background: var(--accent);
-}
-.shell-tabs a[aria-current="page"]:hover { color: var(--bg); background: var(--accent); }
-
-/* Which game the three tabs are showing. Injected by mods.js rather than
-   written into each page, and only when there is more than one mod with
-   assets for the current tab — so a viewer serving vanilla alone looks
-   exactly as it did before mods existed. */
-.shell-mods {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-.shell-mods-label {
-  color: var(--muted);
-  letter-spacing: .12em;
-  text-transform: uppercase;
-}
-.shell-mods select {
-  padding: 5px 8px;
-  background: #14150f;
-  color: var(--text);
-  border: 1px solid var(--line);
-  font: inherit;
-  letter-spacing: .08em;
-}
-.shell-mods select:hover { background: #1c1e16; }
-.shell-mods select:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
+.shell-tabs a:hover { color: var(--mm-ink); background: var(--mm-bg-soft); }
+.shell-tabs a:focus-visible { outline: 1px solid var(--mm-ink); outline-offset: -1px; }
+.shell-tabs a[aria-current="page"],
+.shell-tabs a[aria-current="page"]:hover {
+  color: var(--mm-highlight-ink);
+  background: var(--mm-highlight);
+  font-weight: 600;
 }
 
 /* What the current page is for, so the tab label can stay one word. */
 .shell-sub {
-  color: var(--muted);
-  opacity: .7;
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--mm-ink-muted);
+  font-size: 10.5px;
+  letter-spacing: .08em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-@media (max-width: 720px) {
+.shell-spacer { flex: 1; }
+
+/* The armoury search. A button on Models, which owns the armoury; a link to
+   it from Maps and Poses. */
+.shell-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-width: 240px;
+  padding: 6px 10px 6px 12px;
+  background: transparent;
+  border: 1px solid var(--mm-rule);
+  border-radius: 999px;
+  color: var(--mm-ink-muted);
+  font: 11px var(--mm-font-mono);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color .15s ease, color .15s ease;
+}
+.shell-search svg { width: 12px; height: 12px; flex: none; }
+.shell-search span { flex: 1; }
+.shell-search:hover,
+.shell-search:focus-visible { border-color: var(--mm-ink); color: var(--mm-ink-soft); outline: none; }
+.shell-search kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--mm-rule);
+  border-radius: 4px;
+  color: var(--mm-ink-muted);
+  font: 10px var(--mm-font-mono);
+  letter-spacing: .05em;
+}
+
+/* Which game the three tabs are showing: the house olive anchor strip,
+   injected by mods.js only when there is more than one mod with assets for
+   the current tab — a viewer serving vanilla alone gets the bar and nothing
+   else. */
+.shell-mods {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: none;
+  height: var(--nav-strip-h);
+  padding: 0 16px;
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.shell-mods-pick { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* Maps and Poses style bare labels and selects for their own panels; the
+   strip must not inherit a block label or a full-width select from them. */
+.shell-mods label {
+  display: inline;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  white-space: nowrap;
+}
+.shell-mods select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  padding: 3px 20px 3px 4px;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 3.5 5 7l3.5-3.5' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 4px center / 9px 9px;
+  border: 0;
+  border-radius: 2px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.shell-mods select:hover { background-color: rgba(0, 0, 0, .1); }
+.shell-mods select:focus-visible { outline: 1px solid var(--mm-highlight-ink); outline-offset: 0; }
+.shell-mods select option { background: var(--mm-bg); color: var(--mm-ink); text-transform: none; }
+.shell-mods-counts {
+  color: rgba(0, 0, 0, .62);
+  letter-spacing: .1em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shell-mods-counts b { color: var(--mm-highlight-ink); font-weight: 600; }
+
+@media (max-width: 880px) {
   .shell-sub { display: none; }
+  .shell-search { min-width: 0; }
+  .shell-search span { display: none; }
+}
+@media (max-width: 560px) {
+  .shell-mods-counts { display: none; }
 }
 @media (max-width: 480px) {
-  .shell-brand { display: none; }
+  .shell-bar { gap: 10px; padding: 0 12px; }
+  .shell-brand b { display: none; }
   .shell-tabs a { padding: 7px 10px; }
-  /* The select keeps its place at this width; only its caption goes. */
-  .shell-mods-label { display: none; }
 }

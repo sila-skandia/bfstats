@@ -5,663 +5,1170 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <title>BF1942 mesh &middot; models</title>
+<link rel="icon" href="./favicon.ico">
+<link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./shell.css">
 <style>
-  :root {
-    --bg: #14150f;
-    --panel: #1c1e16;
-    --line: #2e3125;
-    --text: #e6e4d9;
-    --muted: #8d8f7e;
-    --accent: #9aab5a;
-    --warn: #c98a3e;
-    --bad: #b8574a;
-  }
+  :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
     display: grid;
-    grid-template-columns: 320px 1fr;
-    grid-template-rows: var(--nav-h) 1fr;
-    background: var(--bg);
-    color: var(--text);
-    font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-rows: var(--nav-h) minmax(0, 1fr);
+    background: var(--mm-bg);
+    color: var(--mm-ink);
+    font: 12px/1.5 var(--mm-font-mono);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  aside {
-    background: var(--panel);
-    border-right: 1px solid var(--line);
-    overflow-y: auto;
-    padding: 16px;
-  }
-  h1 {
-    font-size: 12px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 0 0 16px;
-  }
-  h2 {
-    font-size: 10px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: 20px 0 8px;
-    border-top: 1px solid var(--line);
-    padding-top: 12px;
-  }
-  h2:first-of-type { border-top: 0; padding-top: 0; }
-  #variant-panel[hidden] { display: none; }
-  .variant-grid { display: grid; gap: 8px; }
-  .variant-field { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; }
-  .variant-field span {
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-  .variant-field select {
-    min-width: 0;
-    width: 100%;
-    padding: 6px 24px 6px 8px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: #15170f;
-    color: var(--text);
-    font: inherit;
-    cursor: pointer;
-  }
-  .variant-field select:hover,
-  .variant-field select:focus-visible { border-color: var(--accent); outline: none; }
-  .variant-field select:disabled { color: var(--muted); cursor: default; opacity: .7; }
-  #variant-summary {
-    margin-top: 9px;
-    padding: 7px 8px;
-    border-left: 2px solid var(--accent);
-    background: rgba(154, 171, 90, .06);
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1.5;
-  }
-  #variant-summary strong { color: var(--text); font-weight: 500; }
-  label.toggle { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
-  .stat { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
-  .stat span:last-child { color: var(--accent); }
-  ul.missing { margin: 0; padding-left: 16px; color: var(--bad); }
-  ul.missing li { font-size: 11px; }
-  .rig-input { margin-bottom: 12px; }
-  .rig-input label { display: flex; justify-content: space-between; font-size: 11px; color: var(--accent); }
-  .rig-input input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
-  .rig-input .driven { font-size: 10px; color: var(--muted); line-height: 1.5; }
-  .rig-none { font-size: 11px; color: var(--muted); }
-  .rig-pad .pad {
-    position: relative;
-    width: 148px;
-    height: 148px;
-    margin: 6px auto 4px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background:
-      linear-gradient(var(--line), var(--line)) 50% 0 / 1px 100% no-repeat,
-      linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat,
-      #15170f;
-    touch-action: none;
-    cursor: crosshair;
-  }
-  .rig-pad .pad:hover,
-  .rig-pad .pad.dragging { border-color: var(--accent); }
-  .rig-pad .pad-knob {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 13px;
-    height: 13px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 0 3px rgba(154, 171, 90, .15);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-  }
-  .seat { display: block; color: var(--accent); opacity: .65; }
-  #fire-section[hidden] { display: none; }
-  .fire-control { margin-bottom: 10px; }
-  .fire-button {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: rgba(201, 138, 62, .08);
-    color: var(--text);
-    font: inherit;
-    font-size: 11px;
+  button, input, select { font: inherit; }
+  kbd {
+    padding: 0 5px;
+    border: 1px solid var(--mm-rule);
+    border-radius: 4px;
+    color: var(--mm-ink-muted);
+    font: 10px/1.5 var(--mm-font-mono);
     letter-spacing: .05em;
-    cursor: pointer;
-    touch-action: none;
-    user-select: none;
   }
-  .fire-button:hover,
-  .fire-button:focus-visible { border-color: var(--warn); outline: none; }
-  .fire-button[aria-pressed="true"] {
-    background: var(--warn);
-    border-color: var(--warn);
-    color: #14150f;
-  }
-  .fire-button .fire-word {
-    color: var(--warn);
-    font-weight: 700;
-    letter-spacing: .12em;
-  }
-  .fire-button[aria-pressed="true"] .fire-word { color: #14150f; }
-  .fire-meta {
-    margin-top: 3px;
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1.5;
-  }
-  .view-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
-  .view-buttons button {
-    padding: 4px 9px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    font-size: 10px;
-    letter-spacing: .04em;
-    cursor: pointer;
-  }
-  .view-buttons button:hover,
-  .view-buttons button:focus-visible { border-color: var(--accent); outline: none; }
-  .view-buttons button[aria-pressed="true"] { background: var(--accent); color: #14150f; }
-  #anim-section[hidden], #views-section[hidden] { display: none; }
-  .collision-note {
-    margin: 8px 0;
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1.5;
-  }
-  #collision-legend {
-    margin: 9px 0 0;
-    padding: 8px;
-    border: 1px solid var(--line);
-    background: rgba(0, 0, 0, .12);
-  }
-  #collision-legend[hidden] { display: none; }
-  .legend-labels {
+  .sep { color: var(--mm-ink-faint); }
+
+  /* --- Control column ----------------------------------------------------
+     Sections are hairline-separated, never carded: a mono eyebrow, the
+     controls, then a mono note. Olive fill means on, a hairline means off. */
+
+  aside {
+    grid-row: 2;
     display: flex;
-    justify-content: space-between;
-    margin-bottom: 4px;
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: .08em;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 14px 24px;
+    background: var(--mm-bg);
+    border-right: 1px solid var(--mm-rule);
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-rule-strong) transparent;
+  }
+  .inspector-title {
+    order: -3;
+    margin: 0 0 10px;
+    color: var(--mm-accent-soft);
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: .16em;
     text-transform: uppercase;
   }
-  .legend-scale {
+  #current { order: -3; }
+  .panel { padding: 12px 0; border-top: 1px solid var(--mm-rule); }
+  .panel[hidden] { display: none; }
+  /* A duel is the question on screen once an opponent is parked, so its
+     answer and the armour it depends on move to the top of the column. */
+  body[data-compare="true"] #compare-panel { order: -2; }
+  body[data-compare="true"] #armour-panel { order: -1; }
+  .panel-title {
+    margin: 0 0 10px;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .note {
+    margin: 8px 0 0;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+
+  .field {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    height: 5px;
-    margin-bottom: 8px;
-  }
-  .legend-scale span:nth-child(1) { background: #c24d43; }
-  .legend-scale span:nth-child(2) { background: #d47a38; }
-  .legend-scale span:nth-child(3) { background: #d1ad3e; }
-  .legend-scale span:nth-child(4) { background: #7d9f50; }
-  .legend-scale span:nth-child(5) { background: #3d7894; }
-  #legend-materials { display: flex; flex-wrap: wrap; gap: 4px; }
-  .material-chip {
-    display: inline-flex;
+    grid-template-columns: 56px minmax(0, 1fr);
     align-items: center;
-    gap: 5px;
-    padding: 2px 5px;
-    border: 1px solid var(--line);
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: 9px;
-    cursor: pointer;
-    transition: border-color 100ms ease, color 100ms ease, opacity 100ms ease;
+    gap: 10px;
   }
-  .material-chip:hover,
-  .material-chip:focus-visible { border-color: var(--chip); color: var(--text); outline: none; }
-  .material-chip[aria-pressed="true"] {
-    border-color: var(--chip);
-    box-shadow: inset 0 -2px var(--chip);
-    color: var(--text);
-  }
-  #legend-materials[data-filtered="true"] .material-chip:not([aria-pressed="true"]) { opacity: .35; }
-  .material-chip i {
-    display: block;
-    flex: none;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--chip);
-  }
-  .legend-hint { margin-top: 6px; color: var(--muted); font-size: 9px; }
-  #hit-details {
-    margin-top: 10px;
-    padding: 8px;
-    border: 1px solid var(--line);
-    border-left: 2px solid var(--warn);
-    background: rgba(201, 138, 62, .05);
-    font-size: 11px;
-  }
-  #hit-details .empty { color: var(--muted); }
-  .hit-region {
-    color: var(--text);
-    font-size: 12px;
-  }
-  .hit-class { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
-  .impact-reading {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    margin: 10px 0 6px;
-  }
-  .impact-reading strong { color: var(--accent); font-size: 20px; font-weight: 500; }
-  .impact-reading span { color: var(--muted); font-size: 9px; text-transform: uppercase; }
-  .damage-basis { margin-top: -6px; color: var(--muted); font-size: 9px; }
-  .hp-loss {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    margin-top: 8px;
-    padding-top: 6px;
-    border-top: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 9px;
+  .field + .field, .toggle + .field { margin-top: 8px; }
+  #compare-panel .field { grid-template-columns: 64px minmax(0, 1fr); }
+  .field > span {
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .14em;
     text-transform: uppercase;
   }
-  .hp-loss span:last-child { color: var(--warn); text-align: right; }
-  .hp-loss.hp-loss-known span:last-child { color: var(--text); }
-  .hp-loss.hp-loss-lethal span:last-child { color: var(--bad); }
-  .hp-loss.hp-loss-immune span:last-child { color: var(--muted); }
-  .weapon-field { margin: 6px 0 0; }
+  select.select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 24px 6px 8px;
+    background: var(--mm-bg-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 3.5 5 7l3.5-3.5' fill='none' stroke='%238a8a8a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center / 9px 9px;
+    border: 1px solid var(--mm-rule);
+    border-radius: 2px;
+    color: var(--mm-ink);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: border-color .15s ease;
+  }
+  select.select:hover { border-color: var(--mm-rule-strong); }
+  select.select:focus-visible { border-color: var(--mm-ink); outline: none; }
+  select.select:disabled { color: var(--mm-ink-muted); cursor: default; }
+  select.select.is-set { border-color: var(--mm-ink); }
+  select option, select optgroup { background: var(--mm-bg); color: var(--mm-ink); }
+
+  .callout {
+    margin-top: 10px;
+    padding: 6px 10px;
+    border-left: 2px solid var(--mm-accent);
+    background: var(--mm-bg-soft);
+    color: var(--mm-ink-soft);
+    font-size: 10.5px;
+    line-height: 1.5;
+  }
+  .callout:empty { display: none; }
+  .callout--win { border-left-color: var(--mm-success); }
+  .callout--even { border-left-color: var(--mm-ink-faint); }
+  .callout-label {
+    margin-bottom: 4px;
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .callout b { color: var(--mm-ink); font-weight: 400; }
+  .tone-ok { color: var(--mm-accent-soft); }
+  .tone-warn { color: var(--mm-load-busy); }
+  .tone-win { color: var(--mm-success); }
+
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 3px 0;
+    color: var(--mm-ink-soft);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .toggle input,
+  .facet label input {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: 0 0 12px;
+    width: 12px;
+    height: 12px;
+    margin: 0;
+    background: transparent;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .toggle input:hover,
+  .facet label input:hover { border-color: var(--mm-ink-muted); }
+  .toggle input:checked,
+  .facet label input:checked { background: var(--mm-accent); border-color: var(--mm-accent); }
+  .toggle input:focus-visible,
+  .facet label input:focus-visible { outline: 1px solid var(--mm-ink); outline-offset: 2px; }
+  .toggle input:checked + span { color: var(--mm-ink); }
+  .toggle:has(input:disabled) { color: var(--mm-ink-faint); cursor: default; }
+  .toggle input:disabled { opacity: .5; cursor: default; }
+
+  .disclosure > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    color: var(--mm-ink-soft);
+    font-size: 10.5px;
+    list-style: none;
+    cursor: pointer;
+  }
+  .disclosure > summary::-webkit-details-marker { display: none; }
+  .disclosure > summary::before {
+    content: '';
+    flex: none;
+    width: 9px;
+    height: 9px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M3.5 1.5 7 5 3.5 8.5' fill='none' stroke='%238a8a8a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
+    transition: transform .15s ease;
+  }
+  .disclosure[open] > summary::before { transform: rotate(90deg); }
+  .disclosure > summary:hover { color: var(--mm-ink); }
+  .disclosure > summary:focus-visible { outline: 1px solid var(--mm-ink-muted); outline-offset: 2px; }
+  .disclosure-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 8px 0 0 3px;
+    padding: 2px 0 0 14px;
+    border-left: 1px solid var(--mm-rule);
+  }
+
+  /* One slider look everywhere: a 3px olive-filled track and a hairline
+     thumb. --fill is kept in step by syncRange(). */
+  input.range {
+    --fill: 50%;
+    --range-fill: var(--mm-accent);
+    appearance: none;
+    -webkit-appearance: none;
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    height: 15px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  input.range.is-busy { --range-fill: var(--mm-load-busy); }
+  input.range::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(var(--range-fill), var(--range-fill)) 0 0 / var(--fill) 100% no-repeat, var(--mm-bg-mute);
+  }
+  input.range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 3px;
+    height: 13px;
+    margin-top: -5px;
+    background: var(--mm-ink);
+    border: 0;
+    border-radius: 0;
+  }
+  input.range::-moz-range-track { height: 3px; border-radius: 2px; background: var(--mm-bg-mute); }
+  input.range::-moz-range-progress { height: 3px; border-radius: 2px; background: var(--range-fill); }
+  input.range::-moz-range-thumb { width: 3px; height: 13px; background: var(--mm-ink); border: 0; border-radius: 0; }
+  input.range:focus-visible { outline: 1px solid var(--mm-ink-muted); outline-offset: 3px; }
+  .range-row { display: flex; align-items: center; gap: 10px; padding: 4px 0 2px; }
+  .range-row[hidden] { display: none; }
+  .range-row output {
+    min-width: 46px;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* Current model + armoury CTA */
+  .side-allied { --side-tint: var(--mm-success); }
+  .side-axis { --side-tint: var(--mm-kill); }
+  .side-mixed { --side-tint: var(--mm-kd-low); }
+  .side-none { --side-tint: var(--mm-rule); }
+
+  #current-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid var(--mm-rule);
+    border-top: 2px solid var(--side-tint, var(--mm-rule));
+    border-radius: 2px;
+  }
+  #current-thumb {
+    flex: 0 0 52px;
+    width: 52px;
+    height: 52px;
+    object-fit: contain;
+    background: var(--mm-stage);
+  }
+  #current-thumb[hidden] { display: none; }
+  .current-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  #current-name,
+  #current-meta,
+  #current-side { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #current-name { color: var(--mm-ink); font-size: 13px; letter-spacing: .02em; }
+  /* Tighter than the house .06em so "Land vehicle · 6.29 m · 5,614 tris"
+     fits the 320px column on one line. */
+  #current-meta { color: var(--mm-ink-muted); font-size: 10px; letter-spacing: .01em; }
+  #current-side {
+    color: var(--side-tint, var(--mm-ink-muted));
+    font-size: 9.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  #current-side:empty { display: none; }
+  button.browse {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    background: var(--mm-highlight);
+    border: 0;
+    border-radius: 2px;
+    color: var(--mm-highlight-ink);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color .15s ease;
+  }
+  button.browse:hover { background: var(--mm-accent); }
+  button.browse:focus-visible { outline: 1px solid var(--mm-ink); outline-offset: 2px; }
+  button.browse kbd { border-color: rgba(0, 0, 0, .45); color: var(--mm-highlight-ink); }
+
+  /* Armour */
   .weapon-summary {
-    margin-top: 6px;
-    color: var(--muted);
+    margin-top: 8px;
+    color: var(--mm-ink-muted);
     font-size: 10px;
     line-height: 1.5;
   }
   .weapon-summary:empty { display: none; }
-  .weapon-summary strong { color: var(--text); font-weight: 500; }
-  .material-chip small { color: var(--text); font-size: 9px; }
-  .material-chip[data-immune="true"] { border-style: dashed; }
-  .distance-control { margin-top: 8px; }
-  .distance-control label { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
-  .distance-control output { color: var(--text); }
-  .distance-control input { width: 100%; margin: 4px 0 0; accent-color: var(--accent); }
-  #versus[hidden] { display: none; }
-  #versus {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(480px, calc(100% - 32px));
-    padding: 14px 16px 12px;
-    border: 1px solid rgba(230, 228, 217, .16);
-    background:
-      linear-gradient(180deg, rgba(12, 13, 9, .08), rgba(12, 13, 9, .22)),
-      rgba(16, 17, 12, .88);
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, .45),
-      0 18px 50px rgba(0, 0, 0, .45);
-    backdrop-filter: blur(10px);
-    pointer-events: auto;
-    z-index: 3;
-  }
-  .vs-head {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 10px;
-    align-items: end;
-  }
-  .vs-side { min-width: 0; }
-  .vs-side.vs-them { text-align: right; }
-  .vs-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font: 700 22px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-    color: var(--muted);
-    transition: color 180ms ease;
-  }
-  .vs-them .vs-name { color: #9a8570; }
-  #versus[data-winner="us"] .vs-us .vs-name { color: var(--accent); }
-  #versus[data-winner="them"] .vs-them .vs-name { color: #f0c090; }
-  #versus[data-winner="even"] .vs-name { color: var(--text); }
-  .vs-hp {
-    margin-top: 3px;
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-  }
-  .vs-side select {
-    width: 100%;
-    margin-top: 7px;
-    padding: 4px 20px 4px 6px;
-    border: 1px solid var(--line);
-    background: #15170f;
-    color: var(--text);
-    font: inherit;
-    font-size: 10px;
-    cursor: pointer;
-  }
-  .vs-mark {
-    align-self: center;
-    width: 42px;
-    height: 42px;
-    display: grid;
-    place-items: center;
-    border: 1px solid rgba(230, 228, 217, .28);
-    background: #14150f;
-    color: var(--text);
-    font: 700 15px/1 Impact, "Arial Narrow", sans-serif;
-    letter-spacing: .08em;
-  }
-  .vs-verdict {
-    margin: 14px 0 0;
-    text-align: center;
-  }
-  .vs-winner-label {
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: .18em;
-    text-transform: uppercase;
-  }
-  .vs-winner {
-    margin-top: 4px;
-    font: 700 34px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: var(--text);
-    animation: vs-stamp 320ms ease;
-  }
-  #versus[data-winner="us"] .vs-winner { color: var(--accent); }
-  #versus[data-winner="them"] .vs-winner { color: #e0a25a; }
-  #versus[data-winner="even"] .vs-winner { color: var(--text); }
-  .vs-winner-sub {
-    margin-top: 4px;
-    color: var(--muted);
-    font-size: 11px;
-    letter-spacing: .04em;
-  }
-  .vs-duel {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 12px;
-    align-items: center;
-    margin: 14px 0 0;
-    padding: 12px 10px;
-    border: 1px solid rgba(230, 228, 217, .12);
-    background: rgba(0, 0, 0, .22);
-  }
-  .vs-duel-side { min-width: 0; }
-  .vs-duel-them { text-align: right; }
-  .vs-duel-num {
-    font: 700 42px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
-    animation: vs-stamp 280ms ease;
-  }
-  .vs-duel-num.is-muted {
-    font-size: 18px;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  #versus[data-winner="us"] .vs-duel-us .vs-duel-num:not(.is-muted) { color: var(--accent); }
-  #versus[data-winner="them"] .vs-duel-them .vs-duel-num:not(.is-muted) { color: #e0a25a; }
-  .vs-duel-cap {
-    margin-top: 6px;
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1.35;
-  }
-  .vs-duel-mid {
-    color: var(--muted);
-    font: 700 12px/1 Impact, "Arial Narrow", sans-serif;
-    letter-spacing: .14em;
-  }
-  .vs-meter {
-    display: grid;
-    grid-template-columns: var(--us, 50%) var(--them, 50%);
-    height: 6px;
-    margin: 10px 0 0;
-    background: rgba(255, 255, 255, .06);
-    overflow: hidden;
-  }
-  .vs-meter span:first-child { background: var(--accent); }
-  .vs-meter span:last-child { background: #c98a3e; }
-  .vs-aspects-head {
+  .weapon-summary strong { color: var(--mm-ink-soft); font-weight: 400; }
+  #collision-legend { margin-top: 10px; }
+  #collision-legend[hidden] { display: none; }
+  /* Critical-red to faint: the same five stops the collision meshes are
+     painted with (vulnerabilityStops). There is no blue in the system. */
+  .ramp { display: flex; gap: 2px; }
+  .ramp span { flex: 1; height: 6px; }
+  .ramp span:nth-child(1) { background: var(--mm-kill); }
+  .ramp span:nth-child(2) { background: var(--mm-load-busy); }
+  .ramp span:nth-child(3) { background: var(--mm-kd-low); }
+  .ramp span:nth-child(4) { background: var(--mm-accent); }
+  .ramp span:nth-child(5) { background: var(--mm-kd-poor); }
+  .ramp-labels {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
-    margin: 14px 0 6px;
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-  }
-  .vs-lanes { display: grid; gap: 4px; }
-  .vs-lane {
-    display: grid;
-    grid-template-columns: 64px 1fr auto;
-    gap: 10px;
-    align-items: center;
-    padding: 7px 8px;
-    border-left: 2px solid transparent;
-    background: rgba(255, 255, 255, .02);
-  }
-  .vs-lane[data-win="us"] { border-left-color: var(--accent); }
-  .vs-lane[data-win="them"] { border-left-color: #c98a3e; }
-  .vs-lane[data-decisive="true"] { background: rgba(154, 171, 90, .07); }
-  #versus[data-winner="them"] .vs-lane[data-decisive="true"] {
-    background: rgba(201, 138, 62, .08);
-  }
-  .vs-face {
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-  }
-  .vs-edge {
-    font: 700 11px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .vs-lane[data-win="us"] .vs-edge { color: var(--accent); }
-  .vs-lane[data-win="them"] .vs-edge { color: #e0a25a; }
-  .vs-counts {
-    display: flex;
-    gap: 10px;
-    align-items: baseline;
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
-    font-size: 12px;
-  }
-  .vs-count {
-    display: inline-flex;
-    gap: 4px;
-    align-items: baseline;
-  }
-  .vs-count strong {
-    font: 700 16px/1 Impact, "Arial Narrow", "Franklin Gothic Medium", sans-serif;
-  }
-  .vs-count span {
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-  }
-  .vs-count.is-muted strong {
-    font: 600 9px/1 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .vs-lane[data-win="us"] .vs-count-us:not(.is-muted) strong { color: var(--accent); }
-  .vs-lane[data-win="them"] .vs-count-them:not(.is-muted) strong { color: #e0a25a; }
-  @keyframes vs-stamp {
-    from { opacity: 0; transform: translateY(4px) scale(.97); }
-    to { opacity: 1; transform: none; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .vs-winner,
-    .vs-duel-num { animation: none; }
-  }
-  .vs-foot {
-    margin-top: 10px;
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: .06em;
-    text-align: center;
-    line-height: 1.45;
-  }
-  .angle-control label { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
-  .angle-control output { color: var(--text); }
-  .angle-control input { width: 100%; margin: 4px 0 0; accent-color: var(--warn); }
-  #hit-details .formula {
-    margin-top: 7px;
-    color: var(--muted);
-    font-size: 10px;
-  }
-  .hit-technical { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
-  .hit-technical summary { color: var(--muted); cursor: pointer; font-size: 10px; }
-  .hit-technical[open] summary { margin-bottom: 4px; }
-  .panel-details { margin-top: 7px; }
-  .panel-details > summary {
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 10px;
-    list-style-position: outside;
-  }
-  .panel-details[open] > summary { margin-bottom: 6px; }
-  .detail-label {
-    margin: 10px 0 4px;
-    color: var(--muted);
+    margin-top: 5px;
+    color: var(--mm-ink-muted);
     font-size: 9px;
     letter-spacing: .1em;
     text-transform: uppercase;
   }
-  #tree { font-size: 11px; line-height: 1.7; white-space: pre; overflow-x: auto; color: var(--muted); }
-  #tree b { color: var(--text); font-weight: 400; }
+  #legend-materials { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+  .material-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 6px;
+    background: transparent;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .04em;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: border-color .12s ease, color .12s ease, opacity .12s ease;
+  }
+  .material-chip:hover,
+  .material-chip:focus-visible { border-color: var(--chip); color: var(--mm-ink); outline: none; }
+  .material-chip[aria-pressed="true"] {
+    border-color: var(--chip);
+    box-shadow: inset 0 -2px var(--chip);
+    color: var(--mm-ink);
+  }
+  #legend-materials[data-filtered="true"] .material-chip:not([aria-pressed="true"]) { opacity: .35; }
+  .material-chip i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--chip); }
+  .material-chip small { color: var(--mm-ink); font-size: 9.5px; }
+  .material-chip[data-immune="true"] { border-style: dashed; }
+  .legend-hint { margin-top: 6px; color: var(--mm-ink-muted); font-size: 9.5px; }
+
+  #hit-details {
+    margin-top: 10px;
+    padding: 6px 10px 8px;
+    border-left: 2px solid var(--mm-load-busy);
+    background: var(--mm-bg-soft);
+    color: var(--mm-ink-soft);
+    font-size: 10.5px;
+  }
+  .hit-region { color: var(--mm-ink); font-size: 12px; }
+  .hit-class {
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .impact-reading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 10px 0 4px;
+  }
+  .impact-reading strong {
+    color: var(--mm-ink);
+    font: 300 28px/1 var(--mm-font-display);
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .impact-reading span {
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .14em;
+    text-align: right;
+    text-transform: uppercase;
+  }
+  .damage-basis { color: var(--mm-ink-muted); font-size: 10px; }
+  .hp-loss {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 3px 8px;
+    margin-top: 8px;
+    padding-top: 7px;
+    border-top: 1px solid var(--mm-rule);
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .hp-loss span:nth-child(even) {
+    color: var(--mm-load-busy);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .hp-loss.hp-loss-known span:nth-child(even) { color: var(--mm-ink); }
+  .hp-loss.hp-loss-lethal span:nth-child(even) { color: var(--mm-kill); }
+  .hp-loss.hp-loss-immune span:nth-child(even) { color: var(--mm-ink-muted); }
+  #hit-details .formula { margin-top: 7px; color: var(--mm-ink-muted); font-size: 10px; line-height: 1.5; }
+  .angle-control, .distance-control { margin-top: 10px; }
+  .angle-control label,
+  .distance-control label {
+    display: flex;
+    justify-content: space-between;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+  }
+  .angle-control output,
+  .distance-control output { color: var(--mm-ink); font-variant-numeric: tabular-nums; }
+  .hit-technical { margin-top: 9px; padding-top: 7px; border-top: 1px solid var(--mm-rule); }
+  .hit-technical .stat:first-of-type { margin-top: 6px; }
+  .stat {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 0;
+    font-size: 10.5px;
+  }
+  .stat span:first-child { color: var(--mm-ink-muted); white-space: nowrap; }
+  .stat span:last-child {
+    min-width: 0;
+    color: var(--mm-ink);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  /* Compare */
+  #compare-verdict[hidden] { display: none; }
+  #compare-verdict .toggle { margin-top: 8px; }
+
+  /* Model */
+  .model-details { margin-top: 9px; }
+  .detail-label {
+    margin: 12px 0 5px;
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  ul.missing { margin: 0; padding-left: 14px; color: var(--mm-kill); font-size: 10.5px; }
+  ul.missing li.none { color: var(--mm-accent-soft); list-style: none; margin-left: -14px; }
+  #tree {
+    overflow-x: auto;
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    line-height: 1.7;
+    white-space: pre;
+  }
+  #tree b { color: var(--mm-ink-soft); font-weight: 400; }
+
+  /* --- Stage --------------------------------------------------------------
+     The canvas owns `main`; the hints strip and crew console are rows under
+     it rather than overlays, so the renderer's clientHeight is the visible
+     viewport and nothing sits over the model or the raycast. */
+
+  .stage {
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--mm-stage);
+  }
   /* The canvas is taken out of flow: at its attribute size it would otherwise
      prop `main` open, and a viewport that only ever grows can never shrink back
      (setSize(w, h, false) deliberately leaves the element's style alone). */
-  main { position: relative; overflow: hidden; min-width: 0; }
+  main { position: relative; flex: 1; min-height: 0; overflow: hidden; }
   main > canvas { position: absolute; inset: 0; }
-  canvas { display: block; }
+  canvas { display: block; transition: opacity 120ms ease; }
+  main[data-load-state="loading"] canvas { opacity: .55; }
   main[data-collision="true"] canvas { cursor: crosshair; }
   main[data-angle-drag="true"] canvas { cursor: grabbing; }
-  #hud {
-    position: absolute; left: 16px; bottom: 16px;
-    background: rgba(20,21,15,.82);
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    padding: 8px 12px;
-    font-size: 11px;
-    color: var(--muted);
+
+  #crumb {
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 340px);
+    overflow: hidden;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    white-space: nowrap;
     pointer-events: none;
   }
+  #crumb[hidden] { display: none; }
+  #crumb b { color: var(--mm-ink); font-weight: 400; }
   #banner {
-    position: absolute; left: 16px; top: 16px; right: 16px;
-    background: rgba(201,138,62,.14);
-    border: 1px solid var(--warn);
-    color: var(--warn);
-    border-radius: 3px;
-    padding: 8px 12px;
-    font-size: 11px;
+    position: absolute;
+    top: 36px;
+    left: 14px;
+    z-index: 2;
+    max-width: min(520px, calc(100% - 28px));
+    padding: 6px 10px;
+    border-left: 2px solid var(--mm-load-busy);
+    background: var(--mm-bg);
+    color: var(--mm-ink-soft);
+    font-size: 10.5px;
+    line-height: 1.5;
   }
   #banner[hidden] { display: none; }
-  main[data-load-state="loading"] canvas { opacity: .55; }
-  canvas { transition: opacity 120ms ease; }
-  /* Thumbnail shots: nothing over the canvas, and no half-faded loading state. */
-  body.is-portrait #hud,
+
+  #hints {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    height: 30px;
+    padding: 0 16px;
+    overflow: hidden;
+    background: var(--mm-bg);
+    border-top: 1px solid var(--mm-rule);
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* --- Crew console ---------------------------------------------------------
+     One station per seat. What a seat aims with, what it fires and where its
+     camera sits are the same station, in the order you would use them. */
+
+  .crew { flex: none; min-width: 0; background: var(--mm-bg); border-top: 1px solid var(--mm-rule); }
+  .crew[hidden] { display: none; }
+  .crew-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 36px;
+    padding: 0 10px 0 16px;
+  }
+  .crew[data-collapsed="false"] .crew-head { border-bottom: 1px solid var(--mm-rule); }
+  .crew-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    color: var(--mm-ink);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .crew-title::before {
+    content: '';
+    width: 3px;
+    height: 12px;
+    border-radius: 1px;
+    background: var(--mm-accent);
+  }
+  .crew-count {
+    flex: none;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .crew-keys {
+    display: flex;
+    flex: 1;
+    justify-content: flex-end;
+    gap: 14px;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    letter-spacing: .06em;
+    white-space: nowrap;
+  }
+  .crew-keys span { display: inline-flex; align-items: center; gap: 5px; }
+  .crew-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: none;
+    min-height: 24px;
+    padding: 3px 10px;
+    background: transparent;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+    color: var(--mm-ink);
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    cursor: pointer;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .crew-btn[hidden] { display: none; }
+  .crew-btn:hover,
+  .crew-btn:focus-visible { border-color: var(--mm-ink); outline: none; }
+  .crew-btn[aria-pressed="true"] {
+    background: var(--mm-highlight);
+    border-color: var(--mm-highlight);
+    color: var(--mm-highlight-ink);
+  }
+  .crew-btn svg { width: 12px; height: 12px; flex: none; }
+  .crew-collapse { width: 26px; padding: 3px 0; color: var(--mm-ink-muted); }
+  .crew-collapse svg { transition: transform .15s ease; }
+  .crew[data-collapsed="true"] .crew-collapse svg { transform: rotate(180deg); }
+  .crew-row {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-rule-strong) transparent;
+  }
+  .crew[data-collapsed="true"] .crew-row { display: none; }
+
+  .station {
+    position: relative;
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px 14px;
+    border-right: 1px solid var(--mm-rule);
+  }
+  .station::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    background: transparent;
+    transition: background-color .15s ease;
+  }
+  .station[data-active="true"]::before { background: var(--mm-accent); }
+  .station-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .station-key { flex: none; font-variant-numeric: tabular-nums; }
+  .station[data-active="true"] .station-key {
+    background: var(--mm-accent);
+    border-color: var(--mm-accent);
+    color: var(--mm-highlight-ink);
+  }
+  .station-name {
+    flex: none;
+    color: var(--mm-ink);
+    font: 500 14px/1.2 var(--mm-font-display);
+    white-space: nowrap;
+  }
+  .station-role {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .12em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .station-view { width: 26px; padding: 3px 0; color: var(--mm-ink-muted); }
+  .station-view[aria-pressed="true"] { color: var(--mm-highlight-ink); }
+  .station-views { display: flex; flex-wrap: wrap; gap: 6px; }
+  .station-body { display: flex; align-items: flex-start; gap: 16px; }
+  .station-controls { display: flex; align-items: flex-start; gap: 14px; }
+  .station-controls:empty { display: none; }
+  .station-triggers { display: flex; flex-direction: column; gap: 6px; width: 236px; }
+  .station-triggers:empty { display: none; }
+
+  .instrument { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .instrument-row { display: flex; align-items: flex-start; gap: 10px; }
+  .instrument-label {
+    color: var(--mm-ink-muted);
+    font-size: 9px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  /* `pre`, because readouts are padded to a fixed character count (steady())
+     and a collapsed leading space would let the column breathe as values
+     change sign or gain a digit. */
+  .instrument-read {
+    color: var(--mm-ink-soft);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    white-space: pre;
+  }
+  .instrument:focus-within .instrument-read { color: var(--mm-ink); }
+  .dial,
+  .elev,
+  .pad { touch-action: none; outline: none; }
+  .dial:focus-visible,
+  .elev:focus-visible,
+  .pad:focus-visible { box-shadow: 0 0 0 1px var(--mm-ink-muted); }
+  .dial { width: 84px; height: 84px; border-radius: 50%; cursor: grab; }
+  .dial.dragging { cursor: grabbing; }
+  .dial svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .dial-face { fill: var(--mm-bg-soft); stroke: var(--mm-rule-strong); }
+  .dial-tick { stroke: var(--mm-rule-strong); stroke-width: 1; }
+  .dial-tick.is-major { stroke: var(--mm-ink-faint); }
+  .dial-arc { fill: none; stroke: var(--mm-accent); stroke-width: 3; stroke-linecap: butt; }
+  .dial-hull { fill: none; stroke: var(--mm-ink-faint); stroke-width: 1; }
+  .dial-needle { stroke: var(--mm-ink); stroke-width: 1.5; stroke-linecap: round; }
+  .dial-tip { fill: var(--mm-accent-soft); }
+  .dial-hub { fill: var(--mm-ink); }
+  .elev-wrap { position: relative; padding-right: 26px; }
+  .elev {
+    position: relative;
+    width: 22px;
+    height: 84px;
+    background: var(--mm-bg-soft);
+    border: 1px solid var(--mm-rule);
+    cursor: ns-resize;
+  }
+  .elev:hover, .elev.dragging { border-color: var(--mm-ink-muted); }
+  .elev-zero { position: absolute; left: -4px; right: -4px; height: 1px; background: var(--mm-rule-strong); }
+  .elev-fill { position: absolute; left: 0; right: 0; background: var(--mm-accent); opacity: .55; }
+  .elev-mark { position: absolute; left: -5px; right: -5px; height: 2px; margin-top: -1px; background: var(--mm-ink); }
+  .elev-lim {
+    position: absolute;
+    left: 28px;
+    color: var(--mm-ink-muted);
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .elev-lim.is-top { top: 0; }
+  .elev-lim.is-bottom { bottom: 0; }
+  .pad {
+    position: relative;
+    width: 84px;
+    height: 84px;
+    background:
+      linear-gradient(var(--mm-rule), var(--mm-rule)) 50% 0 / 1px 100% no-repeat,
+      linear-gradient(var(--mm-rule), var(--mm-rule)) 0 50% / 100% 1px no-repeat,
+      var(--mm-bg-soft);
+    border: 1px solid var(--mm-rule);
+    cursor: crosshair;
+  }
+  .pad:hover, .pad.dragging { border-color: var(--mm-ink-muted); }
+  .pad-knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    margin: -4.5px 0 0 -4.5px;
+    border-radius: 50%;
+    background: var(--mm-accent-soft);
+    pointer-events: none;
+    transition: left .14s ease, top .14s ease;
+  }
+  .pad.dragging .pad-knob { transition: none; }
+  .lever { display: flex; flex-direction: column; gap: 5px; width: 128px; }
+  .lever-head { display: flex; justify-content: space-between; gap: 8px; }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .seg button {
+    padding: 5px 10px;
+    background: transparent;
+    border: 0;
+    border-right: 1px solid var(--mm-rule-strong);
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { color: var(--mm-ink); }
+  .seg button:focus-visible { outline: 1px solid var(--mm-ink); outline-offset: -1px; }
+  .seg button[aria-pressed="true"] { background: var(--mm-ink); color: var(--mm-bg); }
+
+  /* Triggers borrow the busy-amber load band; held, they fill. */
+  .trigger {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 1px 10px;
+    width: 100%;
+    padding: 6px 10px 6px 0;
+    background: transparent;
+    border: 1px solid var(--mm-load-busy);
+    border-radius: 2px;
+    color: var(--mm-ink);
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+    transition: background-color .08s ease, color .08s ease;
+  }
+  .trigger:hover,
+  .trigger:focus-visible { background: rgba(197, 162, 58, .1); outline: none; }
+  .trigger-word {
+    grid-row: span 2;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border-right: 1px solid rgba(197, 162, 58, .35);
+    color: var(--mm-load-busy);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .14em;
+  }
+  .trigger-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .trigger-name span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .trigger-kind {
+    flex: none;
+    padding: 0 4px;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+    color: var(--mm-ink-muted);
+    font-size: 8.5px;
+    letter-spacing: .12em;
+    line-height: 1.5;
+    text-transform: uppercase;
+  }
+  .trigger-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .trigger-stats { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* Space and F fire the active station, so only its triggers show them. */
+  .station:not([data-active="true"]) .trigger kbd { display: none; }
+  .trigger[aria-pressed="true"] { background: var(--mm-load-busy); color: var(--mm-highlight-ink); }
+  .trigger[aria-pressed="true"] .trigger-word { color: var(--mm-highlight-ink); border-right-color: rgba(0, 0, 0, .3); }
+  .trigger[aria-pressed="true"] .trigger-meta,
+  .trigger[aria-pressed="true"] .trigger-kind,
+  .trigger[aria-pressed="true"] kbd { color: var(--mm-highlight-ink); border-color: rgba(0, 0, 0, .35); }
+
+  /* --- Head-on duel ---------------------------------------------------------
+     Solid page surface on a strong hairline, like the modal pattern. The
+     verdict is the olive anchor chip pointing at the winner. */
+
+  #versus {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    z-index: 3;
+    width: min(760px, calc(100% - 32px));
+    max-height: calc(100% - 48px);
+    overflow-y: auto;
+    transform: translateX(-50%);
+    background: var(--mm-bg);
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+  }
+  #versus[hidden] { display: none; }
+  .eyebrow {
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .rule { height: 1px; margin: 0; background: var(--mm-rule); border: 0; }
+  .vs-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px 10px;
+  }
+  .vs-top-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .vs-title { color: var(--mm-ink); font: 400 16px/1.3 var(--mm-font-display); }
+  .vs-close {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--mm-rule);
+    border-radius: 999px;
+    color: var(--mm-ink-muted);
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .vs-close svg { width: 10px; height: 10px; }
+  .vs-close:hover,
+  .vs-close:focus-visible { color: var(--mm-ink); border-color: var(--mm-ink); outline: none; }
+  .vs-combatants {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr);
+    align-items: center;
+  }
+  .vs-side { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 16px; }
+  .vs-us { border-right: 1px solid var(--mm-rule); }
+  .vs-them { flex-direction: row-reverse; border-left: 1px solid var(--mm-rule); text-align: right; }
+  .vs-thumb {
+    flex: 0 0 56px;
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    background: var(--mm-stage);
+  }
+  .vs-thumb[hidden] { display: none; }
+  .vs-id { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .vs-them .vs-id { align-items: flex-end; }
+  .vs-name {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--mm-ink);
+    font: 500 19px/1.1 var(--mm-font-display);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .vs-side-line {
+    max-width: 100%;
+    color: var(--side-tint, var(--mm-ink-muted));
+    font-size: 9.5px;
+    letter-spacing: .14em;
+    line-height: 1.45;
+    text-transform: uppercase;
+  }
+  .vs-side.side-none .vs-side-line { color: var(--mm-ink-muted); }
+  .vs-kit {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+    color: var(--mm-ink-soft);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .vs-kit select {
+    appearance: none;
+    -webkit-appearance: none;
+    min-width: 0;
+    max-width: 180px;
+    padding: 2px 16px 2px 4px;
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 3.5 5 7l3.5-3.5' fill='none' stroke='%238a8a8a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 3px center / 8px 8px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    color: var(--mm-ink-soft);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .vs-kit select:hover,
+  .vs-kit select:focus-visible { border-color: var(--mm-rule-strong); color: var(--mm-ink); outline: none; }
+  .vs-verdict { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0; }
+  .vs-verdict-label {
+    color: var(--mm-ink-faint);
+    font-size: 10px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  .vs-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    background: var(--mm-highlight);
+    border: 1px solid var(--mm-highlight);
+    border-radius: 2px;
+    color: var(--mm-highlight-ink);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .2em;
+    white-space: nowrap;
+    animation: vs-in 220ms ease;
+  }
+  .vs-chip svg { width: 11px; height: 11px; }
+  .vs-chip[data-winner="even"] { background: transparent; border-color: var(--mm-rule-strong); color: var(--mm-ink-soft); }
+  @keyframes vs-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .vs-chip { animation: none; } }
+  .vs-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 0 16px;
+    border-bottom: 1px solid var(--mm-rule);
+  }
+  .vs-stat { min-width: 0; padding: 14px 18px; border-right: 1px solid var(--mm-rule); }
+  .vs-stat:first-child { padding-left: 0; }
+  .vs-stat:last-child { padding-right: 0; border-right: 0; }
+  .vs-stat-label {
+    margin-bottom: 8px;
+    overflow: hidden;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .vs-stat-value {
+    color: var(--mm-ink);
+    font: 300 clamp(22px, 2.4vw, 30px)/1 var(--mm-font-display);
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .vs-stat-value small {
+    margin-left: 4px;
+    color: var(--mm-ink-muted);
+    font: 11px var(--mm-font-mono);
+    text-transform: uppercase;
+    vertical-align: 6px;
+  }
+  .vs-stat-value.is-good { color: var(--mm-kd-good); }
+  .vs-stat-value.is-muted { color: var(--mm-ink-muted); font-size: 16px; font-family: var(--mm-font-mono); }
+  .vs-meter-wrap { padding: 14px 16px; }
+  .vs-meter-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 7px;
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+  }
+  .vs-meter-head .is-mid { color: var(--mm-ink-faint); }
+  .vs-meter-head .is-win { color: var(--mm-success); }
+  .vs-meter { position: relative; display: flex; height: 8px; background: var(--mm-bg-mute); }
+  .vs-meter span { display: block; height: 100%; }
+  .vs-meter .is-us { width: var(--us, 50%); background: var(--us-fill, var(--mm-ink-faint)); }
+  .vs-meter .is-them { flex: 1; background: var(--them-fill, var(--mm-ink-faint)); }
+  .vs-meter i {
+    position: absolute;
+    top: -3px;
+    left: var(--us, 50%);
+    width: 2px;
+    height: 14px;
+    margin-left: -1px;
+    background: var(--mm-ink);
+  }
+  .vs-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 16px;
+    background: var(--mm-highlight);
+    color: var(--mm-highlight-ink);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .vs-bar span:last-child { opacity: .7; letter-spacing: .1em; }
+  .vs-lanes { padding: 0 16px 6px; }
+  .vs-lane,
+  .vs-lane-head {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 150px;
+    align-items: center;
+    gap: 0 14px;
+  }
+  .vs-lane-head {
+    padding: 8px 0 6px;
+    border-bottom: 1px solid var(--mm-rule);
+    color: var(--mm-ink-faint);
+    font-size: 9px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .vs-lane-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vs-lane { padding: 9px 0; border-bottom: 1px solid var(--mm-rule); font-size: 11px; }
+  .vs-lane:last-child { border-bottom: 0; }
+  .vs-face {
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .vs-shots { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .vs-shots b {
+    flex: none;
+    width: 38px;
+    color: var(--mm-ink);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .vs-shots.is-muted b {
+    color: var(--mm-ink-muted);
+    font-size: 9px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .vs-shots i { position: relative; flex: 1; height: 4px; background: var(--mm-bg-mute); }
+  .vs-shots i::after {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--w, 0%);
+    background: var(--fill, var(--mm-ink-faint));
+  }
+  .vs-shots.is-elite b { color: var(--mm-kd-elite); }
+  .vs-edge {
+    overflow: hidden;
+    color: var(--mm-ink-muted);
+    font-size: 9.5px;
+    letter-spacing: .06em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .vs-edge.is-elite { color: var(--mm-kd-elite); }
+  .vs-foot { padding: 0 16px 14px; color: var(--mm-ink-muted); font-size: 10px; line-height: 1.5; }
+
+  /* Thumbnail shots: nothing over or around the canvas, and no half-faded
+     loading state. The nav row goes too, and shoot.mjs gets its square canvas
+     back: at the 820x500 shooting viewport the column leaves exactly 500x500,
+     and the browse view's scale lineup reads size off a common aspect. */
+  body.is-portrait { grid-template-rows: 0 minmax(0, 1fr); }
+  body.is-portrait .shell-nav,
+  body.is-portrait #hints,
+  body.is-portrait #crew,
+  body.is-portrait #crumb,
   body.is-portrait #banner,
   body.is-portrait #versus { display: none; }
   body.is-portrait canvas { opacity: 1; transition: none; }
-  /* The nav row goes too, and shoot.mjs gets its square canvas back: at the
-     820x500 shooting viewport the sidebar leaves exactly 500x500, and the
-     browse view's scale lineup reads size off a common aspect. Leaving the bar
-     in would silently reshape every regenerated thumbnail to 500x462. */
-  body.is-portrait { grid-template-rows: 0 1fr; }
-  body.is-portrait .shell-nav { display: none; }
   /* Hiding the bar takes it out of the grid, so auto-placement would pull the
-     panel and viewport up into the collapsed first row. Pin them to the second
+     column and stage up into the collapsed first row. Pin them to the second
      row, which is where they sit in both modes anyway. */
   body.is-portrait > aside,
-  body.is-portrait > main { grid-row: 2; }
+  body.is-portrait > .stage { grid-row: 2; }
 
   /* --- Armoury browser ----------------------------------------------------
      The sidebar list does not survive a few hundred models, so picking one is
      its own surface: facets on the left, a layout switch across the top, and
      three ways of looking at the same filtered set. */
-
-  .side-allied { --side-tint: #7fa3c9; }
-  .side-axis { --side-tint: #c07c5a; }
-  .side-mixed { --side-tint: #9c8fb5; }
-  .side-none { --side-tint: var(--line); }
-
-  #current {
-    display: grid;
-    gap: 8px;
-    margin-bottom: 14px;
-  }
-  #current-card {
-    display: grid;
-    grid-template-columns: 64px 1fr;
-    gap: 10px;
-    align-items: center;
-    padding: 8px;
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--side-tint, var(--line));
-    border-radius: 3px;
-    background: #15170f;
-  }
-  #current-thumb {
-    width: 64px; height: 64px;
-    object-fit: contain;
-    background: #101208;
-    border-radius: 2px;
-  }
-  #current-thumb[hidden] { display: none; }
-  #current-name { font-size: 14px; color: var(--text); }
-  #current-meta { font-size: 10px; color: var(--muted); line-height: 1.5; }
-  button.browse {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    width: 100%;
-    padding: 9px 10px;
-    background: rgba(154, 171, 90, .1);
-    color: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 3px;
-    font: inherit;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  button.browse:hover { background: rgba(154, 171, 90, .2); }
-  button.browse kbd {
-    font: inherit;
-    font-size: 10px;
-    color: var(--muted);
-    border: 1px solid var(--line);
-    border-radius: 2px;
-    padding: 0 4px;
-    text-transform: none;
-  }
 
   #browser {
     position: fixed;
@@ -670,134 +1177,183 @@
     inset: var(--nav-h) 0 0 0;
     z-index: 40;
     display: grid;
-    grid-template-columns: 232px 1fr;
-    grid-template-rows: auto 1fr;
-    background: rgba(10, 11, 7, .97);
-    backdrop-filter: blur(3px);
+    grid-template-columns: 232px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    background: var(--mm-bg);
   }
   #browser[hidden] { display: none; }
   .browser-head {
     grid-column: 1 / -1;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 14px;
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--line);
+    gap: 12px 14px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--mm-rule);
   }
   .browser-head h2 {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     margin: 0;
-    border: 0;
-    padding: 0;
-    color: var(--accent);
-    font-size: 12px;
-    letter-spacing: .14em;
+    color: var(--mm-ink);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
     white-space: nowrap;
   }
+  .browser-head h2::before {
+    content: '';
+    width: 3px;
+    height: 12px;
+    border-radius: 1px;
+    background: var(--mm-accent);
+  }
+  .browser-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 260px;
+    max-width: 420px;
+    padding: 7px 12px;
+    border: 1px solid var(--mm-rule);
+    border-radius: 999px;
+    color: var(--mm-ink-muted);
+    transition: border-color .15s ease;
+  }
+  .browser-search:focus-within { border-color: var(--mm-ink); }
+  .browser-search svg { flex: none; width: 12px; height: 12px; }
   #browser-search {
     flex: 1;
     min-width: 0;
-    max-width: 420px;
-    padding: 8px 10px;
-    background: #15170f;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    color: var(--text);
-    font: inherit;
-  }
-  #browser-search:focus-visible { border-color: var(--accent); outline: none; }
-  #browser-count { color: var(--muted); font-size: 11px; white-space: nowrap; }
-  .browser-head .spacer { flex: 1; }
-  .layout-switch { display: flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
-  .layout-switch button {
-    padding: 7px 12px;
     background: transparent;
     border: 0;
-    border-left: 1px solid var(--line);
-    color: var(--muted);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
+    outline: 0;
+    color: var(--mm-ink);
+    font: 12.5px var(--mm-font-display);
   }
-  .layout-switch button:first-child { border-left: 0; }
-  .layout-switch button[aria-pressed="true"] { background: var(--accent); color: #14150f; }
-  .browser-head select {
-    padding: 7px 8px;
-    background: #15170f;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    color: var(--text);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
+  #browser-search::placeholder { color: var(--mm-ink-muted); }
+  #browser-count {
+    color: var(--mm-ink-muted);
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
-  button.browser-close {
-    padding: 7px 12px;
+  .browser-head .spacer { flex: 1; }
+  .browser-head select.select { width: auto; }
+  .layout-switch {
+    display: inline-flex;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .layout-switch button {
+    padding: 6px 12px;
     background: transparent;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    color: var(--muted);
-    font: inherit;
-    font-size: 11px;
+    border: 0;
+    border-right: 1px solid var(--mm-rule-strong);
+    color: var(--mm-ink-muted);
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
     cursor: pointer;
   }
-  button.browser-close:hover { border-color: var(--bad); color: var(--bad); }
+  .layout-switch button:last-child { border-right: 0; }
+  .layout-switch button:hover { color: var(--mm-ink); }
+  .layout-switch button:focus-visible { outline: 1px solid var(--mm-ink); outline-offset: -1px; }
+  .layout-switch button[aria-pressed="true"] { background: var(--mm-ink); color: var(--mm-bg); }
+  button.browser-close {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+    color: var(--mm-ink);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+  }
+  button.browser-close:hover,
+  button.browser-close:focus-visible {
+    background: var(--mm-accent);
+    border-color: var(--mm-accent);
+    color: var(--mm-highlight-ink);
+    outline: none;
+  }
+  button.browser-close:hover kbd,
+  button.browser-close:focus-visible kbd { border-color: rgba(0, 0, 0, .4); color: var(--mm-highlight-ink); }
 
   #facets {
     overflow-y: auto;
     padding: 14px 14px 40px;
-    border-right: 1px solid var(--line);
+    border-right: 1px solid var(--mm-rule);
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-rule-strong) transparent;
   }
   .facet { margin-bottom: 16px; }
   .facet > h3 {
     margin: 0 0 6px;
+    color: var(--mm-ink-muted);
     font-size: 10px;
-    letter-spacing: .12em;
+    font-weight: 400;
+    letter-spacing: .14em;
     text-transform: uppercase;
-    color: var(--muted);
   }
   .facet label {
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 2px 0;
+    gap: 8px;
+    padding: 3px 0;
+    color: var(--mm-ink-soft);
     font-size: 11px;
     cursor: pointer;
   }
   .facet label.is-empty { opacity: .32; }
-  .facet label input { accent-color: var(--accent); margin: 0; }
   .facet label .facet-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .facet label .facet-count { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-  .facet label input:checked + .facet-name { color: var(--accent); }
+  .facet label .facet-count { color: var(--mm-ink-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .facet label input:checked + .facet-name { color: var(--mm-ink); }
   .facet-more {
     margin-top: 2px;
     padding: 0;
     background: none;
     border: 0;
-    color: var(--accent);
-    font: inherit;
+    color: var(--mm-accent-soft);
     font-size: 10px;
     cursor: pointer;
-    opacity: .8;
   }
+  .facet-more:hover { color: var(--mm-ink); }
   #facet-reset {
     width: 100%;
-    padding: 6px;
     margin-bottom: 14px;
+    padding: 6px;
     background: transparent;
-    border: 1px dashed var(--line);
-    border-radius: 3px;
-    color: var(--muted);
-    font: inherit;
+    border: 1px dashed var(--mm-rule-strong);
+    border-radius: 2px;
+    color: var(--mm-ink-muted);
     font-size: 10px;
-    letter-spacing: .08em;
+    letter-spacing: .1em;
     text-transform: uppercase;
     cursor: pointer;
   }
-  #facet-reset:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
-  #facet-reset:disabled { opacity: .35; cursor: default; }
+  #facet-reset:hover:not(:disabled) { border-color: var(--mm-kill); color: var(--mm-kill); }
+  #facet-reset:disabled { opacity: .4; cursor: default; }
 
-  #browser-body { overflow-y: auto; padding: 16px 18px 48px; }
-  .browser-empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  #browser-body { overflow-y: auto; padding: 16px 16px 48px; }
+  .browser-empty {
+    padding: 48px 16px;
+    color: var(--mm-ink-muted);
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-align: center;
+    text-transform: uppercase;
+  }
 
   /* Grid ---------------------------------------------------------------- */
   .card-grid {
@@ -816,109 +1372,110 @@
     gap: 0;
     padding: 0;
     overflow: hidden;
+    background: var(--mm-bg);
+    border: 1px solid var(--mm-rule);
+    border-top: 2px solid var(--side-tint, var(--mm-rule));
+    border-radius: 2px;
+    color: var(--mm-ink);
     text-align: left;
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--line);
-    border-top: 2px solid var(--side-tint, var(--line));
-    border-radius: 3px;
-    font: inherit;
     cursor: pointer;
+    transition: border-color .15s ease;
   }
-  button.card:hover, button.card:focus-visible {
-    border-color: var(--accent);
-    border-top-color: var(--side-tint, var(--accent));
+  button.card:hover,
+  button.card:focus-visible {
+    border-color: var(--mm-ink-muted);
+    border-top-color: var(--side-tint, var(--mm-ink-muted));
     outline: none;
-    transform: translateY(-1px);
   }
-  button.card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--accent); }
+  button.card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--mm-accent); }
   .card-art {
     position: relative;
     /* Square, to match the thumbnails — a 4:3 well would letterbox them. */
-    aspect-ratio: 1;
-    background:
-      radial-gradient(ellipse at 50% 92%, rgba(154,171,90,.1), transparent 62%),
-      #101208;
     display: grid;
     place-items: center;
+    aspect-ratio: 1;
+    background: var(--mm-stage);
   }
-  .card-art img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .card-art img { display: block; width: 100%; height: 100%; object-fit: contain; }
   .card-art .no-art {
+    color: var(--mm-ink-faint);
     font-size: 9px;
-    letter-spacing: .1em;
+    letter-spacing: .12em;
     text-transform: uppercase;
-    color: var(--muted);
-    opacity: .5;
   }
   /* Stacked, not wrapped: two badges side by side overflow a narrow card and
      break mid-word. */
   .card-flags {
     position: absolute;
-    top: 5px; right: 5px;
+    top: 5px;
+    right: 5px;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: 3px;
   }
   .card-flag {
-    white-space: nowrap;
-    padding: 1px 4px;
+    padding: 1px 5px;
+    background: rgba(19, 19, 19, .88);
+    border: 1px solid var(--mm-rule-strong);
     border-radius: 2px;
+    color: var(--mm-ink-soft);
     font-size: 9px;
-    letter-spacing: .05em;
-    background: rgba(20,21,15,.85);
-    border: 1px solid var(--line);
-    color: var(--muted);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
-  .card-flag.is-warn { border-color: var(--warn); color: var(--warn); }
-  .card-body { padding: 7px 8px 8px; display: grid; gap: 3px; min-width: 0; }
+  .card-flag.is-warn { border-color: var(--mm-load-busy); color: var(--mm-load-busy); }
+  .card-body { display: grid; gap: 3px; min-width: 0; padding: 8px 9px 9px; }
   .card-name {
+    overflow: hidden;
     font-size: 12px;
     line-height: 1.3;
-    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .card-sub {
-    font-size: 10px;
-    color: var(--muted);
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
     align-items: baseline;
+    gap: 6px;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
   }
   .card-sub span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card-sub .is-side { color: var(--side-tint, var(--muted)); }
+  .card-sub .is-side { color: var(--side-tint, var(--mm-ink-muted)); }
+  .side-none .card-sub .is-side { color: var(--mm-ink-muted); }
 
   /* Scale lineup -------------------------------------------------------- */
-  .scale-note { color: var(--muted); font-size: 10px; margin-bottom: 12px; line-height: 1.6; }
+  .scale-note { margin-bottom: 12px; color: var(--mm-ink-muted); font-size: 10px; line-height: 1.6; }
   .scale-rule {
     position: relative;
     height: 18px;
     margin-bottom: 6px;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--mm-rule-strong);
   }
   .scale-rule span {
     position: absolute;
     bottom: 0;
     padding-left: 4px;
-    border-left: 1px solid var(--line);
+    border-left: 1px solid var(--mm-rule-strong);
+    color: var(--mm-ink-muted);
     font-size: 9px;
-    color: var(--muted);
     line-height: 18px;
     white-space: nowrap;
   }
   .scale-row {
     display: grid;
     grid-template-columns: 132px minmax(0, 1fr);
-    gap: 12px;
     align-items: end;
+    gap: 12px;
     padding: 6px 0;
-    border-bottom: 1px solid rgba(46,49,37,.5);
+    border-bottom: 1px solid var(--mm-rule);
   }
-  .scale-label { padding-bottom: 4px; }
+  .scale-label { padding-bottom: 4px; border-left: 2px solid var(--side-tint, var(--mm-rule)); padding-left: 8px; }
   .scale-label .scale-name { font-size: 11px; }
-  .scale-label .scale-dim { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .scale-label .scale-dim { color: var(--mm-ink-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
   /* Square, because the thumbnails are square: any other aspect would letterbox
      inside object-fit and silently shrink the model off the shared scale. */
   /* The square frame is what carries the scale, but a model only fills a band
@@ -927,76 +1484,109 @@
      space above and below. */
   button.scale-figure {
     display: block;
+    justify-self: start;
     padding: 0;
+    overflow: hidden;
     background: none;
     border: 0;
-    overflow: hidden;
-    cursor: pointer;
     line-height: 0;
-    justify-self: start;
+    cursor: pointer;
   }
   button.scale-figure img { display: block; object-fit: contain; }
-  button.scale-figure:hover { outline: 1px solid var(--accent); }
-  button.scale-figure.is-clamped { outline: 1px dotted var(--warn); }
+  button.scale-figure:hover,
+  button.scale-figure:focus-visible { outline: 1px solid var(--mm-ink-muted); }
+  button.scale-figure.is-clamped { outline: 1px dotted var(--mm-load-busy); }
   button.scale-figure .scale-box {
-    width: 100%; height: 100%;
-    background: linear-gradient(180deg, transparent, rgba(154,171,90,.2));
-    border: 1px solid var(--side-tint, var(--line));
+    width: 100%;
+    height: 100%;
+    background: var(--mm-bg-soft);
+    border: 1px solid var(--side-tint, var(--mm-rule));
   }
   .scale-lane { min-width: 0; }
 
   /* Scatter ------------------------------------------------------------- */
-  .plot-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-  .plot-controls label { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-  .plot-controls select {
-    padding: 5px 8px;
-    background: #15170f;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    color: var(--text);
-    font: inherit;
-    font-size: 11px;
-    text-transform: none;
-    letter-spacing: 0;
-    cursor: pointer;
+  .plot-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .plot-controls label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--mm-ink-muted);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
   }
+  .plot-controls select.select { width: auto; letter-spacing: 0; text-transform: none; }
   .plot-wrap { position: relative; }
-  .plot-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
-  .plot-wrap .axis-line { stroke: var(--line); }
-  .plot-wrap .tick-line { stroke: rgba(46,49,37,.65); }
-  .plot-wrap text { fill: var(--muted); font: 10px ui-monospace, monospace; }
-  .plot-wrap .axis-title { fill: var(--accent); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
-  .plot-dot { cursor: pointer; }
-  .plot-dot circle { fill: var(--side-tint, var(--muted)); fill-opacity: .55; stroke: var(--side-tint, var(--muted)); }
-  .plot-dot:hover circle, .plot-dot:focus-visible circle { fill-opacity: .95; stroke: var(--text); }
-  .plot-dot text { fill: var(--text); font-size: 9px; pointer-events: none; }
-  .plot-dot:hover text { fill: var(--accent); }
+  .plot-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .plot-wrap .axis-line { stroke: var(--mm-rule-strong); }
+  .plot-wrap .tick-line { stroke: var(--mm-bg-mute); }
+  .plot-wrap text { fill: var(--mm-ink-muted); font: 10px var(--mm-font-mono); }
+  .plot-wrap .axis-title { fill: var(--mm-accent-soft); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+  .plot-dot { cursor: pointer; outline: none; }
+  .plot-dot circle {
+    fill: var(--side-tint, var(--mm-ink-muted));
+    fill-opacity: .45;
+    stroke: var(--side-tint, var(--mm-ink-muted));
+  }
+  .plot-dot.side-none circle { fill: var(--mm-ink-muted); stroke: var(--mm-ink-muted); }
+  .plot-dot:hover circle,
+  .plot-dot:focus-visible circle { fill-opacity: .9; stroke: var(--mm-ink); }
+  .plot-dot text { fill: var(--mm-ink-soft); font-size: 9px; pointer-events: none; }
+  .plot-dot:hover text { fill: var(--mm-ink); }
   /* Labels that would have landed on a neighbour: still there, revealed on
      hover, so a dense cluster stays legible one dot at a time. */
   .plot-dot text.is-crowded { opacity: 0; }
   .plot-dot:hover text.is-crowded,
   .plot-dot:focus-visible text.is-crowded { opacity: 1; }
-  .plot-unplotted { margin-top: 10px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+  .plot-unplotted { margin-top: 10px; color: var(--mm-ink-muted); font-size: 10px; line-height: 1.6; }
+
+  /* Narrow screens: the column stacks over the stage instead of squeezing it
+     to nothing. Desktop is where this tool earns its keep; this keeps a phone
+     from getting a 0px viewport. */
+  @media (max-width: 720px) {
+    body {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: var(--nav-h) minmax(0, 46vh) minmax(0, 1fr);
+    }
+    aside { grid-row: 3; border-right: 0; border-top: 1px solid var(--mm-rule); }
+    .stage { grid-row: 2; }
+    #crumb { max-width: calc(100% - 28px); }
+    .crew-keys, #hints { display: none; }
+    #browser { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+    #facets { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--mm-rule); }
+    .vs-combatants { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+    .vs-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .vs-lane, .vs-lane-head { grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr); }
+    .vs-edge, .vs-lane-head span:last-child { display: none; }
+  }
 </style>
 </head>
 <body>
 <nav class="shell-nav">
-  <span class="shell-brand"><b>BF1942</b> mesh</span>
-  <span class="shell-tabs">
-    <a href="./index.html" aria-current="page">Models</a>
-    <a href="./map.html">Maps</a>
-    <a href="./poses.html">Poses</a>
-  </span>
-  <span class="shell-sub">vehicles and weapons &middot; armour, damage and duels</span>
+  <div class="shell-bar">
+    <span class="shell-brand"><img class="shell-brand-sigil" src="./bfstats-logo.webp" alt="bfstats.io" width="26" height="26"><b>mesh</b></span>
+    <span class="shell-tabs">
+      <a href="./index.html" aria-current="page">Models</a>
+      <a href="./map.html">Maps</a>
+      <a href="./poses.html">Poses</a>
+    </span>
+    <span class="shell-sub">vehicles and weapons &middot; armour, damage and duels</span>
+    <span class="shell-spacer"></span>
+    <button type="button" class="shell-search" id="shell-search" aria-haspopup="dialog">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>Search name, faction, map&hellip;</span><kbd>/</kbd>
+    </button>
+  </div>
 </nav>
 <aside>
-  <h1>Model inspector</h1>
+  <h1 class="inspector-title">Model inspector</h1>
   <div id="current">
     <div id="current-card" class="side-none">
       <img id="current-thumb" alt="" hidden>
-      <div>
+      <div class="current-text">
         <div id="current-name">&mdash;</div>
         <div id="current-meta"></div>
+        <div id="current-side"></div>
       </div>
     </div>
     <button type="button" class="browse" id="browse-open">
@@ -1004,90 +1594,108 @@
     </button>
   </div>
 
-  <section id="variant-panel" hidden>
-    <h2>Variant</h2>
-    <div class="variant-grid">
-      <label class="variant-field"><span>Build</span><select id="configuration"></select></label>
-      <label class="variant-field"><span>Skin</span><select id="skin"></select></label>
+  <section class="panel" id="variant-panel" hidden>
+    <h2 class="panel-title">Variant</h2>
+    <label class="field"><span>Build</span><select id="configuration" class="select"></select></label>
+    <label class="field"><span>Skin</span><select id="skin" class="select"></select></label>
+    <div id="variant-summary" class="callout"></div>
+  </section>
+
+  <section class="panel" id="display-panel">
+    <h2 class="panel-title">Display</h2>
+    <label class="toggle"><input type="checkbox" id="spin"><span>auto-rotate</span></label>
+    <label class="toggle"><input type="checkbox" id="axes" checked><span>axes + ground grid</span></label>
+    <details class="disclosure">
+      <summary>Technical display options</summary>
+      <div class="disclosure-body">
+        <label class="toggle"><input type="checkbox" id="wireframe"><span>wireframe</span></label>
+        <label class="toggle"><input type="checkbox" id="untextured"><span>flat grey</span></label>
+        <label class="toggle"><input type="checkbox" id="doubleside"><span>force double-sided</span></label>
+        <label class="toggle"><input type="checkbox" id="explode"><span>explode parts</span></label>
+        <div class="range-row" id="explode-row" hidden>
+          <input type="range" class="range" id="explode-amount" min="0" max="1" step="0.01" value="0.5" aria-label="Explode distance">
+          <output id="explode-output" title="Furthest any part has moved from its assembled position">0.00 m</output>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section class="panel" id="armour-panel">
+    <h2 class="panel-title">Armour</h2>
+    <label class="toggle"><input type="checkbox" id="collision"><span>show armour regions</span></label>
+    <label class="field"><span>Weapon</span><select id="weapon" class="select"></select></label>
+    <div id="weapon-summary" class="weapon-summary"></div>
+    <div id="collision-legend" hidden>
+      <div class="ramp" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="ramp-labels"><span>Vulnerable</span><span>Protected</span></div>
+      <div id="legend-materials"></div>
+      <div class="legend-hint" id="legend-hint">Select a material to isolate it; select it again to show all.</div>
     </div>
-    <div id="variant-summary"></div>
+    <p class="note" id="collision-note">
+      Colours show inferred relative protection. Pick a weapon to colour by its
+      actual damage table. Click a region, then drag the shot arrow or use the angle control.
+    </p>
+    <div id="hit-details" aria-live="polite">
+      <div class="empty">No collision face selected.</div>
+    </div>
   </section>
 
-  <h2>Display</h2>
-  <label class="toggle"><input type="checkbox" id="spin"> auto-rotate</label>
-  <details class="panel-details">
-    <summary>Technical display options</summary>
-    <label class="toggle"><input type="checkbox" id="wireframe"> wireframe</label>
-    <label class="toggle"><input type="checkbox" id="untextured"> flat grey (ignore textures)</label>
-    <label class="toggle"><input type="checkbox" id="explode"> explode parts</label>
-    <label class="toggle"><input type="checkbox" id="axes" checked> axes + ground grid</label>
-    <label class="toggle"><input type="checkbox" id="doubleside"> force double-sided</label>
-  </details>
-
-  <section id="views-section" hidden>
-    <h2>Views</h2>
-    <div id="views" class="view-buttons"></div>
-    <div class="collision-note">Seat cameras recovered from the vehicle's Camera templates. Orbit returns to the browse framing.</div>
+  <section class="panel" id="compare-panel">
+    <h2 class="panel-title">Compare</h2>
+    <label class="field"><span>Opponent</span><select id="opponent" class="select"></select></label>
+    <p class="note">Parks a second vehicle and answers who wins a head-on fight. Armour inspection stays on Weapon.</p>
+    <div id="compare-verdict" hidden>
+      <div class="callout callout--win" id="compare-verdict-box">
+        <div class="callout-label">Verdict</div>
+        <div id="compare-verdict-text"></div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="duel-hud" checked><span>show duel HUD</span></label>
+    </div>
   </section>
 
-  <section id="anim-section" hidden>
-    <h2>Engine</h2>
-    <label class="toggle"><input type="checkbox" id="engine-run"> run engine (spin propellers / rotors)</label>
-    <div class="collision-note" id="anim-parts"></div>
+  <section class="panel" id="model-panel">
+    <h2 class="panel-title">Model</h2>
+    <details class="disclosure">
+      <summary>Model details</summary>
+      <div class="model-details">
+        <div id="stats"></div>
+        <div class="detail-label">Missing textures</div>
+        <ul class="missing" id="missing"></ul>
+        <div class="detail-label">Part tree</div>
+        <div id="tree"></div>
+      </div>
+    </details>
   </section>
-
-  <section id="fire-section" hidden>
-    <h2>Guns</h2>
-    <div id="fire-controls"></div>
-    <div class="collision-note">Hold to fire. Muzzle positions, convergence, rate of fire, tracer interval and recoil come from each FireArms template.</div>
-  </section>
-
-  <h2>Compare</h2>
-  <label class="variant-field weapon-field"><span>Opponent</span><select id="opponent"></select></label>
-  <div class="collision-note">Parks a second vehicle and answers who wins a head-on fight. Armour inspection stays on Weapon.</div>
-
-  <h2>Armour</h2>
-  <label class="toggle"><input type="checkbox" id="collision"> show armour regions</label>
-  <label class="variant-field weapon-field"><span>Weapon</span><select id="weapon"></select></label>
-  <div id="weapon-summary" class="weapon-summary"></div>
-  <div id="collision-legend" hidden>
-    <div class="legend-labels"><span>more vulnerable</span><span>more protected</span></div>
-    <div class="legend-scale"><span></span><span></span><span></span><span></span><span></span></div>
-    <div id="legend-materials"></div>
-    <div class="legend-hint" id="legend-hint">Select a material to isolate it; select it again to show all.</div>
-  </div>
-  <div class="collision-note" id="collision-note">
-    Colours show inferred relative protection. Pick a weapon to colour by its
-    actual damage table. Click a region, then drag the shot arrow or use the angle control.
-  </div>
-  <div id="hit-details" aria-live="polite">
-    <div class="empty">No collision face selected.</div>
-  </div>
-
-  <h2>Rig</h2>
-  <div id="rig"></div>
-
-  <h2>Model</h2>
-  <details class="panel-details">
-    <summary>Model details</summary>
-    <div id="stats"></div>
-    <div class="detail-label">Missing textures</div>
-    <ul class="missing" id="missing"></ul>
-    <div class="detail-label">Part tree</div>
-    <div id="tree"></div>
-  </details>
 </aside>
-<main>
-  <div id="banner" hidden></div>
-  <div id="versus" hidden></div>
-  <div id="hud">drag to orbit &middot; scroll to zoom &middot; right-drag to pan</div>
-</main>
+<div class="stage">
+  <main>
+    <div id="crumb" hidden></div>
+    <div id="banner" hidden></div>
+    <div id="versus" hidden></div>
+  </main>
+  <div id="hints" aria-hidden="true"></div>
+  <section id="crew" class="crew" data-collapsed="false" hidden aria-label="Crew stations">
+    <div class="crew-head">
+      <span class="crew-title">Crew stations</span>
+      <span class="crew-count" id="crew-count"></span>
+      <span class="crew-keys" id="crew-keys"></span>
+      <button type="button" class="crew-btn" id="view-orbit" aria-pressed="true" hidden>Orbit</button>
+      <button type="button" class="crew-btn crew-collapse" id="crew-collapse" aria-expanded="true" aria-controls="crew-row" aria-label="Collapse crew stations">
+        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 3.5 5 7l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="crew-row" id="crew-row"></div>
+  </section>
+</div>
 
 <div id="browser" hidden role="dialog" aria-modal="true" aria-label="Browse models">
   <div class="browser-head">
-    <h2>ARMOURY</h2>
-    <input id="browser-search" type="search" placeholder="Search name, faction, map&hellip;"
-           autocomplete="off" spellcheck="false">
+    <h2>Armoury</h2>
+    <label class="browser-search">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input id="browser-search" type="search" placeholder="Search name, faction, map&hellip;"
+             autocomplete="off" spellcheck="false" aria-label="Search models">
+    </label>
     <span id="browser-count"></span>
     <span class="spacer"></span>
     <div class="layout-switch" id="layout-switch" role="group" aria-label="Layout">
@@ -1095,18 +1703,16 @@
       <button type="button" data-layout="scale" aria-pressed="false">Scale</button>
       <button type="button" data-layout="plot" aria-pressed="false">Plot</button>
     </div>
-    <label>
-      <select id="browser-sort" aria-label="Sort">
-        <option value="name">Name</option>
-        <option value="triangles">Triangles</option>
-        <option value="parts">Parts</option>
-        <option value="length">Size</option>
-        <option value="hitpoints">Hit points</option>
-        <option value="levels">Map appearances</option>
-        <option value="variants">Variants</option>
-        <option value="missing">Unresolved textures</option>
-      </select>
-    </label>
+    <select id="browser-sort" class="select" aria-label="Sort">
+      <option value="name">Name</option>
+      <option value="triangles">Triangles</option>
+      <option value="parts">Parts</option>
+      <option value="length">Size</option>
+      <option value="hitpoints">Hit points</option>
+      <option value="levels">Map appearances</option>
+      <option value="variants">Variants</option>
+      <option value="missing">Unresolved textures</option>
+    </select>
     <button type="button" class="browser-close" id="browse-close">Close <kbd>Esc</kbd></button>
   </div>
   <div id="facets"></div>
@@ -1139,7 +1745,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 main.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x14150f);
+scene.background = new THREE.Color(0x0c0c0c);   // --mm-stage in tokens.css
 
 const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 2000);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -1153,7 +1759,7 @@ const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(4, 7, 5)
 const fill = new THREE.DirectionalLight(0xffffff, 0.7); fill.position.set(-5, 2, -4); scene.add(fill);
 
 const helpers = new THREE.Group();
-const grid = new THREE.GridHelper(20, 20, 0x3c4030, 0x24261c);
+const grid = new THREE.GridHelper(20, 20, 0x3a3a3a, 0x1f1f1f);
 helpers.add(grid, new THREE.AxesHelper(2));
 scene.add(helpers);
 
@@ -1166,6 +1772,7 @@ const state = {
   wireframe: false,
   untextured: false,
   explode: false,
+  explodeAmount: 0.5,
   doubleside: false,
   collision: false,
   collisionMaterial: null,
@@ -1181,41 +1788,43 @@ let angleDragStart = null;
 // comes back as a plain object and the renderer chokes on its missing matrix.
 // Keep the bookkeeping outside the material.
 const originalMap = new WeakMap();
+// Critical to protected, in Neutral Depth's numeric tints: kill, busy, khaki,
+// olive, poor grey. The .ramp swatches in the Armour panel mirror these.
 const vulnerabilityStops = [
-  new THREE.Color(0xc24d43),
-  new THREE.Color(0xd47a38),
-  new THREE.Color(0xd1ad3e),
-  new THREE.Color(0x7d9f50),
-  new THREE.Color(0x3d7894),
+  new THREE.Color(0xd65a5a),
+  new THREE.Color(0xc5a23a),
+  new THREE.Color(0x8a8a6a),
+  new THREE.Color(0x7d8849),
+  new THREE.Color(0x6a6a6a),
 ];
 const collisionStyles = new Map();
 const hitMarker = new THREE.Mesh(
   new THREE.SphereGeometry(1, 16, 12),
-  new THREE.MeshBasicMaterial({ color: 0xf4efe1, depthTest: false }),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false }),
 );
 const hitNormal = new THREE.ArrowHelper(
   new THREE.Vector3(0, 1, 0),
   new THREE.Vector3(),
   1,
-  0xf4efe1,
+  0xffffff,
 );
 const shotArrow = new THREE.ArrowHelper(
   new THREE.Vector3(0, -1, 0),
   new THREE.Vector3(),
   1,
-  0xf0a12b,
+  0xc5a23a,
 );
 const shotShaft = new THREE.Mesh(
   new THREE.CylinderGeometry(1, 1, 1, 8),
-  new THREE.MeshBasicMaterial({ color: 0xf0a12b, depthTest: false }),
+  new THREE.MeshBasicMaterial({ color: 0xc5a23a, depthTest: false }),
 );
 const angleHandle = new THREE.Mesh(
   new THREE.SphereGeometry(1, 16, 12),
-  new THREE.MeshBasicMaterial({ color: 0xf0a12b, depthTest: false }),
+  new THREE.MeshBasicMaterial({ color: 0xc5a23a, depthTest: false }),
 );
 const angleArc = new THREE.Line(
   new THREE.BufferGeometry(),
-  new THREE.LineBasicMaterial({ color: 0xd1ad3e, depthTest: false }),
+  new THREE.LineBasicMaterial({ color: 0xc5a23a, depthTest: false }),
 );
 hitMarker.renderOrder = 100;
 for (const arrow of [hitNormal, shotArrow]) {
@@ -1311,6 +1920,20 @@ function resize() {
   invalidate();
 }
 addEventListener('resize', resize);
+// The crew console collapses and the column stacks on narrow screens, and
+// neither fires a window resize.
+new ResizeObserver(() => resize()).observe(main);
+
+/** Keep a styled range's olive fill in step with its value. */
+function syncRange(input) {
+  const min = Number(input.min || 0);
+  const max = Number(input.max || 1);
+  const share = max === min ? 0 : (Number(input.value) - min) / (max - min);
+  input.style.setProperty('--fill', `${(share * 100).toFixed(1)}%`);
+}
+document.addEventListener('input', event => {
+  if (event.target.matches?.('input.range')) syncRange(event.target);
+});
 
 // --- On-demand rendering ---------------------------------------------------
 //
@@ -1349,6 +1972,7 @@ function startAnimating() {
     advanceRates(dt);
     advanceScroll(dt);
     advanceGlide(dt);
+    const gearMoving = advanceGear(dt);
     const hasFire = advanceFire(dt);
     if (mixer && engineRunning) mixer.update(dt);
     // controls.update() returns true while damping or auto-rotate is still
@@ -1364,7 +1988,7 @@ function startAnimating() {
       (inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
     const hasClips = Boolean(mixer && engineRunning);
 
-    if (hasRates || hasScroll || hasClips || hasFire || cameraGlide || controlsMoving) {
+    if (hasRates || hasScroll || hasClips || hasFire || gearMoving || cameraGlide || controlsMoving) {
       requestAnimationFrame(tick);
     } else {
       animating = false;
@@ -1649,6 +2273,8 @@ const compare = {
   targets: [],
   ourGun: null,
   theirGun: null,
+  // The duel card's visibility, independent of whether an opponent is parked.
+  hud: true,
 };
 
 function hideOpponentCollision() {
@@ -1667,8 +2293,12 @@ function clearOpponent() {
   compare.ourGun = null;
   compare.theirGun = null;
   opponentSelect.value = '';
+  opponentSelect.classList.remove('is-set');
   versusPanel.hidden = true;
   versusPanel.innerHTML = '';
+  document.getElementById('compare-verdict').hidden = true;
+  document.body.dataset.compare = 'false';
+  renderHints();
 }
 
 function buildOpponentSelect(entry) {
@@ -1985,7 +2615,9 @@ function fillVersusGunSelect(select, selected, entry) {
     const group = document.createElement('optgroup');
     group.label = label;
     for (const weapon of weapons) {
-      group.appendChild(new Option(weaponLabel(weapon), weapon.name));
+      // The vehicle's own guns need no owner prefix; the select is narrow.
+      const text = label === 'this vehicle' ? weapon.name : weaponLabel(weapon);
+      group.appendChild(new Option(text, weapon.name));
     }
     select.appendChild(group);
   }
@@ -2021,44 +2653,157 @@ function attr(value) {
     .replace(/</g, '&lt;');
 }
 
+/** Seconds from the first round to the killing one: the gaps at the gun's
+ *  rate of fire, plus a reload for every magazine emptied on the way. Null
+ *  when the tables do not say how fast the gun fires. */
+function timeToKill(weapon, shots) {
+  if (!weapon || !(shots > 0) || !(weapon.roundOfFire > 0)) return null;
+  const gaps = shots - 1;
+  let seconds = gaps / weapon.roundOfFire;
+  if (weapon.magSize > 0 && weapon.reloadTime > 0) {
+    seconds += Math.floor(gaps / weapon.magSize) * weapon.reloadTime;
+  }
+  return seconds;
+}
+
+function formatSeconds(seconds) {
+  if (seconds == null) return null;
+  return seconds < 10 ? seconds.toFixed(1) : String(Math.round(seconds));
+}
+
+/** Shots and time to kill on the facing that decides the headline. */
+function duelTimes(duel) {
+  const shotsOf = strike => (!strike?.hasPlate || strike.noGun || strike.immune
+    ? null : strike.shotsMax ?? null);
+  const ourShots = shotsOf(duel.decisiveAtThem);
+  const theirShots = shotsOf(duel.decisiveAtUs);
+  return {
+    ourShots,
+    theirShots,
+    ourTtk: timeToKill(compare.ourGun, ourShots),
+    theirTtk: timeToKill(compare.theirGun, theirShots),
+  };
+}
+
+const ARROW_LEFT = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M10.5 6h-9M5 2.5 1.5 6 5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ARROW_RIGHT = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M7 2.5 10.5 6 7 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CLOSE_ICON = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="m2 2 6 6M8 2 2 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
+function versusSkeleton() {
+  const side = (which, gunId) => {
+    const hp = '<span class="vs-hp"></span>';
+    const gun = `<select id="${gunId}" aria-label="Gun"></select>`;
+    const kit = which === 'us' ? `${hp}<span class="sep">·</span>${gun}` : `${gun}<span class="sep">·</span>${hp}`;
+    return `<div class="vs-side vs-${which}"><img class="vs-thumb" alt="" hidden>`
+      + `<div class="vs-id"><div class="vs-name"></div><div class="vs-side-line"></div>`
+      + `<div class="vs-kit">${kit}</div></div></div>`;
+  };
+  return '<div class="vs-top"><div class="vs-top-text">'
+    + '<div class="eyebrow">Head-on duel · from damage.json</div>'
+    + '<div class="vs-title" id="versus-title"></div></div>'
+    + `<button type="button" class="vs-close" id="versus-close" aria-label="Hide the duel HUD" title="Hide the duel HUD">${CLOSE_ICON}</button>`
+    + '</div><hr class="rule">'
+    + '<div class="vs-combatants">'
+    + side('us', 'versus-our-gun')
+    + '<div class="vs-verdict" aria-live="polite"><div class="vs-verdict-label">Verdict</div>'
+    + '<div class="vs-chip" id="versus-chip"></div></div>'
+    + side('them', 'versus-their-gun')
+    + '</div><hr class="rule">'
+    + '<div class="vs-stats" id="versus-stats"></div>'
+    + '<div class="vs-meter-wrap"><div class="vs-meter-head" id="versus-meter-head"></div>'
+    + '<div class="vs-meter" id="versus-meter" aria-hidden="true"><span class="is-us"></span><span class="is-them"></span><i></i></div></div>'
+    + '<div class="vs-bar"><span># By facing</span><span>Shots to kill · fewer wins</span></div>'
+    + '<div class="vs-lanes"><div class="vs-lane-head" id="versus-lane-head"></div><div id="versus-lanes"></div></div>'
+    + '<div class="vs-foot" id="versus-foot"></div>';
+}
+
+function fillCombatant(selector, entry, hp) {
+  const side = versusPanel.querySelector(selector);
+  side.className = `vs-side ${selector.slice(1)} ${sideClass(entry)}`;
+  side.querySelector('.vs-name').textContent = entry.name;
+  side.querySelector('.vs-side-line').textContent = sideLine(entry, true);
+  side.querySelector('.vs-hp').textContent = hp != null ? `${hp} HP` : 'HP unknown';
+  const thumb = side.querySelector('.vs-thumb');
+  const source = thumbFor(entry);
+  thumb.hidden = !source;
+  if (source && thumb.getAttribute('src') !== source) thumb.src = source;
+}
+
+function laneVerdict(lane, ours, theirs, duel, decisive) {
+  if (decisive && lane.win) return { text: 'Decides the duel', elite: true };
+  if (lane.win === 'us') return { text: `${duel.us} favoured` };
+  if (lane.win === 'them') return { text: `${duel.them} favoured` };
+  const edge = laneEdge(lane.win, ours, theirs);
+  if (edge === 'even') return { text: decisive ? 'Even · decides the duel' : 'Even trade' };
+  if (edge === 'one-sided') return { text: 'One-sided' };
+  return { text: 'No plate' };
+}
+
 function renderVersusLanes(duel) {
+  const head = versusPanel.querySelector('#versus-lane-head');
   const lanes = versusPanel.querySelector('#versus-lanes');
   if (!lanes || !duel) return;
+  head.innerHTML = `<span>Face</span><span>${attr(duel.us)} fires</span>`
+    + `<span>${attr(duel.them)} fires</span><span>Edge</span>`;
+  const countOf = strike => (!strike.hasPlate || strike.noGun || strike.immune ? 0 : strike.shotsMax || 0);
+  // Bars share one scale across both columns: a shorter bar is a quicker kill.
+  const most = Math.max(1, ...duel.lanes.flatMap(lane => [countOf(lane.atThem), countOf(lane.atUs)]));
   lanes.innerHTML = duel.lanes.map(lane => {
     const ours = versusShots(lane.atThem);
     const theirs = versusShots(lane.atUs);
-    const ourTip = attr(versusTip(lane.atThem, duel.theirHp, duel.us, duel.them));
-    const theirTip = attr(versusTip(lane.atUs, duel.ourHp, duel.them, duel.us));
-    const edge = laneEdge(lane.win, ours, theirs);
-    const decisive = lane.id === duel.decisive ? 'true' : 'false';
-    return `<div class="vs-lane" data-win="${lane.win}" data-aspect="${lane.id}" data-decisive="${decisive}" title="${ourTip} | ${theirTip}">` +
-      `<div class="vs-face">${lane.label}</div>` +
-      `<div class="vs-edge">${edge}</div>` +
-      `<div class="vs-counts">` +
-      `<div class="vs-count vs-count-us${ours.muted ? ' is-muted' : ''}"><strong>${ours.text}</strong><span>you</span></div>` +
-      `<div class="vs-count vs-count-them${theirs.muted ? ' is-muted' : ''}"><strong>${theirs.text}</strong><span>them</span></div>` +
-      `</div>` +
-      `</div>`;
+    const decisive = lane.id === duel.decisive;
+    const fill = side => {
+      if (!lane.win) return 'var(--mm-ink-faint)';
+      if (lane.win !== side) return 'var(--mm-kill-soft)';
+      return decisive ? 'var(--mm-kd-elite)' : 'var(--mm-accent)';
+    };
+    const cell = (shots, strike, side) =>
+      `<div class="vs-shots${shots.muted ? ' is-muted' : ''}${decisive && lane.win === side ? ' is-elite' : ''}"`
+      + ` style="--w:${(countOf(strike) / most * 100).toFixed(1)}%;--fill:${fill(side)}">`
+      + `<b>${shots.text}</b><i></i></div>`;
+    const edge = laneVerdict(lane, ours, theirs, duel, decisive);
+    const tip = `${versusTip(lane.atThem, duel.theirHp, duel.us, duel.them)} | ${versusTip(lane.atUs, duel.ourHp, duel.them, duel.us)}`;
+    return `<div class="vs-lane" data-win="${lane.win}" data-aspect="${lane.id}" data-decisive="${decisive}" title="${attr(tip)}">`
+      + `<div class="vs-face">${lane.label}</div>`
+      + cell(ours, lane.atThem, 'us')
+      + cell(theirs, lane.atUs, 'them')
+      + `<div class="vs-edge${edge.elite ? ' is-elite' : ''}">${attr(edge.text)}</div>`
+      + '</div>';
   }).join('');
 }
 
-function renderVersusDuel(duel) {
-  const atThem = duel.decisiveAtThem;
-  const atUs = duel.decisiveAtUs;
-  const ours = versusDecisiveShots(atThem);
-  const theirs = versusDecisiveShots(atUs);
-  const ourNum = versusPanel.querySelector('#versus-duel-us');
-  const theirNum = versusPanel.querySelector('#versus-duel-them');
-  const ourCap = versusPanel.querySelector('#versus-duel-us-cap');
-  const theirCap = versusPanel.querySelector('#versus-duel-them-cap');
-  ourNum.textContent = ours.text;
-  theirNum.textContent = theirs.text;
-  ourNum.classList.toggle('is-muted', ours.muted);
-  theirNum.classList.toggle('is-muted', theirs.muted);
-  ourCap.textContent = duelShotCaption(atThem, duel.them, 'us');
-  theirCap.textContent = duelShotCaption(atUs, duel.us, 'them');
-  ourNum.title = versusTip(atThem, duel.theirHp, duel.us, duel.them);
-  theirNum.title = versusTip(atUs, duel.ourHp, duel.them, duel.us);
+/** The one-line answer in the Compare panel, readable with the HUD hidden. */
+function renderCompareVerdict(duel) {
+  const box = document.getElementById('compare-verdict-box');
+  const text = document.getElementById('compare-verdict-text');
+  document.getElementById('compare-verdict').hidden = false;
+  const decided = duel.winner === 'us' || duel.winner === 'them';
+  box.className = `callout ${decided ? 'callout--win' : 'callout--even'}`;
+  if (!decided) {
+    text.textContent = duel.story;
+    return;
+  }
+  const times = duelTimes(duel);
+  const usWon = duel.winner === 'us';
+  const winner = usWon ? duel.us : duel.them;
+  const [winTtk, loseTtk] = usWon ? [times.ourTtk, times.theirTtk] : [times.theirTtk, times.ourTtk];
+  const [winShots, loseShots] = usWon ? [times.ourShots, times.theirShots] : [times.theirShots, times.ourShots];
+  // The winner is whoever needs fewer shots; a slow-firing gun can still take
+  // longer, so a time margin is only quoted when it points the same way.
+  let how = '';
+  if (winTtk != null && loseTtk != null && loseTtk - winTtk > 0.05) {
+    how = ` by <span class="tone-win">${formatSeconds(loseTtk - winTtk)} s</span>`;
+  } else if (winShots != null) {
+    how = ` in <span class="tone-win">${winShots} shot${winShots === 1 ? '' : 's'}</span>`
+      + (loseShots != null ? ` to ${loseShots}` : '');
+  }
+  text.innerHTML = `<b>${attr(winner)}</b> wins${how}`;
+}
+
+function setDuelHud(on) {
+  compare.hud = Boolean(on);
+  document.getElementById('duel-hud').checked = compare.hud;
+  versusPanel.hidden = !compare.hud || !compare.entry;
 }
 
 function renderVersus() {
@@ -2067,50 +2812,62 @@ function renderVersus() {
     versusPanel.hidden = true;
     versusPanel.innerHTML = '';
     versusPanel.removeAttribute('data-winner');
+    document.getElementById('compare-verdict').hidden = true;
     return;
   }
-  versusPanel.hidden = false;
+  renderCompareVerdict(duel);
+  versusPanel.hidden = !compare.hud;
   versusPanel.dataset.winner = duel.winner;
-  if (!versusPanel.querySelector('.vs-head')) {
-    versusPanel.innerHTML =
-      `<div class="vs-head">` +
-      `<div class="vs-side vs-us"><div class="vs-name"></div><div class="vs-hp"></div><select id="versus-our-gun"></select></div>` +
-      `<div class="vs-mark">VS</div>` +
-      `<div class="vs-side vs-them"><div class="vs-name"></div><div class="vs-hp"></div><select id="versus-their-gun"></select></div>` +
-      `</div>` +
-      `<div class="vs-verdict" aria-live="polite">` +
-      `<div class="vs-winner-label">stronger vehicle</div>` +
-      `<div class="vs-winner" id="versus-winner"></div>` +
-      `<div class="vs-winner-sub" id="versus-winner-sub"></div>` +
-      `</div>` +
-      `<div class="vs-duel" id="versus-duel">` +
-      `<div class="vs-duel-side vs-duel-us"><div class="vs-duel-num" id="versus-duel-us"></div><div class="vs-duel-cap" id="versus-duel-us-cap"></div></div>` +
-      `<div class="vs-duel-mid">VS</div>` +
-      `<div class="vs-duel-side vs-duel-them"><div class="vs-duel-num" id="versus-duel-them"></div><div class="vs-duel-cap" id="versus-duel-them-cap"></div></div>` +
-      `</div>` +
-      `<div class="vs-meter" id="versus-meter" aria-hidden="true"><span></span><span></span></div>` +
-      `<div class="vs-aspects-head"><span>by facing</span><span>you · them</span></div>` +
-      `<div class="vs-lanes" id="versus-lanes"></div>` +
-      `<div class="vs-foot" id="versus-foot"></div>`;
+  if (!versusPanel.querySelector('.vs-top')) {
+    versusPanel.innerHTML = versusSkeleton();
     bindVersusGuns();
+    versusPanel.querySelector('#versus-close').addEventListener('click', () => setDuelHud(false));
   }
-  versusPanel.querySelector('.vs-us .vs-name').textContent = duel.us;
-  versusPanel.querySelector('.vs-them .vs-name').textContent = duel.them;
-  versusPanel.querySelector('.vs-us .vs-hp').textContent = duel.ourHp != null ? `${duel.ourHp} HP` : 'HP unknown';
-  versusPanel.querySelector('.vs-them .vs-hp').textContent = duel.theirHp != null ? `${duel.theirHp} HP` : 'HP unknown';
-  versusPanel.querySelector('#versus-winner').textContent = winnerStamp(duel);
-  versusPanel.querySelector('#versus-winner-sub').textContent = winnerSubline(duel);
+  const facing = duel.decisiveLabel && duel.decisive !== 'overall' ? duel.decisiveLabel : null;
+  versusPanel.querySelector('#versus-title').textContent = facing
+    ? `${facing.charAt(0).toUpperCase()}${facing.slice(1)}-on, point blank, perpendicular`
+    : 'Best armour, point blank, perpendicular';
+  fillCombatant('.vs-us', currentEntry, duel.ourHp);
+  fillCombatant('.vs-them', compare.entry, duel.theirHp);
+
+  const usWins = duel.winner === 'us';
+  const themWins = duel.winner === 'them';
+  const chip = versusPanel.querySelector('#versus-chip');
+  chip.dataset.winner = duel.winner;
+  chip.innerHTML = usWins ? `${ARROW_LEFT}Winner` : themWins ? `Winner${ARROW_RIGHT}` : 'Even';
+  chip.title = usWins ? `${duel.us} wins` : themWins ? `${duel.them} wins` : duel.story;
+
+  const times = duelTimes(duel);
+  const ttkNote = 'Gaps between rounds at the gun’s rate of fire, plus a reload per emptied magazine';
+  const cell = (label, value, good, unit, title) => {
+    const muted = value == null;
+    return `<div class="vs-stat" title="${attr(title)}"><div class="vs-stat-label">${attr(label)}</div>`
+      + `<div class="vs-stat-value${muted ? ' is-muted' : good ? ' is-good' : ''}">`
+      + `${muted ? '—' : value}${!muted && unit ? `<small>${unit}</small>` : ''}</div></div>`;
+  };
+  versusPanel.querySelector('#versus-stats').innerHTML = [
+    cell(`${duel.us} TTK`, formatSeconds(times.ourTtk), usWins, 's', ttkNote),
+    cell('Shots to kill', times.ourShots, usWins, '', `${duel.us} firing on ${duel.them}`),
+    cell(`${duel.them} TTK`, formatSeconds(times.theirTtk), themWins, 's', ttkNote),
+    cell('Shots to kill', times.theirShots, themWins, '', `${duel.them} firing on ${duel.us}`),
+  ].join('');
+
+  const usShare = Math.round(duel.share.us * 100);
+  versusPanel.querySelector('#versus-meter-head').innerHTML =
+    `<span class="${usWins ? 'is-win' : ''}">${attr(duel.us)} ${usShare}%</span>`
+    + '<span class="is-mid" title="Share of kill speed on the deciding facing: 1 ÷ shots to kill, normalised">Edge</span>'
+    + `<span class="${themWins ? 'is-win' : ''}">${attr(duel.them)} ${100 - usShare}%</span>`;
   const meter = versusPanel.querySelector('#versus-meter');
+  const win = 'var(--mm-accent)';
+  const lose = 'var(--mm-kill-soft)';
+  const even = 'var(--mm-ink-faint)';
   meter.style.setProperty('--us', `${(duel.share.us * 100).toFixed(1)}%`);
-  meter.style.setProperty('--them', `${(duel.share.them * 100).toFixed(1)}%`);
-  const facing = duel.decisiveLabel && duel.decisive !== 'overall'
-    ? `${duel.decisiveLabel}-on`
-    : 'best armour';
-  versusPanel.querySelector('#versus-foot').textContent =
-    `${duel.story} Fewer shots wins. ${facing} decides the headline; hover a row for plate detail.`;
+  meter.style.setProperty('--us-fill', usWins ? win : themWins ? lose : even);
+  meter.style.setProperty('--them-fill', themWins ? win : usWins ? lose : even);
+
+  versusPanel.querySelector('#versus-foot').textContent = duel.story;
   fillVersusGunSelect(versusPanel.querySelector('#versus-our-gun'), compare.ourGun?.name, currentEntry);
   fillVersusGunSelect(versusPanel.querySelector('#versus-their-gun'), compare.theirGun?.name, compare.entry);
-  renderVersusDuel(duel);
   renderVersusLanes(duel);
 }
 
@@ -2179,6 +2936,9 @@ async function setOpponent(name) {
   });
   scene.add(compare.root);
   opponentSelect.value = entry.name;
+  opponentSelect.classList.add('is-set');
+  document.body.dataset.compare = 'true';
+  renderHints();
   parkOpponent();
   hideOpponentCollision();
   renderVersus();
@@ -2187,6 +2947,7 @@ async function setOpponent(name) {
 }
 
 opponentSelect.addEventListener('change', () => void setOpponent(opponentSelect.value));
+document.getElementById('duel-hud').addEventListener('change', event => setDuelHud(event.target.checked));
 
 function clearHit() {
   lastHit = null;
@@ -2251,7 +3012,7 @@ function configureCollisionLegend(report) {
       const damage = damages.get(material);
       if (damage == null || !(damage > 0)) {
         collisionStyles.set(material, {
-          color: new THREE.Color(0x666a61),
+          color: new THREE.Color(0x444444),
           label: damage == null
             ? `No ${weapon.name} entry (immune)`
             : `${weapon.name} is tabled at 0 HP here`,
@@ -2289,7 +3050,7 @@ function configureCollisionLegend(report) {
     });
     for (const material of allMaterials.filter(id => !isRankedArmorMaterial(id))) {
       collisionStyles.set(material, {
-        color: new THREE.Color(0x666a61),
+        color: new THREE.Color(0x444444),
         label: 'Unclassified collision region',
       });
     }
@@ -2302,7 +3063,7 @@ function configureCollisionLegend(report) {
 
   for (const obj of collisionTargets) {
     const materialId = obj.geometry.userData.defenseMaterial;
-    const color = collisionStyles.get(materialId)?.color || new THREE.Color(0x666a61);
+    const color = collisionStyles.get(materialId)?.color || new THREE.Color(0x444444);
     for (const material of [obj.material].flat()) {
       material.color.copy(color);
       if (material.emissive) material.emissive.copy(color).multiplyScalar(.12);
@@ -2349,6 +3110,7 @@ function applyCollisionState() {
   collisionLegend.hidden = !state.collision || !collisionRoots.length;
   hideOpponentCollision();
   if (!state.collision) clearHit();
+  renderHints();
 }
 
 function setCollisionMaterial(material) {
@@ -2437,7 +3199,10 @@ function updateHitPanel() {
   const hpLoss = document.getElementById('hp-loss');
   const hpNote = document.getElementById('hp-note');
   if (output) output.value = `${angle.toFixed(1)}°`;
-  if (range) range.value = String(angle);
+  if (range) {
+    range.value = String(angle);
+    syncRange(range);
+  }
 
   const damage = computeHitDamage();
   lastHit.damage = damage;
@@ -2606,7 +3371,7 @@ function renderHitPanel() {
   const distanceControl = hasDistanceFalloff(weapon)
     ? '<div class="distance-control">' +
       `<label for="distance-range"><span>Range</span><output id="distance-output">${damageState.distance.toFixed(0)} m</output></label>` +
-      `<input id="distance-range" type="range" min="0" max="${Math.ceil(weapon.distToMinDamage * 1.25)}" step="1" value="${damageState.distance}">` +
+      `<input id="distance-range" class="range" type="range" min="0" max="${Math.ceil(weapon.distToMinDamage * 1.25)}" step="1" value="${damageState.distance}">` +
       '</div>'
     : '';
   const technical = [
@@ -2632,17 +3397,19 @@ function renderHitPanel() {
     '<div class="formula" id="hp-note"></div>' +
     '<div class="angle-control">' +
     '<label for="angle-range"><span>Impact angle</span><output id="angle-output">0.0°</output></label>' +
-    '<input id="angle-range" type="range" min="0" max="85" step="0.5" value="0">' +
+    '<input id="angle-range" class="range is-busy" type="range" min="0" max="85" step="0.5" value="0">' +
     '</div>' +
     distanceControl +
     '<div class="formula">Drag the orange arrow handle or use the slider.</div>' +
     '<div class="formula" id="impact-formula"></div>' +
-    '<details class="hit-technical"><summary>Technical details</summary>' +
+    '<details class="disclosure hit-technical"><summary>Technical details</summary>' +
     technical.map(([label, value]) =>
       `<div class="stat"><span>${label}</span><span>${value}</span></div>`
     ).join('') +
     '</details>';
 
+  const distanceRange = document.getElementById('distance-range');
+  if (distanceRange) syncRange(distanceRange);
   document.getElementById('angle-range').addEventListener('input', event => {
     setHitAngle(Number(event.target.value));
   });
@@ -2719,20 +3486,37 @@ function applyState() {
     }
     if (obj.userData.home) {
       const h = obj.userData.home;
-      const k = state.explode ? 2.2 : 1;
+      const k = explodeFactor();
       obj.position.set(h.x * k, h.y * k, h.z * k);
     }
   });
+  if (state.explode) {
+    let furthest = 0;
+    current.traverse(obj => {
+      if (obj.userData.home) furthest = Math.max(furthest, obj.userData.home.length() * (explodeFactor() - 1));
+    });
+    document.getElementById('explode-output').value = `${furthest.toFixed(2)} m`;
+  }
   applyCollisionState();
   invalidate();
 }
 
+// Half-way is the old fixed 2.2x spread.
+const explodeFactor = () => (state.explode ? 1 + state.explodeAmount * 2.4 : 1);
+
 for (const id of ['wireframe', 'untextured', 'explode', 'doubleside']) {
   document.getElementById(id).addEventListener('change', e => {
     state[id] = e.target.checked;
+    if (id === 'explode') document.getElementById('explode-row').hidden = !e.target.checked;
     applyState();
   });
 }
+const explodeAmount = document.getElementById('explode-amount');
+syncRange(explodeAmount);
+explodeAmount.addEventListener('input', () => {
+  state.explodeAmount = Number(explodeAmount.value);
+  applyState();
+});
 document.getElementById('axes').addEventListener('change', e => { helpers.visible = e.target.checked; invalidate(); });
 document.getElementById('spin').addEventListener('change', e => {
   controls.autoRotate = e.target.checked;
@@ -2833,16 +3617,6 @@ const AXIS = { yaw: 'y', pitch: 'x', roll: 'z' };
 // Same handedness fix the exporter applies to authored rotations: mirroring Z
 // conjugates rotations about X and Y, and leaves those about Z alone.
 const SIGN = { yaw: -1, pitch: -1, roll: 1 };
-
-const INPUT_LABEL = {
-  c_PIYaw: 'Steer (A / D)',
-  c_PIThrottle: 'Throttle (W / S)',
-  c_PIMouseLookX: 'Look X (traverse)',
-  c_PIMouseLookY: 'Look Y (elevate)',
-  c_PIPitch: 'Pitch',
-  c_PIRoll: 'Roll',
-  c_PILandingGear: 'Gear (0 down · 1 up)',
-};
 
 // The exporter's synthetic axis for LandingGear retraction: not a player input,
 // so its slider runs 0 (deployed, the authored rest pose) to 1 (retracted) and
@@ -2980,19 +3754,16 @@ let mixer = null;
 let clipActions = [];
 let engineRunning = false;
 
+// Names of the nodes the baked clips move, for the station that owns them.
+let animatedNodes = [];
+
 function collectAnimations(gltf) {
   mixer = null;
   clipActions = [];
   engineRunning = false;
-  const section = document.getElementById('anim-section');
-  const toggle = document.getElementById('engine-run');
-  toggle.checked = false;
-  document.getElementById('anim-parts').textContent = '';
+  animatedNodes = [];
   const clips = gltf.animations || [];
-  if (!clips.length) {
-    section.hidden = true;
-    return;
-  }
+  if (!clips.length) return;
   mixer = new THREE.AnimationMixer(gltf.scene);
   clipActions = clips.map(clip => {
     const action = mixer.clipAction(clip);
@@ -3000,16 +3771,13 @@ function collectAnimations(gltf) {
     return action;
   });
   // Every track name is "<node name>.quaternion" / ".position".
-  const parts = [...new Set(clips.flatMap(clip =>
+  animatedNodes = [...new Set(clips.flatMap(clip =>
     clip.tracks.map(track => track.name.split('.')[0])))];
-  document.getElementById('anim-parts').textContent =
-    `Animated: ${parts.join(', ')}`;
-  section.hidden = false;
 }
 
-document.getElementById('engine-run').addEventListener('change', event => {
+function setEngine(on) {
   if (!mixer) return;
-  engineRunning = event.target.checked;
+  engineRunning = Boolean(on);
   if (engineRunning) {
     for (const action of clipActions) { action.paused = false; action.play(); }
     startAnimating();
@@ -3019,7 +3787,8 @@ document.getElementById('engine-run').addEventListener('change', event => {
     for (const action of clipActions) action.stop();
     invalidate();
   }
-});
+  refreshCrew();
+}
 
 // --- gun fire ----------------------------------------------------------------
 //
@@ -3160,11 +3929,11 @@ function collectFireArms(root) {
       recoil: stats.recoil ? 1 : null,
     });
   });
-  buildFirePanel();
 }
 
 function fireShot(group) {
   group.shots += 1;
+  if (group.ui) group.ui.count.textContent = `${group.shots} rds`;
   for (const emitter of group.emitters) {
     emitter.age = 0;
     emitter.node.visible = true;
@@ -3463,75 +4232,101 @@ function advanceFire(dt) {
   return active;
 }
 
+/** "Gun Barrel", "Coaxial browning": a FireArms node name without its vehicle. */
+function partLabel(name, entry) {
+  const raw = String(name || '');
+  const root = (entry?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  let label = raw;
+  if (root && raw.toLowerCase().replace(/[^a-z0-9]/g, '').startsWith(root)) {
+    // Strip the vehicle prefix however it was punctuated: Chi-ha_, B17_, Sherman.
+    let kept = 0;
+    let index = 0;
+    while (index < raw.length && kept < root.length) {
+      if (/[a-z0-9]/i.test(raw[index])) kept += 1;
+      index += 1;
+    }
+    label = raw.slice(index);
+  }
+  label = label.replace(/_+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim() || raw;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function fireMeta(group) {
   const stats = group.stats;
   const parts = [];
   if (stats.roundOfFire) parts.push(`${stats.roundOfFire} rds/s`);
   if (stats.velocity) parts.push(`${stats.velocity} m/s`);
-  if (stats.muzzles > 1) parts.push(`${stats.muzzles} muzzles`);
-  if (stats.tracer) parts.push(`tracer every ${stats.tracer.interval}`);
-  if (stats.recoil) parts.push('recoil');
-  if (stats.magSize) parts.push(`mag ${stats.magSize}`);
   return parts.join(' · ');
 }
 
-function buildFirePanel() {
-  const section = document.getElementById('fire-section');
-  const host = document.getElementById('fire-controls');
-  host.innerHTML = '';
-  if (!fireGroups.length) {
-    section.hidden = true;
-    return;
-  }
-  const seats = new Set(fireGroups.map(group => group.stats.control || 'vehicle'));
-  for (const group of fireGroups) {
-    const wrap = document.createElement('div');
-    wrap.className = 'fire-control';
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'fire-button';
-    button.setAttribute('aria-pressed', 'false');
-    button.innerHTML =
-      `<span>${group.node.name}</span><span class="fire-word">FIRE</span>`;
-    const meta = document.createElement('div');
-    meta.className = 'fire-meta';
-    meta.innerHTML =
-      (seats.size > 1 ? `<span class="seat">${group.stats.control}</span>` : '')
-      + fireMeta(group);
-    const start = () => {
-      if (group.firing) return;
-      group.firing = true;
-      group.cooldown = 0;   // first round leaves immediately
-      button.setAttribute('aria-pressed', 'true');
-      startAnimating();
-    };
-    const stop = () => {
-      if (!group.firing) return;
-      group.firing = false;
-      button.setAttribute('aria-pressed', 'false');
-      startAnimating();     // let flashes decay and tracers fly out
-    };
-    button.addEventListener('pointerdown', event => {
-      button.setPointerCapture(event.pointerId);
-      start();
-    });
-    button.addEventListener('pointerup', stop);
-    button.addEventListener('pointercancel', stop);
-    // Hold-to-fire from the keyboard too; ignore auto-repeat.
-    button.addEventListener('keydown', event => {
-      if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
-        event.preventDefault();
-        start();
-      }
-    });
-    button.addEventListener('keyup', event => {
-      if (event.key === ' ' || event.key === 'Enter') stop();
-    });
-    button.addEventListener('blur', stop);
-    wrap.append(button, meta);
-    host.appendChild(wrap);
-  }
-  section.hidden = false;
+function fireTitle(group) {
+  const stats = group.stats;
+  const projectile = stats.projectile && typeof stats.projectile === 'object'
+    ? stats.projectile.template : stats.projectile;
+  return [
+    group.node.name,
+    fireMeta(group),
+    stats.tracer ? `tracer every ${stats.tracer.interval}` : null,
+    stats.muzzles > 1 ? `${stats.muzzles} muzzles` : null,
+    stats.magSize > 0 ? `mag ${stats.magSize}` : null,
+    stats.recoil ? 'recoil' : null,
+    projectile,
+  ].filter(Boolean).join(' · ');
+}
+
+function startFiring(group) {
+  if (group.firing) return;
+  group.firing = true;
+  group.cooldown = 0;   // first round leaves immediately
+  group.ui?.button.setAttribute('aria-pressed', 'true');
+  startAnimating();
+}
+
+function stopFiring(group) {
+  if (!group.firing) return;
+  group.firing = false;
+  group.ui?.button.setAttribute('aria-pressed', 'false');
+  startAnimating();     // let flashes decay and tracers fly out
+}
+
+/** Hold-to-fire button for one FireArms template. `keyHint` is its shortcut. */
+function buildTrigger(group, entry, keyHint) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'trigger';
+  button.setAttribute('aria-pressed', 'false');
+  button.title = `Hold to fire · ${fireTitle(group)}`;
+  const projectile = group.stats.projectile;
+  const kind = projectile && typeof projectile === 'object' ? projectile.kind : null;
+  button.innerHTML = '<span class="trigger-word">FIRE</span>'
+    + `<span class="trigger-name"><span>${attr(partLabel(group.node.name, entry))}</span>`
+    + (keyHint ? `<kbd>${keyHint}</kbd>` : '')
+    + '</span><span class="trigger-meta">'
+    + (kind ? `<span class="trigger-kind">${attr(kind)}</span>` : '')
+    + `<span class="trigger-stats">${attr(fireMeta(group))}</span><span data-count></span></span>`;
+  group.ui = { button, count: button.querySelector('[data-count]') };
+  button.addEventListener('pointerdown', event => {
+    button.setPointerCapture(event.pointerId);
+    startFiring(group);
+  });
+  button.addEventListener('pointerup', () => stopFiring(group));
+  button.addEventListener('pointercancel', () => stopFiring(group));
+  // Hold-to-fire from the keyboard too; ignore auto-repeat. Kept off the
+  // window so the console's own Space binding does not fire it twice.
+  button.addEventListener('keydown', event => {
+    if (event.key !== ' ' && event.key !== 'Enter') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) startFiring(group);
+  });
+  button.addEventListener('keyup', event => {
+    if (event.key !== ' ' && event.key !== 'Enter') return;
+    event.preventDefault();
+    event.stopPropagation();
+    stopFiring(group);
+  });
+  button.addEventListener('blur', () => stopFiring(group));
+  return button;
 }
 
 // --- seat camera views --------------------------------------------------------
@@ -3568,25 +4363,6 @@ function advanceGlide(dt) {
 // The user grabbing the controls takes precedence over an in-flight glide.
 controls.addEventListener('start', () => { cameraGlide = null; });
 
-function viewLabel(control, entry) {
-  const root = (entry?.name || '').toLowerCase();
-  let label = control === 'vehicle' ? '' : control;
-  if (label.toLowerCase() === root) label = '';
-  else if (label.toLowerCase().startsWith(root)) label = label.slice(root.length);
-  label = label
-    .replace(/^eod_/i, '')
-    .replace(/pco/ig, '')
-    .replace(/[_]+/g, ' ')
-    .replace(/([a-z])([A-Z0-9])/g, '$1 $2')
-    .trim();
-  if (!label) {
-    label = entry?.category === 'air' ? 'Cockpit'
-      : entry?.category === 'sea' ? 'Helm'
-      : 'Driver';
-  }
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
 function goToView(node) {
   if (!current) return;
   current.updateMatrixWorld(true);
@@ -3599,186 +4375,804 @@ function goToView(node) {
   glideCamera(position, position.clone().addScaledVector(forward, distance));
 }
 
-function markActiveView(button) {
-  for (const other of document.querySelectorAll('#views button')) {
-    other.setAttribute('aria-pressed', String(other === button));
-  }
+function orbitView() {
+  markActiveView(null);
+  if (!framing) return;
+  const angle = -Math.PI * .22;
+  const distance = framing.radius * 1.85;
+  glideCamera(
+    new THREE.Vector3(
+      framing.centre.x + Math.cos(angle) * distance,
+      framing.centre.y + framing.radius * .72,
+      framing.centre.z + Math.sin(angle) * distance,
+    ),
+    framing.centre.clone(),
+  );
 }
 
-function collectViews(root, entry) {
+function collectViews(root) {
   seatViews.length = 0;
   root.traverse(obj => {
     if (obj.userData?.cameraView) seatViews.push(obj);
   });
-  const section = document.getElementById('views-section');
-  const host = document.getElementById('views');
-  host.innerHTML = '';
-  if (!seatViews.length) {
-    section.hidden = true;
-    return;
-  }
-  const orbit = document.createElement('button');
-  orbit.type = 'button';
-  orbit.textContent = 'Orbit';
-  orbit.setAttribute('aria-pressed', 'true');
-  orbit.addEventListener('click', () => {
-    markActiveView(orbit);
-    if (!framing) return;
-    const angle = -Math.PI * .22;
-    const distance = framing.radius * 1.85;
-    glideCamera(
-      new THREE.Vector3(
-        framing.centre.x + Math.cos(angle) * distance,
-        framing.centre.y + framing.radius * .72,
-        framing.centre.z + Math.sin(angle) * distance,
-      ),
-      framing.centre.clone(),
-    );
-  });
-  host.appendChild(orbit);
-  const used = new Map();
-  for (const node of seatViews) {
-    let label = viewLabel(node.userData.cameraView.control, entry);
-    const count = used.get(label) ?? 0;
-    used.set(label, count + 1);
-    if (count) label = `${label} ${count + 1}`;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = label;
-    button.addEventListener('click', () => {
-      markActiveView(button);
-      goToView(node);
-    });
-    host.appendChild(button);
-  }
-  section.hidden = false;
 }
 
-// In the game one physical control usually drives two of these inputs at once:
-// a gunner's mouse traverses with MouseLookX and elevates with MouseLookY, and
-// a pilot's stick rolls with mouse x and pitches with mouse y. When both halves
-// of a pair exist on the same seat, render one 2-axis pad instead of two
-// unrelated sliders.
-const XY_PAIRS = [
-  { x: 'c_PIMouseLookX', y: 'c_PIMouseLookY', label: 'Look (mouse)' },
-  { x: 'c_PIRoll', y: 'c_PIPitch', label: 'Stick (mouse)' },
-];
+// --- crew console ------------------------------------------------------------
+//
+// Every rig input, every FireArms template and every camera template names the
+// PlayerControlObject it belongs to. That name is a seat, and the console gives
+// each seat one station: how it aims, what it fires and where its camera sits,
+// side by side. As three sidebar sections that each spanned every seat, the
+// commander's Browning trigger sat a screen away from the dial that points it.
 
-// A square touchpad driving two inputs: pad x → keyX, pad y → keyY, both -1..1.
-// Updates inputValues and calls applyRig() exactly as the sliders do.
-function buildPad(keyX, gx, keyY, gy, pair, seat) {
-  const rate = gx.rate || gy.rate;
-  const wrap = document.createElement('div');
-  wrap.className = 'rig-input rig-pad';
-  wrap.innerHTML =
-    `<label><span>${pair.label}${rate ? ' — rate' : ''}</span><span data-out>x 0.00 · y 0.00</span></label>` +
-    `<div class="pad"><div class="pad-knob"></div></div>` +
-    `<div class="driven">${seat}${[...gx.driven, ...gy.driven].join('<br>')}</div>`;
-  const pad = wrap.querySelector('.pad');
-  const knob = wrap.querySelector('.pad-knob');
-  const out = wrap.querySelector('[data-out]');
-  let x = 0, y = 0;
-  const push = () => {
-    knob.style.left = `${(x + 1) * 50}%`;
-    knob.style.top = `${(1 - y) * 50}%`;
-    out.textContent = `x ${x.toFixed(2)} · y ${y.toFixed(2)}`;
-    inputValues.set(keyX, x);
-    inputValues.set(keyY, y);
-    applyRig();
-    if ((gx.rate && x !== 0) || (gy.rate && y !== 0)) startAnimating(); else invalidate();
-  };
-  const clamp = v => Math.min(1, Math.max(-1, Math.round(v * 100) / 100));
-  const fromEvent = event => {
-    const rect = pad.getBoundingClientRect();
-    x = clamp(((event.clientX - rect.left) / rect.width) * 2 - 1);
-    y = clamp(1 - ((event.clientY - rect.top) / rect.height) * 2);
-    push();
-  };
-  pad.addEventListener('pointerdown', event => {
-    pad.setPointerCapture(event.pointerId);
-    pad.classList.add('dragging');
-    fromEvent(event);
+const crewEl = document.getElementById('crew');
+const crewRow = document.getElementById('crew-row');
+const crew = {
+  stations: [],
+  active: 0,
+  view: null,
+  gear: null,
+  held: new Map(),      // key -> { inputKey, direction }
+  keyGuns: new Map(),   // key -> fire group it started
+  refreshers: [],
+};
+
+const AIM = { x: 'c_PIMouseLookX', y: 'c_PIMouseLookY' };
+const STICK = { x: 'c_PIRoll', y: 'c_PIPitch' };
+const DRIVE = { x: 'c_PIYaw', y: 'c_PIThrottle' };
+const KNOWN_INPUTS = new Set([...Object.values(AIM), ...Object.values(STICK), ...Object.values(DRIVE), GEAR_INPUT]);
+
+// Held keys push an input to its end stop and let it spring home on release,
+// like the real controls — and they leave the mouse free for a dial.
+const KEY_INPUTS = {
+  w: [DRIVE.y, 1], s: [DRIVE.y, -1], a: [DRIVE.x, -1], d: [DRIVE.x, 1],
+  ArrowUp: [STICK.y, 1], ArrowDown: [STICK.y, -1],
+  ArrowLeft: [STICK.x, -1], ArrowRight: [STICK.x, 1],
+};
+
+const SHORT_LABEL = {
+  c_PIYaw: 'Steer',
+  c_PIThrottle: 'Throttle',
+  c_PIMouseLookX: 'Traverse',
+  c_PIMouseLookY: 'Elevate',
+  c_PIPitch: 'Pitch',
+  c_PIRoll: 'Roll',
+  c_PILandingGear: 'Gear',
+};
+
+const EYE_ICON = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M1 7s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
+
+function make(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+const signedDegrees = degrees => {
+  const rounded = Math.round(degrees);
+  return `${rounded > 0 ? '+' : rounded < 0 ? '−' : ''}${Math.abs(rounded)}°`;
+};
+// Live readouts sit in auto-width stations, so a value that gains a digit or
+// a sign would widen its station and shove every station after it. In a mono
+// face a fixed character count is a fixed width.
+const steady = (text, width) => text.padStart(width);
+const signedPercent = value => {
+  const rounded = Math.round(value * 100);
+  return `${rounded > 0 ? '+' : rounded < 0 ? '−' : ''}${Math.abs(rounded)}`;
+};
+
+/** Where a positional axis sits for input `t`, exactly as applyRig() poses it. */
+function degreesAt(spec, t) {
+  if (spec.free) return t * FREE_RANGE;
+  if (spec.input === GEAR_INPUT) return spec.min + t * (spec.max - spec.min);
+  return t < 0 ? -t * spec.min : t * spec.max;
+}
+
+/** The input that puts a part nearest `degrees`, preferring the smaller input on
+ *  a tie so a one-sided range (0..40) never snaps to its far end. */
+function inputFor(spec, degrees) {
+  let best = 0;
+  let bestGap = Math.abs(degreesAt(spec, 0) - degrees);
+  for (let step = -200; step <= 200; step++) {
+    const t = step / 200;
+    const gap = Math.abs(degreesAt(spec, t) - degrees);
+    if (gap < bestGap - 1e-9) {
+      best = t;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
+function refreshCrew() {
+  for (const refresh of crew.refreshers) refresh();
+}
+
+function setCrewInput(key, value) {
+  inputValues.set(key, Math.max(-1, Math.min(1, value)));
+  applyRig();
+  refreshCrew();
+  startAnimating();
+}
+
+/** Pointer drag with capture; `onPoint` gets every move while held. */
+function draggable(element, onPoint, onRelease) {
+  element.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    element.focus({ preventScroll: true });
+    element.setPointerCapture(event.pointerId);
+    element.classList.add('dragging');
+    onPoint(event);
   });
-  pad.addEventListener('pointermove', event => {
-    if (pad.hasPointerCapture(event.pointerId)) fromEvent(event);
+  element.addEventListener('pointermove', event => {
+    if (element.hasPointerCapture(event.pointerId)) onPoint(event);
   });
   const release = event => {
-    if (pad.hasPointerCapture(event.pointerId)) pad.releasePointerCapture(event.pointerId);
-    pad.classList.remove('dragging');
+    if (!element.classList.contains('dragging')) return;
+    if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+    element.classList.remove('dragging');
+    onRelease?.();
   };
-  pad.addEventListener('pointerup', release);
-  pad.addEventListener('pointercancel', release);
-  // Dead centre is hard to hit by hand; snap both axes home like the
-  // rate-slider reset.
-  pad.addEventListener('dblclick', () => { x = 0; y = 0; push(); });
+  element.addEventListener('pointerup', release);
+  element.addEventListener('pointercancel', release);
+}
+
+function rangeText(spec) {
+  return spec.driver === 'rate' ? 'continuous'
+    : spec.free ? 'free 360°'
+    : `${spec.min}°..${spec.max}°`;
+}
+
+function cleanControl(control, entry) {
+  const root = (entry?.name || '').toLowerCase();
+  let label = control;
+  if (root && label.toLowerCase().startsWith(root)) label = label.slice(root.length);
+  return label
+    .replace(/^eod_/i, '')
+    .replace(/pco/ig, '')
+    .replace(/_+/g, ' ')
+    .replace(/([a-z])([A-Z0-9])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function labelStations(stations, entry) {
+  let unnamed = 0;
+  for (const seat of stations) {
+    if (seat.root) {
+      seat.name = entry?.category === 'air' ? 'Pilot'
+        : entry?.category === 'sea' ? 'Helm'
+        : entry?.category === 'land' ? 'Driver'
+        : entry?.category === 'emplacement' ? 'Gunner'
+        : 'Weapon';
+      continue;
+    }
+    const cleaned = cleanControl(seat.control, entry);
+    if (!cleaned || /^\d+$/.test(cleaned)) {
+      unnamed += 1;
+      seat.name = `${seat.guns.length || seat.inputs.size ? 'Gunner' : 'Seat'} ${cleaned || unnamed}`;
+    } else {
+      seat.name = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+    }
+  }
+  // "Browning 1" with no Browning 2 beside it is just "Browning".
+  const numbered = seat => /^(.*) \d+$/.exec(seat.name)?.[1];
+  const bases = new Map();
+  for (const seat of stations) {
+    const base = numbered(seat);
+    if (base) bases.set(base, (bases.get(base) || 0) + 1);
+  }
+  for (const seat of stations) {
+    const base = numbered(seat);
+    if (base && bases.get(base) === 1 && !stations.some(other => other.name === base)) seat.name = base;
+  }
+}
+
+function stationRole(seat) {
+  const has = input => seat.inputs.has(input);
+  return [
+    has(DRIVE.x) || has(DRIVE.y) ? (crew.category === 'air' ? 'throttle' : 'drive') : null,
+    has(AIM.x) || has(AIM.y) ? 'aim' : null,
+    has(STICK.x) || has(STICK.y) ? 'stick' : null,
+    has(GEAR_INPUT) ? 'gear' : null,
+    seat.guns.length ? `${seat.guns.length} gun${seat.guns.length === 1 ? '' : 's'}` : null,
+    seat.engine ? 'engine' : null,
+    seat.riders ? `${seat.views.length} camera${seat.views.length === 1 ? '' : 's'}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+function collectStations(entry) {
+  const byControl = new Map();
+  const seatFor = control => {
+    const key = control || 'vehicle';
+    if (!byControl.has(key)) {
+      byControl.set(key, { control: key, inputs: new Map(), guns: [], views: [] });
+    }
+    return byControl.get(key);
+  };
+  for (const part of rigged) {
+    for (const [axis, spec] of Object.entries(part.axes)) {
+      const seat = seatFor(part.control);
+      if (!seat.inputs.has(spec.input)) {
+        seat.inputs.set(spec.input, {
+          key: keyOf(seat.control, spec.input), input: spec.input, specs: [], driven: [], rate: false,
+        });
+      }
+      const input = seat.inputs.get(spec.input);
+      input.specs.push({ ...spec, axis });
+      input.driven.push(`${part.node.name} · ${axis} ${rangeText(spec)}`);
+      if (spec.driver === 'rate') input.rate = true;
+    }
+  }
+  for (const group of fireGroups) seatFor(group.stats.control).guns.push(group);
+  const riderLabels = new Map();
+  for (const node of seatViews) {
+    const seat = seatFor(node.userData.cameraView.control);
+    seat.views.push({ node });
+    riderLabels.set(node, cleanControl(seat.control, entry));
+  }
+
+  const rootName = (entry?.name || '').toLowerCase();
+  const seats = [...byControl.values()];
+  for (const seat of seats) {
+    seat.root = seat.control === 'vehicle' || seat.control.toLowerCase() === rootName;
+  }
+  // Driver or pilot first; every other seat in the order it was authored.
+  seats.sort((a, b) => Number(b.root) - Number(a.root));
+  const stations = seats.filter(seat => seat.inputs.size || seat.guns.length);
+  if (mixer) {
+    let home = stations.find(seat => seat.root);
+    if (!home) {
+      home = seats.find(seat => seat.root) || seatFor('vehicle');
+      home.root = true;
+      stations.unshift(home);
+    }
+    home.engine = true;
+  }
+  labelStations(stations, entry);
+  // Seats that only ride (the Hanomag's four passengers) share one station of
+  // cameras rather than four empty columns.
+  const riders = seats.filter(seat => !stations.includes(seat) && seat.views.length);
+  if (riders.length) {
+    stations.push({
+      control: 'riders',
+      riders: true,
+      name: 'Passengers',
+      inputs: new Map(),
+      guns: [],
+      views: riders.flatMap(seat => seat.views.map(view => ({
+        node: view.node,
+        label: riderLabels.get(view.node) || seat.control,
+      }))),
+    });
+  }
+  return stations;
+}
+
+/** Top-down traverse dial: the hull points up, the needle is the turret. */
+function traverseDial(input) {
+  const spec = input.specs.find(item => item.axis === 'yaw' && item.driver !== 'rate') || input.specs[0];
+  const low = spec.free ? -180 : Math.min(spec.min, spec.max);
+  const high = spec.free ? 180 : Math.max(spec.min, spec.max);
+  const at = (radius, degrees) => {
+    const radians = degrees * Math.PI / 180;
+    return `${(radius * Math.sin(radians)).toFixed(2)} ${(-radius * Math.cos(radians)).toFixed(2)}`;
+  };
+  const ticks = [];
+  for (let degrees = 0; degrees < 360; degrees += 30) {
+    const major = degrees % 90 === 0;
+    ticks.push(`<path class="dial-tick${major ? ' is-major' : ''}" d="M${at(major ? 36 : 40, degrees)} L${at(46, degrees)}"/>`);
+  }
+  // Positive authored yaw turns right: the exporter's Z mirror flips the sign
+  // (SIGN.yaw), and a negative turn about +Y is clockwise seen from above.
+  const arc = spec.free ? ''
+    : `<path class="dial-arc" d="M${at(42, low)} A42 42 0 ${high - low > 180 ? 1 : 0} 1 ${at(42, high)}"/>`;
+
+  const wrap = make('div', 'instrument');
+  const dial = make('div', 'dial');
+  dial.tabIndex = 0;
+  dial.setAttribute('role', 'slider');
+  dial.setAttribute('aria-label', 'Traverse');
+  dial.setAttribute('aria-valuemin', String(low));
+  dial.setAttribute('aria-valuemax', String(high));
+  dial.title = `Drag to traverse · double-click to centre\n${input.driven.join('\n')}`;
+  dial.innerHTML = '<svg viewBox="-50 -50 100 100" aria-hidden="true">'
+    + '<circle class="dial-face" r="46"/>'
+    + ticks.join('')
+    + arc
+    + '<rect class="dial-hull" x="-8" y="-13" width="16" height="26" rx="2"/>'
+    + '<path class="dial-hull" d="M-4 -17 L0 -21 L4 -17"/>'
+    + '<g class="dial-pointer"><path class="dial-needle" d="M0 0 L0 -35"/><circle class="dial-tip" cy="-35" r="3"/></g>'
+    + '<circle class="dial-hub" r="2.5"/>'
+    + '</svg>';
+  const pointer = dial.querySelector('.dial-pointer');
+  const read = make('div', 'instrument-read');
+  wrap.append(make('div', 'instrument-label', 'Traverse'), dial, read);
+
+  const setDegrees = degrees => setCrewInput(input.key, inputFor(spec, Math.max(low, Math.min(high, degrees))));
+  draggable(dial, event => {
+    const rect = dial.getBoundingClientRect();
+    const dx = event.clientX - (rect.left + rect.width / 2);
+    const dy = event.clientY - (rect.top + rect.height / 2);
+    setDegrees(Math.atan2(dx, -dy) * 180 / Math.PI);
+  });
+  dial.addEventListener('dblclick', () => setCrewInput(input.key, 0));
+  dial.addEventListener('keydown', event => {
+    const degrees = degreesAt(spec, inputValues.get(input.key) ?? 0);
+    const step = event.shiftKey ? 15 : 3;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') setDegrees(degrees - step);
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') setDegrees(degrees + step);
+    else if (event.key === 'Home') setCrewInput(input.key, 0);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  crew.refreshers.push(() => {
+    const degrees = degreesAt(spec, inputValues.get(input.key) ?? 0);
+    pointer.setAttribute('transform', `rotate(${degrees.toFixed(2)})`);
+    read.textContent = spec.free
+      ? `${String(Math.round(((degrees % 360) + 360) % 360)).padStart(3, '0')}°`
+      : steady(signedDegrees(degrees), 5);
+    dial.setAttribute('aria-valuenow', degrees.toFixed(0));
+  });
   return wrap;
 }
 
-function buildRigPanel() {
-  const host = document.getElementById('rig');
-  host.innerHTML = '';
-  const groups = new Map();
-  for (const part of rigged) {
-    for (const [axis, spec] of Object.entries(part.axes)) {
-      const key = keyOf(part.control, spec.input);
-      if (!groups.has(key)) groups.set(key, { control: part.control, input: spec.input, driven: [], rate: false });
-      if (spec.driver === 'rate') groups.get(key).rate = true;
-      const range = spec.driver === 'rate' ? 'continuous'
-        : spec.free ? 'free 360°'
-        : `${spec.min}°..${spec.max}°`;
-      groups.get(key).driven.push(`${part.node.name} · ${axis} ${range}`);
-    }
+/** Elevation scale: the gun's reachable arc, highest at the top. */
+function elevationScale(input) {
+  const spec = input.specs.find(item => item.axis === 'pitch' && item.driver !== 'rate') || input.specs[0];
+  // Refractor pitch is positive nose-down (a Sherman gun reads -20..5: twenty
+  // up, five down), so the scale shows the negated angle as elevation.
+  const top = spec.free ? 90 : Math.max(-spec.min, -spec.max);
+  const bottom = spec.free ? -90 : Math.min(-spec.min, -spec.max);
+  const clampElevation = value => Math.max(bottom, Math.min(top, value));
+  const yOf = value => ((top - clampElevation(value)) / ((top - bottom) || 1)) * 100;
+
+  const wrap = make('div', 'instrument');
+  const holder = make('div', 'elev-wrap');
+  const scale = make('div', 'elev');
+  scale.tabIndex = 0;
+  scale.setAttribute('role', 'slider');
+  scale.setAttribute('aria-label', 'Elevation');
+  scale.setAttribute('aria-orientation', 'vertical');
+  scale.setAttribute('aria-valuemin', String(bottom));
+  scale.setAttribute('aria-valuemax', String(top));
+  scale.title = `Drag to elevate · double-click to level\n${input.driven.join('\n')}`;
+  const zero = make('div', 'elev-zero');
+  zero.style.top = `${yOf(0)}%`;
+  const fill = make('div', 'elev-fill');
+  const mark = make('div', 'elev-mark');
+  scale.append(zero, fill, mark);
+  const topLabel = make('span', 'elev-lim is-top', signedDegrees(top));
+  const bottomLabel = make('span', 'elev-lim is-bottom', signedDegrees(bottom));
+  holder.append(scale, topLabel, bottomLabel);
+  const read = make('div', 'instrument-read');
+  wrap.append(make('div', 'instrument-label', 'Elevate'), holder, read);
+
+  const setElevation = value => setCrewInput(input.key, inputFor(spec, -clampElevation(value)));
+  draggable(scale, event => {
+    const rect = scale.getBoundingClientRect();
+    const share = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    setElevation(top - share * (top - bottom));
+  });
+  scale.addEventListener('dblclick', () => setCrewInput(input.key, 0));
+  scale.addEventListener('keydown', event => {
+    const elevation = -degreesAt(spec, inputValues.get(input.key) ?? 0);
+    const step = event.shiftKey ? 5 : 1;
+    if (event.key === 'ArrowUp' || event.key === 'ArrowRight') setElevation(elevation + step);
+    else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') setElevation(elevation - step);
+    else if (event.key === 'Home') setCrewInput(input.key, 0);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  crew.refreshers.push(() => {
+    const elevation = -degreesAt(spec, inputValues.get(input.key) ?? 0);
+    const markY = yOf(elevation);
+    const zeroY = yOf(0);
+    mark.style.top = `${markY}%`;
+    fill.style.top = `${Math.min(markY, zeroY)}%`;
+    fill.style.height = `${Math.abs(markY - zeroY)}%`;
+    read.textContent = steady(signedDegrees(elevation), 5);
+    scale.setAttribute('aria-valuenow', elevation.toFixed(0));
+  });
+  return wrap;
+}
+
+/** Two inputs on one square: a stick, or a drive pad that springs home. */
+function xyPad(inputX, inputY, { label, xName, yName, spring }) {
+  const wrap = make('div', 'instrument');
+  const pad = make('div', 'pad');
+  pad.tabIndex = 0;
+  pad.setAttribute('role', 'group');
+  pad.setAttribute('aria-label', label);
+  pad.title = `${spring ? 'Hold and drag' : 'Drag'} · double-click to centre\n${[...inputX.driven, ...inputY.driven].join('\n')}`;
+  const knob = make('div', 'pad-knob');
+  pad.append(knob);
+  const read = make('div', 'instrument-read');
+  wrap.append(make('div', 'instrument-label', label), pad, read);
+
+  const setBoth = (x, y) => {
+    inputValues.set(inputX.key, x);
+    inputValues.set(inputY.key, y);
+    applyRig();
+    refreshCrew();
+    startAnimating();
+  };
+  const clamp = value => Math.max(-1, Math.min(1, Math.round(value * 100) / 100));
+  draggable(pad, event => {
+    const rect = pad.getBoundingClientRect();
+    setBoth(
+      clamp(((event.clientX - rect.left) / rect.width) * 2 - 1),
+      clamp(1 - ((event.clientY - rect.top) / rect.height) * 2),
+    );
+  }, spring ? () => setBoth(0, 0) : null);
+  // Dead centre is hard to hit by hand.
+  pad.addEventListener('dblclick', () => setBoth(0, 0));
+
+  crew.refreshers.push(() => {
+    const x = inputValues.get(inputX.key) ?? 0;
+    const y = inputValues.get(inputY.key) ?? 0;
+    knob.style.left = `${(x + 1) * 50}%`;
+    knob.style.top = `${(1 - y) * 50}%`;
+    read.textContent = `${xName} ${steady(signedPercent(x), 4)} · ${yName} ${steady(signedPercent(y), 4)}`;
+  });
+  return wrap;
+}
+
+/** One input on a slider. Rate inputs (a propeller's throttle) reset on double-click. */
+function lever(input, label) {
+  const wrap = make('div', 'instrument lever');
+  const head = make('div', 'lever-head');
+  const read = make('span', 'instrument-read');
+  head.append(make('span', 'instrument-label', `${label}${input.rate ? ' · rate' : ''}`), read);
+  const slider = make('input', 'range');
+  slider.type = 'range';
+  slider.min = '-1';
+  slider.max = '1';
+  slider.step = '0.01';
+  slider.setAttribute('aria-label', label);
+  slider.title = input.driven.join('\n');
+  wrap.append(head, slider);
+  slider.addEventListener('input', () => setCrewInput(input.key, Number(slider.value)));
+  slider.addEventListener('dblclick', () => setCrewInput(input.key, 0));
+  crew.refreshers.push(() => {
+    const value = inputValues.get(input.key) ?? 0;
+    slider.value = String(value);
+    syncRange(slider);
+    read.textContent = steady(signedPercent(value), 4);
+  });
+  return wrap;
+}
+
+function tweenGear(key, target) {
+  crew.gear = { key, from: inputValues.get(key) ?? 0, to: target, t: 0 };
+  startAnimating();
+}
+
+/** Landing gear travels rather than teleports. True while moving. */
+function advanceGear(dt) {
+  const gear = crew.gear;
+  if (!gear) return false;
+  gear.t = Math.min(1, gear.t + dt / 0.9);
+  const eased = gear.t < .5 ? 2 * gear.t * gear.t : 1 - ((-2 * gear.t + 2) ** 2) / 2;
+  inputValues.set(gear.key, gear.from + (gear.to - gear.from) * eased);
+  applyRig();
+  refreshCrew();
+  if (gear.t >= 1) crew.gear = null;
+  return true;
+}
+
+function gearSwitch(input) {
+  const wrap = make('div', 'instrument');
+  const seg = make('div', 'seg');
+  seg.setAttribute('role', 'group');
+  seg.setAttribute('aria-label', 'Landing gear');
+  seg.title = input.driven.join('\n');
+  const down = make('button', '', 'Down');
+  const up = make('button', '', 'Up');
+  for (const [button, target] of [[down, 0], [up, 1]]) {
+    button.type = 'button';
+    button.addEventListener('click', () => tweenGear(input.key, target));
+    seg.append(button);
   }
-  if (!groups.size) {
-    host.innerHTML = '<div class="rig-none">no input-driven parts</div>';
+  wrap.append(make('div', 'instrument-label', 'Gear'), seg);
+  crew.refreshers.push(() => {
+    const target = crew.gear?.key === input.key ? crew.gear.to : (inputValues.get(input.key) ?? 0);
+    down.setAttribute('aria-pressed', String(target < .5));
+    up.setAttribute('aria-pressed', String(target >= .5));
+  });
+  return wrap;
+}
+
+function viewButton(view, seat, text) {
+  const button = make('button', text ? 'crew-btn' : 'crew-btn station-view');
+  button.type = 'button';
+  button.dataset.view = '';
+  button.viewNode = view.node;
+  button.setAttribute('aria-pressed', 'false');
+  if (text) {
+    button.textContent = text;
+  } else {
+    button.innerHTML = EYE_ICON;
+    button.setAttribute('aria-label', `Look from the ${seat.name.toLowerCase()} seat`);
+    button.title = `Seat camera · ${view.node.name}`;
+  }
+  button.addEventListener('click', () => {
+    markActiveView(view.node);
+    goToView(view.node);
+  });
+  return button;
+}
+
+function buildStation(seat, index, entry) {
+  const station = make('div', 'station');
+  station.dataset.active = 'false';
+  station.title = seat.riders ? '' : seat.control;
+  station.addEventListener('pointerdown', () => setActiveStation(index));
+
+  const head = make('div', 'station-head');
+  if (index < 9) head.append(make('kbd', 'station-key', String(index + 1)));
+  head.append(make('span', 'station-name', seat.name), make('span', 'station-role', stationRole(seat)));
+  if (!seat.riders && seat.views.length) head.append(viewButton(seat.views[0], seat));
+  station.append(head);
+
+  if (seat.riders) {
+    const views = make('div', 'station-views');
+    for (const view of seat.views) views.append(viewButton(view, seat, view.label));
+    station.append(views);
+    return station;
+  }
+
+  const body = make('div', 'station-body');
+  const controls = make('div', 'station-controls');
+  const inputs = seat.inputs;
+  const air = entry?.category === 'air';
+
+  if (inputs.has(AIM.x) || inputs.has(AIM.y)) {
+    const sight = make('div', 'instrument-row');
+    if (inputs.has(AIM.x)) sight.append(traverseDial(inputs.get(AIM.x)));
+    if (inputs.has(AIM.y)) sight.append(elevationScale(inputs.get(AIM.y)));
+    controls.append(sight);
+  }
+  if (inputs.has(STICK.x) && inputs.has(STICK.y)) {
+    controls.append(xyPad(inputs.get(STICK.x), inputs.get(STICK.y),
+      { label: 'Stick', xName: 'roll', yName: 'pitch', spring: false }));
+  }
+  if (inputs.has(DRIVE.x) && inputs.has(DRIVE.y)) {
+    controls.append(xyPad(inputs.get(DRIVE.x), inputs.get(DRIVE.y), {
+      label: air ? 'Rudder · throttle' : 'Drive',
+      xName: air ? 'rud' : 'str',
+      yName: 'thr',
+      spring: true,
+    }));
+  }
+  const paired = new Set();
+  for (const pair of [STICK, DRIVE]) {
+    if (inputs.has(pair.x) && inputs.has(pair.y)) paired.add(pair.x).add(pair.y);
+  }
+  const levers = make('div', 'instrument-row');
+  for (const [name, input] of inputs) {
+    if (name === AIM.x || name === AIM.y || paired.has(name) || name === GEAR_INPUT) continue;
+    const label = name === DRIVE.x && air ? 'Rudder' : SHORT_LABEL[name] || name.replace(/^c_PI/, '');
+    levers.append(lever(input, KNOWN_INPUTS.has(name) ? label : label));
+  }
+  if (levers.childElementCount) controls.append(levers);
+  if (inputs.has(GEAR_INPUT) || seat.engine) {
+    const extras = make('div', 'instrument');
+    if (inputs.has(GEAR_INPUT)) extras.append(gearSwitch(inputs.get(GEAR_INPUT)));
+    if (seat.engine) {
+      const engine = make('button', 'crew-btn', 'Engine');
+      engine.type = 'button';
+      engine.title = animatedNodes.length ? `Spins ${animatedNodes.join(', ')}` : 'Run the baked engine clips';
+      engine.addEventListener('click', () => setEngine(!engineRunning));
+      crew.refreshers.push(() => engine.setAttribute('aria-pressed', String(engineRunning)));
+      const engineWrap = make('div', 'instrument');
+      engineWrap.append(make('div', 'instrument-label', 'Engine'), engine);
+      extras.append(engineWrap);
+    }
+    controls.append(extras);
+  }
+
+  const triggers = make('div', 'station-triggers');
+  seat.guns.forEach((group, slot) => {
+    triggers.append(buildTrigger(group, entry, slot === 0 ? 'Space' : slot === 1 ? 'F' : null));
+  });
+  body.append(controls, triggers);
+  station.append(body);
+  return station;
+}
+
+function setActiveStation(index) {
+  if (!crew.stations[index] || index === crew.active) {
+    if (crew.stations[index]) crewRow.children[index].dataset.active = 'true';
     return;
   }
-  // Seat name only matters once a vehicle has more than one station.
-  const seats = new Set([...groups.values()].map(g => g.control));
-  // Match up x/y halves per seat; each pad is keyed by its x half.
-  const pads = new Map();     // x key -> { pair, yKey }
-  const absorbed = new Set(); // y keys consumed by a pad
-  for (const pair of XY_PAIRS) {
-    for (const seat of seats) {
-      const keyX = keyOf(seat, pair.x);
-      const keyY = keyOf(seat, pair.y);
-      if (groups.has(keyX) && groups.has(keyY)) {
-        pads.set(keyX, { pair, yKey: keyY });
-        absorbed.add(keyY);
-      }
-    }
-  }
-  for (const [key, g] of groups) {
-    if (absorbed.has(key)) continue;
-    const seat = seats.size > 1 ? `<span class="seat">${g.control}</span>` : '';
-    const padSpec = pads.get(key);
-    if (padSpec) {
-      host.appendChild(buildPad(key, g, padSpec.yKey, groups.get(padSpec.yKey), padSpec.pair, seat));
-      continue;
-    }
-    const wrap = document.createElement('div');
-    wrap.className = 'rig-input';
-    wrap.innerHTML =
-      `<label><span>${INPUT_LABEL[g.input] || g.input}${g.rate ? ' — rate' : ''}</span><span data-out>0.00</span></label>` +
-      `<input type="range" min="${g.input === GEAR_INPUT ? 0 : -1}" max="1" step="0.01" value="0">` +
-      `<div class="driven">${seat}${g.driven.join('<br>')}</div>`;
-    const slider = wrap.querySelector('input');
-    const out = wrap.querySelector('[data-out]');
-    const reset = () => { slider.value = '0'; inputValues.set(key, 0); out.textContent = '0.00'; applyRig(); invalidate(); };
-    slider.addEventListener('input', () => {
-      inputValues.set(key, Number(slider.value));
-      out.textContent = Number(slider.value).toFixed(2);
-      applyRig();
-      if (g.rate && Number(slider.value) !== 0) startAnimating(); else invalidate();
-    });
-    // A throttle is held, not aimed: let it spring back like the real control.
-    if (g.rate) slider.addEventListener('dblclick', reset);
-    host.appendChild(wrap);
+  crew.active = index;
+  [...crewRow.children].forEach((node, position) => {
+    node.dataset.active = String(position === index);
+  });
+}
+
+function markActiveView(node) {
+  crew.view = node;
+  document.getElementById('view-orbit').setAttribute('aria-pressed', String(!node));
+  for (const button of crewRow.querySelectorAll('[data-view]')) {
+    button.setAttribute('aria-pressed', String(button.viewNode === node));
   }
 }
 
+function renderCrewKeys() {
+  const has = input => crew.stations.some(seat => seat.inputs.has(input));
+  const keys = [];
+  if (crew.stations.length > 1) keys.push([`1–${Math.min(crew.stations.length, 9)}`, 'station']);
+  if (crew.stations.some(seat => seat.guns.length)) keys.push(['Space', 'fire']);
+  if (crew.stations.some(seat => seat.guns.length > 1)) keys.push(['F', 'second gun']);
+  if (has(DRIVE.x) || has(DRIVE.y)) keys.push(['WASD', 'drive']);
+  if (has(STICK.x) || has(STICK.y)) keys.push(['Arrows', 'stick']);
+  if (has(GEAR_INPUT)) keys.push(['G', 'gear']);
+  if (mixer) keys.push(['E', 'engine']);
+  if (seatViews.length) keys.push(['V', 'seat view'], ['O', 'orbit']);
+  document.getElementById('crew-keys').innerHTML =
+    keys.map(([key, what]) => `<span><kbd>${key}</kbd>${what}</span>`).join('');
+}
+
+function releaseCrewKeys() {
+  const keys = new Set([...crew.held.values()].map(held => held.inputKey));
+  crew.held.clear();
+  for (const inputKey of keys) setCrewInput(inputKey, 0);
+  for (const group of crew.keyGuns.values()) stopFiring(group);
+  crew.keyGuns.clear();
+}
+
+function buildCrew(entry) {
+  crew.held.clear();
+  crew.keyGuns.clear();
+  crew.gear = null;
+  crew.refreshers = [];
+  crew.active = -1;
+  crew.category = entry?.category || null;
+  crew.stations = collectStations(entry);
+  crewRow.replaceChildren(...crew.stations.map((seat, index) => buildStation(seat, index, entry)));
+  crewEl.hidden = !crew.stations.length;
+  setActiveStation(0);
+  const count = crew.stations.length;
+  document.getElementById('crew-count').textContent = `${count} ${count === 1 ? 'station' : 'stations'}`;
+  document.getElementById('view-orbit').hidden = !seatViews.length;
+  markActiveView(null);
+  renderCrewKeys();
+  refreshCrew();
+  renderHints();
+}
+
+function stationWith(input) {
+  const active = crew.stations[crew.active];
+  if (active?.inputs.has(input)) return active;
+  return crew.stations.find(seat => seat.inputs.has(input)) || null;
+}
+
+/** The active station's gun in `slot`, or the first station that has one. */
+function gunInSlot(slot) {
+  if (!crew.stations[crew.active]?.guns[slot]) {
+    const index = crew.stations.findIndex(seat => seat.guns[slot]);
+    if (index < 0) return null;
+    setActiveStation(index);
+  }
+  return crew.stations[crew.active].guns[slot];
+}
+
+function crewKey(event, down) {
+  if (crewEl.hidden || !browser.hidden) return false;
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  const target = event.target;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return false;
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+  if (KEY_INPUTS[key]) {
+    const [inputName, direction] = KEY_INPUTS[key];
+    const seat = stationWith(inputName);
+    if (!seat) return false;
+    const inputKey = keyOf(seat.control, inputName);
+    if (down) {
+      if (event.repeat) return true;
+      crew.held.set(key, { inputKey, direction });
+    } else {
+      crew.held.delete(key);
+    }
+    let value = 0;
+    for (const held of crew.held.values()) if (held.inputKey === inputKey) value += held.direction;
+    setCrewInput(inputKey, value);
+    return true;
+  }
+
+  if (key === ' ' || key === 'f') {
+    // A focused control outside the console keeps its own Space.
+    if (key === ' ' && target.tagName === 'BUTTON' && !crewEl.contains(target)) return false;
+    if (!down) {
+      const group = crew.keyGuns.get(key);
+      crew.keyGuns.delete(key);
+      if (group) stopFiring(group);
+      return Boolean(group);
+    }
+    if (event.repeat) return crew.keyGuns.has(key);
+    const group = gunInSlot(key === ' ' ? 0 : 1);
+    if (!group) return false;
+    crew.keyGuns.set(key, group);
+    startFiring(group);
+    return true;
+  }
+
+  if (!down || event.repeat) return false;
+  if (/^[1-9]$/.test(key) && crew.stations[Number(key) - 1]) {
+    setActiveStation(Number(key) - 1);
+    return true;
+  }
+  if (key === 'g') {
+    const seat = stationWith(GEAR_INPUT);
+    if (!seat) return false;
+    const inputKey = keyOf(seat.control, GEAR_INPUT);
+    const heading = crew.gear?.key === inputKey ? crew.gear.to : (inputValues.get(inputKey) ?? 0);
+    tweenGear(inputKey, heading < .5 ? 1 : 0);
+    return true;
+  }
+  if (key === 'e' && mixer) {
+    setEngine(!engineRunning);
+    return true;
+  }
+  if (key === 'v') {
+    const view = crew.stations[crew.active]?.views[0]
+      || crew.stations.find(seat => seat.views.length)?.views[0];
+    if (!view) return false;
+    markActiveView(view.node);
+    goToView(view.node);
+    return true;
+  }
+  if (key === 'o' && seatViews.length) {
+    orbitView();
+    return true;
+  }
+  return false;
+}
+
+addEventListener('keydown', event => { if (crewKey(event, true)) event.preventDefault(); });
+addEventListener('keyup', event => { if (crewKey(event, false)) event.preventDefault(); });
+// A key released while the tab is in the background never sends keyup.
+addEventListener('blur', releaseCrewKeys);
+
+const CREW_COLLAPSED_KEY = 'bf42-mesh-crew-collapsed';
+function setCrewCollapsed(collapsed) {
+  crewEl.dataset.collapsed = String(collapsed);
+  const button = document.getElementById('crew-collapse');
+  button.setAttribute('aria-expanded', String(!collapsed));
+  button.setAttribute('aria-label', collapsed ? 'Expand crew stations' : 'Collapse crew stations');
+  try {
+    if (collapsed) localStorage.setItem(CREW_COLLAPSED_KEY, '1');
+    else localStorage.removeItem(CREW_COLLAPSED_KEY);
+  } catch { /* private mode: the console just opens expanded next time */ }
+}
+try {
+  if (localStorage.getItem(CREW_COLLAPSED_KEY)) setCrewCollapsed(true);
+} catch { /* unreadable storage: default expanded */ }
+document.getElementById('crew-collapse').addEventListener('click', () =>
+  setCrewCollapsed(crewEl.dataset.collapsed !== 'true'));
+document.getElementById('view-orbit').addEventListener('click', orbitView);
+
+/** Mouse hints under the stage, for what the current state accepts. */
+function renderHints() {
+  const hints = ['Drag orbit', 'Scroll zoom', 'Right-drag pan'];
+  if (state.collision) hints.push('Click a face to place a shot');
+  if (compare.entry) hints.push('Esc drops the opponent');
+  hints.push('/ armoury');
+  document.getElementById('hints').innerHTML =
+    hints.map(hint => `<span>${hint}</span>`).join('<span class="sep">·</span>');
+}
+
 const loader = new GLTFLoader();
-const overlay = createLoadOverlay(main);
+const overlay = createLoadOverlay(main, { placement: 'corner' });
 // Cache-busting is an iteration aid, not a production behaviour. The models are
 // regenerated constantly while extracting, so locally (and with ?nocache
 // anywhere) never serve a cached one — but on the deployed viewer it means
@@ -3842,8 +5236,8 @@ function syncVariantControls(entry, selected) {
   document.getElementById('variant-panel').hidden =
     entry.variants.length === 1;
   document.getElementById('variant-summary').innerHTML =
-    `<strong>${configurationLabel(selected.configuration)}</strong> / ` +
-    skinLabel(skinValue(selected));
+    `<b>${configurationLabel(selected.configuration)}</b> <span class="sep">/</span> ` +
+    attr(skinLabel(skinValue(selected)));
 }
 
 function selectedFromControls() {
@@ -3894,6 +5288,7 @@ async function show(entry, variant) {
     currentVariant = variant;
     current = gltf.scene;
     markCurrent(entry, variant);
+    renderCrumb(entry, variant);
     main.dataset.model = entry.name;
     main.dataset.variant = variantKey(variant);
     main.dataset.loadState = 'ready';
@@ -3999,10 +5394,10 @@ async function show(entry, variant) {
   collectScrolling(current);
   collectAnimations(gltf);
   collectFireArms(current);
-  collectViews(current, entry);
+  collectViews(current);
   cameraGlide = null;
   buildOpponentSelect(entry);
-  buildRigPanel();
+  buildCrew(entry);
   applyState();
 
   const box = new THREE.Box3().setFromObject(current);
@@ -4038,7 +5433,14 @@ async function show(entry, variant) {
 
   const missing = report.texturesNotFound || [];
   document.getElementById('missing').innerHTML =
-    missing.length ? missing.map(t => `<li>${t}</li>`).join('') : '<li style="color:var(--muted)">none</li>';
+    missing.length ? missing.map(t => `<li>${attr(t)}</li>`).join('') : '<li class="none">none</li>';
+  const resolvedCount = report.texturesResolved ? Object.keys(report.texturesResolved).length : 0;
+  const texturesTotal = resolvedCount + missing.length;
+  if (texturesTotal) {
+    document.getElementById('variant-summary').insertAdjacentHTML('beforeend',
+      ` <span class="sep">·</span> <span class="${missing.length ? 'tone-warn' : 'tone-ok'}">`
+      + `${resolvedCount}/${texturesTotal} textures</span>`);
+  }
 
   document.getElementById('tree').innerHTML = (report.partTree || [])
     .slice().reverse()
@@ -4675,6 +6077,31 @@ function closeBrowser() {
   document.getElementById('browse-open').focus();
 }
 
+/** "Axis · Japanese" — the sides, then the armies that field it. */
+function sideLine(entry, withClass = false) {
+  const factions = entry?.factions || [];
+  return [
+    (entry?.sides || []).join(' / '),
+    factions.length > 2 ? `${factions.length} nations` : factions.join(', '),
+    withClass ? CATEGORY_LABELS[entry?.category] || entry?.category : null,
+  ].filter(Boolean).join(' · ');
+}
+
+/** `Sherman / complex | Kasserine Pass`, top-left of the stage. */
+function renderCrumb(entry, variant) {
+  const crumb = document.getElementById('crumb');
+  const parts = [
+    `<b>${attr(entry.name)}</b>`,
+    '<span class="sep">/</span>',
+    `<span>${attr(configurationLabel(variant.configuration))}</span>`,
+  ];
+  if (variant.level) {
+    parts.push('<span class="sep">|</span>', `<span>${attr(variant.level.replace(/_/g, ' '))}</span>`);
+  }
+  crumb.innerHTML = parts.join('');
+  crumb.hidden = false;
+}
+
 /** Sidebar summary of whatever is loaded, so the browser can stay closed. */
 function markCurrent(entry, variant) {
   currentCard.className = sideClass(entry);
@@ -4682,18 +6109,18 @@ function markCurrent(entry, variant) {
   const source = thumbFor(entry);
   currentThumb.hidden = !source;
   if (source) currentThumb.src = source;
-  const bits = [
+  document.getElementById('current-meta').textContent = [
     CATEGORY_LABELS[entry.category] || entry.category,
-    (entry.factions || []).join(', '),
     entry.dimensions ? `${entry.dimensions.length.toFixed(2)} m` : null,
     `${entry.triangles.toLocaleString()} tris`,
-  ].filter(Boolean);
-  document.getElementById('current-meta').textContent = bits.join(' · ');
+  ].filter(Boolean).join(' · ');
+  document.getElementById('current-side').textContent = sideLine(entry);
   if (!browser.hidden) renderBrowser();
   location.replace(`#${encodeURIComponent(entry.name)}/${variantKey(variant)}`);
 }
 
 document.getElementById('browse-open').addEventListener('click', openBrowser);
+document.getElementById('shell-search').addEventListener('click', openBrowser);
 document.getElementById('browse-close').addEventListener('click', closeBrowser);
 searchInput.addEventListener('input', () => {
   browseState.query = searchInput.value.trim().toLowerCase();
@@ -4714,6 +6141,9 @@ addEventListener('keydown', event => {
   if (event.key === 'Escape' && !browser.hidden) {
     event.preventDefault();
     closeBrowser();
+  } else if (event.key === 'Escape' && compare.entry && !typing) {
+    event.preventDefault();
+    void setOpponent(null);
   } else if (!typing && (event.key === '/' || (event.key === 'k' && (event.metaKey || event.ctrlKey)))) {
     event.preventDefault();
     if (browser.hidden) openBrowser(); else searchInput.focus();
@@ -4788,10 +6218,27 @@ window.__modelInspector = {
   setFiring: (index, firing) => {
     const group = fireGroups[index];
     if (!group) return;
-    group.firing = Boolean(firing);
-    if (group.firing) group.cooldown = 0;
-    startAnimating();
+    if (firing) startFiring(group); else stopFiring(group);
   },
+  // Every player input, per crew station, for shoot.mjs --rig and headless checks.
+  getInputs: () => crew.stations.flatMap(seat => [...seat.inputs.values()].map(input => ({
+    key: input.key,
+    station: seat.name,
+    input: input.input,
+    label: `${seat.name} ${SHORT_LABEL[input.input] || input.input}`,
+    gear: input.input === GEAR_INPUT,
+    rate: input.rate,
+    driven: input.driven,
+  }))),
+  setInput: (key, value) => setCrewInput(key, Number(value)),
+  getCrew: () => crew.stations.map(seat => ({
+    name: seat.name,
+    control: seat.control,
+    role: stationRole(seat),
+    inputs: [...seat.inputs.keys()],
+    guns: seat.guns.map(group => group.node.name),
+    views: seat.views.map(view => view.node.name),
+  })),
   // Thumbnails are shot through here rather than through setView, because the
   // scale lineup relies on every one of them being framed to the *same* multiple
   // of the model's bounding sphere. Anything that reframes per-model — fitting
@@ -4884,6 +6331,14 @@ function fromHash() {
 if (manifest.length) {
   const deep = fromHash();
   await showVariant(deep ? deep.entry.index : 0, deep ? deep.variantIndex : null);
+}
+
+// Maps and Poses link here with ?browse from the shell's search pill.
+if (new URLSearchParams(location.search).has('browse')) {
+  const url = new URL(location.href);
+  url.searchParams.delete('browse');
+  history.replaceState(null, '', url.pathname + url.search + url.hash);
+  openBrowser();
 }
 
 resize();
