@@ -677,6 +677,14 @@ class Assembler:
                 effect["sizeOverTime"] = payload.size_over_time
             if payload.color_over_time:
                 effect["colorOverTime"] = payload.color_over_time
+            # Emitter motion along the direction of fire. The Sherman's
+            # additive muzzle smoke (`Em_MuzzPanz_WSmoke`) grows to 3.6 m but
+            # recedes at -5 m/s in game; parked at the muzzle it reads as a
+            # fireball five times the real flash.
+            if emitter.relative_position_in_dof:
+                effect["offsetInDof"] = emitter.relative_position_in_dof
+            if emitter.positional_speed_in_dof:
+                effect["speedInDof"] = emitter.positional_speed_in_dof
             nodes.append(builder.add_node(gltf.Node(
                 name=ref.template,
                 translation=ref.position,
@@ -701,6 +709,126 @@ class Assembler:
             extras={"templateKind": template.kind,
                     "effect": {"kind": "bundle"}},
         ))
+
+    def _projectile_has_rocket_engine(self, template: con_mod.ObjectTemplate,
+                                      depth: int = 0) -> bool:
+        """Whether a projectile carries a `setEngineType c_ETRocket` Engine.
+
+        The Katyusha's rocket declares its motor as an ordinary
+        `addTemplate KatyushaRocket_Engine` child; a shell has no engine and
+        just falls.
+        """
+        if depth > 4:
+            return False
+        for ref in template.children:
+            child = self.library.object(ref.template)
+            if child is None:
+                continue
+            if (child.kind.lower() == "engine"
+                    and (child.engine_type or "").lower() == "c_etrocket"):
+                return True
+            if self._projectile_has_rocket_engine(child, depth + 1):
+                return True
+        return False
+
+    def _projectile_trail_spec(
+            self, projectile: con_mod.ObjectTemplate,
+    ) -> tuple[dict | None, con_mod.ObjectTemplate | None]:
+        """The smoke sprite a projectile drags behind it, or (None, None).
+
+        Two declaration styles ship: `startEffectTemplate e_KatyushaFume` on
+        the Katyusha rocket, and a plain `addTemplate e_PanzShootTrail`
+        EffectBundle child on tank shells. Either way the bundle's emitters
+        name SpriteParticle payloads; the longest-lived one is the trail the
+        eye follows (the KatyushaFume smoke lives 1.5 s against the fire
+        tongue's 0.2 s).
+        """
+        bundles: list[con_mod.ObjectTemplate | None] = []
+        if projectile.start_effect_template:
+            bundles.append(self.library.object(projectile.start_effect_template))
+        for ref in projectile.children:
+            child = self.library.object(ref.template)
+            if child is not None and child.kind.lower() == "effectbundle":
+                bundles.append(child)
+        best: tuple[float, dict, con_mod.ObjectTemplate] | None = None
+        for bundle in bundles:
+            if bundle is None:
+                continue
+            for ref in bundle.children:
+                emitter = self.library.object(ref.template)
+                if emitter is None or emitter.emitter_template is None:
+                    continue
+                payload = self.library.object(emitter.emitter_template)
+                if (payload is None or payload.kind.lower() != "spriteparticle"
+                        or not payload.sprite_texture):
+                    continue
+                ttl = payload.time_to_live or emitter.time_to_live or 0.5
+                if best is not None and ttl <= best[0]:
+                    continue
+                spec: dict = {"texture": payload.sprite_texture,
+                              "timeToLive": ttl}
+                if payload.sprite_size is not None:
+                    spec["size"] = payload.sprite_size
+                if payload.size_over_time:
+                    spec["sizeOverTime"] = payload.size_over_time
+                if payload.color_over_time:
+                    spec["colorOverTime"] = payload.color_over_time
+                best = (ttl, spec, payload)
+        return (best[1], best[2]) if best else (None, None)
+
+    def _projectile_spec(self, builder: gltf.GlbBuilder,
+                         template: con_mod.ObjectTemplate,
+                         report: Report) -> tuple[dict | None, list[int]]:
+        """The typed projectile dict for a FireArms, plus baked hidden nodes.
+
+        `kind` decides what a viewer flies out of the muzzle: `bullet` (no
+        geometry — invisible in game bar the tracer rounds), `shell` (a drawn
+        body that falls), `rocket` (a drawn body with a `c_ETRocket` motor
+        that accelerates). Drawn bodies prefer `visibleDummyProjectileTemplate`
+        — the mesh the game itself shows in flight — and are baked once as a
+        hidden tagged node so mesh/materials/textures ride the ordinary GLB
+        path, same as the flash emitters.
+        """
+        name = template.projectile_template
+        if not name:
+            return None, []
+        spec: dict = {"template": name, "kind": "bullet", "trail": None}
+        nodes: list[int] = []
+        projectile = self.library.object(name)
+        if projectile is None:
+            return spec, nodes
+        drawn = (self.library.object(template.visible_dummy_projectile_template)
+                 if template.visible_dummy_projectile_template else None)
+        body = drawn if drawn is not None and drawn.geometry else projectile
+        if projectile.time_to_live is not None:
+            spec["timeToLive"] = projectile.time_to_live
+        if projectile.gravity_modifier is not None:
+            spec["gravity"] = projectile.gravity_modifier
+        if body.geometry:
+            spec["kind"] = ("rocket"
+                            if self._projectile_has_rocket_engine(projectile)
+                            else "shell")
+            mesh_index, _ = self._mesh_index(builder, body.geometry, report)
+            if mesh_index is not None:
+                nodes.append(builder.add_node(gltf.Node(
+                    name=f"{template.name} projectile",
+                    mesh=mesh_index,
+                    extras={"templateKind": body.kind,
+                            "projectileMesh": {"template": body.name,
+                                               "geometry": body.geometry}},
+                )))
+        trail, payload = self._projectile_trail_spec(projectile)
+        if trail is not None:
+            spec["trail"] = trail
+            quad = self._sprite_quad_mesh(builder, trail["texture"], report)
+            if quad is not None:
+                nodes.append(builder.add_node(gltf.Node(
+                    name=f"{template.name} trail",
+                    mesh=quad,
+                    extras={"templateKind": payload.kind,
+                            "projectileTrail": trail},
+                )))
+        return spec, nodes
 
     def _fire_arms(self, builder: gltf.GlbBuilder,
                    template: con_mod.ObjectTemplate, report: Report,
@@ -747,8 +875,11 @@ class Assembler:
                     tracer["timeToLive"] = projectile.time_to_live
                 if projectile.tracer_scaler is not None:
                     tracer["scaler"] = projectile.tracer_scaler
+        projectile_spec, projectile_nodes = self._projectile_spec(
+            builder, template, report)
+        nodes += projectile_nodes
         extras = {key: value for key, value in {
-            "projectile": template.projectile_template,
+            "projectile": projectile_spec,
             "roundOfFire": template.round_of_fire,
             "magSize": template.mag_size,
             "velocity": template.velocity,
@@ -765,6 +896,8 @@ class Assembler:
             + (f", {template.round_of_fire:g} rps" if template.round_of_fire else "")
             + (f", {template.velocity:g} m/s" if template.velocity else "")
             + (f", tracer every {tracer['interval']}" if tracer else "")
+            + (f", projectile {projectile_spec['kind']}"
+               if projectile_spec else "")
             + (f", flash {template.visible_barrel_template}"
                if template.visible_barrel_template else ""))
         return nodes, extras

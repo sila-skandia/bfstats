@@ -245,6 +245,9 @@ class ObjectTemplate:
                                     tuple[float, float, float]]] = field(default_factory=list)
     projectile_template: str | None = None
     projectile_position: tuple[float, float, float] | None = None
+    # The body the game draws in flight when it differs from the physics
+    # projectile (`visibleDummyProjectileTemplate KatyushaRocketDummy`).
+    visible_dummy_projectile_template: str | None = None
     visible_barrel_template: str | None = None
     tracer_template: str | None = None
     # Every Nth round carries the tracer (`setTracerTemplate X CRD_NONE/3/0/0`).
@@ -257,6 +260,15 @@ class ObjectTemplate:
     velocity: float | None = None
     tracer_scaler: float | None = None
     time_to_live: float | None = None
+    # A projectile's looping in-flight effect (`startEffectTemplate
+    # e_KatyushaFume` — the rocket's smoke trail).
+    start_effect_template: str | None = None
+    # `gravityModifier 0` on bullets, negative on rising smoke; scales the
+    # engine's gravity on whatever this template spawns as.
+    gravity_modifier: float | None = None
+    # `setEngineType c_ETRocket` marks an Engine that accelerates its parent
+    # after launch (the Katyusha rocket's motor), vs. propellers and wheels.
+    engine_type: str | None = None
 
     # Effect chain: EffectBundle -> Emitter (`ObjectTemplate.template` names
     # the payload) -> Particle (mesh) or SpriteParticle (textured quad).
@@ -268,6 +280,11 @@ class ObjectTemplate:
     dest_blend_mode: str | None = None
     show_in_first_person: bool = False
     show_in_third_person: bool = False
+    # Emitter motion: where particles spawn along the direction of fire
+    # (`relativePositionInDof`) and how fast they drift along it
+    # (`positionalSpeedInDof`, negative = receding behind the muzzle).
+    relative_position_in_dof: float | None = None
+    positional_speed_in_dof: float | None = None
 
     @property
     def is_lod_selector(self) -> bool:
@@ -500,15 +517,32 @@ class ObjectLibrary:
                     except (ValueError, IndexError):
                         continue
                 elif cmd in ("projectiletemplate", "visiblebarreltemplate",
+                             "visibledummyprojectiletemplate",
+                             "starteffecttemplate", "setenginetype",
                              "setinputfire", "destblendmode", "texture"):
                     if args:
                         setattr(obj, {
                             "projectiletemplate": "projectile_template",
                             "visiblebarreltemplate": "visible_barrel_template",
+                            "visibledummyprojectiletemplate":
+                                "visible_dummy_projectile_template",
+                            "starteffecttemplate": "start_effect_template",
+                            "setenginetype": "engine_type",
                             "setinputfire": "input_fire",
                             "destblendmode": "dest_blend_mode",
                             "texture": "sprite_texture",
                         }[cmd], args.split()[0])
+                elif cmd in ("gravitymodifier", "positionalspeedindof",
+                             "relativepositionindof"):
+                    # Written as CRD triples (`CRD_UNIFORM/-5/-10/0`) or bare
+                    # numbers (`gravityModifier 0`); the first value is the
+                    # mean / fixed one either way.
+                    if args and (value := crd(args.split()[0])) is not None:
+                        setattr(obj, {
+                            "gravitymodifier": "gravity_modifier",
+                            "positionalspeedindof": "positional_speed_in_dof",
+                            "relativepositionindof": "relative_position_in_dof",
+                        }[cmd], value)
                 elif cmd == "settracertemplate":
                     tokens = args.split()
                     if tokens:
