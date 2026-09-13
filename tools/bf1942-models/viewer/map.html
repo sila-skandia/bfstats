@@ -276,10 +276,10 @@ function flySpeed() {
 function lookDelta(dx, dy) {
   if (!dx && !dy) return;
   if (optPilot.checked && aircraft) {
-    // The mouse is the stick, not a head. Y is inverted, which is the game's
-    // own default for aircraft.
-    stick.roll = Math.max(-1, Math.min(1, stick.roll + dx * STICK_SENS));
-    stick.pitch = Math.max(-1, Math.min(1, stick.pitch + dy * STICK_SENS));
+    // A head inside the cockpit, not a stick: the arrow keys fly the aircraft.
+    head.yaw = Math.max(-HEAD_YAW, Math.min(HEAD_YAW, head.yaw - dx * HEAD_SENS));
+    head.pitch = Math.max(HEAD_PITCH_DOWN,
+      Math.min(HEAD_PITCH_UP, head.pitch - dy * HEAD_SENS));
     return;
   }
   look.yaw -= dx * LOOK_SENS;
@@ -297,6 +297,8 @@ addEventListener('keydown', e => {
     aircraft.reset();
     stick.roll = 0;
     stick.pitch = 0;
+    head.yaw = 0;
+    head.pitch = 0;
   }
   if (captured && (FLY_KEYS.has(e.code)
       || (optPilot.checked && AIR_KEYS.has(e.code)))) e.preventDefault();
@@ -1405,17 +1407,32 @@ function applyVisibility() {
 // point. Piloting therefore adds no extraction: it drives what is already here.
 //
 // Control scheme is the game's own (`Settings/Default/Controls/Air.con`): the
-// mouse is the stick — X rolls, Y pitches, inverted — A/D is rudder and W/S is
-// throttle. Landing gear is deliberately not bound; in the real game it is
-// automatic on altitude thresholds, which `Aircraft.integrate` reproduces.
+// keyboard flies the aircraft and the mouse is a head, not a stick. W/S is
+// throttle, A/D is rudder, the arrow keys are the stick — up/down pitch,
+// left/right roll. Landing gear is deliberately not bound; in the real game it
+// is automatic on altitude thresholds, which `Aircraft.integrate` reproduces.
+//
+// Freeing the mouse from the stick lets it do what the game's own hold-LShift
+// free-look does: swivel the pilot's head inside a cockpit that is still flying
+// straight. The clamps below are the ones the Corsair's camera declares.
 
 let aircraft = null;
-const AIR_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR']);
-// Stick position, -1..1, decayed toward centre so a mouse that stops moving
-// lets the surfaces spring back the way `setAutomaticReset 1` does.
+const AIR_KEYS = new Set([
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+]);
+// Stick position, -1..1. Held keys drive it toward full deflection and it
+// springs back to centre when they are released, which is what the surfaces'
+// own `setAutomaticReset 1` does in the engine.
 const stick = { roll: 0, pitch: 0 };
-const STICK_SENS = 0.0065;
-const STICK_RETURN = 1.6;
+const STICK_RATE = 2.4;      // to full deflection in ~0.4 s
+const STICK_RETURN = 3.2;    // and back to centre a little faster
+// `CorsairCamera` look limits, from the template: +-70 deg yaw, -40..+5 pitch.
+const HEAD_YAW = THREE.MathUtils.degToRad(70);
+const HEAD_PITCH_DOWN = THREE.MathUtils.degToRad(-40);
+const HEAD_PITCH_UP = THREE.MathUtils.degToRad(5);
+const head = { yaw: 0, pitch: 0 };
+const HEAD_SENS = 0.0022;
 const cockpit = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 
 /**
@@ -1471,37 +1488,58 @@ function setPilot(on) {
   }
   stick.roll = 0;
   stick.pitch = 0;
+  head.yaw = 0;
+  head.pitch = 0;
   hud.textContent = on
-    ? 'mouse stick (X roll, Y pitch) · W/S throttle · A/D rudder · R reset · Esc'
+    ? 'W/S throttle · A/D rudder · arrows pitch and roll · mouse look around · R reset · Esc'
     : HUD_FLY;
 }
 
-/** Read the keyboard and the accumulated stick into the aircraft's inputs. */
+/**
+ * Move an axis toward a held key's demand, and spring it back when released.
+ * A digital key on an analogue surface needs this or every input is a slam.
+ */
+function axisToward(current, demand, dt) {
+  const rate = (demand === 0 ? STICK_RETURN : STICK_RATE) * dt;
+  const gap = demand - current;
+  return Math.abs(gap) <= rate ? demand : current + Math.sign(gap) * rate;
+}
+
+/** Read the keyboard into the aircraft's inputs and step the sim. */
 function pilot(dt) {
   if (!aircraft) return;
-  if (captured) {
-    const throttle = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
-    if (throttle) {
-      aircraft.setInput('c_PIThrottle', Math.max(0, Math.min(1,
-        aircraft.input('c_PIThrottle') + throttle * dt)));
-    }
-    const rudder = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
-    aircraft.setInput('c_PIYaw', rudder);
-  } else {
-    aircraft.setInput('c_PIYaw', 0);
+  const held = captured ? keys : new Set();
+
+  // W/S throttle. It latches rather than springs — you set a power setting and
+  // it stays there, which is what a throttle quadrant does.
+  const power = (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0);
+  if (power) {
+    aircraft.setInput('c_PIThrottle', Math.max(0, Math.min(1,
+      aircraft.input('c_PIThrottle') + power * dt)));
   }
-  // Centre the stick when the mouse is still. Refractor's own surfaces do this
-  // via setAutomaticReset; doing it here keeps the plane flyable with a mouse
-  // that has no spring.
-  const decay = Math.max(0, 1 - STICK_RETURN * dt);
-  stick.roll *= decay;
-  stick.pitch *= decay;
+
+  // A/D rudder, arrows for the stick.
+  aircraft.setInput('c_PIYaw',
+    axisToward(aircraft.input('c_PIYaw'),
+      (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
+  stick.roll = axisToward(stick.roll,
+    (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0), dt);
+  stick.pitch = axisToward(stick.pitch,
+    (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0), dt);
   aircraft.setInput('c_PIRoll', stick.roll);
   aircraft.setInput('c_PIPitch', stick.pitch);
+
   aircraft.integrate(dt);
+
+  // The camera rides the cockpit node, with the free-look offset applied in the
+  // aircraft's frame so the head turns with the plane rather than against it.
   aircraft.cameraPose(cockpit);
   camera.position.copy(cockpit.position);
   camera.quaternion.copy(cockpit.quaternion);
+  if (head.yaw || head.pitch) {
+    camera.quaternion.multiply(new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(head.pitch, head.yaw, 0, 'YXZ')));
+  }
 }
 
 function placeCamera() {
@@ -1749,6 +1787,10 @@ if (params.has('shots')) {
   // __renderOnce, so a test can step it frame by frame and read the result.
   Object.defineProperty(window, '__aircraft', { get: () => aircraft });
   window.__stick = stick;
+  // Headless checks fly through the real input path rather than poking the
+  // aircraft: add key codes to __keys and open the gate with __setFly(true).
+  window.__keys = keys;
+  window.__setFly = setFly;
   window.__getAudioState = () => ({
     audioListener,
     ambientAudio,
