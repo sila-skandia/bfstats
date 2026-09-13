@@ -240,6 +240,7 @@ water.color 0.63/0.59/0.33
 
         self.assertEqual((0.8, 0.718, 0.531), info.fog_color)
         self.assertEqual(150.0, info.fog_start)
+        self.assertEqual(300.0, info.fog_end)
         self.assertEqual((1024.0, 0.0, 2048.0, 2048.0),
                          (info.combat.min_x, info.combat.min_z, info.combat.size_x, info.combat.size_z))
         self.assertEqual((1983.37, 69.94, 688.15), info.camera)
@@ -281,11 +282,39 @@ sky.sunLightDirectionVec -0.778/0.58/-0.234
         self.assertEqual(180.0, info.sky.rot_angle)
         self.assertEqual(150.0, info.sky.height_offset)
         self.assertTrue(info.sky.has_cloud)
+        # The REM'd-out cloud geometry must not register: without an active
+        # cloud template the engine draws no cloud layer (vanilla ships no
+        # cloud mesh at all), so cloud_mesh stays None and no clouds are
+        # emitted for this level.
+        self.assertIsNone(info.sky.cloud_mesh)
         self.assertEqual((-0.03, 0.015), info.sky.cloud_speed)
         self.assertEqual(8.0, info.sky.cloud_tex_scale)
         self.assertEqual(3500.0, info.sky.cloud_height)
         self.assertEqual(2500.0, info.sky.cloud_ofs_height)
         self.assertEqual(333.0, info.sky.cloud_dist)
+
+    def test_active_cloud_geometry_registers_cloud_mesh(self) -> None:
+        # The mod pattern (bf1918, FHSW, GCMOD, ...): an ACTIVE cloud template
+        # plus a shipped mesh is what actually makes the engine draw clouds.
+        info = LevelInfo(name="Battle_of_Cer", terrain=parse_terrain_con(""))
+        parse_init_con(
+            """
+GeometryTemplate.create StandardMesh SkyBox
+GeometryTemplate.file Sky_Cer_m1
+Sky.initSky
+
+GeometryTemplate.create StandardMesh Cloud
+GeometryTemplate.file ../bf1942/levels/Battle_of_Cer/standardMesh/cloud
+
+Sky.addCloud
+Cloud.setTexScale 8
+""",
+            info,
+        )
+
+        self.assertEqual("Sky_Cer_m1", info.sky.mesh)
+        self.assertTrue(info.sky.has_cloud)
+        self.assertEqual("cloud", info.sky.cloud_mesh)
 
     def test_geometry_file_keeps_only_the_leaf(self) -> None:
         info = LevelInfo(name="X", terrain=parse_terrain_con(""))
@@ -375,6 +404,20 @@ water.waterShallowAlpha 0.1
 
         self.assertFalse(info.water.declared)
 
+    def test_undeclared_fog_range_stays_none(self) -> None:
+        # 18 of 23 vanilla levels declare only fogColorVec; the range must
+        # stay None so the exporter can derive it from Game.setViewDistance
+        # instead of inventing one.
+        info = LevelInfo(name="Berlin", terrain=parse_terrain_con(""))
+        parse_init_con(
+            "renderer.fogColorVec 0.68/0.62/0.55\nGame.setViewDistance 100\n",
+            info,
+        )
+
+        self.assertIsNone(info.fog_start)
+        self.assertIsNone(info.fog_end)
+        self.assertEqual(100.0, info.game_view_distance)
+
 
 class RenderSettingsTests(unittest.TestCase):
     def test_lighting_view_distance_and_alternative_path(self) -> None:
@@ -385,6 +428,7 @@ textureManager.alternativePath Texture/Africa
 shadow.shadowColor 0.55
 renderer.globalAmbientColor .2/.2/.2
 renderer.setViewdistance 700
+Game.setViewDistance 300
 renderer.ambientColor .12/.1/.08
 renderer.diffuseColor .55/.52/0.38
 renderer.specularColor .3/.3/.3
@@ -394,6 +438,9 @@ renderer.specularColor .3/.3/.3
 
         self.assertEqual("Texture/Africa", info.texture_alternative_path)
         self.assertEqual(700.0, info.view_distance)
+        # Game.setViewDistance is the engine's real draw distance; the stray
+        # renderer.setViewdistance (Tobruk only) is kept separately.
+        self.assertEqual(300.0, info.game_view_distance)
         self.assertEqual(0.55, info.lighting.shadow_color)
         self.assertEqual((0.2, 0.2, 0.2), info.lighting.global_ambient)
         self.assertEqual((0.12, 0.1, 0.08), info.lighting.ambient_color)
