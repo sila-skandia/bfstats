@@ -93,6 +93,34 @@
   .rig-input input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
   .rig-input .driven { font-size: 10px; color: var(--muted); line-height: 1.5; }
   .rig-none { font-size: 11px; color: var(--muted); }
+  .rig-pad .pad {
+    position: relative;
+    width: 148px;
+    height: 148px;
+    margin: 6px auto 4px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background:
+      linear-gradient(var(--line), var(--line)) 50% 0 / 1px 100% no-repeat,
+      linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat,
+      #15170f;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .rig-pad .pad:hover,
+  .rig-pad .pad.dragging { border-color: var(--accent); }
+  .rig-pad .pad-knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(154, 171, 90, .15);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
   .seat { display: block; color: var(--accent); opacity: .65; }
   .view-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
   .view-buttons button {
@@ -3056,6 +3084,66 @@ function collectViews(root, entry) {
   section.hidden = false;
 }
 
+// In the game one physical control usually drives two of these inputs at once:
+// a gunner's mouse traverses with MouseLookX and elevates with MouseLookY, and
+// a pilot's stick rolls with mouse x and pitches with mouse y. When both halves
+// of a pair exist on the same seat, render one 2-axis pad instead of two
+// unrelated sliders.
+const XY_PAIRS = [
+  { x: 'c_PIMouseLookX', y: 'c_PIMouseLookY', label: 'Look (mouse)' },
+  { x: 'c_PIRoll', y: 'c_PIPitch', label: 'Stick (mouse)' },
+];
+
+// A square touchpad driving two inputs: pad x → keyX, pad y → keyY, both -1..1.
+// Updates inputValues and calls applyRig() exactly as the sliders do.
+function buildPad(keyX, gx, keyY, gy, pair, seat) {
+  const rate = gx.rate || gy.rate;
+  const wrap = document.createElement('div');
+  wrap.className = 'rig-input rig-pad';
+  wrap.innerHTML =
+    `<label><span>${pair.label}${rate ? ' — rate' : ''}</span><span data-out>x 0.00 · y 0.00</span></label>` +
+    `<div class="pad"><div class="pad-knob"></div></div>` +
+    `<div class="driven">${seat}${[...gx.driven, ...gy.driven].join('<br>')}</div>`;
+  const pad = wrap.querySelector('.pad');
+  const knob = wrap.querySelector('.pad-knob');
+  const out = wrap.querySelector('[data-out]');
+  let x = 0, y = 0;
+  const push = () => {
+    knob.style.left = `${(x + 1) * 50}%`;
+    knob.style.top = `${(1 - y) * 50}%`;
+    out.textContent = `x ${x.toFixed(2)} · y ${y.toFixed(2)}`;
+    inputValues.set(keyX, x);
+    inputValues.set(keyY, y);
+    applyRig();
+    if ((gx.rate && x !== 0) || (gy.rate && y !== 0)) startAnimating(); else invalidate();
+  };
+  const clamp = v => Math.min(1, Math.max(-1, Math.round(v * 100) / 100));
+  const fromEvent = event => {
+    const rect = pad.getBoundingClientRect();
+    x = clamp(((event.clientX - rect.left) / rect.width) * 2 - 1);
+    y = clamp(1 - ((event.clientY - rect.top) / rect.height) * 2);
+    push();
+  };
+  pad.addEventListener('pointerdown', event => {
+    pad.setPointerCapture(event.pointerId);
+    pad.classList.add('dragging');
+    fromEvent(event);
+  });
+  pad.addEventListener('pointermove', event => {
+    if (pad.hasPointerCapture(event.pointerId)) fromEvent(event);
+  });
+  const release = event => {
+    if (pad.hasPointerCapture(event.pointerId)) pad.releasePointerCapture(event.pointerId);
+    pad.classList.remove('dragging');
+  };
+  pad.addEventListener('pointerup', release);
+  pad.addEventListener('pointercancel', release);
+  // Dead centre is hard to hit by hand; snap both axes home like the
+  // rate-slider reset.
+  pad.addEventListener('dblclick', () => { x = 0; y = 0; push(); });
+  return wrap;
+}
+
 function buildRigPanel() {
   const host = document.getElementById('rig');
   host.innerHTML = '';
@@ -3077,8 +3165,27 @@ function buildRigPanel() {
   }
   // Seat name only matters once a vehicle has more than one station.
   const seats = new Set([...groups.values()].map(g => g.control));
+  // Match up x/y halves per seat; each pad is keyed by its x half.
+  const pads = new Map();     // x key -> { pair, yKey }
+  const absorbed = new Set(); // y keys consumed by a pad
+  for (const pair of XY_PAIRS) {
+    for (const seat of seats) {
+      const keyX = keyOf(seat, pair.x);
+      const keyY = keyOf(seat, pair.y);
+      if (groups.has(keyX) && groups.has(keyY)) {
+        pads.set(keyX, { pair, yKey: keyY });
+        absorbed.add(keyY);
+      }
+    }
+  }
   for (const [key, g] of groups) {
+    if (absorbed.has(key)) continue;
     const seat = seats.size > 1 ? `<span class="seat">${g.control}</span>` : '';
+    const padSpec = pads.get(key);
+    if (padSpec) {
+      host.appendChild(buildPad(key, g, padSpec.yKey, groups.get(padSpec.yKey), padSpec.pair, seat));
+      continue;
+    }
     const wrap = document.createElement('div');
     wrap.className = 'rig-input';
     wrap.innerHTML =
