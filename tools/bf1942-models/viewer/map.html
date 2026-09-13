@@ -132,6 +132,8 @@
     <label class="opt"><input type="checkbox" id="wire"> wireframe</label>
     <label class="opt"><input type="checkbox" id="vehicles" checked> vehicles</label>
     <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
+    <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
+    <label class="opt" style="display:flex;align-items:center;gap:6px;"><input type="range" id="sound-vol" min="0" max="1" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:var(--accent);"> vol</label>
   </aside>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; Esc</div>
   <div id="gate"><span>Click to fly</span></div>
@@ -229,6 +231,14 @@ const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
 const optVehicles = document.getElementById('vehicles');
 const optEntire = document.getElementById('entire-map');
+const optSound = document.getElementById('sound');
+const optSoundVol = document.getElementById('sound-vol');
+
+let audioListener = null;
+let audioLoader = null;
+let ambientAudio = null;
+let activeAreaAudios = [];
+const audioBufferCache = new Map();
 
 function uiFocused() {
   const t = document.activeElement;
@@ -274,6 +284,7 @@ function setFly(on) {
 }
 function capture() {
   setFly(true);
+  ensureAudioContext();
   renderer.domElement.requestPointerLock();
 }
 function release() {
@@ -991,6 +1002,158 @@ function advanceSim(dt) {
   }
 }
 
+function ensureAudioContext() {
+  if (!audioListener) {
+    audioListener = new THREE.AudioListener();
+    camera.add(audioListener);
+    audioLoader = new THREE.AudioLoader();
+  }
+  if (audioListener.context && audioListener.context.state === 'suspended') {
+    audioListener.context.resume().catch(() => {});
+  }
+}
+
+function disposeSounds() {
+  if (ambientAudio) {
+    try {
+      if (ambientAudio.isPlaying) ambientAudio.stop();
+      ambientAudio.disconnect();
+    } catch (_) {}
+    ambientAudio = null;
+  }
+  for (const item of activeAreaAudios) {
+    try {
+      if (item.sound.isPlaying) item.sound.stop();
+      item.sound.disconnect();
+      if (item.anchor) scene.remove(item.anchor);
+    } catch (_) {}
+  }
+  activeAreaAudios = [];
+}
+
+async function setupSounds(report, dir) {
+  disposeSounds();
+  const cfg = report.sounds;
+  if (!cfg) return;
+
+  if (!audioListener) {
+    audioListener = new THREE.AudioListener();
+    camera.add(audioListener);
+    audioLoader = new THREE.AudioLoader();
+  }
+
+  const getBuffer = async (relPath) => {
+    const url = `${MAPS_BASE}/${dir}/${relPath}${bust()}`;
+    if (audioBufferCache.has(url)) return audioBufferCache.get(url);
+    try {
+      const buf = await audioLoader.loadAsync(url);
+      audioBufferCache.set(url, buf);
+      return buf;
+    } catch (e) {
+      console.warn(`Could not load sound ${url}:`, e);
+      return null;
+    }
+  };
+
+  // Ambient atmospheric sound
+  if (cfg.ambient && cfg.ambient.file) {
+    const buf = await getBuffer(cfg.ambient.file);
+    if (buf && cfg === report.sounds) {
+      ambientAudio = new THREE.Audio(audioListener);
+      ambientAudio.setBuffer(buf);
+      ambientAudio.setLoop(true);
+      const master = optSound.checked ? parseFloat(optSoundVol.value) : 0;
+      ambientAudio.setVolume((cfg.ambient.volume ?? 0.6) * master);
+      try { ambientAudio.play(); } catch (_) {}
+    }
+  }
+
+  // Shorelines and positional area sounds
+  if (cfg.areas && cfg.areas.length > 0) {
+    for (const area of cfg.areas) {
+      if (!area.file || !area.points || area.points.length === 0) continue;
+      const buf = await getBuffer(area.file);
+      if (!buf || cfg !== report.sounds) continue;
+
+      const anchor = new THREE.Object3D();
+      anchor.position.set(area.points[0][0], area.points[0][1], area.points[0][2]);
+      scene.add(anchor);
+
+      const sound = new THREE.PositionalAudio(audioListener);
+      sound.setBuffer(buf);
+      sound.setLoop(true);
+      sound.setRefDistance(area.nearDistance || 40.0);
+      sound.setMaxDistance((area.farDistance || 80.0) * 1.5);
+      sound.setRolloffFactor(1);
+      anchor.add(sound);
+
+      activeAreaAudios.push({
+        anchor,
+        sound,
+        area,
+        baseVolume: area.volume ?? 0.6,
+      });
+      try { sound.play(); } catch (_) {}
+    }
+  }
+  updateAudio();
+}
+
+function updateAudio() {
+  const master = optSound.checked ? parseFloat(optSoundVol.value) : 0;
+  if (ambientAudio) {
+    const base = extras.sounds?.ambient?.volume ?? 0.6;
+    ambientAudio.setVolume(base * master);
+  }
+
+  if (activeAreaAudios.length === 0) return;
+
+  const camPos = camera.position;
+  for (const item of activeAreaAudios) {
+    const pts = item.area.points;
+    let bx = pts[0][0], by = pts[0][1], bz = pts[0][2];
+    let minD2 = Infinity;
+
+    if (pts.length === 1) {
+      minD2 = (camPos.x - bx) ** 2 + (camPos.y - by) ** 2 + (camPos.z - bz) ** 2;
+    } else {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const dx = p2[0] - p1[0];
+        const dy = p2[1] - p1[1];
+        const dz = p2[2] - p1[2];
+        const len2 = dx * dx + dy * dy + dz * dz;
+        let t = len2 > 0 ? ((camPos.x - p1[0]) * dx + (camPos.y - p1[1]) * dy + (camPos.z - p1[2]) * dz) / len2 : 0;
+        if (t < 0) t = 0;
+        else if (t > 1) t = 1;
+        const qx = p1[0] + t * dx;
+        const qy = p1[1] + t * dy;
+        const qz = p1[2] + t * dz;
+        const dist2 = (camPos.x - qx) ** 2 + (camPos.y - qy) ** 2 + (camPos.z - qz) ** 2;
+        if (dist2 < minD2) {
+          minD2 = dist2;
+          bx = qx; by = qy; bz = qz;
+        }
+      }
+    }
+
+    item.anchor.position.set(bx, by, bz);
+
+    const dist = Math.sqrt(minD2);
+    const near = item.area.nearDistance || 40.0;
+    const far = item.area.farDistance || 80.0;
+    let ramp = 0.0;
+    if (dist <= near) {
+      ramp = 1.0;
+    } else if (dist < far) {
+      const denom = Math.max(far - near, 0.001);
+      ramp = 1.0 - (dist - near) / denom;
+    }
+    item.sound.setVolume(item.baseVolume * ramp * master);
+  }
+}
+
 function applyLighting() {
   const light = extras.lighting;
   if (!light) {
@@ -1221,6 +1384,7 @@ async function show(entry) {
   extras = report;
   dispose(currentRoot);
   disposeSky();
+  disposeSounds();
   currentRoot = gltf.scene;
   scene.add(currentRoot);
   const dir = entry.glb.replace(/\/[^/]+$/, '');
@@ -1229,6 +1393,7 @@ async function show(entry) {
   bindTerrainDetail(currentRoot, dir);
   setupSky(currentRoot, dir);
   setupWater(currentRoot, dir);
+  setupSounds(extras, dir);
   // After the baked paths and the sky/water shaders have claimed their
   // meshes, everything still on a lit glTF material is the engine's
   // fixed-function path: vehicles and non-lightmapped statics.
@@ -1307,12 +1472,22 @@ if (!manifest.length) {
   await show(first);
 }
 
+optSound.addEventListener('change', () => {
+  ensureAudioContext();
+  updateAudio();
+});
+optSoundVol.addEventListener('input', () => {
+  ensureAudioContext();
+  updateAudio();
+});
+
 const clock = new THREE.Clock();
 function frame(dt) {
   fly(dt);
   applyLook();
   applyVisibility();
   advanceSim(dt);
+  updateAudio();
   updateSky();
   renderer.render(scene, camera);
 }
@@ -1333,6 +1508,11 @@ if (params.has('shots')) {
   window.__scene = scene;
   window.__camera = camera;
   window.__renderer = renderer;
+  window.__getAudioState = () => ({
+    audioListener,
+    ambientAudio,
+    activeAreaAudios,
+  });
 }
 </script>
 </body>
