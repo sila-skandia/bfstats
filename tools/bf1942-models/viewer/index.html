@@ -2795,7 +2795,13 @@ const INPUT_LABEL = {
   c_PIMouseLookY: 'Look Y (elevate)',
   c_PIPitch: 'Pitch',
   c_PIRoll: 'Roll',
+  c_PILandingGear: 'Gear (0 down · 1 up)',
 };
+
+// The exporter's synthetic axis for LandingGear retraction: not a player input,
+// so its slider runs 0 (deployed, the authored rest pose) to 1 (retracted) and
+// interpolates min..max directly instead of splitting the range about 0.
+const GEAR_INPUT = 'c_PILandingGear';
 
 // An axis with no declared range traverses freely; show it over a full circle.
 const FREE_RANGE = 180;
@@ -2820,6 +2826,11 @@ function applyRig() {
         deg = rateAngle.get(`${key}/${axis}`) ?? 0;
       } else if (spec.free) {
         deg = (inputValues.get(key) ?? 0) * FREE_RANGE;
+      } else if (spec.input === GEAR_INPUT) {
+        // min is the deployed angle, max the retracted one — a pose pair,
+        // not an ordered range (a Spitfire leg deploys at 0, retracts to -79).
+        const t = inputValues.get(key) ?? 0;
+        deg = spec.min + t * (spec.max - spec.min);
       } else {
         const t = inputValues.get(key) ?? 0;
         deg = t < 0 ? -t * spec.min : t * spec.max;
@@ -3190,7 +3201,7 @@ function buildRigPanel() {
     wrap.className = 'rig-input';
     wrap.innerHTML =
       `<label><span>${INPUT_LABEL[g.input] || g.input}${g.rate ? ' — rate' : ''}</span><span data-out>0.00</span></label>` +
-      `<input type="range" min="-1" max="1" step="0.01" value="0">` +
+      `<input type="range" min="${g.input === GEAR_INPUT ? 0 : -1}" max="1" step="0.01" value="0">` +
       `<div class="driven">${seat}${g.driven.join('<br>')}</div>`;
     const slider = wrap.querySelector('input');
     const out = wrap.querySelector('[data-out]');

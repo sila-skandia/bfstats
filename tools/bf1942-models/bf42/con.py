@@ -73,6 +73,13 @@ PLAYER_INPUTS = {
     "5": "c_PIMouseLookY",
 }
 
+# A LandingGear is not player-bound: the engine drives it from altitude
+# (`setGearDownHeight`) and throttle (`setGearUpEngineInput` /
+# `setGearDownEngineInput`). The synthetic name below is not an engine
+# constant — it exists so retraction rides the same rig schema as the
+# input-driven axes, as a 0 (deployed) .. 1 (retracted) position.
+GEAR_INPUT = "c_PILandingGear"
+
 MODEL_CONFIGURATIONS = ("complex", "wreck")
 
 
@@ -221,8 +228,13 @@ class ObjectTemplate:
           vanilla uses both — PanzerIV's MG mount says `setInputToPitch 5` where the
           Sherman's says `c_PIMouseLookY`.
         * `c_PINone` is a binding to nothing and must not produce an axis.
+        * A LandingGear axis has no input at all; its retraction is synthesized
+          under `GEAR_INPUT` (see `_landing_gear_axes`). Input-bound axes win
+          over the synthesis on the same axis — DC Final's `AC-130_Gear_Front`
+          steers its yaw from `c_PIYaw` like a nose wheel.
         """
-        if not self.inputs:
+        gear = self._landing_gear_axes() if self.kind.lower() == "landinggear" else {}
+        if not self.inputs and not gear:
             return None
         axes = {}
         for index, axis in enumerate(("yaw", "pitch", "roll")):
@@ -244,9 +256,48 @@ class ObjectTemplate:
                 "driver": "rate" if span is not None and span > ACCUMULATOR_SPAN else "position",
                 "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
             }
+        for axis, spec in gear.items():
+            axes.setdefault(axis, spec)
         if not axes:
             return None
         return {"axes": axes, "automaticReset": self.automatic_reset}
+
+    def _landing_gear_axes(self) -> dict:
+        """Retraction of a LandingGear, as `GEAR_INPUT`-driven position axes.
+
+        Per moving axis a gear declares one bound per pose, and the bound
+        farther from zero is the retracted one; the nearer bound — almost
+        always the undeclared 0 the mesh was authored in, parked on its
+        wheels — is deployed. The Spitfire's mirrored legs fix the sign
+        convention (left `setMinRotation -20/0/-79`, right
+        `setMaxRotation 20/0/79`: both fold up into the wings), and mods
+        confirm the magnitude reading where both bounds appear (FH's
+        Thunderbolt leg spans roll 1..84 — deployed rests at 1). Neither
+        `setMaxSpeed` nor `setAcceleration` adds information: across all
+        3,173 moving gear axes in the installed mods that carry both, the
+        sign of their product always points at the farther bound (the
+        Corsair's right leg pairs acceleration 75 with maxSpeed -30), and no
+        axis declares equal-magnitude opposite bounds. `min`/`max` here are
+        the deployed/retracted angles, not an ordered range — deployed may
+        be the numerically larger one.
+        """
+        axes = {}
+        mn = self.min_rotation or (0.0, 0.0, 0.0)
+        mx = self.max_rotation or (0.0, 0.0, 0.0)
+        for index, axis in enumerate(("yaw", "pitch", "roll")):
+            lo, hi = mn[index], mx[index]
+            if lo == hi:
+                continue
+            deployed, retracted = (hi, lo) if abs(lo) >= abs(hi) else (lo, hi)
+            axes[axis] = {
+                "input": GEAR_INPUT,
+                "min": deployed,
+                "max": retracted,
+                "free": False,
+                "driver": "position",
+                "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
+            }
+        return axes
 
 
 @dataclass
