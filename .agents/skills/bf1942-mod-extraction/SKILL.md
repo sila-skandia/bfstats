@@ -147,7 +147,54 @@ All Refractor textures are stored as DDS or TGA:
 
 ---
 
-## 7. Deployment to Hetzner Asset Storage
+## 7. 3D Model, Pose, & Thumbnail Extraction Pipeline
+
+The pipeline under `tools/bf1942-models/` extracts interactive 3D glTF/GLB models, authentic animation poses, and portrait thumbnails for the web viewer (`viewer/`).
+
+### Complete Extraction Workflow for a Mod
+
+For any mod (e.g. `FHSW`, `EoD`, `DesertCombat`, `FH`):
+
+```bash
+# 1. Extract 3D models with multi-worker parallelism (-j)
+python3 tools/bf1942-models/extract_all.py --mod <Mod> \
+  --out tools/bf1942-models/viewer/models/mods/<mod_id> \
+  --configuration-all -j 16
+
+# 2. Extract authentic faction-matched poses (stand/crouch/lie)
+python3 tools/bf1942-models/extract_pose.py --mod <Mod> \
+  --matrix --match-faction -j 16 --export \
+  --out tools/bf1942-models/viewer/models/mods/<mod_id>/poses
+
+# 3. Generate model thumbnails (MANDATORY for viewer lineup & cards)
+# Ensure the local viewer server is running on port 5273 (threaded server recommended):
+python3 -c "from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer; import os; os.chdir('tools/bf1942-models/viewer'); ThreadingHTTPServer(('0.0.0.0', 5273), SimpleHTTPRequestHandler).serve_forever()" &
+
+# Render portrait thumbnails and stamp into models.json via Playwright:
+node tools/bf1942-models/shoot.mjs --thumbs \
+  --url "http://localhost:5273/?mod=<mod_id>" \
+  --out tools/bf1942-models/viewer/models/mods/<mod_id>/thumbs \
+  --manifest tools/bf1942-models/viewer/models/mods/<mod_id>/models.json \
+  --skip-existing -j 8
+
+# Alternatively, extract_all.py supports --thumbs directly:
+python3 tools/bf1942-models/extract_all.py --mod <Mod> \
+  --out tools/bf1942-models/viewer/models/mods/<mod_id> \
+  --thumbs -j 16
+
+# 4. Rebuild mod registry so the mod appears in viewer dropdowns
+python3 tools/bf1942-models/build_mods_manifest.py
+```
+
+### Critical Rules for Model & Thumbnail Extraction
+1. **Always generate thumbnails**: The model browser cards and scale lineup rely on `entry.thumb` in `models.json`. Without thumbnails, the UI displays blank "no thumbnail" placeholders. Always run `shoot.mjs --thumbs` or `extract_all.py --thumbs`.
+2. **Faction/Side pose filtering**: Always pass `--match-faction` (or `--match-side`) to `extract_pose.py`. Refractor mods have hundreds of weapons; unfiltered cross-product posing creates tens of thousands of invalid combinations and takes hours.
+3. **Monolithic archive unpacking**: Mods like FHSW concatenate vehicle scripts into `!_PACK_<FACTION>/Compressed.con`. The library builder unpacks virtual paths using `rem folder = <Name>` and `rem sauce = <File>`.
+4. **DirectX 8 index buffer format**: Refractor index buffers are unsigned 16-bit (`uint16` / `<H`). Always unpack indices as unsigned to prevent signed 32,767 overflow on large warships and complexes.
+
+---
+
+## 8. Deployment to Hetzner Asset Storage
 
 - **Storage Location**: Kubernetes PVC `bf42-stats-pvc-v2` mounted at `/mnt/assets` on `filebrowser` and `/mnt/data/assets` on `bf42-stats`.
 - **Upload Method**: Streaming tar over `kubectl exec`:
@@ -162,7 +209,7 @@ All Refractor textures are stored as DDS or TGA:
 
 ---
 
-## 8. Settling a Format Question Against the Game Binary
+## 9. Settling a Format Question Against the Game Binary
 
 Our readers reconstruct proprietary formats from observation, and observation of vanilla
 data is often right by coincidence and wrong on mods. The cross-reference corpus lives in
