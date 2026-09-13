@@ -386,3 +386,101 @@ GeometryTemplate.setSkin animations/TestRightHand.skn
 
         self.assertIsNotNone(aligned)
         self.assertEqual("Bip01 R Forearm", aligned[2])
+
+
+class FireArmsBakeTests(unittest.TestCase):
+    """Meshless plane guns must survive as muzzle nodes with firing extras."""
+
+    GUNS_CON = """
+ObjectTemplate.create Bundle PlaneComplex
+ObjectTemplate.addTemplate PlaneBody
+ObjectTemplate.addTemplate PlaneGuns
+ObjectTemplate.setPosition 0/0/1
+
+ObjectTemplate.create SimpleObject PlaneBody
+ObjectTemplate.geometry Plane_hull
+
+ObjectTemplate.create FireArms PlaneGuns
+ObjectTemplate.visibleBarrelTemplate e_TestMuzz
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.setTracerTemplate Tracer_Projectile CRD_NONE/3/0/0
+ObjectTemplate.magSize 900
+ObjectTemplate.velocity 400
+ObjectTemplate.roundOfFire 12
+ObjectTemplate.addFireArmsPosition 2.6/0.21/1.8 -1.6/0/0
+ObjectTemplate.addFireArmsPosition -2.6/0.21/1.8 1.6/0/0
+
+ObjectTemplate.create Projectile Tracer_Projectile
+ObjectTemplate.timeToLive CRD_NONE/3/0/0
+ObjectTemplate.tracerScaler 50.0
+
+ObjectTemplate.create EffectBundle e_TestMuzz
+ObjectTemplate.addTemplate em_TestMuzz
+
+ObjectTemplate.create Emitter em_TestMuzz
+ObjectTemplate.template fx_TestMuzz
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+
+ObjectTemplate.create Particle fx_TestMuzz
+ObjectTemplate.geometry Muzz_m1
+ObjectTemplate.timeToLive CRD_NONE/0.07/0/0
+ObjectTemplate.sizeOverTime 0/0.12|100/9.4
+
+GeometryTemplate.create StandardMesh Plane_hull
+GeometryTemplate.create StandardMesh Muzz_m1
+"""
+
+    def _assemble(self):
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Plane/Weapons.con", self.GUNS_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        for geometry_name in ("Plane_hull", "Muzz_m1"):
+            mesh_index = builder.add_mesh(geometry_name, [triangle])
+            assembler._geom_mesh[geometry_name.lower()] = (mesh_index, 1)
+            assembler._geom_collisions[geometry_name.lower()] = []
+        report = Report(root="PlaneComplex", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "PlaneComplex", report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict())), report
+
+    def test_meshless_guns_survive_with_muzzles_and_stats(self) -> None:
+        document, report = self._assemble()
+        nodes = {node["name"]: node for node in document["nodes"]}
+
+        guns = nodes["PlaneGuns"]
+        fire = guns["extras"]["fireArms"]
+        self.assertEqual(12.0, fire["roundOfFire"])
+        self.assertEqual(900, fire["magSize"])
+        self.assertEqual(400.0, fire["velocity"])
+        self.assertEqual(2, fire["muzzles"])
+        self.assertEqual(
+            {"template": "Tracer_Projectile", "interval": 3,
+             "timeToLive": 3.0, "scaler": 50.0},
+            fire["tracer"])
+        # The gun bundle's own placement (0/0/1 -> glTF z=-1) survives.
+        self.assertEqual([0.0, 0.0, -1.0], guns["translation"])
+
+        muzzle_names = [name for name in nodes if "muzzle" in name]
+        self.assertEqual(2, len(muzzle_names))
+        first = nodes["PlaneGuns muzzle 1"]
+        self.assertEqual({"index": 0}, first["extras"]["muzzle"])
+        # Refractor 2.6/0.21/1.8 -> glTF Z negated.
+        self.assertEqual([2.6, 0.21, -1.8], first["translation"])
+
+        # The flash chain resolved down to the Particle mesh emitter node.
+        flash = nodes["em_TestMuzz"]
+        self.assertEqual("mesh", flash["extras"]["effect"]["kind"])
+        self.assertAlmostEqual(0.07, flash["extras"]["effect"]["timeToLive"])
+        self.assertEqual([[0.0, 0.12], [100.0, 9.4]],
+                         flash["extras"]["effect"]["sizeOverTime"])
+        self.assertIn("mesh", flash)
+        self.assertEqual(1, len(report.fire_arms))
+
+
+if __name__ == "__main__":
+    unittest.main()

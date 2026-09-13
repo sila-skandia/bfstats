@@ -30,6 +30,7 @@ _TEXTURE = re.compile(r'\btexture\s+"([^"]+)"', re.IGNORECASE)
 _BOOL = re.compile(r'\b(twosided|transparent)\s+(true|false)\s*;', re.IGNORECASE)
 _ALPHATEST = re.compile(r'\balphaTest\s+(\w+)\s+([0-9.]+)\s*;', re.IGNORECASE)
 _CULLMODE = re.compile(r'\bcullMode\s+(\w+)\s*;', re.IGNORECASE)
+_BLENDFUNC = re.compile(r'\bblend(Src|Dest)\s+(\w+)\s*;', re.IGNORECASE)
 
 
 @dataclass
@@ -40,6 +41,18 @@ class Shader:
     twosided: bool = False
     transparent: bool = False
     alpha_test: float | None = None
+    blend_src: str | None = None
+    blend_dest: str | None = None
+
+    @property
+    def additive(self) -> bool:
+        """`blendSrc sourceAlpha; blendDest one;` — additive light.
+
+        Muzzle flashes and tracer glows declare this pair; exporting them as
+        ordinary alpha blend paints the flash's black background over the
+        model instead of adding its light.
+        """
+        return self.transparent and (self.blend_dest or "").lower() == "one"
 
     @property
     def base_texture(self) -> str | None:
@@ -84,6 +97,8 @@ def parse(text: str) -> dict[str, Shader]:
             setattr(shader, flag.lower(), value.lower() == "true")
         if at := _ALPHATEST.search(body):
             shader.alpha_test = float(at.group(2))
+        for which, mode in _BLENDFUNC.findall(body):
+            setattr(shader, f"blend_{which.lower()}", mode)
         if cm := _CULLMODE.search(body):
             if cm.group(1).lower() == "none":
                 shader.twosided = True
