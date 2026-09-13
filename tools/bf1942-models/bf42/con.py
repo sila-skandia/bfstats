@@ -148,6 +148,37 @@ class ChildRef:
     skeleton_part: str | None = None
 
 
+@dataclass
+class LodSelector:
+    """A `LodSelectorTemplate` block — the rule a LodObject picks alternatives by.
+
+    Refractor names the rule rather than inlining it: the LodObject says
+    `ObjectTemplate.lodSelector CorsairCockpitSelector` and a separate
+    `LodSelectorTemplate.create <kind> <name>` block declares the thresholds.
+    Two terms exist and a selector kind decides which of them it consults:
+
+        LodSelectorTemplate.create DistCompareSelector CorsairCockpitSelector
+        LodSelectorTemplate.addLodDistance 20        metres from the observer
+        LodSelectorTemplate.addLodComparison 0.5     against a per-kind scalar
+
+    What feeds the comparison scalar is engine-side and differs per selector
+    kind — engine input for a propeller's `CompareSelector` (`addLodComparison
+    0.07` swaps the static blade for the blurred disc), an in-cockpit flag for
+    a cockpit's. We record the declared numbers and let the caller decide; the
+    exporter uses only the *alternatives*, not the thresholds, and stamps the
+    thresholds on the node so a viewer can reproduce the swap.
+    """
+    name: str
+    kind: str
+    distances: list[float] = field(default_factory=list)
+    comparisons: list[float] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {"selector": self.name, "selectorKind": self.kind,
+                "distances": list(self.distances),
+                "comparisons": list(self.comparisons)}
+
+
 def lod_alternative_role(template_name: str) -> str | None:
     """The semantic role encoded in a LodObject child's conventional name."""
     name = template_name.lower()
@@ -295,6 +326,10 @@ class ObjectTemplate:
     relative_position_in_dof: float | None = None
     positional_speed_in_dof: float | None = None
 
+    # `ObjectTemplate.lodSelector <name>` — which `LodSelectorTemplate` block
+    # decides between this LodObject's alternatives.
+    lod_selector: str | None = None
+
     @property
     def is_lod_selector(self) -> bool:
         return self.kind.lower() == "lodobject"
@@ -415,6 +450,7 @@ class ObjectLibrary:
     def __init__(self) -> None:
         self.objects: dict[str, ObjectTemplate] = {}
         self.geometries: dict[str, GeometryTemplate] = {}
+        self.selectors: dict[str, LodSelector] = {}
         # geometry template name -> the object folder it was declared in, so the
         # per-object `Art/*.rs` override can be found later.
         self.geometry_dir: dict[str, str] = {}
@@ -425,6 +461,7 @@ class ObjectLibrary:
         obj: ObjectTemplate | None = None
         geom: GeometryTemplate | None = None
         child: ChildRef | None = None
+        selector: LodSelector | None = None
 
         for line in text.splitlines():
             match = _COMMAND.match(line.strip())
@@ -444,6 +481,11 @@ class ObjectLibrary:
                     continue
                 elif cmd == "geometry":
                     obj.geometry = args.split()[0] if args else None
+                elif cmd == "lodselector":
+                    # Names the rule, never a child instance, so it is read onto
+                    # the template even though it is written after the
+                    # `addTemplate` lines it arbitrates between.
+                    obj.lod_selector = args.split()[0] if args else None
                 elif cmd == "addtemplate":
                     if args:
                         child = ChildRef(template=args.split()[0])
@@ -629,6 +671,26 @@ class ObjectLibrary:
                     # only the name is load-bearing.
                     child.skeleton_part = args.split()[0] if args else None
 
+            elif ns == "lodselectortemplate":
+                if cmd == "create":
+                    parts = args.split()
+                    if len(parts) < 2:
+                        continue
+                    selector = LodSelector(name=parts[1], kind=parts[0])
+                    self.selectors.setdefault(parts[1].lower(), selector)
+                elif selector is None:
+                    continue
+                elif cmd in ("addloddistance", "addlodcomparison"):
+                    # Written one threshold per line, in alternative order, so
+                    # they accumulate rather than overwrite: `DistCompareSelector2`
+                    # blocks declare several.
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    (selector.distances if cmd == "addloddistance"
+                     else selector.comparisons).append(value)
+
             elif ns == "geometrytemplate":
                 if cmd == "create":
                     parts = args.split()
@@ -647,6 +709,9 @@ class ObjectLibrary:
 
     def geometry(self, name: str) -> GeometryTemplate | None:
         return self.geometries.get(name.lower())
+
+    def selector(self, name: str | None) -> LodSelector | None:
+        return self.selectors.get(name.lower()) if name else None
 
     def art_dir(self, geometry_name: str) -> str | None:
         folder = self.geometry_dir.get(geometry_name.lower())

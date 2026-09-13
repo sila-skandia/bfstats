@@ -9,7 +9,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import gltf, skin, stdmesh  # noqa: E402
-from bf42.assemble import Assembler, Report, browse_rig  # noqa: E402
+from bf42.assemble import (  # noqa: E402
+    Assembler,
+    Report,
+    browse_rig,
+    reaches_first_person,
+)
 from bf42.con import ObjectLibrary, ObjectTemplate  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
 
@@ -169,6 +174,198 @@ GeometryTemplate.create StandardMesh PT_Steering_M1
         self.assertIn("PT_Steering_M1", report.missing_meshes)
         self.assertNotIn("1P_PT_Str_M1", report.missing_meshes)
         self.assertEqual(["lodHelm -> LowHelm"], report.selected_lod_alternatives)
+
+
+# A cut-down Corsair with the shape that matters: a PCO, a configuration
+# LodObject, a cockpit LodObject whose first alternative is the hull, a camera,
+# and one control surface that has nothing to do with first person.
+COCKPIT_CON = """
+ObjectTemplate.create PlayerControlObject Corsair
+ObjectTemplate.addTemplate lodCorsair
+
+ObjectTemplate.create LodObject lodCorsair
+ObjectTemplate.addTemplate CorsairComplex
+ObjectTemplate.addTemplate CorsairWreck
+
+ObjectTemplate.create Bundle CorsairComplex
+ObjectTemplate.addTemplate lodCorsairCockpit
+ObjectTemplate.setPosition 0/0.5/0
+ObjectTemplate.addTemplate CorsairCamera
+ObjectTemplate.addTemplate CorsairRudder
+
+ObjectTemplate.create LodObject lodCorsairCockpit
+ObjectTemplate.addTemplate CorsairCockpitExternal
+ObjectTemplate.addTemplate CorsairCockpitInternal
+ObjectTemplate.lodSelector CorsairCockpitSelector
+
+ObjectTemplate.create Bundle CorsairCockpitExternal
+ObjectTemplate.geometry Corsair_Hull_M1
+
+ObjectTemplate.create SimpleObject CorsairCockpitInternal
+ObjectTemplate.geometry 1P_Corsair
+
+ObjectTemplate.create Camera CorsairCamera
+
+ObjectTemplate.create Wing CorsairRudder
+ObjectTemplate.geometry Corsair_Rudder_M1
+
+ObjectTemplate.create Bundle CorsairWreck
+ObjectTemplate.geometry Corsair_Wreck_M1
+
+LodSelectorTemplate.create DistCompareSelector CorsairCockpitSelector
+LodSelectorTemplate.addLodDistance 20
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh Corsair_Hull_M1
+GeometryTemplate.create StandardMesh 1P_Corsair
+GeometryTemplate.create StandardMesh Corsair_Rudder_M1
+GeometryTemplate.create StandardMesh Corsair_Wreck_M1
+"""
+
+
+def cockpit_library() -> ObjectLibrary:
+    library = ObjectLibrary()
+    library.add_con("Objects/Vehicles/Air/Corsair/Objects.con", COCKPIT_CON)
+    return library
+
+
+def stub_meshes(assembler: Assembler, builder: gltf.GlbBuilder, *names: str) -> None:
+    """Stand in for the `.sm` files an archive-less test has no way to supply.
+
+    `build_node` drops a node with neither a mesh nor a surviving child, so a
+    test about tree *shape* needs something behind each geometry name. The
+    geometry cache is exactly the seam the archive lookup fills, and seeding it
+    keeps the mesh reader out of a test that is not about the mesh reader.
+    """
+    triangle = gltf.Primitive(
+        positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+        indices=[0, 1, 2],
+    )
+    for name in names:
+        assembler._geom_mesh[name.lower()] = (
+            builder.add_mesh(name, [triangle]), 1)
+
+
+class CockpitExportTests(unittest.TestCase):
+    def test_reaches_first_person_sees_through_lod_alternatives(self) -> None:
+        library = cockpit_library()
+        # The interior is the alternative no configuration selects, so a
+        # predicate that consulted the selection would never find it.
+        self.assertTrue(reaches_first_person(library, "Corsair"))
+        self.assertTrue(reaches_first_person(library, "lodCorsairCockpit"))
+        self.assertFalse(reaches_first_person(library, "CorsairRudder"))
+        self.assertFalse(reaches_first_person(library, "CorsairCockpitExternal"))
+        self.assertFalse(reaches_first_person(library, "NoSuchTemplate"))
+
+    def test_ordinary_export_still_takes_the_hull_and_loads_no_1p_mesh(self) -> None:
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, cockpit_library())
+        builder = gltf.GlbBuilder()
+        report = Report(root="Corsair", configuration="complex", lod=0)
+
+        assembler.build_node(builder, "Corsair", report)
+        self.assertIn("lodCorsairCockpit -> CorsairCockpitExternal",
+                      report.selected_lod_alternatives)
+        self.assertIn("Corsair_Hull_M1", report.missing_meshes)
+        self.assertNotIn("1P_Corsair", report.missing_meshes)
+        self.assertEqual([], report.cockpit_swaps)
+
+    def test_cockpit_export_takes_the_interior_and_prunes_everything_else(self) -> None:
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, cockpit_library(),
+                              first_person=True, include_collision=False)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Corsair", configuration="complex", lod=0,
+                        first_person=True)
+        stub_meshes(assembler, builder, "1P_Corsair", "Corsair_Hull_M1",
+                    "Corsair_Rudder_M1")
+
+        root = assembler.build_node(builder, "Corsair", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        self.assertIn("lodCorsairCockpit -> CorsairCockpitInternal",
+                      report.selected_lod_alternatives)
+        # Only the branch that reaches first-person geometry survives, so the
+        # nodes the ordinary export already owns are not duplicated here.
+        self.assertEqual(
+            ["CorsairCockpitInternal", "lodCorsairCockpit", "CorsairComplex",
+             "lodCorsair", "Corsair"],
+            names,
+        )
+        # The chain above the interior keeps the placement it has in the
+        # ordinary export, which is what lets a viewer graft by node name.
+        complex_node = document["nodes"][names.index("CorsairComplex")]
+        cockpit_node = document["nodes"][names.index("lodCorsairCockpit")]
+        self.assertNotIn("translation", complex_node)
+        self.assertEqual([0.0, 0.5, 0.0], cockpit_node["translation"])
+
+    def test_cockpit_export_stamps_the_swap_and_its_declared_thresholds(self) -> None:
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, cockpit_library(),
+                              first_person=True, include_collision=False)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Corsair", configuration="complex", lod=0,
+                        first_person=True)
+        stub_meshes(assembler, builder, "1P_Corsair")
+
+        root = assembler.build_node(builder, "Corsair", report)
+        document = glb_document(builder.build([root], extras={}))
+        swap = next(node["extras"]["lodAlternative"] for node in document["nodes"]
+                    if node["name"] == "lodCorsairCockpit")
+
+        self.assertEqual("CorsairCockpitInternal", swap["selected"])
+        self.assertEqual(["CorsairCockpitExternal"], swap["replaces"])
+        self.assertEqual("DistCompareSelector", swap["selectorKind"])
+        self.assertEqual([20.0], swap["distances"])
+        self.assertEqual([0.5], swap["comparisons"])
+        self.assertEqual(
+            ["lodCorsairCockpit: CorsairCockpitInternal replaces "
+             "CorsairCockpitExternal"],
+            report.cockpit_swaps,
+        )
+        # A LodObject whose selection is not first person carries no swap: the
+        # configuration LodObject above it picks Complex for both exports.
+        self.assertNotIn(
+            "lodAlternative",
+            next(node for node in document["nodes"]
+                 if node["name"] == "lodCorsair").get("extras", {}),
+        )
+
+    def test_cockpit_export_finds_a_first_person_alternative_declared_first(self) -> None:
+        # Every steering wheel and the B17's gun models pair their alternatives
+        # the other way round under a `DistanceSelector`, because there the 1P
+        # mesh is the near LOD. Selection must key on geometry, not on index.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Sea/Elco80/Objects.con",
+            """
+ObjectTemplate.create LodObject lodPT_Steering
+ObjectTemplate.addTemplate PT_HighRSteering
+ObjectTemplate.addTemplate PT_LowSteering
+
+ObjectTemplate.create SimpleObject PT_HighRSteering
+ObjectTemplate.geometry 1P_PT_Str_M1
+
+ObjectTemplate.create SimpleObject PT_LowSteering
+ObjectTemplate.geometry PT_Steering_M1
+
+GeometryTemplate.create StandardMesh 1P_PT_Str_M1
+GeometryTemplate.create StandardMesh PT_Steering_M1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, first_person=True,
+                              include_collision=False)
+        builder = gltf.GlbBuilder()
+        report = Report(root="lodPT_Steering", configuration="complex", lod=0,
+                        first_person=True)
+
+        assembler.build_node(builder, "lodPT_Steering", report)
+        self.assertEqual(["lodPT_Steering -> PT_HighRSteering"],
+                         report.selected_lod_alternatives)
+        self.assertIn("1P_PT_Str_M1", report.missing_meshes)
+        self.assertNotIn("PT_Steering_M1", report.missing_meshes)
 
 
 class BrowseRigTests(unittest.TestCase):

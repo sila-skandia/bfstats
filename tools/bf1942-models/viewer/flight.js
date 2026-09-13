@@ -18,6 +18,7 @@
 // difference and must never learn to.
 
 import * as THREE from 'three';
+import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 
 // --- Refractor rig ---------------------------------------------------------
 //
@@ -89,8 +90,94 @@ class RiggedPart {
     this.base = node.quaternion.clone();
     this.axes = rig.axes;
     this.control = rig.control || 'vehicle';
+    // An Engine's spin is declared on the Engine but does not happen there.
+    // Refractor stops it at every `hasMobilePhysics 1` boundary — a Corsair's
+    // landing gear hangs off its Engine without turning with the propeller —
+    // so rotating the Engine node, which is where the rig sits, would swing
+    // the gear, the wheels and the bay hatches around the prop shaft.
+    //
+    // `assemble.py` already decides which children the spin reaches (it needs
+    // the same answer to bake clips for the model browser) and stamps them
+    // `spinsWithEngine`. Collect them, and fall back to the node itself, which
+    // is right for an Engine that *is* the propeller — a carrier's screws —
+    // and for scenes extracted before the flag existed.
+    this.spun = [];
+    for (const child of node.children) {
+      if (child.userData?.spinsWithEngine) this.spun.push(child);
+    }
+    if (!this.spun.length) this.spun.push(node);
+    this.spunBases = this.spun.map(n => n.quaternion.clone());
   }
 }
+
+// --- cockpit interior ------------------------------------------------------
+//
+// A vehicle glb has no inside. `1P_Corsair` and the fuselage that hides it are
+// two alternatives of one LodObject, so the ordinary export picks the fuselage
+// and `assemble.py` skips every `1P*` mesh outright — see
+// `geometry_is_first_person` there for the three reasons, all of which still
+// hold for a browse thumbnail and for a baked level.
+//
+// So the interior ships as its own file, `models/<Control>.cockpit.glb`, built
+// by `extract_models.py --cockpit`. It is a graft rather than a model: the same
+// template walk, pruned to the branches that reach first-person geometry, so
+// every node above the interior keeps the name and the local transform it has
+// in the ordinary export. Attaching it is therefore a name match and a
+// reparent — no offsets to maintain in two places.
+//
+// A separate file rather than an extra node in the vehicle, for three reasons:
+// a level bake would otherwise carry an interior for all 32 of Wake's spawners
+// when at most one is ever flown; the browse thumbnails and the shipped map
+// scenes stay byte-identical, so nothing has to be re-extracted; and a
+// flythrough that never enters the cockpit never pays for it.
+
+/**
+ * One LodObject whose first-person alternative has been grafted onto the
+ * flown vehicle — Refractor's cockpit swap, reproduced.
+ *
+ * The engine picks between the alternatives with a `LodSelectorTemplate`, and
+ * `assemble.py` stamps the declared thresholds on the node. For the 33 vanilla
+ * cockpits they are strikingly uniform: `DistCompareSelector`, exterior first,
+ * interior second, `addLodComparison 0.5` against what can only be a 0/1
+ * "the observer is the occupant, in inside view" scalar. The companion
+ * `addLodDistance` is not the deciding term — it runs from 0.5 m on the M10 to
+ * 200 m on the battleship gun, tracking the size of the object rather than any
+ * view, and the Chi-ha omits it entirely. It reads as a precondition on the
+ * occupancy test, and it cannot veto for an observer sitting at the eye point.
+ *
+ * So the comparison is the gate, and for a viewer with exactly one observer
+ * that gate is simply: are we in the cockpit.
+ */
+class CockpitSwap {
+  constructor(host, interior, hidden, spec) {
+    this.host = host;
+    this.interior = interior;
+    this.hidden = hidden;
+    this.spec = spec;
+  }
+
+  apply(firstPerson) {
+    for (const node of this.interior) node.visible = firstPerson;
+    for (const node of this.hidden) node.visible = !firstPerson;
+  }
+}
+
+/**
+ * Where `<Control>.cockpit.glb` lives, given no word from the page.
+ *
+ * `mods.js` puts a mod's assets in a sibling subtree of vanilla's classic one,
+ * `models/mods/<id>/`, and carries the choice in `?mod=`. Reading that here
+ * rather than importing `selectMod` keeps this module out of the nav-drawing
+ * business; a page that resolves the mod properly can pass `modelsBase` and
+ * override it.
+ */
+function defaultModelsBase() {
+  const mod = new URLSearchParams(location.search).get('mod');
+  const path = mod && mod !== 'bf1942' ? `models/mods/${mod}/` : 'models/';
+  return new URL(path, import.meta.url).href;
+}
+
+const cockpitLoader = new GLTFLoader();
 
 // --- the vehicle -----------------------------------------------------------
 
@@ -125,15 +212,19 @@ export class VehicleState {
 /**
  * One flyable vehicle: the scene node, its rig, its cockpit camera, its state.
  *
- * Construction is deliberately cheap and side-effect free apart from the
- * reparent, so a replay can instantiate several and step them all.
+ * Construction is cheap and synchronously side-effect free apart from the
+ * reparent, so a replay can instantiate several and step them all. The one
+ * asynchronous thing it starts is the cockpit fetch; await `cockpitReady` if
+ * you need the interior in a particular frame (a screenshot does, a player
+ * does not — it pops in a few hundred ms after entering the seat).
  */
 export class Vehicle {
   /**
    * @param {THREE.Object3D} node   the assembled vehicle root from the map glb
    * @param {THREE.Object3D} parent where to reparent it to (usually the scene)
+   * @param {{modelsBase?: string, cockpit?: boolean}} [options]
    */
-  constructor(node, parent) {
+  constructor(node, parent, options = {}) {
     this.node = node;
     this.state = new VehicleState();
     this.control = node.userData?.control || node.name || 'vehicle';
@@ -166,15 +257,116 @@ export class Vehicle {
     this.cameraNode = null;
     this.propellerNodes = [];
     this.collect();
+
+    // Occupying a seat is what the cockpit swap keys off, and the only reason
+    // to build a `Vehicle` is that someone is now sitting in it.
+    this.firstPerson = true;
+    // Whether being driven counts as being in the cockpit.
+    //
+    // The engine's own gate is an occupancy scalar, and a page with a single
+    // camera has no other way to express it: `map.html` has one view, the
+    // pilot's, and nothing on the vehicle can see its "pilot the plane" tick
+    // box. So stepping the flight model means occupied and `reset()` means the
+    // seat was vacated — which keeps a plane you have stopped flying from
+    // sitting on the strip with its fuselage swapped out.
+    //
+    // A page that grows a chase camera knows better than this and should turn
+    // it off, then drive `setFirstPerson` from its own camera mode.
+    this.autoFirstPerson = true;
+    this.swaps = [];
+    this.cockpitReady = options.cockpit === false
+      ? Promise.resolve(null)
+      : this.loadCockpit(options.modelsBase);
   }
 
-  /** Index the rig parts, the cockpit camera and the propeller. */
+  /**
+   * Fetch this vehicle's first-person interior and graft it on.
+   *
+   * A vehicle with no cockpit export is not an error: most ground vehicles
+   * have no `1P_*` mesh at all, and an asset tree published before cockpits
+   * existed has none for anything. Either way the 404 leaves the vehicle
+   * exactly as it was.
+   */
+  async loadCockpit(modelsBase) {
+    const base = modelsBase || defaultModelsBase();
+    const url = new URL(`${this.control}.cockpit.glb`, base).href;
+    try {
+      const gltf = await cockpitLoader.loadAsync(url);
+      return this.attachCockpit(gltf.scene);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Move the interior out of the cockpit glb and into this vehicle's own tree.
+   *
+   * Matching is by node name, which works because the cockpit export is the
+   * same template walk pruned rather than a separate authoring of the same
+   * geometry: `lodCorsairCockpit` means the same node in both files, at the
+   * same place, so the interior lands where the engine puts it without this
+   * module knowing a single offset.
+   *
+   * Only the flown seat's swaps are taken. A B17 ships five — the pilot's
+   * cockpit plus a 1P mesh for each gunner station's turret and gun — and each
+   * carries the `control` of the nested PlayerControlObject it belongs to.
+   * Grafting another seat's would hang a Browning in mid-air behind the pilot.
+   * When seat switching arrives, the filter is where it changes.
+   */
+  attachCockpit(root) {
+    const byName = new Map();
+    this.node.traverse(obj => {
+      if (obj.name && !byName.has(obj.name)) byName.set(obj.name, obj);
+    });
+
+    const sources = [];
+    root.traverse(obj => {
+      if (obj.userData?.lodAlternative) sources.push(obj);
+    });
+    for (const source of sources) {
+      const spec = source.userData.lodAlternative;
+      if ((source.userData.control || '') !== this.control) continue;
+      const host = byName.get(source.name);
+      if (!host) continue;
+      // `children` is live while reparenting, so snapshot it first.
+      const interior = [...source.children];
+      for (const child of interior) host.add(child);
+      const hidden = (spec.replaces || [])
+        .map(name => byName.get(name))
+        .filter(Boolean);
+      this.swaps.push(new CockpitSwap(host, interior, hidden, spec));
+    }
+    if (!this.swaps.length) return null;
+
+    // The grafted subtree brings its own rig extras (the SBD's gunner mount is
+    // a RotationalBundle), so re-index rather than leaving them frozen.
+    this.collect();
+    this.setFirstPerson(this.firstPerson);
+    return this;
+  }
+
+  /** Show the interior or the exterior, at every grafted LodObject. */
+  setFirstPerson(on) {
+    this.firstPerson = !!on;
+    for (const swap of this.swaps) swap.apply(this.firstPerson);
+    return this.firstPerson;
+  }
+
+  /**
+   * Index the rig parts, the cockpit camera and the propeller.
+   *
+   * Re-entrant: the cockpit arrives after the aircraft may already be flying,
+   * and a `RiggedPart` captures its node's rest pose on construction. Building
+   * a fresh one for a surface that is currently deflected would bake that
+   * deflection in as the new neutral, so parts already indexed are kept.
+   */
   collect() {
+    const indexed = new Map(this.parts.map(part => [part.node, part]));
     this.parts.length = 0;
     this.propellerNodes.length = 0;
     this.node.traverse(obj => {
       const data = obj.userData || {};
-      if (data.rig?.axes) this.parts.push(new RiggedPart(obj, data.rig));
+      if (data.rig?.axes) this.parts.push(indexed.get(obj) || new RiggedPart(obj, data.rig));
       // `CorsairCamera`: an empty node the exporter stamps with
       // `templateKind: "Camera"` and `cameraView`, sitting at the pilot's eye
       // point in the vehicle's own frame. That is first person, for free.
@@ -236,17 +428,33 @@ export class Vehicle {
   applyRig() {
     const { surfaces } = this.state;
     for (const part of this.parts) {
+      // Position axes pose the part itself; a rate axis is an Engine's spin and
+      // lands on whichever children it actually reaches (see `RiggedPart`).
       const q = part.base.clone();
+      const spin = new THREE.Quaternion();
+      let spinning = false;
       for (const [axis, spec] of Object.entries(part.axes)) {
-        const key = `${keyOf(part.control, spec.input)}/${axis}`;
-        const deg = spec.driver === 'rate'
-          ? this.state.propellerAngle
-          : axisAngle(spec, surfaces.get(key) ?? 0);
         const e = new THREE.Euler(0, 0, 0);
-        e[AXIS[axis]] = THREE.MathUtils.degToRad(deg * SIGN[axis]);
+        if (spec.driver === 'rate') {
+          e[AXIS[axis]] = THREE.MathUtils.degToRad(this.state.propellerAngle * SIGN[axis]);
+          spin.multiply(new THREE.Quaternion().setFromEuler(e));
+          spinning = true;
+          continue;
+        }
+        const key = `${keyOf(part.control, spec.input)}/${axis}`;
+        e[AXIS[axis]] = THREE.MathUtils.degToRad(
+          axisAngle(spec, surfaces.get(key) ?? 0) * SIGN[axis]);
         q.multiply(new THREE.Quaternion().setFromEuler(e));
       }
       part.node.quaternion.copy(q);
+      if (!spinning) continue;
+      // Pre-multiplied: the spin is about the Engine's axis, which the child
+      // sees outside its own authored rotation. Same convention as the baked
+      // clips' `frame: "parent"`.
+      part.spun.forEach((node, i) => {
+        if (node === part.node) node.quaternion.copy(q).multiply(spin);
+        else node.quaternion.copy(spin).multiply(part.spunBases[i]);
+      });
     }
   }
 
@@ -338,9 +546,12 @@ export const CORSAIR = {
 
 /** An aircraft: a `Vehicle` plus the model that turns inputs into state. */
 export class Aircraft extends Vehicle {
-  constructor(node, parent, spec = CORSAIR) {
-    super(node, parent);
-    this.spec = spec;
+  /**
+   * @param {{spec?: object, modelsBase?: string, cockpit?: boolean}} [options]
+   */
+  constructor(node, parent, options = {}) {
+    super(node, parent, options);
+    this.spec = options.spec || CORSAIR;
     this.groundHeight = () => -Infinity;
     // Airborne-from-rest would just belly-flop; a plane parked on the strip has
     // its gear down and no airspeed, which is the honest starting state.
@@ -355,6 +566,7 @@ export class Aircraft extends Vehicle {
   integrate(dt) {
     const s = this.state;
     const k = this.spec;
+    if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
     this.advanceSurfaces(dt);
 
     // Throttle spools rather than steps.
@@ -458,8 +670,9 @@ export class Aircraft extends Vehicle {
     this.applyRig();
   }
 
-  /** Park the aircraft on the strip at its spawn, nose level. */
+  /** Park the aircraft on the strip at its spawn, nose level, and step out. */
   reset() {
+    if (this.autoFirstPerson) this.setFirstPerson(false);
     const s = this.state;
     s.velocity.set(0, 0, 0);
     s.throttle = 0;
