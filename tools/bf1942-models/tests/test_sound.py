@@ -194,6 +194,65 @@ endEffect
         # Refractor (100 + 30, 95, 200 - 40) = (130, 95, 160) -> glTF [130, 95, -160]
         self.assertEqual([130.0, 95.0, -160.0], area.points[1])
 
+    def test_discover_level_sounds_singular_sound_folder(self) -> None:
+        # Kasserine_Pass ships Sound/ (singular) instead of Sounds/, with a
+        # custom Sound\ambfx.wav inside the level rfa. Discovery must fall
+        # back to Sound/ for the environment con, the ssc lookups, and the
+        # area-con scan.
+        mock_files = MockLevelFiles({
+            "Sound/Environment.con": "EnvironmentSound.load Environment.ssc\n",
+            "Sound/Environment.ssc": """
+#templateLevel HIGH
+newPatch
+load Sound\\ambfx.wav
+loop
+volume 0.7
+""",
+            "Sound/coast.con": """
+ObjectTemplate.create AreaObject coast
+ObjectTemplate.loadSoundScript Coastline.ssc
+ObjectTemplate.triggerRadius 40
+ObjectTemplate.addLinePoint 10.0/-20.0
+""",
+            "Sound/Coastline.ssc": """
+#templateLevel HIGH
+newPatch
+load @ROOT/Sound/@RTD/Water_waves.wav
+loop
+volume 0.5
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 40
+	param 80
+	param 1
+	param -1
+endEffect
+""",
+        })
+
+        statics = [
+            StaticInstance(
+                template="coast",
+                position=(100.0, 95.0, 200.0),
+                rotation=(0.0, 0.0, 0.0),
+            )
+        ]
+
+        sounds = discover_level_sounds(mock_files, statics)
+        self.assertIsNotNone(sounds.ambient)
+        self.assertEqual("Sound/ambfx.wav", sounds.ambient.file)
+        self.assertAlmostEqual(0.7, sounds.ambient.volume)
+
+        self.assertEqual(1, len(sounds.areas))
+        area = sounds.areas[0]
+        self.assertEqual("coast", area.name)
+        self.assertEqual("@ROOT/Sound/@RTD/Water_waves.wav", area.file)
+        self.assertEqual(40.0, area.near_distance)
+        self.assertEqual(80.0, area.far_distance)
+        self.assertEqual([110.0, 95.0, -180.0], area.points[0])
+
 
 if __name__ == "__main__":
     unittest.main()
