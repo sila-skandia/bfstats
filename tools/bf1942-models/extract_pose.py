@@ -687,10 +687,10 @@ def main() -> int:
                 w_sides = set(w_entry.get("sides", []))
                 w_facs = set(w_entry.get("factions", []))
                 if args.match_faction:
-                    if s_facs and w_facs and not (s_facs & w_facs):
+                    if not (s_facs and w_facs and (s_facs & w_facs)):
                         continue
                 elif args.match_side:
-                    if s_sides and w_sides and not (s_sides & w_sides):
+                    if not (s_sides and w_sides and (s_sides & w_sides)):
                         continue
                 target_pairs.append((soldier, weapon))
 
