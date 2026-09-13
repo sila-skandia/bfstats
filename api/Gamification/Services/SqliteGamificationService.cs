@@ -395,14 +395,14 @@ public class SqliteGamificationService(
     /// <summary>
     /// Get achievements for a specific round
     /// </summary>
-    public async Task<List<Achievement>> GetRoundAchievementsAsync(string roundId)
+    public async Task<List<Achievement>> GetRoundAchievementsAsync(string roundId, CancellationToken ct = default)
     {
         try
         {
             var playerAchievements = await dbContext.PlayerAchievements
                 .Where(pa => pa.RoundId == roundId)
                 .OrderBy(pa => pa.AchievedAt)
-                .ToListAsync();
+                .ToListAsync(ct);
 
             return playerAchievements.Select(MapEntityToAchievement).ToList();
         }
