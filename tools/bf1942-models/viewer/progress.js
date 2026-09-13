@@ -25,6 +25,8 @@ function injectStyle() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
+/* Neutral Depth, read from tokens.css when the page links it. The fallbacks
+   are the same values, so a page that does not still gets the right card. */
 .ld-overlay {
   position: absolute;
   inset: 0;
@@ -34,40 +36,45 @@ function injectStyle() {
   pointer-events: none;
   opacity: 0;
   transition: opacity ${FADE_MS}ms ease;
-  font: 12px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+  font: 12px/1.5 var(--mm-font-mono, ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace);
+}
+/* Corner placement keeps the model visible while it streams in: the Models
+   page swaps models far more often than Maps swaps levels. */
+.ld-overlay[data-placement="corner"] {
+  place-items: start end;
+  padding: 16px;
 }
 .ld-overlay[hidden] { display: none; }
 .ld-overlay[data-shown="true"] { opacity: 1; }
 .ld-card {
   width: min(360px, calc(100% - 32px));
-  padding: 16px 18px 14px;
-  background: rgba(20, 21, 15, .9);
-  border: 1px solid #2e3125;
-  border-radius: 3px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+  padding: 12px 14px;
+  background: var(--mm-bg, #131313);
+  border: 1px solid var(--mm-rule-strong, #3d3d3d);
+  border-radius: 2px;
 }
+.ld-overlay[data-placement="corner"] .ld-card { width: min(300px, 100%); }
 .ld-title {
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: #9aab5a;
-  margin-bottom: 12px;
+  color: var(--mm-accent-soft, #9aa666);
+  margin-bottom: 9px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .ld-bar {
   position: relative;
-  height: 3px;
-  background: #24261c;
+  height: 2px;
+  background: var(--mm-bg-mute, #222222);
   overflow: hidden;
 }
 .ld-bar i {
   display: block;
   height: 100%;
   width: 0;
-  background: #9aab5a;
+  background: var(--mm-accent, #7d8849);
   transition: width 160ms linear;
 }
 /* Unknown length (no Content-Length, or a proxy that strips it): sweep rather
@@ -86,20 +93,21 @@ function injectStyle() {
   justify-content: space-between;
   gap: 12px;
   margin-top: 9px;
-  color: #e6e4d9;
+  color: var(--mm-ink, #ffffff);
+  font-size: 11px;
 }
 .ld-phase { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ld-pct { color: #9aab5a; font-variant-numeric: tabular-nums; }
+.ld-pct { color: var(--mm-accent-soft, #9aa666); font-variant-numeric: tabular-nums; }
 .ld-sub {
-  margin-top: 3px;
-  color: #8d8f7e;
-  font-size: 11px;
+  margin-top: 4px;
+  color: var(--mm-ink-muted, #8a8a8a);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
-  min-height: 16px;
+  min-height: 15px;
 }
 .ld-overlay[data-state="error"] .ld-title,
-.ld-overlay[data-state="error"] .ld-pct { color: #c98a3e; }
-.ld-overlay[data-state="error"] .ld-bar i { background: #c98a3e; }
+.ld-overlay[data-state="error"] .ld-pct { color: var(--mm-load-busy, #c5a23a); }
+.ld-overlay[data-state="error"] .ld-bar i { background: var(--mm-load-busy, #c5a23a); }
 /* Thumbnail tooling renders into the same canvas; nothing may sit over it. */
 body.is-portrait .ld-overlay { display: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -129,11 +137,13 @@ function formatEta(seconds) {
   return `${Math.floor(seconds / 60)}m ${String(Math.ceil(seconds % 60)).padStart(2, '0')}s left`;
 }
 
-export function createLoadOverlay(host) {
+/** `placement`: 'center' (default) or 'corner' — top-right of the host. */
+export function createLoadOverlay(host, { placement = 'center' } = {}) {
   injectStyle();
 
   const root = document.createElement('div');
   root.className = 'ld-overlay';
+  root.dataset.placement = placement;
   root.hidden = true;
   root.setAttribute('role', 'status');
   root.setAttribute('aria-live', 'polite');

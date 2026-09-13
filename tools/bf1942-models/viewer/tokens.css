@@ -1,0 +1,63 @@
+/* Neutral Depth for the three viewers: the same --mm-* values bfstats.io
+   carries in ui/src/styles/modern-minimal.css, so mesh.bfstats.io reads as the
+   same product rather than a sibling with its own palette.
+
+   Geist is vendored, not pulled from a CDN. The pages ship in a static nginx
+   image and are developed against `python3 -m http.server` with no network
+   guarantee; a font that silently falls back to Menlo on one of those is a
+   different layout. */
+
+@font-face {
+  font-family: 'Geist Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./vendor/fonts/geist-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Geist Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./vendor/fonts/geist-mono-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+:root {
+  --mm-bg: #131313;
+  --mm-bg-soft: #1a1a1a;
+  --mm-bg-mute: #222222;
+  --mm-rule: #2d2d2d;
+  --mm-rule-strong: #3d3d3d;
+
+  --mm-ink: #ffffff;
+  --mm-ink-soft: #c8c8c8;
+  --mm-ink-muted: #8a8a8a;
+  --mm-ink-faint: #555555;
+
+  --mm-accent: #7d8849;
+  --mm-accent-soft: #9aa666;
+  --mm-highlight: #847d4c;
+  --mm-highlight-ink: #000000;
+
+  --mm-success: #7da34c;
+  --mm-success-bg: #2b3a1a;
+  --mm-danger: #d65a5a;
+  --mm-kill: #d65a5a;
+  --mm-kill-soft: #8a3838;
+  --mm-load-busy: #c5a23a;
+
+  --mm-kd-poor: #6a6a6a;
+  --mm-kd-low: #8a8a6a;
+  --mm-kd-good: #7d8849;
+  --mm-kd-elite: #b4c060;
+
+  /* The one 3D-specific token. The stage sits a step below the page surface
+     (#131313 mixed 62% toward black) so a dark olive-drab render still
+     separates from the chrome. index.html clears the WebGL canvas to the same
+     value; change both together. */
+  --mm-stage: #0c0c0c;
+
+  --mm-font-display: 'Geist Variable', 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mm-font-mono: 'Geist Mono Variable', 'Geist Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
