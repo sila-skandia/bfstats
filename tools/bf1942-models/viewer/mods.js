@@ -85,40 +85,62 @@ function withMod(href, id) {
   return url.pathname + url.search;
 }
 
+// What the strip counts, in tab order. Poses are soldier x weapon pairs, which
+// is what the Poses tab lists, so the noun says so.
+const COUNT_NOUNS = [
+  ['models', 'models'],
+  ['maps', 'maps'],
+  ['poses', 'pose pairs'],
+];
+
+// Maps and Poses link to the armoury rather than owning one; `/` follows the
+// link so the key in the search pill means the same thing on every tab. The
+// Models page binds its own `/`, and its pill is a button, not a link.
+function bindSearchKey(nav) {
+  const link = nav.querySelector('a.shell-search[href]');
+  if (!link) return;
+  addEventListener('keydown', event => {
+    if (event.key !== '/' || event.defaultPrevented) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+    event.preventDefault();
+    location.href = link.href;
+  });
+}
+
 function install(available, active, tab) {
   const nav = document.querySelector('.shell-nav');
   if (!nav) return;
 
   // Carry the mod across a tab change, so a shared Models link lands on the
-  // same mod's Maps.
-  for (const link of nav.querySelectorAll('.shell-tabs a[href]')) {
+  // same mod's Maps — and the armoury search lands on the same mod's models.
+  for (const link of nav.querySelectorAll('.shell-tabs a[href], a.shell-search[href]')) {
     link.href = withMod(link.getAttribute('href'), active.id);
   }
+  bindSearchKey(nav);
 
   // One mod to choose from is not a choice. Nothing is drawn, which is also
   // what production looks like until a mod's assets are uploaded.
   if (available.length < 2) return;
 
-  let slot = nav.querySelector('.shell-mods');
-  if (!slot) {
-    slot = document.createElement('span');
-    slot.className = 'shell-mods';
-    const sub = nav.querySelector('.shell-sub');
-    if (sub) nav.insertBefore(slot, sub);
-    else nav.appendChild(slot);
+  let strip = nav.querySelector('.shell-mods');
+  if (!strip) {
+    strip = document.createElement('div');
+    strip.className = 'shell-mods';
+    nav.appendChild(strip);
   }
-  slot.textContent = '';
+  strip.textContent = '';
 
+  const pick = document.createElement('span');
+  pick.className = 'shell-mods-pick';
   const label = document.createElement('label');
-  label.className = 'shell-mods-label';
   label.setAttribute('for', 'shell-mod-select');
-  label.textContent = 'Mod';
+  label.textContent = 'Mod ·';
 
   const select = document.createElement('select');
   select.id = 'shell-mod-select';
   select.title = 'Which game or mod to browse';
   for (const mod of available) {
-    const option = new Option(mod.short || mod.name || mod.id, mod.id);
+    const option = new Option(mod.name || mod.short || mod.id, mod.id);
     option.title = `${mod.name} — ${mod.counts?.[tab] || 0} on this tab`;
     select.appendChild(option);
   }
@@ -127,8 +149,27 @@ function install(available, active, tab) {
     remember(select.value);
     location.href = withMod(location.href, select.value);
   });
+  pick.append(label, select);
 
-  slot.append(label, select);
+  // The active mod's size on every tab, with this tab's figure in full ink.
+  const counts = document.createElement('span');
+  counts.className = 'shell-mods-counts';
+  COUNT_NOUNS.forEach(([key, noun], index) => {
+    if (index) counts.append(' · ');
+    const figure = Number(active.counts?.[key] || 0).toLocaleString();
+    if (key === tab) {
+      const strong = document.createElement('b');
+      strong.textContent = `${figure} ${noun}`;
+      counts.append(strong);
+    } else {
+      counts.append(`${figure} ${noun}`);
+    }
+  });
+
+  strip.append(pick, counts);
+  // Grows --nav-h (shell.css). This runs inside selectMod(), which every page
+  // awaits before it creates a renderer, so nothing has measured yet.
+  document.documentElement.classList.add('shell-has-mods');
 }
 
 /**

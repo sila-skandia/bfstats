@@ -5,17 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <title>BF1942 mesh &middot; poses</title>
+<link rel="icon" href="./favicon.ico">
+<link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./shell.css">
 <style>
   :root {
-    --bg: #14150f;
-    --panel: #1c1e16;
-    --line: #2e3125;
-    --text: #e6e4d9;
-    --muted: #8d8f7e;
-    --accent: #9aab5a;
-    --warn: #c98a3e;
-    --bad: #b8574a;
+    /* Neutral Depth, from tokens.css. */
+    --bg: var(--mm-stage);
+    --panel: var(--mm-bg);
+    --line: var(--mm-rule);
+    --text: var(--mm-ink-soft);
+    --muted: var(--mm-ink-muted);
+    --accent: var(--mm-accent-soft);
+    --warn: var(--mm-load-busy);
+    --bad: var(--mm-danger);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -25,7 +28,7 @@
     grid-template-rows: var(--nav-h) 1fr;
     background: var(--bg);
     color: var(--text);
-    font: 13px/1.5 ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+    font: 13px/1.5 var(--mm-font-mono);
   }
   aside {
     background: var(--panel);
@@ -65,7 +68,7 @@
     padding: 6px 24px 6px 8px;
     border: 1px solid var(--line);
     border-radius: 3px;
-    background: #15170f;
+    background: var(--mm-bg-soft);
     color: var(--text);
     font: inherit;
     cursor: pointer;
@@ -77,7 +80,7 @@
     padding: 5px 0;
     border: 1px solid var(--line);
     border-radius: 3px;
-    background: #15170f;
+    background: var(--mm-bg-soft);
     color: var(--text);
     font: inherit;
     font-size: 11px;
@@ -92,7 +95,7 @@
     padding: 5px 0;
     border: 1px solid var(--line);
     border-radius: 3px;
-    background: #15170f;
+    background: var(--mm-bg-soft);
     color: var(--text);
     font: inherit;
     font-size: 11px;
@@ -143,8 +146,8 @@
     text-align: left;
     cursor: pointer;
   }
-  #pairs button:hover { background: rgba(154, 171, 90, .08); }
-  #pairs button.current { background: rgba(154, 171, 90, .14); color: var(--accent); }
+  #pairs button:hover { background: var(--mm-bg-soft); }
+  #pairs button.current { background: rgba(125, 136, 73, .18); color: var(--accent); }
   #pairs .palm { color: var(--accent); }
   #pairs .palm.warn { color: var(--warn); }
   #pairs .palm.bad { color: var(--bad); }
@@ -154,7 +157,7 @@
     padding: 6px 8px;
     border: 1px solid var(--line);
     border-radius: 3px;
-    background: #15170f;
+    background: var(--mm-bg-soft);
     color: var(--text);
     font: inherit;
   }
@@ -173,13 +176,20 @@
 </head>
 <body>
 <nav class="shell-nav">
-  <span class="shell-brand"><b>BF1942</b> mesh</span>
-  <span class="shell-tabs">
-    <a href="./index.html">Models</a>
-    <a href="./map.html">Maps</a>
-    <a href="./poses.html" aria-current="page">Poses</a>
-  </span>
-  <span class="shell-sub">soldier animation states &middot; weapon grip welds</span>
+  <div class="shell-bar">
+    <span class="shell-brand"><img class="shell-brand-sigil" src="./bfstats-logo.webp" alt="bfstats.io" width="26" height="26"><b>mesh</b></span>
+    <span class="shell-tabs">
+      <a href="./index.html">Models</a>
+      <a href="./map.html">Maps</a>
+      <a href="./poses.html" aria-current="page">Poses</a>
+    </span>
+    <span class="shell-sub">soldier animation states &middot; weapon grip welds</span>
+    <span class="shell-spacer"></span>
+    <a class="shell-search" href="./index.html?browse">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>Search name, faction, map&hellip;</span><kbd>/</kbd>
+    </a>
+  </div>
 </nav>
 <aside>
   <h1>Grip inspector</h1>
@@ -258,12 +268,13 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 main.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x14150f);
+scene.background = new THREE.Color(0x0c0c0c);   // --mm-stage
 
 const camera = new THREE.PerspectiveCamera(42, 1, 0.02, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.addEventListener('change', () => startAnimating());
+controls.addEventListener('start', () => { cameraMove = null; });   // a drag wins over a glide
 
 // Same neutral three-point rig as the model inspector: the point is to see
 // what the pose pipeline actually produced, not to flatter it.
@@ -272,7 +283,7 @@ const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(4, 7, 5)
 const fill = new THREE.DirectionalLight(0xffffff, 0.7); fill.position.set(-5, 2, -4); scene.add(fill);
 
 const helpers = new THREE.Group();
-helpers.add(new THREE.GridHelper(4, 8, 0x3c4030, 0x24261c), new THREE.AxesHelper(1));
+helpers.add(new THREE.GridHelper(4, 8, 0x333333, 0x1c1c1c), new THREE.AxesHelper(1));
 scene.add(helpers);
 
 const loader = new GLTFLoader();
@@ -284,16 +295,19 @@ let viewMode = 'figure';
 let loadSequence = 0;
 
 // Stances are constant animation clips in the glb — one pose each — and the
-// switch is an AnimationMixer crossfade between them. Assets extracted
-// before stances exist carry no clips; their buttons disable and the static
-// standing pose renders exactly as before.
+// switch blends their weights. Assets extracted before stances exist carry
+// no clips; their buttons disable and the static standing pose renders
+// exactly as before.
 const STANCE_KEYS = ['stand', 'crouch', 'lie'];
-const FADE_SECONDS = 0.4;
+// The pose settles first, then the camera glides to the re-fitted framing:
+// moving both at once reads as the figure jumping.
+const STANCE_BLEND_MS = 450;
+const CAMERA_MOVE_MS = 650;
 let stance = 'stand';
 let mixer = null;
 let stanceActions = {};
-let fadeUntil = 0;
-let refitTimer = 0;
+let stanceBlend = null;   // { from: { key: weight }, start }
+let cameraMove = null;    // { fromPosition, fromTarget, position, target, start }
 let stanceMetricsHook = null;   // set once the manifest is wired up
 
 const stanceButtons = [...document.querySelectorAll('.stances button')];
@@ -308,22 +322,61 @@ function updateStanceButtons() {
 function setStance(key) {
   if (!STANCE_KEYS.includes(key) || key === stance) return;
   if (current && !stanceActions[key]) return;   // asset lacks this stance
-  const previous = stanceActions[stance];
   stance = key;
   updateStanceButtons();
   stanceMetricsHook?.();
-  const target = stanceActions[key];
-  if (!mixer || !target) return;
-  if (previous && previous !== target) {
-    target.enabled = true;
-    previous.crossFadeTo(target, FADE_SECONDS, false);
-  } else {
-    target.setEffectiveWeight(1);
-  }
-  fadeUntil = performance.now() + FADE_SECONDS * 1000 + 120;
+  if (!mixer || !stanceActions[key]) return;
+  // Not AnimationAction.crossFadeTo: its fade scales the action's own weight,
+  // and the idle stances sit at weight 0, so the incoming pose never showed.
+  // Blending from the weights on screen also lets a switch made mid-blend
+  // turn around instead of jumping.
+  stanceBlend = {
+    from: Object.fromEntries(Object.entries(stanceActions)
+      .map(([name, action]) => [name, action.getEffectiveWeight()])),
+    start: performance.now(),
+  };
   startAnimating();
-  clearTimeout(refitTimer);
-  refitTimer = setTimeout(refit, FADE_SECONDS * 1000 + 60);
+}
+
+// Returns true on the frame the blend lands, so the caller can re-fit once
+// the mixer has applied the final pose.
+function advanceStanceBlend(now) {
+  if (!stanceBlend) return false;
+  const t = Math.min((now - stanceBlend.start) / STANCE_BLEND_MS, 1);
+  const eased = t * t * (3 - 2 * t);
+  for (const [name, action] of Object.entries(stanceActions))
+    action.setEffectiveWeight(THREE.MathUtils.lerp(stanceBlend.from[name], name === stance ? 1 : 0, eased));
+  if (t < 1) return false;
+  stanceBlend = null;
+  return true;
+}
+
+function moveCamera(position, target, animate) {
+  if (!animate) {
+    cameraMove = null;
+    camera.position.copy(position);
+    controls.target.copy(target);
+    controls.update();
+    invalidate();
+    return;
+  }
+  cameraMove = {
+    fromPosition: camera.position.clone(),
+    fromTarget: controls.target.clone(),
+    position,
+    target,
+    start: performance.now(),
+  };
+  startAnimating();
+}
+
+function advanceCamera(now) {
+  if (!cameraMove) return;
+  const t = Math.min((now - cameraMove.start) / CAMERA_MOVE_MS, 1);
+  const eased = t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+  camera.position.lerpVectors(cameraMove.fromPosition, cameraMove.position, eased);
+  controls.target.lerpVectors(cameraMove.fromTarget, cameraMove.target, eased);
+  if (t === 1) cameraMove = null;
 }
 for (const button of stanceButtons)
   button.addEventListener('click', () => setStance(button.dataset.stance));
@@ -343,31 +396,28 @@ function disposeModel(root) {
   materials.forEach(material => material.dispose());
 }
 
-function applyView() {
+const gripView = () => viewMode === 'grip' && gripPoint;
+const viewTarget = () => (gripView() ? gripPoint : framing.centre).clone();
+const viewDistance = ({ radius }) => (gripView() ? Math.max(radius * .45, .35) : radius * 2.6);
+
+function applyView(animate = false) {
   if (!framing) return;
-  if (viewMode === 'grip' && gripPoint) {
-    const d = Math.max(framing.radius * .45, .35);
-    camera.position.set(gripPoint.x + d * .8, gripPoint.y + d * .35, gripPoint.z + d);
-    controls.target.copy(gripPoint);
-  } else {
-    const d = framing.radius * 2.6;
-    camera.position.set(
-      framing.centre.x + d * .62,
-      framing.centre.y + framing.radius * .5,
-      framing.centre.z + d * .78,
-    );
-    controls.target.copy(framing.centre);
-  }
-  controls.update();
-  invalidate();
+  const target = viewTarget();
+  const d = viewDistance(framing);
+  const position = gripView()
+    ? new THREE.Vector3(target.x + d * .8, target.y + d * .35, target.z + d)
+    : new THREE.Vector3(target.x + d * .62, target.y + framing.radius * .5, target.z + d * .78);
+  moveCamera(position, target, animate);
 }
 
 // Frame off the posed joints, not Box3.setFromObject: a skinned mesh node
 // sits at the scene root, so its object-level bounds are the bind-space
 // figure lying along +Z, nowhere near the posed, pitched render. Re-run
-// after a stance fade completes — the joints move, the bounds move.
-function refit() {
+// after a stance blend lands — the joints move, the bounds move. That one
+// glides and keeps the viewer's orbit angle; a fresh load snaps to the preset.
+function refit({ glide = false } = {}) {
   if (!current) return;
+  const previous = framing;
   current.updateMatrixWorld(true);
   const box = new THREE.Box3();
   gripPoint = null;
@@ -385,7 +435,11 @@ function refit() {
     centre: box.getCenter(new THREE.Vector3()),
     radius: Math.max(size.x, size.y, size.z) / 2 || 1,
   };
-  applyView();
+  if (!glide || !previous) { applyView(); return; }
+  const target = viewTarget();
+  const offset = camera.position.clone().sub(controls.target)
+    .multiplyScalar(viewDistance(framing) / viewDistance(previous));
+  moveCamera(target.clone().add(offset), target, true);
 }
 
 function applyWireframe() {
@@ -422,6 +476,8 @@ async function loadPair(pair) {
 
   mixer = null;
   stanceActions = {};
+  stanceBlend = null;
+  cameraMove = null;
   for (const key of STANCE_KEYS) {
     const clip = THREE.AnimationClip.findByName(gltf.animations ?? [], key);
     if (!clip) continue;
@@ -472,10 +528,13 @@ function startAnimating() {
   (function tick(now = performance.now()) {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
+    const stanceLanded = advanceStanceBlend(now);
     if (mixer) mixer.update(delta);
+    if (stanceLanded) refit({ glide: true });
+    advanceCamera(now);
     const controlsMoving = controls.update();
     renderer.render(scene, camera);
-    if (controlsMoving || controls.autoRotate || now < fadeUntil)
+    if (controlsMoving || controls.autoRotate || stanceBlend || cameraMove)
       requestAnimationFrame(tick);
     else animating = false;
   })();
@@ -672,13 +731,13 @@ if (manifest) {
     viewMode = 'figure';
     figureButton.classList.add('active');
     gripButton.classList.remove('active');
-    applyView();
+    applyView(true);
   });
   gripButton.addEventListener('click', () => {
     viewMode = 'grip';
     gripButton.classList.add('active');
     figureButton.classList.remove('active');
-    applyView();
+    applyView(true);
   });
 
   const params = new URLSearchParams(location.search);
