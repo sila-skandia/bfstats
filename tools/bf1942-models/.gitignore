@@ -1,5 +1,5 @@
 shots*/
-viewer/models/
-viewer/maps/
+viewer/models
+viewer/maps
 out*/
 __pycache__/

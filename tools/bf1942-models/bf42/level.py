@@ -142,6 +142,50 @@ class CombatArea:
 
 
 @dataclass
+class SoundPatch:
+    level: str
+    file: str
+    loop: bool = False
+    volume: float = 1.0
+    min_distance: float = 1.0
+    near_distance: float | None = None
+    far_distance: float | None = None
+    ramp_start_val: float | None = None
+    ramp_delta_val: float | None = None
+
+
+@dataclass
+class AmbientSoundInfo:
+    file: str
+    volume: float = 1.0
+
+
+@dataclass
+class AreaSoundTemplate:
+    name: str
+    kind: str  # "areaobject" or "simpleobject"
+    ssc_file: str = ""
+    trigger_radius: float = 40.0
+    line_points: list[tuple[float, float]] = field(default_factory=list)
+
+
+@dataclass
+class PlacedAreaSound:
+    name: str
+    file: str
+    volume: float = 1.0
+    near_distance: float = 40.0
+    far_distance: float = 80.0
+    points: list[list[float]] = field(default_factory=list)
+
+
+@dataclass
+class LevelSounds:
+    ambient: AmbientSoundInfo | None = None
+    areas: list[PlacedAreaSound] = field(default_factory=list)
+
+
+@dataclass
 class LevelInfo:
     name: str
     terrain: TerrainInfo
@@ -160,6 +204,7 @@ class LevelInfo:
     lighting: LightingInfo = field(default_factory=LightingInfo)
     view_distance: float | None = None      # renderer.setViewdistance
     texture_alternative_path: str = ""      # textureManager.alternativePath
+    sounds: LevelSounds = field(default_factory=LevelSounds)
 
 
 @dataclass
@@ -661,3 +706,210 @@ def _commands(text: str) -> list[tuple[str, str, str]]:
             ns, cmd, args = match.group(1).lower(), match.group(2).lower(), match.group(3) or ""
             out.append((ns, cmd, args))
     return out
+
+
+def parse_ssc(text: str) -> list[SoundPatch]:
+    """Parse a Refractor .ssc sound script into patches with distance ramps."""
+    patches: list[SoundPatch] = []
+    current: SoundPatch | None = None
+    current_level = "high"
+    in_effect = False
+    ctrl_src = ""
+    ctrl_dest = ""
+    envelope = ""
+    params: list[float] = []
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("rem") or line.startswith("//") or line.startswith("***"):
+            continue
+        line_lower = line.lower()
+        if line_lower.startswith("#templatelevel"):
+            parts = line.split()
+            if len(parts) > 1:
+                current_level = parts[1].lower()
+        elif line_lower.startswith("newpatch"):
+            current = SoundPatch(level=current_level, file="", loop=False, volume=1.0, min_distance=1.0)
+            patches.append(current)
+            in_effect = False
+        elif line_lower.startswith("begineffect"):
+            in_effect = True
+            ctrl_src = ""
+            ctrl_dest = ""
+            envelope = ""
+            params = []
+        elif line_lower.startswith("endeffect"):
+            if in_effect and current is not None:
+                if ctrl_src == "distance" and ctrl_dest == "volume" and envelope == "ramp":
+                    if len(params) >= 2:
+                        current.near_distance = params[0]
+                        current.far_distance = params[1]
+                    if len(params) >= 4:
+                        current.ramp_start_val = params[2]
+                        current.ramp_delta_val = params[3]
+            in_effect = False
+        elif in_effect:
+            parts = line.split()
+            cmd = parts[0].lower()
+            if cmd == "controlsource" and len(parts) > 1:
+                ctrl_src = parts[1].lower()
+            elif cmd == "controldestination" and len(parts) > 1:
+                ctrl_dest = parts[1].lower()
+            elif cmd == "envelope" and len(parts) > 1:
+                envelope = parts[1].lower()
+            elif cmd == "param" and len(parts) > 1:
+                try:
+                    params.append(float(parts[1]))
+                except ValueError:
+                    pass
+        elif current is not None:
+            parts = line.split()
+            cmd = parts[0].lower()
+            if cmd == "load" and len(parts) > 1:
+                current.file = parts[1].replace("\\", "/")
+            elif cmd == "loop":
+                current.loop = True
+            elif cmd.startswith("volume"):
+                val_str = parts[1] if len(parts) > 1 else cmd.removeprefix("volume")
+                try:
+                    current.volume = float(val_str)
+                except ValueError:
+                    pass
+            elif cmd == "mindistance" and len(parts) > 1:
+                try:
+                    current.min_distance = float(parts[1])
+                except ValueError:
+                    pass
+    return patches
+
+
+def parse_area_con(text: str) -> AreaSoundTemplate | None:
+    """Parse an AreaObject or SimpleObject sound template from a Sounds/*.con file."""
+    tmpl: AreaSoundTemplate | None = None
+    for ns, cmd, args in _commands(text):
+        if ns != "objecttemplate":
+            continue
+        tokens = args.split()
+        if cmd == "create" and len(tokens) >= 2:
+            kind = tokens[0].lower()
+            name = tokens[1]
+            tmpl = AreaSoundTemplate(name=name, kind=kind)
+        elif tmpl is None:
+            continue
+        elif cmd == "loadsoundscript" and tokens:
+            tmpl.ssc_file = tokens[0].replace("\\", "/")
+        elif cmd == "triggerradius" and tokens:
+            try:
+                tmpl.trigger_radius = float(tokens[0])
+            except ValueError:
+                pass
+        elif cmd == "addlinepoint" and tokens:
+            coords = tokens[0].split("/")
+            if len(coords) >= 2:
+                try:
+                    tmpl.line_points.append((float(coords[0]), float(coords[1])))
+                except ValueError:
+                    pass
+    return tmpl
+
+
+def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance]) -> LevelSounds:
+    """Extract ambient environment sound and placed area/coastline sounds."""
+    sounds = LevelSounds()
+
+    # 1. Global Ambient Sound from Sounds/Environment.con -> Environment.ssc
+    env_ssc_name: str | None = None
+    if files.find("Sounds/Environment.con"):
+        env_con_txt = files.read("Sounds/Environment.con").decode("latin-1")
+        for line in env_con_txt.splitlines():
+            line = line.strip()
+            if line.lower().startswith("environmentsound.load") and len(line.split()) > 1:
+                env_ssc_name = line.split()[-1].replace("\\", "/").strip()
+                break
+    if not env_ssc_name:
+        env_ssc_name = "Environment.ssc"
+
+    for candidate in [f"Sounds/{env_ssc_name}", env_ssc_name]:
+        if files.find(candidate):
+            ssc_txt = files.read(candidate).decode("latin-1")
+            patches = parse_ssc(ssc_txt)
+            for p in patches:
+                if p.file and not p.file.lower().endswith("silence.wav"):
+                    sounds.ambient = AmbientSoundInfo(file=p.file, volume=p.volume)
+                    break
+            if sounds.ambient is not None:
+                break
+
+    # 2. Area and point sound objects from Sounds/*.con
+    templates: dict[str, AreaSoundTemplate] = {}
+    for name in files.names():
+        name_lower = name.lower().replace("\\", "/")
+        if "sounds/" in name_lower and name_lower.endswith(".con") and not name_lower.endswith("environment.con"):
+            txt = files.read(name).decode("latin-1")
+            tmpl = parse_area_con(txt)
+            if tmpl is not None:
+                templates[tmpl.name.lower()] = tmpl
+
+    # 3. Match templates with placements in static_objects
+    for inst in static_objects:
+        key = inst.template.lower()
+        if key not in templates:
+            continue
+        tmpl = templates[key]
+        if not tmpl.ssc_file:
+            continue
+
+        ssc_candidate = tmpl.ssc_file
+        ssc_hit = files.find(f"Sounds/{ssc_candidate}") or files.find(ssc_candidate)
+        if not ssc_hit:
+            continue
+        ssc_txt = files.read(ssc_hit).decode("latin-1")
+        patches = parse_ssc(ssc_txt)
+        patch = None
+        for p in patches:
+            if p.file and not p.file.lower().endswith("silence.wav"):
+                patch = p
+                break
+        if patch is None:
+            continue
+
+        near_dist = patch.near_distance if patch.near_distance is not None else tmpl.trigger_radius
+        far_dist = patch.far_distance if patch.far_distance is not None else max(near_dist * 2.0, tmpl.trigger_radius * 2.0)
+        ox, oy, oz = inst.position
+
+        yaw_deg = inst.rotation[0]
+        yaw_rad = math.radians(yaw_deg)
+        cos_y = math.cos(yaw_rad)
+        sin_y = math.sin(yaw_rad)
+
+        gltf_points: list[list[float]] = []
+        if tmpl.line_points:
+            for dx, dz in tmpl.line_points:
+                if abs(yaw_deg) > 1e-4:
+                    rx = dx * cos_y - dz * sin_y
+                    rz = dx * sin_y + dz * cos_y
+                else:
+                    rx, rz = dx, dz
+                wx = ox + rx
+                wy = oy
+                wz = oz + rz
+                # glTF coordinate conversion: negate Z
+                gltf_points.append([round(wx, 3), round(wy, 3), round(-wz, 3)])
+        else:
+            # Point emitter (like Siren)
+            gltf_points.append([round(ox, 3), round(oy, 3), round(-oz, 3)])
+
+        vol = patch.volume if patch.volume > 0 else (
+            patch.ramp_start_val if patch.ramp_start_val is not None and patch.ramp_start_val > 0 else 0.6
+        )
+        sounds.areas.append(PlacedAreaSound(
+            name=tmpl.name,
+            file=patch.file,
+            volume=vol,
+            near_distance=near_dist,
+            far_distance=far_dist,
+            points=gltf_points,
+        ))
+
+    return sounds
+
