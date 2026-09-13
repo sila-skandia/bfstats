@@ -83,6 +83,17 @@ def vec3(token: str) -> tuple[float, float, float]:
     return tuple(float(p) for p in parts)
 
 
+def vec3_lenient(token: str) -> tuple[float, float, float]:
+    """A vector whose author trailed off — `15/0/` means 15/0/0.
+
+    `setContinousRotationSpeed` triples in shipped data drop trailing
+    components (vanilla's `RadarBun_tower_M1` says `15/0/`), which the engine
+    reads as zero rather than as an error.
+    """
+    parts = (token.replace(",", "/").split("/") + ["0", "0", "0"])[:3]
+    return tuple(float(p) if p.strip() else 0.0 for p in parts)
+
+
 @dataclass
 class ChildRef:
     """One `addTemplate` — a named template placed at an offset in its parent."""
@@ -173,6 +184,13 @@ class ObjectTemplate:
     skeleton_main: str | None = None
     invisible: bool = False
     animated_texture_speed: tuple[float, float] | None = None
+    # Parts flagged `hasMobilePhysics 1` are separate physics bodies: an
+    # Engine's accumulated spin never reaches them visually (a Corsair's
+    # landing gear hangs off its Engine yet does not turn with the propeller).
+    has_mobile_physics: bool = False
+    # `setContinousRotationSpeed y/p/r` — ambient deg/s the engine applies
+    # unconditionally (windmill wings, radar dishes, the CH-47's parked rotor).
+    continuous_rotation: tuple[float, float, float] | None = None
     has_armor: bool = False
     hitpoints: float | None = None
     max_hitpoints: float | None = None
@@ -315,6 +333,13 @@ class ObjectLibrary:
                     obj.skeleton_main = args.split()[0] if args else None
                 elif cmd == "createinvisible":
                     obj.invisible = args.strip().startswith("1")
+                elif cmd == "hasmobilephysics":
+                    obj.has_mobile_physics = args.strip().startswith("1")
+                elif cmd == "setcontinousrotationspeed":
+                    try:
+                        obj.continuous_rotation = vec3_lenient(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
                 elif cmd == "setanimatedtexturespeed":
                     try:
                         u, v = args.split()[0].replace(",", "/").split("/")[:2]

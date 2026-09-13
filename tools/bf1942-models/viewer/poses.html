@@ -100,6 +100,13 @@
   }
   .views button:hover { border-color: var(--accent); }
   .views button.active { border-color: var(--accent); color: var(--accent); }
+  .views button:disabled {
+    color: var(--muted);
+    opacity: .45;
+    cursor: default;
+  }
+  .views button:disabled:hover { border-color: var(--line); }
+  .views.stances { margin-top: 0; }
   .stat { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
   .stat span:last-child { color: var(--accent); }
   .stat span:last-child.warn { color: var(--warn); }
@@ -111,6 +118,7 @@
     font-size: 10px;
     line-height: 1.5;
     overflow-wrap: anywhere;
+    white-space: pre-line;
   }
   #note { color: var(--warn); font-size: 10px; line-height: 1.5; margin-top: 4px; }
   #pairs {
@@ -184,6 +192,15 @@
   </div>
   <div class="hint">Arrow keys: left/right steps the weapon, up/down the soldier.</div>
 
+  <h2>Stance</h2>
+  <div class="views stances">
+    <button type="button" data-stance="stand" class="active">standing</button>
+    <button type="button" data-stance="crouch">kneeling</button>
+    <button type="button" data-stance="lie">prone</button>
+  </div>
+  <div class="hint">Keys 1/2/3 switch stance. Older extracts carry only the
+  standing pose; the other two are disabled for those.</div>
+
   <h2>Weld</h2>
   <div class="stat"><span>right palm to weapon</span><span id="palm-r">&mdash;</span></div>
   <div class="stat"><span>left palm to weapon</span><span id="palm-l">&mdash;</span></div>
@@ -219,8 +236,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
+import { selectMod } from './mods.js';
 
-const POSES_BASE = 'models/poses';
+// Which game's poses this page serves: 'models/poses' for vanilla,
+// 'models/mods/eod/poses' for a mod. Resolved before anything is fetched, and
+// it draws the nav's mod picker as a side effect.
+const activeMod = await selectMod('poses');
+const POSES_BASE = activeMod.paths.poses;
 // Same rule as the other two viewers: bypass the cache while iterating on an
 // extract locally (or with ?nocache), let nginx's Cache-Control stand in
 // production rather than re-fetching every pose on every visit.
@@ -261,6 +283,51 @@ let gripPoint = null;      // world position of Bip01 R Hand
 let viewMode = 'figure';
 let loadSequence = 0;
 
+// Stances are constant animation clips in the glb — one pose each — and the
+// switch is an AnimationMixer crossfade between them. Assets extracted
+// before stances exist carry no clips; their buttons disable and the static
+// standing pose renders exactly as before.
+const STANCE_KEYS = ['stand', 'crouch', 'lie'];
+const FADE_SECONDS = 0.4;
+let stance = 'stand';
+let mixer = null;
+let stanceActions = {};
+let fadeUntil = 0;
+let refitTimer = 0;
+let stanceMetricsHook = null;   // set once the manifest is wired up
+
+const stanceButtons = [...document.querySelectorAll('.stances button')];
+function updateStanceButtons() {
+  for (const button of stanceButtons) {
+    const key = button.dataset.stance;
+    button.disabled = current ? !stanceActions[key] : false;
+    button.classList.toggle('active', key === stance);
+  }
+}
+
+function setStance(key) {
+  if (!STANCE_KEYS.includes(key) || key === stance) return;
+  if (current && !stanceActions[key]) return;   // asset lacks this stance
+  const previous = stanceActions[stance];
+  stance = key;
+  updateStanceButtons();
+  stanceMetricsHook?.();
+  const target = stanceActions[key];
+  if (!mixer || !target) return;
+  if (previous && previous !== target) {
+    target.enabled = true;
+    previous.crossFadeTo(target, FADE_SECONDS, false);
+  } else {
+    target.setEffectiveWeight(1);
+  }
+  fadeUntil = performance.now() + FADE_SECONDS * 1000 + 120;
+  startAnimating();
+  clearTimeout(refitTimer);
+  refitTimer = setTimeout(refit, FADE_SECONDS * 1000 + 60);
+}
+for (const button of stanceButtons)
+  button.addEventListener('click', () => setStance(button.dataset.stance));
+
 function disposeModel(root) {
   if (!root) return;
   const materials = new Set();
@@ -295,6 +362,32 @@ function applyView() {
   invalidate();
 }
 
+// Frame off the posed joints, not Box3.setFromObject: a skinned mesh node
+// sits at the scene root, so its object-level bounds are the bind-space
+// figure lying along +Z, nowhere near the posed, pitched render. Re-run
+// after a stance fade completes — the joints move, the bounds move.
+function refit() {
+  if (!current) return;
+  current.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  gripPoint = null;
+  current.traverse(obj => {
+    if (obj.isBone || obj.userData?.joint)
+      box.expandByPoint(obj.getWorldPosition(new THREE.Vector3()));
+    // GLTFLoader sanitizes node names, so "Bip01 R Hand" arrives with
+    // underscores for spaces.
+    if (!gripPoint && /^Bip01[_ ]R[_ ]Hand$/.test(obj.name))
+      gripPoint = obj.getWorldPosition(new THREE.Vector3());
+  });
+  box.expandByScalar(0.25);        // joints sit inside the flesh and the kit
+  const size = box.getSize(new THREE.Vector3());
+  framing = {
+    centre: box.getCenter(new THREE.Vector3()),
+    radius: Math.max(size.x, size.y, size.z) / 2 || 1,
+  };
+  applyView();
+}
+
 function applyWireframe() {
   const on = document.getElementById('wireframe').checked;
   current?.traverse(obj => {
@@ -326,27 +419,24 @@ async function loadPair(pair) {
   // them, so culling by those bounds blanks parts of the body mid-orbit.
   current.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
   scene.add(current);
-  current.updateMatrixWorld(true);
 
-  // Frame off the posed joints, not Box3.setFromObject: a skinned mesh node
-  // sits at the scene root, so its object-level bounds are the bind-space
-  // figure lying along +Z, nowhere near the posed, pitched render.
-  const box = new THREE.Box3();
-  gripPoint = null;
-  current.traverse(obj => {
-    if (obj.isBone || obj.userData?.joint)
-      box.expandByPoint(obj.getWorldPosition(new THREE.Vector3()));
-    // GLTFLoader sanitizes node names, so "Bip01 R Hand" arrives with
-    // underscores for spaces.
-    if (!gripPoint && /^Bip01[_ ]R[_ ]Hand$/.test(obj.name))
-      gripPoint = obj.getWorldPosition(new THREE.Vector3());
-  });
-  box.expandByScalar(0.25);        // joints sit inside the flesh and the kit
-  const size = box.getSize(new THREE.Vector3());
-  framing = {
-    centre: box.getCenter(new THREE.Vector3()),
-    radius: Math.max(size.x, size.y, size.z) / 2 || 1,
-  };
+  mixer = null;
+  stanceActions = {};
+  for (const key of STANCE_KEYS) {
+    const clip = THREE.AnimationClip.findByName(gltf.animations ?? [], key);
+    if (!clip) continue;
+    mixer ??= new THREE.AnimationMixer(current);
+    const action = mixer.clipAction(clip);
+    action.play();
+    action.setEffectiveWeight(0);
+    stanceActions[key] = action;
+  }
+  if (!stanceActions[stance]) stance = 'stand';
+  stanceActions[stance]?.setEffectiveWeight(1);
+  mixer?.update(0);
+  updateStanceButtons();
+  stanceMetricsHook?.();
+  refit();
 
   const skinned = [];
   current.traverse(obj => { if (obj.isSkinnedMesh) skinned.push(obj); });
@@ -357,7 +447,6 @@ async function loadPair(pair) {
   }
 
   applyWireframe();
-  applyView();
   statusLine.textContent = `${pair.soldier} holding ${pair.weapon}`;
 }
 
@@ -379,10 +468,15 @@ function startAnimating() {
   if (animating) return;
   animating = true;
   renderScheduled = false;
-  (function tick() {
+  let last = performance.now();
+  (function tick(now = performance.now()) {
+    const delta = Math.min((now - last) / 1000, 0.1);
+    last = now;
+    if (mixer) mixer.update(delta);
     const controlsMoving = controls.update();
     renderer.render(scene, camera);
-    if (controlsMoving || controls.autoRotate) requestAnimationFrame(tick);
+    if (controlsMoving || controls.autoRotate || now < fadeUntil)
+      requestAnimationFrame(tick);
     else animating = false;
   })();
 }
@@ -433,22 +527,30 @@ if (manifest) {
     const palmR = document.getElementById('palm-r');
     const palmL = document.getElementById('palm-l');
     const naive = document.getElementById('palm-naive');
-    const metrics = pair?.metrics ?? {};
+    // Per-stance metrics when the matrix carries them (stance-aware
+    // extracts); the old single-stance shape falls through untouched.
+    const stanceInfo = pair?.stances?.[stance];
+    const metrics = stanceInfo?.metrics ?? pair?.metrics ?? {};
     palmR.textContent = centimetres(metrics.palmR);
     palmR.className = palmClass(metrics.palmR);
     palmL.textContent = centimetres(metrics.palmL);
     palmL.className = 'muted';
     naive.textContent = centimetres(metrics.palmRNaive);
     naive.className = 'muted';
-    document.getElementById('clip').textContent = pair?.upperClip ?? '';
+    document.getElementById('clip').textContent = [
+      stanceInfo?.upperClip ?? pair?.upperClip,
+      stanceInfo?.lowerClip,
+    ].filter(Boolean).join('\n');
     const note = document.getElementById('note');
     const warnings = [];
+    if (stanceInfo?.error) warnings.push(stanceInfo.error);
     if (pair?.weaponSkeleton) warnings.push(`weapon skeleton ${pair.weaponSkeleton}`);
     if (pair?.texturesMissing?.length)
       warnings.push(`missing textures: ${pair.texturesMissing.join(', ')}`);
     note.hidden = !warnings.length;
     note.textContent = warnings.join(' · ');
   }
+  stanceMetricsHook = () => showMetrics(currentPair());
 
   const pairList = document.getElementById('pairs');
   const pairCount = document.getElementById('pair-count');
@@ -514,6 +616,9 @@ if (manifest) {
     else if (event.key === 'ArrowRight') { step(weaponSelect, 1); event.preventDefault(); }
     else if (event.key === 'ArrowUp') { step(soldierSelect, -1); event.preventDefault(); }
     else if (event.key === 'ArrowDown') { step(soldierSelect, 1); event.preventDefault(); }
+    else if (event.key === '1') setStance('stand');
+    else if (event.key === '2') setStance('crouch');
+    else if (event.key === '3') setStance('lie');
   });
 
   document.getElementById('spin').addEventListener('change', event => {
@@ -548,7 +653,25 @@ if (manifest) {
   const params = new URLSearchParams(location.search);
   if (soldiers.includes(params.get('soldier'))) soldierSelect.value = params.get('soldier');
   if (weapons.includes(params.get('weapon'))) weaponSelect.value = params.get('weapon');
+  if (STANCE_KEYS.includes(params.get('stance'))) {
+    stance = params.get('stance');
+    updateStanceButtons();
+  }
   selectionChanged();
+
+  // Deterministic hooks for the headless screenshot harness.
+  window.__poseInspector = {
+    manifest,
+    get stance() { return stance; },
+    get status() { return statusLine.textContent; },
+    stances: () => Object.keys(stanceActions),
+    setStance,
+    select(soldier, weapon) {
+      soldierSelect.value = soldier;
+      weaponSelect.value = weapon;
+      selectionChanged();
+    },
+  };
 }
 </script>
 </body>
