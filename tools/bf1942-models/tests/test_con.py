@@ -180,6 +180,62 @@ ObjectTemplate.addTemplate TestCockpitInternal
             ).template,
         )
 
+    def test_lod_selector_block_is_parsed_and_bound_to_its_lod_object(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Air/Corsair/Objects.con",
+            """
+ObjectTemplate.create LodObject lodCorsairCockpit
+ObjectTemplate.addTemplate CorsairCockpitExternal
+ObjectTemplate.addTemplate CorsairCockpitInternal
+ObjectTemplate.lodSelector CorsairCockpitSelector
+
+ObjectTemplate.create SimpleObject CorsairCockpitInternal
+ObjectTemplate.geometry 1P_Corsair
+
+LodSelectorTemplate.create DistCompareSelector CorsairCockpitSelector
+LodSelectorTemplate.addLodDistance 20
+LodSelectorTemplate.addLodComparison 0.5
+""",
+        )
+
+        lod = library.object("lodCorsairCockpit")
+        self.assertEqual("CorsairCockpitSelector", lod.lod_selector)
+        # `lodSelector` follows two `addTemplate` lines, and everything else
+        # that follows one belongs to that child instance. This does not.
+        self.assertEqual(
+            [None, None],
+            [getattr(child, "lod_selector", None) for child in lod.children],
+        )
+
+        selector = library.selector("corsaircockpitselector")
+        self.assertEqual("DistCompareSelector", selector.kind)
+        self.assertEqual([20.0], selector.distances)
+        self.assertEqual([0.5], selector.comparisons)
+        self.assertEqual(
+            {"selector": "CorsairCockpitSelector",
+             "selectorKind": "DistCompareSelector",
+             "distances": [20.0], "comparisons": [0.5]},
+            selector.as_dict(),
+        )
+        self.assertIsNone(library.selector(None))
+        self.assertIsNone(library.selector("NoSuchSelector"))
+
+    def test_selector_thresholds_accumulate_in_declaration_order(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Test/Objects.con",
+            """
+LodSelectorTemplate.create DistCompareSelector2 TestLodSelector
+LodSelectorTemplate.hasDestroyedLod 1
+LodSelectorTemplate.addLodDistance 200
+LodSelectorTemplate.addLodDistance 400
+""",
+        )
+        selector = library.selector("TestLodSelector")
+        self.assertEqual([200.0, 400.0], selector.distances)
+        self.assertEqual([], selector.comparisons)
+
     def test_geometry_set_skin_is_kept_on_the_template(self) -> None:
         library = ObjectLibrary()
         library.add_con(
