@@ -225,7 +225,8 @@ class GlbBuilder:
     def add_material(self, name: str, texture: int | None = None, *,
                      double_sided: bool = False, alpha_cutoff: float | None = None,
                      blend: bool = False, base_color=(1.0, 1.0, 1.0, 1.0),
-                     unlit: bool = False, emissive_floor: float = 0.0) -> int:
+                     unlit: bool = False, emissive_floor: float = 0.0,
+                     additive: bool = False) -> int:
         pbr: dict = {"baseColorFactor": list(base_color),
                      "metallicFactor": 0.0, "roughnessFactor": 0.85}
         if texture is not None:
@@ -240,7 +241,14 @@ class GlbBuilder:
             # honours it without knowing anything about trees.
             mat["emissiveTexture"] = {"index": texture}
             mat["emissiveFactor"] = [emissive_floor] * 3
-        if alpha_cutoff is not None:
+        if additive:
+            # glTF has no additive blend mode. BLEND plus an extras flag is the
+            # closest legal spelling: any viewer renders a sane translucent
+            # fallback, and ours reads the flag (GLTFLoader lands extras in
+            # material.userData) and switches to real additive blending.
+            mat["alphaMode"] = "BLEND"
+            mat["extras"] = {"additive": True}
+        elif alpha_cutoff is not None:
             mat["alphaMode"] = "MASK"
             mat["alphaCutoff"] = alpha_cutoff
         elif blend:

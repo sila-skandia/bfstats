@@ -53,6 +53,33 @@ subshader "Sherman_Hull_M1_Material0" "StandardMesh/Default" {
         self.assertTrue(shader.twosided)
         self.assertEqual(0.5, shader.alpha_test)
 
+    def test_additive_blend_pair_is_recognised(self) -> None:
+        # Verbatim from MuzzHeavy_m1.rs: the muzzle-flash mesh adds its light.
+        shaders = rs.parse(
+            """
+subshader "MuzzHeavy_m1_Material0" "StandardMesh/Default" {
+  transparent true;
+  blendSrc sourceAlpha;
+  blendDest one;
+  twosided true;
+  depthWrite false;
+  alphaTestRef 0.7;
+  texture "texture/MuzzHeavy_o";
+}
+"""
+        )
+        shader = rs.lookup(shaders, "MuzzHeavy_m1_Material0")
+        self.assertEqual("sourceAlpha", shader.blend_src)
+        self.assertEqual("one", shader.blend_dest)
+        self.assertTrue(shader.additive)
+        # alphaTestRef is not alphaTest: no cutoff may be inferred from it.
+        self.assertIsNone(shader.alpha_test)
+
+    def test_plain_transparency_is_not_additive(self) -> None:
+        shaders = rs.parse(
+            'shader "Material4" { transparent true; texture "texture/x"; }')
+        self.assertFalse(rs.lookup(shaders, "Material4").additive)
+
 
 if __name__ == "__main__":
     unittest.main()

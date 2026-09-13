@@ -108,7 +108,9 @@ class EngineSpinAxesTests(unittest.TestCase):
     def test_aircraft_rate_span_spins_at_declared_speed(self) -> None:
         engine = self._engine((-0.3, 0.0, -3000.0), (0.3, 0.0, 5000.0),
                               (1000.0, 0.0, 500.0), {"roll": "c_PIThrottle"})
-        self.assertEqual({"roll": 500.0}, engine_spin_axes(engine))
+        # Declared 500 deg/s is idle windmilling; display scales it x3 so a
+        # running engine reads as one.
+        self.assertEqual({"roll": 1500.0}, engine_spin_axes(engine))
 
     def test_helicopter_tail_with_degenerate_span_still_spins(self) -> None:
         # EoD tail rotors declare min == max (100/100): no usable span, but
@@ -117,8 +119,9 @@ class EngineSpinAxesTests(unittest.TestCase):
                               (0.0, 0.0, 10000.0), {"roll": "c_PIThrottle"})
         axes = engine_spin_axes(engine)
         self.assertIn("roll", axes)
-        # 10000 deg/s aliases into noise on screen; clamped for display.
-        self.assertEqual(1080.0, axes["roll"])
+        # 10000 deg/s aliases into noise on screen; clamped to the 2160 cap
+        # (36 deg per 60 Hz frame, under four-blade backward strobing).
+        self.assertEqual(2160.0, axes["roll"])
 
     def test_tank_body_lean_never_spins(self) -> None:
         # Sherman-style: throttle bound over a +/-1 degree lean span. Spinning
@@ -219,7 +222,7 @@ class PropellerBakeTests(unittest.TestCase):
         names = {document["nodes"][node]["name"] for node in targets}
         self.assertEqual({"lodPlanePropeller"}, names)
         self.assertEqual(
-            ["lodPlanePropeller roll 500 deg/s (from PlaneEngine)"],
+            ["lodPlanePropeller roll 1500 deg/s (from PlaneEngine)"],
             report.animated_parts)
 
     def test_clip_rotates_a_quarter_turn_about_the_prop_axis(self) -> None:
@@ -235,7 +238,7 @@ class PropellerBakeTests(unittest.TestCase):
         sampler = animation["samplers"][rotation_channel["sampler"]]
         quaternions = read_accessor_vec4(document, blob, sampler["output"])
 
-        # 500 deg/s -> full turn in 0.72 s, keys every quarter turn; the
+        # 1500 display deg/s -> full turn in 0.24 s, keys every quarter turn; the
         # first and last keys are the same orientation (a clean loop) and the
         # middle key is a half turn about Z, unchanged by the Z-mirror.
         self.assertEqual(5, len(quaternions))

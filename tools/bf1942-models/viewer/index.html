@@ -122,6 +122,45 @@
     pointer-events: none;
   }
   .seat { display: block; color: var(--accent); opacity: .65; }
+  #fire-section[hidden] { display: none; }
+  .fire-control { margin-bottom: 10px; }
+  .fire-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: rgba(201, 138, 62, .08);
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: .05em;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+  }
+  .fire-button:hover,
+  .fire-button:focus-visible { border-color: var(--warn); outline: none; }
+  .fire-button[aria-pressed="true"] {
+    background: var(--warn);
+    border-color: var(--warn);
+    color: #14150f;
+  }
+  .fire-button .fire-word {
+    color: var(--warn);
+    font-weight: 700;
+    letter-spacing: .12em;
+  }
+  .fire-button[aria-pressed="true"] .fire-word { color: #14150f; }
+  .fire-meta {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
   .view-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
   .view-buttons button {
     padding: 4px 9px;
@@ -997,6 +1036,12 @@
     <div class="collision-note" id="anim-parts"></div>
   </section>
 
+  <section id="fire-section" hidden>
+    <h2>Guns</h2>
+    <div id="fire-controls"></div>
+    <div class="collision-note">Hold to fire. Muzzle positions, convergence, rate of fire, tracer interval and recoil come from each FireArms template.</div>
+  </section>
+
   <h2>Compare</h2>
   <label class="variant-field weapon-field"><span>Opponent</span><select id="opponent"></select></label>
   <div class="collision-note">Parks a second vehicle and answers who wins a head-on fight. Armour inspection stays on Weapon.</div>
@@ -1304,6 +1349,7 @@ function startAnimating() {
     advanceRates(dt);
     advanceScroll(dt);
     advanceGlide(dt);
+    const hasFire = advanceFire(dt);
     if (mixer && engineRunning) mixer.update(dt);
     // controls.update() returns true while damping or auto-rotate is still
     // moving the camera, false once it has settled.
@@ -1318,7 +1364,7 @@ function startAnimating() {
       (inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
     const hasClips = Boolean(mixer && engineRunning);
 
-    if (hasRates || hasScroll || hasClips || cameraGlide || controlsMoving) {
+    if (hasRates || hasScroll || hasClips || hasFire || cameraGlide || controlsMoving) {
       requestAnimationFrame(tick);
     } else {
       animating = false;
@@ -2975,6 +3021,317 @@ document.getElementById('engine-run').addEventListener('change', event => {
   }
 });
 
+// --- gun fire ----------------------------------------------------------------
+//
+// A FireArms template is the gun a seat fires: the extractor stamps its node
+// with `fireArms` (roundOfFire in rounds/second, velocity, magSize, tracer
+// interval, recoil), hangs a mesh-less `muzzle` node per barrel (plane wing
+// guns carry their authored convergence there), and bakes the additive
+// emitters of the flash EffectBundle as hidden tagged nodes. The viewer
+// strobes those emitters per shot, replays their authored sizeOverTime /
+// colorRGBAOverTime ramps over each one's timeToLive, and flies tracer
+// streaks out of the muzzles.
+
+const fireGroups = [];
+const activeTracers = [];
+const tracerPool = [];
+
+// Real muzzle velocities (400-1000 m/s) cross the whole scene between two
+// frames; scaled down so a burst reads as a stream instead of a strobe.
+const TRACER_SPEED_SCALE = 0.15;
+const TRACER_MAX_AGE = 1.5;      // seconds before a streak is recycled
+const TRACER_MAX_RANGE = 250;    // metres of travel before recycling
+// `recoilSize 3` as 3 m of barrel travel is not a picture; a tenth reads as
+// a gun. Recovery runs at the same scale so size/speed keeps the engine's
+// ratio (Sherman: 0.3 m kick recovered in 0.3 s).
+const RECOIL_KICK_SCALE = 0.1;
+
+const tracerGeometry = new THREE.CylinderGeometry(0.03, 0.03, 1, 6, 1, true);
+tracerGeometry.rotateX(Math.PI / 2);   // length along Z so lookAt aims it
+const tracerMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffd9a0, transparent: true, opacity: 0.9,
+  blending: THREE.AdditiveBlending, depthWrite: false,
+});
+// Rounds between tracers (and cannon shells) still show, just dimmer.
+const shellMaterial = new THREE.MeshBasicMaterial({
+  color: 0xc9b89a, transparent: true, opacity: 0.4,
+  blending: THREE.AdditiveBlending, depthWrite: false,
+});
+
+function recycleTracers() {
+  for (const tracer of activeTracers) {
+    scene.remove(tracer.mesh);
+    tracerPool.push(tracer.mesh);
+  }
+  activeTracers.length = 0;
+}
+
+function collectFireArms(root) {
+  recycleTracers();
+  fireGroups.length = 0;
+  // Every baked effect stays dark until a shot strobes it — this also parks
+  // non-gun effects (water-touch planes, shell ejects on unarmed variants).
+  root.traverse(obj => {
+    if (obj.userData?.effect) obj.visible = false;
+  });
+  root.traverse(obj => {
+    const stats = obj.userData?.fireArms;
+    if (!stats) return;
+    const muzzles = [];
+    const emitters = [];
+    obj.traverse(node => {
+      if (node.userData?.muzzle) muzzles.push(node);
+      const spec = node.userData?.effect;
+      if (!spec || spec.kind === 'bundle') return;
+      // Emitter materials are shared through the exporter's cache (both wing
+      // flashes, or two seats' glows, reference one material); tinting a
+      // shared one would flash every gun at once. Clone per emitter.
+      const materials = [];
+      node.traverse(part => {
+        if (!part.isMesh) return;
+        const cloned = [part.material].flat().map(m => {
+          const clone = m.clone();
+          originalMap.set(clone, clone.map);
+          materials.push(clone);
+          return clone;
+        });
+        part.material = cloned.length === 1 ? cloned[0] : cloned;
+      });
+      emitters.push({ node, spec, materials, age: Infinity, spin: 0 });
+    });
+    // Bomb racks declare no flash, no tracer and no recoil: nothing to show.
+    if (!emitters.length && !stats.tracer && !stats.recoil
+        && !(stats.velocity > 0)) return;
+    fireGroups.push({
+      node: obj,
+      stats,
+      muzzles: muzzles.length ? muzzles : [obj],
+      emitters,
+      firing: false,
+      cooldown: 0,
+      shots: 0,
+      // 1 = barrel home; a shot resets to 0 and it eases forward again.
+      recoil: stats.recoil ? 1 : null,
+    });
+  });
+  buildFirePanel();
+}
+
+function fireShot(group) {
+  group.shots += 1;
+  for (const emitter of group.emitters) {
+    emitter.age = 0;
+    emitter.node.visible = true;
+    // The engine rolls each flash particle (`startRotation CRD_UNIFORM
+    // 0/180`), which is what keeps a held burst from looking like one frame.
+    emitter.spin = Math.random() * Math.PI * 2;
+    // Bundle wrappers between the FireArms node and the emitter are hidden
+    // too; walk them visible up to the gun.
+    for (let node = emitter.node.parent;
+         node && node !== group.node; node = node.parent) {
+      node.visible = true;
+    }
+  }
+  if (group.recoil !== null) group.recoil = 0;
+  const tracer = group.stats.tracer;
+  const tracerRound = tracer
+    ? group.shots % Math.max(tracer.interval, 1) === 0
+    : false;
+  if (group.stats.velocity > 0) {
+    for (const muzzle of group.muzzles) spawnTracer(muzzle, group, tracerRound);
+  }
+}
+
+const _tracerOrigin = new THREE.Vector3();
+const _tracerAim = new THREE.Quaternion();
+
+function spawnTracer(muzzle, group, bright) {
+  muzzle.updateWorldMatrix(true, false);
+  muzzle.getWorldPosition(_tracerOrigin);
+  // A muzzle node's forward is the gun's forward: Refractor +Z, glTF -Z —
+  // wing-gun convergence is already in the node's rotation.
+  const direction = new THREE.Vector3(0, 0, -1)
+    .applyQuaternion(muzzle.getWorldQuaternion(_tracerAim));
+  const scaler = group.stats.tracer?.scaler ?? 50;
+  const length = Math.min(Math.max(scaler * 0.04, 1), 4);
+  const mesh = tracerPool.pop() || new THREE.Mesh(tracerGeometry, tracerMaterial);
+  mesh.material = bright ? tracerMaterial : shellMaterial;
+  mesh.scale.set(1, 1, length);
+  mesh.position.copy(_tracerOrigin).addScaledVector(direction, length / 2);
+  mesh.lookAt(_tracerOrigin.clone().add(direction));
+  scene.add(mesh);
+  activeTracers.push({
+    mesh,
+    direction,
+    speed: (group.stats.velocity || 100) * TRACER_SPEED_SCALE,
+    age: 0,
+    travelled: 0,
+  });
+}
+
+/** Piecewise-linear sample of an over-time ramp at `phase` (0..100). */
+function sampleCurve(points, phase) {
+  if (phase <= points[0][0]) return points[0].slice(1);
+  for (let i = 1; i < points.length; i++) {
+    if (phase <= points[i][0]) {
+      const [t0, ...v0] = points[i - 1];
+      const [t1, ...v1] = points[i];
+      const k = t1 === t0 ? 1 : (phase - t0) / (t1 - t0);
+      return v0.map((v, j) => v + (v1[j] - v) * k);
+    }
+  }
+  return points[points.length - 1].slice(1);
+}
+
+const _billboard = new THREE.Quaternion();
+const _spinAxis = new THREE.Vector3(0, 0, 1);
+
+/** Advance flashes, recoil, firing cadence and tracers. True while active. */
+function advanceFire(dt) {
+  let active = false;
+  for (const group of fireGroups) {
+    for (const emitter of group.emitters) {
+      if (!emitter.node.visible) continue;
+      emitter.age += dt;
+      const ttl = emitter.spec.timeToLive || 0.1;
+      if (emitter.age >= ttl) {
+        emitter.node.visible = false;
+        continue;
+      }
+      active = true;
+      const phase = (emitter.age / ttl) * 100;
+      // `sizeOverTime` is the absolute size ramp; a bare `size` is the fixed
+      // size of particles that declare no ramp.
+      const size = emitter.spec.sizeOverTime
+        ? sampleCurve(emitter.spec.sizeOverTime, phase)[0]
+        : (emitter.spec.size ?? 1);
+      emitter.node.scale.setScalar(Math.max(size, 1e-4));
+      if (emitter.spec.colorOverTime) {
+        const [r, g, b, a] = sampleCurve(emitter.spec.colorOverTime, phase);
+        for (const material of emitter.materials) {
+          material.color.setRGB(r / 255, g / 255, b / 255);
+          material.opacity = a / 255;
+        }
+      }
+      if (emitter.spec.billboard) {
+        // Face the camera, then the per-shot roll about the view axis.
+        emitter.node.parent.getWorldQuaternion(_billboard).invert();
+        emitter.node.quaternion.copy(_billboard).multiply(camera.quaternion)
+          .multiply(new THREE.Quaternion().setFromAxisAngle(_spinAxis, emitter.spin));
+      }
+    }
+    if (group.recoil !== null && group.recoil < 1) {
+      active = true;
+      const recoil = group.stats.recoil;
+      const recover = Math.max(recoil.size / (recoil.speed || 10), 0.05);
+      group.recoil = Math.min(1, group.recoil + dt / recover);
+      const kick = recoil.size * RECOIL_KICK_SCALE * (1 - group.recoil);
+      const home = group.node.userData.home;
+      if (home) {
+        // The barrel mesh was Z-mirrored into glTF, so it points down -Z and
+        // recoils along +Z of its own frame.
+        const back = new THREE.Vector3(0, 0, kick).applyQuaternion(group.node.quaternion);
+        group.node.position.copy(home).add(back);
+      }
+    }
+    if (group.firing) {
+      active = true;
+      group.cooldown -= dt;
+      const period = 1 / (group.stats.roundOfFire || 1);
+      while (group.cooldown <= 0) {
+        fireShot(group);
+        group.cooldown += period;
+      }
+    }
+  }
+  for (let i = activeTracers.length - 1; i >= 0; i--) {
+    const tracer = activeTracers[i];
+    tracer.age += dt;
+    const step = tracer.speed * dt;
+    tracer.travelled += step;
+    tracer.mesh.position.addScaledVector(tracer.direction, step);
+    if (tracer.age > TRACER_MAX_AGE || tracer.travelled > TRACER_MAX_RANGE) {
+      scene.remove(tracer.mesh);
+      tracerPool.push(tracer.mesh);
+      activeTracers.splice(i, 1);
+    } else {
+      active = true;
+    }
+  }
+  return active;
+}
+
+function fireMeta(group) {
+  const stats = group.stats;
+  const parts = [];
+  if (stats.roundOfFire) parts.push(`${stats.roundOfFire} rds/s`);
+  if (stats.velocity) parts.push(`${stats.velocity} m/s`);
+  if (stats.muzzles > 1) parts.push(`${stats.muzzles} muzzles`);
+  if (stats.tracer) parts.push(`tracer every ${stats.tracer.interval}`);
+  if (stats.recoil) parts.push('recoil');
+  if (stats.magSize) parts.push(`mag ${stats.magSize}`);
+  return parts.join(' · ');
+}
+
+function buildFirePanel() {
+  const section = document.getElementById('fire-section');
+  const host = document.getElementById('fire-controls');
+  host.innerHTML = '';
+  if (!fireGroups.length) {
+    section.hidden = true;
+    return;
+  }
+  const seats = new Set(fireGroups.map(group => group.stats.control || 'vehicle'));
+  for (const group of fireGroups) {
+    const wrap = document.createElement('div');
+    wrap.className = 'fire-control';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'fire-button';
+    button.setAttribute('aria-pressed', 'false');
+    button.innerHTML =
+      `<span>${group.node.name}</span><span class="fire-word">FIRE</span>`;
+    const meta = document.createElement('div');
+    meta.className = 'fire-meta';
+    meta.innerHTML =
+      (seats.size > 1 ? `<span class="seat">${group.stats.control}</span>` : '')
+      + fireMeta(group);
+    const start = () => {
+      if (group.firing) return;
+      group.firing = true;
+      group.cooldown = 0;   // first round leaves immediately
+      button.setAttribute('aria-pressed', 'true');
+      startAnimating();
+    };
+    const stop = () => {
+      if (!group.firing) return;
+      group.firing = false;
+      button.setAttribute('aria-pressed', 'false');
+      startAnimating();     // let flashes decay and tracers fly out
+    };
+    button.addEventListener('pointerdown', event => {
+      button.setPointerCapture(event.pointerId);
+      start();
+    });
+    button.addEventListener('pointerup', stop);
+    button.addEventListener('pointercancel', stop);
+    // Hold-to-fire from the keyboard too; ignore auto-repeat.
+    button.addEventListener('keydown', event => {
+      if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+        event.preventDefault();
+        start();
+      }
+    });
+    button.addEventListener('keyup', event => {
+      if (event.key === ' ' || event.key === 'Enter') stop();
+    });
+    button.addEventListener('blur', stop);
+    wrap.append(button, meta);
+    host.appendChild(wrap);
+  }
+  section.hidden = false;
+}
+
 // --- seat camera views --------------------------------------------------------
 //
 // Camera templates come out of the extractor as mesh-less nodes tagged
@@ -3358,7 +3715,18 @@ async function show(entry, variant) {
   current.traverse(obj => {
     // Remember authored positions so the explode slider can scale them.
     obj.userData.home = obj.position.clone();
-    if (obj.isMesh) for (const m of [obj.material].flat()) originalMap.set(m, m.map);
+    if (obj.isMesh) for (const m of [obj.material].flat()) {
+      originalMap.set(m, m.map);
+      // glTF has no additive blend mode; the exporter marks muzzle-flash and
+      // tracer-glow materials (`blendDest one` in the .rs) via extras, which
+      // GLTFLoader lands in userData.
+      if (m.userData?.additive) {
+        m.blending = THREE.AdditiveBlending;
+        m.transparent = true;
+        m.depthWrite = false;
+        m.needsUpdate = true;
+      }
+    }
     const rig = obj.userData?.rig;
     if (!rig?.axes) return;
 
@@ -3428,6 +3796,7 @@ async function show(entry, variant) {
   collectCollisions(current, report);
   collectScrolling(current);
   collectAnimations(gltf);
+  collectFireArms(current);
   collectViews(current, entry);
   cameraGlide = null;
   buildOpponentSelect(entry);
@@ -4187,6 +4556,40 @@ window.__modelInspector = {
       name: node.name, control: node.userData.cameraView.control,
     })),
   }),
+  // Gun state and a trigger, for headless checks: each group is one FireArms
+  // template with its muzzles, baked flash emitters and firing stats.
+  getFire: () => ({
+    groups: fireGroups.map(group => ({
+      name: group.node.name,
+      control: group.stats.control,
+      stats: group.stats,
+      firing: group.firing,
+      shots: group.shots,
+      muzzles: group.muzzles.map(node => {
+        node.updateWorldMatrix(true, false);
+        return {
+          name: node.name,
+          world: node.getWorldPosition(new THREE.Vector3()).toArray(),
+        };
+      }),
+      flashes: group.emitters.map(emitter => ({
+        name: emitter.node.name,
+        kind: emitter.spec.kind,
+        visible: emitter.node.visible,
+      })),
+    })),
+    tracers: activeTracers.map(tracer => ({
+      position: tracer.mesh.position.toArray(),
+      bright: tracer.mesh.material === tracerMaterial,
+    })),
+  }),
+  setFiring: (index, firing) => {
+    const group = fireGroups[index];
+    if (!group) return;
+    group.firing = Boolean(firing);
+    if (group.firing) group.cooldown = 0;
+    startAnimating();
+  },
   // Thumbnails are shot through here rather than through setView, because the
   // scale lineup relies on every one of them being framed to the *same* multiple
   // of the model's bounding sphere. Anything that reframes per-model — fitting

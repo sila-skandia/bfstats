@@ -147,6 +147,7 @@ class Report:
     collision_triangles: int = 0
     collision_materials: list[int] = field(default_factory=list)
     armor: dict = field(default_factory=dict)
+    fire_arms: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -175,6 +176,7 @@ class Report:
             "collisionTriangles": self.collision_triangles,
             "collisionMaterials": sorted(set(self.collision_materials)),
             "armor": self.armor,
+            "fireArms": self.fire_arms,
         }
 
 
@@ -205,6 +207,7 @@ class Assembler:
         self._collision_material_cache: dict[int, int] = {}
         self._skin_cache: dict[str, skin.Skin | None] = {}
         self._skeleton_cache: dict[str, ske.Skeleton | None] = {}
+        self._sprite_mesh_cache: dict[str, int | None] = {}
         # Spin keyframe specs gathered during the tree walk; `export` bakes
         # them into glTF animation clips against its own builder. Callers that
         # drive `build_node` with an external builder (the level exporter)
@@ -341,7 +344,7 @@ class Assembler:
 
         texture_path = shader.base_texture
         key = (texture_path, shader.twosided, shader.transparent,
-               shader.alpha_test, unlit, emissive_floor)
+               shader.alpha_test, unlit, emissive_floor, shader.additive)
         if key in self._material_cache:
             return self._material_cache[key]
 
@@ -350,10 +353,14 @@ class Assembler:
             name=shader.name,
             texture=texture,
             double_sided=shader.twosided,
-            alpha_cutoff=shader.alpha_test,
+            # An additive shader's alphaTestRef is a fixed-function cutoff the
+            # engine applies *on top of* the blend; keeping MASK would kill the
+            # flash's soft falloff, so additive wins.
+            alpha_cutoff=None if shader.additive else shader.alpha_test,
             blend=shader.transparent and shader.alpha_test is None,
             unlit=unlit,
             emissive_floor=emissive_floor,
+            additive=shader.additive,
         )
         self._material_cache[key] = index
         return index
@@ -583,6 +590,184 @@ class Assembler:
         if not primitives:
             return None, 0
         return builder.add_mesh(mesh_file, primitives), triangles
+
+    # -- effects (muzzle flashes) ------------------------------------------- #
+
+    def _sprite_quad_mesh(self, builder: gltf.GlbBuilder, texture_name: str,
+                          report: Report) -> int | None:
+        """A unit quad carrying one SpriteParticle texture, additively blended.
+
+        The engine billboards these toward the camera; the viewer does the
+        same at run time, so the quad's authored plane (XY, facing +Z) only
+        has to be *a* plane.
+        """
+        key = texture_name.lower()
+        if key in self._sprite_mesh_cache:
+            return self._sprite_mesh_cache[key]
+        texture = self._texture_index(builder, f"texture/{texture_name}", report)
+        if texture is None:
+            self._sprite_mesh_cache[key] = None
+            return None
+        material = builder.add_material(
+            name=f"fx {texture_name}",
+            texture=texture,
+            double_sided=True,
+            blend=True,
+            additive=True,
+            # Full-bright: a muzzle flash is light, and shading it against the
+            # viewer's sun would dim exactly the thing being demonstrated.
+            unlit=True,
+        )
+        index = builder.add_mesh(f"fx {texture_name}", [gltf.Primitive(
+            positions=[(-0.5, -0.5, 0.0), (0.5, -0.5, 0.0),
+                       (0.5, 0.5, 0.0), (-0.5, 0.5, 0.0)],
+            uvs=[(0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)],
+            indices=[0, 1, 2, 0, 2, 3],
+            material=material,
+        )])
+        self._sprite_mesh_cache[key] = index
+        return index
+
+    def _effect_emitter_nodes(self, builder: gltf.GlbBuilder,
+                              bundle: con_mod.ObjectTemplate,
+                              report: Report) -> list[int]:
+        """The bakeable emitters of an EffectBundle, as tagged hidden nodes.
+
+        Each Emitter child names its payload with `ObjectTemplate.template`:
+        a Particle (an ordinary `.sm` mesh — `MuzzHeavy_m1`) or a
+        SpriteParticle (a textured quad). Only additive payloads
+        (`destBlendMode BMOne`, or an `.rs` declaring `blendDest one`) are
+        baked: those are the flash's light. Alpha-blended payloads are smoke
+        and dust, which a strobed still image cannot sell.
+        """
+        nodes: list[int] = []
+        for ref in bundle.children:
+            emitter = self.library.object(ref.template)
+            if emitter is None or emitter.emitter_template is None:
+                continue
+            if emitter.show_in_first_person and not emitter.show_in_third_person:
+                continue
+            payload = self.library.object(emitter.emitter_template)
+            if payload is None:
+                continue
+            kind = payload.kind.lower()
+            mesh_index: int | None = None
+            effect: dict = {}
+            if kind == "spriteparticle":
+                if (payload.dest_blend_mode or "").lower() != "bmone":
+                    continue
+                if not payload.sprite_texture:
+                    continue
+                mesh_index = self._sprite_quad_mesh(
+                    builder, payload.sprite_texture, report)
+                effect["kind"] = "sprite"
+                effect["billboard"] = True
+                if payload.sprite_size is not None:
+                    effect["size"] = payload.sprite_size
+            elif kind == "particle" and payload.geometry:
+                # The mesh's own .rs declares the additive blend; the material
+                # path picks it up, so no filter is needed here.
+                mesh_index, _ = self._mesh_index(builder, payload.geometry, report)
+                effect["kind"] = "mesh"
+            if mesh_index is None:
+                continue
+            effect["timeToLive"] = (payload.time_to_live
+                                    or emitter.time_to_live or 0.1)
+            if payload.size_over_time:
+                effect["sizeOverTime"] = payload.size_over_time
+            if payload.color_over_time:
+                effect["colorOverTime"] = payload.color_over_time
+            nodes.append(builder.add_node(gltf.Node(
+                name=ref.template,
+                translation=ref.position,
+                rotation=gltf.quat_from_ypr(*ref.rotation),
+                mesh=mesh_index,
+                extras={"templateKind": payload.kind, "effect": effect},
+            )))
+        return nodes
+
+    def _effect_bundle_node(self, builder: gltf.GlbBuilder,
+                            template: con_mod.ObjectTemplate, report: Report, *,
+                            position, rotation, depth: int) -> int | None:
+        emitters = self._effect_emitter_nodes(builder, template, report)
+        if not emitters:
+            return None
+        report.part_tree.append(f"{'  ' * depth}{template.name} ({template.kind})")
+        return builder.add_node(gltf.Node(
+            name=template.name,
+            translation=position,
+            rotation=gltf.quat_from_ypr(*rotation),
+            children=emitters,
+            extras={"templateKind": template.kind,
+                    "effect": {"kind": "bundle"}},
+        ))
+
+    def _fire_arms(self, builder: gltf.GlbBuilder,
+                   template: con_mod.ObjectTemplate, report: Report,
+                   control: str, depth: int) -> tuple[list[int], dict]:
+        """Muzzle nodes and the firing stats for one FireArms template.
+
+        Plane guns declare one `addFireArmsPosition <pos> <ypr>` per barrel
+        (the ypr is gun convergence); a tank gun declares none and fires from
+        `projectilePosition` along the barrel the FireArms itself carries. The
+        flash named by `visibleBarrelTemplate` is baked under every muzzle;
+        `addTemplate`-attached flashes (the Sherman's `e_MuzzPanz`) arrive
+        through the ordinary child walk instead.
+        """
+        muzzles = template.fire_arms_positions or [
+            (template.projectile_position or (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))]
+        nodes: list[int] = []
+        for index, (position, rotation) in enumerate(muzzles):
+            children: list[int] = []
+            if template.visible_barrel_template:
+                flash = self.build_node(
+                    builder, template.visible_barrel_template, report,
+                    depth=depth + 1, control=control)
+                if flash is not None:
+                    children.append(flash)
+            nodes.append(builder.add_node(gltf.Node(
+                name=f"{template.name} muzzle {index + 1}",
+                translation=position,
+                rotation=gltf.quat_from_ypr(*rotation),
+                children=children,
+                extras={"templateKind": "Muzzle",
+                        "muzzle": {"index": index},
+                        "control": control or "vehicle"},
+            )))
+
+        tracer = None
+        if template.tracer_template:
+            projectile = self.library.object(template.tracer_template)
+            tracer = {
+                "template": template.tracer_template,
+                "interval": template.tracer_interval or 1,
+            }
+            if projectile is not None:
+                if projectile.time_to_live is not None:
+                    tracer["timeToLive"] = projectile.time_to_live
+                if projectile.tracer_scaler is not None:
+                    tracer["scaler"] = projectile.tracer_scaler
+        extras = {key: value for key, value in {
+            "projectile": template.projectile_template,
+            "roundOfFire": template.round_of_fire,
+            "magSize": template.mag_size,
+            "velocity": template.velocity,
+            "input": template.input_fire or "c_PIFire",
+            "control": control or "vehicle",
+            "muzzles": len(muzzles),
+            "tracer": tracer,
+            "recoil": ({"size": template.recoil_size,
+                        "speed": template.recoil_speed}
+                       if template.recoil_size else None),
+        }.items() if value is not None}
+        report.fire_arms.append(
+            f"[{control or 'vehicle'}] {template.name}: {len(muzzles)} muzzle(s)"
+            + (f", {template.round_of_fire:g} rps" if template.round_of_fire else "")
+            + (f", {template.velocity:g} m/s" if template.velocity else "")
+            + (f", tracer every {tracer['interval']}" if tracer else "")
+            + (f", flash {template.visible_barrel_template}"
+               if template.visible_barrel_template else ""))
+        return nodes, extras
 
     def _read_skin(self, path: str) -> skin.Skin | None:
         key = path.lower()
@@ -867,6 +1052,15 @@ class Assembler:
         if template.invisible:
             return None
 
+        # EffectBundles never reach the ordinary walk usefully: their Emitter
+        # children link to their payloads with `ObjectTemplate.template`, not
+        # `addTemplate`, so every child looks meshless and the whole flash
+        # vanishes. Bake the additive payloads instead.
+        if template.kind.lower() == "effectbundle":
+            return self._effect_bundle_node(
+                builder, template, report,
+                position=position, rotation=rotation, depth=depth)
+
         # Player inputs are scoped to a seat, not to the vehicle. `c_PIMouseLookY`
         # on a tank's gun and on the commander's MG are two different players'
         # mice — the MG sits inside its own PlayerControlObject. Treating the name
@@ -954,10 +1148,20 @@ class Assembler:
                     },
                 )))
 
+        # A FireArms that launches something gets muzzle nodes (and, for plane
+        # guns, its `visibleBarrelTemplate` flash baked under each one).
+        fire_extras: dict | None = None
+        if template.kind.lower() == "firearms" and template.projectile_template:
+            muzzle_nodes, fire_extras = self._fire_arms(
+                builder, template, report, control, depth)
+            child_indices += muzzle_nodes
+
         # A Camera has no geometry and usually no children, but its placement
         # IS the seat's viewpoint — worth a (mesh-less) node so a viewer can
         # snap its own camera to the pilot's or gunner's eyes, and parked
         # inside the turret it was authored in so it traverses with it.
+        # Meshless FireArms survive the same way: their muzzles are the seat's
+        # guns (a Spitfire's wing guns are nodes on empty air).
         is_camera = template.kind.lower() == "camera"
         if mesh_index is None and not child_indices and not is_camera:
             return None
@@ -971,6 +1175,8 @@ class Assembler:
 
         extras: dict = {"templateKind": template.kind, "geometry": template.geometry,
                         "control": control or "vehicle"}
+        if fire_extras is not None:
+            extras["fireArms"] = fire_extras
         if is_camera:
             extras["cameraView"] = {"control": control or "vehicle"}
             report.cameras.append(f"[{control or 'vehicle'}] {template.name}")
