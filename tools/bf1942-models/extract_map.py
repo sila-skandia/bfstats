@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -41,9 +42,11 @@ from bf42 import gltf, stdmesh  # noqa: E402
 from bf42 import rs as rs_mod  # noqa: E402
 from bf42.assemble import Assembler, Report  # noqa: E402
 from bf42.level import (  # noqa: E402
+    LevelFiles,
     LevelInfo,
     index_object_lightmaps,
     decode_heightmap,
+    discover_level_sounds,
     find_level_archives,
     load_level_files,
     parse_cubemap_rcm,
@@ -53,7 +56,7 @@ from bf42.level import (  # noqa: E402
     parse_terrain_con,
     spawn_vehicle,
 )
-from bf42.rfa import find_archives_dir  # noqa: E402
+from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
 from bf42.terrain import (  # noqa: E402
     DETAIL_REPEATS,
     default_patches,
@@ -148,6 +151,7 @@ def load_level(game_dir: Path, mod: str, level: str,
         parse_init_con(_read_text(files, "Init/SkyAndSun.con"), info)
     if files.find("StaticObjects.con"):
         info.static_objects = parse_static_objects(_read_text(files, "StaticObjects.con"))
+    info.sounds = discover_level_sounds(files, info.static_objects)
     if files.find("Conquest/ObjectSpawnTemplates.con"):
         info.spawn_templates = parse_spawn_templates(
             _read_text(files, "Conquest/ObjectSpawnTemplates.con"))
@@ -163,6 +167,80 @@ def load_level(game_dir: Path, mod: str, level: str,
 def _to_gltf_vec(vec: tuple[float, float, float]) -> list[float]:
     x, y, z = vec
     return [x, y, -z]
+
+
+SOUND_ARCHIVES = ("sound", "sound_001")
+
+
+def resolve_sound(ref: str, level_files: LevelFiles | None,
+                  sounds: ArchivePool) -> tuple[str, bytes] | None:
+    clean = ref.replace("\\", "/").strip()
+    if clean.lower().startswith("@root/"):
+        clean = clean[6:]
+    clean = clean.lstrip("/")
+    basename = Path(clean).name
+
+    # 1. Check level_files if available
+    if level_files is not None:
+        for candidate in [clean, f"Sound/{basename}", f"Sounds/{basename}",
+                          f"Sound/22khz/{basename}", f"Sound/44khz/{basename}", f"Sound/11khz/{basename}"]:
+            hit = level_files.find(candidate)
+            if hit is not None:
+                return basename, level_files.read(candidate)
+
+    # 2. Check sounds pool
+    rates = ["22khz", "44khz", "11khz"]
+    if "@rtd" in clean.lower():
+        for r in rates:
+            sub = re.sub(r"@rtd", r, clean, flags=re.IGNORECASE)
+            if sub in sounds:
+                return basename, sounds.read(sub)
+    else:
+        if clean in sounds:
+            return basename, sounds.read(clean)
+        for r in rates:
+            candidate = f"Sound/{r}/{basename}"
+            if candidate in sounds:
+                return basename, sounds.read(candidate)
+    return None
+
+
+def extract_sounds(info: LevelInfo, level_files: LevelFiles,
+                   sounds: ArchivePool, out_dir: Path) -> dict:
+    """Extract referenced sound wav files and produce the sounds report dict."""
+    sounds_dir = out_dir / "sounds"
+    sound_report: dict = {"ambient": None, "areas": []}
+
+    if info.sounds.ambient is not None:
+        resolved = resolve_sound(info.sounds.ambient.file, level_files, sounds)
+        if resolved is not None:
+            basename, data = resolved
+            sounds_dir.mkdir(parents=True, exist_ok=True)
+            (sounds_dir / basename).write_bytes(data)
+            sound_report["ambient"] = {
+                "file": f"sounds/{basename}",
+                "volume": info.sounds.ambient.volume,
+            }
+
+    written_files: set[str] = set()
+    for area in info.sounds.areas:
+        resolved = resolve_sound(area.file, level_files, sounds)
+        if resolved is not None:
+            basename, data = resolved
+            if basename not in written_files:
+                sounds_dir.mkdir(parents=True, exist_ok=True)
+                (sounds_dir / basename).write_bytes(data)
+                written_files.add(basename)
+            sound_report["areas"].append({
+                "name": area.name,
+                "file": f"sounds/{basename}",
+                "volume": area.volume,
+                "nearDistance": area.near_distance,
+                "farDistance": area.far_distance,
+                "points": area.points,
+            })
+
+    return sound_report
 
 
 def _load_level_dds(files, stem: str):
@@ -608,6 +686,14 @@ def main() -> int:
         extras["skybox"] = extras["envmap"]
     extras["water"] = write_water_assets(
         info, heightmap, textures, out_dir, args.max_texture)
+
+    sounds = ArchivePool()
+    for mod_dir in chain:
+        archives = find_archives_dir(mod_dir)
+        if archives is not None:
+            sounds.add_dir(archives, SOUND_ARCHIVES)
+    extras["sounds"] = extract_sounds(info, files, sounds, out_dir)
+
     (out_dir / "scene.glb").write_bytes(glb)
     (out_dir / "scene.json").write_text(json.dumps(extras, indent=2))
     maps_index = args.out / "maps.json"
@@ -633,6 +719,9 @@ def main() -> int:
     obj = extras["objects"]
     sky = extras.get("sky")
     water = extras.get("water")
+    snd = extras.get("sounds") or {}
+    amb = snd.get("ambient")
+    areas = snd.get("areas") or []
     print(f"  terrain {extras['terrain']['triangles']} tris, "
           f"{len(files.tiles())} tiles"
           f" + {extras['terrain'].get('defaultTiles', 0)} default"
@@ -647,6 +736,8 @@ def main() -> int:
           f"water:  "
           f"{'layers ' + '/'.join(sorted(water['textures'])) if water else 'flat colour'}",
           file=sys.stderr)
+    print(f"  sounds: ambient {amb['file'] if amb else 'none'}, "
+          f"{len(areas)} area/emitter sound(s)", file=sys.stderr)
     return 0
 
 
