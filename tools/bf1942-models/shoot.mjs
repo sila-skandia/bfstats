@@ -9,11 +9,22 @@
 // CPU rendering for CI environments that lack a GPU.
 
 import { chromium } from '../../ui/node_modules/playwright/index.mjs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
 
 const arg = (name, fallback) => {
   const index = process.argv.indexOf(`--${name}`);
   return index > -1 ? process.argv[index + 1] : fallback;
+};
+
+const jobsArg = () => {
+  const idx = process.argv.indexOf('-j');
+  if (idx > -1) return process.argv[idx + 1];
+  return arg('jobs', 1);
+};
+const jobs = Math.max(1, Number(jobsArg()));
+const skipExisting = process.argv.includes('--skip-existing');
+const exists = async path => {
+  try { await stat(path); return true; } catch { return false; }
 };
 
 const url = arg('url', 'http://localhost:5273');
@@ -56,27 +67,55 @@ if (thumbs) {
   // A square viewport, a fixed camera distance in bounding-sphere radii, and no
   // per-model reframing: that combination is what lets the browse view's scale
   // lineup draw these at a common scale by size alone.
-  await page.setViewportSize({ width: 820, height: 500 });
   const dir = arg('out', 'viewer/models/thumbs');
   await mkdir(dir, { recursive: true });
-  const canvas = page.locator('main canvas');
   const written = [];
 
-  for (const model of models) {
-    if (only && model.name.toLowerCase() !== only.toLowerCase()) continue;
-    await page.evaluate(
-      ([modelIndex, variantIndex]) =>
-        window.__modelInspector.showVariant(modelIndex, variantIndex),
-      [model.index, model.defaultVariant],
-    );
-    await page.evaluate(() => window.__modelInspector.setPortrait(true));
-    await page.waitForTimeout(160);
-    const file = `${slug(model.name)}.png`;
-    await canvas.screenshot({ path: `${dir}/${file}`, omitBackground: false });
-    written.push([model.name, `thumbs/${file}`]);
+  const targetModels = models.filter(m => !only || m.name.toLowerCase() === only.toLowerCase());
+  let nextIndex = 0;
+
+  const pages = [page];
+  for (let i = 1; i < Math.min(jobs, targetModels.length); i++) {
+    const p = await browser.newPage();
+    p.on('pageerror', error => console.error('page error:', error.message));
+    await p.goto(url, { waitUntil: 'networkidle' });
+    await p.waitForFunction(() => window.__modelInspector?.getCurrent());
+    pages.push(p);
   }
 
-  await page.evaluate(() => window.__modelInspector.setPortrait(false));
+  async function worker(workerPage) {
+    await workerPage.setViewportSize({ width: 820, height: 500 });
+    const canvas = workerPage.locator('main canvas');
+    while (true) {
+      const idx = nextIndex++;
+      if (idx >= targetModels.length) break;
+      const model = targetModels[idx];
+      const file = `${slug(model.name)}.png`;
+      const outPath = `${dir}/${file}`;
+      if (skipExisting && (await exists(outPath))) {
+        written.push([model.name, `thumbs/${file}`]);
+        continue;
+      }
+      try {
+        await workerPage.evaluate(
+          ([modelIndex, variantIndex]) =>
+            window.__modelInspector.showVariant(modelIndex, variantIndex),
+          [model.index, model.defaultVariant],
+        );
+        await workerPage.evaluate(() => window.__modelInspector.setPortrait(true));
+        await workerPage.waitForTimeout(160);
+        await canvas.screenshot({ path: outPath, omitBackground: false });
+        written.push([model.name, `thumbs/${file}`]);
+      } catch (err) {
+        console.error(`[thumbs] failed ${model.name}:`, err.message);
+      }
+      if (written.length % 50 === 0 || written.length === targetModels.length) {
+        console.log(`[thumbs] ${written.length}/${targetModels.length} (${Math.round(written.length / targetModels.length * 100)}%)`);
+      }
+    }
+  }
+
+  await Promise.all(pages.map(p => worker(p)));
   await browser.close();
 
   // Stamp the paths into the manifest so the viewer knows they exist. The

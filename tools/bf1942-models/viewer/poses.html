@@ -503,16 +503,40 @@ const manifest = await fetch(`${POSES_BASE}/poses-matrix.json${bust()}`).then(re
 
 if (manifest) {
   const pairs = manifest.pairs.filter(pair => !pair.error);
-  const soldiers = manifest.soldiers;
-  const weapons = manifest.weapons;
+
+  // Group available weapons per soldier so only existing pairs can be selected
+  const weaponsBySoldier = new Map();
+  for (const pair of pairs) {
+    let list = weaponsBySoldier.get(pair.soldier);
+    if (!list) {
+      list = [];
+      weaponsBySoldier.set(pair.soldier, list);
+    }
+    list.push(pair.weapon);
+  }
+  for (const list of weaponsBySoldier.values()) list.sort((a, b) => a.localeCompare(b));
+
+  const soldiersWithPairs = [...weaponsBySoldier.keys()].sort((a, b) => a.localeCompare(b));
+  const soldiers = soldiersWithPairs.length > 0 ? soldiersWithPairs : (manifest.soldiers || []);
   const byKey = new Map(pairs.map(pair => [`${pair.soldier}|${pair.weapon}`, pair]));
 
   const soldierSelect = document.getElementById('soldier');
   const weaponSelect = document.getElementById('weapon');
   for (const soldier of soldiers)
     soldierSelect.add(new Option(soldier, soldier));
-  for (const weapon of weapons)
-    weaponSelect.add(new Option(weapon, weapon));
+
+  function updateWeaponOptions(preferredWeapon = null) {
+    const available = weaponsBySoldier.get(soldierSelect.value) || [];
+    weaponSelect.replaceChildren(...available.map(w => new Option(w, w)));
+    if (preferredWeapon && available.includes(preferredWeapon)) {
+      weaponSelect.value = preferredWeapon;
+    } else if (available.length > 0) {
+      weaponSelect.selectedIndex = 0;
+    }
+    const disabled = available.length <= 1;
+    document.getElementById('prev-weapon').disabled = disabled;
+    document.getElementById('next-weapon').disabled = disabled;
+  }
 
   const palmClass = metres =>
     metres == null ? 'muted' : metres <= 0.06 ? '' : metres <= 0.12 ? 'warn' : 'bad';
@@ -577,7 +601,7 @@ if (manifest) {
       button.append(label, palm);
       button.addEventListener('click', () => {
         soldierSelect.value = pair.soldier;
-        weaponSelect.value = pair.weapon;
+        updateWeaponOptions(pair.weapon);
         selectionChanged();
       });
       return button;
@@ -598,12 +622,19 @@ if (manifest) {
 
   function step(select, delta) {
     const options = [...select.options];
+    if (!options.length) return;
     const index = (select.selectedIndex + delta + options.length) % options.length;
     select.selectedIndex = index;
+    if (select === soldierSelect) {
+      updateWeaponOptions(weaponSelect.value);
+    }
     selectionChanged();
   }
 
-  soldierSelect.addEventListener('change', selectionChanged);
+  soldierSelect.addEventListener('change', () => {
+    updateWeaponOptions(weaponSelect.value);
+    selectionChanged();
+  });
   weaponSelect.addEventListener('change', selectionChanged);
   document.getElementById('prev-weapon').addEventListener('click', () => step(weaponSelect, -1));
   document.getElementById('next-weapon').addEventListener('click', () => step(weaponSelect, 1));
@@ -652,7 +683,7 @@ if (manifest) {
 
   const params = new URLSearchParams(location.search);
   if (soldiers.includes(params.get('soldier'))) soldierSelect.value = params.get('soldier');
-  if (weapons.includes(params.get('weapon'))) weaponSelect.value = params.get('weapon');
+  updateWeaponOptions(params.get('weapon'));
   if (STANCE_KEYS.includes(params.get('stance'))) {
     stance = params.get('stance');
     updateStanceButtons();
@@ -668,7 +699,7 @@ if (manifest) {
     setStance,
     select(soldier, weapon) {
       soldierSelect.value = soldier;
-      weaponSelect.value = weapon;
+      updateWeaponOptions(weapon);
       selectionChanged();
     },
   };
