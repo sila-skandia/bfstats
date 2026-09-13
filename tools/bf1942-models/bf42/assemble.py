@@ -53,11 +53,19 @@ _DRIVETRAIN_INPUTS = frozenset({"c_PIYaw", "c_PIThrottle"})
 # engine integrates them, and both are useless on a screen: one never visibly
 # moves, the other aliases into noise — in game the blurred-disc LOD has taken
 # over long before that (`CompareSelector` swaps `..PropellerStatic` for
-# `..PropellerBlurred` at engine input ~0.07). The baked clip keeps the real
-# axis and the real speed where the real speed reads as motion, and clamps the
-# rest into a band a 60 Hz viewer can actually show.
+# `..PropellerBlurred` at engine input ~0.07). The declared numbers were never
+# meant to be watched at full throttle either: nearly every propeller aircraft
+# across the installed mods declares 400–1250 deg/s (vanilla planes all say
+# 500–600), barely 1.5 rev/s — idle windmilling, not a running engine. The
+# baked clip therefore scales every Engine axis up ×3 (props land at 4–6
+# rev/s, which reads as a propeller) and clamps into a band a 60 Hz viewer can
+# show: the cap is 36 deg per 60 Hz frame, under the 45 deg/frame where a
+# four-blade rotor (90-degree symmetry) starts strobing backward. Ambient
+# `setContinousRotationSpeed` parts (radar dishes, windmills) never pass
+# through here and keep their real speed.
+SPIN_DISPLAY_SCALE = 3.0
 SPIN_MIN_DEG_PER_SEC = 120.0
-SPIN_MAX_DEG_PER_SEC = 1080.0
+SPIN_MAX_DEG_PER_SEC = 2160.0
 
 
 def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
@@ -84,7 +92,8 @@ def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
     for axis, spec in rig["axes"].items():
         if spec["driver"] == "rate" or (spec["free"] and spec["input"] == "c_PIThrottle"):
             declared = abs(spec.get("maxSpeed") or 0.0) or 360.0
-            axes[axis] = min(max(declared, SPIN_MIN_DEG_PER_SEC), SPIN_MAX_DEG_PER_SEC)
+            axes[axis] = min(max(declared * SPIN_DISPLAY_SCALE, SPIN_MIN_DEG_PER_SEC),
+                             SPIN_MAX_DEG_PER_SEC)
     return axes
 
 
@@ -786,6 +795,48 @@ class Assembler:
                 return True
         return False
 
+    def _spin_reaches_visible_mesh(self, template_name: str, *,
+                                   depth: int = 0,
+                                   lod_alternative: bool = False,
+                                   stack: frozenset[str] = frozenset()) -> bool:
+        """Whether an Engine child carries any mesh the spin would actually turn.
+
+        The spin stops at `hasMobilePhysics 1` boundaries — those are physics
+        bodies of their own — but the flag can sit one level below the child
+        the Engine places: the Ilyushin's gear-hatch Bundle is a mesh-less
+        plain wrapper whose only visible content is two mobile-physics hatch
+        covers. Spinning the wrapper spins exactly the geometry the engine
+        never spins, so a child with nothing visible outside such boundaries
+        gets no track. A LodObject's alternatives are exempt from the cut:
+        they are one visual part, not attachments — EoD stamps
+        `hasMobilePhysics 1` on the CH-47's propeller meshes themselves, and
+        the physics body those flags describe is the helicopter, not the
+        rotor.
+        """
+        if depth > 24:
+            return False
+        template = self.library.object(template_name)
+        if template is None or template.invisible:
+            return False
+        if depth > 0 and template.has_mobile_physics and not lod_alternative:
+            return False
+        key = template.name.lower()
+        if key in stack:
+            return False
+        if template.geometry and not geometry_is_first_person(template.geometry):
+            return True
+        stack = stack | {key}
+        children = template.children
+        if template.is_lod_selector and children:
+            children = [con_mod.select_lod_alternative(children, self.configuration)]
+        return any(
+            (name := con_mod.instance_template_name(ref, self.library.object))
+            and self._spin_reaches_visible_mesh(
+                name, depth=depth + 1,
+                lod_alternative=template.is_lod_selector, stack=stack)
+            for ref in children
+        )
+
     # -- tree --------------------------------------------------------------- #
 
     def build_node(self, builder: gltf.GlbBuilder, template_name: str, report: Report,
@@ -871,6 +922,8 @@ class Assembler:
             for ref, child_name, node_index in built_children:
                 child_template = self.library.object(child_name)
                 if child_template is None or child_template.has_mobile_physics:
+                    continue
+                if not self._spin_reaches_visible_mesh(child_name):
                     continue
                 for axis, speed in spin_axes.items():
                     # `frame="parent"`: the spin happens about the Engine's
