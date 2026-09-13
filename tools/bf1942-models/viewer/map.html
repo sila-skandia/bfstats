@@ -239,6 +239,10 @@ let audioLoader = null;
 let ambientAudio = null;
 let activeAreaAudios = [];
 const audioBufferCache = new Map();
+// Bumped by disposeSounds; an async setupSounds captures the value after its
+// own dispose and bails if a later dispose/setup has superseded it, so a
+// rapid map switch can never leak a loop that dispose can't reach.
+let soundsGeneration = 0;
 
 function uiFocused() {
   const t = document.activeElement;
@@ -1014,6 +1018,7 @@ function ensureAudioContext() {
 }
 
 function disposeSounds() {
+  soundsGeneration++;
   if (ambientAudio) {
     try {
       if (ambientAudio.isPlaying) ambientAudio.stop();
@@ -1033,6 +1038,7 @@ function disposeSounds() {
 
 async function setupSounds(report, dir) {
   disposeSounds();
+  const gen = soundsGeneration;
   const cfg = report.sounds;
   if (!cfg) return;
 
@@ -1042,15 +1048,19 @@ async function setupSounds(report, dir) {
     audioLoader = new THREE.AudioLoader();
   }
 
+  // The cache key must be the un-busted path: with bust() in the key the dev
+  // origin re-keyed (and re-decoded) the same wav on every call, and the
+  // sequential decode stagger started identical loops 50-200ms apart — a
+  // permanent slapback echo. bust() stays on the fetch URL only.
   const getBuffer = async (relPath) => {
-    const url = `${MAPS_BASE}/${dir}/${relPath}${bust()}`;
-    if (audioBufferCache.has(url)) return audioBufferCache.get(url);
+    const key = `${dir}/${relPath}`;
+    if (audioBufferCache.has(key)) return audioBufferCache.get(key);
     try {
-      const buf = await audioLoader.loadAsync(url);
-      audioBufferCache.set(url, buf);
+      const buf = await audioLoader.loadAsync(`${MAPS_BASE}/${key}${bust()}`);
+      audioBufferCache.set(key, buf);
       return buf;
     } catch (e) {
-      console.warn(`Could not load sound ${url}:`, e);
+      console.warn(`Could not load sound ${key}:`, e);
       return null;
     }
   };
@@ -1058,7 +1068,8 @@ async function setupSounds(report, dir) {
   // Ambient atmospheric sound
   if (cfg.ambient && cfg.ambient.file) {
     const buf = await getBuffer(cfg.ambient.file);
-    if (buf && cfg === report.sounds) {
+    if (gen !== soundsGeneration) return;
+    if (buf) {
       ambientAudio = new THREE.Audio(audioListener);
       ambientAudio.setBuffer(buf);
       ambientAudio.setLoop(true);
@@ -1068,31 +1079,43 @@ async function setupSounds(report, dir) {
     }
   }
 
-  // Shorelines and positional area sounds
+  // Shorelines and positional area sounds. One looping voice per unique wave
+  // file: several areas sharing Water_waves.wav used to get one loop each, and
+  // two loops of the same sample audible at once through separate HRTF panners
+  // reads as a hall echo, not louder surf. updateAudio moves the single
+  // anchor to the closest point across every polyline in the group.
   if (cfg.areas && cfg.areas.length > 0) {
+    const groups = new Map();
     for (const area of cfg.areas) {
       if (!area.file || !area.points || area.points.length === 0) continue;
-      const buf = await getBuffer(area.file);
-      if (!buf || cfg !== report.sounds) continue;
+      const key = area.file.toLowerCase();
+      if (!groups.has(key)) groups.set(key, { file: area.file, areas: [] });
+      groups.get(key).areas.push(area);
+    }
 
+    for (const group of groups.values()) {
+      const buf = await getBuffer(group.file);
+      if (gen !== soundsGeneration) return;
+      if (!buf) continue;
+
+      const first = group.areas[0];
       const anchor = new THREE.Object3D();
-      anchor.position.set(area.points[0][0], area.points[0][1], area.points[0][2]);
+      anchor.position.set(first.points[0][0], first.points[0][1], first.points[0][2]);
       scene.add(anchor);
 
       const sound = new THREE.PositionalAudio(audioListener);
       sound.setBuffer(buf);
       sound.setLoop(true);
-      sound.setRefDistance(area.nearDistance || 40.0);
-      sound.setMaxDistance((area.farDistance || 80.0) * 1.5);
-      sound.setRolloffFactor(1);
+      sound.setRefDistance(first.nearDistance || 40.0);
+      // The manual .ssc near/far ramp in updateAudio owns distance volume
+      // exclusively; rolloff 0 disables the panner's own inverse-distance
+      // curve so the two attenuations don't multiply. setMaxDistance is not
+      // called — it only applies to the 'linear' distance model, so it was
+      // inert here anyway. HRTF panning is kept for direction.
+      sound.setRolloffFactor(0);
       anchor.add(sound);
 
-      activeAreaAudios.push({
-        anchor,
-        sound,
-        area,
-        baseVolume: area.volume ?? 0.6,
-      });
+      activeAreaAudios.push({ anchor, sound, areas: group.areas });
       try { sound.play(); } catch (_) {}
     }
   }
@@ -1110,13 +1133,23 @@ function updateAudio() {
 
   const camPos = camera.position;
   for (const item of activeAreaAudios) {
-    const pts = item.area.points;
-    let bx = pts[0][0], by = pts[0][1], bz = pts[0][2];
+    // Closest point to the camera across every polyline in the group; the
+    // area that produced it supplies the near/far ramp and base volume.
+    let bestArea = item.areas[0];
+    let bx = bestArea.points[0][0], by = bestArea.points[0][1], bz = bestArea.points[0][2];
     let minD2 = Infinity;
 
-    if (pts.length === 1) {
-      minD2 = (camPos.x - bx) ** 2 + (camPos.y - by) ** 2 + (camPos.z - bz) ** 2;
-    } else {
+    for (const area of item.areas) {
+      const pts = area.points;
+      if (pts.length === 1) {
+        const dist2 = (camPos.x - pts[0][0]) ** 2 + (camPos.y - pts[0][1]) ** 2 + (camPos.z - pts[0][2]) ** 2;
+        if (dist2 < minD2) {
+          minD2 = dist2;
+          bx = pts[0][0]; by = pts[0][1]; bz = pts[0][2];
+          bestArea = area;
+        }
+        continue;
+      }
       for (let i = 0; i < pts.length - 1; i++) {
         const p1 = pts[i];
         const p2 = pts[i + 1];
@@ -1134,6 +1167,7 @@ function updateAudio() {
         if (dist2 < minD2) {
           minD2 = dist2;
           bx = qx; by = qy; bz = qz;
+          bestArea = area;
         }
       }
     }
@@ -1141,8 +1175,8 @@ function updateAudio() {
     item.anchor.position.set(bx, by, bz);
 
     const dist = Math.sqrt(minD2);
-    const near = item.area.nearDistance || 40.0;
-    const far = item.area.farDistance || 80.0;
+    const near = bestArea.nearDistance || 40.0;
+    const far = bestArea.farDistance || 80.0;
     let ramp = 0.0;
     if (dist <= near) {
       ramp = 1.0;
@@ -1150,7 +1184,7 @@ function updateAudio() {
       const denom = Math.max(far - near, 0.001);
       ramp = 1.0 - (dist - near) / denom;
     }
-    item.sound.setVolume(item.baseVolume * ramp * master);
+    item.sound.setVolume((bestArea.volume ?? 0.6) * ramp * master);
   }
 }
 
@@ -1386,6 +1420,13 @@ async function show(entry) {
   disposeSky();
   disposeSounds();
   currentRoot = gltf.scene;
+  // Baked fire-effect payloads (muzzle flashes, projectile bodies, trail
+  // quads) ride every assembled vehicle; only the model viewer animates
+  // them, so here they must stay hidden or they render parked on the guns.
+  currentRoot.traverse(obj => {
+    if (obj.userData?.effect || obj.userData?.projectileMesh
+        || obj.userData?.projectileTrail) obj.visible = false;
+  });
   scene.add(currentRoot);
   const dir = entry.glb.replace(/\/[^/]+$/, '');
   bindLightmaps(currentRoot, dir);
