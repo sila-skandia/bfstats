@@ -28,7 +28,7 @@ from bf42 import con as con_mod
 from bf42 import damage as damage_mod
 from bf42 import measure as measure_mod
 from bf42 import roster as roster_mod
-from bf42.assemble import Assembler
+from bf42.assemble import Assembler, reaches_first_person
 from bf42.rfa import ArchivePool, find_archives_dir, find_game_dir, find_levels_dir
 
 DEFAULT_GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
@@ -273,8 +273,11 @@ def template_category(library: con_mod.ObjectLibrary, name: str) -> str:
     return next((v for k, v in CATEGORY_PREFIXES.items() if source.startswith(k)), "object")
 
 
-def variant_suffix(configuration: str, lod: int, level_label: str | None) -> str:
+def variant_suffix(configuration: str, lod: int, level_label: str | None,
+                   first_person: bool = False) -> str:
     tokens: list[str] = []
+    if first_person:
+        tokens.append("cockpit")
     if configuration != "complex":
         tokens.append(configuration)
     if lod:
@@ -288,12 +291,18 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                objects: ArchivePool, library: con_mod.ObjectLibrary, *,
                configuration: str, lod: int, max_texture: int, out: Path,
                level_label: str | None = None,
+               first_person: bool = False,
                ) -> dict | None:
     """Export a single vehicle variant, returning a manifest fragment or None."""
     assembler = Assembler(meshes, textures, objects, library,
                           lod=lod, max_texture=max_texture,
-                          configuration=configuration)
-    suffix = variant_suffix(configuration, lod, level_label)
+                          configuration=configuration,
+                          first_person=first_person,
+                          # Nothing collides with a cockpit interior: it is
+                          # scenery drawn around a camera that is already
+                          # inside the vehicle's own hull.
+                          include_collision=not first_person)
+    suffix = variant_suffix(configuration, lod, level_label, first_person)
     file_stem = f"{name}{suffix}"
     try:
         glb, report = assembler.export(name)
@@ -326,6 +335,7 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
         "level": level_label,
         "configuration": configuration,
         "lod": lod,
+        "firstPerson": first_person,
         "parts": report.parts,
         "triangles": report.triangles,
         "texturesResolved": len(report.resolved_textures),
@@ -347,52 +357,77 @@ def _init_export_worker(chain_paths: list[str], fallback_paths: list[str]) -> No
     _worker_state["library"] = library
 
 
-def _export_template_task(task_args: tuple) -> tuple[str, list[dict], int]:
-    name, configurations, lod, max_texture, out_path_str, level_sources_tuples = task_args
-    try:
-        out = Path(out_path_str)
-        meshes = _worker_state["meshes"]
-        base_textures = _worker_state["base_textures"]
-        objects = _worker_state["objects"]
-        library = _worker_state["library"]
+def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
+                    objects: ArchivePool, library: con_mod.ObjectLibrary, *,
+                    configurations: list[str], lod: int, max_texture: int,
+                    out: Path, level_sources: list[tuple[str, Path]],
+                    cockpit: bool = False) -> tuple[list[dict], int]:
+    """Every variant of one template: configurations x theatre skins, + cockpit."""
+    variants: list[dict] = []
+    failures = 0
+    for configuration in configurations:
+        base = export_one(
+            name, meshes, base_textures, objects, library,
+            configuration=configuration, lod=lod,
+            max_texture=max_texture, out=out,
+        )
+        if base is None:
+            failures += 1
+            continue
+        variants.append(base)
 
-        variants: list[dict] = []
-        failures = 0
-        for configuration in configurations:
-            base = export_one(
-                name, meshes, base_textures, objects, library,
+        for level_name, level_path in level_sources:
+            level_textures = ArchivePool()
+            try:
+                added = level_textures.add_level(level_path, label=level_name)
+            except Exception as exc:
+                print(f"  {name}.{level_name}: cannot read level archive ({exc})",
+                      file=sys.stderr)
+                continue
+            if not added:
+                continue
+            level_textures.extend_from(base_textures)
+
+            variant = export_one(
+                name, meshes, level_textures, objects, library,
                 configuration=configuration, lod=lod,
                 max_texture=max_texture, out=out,
+                level_label=level_name,
             )
-            if base is None:
-                failures += 1
-                continue
-            variants.append(base)
+            if variant:
+                variants.append(variant)
 
-            for level_name, level_path_str in level_sources_tuples:
-                level_path = Path(level_path_str)
-                level_textures = ArchivePool()
-                try:
-                    added = level_textures.add_level(level_path, label=level_name)
-                except Exception as exc:
-                    print(f"  {name}.{level_name}: cannot read level archive ({exc})",
-                          file=sys.stderr)
-                    continue
-                if not added:
-                    continue
-                level_textures.extend_from(base_textures)
+    # The cockpit hangs off the default configuration only. A wreck has no
+    # interior to sit in, and a theatre skin never reaches the interior
+    # textures — `1P_Corsair` samples `Corsair_Interior_I`, which no level
+    # archive overrides.
+    if cockpit and reaches_first_person(library, name):
+        interior = export_one(
+            name, meshes, base_textures, objects, library,
+            configuration="complex", lod=lod,
+            max_texture=max_texture, out=out, first_person=True,
+        )
+        if interior:
+            variants.append(interior)
 
-                variant = export_one(
-                    name, meshes, level_textures, objects, library,
-                    configuration=configuration, lod=lod,
-                    max_texture=max_texture, out=out,
-                    level_label=level_name,
-                )
-                if variant:
-                    variants.append(variant)
+    if not variants:
+        failures += 1
+    return variants, failures
 
-        if not variants:
-            failures += 1
+
+def _export_template_task(task_args: tuple) -> tuple[str, list[dict], int]:
+    (name, configurations, lod, max_texture, out_path_str,
+     level_sources_tuples, cockpit) = task_args
+    try:
+        variants, failures = export_template(
+            name,
+            _worker_state["meshes"], _worker_state["base_textures"],
+            _worker_state["objects"], _worker_state["library"],
+            configurations=configurations, lod=lod, max_texture=max_texture,
+            out=Path(out_path_str),
+            level_sources=[(n, Path(p)) for n, p in level_sources_tuples],
+            cockpit=cockpit,
+        )
         return name, variants, failures
     except Exception as exc:
         print(f"  {name}: worker error ({exc})", file=sys.stderr)
@@ -415,6 +450,11 @@ def main() -> int:
                     help="vehicle alternative to export; repeatable (default: complex)")
     ap.add_argument("--configuration-all", action="store_true",
                     help="export both Complex and Wreck alternatives when available")
+    ap.add_argument("--cockpit", action="store_true",
+                    help="also export `<Name>.cockpit.glb` — the first-person interior "
+                         "geometry the ordinary export deliberately leaves out. It is a "
+                         "graft, not a model: a viewer attaches it to the matching nodes "
+                         "of the ordinary export when the camera goes inside")
     ap.add_argument("--max-texture", type=int, default=1024, help="downscale textures above this, 0 to keep")
     ap.add_argument("--texture-fallback", action="append", default=[],
                     help="mod folder to borrow textures from when the chain lacks them "
@@ -516,7 +556,7 @@ def main() -> int:
                   file=sys.stderr)
         if configurations:
             tasks.append((name, configurations, args.lod, args.max_texture, str(args.out),
-                          [(n, str(p)) for n, p in level_sources]))
+                          [(n, str(p)) for n, p in level_sources], args.cockpit))
 
     template_variants: dict[str, list[dict]] = {}
     failures = 0
@@ -532,44 +572,12 @@ def main() -> int:
                 template_variants[name] = variants
                 failures += f_count
     else:
-        for task in tasks:
-            name, configurations, lod, max_texture, out_path_str, level_sources_tuples = task
-            variants: list[dict] = []
-            f_count = 0
-            for configuration in configurations:
-                base = export_one(
-                    name, meshes, base_textures, objects, library,
-                    configuration=configuration, lod=lod,
-                    max_texture=max_texture, out=args.out,
-                )
-                if base is None:
-                    f_count += 1
-                    continue
-                variants.append(base)
-
-                for level_name, level_path in level_sources:
-                    level_textures = ArchivePool()
-                    try:
-                        added = level_textures.add_level(level_path, label=level_name)
-                    except Exception as exc:
-                        print(f"  {name}.{level_name}: cannot read level archive ({exc})",
-                              file=sys.stderr)
-                        continue
-                    if not added:
-                        continue
-                    level_textures.extend_from(base_textures)
-
-                    variant = export_one(
-                        name, meshes, level_textures, objects, library,
-                        configuration=configuration, lod=lod,
-                        max_texture=max_texture, out=args.out,
-                        level_label=level_name,
-                    )
-                    if variant:
-                        variants.append(variant)
-
-            if not variants:
-                f_count += 1
+        for name, configurations, lod, max_texture, _out, _levels, want_cockpit in tasks:
+            variants, f_count = export_template(
+                name, meshes, base_textures, objects, library,
+                configurations=configurations, lod=lod, max_texture=max_texture,
+                out=args.out, level_sources=level_sources, cockpit=want_cockpit,
+            )
             template_variants[name] = variants
             failures += f_count
 
@@ -579,11 +587,17 @@ def main() -> int:
         if not variants:
             continue
 
+        # A cockpit is never a candidate for the browse model: it shares the
+        # `complex` configuration with the real thing but is a bare interior
+        # tub, so letting it into this pick would turn a fighter's thumbnail
+        # into a dashboard. It rides alongside under its own key instead.
+        showable = [v for v in variants if not v.get("firstPerson")] or variants
         default_variants = [
-            variant for variant in variants
+            variant for variant in showable
             if variant["configuration"] == "complex"
-        ] or variants
+        ] or showable
         best = min(default_variants, key=lambda v: len(v["texturesMissing"]))
+        cockpit = next((v["glb"] for v in variants if v.get("firstPerson")), None)
         report = json.loads((args.out / best["report"]).read_text())
         manifest.append({
             "name": name,
@@ -591,6 +605,7 @@ def main() -> int:
             "category": template_category(library, name),
             "glb": best["glb"],
             "report": best["report"],
+            "cockpit": cockpit,
             "configuration": best["configuration"],
             "lod": best["lod"],
             "level": best["level"],
