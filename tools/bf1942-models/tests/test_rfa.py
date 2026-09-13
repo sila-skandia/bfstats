@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -96,6 +98,52 @@ class ArchivePoolTests(unittest.TestCase):
             "texture/FH_pahile_c.dds",
             pool.resolve_ext("texture/PAHILE_C", (".dds", ".tga")),
         )
+
+
+class TryReadTests(unittest.TestCase):
+    """One corrupt entry is one missing file, not a dead extraction.
+
+    EoD's `objects.rfa` has three entries whose LZO streams overrun their
+    lookbehind window, out of 4806. Reading every `.con` in the pool must
+    survive them.
+    """
+
+    class _Archive:
+        def __init__(self, payloads: dict[str, bytes | Exception]):
+            self.entries = list(payloads)
+            self._payloads = payloads
+
+        def read(self, name: str) -> bytes:
+            value = self._payloads[name]
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+    def _pool(self, payloads) -> ArchivePool:
+        pool = ArchivePool()
+        archive = self._Archive(payloads)
+        for name in archive.entries:
+            pool._index[name.lower()] = ("objects.rfa", archive, name)
+        return pool
+
+    def test_returns_none_for_an_undecompressable_entry(self) -> None:
+        pool = self._pool({
+            "objects/Good.con": b"ObjectTemplate.create",
+            "objects/Bad.con": ValueError("lzo1x_decompress_safe returned -6"),
+        })
+
+        self.assertEqual(b"ObjectTemplate.create", pool.try_read("objects/good.con"))
+        with contextlib.redirect_stderr(io.StringIO()) as warned:
+            self.assertIsNone(pool.try_read("objects/bad.con"))
+            # Warned once, not once per pass over the pool.
+            self.assertIsNone(pool.try_read("objects/bad.con"))
+        self.assertEqual(1, warned.getvalue().count("objects/Bad.con"))
+        # And still raises for callers that want the failure.
+        with self.assertRaises(ValueError):
+            pool.read("objects/bad.con")
+
+    def test_missing_name_is_none_rather_than_a_key_error(self) -> None:
+        self.assertIsNone(self._pool({}).try_read("objects/nope.con"))
 
 
 if __name__ == "__main__":

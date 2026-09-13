@@ -46,9 +46,24 @@ NATION_LABELS = {
     "japanese": "Japanese",
     "specialforces": "Special Forces",
     "vietcong": "Viet Cong",
+    "auss": "Australian",
+    "australian": "Australian",
+    "dutch": "Dutch",
+    "fin": "Finnish",
+    "finish": "Finnish",
+    "finnish": "Finnish",
+    "fre": "French",
+    "french": "French",
+    "hun": "Hungarian",
+    "hungarian": "Hungarian",
+    "ita": "Italian",
+    "italian": "Italian",
+    "italiandesert": "Italian",
+    "pol": "Polish",
+    "polish": "Polish",
 }
 
-AXIS_NATIONS = {"German", "Japanese"}
+AXIS_NATIONS = {"German", "Japanese", "Italian", "Hungarian", "Finnish"}
 
 # `GB_AT` and `Canadian_Assault` spell their class differently to the folder that
 # holds them; the folder is the one that is consistent.

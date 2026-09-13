@@ -94,6 +94,22 @@
   .rig-input .driven { font-size: 10px; color: var(--muted); line-height: 1.5; }
   .rig-none { font-size: 11px; color: var(--muted); }
   .seat { display: block; color: var(--accent); opacity: .65; }
+  .view-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
+  .view-buttons button {
+    padding: 4px 9px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: .04em;
+    cursor: pointer;
+  }
+  .view-buttons button:hover,
+  .view-buttons button:focus-visible { border-color: var(--accent); outline: none; }
+  .view-buttons button[aria-pressed="true"] { background: var(--accent); color: #14150f; }
+  #anim-section[hidden], #views-section[hidden] { display: none; }
   .collision-note {
     margin: 8px 0;
     color: var(--muted);
@@ -941,6 +957,18 @@
     <label class="toggle"><input type="checkbox" id="doubleside"> force double-sided</label>
   </details>
 
+  <section id="views-section" hidden>
+    <h2>Views</h2>
+    <div id="views" class="view-buttons"></div>
+    <div class="collision-note">Seat cameras recovered from the vehicle's Camera templates. Orbit returns to the browse framing.</div>
+  </section>
+
+  <section id="anim-section" hidden>
+    <h2>Engine</h2>
+    <label class="toggle"><input type="checkbox" id="engine-run"> run engine (spin propellers / rotors)</label>
+    <div class="collision-note" id="anim-parts"></div>
+  </section>
+
   <h2>Compare</h2>
   <label class="variant-field weapon-field"><span>Opponent</span><select id="opponent"></select></label>
   <div class="collision-note">Parks a second vehicle and answers who wins a head-on fight. Armour inspection stays on Weapon.</div>
@@ -1021,6 +1049,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { createLoadOverlay } from './progress.js';
+import { selectMod } from './mods.js';
+
+// Which game's assets this page serves, and the directory they hang off:
+// 'models' for vanilla, 'models/mods/eod' for a mod. Resolved before anything
+// is fetched, and it draws the nav's mod picker as a side effect.
+const activeMod = await selectMod('models');
+const MODELS_BASE = activeMod.paths.models;
 
 const main = document.querySelector('main');
 // preserveDrawingBuffer lets the headless checks read the canvas back after a
@@ -1240,6 +1275,8 @@ function startAnimating() {
     const dt = Math.min(clock.getDelta(), 0.1);
     advanceRates(dt);
     advanceScroll(dt);
+    advanceGlide(dt);
+    if (mixer && engineRunning) mixer.update(dt);
     // controls.update() returns true while damping or auto-rotate is still
     // moving the camera, false once it has settled.
     const controlsMoving = controls.update();
@@ -1251,8 +1288,9 @@ function startAnimating() {
         spec.driver === 'rate' && (inputValues.get(keyOf(part.control, spec.input)) ?? 0) !== 0));
     const hasScroll = scrolling.some(part =>
       (inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
+    const hasClips = Boolean(mixer && engineRunning);
 
-    if (hasRates || hasScroll || controlsMoving) {
+    if (hasRates || hasScroll || hasClips || cameraGlide || controlsMoving) {
       requestAnimationFrame(tick);
     } else {
       animating = false;
@@ -1273,7 +1311,7 @@ const isCollisionMesh = obj => obj.isMesh && obj.geometry?.userData?.collision;
 // damage.json. Direct damage is materialDamage(att) * damageMod(att, def) *
 // cos(angle) * distanceMod; splash swaps in material2 and a radius term. A
 // pair with no damageMod entry is one the engine ignores entirely.
-const damageTables = await fetch(`models/damage.json?t=${Date.now()}`)
+const damageTables = await fetch(`${MODELS_BASE}/damage.json?t=${Date.now()}`)
   .then(response => (response.ok ? response.json() : null))
   .catch(() => null);
 const weaponsByName = new Map(
@@ -2026,10 +2064,10 @@ async function setOpponent(name) {
   try {
     [gltf, report] = await Promise.all([
       loader.loadAsync(
-        `models/${variant.glb}${bust()}`,
+        `${MODELS_BASE}/${variant.glb}${bust()}`,
         e => load.bytes('model', e.loaded, e.lengthComputable ? e.total : 0),
       ),
-      fetch(`models/${variant.report}${bust()}`).then(response => {
+      fetch(`${MODELS_BASE}/${variant.report}${bust()}`).then(response => {
         if (!response.ok) throw new Error(`opponent report ${response.status}`);
         return response.json();
       }).then(json => { load.finish('report'); return json; }),
@@ -2844,6 +2882,180 @@ function advanceRates(dt) {
   if (moved) applyRig();
 }
 
+// --- baked engine clips -----------------------------------------------------
+//
+// The extractor bakes each Engine's throttle-driven spin (and every
+// `setContinousRotationSpeed` ambient rotator) into looping glTF clips named
+// `spin`, `spin.1`, ... — one clip per rotation period so each loops
+// seamlessly. The viewer just plays them all; parts that must not spin (a
+// Corsair's landing gear shares the propeller's Engine parent) were excluded
+// at bake time via their `hasMobilePhysics` flag.
+
+let mixer = null;
+let clipActions = [];
+let engineRunning = false;
+
+function collectAnimations(gltf) {
+  mixer = null;
+  clipActions = [];
+  engineRunning = false;
+  const section = document.getElementById('anim-section');
+  const toggle = document.getElementById('engine-run');
+  toggle.checked = false;
+  document.getElementById('anim-parts').textContent = '';
+  const clips = gltf.animations || [];
+  if (!clips.length) {
+    section.hidden = true;
+    return;
+  }
+  mixer = new THREE.AnimationMixer(gltf.scene);
+  clipActions = clips.map(clip => {
+    const action = mixer.clipAction(clip);
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    return action;
+  });
+  // Every track name is "<node name>.quaternion" / ".position".
+  const parts = [...new Set(clips.flatMap(clip =>
+    clip.tracks.map(track => track.name.split('.')[0])))];
+  document.getElementById('anim-parts').textContent =
+    `Animated: ${parts.join(', ')}`;
+  section.hidden = false;
+}
+
+document.getElementById('engine-run').addEventListener('change', event => {
+  if (!mixer) return;
+  engineRunning = event.target.checked;
+  if (engineRunning) {
+    for (const action of clipActions) { action.paused = false; action.play(); }
+    startAnimating();
+  } else {
+    // Rewind to the authored pose rather than freezing mid-turn.
+    mixer.setTime(0);
+    for (const action of clipActions) action.stop();
+    invalidate();
+  }
+});
+
+// --- seat camera views --------------------------------------------------------
+//
+// Camera templates come out of the extractor as mesh-less nodes tagged
+// `cameraView`, parked exactly where the .con put them — inside the turret or
+// gun bundle they were authored in, so a gunner's view traverses with the rig
+// sliders. Each becomes a button that glides the viewer camera to that seat.
+
+const seatViews = [];
+let cameraGlide = null;
+
+function glideCamera(toPosition, toTarget) {
+  cameraGlide = {
+    fromPosition: camera.position.clone(),
+    fromTarget: controls.target.clone(),
+    toPosition, toTarget, t: 0,
+  };
+  startAnimating();
+}
+
+function advanceGlide(dt) {
+  if (!cameraGlide) return;
+  const glide = cameraGlide;
+  glide.t = Math.min(1, glide.t + dt / 0.55);
+  const eased = glide.t < 0.5
+    ? 2 * glide.t * glide.t
+    : 1 - ((-2 * glide.t + 2) ** 2) / 2;
+  camera.position.lerpVectors(glide.fromPosition, glide.toPosition, eased);
+  controls.target.lerpVectors(glide.fromTarget, glide.toTarget, eased);
+  if (glide.t >= 1) cameraGlide = null;
+}
+
+// The user grabbing the controls takes precedence over an in-flight glide.
+controls.addEventListener('start', () => { cameraGlide = null; });
+
+function viewLabel(control, entry) {
+  const root = (entry?.name || '').toLowerCase();
+  let label = control === 'vehicle' ? '' : control;
+  if (label.toLowerCase() === root) label = '';
+  else if (label.toLowerCase().startsWith(root)) label = label.slice(root.length);
+  label = label
+    .replace(/^eod_/i, '')
+    .replace(/pco/ig, '')
+    .replace(/[_]+/g, ' ')
+    .replace(/([a-z])([A-Z0-9])/g, '$1 $2')
+    .trim();
+  if (!label) {
+    label = entry?.category === 'air' ? 'Cockpit'
+      : entry?.category === 'sea' ? 'Helm'
+      : 'Driver';
+  }
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function goToView(node) {
+  if (!current) return;
+  current.updateMatrixWorld(true);
+  const position = node.getWorldPosition(new THREE.Vector3());
+  // A camera node's forward is the vehicle's forward: Refractor +Z, which the
+  // exporter's handedness mirror turns into glTF -Z.
+  const quaternion = node.getWorldQuaternion(new THREE.Quaternion());
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+  const distance = Math.max(framing?.radius ?? 5, 2);
+  glideCamera(position, position.clone().addScaledVector(forward, distance));
+}
+
+function markActiveView(button) {
+  for (const other of document.querySelectorAll('#views button')) {
+    other.setAttribute('aria-pressed', String(other === button));
+  }
+}
+
+function collectViews(root, entry) {
+  seatViews.length = 0;
+  root.traverse(obj => {
+    if (obj.userData?.cameraView) seatViews.push(obj);
+  });
+  const section = document.getElementById('views-section');
+  const host = document.getElementById('views');
+  host.innerHTML = '';
+  if (!seatViews.length) {
+    section.hidden = true;
+    return;
+  }
+  const orbit = document.createElement('button');
+  orbit.type = 'button';
+  orbit.textContent = 'Orbit';
+  orbit.setAttribute('aria-pressed', 'true');
+  orbit.addEventListener('click', () => {
+    markActiveView(orbit);
+    if (!framing) return;
+    const angle = -Math.PI * .22;
+    const distance = framing.radius * 1.85;
+    glideCamera(
+      new THREE.Vector3(
+        framing.centre.x + Math.cos(angle) * distance,
+        framing.centre.y + framing.radius * .72,
+        framing.centre.z + Math.sin(angle) * distance,
+      ),
+      framing.centre.clone(),
+    );
+  });
+  host.appendChild(orbit);
+  const used = new Map();
+  for (const node of seatViews) {
+    let label = viewLabel(node.userData.cameraView.control, entry);
+    const count = used.get(label) ?? 0;
+    used.set(label, count + 1);
+    if (count) label = `${label} ${count + 1}`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      markActiveView(button);
+      goToView(node);
+    });
+    host.appendChild(button);
+  }
+  section.hidden = false;
+}
+
 function buildRigPanel() {
   const host = document.getElementById('rig');
   host.innerHTML = '';
@@ -2969,6 +3181,7 @@ function selectedFromControls() {
 async function show(entry, variant) {
   const sequence = ++loadSequence;
   let report;
+  let gltf;
   main.dataset.loadState = 'loading';
   syncVariantControls(entry, variant);
   const load = overlay.begin(entry.name);
@@ -2980,15 +3193,15 @@ async function show(entry, variant) {
   try {
     const loaded = await Promise.all([
       loader.loadAsync(
-        `models/${variant.glb}${bust()}`,
+        `${MODELS_BASE}/${variant.glb}${bust()}`,
         e => load.bytes('model', e.loaded, e.lengthComputable ? e.total : 0),
       ),
-      fetch(`models/${variant.report}${bust()}`).then(response => {
+      fetch(`${MODELS_BASE}/${variant.report}${bust()}`).then(response => {
         if (!response.ok) throw new Error(`report returned ${response.status}`);
         return response.json();
       }).then(json => { load.finish('report'); return json; }),
     ]);
-    const gltf = loaded[0];
+    gltf = loaded[0];
     report = loaded[1];
     if (sequence !== loadSequence) {
       disposeModel(gltf.scene);
@@ -3096,6 +3309,9 @@ async function show(entry, variant) {
   renderWeaponSummary();
   collectCollisions(current, report);
   collectScrolling(current);
+  collectAnimations(gltf);
+  collectViews(current, entry);
+  cameraGlide = null;
   buildOpponentSelect(entry);
   buildRigPanel();
   applyState();
@@ -3154,7 +3370,7 @@ async function show(entry, variant) {
   return true;
 }
 
-const rawManifest = await fetch(`models/models.json${bust()}`).then(response => {
+const rawManifest = await fetch(`${MODELS_BASE}/models.json${bust()}`).then(response => {
   if (!response.ok) throw new Error(`manifest returned ${response.status}`);
   return response.json();
 });
@@ -3270,7 +3486,7 @@ function sideClass(entry) {
 }
 
 function thumbFor(entry) {
-  return entry.thumb ? `models/${entry.thumb}` : null;
+  return entry.thumb ? `${MODELS_BASE}/${entry.thumb}` : null;
 }
 
 /** Everything a free-text query should be able to hit. */
@@ -3834,6 +4050,25 @@ window.__modelInspector = {
     lod: currentVariant.lod,
   } : null,
   setView: setCameraView,
+  // Baked spin clips and recovered seat cameras, for headless checks.
+  getAnimation: () => ({
+    running: engineRunning,
+    clips: clipActions.map(action => ({
+      name: action.getClip().name,
+      duration: action.getClip().duration,
+      time: action.time,
+      isRunning: action.isRunning(),
+    })),
+    nodes: !current ? [] : [...new Set(clipActions.flatMap(action =>
+      action.getClip().tracks.map(track => track.name.split('.')[0])))]
+      .map(name => {
+        const node = current.getObjectByName(name);
+        return node ? { name, quaternion: node.quaternion.toArray() } : { name };
+      }),
+    views: seatViews.map(node => ({
+      name: node.name, control: node.userData.cameraView.control,
+    })),
+  }),
   // Thumbnails are shot through here rather than through setView, because the
   // scale lineup relies on every one of them being framed to the *same* multiple
   // of the model's bounding sphere. Anything that reframes per-model — fitting

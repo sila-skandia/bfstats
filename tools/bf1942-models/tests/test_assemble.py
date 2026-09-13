@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bf42 import gltf, stdmesh  # noqa: E402
+from bf42 import gltf, skin, stdmesh  # noqa: E402
 from bf42.assemble import Assembler, Report, browse_rig  # noqa: E402
 from bf42.con import ObjectLibrary, ObjectTemplate  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
@@ -226,3 +226,163 @@ class AlphaBleedTests(unittest.TestCase):
 
         rgba = bytes([0, 0, 0, 0]) * 4
         self.assertEqual(bytes(rgba), Assembler._bleed_alpha(2, 2, rgba))
+
+    def test_specular_alpha_skin_is_never_overwritten(self) -> None:
+        """Opaque `_I` skins keep reflectivity in alpha (68-254 measured).
+
+        Those texels are content, not cutout background: bleeding across them
+        erased whole aircraft liveries (Wake's parked planes rendered as flat
+        bled colour). Only near-zero alpha may be treated as cut away.
+        """
+        from bf42.assemble import Assembler
+
+        # One fully opaque texel beside painted texels at semi alpha.
+        rgba = bytes([255, 0, 0, 255]) + bytes([0, 0, 255, 119]) * 3
+        out = Assembler._bleed_alpha(4, 1, rgba)
+
+        self.assertEqual(bytes(rgba), bytes(out))
+
+
+def pack_skn(vertices: list[tuple], bones: list[str]) -> bytes:
+    out = bytearray()
+    out += struct.pack("<II", 1, len(vertices))
+    for rest, influences in vertices:
+        out += struct.pack("<3f", *rest)
+        out.append(len(influences))
+        for bone, weight, offset in influences:
+            out += struct.pack("<H", bone)
+            out += struct.pack("<f", weight)
+            out += struct.pack("<3f", *offset)
+    out += struct.pack("<H", len(bones))
+    for name in bones:
+        raw = name.encode("latin-1") + b"\0"
+        out += struct.pack("<H", len(raw))
+        out += raw
+    return bytes(out)
+
+
+def apply_bind(rotation, translation, offset):
+    return tuple(
+        sum(rotation[i][j] * offset[j] for j in range(3)) + translation[i]
+        for i in range(3)
+    )
+
+
+class SoldierPartAlignmentTests(unittest.TestCase):
+    """Hands AND the head are plugged into the 3P body's bind pose.
+
+    Every `ComplexHead` skin assumes `Bip01 Spine3` in the exporter's default
+    standing pose, while the body skin binds the same bone a few cm forward
+    and lower (measured on GermanSoldier: head assumes (0, -0.013, 1.504),
+    body binds (0.003, 0.018, 1.451)). Emitting the head unaligned leaves it
+    floating high and behind the neck stump — the alignment must map the
+    head's Spine3-weighted collar verts exactly onto the body's bind.
+    """
+
+    IDENTITY = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+    # 15 deg about X: the head skin's chest is straighter than the body's.
+    _c, _s = 0.9659258263, 0.2588190451
+    TILT = ((1.0, 0.0, 0.0), (0.0, _c, -_s), (0.0, _s, _c))
+    HEAD_SPINE3 = (0.0, -0.0132, 1.5038)   # head skin's assumed bind
+    BODY_SPINE3 = (0.0033, 0.0177, 1.4507)  # where the body actually binds it
+    OFFSETS = [(0.0, 0.0, 0.0), (0.05, 0.0, 0.0), (0.0, 0.04, 0.0), (0.0, 0.0, 0.03)]
+
+    def _skin(self, rotation, translation, bone, path):
+        verts = [
+            (apply_bind(rotation, translation, offset), [(0, 1.0, offset)])
+            for offset in self.OFFSETS
+        ]
+        return skin.parse(pack_skn(verts, [bone]), path)
+
+    def _assembler(self) -> Assembler:
+        library = ObjectLibrary()
+        library.add_con("Objects/Soldiers/Test/Objects.con", """
+ObjectTemplate.create BFSoldier TestSoldier
+ObjectTemplate.addTemplate TestComplexHead1
+ObjectTemplate.addTemplate Test3PBody
+ObjectTemplate.addTemplate TestRightHand
+
+ObjectTemplate.create AnimatedBundle TestComplexHead1
+ObjectTemplate.geometry Soldier/TestFace
+
+ObjectTemplate.create AnimatedBundle Test3PBody
+ObjectTemplate.geometry Soldier/TestBody
+
+ObjectTemplate.create AnimatedBundle TestRightHand
+ObjectTemplate.geometry Soldier/TestRightHand
+""")
+        library.add_con("Objects/Soldiers/Test/Geometries.con", """
+GeometryTemplate.create AnimatedMesh Soldier/TestFace
+GeometryTemplate.setSkin animations/TestFace.skn
+
+GeometryTemplate.create AnimatedMesh Soldier/TestBody
+GeometryTemplate.setSkin animations/TestBody.skn
+
+GeometryTemplate.create AnimatedMesh Soldier/TestRightHand
+GeometryTemplate.setSkin animations/TestRightHand.skn
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        # The .skn archives are not on disk in a unit test; seed the cache the
+        # same way `_read_skin` would fill it.
+        assembler._skin_cache = {
+            "animations/testface.skn": self._skin(
+                self.IDENTITY, self.HEAD_SPINE3, "Bip01 Spine3", "face.skn"),
+            "animations/testbody.skn": self._skin(
+                self.TILT, self.BODY_SPINE3, "Bip01 Spine3", "body.skn"),
+            "animations/testrighthand.skn": self._skin(
+                self.IDENTITY, (-0.3147, 0.2447, 1.2255), "Bip01 R Forearm",
+                "hand.skn"),
+        }
+        return assembler
+
+    def test_head_collar_lands_exactly_on_the_bodys_spine3_bind(self) -> None:
+        assembler = self._assembler()
+        library = assembler.library
+        body = assembler._soldier_body_skin(library.object("TestSoldier"))
+        self.assertIsNotNone(body)
+
+        aligned = assembler._part_alignment(library.object("TestComplexHead1"), body)
+
+        self.assertIsNotNone(aligned)
+        r_rel, t_rel, bone = aligned
+        self.assertEqual("Bip01 Spine3", bone)
+        # A collar vertex authored in the head's bind must land where the
+        # body's bind puts the same bone-local point.
+        for offset in self.OFFSETS:
+            source = apply_bind(self.IDENTITY, self.HEAD_SPINE3, offset)
+            expected = apply_bind(self.TILT, self.BODY_SPINE3, offset)
+            mapped = apply_bind(r_rel, t_rel, source)
+            for got, want in zip(mapped, expected):
+                self.assertAlmostEqual(want, got, places=5)
+
+    def test_the_body_itself_is_never_re_aligned(self) -> None:
+        assembler = self._assembler()
+        library = assembler.library
+        body = assembler._soldier_body_skin(library.object("TestSoldier"))
+
+        self.assertIsNone(assembler._part_alignment(library.object("Test3PBody"), body))
+
+    def test_hands_still_align_through_the_forearm(self) -> None:
+        assembler = self._assembler()
+        library = assembler.library
+        body = assembler._soldier_body_skin(library.object("TestSoldier"))
+        # The body must expose the forearm too for the hand to have a shared
+        # bone; rebuild it as a two-bone skin.
+        forearm_bind = (self.TILT, (-0.3435, 0.1004, 1.3097))
+        verts = [
+            (apply_bind(self.TILT, self.BODY_SPINE3, offset), [(0, 1.0, offset)])
+            for offset in self.OFFSETS
+        ] + [
+            (apply_bind(*forearm_bind, offset), [(1, 1.0, offset)])
+            for offset in self.OFFSETS
+        ]
+        two_bone = skin.parse(
+            pack_skn(verts, ["Bip01 Spine3", "Bip01 R Forearm"]), "body2.skn")
+        assembler._skin_cache["animations/testbody.skn"] = two_bone
+        body = assembler._soldier_body_skin(library.object("TestSoldier"))
+
+        aligned = assembler._part_alignment(library.object("TestRightHand"), body)
+
+        self.assertIsNotNone(aligned)
+        self.assertEqual("Bip01 R Forearm", aligned[2])

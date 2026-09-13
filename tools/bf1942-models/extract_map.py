@@ -134,8 +134,9 @@ def _read_text(files, relative: str) -> str:
     return files.read(relative).decode("latin-1")
 
 
-def load_level(game_dir: Path, mod: str, level: str) -> tuple:
-    paths = find_level_archives(game_dir, mod, level)
+def load_level(game_dir: Path, mod: str, level: str,
+               chain: list[Path] | None = None) -> tuple:
+    paths = find_level_archives(game_dir, mod, level, chain=chain)
     if not paths:
         sys.exit(f"no level archive for {mod}/{level}")
     files = load_level_files(paths, level)
@@ -552,7 +553,8 @@ def main() -> int:
     args = ap.parse_args()
 
     game_dir = args.game_dir.expanduser()
-    files, info, heightmap, paths = load_level(game_dir, args.mod, args.level)
+    chain = mod_chain(game_dir, args.mod)
+    files, info, heightmap, paths = load_level(game_dir, args.mod, args.level, chain)
     print(f"level:    {info.name}  ({', '.join(p.name for p in paths)})", file=sys.stderr)
     print(f"world:    {info.terrain.world_size:g} m, yScale {info.terrain.y_scale}, "
           f"heightmap {heightmap.dim}x{heightmap.dim}", file=sys.stderr)
@@ -565,7 +567,6 @@ def main() -> int:
     out_dir = args.out / info.name.lower()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    chain = mod_chain(game_dir, args.mod)
     extra_names = list(args.texture_fallback)
     if not _vanilla_texture_rfa_present(chain):
         extra_names += list(TEXTURE_GAP_MODS)
