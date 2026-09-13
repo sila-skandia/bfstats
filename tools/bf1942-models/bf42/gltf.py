@@ -70,6 +70,53 @@ def quat_mul(a, b):
     return _qmul(a, b)
 
 
+# -- Refractor-space rotation matrices ---------------------------------------
+#
+# `add_animation` takes its keyframes as Refractor-space (Matrix3, Vector3)
+# pairs and applies the Z-mirror conjugation itself, so animation authors need
+# a way to *build* those matrices that agrees with `quat_from_ypr`. These are
+# plain right-handed rotation matrices; the sign flips that `quat_from_ypr`
+# bakes in emerge from the conjugation inside `quat_from_matrix`, which is
+# pinned by a unit test asserting
+# `quat_from_matrix(ypr_matrix(y, p, r)) == quat_from_ypr(y, p, r)`.
+
+def rot_x(deg: float) -> tuple[tuple[float, float, float], ...]:
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return ((1.0, 0.0, 0.0), (0.0, c, -s), (0.0, s, c))
+
+
+def rot_y(deg: float) -> tuple[tuple[float, float, float], ...]:
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return ((c, 0.0, s), (0.0, 1.0, 0.0), (-s, 0.0, c))
+
+
+def rot_z(deg: float) -> tuple[tuple[float, float, float], ...]:
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return ((c, -s, 0.0), (s, c, 0.0), (0.0, 0.0, 1.0))
+
+
+# `setRotation` triples are Yaw/Pitch/Roll; the engine spins yaw about Y,
+# pitch about X and roll about Z (Refractor +Z is forward, so a propeller's
+# roll axis is its crankshaft).
+AXIS_MATRIX = {"yaw": rot_y, "pitch": rot_x, "roll": rot_z}
+
+
+def mat_mul(a, b):
+    return tuple(
+        tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3))
+        for i in range(3)
+    )
+
+
+def ypr_matrix(yaw_deg: float, pitch_deg: float, roll_deg: float):
+    """The matrix twin of `quat_from_ypr`, still in Refractor space.
+
+    Refractor composes R = Ry(yaw) * Rx(pitch) * Rz(roll); the handedness
+    conversion happens later, in `quat_from_matrix`.
+    """
+    return mat_mul(rot_y(yaw_deg), mat_mul(rot_x(pitch_deg), rot_z(roll_deg)))
+
+
 def quat_from_matrix(rotation: tuple[tuple[float, float, float], ...]) -> tuple[float, float, float, float]:
     """A Refractor 3x3 (row-major, R * v) as a glTF quaternion, Z-mirrored.
 
@@ -122,6 +169,7 @@ class GlbBuilder:
         self._textures: list[dict] = []
         self._nodes: list[Node] = []
         self._skins: list[dict] = []
+        self._animations: list[dict] = []
         self._extensions_used: set[str] = set()
         self._generator = generator
 
@@ -240,7 +288,7 @@ class GlbBuilder:
             for i in range(0, len(prim.indices) - 2, 3):
                 a, b, c = prim.indices[i:i + 3]
                 flipped += [a, c, b]
-            wide = len(positions) > 65535
+            wide = len(positions) > 65535 or (max(flipped) > 65535 if flipped else False)
             fmt, comp = ("<I", COMPONENT_UINT) if wide else ("<H", COMPONENT_USHORT)
             view = self._view(b"".join(struct.pack(fmt, i) for i in flipped), target=34963)
             index_acc = self._accessor(view, comp, len(flipped), "SCALAR")
@@ -300,6 +348,47 @@ class GlbBuilder:
         self._skins.append(skin)
         return len(self._skins) - 1
 
+    def add_animation(self, name: str,
+                      tracks: list[tuple[int, tuple[float, ...],
+                                         list[tuple[tuple[tuple[float, float, float], ...],
+                                                    tuple[float, float, float]]]]],
+                      ) -> int:
+        """A keyframed animation over existing nodes.
+
+        Each track is `(node index, times, transforms)`: one node's rigid
+        keyframes, with every transform a Refractor-space
+        `(rotation Matrix3, translation Vector3)` — the same convention
+        `Node` takes. The Z-mirror conjugation into glTF space happens here,
+        exactly matching how `build` exports the node's static transform, so
+        a clip whose values equal the node's transform is a no-op.
+        """
+        samplers: list[dict] = []
+        channels: list[dict] = []
+        for node, times, transforms in tracks:
+            time_data = b"".join(struct.pack("<f", t) for t in times)
+            time_acc = self._accessor(
+                self._view(time_data), COMPONENT_FLOAT, len(times), "SCALAR",
+                [min(times)], [max(times)])
+            quats = [quat_from_matrix(rotation) for rotation, _ in transforms]
+            rot_acc = self._accessor(
+                self._view(b"".join(struct.pack("<4f", *q) for q in quats)),
+                COMPONENT_FLOAT, len(quats), "VEC4")
+            samplers.append({"input": time_acc, "output": rot_acc,
+                             "interpolation": "LINEAR"})
+            channels.append({"sampler": len(samplers) - 1,
+                             "target": {"node": node, "path": "rotation"}})
+            positions = [(x, y, -z) for _, (x, y, z) in transforms]
+            pos_acc = self._accessor(
+                self._view(b"".join(struct.pack("<3f", *p) for p in positions)),
+                COMPONENT_FLOAT, len(positions), "VEC3")
+            samplers.append({"input": time_acc, "output": pos_acc,
+                             "interpolation": "LINEAR"})
+            channels.append({"sampler": len(samplers) - 1,
+                             "target": {"node": node, "path": "translation"}})
+        self._animations.append(
+            {"name": name, "samplers": samplers, "channels": channels})
+        return len(self._animations) - 1
+
     # -- output ------------------------------------------------------------- #
 
     def build(self, roots: list[int], extras: dict | None = None) -> bytes:
@@ -333,6 +422,8 @@ class GlbBuilder:
         }
         if self._skins:
             doc["skins"] = self._skins
+        if self._animations:
+            doc["animations"] = self._animations
         if self._extensions_used:
             doc["extensionsUsed"] = sorted(self._extensions_used)
         if self._materials:

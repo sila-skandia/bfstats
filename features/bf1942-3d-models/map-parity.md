@@ -168,7 +168,9 @@ child part nodes always carry extras), and the baked per-instance shadows
 multiply in — building walls get their sun side and shade side back.
 
 Also wired through: `renderer.diffuseColor` drives the sun light,
-`renderer.ambientColor`/`globalAmbientColor` the hemisphere, and every
+`renderer.ambientColor`/`globalAmbientColor` the hemisphere (terrain itself is
+excluded from analytic lighting since the Wake grey-cast audit — the Tx tiles
+are pre-lit; see rendering-technology.md), and every
 declared colour (fog included) is treated as an sRGB display value — the
 engine predates colour management, and pushing its floats through a linear
 pipeline unconverted washes them out. `renderer.setViewdistance` becomes the

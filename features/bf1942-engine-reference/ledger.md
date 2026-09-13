@@ -186,6 +186,25 @@ Three routes, cheapest first:
 
 ---
 
+## Dynamic-mesh lighting (settled 2026-09-13)
+
+How the engine lights vehicles and non-lightmapped statics, settled for the
+map viewer's analytic-rig replacement (`bindDynamicShading` in
+`tools/bf1942-models/viewer/map.html`):
+
+| # | Finding | Status | Evidence |
+|---|---|---|---|
+| DL-1 | Lit StandardMesh materials draw with stage0 **MODULATE2X**(TEXTURE, DIFFUSE); `lighting false` materials get `D3DRS_LIGHTING=0` + SELECTARG1(TEXTURE) | **verified** | `StandardMeshSubShader_applyRenderState` 0x005bf690, reached via vtable 0x009061a4 whose trailing .rdata is the `.rs` attribute string block (`envmap`, `materialSpecularPower`, `materialSpecular`, `materialDiffuse`, `blendDest`, `blendSrc`, ...). Field map: +0x2d lighting, +0x2e lightingSpecular→SPECULARENABLE, +0x2f twosided→CULLMODE, +0x34/+0x38 blend, +0x3c alphaTestRef, +0x44 material index → SetMaterial(base+i*0x44). |
+| DL-2 | DIFFUSE is D3D8 fixed-function vertex lighting: SetLight slots 0–7 + LightEnable + `D3DRS_AMBIENT`, i.e. clamp01(ambient + globalAmbient + diffuse·max(0,N·L)) in 8-bit display space | **verified** | `RendPCDX8_flushDeferredState` 0x00604750 (SetLight/LightEnable/D3DRS_AMBIENT 0x8b cases); `LightDesc_toD3DLIGHT8` 0x0045f210 (per-light ambient slot populated, type 0 → DIRECTIONAL). |
+| DL-3 | Material colour is effectively white in the combine | **working** | survey of vanilla `standardMesh.rfa`: `materialDiffuse` is `1 1 1` in 3202/3523 declarations; no `materialAmbient` attribute exists in any of 1297 `.rs` files. |
+| DL-4 | `FUN_00664560`'s MODULATE **1x** is NOT the mesh path | **verified** | it is the simple texture path of the DX8 renderer (own texture cache at +0x90008); a prior session nearly calibrated mesh lighting off it. Do not repeat. |
+
+Not modelled in the viewer (documented gaps): per-material specular
+(`lightingSpecular`, ~1/3 of vanilla materials) and the `envmap` reflection
+stage (338 materials).
+
+---
+
 ## Other formats
 
 Add a section per format as it comes under investigation. Keep the same shape:

@@ -108,6 +108,65 @@ Two findings the parity work should pick up:
   `--texture-fallback`) are stale, and the remaining visual gap is the stage
   list above plus whatever the parallel map-parity pass finds from the inside.
 
+## The lighting model, audited (Wake grey-cast fix)
+
+Wake rendered noticeably darker and greyer than the game while Tobruk matched.
+The audit traced every lighting input end to end; extraction was faithful on
+both maps (`Init.con` / `Init/SkyAndSun.con` values land in `scene.json`
+verbatim), so the fault had to be in how `map.html` spends them.
+
+Two findings, both fixed in `map.html`:
+
+- **Terrain was double-lit.** The Tx colour tiles are *pre-lit* — Battlecraft
+  bakes the level's sun, ambient and cast shadows into the tile art (open any
+  tile: building/trench shadows are painted in, all falling with
+  `sunLightDirectionVec`), and dark levels get dark tiles because the bake
+  carries the level's light level. The engine composes ground as
+  `tile * detail * 2` plus fog and never relights it. The viewer was
+  multiplying the analytic hemisphere+sun on top: on Tobruk that factor is a
+  warm ~0.87 in display terms and hides inside the desert palette; on Wake the
+  near-grey `diffuseColor 0.4/0.38/0.36` plus a cool fog hemisphere summed to
+  a flat grey 0.563/0.559/0.562 in linear — measured off the airfield, ground
+  texels dropped from the tile art's warm sand (208/176/142-class) to a grey
+  128/104/73. `unlightTerrain` now gives terrain the same unlit treatment as
+  lightmapped statics (MeshBasicMaterial + the display-space detail combine),
+  which is the engine's own composition.
+- **The hemisphere borrowed the fog colour as a light.** The engine has no
+  sky-dome light — its only ambient terms are `renderer.ambientColor` and
+  `globalAmbientColor`, and no vanilla level declares a blue one. Tinting the
+  hemisphere with raw `fogColorVec` injected atmosphere blue into vehicle and
+  static shading on marine maps; on Wake (fog 0.71/0.74/0.79 vs sun 1/.95/.9)
+  it cancelled the sun's warmth exactly — the "grey vehicles" report.
+  `applyLighting` now keeps the fog's *luminance* as the bounce magnitude but
+  gives it the sun's hue, so the ambient can never fight the level's declared
+  light colour. On warm-fog maps (Tobruk et al.) this is a <2% change by
+  construction; on cool-fog maps it removes the blue cast.
+
+Known limitation, unchanged by this pass: with terrain unlit, slope shading
+and hill/building shadows on the ground come entirely from the baked tile art
+(256 m of world per 1024px tile), and `Textures/LightmapShadowBits.lsb`
+(the engine's separate terrain shadow mask, `Terrain.ShadowAmbient`) remains
+unparsed — see map-parity.md.
+
+The dynamic-mesh combine, formerly the open question above, is now settled
+from the decompiled renderer (engine-reference ledger, "Dynamic-mesh
+lighting"): a lit StandardMesh draws with texture stage 0 =
+**MODULATE2X(TEXTURE, DIFFUSE)** — the same 2x headroom as the terrain-detail
+and lightmap combines — where DIFFUSE is D3D fixed-function vertex lighting,
+`clamp01(ambientColor + globalAmbientColor + diffuseColor * max(0, N.L))`,
+evaluated in 8-bit display space with an effectively white material. The
+hemisphere+directional rig has been replaced by `bindDynamicShading` in
+`map.html`, which runs that exact arithmetic per fragment via the same sRGB
+round-trip as the detail combine; vehicles now sit at the game's exposure
+against the pre-lit terrain instead of reading a stop dark (the linear-space
+rig lost both the display-space midtones and the 2x). The analytic
+hemisphere+sun remain in the scene but no longer light anything on the maps
+tab. Still unmodelled: `lightingSpecular` (adds highlights on ~1/3 of
+materials) and the `envmap` reflection stage (338 vanilla materials); the
+extractor's 0.45 emissive translucency floor on branch cards is ignored by
+the maps tab now that the true combine floors every surface at
+2*(ambient+globalAmbient).
+
 ## Payload: the 7x that is lying on the table
 
 Measured with `gltf-transform` on Tobruk's `scene.glb`:

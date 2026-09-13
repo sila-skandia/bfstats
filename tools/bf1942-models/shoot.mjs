@@ -81,7 +81,12 @@ if (thumbs) {
 
   // Stamp the paths into the manifest so the viewer knows they exist. The
   // extractor rewrites models.json wholesale, so this runs after extraction.
-  const manifestPath = 'viewer/models/models.json';
+  // A mod's manifest is the same file one directory deeper, and the page it
+  // was shot from is the same page with `?mod=<id>`:
+  //   node shoot.mjs --thumbs --url http://localhost:5273/?mod=eod \
+  //     --out viewer/models/mods/eod/thumbs \
+  //     --manifest viewer/models/mods/eod/models.json
+  const manifestPath = arg('manifest', 'viewer/models/models.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const byName = new Map(written);
   for (const entry of manifest) {

@@ -31,6 +31,12 @@ from extract_hud_assets import decode_tga  # noqa: E402
 
 TEXTURE_EXTS = (".dds", ".tga")
 
+# Texels with alpha below this are treated as alpha-tested cutout background
+# whose RGB is safe to overwrite when bleeding (see `_bleed_alpha`). Kept low
+# on purpose: alpha also carries specular/reflectivity on opaque `_I` skins
+# (measured minima 68-119 on vanilla aircraft), which must never be bled over.
+BLEED_CUTOUT_ALPHA = 16
+
 
 def geometry_is_first_person(geometry_name: str | None) -> bool:
     """Cockpit / 1P view meshes are named `1P_...` (or `1PPT_...`, `1PBritBody`)."""
@@ -41,6 +47,45 @@ def geometry_is_first_person(geometry_name: str | None) -> bool:
 
 
 _DRIVETRAIN_INPUTS = frozenset({"c_PIYaw", "c_PIThrottle"})
+
+# Declared engine speeds span 1 deg/s (DC's AH64 tail, plainly a data typo) to
+# 30000 deg/s (EoD's Huey main rotor). Both are real in the sense that the
+# engine integrates them, and both are useless on a screen: one never visibly
+# moves, the other aliases into noise — in game the blurred-disc LOD has taken
+# over long before that (`CompareSelector` swaps `..PropellerStatic` for
+# `..PropellerBlurred` at engine input ~0.07). The baked clip keeps the real
+# axis and the real speed where the real speed reads as motion, and clamps the
+# rest into a band a 60 Hz viewer can actually show.
+SPIN_MIN_DEG_PER_SEC = 120.0
+SPIN_MAX_DEG_PER_SEC = 1080.0
+
+
+def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
+    """Axes an Engine visibly spins, as display deg/s — or an empty dict.
+
+    Two declaration styles occur in shipped data:
+
+    * a rate span (`-3000..5000`, every vanilla aircraft): `rig()` already
+      classifies the axis as an accumulator;
+    * no usable span at all (EoD helicopter tail rotors declare `100/100`),
+      where being bound to `c_PIThrottle` is the tell.
+
+    Tank Engines bind roll to throttle too, but over a +/-1 degree body-lean
+    span — neither rate nor free, so they never land here (spinning the hull
+    lean spins the whole running gear, which is the bug this predicate exists
+    to avoid).
+    """
+    if template.kind.lower() != "engine":
+        return {}
+    rig = template.rig()
+    if not rig:
+        return {}
+    axes: dict[str, float] = {}
+    for axis, spec in rig["axes"].items():
+        if spec["driver"] == "rate" or (spec["free"] and spec["input"] == "c_PIThrottle"):
+            declared = abs(spec.get("maxSpeed") or 0.0) or 360.0
+            axes[axis] = min(max(declared, SPIN_MIN_DEG_PER_SEC), SPIN_MAX_DEG_PER_SEC)
+    return axes
 
 
 def browse_rig(template: con_mod.ObjectTemplate, *,
@@ -84,6 +129,8 @@ class Report:
     mesh_lods: dict[str, dict[str, int]] = field(default_factory=dict)
     part_tree: list[str] = field(default_factory=list)
     rigged_parts: list[str] = field(default_factory=list)
+    animated_parts: list[str] = field(default_factory=list)
+    cameras: list[str] = field(default_factory=list)
     skinned_parts: list[str] = field(default_factory=list)
     bound_parts: list[str] = field(default_factory=list)
     unreadable_skeletons: list[str] = field(default_factory=list)
@@ -110,6 +157,8 @@ class Report:
             "meshLods": dict(sorted(self.mesh_lods.items())),
             "partTree": self.part_tree,
             "riggedParts": self.rigged_parts,
+            "animatedParts": self.animated_parts,
+            "cameras": self.cameras,
             "skinnedParts": self.skinned_parts,
             "boundParts": self.bound_parts,
             "skeletonsNotRead": sorted(set(self.unreadable_skeletons)),
@@ -147,6 +196,11 @@ class Assembler:
         self._collision_material_cache: dict[int, int] = {}
         self._skin_cache: dict[str, skin.Skin | None] = {}
         self._skeleton_cache: dict[str, ske.Skeleton | None] = {}
+        # Spin keyframe specs gathered during the tree walk; `export` bakes
+        # them into glTF animation clips against its own builder. Callers that
+        # drive `build_node` with an external builder (the level exporter)
+        # simply never flush them.
+        self._spin_tracks: list[dict] = []
 
     # -- shaders ------------------------------------------------------------ #
 
@@ -194,12 +248,21 @@ class Assembler:
         breadth-first flood outward from the opaque texels fills every texel in
         one linear pass instead, which is also what makes it cheap enough to run
         over every texture in a level.
+
+        Only texels that are genuinely cut away (alpha below
+        ``BLEED_CUTOUT_ALPHA``) may be overwritten. Alpha is NOT a cutout mask
+        on every texture: opaque `_I` vehicle skins store specular/reflectivity
+        there (the F4U fuselage spans alpha 119-254), and the first version of
+        this pass seeded only from alpha>=250 and flood-filled everything else,
+        which erased whole aircraft liveries into flat bled colour. Foliage
+        backgrounds sit at alpha~0, so the low threshold still catches them.
         """
         alpha = range(3, len(rgba), 4)
-        if not any(rgba[i] < 250 for i in alpha):
+        if not any(rgba[i] < BLEED_CUTOUT_ALPHA for i in alpha):
             return rgba
         out = bytearray(rgba)
-        queue = [i for i, a in enumerate(range(3, len(out), 4)) if out[a] >= 250]
+        queue = [i for i, a in enumerate(range(3, len(out), 4))
+                 if out[a] >= BLEED_CUTOUT_ALPHA]
         if not queue:
             return bytes(out)
         seen = bytearray(width * height)
@@ -538,7 +601,7 @@ class Assembler:
         return self._read_skin(geom.skin)
 
     def _soldier_body_skin(self, soldier: con_mod.ObjectTemplate) -> skin.Skin | None:
-        """The 3P body skin — the bind the hands have to be mapped into."""
+        """The 3P body skin — the bind the hands and head have to be mapped into."""
         for ref in soldier.children:
             name = con_mod.instance_template_name(ref, self.library.object)
             if name is None:
@@ -556,15 +619,26 @@ class Assembler:
                 return parsed
         return None
 
-    def _hand_alignment(
+    def _part_alignment(
             self, template: con_mod.ObjectTemplate, body: skin.Skin | None,
     ) -> tuple[tuple[tuple[float, float, float], ...], tuple[float, float, float], str] | None:
-        if body is None or not template.geometry or "hand" not in template.name.lower():
+        """Rigid transform plugging a skinned soldier part into the body's bind.
+
+        A soldier's hands and `ComplexHead` are separate skins authored in
+        their own bind poses, which are not the pose the 3P body was authored
+        in — every head skin assumes `Bip01 Spine3` at the exporter's default
+        standing pose while the body binds it a few cm forward and lower, so
+        an unaligned head floats high and behind the neck stump. The shared
+        recoverable bone (Spine3 for heads, the forearm for hands) gives the
+        exact rigid correction; the body itself resolves to the same cached
+        skin object and is left alone.
+        """
+        if body is None or not template.geometry:
             return None
-        hand = self._geometry_skin(template.geometry)
-        if hand is None:
+        part = self._geometry_skin(template.geometry)
+        if part is None or part is body:
             return None
-        aligned = skin.alignment(hand, body)
+        aligned = skin.alignment(part, body)
         return aligned
 
     def _read_skeleton(self, path: str, report: Report) -> ske.Skeleton | None:
@@ -766,6 +840,7 @@ class Assembler:
                 children_refs, report, template.name)
 
         child_indices: list[int] = []
+        built_children: list[tuple[con_mod.ChildRef, str, int]] = []
         for ref in children_refs:
             child_name = con_mod.instance_template_name(ref, self.library.object)
             if child_name is None:
@@ -782,6 +857,35 @@ class Assembler:
             )
             if child is not None:
                 child_indices.append(child)
+                built_children.append((ref, child_name, child))
+
+        # An Engine's accumulated rotation reaches its plain visual children —
+        # the propeller LodObject — but never the sub-parts that are physics
+        # bodies of their own (`hasMobilePhysics 1`): a Corsair's landing gear
+        # hangs off its Engine without turning with the prop. An Engine with a
+        # mesh of its own (carrier screws) simply is the propeller, and spins
+        # itself instead.
+        spin_axes = engine_spin_axes(template)
+        engine_self_spins = bool(spin_axes) and mesh_index is not None
+        if spin_axes and not engine_self_spins:
+            for ref, child_name, node_index in built_children:
+                child_template = self.library.object(child_name)
+                if child_template is None or child_template.has_mobile_physics:
+                    continue
+                for axis, speed in spin_axes.items():
+                    # `frame="parent"`: the spin happens about the Engine's
+                    # axis, which the child sees as a pre-multiplied rotation
+                    # (its own authored rotation — the Huey tail rotor's
+                    # -90 yaw — stays innermost).
+                    self._spin_tracks.append({
+                        "node": node_index,
+                        "axes": {axis: speed},
+                        "position": ref.position,
+                        "rotation": ref.rotation,
+                        "frame": "parent",
+                    })
+                    report.animated_parts.append(
+                        f"{child_name} {axis} {speed:g} deg/s (from {template.name})")
 
         if self.include_collision:
             for collision_mesh, layer, role in collision_meshes:
@@ -797,7 +901,12 @@ class Assembler:
                     },
                 )))
 
-        if mesh_index is None and not child_indices:
+        # A Camera has no geometry and usually no children, but its placement
+        # IS the seat's viewpoint — worth a (mesh-less) node so a viewer can
+        # snap its own camera to the pilot's or gunner's eyes, and parked
+        # inside the turret it was authored in so it traverses with it.
+        is_camera = template.kind.lower() == "camera"
+        if mesh_index is None and not child_indices and not is_camera:
             return None
 
         if mesh_index is not None:
@@ -809,6 +918,9 @@ class Assembler:
 
         extras: dict = {"templateKind": template.kind, "geometry": template.geometry,
                         "control": control or "vehicle"}
+        if is_camera:
+            extras["cameraView"] = {"control": control or "vehicle"}
+            report.cameras.append(f"[{control or 'vehicle'}] {template.name}")
         yaw, pitch, roll = rotation
         if template.kind.lower() == "bfsoldier":
             # Bind-pose soldier meshes stand along Refractor +Z (3ds Max Biped).
@@ -823,7 +935,7 @@ class Assembler:
             position = (px + tx, py + ty, pz + tz)
             node_rotation = gltf.quat_mul(node_rotation, gltf.quat_from_matrix(r_bind))
             extras["boundBone"] = bone
-        if aligned := self._hand_alignment(template, body_skin):
+        if aligned := self._part_alignment(template, body_skin):
             r_rel, t_rel, bone = aligned
             px, py, pz = position
             tx, ty, tz = t_rel
@@ -864,7 +976,7 @@ class Assembler:
         if rel := self._lightmap_rel(template, world_origin):
             extras["lightmap"] = rel
 
-        return builder.add_node(gltf.Node(
+        node_index = builder.add_node(gltf.Node(
             name=template.name,
             translation=position,
             rotation=node_rotation,
@@ -873,8 +985,80 @@ class Assembler:
             extras=extras,
         ))
 
+        # Spin specs need the node's *authored* placement (the keyframes
+        # restate it), so they only apply where nothing else has rewritten it:
+        # bind poses and soldier-part alignment never occur on vehicle
+        # drivetrains or ambient rotators.
+        placement_untouched = bind is None and not aligned \
+            and template.kind.lower() != "bfsoldier"
+        if engine_self_spins and placement_untouched:
+            for axis, speed in spin_axes.items():
+                self._spin_tracks.append({
+                    "node": node_index,
+                    "axes": {axis: speed},
+                    "position": position,
+                    "rotation": rotation,
+                    "frame": "local",
+                })
+                report.animated_parts.append(
+                    f"{template.name} {axis} {speed:g} deg/s (own mesh)")
+        if (template.continuous_rotation
+                and any(abs(s) >= 0.01 for s in template.continuous_rotation)
+                and placement_untouched):
+            yaw_s, pitch_s, roll_s = template.continuous_rotation
+            axes = {axis: speed for axis, speed in
+                    (("yaw", yaw_s), ("pitch", pitch_s), ("roll", roll_s))
+                    if abs(speed) >= 0.01}
+            self._spin_tracks.append({
+                "node": node_index,
+                "axes": axes,
+                "position": position,
+                "rotation": rotation,
+                "frame": "local",
+            })
+            report.animated_parts.append(
+                f"{template.name} continuous "
+                + "/".join(f"{axis} {speed:g}" for axis, speed in axes.items())
+                + " deg/s")
+
+        return node_index
+
+    def _flush_spin_animations(self, builder: gltf.GlbBuilder) -> None:
+        """Bake the gathered spin specs as looping glTF rotation clips.
+
+        Tracks are grouped by period and each group becomes its own clip, so
+        every clip loops seamlessly at exactly one revolution of its parts —
+        no least-common-multiple juggling when a B17 mixes 500 and 600 deg/s
+        engines. Keyframes sit every quarter turn of the fastest axis, which
+        is as coarse as slerp allows without ever taking the short way round.
+        """
+        groups: dict[float, list] = {}
+        for track in self._spin_tracks:
+            fastest = max(abs(speed) for speed in track["axes"].values())
+            period = 360.0 / fastest
+            steps = max(4, round(period * fastest / 90.0))
+            base = gltf.ypr_matrix(*track["rotation"])
+            times, transforms = [], []
+            for i in range(steps + 1):
+                t = period * i / steps
+                spin = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+                for axis in ("yaw", "pitch", "roll"):
+                    if axis in track["axes"]:
+                        spin = gltf.mat_mul(
+                            spin, gltf.AXIS_MATRIX[axis](track["axes"][axis] * t))
+                full = (gltf.mat_mul(spin, base) if track["frame"] == "parent"
+                        else gltf.mat_mul(base, spin))
+                times.append(t)
+                transforms.append((full, track["position"]))
+            groups.setdefault(round(period, 6), []).append(
+                (track["node"], tuple(times), transforms))
+        for index, key in enumerate(sorted(groups)):
+            builder.add_animation(
+                "spin" if index == 0 else f"spin.{index}", groups[key])
+
     def export(self, root_template: str) -> tuple[bytes, Report]:
         builder = gltf.GlbBuilder()
+        self._spin_tracks = []
         report = Report(
             root=root_template,
             configuration=self.configuration,
@@ -898,4 +1082,5 @@ class Assembler:
         root = self.build_node(builder, root_template, report)
         if root is None:
             raise ValueError(f"nothing renderable resolved for template {root_template!r}")
+        self._flush_spin_animations(builder)
         return builder.build([root], extras=report.as_dict()), report

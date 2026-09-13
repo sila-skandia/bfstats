@@ -144,6 +144,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createLoadOverlay } from './progress.js';
+import { selectMod } from './mods.js';
+
+// Which game's levels this page serves, and the directory they hang off:
+// 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
+// fetched, and it draws the nav's mod picker as a side effect.
+const activeMod = await selectMod('maps');
+const MAPS_BASE = activeMod.paths.maps;
 
 const DEFAULT_DRAW = 700;
 const FLY_SPEED = 140;
@@ -374,6 +381,37 @@ function dispose(root) {
   scene.remove(root);
 }
 
+// The terrain colour tiles are PRE-LIT: Battlecraft bakes the level's sun,
+// ambient and cast shadows into the Tx tile art itself (open any tile - the
+// building, trench and treeline shadows are painted into the pixels, all
+// falling the same way as sunLightDirectionVec). The engine composes ground
+// as tile * detail * 2 plus fog and never relights it, so the viewer's
+// analytic hemisphere+sun must not multiply in a second time. On Tobruk that
+// double-lighting was a warm ~0.87 display-space factor that hid inside an
+// already-warm palette; on Wake the level's near-grey diffuseColor
+// (0.4/0.38/0.36) summed with a cool-blue fog hemisphere to a dead-grey 0.56
+// in linear - the island rendered visibly darker and desaturated against the
+// game's warm sandy tiles. Dark levels stay dark without analytic help
+// because the bake carries the level's light level into the tile art.
+function unlightTerrain(root) {
+  root.traverse(node => {
+    if (node.userData?.kind !== 'terrain') return;
+    node.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      const source = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const flat = source.map(m => {
+        const mat = new THREE.MeshBasicMaterial({
+          map: m.map || null,
+          side: m.side,
+        });
+        mat.name = m.name;
+        return mat;
+      });
+      obj.material = Array.isArray(obj.material) ? flat : flat[0];
+    });
+  });
+}
+
 // The engine's second terrain stage, `base * detail * 2`.
 //
 // Baking it into the tile colour map at export caps the grain at that map's
@@ -386,9 +424,16 @@ function bindTerrainDetail(root, dir) {
   const info = extras.terrain || {};
   if (!info.detailTexture) return;
   const repeats = info.detailRepeats || 16;
-  const tex = texLoader.load(`./maps/${dir}/${info.detailTexture}${bust()}`);
+  const tex = texLoader.load(`${MAPS_BASE}/${dir}/${info.detailTexture}${bust()}`);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
+  // Raw texels, NOT sRGB-decoded: the engine's modulate-2x runs in 8-bit
+  // display space, where the detail map's mid-grey 128 is the identity
+  // (`apply_detail` in bf42/terrain.py is the same math at export). Decoding
+  // the map to linear first turns that identity into 2*srgb2lin(0.5) = 0.43 -
+  // terrain came out ~2.3x too dark with the hue baked toward mud. The
+  // combine below round-trips the base tile through sRGB so the multiply
+  // happens in the space the engine did it in.
+  tex.colorSpace = THREE.NoColorSpace;
   root.traverse(node => {
     if (node.userData?.kind !== 'terrain') return;
     node.traverse(obj => {
@@ -406,11 +451,22 @@ function bindTerrainDetail(root, dir) {
             .replace('void main() {',
               `uniform sampler2D tDetail;
                uniform float detailRepeats;
+               vec3 bfToSrgb( vec3 c ) {
+                 return mix( pow( c, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ),
+                     c * 12.92, vec3( lessThanEqual( c, vec3( 0.0031308 ) ) ) );
+               }
+               vec3 bfFromSrgb( vec3 c ) {
+                 return mix( pow( c * ( 1.0 / 1.055 ) + vec3( 0.055 / 1.055 ),
+                         vec3( 2.4 ) ),
+                     c * ( 1.0 / 12.92 ),
+                     vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) );
+               }
                void main() {`)
             .replace('#include <map_fragment>',
               `#include <map_fragment>
-               diffuseColor.rgb = min( vec3( 1.0 ), diffuseColor.rgb * 2.0 *
-                   texture2D( tDetail, vMapUv * detailRepeats ).rgb );`);
+               diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
+                   2.0 * bfToSrgb( diffuseColor.rgb ) *
+                       texture2D( tDetail, vMapUv * detailRepeats ).rgb ) );`);
         };
         mat.needsUpdate = true;
         return mat;
@@ -469,7 +525,7 @@ function bindLightmaps(root, dir) {
   root.traverse(node => {
     const rel = node.userData?.lightmap;
     if (!rel) return;
-    const url = `./maps/${dir}/${rel}${bust()}`;
+    const url = `${MAPS_BASE}/${dir}/${rel}${bust()}`;
     let tex = lmCache.get(url);
     if (!tex) {
       tex = texLoader.load(url);
@@ -490,25 +546,140 @@ function bindLightmaps(root, dir) {
         });
         mat.name = m.name;
         mat.lightMap = tex;
+        // MeshBasicMaterial's lightmap term is INLINE in its fragment shader
+        // (r169 has no <lightmap_fragment> chunk anywhere), so the combine
+        // must replace that exact line. The first version of this pass
+        // injected its factor after <map_fragment> and "removed" a
+        // #include <lightmap_fragment> that does not exist — a silent no-op
+        // that left three's own `lm * 1/pi` accumulation in place, so the
+        // bake multiplied in twice and shadow-side texels (near zero)
+        // squared to black while sun-facing walls survived. Anchor on the
+        // built-in line and rewrite it into the engine combine, applied once.
         mat.onBeforeCompile = (shader) => {
-          shader.fragmentShader = shader.fragmentShader
-            .replace(
-              '#include <map_fragment>',
-              `#include <map_fragment>
-               #ifdef USE_LIGHTMAP
-               diffuseColor.rgb *= mix( vec3( 1.0 ),
-                   min( vec3( 2.0 ), ${floorGlsl}
-                       + 2.0 * texture2D( lightMap, vLightMapUv ).rgb ),
-                   lightMapIntensity );
-               #endif`,
-            )
-            .replace('#include <lightmap_fragment>', '');
+          const anchor = 'reflectedLight.indirectDiffuse += '
+            + 'lightMapTexel.rgb * lightMapIntensity * RECIPROCAL_PI;';
+          if (!shader.fragmentShader.includes(anchor)) {
+            console.warn('lightmap combine anchor missing (three.js upgrade?); '
+              + 'bake left on the stock path for', mat.name);
+            return;
+          }
+          shader.fragmentShader = shader.fragmentShader.replace(anchor,
+            `reflectedLight.indirectDiffuse += mix( vec3( 1.0 ),
+                 min( vec3( 2.0 ), ${floorGlsl} + 2.0 * lightMapTexel.rgb ),
+                 lightMapIntensity );`);
         };
         mat.needsUpdate = true;
         return mat;
       });
       obj.material = Array.isArray(obj.material) ? bound : bound[0];
     }
+  });
+}
+
+// The engine's lighting for everything that is neither pre-lit terrain nor a
+// lightmapped static: vehicles and bare statics. Verified against the
+// decompiled renderer (features/bf1942-engine-reference/, symbols
+// StandardMeshSubShader_applyRenderState 0x005bf690 - the vtable slot of
+// dice.ref2.rend.SubShaderBuilder.StandardMesh, whose .rdata carries the .rs
+// attribute strings - plus RendPCDX8_flushDeferredState 0x00604750 and
+// LightDesc_toD3DLIGHT8 0x0045f210 for the light rig): a lit StandardMesh
+// draws with texture stage 0 = MODULATE2X(TEXTURE, DIFFUSE) - the same 2x
+// headroom as the terrain-detail and lightmap combines - where DIFFUSE is
+// D3D fixed-function vertex lighting,
+//
+//   clamp01( ambientColor + globalAmbientColor + diffuseColor * max(0, N.L) )
+//
+// with the material colour effectively white (materialDiffuse is `1 1 1` in
+// 3202 of 3523 vanilla .rs declarations; no materialAmbient attribute
+// exists). Beware FUN_00664560's MODULATE 1x: that is a different, simpler
+// renderer path, not the mesh one. Fixed-function lighting ran in 8-bit
+// DISPLAY space; the previous hemisphere+sun rig evaluated its combine in
+// linear, which reads far darker in the midtones (display 0.63 is linear
+// 0.36) and lost the 2x - vehicles sat visibly under-exposed on terrain
+// whose bake renders at full display brightness. Same class of fix as the
+// detail combine above: round-trip through sRGB and multiply in the space
+// the engine used. Not modelled: the optional specular term
+// (lightingSpecular, ~1/3 of materials) and the envmap reflection stage.
+function bindDynamicShading(root) {
+  const lit = extras.lighting || {};
+  const amb = lit.ambient || [0.2, 0.2, 0.2];
+  const glob = lit.globalAmbient || [0.2, 0.2, 0.2];
+  const diff = lit.diffuse || [0.5, 0.5, 0.5];
+  // show() aims the DirectionalLight along -sunDirection toward the origin;
+  // the same convention makes L (surface toward sun) the negated X/Z.
+  const sd = extras.sunDirection || [-0.35, 0.8, 0.45];
+  const norm = Math.hypot(sd[0], sd[1], sd[2]) || 1;
+  const L = [-sd[0] / norm, sd[1] / norm, -sd[2] / norm];
+  const f = n => Number(n).toFixed(4);
+  const floorGlsl = `vec3( ${[0, 1, 2].map(i =>
+    f(Math.min(1, (amb[i] || 0) + (glob[i] || 0)))).join(', ')} )`;
+  const sunGlsl = `vec3( ${diff.map(f).join(', ')} )`;
+  const dirGlsl = `vec3( ${L.map(f).join(', ')} )`;
+  // Injected constants are baked as literals, and three caches programs by
+  // the onBeforeCompile SOURCE - identical closures with different level
+  // values would collide across map switches without an explicit key.
+  const cacheKey = `bf-dynamic-lit:${floorGlsl}|${sunGlsl}|${dirGlsl}`;
+  root.traverse(obj => {
+    if (!obj.isMesh || !obj.material) return;
+    const source = Array.isArray(obj.material) ? obj.material : [obj.material];
+    if (!source.some(m => m.isMeshStandardMaterial)) return;
+    const bound = source.map(m => {
+      if (!m.isMeshStandardMaterial) return m;
+      const mat = new THREE.MeshBasicMaterial({
+        map: m.map || null,
+        color: m.color ? m.color.clone() : 0xffffff,
+        side: m.side,
+        alphaTest: m.alphaTest || 0,
+        transparent: m.transparent,
+        opacity: m.opacity,
+        depthWrite: m.depthWrite,
+      });
+      mat.name = m.name;
+      // The glb's emissive slot carries a 0.45 translucency floor on branch
+      // cards (see assemble.py) - a crutch calibrated against the OLD
+      // under-lit rig, where pure N.L blackened sun-away fronds. The
+      // engine-true combine already floors every surface at
+      // 2*(ambient+globalAmbient), and in-game palms keep genuinely dark
+      // shadow sides, so the crutch is dropped here rather than folded in -
+      // keeping it would pin fronds at >=1.5x their texel on Tobruk.
+      mat.customProgramCacheKey = () => cacheKey;
+      mat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace('void main() {',
+            'varying vec3 vBfNormal;\nvoid main() {')
+          .replace('#include <begin_vertex>',
+            `vBfNormal = mat3( modelMatrix ) * normal;
+             #include <begin_vertex>`);
+        shader.fragmentShader = shader.fragmentShader
+          .replace('void main() {',
+            `varying vec3 vBfNormal;
+             vec3 bfToSrgb( vec3 c ) {
+               return mix( pow( c, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ),
+                   c * 12.92, vec3( lessThanEqual( c, vec3( 0.0031308 ) ) ) );
+             }
+             vec3 bfFromSrgb( vec3 c ) {
+               return mix( pow( c * ( 1.0 / 1.055 ) + vec3( 0.055 / 1.055 ),
+                       vec3( 2.4 ) ),
+                   c * ( 1.0 / 12.92 ),
+                   vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) );
+             }
+             void main() {`)
+          .replace('#include <map_fragment>',
+            `#include <map_fragment>
+             vec3 bfN = normalize( vBfNormal );
+             if ( !gl_FrontFacing ) bfN = -bfN;
+             float bfNdL = max( 0.0, dot( bfN, ${dirGlsl} ) );
+             // D3D clamps the vertex diffuse to [0,1] BEFORE the stage's
+             // modulate-2x, and saturates again after the multiply.
+             vec3 bfLit = 2.0 * min( vec3( 1.0 ),
+                 ${floorGlsl} + ${sunGlsl} * bfNdL );
+             diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
+                 bfToSrgb( diffuseColor.rgb ) * bfLit ) );`);
+      };
+      mat.needsUpdate = true;
+      return mat;
+    });
+    obj.material = Array.isArray(obj.material) ? bound : bound[0];
   });
 }
 
@@ -579,7 +750,7 @@ function setupSky(root, dir) {
 function setupClouds(dir) {
   const clouds = extras.sky?.clouds;
   if (!clouds?.texture) return;
-  const tex = texLoader.load(`./maps/${dir}/${clouds.texture}${bust()}`);
+  const tex = texLoader.load(`${MAPS_BASE}/${dir}/${clouds.texture}${bust()}`);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   waterAssets.push(tex);
@@ -636,7 +807,7 @@ function setupWater(root, dir) {
   });
   if (!waterObj) return;
   const load = rel => {
-    const tex = texLoader.load(`./maps/${dir}/${rel}${bust()}`);
+    const tex = texLoader.load(`${MAPS_BASE}/${dir}/${rel}${bust()}`);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     waterAssets.push(tex);
     return tex;
@@ -653,7 +824,7 @@ function setupWater(root, dir) {
   // envmap parameter; the same six faces feed the fresnel term here.
   let env = null;
   if (extras.envmap?.length === 6) {
-    env = cubeLoader.load(extras.envmap.map(f => `./maps/${dir}/${f}${bust()}`));
+    env = cubeLoader.load(extras.envmap.map(f => `${MAPS_BASE}/${dir}/${f}${bust()}`));
     env.colorSpace = THREE.SRGBColorSpace;
     waterAssets.push(env);
   }
@@ -834,11 +1005,21 @@ function applyLighting() {
   // normalising it and carrying the magnitude into intensity.
   const diffuse = light.diffuse || [0.5, 0.5, 0.5];
   const peak = Math.max(...diffuse, 0.01);
-  sun.color.setRGB(diffuse[0] / peak, diffuse[1] / peak, diffuse[2] / peak,
-                   THREE.SRGBColorSpace);
+  const tint = diffuse.map(c => c / peak);
+  sun.color.setRGB(tint[0], tint[1], tint[2], THREE.SRGBColorSpace);
   sun.intensity = 2.4 * Math.min(1.4, peak / 0.5);
+  // The engine has no sky-dome light: its only ambient terms are
+  // renderer.ambientColor / globalAmbientColor, and neither is ever blue.
+  // Tinting the hemisphere with the raw fog colour injected atmosphere blue
+  // into the shading on marine maps - on Wake (fog 0.71/0.74/0.79 against sun
+  // 1/.95/.9) the two cancelled to a dead-grey total and every vehicle picked
+  // up a cool cast the game never shows. Keep the fog's LUMINANCE as the size
+  // of the ambient bounce, but give it the sun's hue so the hemisphere can
+  // never fight the level's declared light colour.
   const fog = extras.fogColor || [0.7, 0.7, 0.7];
-  hemi.color.setRGB(fog[0], fog[1], fog[2], THREE.SRGBColorSpace);
+  const atmos = 0.2126 * fog[0] + 0.7152 * fog[1] + 0.0722 * fog[2];
+  hemi.color.setRGB(atmos * tint[0], atmos * tint[1], atmos * tint[2],
+                    THREE.SRGBColorSpace);
   const ground = light.ambient || [0.2, 0.2, 0.2];
   hemi.groundColor.setRGB(
     Math.min(1, ground[0] * 2.5), Math.min(1, ground[1] * 2.5),
@@ -978,7 +1159,7 @@ async function loadSky(entry) {
   if (!faces || faces.length !== 6) return;
   const dir = entry.glb.replace(/\/[^/]+$/, '');
   const tex = await cubeLoader.loadAsync(
-    faces.map(f => `./maps/${dir}/${f}${bust()}`),
+    faces.map(f => `${MAPS_BASE}/${dir}/${f}${bust()}`),
   );
   tex.colorSpace = THREE.SRGBColorSpace;
   skybox = tex;
@@ -1025,10 +1206,10 @@ async function show(entry) {
   let report;
   let gltf;
   try {
-    report = await fetch(`./maps/${entry.report}${bust()}`).then(r => r.json());
+    report = await fetch(`${MAPS_BASE}/${entry.report}${bust()}`).then(r => r.json());
     load.finish('report');
     gltf = await loader.loadAsync(
-      `./maps/${entry.glb}${bust()}`,
+      `${MAPS_BASE}/${entry.glb}${bust()}`,
       e => load.bytes('scene', e.loaded, e.lengthComputable ? e.total : 0),
     );
     load.finish('scene');
@@ -1044,9 +1225,14 @@ async function show(entry) {
   scene.add(currentRoot);
   const dir = entry.glb.replace(/\/[^/]+$/, '');
   bindLightmaps(currentRoot, dir);
+  unlightTerrain(currentRoot);
   bindTerrainDetail(currentRoot, dir);
   setupSky(currentRoot, dir);
   setupWater(currentRoot, dir);
+  // After the baked paths and the sky/water shaders have claimed their
+  // meshes, everything still on a lit glTF material is the engine's
+  // fixed-function path: vehicles and non-lightmapped statics.
+  bindDynamicShading(currentRoot);
   applyLighting();
   if (extras.sunDirection) {
     // The sun light points along -sunLightDirectionVec toward the origin.
@@ -1099,7 +1285,7 @@ optEntire.addEventListener('change', () => {
   applyVisibility();
 });
 
-const manifest = await fetch(`./maps/maps.json${bust()}`)
+const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
   .then(r => r.ok ? r.json() : [])
   .catch(() => []);
 const select = document.getElementById('maps');

@@ -56,6 +56,35 @@
 }
 .shell-tabs a[aria-current="page"]:hover { color: var(--bg); background: var(--accent); }
 
+/* Which game the three tabs are showing. Injected by mods.js rather than
+   written into each page, and only when there is more than one mod with
+   assets for the current tab — so a viewer serving vanilla alone looks
+   exactly as it did before mods existed. */
+.shell-mods {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.shell-mods-label {
+  color: var(--muted);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.shell-mods select {
+  padding: 5px 8px;
+  background: #14150f;
+  color: var(--text);
+  border: 1px solid var(--line);
+  font: inherit;
+  letter-spacing: .08em;
+}
+.shell-mods select:hover { background: #1c1e16; }
+.shell-mods select:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
 /* What the current page is for, so the tab label can stay one word. */
 .shell-sub {
   color: var(--muted);
@@ -71,4 +100,6 @@
 @media (max-width: 480px) {
   .shell-brand { display: none; }
   .shell-tabs a { padding: 7px 10px; }
+  /* The select keeps its place at this width; only its caption goes. */
+  .shell-mods-label { display: none; }
 }

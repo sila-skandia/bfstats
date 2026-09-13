@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import con as con_mod
-from .rfa import RfaArchive, find_archives_dir
+from .rfa import RfaArchive, find_archives_dir, find_levels_dir
 
 PATCH_METERS = 256.0
 # Heightmap samples are 8.8 fixed-point: 65535 corresponds to 256 * yScale metres.
@@ -239,27 +239,8 @@ class LevelFiles:
         return [(c, r, p) for (c, r), p in sorted(by_cell.items())]
 
 
-def find_level_archives(game_dir: Path, mod: str, level: str) -> list[Path]:
-    """Base level archive plus patches, in overlay order (later wins)."""
-    mods_dir = game_dir / "Mods"
-    if not mods_dir.is_dir():
-        return []
-    by_lower = {d.name.lower(): d for d in mods_dir.iterdir() if d.is_dir()}
-    mod_dir = by_lower.get(mod.lower())
-    if mod_dir is None:
-        return []
-    archives = find_archives_dir(mod_dir)
-    if archives is None:
-        return []
-    levels_dir = None
-    for child in archives.iterdir():
-        if child.is_dir() and child.name.lower() == mod_dir.name.lower():
-            for sub in child.iterdir():
-                if sub.is_dir() and sub.name.lower() == "levels":
-                    levels_dir = sub
-                    break
-    if levels_dir is None:
-        return []
+def _level_archives_in(levels_dir: Path, level: str) -> list[Path]:
+    """`<level>.rfa` plus its numbered patches, base before patch."""
     wanted = level.lower()
     found: list[Path] = []
     for child in sorted(levels_dir.iterdir(), key=lambda p: p.name.lower()):
@@ -274,6 +255,45 @@ def find_level_archives(game_dir: Path, mod: str, level: str) -> list[Path]:
         base, _, suffix = stem.rpartition("_")
         if base.lower() == wanted and suffix.isdigit():
             found.append(child)
+    return found
+
+
+def find_level_archives(game_dir: Path, mod: str, level: str, *,
+                        chain: list[Path] | None = None) -> list[Path]:
+    """Base level archive plus patches, in overlay order (later wins).
+
+    Levels always live in `Archives/bf1942/levels/`, never in a folder named
+    after the mod: both `Game.rfa` and every level archive hold paths that start
+    `bf1942/`, and Refractor mounts an archive at its own path prefix. See
+    `rfa.find_game_dir`.
+
+    `chain` is the mod's inheritance chain nearest-first (what `mod_chain`
+    returns). The parents are searched too and their archives placed *first*, so
+    a mod map that only ships `Init.con` and `ObjectSpawnTemplates.con` still
+    resolves `Terrain.con` and the heightmap out of the parent's copy of the
+    same level — the underlay the engine gets for free from `addModPath`.
+    """
+    mods_dir = game_dir / "Mods"
+    if not mods_dir.is_dir():
+        return []
+    by_lower = {d.name.lower(): d for d in mods_dir.iterdir() if d.is_dir()}
+    if chain is None:
+        mod_dir = by_lower.get(mod.lower())
+        if mod_dir is None:
+            return []
+        chain = [mod_dir]
+
+    found: list[Path] = []
+    # Farthest ancestor first: LevelFiles lets later archives win, and the
+    # nearest mod is the one whose files must win.
+    for mod_dir in reversed(chain):
+        archives = find_archives_dir(mod_dir)
+        if archives is None:
+            continue
+        levels_dir = find_levels_dir(archives)
+        if levels_dir is None:
+            continue
+        found.extend(_level_archives_in(levels_dir, level))
     return found
 
 

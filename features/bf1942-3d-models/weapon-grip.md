@@ -8,7 +8,7 @@ game's own animation clips, weapon welded to the hand:
 cd tools/bf1942-models
 python3 extract_pose.py BritishSoldier Colt GermanSoldier K98 --out ./viewer/models
 python3 extract_pose.py --matrix            # every soldier against every weapon
-python3 -m unittest discover -s tests       # 198, installation-independent
+python3 -m unittest discover -s tests       # 222, installation-independent
 ```
 
 Each pair becomes `<Soldier>__<Weapon>.pose.glb`: body, one head variant and
@@ -16,6 +16,42 @@ both hands as glTF skins over one joint hierarchy, the weapon's full template
 tree parented under the `Bip01 R Hand` joint. GPU skinning works — no baked
 fallback was needed — and a `.pose.report.json` beside each file carries the
 weld metrics.
+
+## Stances
+
+Each glb carries all three postures. The node hierarchy stays posed standing
+— a viewer that ignores animations renders the old single-stance export byte
+for byte — and three constant glTF animation clips named `stand`, `crouch`
+and `lie` re-pose the same joints, so the viewer switches stance with an
+AnimationMixer crossfade rather than a reload. The clips cost ~40 KB per
+file against bodies that run to a megabyte.
+
+The state names: there is no `Ub_CrouchAim` / `Ub_LieAim` family in vanilla.
+The crouched and prone weapon-holding idles are the breath states —
+`Ub_Crouch<W>` (`Crouch/3p/<W>/3PCrouchBreathUpper<W>.baf`) and `Ub_Lie<W>`
+(`Lie/3p/<W>/3PLieBreathUpper<W>.baf`) — over the weapon-independent
+`Lb_Crouch` / `Lb_Lie` lower halves. Both families sit behind the same
+`copyState2` include replay as StandAim, and the six-argument `copyState`
+donor rule applies per stance: the K98 and K98Sniper borrow the No4's crouch
+and lie clips, the Panzershreck the Bazooka's, the WalterP38 the Colt's. All
+28 weapons resolve all three stances; a weapon that lacks one (a mod, say)
+records the error in its report's `stances` entry and ships without that
+clip, and the viewer disables the button.
+
+Beware enumerating a stance family by prefix: `weapons("Ub_Crouch")` also
+matches `Ub_CrouchIdle<W>1`, `Ub_CrouchForward<W>` and friends — 308 phantom
+"weapons". The matrix therefore keeps enumerating off `Ub_StandAim` and
+resolves the other two stances per weapon by exact state name.
+
+Every clip covers the union of bones any stance animates (a bone a stance
+leaves alone gets its `.ske` rest — exactly what the static node transform
+falls back to), so a crossfade never blends a posed bone against an unposed
+one. The weapon rides the hand joint with no channels of its own: the weld
+transform depends only on the weapon skeleton's rest and the clip
+conventions, not the stance, and the same attach verified per-stance keeps
+the right palm at 2-4 cm across all three postures — prone included, where
+the lie clips swing the whole figure horizontal through the `Bip01` root
+track like any other clip pose.
 
 ## The mechanism
 
@@ -152,7 +188,7 @@ formula. The fix: skinned mesh nodes sit at the scene root with no transform,
 inherited or otherwise; the joints keep the pitch, and the render is
 identical under a spec-exact reader and under three.js.
 
-### The weld that every metric passed upside down
+### The weld that every metric passed upside down — twice
 
 The first full matrix welded every weapon 180 degrees rolled about the grip
 axis — sights down, magazine up — and **no numeric instrument saw it**. The
@@ -161,21 +197,40 @@ at zero; palm-to-nearest-surface distance is roll-blind on a barrel-symmetric
 weapon, and it measured the same healthy 2–3 cm either way. Only an eyeball
 on the render caught it.
 
-The elimination that pinned it: the attach itself is right — welded onto the
-`.ske` **rest** stance the Thompson lands exactly where the rig's own
-`Thompson` prop bone says (4 mm, 1.6 degrees), and that rest-stance export
-renders a perfect hold. The weapon's own clips animate only internal bones
-(`trigger`, `flerp`), and the soldier clips carry no weapon bones, so no clip
-supplies the missing rotation. The clip's hand track is parent-relative (its
-translation is the rig's exact 0.305 m forearm-to-hand offset), killing the
-track-as-root theory. What remains is the frame convention itself: **the
-hand frame a `.baf` clip poses is rolled half a turn about the grip axis
-against the hand frame the `.ske` files agree on.** The correction —
-`pose.CLIP_GRIP_ROLL`, folded in by `weapon_attachment(..., clip_posed=True)`
-— was picked by rendering all three candidate half-turns; only Rz(180)
-post-multiplied on the attach puts the Thompson's sights up, muzzle forward,
-stock in the shoulder. It is one constant for every weapon because every
-weapon skeleton came off the same authoring rig.
+The elimination that pinned the layer: the attach itself is right — welded
+onto the `.ske` **rest** stance the Thompson lands exactly where the rig's
+own `Thompson` prop bone says (4 mm, 1.6 degrees), and that rest-stance
+export renders a perfect hold. So the discrepancy lives between the `.ske`
+frame convention and the `.baf` one. The first correction —
+`CLIP_GRIP_ROLL`, an Rz(180) *post-multiplied* on the attach — was picked by
+rendering the three candidate half-turns against the Thompson, and that was
+the second trap: a post-multiplied constant acts in each **weapon's** main
+frame, so it welds every weapon differently, and the Thompson was the one
+weapon it happened to suit. The palm metrics stayed green (they are
+rotation-blind), the matrix "passed", and every other weapon rendered with
+the gun twisted out of the soldier's grip — 45 degrees down for most rifles,
+the opposite way for the JohnsonLMG — by exactly the amount its main-bone
+rest differs from the Thompson's.
+
+The game's own data settles it, because the doc's earlier claim that "the
+soldier clips carry no weapon bones" turned out to be false for exactly one
+weapon: `3pStandAimUpperJohnsonLmg.baf` tracks the JohnsonLMG's `base`,
+`mag`, `trigger` and `reload` bones, and its frame-0 `base` local equals the
+**raw** `JohnsonLMG.ske` relative rest of `base` under the hand root — to
+0.00 degrees and 0.04 mm. A `.baf` clip therefore poses bones in the raw
+`.ske` frame convention: the Z-mirror conjugation `ske.parse` applies to
+skeleton files (they are stored mirrored against their meshes) simply never
+happened to clip data. The weld for a clip-posed hand is the parsed attach
+with that conjugation undone, carried through the same 180-degree
+clip-world-to-mesh-world yaw the clip root tracks get (`baf.ROOT_ALIGN`),
+because the welded weapon geometry lives in mesh world:
+
+    A = rest(root)^-1 * rest(main);  attach = (S A_rot S * Ry180, S A_t)
+    with S = diag(1, 1, -1)
+
+`weapon_attachment(..., clip_posed=True)` folds it in. For the Thompson the
+old and new transforms agree to 3 degrees and 2.5 cm — which is why the
+Thompson-calibrated constant looked perfect and everything else was wrong.
 
 ### The reconstruction test that reports a stance as an error
 
@@ -215,7 +270,7 @@ The full matrix — `extract_pose.py --matrix` — is 8 soldiers x 28 weapons
 with a 3P `StandAim` clip:
 
 - **224/224 pairs resolve.** No errors, no skipped weapons.
-- **Right palm to weapon surface: median 2.6 cm, p95 8.1 cm, worst 8.7 cm**
+- **Right palm to weapon surface: median 2.6 cm, p95 5.7 cm, worst 9.6 cm**
   (the RepairPack, whose skeleton's main bone is the exporter default
   `Object01`). The same measurement with the weapon left at the soldier's
   origin — the number this feature exists to shrink — has median 0.97 m.

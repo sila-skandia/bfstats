@@ -447,6 +447,15 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x0045f210",
+   "name": "LightDesc_toD3DLIGHT8",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Converts engine light desc to D3DLIGHT8: diffuse rgb from dwords 7-9, specular 10-12, ambient 13-15 of source struct; type 0 -> D3DLIGHT_DIRECTIONAL(3) with direction dwords 4-6; type 1 -> POINT; type 2 -> SPOT. Per-light ambient slot is populated, so level ambientColor + D3DRS_AMBIENT globalAmbientColor are both additive into the fixed-function ambient term."
+  },
+  {
    "address": "0x0045fbd0",
    "name": "patch__display_settings_string",
    "kind": "patch_site",
@@ -1329,6 +1338,15 @@
    "note": "Second destructor with the same member layout as 0x005d0140 (offsets 0x60-0x66, 0x34, 0x2f, 0x2b). Two instantiations of one template class."
   },
   {
+   "address": "0x005bf690",
+   "name": "StandardMeshSubShader_applyRenderState",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtable 0x009061a4 slot +0x10; .rdata after the vtable holds the .rs attribute strings (envmap, materialSpecularPower, materialSpecular, materialDiffuse, blendDest, blendSrc...). Fields: +0x2d lighting -> D3DRS_LIGHTING, +0x2e lightingSpecular -> SPECULARENABLE, +0x2f twosided -> CULLMODE, +0x30 envmap (stage1/2 setup), +0x31 transparent, +0x34/+0x38 blendSrc/Dest, +0x3c alphaTestRef, +0x44 material index -> SetMaterial(base + i*0x44). THE combine for lit StandardMesh (vehicles/statics): stage0 COLOROP=MODULATE2X, ARG1=TEXTURE, ARG2=DIFFUSE - i.e. pixel = clamp01(2 * tex * clamp01(vertex fixed-function diffuse)). Unlit path (lighting false) sets D3DRS_LIGHTING=0 and stage0 SELECTARG1(TEXTURE). NOTE: FUN_00664560's MODULATE 1x is a different, simpler renderer path, NOT the StandardMesh one."
+  },
+  {
    "address": "0x005c1280",
    "name": "File__CRC_func",
    "kind": "function",
@@ -1374,6 +1392,15 @@
    "note": "bf42plus section: System"
   },
   {
+   "address": "0x00604750",
+   "name": "RendPCDX8_flushDeferredState",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Deferred render-state queue flusher: dispatch loop applying queued states to the device. Cases include SetMaterial(+0xA8) from queue at 0x9c0568, D3DRS_AMBIENT (0x8b) global ambient, D3DRS_*MATERIALSOURCE (0x91+), SetLight(+0xB0) for 8 slots via FUN_0045f210, LightEnable(+0xB8). Confirms fixed-function D3D lighting drives DIFFUSE for dynamic meshes."
+  },
+  {
    "address": "0x00632478",
    "name": "patch__ForegroundLockTimeout",
    "kind": "patch_site",
@@ -1417,6 +1444,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Resolution / Display Patches"
+  },
+  {
+   "address": "0x00664560",
+   "name": "RendPCDX8_flushMaterialStages",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "DX8 material flush for the SIMPLE texture path (param+0x90008 texture cache): stage0 MODULATE(1x, TEXTURE x DIFFUSE); no-texture SELECTARG DIFFUSE; +0x5e flag path ADD(TEXTURE,TFACTOR) then stage1 MODULATE(CURRENT,DIFFUSE). NOT the StandardMesh path - vehicles/statics go through StandardMeshSubShader_applyRenderState 0x005bf690 which uses MODULATE2X. Do not calibrate mesh lighting off this function."
   },
   {
    "address": "0x0069f4ae",
@@ -2119,6 +2155,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "vtable installed by the destructor at 0x005b7660. Byte-identical in content to GeometryTemplate_vtable_B; both templates resolve every slot to the same implementations. Slots 0-3 are all 0x00804ae0 (stub). Implementation cluster is 0x005cdxxx + 0x005b5exx."
+  },
+  {
+   "address": "0x009061a4",
+   "name": "vtbl_StandardMeshSubShader",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "SubShaderBuilder.StandardMesh subshader vtable: +0x10 = applyRenderState 0x005bf690; followed in .rdata by the .rs attribute name strings."
   },
   {
    "address": "0x00908830",

@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -116,11 +118,14 @@ def load_damage_tables(game: ArchivePool) -> damage_mod.DamageTables:
 
 
 def collect_weapons(objects: ArchivePool) -> list[damage_mod.Weapon]:
-    scripts = {
-        name: objects.read(name).decode("latin-1")
-        for name in objects.names()
-        if name.lower().endswith(".con")
-    }
+    scripts = {}
+    for name in objects.names():
+        if not name.lower().endswith(".con"):
+            continue
+        # try_read, not read: a damaged entry in a mod archive is one missing
+        # script, not a reason to abandon the mod. See ArchivePool.try_read.
+        if (blob := objects.try_read(name)) is not None:
+            scripts[name] = blob.decode("latin-1")
     return damage_mod.collect_weapons(scripts)
 
 
@@ -191,11 +196,43 @@ def discover_levels(chain: list[Path]) -> list[tuple[str, Path]]:
     return results
 
 
+RE_FOLDER = re.compile(r"^\s*rem\s+folder\s*=\s*(.+)$", re.IGNORECASE)
+RE_SAUCE = re.compile(r"^\s*rem\s+sauce\s*=\s*(.+)$", re.IGNORECASE)
+
+
 def build_library(objects: ArchivePool) -> con_mod.ObjectLibrary:
     library = con_mod.ObjectLibrary()
     for name in objects.names():
-        if name.lower().endswith(".con"):
-            library.add_con(name, objects.read(name).decode("latin-1"))
+        if not name.lower().endswith(".con"):
+            continue
+        if (blob := objects.try_read(name)) is None:
+            continue
+        text = blob.decode("latin-1")
+        if "compressed.con" in name.lower() and "rem folder =" in text.lower():
+            parts = name.replace("\\", "/").split("/")
+            pack_idx = next((i for i, p in enumerate(parts) if p.lower().startswith("!_pack")), None)
+            base_prefix = "/".join(parts[:pack_idx]) if pack_idx is not None else "/".join(parts[:-1])
+            cur_folder = ""
+            cur_sauce = "Objects.con"
+            chunk_lines: list[str] = []
+            for line in text.splitlines():
+                m_f = RE_FOLDER.match(line)
+                m_s = RE_SAUCE.match(line)
+                if m_f:
+                    if chunk_lines and cur_folder:
+                        sub_source = f"{base_prefix}/{cur_folder}/{cur_sauce}"
+                        library.add_con(sub_source, "\n".join(chunk_lines))
+                        chunk_lines = []
+                    cur_folder = m_f.group(1).strip()
+                elif m_s:
+                    cur_sauce = m_s.group(1).strip()
+                else:
+                    chunk_lines.append(line)
+            if chunk_lines and cur_folder:
+                sub_source = f"{base_prefix}/{cur_folder}/{cur_sauce}"
+                library.add_con(sub_source, "\n".join(chunk_lines))
+        else:
+            library.add_con(name, text)
     return library
 
 
@@ -260,7 +297,7 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
     file_stem = f"{name}{suffix}"
     try:
         glb, report = assembler.export(name)
-    except ValueError as exc:
+    except Exception as exc:
         print(f"  {name}{suffix}: {exc}", file=sys.stderr)
         return None
 
@@ -296,6 +333,72 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
     }
 
 
+_worker_state: dict = {}
+
+
+def _init_export_worker(chain_paths: list[str], fallback_paths: list[str]) -> None:
+    chain = [Path(p) for p in chain_paths]
+    fallbacks = [Path(p) for p in fallback_paths]
+    meshes, base_textures, objects, _game = build_pools(chain, fallbacks)
+    library = build_library(objects)
+    _worker_state["meshes"] = meshes
+    _worker_state["base_textures"] = base_textures
+    _worker_state["objects"] = objects
+    _worker_state["library"] = library
+
+
+def _export_template_task(task_args: tuple) -> tuple[str, list[dict], int]:
+    name, configurations, lod, max_texture, out_path_str, level_sources_tuples = task_args
+    try:
+        out = Path(out_path_str)
+        meshes = _worker_state["meshes"]
+        base_textures = _worker_state["base_textures"]
+        objects = _worker_state["objects"]
+        library = _worker_state["library"]
+
+        variants: list[dict] = []
+        failures = 0
+        for configuration in configurations:
+            base = export_one(
+                name, meshes, base_textures, objects, library,
+                configuration=configuration, lod=lod,
+                max_texture=max_texture, out=out,
+            )
+            if base is None:
+                failures += 1
+                continue
+            variants.append(base)
+
+            for level_name, level_path_str in level_sources_tuples:
+                level_path = Path(level_path_str)
+                level_textures = ArchivePool()
+                try:
+                    added = level_textures.add_level(level_path, label=level_name)
+                except Exception as exc:
+                    print(f"  {name}.{level_name}: cannot read level archive ({exc})",
+                          file=sys.stderr)
+                    continue
+                if not added:
+                    continue
+                level_textures.extend_from(base_textures)
+
+                variant = export_one(
+                    name, meshes, level_textures, objects, library,
+                    configuration=configuration, lod=lod,
+                    max_texture=max_texture, out=out,
+                    level_label=level_name,
+                )
+                if variant:
+                    variants.append(variant)
+
+        if not variants:
+            failures += 1
+        return name, variants, failures
+    except Exception as exc:
+        print(f"  {name}: worker error ({exc})", file=sys.stderr)
+        return name, [], 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -303,6 +406,8 @@ def main() -> int:
     ap.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--out", type=Path, default=Path(__file__).resolve().parent / "out")
+    ap.add_argument("-j", "--jobs", type=int, default=1,
+                    help="number of parallel workers (default: 1)")
     ap.add_argument("--lod", type=int, default=0,
                     help="mesh LOD index to export (default: 0)")
     ap.add_argument("--configuration", dest="configurations", action="append",
@@ -390,11 +495,8 @@ def main() -> int:
         ap.error("--lod must be zero or greater")
 
     args.out.mkdir(parents=True, exist_ok=True)
-    failures = 0
-    manifest: list[dict] = []
-
+    tasks = []
     for name in args.templates:
-        variants: list[dict] = []
         available_configurations = library.available_configurations(name)
         requested_configurations = (
             available_configurations
@@ -412,41 +514,69 @@ def main() -> int:
         for configuration in unavailable:
             print(f"  {name}: no {configuration} configuration; skipping",
                   file=sys.stderr)
+        if configurations:
+            tasks.append((name, configurations, args.lod, args.max_texture, str(args.out),
+                          [(n, str(p)) for n, p in level_sources]))
 
-        for configuration in configurations:
-            base = export_one(
-                name, meshes, base_textures, objects, library,
-                configuration=configuration, lod=args.lod,
-                max_texture=args.max_texture, out=args.out,
-            )
-            if base is None:
-                failures += 1
-                continue
-            variants.append(base)
-
-            for level_name, level_path in level_sources:
-                level_textures = ArchivePool()
-                try:
-                    added = level_textures.add_level(level_path, label=level_name)
-                except Exception as exc:
-                    print(f"  {name}.{level_name}: cannot read level archive ({exc})",
-                          file=sys.stderr)
-                    continue
-                if not added:
-                    continue
-                level_textures.extend_from(base_textures)
-
-                variant = export_one(
-                    name, meshes, level_textures, objects, library,
-                    configuration=configuration, lod=args.lod,
-                    max_texture=args.max_texture, out=args.out,
-                    level_label=level_name,
+    template_variants: dict[str, list[dict]] = {}
+    failures = 0
+    if args.jobs > 1 and len(tasks) > 1:
+        chain_strs = [str(p) for p in chain]
+        fallback_strs = [str(p) for p in fallbacks]
+        with ProcessPoolExecutor(
+            max_workers=min(args.jobs, len(tasks)),
+            initializer=_init_export_worker,
+            initargs=(chain_strs, fallback_strs),
+        ) as executor:
+            for name, variants, f_count in executor.map(_export_template_task, tasks):
+                template_variants[name] = variants
+                failures += f_count
+    else:
+        for task in tasks:
+            name, configurations, lod, max_texture, out_path_str, level_sources_tuples = task
+            variants: list[dict] = []
+            f_count = 0
+            for configuration in configurations:
+                base = export_one(
+                    name, meshes, base_textures, objects, library,
+                    configuration=configuration, lod=lod,
+                    max_texture=max_texture, out=args.out,
                 )
-                if variant:
-                    variants.append(variant)
+                if base is None:
+                    f_count += 1
+                    continue
+                variants.append(base)
 
+                for level_name, level_path in level_sources:
+                    level_textures = ArchivePool()
+                    try:
+                        added = level_textures.add_level(level_path, label=level_name)
+                    except Exception as exc:
+                        print(f"  {name}.{level_name}: cannot read level archive ({exc})",
+                              file=sys.stderr)
+                        continue
+                    if not added:
+                        continue
+                    level_textures.extend_from(base_textures)
+
+                    variant = export_one(
+                        name, meshes, level_textures, objects, library,
+                        configuration=configuration, lod=lod,
+                        max_texture=max_texture, out=args.out,
+                        level_label=level_name,
+                    )
+                    if variant:
+                        variants.append(variant)
+
+            if not variants:
+                f_count += 1
+            template_variants[name] = variants
+            failures += f_count
+
+    manifest: list[dict] = []
+    for name in args.templates:
+        variants = template_variants.get(name, [])
         if not variants:
-            failures += 1
             continue
 
         default_variants = [
@@ -476,6 +606,8 @@ def main() -> int:
             "dimensions": measure_mod.bounds(args.out / best["glb"]),
             "hitpoints": (report.get("armor") or {}).get("hitpoints"),
             "rigged": len(report.get("riggedParts") or []),
+            "animatedParts": len(report.get("animatedParts") or []),
+            "cameras": len(report.get("cameras") or []),
             "variants": variants,
         })
 

@@ -100,18 +100,33 @@ def worlds_by_name(skeleton: Skeleton, worlds: list[RT]) -> dict[str, RT]:
             for i, bone in enumerate(skeleton.bones)}
 
 
-# The hand frame a `.baf` clip poses is rolled half a turn about the grip
-# axis against the hand frame the `.ske` files were authored in. Welding the
-# `.ske`-derived attach onto a clip-posed hand therefore needs a constant
-# 180-degree correction — without it every weapon renders upside down while
-# the same attach welds perfectly onto the `.ske` rest stance (the Thompson
-# prop bone agrees to 4 mm / 1.6 degrees). Measured, not derived: of the
-# three half-turns post-multiplied onto the attach, only this one puts the
-# Thompson's sights up, muzzle forward and stock in the shoulder; the flip
-# is uniform across all weapon rigs because they share one authoring rig.
-CLIP_GRIP_ROLL: Matrix3 = ((-1.0, 0.0, 0.0),
-                           (0.0, -1.0, 0.0),
-                           (0.0, 0.0, 1.0))
+# A `.baf` clip poses bones in the *raw* `.ske` frame convention — the
+# Z-mirror conjugation `ske.parse` applies (S T S with S = diag(1, 1, -1))
+# never happened to clip data. The proof is in the game's own data: the
+# JohnsonLMG's `3pStandAimUpperJohnsonLmg.baf` carries a track for the
+# weapon's `base` bone, and that track's local transform equals the raw
+# (pre-mirror) `.ske` relative rest of `base` under the hand root exactly —
+# rotation to 0.00 degrees, translation to 0.04 mm — while it differs from
+# the mirrored parse by the mirror itself. Welding a `.ske`-derived attach
+# onto a clip-posed hand therefore means undoing the parse-time conjugation
+# (back into the clip's convention), then carrying the result through the
+# same 180-degree clip-world-to-mesh-world yaw every clip root track gets
+# (`baf.ROOT_ALIGN`), because the welded weapon's geometry lives in mesh
+# world. The retired `CLIP_GRIP_ROLL` constant — an Rz(180) post-multiplied
+# per weapon — was calibrated by eyeballing the Thompson alone; the
+# Thompson's attach happens to land within 3 degrees of this transform, so
+# the render looked right, while weapons whose main-bone rest differs from
+# the Thompson's were wrong by up to 180 degrees.
+_MIRROR_Z: Matrix3 = ((1.0, 0.0, 0.0),
+                      (0.0, 1.0, 0.0),
+                      (0.0, 0.0, -1.0))
+CLIP_WORLD_YAW: Matrix3 = ROOT_ALIGN[0]
+
+
+def _mat_mul(a: Matrix3, b: Matrix3) -> Matrix3:
+    return tuple(
+        tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3))
+        for i in range(3))
 
 
 def weapon_attachment(weapon_skeleton: Skeleton, main_index: int | None,
@@ -126,20 +141,22 @@ def weapon_attachment(weapon_skeleton: Skeleton, main_index: int | None,
 
         attach = rest(root)^-1 * rest(main)
 
-    That attach is expressed against the `.ske` hand frame. A hand posed
-    from a `.baf` clip lives in a frame rolled 180 degrees about the grip
-    axis, so pass `clip_posed=True` to fold `CLIP_GRIP_ROLL` in; leave it
-    off when welding onto the `.ske` rest stance.
+    That attach is expressed in the parsed (Z-mirror-conjugated) `.ske`
+    convention, which is also the convention of a hand posed at `.ske` rest —
+    so it welds onto the rest stance as-is. A hand posed from a `.baf` clip
+    is in the raw file convention instead, so pass `clip_posed=True` to
+    re-express the attach: conjugate the mirror back out, then post-multiply
+    the clip-world yaw (`CLIP_WORLD_YAW`) that maps the weapon's mesh-world
+    geometry into clip world.
     """
     if main_index is None:
         main_index = 0
     rotation, translation = _mul(_inverse(weapon_skeleton.rest(0)),
                                  weapon_skeleton.rest(main_index))
     if clip_posed:
-        rotation = tuple(
-            tuple(sum(rotation[i][k] * CLIP_GRIP_ROLL[k][j] for k in range(3))
-                  for j in range(3))
-            for i in range(3))
+        rotation = _mat_mul(_mat_mul(_MIRROR_Z, rotation), _MIRROR_Z)
+        rotation = _mat_mul(rotation, CLIP_WORLD_YAW)
+        translation = (translation[0], translation[1], -translation[2])
     return rotation, translation
 
 

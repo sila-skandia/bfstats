@@ -186,10 +186,12 @@ class _Cursor:
         self.pos += count * 4
         return v
 
-    def int16s(self, count: int) -> list[int]:
-        v = list(struct.unpack_from(f"<{count}h", self.data, self.pos))
+    def uint16s(self, count: int) -> list[int]:
+        v = list(struct.unpack_from(f"<{count}H", self.data, self.pos))
         self.pos += count * 2
         return v
+
+    int16s = uint16s
 
 
 def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
@@ -285,7 +287,7 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
         # Payloads follow all descriptors, in descriptor order.
         for m in materials:
             m.vertices = c.floats(m.vertex_count * m.floats_per_vertex)
-            m.indices = c.int16s(m.index_count)
+            m.indices = c.uint16s(m.index_count)
         lods.append(Lod(materials))
 
     return StandardMesh(

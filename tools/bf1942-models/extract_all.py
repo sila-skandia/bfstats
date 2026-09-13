@@ -87,6 +87,8 @@ def main() -> int:
                     help="pass through: mod to borrow textures from (repeatable). "
                          "Vanilla needs none since texture.rfa was restored.")
     ap.add_argument("--max-texture", type=int, default=1024)
+    ap.add_argument("-j", "--jobs", type=int, default=12,
+                    help="number of parallel workers (default: 12)")
     ap.add_argument("--verify", action="store_true",
                     help="run verify_models.py over the output afterwards")
     args = ap.parse_args()
@@ -130,6 +132,7 @@ def main() -> int:
         "--mod", args.mod,
         "--out", str(args.out),
         "--max-texture", str(args.max_texture),
+        "-j", str(args.jobs),
     ]
     if args.level_all:
         command.append("--level-all")

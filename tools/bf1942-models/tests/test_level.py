@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import struct
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42.level import (  # noqa: E402
     decode_heightmap,
+    find_level_archives,
     parse_cubemap_rcm,
     parse_init_con,
     parse_spawn_templates,
@@ -553,6 +555,57 @@ class ObjectLightmapTests(unittest.TestCase):
             ("bunker1_m1", 1969, 80, 835),
             object_lightmap_key("bunker1_M1.sm", (1969.56, 80.39, 835.095)),
         )
+
+
+class LevelArchiveLookupTests(unittest.TestCase):
+    """`Archives/bf1942/levels/` in *every* mod, plus the parent underlay."""
+
+    def _install(self, root: Path, mod: str, archives: str,
+                 levels: list[str]) -> None:
+        directory = root / "Mods" / mod / archives / "bf1942" / "levels"
+        directory.mkdir(parents=True, exist_ok=True)
+        for name in levels:
+            (directory / name).write_bytes(b"")
+
+    def test_mod_levels_live_under_bf1942_not_under_the_mod_name(self) -> None:
+        # EoD's levels are in `EoD/archives/bf1942/levels/`: a level archive's
+        # internal paths start `bf1942/`, and Refractor mounts an archive at its
+        # own prefix. Searching `EoD/archives/EoD/` finds nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._install(root, "EoD", "archives", ["Hamburger_Hill.rfa"])
+
+            found = find_level_archives(root, "EoD", "Hamburger_Hill")
+
+            self.assertEqual(["Hamburger_Hill.rfa"], [p.name for p in found])
+
+    def test_parent_archives_underlay_the_mod_ones(self) -> None:
+        # A mod map that only overrides some files resolves the rest from the
+        # parent's copy. LevelFiles lets later archives win, so the parent's
+        # must come first.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._install(root, "EoD", "archives", ["Tobruk.rfa"])
+            self._install(root, "bf1942", "Archives",
+                          ["Tobruk.rfa", "Tobruk_003.rfa"])
+            chain = [root / "Mods" / "EoD", root / "Mods" / "bf1942"]
+
+            found = find_level_archives(root, "EoD", "Tobruk", chain=chain)
+
+            self.assertEqual(
+                [("bf1942", "Tobruk.rfa"),
+                 ("bf1942", "Tobruk_003.rfa"),
+                 ("EoD", "Tobruk.rfa")],
+                [(p.parents[3].name, p.name) for p in found],
+            )
+
+    def test_without_a_chain_only_the_named_mod_is_searched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._install(root, "EoD", "archives", [])
+            self._install(root, "bf1942", "Archives", ["Tobruk.rfa"])
+
+            self.assertEqual([], find_level_archives(root, "EoD", "Tobruk"))
 
 
 if __name__ == "__main__":
