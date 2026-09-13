@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import re
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -151,7 +152,74 @@ class CombatArea:
 
 
 @dataclass
+class SoundEffect:
+    """One `beginEffect`/`endEffect` modulator on a sample.
+
+    A `.ssc` effect is a curve, not a filter: it maps a runtime control value
+    onto a multiplicative factor for one destination. Every effect on the same
+    destination multiplies, which is how the med engine layer gets its
+    trapezoid (a rise ramp times a fall ramp) and how the distance fade stacks
+    on top of the RPM crossfade.
+
+    `Ramp p1 p2 p3 p4` is piecewise linear in the control value `x`: `p3` below
+    `p1`, `p3 + p4` above `p2`, linear between, and `p4` is signed so a fade-out
+    is just a negative delta. Six-param ramps occur (573 in vanilla) and the
+    extra pair's meaning is unresolved; treating them as four-param reproduces
+    the audible design, so the surplus is carried but not interpreted.
+    `Linear p1 p2` is `p1 + p2 * x`, which with `controlSource Default` and
+    `p2 = 0` is the "constant pitch offset" idiom.
+    """
+
+    destination: str                  # "volume" | "pitch"
+    source: str                       # "distance" | "time" | "extern" | ...
+    envelope: str                     # "ramp" | "linear"
+    params: list[float] = field(default_factory=list)
+    # The channel named by `controlSource Extern #map<Engine::Rpm>`, verbatim.
+    # Only two maps exist in vanilla: Engine (Rpm, DiveAngle) and Effect
+    # (Speed, Angle), both declared by a `#beginMap` block.
+    extern: str = ""
+
+
+@dataclass
+class SoundSample:
+    """One `load` inside a patch — a voice, not an alternative.
+
+    Every sample a patch loads plays *simultaneously*; they are layers. The one
+    exception is `randomPlay 1`, which turns the patch's samples into a pick-one
+    list (crackle loops, bomb-release clacks).
+    """
+
+    file: str
+    loop: bool = False
+    volume: float = 1.0
+    min_distance: float = 1.0
+    priority: int | None = None
+    # "release" plays the sample when the patch is released (engine-stop
+    # rattles, gear clunks); "volume" delays the start until the sample's
+    # computed volume first goes non-zero, which is how distant explosion
+    # layers are delayed by the speed of sound.
+    trigger: str = ""
+    stop: str = ""                    # "finishsample" | "immediate"
+    stereo: bool = False
+    doppler_off: bool = False
+    # DICE's own anti-phasing trick: a per-play pitch jitter so two vehicles
+    # running the identical loop beat instead of flanging.
+    random_start_pitch: tuple[float, float] | None = None
+    # Voice offset in the owning object's frame (Refractor: x right, y up,
+    # z forward), e.g. the Corsair's two cockpit whine layers at +-.9/.3/-4.2.
+    relative_position: tuple[float, float, float] | None = None
+    effects: list[SoundEffect] = field(default_factory=list)
+
+
+@dataclass
 class SoundPatch:
+    """One event slot on the owning object, holding every layer it plays.
+
+    The scalar fields below are the single-voice view the map-ambience path has
+    always used; they mirror `samples[0]`, which for every ambient and area
+    script in vanilla is the only sample there is.
+    """
+
     level: str
     file: str
     loop: bool = False
@@ -161,6 +229,8 @@ class SoundPatch:
     far_distance: float | None = None
     ramp_start_val: float | None = None
     ramp_delta_val: float | None = None
+    samples: list[SoundSample] = field(default_factory=list)
+    random_play: bool = False
 
 
 @dataclass
@@ -744,79 +814,262 @@ def _commands(text: str) -> list[tuple[str, str, str]]:
     return out
 
 
-def parse_ssc(text: str) -> list[SoundPatch]:
-    """Parse a Refractor .ssc sound script into patches with distance ramps."""
+_SSC_EXTERN = re.compile(r"#map<([^>]+)>", re.IGNORECASE)
+
+# An include chain four files deep is normal (CorsairEngine -> EngineHigh ->
+# Dive -> EngineMap); anything past this is a cycle in authored data.
+_SSC_MAX_INCLUDE_DEPTH = 12
+
+
+def resolve_ssc_path(source: str, relative: str) -> str:
+    """Resolve a `#include` against the archive path of the including file."""
+    parts = source.replace("\\", "/").split("/")[:-1]
+    for segment in relative.replace("\\", "/").split("/"):
+        if segment in ("", "."):
+            continue
+        if segment == "..":
+            if parts:
+                parts.pop()
+        else:
+            parts.append(segment)
+    return "/".join(parts)
+
+
+def _ssc_lines(text: str, source: str,
+               include: Callable[[str], str | None] | None,
+               depth: int = 0):
+    """Flatten a script's lines, expanding `#include` where it appears.
+
+    `#include` is textual, so an included file's `#templateLevel` keeps
+    applying after the include returns and a file included between `newPatch`
+    and the next `newPatch` contributes layers to *that* patch — which is
+    exactly how the Corsair picks up `airplanedive.wav` from `Dive.ssc`. The
+    only per-file state is the directory relative includes resolve against.
+    """
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.lower().startswith("#include"):
+            tokens = line.split(None, 1)
+            if include is None or len(tokens) < 2 or depth >= _SSC_MAX_INCLUDE_DEPTH:
+                continue
+            target = resolve_ssc_path(source, tokens[1].strip())
+            nested = include(target)
+            if nested is None:
+                continue
+            yield from _ssc_lines(nested, target, include, depth + 1)
+            continue
+        yield line
+
+
+def _ssc_floats(tokens: list[str]) -> list[float]:
+    """Numbers out of a `a/b/c` or `a / b` tail, whatever the spacing."""
+    out: list[float] = []
+    for piece in " ".join(tokens).replace("/", " ").split():
+        try:
+            out.append(float(piece))
+        except ValueError:
+            pass
+    return out
+
+
+def parse_ssc(text: str, *, level: str | None = None,
+              include: Callable[[str], str | None] | None = None,
+              source: str = "") -> list[SoundPatch]:
+    """Parse a Refractor .ssc sound script into patches of layered samples.
+
+    `level` filters to one `#templateLevel` tier (the Options -> Sound detail
+    setting, *not* an RPM band — `CorsairEngine.ssc` is nothing but a dispatcher
+    that includes EngineHigh/Medium/Low, and all three contain the same
+    three-band RPM crossfade). Left `None`, every patch is kept and tagged with
+    the tier it was declared under, which is what the map-ambience path wants.
+
+    `include` is a reader that turns a resolved archive path into text; without
+    it `#include` lines are dropped, which is the old behaviour.
+    """
     patches: list[SoundPatch] = []
     current: SoundPatch | None = None
+    sample: SoundSample | None = None
     current_level = "high"
+    want = level.lower() if level else None
     in_effect = False
-    ctrl_src = ""
-    ctrl_dest = ""
-    envelope = ""
-    params: list[float] = []
+    in_map = False
+    effect: SoundEffect | None = None
 
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("rem") or line.startswith("//") or line.startswith("***"):
+    def close_patch(patch: SoundPatch | None) -> None:
+        """Project the first layer onto the patch's single-voice view."""
+        if patch is None or not patch.samples:
+            return
+        first = patch.samples[0]
+        patch.file = first.file
+        patch.loop = first.loop
+        patch.volume = first.volume
+        patch.min_distance = first.min_distance
+        for eff in first.effects:
+            if eff.source == "distance" and eff.destination == "volume" \
+                    and eff.envelope == "ramp":
+                if len(eff.params) >= 2:
+                    patch.near_distance = eff.params[0]
+                    patch.far_distance = eff.params[1]
+                if len(eff.params) >= 4:
+                    patch.ramp_start_val = eff.params[2]
+                    patch.ramp_delta_val = eff.params[3]
+                break
+
+    for line in _ssc_lines(text, source, include):
+        if not line or line.startswith("rem") or line.startswith("//") \
+                or line.startswith("***") or line.startswith(";"):
             continue
-        line_lower = line.lower()
-        if line_lower.startswith("#templatelevel"):
+        lower = line.lower()
+
+        # `#beginMap Engine / Rpm / DiveAngle / #endMap` declares the extern
+        # channels the owning object feeds; the bare channel names inside are
+        # not directives.
+        if in_map:
+            if lower.startswith("#endmap"):
+                in_map = False
+            continue
+        if lower.startswith("#beginmap"):
+            in_map = True
+            continue
+        if lower.startswith("#templatelevel"):
             parts = line.split()
             if len(parts) > 1:
                 current_level = parts[1].lower()
-        elif line_lower.startswith("newpatch"):
-            current = SoundPatch(level=current_level, file="", loop=False, volume=1.0, min_distance=1.0)
+            continue
+        if lower.startswith("beginskip"):
+            # One occurrence in vanilla, with no terminator anywhere in the
+            # shipped data: it comments out the tail of the file it opens.
+            break
+        if lower.startswith("#"):
+            continue
+        if want is not None and current_level != want:
+            continue
+
+        if lower.startswith("newpatch"):
+            close_patch(current)
+            current = SoundPatch(level=current_level, file="", loop=False,
+                                 volume=1.0, min_distance=1.0)
             patches.append(current)
+            sample = None
             in_effect = False
-        elif line_lower.startswith("begineffect"):
+            continue
+        if lower.startswith("begineffect"):
             in_effect = True
-            ctrl_src = ""
-            ctrl_dest = ""
-            envelope = ""
-            params = []
-        elif line_lower.startswith("endeffect"):
-            if in_effect and current is not None:
-                if ctrl_src == "distance" and ctrl_dest == "volume" and envelope == "ramp":
-                    if len(params) >= 2:
-                        current.near_distance = params[0]
-                        current.far_distance = params[1]
-                    if len(params) >= 4:
-                        current.ramp_start_val = params[2]
-                        current.ramp_delta_val = params[3]
+            effect = SoundEffect(destination="", source="", envelope="")
+            continue
+        # `endeffec` (sic) ships in vanilla and the engine ignores the typo
+        # rather than staying inside the effect; matching on the short prefix
+        # costs nothing and keeps a mistyped block from swallowing the rest.
+        if lower.startswith("endeffec"):
+            if in_effect and effect is not None and sample is not None \
+                    and effect.destination and effect.envelope:
+                sample.effects.append(effect)
             in_effect = False
-        elif in_effect:
-            parts = line.split()
-            cmd = parts[0].lower()
+            effect = None
+            continue
+
+        parts = line.split()
+        cmd = parts[0].lower()
+
+        if in_effect:
+            if effect is None:
+                continue
             if cmd == "controlsource" and len(parts) > 1:
-                ctrl_src = parts[1].lower()
+                effect.source = parts[1].lower()
+                found = _SSC_EXTERN.search(line)
+                if found:
+                    effect.extern = found.group(1).strip()
             elif cmd == "controldestination" and len(parts) > 1:
-                ctrl_dest = parts[1].lower()
+                effect.destination = parts[1].lower()
             elif cmd == "envelope" and len(parts) > 1:
-                envelope = parts[1].lower()
-            elif cmd == "param" and len(parts) > 1:
+                effect.envelope = parts[1].lower()
+            elif cmd.startswith("p") and len(parts) > 1:
+                # `param`, plus the `pram` typo that ships in two vanilla files.
                 try:
-                    params.append(float(parts[1]))
+                    effect.params.append(float(parts[1]))
                 except ValueError:
                     pass
-        elif current is not None:
-            parts = line.split()
-            cmd = parts[0].lower()
-            if cmd == "load" and len(parts) > 1:
-                current.file = parts[1].replace("\\", "/")
-            elif cmd == "loop":
-                current.loop = True
-            elif cmd.startswith("volume"):
-                val_str = parts[1] if len(parts) > 1 else cmd.removeprefix("volume")
-                try:
-                    current.volume = float(val_str)
-                except ValueError:
-                    pass
-            elif cmd == "mindistance" and len(parts) > 1:
-                try:
-                    current.min_distance = float(parts[1])
-                except ValueError:
-                    pass
+            continue
+
+        if cmd == "load" and len(parts) > 1:
+            if current is None:
+                current = SoundPatch(level=current_level, file="", loop=False,
+                                     volume=1.0, min_distance=1.0)
+                patches.append(current)
+            sample = SoundSample(file=parts[1].replace("\\", "/"))
+            current.samples.append(sample)
+            continue
+        if current is None:
+            continue
+        if cmd == "randomplay":
+            current.random_play = len(parts) < 2 or parts[1] != "0"
+            continue
+        if sample is None:
+            continue
+        if cmd == "loop":
+            sample.loop = True
+        elif cmd.startswith("volume"):
+            # `volume.2` (sic) ships with no separating space.
+            val = parts[1] if len(parts) > 1 else cmd.removeprefix("volume")
+            try:
+                sample.volume = float(val)
+            except ValueError:
+                pass
+        elif cmd == "mindistance" and len(parts) > 1:
+            try:
+                sample.min_distance = float(parts[1])
+            except ValueError:
+                pass
+        elif cmd == "priority" and len(parts) > 1:
+            try:
+                sample.priority = int(float(parts[1]))
+            except ValueError:
+                pass
+        elif cmd == "trigger" and len(parts) > 1:
+            sample.trigger = parts[1].lower()
+        elif cmd == "stop" and len(parts) > 1:
+            sample.stop = parts[1].lower()
+        elif cmd == "stereo":
+            sample.stereo = True
+        elif cmd == "doppleroff":
+            sample.doppler_off = True
+        elif cmd == "randomstartpitch":
+            values = _ssc_floats(parts[1:])
+            if len(values) >= 2:
+                sample.random_start_pitch = (values[0], values[1])
+            elif values:
+                sample.random_start_pitch = (values[0], values[0])
+        elif cmd == "relativeposition":
+            values = _ssc_floats(parts[1:])
+            if len(values) >= 3:
+                sample.relative_position = (values[0], values[1], values[2])
+
+    close_patch(current)
     return patches
+
+
+def parse_sound_scripts(text: str) -> dict[str, tuple[str, str]]:
+    """Every `loadSoundScript` in one `.con`, keyed by the template it binds to.
+
+    Returns `name.lower() -> (kind, script path)`, the path still relative to
+    the folder the `.con` itself lives in — `Sounds/CorsairEngine.ssc` on the
+    Corsair's Engine, `../Common/Sounds/HullLeft.ssc` on its outer wings.
+    Sound is attached per *template*, not per vehicle: one `Physics.con`
+    typically binds an engine script, two airframe-creak scripts and a landing
+    gear script to four different children.
+    """
+    out: dict[str, tuple[str, str]] = {}
+    name = ""
+    kind = ""
+    for ns, cmd, args in _commands(text):
+        if ns != "objecttemplate":
+            continue
+        tokens = args.split()
+        if cmd in ("create", "activesafe") and len(tokens) >= 2:
+            kind, name = tokens[0].lower(), tokens[1]
+        elif cmd == "loadsoundscript" and tokens and name:
+            out.setdefault(name.lower(), (kind, tokens[0].replace("\\", "/")))
+    return out
 
 
 def parse_area_con(text: str) -> AreaSoundTemplate | None:

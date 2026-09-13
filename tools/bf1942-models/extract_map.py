@@ -51,9 +51,12 @@ from bf42.level import (  # noqa: E402
     load_level_files,
     parse_cubemap_rcm,
     parse_init_con,
+    parse_sound_scripts,
     parse_spawn_templates,
+    parse_ssc,
     parse_static_objects,
     parse_terrain_con,
+    resolve_ssc_path,
     spawn_vehicle,
 )
 from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
@@ -172,8 +175,17 @@ def _to_gltf_vec(vec: tuple[float, float, float]) -> list[float]:
 SOUND_ARCHIVES = ("sound", "sound_001")
 
 
+# `@RTD` is the sample-rate directory the engine substitutes for the current
+# sound-quality setting. Ambient beds are heard from hundreds of metres away and
+# 22 kHz is indistinguishable there, but a cockpit engine layer is heard from
+# four metres, so vehicle sound asks for the 44 kHz masters first.
+AMBIENT_RATES = ("22khz", "44khz", "11khz")
+VEHICLE_RATES = ("44khz", "22khz", "11khz")
+
+
 def resolve_sound(ref: str, level_files: LevelFiles | None,
-                  sounds: ArchivePool) -> tuple[str, bytes] | None:
+                  sounds: ArchivePool,
+                  rates: tuple[str, ...] = AMBIENT_RATES) -> tuple[str, bytes] | None:
     clean = ref.replace("\\", "/").strip()
     if clean.lower().startswith("@root/"):
         clean = clean[6:]
@@ -183,13 +195,12 @@ def resolve_sound(ref: str, level_files: LevelFiles | None,
     # 1. Check level_files if available
     if level_files is not None:
         for candidate in [clean, f"Sound/{basename}", f"Sounds/{basename}",
-                          f"Sound/22khz/{basename}", f"Sound/44khz/{basename}", f"Sound/11khz/{basename}"]:
+                          *(f"Sound/{r}/{basename}" for r in rates)]:
             hit = level_files.find(candidate)
             if hit is not None:
                 return basename, level_files.read(candidate)
 
     # 2. Check sounds pool
-    rates = ["22khz", "44khz", "11khz"]
     if "@rtd" in clean.lower():
         for r in rates:
             sub = re.sub(r"@rtd", r, clean, flags=re.IGNORECASE)
@@ -205,42 +216,175 @@ def resolve_sound(ref: str, level_files: LevelFiles | None,
     return None
 
 
+# The sound-detail tier to extract for vehicles. HIGH is what the game plays on
+# a desktop: the three-band RPM core, the start and stop one-shots, the mid- and
+# far-distance timbre layers, the dive scream, and the two cockpit whine voices.
+# Note the trap the research doc records — `#templateLevel HIGH/MEDIUM/LOW` is
+# the Options -> Sound quality setting, NOT an RPM band. All three tiers carry
+# the same three-band crossfade; the tier only decides how many layers ride on
+# top of it (LOW 3 voices, MEDIUM 9, HIGH 11).
+VEHICLE_SOUND_LEVEL = "high"
+
+
+def find_engine_script(library, objects: ArchivePool,
+                       template: str) -> tuple[str, str] | None:
+    """The `.ssc` bound to a vehicle's Engine: `(archive path, engine name)`.
+
+    Two hops, because `loadSoundScript` binds to a *template*, not to a vehicle:
+    walk the vehicle's template tree for its `Engine` child, then read the
+    `.con` that declared that child and take the script bound to it by name. A
+    Corsair's `Physics.con` binds four different scripts to four different
+    children (engine, two wing creaks, landing gear); matching on the engine's
+    own name is what picks the right one.
+    """
+    root = library.objects.get(template.lower())
+    if root is None:
+        return None
+    seen: set[str] = set()
+    queue = [root]
+    engine = None
+    while queue:
+        node = queue.pop(0)
+        key = node.name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if node.kind.lower() == "engine":
+            engine = node
+            break
+        for ref in node.children:
+            child = library.objects.get(ref.template.lower())
+            if child is not None:
+                queue.append(child)
+    if engine is None or not engine.source:
+        return None
+    con_hit = objects.find(engine.source)
+    if con_hit is None:
+        return None
+    scripts = parse_sound_scripts(objects.read(con_hit).decode("latin-1"))
+    entry = scripts.get(engine.name.lower())
+    if entry is None:
+        return None
+    return resolve_ssc_path(engine.source, entry[1]), engine.name
+
+
+def _modulator_report(effect) -> dict:
+    # `Extern #map<Engine::Rpm>` is flattened to a plain source name: the viewer
+    # only ever needs to know which control channel to feed the curve, and the
+    # two vanilla maps (Engine, Effect) have no overlapping channel names.
+    source = effect.extern.lower() if effect.source == "extern" else effect.source
+    return {
+        "dest": effect.destination,
+        "source": source,
+        "envelope": effect.envelope,
+        "params": effect.params,
+    }
+
+
 def extract_sounds(info: LevelInfo, level_files: LevelFiles,
-                   sounds: ArchivePool, out_dir: Path) -> dict:
+                   sounds: ArchivePool, out_dir: Path,
+                   library=None, objects: ArchivePool | None = None,
+                   vehicles: list[str] | None = None) -> dict:
     """Extract referenced sound wav files and produce the sounds report dict."""
     sounds_dir = out_dir / "sounds"
-    sound_report: dict = {"ambient": None, "areas": []}
+    sound_report: dict = {"ambient": None, "areas": [], "vehicles": []}
+    written_files: set[str] = set()
+
+    def write(resolved: tuple[str, bytes]) -> str:
+        basename, data = resolved
+        if basename not in written_files:
+            sounds_dir.mkdir(parents=True, exist_ok=True)
+            (sounds_dir / basename).write_bytes(data)
+            written_files.add(basename)
+        return f"sounds/{basename}"
 
     if info.sounds.ambient is not None:
         resolved = resolve_sound(info.sounds.ambient.file, level_files, sounds)
         if resolved is not None:
-            basename, data = resolved
-            sounds_dir.mkdir(parents=True, exist_ok=True)
-            (sounds_dir / basename).write_bytes(data)
             sound_report["ambient"] = {
-                "file": f"sounds/{basename}",
+                "file": write(resolved),
                 "volume": info.sounds.ambient.volume,
             }
 
-    written_files: set[str] = set()
     for area in info.sounds.areas:
         resolved = resolve_sound(area.file, level_files, sounds)
         if resolved is not None:
-            basename, data = resolved
-            if basename not in written_files:
-                sounds_dir.mkdir(parents=True, exist_ok=True)
-                (sounds_dir / basename).write_bytes(data)
-                written_files.add(basename)
             sound_report["areas"].append({
                 "name": area.name,
-                "file": f"sounds/{basename}",
+                "file": write(resolved),
                 "volume": area.volume,
                 "nearDistance": area.near_distance,
                 "farDistance": area.far_distance,
                 "points": area.points,
             })
 
+    if library is not None and objects is not None and vehicles:
+        sound_report["vehicles"] = extract_vehicle_sounds(
+            library, objects, sounds, vehicles, write)
+
     return sound_report
+
+
+def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
+                           vehicles: list[str], write) -> list[dict]:
+    """Per-vehicle engine sound: the layered patch, and its wavs on disk.
+
+    What ships is the parsed script rather than a baked recipe. Every layer
+    keeps its own modulator list, so the viewer evaluates the same curves the
+    engine does and a Zero or a Spitfire needs no new code — only its own
+    `.ssc`. The one interpretation baked in here is the coordinate flip on
+    `relativePosition`, which is the exporter's own Z mirror, so the viewer
+    never has to know Refractor is left-handed.
+    """
+    def read_script(path: str) -> str | None:
+        hit = objects.find(path)
+        return objects.read(hit).decode("latin-1") if hit else None
+
+    out: list[dict] = []
+    for template in vehicles:
+        found = find_engine_script(library, objects, template)
+        if found is None:
+            continue
+        script_path, engine_name = found
+        text = read_script(script_path)
+        if text is None:
+            continue
+        patches = parse_ssc(text, level=VEHICLE_SOUND_LEVEL,
+                            include=read_script, source=script_path)
+        # An Engine is a single-patch object: triggered while it runs, released
+        # when it stops. Anything past the first patch is not engine sound.
+        samples = patches[0].samples if patches else []
+        layers: list[dict] = []
+        for sample in samples:
+            resolved = resolve_sound(sample.file, None, sounds, VEHICLE_RATES)
+            if resolved is None:
+                continue
+            layers.append({
+                "file": write(resolved),
+                "loop": sample.loop,
+                "volume": sample.volume,
+                "minDistance": sample.min_distance,
+                "priority": sample.priority,
+                "trigger": sample.trigger or None,
+                "stop": sample.stop or None,
+                "stereo": sample.stereo,
+                "doppler": not sample.doppler_off,
+                "randomStartPitch": (list(sample.random_start_pitch)
+                                     if sample.random_start_pitch else None),
+                "relativePosition": (_to_gltf_vec(sample.relative_position)
+                                     if sample.relative_position else None),
+                "modulators": [_modulator_report(e) for e in sample.effects],
+            })
+        if not layers:
+            continue
+        out.append({
+            "template": template,
+            "engine": engine_name,
+            "script": script_path,
+            "level": VEHICLE_SOUND_LEVEL,
+            "layers": layers,
+        })
+    return out
 
 
 def _load_level_dds(files, stem: str):
@@ -673,6 +817,7 @@ def main() -> int:
           f"{len(info.spawn_objects)} spawners", file=sys.stderr)
 
     assembler = None
+    library = None
     lightmaps: dict[tuple[str, int, int, int], str] = {}
     out_dir = args.out / info.name.lower()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -724,7 +869,16 @@ def main() -> int:
         archives = find_archives_dir(mod_dir)
         if archives is not None:
             sounds.add_dir(archives, SOUND_ARCHIVES)
-    extras["sounds"] = extract_sounds(info, files, sounds, out_dir)
+    # Engine sound is per spawned vehicle, deduped by template: a level with
+    # eight Corsair spawners still ships one set of wavs and one script.
+    spawned: list[str] = []
+    for inst in info.spawn_objects:
+        vehicle = spawn_vehicle(inst.template, inst.team, info.spawn_templates)
+        if vehicle and vehicle not in spawned:
+            spawned.append(vehicle)
+    extras["sounds"] = extract_sounds(info, files, sounds, out_dir,
+                                      library=library, objects=objects,
+                                      vehicles=spawned)
 
     (out_dir / "scene.glb").write_bytes(glb)
     (out_dir / "scene.json").write_text(json.dumps(extras, indent=2))
@@ -768,8 +922,11 @@ def main() -> int:
           f"water:  "
           f"{'layers ' + '/'.join(sorted(water['textures'])) if water else 'flat colour'}",
           file=sys.stderr)
+    engines = snd.get("vehicles") or []
     print(f"  sounds: ambient {amb['file'] if amb else 'none'}, "
-          f"{len(areas)} area/emitter sound(s)", file=sys.stderr)
+          f"{len(areas)} area/emitter sound(s), "
+          f"{len(engines)} vehicle engine(s) "
+          f"({sum(len(v['layers']) for v in engines)} layers)", file=sys.stderr)
     return 0
 
 
