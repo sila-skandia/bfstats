@@ -89,6 +89,10 @@ def main() -> int:
     ap.add_argument("--max-texture", type=int, default=1024)
     ap.add_argument("-j", "--jobs", type=int, default=12,
                     help="number of parallel workers (default: 12)")
+    ap.add_argument("--thumbs", action="store_true",
+                    help="render model thumbnails via shoot.mjs and stamp models.json")
+    ap.add_argument("--thumbs-url", default="http://localhost:5273",
+                    help="viewer URL to shoot thumbnails against (default: http://localhost:5273)")
     ap.add_argument("--verify", action="store_true",
                     help="run verify_models.py over the output afterwards")
     args = ap.parse_args()
@@ -158,6 +162,20 @@ def main() -> int:
               file=sys.stderr)
         for name in failed:
             print(f"  {name}", file=sys.stderr)
+
+    if args.thumbs and manifest_path.is_file():
+        thumbs_dir = args.out / "thumbs"
+        shoot_cmd = [
+            "node", str(HERE / "shoot.mjs"),
+            "--thumbs",
+            "--url", f"{args.thumbs_url}/?mod={args.mod.lower()}",
+            "--out", str(thumbs_dir),
+            "--manifest", str(manifest_path),
+            "-j", str(min(args.jobs, 8)),
+            "--skip-existing",
+        ]
+        print(f"\nrendering thumbnails to {thumbs_dir}...", file=sys.stderr)
+        subprocess.run(shoot_cmd)
 
     if args.verify:
         verify_command = [
