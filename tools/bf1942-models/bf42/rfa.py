@@ -77,6 +77,8 @@ class ArchivePool:
         # before the path a shader wrote, which is how Tobruk turns every
         # spawned Sherman desert-yellow without touching a single `.rs`.
         self._alternative_dirs: list[str] = []
+        # Entries `try_read` has already warned about, so a second pass is quiet.
+        self._unreadable: set[str] = set()
 
     def set_alternative_paths(self, dirs: list[str]) -> None:
         self._alternative_dirs = [d.replace("\\", "/").strip("/").lower() for d in dirs if d]
@@ -186,6 +188,29 @@ class ArchivePool:
     def read(self, name: str) -> bytes:
         label, archive, real = self._index[name.lower()]
         return archive.read(real)
+
+    def try_read(self, name: str) -> bytes | None:
+        """`read`, but None instead of an exception on an undecompressable entry.
+
+        Mod archives are not always intact. EoD's `objects.rfa` has three entries
+        whose LZO streams overrun their lookbehind window
+        (`e_MuzzSG44/Geometries.con` and two Rocketlauncher `.ssc` sounds out of
+        4806 entries) — the shipped archive is simply damaged there. A bulk scan
+        over every `.con` in a pool must not abort the whole extraction because
+        one script in an effects folder cannot be inflated.
+        """
+        hit = self._index.get(name.lower())
+        if hit is None:
+            return None
+        label, archive, real = hit
+        try:
+            return archive.read(real)
+        except Exception as exc:  # corrupt LZO segment, truncated entry, ...
+            if real.lower() not in self._unreadable:
+                self._unreadable.add(real.lower())
+                print(f"WARNING: unreadable archive entry {label}:{real} ({exc})",
+                      file=sys.stderr)
+            return None
 
     def find(self, name: str) -> str | None:
         """The archive-cased name for a lookup, or None."""

@@ -170,10 +170,18 @@ class RemapCollisionTests(unittest.TestCase):
         self.assertEqual(["Bip01 R Forearm", "Bip01 R Hand"], mapped)
 
 
+def mat_mul(a, b):
+    return tuple(
+        tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3))
+        for i in range(3))
+
+
 class WeaponAttachmentTests(unittest.TestCase):
-    """attach = rest(root)^-1 * rest(main); `clip_posed` folds in the
-    half-turn grip roll between the `.ske` hand frame and the frame a
-    `.baf` clip poses the hand in. The roll touches rotation only."""
+    """attach = rest(root)^-1 * rest(main). `clip_posed` re-expresses it for
+    a hand posed from a `.baf` clip: clips pose bones in the *raw* `.ske`
+    frame convention (`ske.parse` Z-mirror-conjugates, clip data never did),
+    and the weapon's mesh-world geometry crosses into clip world through the
+    same 180-degree yaw the clip root tracks get (`baf.ROOT_ALIGN`)."""
 
     def _weapon(self) -> ske.Skeleton:
         yaw90 = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
@@ -189,17 +197,87 @@ class WeaponAttachmentTests(unittest.TestCase):
         for got, want in zip(translation, (0.05, 0.02, 0.0)):
             self.assertAlmostEqual(want, got)
 
-    def test_clip_posed_folds_in_the_grip_roll(self) -> None:
-        plain = pose.weapon_attachment(self._weapon(), 1)
-        rolled = pose.weapon_attachment(self._weapon(), 1, clip_posed=True)
-        # Rotation picks up exactly CLIP_GRIP_ROLL on the right...
+    def test_clip_posed_is_the_raw_relative_through_the_clip_world_yaw(self) -> None:
+        # The raw records below never commute with either half-turn, so a
+        # wrongly-sided correction cannot pass. pack_ske stores raw values;
+        # ske.parse mirrors them, and clip_posed must mirror back out:
+        # attach = raw_rel_rotation * CLIP_WORLD_YAW, raw_rel_translation.
+        root_raw = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+        c, s = math.cos(math.radians(30.0)), math.sin(math.radians(30.0))
+        main_raw = ((c, 0.0, s), (0.0, 1.0, 0.0), (-s, 0.0, c))
+        weapon = ske.parse(pack_ske([
+            ("Bip01 R Hand", -1, root_raw, (0.305, 0.0, 0.0)),
+            ("BaseNo4", 0, main_raw, (0.113, 0.026, 0.045)),
+        ]), "w.ske")
+
+        rotation, translation = pose.weapon_attachment(
+            weapon, 1, clip_posed=True)
+
+        # A direct child of the root IS the raw relative.
+        want = mat_mul(main_raw, pose.CLIP_WORLD_YAW)
         for i in range(3):
             for j in range(3):
-                want = sum(plain[0][i][k] * pose.CLIP_GRIP_ROLL[k][j]
-                           for k in range(3))
-                self.assertAlmostEqual(want, rolled[0][i][j])
-        # ...and the translation is untouched.
-        self.assertEqual(plain[1], rolled[1])
+                self.assertAlmostEqual(want[i][j], rotation[i][j], places=5)
+        for got, exp in zip(translation, (0.113, 0.026, 0.045)):
+            self.assertAlmostEqual(exp, got, places=5)
+
+    def test_clip_posed_matches_the_johnsonlmg_clips_own_base_track(self) -> None:
+        """The one weapon whose 3P StandAim clip tracks the weapon's own base
+        bone is the ground truth for the weld: the clip's base local IS the
+        graft the game uses. These are the actual JohnsonLMG.ske records and
+        the decoded frame-0 base local of 3pStandAimUpperJohnsonLmg.baf."""
+        root_raw = ((0.954794, 0.187281, 0.230856),
+                    (0.095048, -0.928155, 0.359854),
+                    (0.281664, -0.321644, -0.903997))
+        base_raw = ((0.091642, 0.167493, -0.981605),
+                    (0.995516, 0.007796, 0.094271),
+                    (0.023442, -0.985842, -0.166028))
+        weapon = ske.parse(pack_ske([
+            ("Bip01 R Hand", -1, root_raw, (0.305002, 0.0, 0.0)),
+            ("base", 0, base_raw, (0.376729, -0.001282, -0.037891)),
+        ]), "JohnsonLMG.ske")
+        clip_base_local = (
+            ((0.091645, 0.167451, -0.981611),
+             (0.995516, 0.007793, 0.094273),
+             (0.023436, -0.98585, -0.165986)),
+            (0.376709, -0.001251, -0.037872))
+
+        rotation, translation = pose.weapon_attachment(
+            weapon, 1, clip_posed=True)
+
+        # attach = clip base local, carried through the clip-world yaw the
+        # welded mesh-world weapon geometry needs. Tolerance is the .baf's
+        # 1.15 fixed-point quantisation.
+        want = mat_mul(clip_base_local[0], pose.CLIP_WORLD_YAW)
+        for i in range(3):
+            for j in range(3):
+                self.assertAlmostEqual(want[i][j], rotation[i][j], places=3)
+        for got, exp in zip(translation, clip_base_local[1]):
+            self.assertAlmostEqual(exp, got, places=3)
+
+    def test_clip_posed_is_not_a_post_multiplied_half_turn(self) -> None:
+        """Regression: the retired CLIP_GRIP_ROLL (Rz180 post-multiplied on
+        the parsed attach) was calibrated on the Thompson alone and welded
+        every weapon with a differently-rotated main bone up to 180 degrees
+        wrong — the 45-degrees-down No4Sniper, the flipped JohnsonLMG, the
+        misaligned Binoculars. For a main bone rotated against the root the
+        two must disagree."""
+        rz180 = ((-1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0))
+        c, s = math.cos(math.radians(30.0)), math.sin(math.radians(30.0))
+        main_raw = ((c, 0.0, s), (0.0, 1.0, 0.0), (-s, 0.0, c))
+        weapon = ske.parse(pack_ske([
+            ("Bip01 R Hand", -1, IDENTITY, (0.305, 0.0, 0.0)),
+            ("base", 0, main_raw, (0.1, 0.0, 0.02)),
+        ]), "w.ske")
+
+        plain = pose.weapon_attachment(weapon, 1)
+        clip = pose.weapon_attachment(weapon, 1, clip_posed=True)
+
+        old = mat_mul(plain[0], rz180)
+        agreement = max(
+            abs(old[i][j] - clip[0][i][j])
+            for i in range(3) for j in range(3))
+        self.assertGreater(agreement, 0.5)
 
 
 class RestReconstructionTests(unittest.TestCase):
