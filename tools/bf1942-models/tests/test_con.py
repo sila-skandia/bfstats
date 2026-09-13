@@ -368,6 +368,70 @@ ObjectTemplate.tracerScaler 50.0
         self.assertEqual(3.0, tracer.time_to_live)
         self.assertEqual(50.0, tracer.tracer_scaler)
 
+    def test_projectile_flight_fields_are_read(self) -> None:
+        # Verbatim-shaped from the Katyusha: the FireArms names a separate
+        # drawn body, the projectile declares its trail effect, and its motor
+        # is a c_ETRocket Engine child.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Katyusha/Weapons.con",
+            """
+ObjectTemplate.create FireArms KatyushaFireArmsBundle
+ObjectTemplate.projectileTemplate KatyushaRocket
+ObjectTemplate.visibleDummyProjectileTemplate KatyushaRocketDummy
+
+ObjectTemplate.create Projectile KatyushaRocket
+ObjectTemplate.timeToLive CRD_NONE/20/0/0
+ObjectTemplate.startEffectTemplate e_KatyushaFume
+
+ObjectTemplate.create Projectile SpitfireProjectile
+ObjectTemplate.gravityModifier 0
+
+ObjectTemplate.create SpriteParticle Fx_KatyushaDamage
+ObjectTemplate.gravityModifier CRD_UNIFORM/-0.1/-0.2/0
+
+ObjectTemplate.create Engine KatyushaRocket_Engine
+ObjectTemplate.setEngineType c_ETRocket
+""",
+        )
+
+        guns = library.object("KatyushaFireArmsBundle")
+        self.assertEqual("KatyushaRocket", guns.projectile_template)
+        self.assertEqual("KatyushaRocketDummy",
+                         guns.visible_dummy_projectile_template)
+        rocket = library.object("KatyushaRocket")
+        self.assertEqual("e_KatyushaFume", rocket.start_effect_template)
+        # gravityModifier accepts both bare numbers and CRD triples.
+        self.assertEqual(0.0, library.object("SpitfireProjectile").gravity_modifier)
+        self.assertEqual(-0.1, library.object("Fx_KatyushaDamage").gravity_modifier)
+        self.assertEqual("c_ETRocket",
+                         library.object("KatyushaRocket_Engine").engine_type)
+
+    def test_emitter_motion_in_dof_is_read(self) -> None:
+        # Verbatim from the Sherman's Em_MuzzPanz_WSmoke (recedes behind the
+        # muzzle) and Em_MuzzPanz_Smoke (spawns 0.4 m back).
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Effects/e_MuzzPanz/Effects.con",
+            """
+ObjectTemplate.create Emitter Em_MuzzPanz_WSmoke
+ObjectTemplate.template Fx_MuzzPanz_WSmoke
+ObjectTemplate.positionalSpeedInDof CRD_UNIFORM/-5/-10/0
+
+ObjectTemplate.create Emitter Em_MuzzPanz_Smoke
+ObjectTemplate.template Fx_MuzzPanz_Smoke
+ObjectTemplate.relativePositionInDof CRD_NONE/-0.4/0/0
+ObjectTemplate.positionalSpeedInDof CRD_NONE/15/0/0
+""",
+        )
+
+        wsmoke = library.object("Em_MuzzPanz_WSmoke")
+        self.assertEqual(-5.0, wsmoke.positional_speed_in_dof)
+        self.assertIsNone(wsmoke.relative_position_in_dof)
+        smoke = library.object("Em_MuzzPanz_Smoke")
+        self.assertEqual(-0.4, smoke.relative_position_in_dof)
+        self.assertEqual(15.0, smoke.positional_speed_in_dof)
+
     def test_effect_chain_fields_are_read(self) -> None:
         library = ObjectLibrary()
         library.add_con(

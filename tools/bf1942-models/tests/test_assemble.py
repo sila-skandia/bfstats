@@ -430,9 +430,10 @@ GeometryTemplate.create StandardMesh Plane_hull
 GeometryTemplate.create StandardMesh Muzz_m1
 """
 
-    def _assemble(self):
+    def _assemble(self, con_text: str | None = None):
         library = ObjectLibrary()
-        library.add_con("Objects/Vehicles/Air/Plane/Weapons.con", self.GUNS_CON)
+        library.add_con("Objects/Vehicles/Air/Plane/Weapons.con",
+                        con_text or self.GUNS_CON)
         pool = ArchivePool()
         assembler = Assembler(pool, pool, pool, library)
         builder = gltf.GlbBuilder()
@@ -480,6 +481,195 @@ GeometryTemplate.create StandardMesh Muzz_m1
                          flash["extras"]["effect"]["sizeOverTime"])
         self.assertIn("mesh", flash)
         self.assertEqual(1, len(report.fire_arms))
+
+    def test_meshless_projectile_types_as_bullet_without_a_baked_body(self) -> None:
+        # PlaneProjectile resolves but has no geometry — invisible in game
+        # bar the tracer rounds, so nothing gets baked to fly.
+        document, _ = self._assemble(self.GUNS_CON + """
+ObjectTemplate.create Projectile PlaneProjectile
+ObjectTemplate.timeToLive CRD_NONE/3/0/0
+ObjectTemplate.gravityModifier 0
+""")
+        nodes = {node["name"]: node for node in document["nodes"]}
+
+        fire = nodes["PlaneGuns"]["extras"]["fireArms"]
+        self.assertEqual(
+            {"template": "PlaneProjectile", "kind": "bullet", "trail": None,
+             "timeToLive": 3.0, "gravity": 0.0},
+            fire["projectile"])
+        self.assertNotIn("PlaneGuns projectile", nodes)
+
+    def test_unresolved_projectile_still_types_as_bullet(self) -> None:
+        document, _ = self._assemble(self.GUNS_CON)
+        fire = next(node for node in document["nodes"]
+                    if node["name"] == "PlaneGuns")["extras"]["fireArms"]
+        self.assertEqual(
+            {"template": "PlaneProjectile", "kind": "bullet", "trail": None},
+            fire["projectile"])
+
+
+class ProjectileBakeTests(unittest.TestCase):
+    """Shells and rockets carry a typed spec and a baked hidden body."""
+
+    ROCKET_CON = """
+ObjectTemplate.create FireArms RocketRamp
+ObjectTemplate.projectileTemplate TestRocket
+ObjectTemplate.visibleDummyProjectileTemplate TestRocketDummy
+ObjectTemplate.velocity 45
+ObjectTemplate.roundOfFire 1
+ObjectTemplate.addFireArmsPosition -1.15/-0.188/0 0/0/0
+
+ObjectTemplate.create SimpleObject TestRocketDummy
+ObjectTemplate.geometry Rocket_m1
+
+ObjectTemplate.create Projectile TestRocket
+ObjectTemplate.geometry Rocket_m1
+ObjectTemplate.timeToLive CRD_NONE/20/0/0
+ObjectTemplate.startEffectTemplate e_TestFume
+ObjectTemplate.addTemplate TestRocket_Engine
+
+ObjectTemplate.create Engine TestRocket_Engine
+ObjectTemplate.setEngineType c_ETRocket
+
+ObjectTemplate.create EffectBundle e_TestFume
+ObjectTemplate.addTemplate Em_TestFume_Smoke
+ObjectTemplate.addTemplate Em_TestFume_Fire
+
+ObjectTemplate.create Emitter Em_TestFume_Smoke
+ObjectTemplate.template Fx_TestFume_Smoke
+ObjectTemplate.timeToLive CRD_NONE/7/0/0
+
+ObjectTemplate.create SpriteParticle Fx_TestFume_Smoke
+ObjectTemplate.timeToLive CRD_NORMAL/1.5/1.53/0
+ObjectTemplate.size CRD_NONE/1.2/0/0
+ObjectTemplate.sizeOverTime 0/0.4|16/0.5|100/0.75
+ObjectTemplate.texture e_muzs1_I
+
+ObjectTemplate.create Emitter Em_TestFume_Fire
+ObjectTemplate.template Fx_TestFume_Fire
+
+ObjectTemplate.create SpriteParticle Fx_TestFume_Fire
+ObjectTemplate.timeToLive CRD_NONE/0.2/0.2/0
+ObjectTemplate.size CRD_NONE/0.8/0/0
+ObjectTemplate.texture e_fire4
+
+GeometryTemplate.create StandardMesh Rocket_m1
+"""
+
+    def _assemble(self, root: str):
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Weapons.con", self.ROCKET_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        mesh_index = builder.add_mesh("Rocket_m1", [triangle])
+        assembler._geom_mesh["rocket_m1"] = (mesh_index, 1)
+        assembler._geom_collisions["rocket_m1"] = []
+        report = Report(root=root, configuration="complex", lod=0)
+        node = assembler.build_node(builder, root, report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict())), report
+
+    def test_rocket_projectile_is_typed_and_baked_under_the_gun(self) -> None:
+        document, report = self._assemble("RocketRamp")
+        nodes = {node["name"]: node for node in document["nodes"]}
+
+        fire = nodes["RocketRamp"]["extras"]["fireArms"]
+        self.assertEqual("TestRocket", fire["projectile"]["template"])
+        self.assertEqual("rocket", fire["projectile"]["kind"])
+        self.assertEqual(20.0, fire["projectile"]["timeToLive"])
+        # The longest-lived sprite is the trail the eye follows — the smoke,
+        # not the 0.2 s fire tongue.
+        self.assertEqual(
+            {"texture": "e_muzs1_I", "timeToLive": 1.5, "size": 1.2,
+             "sizeOverTime": [[0.0, 0.4], [16.0, 0.5], [100.0, 0.75]]},
+            fire["projectile"]["trail"])
+
+        body = nodes["RocketRamp projectile"]
+        self.assertEqual(
+            {"template": "TestRocketDummy", "geometry": "Rocket_m1"},
+            body["extras"]["projectileMesh"])
+        self.assertIn("mesh", body)
+        # Baked under the FireArms node, next to the muzzles.
+        self.assertIn(
+            document["nodes"].index(body),
+            nodes["RocketRamp"]["children"])
+
+    def test_shell_without_rocket_engine_types_as_shell(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Weapons.con", """
+ObjectTemplate.create FireArms ShellGun
+ObjectTemplate.projectileTemplate TestShell
+ObjectTemplate.velocity 100
+
+ObjectTemplate.create Projectile TestShell
+ObjectTemplate.geometry Rocket_m1
+ObjectTemplate.timeToLive CRD_NONE/10/0/0
+
+GeometryTemplate.create StandardMesh Rocket_m1
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        assembler._geom_mesh["rocket_m1"] = (builder.add_mesh("Rocket_m1", [triangle]), 1)
+        assembler._geom_collisions["rocket_m1"] = []
+        report = Report(root="ShellGun", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "ShellGun", report)
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+        nodes = {n["name"]: n for n in document["nodes"]}
+
+        fire = nodes["ShellGun"]["extras"]["fireArms"]
+        self.assertEqual("shell", fire["projectile"]["kind"])
+        self.assertIsNone(fire["projectile"]["trail"])
+        self.assertIn("ShellGun projectile", nodes)
+
+
+class EmitterMotionBakeTests(unittest.TestCase):
+    """Emitter drift along the direction of fire rides the effect extras."""
+
+    def test_speed_and_offset_in_dof_are_exported(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Effects/e_TestMuzz/Effects.con", """
+ObjectTemplate.create EffectBundle e_TestMuzz
+ObjectTemplate.addTemplate Em_TestSmoke
+
+ObjectTemplate.create Emitter Em_TestSmoke
+ObjectTemplate.template Fx_TestSmoke
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+ObjectTemplate.relativePositionInDof CRD_NONE/-0.4/0/0
+ObjectTemplate.positionalSpeedInDof CRD_UNIFORM/-5/-10/0
+
+ObjectTemplate.create SpriteParticle Fx_TestSmoke
+ObjectTemplate.timeToLive CRD_NONE/0.5/0.5/0
+ObjectTemplate.texture e_muz1_I
+ObjectTemplate.destBlendMode BMOne
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="e_TestMuzz", configuration="complex", lod=0)
+        # The sprite texture is not on disk in a unit test; seed the quad the
+        # same way `_sprite_quad_mesh` would fill its cache.
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        assembler._sprite_mesh_cache["e_muz1_i"] = builder.add_mesh(
+            "fx quad", [triangle])
+        bundle = library.object("e_TestMuzz")
+
+        emitters = assembler._effect_emitter_nodes(builder, bundle, report)
+
+        self.assertEqual(1, len(emitters))
+        document = glb_document(builder.build(emitters, extras=report.as_dict()))
+        effect = document["nodes"][0]["extras"]["effect"]
+        self.assertEqual(-0.4, effect["offsetInDof"])
+        self.assertEqual(-5.0, effect["speedInDof"])
 
 
 if __name__ == "__main__":
