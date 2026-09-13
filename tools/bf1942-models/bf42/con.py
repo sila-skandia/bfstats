@@ -213,6 +213,15 @@ class ObjectTemplate:
     min_rotation: tuple[float, float, float] | None = None
     max_rotation: tuple[float, float, float] | None = None
     max_speed: tuple[float, float, float] | None = None
+    # `setAcceleration y/p/r`. Its *sign* is the deflection direction, and on a
+    # symmetric surface it is the only thing that carries it: a Corsair's two
+    # ailerons declare identical ranges (`0/-30/0`..`0/30/0`), identical rates
+    # (`0/120/0`) and the same `setInputToPitch c_PIRoll`, and differ only in
+    # `setAcceleration` — `0/-120/0` left, `0/120/0` right. That lone sign is
+    # what makes one go up while the other goes down. The elevators, which must
+    # move together, both declare `0/-60/0`. Dropping this welds every aileron
+    # pair into moving the same way.
+    acceleration: tuple[float, float, float] | None = None
     inputs: dict[str, str] = field(default_factory=dict)   # yaw|pitch|roll -> input name
     automatic_reset: bool = False
     skeleton: str | None = None
@@ -329,6 +338,11 @@ class ObjectTemplate:
             hi = self.max_rotation[index] if self.max_rotation else None
             free = lo is None or hi is None or lo == hi
             span = None if free else abs(hi - lo)
+            # Which way a positive input deflects this axis. See `acceleration`:
+            # a mirrored pair declares one identical range and two opposite
+            # accelerations, so without this both halves of an aileron pair
+            # deflect the same way and the aircraft visibly cannot roll.
+            accel = (self.acceleration or (0.0, 0.0, 0.0))[index]
             axes[axis] = {
                 "input": name,
                 "min": lo if not free else None,
@@ -336,6 +350,7 @@ class ObjectTemplate:
                 "free": free,
                 "driver": "rate" if span is not None and span > ACCUMULATOR_SPAN else "position",
                 "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
+                "direction": -1.0 if accel < 0 else 1.0,
             }
         for axis, spec in gear.items():
             axes.setdefault(axis, spec)
@@ -446,14 +461,16 @@ class ObjectLibrary:
                         target.rotation = value
                 # The rig always belongs to the template being defined, never to a
                 # child instance — it is behaviour, not placement.
-                elif cmd in ("setminrotation", "setmaxrotation", "setmaxspeed"):
+                elif cmd in ("setminrotation", "setmaxrotation", "setmaxspeed",
+                             "setacceleration"):
                     try:
                         value = vec3(args.split()[0]) if args else (0.0, 0.0, 0.0)
                     except (ValueError, IndexError):
                         continue
                     setattr(obj, {"setminrotation": "min_rotation",
                                   "setmaxrotation": "max_rotation",
-                                  "setmaxspeed": "max_speed"}[cmd], value)
+                                  "setmaxspeed": "max_speed",
+                                  "setacceleration": "acceleration"}[cmd], value)
                 elif cmd in ("setinputtoyaw", "setinputtopitch", "setinputtoroll"):
                     if args:
                         obj.inputs[cmd.removeprefix("setinputto")] = args.split()[0]
