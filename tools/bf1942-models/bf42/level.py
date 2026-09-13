@@ -817,19 +817,24 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
     """Extract ambient environment sound and placed area/coastline sounds."""
     sounds = LevelSounds()
 
-    # 1. Global Ambient Sound from Sounds/Environment.con -> Environment.ssc
+    # 1. Global Ambient Sound from Sounds/Environment.con -> Environment.ssc.
+    # Most levels use Sounds/, but some (e.g. Kasserine_Pass) ship a singular
+    # Sound/ folder — check both for the con, the ssc, and the area scan below.
     env_ssc_name: str | None = None
-    if files.find("Sounds/Environment.con"):
-        env_con_txt = files.read("Sounds/Environment.con").decode("latin-1")
+    for env_con in ("Sounds/Environment.con", "Sound/Environment.con"):
+        if not files.find(env_con):
+            continue
+        env_con_txt = files.read(env_con).decode("latin-1")
         for line in env_con_txt.splitlines():
             line = line.strip()
             if line.lower().startswith("environmentsound.load") and len(line.split()) > 1:
                 env_ssc_name = line.split()[-1].replace("\\", "/").strip()
                 break
+        break
     if not env_ssc_name:
         env_ssc_name = "Environment.ssc"
 
-    for candidate in [f"Sounds/{env_ssc_name}", env_ssc_name]:
+    for candidate in [f"Sounds/{env_ssc_name}", f"Sound/{env_ssc_name}", env_ssc_name]:
         if files.find(candidate):
             ssc_txt = files.read(candidate).decode("latin-1")
             patches = parse_ssc(ssc_txt)
@@ -844,7 +849,11 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
     templates: dict[str, AreaSoundTemplate] = {}
     for name in files.names():
         name_lower = name.lower().replace("\\", "/")
-        if "sounds/" in name_lower and name_lower.endswith(".con") and not name_lower.endswith("environment.con"):
+        if (
+            ("sounds/" in name_lower or "sound/" in name_lower)
+            and name_lower.endswith(".con")
+            and not name_lower.endswith("environment.con")
+        ):
             txt = files.read(name).decode("latin-1")
             tmpl = parse_area_con(txt)
             if tmpl is not None:
@@ -860,7 +869,11 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             continue
 
         ssc_candidate = tmpl.ssc_file
-        ssc_hit = files.find(f"Sounds/{ssc_candidate}") or files.find(ssc_candidate)
+        ssc_hit = (
+            files.find(f"Sounds/{ssc_candidate}")
+            or files.find(f"Sound/{ssc_candidate}")
+            or files.find(ssc_candidate)
+        )
         if not ssc_hit:
             continue
         ssc_txt = files.read(ssc_hit).decode("latin-1")
