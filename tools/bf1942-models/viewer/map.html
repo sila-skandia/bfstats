@@ -160,6 +160,7 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
 import { Aircraft, findVehicle } from './flight.js';
+import { loadEngineAudio, findEngineSpec } from './engine-audio.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1076,19 +1077,51 @@ function advanceSim(dt) {
   }
 }
 
-function ensureAudioContext() {
+function ensureListener() {
   if (!audioListener) {
     audioListener = new THREE.AudioListener();
     camera.add(audioListener);
     audioLoader = new THREE.AudioLoader();
   }
+  return audioListener;
+}
+
+function ensureAudioContext() {
+  ensureListener();
+  // Autoplay policy: a context created before any click starts suspended and
+  // stays that way until a gesture resumes it. Every caller of this is a real
+  // user gesture; the catch is for the ones that are not.
   if (audioListener.context && audioListener.context.state === 'suspended') {
     audioListener.context.resume().catch(() => {});
   }
 }
 
+/**
+ * Decoded wav, cached on the un-busted path.
+ *
+ * The cache key must not carry `bust()`: with it, the dev origin re-keyed and
+ * re-decoded the same wav on every call, and the sequential decode stagger
+ * started identical loops 50-200 ms apart — a permanent slapback echo. bust()
+ * stays on the fetch URL only. Ambient, area and engine sound all come through
+ * here so the one-decode-per-wav rule holds across all three.
+ */
+async function soundBuffer(dir, relPath) {
+  const key = `${dir}/${relPath}`;
+  if (audioBufferCache.has(key)) return audioBufferCache.get(key);
+  ensureListener();
+  try {
+    const buf = await audioLoader.loadAsync(`${MAPS_BASE}/${key}${bust()}`);
+    audioBufferCache.set(key, buf);
+    return buf;
+  } catch (e) {
+    console.warn(`Could not load sound ${key}:`, e);
+    return null;
+  }
+}
+
 function disposeSounds() {
   soundsGeneration++;
+  disposeEngineAudio();
   if (ambientAudio) {
     try {
       if (ambientAudio.isPlaying) ambientAudio.stop();
@@ -1112,28 +1145,8 @@ async function setupSounds(report, dir) {
   const cfg = report.sounds;
   if (!cfg) return;
 
-  if (!audioListener) {
-    audioListener = new THREE.AudioListener();
-    camera.add(audioListener);
-    audioLoader = new THREE.AudioLoader();
-  }
-
-  // The cache key must be the un-busted path: with bust() in the key the dev
-  // origin re-keyed (and re-decoded) the same wav on every call, and the
-  // sequential decode stagger started identical loops 50-200ms apart — a
-  // permanent slapback echo. bust() stays on the fetch URL only.
-  const getBuffer = async (relPath) => {
-    const key = `${dir}/${relPath}`;
-    if (audioBufferCache.has(key)) return audioBufferCache.get(key);
-    try {
-      const buf = await audioLoader.loadAsync(`${MAPS_BASE}/${key}${bust()}`);
-      audioBufferCache.set(key, buf);
-      return buf;
-    } catch (e) {
-      console.warn(`Could not load sound ${key}:`, e);
-      return null;
-    }
-  };
+  ensureListener();
+  const getBuffer = (relPath) => soundBuffer(dir, relPath);
 
   // Ambient atmospheric sound
   if (cfg.ambient && cfg.ambient.file) {
@@ -1192,8 +1205,148 @@ async function setupSounds(report, dir) {
   updateAudio();
 }
 
-function updateAudio() {
-  const master = optSound.checked ? parseFloat(optSoundVol.value) : 0;
+// --- engine audio -----------------------------------------------------------
+//
+// The flown vehicle's own engine, played from the `.ssc` the extractor shipped
+// in `scene.json`. `engine-audio.js` owns the graph and the curve evaluation;
+// everything here is the seam — which node the voices hang off, what the
+// control channels are worth this frame, and the lifecycle rules the ambient
+// path already established (nothing starts inside an async gap, nothing
+// survives a map change).
+
+let engineAudio = null;
+// Bumped by disposeEngineAudio, for the same reason soundsGeneration exists: an
+// in-flight load must be able to tell that it has been superseded, or a rapid
+// pilot toggle leaks a running engine that dispose can no longer reach.
+let engineGeneration = 0;
+let engineNode = null;
+let currentDir = '';
+// `Acceleration` is a control source in its own right — the Corsair's right
+// cockpit whine pitches off it — and the flight model publishes velocity, not
+// acceleration, so it is differenced here. Raw frame differences are mostly
+// numerical noise, hence the one-pole smoothing.
+const enginePrevVelocity = new THREE.Vector3();
+const engineScratch = new THREE.Vector3();
+let engineAccel = 0;
+const ACCEL_SMOOTHING = 5;          // 1/s
+const engineWorldPos = new THREE.Vector3();
+const engineWorldQuat = new THREE.Quaternion();
+// The longest shut-down one-shot in the vanilla set is willyenginestp at
+// 1.94 s; the loops are gone 0.2 s in.
+const ENGINE_RELEASE_MS = 2400;
+
+function disposeEngineAudio() {
+  engineGeneration++;
+  if (engineAudio) {
+    engineAudio.dispose();
+    engineAudio = null;
+  }
+  engineNode = null;
+  engineAccel = 0;
+  enginePrevVelocity.set(0, 0, 0);
+}
+
+async function setupEngineAudio() {
+  disposeEngineAudio();
+  const gen = engineGeneration;
+  if (!aircraft) return;
+  const template = aircraft.node.userData?.control || aircraft.node.name;
+  const spec = findEngineSpec(extras, template);
+  if (!spec) {
+    // A stale scene.json, a vehicle with no Engine sound script and an
+    // unpublished wav are otherwise indistinguishable — which is exactly the
+    // failure that made every map but Wake look silent last time.
+    console.info(`no engine sound for ${template}: re-extract this map if it `
+                 + 'predates the vehicle-sound pipeline');
+    return;
+  }
+  // The voices hang off the `Engine` node the script is bound to, not the
+  // vehicle origin: on a Corsair that is the propeller hub at z -4.15, four
+  // metres ahead of the pilot's ear, which is where the noise actually is.
+  engineNode = aircraft.node.getObjectByName(spec.engine) || aircraft.node;
+  const dir = currentDir;
+  const built = await loadEngineAudio(spec, {
+    listener: ensureListener(),
+    getBuffer: (relPath) => soundBuffer(dir, relPath),
+  });
+  if (!built) return;
+  // Decoding took several awaits; anything could have happened. Nothing has
+  // been started yet, so a superseded load is thrown away silently.
+  if (gen !== engineGeneration || !aircraft) {
+    built.dispose();
+    return;
+  }
+  engineAudio = built;
+  engineAudio.setMaster(masterVolume());
+  engineAudio.start();
+}
+
+/**
+ * Stop the engine the way the script expects: release, then tear down.
+ *
+ * `trigger Release` layers (the shut-down rattle) only play on release, and
+ * every loop carries a `Volume <- TimeRelease` fade, so the graph has to stay
+ * alive past the toggle. The generation guard is what stops a re-enable inside
+ * the tail from being killed by the pending teardown.
+ */
+function stopEngineAudio() {
+  if (!engineAudio) return;
+  engineAudio.release();
+  const gen = engineGeneration;
+  setTimeout(() => {
+    if (gen === engineGeneration) disposeEngineAudio();
+  }, ENGINE_RELEASE_MS);
+}
+
+function masterVolume() {
+  return optSound.checked ? parseFloat(optSoundVol.value) : 0;
+}
+
+/** Everything the `.ssc` control sources are worth this frame. */
+function engineControl(dt) {
+  const state = aircraft?.state;
+  if (engineNode) {
+    engineNode.getWorldPosition(engineWorldPos);
+    engineNode.getWorldQuaternion(engineWorldQuat);
+  }
+  let speed = 0;
+  let diveAngle = 0;
+  if (state) {
+    speed = state.airspeed || state.velocity.length();
+    if (dt > 0) {
+      const a = engineScratch.copy(state.velocity).sub(enginePrevVelocity).length() / dt;
+      engineAccel += (a - engineAccel) * Math.min(1, dt * ACCEL_SMOOTHING);
+      enginePrevVelocity.copy(state.velocity);
+    }
+    // `Engine::DiveAngle` is fed by the engine object and the vanilla ramps
+    // span 0.2..1, so it is read here as the sine of the flight path's descent
+    // angle — 1 straight down, 0.2 about 12 degrees nose-down, which is where
+    // the dive scream starts to come in. Inferred, not read out of the data.
+    if (speed > 1) diveAngle = Math.max(0, -state.velocity.y / speed);
+  }
+  return {
+    dt,
+    // The already-spooled engine value, NOT the stick. `c_PIThrottle` reaches
+    // full in a second; `state.throttle` chases it at the rate Physics.con
+    // declares (maxSpeed.roll 500 over maxRotation.roll 5000, a tenth of the
+    // range per second), so the note takes the same ten seconds to come up
+    // that the real one does.
+    rpm: state ? state.throttle : 0,
+    speed,
+    acceleration: engineAccel,
+    diveAngle,
+    position: engineWorldPos,
+    quaternion: engineWorldQuat,
+    listenerPosition: camera.position,
+  };
+}
+
+function updateAudio(dt = 0) {
+  const master = masterVolume();
+  if (engineAudio) {
+    engineAudio.setMaster(master);
+    engineAudio.update(engineControl(dt));
+  }
   if (ambientAudio) {
     const base = extras.sounds?.ambient?.volume ?? 0.6;
     ambientAudio.setVolume(base * master);
@@ -1481,7 +1634,15 @@ function setPilot(on) {
     // spawn pose puts it on the deck, so lift it clear of its own wheels.
     aircraft.state.position.y += 0.2;
   }
+  if (on && aircraft) {
+    // Ticking the box is the user gesture the autoplay policy wants; the same
+    // call on a map load is not one, and resume() there fails harmlessly until
+    // the fly gate is clicked.
+    ensureAudioContext();
+    setupEngineAudio();
+  }
   if (!on && aircraft) {
+    stopEngineAudio();
     aircraft.reset();
     aircraft.applyTransform();
     aircraft.applyRig();
@@ -1650,6 +1811,7 @@ async function show(entry) {
   });
   scene.add(currentRoot);
   const dir = entry.glb.replace(/\/[^/]+$/, '');
+  currentDir = dir;
   bindLightmaps(currentRoot, dir);
   unlightTerrain(currentRoot);
   bindTerrainDetail(currentRoot, dir);
@@ -1761,7 +1923,7 @@ function frame(dt) {
   }
   applyVisibility();
   advanceSim(dt);
-  updateAudio();
+  updateAudio(dt);
   updateSky();
   renderer.render(scene, camera);
 }
@@ -1795,6 +1957,10 @@ if (params.has('shots')) {
     audioListener,
     ambientAudio,
     activeAreaAudios,
+    // Headless Chromium will not let anyone listen, so the engine crossfade has
+    // to be asserted on the graph: per-layer gain and playback rate, and the
+    // voice count, which is the number the hall-echo bug moved.
+    engine: engineAudio ? engineAudio.snapshot() : null,
   });
 }
 </script>
