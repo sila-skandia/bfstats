@@ -101,6 +101,38 @@ def vec3_lenient(token: str) -> tuple[float, float, float]:
     return tuple(float(p) if p.strip() else 0.0 for p in parts)
 
 
+def crd(token: str) -> float | None:
+    """The deterministic value of a CRD random-variable token.
+
+    Scalar effect parameters are written as `CRD_<distribution>/<a>/<b>/<c>`
+    (`timeToLive CRD_NONE/0.07/0/0`, `setTracerTemplate ... CRD_NONE/3/0/0`),
+    where the first number is the mean / fixed value. Bare numbers also occur
+    (`gravityModifier 0`), so both spellings are accepted.
+    """
+    parts = token.split("/")
+    if parts and parts[0].upper().startswith("CRD"):
+        parts = parts[1:]
+    try:
+        return float(parts[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def curve(token: str) -> list[list[float]] | None:
+    """An over-time ramp: `0/0.12|100/9.4` -> [[0, 0.12], [100, 9.4]].
+
+    Time runs 0..100 (percent of the particle's timeToLive). Points carry one
+    value for `sizeOverTime` and four (RGBA, 0..255) for `colorRGBAOverTime`.
+    """
+    points: list[list[float]] = []
+    for chunk in token.split("|"):
+        try:
+            points.append([float(p) for p in chunk.split("/") if p.strip()])
+        except ValueError:
+            return None
+    return points or None
+
+
 @dataclass
 class ChildRef:
     """One `addTemplate` — a named template placed at an offset in its parent."""
@@ -204,6 +236,38 @@ class ObjectTemplate:
     material: int | None = None
     critical_damage: float | None = None
     hp_lost_while_critical_damage: float | None = None
+
+    # FireArms. Plane guns are meshless FireArms with one `addFireArmsPosition
+    # <pos> <ypr>` per muzzle (the Spitfire's ±1.6° yaw is gun convergence);
+    # tank guns are a FireArms *with* geometry (the barrel) whose flash is an
+    # ordinary `addTemplate` child. `roundOfFire` is rounds per second.
+    fire_arms_positions: list[tuple[tuple[float, float, float],
+                                    tuple[float, float, float]]] = field(default_factory=list)
+    projectile_template: str | None = None
+    projectile_position: tuple[float, float, float] | None = None
+    visible_barrel_template: str | None = None
+    tracer_template: str | None = None
+    # Every Nth round carries the tracer (`setTracerTemplate X CRD_NONE/3/0/0`).
+    tracer_interval: int | None = None
+    input_fire: str | None = None
+    recoil_size: float | None = None
+    recoil_speed: float | None = None
+    round_of_fire: float | None = None
+    mag_size: int | None = None
+    velocity: float | None = None
+    tracer_scaler: float | None = None
+    time_to_live: float | None = None
+
+    # Effect chain: EffectBundle -> Emitter (`ObjectTemplate.template` names
+    # the payload) -> Particle (mesh) or SpriteParticle (textured quad).
+    emitter_template: str | None = None
+    sprite_texture: str | None = None
+    sprite_size: float | None = None
+    size_over_time: list[list[float]] | None = None
+    color_over_time: list[list[float]] | None = None
+    dest_blend_mode: str | None = None
+    show_in_first_person: bool = False
+    show_in_third_person: bool = False
 
     @property
     def is_lod_selector(self) -> bool:
@@ -420,6 +484,78 @@ class ObjectLibrary:
                         "criticaldamage": "critical_damage",
                         "hplostwhilecriticaldamage": "hp_lost_while_critical_damage",
                     }[cmd], value)
+                elif cmd == "addfirearmsposition":
+                    tokens = args.split()
+                    if not tokens:
+                        continue
+                    try:
+                        pos = vec3_lenient(tokens[0])
+                        ypr = vec3_lenient(tokens[1]) if len(tokens) > 1 else (0.0, 0.0, 0.0)
+                    except ValueError:
+                        continue
+                    obj.fire_arms_positions.append((pos, ypr))
+                elif cmd == "projectileposition":
+                    try:
+                        obj.projectile_position = vec3_lenient(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd in ("projectiletemplate", "visiblebarreltemplate",
+                             "setinputfire", "destblendmode", "texture"):
+                    if args:
+                        setattr(obj, {
+                            "projectiletemplate": "projectile_template",
+                            "visiblebarreltemplate": "visible_barrel_template",
+                            "setinputfire": "input_fire",
+                            "destblendmode": "dest_blend_mode",
+                            "texture": "sprite_texture",
+                        }[cmd], args.split()[0])
+                elif cmd == "settracertemplate":
+                    tokens = args.split()
+                    if tokens:
+                        obj.tracer_template = tokens[0]
+                    if len(tokens) > 1 and (interval := crd(tokens[1])) is not None:
+                        obj.tracer_interval = int(interval) or None
+                elif cmd in ("recoilsize", "recoilspeed", "roundoffire",
+                             "velocity", "tracerscaler"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "recoilsize": "recoil_size",
+                        "recoilspeed": "recoil_speed",
+                        "roundoffire": "round_of_fire",
+                        "velocity": "velocity",
+                        "tracerscaler": "tracer_scaler",
+                    }[cmd], value)
+                elif cmd == "magsize":
+                    try:
+                        obj.mag_size = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "timetolive":
+                    # First declaration wins: `timeToLive` restated after an
+                    # `addTemplate` is a per-instance override on that child
+                    # (`CRD_NONE/-1/0/0`, live as long as the parent), not a
+                    # redefinition of the template's own lifetime.
+                    if obj.time_to_live is None and args:
+                        obj.time_to_live = crd(args.split()[0])
+                elif cmd == "template":
+                    obj.emitter_template = args.split()[0] if args else None
+                elif cmd == "size":
+                    if args:
+                        obj.sprite_size = crd(args.split()[0])
+                elif cmd in ("sizeovertime", "colorrgbaovertime"):
+                    if args.strip():
+                        setattr(obj,
+                                "size_over_time" if cmd == "sizeovertime"
+                                else "color_over_time",
+                                curve(args.split()[0]))
+                elif cmd in ("showinfirstperson", "showinthirdperson"):
+                    setattr(obj,
+                            "show_in_first_person" if cmd == "showinfirstperson"
+                            else "show_in_third_person",
+                            args.strip().startswith("1"))
                 elif child is None:
                     continue
                 elif cmd == "setisfirstpersonpart":

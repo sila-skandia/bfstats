@@ -307,6 +307,105 @@ ObjectTemplate.addTemplate TestLod
         self.assertEqual("animations/Test.ske", template.skeleton)
         self.assertIsNone(template.children[0].skeleton_part)
 
+    def test_fire_arms_spatial_and_rate_fields_are_read(self) -> None:
+        # Verbatim from the Spitfire's Weapons.con: two converged wing
+        # muzzles, a muzzle-flash EffectBundle, every-3rd-round tracers.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Air/Spitfire/Weapons.con",
+            """
+ObjectTemplate.create FireArms SpitfireGuns
+ObjectTemplate.visibleBarrelTemplate e_MuzzHeavy
+ObjectTemplate.projectileTemplate SpitfireProjectile
+ObjectTemplate.projectilePosition 0/0/2
+ObjectTemplate.setTracerTemplate Tracer_Projectile CRD_NONE/3/0/0
+ObjectTemplate.magSize 900
+ObjectTemplate.velocity 400
+ObjectTemplate.roundOfFire 12
+ObjectTemplate.addFireArmsPosition 2.6/0.21/1.8 -1.6/0/0
+ObjectTemplate.addFireArmsPosition -2.6/0.21/1.8 1.6/0/0
+""",
+        )
+        guns = library.object("SpitfireGuns")
+        self.assertEqual("e_MuzzHeavy", guns.visible_barrel_template)
+        self.assertEqual("SpitfireProjectile", guns.projectile_template)
+        self.assertEqual((0.0, 0.0, 2.0), guns.projectile_position)
+        self.assertEqual("Tracer_Projectile", guns.tracer_template)
+        self.assertEqual(3, guns.tracer_interval)
+        self.assertEqual(900, guns.mag_size)
+        self.assertEqual(400.0, guns.velocity)
+        self.assertEqual(12.0, guns.round_of_fire)
+        self.assertEqual([((2.6, 0.21, 1.8), (-1.6, 0.0, 0.0)),
+                          ((-2.6, 0.21, 1.8), (1.6, 0.0, 0.0))],
+                         guns.fire_arms_positions)
+
+    def test_tank_recoil_and_crd_time_to_live_are_read(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Sherman/Weapons.con",
+            """
+ObjectTemplate.create FireArms ShermanGunBarrel
+ObjectTemplate.geometry Sherman_Canon1_M1
+ObjectTemplate.addTemplate e_MuzzPanz
+ObjectTemplate.setPosition 0/0/0.5
+ObjectTemplate.projectileTemplate ShermanProjectile
+ObjectTemplate.roundOfFire 0.35
+ObjectTemplate.recoilSpeed 10
+ObjectTemplate.recoilSize 3
+
+ObjectTemplate.create Projectile Tracer_Projectile
+ObjectTemplate.timeToLive CRD_NONE/3/0/0
+ObjectTemplate.tracerScaler 50.0
+""",
+        )
+        barrel = library.object("ShermanGunBarrel")
+        self.assertEqual(3.0, barrel.recoil_size)
+        self.assertEqual(10.0, barrel.recoil_speed)
+        self.assertEqual(0.35, barrel.round_of_fire)
+        # setPosition after addTemplate still places the child, not the gun.
+        self.assertEqual((0.0, 0.0, 0.5), barrel.children[0].position)
+        tracer = library.object("Tracer_Projectile")
+        self.assertEqual(3.0, tracer.time_to_live)
+        self.assertEqual(50.0, tracer.tracer_scaler)
+
+    def test_effect_chain_fields_are_read(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Effects/e_MuzzHeavy/effects.con",
+            """
+ObjectTemplate.create Emitter em_MuzzHeavy_glow
+ObjectTemplate.template fx_MuzzHeavy_glow
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+ObjectTemplate.showInThirdPerson 1
+
+ObjectTemplate.create SpriteParticle fx_MuzzHeavy_glow
+ObjectTemplate.timeToLive CRD_NONE/0.07/0.07/0
+ObjectTemplate.size CRD_NONE/0.43/0/0
+ObjectTemplate.texture e_fire4
+ObjectTemplate.destBlendMode BMOne
+ObjectTemplate.colorRGBAOverTime 0/255/255/128/255|100/255/128/0/65
+
+ObjectTemplate.create Particle fx_MuzzHeavy
+ObjectTemplate.geometry MuzzHeavy_m1
+ObjectTemplate.timeToLive CRD_NONE/0.07/0/0
+ObjectTemplate.sizeOverTime 0/0.12009|100/9.40001
+""",
+        )
+        emitter = library.object("em_MuzzHeavy_glow")
+        self.assertEqual("fx_MuzzHeavy_glow", emitter.emitter_template)
+        self.assertEqual(0.1, emitter.time_to_live)
+        self.assertTrue(emitter.show_in_third_person)
+        sprite = library.object("fx_MuzzHeavy_glow")
+        self.assertEqual("e_fire4", sprite.sprite_texture)
+        self.assertEqual(0.43, sprite.sprite_size)
+        self.assertEqual("BMOne", sprite.dest_blend_mode)
+        self.assertEqual([[0.0, 255.0, 255.0, 128.0, 255.0],
+                          [100.0, 255.0, 128.0, 0.0, 65.0]],
+                         sprite.color_over_time)
+        particle = library.object("fx_MuzzHeavy")
+        self.assertEqual([[0.0, 0.12009], [100.0, 9.40001]],
+                         particle.size_over_time)
+
 
 if __name__ == "__main__":
     unittest.main()
