@@ -536,3 +536,195 @@ One new hazard specific to engines: pausing/restarting the three core
 loops independently (e.g. muting layers with `src.stop()`) desyncs their
 loop phase and produces audible combing when a layer returns. Keep all
 three running and mute with gain only.
+
+---
+
+## 7. What was built
+
+Shipped 2026-09-14. The one architectural departure from §6: **nothing in the
+runtime hard-codes the Corsair's numbers.** The extractor ships the parsed
+script — every layer with its own modulator list — and `engine-audio.js`
+evaluates the same curves the engine evaluates. That was cheaper than baking
+§6.3's formulas (the ramp evaluator is nine lines), it made the `Time` attack,
+the `TimeRelease` fade and the distance falloff fall out for free instead of
+being three more special cases, and it means a Zero, a Sherman or a destroyer
+needs no new code. Every vanilla aircraft already works.
+
+### 7.1 Parser (`bf42/level.py`)
+
+`parse_ssc(text, *, level=None, include=None, source="")`. Two new records,
+`SoundSample` (one per `load`, with every sample directive) and `SoundEffect`
+(`destination`, `source`, `extern`, `envelope`, `params`); `SoundPatch` grows
+`samples` and `random_play`. The old scalar view (`file`, `loop`, `volume`,
+`min_distance`, the distance ramp) is now projected from `samples[0]` at patch
+close, so the map-ambience path is untouched — verified against all 23
+extracted maps, whose `ambient` and `areas` output is byte-identical, and
+against the 93 level-root ambient/area scripts in vanilla, none of which is
+multi-load.
+
+`#include` is expanded **textually** into the line stream, which is what makes
+`airplanedive.wav` a layer of the engine patch (`EngineHigh.ssc` includes
+`Dive.ssc` *between* `newPatch` and the next `load`) and what lets
+`EngineLow.ssc`, which declares no `#templateLevel` of its own, inherit LOW
+from the dispatcher that included it. `resolve_ssc_path` resolves relatives
+against the including file. Depth cap 12; the Corsair's real chain is 4.
+`#beginMap`/`#endMap` and `beginSkip` are skipped, and the vanilla typos
+(`endeffec`, `pram`, `volume.2`, `####` banners) are tolerated deliberately:
+`endeffec` is matched on the short prefix so a mistyped block cannot swallow
+the rest of a patch.
+
+All 981 vanilla `.ssc` files parse. 12 new tests in `tests/test_sound.py`
+(277 pass, up from 265).
+
+`parse_sound_scripts(text)` is new and separate: `loadSoundScript` binds to a
+*template*, not a vehicle, and one `Physics.con` binds four scripts to four
+children, so the engine's script can only be found by matching the engine's own
+name.
+
+### 7.2 Extraction (`extract_map.py`)
+
+`find_engine_script` walks the vehicle's template tree for its `Engine` child,
+then reads the `.con` that declared it. `extract_vehicle_sounds` parses at
+`#templateLevel HIGH` and writes `sounds.vehicles[]` into `scene.json`:
+`{template, engine, script, level, layers[]}`, each layer carrying
+`file/loop/volume/minDistance/priority/trigger/stop/stereo/doppler/
+randomStartPitch/relativePosition/modulators[]`. `Extern #map<Engine::Rpm>` is
+flattened to the source string `engine::rpm`, and `relativePosition` is
+converted to glTF coordinates at extraction time so the viewer never learns
+that Refractor is left-handed.
+
+§1.5's note about the 22 kHz preference was right: `resolve_sound` now takes a
+rate order, `VEHICLE_RATES = 44/22/11`, with ambience unchanged on 22/44/11.
+
+Cost: 5.4 MB of wavs for Wake's eight engines, 109 MB across all 23 extracted
+maps. Only the flown vehicle's layers are ever fetched (the Corsair's eleven
+are ~1.8 MB), so this is a publish-volume cost, not a page-weight one — but
+it is a real one, and `viewer/maps` is gitignored, so it only shows up when
+the assets tree is synced.
+
+### 7.3 Runtime (`viewer/engine-audio.js`)
+
+```
+per layer:  BufferSource(loop) -> GainNode ─┐
+                                            ├─> PannerNode (per relativePosition)
+                                            │     HRTF, rolloffFactor 0
+                                            └──> busGain (master x headroom)
+                                                   -> AudioListener.getInput()
+```
+
+- **One panner per distinct `relativePosition`**, not per layer. The Corsair's
+  eleven voices collapse to three groups: nine at the engine node, and the two
+  cockpit whines at ±0.9 m. Those two are the stereo width you hear in first
+  person, and they are why §6.2's "skip `relativePosition`" was not taken —
+  it costs two extra panners and it is the most audible thing in the cockpit.
+- `rolloffFactor 0` so the script's own `Volume <- Distance` ramp owns distance
+  volume alone, exactly as the area sounds do.
+- **The patch clock is the simulation clock, not `ctx.currentTime`.** They
+  diverge whenever the context is suspended, which is the state the page is in
+  before any click, and a `Time` attack ramp read off a frozen clock holds
+  every layer at zero forever.
+- **Doppler** from the frame-to-frame change in distance (one subtraction, and
+  it picks up a moving listener for free), clamped to 0.85..1.2. The first
+  frame is primed rather than differenced against an initial zero — doing it
+  the naive way reads as a 250 m/s recession and starts every layer at the
+  clamped doppler floor, audible as a lurch on engine start. That bug was real
+  and is fixed.
+- **Bus headroom 0.28.** The `.ssc` mix is authored against a game mixer with
+  its own headroom; summed straight into `destination`, a Corsair at full
+  throttle heard from the cockpit is hi 1.0 + veadaurun 0.5 + prop 1.0 + two
+  cockpit whines at 0.64 ≈ 3.8 and clips flat. Scaling the bus rather than the
+  voices keeps every per-voice gain reporting the value its script asks for,
+  which is what makes the crossfade checkable.
+- `setTargetAtTime` everywhere (0.05 s gain, 0.1 s pitch, echoing
+  `Sound.setPitchChangeRate 15`), skipped when the value has not moved.
+- Anti-phasing: shared decode cache (`soundBuffer` in `map.html`, keyed on the
+  un-busted path, now used by ambient, area *and* engine paths), one random
+  start offset per loop, and a per-instance `randomStartPitch` jitter.
+
+### 7.4 Wiring (`viewer/map.html`)
+
+`setPilot(true)` calls `ensureAudioContext()` — ticking the checkbox *is* the
+user gesture — then `setupEngineAudio()`. Loading is inert and `start()` is a
+separate synchronous call made only after re-checking `engineGeneration`, so a
+superseded load cannot leak a loop. `setPilot(false)` calls `release()` (the
+`TimeRelease` fade falls out of the curves; the `trigger Release` rattle
+starts) and schedules teardown 2.4 s later behind the same generation guard.
+`disposeSounds()` disposes the engine too, so a map change takes it.
+`updateAudio(dt)` feeds the control channels and applies the sound checkbox and
+volume slider to the bus.
+
+Two control channels are derived rather than read, because `flight.js`
+publishes neither:
+
+- `Acceleration` — differenced from `state.velocity` with one-pole smoothing
+  (raw frame differences are mostly numerical noise). The Corsair's *right*
+  cockpit whine pitches off this while the left pitches off `Speed`; that
+  asymmetry is in the data, not a transcription error.
+- `Engine::DiveAngle` — read as the sine of the flight path's descent angle
+  (1 straight down, 0.2 ≈ 12° nose-down). **Inferred**, not read out of the
+  data; the vanilla ramps span 0.2..1 and this is the only reading that makes
+  those bounds mean anything.
+
+`Engine::Rpm` is **`state.throttle`, not `inputs.get('c_PIThrottle')`** — the
+flight model already spools at `throttleRate 0.1`, which is exactly
+`maxSpeed.roll 500` over `maxRotation.roll 5000`. No change to `flight.js` was
+needed.
+
+### 7.5 Measured
+
+Headless Chromium will not let anyone listen, so `__getAudioState().engine`
+exposes a snapshot and the check asserts on the graph. Stepping the sim at
+1/60 with W held, sampling every 0.5 s (scratch `engine-audio-test.mjs`):
+
+| Rpm | idle gain | mid gain | hi gain | idle rate | mid rate | hi rate |
+|---|---|---|---|---|---|---|
+| 0.00 | 1.000 | 0.000 | 0.000 | 0.700 | 0.700 | 0.700 |
+| 0.242 | 0.597 | 0.403 | 0.000 | 0.821 | 0.700 | 0.700 |
+| 0.484 | 0.193 | 0.807 | 0.000 | 0.942 | 0.743 | 0.700 |
+| 0.605 | 0.000 | 0.987 | 0.013 | 1.000 | 0.804 | 0.703 |
+| 0.787 | 0.000 | 0.521 | 0.467 | 1.000 | 0.897 | 0.825 |
+| 0.968 | 0.000 | 0.056 | 0.921 | 1.000 | 0.988 | 0.945 |
+| 1.00 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 0.967 |
+
+(rates with the `randomStartPitch` jitter divided back out). Every sample
+matches §2.3's bands to within 0.02. The crossfade points land exactly where
+the script says — idle out and mid at peak at Rpm 0.6, mid out and hi at peak
+by 0.99 — and each layer sweeps 0.70 -> 1.00 across its own band. Note hi tops
+out at **0.967, not 1.00**: its pitch ramp runs to Rpm **1.05**, which a
+throttle clamped to [0, 1] never reaches. §6.3's formula has this right; §2.3's
+prose ("each layer sweeps ... up to 1.00") slightly overstates it.
+
+Throttling back reverses the crossfade symmetrically over the same ten seconds.
+The dive scream was checked separately by nosing over at full power: gain
+0 -> 0.24 -> 0.77 -> 1.00 as the flight path steepens, playback rate 0.939 ->
+0.985.
+
+Invariants: **looping voice count constant at 9** across the whole sweep, the
+dive, a ground impact, a pilot toggle inside the release tail, and a map change
+— the count the `319a794` bug moved. Three panner groups. Engine-node-to-ear
+distance 4.18 m, and the cockpit voices land at 1.25 m (their −4.2 offset is
+relative to the Engine node at z +4.149, which puts them in the cockpit — §1.3
+called this and the measurement confirms it). A separate lifecycle check
+instruments every `AudioBufferSourceNode` the page creates: live-source counts
+return exactly to the map's own two after `release()`, and to the new map's
+after a map change. No console errors.
+
+### 7.6 Corrections to the research above
+
+- **§2.3 is wrong that the Dive include is HIGH-only.** `EngineMedium.ssc`
+  includes it too; MEDIUM parses to 9 voices *including* `airplanedive.wav`,
+  HIGH to 11 including it. §2.4 has it right (it lists dive under "Medium
+  adds"); only §2.3's parenthetical double-counts.
+- **§2.4's "veadaurun covers 150-400 m, prop 300-600 m" overstates the
+  gating.** Those are fade-*out* ramps: both layers are at full volume
+  everywhere inside 150 m and 300 m respectively, so with `rolloffFactor 0`
+  they are as loud in the cockpit as at 150 m. That is faithful to the data —
+  DirectSound3D is also flat inside `minDistance` — but it is what makes the
+  bus headroom necessary, and it is not "a distance-based timbre LOD" in the
+  sense of layers switching on and off.
+- **§6.3's `gIdle`/`gMid`/`gHigh` formulas are exactly right** and were used
+  unchanged as the test's expected values.
+- Everything else checked out, including the `#templateLevel` trap, the
+  `Extern #map<...>` syntax, the voice counts per tier (3/9/11), the 44 kHz
+  rate preference, and the `Engine::Rpm` = `rotation / maxRotation.roll`
+  reading.

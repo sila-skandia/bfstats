@@ -294,11 +294,25 @@ Research complete; a working prototype flies. Implemented so far:
   provisional flight model using the researched constants.
 - `viewer/map.html` — a "pilot the plane" mode: mouse stick, W/S throttle,
   A/D rudder, R to reset, cockpit camera, terrain and sea floor.
+- **The cockpit interior.** `extract_models.py --cockpit` writes
+  `<Name>.cockpit.glb`, the first-person branch of the same template walk that
+  every other export deliberately refuses, and `flight.js` grafts it onto the
+  flown vehicle by node name and reproduces the LodObject's hull/interior swap.
+  All 12 vanilla aircraft and the 1P ground and sea vehicles come out with no
+  per-vehicle handling. ([input-and-cockpit.md](input-and-cockpit.md) §8)
+- Engine sound. `parse_ssc` handles multi-load layers, `#include` and the
+  `beginEffect` modulators; `extract_map.py` ships each spawned vehicle's
+  parsed engine script and its wavs; `viewer/engine-audio.js` evaluates the
+  same curves the engine does. Nothing is hard-coded per vehicle, so every
+  vanilla aircraft, tank and ship already has its note.
 
 Verified headlessly on Wake: the Corsair rolls down the strip, lifts off,
 retracts its gear on the altitude threshold, and holds ~34 m/s climbing at
 full throttle 10 s in. Commanding full roll deflects
-`CorsairFlapLeftOuter` to +30.3° and `CorsairFlapRightOuter` to −29.8°.
+`CorsairFlapLeftOuter` to +30.3° and `CorsairFlapRightOuter` to −29.8°. Over
+the same run the engine's three core loops crossfade on exactly the bands
+`EngineHigh.ssc` declares and each sweeps playback rate 0.70 to 1.00 across its
+own — see [engine-sound.md](engine-sound.md) §7.5 for the measured table.
 
 Not yet done, in rough priority order:
 
@@ -310,13 +324,7 @@ Not yet done, in rough priority order:
    surface loop in [flight-model.md](flight-model.md) §8, which is the
    architecture the engine actually uses and which gets roll coupling,
    adverse yaw and the regulator stall for free.
-3. **Engine sound.** The Web Audio graph is fully specified in
-   [engine-sound.md](engine-sound.md); the repo already extracts the wavs.
-4. **The cockpit interior.** `1P_corsair.sm` exists in `standardMesh.rfa` and
-   parses, but `assemble.py` deliberately skips `1P*` geometry, so first person
-   currently looks out of an empty hull. This is the one genuinely missing
-   pipeline piece.
-5. **Damage and the crash chain.** Smoke at 65 HP, fire at 20, then `e_ExplGas`
+3. **Damage and the crash chain.** Smoke at 65 HP, fire at 20, then `e_ExplGas`
    plus scrap emitters throwing `Wreck_Corsair2_M1` — all specced in
    [collision-and-crash.md](collision-and-crash.md), and `Corsair.wreck.glb` is
    already in the viewer.
