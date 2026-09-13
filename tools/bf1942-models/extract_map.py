@@ -298,12 +298,31 @@ def prepare_sky(info: LevelInfo, meshes, textures):
     return faces
 
 
-def write_cloud_assets(info: LevelInfo, textures, out_dir: Path) -> dict | None:
-    """The scrolling cloud layer's texture and parameters, or None."""
-    if not info.sky.has_cloud:
+def write_cloud_assets(info: LevelInfo, meshes, textures, out_dir: Path) -> dict | None:
+    """The scrolling cloud layer's texture and parameters, or None.
+
+    `Sky.addCloud` alone is not enough: the layer draws the cloud geometry
+    template, and vanilla REMs that template out on every map (and ships no
+    cloud mesh at all), so the engine never renders clouds there — the clouds
+    visible in-game are painted into the Sky_*_m1 faces. Only levels with an
+    active cloud GeometryTemplate (mods) get the layer, and the texture comes
+    from that mesh's own .rs material rather than a guessed name.
+    """
+    if not (info.sky.has_cloud and info.sky.cloud_mesh):
         return None
+    texture_stem = info.sky.cloud_texture
+    rs_name = meshes.find(f"standardmesh/{info.sky.cloud_mesh}.rs")
+    if rs_name:
+        try:
+            shaders = rs_mod.parse(meshes.read(rs_name).decode("latin-1"))
+            for shader in shaders.values():
+                if shader.base_texture:
+                    texture_stem = shader.base_texture
+                    break
+        except Exception:
+            pass
     try:
-        image = _decode_pool_image(textures, info.sky.cloud_texture)
+        image = _decode_pool_image(textures, texture_stem)
     except Exception:
         image = None
     if image is None:
@@ -589,13 +608,26 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     if info.lighting.shadow_color is not None:
         lighting["shadowColor"] = info.lighting.shadow_color
 
+    # The engine's draw distance is `Game.setViewDistance` (declared by every
+    # vanilla level; the video slider scales it). `renderer.setViewdistance`
+    # is a raw renderer poke only Tobruk carries — and the game overrides it
+    # there (Game VD 300 vs the stray 700; the in-game haze wall sits at 300).
+    view_distance = info.game_view_distance or info.view_distance or 700.0
+    # A level with no declared fogLinearStart/End still fogs in-game: the
+    # engine hazes to the view distance (all levels set vertexFogEnable 1 and
+    # DICE paints fogColorVec into the sky's below-horizon band to meet it).
+    # Derive an undeclared range from the view distance; the 0.5 start
+    # fraction is DICE's own habit in the five levels that do declare one
+    # (Tobruk 0.50, Kasserine 0.50, Stalingrad 0.56, Gazala 0.59, Kharkov 0.60).
+    fog_end = info.fog_end if info.fog_end is not None else view_distance
+    fog_start = info.fog_start if info.fog_start is not None else view_distance * 0.5
     extras = {
         "level": info.name,
         "worldSize": info.terrain.world_size,
         "waterLevel": info.terrain.water_level,
         "fogColor": list(info.fog_color),
-        "fogStart": info.fog_start,
-        "fogEnd": info.fog_end,
+        "fogStart": fog_start,
+        "fogEnd": fog_end,
         "sunDirection": _to_gltf_vec(info.sun_direction),
         "camera": _to_gltf_vec(info.camera) if info.camera else None,
         "combatArea": None if info.combat is None else {
@@ -608,7 +640,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "sky": None,
         "water": None,
         "lighting": lighting or None,
-        "drawDistance": info.view_distance or 700,
+        "drawDistance": view_distance,
     }
     if not roots:
         raise ValueError("nothing renderable in this level")
@@ -676,7 +708,7 @@ def main() -> int:
             "mesh": info.sky.mesh,
             "rotAngle": info.sky.rot_angle,
             "heightOffset": info.sky.height_offset,
-            "clouds": write_cloud_assets(info, textures, out_dir),
+            "clouds": write_cloud_assets(info, meshes, textures, out_dir),
         }
     # The ENVMAP_G_.rcm faces are the engine's water/glass reflection source
     # (`ShaderManager.setTextureParam envmap`), exported always. Without a sky
