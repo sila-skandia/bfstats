@@ -31,9 +31,11 @@ are a flag, a regex, a spelling and a missing `elif`.
 
 The genuine structural absences are three:
 
-1. **Nothing collides with anything.** A projectile is deleted by a timer or a
-   range cap and passes through terrain, buildings, water, vehicles and soldiers
-   identically.
+1. ~~**Nothing collides with anything.**~~ **Closed for projectiles**, on a
+   re-extracted map: a round now stops at the terrain, the sea or a hull and
+   names the surface it struck ([`projectile-collision.md`](projectile-collision.md)).
+   What a hit *does* — explode, damage, decal, sound — is still absent, and
+   nothing but a round collides yet.
 2. **There are no people.** No soldier geometry exists anywhere in a level.
 3. **There is no particle runtime.** 102 of 216 EffectBundles produce zero
    geometry — every smoke, fire, dust, debris and damage effect in the game.
@@ -135,10 +137,14 @@ Merged across all seven reports, deduplicated, and ordered by impact over size.
 | Impact-effect table dropped | `damage.py` now parses `setEffectTemplate` and emits `effects[attacker][defender] -> template` |
 | Soldiers bare-headed | `bf42/kit.py` + `extract_kits.py` walk the `KitPart` / `setBoneName` tree. 45 kits declared, 35 live, 77 distinct worn meshes, resolved per nation and class |
 | Weapon behaviour discarded | `con.py` now parses the recoil, magazine, reload, zoom, scope, deviation, crosshair and ammo-type families |
+| **The projectile collision loop** (C-1, C-5, C-6, M-2) | Rounds now stop at the ground, the sea and the wall they hit. `viewer/collision.js` — a `three`-free module so the real thing runs under node in `tests/test_collision.py` — sweeps every round's per-frame segment against the water plane, then the level's own 4 m height lattice, then a 32 m uniform grid over the hulls, each narrowing the next. Measured in Chromium against Wake's 20,911 triangles: **1.7 us per cast**, 4.5 candidate triangles per query. Flown and fired: 84 rounds, hits on water (`e_RichoWaterHeavy`), Juicy grass, Dry sand and Reinforced Concrete, each naming the bundle `setEffectTemplate` authors for that pairing. See [`projectile-collision.md`](projectile-collision.md) |
+| Ground-height query wired only to the aircraft (C-5) | One implementation now serves the camera clamp, the flown vehicle, the view rig and every round in the air — and it is the heightfield the engine itself collides against, not a raycast against 64 drawn tile meshes |
+| `Materialmap.raw` never read (M-2) | Already shipping as `terrain/materials.png`; the viewer decodes it per level and samples it nearest, so a ground hit resolves the authored surface. Confirmed live on Wake: adjacent impacts came back Juicy grass and Dry sand |
 
-**Still open, and the point of the exercise:** the projectile collision loop
-itself. The geometry is in the scene and the effect table is in the manifest;
-nothing in `gunfire.js` yet raycasts against either.
+**Still open on this axis:** the authored `EffectBundle`s are *selected* but not
+*played* — the 73 bundles are not baked into the level glb, so an impact draws a
+tinted stand-in and carries the resolved name. Nor are the decals, the impact
+sounds, splash damage, or any damage bookkeeping when a round lands.
 
 ### Keystones — do these first
 
@@ -168,7 +174,6 @@ nothing in `gunfire.js` yet raycasts against either.
 
 | Gap | Scale of it |
 |---|---|
-| No projectile collision loop | The headline complaint. Blocked on the two collision keystones |
 | Soldier animation is three frozen stills | **1,154 `.baf` clips, none of them single-frame; 1,458 state-machine states** covering walk, run, crouch, prone, jump, swim, ladder, parachute, death, ragdoll, vehicle entry and seated. The pipeline samples frame 0 of six of them |
 | No soldier anywhere in a level | `soldierSpawns` renders as 2D minimap dots; `map.html` never fetches from `models/` |
 | Ground vehicles are not drivable | The viewer drives **3 of 49** categorised vanilla vehicles, all fighters, all on one aircraft's hardcoded constants. Land vehicles are 61% of spawner slots |
