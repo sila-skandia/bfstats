@@ -57,11 +57,20 @@ All counts measured, not estimated. Reproduce commands at the bottom.
 |---|---|---|---|---|---|
 | Wake | 478 | **20,911** | 44 | 512² @ 4 m | 5 (Wet sand 249,019 of 262,144 samples) |
 | Bocage | 427 | **21,661** | 51 | 512² @ 4 m | 6 (Juicy grass 146,144) |
+| Berlin | 543 | **33,067** | 44 | 512² @ 4 m | 4 (**Reserved/Outside map 259,537**) |
 
 Unique geometry behind those instances is far smaller — Wake 6,300 triangles
-across 85 parts, Bocage 8,765 across 128 — because a map places the same bunker
-forty times. Cost of carrying it: Bocage's `scene.glb` went 68,162 KB to
-68,940 KB, **+1.1%**.
+across 85 parts, Bocage 8,765 across 128, Berlin 6,411 across 98 — because a map
+places the same bunker forty times. Cost of carrying it: Bocage's `scene.glb`
+went 68,162 KB to 68,940 KB, **+1.1%**.
+
+Berlin is the one to read twice. Its material map says 259,537 of 262,144
+samples are id **7, "Reserved (Outside map)"** — the engine itself calls 99% of
+Berlin out of bounds — and the level ships four terrain tiles and no default
+patches, so the height lattice rebuilds at **6.3% coverage** and a round fired
+over the rest of the world has no ground to hit. That is the terrain export,
+not the collider, and it reproduces on a *fresh* extract: it is what the level
+contains.
 
 Resolution through the effect table, queried from the shipped
 `_shared/damage.json`:
@@ -177,15 +186,17 @@ requests.
 **Per-cast cost**, 300,000 casts per map at pseudo-random positions across the
 whole world:
 
-| query | Wake (20,911 tris, 1,054 cells) | Bocage (21,661 tris, 1,410 cells) |
-|---|---|---|
-| level flight, 16.7 m segment — the 1000 m/s frame | **1,699 ns** | **1,232 ns** |
-| straight down from 400 m — the longest segment anything asks | **1,619 ns** | **1,941 ns** |
-| candidate triangles per query | 4.5 | 2.7 |
+| query | Wake<br>20,911 tris / 1,054 cells | Bocage<br>21,661 / 1,410 | Berlin<br>33,067 / 192 |
+|---|---|---|---|
+| level flight, 16.7 m segment — the 1000 m/s frame | **1,699 ns** | **1,232 ns** | **2,120 ns** |
+| straight down from 400 m — the longest segment anything asks | **1,619 ns** | **1,941 ns** | **2,104 ns** |
+| candidate triangles per query | 4.5 | 2.7 | 10.7 |
 
-Bocage is the denser map and the cheaper one in flight, because its water sits
-at y = 10 against Wake's 95: fewer rounds get past the water and terrain tests
-to reach the grid at all, which is exactly what ordering them first is for.
+Berlin is the worst case of the three and still 2.1 µs: it packs half again as
+many triangles into a *fifth* as many cells, because the whole level is one
+dense city block, so a query there really does test ten triangles instead of
+three. That is the shape of the curve — it follows local density, not map
+total, which is the property a uniform grid is chosen for.
 
 The `WorldCollider`'s own per-cast accumulator reported 4.38 µs over a live
 burst, but Chromium clamps `performance.now()` to ~5 µs, so that figure is a
@@ -226,13 +237,14 @@ Geometric probes against the loaded level agreed: a ray fired horizontally at
 Wake's `supplyde_m1` from 40 m out stopped on it at t = 40.9 m against material
 93, and straight-down probes over the lagoon returned `water` at y = 95.
 
-**Bocage** was probed the same way and behaves identically — 21,661 triangles
-indexed, heightfield 512² with its material map loaded, a horizontal ray into
-`eu_church_M1` stopping at t = 69.3 m on material 90, and straight-down probes
-returning `water` over the river and `terrain` material 5 (Wet dirt) inland.
-It could **not** be flown and fired, because `setPilot` only looks for a
-Corsair, a Spitfire or a Zero and Bocage spawns none of the three; the firing
-loop itself is verified on Wake only.
+**Bocage and Berlin** were probed the same way and behave identically —
+21,661 and 33,067 triangles indexed, heightfield 512² with the material map
+loaded, a horizontal ray into `eu_church_M1` stopping at t = 69.3 m on material
+90 and into `rusruin01_m1` at t = 6.5 m on material 94, and straight-down probes
+returning `water` over Bocage's river and `terrain` material 5 (Wet dirt)
+inland. Neither could be **flown and fired**, because `setPilot` only looks for
+a Corsair, a Spitfire or a Zero and neither level spawns one; the firing loop
+itself is verified on Wake only, the collider on all three.
 
 ---
 
@@ -270,24 +282,25 @@ Named honestly, because each one is a separate piece of work.
   every level has to be re-run to get it. A map without hulls still collides
   against terrain and water and says so in the stats panel (`collision hulls not
   exported`) rather than failing quietly.
-- **A stale extract can have a sparse heightfield, and it is not this code's
-  fault.** Berlin's pre-collision export carries 4 terrain tiles and nothing
-  else, so the lattice rebuilds at **6.3% coverage** and 94% of the world has no
-  ground to hit — rounds there fall to the sea. That is the terrain export, not
-  the collider; re-extracting fills it (Wake and Bocage both come back at 1.0).
-  `__collision().heightfield.coverage` is there to make it visible.
+- **Berlin has no ground outside its four tiles**, so a round fired over the
+  rest of the world falls to the sea instead of the dirt. The level declares
+  99% of itself "Reserved (Outside map)" and ships no default patches, so this
+  may well be right; settling it is a terrain-export question, not a collision
+  one. `__collision().heightfield.coverage` is there to make it visible —
+  Wake and Bocage both come back at 1.0, Berlin at 0.063.
 
 ---
 
 ## Reproduce
 
 Re-extract a level with collision (it is on by default; `--no-collision` opts
-out). Takes about 45 s per level:
+out). Measured 41-61 s per level:
 
 ```bash
 cd tools/bf1942-models
 python3 extract_map.py Wake   --out ./viewer/maps
 python3 extract_map.py Bocage --out ./viewer/maps
+python3 extract_map.py Berlin --out ./viewer/maps
 ```
 
 Count what landed:
@@ -295,7 +308,7 @@ Count what landed:
 ```bash
 cd tools/bf1942-models/viewer/maps && python3 - <<'PY'
 import struct, json, collections
-for name in ("wake", "bocage"):
+for name in ("wake", "bocage", "berlin"):
     d = open(f"{name}/scene.glb", "rb").read()
     ln = struct.unpack_from('<I', d, 12)[0]
     j = json.loads(d[20:20 + ln])
@@ -310,6 +323,7 @@ for name in ("wake", "bocage"):
 PY
 # wake: 478 nodes, 20911 triangles, 44 materials
 # bocage: 427 nodes, 21661 triangles, 51 materials
+# berlin: 543 nodes, 33067 triangles, 44 materials
 ```
 
 Check the effect table and the attacker ids the viewer reads:
