@@ -20,6 +20,11 @@
 //     materials. That is small enough that a uniform XZ grid beats a BVH: the
 //     build is a counting sort and the query is a DDA walk (gap C-1).
 //
+// Two query shapes come out of it. `cast` is the ray a round flies along.
+// `sweepSphere` is the fat version a *body* needs — a soldier, and later a
+// vehicle — and it shares the same grid rather than building a second one; see
+// the method for why it queries that grid as a rectangle instead of walking it.
+//
 // The module is deliberately free of any `three` import. It reads three.js
 // objects through the three fields it needs (`geometry.attributes.position`,
 // `geometry.index`, `matrixWorld.elements`) and hands back plain numbers, which
@@ -189,6 +194,27 @@ function inferDim(meshes, worldSize) {
 
 const CELL_SIZE = 32;   // metres; 64 x 64 cells over a 2048 m level
 
+// Where `#sweepTriangle` leaves its contact. Module scratch rather than an
+// object, for the same reason the triangles are nine loose floats: the sweep
+// runs over every candidate in the cell and must not allocate once.
+let _sweepNx = 0, _sweepNy = 0, _sweepNz = 0;
+let _sweepPx = 0, _sweepPy = 0, _sweepPz = 0;
+
+/** Smallest root of `a t^2 + b t + c` inside [0, limit], or -1. */
+function lowestRoot(a, b, c, limit) {
+  if (a > -1e-12 && a < 1e-12) return -1;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return -1;
+  const root = Math.sqrt(disc);
+  let lo = (-b - root) / (2 * a);
+  let hi = (-b + root) / (2 * a);
+  // `a` is negative for the edge quadratic, which flips the two.
+  if (lo > hi) { const swap = lo; lo = hi; hi = swap; }
+  if (lo >= 0 && lo <= limit) return lo;
+  if (hi >= 0 && hi <= limit) return hi;
+  return -1;
+}
+
 /**
  * Every collision triangle in the level, in world space, in one XZ grid.
  *
@@ -328,6 +354,203 @@ export class CollisionIndex {
     out.kind = 'object';
     this.#normal(tri, out);
     return out;
+  }
+
+  /**
+   * Nearest contact for a sphere of `radius` swept along a segment, or null.
+   *
+   * A round is a point and a body is not. `cast` answers "what does this ray
+   * meet"; a walking soldier needs "how far can a 0.3 m ball travel before it
+   * touches something", which is a different query and cannot be faked with a
+   * ray — a ray down the middle of a doorway reports clear while the shoulders
+   * are already in the frame.
+   *
+   * Broadphase is the same grid, queried as a rectangle rather than walked as a
+   * DDA. That is deliberate: the swept volume is fat, so the cells a DDA would
+   * visit are not the cells the volume touches, and a body moving at 6 m/s
+   * covers 0.1 m in a tick — one or two 32 m cells either way. Building a
+   * second index for this would be absurd.
+   *
+   * `dx, dy, dz` unit, `maxDist` metres, so `out.t` is again metres. `out.x/y/z`
+   * is the sphere *centre* at contact and `out.px/py/pz` the point it touched;
+   * `out.nx/ny/nz` points from the hull toward the centre, which is the
+   * direction that separates them.
+   */
+  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out) {
+    if (!this.cellStart || maxDist <= 0) return null;
+    const stats = this.stats;
+    stats.queries++;
+    const stamp = ++this._query;
+    const size = this.cellSize;
+    const vx = dx * maxDist, vy = dy * maxDist, vz = dz * maxDist;
+    // The swept volume's own box, grown by the radius on every side.
+    const loX = Math.min(ox, ox + vx) - radius;
+    const hiX = Math.max(ox, ox + vx) + radius;
+    const loY = Math.min(oy, oy + vy) - radius;
+    const hiY = Math.max(oy, oy + vy) + radius;
+    const loZ = Math.min(oz, oz + vz) - radius;
+    const hiZ = Math.max(oz, oz + vz) + radius;
+    let ix0 = Math.floor((loX - this.minX) / size);
+    let ix1 = Math.floor((hiX - this.minX) / size);
+    let iz0 = Math.floor((loZ - this.minZ) / size);
+    let iz1 = Math.floor((hiZ - this.minZ) / size);
+    if (ix1 < 0 || iz1 < 0 || ix0 >= this.cols || iz0 >= this.rows) return null;
+    ix0 = Math.max(0, ix0); iz0 = Math.max(0, iz0);
+    ix1 = Math.min(this.cols - 1, ix1); iz1 = Math.min(this.rows - 1, iz1);
+    // Fractions of the segment, not metres: the narrowphase quadratics are all
+    // parameterised on the displacement vector.
+    let best = 1;
+    let found = false;
+    for (let iz = iz0; iz <= iz1; iz++) {
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const cell = this.cell(ix, iz);
+        const from = this.cellStart[cell];
+        const to = this.cellStart[cell + 1];
+        if (to <= from) continue;
+        if (hiY < this.cellMinY[cell] || loY > this.cellMaxY[cell]) continue;
+        stats.cells++;
+        for (let k = from; k < to; k++) {
+          const tri = this.cellItems[k];
+          if (this._stamp[tri] === stamp) continue;
+          this._stamp[tri] = stamp;
+          stats.candidates++;
+          if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
+          // Box reject before the swept test. A ray gets away without one — the
+          // per-cell Y band plus Moller-Trumbore is already cheap — but a sweep
+          // costs a plane crossing, three edge quadratics and three corner
+          // quadratics, and Berlin packs about a thousand triangles into the
+          // 32 m cell a body is standing in, nearly all of them several storeys
+          // above its head. Eighteen comparisons throws those out.
+          const j = tri * 9;
+          const p = this.tris;
+          if (Math.min(p[j + 1], p[j + 4], p[j + 7]) > hiY
+              || Math.max(p[j + 1], p[j + 4], p[j + 7]) < loY
+              || Math.min(p[j], p[j + 3], p[j + 6]) > hiX
+              || Math.max(p[j], p[j + 3], p[j + 6]) < loX
+              || Math.min(p[j + 2], p[j + 5], p[j + 8]) > hiZ
+              || Math.max(p[j + 2], p[j + 5], p[j + 8]) < loZ) continue;
+          stats.tests++;
+          const t = this.#sweepTriangle(tri, ox, oy, oz, vx, vy, vz, radius, best);
+          if (t >= 0 && t <= best) {
+            best = t;
+            found = true;
+            out.triangle = tri;
+            out.nx = _sweepNx; out.ny = _sweepNy; out.nz = _sweepNz;
+            out.px = _sweepPx; out.py = _sweepPy; out.pz = _sweepPz;
+          }
+        }
+      }
+    }
+    if (!found) return null;
+    out.t = best * maxDist;
+    out.x = ox + vx * best;
+    out.y = oy + vy * best;
+    out.z = oz + vz * best;
+    out.material = this.materials[out.triangle];
+    out.owner = this.owners[out.triangle];
+    out.kind = 'object';
+    return out;
+  }
+
+  /**
+   * A sphere swept against one triangle: the face, then its three edges, then
+   * its three corners. Returns the fraction of `v` at first touch, or -1, and
+   * leaves the contact in the module scratch.
+   *
+   * The face case is a plane crossing; the edge and corner cases are the
+   * quadratics from Fauerby's swept-sphere note, written out for a sphere of
+   * arbitrary radius rather than in unit-ellipsoid space. Anything moving away
+   * from the face is ignored outright, which is what lets a body that has ended
+   * up inside geometry push its way back out instead of freezing.
+   */
+  #sweepTriangle(tri, cx, cy, cz, vx, vy, vz, radius, best) {
+    const p = this.tris;
+    const i = tri * 9;
+    const ax = p[i], ay = p[i + 1], az = p[i + 2];
+    const bx = p[i + 3], by = p[i + 4], bz = p[i + 5];
+    const gx = p[i + 6], gy = p[i + 7], gz = p[i + 8];
+    const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+    const e2x = gx - ax, e2y = gy - ay, e2z = gz - az;
+    let nx = e1y * e2z - e1z * e2y;
+    let ny = e1z * e2x - e1x * e2z;
+    let nz = e1x * e2y - e1y * e2x;
+    const nlen = Math.hypot(nx, ny, nz);
+    if (nlen < 1e-12) return -1;               // degenerate face
+    nx /= nlen; ny /= nlen; nz /= nlen;
+    // Two-sided, for the same reason `#intersect` is: point the plane normal at
+    // whichever side the sphere is on.
+    let sd = nx * (cx - ax) + ny * (cy - ay) + nz * (cz - az);
+    if (sd < 0) { nx = -nx; ny = -ny; nz = -nz; sd = -sd; }
+    const nv = nx * vx + ny * vy + nz * vz;
+    if (nv >= -1e-9) return -1;                // parallel, or receding
+    let t = (radius - sd) / nv;
+    if (t < 0) t = 0;                          // already inside the slab
+    if (t > best) return -1;
+    // Where on the plane the sphere touches down at t.
+    const px = cx + vx * t - nx * radius;
+    const py = cy + vy * t - ny * radius;
+    const pz = cz + vz * t - nz * radius;
+    const rx = px - ax, ry = py - ay, rz = pz - az;
+    const d11 = e1x * e1x + e1y * e1y + e1z * e1z;
+    const d12 = e1x * e2x + e1y * e2y + e1z * e2z;
+    const d22 = e2x * e2x + e2y * e2y + e2z * e2z;
+    const dr1 = rx * e1x + ry * e1y + rz * e1z;
+    const dr2 = rx * e2x + ry * e2y + rz * e2z;
+    const denom = d11 * d22 - d12 * d12;
+    if (denom > 1e-12) {
+      const u = (d22 * dr1 - d12 * dr2) / denom;
+      const w = (d11 * dr2 - d12 * dr1) / denom;
+      if (u >= 0 && w >= 0 && u + w <= 1) {
+        _sweepNx = nx; _sweepNy = ny; _sweepNz = nz;
+        _sweepPx = px; _sweepPy = py; _sweepPz = pz;
+        return t;
+      }
+    }
+    // Off the face: the nearest of the six features on its border.
+    const vv = vx * vx + vy * vy + vz * vz;
+    if (vv < 1e-18) return -1;
+    let hit = -1;
+    const corner = (qx, qy, qz) => {
+      const sx = cx - qx, sy = cy - qy, sz = cz - qz;
+      const root = lowestRoot(vv, 2 * (vx * sx + vy * sy + vz * sz),
+                              sx * sx + sy * sy + sz * sz - radius * radius,
+                              hit < 0 ? best : hit);
+      if (root < 0) return;
+      hit = root;
+      _sweepPx = qx; _sweepPy = qy; _sweepPz = qz;
+    };
+    const edge = (qx, qy, qz, ex, ey, ez) => {
+      const ee = ex * ex + ey * ey + ez * ez;
+      if (ee < 1e-12) return;
+      const kx = qx - cx, ky = qy - cy, kz = qz - cz;   // base -> corner
+      const ev = ex * vx + ey * vy + ez * vz;
+      const ek = ex * kx + ey * ky + ez * kz;
+      const kk = kx * kx + ky * ky + kz * kz;
+      const root = lowestRoot(
+        ev * ev - ee * vv,
+        2 * (ee * (vx * kx + vy * ky + vz * kz) - ev * ek),
+        ee * (radius * radius - kk) + ek * ek,
+        hit < 0 ? best : hit);
+      if (root < 0) return;
+      const f = (ev * root - ek) / ee;
+      if (f < 0 || f > 1) return;
+      hit = root;
+      _sweepPx = qx + ex * f; _sweepPy = qy + ey * f; _sweepPz = qz + ez * f;
+    };
+    corner(ax, ay, az); corner(bx, by, bz); corner(gx, gy, gz);
+    edge(ax, ay, az, e1x, e1y, e1z);
+    edge(ax, ay, az, e2x, e2y, e2z);
+    edge(bx, by, bz, gx - bx, gy - by, gz - bz);
+    if (hit < 0) return -1;
+    // The separating direction is centre-at-contact minus the point touched.
+    let sx = (cx + vx * hit) - _sweepPx;
+    let sy = (cy + vy * hit) - _sweepPy;
+    let sz = (cz + vz * hit) - _sweepPz;
+    const len = Math.hypot(sx, sy, sz);
+    if (len < 1e-9) { sx = nx; sy = ny; sz = nz; }
+    else { sx /= len; sy /= len; sz /= len; }
+    _sweepNx = sx; _sweepNy = sy; _sweepNz = sz;
+    return hit;
   }
 
   /** Moller-Trumbore, two-sided: a hull's winding is not something to trust. */
@@ -539,8 +762,34 @@ export class WorldCollider {
       dx: 0, dy: 0, dz: 0,
       material: 0, kind: '', owner: -1, triangle: -1,
     };
+    // A second record, not a shared one: a body resolving its move must not
+    // overwrite the impact a round is in the middle of reporting.
+    this.sweepHit = {
+      t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+      px: 0, py: 0, pz: 0,
+      material: 0, kind: '', owner: -1, triangle: -1,
+    };
     this.elapsed = 0;    // total microseconds spent in cast(), for the budget
     this.casts = 0;
+  }
+
+  /**
+   * Nearest hull contact for a swept sphere, or null.
+   *
+   * Hulls only. Terrain is deliberately not in here: the heightfield is a
+   * function of (x, z), so a body standing on it is one `surfaceHeight` lookup
+   * and a clamp, which is both exact and far cheaper than sweeping a sphere
+   * against a lattice. `physics.js` does that clamp, and `map.html` composes the
+   * two. The sea is not solid and never appears in a sweep at all.
+   */
+  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1) {
+    if (!this.statics) return null;
+    const started = performance.now();
+    const out = this.statics.sweepSphere(
+      ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit);
+    this.elapsed += (performance.now() - started) * 1000;
+    this.casts++;
+    return out;
   }
 
   /** The height a thing standing at (x, z) rests on: ground, or the sea. */

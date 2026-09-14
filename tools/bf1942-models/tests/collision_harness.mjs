@@ -159,6 +159,29 @@ results.behindMiss = world.cast(0, 5, -5, -1, 0, 0, 16, -1) === null;
 // The normal faces the incoming round rather than the quad's winding.
 results.facingNormal = struck && [struck.nx, struck.ny, struck.nz];
 
+// --- the swept sphere ------------------------------------------------------
+
+// The body query rather than the round query: a 0.5 m sphere stops half a metre
+// short of the same wall a ray stops on, and the owner skip works the same way.
+const swept = world.sweepSphere(0, 5, -5, 1, 0, 0, 16, 0.5, -1);
+results.sweptSphere = swept && {
+  t: swept.t, x: swept.x, nx: swept.nx, px: swept.px,
+  material: swept.material, owner: swept.owner, kind: swept.kind,
+};
+const sweptThrough = world.sweepSphere(0, 5, -5, 1, 0, 0, 16, 0.5,
+                                       statics.ownerOf(near));
+results.sweptOwnerSkipped = sweptThrough && {
+  t: sweptThrough.t, material: sweptThrough.material,
+};
+// Radius zero degenerates to the ray, which is the sanity check that the two
+// narrowphases agree.
+const sweptRay = world.sweepSphere(0, 5, -5, 1, 0, 0, 16, 0, -1);
+results.sweptZeroRadiusMatchesTheRay = sweptRay && sweptRay.t;
+// A sphere with no statics to sweep has nothing to say.
+results.sweptWithoutStatics =
+  new WorldCollider({ heightfield: field }).sweepSphere(
+    0, 5, -5, 1, 0, 0, 16, 0.5) === null;
+
 // Terrain, water and hulls together: the wall is nearer than the ground, so it
 // has to win, and the grid must not be asked past it.
 const all = new WorldCollider({ heightfield: field, waterLevel: 2, statics });
