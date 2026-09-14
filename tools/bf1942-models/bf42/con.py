@@ -255,6 +255,27 @@ class LodSelector:
     distances: list[float] = field(default_factory=list)
     comparisons: list[float] = field(default_factory=list)
 
+    @property
+    def ranks_by_distance(self) -> bool:
+        """Whether this selector orders its alternatives near-to-far.
+
+        A plain `DistanceSelector` is a LOD ladder: alternative 0 is what the
+        engine draws until the observer passes `addLodDistance[0]`, then
+        alternative 1, and so on. The comparison-driven kinds
+        (`DistCompareSelector`, `DistCompareSelector2`, `CompareSelector`) are
+        not ladders — they swap on a state flag such as "the camera is in the
+        cockpit" — so for those the order says nothing and only the
+        conventional child *name* identifies the alternative.
+
+        Measured across the 14 installed mods: of 1339 `DistanceSelector`
+        LodObjects, 1063 name alternative 0 with a near token
+        (Interior/Internal/High/Cockpit) and its last with a far one
+        (Exterior/External/Low/Dummy), 268 are unnamed, and 8 run the other
+        way. All 8 are vehicle cockpit or steering parts, where the
+        first-person geometry guard picks the alternative regardless of order.
+        """
+        return self.kind.lower() == "distanceselector"
+
     def as_dict(self) -> dict:
         return {"selector": self.name, "selectorKind": self.kind,
                 "distances": list(self.distances),
@@ -262,7 +283,12 @@ class LodSelector:
 
 
 def lod_alternative_role(template_name: str) -> str | None:
-    """The semantic role encoded in a LodObject child's conventional name."""
+    """The semantic role encoded in a LodObject child's conventional name.
+
+    Note that "interior" is a *role*, not a place: under a building's
+    `DistanceSelector` it is the near rung of a LOD ladder, and the one that
+    models the inside. See `select_lod_alternative`.
+    """
     name = template_name.lower()
     # Buildings use Interior/Exterior; vehicles use Internal/External/Complex.
     # "interior" is checked before "complex" so a name cannot match both.
@@ -290,12 +316,41 @@ def split_geometry_qualifier(name: str) -> tuple[str | None, str]:
     return (kind, bare) if separator else (None, name)
 
 
-def select_lod_alternative(children: list[ChildRef], configuration: str) -> ChildRef:
-    """Choose one LodObject alternative without ever stacking its siblings."""
+def select_lod_alternative(children: list[ChildRef], configuration: str,
+                           selector: LodSelector | None = None) -> ChildRef:
+    """Choose one LodObject alternative without ever stacking its siblings.
+
+    Two different questions wear the same `Interior`/`Exterior` vocabulary, and
+    telling them apart needs the selector, not the name:
+
+    * Under a **`DistanceSelector`** the alternatives are a LOD ladder and
+      alternative 0 is the near one. A building declares
+      `addLodDistance 70` over `SupplydeInterior` then `SupplydeExterior`:
+      inside 70 m the engine draws `SupplydeInterior`, which is the mesh that
+      models the inside of the building, and past 70 m it drops to
+      `SupplydeExterior`, a hollow outer shell. Matching the name role
+      "complex" here picks the *far* rung, so a level bake ships buildings
+      with no interior — you walk through the doorway the collision hull
+      allows and then see straight out through the back faces of the shell.
+      Measured on vanilla: `citymesh2_m1` carries 1312 triangles of which 372
+      sit more than 1.5 m inside the footprint; `citymesh2_m2` carries 635 and
+      exactly **zero** inside it.
+    * Under the comparison-driven kinds the alternatives are states, not
+      rungs — a cockpit interior versus the hull that hides it — and there the
+      name role is the only thing that identifies them.
+
+    The near rung of a vehicle's `DistanceSelector` is a first-person part (a
+    steering wheel, the B17's gun sights). Those are not filtered here: the
+    caller's first-person geometry guard already refuses `1P_...` meshes, and
+    it has to run anyway for the cockpit selectors.
+    """
     if not children:
         raise ValueError("cannot select from an empty LodObject")
     if configuration not in MODEL_CONFIGURATIONS:
         raise ValueError(f"unknown model configuration: {configuration}")
+
+    if selector is not None and selector.ranks_by_distance:
+        return children[0]
 
     return next(
         (child for child in children if lod_alternative_role(child.template) == configuration),
