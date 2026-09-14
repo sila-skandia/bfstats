@@ -342,6 +342,70 @@ results.constants = {
   };
 }
 
+// --- an Engine never spins its own subtree ---------------------------------
+//
+// `EngineTemplate` derives from `RotationalBundleTemplate`, so a `.con` may
+// write `setInputToRoll c_PIThrottle` on an Engine — but the object it creates
+// is a `PhysicsEngine` deriving from `PhysicsNode`, which does not inherit
+// `RotationalBundle::handleUpdate`. The Engine node is never posed by that
+// axis; the propeller is, through two interface queries at the tail of
+// `PhysicsEngine::updatePhysics` (`0x0057bfb0`).
+//
+// So the three cases `assemble.py` distinguishes have to stay distinguished.
+// The one that was a live bug on production: a scene extracted before
+// `spinsChildren` existed used to fall back to rotating the Engine node, which
+// on a Corsair swung the landing gear, both wheels, the tail wheel and the two
+// bay hatches around the prop shaft.
+
+{
+  const ENGINE_AXIS = {
+    roll: { input: 'c_PIThrottle', min: -3000, max: 5000, free: false,
+            driver: 'rate', maxSpeed: 500, direction: 1 },
+  };
+  const build = (extras, stamp = true) => {
+    const root = new THREE.Object3D();
+    root.name = 'Corsair';
+    root.userData = { control: 'Corsair', templateKind: 'PlayerControlObject' };
+    const engine = new THREE.Object3D();
+    engine.name = 'CorsairEngine';
+    engine.userData = { rig: { control: 'Corsair', axes: ENGINE_AXIS }, ...extras };
+    for (const [name, spins] of [['lodCorsairPropeller', true],
+                                 ['CorsairLandingGearLeft', false]]) {
+      const child = new THREE.Object3D();
+      child.name = name;
+      if (spins && stamp) child.userData = { spinsWithEngine: true };
+      engine.add(child);
+    }
+    root.add(engine);
+    const plane = new Aircraft(root, null, { cockpit: false });
+    plane.state.propellerAngle = 90;
+    plane.applyRig();
+    const angle = obj => round(2 * Math.acos(Math.min(1, Math.abs(obj.quaternion.w))) * DEG, 1);
+    return {
+      spun: plane.parts.find(part => part.node === engine).spun.map(n => n.name),
+      engine: angle(engine),
+      propeller: angle(engine.getObjectByName('lodCorsairPropeller')),
+      gear: angle(engine.getObjectByName('CorsairLandingGearLeft')),
+    };
+  };
+  results.engineSpin = {
+    // The field is present and names the propeller: spin exactly that.
+    named: build({ spinsChildren: ['lodCorsairPropeller'] }),
+    // Present and empty: this Engine reaches no drawn geometry (Willy,
+    // KettenKrad, Elco80). Spin nothing — and the empty list is the whole
+    // reason that can be told apart from the case below.
+    empty: build({ spinsChildren: [] }),
+    // No list, but the children carry the older per-child stamp. That is the
+    // intermediate asset generation and the stamps are still the right answer.
+    stamped: build({}),
+    // Neither field: the asset predates both. Spin nothing, which costs a
+    // stationary propeller on an old scene and is the only answer that cannot
+    // be wrong — the fallback this replaces rotated the Engine node instead,
+    // and took nineteen of a Corsair's nodes round with it.
+    legacy: build({}, false),
+  };
+}
+
 // --- what the surface table works out to -----------------------------------
 //
 // The per-surface coefficients, which are the whole of the aerodynamics now.
