@@ -29,6 +29,7 @@
 // fixed: see `fireShot` on muzzle alternation.
 
 import * as THREE from 'three';
+import { impactEffect, materialFamily } from './collision.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -66,6 +67,19 @@ const ROCKET_ACCEL = 25;         // m/s^2
 const GRAVITY = 9.81;
 const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
 const MAX_TRAIL_PUFFS = 96;
+// Per-frame lid on collision queries. `features/flyable-vehicles/collision-and-crash.md`
+// budgets the swept narrowphase at 0.1-0.3 ms worst case for one body; a held
+// burst from a twelve-round-a-second gun keeps tens of rounds in the air, and
+// this caps the whole loop at that same order. Rounds past the lid keep flying
+// and are tested next frame — they do not tunnel, because the untested step is
+// carried forward into the segment the next frame casts.
+const MAX_CASTS_PER_FRAME = 192;
+// How long an impact stand-in lives, by surface family. The authored bundles
+// declare `timeToLive CRD_NONE/1.8/0/0` almost uniformly; these are shorter
+// because a flat billboard holding for 1.8 s reads as a decal, not a burst.
+const IMPACT_TTL = 0.45;
+const IMPACT_WATER_TTL = 0.8;
+const MAX_IMPACTS = 48;
 
 // Fallback streak, for a GLB baked before the tracer mesh was exported. The
 // game's own `TLight_m1` is a tapered 0.0061 m spike trailing 1 m behind the
@@ -86,6 +100,53 @@ const shellMaterial = new THREE.MeshBasicMaterial({
   color: 0xc9b89a, transparent: true, opacity: 0.4,
   blending: THREE.AdditiveBlending, depthWrite: false,
 });
+
+// The impact stand-in.
+//
+// Refractor answers "what does this hit look like" out of the MaterialManager:
+// `setEffectTemplate` names one of 73 authored EffectBundles per (attacker,
+// defender) pair, and `collision.js` resolves the name. Playing the bundle
+// itself needs its emitters, sprites and sounds baked into the level glb the
+// way the muzzle flashes already are, and that is an extractor job this pass
+// did not do — see the "still missing" section of
+// `features/bf1942-3d-models/projectile-collision.md`.
+//
+// So: one soft additive puff, expanding and fading, stood up on the surface
+// normal, tinted by the material family the hit resolved to. It is a marker
+// that the round stopped and where, not a reconstruction of the effect. The
+// resolved bundle name rides along on the impact record so a check can assert
+// the *selection* is right even though the drawing is a placeholder.
+const IMPACT_TINTS = {
+  ground: 0xc8ab7a,   // dust off dirt and sand
+  water:  0xdff0ff,   // spray
+  stone:  0xbdb6ab,   // grit and concrete dust
+  metal:  0xffc98a,   // sparks
+  wood:   0xa8834f,   // splinters
+  armour: 0xffd07a,   // the armour flash bundles are all fire-coloured
+};
+
+let impactTexture = null;
+function softDisc() {
+  // A radial falloff drawn once. Additive, so the centre is the bright core
+  // and the rim goes to black rather than to transparent.
+  if (impactTexture) return impactTexture;
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(
+    size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  impactTexture = new THREE.CanvasTexture(canvas);
+  impactTexture.colorSpace = THREE.SRGBColorSpace;
+  return impactTexture;
+}
+
+const impactGeometry = new THREE.PlaneGeometry(1, 1);
 
 /** Piecewise-linear sample of an over-time ramp at `phase` (0..100). */
 export function sampleCurve(points, phase) {
@@ -108,6 +169,9 @@ const _spinAxis = new THREE.Vector3(0, 0, 1);
 const _drift = new THREE.Vector3();
 const _aimBack = new THREE.Vector3();
 const _extent = new THREE.Vector3();
+const _step = new THREE.Vector3();
+const _tip = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
 
 /**
  * Every gun in one scene, and the rounds they have in the air.
@@ -141,6 +205,32 @@ export class GunFire {
     this.projectiles = [];
     this.puffs = [];
     this.tracerPool = [];
+    // What a round runs into. A `WorldCollider` from `collision.js`, or null —
+    // the model browser fires a model on a turntable with no world around it,
+    // and a null collider is exactly the old behaviour: rounds end on their
+    // `timeToLive` or the range cap and nothing else.
+    this.collider = null;
+    // The `attacker -> defender -> EffectBundle` table out of
+    // `_shared/damage.json`, and the `projectileTemplate -> attacker material`
+    // table beside it. Both optional; without them a hit still stops the round,
+    // it just cannot name the effect the game would have played.
+    this.damageEffects = null;
+    this.projectileMaterials = null;
+    this.onImpact = null;
+    this.impacts = [];
+    this.impactPool = [];
+    /** The last few hits, newest first, for the debug readout and headless checks. */
+    this.hits = [];
+  }
+
+  /** Attacker material for a projectile template, or null. */
+  attackerMaterial(spec) {
+    if (!spec) return null;
+    if (Number.isFinite(spec.material)) return spec.material;
+    const table = this.projectileMaterials;
+    if (!table || !spec.template) return null;
+    const entry = table[spec.template.toLowerCase()];
+    return Number.isFinite(entry?.material) ? entry.material : null;
   }
 
   /** Put every round in the air back in its pool. Call on a scene change. */
@@ -160,6 +250,13 @@ export class GunFire {
     this.projectiles.length = 0;
     for (const puff of this.puffs) this.scene.remove(puff.mesh);
     this.puffs.length = 0;
+    for (const impact of this.impacts) {
+      this.scene.remove(impact.mesh);
+      impact.mesh.visible = false;
+      this.impactPool.push(impact.mesh);
+    }
+    this.impacts.length = 0;
+    this.hits.length = 0;
   }
 
   /**
@@ -303,6 +400,11 @@ export class GunFire {
         firing: false,
         cooldown: 0,
         shots: 0,
+        // Which placed object this gun is part of, so its own rounds ignore its
+        // own hull. Resolved lazily against whatever collider is in force —
+        // see `#owner` — because a level switch replaces both.
+        owner: -1,
+        ownerFor: undefined,
         speedScale,
         maxRange,
         roundLifetime,
@@ -459,10 +561,15 @@ export class GunFire {
     this.tracers.push({
       mesh,
       pool,
+      group,
       lengthScale,
       width: group.tracerWidth,
       bright,
       velocity,
+      // Distance from the drawn mesh's origin to the round it stands for. The
+      // baked streak's head *is* its origin; the stand-in cylinder is drawn
+      // centred, so its round is half a length ahead of `mesh.position`.
+      lead: lengthScale ? 0 : (mesh.scale.z || 0) / 2,
       // How long the streak lives. `fixed` is the turntable policy — a tracer
       // stays on screen about 1.5 s or 250 m, tuned against rounds already
       // slowed to 15% — and stays the model browser's default. `data` is the
@@ -540,9 +647,106 @@ export class GunFire {
     });
   }
 
+  /**
+   * Test the segment a round just flew, and hand back the first surface on it.
+   *
+   * This is the sweep, and it is the whole reason a round cannot pass through a
+   * wall: at 1000 m/s a round moves 16.7 m between frames and Bocage's church
+   * walls are 0.3 m thick, so a point test at the new position would miss the
+   * wall in 98 frames out of 100. The segment from where the round *was* to
+   * where it *is* cannot.
+   *
+   * `lead` is how far ahead of `position` the round itself sits — zero for the
+   * baked streak, whose head is its origin, and half a length for the stand-in
+   * cylinder, which is drawn centred.
+   */
+  #sweep(group, position, velocity, step, lead) {
+    const collider = this.collider;
+    if (!collider || step <= 0 || this.casts >= MAX_CASTS_PER_FRAME) return null;
+    const speed = velocity.length();
+    if (!(speed > 0)) return null;
+    _step.copy(velocity).divideScalar(speed);
+    const from = _tip.copy(position)
+      .addScaledVector(_step, lead - step);
+    this.casts++;
+    return collider.cast(from.x, from.y, from.z, _step.x, _step.y, _step.z,
+                         step, this.#owner(group));
+  }
+
+  /**
+   * Which placed object this gun belongs to, so its rounds ignore its own hull.
+   *
+   * A muzzle sits inside the vehicle's collision mesh — the Tiger's gun barrel
+   * starts several metres inside `Tiger_Hull_M1` — so without this every shot
+   * would detonate on the firer. Cached per group and invalidated when the
+   * collider changes, because resolving it walks the ancestor chain.
+   */
+  #owner(group) {
+    if (group.ownerFor !== this.collider) {
+      group.ownerFor = this.collider;
+      group.owner = this.collider?.statics?.ownerOf(group.node) ?? -1;
+    }
+    return group.owner;
+  }
+
+  /** Record a hit, name the effect the game would play, and mark the spot. */
+  #impact(group, spec, hit) {
+    const attacker = this.attackerMaterial(spec);
+    const family = materialFamily(hit.material);
+    const record = {
+      kind: hit.kind,
+      material: hit.material,
+      family,
+      attacker,
+      // The authored EffectBundle for this pairing. Named, not played — see the
+      // comment on IMPACT_TINTS.
+      effect: impactEffect(this.damageEffects, attacker, hit.material),
+      point: [hit.x, hit.y, hit.z],
+      normal: [hit.nx, hit.ny, hit.nz],
+      gun: group.node.name,
+      distance: hit.t,
+    };
+    this.hits.unshift(record);
+    if (this.hits.length > 16) this.hits.length = 16;
+    this.#spawnImpact(hit, family);
+    this.onImpact?.(record, hit);
+  }
+
+  #spawnImpact(hit, family) {
+    if (this.impacts.length >= MAX_IMPACTS) return;
+    let mesh = this.impactPool.pop();
+    if (!mesh) {
+      mesh = new THREE.Mesh(impactGeometry, new THREE.MeshBasicMaterial({
+        map: softDisc(), transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      }));
+      this.onMaterial?.(mesh.material);
+    }
+    mesh.material.color.setHex(IMPACT_TINTS[family] ?? IMPACT_TINTS.ground);
+    mesh.material.opacity = 1;
+    mesh.visible = true;
+    // Lifted off the surface along its normal, the way the engine lifts its own
+    // ricochet decals (`relativePositionInUp 0.001` on every `Richo*Decal`
+    // emitter) — just further, because this is a billboard and not a decal.
+    mesh.position.set(hit.x + hit.nx * 0.15,
+                      hit.y + hit.ny * 0.15,
+                      hit.z + hit.nz * 0.15);
+    mesh.quaternion.copy(this.camera.quaternion);
+    mesh.scale.setScalar(0.4);
+    this.scene.add(mesh);
+    this.impacts.push({
+      mesh, age: 0,
+      ttl: hit.kind === 'water' ? IMPACT_WATER_TTL : IMPACT_TTL,
+      // Spray stands taller than dust; both are markers, neither is authored.
+      grow: hit.kind === 'water' ? 5 : 3,
+    });
+  }
+
   /** Advance flashes, recoil, firing cadence and rounds. True while active. */
   advance(dt) {
     let active = false;
+    // The per-frame collision budget, spent by `#sweep` and reset here.
+    this.casts = 0;
     for (const group of this.groups) {
       for (const emitter of group.emitters) {
         if (!emitter.node.visible) continue;
@@ -623,6 +827,20 @@ export class GunFire {
       const step = tracer.velocity.length() * dt;
       tracer.travelled += step;
       tracer.mesh.position.addScaledVector(tracer.velocity, dt);
+      const struck = this.#sweep(tracer.group, tracer.mesh.position,
+                                 tracer.velocity, step, tracer.lead);
+      if (struck) {
+        // Put the streak's head on the surface before it goes, so the last
+        // frame drawn is the round stopping rather than the round past it.
+        tracer.mesh.position.set(struck.x, struck.y, struck.z)
+          .addScaledVector(_step, -tracer.lead);
+        this.#impact(tracer.group, tracer.group.stats.projectile, struck);
+        this.scene.remove(tracer.mesh);
+        tracer.mesh.visible = false;
+        tracer.pool.push(tracer.mesh);
+        this.tracers.splice(i, 1);
+        continue;
+      }
       if (tracer.lengthScale && tracer.width && metresPerPxAt1m) {
         // Hold the cross-section at TRACER_MIN_SCREEN_PX, never below the real
         // mesh. Length keeps its own scale, so a streak stays 50 m long and
@@ -656,6 +874,17 @@ export class GunFire {
       // Nose (local -Z) along the velocity, so shells arc over.
       _aimBack.copy(shot.mesh.position).sub(shot.velocity);
       shot.mesh.lookAt(_aimBack);
+      const struck = this.#sweep(shot.group, shot.mesh.position,
+                                 shot.velocity, step, 0);
+      if (struck) {
+        shot.mesh.position.set(struck.x, struck.y, struck.z);
+        this.#impact(shot.group, shot.group.stats.projectile, struck);
+        this.scene.remove(shot.mesh);
+        shot.mesh.visible = false;
+        shot.group.projectilePool.push(shot.mesh);
+        this.projectiles.splice(i, 1);
+        continue;
+      }
       if (shot.age > shot.ttl || shot.travelled > shot.group.maxRange) {
         this.scene.remove(shot.mesh);
         shot.mesh.visible = false;
@@ -702,6 +931,23 @@ export class GunFire {
           material.opacity = 1 - phase / 100;
         }
       }
+    }
+    for (let i = this.impacts.length - 1; i >= 0; i--) {
+      const impact = this.impacts[i];
+      impact.age += dt;
+      if (impact.age >= impact.ttl) {
+        this.scene.remove(impact.mesh);
+        impact.mesh.visible = false;
+        this.impactPool.push(impact.mesh);
+        this.impacts.splice(i, 1);
+        continue;
+      }
+      active = true;
+      const phase = impact.age / impact.ttl;
+      // Fast out, slow fade: the burst is over long before the dust is.
+      impact.mesh.scale.setScalar(0.4 + impact.grow * Math.sqrt(phase));
+      impact.mesh.material.opacity = (1 - phase) ** 2;
+      impact.mesh.quaternion.copy(this.camera.quaternion);
     }
     return active;
   }
