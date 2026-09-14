@@ -205,6 +205,36 @@ stage (338 materials).
 
 ---
 
+## Soldier camera shake / view bob (settled 2026-09-15)
+
+What `setCameraShake*` in `animations/AnimationStates*.con` actually does, settled
+for the first-person soldier in `tools/bf1942-models/viewer/soldier.js`. The open
+question was the **third argument** — `setCameraShakeUpDown 0 0.08 15` — whose unit
+had never survived measurement.
+
+| # | Finding | Status | Evidence |
+|---|---|---|---|
+| CS-1 | The third argument is an **angular rate in radians per second**. Each channel is `amplitude * sin(rate * t) * factor`, `t` an instance-local seconds accumulator advanced `t += dt`. Not Hz, not a duration, not a count | **verified** | `getCameraShakeTransform` 0x00613e90 (lnxded `dice::anim::AnimationStateMachineInstance::getCameraShakeTransform` 0x0832b6c0): six `sin()` call sites, each `fld [block+rate]; fmul [this+0x8]; call sin; fmul <amp*factor>`. `t += dt` at lnxded 0x0832b825–0x0832b845. |
+| CS-2 | The first argument is a **slot index** (clamped 0..2): a state may chain three shakes, each with its own `timeToShake`/`fadeOut`, advanced when one expires. All of vanilla uses slot 0 | **verified** | setters lnxded 0x08329d30–0x08329ed0 (`cmp edx,2; ja <ret>`, `this + idx*68`); slot advance `f15 = slot+1` at lnxded 0x0832b8ad. |
+| CS-3 | `fadeIn` and `fadeOut` are **rates per second**, not durations: `factor += fadeIn*dt` clamped to 1, `factor -= fadeOut*dt` floored at `minFactor`. `fadeIn <= 0` snaps the factor to 1 | **verified** | lnxded 0x0832bd78–0x0832bdc2 (fade in), 0x0832b877–0x0832b8b3 (fade out). So `setCameraShakeFadeIn 0 0.6` ramps over 1/0.6 = 1.67 s. |
+| CS-4 | Channels map: `UpDown`→translate Y, `LeftRight`→translate X, `InOut`→translate Z, `Pitch`/`Yaw`/`Roll`→rotate X/Y/Z **in degrees** | **verified** | Mat4 stores at +0x34/+0x30/+0x38; `setRotateXDeg`/`YDeg`/`ZDeg` at lnxded 0x08251240 / 0x081a24b0 / 0x08062740. |
+| CS-5 | Nothing scales the shake by ground speed. `dt` passes through untouched; the gait only selects which animation state is current | **verified** | `BFSoldier::updateCameraShake` 0x004facd0 — the only caller; passes its `dt` argument straight down. |
+| CS-6 | **The walking view bob is multiplied by a shipped zero.** The lower-body state machine, which owns every `Lb_Walk/Run/Crouch/Lie` locomotion state, is scaled by `cameraShakeFactor`; that global is `0.0f` in initialized `.data` and no vanilla file sets it. Weapon-fire (`Ub_*`) and explosion/hit shakes are unaffected — they are passed a hardcoded `1.0f` | **verified** | `cameraShakeFactor` = `DAT_0099000c` 0x0099000c, inside `.data` (0x00952000–0x00a9298b, initialized), bytes `00 00 00 00`. Its only writers are the console accessor for the `PlayerControlObjectTemplate` property of that name (registrar 0x004f1310, string 0x008e9604); no static initialiser writes it. Searched every `.con`/`.inc`/`.tweak` in `Objects.rfa`, `animations.rfa`, `Game.rfa`, `menu.rfa` and both `Settings/` trees: no assignment anywhere. |
+
+The consequence of CS-6 is worth stating plainly, because it is the opposite of
+what the authored data looks like: **retail BF1942 has no first-person walking
+view bob.** The `Lb_*` shakes are real, carefully tuned, and inert. Anyone
+calibrating a soldier camera against the `.con` files alone will add a bob the
+game does not have.
+
+Instance layout, for a future reader: a `BFSoldier` holds three
+`AnimationStateMachineInstance`s in an array based at +0x294 (lnxded), 68 bytes
+each — 0 lower body, 1 upper body, 2 camera-shake triggers. Slot 2 is proven by
+`triggerCameraShake`, which is the entry point for `BigExplosion`, `HitShake` and
+`DieShake` in `animations/AnimationStatesCameraShakes.con`.
+
+---
+
 ## Other formats
 
 Add a section per format as it comes under investigation. Keep the same shape:
