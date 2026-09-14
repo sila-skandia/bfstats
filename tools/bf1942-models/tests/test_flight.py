@@ -226,6 +226,40 @@ class FlightModelTests(unittest.TestCase):
         self.assertAlmostEqual(-1.0, rig["stops"]["c_PIPitch"], places=6)
         self.assertAlmostEqual(1.0, rig["stops"]["c_PIRoll"], places=6)
 
+    def test_an_engine_spins_its_propeller_and_never_its_own_subtree(self) -> None:
+        # `EngineTemplate` derives from `RotationalBundleTemplate`, which is the
+        # only reason a `.con` may write `setInputToRoll c_PIThrottle` on an
+        # Engine at all — but the object it creates is a `PhysicsEngine`
+        # deriving from `PhysicsNode`, and `RotationalBundle::handleUpdate` is
+        # the one place those numbers become a transform. The Engine node is
+        # never posed by that axis, so it must never pose its subtree.
+        #
+        # This was a live bug on production: a Corsair whose landing gear, both
+        # wheels, tail wheel and two bay hatches orbited the prop shaft.
+        spin = self.results["engineSpin"]
+
+        # Named children: spin exactly those, and nothing else moves.
+        self.assertEqual(["lodCorsairPropeller"], spin["named"]["spun"])
+        self.assertAlmostEqual(90.0, spin["named"]["propeller"], places=1)
+        self.assertAlmostEqual(0.0, spin["named"]["engine"], places=1)
+        self.assertAlmostEqual(0.0, spin["named"]["gear"], places=1)
+
+        # No list, but the children carry the older per-child stamp: that is the
+        # intermediate asset generation and the stamps still decide.
+        self.assertEqual(["lodCorsairPropeller"], spin["stamped"]["spun"])
+        self.assertAlmostEqual(90.0, spin["stamped"]["propeller"], places=1)
+
+        # Present but empty, and neither field at all: spin nothing. The Engine
+        # node itself must stay put in every case, because an Engine node
+        # spinning itself is never correct — that fallback is what dragged the
+        # gear round on production.
+        for case in ("empty", "legacy"):
+            self.assertEqual([], spin[case]["spun"], case)
+            self.assertAlmostEqual(0.0, spin[case]["propeller"], places=1, msg=case)
+        for case in ("named", "empty", "stamped", "legacy"):
+            self.assertAlmostEqual(0.0, spin[case]["engine"], places=1, msg=case)
+            self.assertAlmostEqual(0.0, spin[case]["gear"], places=1, msg=case)
+
     def test_the_inertia_is_the_box_estimate_times_the_authored_modifier(self) -> None:
         # `inertiaModifier 1.05/0.850/0.94` is yaw/pitch/roll [data]; the
         # solid-box base it multiplies is the last free number in the model.
