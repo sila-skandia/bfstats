@@ -713,13 +713,24 @@ class Assembler:
         (`destBlendMode BMOne`, or an `.rs` declaring `blendDest one`) are
         baked: those are the flash's light. Alpha-blended payloads are smoke
         and dust, which a strobed still image cannot sell.
+
+        Emitters restricted to one view carry it in `effect.view`. The engine
+        draws a *different* muzzle flash to the man in the seat: `e_MuzzHeavy`,
+        which every vanilla aircraft gun names as its `visibleBarrelTemplate`,
+        bundles `em_MuzzHeavy` (a 1.76 m `MuzzHeavy_m1` mesh ramping
+        `sizeOverTime 0.12 -> 9.4`) and `em_MuzzHeavy_glow`, both
+        `showInThirdPerson 1`, alongside `em_1P_MuzzHeavy`, a 0.4 m sprite
+        marked `showInFirstPerson 1`. Declaring one flag restricts the emitter
+        to that view; declaring neither means both, which is 341 of vanilla's
+        364 emitters. Only six are first-person only and every one is a muzzle
+        flash or a shell eject — the exact pair a cockpit needs, and the reason
+        a flythrough flown from the pilot's seat used to wear the third-person
+        fireball at arm's length.
         """
         nodes: list[int] = []
         for ref in bundle.children:
             emitter = self.library.object(ref.template)
             if emitter is None or emitter.emitter_template is None:
-                continue
-            if emitter.show_in_first_person and not emitter.show_in_third_person:
                 continue
             payload = self.library.object(emitter.emitter_template)
             if payload is None:
@@ -747,6 +758,9 @@ class Assembler:
                 continue
             effect["timeToLive"] = (payload.time_to_live
                                     or emitter.time_to_live or 0.1)
+            if emitter.show_in_first_person != emitter.show_in_third_person:
+                effect["view"] = ("first" if emitter.show_in_first_person
+                                  else "third")
             if payload.size_over_time:
                 effect["sizeOverTime"] = payload.size_over_time
             if payload.color_over_time:
