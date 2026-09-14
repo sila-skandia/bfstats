@@ -135,8 +135,13 @@ export const FOV_DEG = 53.86;
  * Seconds between footsteps, per gait.
  * `Objects/Soldiers/Common/Sounds/SoldierSound.inc`, verbatim:
  * `setRunFrequency 0.36`, `setWalkFrequency 0.66`, `setCrouchFrequency 0.50`,
- * `setCrawlFrequency 0.6`. Drives the view bob's phase and, later, the footstep
- * audio.
+ * `setCrawlFrequency 0.6`. Drives the footstep clock, and through it the
+ * footstep audio a later stage will hang off it.
+ *
+ * It used to drive the view bob's phase as well, on the reasoning that a
+ * footstep period was at least an unambiguous cadence where the camera shake's
+ * own rate was not. It is not that any more: `BOB` carries the engine's real
+ * rates now, and a stride and a camera shake turn out to be unrelated clocks.
  *
  * Note what these are no longer used for. They were once half of a derivation
  * of the movement speeds — period times a stride length measured off the posed
@@ -149,7 +154,8 @@ export const FOV_DEG = 53.86;
 export const STEP_PERIOD = { run: 0.36, walk: 0.66, crouch: 0.50, prone: 0.60 };
 
 /**
- * View bob, from `animations/AnimationStatesLower.con`'s camera shakes:
+ * View bob, from the `setCameraShake*` declared on each locomotion state in
+ * `animations/AnimationStates{Lower,Crouching,Lie}.con`, verbatim:
  *
  *     rem Lb_WalkForward                      rem Lb_RunForward
  *     setCameraShakeUpDown    0 0.06 7         0 0.08 15
@@ -157,23 +163,75 @@ export const STEP_PERIOD = { run: 0.36, walk: 0.66, crouch: 0.50, prone: 0.60 };
  *     setCameraShakeYaw       0 0.10 3.0       0 0.15 8.0
  *     setCameraShakeFadeIn    0 0.6            0 0.6
  *
- * **The amplitudes and the fade are the game's; the rate is not.** The third
- * argument's unit does not survive measurement: taken as Hz, 15 against a
- * 2.78 steps/s run cadence is five times too fast, and the walk/run ratio it
- * implies (7:15 = 2.14) does not match the step-rate ratio the same archive
- * declares (0.66:0.36 = 1.83) either. So the phase comes from the footstep
- * clock instead — vertical bob twice per stride, lateral sway once — which is
- * unambiguous, is in the same file, and puts the bob in step with the footstep
- * audio a later stage will hang off the same clock.
+ *     rem Lb_CrouchForward                    rem Lb_LieForward
+ *     setCameraShakeUpDown    0 0.07 10.0      0 0.04 5.0
+ *     setCameraShakeFadeIn    0 0.3            0 0.3
  *
- * `yaw` is in degrees and applied to the view, not to the direction of travel.
+ * All three arguments are now read out of the binary rather than guessed, and
+ * every one of them turned out to mean something other than what the shape of
+ * the line suggests. `getCameraShakeTransform` (`0x00613e90`, and the symbol is
+ * `dice::anim::AnimationStateMachineInstance::getCameraShakeTransform` in the
+ * Linux server) computes, per channel and per frame:
+ *
+ *     value = amplitude * sin(rate * t) * fade * cameraShakeFactor
+ *
+ * with `t` a seconds accumulator the same function advances by `t += dt`. So:
+ *
+ *   - **The third argument is an angular rate in radians per second**, because
+ *     it is the multiplier on seconds inside `sin()`. Not Hz. That is what an
+ *     earlier draft could not pin down, and reading it as Hz is exactly why the
+ *     run bob came out 2.4x too fast: 15 rad/s is 2.39 Hz, not 15.
+ *   - **The first argument is a slot index**, 0..2. A state may chain three
+ *     shakes, each with its own `timeToShake` and `fadeOut`, and the engine
+ *     advances to the next when one expires. All of vanilla uses slot 0.
+ *   - **`fadeIn` is a rate, not a duration**: `fade += fadeIn * dt`, clamped to
+ *     one. `0.6` is therefore a 1.67 s ramp, not a 0.6 s one.
+ *   - Nothing anywhere scales the shake by ground speed. The gait selects which
+ *     state is current; within a state the rate is fixed in real time.
+ *
+ * `up`/`side`/`in` are metres of camera translation on Y/X/Z; `yaw` (and the
+ * pitch and roll no locomotion state declares) is **degrees**, via the engine's
+ * own `setRotateYDeg`. Crouching and lying declare a vertical bob and nothing
+ * else — no sway, no yaw — which an earlier draft of this table invented for
+ * them. `Lb_CrouchStrafe*`/`TurnLeft`/`TurnRight` declare `fadeIn 0.6` where
+ * `Lb_CrouchForward`/`Backward` declare `0.3`; the gait here does not
+ * distinguish the two, and takes the forward value.
+ *
+ * See `features/bf1942-engine-reference/ledger.md` rows CS-1..CS-6.
  */
 export const BOB = {
-  run:    { up: 0.08, side: 0.02, yaw: 0.15, fadeIn: 0.6 },
-  walk:   { up: 0.06, side: 0.01, yaw: 0.10, fadeIn: 0.6 },
-  crouch: { up: 0.04, side: 0.01, yaw: 0.08, fadeIn: 0.6 },
-  prone:  { up: 0.02, side: 0.01, yaw: 0.05, fadeIn: 0.6 },
+  run:    { up: 0.08, upRate: 15, side: 0.02, sideRate: 5,   yaw: 0.15, yawRate: 8, fadeIn: 0.6 },
+  walk:   { up: 0.06, upRate: 7,  side: 0.01, sideRate: 0.5, yaw: 0.10, yawRate: 3, fadeIn: 0.6 },
+  crouch: { up: 0.07, upRate: 10, side: 0,    sideRate: 0,   yaw: 0,    yawRate: 0, fadeIn: 0.3 },
+  prone:  { up: 0.04, upRate: 5,  side: 0,    sideRate: 0,   yaw: 0,    yawRate: 0, fadeIn: 0.3 },
 };
+
+/**
+ * What the whole of `BOB` is multiplied by — and the reason this viewer walks
+ * without a bob.
+ *
+ * `BFSoldier::updateCameraShake` (`0x004facd0`) drives a soldier's three
+ * animation state machines. The upper body, which owns the `Ub_Fire*` weapon
+ * recoil shakes, and the trigger machine, which owns `BigExplosion` /
+ * `HitShake` / `DieShake`, are both passed a hardcoded `1.0f`. The **lower**
+ * body — which owns every `Lb_Walk`, `Lb_Run`, `Lb_Crouch` and `Lb_Lie` state,
+ * and therefore the entire walking view bob — is passed `cameraShakeFactor`.
+ *
+ * That is `DAT_0099000c`, a `PlayerControlObjectTemplate` console property. It
+ * sits in BF1942.exe's *initialized* `.data` and the shipped bytes are
+ * `00 00 00 00`. No static initialiser writes it; its only writers are the
+ * console accessor behind the registrar at `0x004f1310`. Every `.con`, `.inc`
+ * and `.tweak` in `Objects.rfa`, `animations.rfa`, `Game.rfa` and `menu.rfa`
+ * was searched, and both `Settings/` trees: nothing assigns it.
+ *
+ * So the amplitudes above are real, carefully tuned, and **inert**. Retail
+ * BF1942 has no first-person walking view bob, which is not what the authored
+ * data looks like and is the trap anyone calibrating a soldier camera off the
+ * `.con` files alone will fall into. This ships the engine's value; a caller
+ * that wants the bob sets `soldier.cameraShakeFactor`, exactly as the console
+ * property does, and gets the engine's real shape rather than an invention.
+ */
+export const CAMERA_SHAKE_FACTOR = 0;
 
 /**
  * How long the eye takes to travel between stances, seconds. Not invented —
@@ -249,6 +307,8 @@ export class Soldier {
     this.speed = 0;           // horizontal, m/s, as actually achieved
     this.gait = 'stand';      // run | walk | crouch | prone | stand
     this.bobPhase = 0;        // 0..1 of the fade-in, not a clock
+    this.bobTime = 0;         // seconds the current shake has been running
+    this.bobGait = 'stand';   // the gait the fade-in belongs to
     this.stepPhase = 0;       // 0..1 through the current footstep
     this.steps = 0;           // footsteps taken, for the audio stage
     this.blocked = false;     // something stopped the last move
@@ -261,6 +321,10 @@ export class Soldier {
 
     // Bob output, applied to the camera after the eye pose.
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
+    // Per-soldier, because in the engine it is a template property a console
+    // command can move, not a compile-time constant. Ships at the engine's
+    // value, which is zero — see `CAMERA_SHAKE_FACTOR`.
+    this.cameraShakeFactor = CAMERA_SHAKE_FACTOR;
 
     // Reused rather than reallocated: `step()` runs it up to twelve times.
     this._tickInput = { forward: 0, strafe: 0, walk: false };
@@ -290,7 +354,8 @@ export class Soldier {
     this.stance = 'stand';
     this.gait = 'stand';
     this.speed = 0;
-    this.bobPhase = 0; this.stepPhase = 0; this.steps = 0;
+    this.bobPhase = 0; this.bobTime = 0; this.bobGait = 'stand';
+    this.stepPhase = 0; this.steps = 0;
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
     this.blocked = false;
     this.onWater = false;
@@ -469,34 +534,53 @@ export class Soldier {
   }
 
   /**
-   * View bob. Amplitudes are the game's `setCameraShake*`; the phase runs off
-   * the footstep clock (see `BOB`).
+   * View bob, and the footstep clock beside it. Two independent clocks that
+   * used to be one.
+   *
+   * This is `getCameraShakeTransform`'s arithmetic — `amplitude *
+   * sin(rate * t) * fade`, `t` in seconds, `fade` climbing at `fadeIn` per
+   * second — carried out on the three channels a locomotion state declares.
+   * There is deliberately no term in `travelled` or in `this.speed`: the engine
+   * has none, and the gait's only job is to choose which row of `BOB` is live.
+   *
+   * Two details are the engine's rather than the obvious choice. A locomotion
+   * shake does not fade *out* — no `Lb_*` state declares `setCameraShakeFadeOut`
+   * — so standing still stops it dead and resets the clock, which is what the
+   * engine does when the state machine enters an idle state carrying no shake.
+   * And changing gait restarts the fade but not the clock, because
+   * `setCurrentState` (`0x006127f0`) zeroes the fade factor and leaves the time
+   * accumulator alone; the sine therefore never jumps mid-stride.
    */
   #advanceBob(dt, travelled) {
     const moving = travelled > 1e-5 && this.body.grounded;
     const shake = BOB[this.gait] || BOB.walk;
     if (!moving) {
-      this.bobPhase = Math.max(0, this.bobPhase - dt / shake.fadeIn);
+      this.bobPhase = 0;
+      this.bobTime = 0;
+      this.bobGait = 'stand';
     } else {
-      this.bobPhase = Math.min(1, this.bobPhase + dt / shake.fadeIn);
+      if (this.gait !== this.bobGait) {
+        this.bobPhase = 0;
+        this.bobGait = this.gait;
+      }
+      this.bobTime += dt;
+      this.bobPhase = Math.min(1, this.bobPhase + shake.fadeIn * dt);
       const period = STEP_PERIOD[this.gait] || STEP_PERIOD.walk;
-      // A stride is two steps; how far through the current one we are drives
-      // both the bob and, later, when a boot lands.
+      // A stride is two steps; how far through the current one we are is what
+      // says when a boot lands.
       const before = this.stepPhase;
       this.stepPhase = (this.stepPhase + dt / period) % 1;
       if (this.stepPhase < before) this.steps++;
     }
-    const amount = this.bobPhase;
+    const amount = this.bobPhase * this.cameraShakeFactor;
     if (amount <= 0) {
       this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
       return;
     }
-    // The head rises and falls twice per stride and sways once, which is what
-    // a stride is; the yaw rides the sway.
-    const stride = this.stepPhase * Math.PI * 2;
-    this.bobUp = Math.sin(stride * 2) * shake.up * amount;
-    this.bobSide = Math.sin(stride) * shake.side * amount;
-    this.bobYaw = Math.sin(stride) * shake.yaw * amount;
+    const t = this.bobTime;
+    this.bobUp = Math.sin(shake.upRate * t) * shake.up * amount;
+    this.bobSide = Math.sin(shake.sideRate * t) * shake.side * amount;
+    this.bobYaw = Math.sin(shake.yawRate * t) * shake.yaw * amount;
   }
 }
 

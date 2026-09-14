@@ -48,7 +48,8 @@ import {
   Soldier, spawnFlags, pickSpawn, spawnYaw,
   EYE, HEIGHT, GAIT_SPEED, BODY_RADIUS, STEP_HEIGHT, MAX_GROUND_SLOPE,
   JUMP_SPEED, GRAVITY, DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR,
-  PITCH_LIMIT_DEG, FOV_DEG, BOB, STEP_PERIOD, STANCE_TRANSITION,
+  PITCH_LIMIT_DEG, FOV_DEG, BOB, CAMERA_SHAKE_FACTOR, STEP_PERIOD,
+  STANCE_TRANSITION,
 } from './soldier.js';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -147,6 +148,7 @@ const results = { constants: {
   walkFactor: WALK_SPEED_FACTOR,
   pitchLimitDeg: PITCH_LIMIT_DEG, fovDeg: FOV_DEG,
   bobRunUp: BOB.run.up, bobWalkUp: BOB.walk.up,
+  cameraShakeFactor: CAMERA_SHAKE_FACTOR,
   stepPeriod: STEP_PERIOD, stanceTransition: STANCE_TRANSITION,
 } };
 
@@ -370,27 +372,127 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
 
 // --- view bob --------------------------------------------------------------
 
-{
-  const s = runway();
-  const peaks = [];
-  for (let i = 0; i < 240; i++) { s.step(DT, { forward: 1 }); peaks.push(Math.abs(s.bobUp)); }
-  const runPeak = Math.max(...peaks.slice(120));
-  // Standing still, it fades out within the declared 0.6 s.
-  for (let i = 0; i < 60; i++) s.step(DT, {});
-  const restPeak = Math.abs(s.bobUp);
+// Two separate things are under test here, and they were one thing until the
+// binary settled the camera shake's units.
+//
+//   1. The shipped configuration has *no* walking bob at all, because the
+//      engine multiplies the lower body's shake by `cameraShakeFactor` and that
+//      ships as zero. This is the thing the user sees.
+//   2. Turn the factor up and the shape underneath must be the engine's:
+//      `amplitude * sin(rate * t)` with `rate` in radians per second and no
+//      term in ground speed anywhere.
+//
+// The rate is measured off interpolated rising zero crossings rather than
+// counted, so it is not quantised by the sample window.
 
-  const w = runway();
-  const wpeaks = [];
-  for (let i = 0; i < 240; i++) { w.step(DT, { forward: 1, walk: true }); wpeaks.push(Math.abs(w.bobUp)); }
-  results.bob = {
-    runPeak, walkPeak: Math.max(...wpeaks.slice(120)), restPeak,
-    declaredRun: BOB.run.up, declaredWalk: BOB.walk.up,
+/** Hz of a sampled channel, first crossing to last. */
+function cycleRate(series) {
+  const cross = [];
+  for (let i = 1; i < series.length; i++) {
+    if (series[i - 1] <= 0 && series[i] > 0) {
+      const f = series[i] === series[i - 1]
+        ? 0 : -series[i - 1] / (series[i] - series[i - 1]);
+      cross.push((i - 1 + f) * DT);
+    }
+  }
+  if (cross.length < 2) return 0;
+  return (cross.length - 1) / (cross[cross.length - 1] - cross[0]);
+}
+
+/**
+ * Hold `input` for 40 s and report the bob's shape over the last 30, by which
+ * time the slowest declared fade (0.3 per second, i.e. 3.3 s) is long
+ * saturated.
+ *
+ * Deliberately not on the runway: that is 40 m of clear ground and a 40 s run
+ * covers 240. The world here is an unbounded flat plane — a `surfaceHeight`
+ * and nothing else, which `physics.js` explicitly supports — because the
+ * instrument wanted for measuring a camera curve is one with no geometry in it
+ * to perturb the gait. Everything about the *body* is measured elsewhere in
+ * this file against the real collider.
+ */
+const PLANE = { surfaceHeight: () => 0, casts: 0 };
+
+function bobShape(input, factor) {
+  const s = new Soldier({ collider: PLANE }).spawn(0, 0, 0, 0);
+  if (factor !== undefined) s.cameraShakeFactor = factor;
+  const up = [], side = [], yaw = [];
+  let speed = 0;
+  for (let i = 0; i < 2400; i++) {
+    s.step(DT, input);
+    if (i >= 600) { up.push(s.bobUp); side.push(s.bobSide); yaw.push(s.bobYaw); speed += s.speed; }
+  }
+  const peak = (a) => Math.max(...a.map(Math.abs));
+  return {
+    speed: speed / up.length,
+    upPeak: peak(up), upHz: cycleRate(up),
+    sidePeak: peak(side), sideHz: cycleRate(side),
+    yawPeak: peak(yaw), yawHz: cycleRate(yaw),
+  };
+}
+
+{
+  // What the module ships: the factor left alone.
+  results.bobShipped = {
+    run: bobShape({ forward: 1 }),
+    walk: bobShape({ forward: 1, walk: true }),
+    crouch: bobShape({ forward: 1, crouch: true }),
+    prone: bobShape({ forward: 1, prone: true }),
+    factor: new Soldier({}).cameraShakeFactor,
+    constant: CAMERA_SHAKE_FACTOR,
   };
 
+  results.bobShape = {
+    run: bobShape({ forward: 1 }, 1),
+    walk: bobShape({ forward: 1, walk: true }, 1),
+    crouch: bobShape({ forward: 1, crouch: true }, 1),
+    prone: bobShape({ forward: 1, prone: true }, 1),
+    // Backpedalling is 4 m/s against a run's 6 and strafing is 4 as well.
+    // `Lb_RunBackward` and `Lb_StrafeLeft/Right` declare exactly the run's
+    // numbers, so all three must come out identical: that is the assertion
+    // that there is no speed term.
+    backpedal: bobShape({ forward: -1 }, 1),
+    strafe: bobShape({ strafe: 1 }, 1),
+    still: bobShape({}, 1),
+  };
+  results.bobDeclared = {
+    run: { up: BOB.run.up, upRate: BOB.run.upRate, side: BOB.run.side,
+           sideRate: BOB.run.sideRate, yaw: BOB.run.yaw, yawRate: BOB.run.yawRate },
+    walk: { up: BOB.walk.up, upRate: BOB.walk.upRate, side: BOB.walk.side,
+            sideRate: BOB.walk.sideRate, yaw: BOB.walk.yaw, yawRate: BOB.walk.yawRate },
+    crouch: { up: BOB.crouch.up, upRate: BOB.crouch.upRate, side: BOB.crouch.side },
+    prone: { up: BOB.prone.up, upRate: BOB.prone.upRate, side: BOB.prone.side },
+  };
+
+  // The fade is a rate per second, so full amplitude arrives after 1 / 0.6 s
+  // and not before. Half a ramp in, it must still be climbing and must be
+  // within a frame of `fadeIn * elapsed`.
+  const f = new Soldier({ collider: PLANE }).spawn(0, 0, 0, 0);
+  f.cameraShakeFactor = 1;
+  const half = [];
+  const halfFrames = 50;                 // 0.833 s, half of the 1.67 s ramp
+  for (let i = 0; i < halfFrames; i++) { f.step(DT, { forward: 1 }); half.push(f.bobPhase); }
+  results.bobFade = {
+    fadeIn: BOB.run.fadeIn,
+    phaseAfterHalfARamp: f.bobPhase,
+    expected: BOB.run.fadeIn * halfFrames * DT,
+    monotonic: half.every((v, i) => i === 0 || v >= half[i - 1]),
+  };
+
+  // Stopping kills it dead — no `Lb_*` state declares `setCameraShakeFadeOut`.
+  const s = new Soldier({ collider: PLANE }).spawn(0, 0, 0, 0);
+  s.cameraShakeFactor = 1;
+  for (let i = 0; i < 240; i++) s.step(DT, { forward: 1 });
+  const movingPeak = Math.abs(s.bobUp);
+  s.step(DT, {});
+  results.bobStop = { movingPeak, afterOneStillFrame: Math.abs(s.bobUp) };
+
   // Footsteps land on the declared clock: one second of running is 1 / 0.36.
-  const f = runway();
-  walk(f, { forward: 1 }, 300);          // five seconds
-  results.steps = { taken: f.steps, expected: 5 / STEP_PERIOD.run };
+  // The same clock no longer drives the bob, so this has to keep working on
+  // its own.
+  const steps = runway();
+  walk(steps, { forward: 1 }, 300);      // five seconds
+  results.steps = { taken: steps.steps, expected: 5 / STEP_PERIOD.run };
 }
 
 // --- cost ------------------------------------------------------------------
