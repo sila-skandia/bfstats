@@ -172,12 +172,73 @@ ObjectTemplate.addTemplate TestCockpitInternal
             "TestCockpitExternal",
             select_lod_alternative(cockpit_alternatives, "complex").template,
         )
+        # With no selector to consult, only the name role is available.
         self.assertEqual(
             "afr_house1_steExterior",
             select_lod_alternative(
                 [ChildRef("afr_house1_steInterior"), ChildRef("afr_house1_steExterior")],
                 "complex",
             ).template,
+        )
+
+    def test_distance_selector_takes_the_near_rung_not_the_complex_name(self) -> None:
+        """A building's `Interior` is the near LOD, and it is what gets drawn.
+
+        `SupplydeExterior` is the hollow shell the engine drops to past 70 m.
+        Picking it by name role is what left level bakes with buildings you
+        could walk into and then see straight out of.
+        """
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Buildings/Common/Supplyde/Objects.con",
+            """
+ObjectTemplate.create Bundle Supplyde_m1
+ObjectTemplate.addTemplate lodSupplyde
+
+LodSelectorTemplate.create DistanceSelector SupplydeSelector
+LodSelectorTemplate.addLodDistance 70
+ObjectTemplate.create LodObject lodSupplyde
+ObjectTemplate.lodSelector SupplydeSelector
+ObjectTemplate.addTemplate SupplydeInterior
+ObjectTemplate.addTemplate SupplydeExterior
+
+ObjectTemplate.create Bundle SupplydeInterior
+ObjectTemplate.geometry Supplyde_m1
+
+ObjectTemplate.create SimpleObject SupplydeExterior
+ObjectTemplate.geometry Supplyde_m2
+""",
+        )
+        lod = library.object("lodSupplyde")
+        selector = library.selector(lod.lod_selector)
+        self.assertTrue(selector.ranks_by_distance)
+        self.assertEqual(
+            "SupplydeInterior",
+            select_lod_alternative(lod.children, "complex", selector).template,
+        )
+
+    def test_compare_selector_keeps_the_name_role_over_child_order(self) -> None:
+        """A cockpit swap is a state, not a ladder, so order carries nothing."""
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Air/Corsair/Objects.con",
+            """
+LodSelectorTemplate.create DistCompareSelector CorsairCockpitSelector
+LodSelectorTemplate.addLodDistance 20
+LodSelectorTemplate.addLodComparison 0.5
+ObjectTemplate.create LodObject lodCorsairCockpit
+ObjectTemplate.lodSelector CorsairCockpitSelector
+ObjectTemplate.addTemplate CorsairCockpitInternal
+ObjectTemplate.addTemplate CorsairCockpitExternal
+""",
+        )
+        lod = library.object("lodCorsairCockpit")
+        selector = library.selector(lod.lod_selector)
+        self.assertFalse(selector.ranks_by_distance)
+        # The interior is listed first here; the role still decides.
+        self.assertEqual(
+            "CorsairCockpitExternal",
+            select_lod_alternative(lod.children, "complex", selector).template,
         )
 
     def test_lod_selector_block_is_parsed_and_bound_to_its_lod_object(self) -> None:
