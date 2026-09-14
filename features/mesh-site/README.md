@@ -25,7 +25,7 @@ the active tab marked by `aria-current="page"`.
 
 | Tab | Page | Serves from |
 |---|---|---|
-| Models | `index.html` | `models/` — vehicles, weapons, armour, damage, duels |
+| Models | `index.html` | `models/` — vehicles, weapons, armour, damage |
 | Maps | `map.html` | `maps/` — extracted levels, terrain, lightmaps, sky |
 | Poses | `poses.html` | `models/poses/` — soldier states and weapon grip welds |
 
