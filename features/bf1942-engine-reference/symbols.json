@@ -1068,6 +1068,15 @@
    "note": "bf42plus section: Patched Locations (for reference)"
   },
   {
+   "address": "0x004facd0",
+   "name": "BFSoldier::updateCameraShake",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Composes a soldier's three AnimationStateMachineInstances (array based at BFSoldier +0x294 in lnxded; 0 = lower body, 1 = upper body, 2 = camera-shake triggers, the last proven by triggerCameraShake). Passes dt straight through with NO speed term. The lower-body instance - which owns every Lb_Walk/Run/Crouch/Lie locomotion state and therefore the whole walking view bob - is multiplied by cameraShakeFactor (DAT_0099000c). The upper-body and trigger instances get a hardcoded 1.0f."
+  },
+  {
    "address": "0x00502e60",
    "name": "calcStringHashValueNoCase",
    "kind": "function",
@@ -1545,6 +1554,15 @@
    "note": "sole xref to 0x00908a90. Ghidra has no function defined here - undefined code or a static initializer. Needs a function created before it can be decompiled."
   },
   {
+   "address": "0x005dd6e0",
+   "name": "console:AnimationState::setCameraShakeUpDown",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Property descriptor ctor for 'setCameraShakeUpDown' (string 0x0090bc8c), 3 args. The whole setCameraShake* family writes into a 68-byte block per slot, slot = the FIRST .con argument (clamped 0..2, so three chained shakes per state; all of vanilla uses 0). Block layout, from the lnxded setters at 0x08329d30-0x08329ed0: +0x00 enabled(byte) +0x04 timeToShake +0x08/0x0c pitch +0x10/0x14 yaw +0x18/0x1c roll +0x20/0x24 upDown +0x28/0x2c leftRight +0x30/0x34 inOut +0x38 fadeIn +0x3c fadeOut +0x40 minFactor; each pair is (amplitude, rate rad/s). fadeIn and fadeOut are RATES PER SECOND, not durations: factor += fadeIn*dt clamped to 1 (0x0832bd78), factor -= fadeOut*dt floored at minFactor. fadeIn <= 0 means factor snaps to 1."
+  },
+  {
    "address": "0x00601664",
    "name": "MemoryPool__alloc",
    "kind": "function",
@@ -1561,6 +1579,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Deferred render-state queue flusher: dispatch loop applying queued states to the device. Cases include SetMaterial(+0xA8) from queue at 0x9c0568, D3DRS_AMBIENT (0x8b) global ambient, D3DRS_*MATERIALSOURCE (0x91+), SetLight(+0xB0) for 8 slots via FUN_0045f210, LightEnable(+0xB8). Confirms fixed-function D3D lighting drives DIFFUSE for dynamic meshes."
+  },
+  {
+   "address": "0x00613e90",
+   "name": "AnimationStateMachineInstance::getCameraShakeTransform",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Builds the camera-shake Mat4 for one state-machine instance. Signature (lnxded: dice::anim::AnimationStateMachineInstance::getCameraShakeTransform(Mat4&, float dt, float factor)). Per channel it computes amp * sin(rate * t) * factor, where t is an instance-local seconds accumulator advanced t += dt (0x0832b825-0x0832b845 in lnxded). UpDown -> Mat4 +0x34 (translate Y), LeftRight -> +0x30 (X), InOut -> +0x38 (Z); Pitch/Yaw/Roll -> setRotateXDeg/YDeg/ZDeg, i.e. degrees. THE THIRD .con ARGUMENT IS AN ANGULAR RATE IN RADIANS PER SECOND, not Hz and not a duration: it is the multiplier on seconds inside sin(). Nothing scales by ground speed. Matched to lnxded 0x0832b6c0 by the five call sites from updateCameraShake and the -20.0f sentinel store."
   },
   {
    "address": "0x00632478",
@@ -2533,6 +2560,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x0099000c",
+   "name": "BFSoldierTemplate::cameraShakeFactor",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "float. Scales the soldier's LOCOMOTION camera shake only (see BFSoldier::updateCameraShake). Lives in initialized .data (0x00952000-0x00a9298b) and the shipped bytes are 0x00000000, i.e. 0.0f. Its only writers are the console accessor for the PlayerControlObjectTemplate property 'cameraShakeFactor' (registrar FUN_004f1310, string 0x008e9604), which clamps to [lo, 1.0]; no static initialiser touches it. No vanilla .con, .inc or .tweak in Objects.rfa, animations.rfa, Game.rfa or menu.rfa sets it, and neither does any Settings file. CONSEQUENCE: retail BF1942 multiplies the declared Lb_* setCameraShake* walk/run bob by zero - the authored walking view bob is inert unless a console command enables it. Weapon-fire (Ub_*) and explosion/hit shakes are unaffected, they run at 1.0."
   },
   {
    "address": "0x009a2170",
