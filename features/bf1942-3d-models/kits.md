@@ -7,8 +7,41 @@ It belongs to the kit he picked at the spawn screen, and the kit is a separate
 object tree the extractor has never walked.
 
 This document settles how the engine dresses a soldier, what that means for
-extraction, and how kits become something you can browse. It is the design
-record; nothing here has been built yet.
+extraction, and how kits become something you can browse.
+
+## What shipped
+
+```bash
+cd tools/bf1942-models
+python3 extract_kits.py --out ./viewer/models
+python3 extract_kits.py --mod EoD --out ./viewer/models/mods/eod
+```
+
+Then **Kits**, the fourth tab of the mesh viewer, beside Models / Maps / Poses.
+
+| | kits | worn meshes | parts placed |
+|---|---|---|---|
+| bf1942 | 35 | 77 | **89 of 89** |
+| EoD | 128 | 186 | 358 |
+
+- `bf42/kit.py` — kit collection, part resolution, the level sweep, the
+  parachute-twin fold.
+- `extract_kits.py` — one `.glb` per distinct worn geometry, one per ground
+  pickup, and `kits.json`.
+- `viewer/kits.html` — the browser.
+- `bf42/con.py` learned `setBoneName`, `setType` and `setKitTeam`;
+  `bf42/roster.py` learned EoD's nations.
+- `tests/test_kit.py` — 16 tests, installation-free like the rest.
+
+Measured in the browser against the real extraction: **89 of 89 vanilla worn
+parts place** (35 head, 22 back, 32 hip) and head parts land at y = 1.73–1.77 m
+against a naive ungrafted y ≈ 0. Orientation is checked by recovering the
+rotation between each part standalone and grafted, which must be the identity:
+**447 of 447 parts across vanilla and EoD, maximum deviation 0.00°.**
+
+It took three metrics to get there, and the first two were each green while the
+helmets were visibly wrong. That story is worth more than the number — see
+"The graft, and the trap it walked into".
 
 ## Scope
 
@@ -38,13 +71,17 @@ Three reasons those columns differ, and each is a rule the pipeline needs:
   `RussKit` / `JapKit` appear in vanilla, XPack2 and EoD, point at older
   `Soldier/USHelmet`-style meshes, and no level's `game.setKit` ever names one.
   XPack2 adds `CommandoKit` and `GerEliteKit` to the dead pile.
-- **Vanilla's Canadian kits are unused content.** All five are declared,
-  none is bound by any vanilla, Road to Rome or Secret Weapons level. That
-  explains the anomaly better than "one nation doesn't differentiate" — nobody
-  finished them, which is why all five wear `Canadian_helmet` and why
-  `CanadianKit/Medic/Objects.con` declares a `Medic_helm_brit` KitPart it then
-  never uses. (bg42 later binds its *own* `Canadian_*` kits; those are different
-  templates.)
+- **Vanilla's Canadian kits are overwritten before they spawn.** Exactly one
+  level names them, `Liberation_of_Caen`, and it sets team 2 *twice* in the same
+  file — five `Canadian_*` kits under `CanadianSoldier`, then immediately five
+  `GB_*` kits under `BritishSoldier`. `Init.con` runs top to bottom and a later
+  `game.setKit 2 0 <x>` replaces slot 0 rather than adding to it, so what
+  actually loads is the British set. Counting *mentions* makes all five Canadian
+  kits look live; replaying the file the way the engine does shows they never
+  reach a player. That also explains why all five wear the same
+  `Canadian_helmet` and why `CanadianKit/Medic/Objects.con` declares a
+  `Medic_helm_brit` part it never uses — unfinished content. (bg42 later binds
+  its *own* `Canadian_*` kits; different templates.)
 - **EoD ships every kit twice.** 116 of its 240 are `_CHUTE` twins, and 115 of the
   116 differ from their base by exactly one thing: the base carries a `nochute`
   flag and the twin does not. Same weapons, same hat. Collapsing them takes 194
@@ -105,6 +142,97 @@ has `Bip01 Head` and no `A`, and is referenced by no template. Dead file.)
 
 `setCopyLinksCount` is inert: 1,319 of 1,320 occurrences are the literal `0` and
 the last is the typo `0^`. Ignore it.
+
+### The graft, and the trap it walked into
+
+A KitPart mesh comes out of the exporter **crown up**, centred on its own origin.
+That is measurable without looking at it: slice the vertex cloud at both ends of
+each axis and compare the spread of the other two. A helmet is a dome, so the
+open rim is wide and the crown converges — `Us_Helmet` reads 0.163 at −Y against
+0.101 at +Y, and `Jap_Helmet` 0.196 against 0.096. Rim at the bottom, crown at
+the top.
+
+The bone it hangs on is a different matter. `Bip01 Head` — and `A`, its
+pure-translation child, which inherits its rotation exactly — carries a 3ds Max
+Biped frame that runs along the limb and has nothing to do with world up:
+
+```
+A / Bip01 Head rest rotation
+  [ 0.187  0.097 -0.978 ]
+  [ 0.348  0.924  0.158 ]
+  [ 0.919 -0.370  0.139 ]
+```
+
+A *skinned* mesh never notices, because its inverse-bind matrices cancel that
+frame for it. **A rigid graft has no inverse bind**, so parenting a helmet
+straight onto the bone hands it the Biped frame raw — 115 to 147 degrees out,
+depending on the bone. The graft must supply the inverse bind itself:
+
+```
+world = posed(bone) * inverse(world_rest(bone)) * mesh
+```
+
+which is rigid skinning to a single bone, and is what the engine does with a
+KitPart.
+
+**Where that rotation comes from is the whole lesson.** Computing it in
+`extract_kits.py` from `UsSoldier.ske` — transpose the bone's rest rotation, ship
+it in the manifest — is the obvious move and it is wrong, by 77 to 95 degrees.
+The skeleton file is several conversions upstream of the thing being posed: the
+`.ske` is stored mirrored in Z against the `.sm` it drives, `gltf.py` applies the
+Refractor-to-glTF mirror on the way out, and `assemble.py` adds `pitch -= 90` to
+stand a `BFSoldier` up on +Y. Reproducing that stack by hand is how you land 80
+degrees out.
+
+The exported pose glb is the one place where **every** conversion has already
+been applied. So the viewer reads the correction straight off the loaded
+skeleton — `inverse(bone.getWorldQuaternion())`, captured once per figure — and
+measures 0.00 degrees. Three candidates, measured against the standalone part:
+
+| local rotation | head | back | hip |
+|---|---|---|---|
+| none | 125.5° | 146.9° | 115.5° |
+| `inverse(rest)` from `UsSoldier.ske` | 77.7° | 94.9° | 79.3° |
+| **`inverse(world(bone))` off the pose glb** | **0°** | **0°** | **0°** |
+
+It is captured with the **standing** clip forced on, never whatever stance the
+viewer happens to be in: the value is a property of the bind pose, and taking it
+mid-crouch would freeze that crouch's head tilt into the helmet permanently.
+Being a *local* rotation it then costs nothing per stance — the bone moves, the
+helmet moves.
+
+### Two blind metrics in a row
+
+This is [`weapon-grip.md`](weapon-grip.md)'s fourth trap, hit twice more.
+
+**A distance cannot see a rotation.** The first check here was a gap metric and
+it passed everything: 1 cm helmet-to-head-bone, median 8.4 cm across 89 parts,
+against a naive ungrafted control of ~1.75 m. All green, every helmet upside
+down. A human looking at the screen caught it.
+
+**A dome cannot see a yaw.** The replacement was a rim test — slice the vertex
+cloud at both ends of world Y and compare the spread of the other two axes; the
+open rim is wide, the crown converges. It correctly caught the inversion (9 of 12
+heads flagged without the correction, 0 with it). But a helmet is *rotationally
+symmetric about its own axis*, so the rim test is structurally incapable of
+seeing a yaw — and the parts were still 90 degrees off. A human caught that one
+too.
+
+The check that actually works is Kabsch: recover the rotation that best maps the
+standalone part's vertex cloud onto the grafted one, and require it to be the
+identity. It is sensitive to yaw, pitch and roll together, it needs no assumption
+about the part's shape — so it covers `Us_Glasses` and the 0.6 m `VCCamoHat` bush
+as well as it covers a helmet — and it is one number per part:
+
+> **447 of 447 parts** (89 vanilla, 358 EoD), **maximum deviation 0.00°.**
+
+Validate the estimator against a known rotation before trusting it; a recovery
+routine that silently returns the identity would report a perfect score. The
+version here recovers a 61.44° test rotation to within 0.00°.
+
+The through-line: each metric was fine as far as it went, and each had a
+*structural* blind spot that no amount of running it would reveal. Ask what a
+measurement cannot see before trusting a green result from it.
 
 ### This is the weapon weld again
 
@@ -177,16 +305,19 @@ netting is real added geometry, alpha-tested and two-sided.
 | Russian | `Russ_Helmet` → `ruhelm_r` + `Ryssun_r` | `medichelm_Russ` → `ruhelm_med_o` | `Russ_ScoutHelm` → `ruhelm_r` + `scoutcover01_o` |
 | **Canadian** | `Canadian_helmet` → `Can_helm` | **`Canadian_helmet`** | **`Canadian_helmet`** |
 
-Canada is the exception, and the liveness test explains it: **no vanilla level
-binds a Canadian kit.** `Objects/Items/CanadianKit/Medic/Objects.con` declares a
+Canada is the exception, and the liveness test explains it: the only level that
+names a Canadian kit overwrites it with the British set in the same file (see
+Scope). `Objects/Items/CanadianKit/Medic/Objects.con` declares a
 `KitPart Medic_helm_brit` and then never uses it — the kit line reads
 `addTemplate Canadian_helmet` — and all five classes wear the same helmet. That
-is unfinished content rather than a design choice, and filtering on `game.setKit`
-removes it before a UI has to explain five identical Canadians.
+is unfinished content rather than a design choice, and replaying `game.setKit`
+the way the engine does removes it before a UI has to explain five identical
+Canadians.
 
-So the vanilla rule is clean with no exceptions: **AT, Assault and Engineer share
-the national helmet; Medic and Scout each get their own.** Seven of seven live
-nations, every one of them.
+So the live vanilla rule is clean with no exceptions: **AT, Assault and Engineer
+share the national helmet; Medic and Scout each get their own.** Six nations
+across seven wardrobes — Germany fields two, European and Afrika Korps — and all
+seven follow it.
 
 `Objects/Items/BaseKit/Objects.con`'s `Kit USKit` / `GerKit` / `BritKit` /
 `RussKit` / `JapKit` are dead the same way. They are five of the ten "missing"
@@ -601,35 +732,38 @@ medic labelled *bareheaded* is a working UI telling the truth.
 
 ## Verification
 
-The project's unit of proof is a matrix, and a distance metric alone is not one.
-[`weapon-grip.md`](weapon-grip.md)'s fourth trap — the weld every metric passed
-upside down, twice — applies with more force here, because a helmet on a head is
-*more* rotationally symmetric than a rifle in a hand. So:
+Three things are checked, and only the third one earns its keep.
 
-- **`headGap`** — min distance from the grafted mesh to the skull vertices
-  weighted to `Bip01 Head`, with a **`headGapNaive`** control (the same distance
-  with the part left at the origin), exactly as `weld_metrics` does for palms.
-  Expect low centimetres against ~1.5 m naive. A naive figure that is *not* large
-  means the metric does not discriminate and its threshold is worthless.
-- **`headAxisAngle`** — angle between the part's principal axis and the posed
-  `Bip01 Head` +Y. Under ~15°. This is the only cheap instrument that catches a
-  backwards helmet.
-- **`enclosureFraction`** — fraction of part vertices inside the head's convex
-  hull, in `bf42/verify.py` beside the existing `silhouette_outside`. Near zero
-  for a helmet sitting on a skull, near 1.0 for a badly bound one.
-- **Per-kit `texturesMissing`**, because an unresolved texture paints a white
-  helmet that is indistinguishable on screen from a bad weld.
-- **`224/224` must not move.** Kits add files; they must not perturb an existing
-  byte of `poses-matrix.json`.
+**Placement.** Every worn part a live kit declares must find its bone and land.
+89 of 89 vanilla, 358 of 358 EoD. Head parts sit at y = 1.73–1.77 m against a
+naive ungrafted y ≈ 0, which is the control that makes the number mean something.
 
-Target claim: *N of N (soldier, kit) combinations resolve; head gap median X cm
-against a naive median of 1.5 m; axis deviation p95 under 15°; 224 of 224 pose
-pairs unchanged.*
+**Orientation — the one that matters.** Recover the rotation between the part
+standalone and the part grafted (Kabsch, via the polar decomposition of the
+cross-covariance) and require the identity. Shape-independent, so it covers
+glasses and foliage hats as well as helmets, and sensitive to yaw, pitch and roll
+together — which the two metrics it replaced were not. **447 of 447 parts,
+maximum deviation 0.00°.** Validate the estimator against a known rotation first:
+it recovers a 61.44° test case to 0.00°, so a green score is not just the routine
+returning the identity.
 
-## Staged plan
+**Textures.** Per-part `texturesMissing` in each `.kit.report.json`, because an
+unresolved texture paints a white helmet that is indistinguishable on screen from
+a bad graft.
 
-Scoped to vanilla + EoD, with Road to Rome and Secret Weapons behind them. Stages
-1 and 2 fix measured bugs and are worth doing whether or not the rest happens.
+And the standing invariant: **kits must not perturb a byte of
+`poses-matrix.json`.** They add files; the 224 pose pairs are not theirs to move.
+
+The checks live in the browser rather than in `bf42/verify.py`, because the thing
+being verified is the *graft* — a viewer-side composition of two files — and
+`weapon-grip.md`'s third trap is exactly that a viewer-side bind convention can
+diverge from what the file says. Checking it anywhere but in the renderer would
+be checking the wrong thing.
+
+## How it was built
+
+Scoped to vanilla + EoD. Steps 1 and 2 fixed measured bugs and stand on their
+own; 7 is still open.
 
 1. **Fix the kit census** — `KIT_SOURCE` to allow a theatre suffix and a unit
    segment; extend `NATION_LABELS` with EoD's `nva` / `arvn` / `pathetlaos`; add
@@ -646,15 +780,16 @@ Scoped to vanilla + EoD, with Road to Rome and Secret Weapons behind them. Stage
 4. **`extract_kits.py`** — one glb per distinct worn geometry (101 across all four
    mods; 50 for vanilla alone), plus `kits.json`. Dedupe by geometry *name*, which
    is safe because a recolour ships as its own `.sm`.
-5. **Verification instruments** — `headGap`/`headAxisAngle`/`enclosureFraction`,
-   registered as `Finding`s in `triage_report`. The 180°-rotated-helmet test is
-   the most important one in the set.
-6. **`kits.html`** — grid, detail view, weapon rack, facets, hash. Gated on 4.
-7. **Road to Rome and Secret Weapons** — should be a re-run, not new code. If
-   either needs a code change, stage 3 got something wrong.
-8. **Docs** — fold measured results back into this file and the README companion
-   table; update README's "Helmets are kit parts, so the exported figure is
-   bareheaded" to point here.
+5. **`kits.html`** — kit list, worn rows, weapon rack, stance blend, hash.
+   This is where the inverse bind is captured, off the loaded skeleton.
+6. **Verification** — placement, then orientation by Kabsch against the
+   standalone part, with the estimator itself validated first.
+7. **Road to Rome and Secret Weapons** — still open. Should be a re-run rather
+   than new code: neither pack uses `setRandomGeometries`, container parts or
+   backslash paths. If either needs a code change, step 3 got something wrong.
+   Both need their models and poses extracted first; kits alone would give a
+   browser with no figure to dress.
+8. **Docs** — this file and the README companion table.
 
 ## Decisions
 
