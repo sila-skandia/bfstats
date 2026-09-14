@@ -34,19 +34,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import con as con_mod
-from bf42 import gltf
 from bf42 import kit as kit_mod
 from bf42 import roster as roster_mod
-from bf42 import ske as ske_mod
 from bf42.assemble import Assembler
 from bf42.rfa import ArchivePool
 
 from extract_models import (DEFAULT_GAME_DIR, build_library, build_pools,
                             discover_levels, mod_chain)
 
-# Every vanilla, XPack and EoD soldier declares this one skeleton, which is why
-# a German helmet fits a Viet Cong head.
-SOLDIER_SKELETON = "animations/UsSoldier.ske"
+# The rotation that seats a part on its bone is NOT computed here. It is the
+# bone's inverse bind, and the only place every coordinate conversion in this
+# pipeline has already been applied — the `.ske` Z-mirror, the glTF mirror, and
+# the `pitch -= 90` that stands a soldier up on +Y — is the exported pose glb
+# itself. Deriving it from `UsSoldier.ske` here was tried and lands 77-95 degrees
+# out. `viewer/kits.html` reads it off the loaded skeleton instead; see
+# "The graft, and the trap it walked into" in features/bf1942-3d-models/kits.md.
 
 # A kit part is a hat. It does not need the vehicle-sized texture budget, and
 # capping it keeps the whole worn set in the low megabytes.
@@ -73,45 +75,6 @@ WWII_NATIONS = roster_mod.AXIS_NATIONS | {
 
 def side_label(nation: str | None) -> str | None:
     return roster_mod.side_of(nation) if nation in WWII_NATIONS else None
-
-
-def bind_rotations(meshes: ArchivePool) -> dict[str, list[float]]:
-    """Per bone, the rotation that cancels its rest frame. glTF (x, y, z, w).
-
-    A KitPart mesh is authored in the soldier's *mesh* space — a helmet comes
-    out of the exporter crown-up, centred on its own origin — while the bone it
-    hangs on carries a 3ds Max Biped frame that points along the limb and has
-    nothing to do with world up. `Bip01 Head` (and `A`, its pure-translation
-    child) sits at roughly a 79-degree tilt.
-
-    A *skinned* mesh never notices, because its inverse-bind matrices cancel
-    that frame for it. A rigid graft has no inverse bind, so parenting a helmet
-    straight onto the bone hands it the Biped frame raw and the helmet arrives
-    upside down. This is the same trap `weapon-grip.md` records twice: a
-    distance metric passes at one centimetre while the thing is inverted,
-    because a distance cannot see a rotation.
-
-    So supply the inverse bind explicitly. `rest()` is the bone's world rest in
-    mesh space, and a rotation matrix's inverse is its transpose. The viewer
-    then applies this as the graft's local rotation, after which
-    `world = posed(bone) * inverse(rest(bone)) * mesh` — rigid skinning to a
-    single bone, which is exactly what the engine does with a KitPart.
-    """
-    blob = meshes.try_read(SOLDIER_SKELETON)
-    if blob is None:
-        print(f"  no {SOLDIER_SKELETON}: kit parts will carry no bind rotation",
-              file=sys.stderr)
-        return {}
-    skeleton = ske_mod.parse(blob, "UsSoldier")
-    out: dict[str, list[float]] = {}
-    for bone in kit_mod.BONE_SLOTS:
-        index = skeleton.index(bone)
-        if index is None:
-            continue
-        rotation, _ = skeleton.rest(index)
-        transpose = tuple(tuple(rotation[col][row] for col in range(3)) for row in range(3))
-        out[bone] = [round(value, 6) for value in gltf.quat_from_matrix(transpose)]
-    return out
 
 
 def export_part(name: str, make_assembler, out: Path) -> dict | None:
@@ -168,7 +131,6 @@ def main() -> int:
         return 1
     meshes, textures, objects, game = build_pools(chain, [])
     library = build_library(objects)
-    binds = bind_rotations(meshes)
 
     kits = kit_mod.collect(library)
     levels = discover_levels(chain)
@@ -241,7 +203,6 @@ def main() -> int:
                 "position": list(part.position),
                 "rotation": list(part.rotation),
                 "viaHolder": part.via_holder,
-                "bindRotation": binds.get(part.bone) or binds.get(part.bone.lower()),
                 "alternatives": [
                     {"template": alt, **({"glb": exported[alt.lower()]["glb"]}
                                          if alt.lower() in exported else {})}

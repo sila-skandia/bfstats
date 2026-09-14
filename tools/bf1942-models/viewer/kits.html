@@ -781,11 +781,58 @@ function applyWireframe() {
 // the mixer moves Bip01 Head, the helmet on `A` goes with it.
 const partCache = new Map();
 let grafted = [];
+// Per bone, the local rotation that seats a part on it: the bone's inverse
+// bind. Captured once per figure, in the standing pose, by `captureBinds()`.
+let boneBinds = new Map();
 
 async function loadPart(glb) {
   if (!partCache.has(glb))
     partCache.set(glb, (await loader.loadAsync(`${MODELS_BASE}/${glb}${bust()}`)).scene);
   return partCache.get(glb);
+}
+
+/** Capture each kit bone's inverse bind, from the figure, in the stand pose.
+ *
+ * A KitPart mesh is authored in the soldier's mesh space: the exporter hands
+ * back a helmet already crown-up. The bone it hangs on is not in that space —
+ * `Bip01 Head` carries a Biped frame that runs along the limb. A *skinned* mesh
+ * never notices, because its inverse-bind matrices cancel that frame for it. A
+ * rigid graft has none, so it must supply one, and the right one is exactly
+ * `inverse(world(bone))` in the pose the mesh was authored against.
+ *
+ * Derived from the loaded glb rather than computed from `UsSoldier.ske`,
+ * because this is the only place every conversion in the pipeline has already
+ * been applied — the `.ske` Z-mirror, the glTF mirror, and the `pitch -= 90`
+ * that stands the figure up on +Y. Computing it from the raw skeleton was tried
+ * and lands 77-95 degrees out; measured against the standalone part, this lands
+ * at 0.
+ *
+ * Always captured with the STANDING clip applied, never whatever stance the
+ * viewer happens to be in: the value is a property of the bind pose, and taking
+ * it mid-crouch would freeze the crouch's head tilt into the helmet for good.
+ */
+function captureBinds(root) {
+  boneBinds = new Map();
+  const stand = stanceActions.stand;
+  const weights = Object.fromEntries(Object.entries(stanceActions)
+    .map(([name, action]) => [name, action.getEffectiveWeight()]));
+  if (stand) {
+    for (const [name, action] of Object.entries(stanceActions))
+      action.setEffectiveWeight(name === 'stand' ? 1 : 0);
+    mixer?.update(0);
+  }
+  root.updateMatrixWorld(true);
+  for (const bone of ['A', 'backpack', 'HipPack']) {
+    const node = boneNamed(root, bone);
+    if (node) boneBinds.set(bone.toLowerCase(),
+      node.getWorldQuaternion(new THREE.Quaternion()).invert());
+  }
+  if (stand) {
+    for (const [name, action] of Object.entries(stanceActions))
+      action.setEffectiveWeight(weights[name] ?? 0);
+    mixer?.update(0);
+    root.updateMatrixWorld(true);
+  }
 }
 
 function boneNamed(root, want) {
@@ -808,19 +855,11 @@ async function applyWorn(kit) {
     if (!bone) continue;                       // no such bone: silently bare, and the row says so
     const source = await loadPart(part.glb);
     const node = source.clone(true);
-    // The inverse bind. A KitPart mesh is authored crown-up in the soldier's
-    // mesh space, but the bone it hangs on carries a 3ds Max Biped frame that
-    // runs along the limb — `Bip01 Head` is tilted about 79 degrees. A skinned
-    // mesh never notices because its inverse-bind matrices cancel that frame;
-    // a rigid graft has none, so without this the helmet arrives upside down.
-    // Applied as the local rotation, the part ends up at
-    // `posed(bone) * inverse(rest(bone)) * mesh` — rigid skinning to one bone,
-    // which is what the engine does with a KitPart.
-    //
-    // Absent (a tree extracted before this was computed) the part still shows,
-    // just in the bone's raw frame: wrong, but visibly wrong, which beats
-    // dropping it.
-    if (part.bindRotation) node.quaternion.fromArray(part.bindRotation);
+    // The inverse bind, captured off this figure's own skeleton. Without it the
+    // part inherits the bone's raw 3ds Max Biped frame — which runs along the
+    // limb, not along world up — and arrives rotated by 115-147 degrees.
+    const bind = boneBinds.get(part.bone.toLowerCase());
+    if (bind) node.quaternion.copy(bind);
     // `setPosition` / `setRotation` on a KitPart are further offsets from the
     // bone. Vanilla and EoD use neither; FH and FHSW do, so compose them on top
     // rather than discovering the gap the day a mod is added.
@@ -915,6 +954,7 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   mixer?.update(0);
   updateStanceButtons();
 
+  captureBinds(current);
   await applyWorn(kit);
   refit();
   applyWireframe();
