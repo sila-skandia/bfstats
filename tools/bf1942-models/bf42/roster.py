@@ -46,6 +46,19 @@ NATION_LABELS = {
     "japanese": "Japanese",
     "specialforces": "Special Forces",
     "vietcong": "Viet Cong",
+    # Eve of Destruction files its kits under short faction folders the WWII
+    # spellings above do not cover — `VCKit`, `NVAKit`, `ARVNKit`. Without these
+    # every Vietnam kit resolves to no nation at all, which reads in a UI as a
+    # mod with no armies rather than as a gap in this table.
+    "vc": "Viet Cong",
+    "vcfemale": "Viet Cong",
+    "civilvc": "Viet Cong",
+    "nva": "NVA",
+    "arvn": "ARVN",
+    "sf": "Special Forces",
+    "navyseals": "Navy SEALs",
+    "pathetlaos": "Pathet Lao",
+    "rambo": "Rambo",
     "auss": "Australian",
     "australian": "Australian",
     "dutch": "Dutch",

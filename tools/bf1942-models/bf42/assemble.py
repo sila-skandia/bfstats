@@ -210,8 +210,12 @@ class Report:
     collision_parts: int = 0
     collision_triangles: int = 0
     collision_materials: list[int] = field(default_factory=list)
+    collision_makeup: list[str] = field(default_factory=list)
     armor: dict = field(default_factory=dict)
     fire_arms: list[str] = field(default_factory=list)
+    # HandFireArms only: magazine, optic, deviation and recoil, straight off
+    # the root template. See `ObjectTemplate.weapon_stats`.
+    weapon: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -242,6 +246,7 @@ class Report:
             "collisionParts": self.collision_parts,
             "collisionTriangles": self.collision_triangles,
             "collisionMaterials": sorted(set(self.collision_materials)),
+            "collisionFromOtherLod": sorted(set(self.collision_makeup)),
             "armor": self.armor,
             "fireArms": self.fire_arms,
         }
@@ -279,6 +284,9 @@ class Assembler:
         self._material_cache: dict[tuple, int] = {}
         self._geom_mesh: dict[str, tuple[int | None, int]] = {}
         self._geom_collisions: dict[str, list[tuple[int, int, str]]] = {}
+        # Face counts per geometry, for ranking a LodObject's alternatives
+        # against each other before any of them is built.
+        self._geom_collision_faces: dict[str, int] = {}
         self._collision_material_cache: dict[int, int] = {}
         self._first_person_reach: dict[str, bool] = {}
         self._skin_cache: dict[str, skin.Skin | None] = {}
@@ -545,6 +553,162 @@ class Assembler:
             "detailed",
         )]
 
+    def _collision_for_geometry(self, builder: gltf.GlbBuilder,
+                                geometry_name: str, report: Report,
+                                ) -> list[tuple[int, int, str]]:
+        """The collision hulls of a geometry, drawn or not.
+
+        `_mesh_index` resolves collision as a side effect of building the
+        render mesh, which is fine while the two always travel together. They
+        do not: a building's LodObject draws its `Exterior` alternative and
+        that mesh ships **no** collision at all — `afr_house1_ste_m2` has zero
+        layers where `afr_house1_ste_m1` has 224 verts / 359 faces over five
+        materials. The engine keeps both alternatives loaded and hangs the
+        physics body off the Bundle root (`setHasCollisionPhysics 1`), so the
+        hull is the object's, not the near-LOD's.
+
+        This is the entry point for the alternative nobody draws: it parses the
+        `.sm` for its collision block only and never touches materials,
+        textures or LOD triangles, so pulling a house's interior hull in does
+        not also pull its interior *walls* into the glb.
+        """
+        cache_key = geometry_name.lower()
+        if cache_key in self._geom_collisions:
+            return self._geom_collisions[cache_key]
+        if not self.include_collision:
+            self._geom_collisions[cache_key] = []
+            return []
+
+        template = self.library.geometry(geometry_name)
+        if template is None or template.kind.lower() == "treemesh":
+            # TreeMesh hulls live in the `.tm`'s own collision block, which
+            # `treemesh.py` recognises and skips; palms are fly-through until
+            # that is promoted to a parser.
+            self._geom_collisions[cache_key] = []
+            return []
+        entry = self.meshes.resolve_ext(
+            f"standardMesh/{template.mesh_file}", (".sm",))
+        if not entry:
+            self._geom_collisions[cache_key] = []
+            return []
+        try:
+            mesh = stdmesh.parse(self.meshes.read(entry), entry)
+        except stdmesh.MeshError:
+            self._geom_collisions[cache_key] = []
+            return []
+        result = self._collision_mesh_indices(
+            builder, template.mesh_file, mesh, report)
+        self._geom_collisions[cache_key] = result
+        return result
+
+    def _collision_triangles(self, template_name: str, depth: int = 0,
+                             stack: frozenset[str] = frozenset()) -> int:
+        """Collision faces reachable below a template, counting every alternative.
+
+        Used to rank a LodObject's alternatives against each other. Cheap
+        enough to run per alternative because `_collision_layer_counts` caches
+        per geometry and a building's tree is a dozen nodes deep at most.
+        """
+        template = self.library.object(template_name)
+        if template is None or depth > 16:
+            return 0
+        key = template.name.lower()
+        if key in stack:
+            return 0
+        stack = stack | {key}
+        total = self._collision_layer_faces(template.geometry) if template.geometry else 0
+        for ref in template.children:
+            child_name = con_mod.instance_template_name(ref, self.library.object)
+            if child_name is not None:
+                total += self._collision_triangles(child_name, depth + 1, stack)
+        return total
+
+    def _collision_layer_faces(self, geometry_name: str) -> int:
+        """Faces in a geometry's richest collision layer, or 0. Cached by name."""
+        cache_key = geometry_name.lower()
+        if cache_key in self._geom_collision_faces:
+            return self._geom_collision_faces[cache_key]
+        count = 0
+        template = self.library.geometry(geometry_name)
+        if template is not None and template.kind.lower() != "treemesh":
+            entry = self.meshes.resolve_ext(
+                f"standardMesh/{template.mesh_file}", (".sm",))
+            if entry:
+                try:
+                    mesh = stdmesh.parse(self.meshes.read(entry), entry)
+                    count = max(
+                        (len(layer.faces) for layer in mesh.collision_layers),
+                        default=0)
+                except stdmesh.MeshError:
+                    count = 0
+        self._geom_collision_faces[cache_key] = count
+        return count
+
+    def _collision_only_node(self, builder: gltf.GlbBuilder, template_name: str,
+                             report: Report, *, position, rotation,
+                             depth: int = 0,
+                             stack: frozenset[str] = frozenset()) -> int | None:
+        """A transform-faithful skeleton of a subtree carrying only its hulls.
+
+        The undrawn LOD alternative is walked for its collision and nothing
+        else: no render meshes, no materials, no FireArms, no cameras. Child
+        placements are kept because they are what puts a barrack's beds and a
+        hangar's crates where the player will shoot them.
+        """
+        template = self.library.object(template_name)
+        if template is None or depth > 16 or template.invisible:
+            return None
+        key = template.name.lower()
+        if key in stack:
+            return None
+        stack = stack | {key}
+
+        children: list[int] = []
+        for mesh_index, layer, role in (
+                self._collision_for_geometry(builder, template.geometry, report)
+                if template.geometry else []):
+            children.append(builder.add_node(gltf.Node(
+                name=f"{template.name} collision {layer}",
+                mesh=mesh_index,
+                extras={
+                    "collision": True,
+                    "collisionLayer": layer,
+                    "collisionRole": role,
+                    "sourceTemplate": template.name,
+                    "sourceGeometry": template.geometry,
+                },
+            )))
+        child_refs = template.children
+        if template.is_lod_selector and child_refs:
+            child_refs = [self._collision_alternative(child_refs)]
+        for ref in child_refs:
+            child_name = con_mod.instance_template_name(ref, self.library.object)
+            if child_name is None:
+                continue
+            child = self._collision_only_node(
+                builder, child_name, report,
+                position=ref.position, rotation=ref.rotation,
+                depth=depth + 1, stack=stack)
+            if child is not None:
+                children.append(child)
+        if not children:
+            return None
+        return builder.add_node(gltf.Node(
+            name=f"{template.name} hull",
+            translation=position,
+            rotation=gltf.quat_from_ypr(*rotation),
+            children=children,
+            extras={"collisionHull": True, "sourceTemplate": template.name},
+        ))
+
+    def _collision_alternative(self, children_refs: list[con_mod.ChildRef],
+                               ) -> con_mod.ChildRef:
+        """The LodObject alternative that carries the object's collision hull."""
+        return max(
+            children_refs,
+            key=lambda ref: self._collision_triangles(
+                con_mod.instance_template_name(ref, self.library.object) or ""))
+
     def _mesh_index(self, builder: gltf.GlbBuilder, geometry_name: str,
                     report: Report) -> tuple[int | None, int]:
         cache_key = geometry_name.lower()
@@ -591,10 +755,14 @@ class Assembler:
             "collisionTriangles": sum(
                 layer.triangle_count for layer in mesh.collision_layers),
         }
-        if self.include_collision:
+        # The mesh is already in hand, so resolve collision from it rather than
+        # re-parsing through `_collision_for_geometry` — but land it in the same
+        # cache, so an undrawn alternative that names the same geometry reuses
+        # this result instead of emitting a second copy of the hull.
+        if self.include_collision and cache_key not in self._geom_collisions:
             self._geom_collisions[cache_key] = self._collision_mesh_indices(
                 builder, mesh_file, mesh, report)
-        else:
+        elif not self.include_collision:
             self._geom_collisions[cache_key] = []
         shaders = self._shaders_for(mesh_file, geometry_name)
 
@@ -1386,11 +1554,24 @@ class Assembler:
 
         children_refs = template.children
         lod_swap: dict | None = None
+        # An alternative this export does not draw, whose hull it still owes
+        # the world. See `_collision_for_geometry`.
+        collision_makeup: con_mod.ChildRef | None = None
         if template.is_lod_selector and children_refs:
             selected_refs = self._select_lod_children(
                 children_refs, report, template.name)
             if self.first_person:
                 lod_swap = self._lod_swap(template, children_refs, selected_refs[0])
+            if self.include_collision and not self.first_person:
+                donor = self._collision_alternative(children_refs)
+                drawn = self._collision_triangles(
+                    con_mod.instance_template_name(
+                        selected_refs[0], self.library.object) or "")
+                if (donor is not selected_refs[0]
+                        and self._collision_triangles(
+                            con_mod.instance_template_name(
+                                donor, self.library.object) or "") > drawn):
+                    collision_makeup = donor
             children_refs = selected_refs
 
         child_indices: list[int] = []
@@ -1454,6 +1635,9 @@ class Assembler:
                         "position": ref.position,
                         "rotation": ref.rotation,
                         "frame": "parent",
+                        # An Engine's spin is bound to c_PIThrottle: it turns
+                        # because someone is aboard with the throttle open.
+                        "gate": "throttle",
                     })
                     report.animated_parts.append(
                         f"{child_name} {axis} {speed:g} deg/s (from {template.name})")
@@ -1471,6 +1655,19 @@ class Assembler:
                         "sourceGeometry": template.geometry,
                     },
                 )))
+            if collision_makeup is not None:
+                donor_name = con_mod.instance_template_name(
+                    collision_makeup, self.library.object)
+                hull = self._collision_only_node(
+                    builder, donor_name or "", report,
+                    position=collision_makeup.position,
+                    rotation=collision_makeup.rotation,
+                    depth=depth + 1, stack=stack)
+                if hull is not None:
+                    child_indices.append(hull)
+                    report.collision_makeup.append(
+                        f"{template.name}: hull from {donor_name} "
+                        f"(drawn alternative carries less)")
 
         # A FireArms that launches something gets muzzle nodes (and, for plane
         # guns, its `visibleBarrelTemplate` flash baked under each one).
@@ -1606,6 +1803,7 @@ class Assembler:
                     "position": position,
                     "rotation": rotation,
                     "frame": "local",
+                    "gate": "throttle",   # an Engine that is its own propeller
                 })
                 report.animated_parts.append(
                     f"{template.name} {axis} {speed:g} deg/s (own mesh)")
@@ -1622,6 +1820,13 @@ class Assembler:
                 "position": position,
                 "rotation": rotation,
                 "frame": "local",
+                # `setContinousRotationSpeed` on a RotationalBundle. The
+                # engine's `handleUpdate` runs this off deltaTime alone and
+                # never touches a player, an input or an occupancy value, so
+                # a windmill nobody can enter turns — and so does a parked
+                # ship's radar. Nine templates in vanilla, and not one of
+                # them also carries an input binding.
+                "gate": "always",
             })
             report.animated_parts.append(
                 f"{template.name} continuous "
@@ -1654,8 +1859,16 @@ class Assembler:
         no least-common-multiple juggling when a B17 mixes 500 and 600 deg/s
         engines. Keyframes sit every quarter turn of the fastest axis, which
         is as coarse as slerp allows without ever taking the short way round.
+
+        Grouping is by *gate* as well as period, because the two kinds of
+        rotation want opposite treatment in a viewer. `spin*` is throttle-gated
+        — a propeller, still until someone opens the throttle. `ambient*` runs
+        off the clock whatever else is happening: windmills, watermills, and
+        the radar dish on a ship nobody has boarded. Separate index sequences
+        keep `spin` meaning exactly what it always meant, so shipped model
+        assets and the browser's engine toggle are unaffected.
         """
-        groups: dict[float, list] = {}
+        groups: dict[tuple[str, float], list] = {}
         for track in self._spin_tracks:
             fastest = max(abs(speed) for speed in track["axes"].values())
             period = 360.0 / fastest
@@ -1673,11 +1886,16 @@ class Assembler:
                         else gltf.mat_mul(base, spin))
                 times.append(t)
                 transforms.append((full, track["position"]))
-            groups.setdefault(round(period, 6), []).append(
+            groups.setdefault((track.get("gate", "throttle"), round(period, 6)),
+                              []).append(
                 (track["node"], tuple(times), transforms))
-        for index, key in enumerate(sorted(groups)):
+        counters: dict[str, int] = {}
+        for key in sorted(groups):
+            stem = "ambient" if key[0] == "always" else "spin"
+            index = counters.get(stem, 0)
+            counters[stem] = index + 1
             builder.add_animation(
-                "spin" if index == 0 else f"spin.{index}", groups[key])
+                stem if index == 0 else f"{stem}.{index}", groups[key])
 
     def export(self, root_template: str) -> tuple[bytes, Report]:
         builder = gltf.GlbBuilder()

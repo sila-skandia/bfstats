@@ -1242,20 +1242,418 @@
   .plot-dot:focus-visible text.is-crowded { opacity: 1; }
   .plot-unplotted { margin-top: 10px; color: var(--mm-ink-muted); font-size: 10px; line-height: 1.6; }
 
-  /* Narrow screens: the column stacks over the stage instead of squeezing it
-     to nothing. Desktop is where this tool earns its keep; this keeps a phone
-     from getting a 0px viewport. */
+  /* Inspector header & collapse controls */
+  .inspector-header {
+    order: -4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .inspector-title {
+    margin: 0;
+    color: var(--mm-accent-soft);
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+  .controls-collapse-btn {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    background: var(--mm-bg-soft);
+    border: 1px solid var(--mm-rule);
+    border-radius: 2px;
+    color: var(--mm-ink-muted);
+    font: 10px var(--mm-font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .controls-collapse-btn:hover,
+  .controls-collapse-btn:focus-visible {
+    color: var(--mm-ink);
+    border-color: var(--mm-rule-strong);
+    outline: none;
+  }
+
+  .stage-controls-fab {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    z-index: 15;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    background: rgba(19, 19, 19, 0.9);
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--mm-ink);
+    font: 11px var(--mm-font-mono);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .stage-controls-fab:hover,
+  .stage-controls-fab:focus-visible {
+    background: var(--mm-bg-soft);
+    border-color: var(--mm-accent);
+    outline: none;
+  }
+  .stage-controls-fab[hidden] { display: none !important; }
+
+  /* Touchpad virtual controller */
+  .stage-touchpad-toggle {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    z-index: 15;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    background: rgba(19, 19, 19, 0.9);
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--mm-ink);
+    font: 11px var(--mm-font-mono);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+    touch-action: manipulation;
+  }
+  .stage-touchpad-toggle:hover,
+  .stage-touchpad-toggle:focus-visible {
+    background: var(--mm-bg-soft);
+    border-color: var(--mm-accent);
+    outline: none;
+  }
+  .stage-touchpad-toggle[aria-pressed="true"] {
+    background: var(--mm-bg-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .stage-touchpad-toggle[hidden] { display: none !important; }
+
+  .touchpad-disk-wrap {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  .touchpad-disk-wrap[hidden] { display: none !important; }
+
+  .touchpad-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 136px;
+    gap: 6px;
+  }
+  .touchpad-station-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    background: rgba(19, 19, 19, 0.92);
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 999px;
+    color: var(--mm-ink);
+    font: 10px var(--mm-font-mono);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: border-color .15s ease;
+  }
+  .touchpad-station-btn:hover {
+    border-color: var(--accent);
+  }
+  .touchpad-station-btn svg {
+    flex: none;
+    color: var(--accent);
+  }
+  .touchpad-station-btn span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .touchpad-close-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: rgba(19, 19, 19, 0.92);
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 50%;
+    color: var(--mm-ink-muted);
+    font: 14px sans-serif;
+    line-height: 1;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .touchpad-close-btn:hover {
+    color: var(--mm-ink);
+    border-color: var(--accent);
+  }
+
+  .touchpad-disk {
+    position: relative;
+    width: 136px;
+    height: 136px;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, rgba(32, 30, 26, 0.88) 0%, rgba(14, 13, 11, 0.94) 100%);
+    border: 1.5px solid var(--mm-rule-strong);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.7), inset 0 0 20px rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .touchpad-disk.is-active {
+    border-color: var(--accent);
+  }
+  .touchpad-cross-h,
+  .touchpad-cross-v {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.08);
+    pointer-events: none;
+  }
+  .touchpad-cross-h {
+    left: 12px;
+    right: 12px;
+    top: calc(50% - 0.5px);
+    height: 1px;
+  }
+  .touchpad-cross-v {
+    top: 12px;
+    bottom: 12px;
+    left: calc(50% - 0.5px);
+    width: 1px;
+  }
+
+  .touchpad-puck {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle at 40% 35%, #2c2925 0%, #151412 100%);
+    border: 1.5px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transition: transform .08s ease-out, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .touchpad-disk.is-dragging .touchpad-puck {
+    transition: box-shadow .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .touchpad-puck-label {
+    font: 10px var(--mm-font-mono);
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: var(--mm-ink);
+    text-transform: uppercase;
+    text-shadow: 0 1px 2px #000;
+    pointer-events: none;
+  }
+  .touchpad-puck.is-firing {
+    background: radial-gradient(circle at 40% 35%, #eb5e28 0%, #a82000 100%);
+    border-color: #ff8a65;
+    box-shadow: 0 0 18px rgba(235, 94, 40, 0.8), inset 0 1px 2px rgba(255, 255, 255, 0.5);
+  }
+  .touchpad-puck.is-firing .touchpad-puck-label {
+    color: #fff;
+  }
+
+  @media (max-width: 360px) {
+    .touchpad-disk { width: 120px; height: 120px; }
+    .touchpad-head { width: 120px; }
+    .touchpad-puck { width: 48px; height: 48px; }
+  }
+
+  /* Armoury filter toggle & count badge */
+  .browser-filter-toggle {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid var(--mm-rule-strong);
+    border-radius: 2px;
+    color: var(--mm-ink-muted);
+    font: 10.5px var(--mm-font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .browser-filter-toggle:hover {
+    color: var(--mm-ink);
+    border-color: var(--mm-ink-muted);
+  }
+  .browser-filter-toggle[aria-expanded="true"] {
+    background: var(--mm-accent);
+    border-color: var(--mm-accent);
+    color: var(--mm-highlight-ink);
+  }
+  .filter-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background: var(--mm-highlight);
+    color: var(--mm-highlight-ink);
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 700;
+  }
+  .browser-filter-toggle[aria-expanded="true"] .filter-count-badge {
+    background: var(--mm-highlight-ink);
+    color: var(--mm-accent-soft);
+  }
+  .filter-count-badge[hidden] { display: none !important; }
+  .facet-done-btn {
+    display: none;
+    width: 100%;
+    margin-top: 14px;
+    padding: 8px;
+    background: var(--mm-accent);
+    border: 0;
+    border-radius: 2px;
+    color: var(--mm-highlight-ink);
+    font: 11px var(--mm-font-mono);
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  /* Narrow screens: model at top, controls at bottom, with full collapse */
   @media (max-width: 720px) {
     body {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: var(--nav-h) minmax(0, 46vh) minmax(0, 1fr);
+      transition: grid-template-rows .2s ease;
     }
-    aside { grid-row: 3; border-right: 0; border-top: 1px solid var(--mm-rule); }
-    .stage { grid-row: 2; }
+    body.controls-collapsed {
+      grid-template-rows: var(--nav-h) minmax(0, 1fr) 0px;
+    }
+    body.controls-collapsed aside,
+    body.controls-collapsed #crew {
+      display: none;
+    }
+    body.controls-collapsed .stage {
+      grid-row: 2;
+      height: 100%;
+    }
+    aside {
+      grid-row: 3;
+      border-right: 0;
+      border-top: 1px solid var(--mm-rule);
+      padding: 10px 12px 20px;
+    }
+    .panel {
+      padding: 8px 0;
+    }
+    .panel-title {
+      margin: 0 0 6px;
+    }
+    #current-card {
+      padding: 6px 8px;
+      margin-bottom: 6px;
+    }
+    #browse-open {
+      padding: 6px 10px;
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .field-grid .field {
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 6px;
+      margin-top: 0 !important;
+    }
+    .toggle-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 14px;
+    }
+    .stage { grid-row: 2; position: relative; }
+    .controls-collapse-btn { display: inline-flex; }
     #crumb { max-width: calc(100% - 28px); }
     .crew-keys, #hints { display: none; }
-    #browser { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
-    #facets { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--mm-rule); }
+
+    /* Armoury browser modal on mobile */
+    .browser-filter-toggle { display: inline-flex; }
+    #browser {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .browser-head {
+      padding: 8px 10px;
+      gap: 8px;
+    }
+    .browser-search {
+      flex: 1 1 180px;
+      padding: 5px 10px;
+    }
+    /* Filters optional and hidden unless selected */
+    #browser:not(.facets-open) #facets {
+      display: none;
+    }
+    #browser.facets-open {
+      grid-template-rows: auto minmax(0, 44vh) minmax(0, 1fr);
+    }
+    #browser.facets-open #facets {
+      display: block;
+      max-height: 44vh;
+      border-right: 0;
+      border-bottom: 1px solid var(--mm-rule);
+      background: var(--mm-bg-soft);
+      padding: 10px 12px 20px;
+    }
+    .facet-done-btn { display: block; }
+    .card-grid {
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+    }
   }
 </style>
 </head>
@@ -1267,6 +1665,7 @@
       <a href="./index.html" aria-current="page">Models</a>
       <a href="./map.html">Maps</a>
       <a href="./poses.html">Poses</a>
+      <a href="./kits.html">Kits</a>
     </span>
     <span class="shell-spacer"></span>
     <button type="button" class="shell-search" id="shell-search" aria-haspopup="dialog">
@@ -1275,8 +1674,14 @@
     </button>
   </div>
 </nav>
-<aside>
-  <h1 class="inspector-title">Model inspector</h1>
+<aside id="inspector-aside">
+  <div class="inspector-header">
+    <h1 class="inspector-title">Model inspector</h1>
+    <button type="button" class="controls-collapse-btn" id="controls-collapse-btn" aria-label="Collapse controls" aria-expanded="true">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3 6 5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Hide</span>
+    </button>
+  </div>
   <div id="current">
     <div id="current-card" class="side-none">
       <img id="current-thumb" alt="" hidden>
@@ -1293,15 +1698,19 @@
 
   <section class="panel" id="variant-panel" hidden>
     <h2 class="panel-title">Variant</h2>
-    <label class="field"><span>Build</span><select id="configuration" class="select"></select></label>
-    <label class="field"><span>Skin</span><select id="skin" class="select"></select></label>
+    <div class="field-grid">
+      <label class="field"><span>Build</span><select id="configuration" class="select"></select></label>
+      <label class="field"><span>Skin</span><select id="skin" class="select"></select></label>
+    </div>
     <div id="variant-summary" class="callout"></div>
   </section>
 
   <section class="panel" id="display-panel">
     <h2 class="panel-title">Display</h2>
-    <label class="toggle"><input type="checkbox" id="spin"><span>auto-rotate</span></label>
-    <label class="toggle"><input type="checkbox" id="axes" checked><span>axes + ground grid</span></label>
+    <div class="toggle-row">
+      <label class="toggle"><input type="checkbox" id="spin"><span>auto-rotate</span></label>
+      <label class="toggle"><input type="checkbox" id="axes" checked><span>axes + ground grid</span></label>
+    </div>
     <details class="disclosure">
       <summary>Technical display options</summary>
       <div class="disclosure-body">
@@ -1355,13 +1764,38 @@
   <main>
     <div id="crumb" hidden></div>
     <div id="banner" hidden></div>
+    <button type="button" class="stage-touchpad-toggle" id="stage-touchpad-toggle" aria-label="Toggle touchpad control" aria-pressed="false" hidden>
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2"/></svg>
+      <span>Pad</span>
+    </button>
+    <div id="touchpad-disk-wrap" class="touchpad-disk-wrap" hidden>
+      <div class="touchpad-head">
+        <button type="button" class="touchpad-station-btn" id="touchpad-station-btn" title="Cycle station">
+          <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor"><path d="M2 4h8M7 1l3 3-3 3M10 8H2M5 11l-3-3 3-3" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="touchpad-station-name">Gunner</span>
+        </button>
+        <button type="button" class="touchpad-close-btn" id="touchpad-close-btn" aria-label="Hide touchpad">&times;</button>
+      </div>
+      <div class="touchpad-disk" id="touchpad-disk">
+        <div class="touchpad-cross-h"></div>
+        <div class="touchpad-cross-v"></div>
+        <div class="touchpad-puck" id="touchpad-puck">
+          <span class="touchpad-puck-label" id="touchpad-puck-label">FIRE</span>
+        </div>
+      </div>
+    </div>
   </main>
+  <button type="button" class="stage-controls-fab" id="stage-controls-fab" aria-label="Show controls" hidden>
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h7M13 4h1M2 8h2M8 8h6M2 12h9M15 12h-1M9 2.5v3M4 6.5v3M11 10.5v3"/></svg>
+    <span>Controls</span>
+  </button>
   <div id="hints" aria-hidden="true"></div>
   <section id="crew" class="crew" data-collapsed="false" hidden aria-label="Crew stations">
     <div class="crew-head">
       <span class="crew-title">Crew stations</span>
       <span class="crew-count" id="crew-count"></span>
       <span class="crew-keys" id="crew-keys"></span>
+      <button type="button" class="crew-btn" id="view-touchpad" aria-pressed="false" hidden>Pad</button>
       <button type="button" class="crew-btn" id="view-orbit" aria-pressed="true" hidden>Orbit</button>
       <button type="button" class="crew-btn crew-collapse" id="crew-collapse" aria-expanded="true" aria-controls="crew-row" aria-label="Collapse crew stations">
         <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 3.5 5 7l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1379,6 +1813,11 @@
       <input id="browser-search" type="search" placeholder="Search name, faction, map&hellip;"
              autocomplete="off" spellcheck="false" aria-label="Search models">
     </label>
+    <button type="button" class="browser-filter-toggle" id="browser-filter-toggle" aria-expanded="false" aria-controls="facets">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3.5h12M4 8h8M6.5 12.5h3" stroke-linecap="round"/></svg>
+      <span>Filters</span>
+      <span class="filter-count-badge" id="filter-count-badge" hidden>0</span>
+    </button>
     <span id="browser-count"></span>
     <span class="spacer"></span>
     <div class="layout-switch" id="layout-switch" role="group" aria-label="Layout">
@@ -1647,7 +2086,8 @@ function startAnimating() {
     advanceGlide(dt);
     const gearMoving = advanceGear(dt);
     const hasFire = guns.advance(dt);
-    if (mixer && engineRunning) mixer.update(dt);
+    const hasPad = advanceTouchpad(dt);
+    if (mixer && (engineRunning || ambientActions.length)) mixer.update(dt);
     // controls.update() returns true while damping or auto-rotate is still
     // moving the camera, false once it has settled.
     const controlsMoving = controls.update();
@@ -1659,9 +2099,9 @@ function startAnimating() {
         spec.driver === 'rate' && (inputValues.get(keyOf(part.control, spec.input)) ?? 0) !== 0));
     const hasScroll = scrolling.some(part =>
       (inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
-    const hasClips = Boolean(mixer && engineRunning);
+    const hasClips = Boolean(mixer && (engineRunning || ambientActions.length));
 
-    if (hasRates || hasScroll || hasClips || hasFire || gearMoving || cameraGlide || controlsMoving) {
+    if (hasRates || hasScroll || hasClips || hasFire || gearMoving || cameraGlide || controlsMoving || hasPad) {
       requestAnimationFrame(tick);
     } else {
       animating = false;
@@ -2647,6 +3087,11 @@ function advanceRates(dt) {
 
 let mixer = null;
 let clipActions = [];
+// `ambient*` clips are the rotation the engine runs off deltaTime alone —
+// a ship's radar dish, a windmill's sails. They are not throttle-gated in the
+// game and must not be here either, so they are held apart from `spin*` and
+// started once, for good.
+let ambientActions = [];
 let engineRunning = false;
 
 // Names of the nodes the baked clips move, for the station that owns them.
@@ -2655,16 +3100,22 @@ let animatedNodes = [];
 function collectAnimations(gltf) {
   mixer = null;
   clipActions = [];
+  ambientActions = [];
   engineRunning = false;
   animatedNodes = [];
   const clips = gltf.animations || [];
   if (!clips.length) return;
   mixer = new THREE.AnimationMixer(gltf.scene);
-  clipActions = clips.map(clip => {
+  for (const clip of clips) {
     const action = mixer.clipAction(clip);
     action.setLoop(THREE.LoopRepeat, Infinity);
-    return action;
-  });
+    if (/^spin(\.\d+)?$/.test(clip.name)) {
+      clipActions.push(action);
+    } else {
+      ambientActions.push(action);
+      action.play();
+    }
+  }
   // Every track name is "<node name>.quaternion" / ".position".
   animatedNodes = [...new Set(clips.flatMap(clip =>
     clip.tracks.map(track => track.name.split('.')[0])))];
@@ -2677,8 +3128,11 @@ function setEngine(on) {
     for (const action of clipActions) { action.paused = false; action.play(); }
     startAnimating();
   } else {
-    // Rewind to the authored pose rather than freezing mid-turn.
-    mixer.setTime(0);
+    // Rewind to the authored pose rather than freezing mid-turn — but only
+    // the throttle-gated clips. `mixer.setTime(0)` would drag the ambient
+    // rotators back to zero with them and snap a turning radar dish.
+    for (const action of clipActions) action.reset();
+    mixer.update(0);
     for (const action of clipActions) action.stop();
     invalidate();
   }
@@ -3457,12 +3911,14 @@ function buildStation(seat, index, entry) {
 function setActiveStation(index) {
   if (!crew.stations[index] || index === crew.active) {
     if (crew.stations[index]) crewRow.children[index].dataset.active = 'true';
+    updateTouchpadUI();
     return;
   }
   crew.active = index;
   [...crewRow.children].forEach((node, position) => {
     node.dataset.active = String(position === index);
   });
+  updateTouchpadUI();
 }
 
 function markActiveView(node) {
@@ -3514,6 +3970,7 @@ function buildCrew(entry) {
   renderCrewKeys();
   refreshCrew();
   renderHints();
+  updateTouchpadUI();
 }
 
 function stationWith(input) {
@@ -3627,6 +4084,294 @@ try {
 document.getElementById('crew-collapse').addEventListener('click', () =>
   setCrewCollapsed(crewEl.dataset.collapsed !== 'true'));
 document.getElementById('view-orbit').addEventListener('click', orbitView);
+
+// --- touchpad virtual controller --------------------------------------------
+//
+// A floating disk for vehicles with seats, controllable axes or weapons.
+// Dragging the disk controls turret traverse & elevation (or flight stick or
+// drive steering); pressing the central zone fires weapons while dragging.
+
+let touchpadOpen = false;
+let padFiring = false;
+const padVector = { x: 0, y: 0 };
+const TURRET_TRAVERSE_SPEED = 85;   // degrees / sec at full deflection
+const TURRET_ELEVATION_SPEED = 42;  // degrees / sec at full deflection
+const R_PAD_MAX = 42;               // max puck travel radius in px
+const R_PAD_FIRE = 27;              // central fire zone radius in px
+
+const touchpadWrap = document.getElementById('touchpad-disk-wrap');
+const touchpadDisk = document.getElementById('touchpad-disk');
+const touchpadPuck = document.getElementById('touchpad-puck');
+const touchpadPuckLabel = document.getElementById('touchpad-puck-label');
+const touchpadToggleBtn = document.getElementById('stage-touchpad-toggle');
+const touchpadCloseBtn = document.getElementById('touchpad-close-btn');
+const touchpadStationBtn = document.getElementById('touchpad-station-btn');
+const touchpadStationName = document.getElementById('touchpad-station-name');
+const viewTouchpadBtn = document.getElementById('view-touchpad');
+
+function hasTouchpadCapability() {
+  return crew.stations.length > 0 && crew.stations.some(s => s.inputs.size > 0 || s.guns.length > 0);
+}
+
+function bestTouchpadStationIndex() {
+  if (!crew.stations.length) return 0;
+  // If current station has guns or aim, keep it
+  const current = crew.stations[crew.active];
+  if (current && (current.guns.length || current.inputs.has(AIM.x) || current.inputs.has(AIM.y))) {
+    return crew.active;
+  }
+  // Otherwise find first station with both aim and guns
+  const withAimAndGuns = crew.stations.findIndex(s => (s.inputs.has(AIM.x) || s.inputs.has(AIM.y)) && s.guns.length);
+  if (withAimAndGuns !== -1) return withAimAndGuns;
+  // Or station with guns
+  const withGuns = crew.stations.findIndex(s => s.guns.length > 0);
+  if (withGuns !== -1) return withGuns;
+  // Or station with aim
+  const withAim = crew.stations.findIndex(s => s.inputs.has(AIM.x) || s.inputs.has(AIM.y));
+  if (withAim !== -1) return withAim;
+  return 0;
+}
+
+function updateTouchpadUI() {
+  if (!hasTouchpadCapability()) {
+    if (touchpadWrap) touchpadWrap.hidden = true;
+    if (touchpadToggleBtn) touchpadToggleBtn.hidden = true;
+    if (viewTouchpadBtn) viewTouchpadBtn.hidden = true;
+    return;
+  }
+  const seat = crew.stations[crew.active];
+  if (touchpadStationName && seat) {
+    touchpadStationName.textContent = seat.name;
+  }
+  if (touchpadPuckLabel && seat) {
+    if (seat.guns.length > 0) {
+      touchpadPuckLabel.textContent = 'FIRE';
+    } else if (seat.inputs.has(AIM.x) || seat.inputs.has(AIM.y)) {
+      touchpadPuckLabel.textContent = 'AIM';
+    } else if (seat.inputs.has(STICK.x) || seat.inputs.has(STICK.y)) {
+      touchpadPuckLabel.textContent = 'STICK';
+    } else if (seat.inputs.has(DRIVE.x) || seat.inputs.has(DRIVE.y)) {
+      touchpadPuckLabel.textContent = 'DRIVE';
+    } else {
+      touchpadPuckLabel.textContent = 'MOVE';
+    }
+  }
+  if (touchpadToggleBtn) {
+    touchpadToggleBtn.hidden = touchpadOpen;
+    touchpadToggleBtn.setAttribute('aria-pressed', String(touchpadOpen));
+  }
+  if (viewTouchpadBtn) {
+    viewTouchpadBtn.hidden = false;
+    viewTouchpadBtn.setAttribute('aria-pressed', String(touchpadOpen));
+  }
+  if (touchpadWrap) {
+    touchpadWrap.hidden = !touchpadOpen;
+  }
+}
+
+function setTouchpadOpen(open) {
+  touchpadOpen = Boolean(open && hasTouchpadCapability());
+  if (touchpadOpen) {
+    const best = bestTouchpadStationIndex();
+    if (best !== crew.active) setActiveStation(best);
+  } else {
+    resetTouchpadState();
+  }
+  updateTouchpadUI();
+}
+
+function resetTouchpadState() {
+  if (padFiring) {
+    const seat = crew.stations[crew.active];
+    if (seat?.guns.length) stopFiring(seat.guns[0]);
+    padFiring = false;
+  }
+  padVector.x = 0;
+  padVector.y = 0;
+  if (touchpadPuck) {
+    touchpadPuck.classList.remove('is-firing');
+    touchpadPuck.style.transform = 'translate(-50%, -50%)';
+  }
+  if (touchpadDisk) {
+    touchpadDisk.classList.remove('is-dragging', 'is-active');
+  }
+}
+
+function cycleTouchpadStation() {
+  if (crew.stations.length <= 1) return;
+  resetTouchpadState();
+  const next = (crew.active + 1) % crew.stations.length;
+  setActiveStation(next);
+  updateTouchpadUI();
+}
+
+function advanceTouchpad(dt) {
+  if (padVector.x === 0 && padVector.y === 0) return false;
+  const seat = crew.stations[crew.active];
+  if (!seat) return false;
+
+  if (seat.inputs.has(AIM.x) || seat.inputs.has(AIM.y)) {
+    if (seat.inputs.has(AIM.x) && padVector.x !== 0) {
+      const inputX = seat.inputs.get(AIM.x);
+      const specX = inputX.specs.find(s => s.axis === 'yaw' && s.driver !== 'rate') || inputX.specs[0];
+      if (specX) {
+        const low = specX.free ? -180 : Math.min(specX.min, specX.max);
+        const high = specX.free ? 180 : Math.max(specX.min, specX.max);
+        let deg = degreesAt(specX, inputValues.get(inputX.key) ?? 0);
+        deg += padVector.x * TURRET_TRAVERSE_SPEED * dt;
+        if (specX.free) {
+          while (deg > 180) deg -= 360;
+          while (deg < -180) deg += 360;
+        } else {
+          deg = Math.max(low, Math.min(high, deg));
+        }
+        setCrewInput(inputX.key, inputFor(specX, deg));
+      }
+    }
+    if (seat.inputs.has(AIM.y) && padVector.y !== 0) {
+      const inputY = seat.inputs.get(AIM.y);
+      const specY = inputY.specs.find(s => s.axis === 'pitch' && s.driver !== 'rate') || inputY.specs[0];
+      if (specY) {
+        const top = specY.free ? 90 : Math.max(-specY.min, -specY.max);
+        const bottom = specY.free ? -90 : Math.min(-specY.min, -specY.max);
+        let elev = -degreesAt(specY, inputValues.get(inputY.key) ?? 0);
+        elev += padVector.y * TURRET_ELEVATION_SPEED * dt;
+        elev = Math.max(bottom, Math.min(top, elev));
+        setCrewInput(inputY.key, inputFor(specY, -elev));
+      }
+    }
+    return true;
+  }
+
+  if (seat.inputs.has(STICK.x) || seat.inputs.has(STICK.y)) {
+    const inputX = seat.inputs.get(STICK.x);
+    const inputY = seat.inputs.get(STICK.y);
+    if (inputX) setCrewInput(inputX.key, padVector.x);
+    if (inputY) setCrewInput(inputY.key, padVector.y);
+    return true;
+  }
+
+  if (seat.inputs.has(DRIVE.x) || seat.inputs.has(DRIVE.y)) {
+    const inputX = seat.inputs.get(DRIVE.x);
+    const inputY = seat.inputs.get(DRIVE.y);
+    if (inputX) setCrewInput(inputX.key, padVector.x);
+    if (inputY) setCrewInput(inputY.key, padVector.y);
+    return true;
+  }
+
+  return false;
+}
+
+if (touchpadDisk) {
+  let padDragging = false;
+
+  touchpadDisk.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    try { touchpadDisk.setPointerCapture(event.pointerId); } catch {}
+    padDragging = true;
+    touchpadDisk.classList.add('is-dragging', 'is-active');
+
+    const rect = touchpadDisk.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = event.clientX - cx;
+    const dy = event.clientY - cy;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist <= R_PAD_FIRE) {
+      padFiring = true;
+      const seat = crew.stations[crew.active];
+      if (seat?.guns.length) startFiring(seat.guns[0]);
+      touchpadPuck.classList.add('is-firing');
+    } else {
+      padFiring = false;
+      touchpadPuck.classList.remove('is-firing');
+    }
+
+    const clampedDist = Math.min(dist, R_PAD_MAX);
+    const angle = Math.atan2(dy, dx);
+    const px = Math.cos(angle) * clampedDist;
+    const py = Math.sin(angle) * clampedDist;
+    padVector.x = px / R_PAD_MAX;
+    padVector.y = -py / R_PAD_MAX;
+    touchpadPuck.style.transform = `translate(calc(-50% + ${px.toFixed(1)}px), calc(-50% + ${py.toFixed(1)}px))`;
+    startAnimating();
+  });
+
+  touchpadDisk.addEventListener('pointermove', event => {
+    if (!padDragging && !touchpadDisk.hasPointerCapture(event.pointerId)) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = touchpadDisk.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = event.clientX - cx;
+    const dy = event.clientY - cy;
+    const dist = Math.hypot(dx, dy);
+
+    const clampedDist = Math.min(dist, R_PAD_MAX);
+    const angle = Math.atan2(dy, dx);
+    const px = Math.cos(angle) * clampedDist;
+    const py = Math.sin(angle) * clampedDist;
+    padVector.x = px / R_PAD_MAX;
+    padVector.y = -py / R_PAD_MAX;
+    touchpadPuck.style.transform = `translate(calc(-50% + ${px.toFixed(1)}px), calc(-50% + ${py.toFixed(1)}px))`;
+    startAnimating();
+  });
+
+  const onPadRelease = event => {
+    try {
+      if (touchpadDisk.hasPointerCapture(event.pointerId)) {
+        touchpadDisk.releasePointerCapture(event.pointerId);
+      }
+    } catch {}
+    padDragging = false;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (padFiring) {
+      const seat = crew.stations[crew.active];
+      if (seat?.guns.length) stopFiring(seat.guns[0]);
+      padFiring = false;
+    }
+    padVector.x = 0;
+    padVector.y = 0;
+    touchpadDisk.classList.remove('is-dragging', 'is-active');
+    touchpadPuck.classList.remove('is-firing');
+    touchpadPuck.style.transform = 'translate(-50%, -50%)';
+
+    const seat = crew.stations[crew.active];
+    if (seat) {
+      if (seat.inputs.has(STICK.x)) setCrewInput(seat.inputs.get(STICK.x).key, 0);
+      if (seat.inputs.has(STICK.y)) setCrewInput(seat.inputs.get(STICK.y).key, 0);
+      if (seat.inputs.has(DRIVE.x)) setCrewInput(seat.inputs.get(DRIVE.x).key, 0);
+      if (seat.inputs.has(DRIVE.y)) setCrewInput(seat.inputs.get(DRIVE.y).key, 0);
+    }
+  };
+
+  touchpadDisk.addEventListener('pointerup', onPadRelease);
+  touchpadDisk.addEventListener('pointercancel', onPadRelease);
+
+  touchpadDisk.addEventListener('dblclick', event => {
+    const rect = touchpadDisk.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dist = Math.hypot(event.clientX - cx, event.clientY - cy);
+    if (dist > R_PAD_FIRE) {
+      const seat = crew.stations[crew.active];
+      if (seat) {
+        for (const input of seat.inputs.values()) setCrewInput(input.key, 0);
+      }
+    }
+  });
+}
+
+touchpadToggleBtn?.addEventListener('click', () => setTouchpadOpen(true));
+touchpadCloseBtn?.addEventListener('click', () => setTouchpadOpen(false));
+viewTouchpadBtn?.addEventListener('click', () => setTouchpadOpen(!touchpadOpen));
+touchpadStationBtn?.addEventListener('click', cycleTouchpadStation);
 
 /** Mouse hints under the stage, for what the current state accepts. */
 function renderHints() {
@@ -4166,7 +4911,17 @@ function renderFacets() {
     return section;
   }).filter(Boolean);
 
-  facetHost.replaceChildren(reset, ...sections);
+  const doneBtn = document.createElement('button');
+  doneBtn.type = 'button';
+  doneBtn.className = 'facet-done-btn';
+  doneBtn.textContent = 'Done with filters';
+  doneBtn.addEventListener('click', () => {
+    browser.classList.remove('facets-open');
+    document.getElementById('browser-filter-toggle')?.setAttribute('aria-expanded', 'false');
+  });
+
+  facetHost.replaceChildren(reset, ...sections, doneBtn);
+  updateFilterBadge();
 }
 
 function variantNote(entry) {
@@ -4529,8 +5284,22 @@ function openBrowser() {
   searchInput.select();
 }
 
+function updateFilterBadge() {
+  let count = 0;
+  for (const set of browseState.selected.values()) {
+    count += set.size;
+  }
+  const badge = document.getElementById('filter-count-badge');
+  if (badge) {
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+}
+
 function closeBrowser() {
   browser.hidden = true;
+  browser.classList.remove('facets-open');
+  document.getElementById('browser-filter-toggle')?.setAttribute('aria-expanded', 'false');
   document.getElementById('browse-open').focus();
 }
 
@@ -4578,6 +5347,29 @@ function markCurrent(entry, variant) {
 document.getElementById('browse-open').addEventListener('click', openBrowser);
 document.getElementById('shell-search').addEventListener('click', openBrowser);
 document.getElementById('browse-close').addEventListener('click', closeBrowser);
+
+const collapseBtn = document.getElementById('controls-collapse-btn');
+const fabBtn = document.getElementById('stage-controls-fab');
+
+function setControlsCollapsed(collapsed) {
+  document.body.classList.toggle('controls-collapsed', collapsed);
+  if (collapseBtn) {
+    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+  }
+  if (fabBtn) {
+    fabBtn.hidden = !collapsed;
+  }
+  resize();
+}
+
+collapseBtn?.addEventListener('click', () => setControlsCollapsed(true));
+fabBtn?.addEventListener('click', () => setControlsCollapsed(false));
+
+const filterToggle = document.getElementById('browser-filter-toggle');
+filterToggle?.addEventListener('click', () => {
+  const isOpen = browser.classList.toggle('facets-open');
+  filterToggle.setAttribute('aria-expanded', String(isOpen));
+});
 searchInput.addEventListener('input', () => {
   browseState.query = searchInput.value.trim().toLowerCase();
   renderBrowser();

@@ -2,25 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Dissecting Refractor: The BF1942 Model Extraction & WebGL Reconstruction Field Guide</title>
+<title>Dissecting Refractor: BF1942 asset storage and web reconstruction manual</title>
 <style>
   @page {
     size: A4;
     margin: 16mm 15mm 18mm 15mm;
     @top-left {
-      content: "DISSECTING REFRACTOR // FIELD MANUAL";
-      font-family: "Courier New", Courier, monospace;
+      content: "Dissecting Refractor: Asset storage and web reconstruction";
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       font-size: 7.5pt;
-      color: #666;
+      color: #555;
       border-bottom: 1px solid #bbb;
       padding-bottom: 3px;
       margin-bottom: 6mm;
     }
     @top-right {
-      content: "BF1942 ASSET EXTRACTION & WEBGL";
-      font-family: "Courier New", Courier, monospace;
+      content: "Technical manual";
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       font-size: 7.5pt;
-      color: #666;
+      color: #555;
       border-bottom: 1px solid #bbb;
       padding-bottom: 3px;
       margin-bottom: 6mm;
@@ -41,22 +41,22 @@
   }
 
   * { box-sizing: border-box; }
-  
+
   body {
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 9.3pt;
-    line-height: 1.38;
+    font-size: 9pt;
+    line-height: 1.36;
     color: #1a1a1a;
     background: #fff;
     margin: 0;
     padding: 0;
   }
 
-  /* COVER PAGE */
+  /* Cover page */
   .cover-page {
     page-break-after: always;
     height: 100vh;
-    padding: 32mm 24mm 24mm 24mm;
+    padding: 30mm 24mm 24mm 24mm;
     background: #181a15;
     color: #e6e4d9;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -78,9 +78,8 @@
   .cover-top-tag {
     font-family: "Courier New", Courier, monospace;
     font-size: 8.5pt;
-    letter-spacing: 0.25em;
+    letter-spacing: 0.2em;
     color: #9aab5a;
-    text-transform: uppercase;
     border-bottom: 1px solid #333a20;
     padding-bottom: 8px;
   }
@@ -90,18 +89,16 @@
   }
 
   .cover-title {
-    font-family: "Courier New", Courier, monospace;
-    font-size: 26pt;
-    font-weight: 900;
-    letter-spacing: -0.02em;
-    line-height: 1.1;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 24pt;
+    font-weight: 800;
+    line-height: 1.15;
     color: #f5f4ed;
     margin: 0 0 10px 0;
-    text-transform: uppercase;
   }
 
   .cover-subtitle {
-    font-size: 12pt;
+    font-size: 11.5pt;
     line-height: 1.35;
     color: #b0b59b;
     font-weight: 400;
@@ -117,7 +114,6 @@
     padding: 4px 10px;
     border: 1px solid #5a6b32;
     border-radius: 2px;
-    letter-spacing: 0.08em;
   }
 
   .cover-ascii {
@@ -142,13 +138,11 @@
     justify-content: space-between;
   }
 
-  /* HEADINGS */
+  /* Headings */
   h1 {
-    font-family: "Courier New", Courier, monospace;
-    font-size: 13pt;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 12.5pt;
     font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
     color: #1e2412;
     border-bottom: 2px solid #2d3618;
     padding-bottom: 2px;
@@ -167,15 +161,14 @@
     font-family: "Courier New", Courier, monospace;
     font-size: 8pt;
     font-weight: bold;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.15em;
     color: #5d6e2e;
-    text-transform: uppercase;
-    margin-bottom: 1px;
+    margin-bottom: 2px;
   }
 
   h2 {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif;
-    font-size: 10pt;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 9.8pt;
     font-weight: bold;
     color: #2b3318;
     margin-top: 10pt;
@@ -186,7 +179,7 @@
   }
 
   h3 {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 8.8pt;
     font-weight: bold;
     color: #333;
@@ -211,7 +204,7 @@
     margin-bottom: 1.5pt;
   }
 
-  /* CODE AND SYNTAX */
+  /* Code and syntax */
   pre, code {
     font-family: "Courier New", Courier, monospace;
   }
@@ -247,7 +240,7 @@
   pre .typ { color: #68a8b8; }
   pre .num { color: #d4a750; }
 
-  /* CALLOUT BOXES - RETRO BOOK STYLE */
+  /* Callout boxes */
   .callout {
     margin: 5pt 0;
     padding: 6px 8px;
@@ -258,15 +251,11 @@
   }
 
   .callout-title {
-    font-family: "Courier New", Courier, monospace;
-    font-size: 7.8pt;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     font-weight: bold;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    letter-spacing: 0.05em;
     margin-bottom: 3px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
   }
 
   .gotcha {
@@ -290,7 +279,7 @@
   }
   .specbox .callout-title { color: #234768; }
 
-  /* TABLES */
+  /* Tables */
   table {
     width: 100%;
     border-collapse: collapse;
@@ -304,8 +293,7 @@
     color: #edf2dc;
     font-family: "Courier New", Courier, monospace;
     font-size: 7.4pt;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.05em;
     padding: 3px 5px;
     border: 1px solid #1a2010;
     text-align: left;
@@ -337,79 +325,87 @@
 </head>
 <body>
 
-<!-- ========================================================================= -->
-<!-- COVER PAGE -->
-<!-- ========================================================================= -->
+<!-- Cover page -->
 <div class="cover-page">
   <div class="cover-border">
     <div>
-      <div class="cover-top-tag">// REVERSE ENGINEERING SERIES &bull; VOL. 2002</div>
+      <div class="cover-top-tag">Refractor 2 technical documentation</div>
       <div class="cover-title-group">
-        <div class="cover-title">Dissecting<br>Refractor</div>
-        <div class="cover-subtitle">The Battlefield 1942 Asset Extraction &amp; WebGL Reconstruction Field Guide</div>
-        <div class="cover-badge">DIRECTX 8 &bull; LZO1X &bull; BIND POSES &bull; THREE.JS SHADERS</div>
+        <div class="cover-title">Dissecting Refractor</div>
+        <div class="cover-subtitle">Asset storage in Battlefield 1942 and transformation for web rendering</div>
+        <div class="cover-badge">DirectX 8, LZO1X, glTF 2.0, Three.js</div>
       </div>
       <div class="cover-ascii">
 +-------------------------------------------------------------------------+
-| [RFA ARCHIVE] ===(LZO1X)===> [CON SCRIPT TREE] ===(OBJECT HIERARCHY)    |
-|                                    |                                    |
-| [STANDARDMESH .SM] <====(.RS)======+======(.SKN / .SKE)====> [RIGGING]  |
+| [RFA ARCHIVES] ===(LZO1X)===> [.CON SCRIPT TREES] ===(SCENE HIERARCHY)  |
+|                                     |                                   |
+| [STANDARDMESH .SM] <====(.RS)=======+=====(.SKN / .SKE)====> [RIGGING]  |
 |         |                                                        |      |
-|    (STRIDE 32/40)   [Z-MIRROR CONJUGATION: R->SRS]          (BAF QUATS) |
+|   (STRIDE 32 / 40)   [Z-MIRROR CONJUGATION: R->SRS]          (BAF QUATS)|
 |         |                                                        |      |
 |         v                                                        v      |
-| [glTF / BINARY GLB] =========> [WEBGL / THREE.JS] <====(sRGB MOD-2X)=== |
+| [glTF / BINARY GLB] =========> [WEBGL / THREE.JS] <====(sRGB MOD-2X)==  |
 +-------------------------------------------------------------------------+</div>
     </div>
     <div>
       <p style="font-size: 8.5pt; color: #a4ab93; margin-bottom: 12px; line-height: 1.4;">
-        A field manual for the technical developer. Explaining how raw binary meshes,
-        nested template trees, run-length animation clips, and pre-lit terrains are
-        extracted from 20-year-old game archives and rendered with mathematical fidelity in modern browsers.
+        A technical manual for developers. This document explains the binary asset formats used
+        by the Refractor 2 engine in Battlefield 1942, identifies the parsing rules required to read
+        them, and describes the pipeline that converts those assets into binary glTF files for
+        rendering in web browsers.
       </p>
       <div class="cover-footer">
-        <span>ANTIGRAVITY / SKANDIA RESEARCH</span>
-        <span>ARCHIVE REF: 60c9452d</span>
+        <span>Skandia Research</span>
+        <span>bfstats documentation</span>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ========================================================================= -->
-<!-- PREFACE & PIPELINE -->
-<!-- ========================================================================= -->
+<!-- Introduction -->
 <div style="page-break-after: always; padding-top: 4mm;">
-  <h1>PREFACE: NO SDK, JUST BYTES</h1>
+  <h1>System architecture and asset structure</h1>
   <p>
-    Battlefield 1942 shipped in September 2002 on the Refractor 2 engine. There was no clean public SDK, no glTF export button, and no tidy JSON scene graphs. The engine is a creature of early DirectX 8 fixed-function architecture: flat uncompressed/LZO archives, stateful console scripts, custom vertex formats with proprietary strides, and MAX-exported bone hierarchies.
+    Battlefield 1942 was released in September 2002 using the Refractor 2 engine. The engine relied on
+    DirectX 8 fixed-function graphics pipelines, flat compressed archives, imperative console scripts,
+    binary geometry files with fixed vertex strides, and hierarchical skeletal animations.
   </p>
   <p>
-    When you attempt to extract these models for the web, standard 3D tools fail. The mesh files contain no textures. The weapon skeletons are stored mirrored backwards along the Z-axis. The animation files transpose quaternions and yaw 180 degrees. The terrain is pre-lit with 2002 sun angles, so throwing standard Three.js hemisphere lighting onto it turns tropical atolls into dark grey mud.
+    Standard 3D software packages cannot open these files directly. Mesh files contain vertex buffers but
+    no texture references. Weapon and soldier skeletons use mirrored coordinate frames along the Z axis.
+    Animation clips store quaternion tracks with row-vector conventions and a 180-degree yaw offset.
+    Terrain tiles contain baked sunlight, so standard WebGL scene lighting produces dark surfaces.
   </p>
   <p>
-    This guide is written for your morning commute. It skips corporate fluff and cuts directly to the byte layouts, the math, the parsing bugs that burned hours of triage, and the WebGL tricks that brought 96 vanilla vehicles and thousands of mod assets into a browser at 60 FPS.
+    This guide explains the file formats used by the engine, outlines the failure modes encountered when
+    parsing them, and details the extraction pipeline built in <code>tools/bf1942-models/</code> to
+    convert these assets into binary glTF for Three.js.
   </p>
 
   <div class="callout warstory">
-    <div class="callout-title">[★] THE REVERSE ENGINEERING GOLDEN RULE</div>
-    <strong>Measure before you decompile.</strong> When a mesh looks broken, do not burn a day in Ghidra tracing stripped MSVC binaries. Write a Python survey across all 33,000 meshes in the installed mods. 95% of apparent engine quirks are either one-off authoring bugs in single mod files or simple coordinate-system misunderstandings.
+    <div class="callout-title">Analysis rule: Measure before decompiling</div>
+    When an extracted asset renders incorrectly, inspect multiple files across the dataset before
+    reading engine binaries in Ghidra. Write a Python script to scan the 33,000 meshes across vanilla
+    and mod archives. Most discrepancies stem from coordinate system mismatches or mod-specific authoring
+    variations.
   </div>
 
-  <h2>THE RECONSTRUCTION PIPELINE AT A GLANCE</h2>
+  <h2>Pipeline overview from archive to WebGL</h2>
   <div class="diag">
-1. ARCHIVES (.rfa)      Unpack data payloads with LZO1X segment decompression.
-2. OBJECT SCRIPTS (.con) Replay stateful command streams to build the parent-child scene graph.
+1. ARCHIVES (.rfa)      Unpack data payloads using LZO1X segment decompression.
+2. OBJECT SCRIPTS (.con) Execute command streams to construct the parent-child scene graph.
 3. GEOMETRY (.sm)       Read 16-bit indices, bounding boxes, collision hulls, and vertex strides.
-4. SHADERS (.rs)        Match mesh material names to texture stages and alpha-test flags.
-5. TEXTURES (.dds/.tga) Decode DXT1/3/5 and BGRA rasters; bleed cutouts to eliminate black halos.
-6. SKELETONS (.ske/.skn)Conjugate Z-mirrored bone matrices (R -> SRS); weld sleeves to hands.
+4. SHADERS (.rs)        Match mesh material names to texture stages and alpha test flags.
+5. TEXTURES (.dds/.tga) Decode DXT1, DXT3, DXT5, and BGRA rasters; bleed edges to prevent halos.
+6. SKELETONS (.ske/.skn)Conjugate Z-mirrored bone matrices; align detached hand meshes to forearms.
 7. ANIMATION (.baf)     Decode 7-channel fixed-point RLE tracks; conjugate quaternions; yaw root 180°.
-8. EXPORT (glTF / .glb) Transform Refractor Left-Hand to WebGL Right-Hand; bake node hierarchy.
-9. BROWSER (Three.js)   Modulate-2x terrain shader; dual-UV lightmaps; interactive vehicle rigging.</div>
+8. EXPORT (glTF / .glb) Convert Refractor left-handed coordinates to WebGL right-handed coordinates.
+9. BROWSER (Three.js)   Render with unlit materials, sRGB modulate-2x detail shaders, and Web Audio.</div>
 
-  <h2>THE 4-WAY HANDSHAKE OF A REFRACTOR ASSET</h2>
+  <h2>The asset resolution contract</h2>
   <p>
-    If you search for <code>Sherman.3ds</code> or <code>Tiger.obj</code> in Battlefield 1942, you will find nothing. A Refractor asset is not a file; it is a <strong>four-way contract</strong> spread across distinct archive domains:
+    In Battlefield 1942, an asset is not a single file. An object definition relies on
+    interdependent files spread across distinct archive directories:
   </p>
   <div class="diag">
 +---------------------+     +-----------------------+     +------------------------+
@@ -422,153 +418,59 @@
 | (DXT1/3/5 Pixels)   |     | (Material Shaders)    |
 +---------------------+     +-----------------------+</div>
   <ol>
-    <li><strong><code>Objects.con</code></strong> declares the hierarchy: <em>"A Sherman is a Bundle containing a Hull, parenting a Turret, parenting a Cannon."</em></li>
-    <li><strong><code>Geometries.con</code></strong> resolves geometry aliases: <code>ObjectTemplate.geometry Sherman_Hull_M1</code> maps to <code>StandardMesh/Sherman_Hull_M1.sm</code>.</li>
-    <li><strong><code>*.sm</code></strong> stores raw vertex positions, normals, UVs, and material slot names (e.g. <code>Material0</code>). It knows nothing about textures.</li>
-    <li><strong><code>*.rs</code></strong> (RenderShader) matches the material slot name to an image filename (e.g. <code>texture/sherma_I</code>).</li>
-    <li><strong><code>*.dds / *.tga</code></strong> contains the compressed texels on disk.</li>
+    <li><code>Objects.con</code> defines the object hierarchy, such as a tank hull parenting a turret, which parents a gun barrel.</li>
+    <li><code>Geometries.con</code> resolves geometry aliases, mapping template names to geometry files.</li>
+    <li><code>*.sm</code> stores vertex coordinates, surface normals, texture coordinates, and material slot names.</li>
+    <li><code>*.rs</code> (RenderShader) matches material slot names to texture filenames.</li>
+    <li><code>*.dds</code> and <code>*.tga</code> store the compressed or raw image rasters.</li>
   </ol>
 </div>
 
-<!-- ========================================================================= -->
-<!-- CHAPTER 1: THE ARCHIVE & FILE ENGINE -->
-<!-- ========================================================================= -->
-
-<!-- ========================================================================= -->
-<!-- FIELD PRIMER: 3D GRAPHICS FOR SYSTEMS DEVELOPERS -->
-<!-- ========================================================================= -->
-<div class=chapter-header>
-  <div class=chapter-num>FIELD PRIMER</div>
-  <h1>3D GRAPHICS CONCEPTS FOR THE SYSTEMS DEVELOPER</h1>
-</div>
-
-<p>
-  If your background is in backend services, networking, or databases rather than 3D graphics, game engine file formats can feel like a cryptic alphabet soup of vector math and arbitrary acronyms. This primer translates the essential 3D concepts into familiar systems-programming terms (structs, arrays, memory offsets, and directed graphs) before we dissect the binary archives.
-</p>
-
-<h2>0.1 GEOMETRY IN MEMORY: VERTICES, STRIDES &amp; INDICES</h2>
-<p>
-  In 3D engines, physical objects are not solid volumetric shapes; they are hollow boundary shells constructed from interconnected triangles (polygons).
-</p>
-<ul>
-  <li><strong>Vertex (The C Struct):</strong> A vertex is a single point on a 3D surface. In memory, it is a contiguous binary struct containing spatial coordinates, a normal vector (which direction the surface faces for lighting), and 2D texture coordinates:
-    <pre style="margin: 3px 0;"><span class="kw">struct</span> <span class="typ">Vertex32</span> {
-    <span class="typ">float</span> x, y, z;       <span class="com">// 12 bytes: World position relative to mesh origin</span>
-    <span class="typ">float</span> nx, ny, nz;    <span class="com">// 12 bytes: Unit surface normal vector (used for lighting)</span>
-    <span class="typ">float</span> u, v;          <span class="com">//  8 bytes: Texture coordinates</span>
-}; <span class="com">// Total sizeof = 32 bytes</span></pre>
-  </li>
-  <li><strong>Stride (sizeof):</strong> The byte width of each vertex struct. When parsing a raw binary buffer, the <em>stride</em> tells your unpacker how many bytes to jump to reach the next vertex. Refractor uses 32 bytes for standard meshes, and 40 bytes when a second UV set is present.</li>
-  <li><strong>Index Buffer (Pointers into the Array):</strong> Storing 3 full vertices for every triangle wastes immense memory because adjacent triangles share corners. Instead, the engine stores a flat array of unique vertices (the <em>Vertex Buffer</em>), and a separate array of integer offsets into that array (the <em>Index Buffer</em>). Every three consecutive indices define one triangle:
-    <pre style="margin: 3px 0;"><span class="com">// Index buffer: two triangles forming a quad (indices 1 and 2 are shared)</span>
-uint16_t indices[] = { <span class="num">0</span>, <span class="num">1</span>, <span class="num">2</span>,   <span class="num">2</span>, <span class="num">3</span>, <span class="num">0</span> };</pre>
-  </li>
-  <li><strong>Primitives (List vs. Strip):</strong> In a <em>Triangle List</em> (primitive 4), every triangle requires 3 separate indices. In a <em>Triangle Strip</em> (primitive 5), each new vertex after the first two creates a new triangle with the preceding two, saving memory and GPU bus bandwidth in 2002.</li>
-</ul>
-
-<h2>0.2 TEXTURING, UV COORDINATES &amp; LIGHTMAPS</h2>
-<ul>
-  <li><strong>UV Coordinates:</strong> A 2D texture image has horizontal (U) and vertical (V) axes normalized between 0.0 and 1.0. Assigning <code>u=0.5, v=0.5</code> to a 3D vertex pins that 3D corner to the exact center pixel of the texture bitmap.</li>
-  <li><strong>Lightmaps (Static Offline Lighting):</strong> In 2002, GPUs lacked the compute power to calculate dynamic soft shadows in real time. Level designers pre-calculated sunlight, ambient occlusion, and shadow penumbras offline using radiosity simulators. The resulting brightness values were saved into a secondary grayscale or colored texture called a <strong>Lightmap</strong>.
-  <br>At runtime, the GPU performs a dual-texture multiply:
-    <pre style="margin: 3px 0;">PixelColor = DiffuseTexture(uv0) * LightmapTexture(uv1) * <span class="num">2.0</span></pre>
-  </li>
-</ul>
-
+<!-- Part 1: How Battlefield 1942 stores assets -->
+<!-- Chapter 1: Archives and scripts -->
 <div class="chapter-header">
-  <div class="chapter-num">FIELD PRIMER (CONTINUED)</div>
-  <h1>RIGGING, GLTF &amp; COORDINATE CONVENTIONS</h1>
-</div>
-
-<h2>0.3 THE SKELETAL RIGGING TRIO: .SKE, .SKN, AND .BAF</h2>
-<p>
-  Rigid vehicles (tanks, jeeps) are simply parented trees of rigid parts. But an animated human soldier requires a three-tier deformation pipeline:
-</p>
-<div class="diag">
-[1. .SKE (Skeleton Armature)] =====> [2. .SKN (Skin Weights)] <==== [3. .SM (3D Triangles)]
-         |                                     |
-         v (Drives Joints)                     v (Deforms Surface)
-[4. .BAF (Animation Tracks)] =========> [FINAL POSED SOLDIER]</div>
-
-<ol>
-  <li><strong>The Skeleton / Armature (<code>.ske</code>):</strong> An abstract directed acyclic graph (DAG) of coordinate spaces called "bones" or "joints". It has no polygons, vertices, or textures. It is purely a parent-child hierarchy (<code>Pelvis &rarr; Spine &rarr; Clavicle &rarr; Forearm &rarr; Hand</code>) where each bone stores a 3x4 affine transform matrix representing its default rest position and rotation relative to its parent.</li>
-  <li><strong>The Skin Binding (<code>.skn</code>):</strong> The binding table that maps the flexible polygon mesh (the jacket, trousers) to the rigid skeleton bones. For every vertex, it stores an influence list:
-    <pre style="margin: 3px 0;">Vertex #512:  <span class="num">75%</span> Forearm Bone,  <span class="num">25%</span> Elbow Bone</pre>
-    When the elbow bends, Vertex 512 moves as a weighted linear interpolation between the two bone transforms, allowing the elbow cloth to stretch naturally without tearing.</li>
-  <li><strong>The Animation Clip (<code>.baf</code>):</strong> A timeseries keyframe recording. It stores the rotational (quaternion) and positional offset for each bone at every frame. Refractor compresses these tracks using fixed-point math and Run-Length Encoding (RLE).</li>
-</ol>
-
-<h2>0.4 GLTF / GLB: THE "JSON + MEMCPY" WEB STANDARD</h2>
-<p>
-  Why convert Refractor assets to <strong>glTF 2.0 (GL Transmission Format)</strong>?
-</p>
-<ul>
-  <li><strong>Why Not Wavefront OBJ?</strong> OBJ is a 1990s ASCII format. Parsing hundreds of thousands of floats from text strings in JavaScript on mobile CPUs burns battery and stalls the main browser thread.</li>
-  <li><strong>Why Not Autodesk FBX?</strong> FBX is a proprietary, closed binary container requiring huge C++ SDKs with complex internal object graphs.</li>
-  <li><strong>The glTF Architecture:</strong> glTF (and its single-file binary container <code>.glb</code>) separates metadata from raw payload. It contains a lightweight JSON header defining the scene graph, pointing directly into flat binary byte buffers (<code>BufferViews</code> and <code>Accessors</code>).</li>
-  <li><strong>Direct VRAM Upload:</strong> Crucially, the binary chunks inside a <code>.glb</code> match GPU vertex buffer layouts 1:1. The browser parses the JSON, reads the byte offsets, and hands the binary buffer directly to WebGL via <code>gl.bufferData()</code>. It is effectively a direct <code>memcpy</code> straight into GPU VRAM.</li>
-</ul>
-
-<h2>0.5 COORDINATE HANDEDNESS (THE 3D ENDIANNESS PROBLEM)</h2>
-<p>
-  Just as CPUs differ in byte endianness (Little-Endian vs Big-Endian), 3D graphics engines differ in spatial <strong>Handedness</strong>:
-</p>
-<ul>
-  <li><strong>Left-Handed (DirectX 8 / Refractor):</strong> Point your left hand: Thumb right (+X), Index finger up (+Y), Middle finger <em>away from you into the screen</em> (+Z forward).</li>
-  <li><strong>Right-Handed (OpenGL / WebGL / glTF / Three.js):</strong> Point your right hand: Thumb right (+X), Index finger up (+Y), Middle finger <em>towards your face</em> (+Z backward).</li>
-</ul>
-<p>
-  If you import a Left-Handed model into WebGL without transforming its coordinates:
-</p>
-<ol>
-  <li>The model faces backwards along Z.</li>
-  <li>Its polygon winding order (the order vertices are traversed: clockwise vs counter-clockwise) is reversed. WebGL’s back-face culling will hide the front of the model and render the interior!</li>
-  <li>Surface normal vectors point inside, causing lighting calculations to invert.</li>
-</ol>
-<p>
-  <strong>The Fix:</strong> Negate Z on all vertices and normals (z &rarr; -z), and swap index pairs to reverse winding: (i0, i1, i2) &rarr; (i0, i2, i1).
-</p>
-
-<div class="chapter-header">
-  <div class="chapter-num">CHAPTER 1</div>
-  <h1>INSIDE THE REFRACTOR FLAT ARCHIVE (.RFA)</h1>
+  <div class="chapter-num">Part 1 &bull; Chapter 1</div>
+  <h1>Archives and scripts</h1>
 </div>
 
 <p>
-  All game assets live in <code>.rfa</code> flat archives. The format is a container with an optional magic header, a contiguous data block, and an index table appended at the end of the payload.
+  All game assets reside within Refractor flat archives (<code>.rfa</code>). The format combines a
+  header, a data payload, and an index table stored at the end of the file.
 </p>
 
 <table>
   <tr>
-    <th style="width: 22%;">Offset / Field</th>
+    <th style="width: 22%;">Offset or field</th>
     <th style="width: 18%;">Type</th>
-    <th>Description &amp; Parsing Notes</th>
+    <th>Description</th>
   </tr>
   <tr>
     <td><code>0x00</code> Header</td>
     <td><code>char[28]</code></td>
-    <td>Optional magic string: <code>"Refractor2 FlatArchive 1.1  "</code>. If absent, base offset is 0.</td>
+    <td>Magic string: <code>Refractor2 FlatArchive 1.1  </code>. When absent, base offset is zero.</td>
   </tr>
   <tr>
     <td><code>data_size</code></td>
-    <td><code>uint32_t</code></td>
-    <td>Length of compressed/uncompressed payload chunk in bytes.</td>
+    <td><code>uint32</code></td>
+    <td>Length of the payload block in bytes.</td>
   </tr>
   <tr>
     <td><code>compressed</code></td>
-    <td><code>uint32_t</code></td>
-    <td>Payload compression flag (1 = compressed, 0 = raw).</td>
+    <td><code>uint32</code></td>
+    <td>Payload compression flag (1 for compressed, 0 for raw).</td>
   </tr>
   <tr>
     <td><code>index_table</code></td>
-    <td>(At EOF)</td>
+    <td>Appended at EOF</td>
     <td>Located at <code>base_offset + data_size</code>. Contains entry count and directory records.</td>
   </tr>
 </table>
 
-<h2>1.1 THE DIRECTORY RECORD &amp; ENTRY UNPACKING</h2>
+<h2>Entry tables and LZO1X segment decompression</h2>
 <p>
-  The index table at <code>base_offset + data_size</code> begins with <code>entry_count (uint32)</code>, followed by variable-length entry records. Each entry specifies its path, compressed/uncompressed sizes, and payload offset:
+  The index table at <code>base_offset + data_size</code> begins with a 32-bit unsigned integer
+  recording the entry count. Variable-length entry records follow. Each record contains the path length,
+  the path string, compressed size, uncompressed size, and data offset:
 </p>
 <pre><span class="kw">def</span> <span class="typ">read_entries</span>(data: bytes, base_offset: int, data_size: int):
     pos = base_offset + data_size
@@ -579,13 +481,12 @@ uint16_t indices[] = { <span class="num">0</span>, <span class="num">1</span>, <
         name_len, = struct.unpack_from(<span class="str">"&lt;I"</span>, data, pos)
         name = data[pos+<span class="num">4</span> : pos+<span class="num">4</span>+name_len].decode(<span class="str">"latin-1"</span>).replace(<span class="str">"\\"</span>, <span class="str">"/"</span>)
         comp_size, uncomp_size, offset = struct.unpack_from(<span class="str">"&lt;III"</span>, data, pos+<span class="num">4</span>+name_len)
-        pos += <span class="num">4</span> + name_len + <span class="num">12</span> + <span class="num">12</span>  <span class="com"># 12 bytes metadata + 12 unused reserved bytes</span>
+        pos += <span class="num">4</span> + name_len + <span class="num">12</span> + <span class="num">12</span>  <span class="com"># 12 bytes metadata plus 12 reserved bytes</span>
         entries[name.lower()] = (offset, comp_size, uncomp_size)
     <span class="kw">return</span> entries</pre>
-
-<h2>1.2 LZO1X SEGMENT DECOMPRESSION</h2>
 <p>
-  Refractor compresses chunks using LZO1X. A compressed entry does not decompress in one single call; it begins with <code>segments_count (uint32)</code>, followed by per-segment descriptors:
+  Compressed entries use the LZO1X algorithm. A compressed entry does not decompress in a single call.
+  It begins with a 32-bit segment count, followed by descriptors for each segment:
 </p>
 <pre><span class="kw">import</span> ctypes
 _lzo = ctypes.CDLL(<span class="str">"liblzo2.so.2"</span>)
@@ -600,178 +501,161 @@ _lzo = ctypes.CDLL(<span class="str">"liblzo2.so.2"</span>)
         pos += <span class="num">12</span>
         chunk = raw_entry_data[seg_offset : seg_offset + seg_csize]
         written = ctypes.c_ulong(seg_usize)
-        _lzo.lzo1x_decompress(chunk, seg_csize, 
+        _lzo.lzo1x_decompress(chunk, seg_csize,
                               ctypes.byref(out_buf, out_offset), ctypes.byref(written), <span class="kw">None</span>)
         out_offset += seg_usize
     <span class="kw">return</span> bytes(out_buf)</pre>
 
+<h2>Mod search paths and case sensitivity</h2>
+<p>
+  Refractor mods declare parent search paths in their <code>init.con</code> scripts using
+  <code>game.addModPath</code>:
+</p>
+<pre><span class="typ">game.addModPath</span> Mods/FHSW/
+<span class="typ">game.addModPath</span> Mods/FH/
+<span class="typ">game.addModPath</span> Mods/Bf1942/</pre>
+<p>
+  The asset resolver checks the nearest child first and falls back to parents. Level archives also
+  require underlaying. A mod level archive often supplies only vehicle spawns, relying on the base game
+  level archive for terrain heightmaps, textures, and capture flags.
+</p>
+
 <div class="callout gotcha">
-  <div class="callout-title">[!] GOTCHA: THE LINUX CASE-SENSITIVITY LANDMINE</div>
-  Battlefield 1942 was authored on Windows where filesystems are case-insensitive. Mod authors freely mixed casing: <code>GCMOD/Archives</code> vs <code>EoD/archives</code> (all lowercase) vs <code>interstate/archives</code>. A naive Linux <code>mod_dir / "Archives"</code> lookup returns empty, silently skipping entire mods. Always perform a case-folded directory scan:
+  <div class="callout-title">File system difference: Linux case sensitivity</div>
+  Battlefield 1942 was developed on Windows, where paths are case-insensitive. Total conversion mods
+  use mixed casing, such as <code>GCMOD/Archives</code>, <code>EoD/archives</code>, and
+  <code>interstate/archives</code>. A direct path lookup on Linux fails when cases differ. The extractor
+  scans directory entries with lowercase comparisons:
   <pre style="margin: 3px 0 0 0;"><span class="kw">def</span> <span class="typ">find_archives</span>(p): <span class="kw">return</span> next((c <span class="kw">for</span> c <span class="kw">in</span> p.iterdir() <span class="kw">if</span> c.name.lower() == <span class="str">"archives"</span>), <span class="kw">None</span>)</pre>
 </div>
 
-<h2>1.3 MOD INHERITANCE &amp; MONOLITHIC PACKS</h2>
+<h2>Stateful console scripts and child scoping</h2>
 <p>
-  Refractor mods inherit content hierarchically. An archive never duplicates vanilla assets; its <code>init.con</code> declares search paths using <code>game.addModPath</code>:
-</p>
-<pre><span class="typ">FHSW</span> (child mod) ---&gt; <span class="typ">FH</span> (parent mod) ---&gt; <span class="typ">Bf1942</span> (base game)</pre>
-<p>
-  <strong>Resolution Rule:</strong> Always probe nearest-child first, falling back to base vanilla. When extracting levels, <strong>underlay</strong> parent archives: Desert Combat's <code>Gazala.rfa</code> only defines vehicle spawns; it relies on vanilla <code>bf1942/levels/Gazala.rfa</code> for control points, flags, and terrain size.
-</p>
-<p>
-  <strong>Monolithic Packs:</strong> Total conversion mods like FHSW frequently concatenate hundreds of vehicle scripts into a single monolithic <code>!_PACK_ALLIES/Compressed.con</code> file. The parser unpacks these virtual trees by detecting comments injected by mod packers: <code>rem folder = &lt;Name&gt;</code> and <code>rem sauce = &lt;File&gt;</code>.
-</p>
-
-<h2>1.4 THE MISSING TEXTURE.RFA CASE STUDY</h2>
-<p>
-  During early pipeline testing, vanilla vehicles extracted as bare untextured geometry. Texture resolution stalled at a dismal <strong>6.2%</strong>. The code was inspected repeatedly for path bugs, but the fault lay in data: the Wine test install was missing base <code>texture.rfa</code> (98,885,015 bytes, 1,605 entries).
-</p>
-<p>
-  Once restored to the archive search pool, resolution surged to <strong>96.0%</strong>. The pipeline maintains an <code>ArchivePool</code> that searches across open archives in exact engine priority:
-</p>
-<pre><span class="com"># Priority order for texture resolution</span>
-1. Objects.rfa (Mod override: Objects/&lt;path&gt;/Art/&lt;mesh&gt;.rs)
-2. StandardMesh.rfa (Global mesh shader: StandardMesh/&lt;mesh&gt;.rs)
-3. Texture.rfa (Base vehicle &amp; weapon textures: texture/&lt;name&gt;.dds)
-4. Menu.rfa (HUD icons and kit selection graphics)</pre>
-
-<h2>1.5 ARCHIVE POOLING &amp; FILE DESCRIPTORS</h2>
-<p>
-  Extracting 1,000 models across 14 mods touches tens of thousands of archive lookups. Naive per-file archive opens quickly trigger <code>EMFILE (Too many open files)</code>. The <code>ArchivePool</code> class opens each <code>.rfa</code> exactly once, parses and caches the index table in memory with normalized lowercase paths, and reuses memory-mapped views for zero-copy slice decompression.
-</p>
-
-<!-- ========================================================================= -->
-<!-- CHAPTER 2: PARSING A PARTICULAR ASSET -->
-<!-- ========================================================================= -->
-<div class="chapter-header">
-  <div class="chapter-num">CHAPTER 2</div>
-  <h1>PARSING A PARTICULAR ASSET: STEP-BY-STEP</h1>
-</div>
-
-<p>
-  Let us trace the complete extraction of a single asset: the <strong>Sherman tank</strong>. We begin with <code>Objects.con</code> and step through the binary formats until we reach textured 3D polygons.
-</p>
-
-<h2>STEP 1: SCRIPT REPLAY &amp; SCENE GRAPH (OBJECTS.CON)</h2>
-<p>
-  Refractor scripts are imperative command streams. As the engine executes each line, it maintains an active template context:
+  Game scripts use the <code>.con</code> extension. The engine processes these files as sequential
+  command streams. It tracks an active template context as commands run:
 </p>
 <pre><span class="kw">ObjectTemplate.create</span> Bundle ShermanComplex
 <span class="kw">ObjectTemplate.geometry</span> Sherman_Hull_M1
 <span class="kw">ObjectTemplate.addTemplate</span> ShermanTower
-<span class="kw">ObjectTemplate.setPosition</span> <span class="num">0</span>/<span class="num">-0.8</span>/<span class="num">0</span>    <span class="com">&lt;-- WARNING: THE TRAP IS HERE</span></pre>
+<span class="kw">ObjectTemplate.setPosition</span> <span class="num">0</span>/<span class="num">-0.8</span>/<span class="num">0</span></pre>
 
 <div class="callout gotcha">
-  <div class="callout-title">[!] THE `setPosition` CHILD INSTANCE TRAP</div>
-  <strong>This single line cost us a full day of debugging.</strong><br>
-  In Refractor syntax, <code>setPosition</code> and <code>setRotation</code> immediately <em>after</em> an <code>addTemplate</code> apply to the <strong>child instance just added</strong>, NOT to the parent bundle! Before any <code>addTemplate</code>, they configure the parent. If your parser assigns <code>setPosition</code> to the current enclosing template, every child part collapses to <code>(0, 0, 0)</code>. On screen, the turret vanishes inside the hull.
+  <div class="callout-title">Scoping rule: Child instance transforms</div>
+  In Refractor syntax, <code>setPosition</code> and <code>setRotation</code> calls placed after an
+  <code>addTemplate</code> invocation apply to the child template just added, not to the parent bundle.
+  Before any <code>addTemplate</code> line, position and rotation configure the parent. If a parser
+  assigns position to the enclosing parent template, every child part collapses to the origin, causing
+  turrets and wheels to render at the center of the vehicle hull.
 </div>
 
-<h3>Accumulators vs. Holds (The Engine Lean Bug)</h3>
+<h2>Vehicle inputs and accumulator spans</h2>
 <p>
-  Vehicle rotational parts declare player inputs via <code>setInputToYaw</code>, <code>setInputToPitch</code>, and <code>setInputToRoll</code>. They pass either symbolic constants (<code>c_PIThrottle</code>) or raw integers (<code>4</code> = MouseX, <code>5</code> = MouseY).
-  Whether an engine axis is a continuous spinning rate or a fixed pose is decided by its <strong>declared span</strong>:
+  Movable vehicle parts connect to player inputs using <code>setInputToYaw</code>,
+  <code>setInputToPitch</code>, and <code>setInputToRoll</code>. The script declares input indices
+  or symbolic names. The declared angular span indicates whether a part spins continuously or holds
+  a pose:
 </p>
 <ul>
-  <li><code>span 2250..15000</code>: Aircraft propellers, helicopter rotors, and wheels &mdash; continuous accumulators.</li>
-  <li><code>span 2.0</code>: Tank hulls &mdash; a &plusmn;1&deg; chassis lean under acceleration and steering.</li>
+  <li>Large spans (such as 2250 to 15000 degrees) identify continuous accumulators, including aircraft propellers, helicopter rotors, and wheels.</li>
+  <li>Small spans (such as 2.0 degrees) identify deflection bounds, including chassis roll during acceleration and steering.</li>
 </ul>
 
 <div class="callout gotcha">
-  <div class="callout-title">[!] WAR STORY: THE ORBITING TANK RUNNING GEAR</div>
-  Early readers treated every template of kind <code>Engine</code> as a continuous spin rate. On a Sherman or Tiger, the hull lean was integrated as a continuous angular rate. Because the tracks and road wheels are children of the Engine, <strong>the entire suspension and running gear slowly orbited the hull in mid-air</strong>. We introduced <code>ACCUMULATOR_SPAN = 360.0</code>: anything below 360&deg; is a clamped pose, not a spin.
+  <div class="callout-title">Animation rule: Distinguishing continuous rotation from chassis lean</div>
+  If an extractor treats every template of type <code>Engine</code> as a continuous spin, the chassis
+  lean angle is integrated continuously over time. Because suspension components and wheels are children
+  of the engine template, the running gear rotates around the tank hull. Setting an accumulator
+  threshold at 360.0 degrees prevents this defect: values below 360.0 degrees are clamped poses rather
+  than continuous rotation rates.
 </div>
 
-<h2>STEP 2: GEOMETRY TEMPLATE INDIRECTION</h2>
-<p>
-  <code>ObjectTemplate.geometry Sherman_Hull_M1</code> does not load <code>Sherman_Hull_M1.sm</code> directly. It queries <code>Geometries.con</code>:
-</p>
-<pre><span class="kw">GeometryTemplate.create</span> StandardMesh Sherman_MGun_Mount_M1
-<span class="kw">GeometryTemplate.file</span> Tank_MGun_Mount_M1</pre>
-<p>
-  Here, the template name differs from the file on disk. The parser must maintain a dictionary of <code>GeometryTemplates</code> before touching the filesystem.
-</p>
+<!-- Chapter 2: Meshes, materials, and textures -->
+<div class="chapter-header">
+  <div class="chapter-num">Part 1 &bull; Chapter 2</div>
+  <h1>Meshes, materials, and textures</h1>
+</div>
 
-<h2>STEP 3: DISSECTING THE BINARY MESH (.SM)</h2>
 <p>
-  The <code>.sm</code> format stores rigid indexed triangle meshes and collision geometries.
+  Rigid geometry is stored in StandardMesh files (<code>.sm</code>). The format contains a fixed header,
+  collision hulls, and an array of Level of Detail (LOD) representations.
 </p>
 
 <table>
   <tr>
-    <th>Byte Offset</th>
+    <th>Byte offset</th>
     <th>Type</th>
-    <th>Name</th>
+    <th>Field</th>
     <th>Description</th>
   </tr>
   <tr>
     <td><code>0x00</code></td>
     <td><code>uint32</code></td>
     <td><code>version</code></td>
-    <td>Universal version identifier: <code>9</code> or <code>10</code>.</td>
+    <td>Format version: 9 or 10.</td>
   </tr>
   <tr>
     <td><code>0x04</code></td>
     <td><code>uint32</code></td>
-    <td><code>unknown</code></td>
-    <td>Always <code>0</code>.</td>
+    <td><code>reserved</code></td>
+    <td>Zero.</td>
   </tr>
   <tr>
-    <td><code>0x08 - 0x1F</code></td>
+    <td><code>0x08 to 0x1F</code></td>
     <td><code>float[6]</code></td>
-    <td><code>boundsMin/Max</code></td>
-    <td>Bounding box (xmin, ymin, zmin) to (xmax, ymax, zmax).</td>
+    <td><code>boundsMinMax</code></td>
+    <td>Axis-aligned bounding box coordinates.</td>
   </tr>
   <tr>
     <td><code>0x20</code></td>
     <td><code>uint8</code></td>
     <td><code>qflag</code></td>
-    <td>Present only if <code>version &gt; 9</code>.</td>
+    <td>Present only when <code>version &gt; 9</code>.</td>
   </tr>
   <tr>
-    <td>Var</td>
+    <td>Variable</td>
     <td><code>uint32</code></td>
     <td><code>colCount</code></td>
-    <td>Number of collision hulls embedded in the file.</td>
+    <td>Count of collision hulls embedded in the file.</td>
   </tr>
   <tr>
-    <td>Var</td>
+    <td>Variable</td>
     <td><code>uint32</code></td>
     <td><code>lodCount</code></td>
-    <td>LOD chain depth (1 for weapon parts, 6 for vehicles).</td>
+    <td>LOD chain depth (1 for handheld items, up to 6 for vehicles).</td>
   </tr>
 </table>
 
-<h3>The Material Descriptors vs. Payload Trap</h3>
+<h2>Material descriptors and vertex strides</h2>
 <p>
-  In each LOD, materials are serialized with a counter-intuitive memory layout:
+  Within each LOD block, material descriptors are grouped together before the binary vertex and index
+  buffers:
 </p>
 <div class="diag">
 [LOD Header] -> [Mat 0 Desc] -> [Mat 1 Desc] -> [Mat 0 Verts] -> [Mat 0 Indices] -> [Mat 1 Verts] -> [Mat 1 Indices]</div>
 <p>
-  <strong>All material descriptors come first; all binary vertex and index payloads follow afterwards in matching sequence.</strong>
+  All material descriptors appear first. Vertex and index payloads follow in the same sequence.
 </p>
-<pre><span class="com"># Material Descriptor Layout</span>
+<pre><span class="com"># Material descriptor layout</span>
 name_len, = struct.unpack_from(<span class="str">"&lt;I"</span>, data, pos)
 name = data[pos+<span class="num">4</span> : pos+<span class="num">4</span>+name_len].decode(<span class="str">"latin-1"</span>)
 pos += <span class="num">4</span> + name_len
 u0, u1, u2, prim, flags, stride, vcount, icount, u3 = struct.unpack_from(<span class="str">"&lt;9I"</span>, data, pos)
 pos += <span class="num">36</span></pre>
-
-<h3>Vertex Strides</h3>
 <p>
-  Refractor uses two universal vertex layouts:
+  Refractor uses two vertex layouts:
 </p>
 <ul>
-  <li><strong>Stride 32 bytes</strong> (Standard): Position (3 &times; <code>f32</code>) + Normal (3 &times; <code>f32</code>) + UV (2 &times; <code>f32</code>).</li>
-  <li><strong>Stride 40 bytes</strong> (Static Lightmapped): Position (3f) + Normal (3f) + Diffuse UV0 (2f) + Lightmap UV1 (2f).</li>
+  <li><strong>Stride 32 bytes</strong> (Standard): Position (3 floats), Normal (3 floats), and Texture UV (2 floats).</li>
+  <li><strong>Stride 40 bytes</strong> (Static lightmapped): Position (3 floats), Normal (3 floats), Texture UV0 (2 floats), and Lightmap UV1 (2 floats).</li>
 </ul>
 
-<h3>DirectX 8 Index Buffers &amp; Primitives</h3>
+<h2>Index buffers and primitive types</h2>
+<p>
+  DirectX 8 index buffers in Refractor use unsigned 16-bit integers. Meshes support two primitive types:
+</p>
 <ul>
-  <li><code>primitive == 4</code>: Triangle List. Indices grouped as (i0, i1, i2).</li>
-  <li><code>primitive == 5</code>: Triangle Strip. Unwound with alternating winding order:
+  <li><code>primitive == 4</code>: Triangle List. Every three indices form one triangle.</li>
+  <li><code>primitive == 5</code>: Triangle Strip. Each additional index after the first two creates a triangle, alternating vertex order:
     <pre style="margin: 3px 0;"><span class="kw">for</span> i <span class="kw">in</span> range(len(idx) - <span class="num">2</span>):
     a, b, c = idx[i], idx[i+<span class="num">1</span>], idx[i+<span class="num">2</span>]
     <span class="kw">if</span> a != b <span class="kw">and</span> b != c <span class="kw">and</span> a != c:
@@ -780,13 +664,17 @@ pos += <span class="num">36</span></pre>
 </ul>
 
 <div class="callout gotcha">
-  <div class="callout-title">[!] GOTCHA: THE SIGNED INT16 OVERFLOW</div>
-  DirectX 8 index buffers use unsigned 16-bit integers (<code>uint16_t</code> / struct format <code>&lt;H</code>). If you unpack indices as signed shorts (<code>&lt;h</code>), any large warship (Yamato, Prince of Wales) or complex industrial bunker with over 32,767 vertices overflows into negative numbers. The geometry explodes into a spiderweb of stretched polygons across the world origin.
+  <div class="callout-title">Format rule: Unsigned index buffers</div>
+  DirectX 8 index buffers use unsigned 16-bit integers (format <code>&lt;H</code>). If unpacked as
+  signed 16-bit integers (format <code>&lt;h</code>), any mesh with more than 32,767 vertices produces
+  negative index values. Large objects, such as battleships and industrial buildings, then render with
+  stretched polygons connecting across distant coordinates.
 </div>
 
-<h2>STEP 4: SHADERS &amp; TEXTURES (.RS, .DDS, .TGA)</h2>
+<h2>RenderShader definitions and texture lookup</h2>
 <p>
-  The material name in the <code>.sm</code> (e.g. <code>Sherman_Hull_M1_Material0</code>) is looked up in <code>StandardMesh/Sherman_Hull_M1.rs</code> or an override <code>Objects/.../Art/Sherman_Hull_M1.rs</code>:
+  Material names declared in the <code>.sm</code> file are matched to shader definitions in
+  <code>StandardMesh/&lt;mesh&gt;.rs</code> or <code>Objects/.../Art/&lt;mesh&gt;.rs</code>:
 </p>
 <pre><span class="kw">subshader</span> <span class="str">"Sherman_Hull_M1_Material0"</span> <span class="str">"StandardMesh/Default"</span> {
     <span class="kw">texture</span> <span class="str">"texture/sherma_I"</span>;
@@ -794,337 +682,166 @@ pos += <span class="num">36</span></pre>
     <span class="kw">twosided</span> <span class="typ">true</span>;
 }</pre>
 <p>
-  Notice that texture paths carry no file extension. The Refractor engine probes <code>.dds</code> first, then falls back to <code>.tga</code>.
+  Texture paths in shader scripts omit file extensions. The engine searches for a <code>.dds</code> file
+  first, then falls back to <code>.tga</code>.
 </p>
 
-<h3>DDS Block Formats &amp; Alpha Dilation</h3>
+<h2>DDS block compression and alpha channels</h2>
 <p>
-  Textures are compressed using DXT block compression:
+  Textures use DirectDraw Surface compression formats:
 </p>
 <ul>
-  <li><strong>DXT1:</strong> 4x4 pixel blocks, 1-bit alpha or 4-color opaque punchthrough.</li>
-  <li><strong>DXT3:</strong> Explicit 4-bit alpha channel per texel. Used for complex cutouts.</li>
-  <li><strong>DXT5:</strong> Interpolated 8-step alpha ramp. Used for smooth gradients and smoke.</li>
-</ul>
-<p>
-  <strong>Alpha Bleeding:</strong> Cutout textures (foliage, track links, wire fences) often store black (0, 0, 0) in transparent texels. When Three.js bilinearly filters edges between opaque and transparent pixels, the black color bleeds into the boundary, creating an ugly dark fringe. We run an alpha dilation pass on export: copy RGB from neighboring opaque pixels into any texel with alpha &le; 16.
-</p>
-
-<h2>STEP 5: GLTF SCENE ASSEMBLY &amp; VERIFICATION</h2>
-<p>
-  In <code>bf42/assemble.py</code>, the parsed template tree is recursively compiled into a glTF 2.0 binary container (<code>.glb</code>). A few critical rules govern this stage:
-</p>
-<ul>
-  <li><strong>Multi-Material Parts:</strong> A single <code>.sm</code> part with multiple materials is mapped to a single glTF <code>Node</code> with one <code>Mesh</code> containing multiple <code>Primitives</code>, preserving local part hierarchy.</li>
-  <li><strong>Collision Mesh Isolation:</strong> Collision layers embedded in the <code>.sm</code> are stripped from the render scene and stored under <code>mesh.extras.collision</code> to prevent collision hulls from drawing over the vehicle body.</li>
-  <li><strong>Automated Health Triage:</strong> The pipeline audits every extracted model, stamping a report into <code>models.json</code>:
-    <ul>
-      <li><code>CLEAN</code>: 100% textures resolved, valid bounding box, intact node tree.</li>
-      <li><code>DEGRADED</code>: Non-critical missing textures (e.g. secondary lightmap).</li>
-      <li><code>BROKEN</code>: Missing primary geometry or corrupt index buffers.</li>
-    </ul>
-  </li>
+  <li><strong>DXT1:</strong> Blocks of 4x4 pixels with 1-bit alpha or opaque color punchthrough.</li>
+  <li><strong>DXT3:</strong> Explicit 4-bit alpha channels, used for sharp transparency edges.</li>
+  <li><strong>DXT5:</strong> Interpolated 8-step alpha ramps, used for gradients and smoke.</li>
 </ul>
 
-<!-- ========================================================================= -->
-<!-- CHAPTER 3: SKELETONS, SKINS & POSES -->
-<!-- ========================================================================= -->
+<!-- Chapter 3: Skeletons, skins, and animations -->
 <div class="chapter-header">
-  <div class="chapter-num">CHAPTER 3</div>
-  <h1>SKELETONS, SKINS &amp; ANIMATION POSES</h1>
+  <div class="chapter-num">Part 1 &bull; Chapter 3</div>
+  <h1>Skeletons, skins, and animations</h1>
 </div>
 
 <p>
-  Vehicles are assembled by chaining <code>setPosition</code> commands. Hand weapons and soldiers are entirely different: a weapon script contains <strong>no position coordinates at all</strong>. It declares:
+  Vehicles use rigid node trees positioned through script offsets. Human soldiers and animated weapons
+  use a three-part deformation system:
 </p>
-<pre><span class="kw">ObjectTemplate.bindToSkeletonPart</span> Bip01_R_Hand</pre>
-<p>
-  The skeleton <em>is</em> the placement. The file that animates the reload bolt is the exact file that positions the bolt on the rifle.
-</p>
+<div class="diag">
+[1. .SKE (Armature)] =========> [2. .SKN (Skin Weights)] <==== [3. .SM (3D Geometry)]
+         |                                     |
+         v (Drives Joints)                     v (Deforms Vertices)
+[4. .BAF (Animation Tracks)] =========> [FINAL POSED MODEL]</div>
 
-<h2>3.1 THE SKELETON FORMAT (.SKE)</h2>
+<h2>Rest-pose skeletons (.ske)</h2>
 <p>
-  A <code>.ske</code> file defines the rest-pose bone hierarchy.
+  A <code>.ske</code> file defines the rest-pose bone hierarchy:
 </p>
 <pre><span class="typ">uint32</span> version (<span class="num">1</span>)
 <span class="typ">uint32</span> boneCount
   per bone:
-    <span class="typ">uint16</span> nameLen (including trailing NUL)
+    <span class="typ">uint16</span> nameLen
     <span class="typ">char</span>   name[nameLen]
     <span class="typ">int16</span>  parentIndex (-1 for root)
     <span class="typ">float</span>  matrix[<span class="num">12</span>]  (Row-major 3x4: [R00 R01 R02 Tx, R10 R11 R12 Ty, R20 R21 R22 Tz])</pre>
 
 <div class="callout gotcha">
-  <div class="callout-title">[★] THE Z-MIRROR CONJUGATION TRAP</div>
-  <strong>A <code>.ske</code> is stored mirrored in Z against the <code>.sm</code> mesh it poses!</strong><br>
-  In <code>UsSoldier.ske</code>, <code>Bip01 Head</code> sits at z = -1.51 m, while the head mesh it drives sits at z = +1.56..1.87 m. If you read the skeleton raw:
-  <ul>
-    <li>The K98 bolt spawns behind the wooden butt plate.</li>
-    <li>The Colt 1911 magazine floats mid-air behind the grip.</li>
-    <li>15% to 60% of every weapon sub-part lands completely outside the silhouette of the gun!</li>
-  </ul>
-  <strong>The Mathematical Fix:</strong> A mirror is a change of basis S = diag(1, 1, -1). It conjugates both rotation and translation:
-  <pre style="margin: 3px 0 0 0;"><span class="kw">def</span> <span class="typ">conjugate_ske</span>(rot, trans):
-    rot_c = (( rot[<span class="num">0</span>][<span class="num">0</span>],  rot[<span class="num">0</span>][<span class="num">1</span>], -rot[<span class="num">0</span>][<span class="num">2</span>]),
-             ( rot[<span class="num">1</span>][<span class="num">0</span>],  rot[<span class="num">1</span>][<span class="num">1</span>], -rot[<span class="num">1</span>][<span class="num">2</span>]),
-             (-rot[<span class="num">2</span>][<span class="num">0</span>], -rot[<span class="num">2</span>][<span class="num">1</span>],  rot[<span class="num">2</span>][<span class="num">2</span>]))
-    trans_c = (trans[<span class="num">0</span>], trans[<span class="num">1</span>], -trans[<span class="num">2</span>])
-    <span class="kw">return</span> rot_c, trans_c</pre>
-  Applying this conjugation at parse time brings silhouette error from 60% down to under 3%.
+  <div class="callout-title">Geometry rule: Skeleton coordinate reflection</div>
+  A <code>.ske</code> file stores bones reflected across the Z axis relative to the <code>.sm</code>
+  geometry it controls. In <code>UsSoldier.ske</code>, the head bone sits at z = -1.51 m, whereas the
+  head mesh geometry sits at z = +1.56 to 1.87 m. Reading the skeleton without reflection places weapon
+  magazines and bolt handles behind the weapon body.
 </div>
 
-<h2>3.2 VERTEX SKINS (.SKN) &amp; RIGID MAP RECOVERY</h2>
+<h2>Skin bindings (.skn)</h2>
 <p>
-  Soldier models consist of three separate meshes: body, head, and hands. Body and head share an origin; hands do not &mdash; they were exported in an arbitrary Max workspace coordinate frame.
-</p>
-<p>
-  A <code>.skn</code> file records vertex bind influences:
+  A <code>.skn</code> file assigns vertex weights to bones:
 </p>
 <pre><span class="typ">float</span> restPos[<span class="num">3</span>]
 <span class="typ">uint8</span> influenceCount
   per influence:
     <span class="typ">uint16</span> boneIndex, <span class="typ">float</span> weight, <span class="typ">float</span> boneLocalOffset[<span class="num">3</span>]</pre>
 <p>
-  At bind pose: <code>rest = R_bone * offset + T_bone</code>.
-</p>
-<p>
-  <strong>How to weld detached hands:</strong> The hand mesh is not in the soldier body skin, but both share the <code>forearm</code> bone. We find vertices with <code>weight == 1.0</code> exclusively on the forearm bone, compute the rigid transformation between the body's forearm space and the hand's forearm space, and snap the floating hands directly onto the sleeve.
+  The bind pose satisfies: <code>rest = R_bone * offset + T_bone</code>.
 </p>
 
-<h2>3.3 BONE ANIMATION CLIPS (.BAF)</h2>
+<h2>Keyframed bone animation clips (.baf)</h2>
 <p>
-  Battlefield 1942 poses soldiers by blending two clips: a weapon-independent lower body clip (<code>Lb_Stand</code>) and a weapon-specific upper body clip (<code>3PStandAimUpperThompson.baf</code>).
+  Soldier animations blend a lower-body clip (such as <code>Lb_Stand</code>) with an upper-body clip
+  (such as <code>3PStandAimUpperThompson.baf</code>).
 </p>
 
 <table>
   <tr>
-    <th>Header Field</th>
+    <th>Header field</th>
     <th>Type</th>
-    <th>Rule / Specification</th>
+    <th>Description</th>
   </tr>
   <tr>
     <td><code>version</code></td>
     <td><code>uint32</code></td>
-    <td>Always <code>3</code> in vanilla.</td>
+    <td>Always 3 in vanilla archives.</td>
   </tr>
   <tr>
     <td><code>boneCount</code></td>
     <td><code>uint16</code></td>
-    <td>Number of animated bones.</td>
+    <td>Count of animated bones.</td>
   </tr>
   <tr>
     <td><code>frameCount</code></td>
     <td><code>uint32</code></td>
-    <td>Total animation frame count.</td>
+    <td>Frame count of the animation.</td>
   </tr>
   <tr>
     <td><code>precision</code></td>
     <td><code>uint8</code></td>
-    <td><strong>Fraction bits for position channels ONLY.</strong></td>
+    <td>Fractional bits for position channels only.</td>
   </tr>
 </table>
 
-<h3>The 7 Channels &amp; RLE Compression</h3>
 <p>
-  Each bone stores 7 channels: Quaternion (x, y, z, w), followed by Position (x, y, z).
-  Channels are stored as 16-bit signed fixed-point integers compressed via Run-Length Encoding:
+  Each bone stores seven channels: Quaternion (x, y, z, w) followed by Position (x, y, z).
+  Channels are stored as 16-bit signed fixed-point integers compressed with run-length encoding:
 </p>
 <ul>
-  <li><code>control &amp; 0x80</code>: Hold run. Read 1 value word, repeat for <code>control &amp; 0x7F</code> frames.</li>
-  <li>Else: Literal run. Read <code>control &amp; 0x7F</code> distinct words.</li>
+  <li><code>control &amp; 0x80</code>: Hold run. Read one value and repeat it for <code>control &amp; 0x7F</code> frames.</li>
+  <li>Else: Literal run. Read <code>control &amp; 0x7F</code> distinct values.</li>
 </ul>
 
 <div class="callout gotcha">
-  <div class="callout-title">[!] GOTCHA: THE PRECISION BIT SHIFT TRAP</div>
-  The header byte <code>precision</code> tells you how many fractional bits exist in position values: <code>pos = val / 2^precision</code>. <strong>It does NOT apply to quaternions!</strong><br>
-  Quaternions are <em>strictly</em> fixed-point 1.15: <code>quat = val / 32768.0</code>.<br>
-  In 1,121 vanilla clips, <code>precision == 15</code>, which tricked early community tools into assuming the precision byte applied to all channels. The 33 clips that drop to precision 11&ndash;14 (parachuting, ladder climbing, death falls) broke completely: dividing quaternions by 2^11 made them 16x larger than unit norm!
+  <div class="callout-title">Decompression rule: Position and quaternion precision</div>
+  The header byte <code>precision</code> indicates the fractional bit count for position values:
+  <code>pos = val / (2^precision)</code>. This scaling factor does not apply to quaternions. Quaternions
+  consistently use 1.15 fixed-point format: <code>quat = val / 32768.0</code>. Applying the position
+  scaling factor to quaternions corrupts rotations when precision drops below 15.
 </div>
 
-<h3>The Shattered Hand &amp; The 180&deg; Yaw</h3>
+<h2>The animation state machine (AnimationStates.con)</h2>
 <p>
-  A <code>.baf</code> clip's transforms replace the skeleton's local transforms outright. However, two conventions must be accounted for:
-</p>
-<ol>
-  <li><strong>Quaternion Transposition:</strong> Refractor stores row-vector quaternions. To convert to standard column-vector matrices, you must take the <strong>quaternion conjugate</strong>:
-    <code>(x, y, z, w) &rarr; (-x, -y, -z, w)</code>.<br>
-    <em>Failing to conjugate produces a shattered hand:</em> near-identity leg rotations absorb the error, but fingers and wrists rotate backwards into a mangled ball of flesh.
-  </li>
-  <li><strong>Root Track 180&deg; Yaw:</strong> The clip coordinate space is rotated 180&deg; around Y relative to mesh world space. The skeleton root joint must be pre-multiplied by <code>Ry180 = diag(-1, 1, -1)</code>.
-  </li>
-</ol>
-
-<h2>3.4 THE STATE MACHINE REPLAY &amp; WEAPON GRAFTING</h2>
-<p>
-  Nothing on a weapon template states which animation clip to play. The resolution requires replaying <code>animations/AnimationStates.con</code>:
+  Weapon templates do not reference animation clips directly. The engine resolves clips by replaying
+  <code>animations/AnimationStates.con</code>:
 </p>
 <ul>
-  <li><code>copyState2</code> commands dynamically substitute the weapon name into state strings.</li>
-  <li>The six-argument <code>copyState</code> specifies donor clips: the K98 has no 3P aim clip of its own and borrows the British Lee-Enfield No. 4; the Panzerschreck borrows the Bazooka; the Walther P38 borrows the Colt 1911.</li>
-  <li><strong>Grafting the Weapon:</strong> Every hand weapon skeleton is rooted at a bone literally named <code>Bip01 R Hand</code>. Attaching the weapon is a simple joint grafting identity:
-    <pre style="margin: 3px 0 0 0;">weapon_world = posed(Bip01_R_Hand) * rest(root)^-1 * rest(main)</pre>
-  </li>
+  <li><code>copyState2</code> commands replace generic weapon placeholders with weapon names.</li>
+  <li><code>copyState</code> commands assign fallback clips: the K98 uses the British Lee-Enfield No. 4 aim clip; the Panzerschreck uses the Bazooka clip; the Walther P38 uses the Colt 1911 clip.</li>
+  <li>Weapon skeletons root at a bone named <code>Bip01 R Hand</code>, attaching directly to the soldier skeleton hand bone.</li>
 </ul>
 
-<!-- ========================================================================= -->
-<!-- CHAPTER 4: MODELING IN THE BROWSER -->
-<!-- ========================================================================= -->
+<!-- Chapter 4: Terrains, lighting, and audio -->
 <div class="chapter-header">
-  <div class="chapter-num">CHAPTER 4</div>
-  <h1>RECONSTRUCTING THE WORLD IN THE BROWSER</h1>
+  <div class="chapter-num">Part 1 &bull; Chapter 4</div>
+  <h1>Terrains, lighting, and audio</h1>
 </div>
 
+<h2>Elevation grids and pre-lit terrain tiles</h2>
 <p>
-  Once meshes, textures, skins, and animations are verified, we export them to binary glTF (<code>.glb</code>) and reconstruct the battlefield inside WebGL using Three.js.
-</p>
-
-<h2>4.1 THE HANDEDNESS BRIDGE</h2>
-<p>
-  Refractor is a <strong>Left-Handed</strong> coordinate system (+X right, +Y up, +Z <em>forward</em>). WebGL and glTF are <strong>Right-Handed</strong> (+X right, +Y up, -Z forward).
-</p>
-<p>
-  Rather than slapping a <code>scale(1, 1, -1)</code> on the root node (which inverts polygon winding, corrupts back-face culling, and flips normal vectors), we bake the coordinate conversion into the geometry pipeline on export:
-</p>
-<pre><span class="com"># In gltf.py: baking handedness conversion</span>
-positions = [(x, y, -z) <span class="kw">for</span> (x, y, z) <span class="kw">in</span> sm.positions]
-normals   = [(nx, ny, -nz) <span class="kw">for</span> (nx, ny, nz) <span class="kw">in</span> sm.normals]
-indices   = [idx <span class="kw">for</span> i <span class="kw">in</span> range(<span class="num">0</span>, len(raw_indices), <span class="num">3</span>)
-                 <span class="kw">for</span> idx <span class="kw">in</span> (raw_indices[i], raw_indices[i+<span class="num">2</span>], raw_indices[i+<span class="num">1</span>])] <span class="com"># Reverse winding</span></pre>
-<p>
-  For vehicle Euler rotations (Yaw, Pitch, Roll): <code>R = Ry(-yaw) * Rx(-pitch) * Rz(roll)</code>. Mirroring Z reverses the direction of rotations around X and Y, but leaves rotation around Z invariant.
-</p>
-
-<h2>4.2 TERRAIN RECONSTRUCTION: HEIGHTMAPS &amp; TILES</h2>
-<p>
-  BF1942 terrains are defined by:
+  Terrains in Battlefield 1942 are defined by two data sources:
 </p>
 <ul>
-  <li><code>Heightmap.raw</code>: 16-bit unsigned elevation grid sampled on a 4-meter spacing:
-    <br><code>Elevation (Y) = (sample / 65535) * 256 * yScale</code>
+  <li><code>Heightmap.raw</code>: 16-bit unsigned elevation samples on a 4-meter grid:
+    <code>elevation = (sample / 65535) * 256 * yScale</code>.
   </li>
-  <li><code>Tx*.dds</code>: 256-meter square surface color tiles.</li>
+  <li><code>Tx*.dds</code>: 256-meter square terrain color tiles.</li>
 </ul>
 
 <div class="callout warstory">
-  <div class="callout-title">[★] THE PRE-LIT TERRAIN TRAP</div>
-  Battlecraft (the 2002 level editor) <strong>pre-baked sunlight, ambient color, and static shadows directly into the Tx tile image pixels</strong>. If you look closely at any desert tile, building shadows and treeline cast shadows are already painted into the texture.<br><br>
-  The original engine rendered terrain with <code>MeshBasicMaterial</code> (flat unlit) and fog. In our first WebGL prototype, we attached standard Three.js directional sun and hemisphere lights to the scene. <strong>The terrain was lit twice.</strong> On Tobruk, it looked acceptable because desert sand is warm. But on Wake Island, the cool blue sky hemisphere multiplied the baked light, turning the sunny Pacific sands into a dead, dark grey smear. <strong>Fix:</strong> Terrain meshes must use unlit basic materials!
+  <div class="callout-title">Lighting rule: Pre-calculated terrain illumination</div>
+  The level editor pre-calculated sunlight, ambient color, and building cast shadows directly into
+  the pixels of the terrain tiles. The original game rendered terrain without dynamic directional
+  lights. Adding standard WebGL directional and hemisphere lights produces duplicate lighting,
+  causing terrain to appear over-darkened and discolored.
 </div>
 
-<h2>4.3 THE MODULATE-2X DETAIL SHADER</h2>
+<h2>Static mesh lightmaps</h2>
 <p>
-  Refractor terrains achieve fine grain underfoot by tiling a 512px detail texture 16 times across each 256m tile:
-  <br><code>Final Color = clamp(2.0 * TileColor * DetailColor, 0.0, 1.0)</code><br>
-  Mid-grey (<code>128, 128, 128</code>) is the neutral identity: darker texels carve dirt ruts; brighter texels highlight sand crests.
+  Structures, bridges, and bunkers use Stride 40 vertices containing a secondary UV channel (<code>uv1</code>)
+  mapped to pre-calculated lightmap images (such as <code>radarbun_m1_406-75-761.png</code>). These textures
+  store direct sunlight and shadow values, which the engine multiplies by the diffuse texture at runtime.
 </p>
 
-<div class="callout gotcha">
-  <div class="callout-title">[!] THE sRGB GAMMA CURVE DISASTER</div>
-  In DirectX 8, <code>modulate-2x</code> was computed in raw 8-bit display space. Modern WebGL runs a linear color pipeline. When Three.js decoded the detail map into linear space, neutral grey 0.5 became 0.5^2.2 &approx; 0.218. Multiplying by 2 gave 0.43 instead of 1.0 &mdash; <strong>the entire terrain became 2.3x too dark</strong>.<br><br>
-  <strong>The Solution:</strong> Set <code>tex.colorSpace = THREE.NoColorSpace</code> and perform the <code>modulate-2x</code> combine in sRGB display space via an <code>onBeforeCompile</code> GLSL hook:
-  <pre style="margin: 4px 0 0 0;"><span class="com">// Three.js onBeforeCompile fragment patch</span>
-diffuseColor.rgb = bfFromSrgb( min( vec3(<span class="num">1.0</span>),
-    <span class="num">2.0</span> * bfToSrgb( diffuseColor.rgb ) * texture2D( tDetail, vMapUv * detailRepeats ).rgb ) );</pre>
-</div>
-
-<h2 style="page-break-before: always;">4.4 STATIC MESH LIGHTMAPS &amp; THE FLIP-Y BUG</h2>
+<h2>Sound scripts and polyline area sounds</h2>
 <p>
-  Buildings, bunkers, and bridges use Stride-40 vertices with a second UV set (<code>uv1</code>) mapped to a level lightmap atlas (e.g. <code>radarbun_m1_406-75-761.png</code>).
-</p>
-
-<div class="diag">
-+----------------------------------------------------------------------------+
-| THE LIGHTMAP TRIAGE LOG                                                    |
-|                                                                            |
-| 1. MISSING PASS:   UserData was attached to the parent glTF Group, but     |
-|                    the lightmap loop only checked direct Mesh instances.   |
-| 2. BURNT SHELLS:   Lightmap was tagged sRGB. A lightmap is a scalar        |
-|                    multiplier, not a color. Linear decoding squared darks! |
-| 3. UPSIDE DOWN:    glTF images load with flipY=false. THREE.TextureLoader  |
-|                    defaults to flipY=true. The lightmap was sampled        |
-|                    mirrored in V, projecting rooftop shadows onto floors!  |
-+----------------------------------------------------------------------------+</div>
-
-<p>
-  <strong>Injecting the Ambient Floor:</strong> The lightmap bake contains direct sun light only. In the Refractor engine, static objects receive the level's ambient light floor:
-</p>
-<pre><span class="com">// Inside patched MeshBasicMaterial fragment shader</span>
-vec3 lmTexel = texture2D( lightMap, vLightMapUv ).rgb;
-reflectedLight.indirectDiffuse += diffuseColor.rgb * max( lmTexel * <span class="num">2.0</span>, ambientFloor );</pre>
-
-<h2>4.5 SOLDIER STANCE CROSSFADING</h2>
-<p>
-  Rather than exporting three separate glTF files for standing, crouching, and prone postures, each extracted <code>&lt;Soldier&gt;__&lt;Weapon&gt;.pose.glb</code> packages all three stances as 1-frame animation clips:
-</p>
-<ul>
-  <li><code>stand</code>: Driven by <code>Ub_StandAim&lt;Weapon&gt;</code> + <code>Lb_Stand</code></li>
-  <li><code>crouch</code>: Driven by <code>Ub_Crouch&lt;Weapon&gt;</code> + <code>Lb_Crouch</code></li>
-  <li><code>lie</code>: Driven by <code>Ub_Lie&lt;Weapon&gt;</code> + <code>Lb_Lie</code></li>
-</ul>
-<p>
-  In the browser, clicking between stances simply triggers a Three.js <code>AnimationMixer</code> crossfade over 0.25 seconds:
-</p>
-<pre><span class="kw">function</span> setStance(newAction) {
-    currentAction.fadeOut(<span class="num">0.25</span>);
-    newAction.reset().fadeIn(<span class="num">0.25</span>).play();
-    currentAction = newAction;
-}</pre>
-<p>
-  Because every clip animates the exact same union of 42 bones, bone matrices interpolate smoothly without popping, tearing, or dropping the weapon from the soldier's hands.
-</p>
-
-
-<!-- ========================================================================= -->
-<!-- CHAPTER 5: BALLISTICS, FIRING EFFECTS & SPATIAL AUDIO -->
-<!-- ========================================================================= -->
-<div class="chapter-header">
-  <div class="chapter-num">CHAPTER 5</div>
-  <h1>BALLISTICS, FIRING EFFECTS &amp; SPATIAL AUDIO</h1>
-</div>
-
-<p>
-  A static vehicle in a viewer is only half the battle. Bringing the battlefield to life requires two dynamic systems: simulating weapon fire (muzzle flashes, tracers, ballistic projectiles, and barrel recoil) and extracting authentic spatial soundscapes.
-</p>
-
-<h2>5.1 HOW THE ENGINE DEFINES A SHOT (TYPED PROJECTILES)</h2>
-<p>
-  Every weapon is declared via an <code>ObjectTemplate.create FireArms &lt;Name&gt;</code> script. In shipped data, firearms specify spatial muzzle locations via <code>addFireArmsPosition</code> (including wing-gun convergence yaw/pitch/roll), rate of fire (<code>roundOfFire</code>), and a linked <code>projectileTemplate</code>.
-</p>
-<p>
-  Projectiles come in three distinct, data-driven archetypes:
-</p>
-<ul>
-  <li><strong>Bullets (Invisible Kinetic Rounds):</strong> Bullets have no 3D geometry in flight. Visibility comes entirely from <code>setTracerTemplate &lt;tpl&gt; CRD_NONE/&lt;interval&gt;/0/0</code>. Every N-th round spawns a <code>TLight_m1</code> tracer cylinder stretched by <code>tracerScaler</code> (e.g. a Spitfire fires 12 rounds/sec and draws a tracer every 3rd round). Between tracer rounds, the game draws <em>nothing</em>.</li>
-  <li><strong>Shells (Ballistic Geometry):</strong> Heavy rounds have physical 3D geometry and fly it: a Sherman fires <code>projectile_m1</code> (0.115 &times; 0.115 &times; 0.48 m) at 100 m/s, governed by gravity drop and pulling a smoke trail (<code>e_PanzShootTrail</code>).</li>
-  <li><strong>Rockets (Self-Propelled Accelerators):</strong> A rocket is a shell containing a child Engine with <code>setEngineType c_ETRocket</code>. For example, the Katyusha's 2.04m rocket (<code>r_rocket_m1</code>) launches at a muzzle velocity of only 45 m/s, accelerating over its flight path while emitting a looping smoke plume (<code>e_KatyushaFume</code>).</li>
-</ul>
-
-<div class="callout gotcha">
-  <div class="callout-title">[!] THE KATYUSHA FAINT STREAK BUG</div>
-  Early versions of <code>assemble.py</code> exported the projectile simply as a template name string. The browser viewer ignored the string and fell back to rendering a generic tracer streak for every weapon with <code>velocity &gt; 0</code>. As a result, <strong>the Katyusha’s massive 2-meter rockets rendered as faint 2-meter bullet streaks!</strong><br>
-  <strong>The Fix:</strong> The pipeline now inspects the template tree, detects child <code>c_ETRocket</code> engines, bakes the projectile mesh (preferring <code>visibleDummyProjectileTemplate</code>) as a hidden node in the glTF, and simulates acceleration ramps and gravity in the WebGL tick loop.
-</div>
-
-<h2>5.2 MUZZLE FLASHES, EMITTER DRIFT &amp; RECOIL</h2>
-<p>
-  Muzzle flashes in Refractor are <code>EffectBundle</code> trees composed of particle meshes and 2D billboard sprites rendered with additive blending (<code>destBlendMode BMOne</code>).
-</p>
-<ul>
-  <li><strong>The Emitter Motion Trap:</strong> Authors did not just spawn a static flash at the muzzle tip. Scripts declare <code>positionalSpeedInDof</code> and <code>relativePositionInDof</code>, drifting smoke and flares <em>backward along the barrel</em> (e.g. Sherman smoke drifts at -5 m/s while the flash peaks at -1 m/s). If you park emitters statically at the muzzle, muzzle smoke reads as an absurdly gigantic 3.6-meter flame ball.</li>
-  <li><strong>Scale Clamping:</strong> Authored size ramps (<code>sizeOverTime</code>) often ramp to extreme multipliers (up to 9.4&times; on heavy guns). In WebGL, we clamp node flash ramps to <code>FLASH_RAMP_MAX = 3.0</code> to prevent flashes from dwarfing the vehicle.</li>
-  <li><strong>Barrel Recoil:</strong> Guns declare <code>recoilSpeed</code> and <code>recoilLength</code>. On firing, the barrel node kicks backward along its local axis and smoothly recovers:
-    <pre style="margin: 3px 0;">barrel.position.z = -recoilLength * (<span class="num">1.0</span> - recoilProgress);</pre>
-  </li>
-</ul>
-
-<div class="chapter-header">
-  <div class="chapter-num">CHAPTER 5 (CONTINUED)</div>
-  <h1>EXTRACTING SOUNDS &amp; SPATIAL AUDIO</h1>
-</div>
-
-<h2>5.3 THE REFRACTOR AUDIO ARCHITECTURE (.SSC)</h2>
-<p>
-  Battlefield 1942 stores audio in <code>Sound.rfa</code> and level archives as uncompressed 16-bit PCM WAV files (typically 22.05 kHz or 44.1 kHz, mono/stereo). Sound playback rules are governed by <strong>Sound Script Configuration (<code>.ssc</code>)</strong> files:
+  Audio files are stored in <code>Sound.rfa</code> and level archives as uncompressed 16-bit PCM WAV
+  files. Playback rules are defined in Sound Script Configuration (<code>.ssc</code>) files:
 </p>
 <pre><span class="kw">newPatch</span>
 <span class="kw">load</span> @ROOT/Sound/@RT/Water_waves.wav
@@ -1133,212 +850,401 @@ reflectedLight.indirectDiffuse += diffuseColor.rgb * max( lmTexel * <span class=
 <span class="kw">maxDistance</span> <span class="num">150.0</span>
 <span class="kw">volume</span> <span class="num">0.8</span>
 <span class="kw">priority</span> <span class="num">5</span></pre>
-
-<h3>Ambient &amp; Shoreline Area Sounds</h3>
 <p>
-  Audio in levels is structured into two main layers:
+  Levels define ambient loops in <code>Sounds/Environment.con</code> and shoreline audio as polylines
+  tracing the water boundary. Sound emanates from the point on the polyline closest to the camera.
+</p>
+
+<!-- Part 2: Transforming assets for web rendering -->
+<!-- Chapter 5: glTF generation and coordinate conversion -->
+<div class="chapter-header">
+  <div class="chapter-num">Part 2 &bull; Chapter 5</div>
+  <h1>glTF generation and coordinate conversion</h1>
+</div>
+
+<p>
+  To render Refractor assets in web browsers, the pipeline in <code>tools/bf1942-models/</code> extracts
+  geometry, transforms coordinate spaces, and compiles assets into binary glTF 2.0 (<code>.glb</code>)
+  files.
+</p>
+
+<h2>Extraction pipeline modules</h2>
+<p>
+  The extraction tools are structured as focused modules:
+</p>
+<ul>
+  <li><code>rfa.py</code>: Reads archives, caches index tables, and performs LZO1X decompression.</li>
+  <li><code>con.py</code>: Parses script syntax and tracks template trees.</li>
+  <li><code>stdmesh.py</code>: Reads vertex records, material descriptors, and index buffers.</li>
+  <li><code>rs.py</code>: Parses shader scripts to map material slots to texture names.</li>
+  <li><code>gltf.py</code>: Constructs binary glTF containers with vertex buffers and accessors.</li>
+  <li><code>assemble.py</code>: Traverses template hierarchies and builds complete vehicle models.</li>
+  <li><code>pose.py</code>: Assembles soldier skeletons, skins, and weapon attachments.</li>
+  <li><code>level.py</code> and <code>terrain.py</code>: Extract terrain meshes and place map objects.</li>
+</ul>
+
+<h2>Coordinate system handedness conversion</h2>
+<p>
+  Refractor uses a left-handed coordinate system (+X right, +Y up, +Z forward).
+  glTF and WebGL use a right-handed coordinate system (+X right, +Y up, -Z forward).
+</p>
+<p>
+  Applying a negative scale on the root node inverts polygon winding, corrupts surface normal vectors,
+  and breaks back-face culling. The pipeline bakes coordinate transformation into the vertex buffers:
+</p>
+<pre><span class="com"># Coordinate conversion in gltf.py</span>
+positions = [(x, y, -z) <span class="kw">for</span> (x, y, z) <span class="kw">in</span> sm.positions]
+normals   = [(nx, ny, -nz) <span class="kw">for</span> (nx, ny, nz) <span class="kw">in</span> sm.normals]
+indices   = [idx <span class="kw">for</span> i <span class="kw">in</span> range(<span class="num">0</span>, len(raw_indices), <span class="num">3</span>)
+                 <span class="kw">for</span> idx <span class="kw">in</span> (raw_indices[i], raw_indices[i+<span class="num">2</span>], raw_indices[i+<span class="num">1</span>])] <span class="com"># Reverse winding</span></pre>
+<p>
+  For vehicle Euler rotations (Yaw, Pitch, Roll): <code>R = Ry(-yaw) * Rx(-pitch) * Rz(roll)</code>.
+  Inverting the Z axis reverses the direction of rotations around X and Y while preserving Z rotation.
+</p>
+
+<h2>Assembling binary glTF containers</h2>
+<p>
+  When exporting to glTF 2.0:
+</p>
+<ul>
+  <li><strong>Sub-mesh primitives:</strong> An <code>.sm</code> part with multiple materials is mapped to a single glTF node containing multiple primitives. Each primitive references its own material definition and index slice.</li>
+  <li><strong>Collision geometry isolation:</strong> Collision hulls from the <code>.sm</code> file are omitted from the visible render tree and stored in <code>mesh.extras.collision</code> to prevent collision shapes from drawing over the vehicle body.</li>
+</ul>
+
+<h2>Texture export and alpha dilation</h2>
+<p>
+  Textures are decoded from DXT rasters and exported as PNG or WebP images.
+</p>
+<p>
+  Cutout textures, such as foliage, wire fences, and tank tracks, frequently store zero values
+  (black) in transparent pixels. When Three.js applies bilinear interpolation at the boundary between
+  opaque and transparent pixels, the black color bleeds into the edge, creating a dark outline.
+</p>
+<p>
+  The exporter runs an alpha dilation pass: for any pixel with an alpha value of 16 or lower, it copies
+  the RGB values from the nearest opaque neighbor. This eliminates dark halos around cutout boundaries.
+</p>
+
+<!-- Chapter 6: Rigging and animation in the browser -->
+<div class="chapter-header">
+  <div class="chapter-num">Part 2 &bull; Chapter 6</div>
+  <h1>Rigging and animation in the browser</h1>
+</div>
+
+<h2>Skeleton rest matrix Z-mirror conjugation</h2>
+<p>
+  Because skeletons in <code>.ske</code> files are mirrored along the Z axis relative to mesh geometry,
+  the exporter conjugates rotation matrices and translations using reflection matrix
+  <code>S = diag(1, 1, -1)</code>:
+</p>
+<pre><span class="kw">def</span> <span class="typ">conjugate_ske</span>(rot, trans):
+    rot_c = (( rot[<span class="num">0</span>][<span class="num">0</span>],  rot[<span class="num">0</span>][<span class="num">1</span>], -rot[<span class="num">0</span>][<span class="num">2</span>]),
+             ( rot[<span class="num">1</span>][<span class="num">0</span>],  rot[<span class="num">1</span>][<span class="num">1</span>], -rot[<span class="num">1</span>][<span class="num">2</span>]),
+             (-rot[<span class="num">2</span>][<span class="num">0</span>], -rot[<span class="num">2</span>][<span class="num">1</span>],  rot[<span class="num">2</span>][<span class="num">2</span>]))
+    trans_c = (trans[<span class="num">0</span>], trans[<span class="num">1</span>], -trans[<span class="num">2</span>])
+    <span class="kw">return</span> rot_c, trans_c</pre>
+<p>
+  This transformation aligns skeleton joint positions with the mesh coordinate frame.
+</p>
+
+<h2>Quaternion conjugation and root bone yaw</h2>
+<p>
+  Animation clips require two adjustments before playback in WebGL:
 </p>
 <ol>
-  <li><strong>Global Ambient Loops:</strong> Declared in <code>Sounds/Environment.con</code>, linking to <code>Environment.ssc</code> (e.g. <code>wind</code>, <code>windall</code>, <code>windcalm</code>). This is a non-positional background loop.</li>
-  <li><strong>Positional Shoreline &amp; River Audio:</strong> Declared in level <code>Sounds.con</code> as <code>AreaObject</code> or <code>SimpleObject</code> polylines. Instead of a single point source, sounds like surf and river rapids are defined as 2D/3D polylines tracing the shoreline. The sound emanates from the <em>closest point on the polyline to the player's camera</em>.</li>
+  <li><strong>Quaternion conjugation:</strong> Refractor stores row-vector quaternions. To convert to standard column-vector matrices, the exporter conjugates each quaternion: <code>(x, y, z, w) &rarr; (-x, -y, -z, w)</code>.</li>
+  <li><strong>Root joint yaw:</strong> The clip coordinate space is rotated 180 degrees around Y relative to mesh world space. The root bone transform is pre-multiplied by <code>Ry(180) = diag(-1, 1, -1)</code>.</li>
 </ol>
 
-<h2>5.4 WEB AUDIO API SPATIALIZATION &amp; BUG TRIAGE</h2>
+<h2>Aligning detached hand meshes</h2>
 <p>
-  In the browser viewer (<code>viewer/map.html</code>), audio is driven by the modern <strong>Web Audio API</strong> using <code>AudioContext</code> and <code>PannerNode</code> (HRTF spatialization).
+  Soldier models use separate meshes for the body, head, and hands. The body and head share an origin,
+  but hand meshes were exported in separate coordinate frames.
+</p>
+<p>
+  Both the body and hand meshes share the forearm bone. The pipeline finds vertices with a weight of 1.0
+  on the forearm bone in both meshes, calculates the rigid coordinate offset between the two frames,
+  and transforms the hand vertices to connect with the sleeve.
+</p>
+
+<h2>Stance crossfading and action bundling</h2>
+<p>
+  Rather than writing separate files for each posture, <code>pose.py</code> packages standing,
+  crouching, and prone stances into a single <code>.glb</code> file as single-frame animation actions:
+</p>
+<ul>
+  <li><code>stand</code>: Upper-body aim clip combined with <code>Lb_Stand</code>.</li>
+  <li><code>crouch</code>: Upper-body aim clip combined with <code>Lb_Crouch</code>.</li>
+  <li><code>lie</code>: Upper-body aim clip combined with <code>Lb_Lie</code>.</li>
+</ul>
+<p>
+  The browser uses Three.js <code>AnimationMixer</code> to crossfade between stances over 0.25 seconds,
+  producing continuous posture transitions without joint discontinuities.
+</p>
+
+<!-- Chapter 7: Three.js browser reconstruction -->
+<div class="chapter-header">
+  <div class="chapter-num">Part 2 &bull; Chapter 7</div>
+  <h1>Three.js browser reconstruction</h1>
+</div>
+
+<h2>Unlit terrain shading</h2>
+<p>
+  Because terrain tiles already contain baked illumination and shadows, terrain meshes use
+  <code>MeshBasicMaterial</code> in Three.js without scene light calculations. This preserves the
+  original color balance without double lighting.
+</p>
+
+<h2>The sRGB modulate-2x detail shader</h2>
+<p>
+  Refractor blends a repeating 512-pixel detail texture across each terrain tile using the formula:
+  <code>FinalColor = clamp(2.0 * TileColor * DetailColor, 0.0, 1.0)</code>.
+  Neutral gray (128, 128, 128) leaves the surface unchanged.
+</p>
+
+<div class="callout gotcha">
+  <div class="callout-title">Color space rule: Modulate-2x detail calculation</div>
+  Modern WebGL applies linear color space conversions to textures. In linear space, neutral gray 0.5
+  becomes approximately 0.218. Multiplying by 2.0 yields 0.43 instead of 1.0, making the terrain
+  2.3 times darker than intended. The viewer sets <code>detailTex.colorSpace = THREE.NoColorSpace</code>
+  and performs the calculation in sRGB space through an <code>onBeforeCompile</code> GLSL hook:
+  <pre style="margin: 4px 0 0 0;"><span class="com">// Three.js onBeforeCompile fragment hook</span>
+diffuseColor.rgb = bfFromSrgb( min( vec3(<span class="num">1.0</span>),
+    <span class="num">2.0</span> * bfToSrgb( diffuseColor.rgb ) * texture2D( tDetail, vMapUv * detailRepeats ).rgb ) );</pre>
+</div>
+
+<h2>Lightmap sampling and ambient floor injection</h2>
+<p>
+  Static buildings sample lightmap atlases using their second UV channel.
+</p>
+
+<div class="callout gotcha">
+  <div class="callout-title">Texture rule: Lightmap coordinate orientation</div>
+  glTF images load with <code>flipY = false</code>, whereas <code>THREE.TextureLoader</code> defaults
+  to <code>flipY = true</code>. Sampling an inverted lightmap projects roof shadows onto interior floors.
+  Setting <code>lightmap.flipY = false</code> aligns the lightmap coordinates with the mesh geometry.
+</div>
+
+<p>
+  The material fragment shader applies the level's ambient light floor to keep shadowed surfaces
+  visible:
+</p>
+<pre><span class="com">// Patched fragment shader for static lightmaps</span>
+vec3 lmTexel = texture2D( lightMap, vLightMapUv ).rgb;
+reflectedLight.indirectDiffuse += diffuseColor.rgb * max( lmTexel * <span class="num">2.0</span>, ambientFloor );</pre>
+
+<h2>Interactive vehicle controls and projectile ballistics</h2>
+<p>
+  In the viewer, vehicle parts react to user controls:
+</p>
+<ul>
+  <li>Rotational parts with spans above 360 degrees update continuously using their rotational speed.</li>
+  <li>Parts with small spans clamp to their authored deflection limits.</li>
+  <li>Recoil offsets move gun barrels backward along their local Z axis upon firing.</li>
+  <li>Muzzle smoke particles drift backward along the barrel using authored drift velocities.</li>
+  <li>Weapons spawn typed projectiles: kinetic bullets draw tracer lines; artillery shells and rockets render 3D meshes with gravity drop and acceleration.</li>
+</ul>
+
+<!-- Chapter 8: Spatial audio in the browser -->
+<div class="chapter-header">
+  <div class="chapter-num">Part 2 &bull; Chapter 8</div>
+  <h1>Spatial audio in the browser</h1>
+</div>
+
+<p>
+  Level audio is spatialized using the Web Audio API with <code>AudioContext</code> and
+  <code>PannerNode</code> (HRTF model).
+</p>
+
+<h2>Looping voice deduplication</h2>
+<p>
+  Levels often define multiple shoreline polylines that reference the same audio file, such as
+  <code>Water_waves.wav</code>.
 </p>
 
 <div class="callout warstory">
-  <div class="callout-title">[★] WAR STORY: THE WAKE ISLAND "HALL ECHO"</div>
-  When shoreline audio was first enabled, flying over Wake Island produced a disorienting, hollow "slapback echo", as if standing in an empty cathedral.<br><br>
-  <strong>The Investigation:</strong>
-  <ul>
-    <li>Wake Island defines 3 separate shoreline polylines that all play the exact same file: <code>Water_waves.wav</code> (a 2.54-second mono loop). Two polylines were within earshot at spawn.</li>
-    <li>Each polyline spawned its own independent <code>PositionalAudio</code> node.</li>
-    <li>Crucially, the file loader included a development cache-buster query parameter (<code>?t=Date.now()</code>). This defeated the browser's audio decode cache, causing the two streams to decode and start playing <strong>50 to 200 ms apart</strong>.</li>
-    <li>Two identical audio loops playing 100 ms out of phase through 3D HRTF panners created a severe acoustic comb filter / slapback echo!</li>
-  </ul>
-  <strong>The Fix:</strong>
-  Deduplicate voices! The engine now maintains <strong>one looping voice per unique WAV file</strong> across all polylines in a group. At every animation frame, it calculates the camera's closest distance across the union of all polylines and updates the single voice's position and gain.
+  <div class="callout-title">Audio rule: Looping voice deduplication</div>
+  When multiple polylines each play an independent audio stream, small differences in decoding time
+  cause streams to play out of phase. Playing identical audio streams 100 milliseconds apart through
+  HRTF panners causes acoustic comb filtering and phase cancellation. The viewer resolves this by
+  running one looping audio voice per unique WAV file, updating its coordinates to the point on any
+  active polyline nearest to the camera.
 </div>
+
+<h2>Custom distance attenuation curves</h2>
+<p>
+  The Web Audio <code>PannerNode</code> applies an inverse distance model by default.
+</p>
 
 <div class="callout gotcha">
-  <div class="callout-title">[!] THE DOUBLE-ATTENUATION TRAP</div>
-  Web Audio's <code>PannerNode</code> applies an inverse distance attenuation model by default. When combined with the game's authored <code>minDistance</code> / <code>maxDistance</code> linear volume ramps from the <code>.ssc</code> file, <strong>the audio was attenuated twice</strong>, cutting out shoreline surf just a few meters from the water.<br>
-  <strong>The Solution:</strong> Set <code>panner.setRolloffFactor(0)</code>. This disables Web Audio's automatic distance dropoff, allowing the game's authentic <code>.ssc</code> volume ramp to control the gain curve exclusively.
+  <div class="callout-title">Audio rule: Distance attenuation curves</div>
+  Combining default Web Audio distance attenuation with the linear volume curves from <code>.ssc</code>
+  scripts attenuates sound twice, cutting off shoreline audio near the water boundary. Calling
+  <code>panner.setRolloffFactor(0)</code> disables Web Audio automatic dropoff, allowing the game's
+  authored <code>minDistance</code> and <code>maxDistance</code> thresholds to govern attenuation
+  directly.
 </div>
 
-<h2>5.5 DISCOVERY QUIRKS: SOUND/ VS SOUNDS/</h2>
-<p>
-  While vanilla levels store environment audio under <code>Sounds/</code> (plural), historical level archives contain quirks:
-</p>
-<ul>
-  <li><code>Kasserine_Pass</code> stores its sound config under <code>Sound/</code> (singular) and ships a custom <code>Sound/ambfx.wav</code> inside the level archive. The extractor implements a case-insensitive fallback to <code>Sound/</code>.</li>
-  <li><code>Truk</code> contains no sound scripts at all &mdash; the only genuinely silent map in vanilla Battlefield 1942.</li>
-</ul>
-
-<!-- ========================================================================= -->
-<!-- APPENDIX: QUICK REFERENCE TABLES -->
-<!-- ========================================================================= -->
+<!-- Part 3: Reference specifications and triage -->
 <div class="chapter-header">
-  <div class="chapter-num">APPENDIX</div>
-  <h1>FIELD QUICK-REFERENCE CHEAT SHEET</h1>
+  <div class="chapter-num">Part 3 &bull; Chapter 9</div>
+  <h1>Reference specifications</h1>
 </div>
 
-<h2>MAGIC STRINGS &amp; EXTENSIONS</h2>
+<h2>File formats and magic bytes</h2>
 <table>
   <tr>
     <th>Extension</th>
     <th>Domain</th>
-    <th>Magic / Format</th>
-    <th>Gotcha / Reference Note</th>
+    <th>Identifier or format</th>
+    <th>Parsing rule</th>
   </tr>
   <tr>
     <td><code>.rfa</code></td>
     <td>Archive</td>
     <td><code>Refractor2 FlatArchive 1.1  </code></td>
-    <td>Trailing index table; LZO1X segment decompression.</td>
+    <td>Index table at EOF; LZO1X segment decompression.</td>
   </tr>
   <tr>
     <td><code>.sm</code></td>
-    <td>StandardMesh</td>
-    <td><code>version == 9 || 10</code></td>
-    <td>Descriptors first, payloads second. Stride 32/40. Unsigned 16-bit indices.</td>
+    <td>Geometry</td>
+    <td>Version 9 or 10</td>
+    <td>Descriptors precede buffers; unsigned 16-bit indices.</td>
   </tr>
   <tr>
     <td><code>.rs</code></td>
     <td>Shader</td>
     <td>ASCII script</td>
-    <td><code>subshader</code> vs <code>shader</code>. Maps material names to texture stages.</td>
+    <td>Maps material slot names to texture paths.</td>
   </tr>
   <tr>
     <td><code>.ske</code></td>
     <td>Skeleton</td>
-    <td><code>version == 1</code></td>
-    <td>3x4 parent-relative matrices. <strong>Stored mirrored in Z (R &rarr; SRS)</strong>.</td>
+    <td>Version 1</td>
+    <td>3x4 rest matrices; conjugate with S = diag(1, 1, -1).</td>
   </tr>
   <tr>
     <td><code>.skn</code></td>
-    <td>Skin Weights</td>
-    <td><code>version == 1</code></td>
-    <td>Rest pos + 1&ndash;2 bone-local offsets. Exclusive pairs recover rigid transforms.</td>
+    <td>Skin</td>
+    <td>Version 1</td>
+    <td>Vertex positions, bone indices, and local offsets.</td>
   </tr>
   <tr>
     <td><code>.baf</code></td>
-    <td>Bone Anim</td>
-    <td><code>version == 3</code></td>
-    <td>7-channel RLE. Precision byte is for position only! Quaternions conjugated.</td>
+    <td>Animation</td>
+    <td>Version 3</td>
+    <td>7-channel RLE; conjugate quaternions; yaw root 180°.</td>
   </tr>
   <tr>
     <td><code>.con</code></td>
-    <td>Scripts</td>
+    <td>Script</td>
     <td>ASCII script</td>
-    <td><code>setPosition</code> applies to preceding <code>addTemplate</code> child!</td>
+    <td><code>setPosition</code> applies to preceding child template.</td>
   </tr>
   <tr>
     <td><code>.ssc</code></td>
-    <td>Audio Config</td>
+    <td>Audio</td>
     <td>ASCII script</td>
-    <td>Near/far distance ramps, loop flags, and WAV sample links.</td>
+    <td>Distance thresholds, loop flags, and sample links.</td>
   </tr>
 </table>
 
-<h2>COORDINATE TRANSFORMATION MATRIX</h2>
+<h2>Coordinate transformation reference</h2>
 <table>
   <tr>
-    <th>Coordinate Space</th>
+    <th>Coordinate space</th>
     <th>Handedness</th>
-    <th>Axes Convention</th>
+    <th>Axis orientation</th>
     <th>Conversion to WebGL glTF</th>
   </tr>
   <tr>
-    <td><strong>Refractor Engine</strong></td>
-    <td>Left-Handed</td>
+    <td>Refractor engine</td>
+    <td>Left-handed</td>
     <td>+X Right, +Y Up, +Z Forward</td>
-    <td>X &rarr; X, Y &rarr; Y, Z &rarr; -Z</td>
+    <td>Invert Z axis; reverse triangle winding order.</td>
   </tr>
   <tr>
-    <td><strong>glTF 2.0 / WebGL</strong></td>
-    <td>Right-Handed</td>
+    <td>glTF 2.0 / WebGL</td>
+    <td>Right-handed</td>
     <td>+X Right, +Y Up, -Z Forward</td>
-    <td>Native target. Triangle index winding reversed.</td>
+    <td>Target coordinate system.</td>
   </tr>
   <tr>
-    <td><strong>Refractor .ske</strong></td>
-    <td>Mirrored Left</td>
+    <td>Refractor skeleton (.ske)</td>
+    <td>Mirrored left</td>
     <td>+X Right, +Y Up, -Z Forward</td>
-    <td>Conjugate: R &rarr; SRS, t &rarr; St where S = diag(1, 1, -1).</td>
+    <td>Conjugate: R' = S*R*S, t' = S*t with S = diag(1, 1, -1).</td>
   </tr>
   <tr>
-    <td><strong>Refractor .baf</strong></td>
-    <td>Yawed Left</td>
-    <td>+X Left, +Y Up, -Z Back</td>
-    <td>Conjugate quat: (-x, -y, -z, w); Root joint yawed 180&deg; (Ry180).</td>
+    <td>Refractor animation (.baf)</td>
+    <td>Yawed left</td>
+    <td>+X Left, +Y Up, -Z Backward</td>
+    <td>Conjugate quaternion: (-x, -y, -z, w); yaw root joint 180°.</td>
   </tr>
 </table>
 
-<h2>TRIAGE CHECKLIST FOR EXTRACTION BUGS</h2>
+<h2>Defect triage checklist</h2>
 <table>
   <tr>
-    <th>Symptom on Screen</th>
-    <th>Root Cause</th>
-    <th>The One-Line Fix</th>
+    <th>Visual symptom</th>
+    <th>Root cause</th>
+    <th>Resolution</th>
   </tr>
   <tr>
-    <td>Turret / gun missing or at (0,0,0)</td>
-    <td><code>setPosition</code> assigned to parent template instead of child</td>
-    <td>Bind transform to preceding <code>addTemplate</code> instance</td>
+    <td>Child part missing or positioned at origin</td>
+    <td><code>setPosition</code> applied to parent template</td>
+    <td>Assign transform to the preceding child instance.</td>
   </tr>
   <tr>
-    <td>Tank wheels orbiting the hull</td>
-    <td>Chassis 1&deg; roll lean treated as continuous engine rate</td>
-    <td>Enforce <code>ACCUMULATOR_SPAN = 360.0</code> threshold</td>
+    <td>Tank suspension rotates around hull</td>
+    <td>Chassis lean treated as continuous angular rate</td>
+    <td>Apply 360-degree threshold to distinguish accumulators from poses.</td>
   </tr>
   <tr>
-    <td>Warship / bunker polygon spiderweb</td>
-    <td>DirectX 8 16-bit indices unpacked as signed short</td>
-    <td>Change struct unpack format from <code>&lt;h</code> to <code>&lt;H</code></td>
+    <td>Stretched polygons on large meshes</td>
+    <td>Index buffer unpacked as signed 16-bit integers</td>
+    <td>Unpack index buffer using unsigned short format (&lt;H).</td>
   </tr>
   <tr>
-    <td>Rifle bolt floating behind butt plate</td>
-    <td><code>.ske</code> rest matrix read without Z conjugation</td>
-    <td>Conjugate: <code>R' = S*R*S, t' = S*t</code> with <code>S = diag(1,1,-1)</code></td>
+    <td>Weapon parts positioned behind weapon body</td>
+    <td>Skeleton rest matrix read without Z reflection</td>
+    <td>Conjugate rotation and translation matrices with S = diag(1, 1, -1).</td>
   </tr>
   <tr>
-    <td>Soldier hand twisted into shredded meat</td>
-    <td><code>.baf</code> quaternion read without conjugation</td>
-    <td>Conjugate quaternion: <code>(-x, -y, -z, w)</code></td>
+    <td>Inverted soldier joint rotations</td>
+    <td>Animation quaternion read without conjugation</td>
+    <td>Conjugate quaternion: (-x, -y, -z, w).</td>
   </tr>
   <tr>
-    <td>Terrain renders 2.3x too dark</td>
-    <td>Modulate-2x detail map decoded to linear color space</td>
-    <td>Set <code>NoColorSpace</code> and combine in sRGB display space</td>
+    <td>Terrain renders too dark</td>
+    <td>Modulate-2x detail texture decoded in linear space</td>
+    <td>Set NoColorSpace on detail map and compute in sRGB space.</td>
   </tr>
   <tr>
-    <td>Building rooftop shadows on floor</td>
-    <td>TextureLoader inverted V on lightmap atlas</td>
-    <td>Set <code>lightmap.flipY = false</code></td>
+    <td>Roof shadows appear on interior floors</td>
+    <td>Lightmap texture sampled with inverted V axis</td>
+    <td>Set lightmap.flipY = false.</td>
   </tr>
   <tr>
-    <td>Katyusha fires faint streak instead of rocket</td>
-    <td>Projectile exported as bare name string; typed as bullet</td>
-    <td>Bake dummy projectile mesh; simulate acceleration ramp</td>
+    <td>Rocket renders as faint line</td>
+    <td>Rocket projectile missing geometry definition</td>
+    <td>Export projectile mesh and simulate flight acceleration.</td>
   </tr>
   <tr>
-    <td>Muzzle smoke appears as gigantic flame</td>
-    <td>Additive smoke emitter parked statically at barrel tip</td>
-    <td>Apply <code>positionalSpeedInDof</code> drift; clamp flash ramp to 3&times;</td>
+    <td>Comb filtering on shoreline audio</td>
+    <td>Duplicate out-of-phase audio loops playing on polylines</td>
+    <td>Use one looping voice per unique WAV file across polylines.</td>
   </tr>
   <tr>
-    <td>Shoreline waves sound like hall echo</td>
-    <td>Duplicate voices playing across polylines with desynced cache</td>
-    <td>Deduplicate to 1 looping voice per unique WAV; zero panner rolloff</td>
+    <td>Shoreline audio cuts off abruptly</td>
+    <td>Web Audio inverse attenuation applied in addition to script ramp</td>
+    <td>Set panner.setRolloffFactor(0).</td>
   </tr>
 </table>
 
 <div style="margin-top: 6mm; border-top: 1px solid #666; padding-top: 6px; font-family: 'Courier New', Courier, monospace; font-size: 7.5pt; color: #555; display: flex; justify-content: space-between;">
-  <span>END OF TRANSMISSION // BFSTATS REVERSE ENGINEERING MANUAL</span>
-  <span>COMPILED FOR MODERN BROWSERS</span>
+  <span>Dissecting Refractor reference documentation</span>
+  <span>Compiled for WebGL rendering</span>
 </div>
 
 </body>
