@@ -141,7 +141,6 @@ export function buildHeightfield(meshes, { worldSize, dim = 0 } = {}) {
   const n = dim + 1;
   const heights = new Float32Array(n * n).fill(NaN);
   let filled = 0;
-  const e = [];
   for (const mesh of meshes) {
     const position = mesh.geometry?.attributes?.position;
     if (!position) continue;
@@ -164,7 +163,6 @@ export function buildHeightfield(meshes, { worldSize, dim = 0 } = {}) {
       heights[at] = Number.isNaN(heights[at]) ? y : Math.max(heights[at], y);
     }
   }
-  e.length = 0;
   return new Heightfield(dim, spacing, heights, { coverage: filled / (n * n) });
 }
 
@@ -616,8 +614,9 @@ export class WorldCollider {
       ? Math.min(maxDist, field.spacing / horizontal)
       : maxDist;
     let tPrev = 0;
-    let fPrev = oy - field.height(ox, oz);
-    if (!(fPrev > 0)) return -1;
+    // Height above ground. NaN where the lattice has a hole, and NaN fails the
+    // test, which is what leaves a round over a missing tile alone.
+    if (!(oy - field.height(ox, oz) > 0)) return -1;
     for (let i = 1; i <= 64; i++) {
       const t = Math.min(step * i, maxDist);
       const f = (oy + dy * t) - field.height(ox + dx * t, oz + dz * t);
@@ -632,7 +631,6 @@ export class WorldCollider {
       }
       if (t >= maxDist) break;
       tPrev = t;
-      fPrev = f;
     }
     return -1;
   }

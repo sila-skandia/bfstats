@@ -705,6 +705,11 @@ export class GunFire {
       normal: [hit.nx, hit.ny, hit.nz],
       gun: group.node.name,
       distance: hit.t,
+      // Which placed object was struck, against the firer's own. They must
+      // never be equal; a gun shooting its own hull is the failure mode that
+      // would look like "the guns stopped working" rather than like a bug.
+      owner: hit.owner,
+      firer: group.owner,
     };
     this.hits.unshift(record);
     if (this.hits.length > 16) this.hits.length = 16;
