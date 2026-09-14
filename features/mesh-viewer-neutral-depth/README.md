@@ -1,7 +1,7 @@
 # Mesh viewer: Neutral Depth pass and crew stations
 
 The Claude Design mock `Mesh Viewer.dc.html` (turn 1: 1a global shell, 1b model
-inspector, 1c head-on duel), implemented in
+inspector), implemented in
 [`tools/bf1942-models/viewer`](../../tools/bf1942-models/viewer). One addition
 the mock does not have: the crew console.
 
@@ -14,7 +14,6 @@ the mock does not have: the crew console.
 | Tokens, Geist, Geist Mono | `tokens.css`, fonts vendored under `vendor/fonts/` (OFL) |
 | 1b control column | `index.html` `<aside>` |
 | 1b stage tone, crumb, hints strip, corner load card | `.stage`, `#crumb`, `#hints`, `createLoadOverlay(main, { placement: 'corner' })` |
-| 1c duel card, compare-first column | `renderVersus()`, `body[data-compare]` reorders the column |
 
 Maps and Poses got the shell and a token remap of their own `--bg`/`--line`/
 `--accent` variables, not a panel redesign — the mock does not cover them.
@@ -49,7 +48,6 @@ Camera-only seats (the Hanomag's passengers) share one Passengers station.
 | arrows | stick (pitch, roll) |
 | `G` / `E` | gear / engine |
 | `V` / `O` | seat view / orbit |
-| `Esc` | drop the duel opponent |
 
 Sign conventions were checked against renders, not assumed: a +45° traverse
 points a Sherman's barrel forward-right from above, and its `-20..5` pitch range
@@ -57,21 +55,16 @@ is twenty degrees of elevation and five of depression.
 
 ## Where the build departs from the mock
 
-- **TTK is computed, not illustrative.** `damage.json` carries `roundOfFire`,
-  `reloadTime` and `magSize`, so time to kill = gaps between the shots needed at
-  that rate, plus a reload per emptied magazine. The Compare verdict quotes the
-  time margin only when it agrees with the shots verdict (a slow gun can need
-  fewer shots and still take longer).
-- **"Win probability" is labelled "Edge".** The meter is the existing
-  `1 / shots` share, not a probability.
 - **Armour ramp reads Vulnerable → Protected**, not Critical → Immune: without a
   weapon selected the ranking is inferred, and immune faces are marked
   separately (dashed chip, darker mesh).
 - **"Mirror both hulls" is not built.** No behaviour behind it was defined.
 - **Explode is a slider**, with the furthest part offset in metres as the mock
   shows; halfway is the old fixed 2.2x.
-- The duel card's × hides the HUD (same as the sidebar toggle); `Esc` drops the
-  opponent.
+- **The head-on duel (mock 1c) is not built.** Compare shipped and was removed
+  again: parking a ghosted opponent to read a shots-to-kill scoreboard was not
+  an intuitive way to ask the question. Armour inspection covers the same tables
+  one face at a time.
 
 ## Follow-ups
 
@@ -82,8 +75,8 @@ is twenty degrees of elevation and five of depression.
 ## Verification
 
 Headless Chromium (SwiftShader) against `python3 -m http.server`: Sherman,
-Chi-ha vs M10, B17, Hanomag, Katyusha, Spitfire, Thompson, the armoury, Maps,
-Poses and a 400px viewport, with no page errors. Keyboard fire, `Esc`, and the
+Chi-ha, M10, B17, Hanomag, Katyusha, Spitfire, Thompson, the armoury, Maps,
+Poses and a 400px viewport, with no page errors. Keyboard fire and the
 traverse/elevation signs checked from top and side renders.
 `node shoot.mjs --rig` now drives inputs through `__modelInspector.setInput`;
 `--thumbs` still produces 500x500.
