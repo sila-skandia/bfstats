@@ -15,7 +15,9 @@ because that tree is already published; a mod gets a sibling subtree under a
     viewer/models/mods/eod/thumbs/
     viewer/models/mods/eod/poses/  EoD poses-matrix.json, *.pose.glb
     viewer/maps/                   vanilla maps.json, <level>/scene.glb
+    viewer/maps/_shared/sounds/    vanilla deduplicated samples (MP3)
     viewer/maps/mods/eod/          EoD maps.json, <level>/scene.glb
+    viewer/maps/mods/eod/_shared/sounds/
 
 Two properties fall out of that shape and both are the point:
 

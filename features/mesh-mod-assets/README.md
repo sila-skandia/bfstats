@@ -23,11 +23,20 @@ viewer/
 │   └── poses/
 ├── maps/                         # vanilla — unchanged
 │   ├── maps.json
+│   ├── _shared/sounds/           # deduplicated samples, MP3
 │   └── <level>/scene.glb …
 └── maps/mods/eod/
     ├── maps.json
+    ├── _shared/sounds/
     └── <level>/scene.glb …
 ```
+
+`_shared/sounds/` is per-mod rather than global, and that is the same trade the
+rest of this layout makes: 67 of vanilla's samples are byte-identical to EoD's,
+but a mod subtree has to stay self-contained for publishing to remain one
+recursive upload of one directory. `scene.json` points at it relatively
+(`../_shared/sounds/x.mp3`), so nothing in the viewer needed changing. See
+`audio-compression.md` and `features/bf1942-3d-models/map-sounds.md`.
 
 Two properties made this the shape to pick, over a single merged manifest with a
 `mod` field on each row:
@@ -111,17 +120,103 @@ Three degradations it has to survive, all of which production will hit:
 
 ## EoD: what came out
 
-Extracted as the pilot sample, all clean:
+The pilot sample has been superseded by a full extraction of the mod. Nothing
+was sampled and nothing was hand-picked:
 
-| | |
-|---|---|
-| Models | `EoD_Huey`, `EoD_Cobra`, `EoD_MiG-21`, `PBR`, `M113` (+ wrecks), `M16`, `AK47`, `M60`, `M79`, `USMarineSoldier`, `VietCongSoldier` |
-| Maps | `Hamburger_Hill` (1424/1428 objects, 41 lightmaps, 1 texture missing), `Hue_Imperial_Palace` (1082/1086 objects, 165 lightmaps, 0 missing) |
-| Poses | 4 soldiers x 8 weapons, 32/32 pairs resolved |
+| | | |
+|---|---|---|
+| Models | 281 of 284 templates | 493 glb (281 base, 140 wreck, 72 cockpit), 281 thumbnails, 2.3 GB |
+| Poses | 1463 of 1463 pairs | 19 soldiers x 77 weapons, 0 errors, 1.8 GB |
+| Maps | 239 of 239 levels | 0 failures, 16 GB |
 
-The catalogue EoD offers is far larger than what was taken: `--list` reports
-**284 spawnable templates** (53 air, 67 land, 33 sea, 38 emplacement, 74
-handweapon, 19 soldier) and 237 level archives.
+The three templates not exported are `Browning_BowMG`, `Coaxial_Browning` and
+`Coaxial_MG42`, skipped up front by `has_renderable_geometry` for the reason
+vanilla skips the latter two: no geometry anywhere in the tree, because they are
+the muzzle-flash logic of a hull or coax MG whose visible barrel belongs to the
+vehicle mesh.
+
+239 levels against 237 archives in `Mods/EoD/archives/bf1942/levels/` is not a
+miscount — `discover_levels` walks the whole mod chain, so two levels that exist
+only in vanilla's own `levels/` come along with it.
+
+One weapon, `APMineDevice`, appears in the pose matrix's
+`weaponsWithoutTemplate` rather than as a column: the animation state machine
+declares a `Ub_StandAim` clip for it but the mod ships no object template, so
+there is nothing to graft onto the hand. That is the matrix reporting a fact
+about the mod, not a failure.
+
+### Verify is noisy on a mod, and the reason is not EoD
+
+`extract_all.py --verify` ends on `102 clean, 59 degraded, 120 broken of 281`.
+Almost none of that is about this extraction. Two things produce it:
+
+* **`verify_models.py` turns its authored-exception lists off for any
+  non-vanilla `--mod`** (`vanilla_facts = args.mod.lower() == "bf1942"`). EoD's
+  catalogue is mostly *vanilla* templates inherited through the mod chain —
+  `K98`, `Tiger`, `PanzerIV`, `Stuka`, `AichiVal` — so the quirks vanilla has
+  recorded as facts (`SILHOUETTE_AUTHORED`, `VANILLA_UNRESOLVED_TEXTURES`,
+  `MATERIALS_WITHOUT_SHADER_AUTHORED`) are re-reported as findings the moment
+  the same template is reached under a mod's name.
+* **A qualified `Type:Name` geometry reference does not resolve.**
+  `Fx_Shell792mm`, the shell-eject emitter payload, declares
+  `ObjectTemplate.geometry StandardMesh:Shell792mmHI_m1`.
+  `Assembler._mesh_index` passes that string to `library.geometry`, which keys
+  on the bare name, so it lands in `missingGeometryTemplates` — which
+  `verify.triage_report` treats as unconditionally broken, with no exemption.
+  The geometry is present: `library.geometry("Shell792mmHI_m1")` resolves and
+  the `.sm` reads fine from both archives. This arrived with `c09ddcc`
+  (vehicles fire their guns) and it hits **vanilla identically** — vanilla's own
+  published tree scores `50 clean, 8 degraded, 36 broken of 94` for the same
+  reason. It is a verify-side false positive, not a defect in either extract.
+
+So the honest verdict on this run is the export counts above: 281 of 281
+selected templates, 1463 of 1463 pairs, 239 of 239 levels, zero failures.
+Re-reading the verify numbers is worth doing once the `Type:Name` lookup is
+fixed, because until then they measure the wrong thing.
+
+### Where the 16 GB of maps goes
+
+Worth knowing before anything is uploaded, because it is almost all
+duplication:
+
+| | files | size |
+|---|---|---|
+| `scene.glb` | 239 | 11.1 GB |
+| `.wav` | 8,665 | 3.19 GB |
+| lightmap `.png` | 27,296 | 0.77 GB |
+| `scene.json`, `maps.json` | 238 | 0.03 GB |
+
+Inside the glb, embedded textures are 8.55 GB across 55,188 images against
+2.33 GB of geometry buffers — 231 images, 252 meshes and 3,265 nodes for an
+average level. Each `scene.glb` is self-contained, so every map that places a
+palm or a hut re-embeds that texture: the 55,188 images are **7,956 unique by
+content, 3.05 GB** (2.8x). The audio duplicates the same way — 8,828 files are
+**260 unique payloads totalling 0.40 GB** (8.1x), because each map directory
+ships its own copy of the same ambient beds and vehicle engine layers.
+
+Deduplicating both would take the tree from 16 GB to roughly 7.7 GB without
+touching a codec or a mesh. Spread is wide either way: `Infinite` is 341 MB and
+`Mono_Lake` 206 MB, against 10 MB for `Jocoseness_Rats`.
+
+Measure unique payloads by hashing bytes in Python, not with
+`md5sum | awk | xargs stat` — 239 EoD level names include `Charlie_don't_surf`
+and `Who'll_Stop_The_Rain`, and the apostrophes make `xargs` drop files
+silently. That mistake undercounted the unique audio by 4x on the first pass
+through this tree.
+
+The audio half of that is **done**: samples are deduplicated into
+`_shared/sounds` as MP3 -V2, taking 3.24 GB to roughly 50 MB and a map's own
+audio payload from 11.5 MB to about 1.5 MB. MP3 rather than a smaller codec
+because it is the only one that survives a loop — measured through Chromium's
+`decodeAudioData`, it returns exactly the source sample count where Vorbis
+retains up to 12.3 ms of padding inside every cycle. `audio-compression.md` has
+the measurements and the three things the implementation got wrong first.
+
+The texture half is not done and is a bigger prize, at 5.5 GB. It is also
+strictly harder: audio was already separate files referenced by path, so dedup
+was a destination change in one function, while textures live *inside* the glb
+binary and pulling them out means external image URIs and giving up the
+single-request property of `scene.glb`.
 
 ## Mod-specific things that had to be fixed
 
