@@ -90,22 +90,49 @@ class RiggedPart {
     this.base = node.quaternion.clone();
     this.axes = rig.axes;
     this.control = rig.control || 'vehicle';
-    // An Engine's spin is declared on the Engine but does not happen there.
-    // Refractor stops it at every `hasMobilePhysics 1` boundary — a Corsair's
-    // landing gear hangs off its Engine without turning with the propeller —
-    // so rotating the Engine node, which is where the rig sits, would swing
-    // the gear, the wheels and the bay hatches around the prop shaft.
+    // An Engine's spin is declared on the Engine and NEVER happens there.
     //
-    // `assemble.py` already decides which children the spin reaches (it needs
-    // the same answer to bake clips for the model browser) and stamps them
-    // `spinsWithEngine`. Collect them, and fall back to the node itself, which
-    // is right for an Engine that *is* the propeller — a carrier's screws —
-    // and for scenes extracted before the flag existed.
+    // This is a fact about the class hierarchy, not a heuristic.
+    // `EngineTemplate` derives from `RotationalBundleTemplate`, which is the
+    // only reason a `.con` may write `setInputToRoll c_PIThrottle` on an Engine
+    // at all — but the object it creates is a `PhysicsEngine` deriving from
+    // `PhysicsNode`, not from `RotationalBundle`.
+    // `RotationalBundle::handleUpdate` is the one place those numbers become a
+    // transform, and `PhysicsEngine` does not inherit it. The tail of
+    // `PhysicsEngine::updatePhysics` (`0x0057bfb0`) instead pushes a rotation
+    // speed into exactly one object through two interface queries: the
+    // propeller. See `features/bf1942-engine-reference/symbols.json`.
+    //
+    // So rotating the Engine node — which is where the rig extra sits — is
+    // never right. A Corsair's landing gear, wheels and bay hatches hang off
+    // its Engine, and spinning the node swings all nineteen of them around the
+    // prop shaft.
+    //
+    // `assemble.py` decides which children the spin reaches (it needs the same
+    // answer to bake clips for the model browser), stamps them
+    // `spinsWithEngine`, and lists them on the Engine as `spinsChildren` —
+    // **emitted even when empty**, which is what lets these three cases be told
+    // apart rather than collapsed into one fallback:
+    //
+    //   named children      spin exactly those
+    //   present but empty   the Engine reaches no drawn geometry at all
+    //                       (Willy, KettenKrad, Elco80). Spin nothing.
+    //   absent              the asset predates the field. Spin nothing, which
+    //                       costs a stationary propeller on an old scene and
+    //                       is the only option that cannot be wrong.
+    const named = node.userData?.spinsChildren;
     this.spun = [];
-    for (const child of node.children) {
-      if (child.userData?.spinsWithEngine) this.spun.push(child);
+    if (Array.isArray(named)) {
+      for (const name of named) {
+        const found = node.children.find(child => child.name === name)
+          || node.getObjectByName(name);
+        if (found && found !== node) this.spun.push(found);
+      }
+    } else {
+      for (const child of node.children) {
+        if (child.userData?.spinsWithEngine) this.spun.push(child);
+      }
     }
-    if (!this.spun.length) this.spun.push(node);
     this.spunBases = this.spun.map(n => n.quaternion.clone());
   }
 }
@@ -476,9 +503,12 @@ export class Vehicle {
       // Pre-multiplied: the spin is about the Engine's axis, which the child
       // sees outside its own authored rotation. Same convention as the baked
       // clips' `frame: "parent"`.
+      //
+      // `part.spun` never contains `part.node` — see `RiggedPart` — so this
+      // cannot reach the Engine's own subtree, and an Engine that reaches no
+      // drawn geometry simply poses nothing here.
       part.spun.forEach((node, i) => {
-        if (node === part.node) node.quaternion.copy(q).multiply(spin);
-        else node.quaternion.copy(spin).multiply(part.spunBases[i]);
+        node.quaternion.copy(spin).multiply(part.spunBases[i]);
       });
     }
   }
