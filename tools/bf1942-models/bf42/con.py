@@ -118,6 +118,58 @@ def crd(token: str) -> float | None:
         return None
 
 
+def crd_range(token: str) -> tuple[float, float] | None:
+    """Both ends of a CRD random range — `CRD_UNIFORM/-0.1/-0.3/0` -> (-0.1, -0.3).
+
+    `crd` above keeps the first value, which is the right answer for the fixed
+    quantities it was written for. Recoil is not fixed: the two numbers are the
+    ends a uniform draw lands between, and a weapon whose kick is always 1.2
+    reads very differently from one whose kick is anywhere in 0.4..0.6. The
+    order is as authored and is not normalised — a left-right range written
+    `-0.1/-0.3` kicks left every time, and sorting it would hide that.
+    """
+    parts = token.split("/")
+    if parts and parts[0].upper().startswith("CRD"):
+        parts = parts[1:]
+    try:
+        return (float(parts[0]), float(parts[1]))
+    except (ValueError, IndexError):
+        return None
+
+
+def floats(text: str) -> tuple[float, ...] | None:
+    """A whitespace-separated float list — `setSpeedDev 1.5 0.4 0.4 0.1`.
+
+    The deviation commands are the only place in the format that spells a
+    vector with spaces instead of slashes, and their lengths differ by command
+    (three for `setFireDev`, four for `setSpeedDev`), so the count is kept as
+    authored rather than padded to a fixed width.
+    """
+    try:
+        values = tuple(float(token) for token in text.split())
+    except ValueError:
+        return None
+    return values or None
+
+
+def truthy(text: str) -> bool | None:
+    """A boolean the data writes three ways: `1`, `0`, and `c_True`.
+
+    Vanilla's Bar1918 writes `setHasRecoilForce 1.2`, which the engine reads as
+    true like any other non-zero, so this compares against zero rather than
+    against the literal `1`.
+    """
+    token = text.split()[0] if text.split() else ""
+    if not token:
+        return None
+    if token.lower().startswith("c_"):
+        return token.lower() == "c_true"
+    try:
+        return float(token) != 0.0
+    except ValueError:
+        return None
+
+
 def curve(token: str) -> list[list[float]] | None:
     """An over-time ramp: `0/0.12|100/9.4` -> [[0, 0.12], [100, 9.4]].
 
@@ -351,6 +403,66 @@ class ObjectTemplate:
     # after launch (the Katyusha rocket's motor), vs. propellers and wheels.
     engine_type: str | None = None
 
+    # -- HandFireArms handling -------------------------------------------- #
+    # What separates one rifle from another once the mesh is on screen. A
+    # vehicle gun is described by `roundOfFire` and `velocity` and little else;
+    # an infantry weapon carries a magazine, a reload, an optic and two whole
+    # families of accuracy modelling, and none of it was read until now — which
+    # is why the armoury could say "mag 5" about both a K98 and a K98Sniper and
+    # nothing about the scope that is the only difference between them.
+    #
+    # Spellings are the data's own, and they are not tidy: `reloadtime` is
+    # lower-case in every vanilla file, `fireOnce` is written `1` on 16 weapons
+    # and `c_True` on two, and `setHasRecoilForce` is `1.2` on the Bar1918 —
+    # a typo the engine reads as true. All three are handled where they parse.
+    num_of_mag: int | None = None
+    # 0 = rounds, 1 = a heat bar (the medic pack's 1800), 2 = no meter at all
+    # (binoculars). Without it `magSize 1800` reads as 1800 bullets.
+    mag_type: int | None = None
+    reload_time: float | None = None
+    auto_reload: bool | None = None
+    # One shot per trigger pull — a bolt rifle, every pistol, the bazooka.
+    fire_once: bool | None = None
+    # Optics. `zoomFov` is the *weapon's* zoomed field of view as a fraction of
+    # the unzoomed one, so smaller is more magnification: 0.4 for an iron-sight
+    # No4 against 0.1 for the sniper. `useScope` swaps the view for the
+    # full-screen `setScopeIcon` overlay, which is why the two snipers and the
+    # binoculars are the only things in the game that draw one.
+    zoom_fov: float | None = None
+    soldier_zoom_fov: float | None = None
+    use_scope: bool | None = None
+    sniper_sight: bool | None = None
+    scope_icon: str | None = None
+    # Seconds of magnification lost after a shot — the sniper's 3 s of being
+    # kicked out of the scope by his own bolt.
+    unzoom_between_fire_time: float | None = None
+    # Deviation: the cone the round can leave in, in degrees. `min_dev` is the
+    # floor a standing, still, unfired shooter gets; the rest are multipliers
+    # and per-state additions the engine sums. Kept as authored tuples rather
+    # than reduced to a number, because their lengths differ (3 for fire/mod,
+    # 4 for turn/speed) and the engine's exact combining rule is not modelled
+    # here — publishing them is honest, inventing an "accuracy score" is not.
+    min_dev: float | None = None
+    min_deviation: float | None = None
+    max_deviation: float | None = None
+    fire_dev: tuple[float, ...] | None = None
+    dev_mod: tuple[float, ...] | None = None
+    turn_dev: tuple[float, ...] | None = None
+    speed_dev: tuple[float, ...] | None = None
+    misc_dev: tuple[float, ...] | None = None
+    # Recoil, as a uniform random range: `CRD_UNIFORM/1.2/1.2/0` is the No4's
+    # fixed 1.2, `CRD_UNIFORM/-0.1/-0.3/0` a left-right kick that is always
+    # leftward. Both ends are kept — the spread between them is the weapon's
+    # unpredictability, and collapsing it to the mean deletes exactly that.
+    recoil_force_up: tuple[float, float] | None = None
+    recoil_force_left_right: tuple[float, float] | None = None
+    has_recoil_force: bool | None = None
+    go_back_on_recoil: bool | None = None
+    # `CHTIcon` / `CHTCrossHair` / `CHTNone` — a scoped weapon draws no
+    # crosshair because the scope overlay is the sight.
+    cross_hair_type: str | None = None
+    hud_ammo_type: str | None = None
+
     # Effect chain: EffectBundle -> Emitter (`ObjectTemplate.template` names
     # the payload) -> Particle (mesh) or SpriteParticle (textured quad).
     emitter_template: str | None = None
@@ -470,6 +582,68 @@ class ObjectTemplate:
                 "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
             }
         return axes
+
+    def weapon_stats(self) -> dict | None:
+        """How this weapon handles — magazine, optic, deviation, recoil.
+
+        Grouped the way the `.con` groups it (vanilla brackets the deviation
+        and recoil commands with `Rem *** Deviation Begin ***`), and every key
+        is omitted when the data does not declare it, so an empty `zoom` block
+        means "no optic" rather than "zoom of zero". A knife returns almost
+        nothing and that is the honest answer for a knife.
+
+        Nothing in the assembler branches on any of this: it is catalogue data
+        that rides out in the report so the armoury can show a K98 and a
+        K98Sniper side by side and name the difference.
+        """
+        def prune(values: dict) -> dict:
+            return {k: v for k, v in values.items() if v is not None}
+
+        magazine = prune({
+            "size": self.mag_size,
+            "magazines": self.num_of_mag,
+            "type": self.mag_type,
+            "reloadTime": self.reload_time,
+            "autoReload": self.auto_reload,
+        })
+        zoom = prune({
+            "fov": self.zoom_fov,
+            "soldierFov": self.soldier_zoom_fov,
+            "scope": self.use_scope,
+            "sniperSight": self.sniper_sight,
+            "icon": self.scope_icon,
+            "unZoomBetweenFire": self.unzoom_between_fire_time,
+        })
+        deviation = prune({
+            "min": self.min_dev,
+            "minDeviation": self.min_deviation,
+            "maxDeviation": self.max_deviation,
+            "fire": list(self.fire_dev) if self.fire_dev else None,
+            "mod": list(self.dev_mod) if self.dev_mod else None,
+            "turn": list(self.turn_dev) if self.turn_dev else None,
+            "speed": list(self.speed_dev) if self.speed_dev else None,
+            "misc": list(self.misc_dev) if self.misc_dev else None,
+        })
+        recoil = prune({
+            "up": list(self.recoil_force_up) if self.recoil_force_up else None,
+            "leftRight": (list(self.recoil_force_left_right)
+                          if self.recoil_force_left_right else None),
+            "hasForce": self.has_recoil_force,
+            "goBack": self.go_back_on_recoil,
+        })
+        stats = prune({
+            "roundOfFire": self.round_of_fire,
+            "fireOnce": self.fire_once,
+            "velocity": self.velocity,
+            "projectile": self.projectile_template,
+            "crossHair": self.cross_hair_type,
+            "hudAmmo": self.hud_ammo_type,
+            "magazine": magazine or None,
+            "zoom": zoom or None,
+            "deviation": deviation or None,
+            "recoil": recoil or None,
+        })
+        return stats or None
 
 
 @dataclass
@@ -706,11 +880,70 @@ class ObjectLibrary:
                         "velocity": "velocity",
                         "tracerscaler": "tracer_scaler",
                     }[cmd], value)
-                elif cmd == "magsize":
+                elif cmd in ("magsize", "numofmag", "magtype"):
                     try:
-                        obj.mag_size = int(float(args.split()[0]))
+                        value = int(float(args.split()[0]))
                     except (ValueError, IndexError):
                         continue
+                    setattr(obj, {"magsize": "mag_size",
+                                  "numofmag": "num_of_mag",
+                                  "magtype": "mag_type"}[cmd], value)
+                # -- HandFireArms handling. Last write wins, deliberately: the
+                # two snipers restate their whole HUD block three times over
+                # and the engine keeps the last one, so a plain assignment is
+                # the correct rule rather than a bug waiting to be found.
+                elif cmd in ("reloadtime", "zoomfov", "soldierzoomfov",
+                             "unzoombetweenfiretime", "setmindev",
+                             "mindeviation", "maxdeviation"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "reloadtime": "reload_time",
+                        "zoomfov": "zoom_fov",
+                        "soldierzoomfov": "soldier_zoom_fov",
+                        "unzoombetweenfiretime": "unzoom_between_fire_time",
+                        "setmindev": "min_dev",
+                        "mindeviation": "min_deviation",
+                        "maxdeviation": "max_deviation",
+                    }[cmd], value)
+                elif cmd in ("fireonce", "autoreload", "usescope",
+                             "setsnipersight", "sethasrecoilforce",
+                             "setgobackonrecoil"):
+                    if (value := truthy(args)) is not None:
+                        setattr(obj, {
+                            "fireonce": "fire_once",
+                            "autoreload": "auto_reload",
+                            "usescope": "use_scope",
+                            "setsnipersight": "sniper_sight",
+                            "sethasrecoilforce": "has_recoil_force",
+                            "setgobackonrecoil": "go_back_on_recoil",
+                        }[cmd], value)
+                elif cmd in ("setfiredev", "setdevmod", "setturndev",
+                             "setspeeddev", "setmiscdev"):
+                    if (values := floats(args)) is not None:
+                        setattr(obj, {
+                            "setfiredev": "fire_dev",
+                            "setdevmod": "dev_mod",
+                            "setturndev": "turn_dev",
+                            "setspeeddev": "speed_dev",
+                            "setmiscdev": "misc_dev",
+                        }[cmd], values)
+                elif cmd in ("setrecoilforceup", "setrecoilforceleftright"):
+                    if args and (span := crd_range(args.split()[0])) is not None:
+                        setattr(obj,
+                                "recoil_force_up" if cmd == "setrecoilforceup"
+                                else "recoil_force_left_right", span)
+                elif cmd in ("setscopeicon", "setcrosshairtype", "sethudammotype"):
+                    # `setScopeIcon "sniper.tga"` is quoted; the other two are
+                    # bare enum names.
+                    if token := args.strip().strip('"'):
+                        setattr(obj, {
+                            "setscopeicon": "scope_icon",
+                            "setcrosshairtype": "cross_hair_type",
+                            "sethudammotype": "hud_ammo_type",
+                        }[cmd], token.split()[0])
                 elif cmd == "timetolive":
                     # First declaration wins: `timeToLive` restated after an
                     # `addTemplate` is a per-instance override on that child

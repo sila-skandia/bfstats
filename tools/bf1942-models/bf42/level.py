@@ -977,6 +977,46 @@ def _parse_water(info: LevelInfo, cmd: str, tokens: list[str]) -> None:
         pass
 
 
+@dataclass
+class MaterialMap:
+    """`Materialmap.raw` — one MaterialManager material id per heightmap sample.
+
+    The file is exactly one byte per `Heightmap.raw` sample at the same `dim`,
+    and the byte is the terrain material id the damage tables key off (the
+    0..15 band of `materialManagerdefine.con`: 1 Water, 3 Juicy grass,
+    10 Dry sand, 11 Wet sand, 12 Rock, 14 Dirt road, ...). Nothing decodes it
+    — there is no palette in the way. `Textures/TerrainPalette.pal`, which
+    sits beside it, is a 256-entry RIFF *colour* palette for the terrain art
+    and has nothing to do with these ids.
+
+    The proof is semantic: El Alamein is 59% id 10, which the define file
+    labels literally "Dry sand (El Alamein)"; Wake is 95% id 11 "Wet sand";
+    Bocage is 56% id 3 "Juicy grass". Each map is the surface it looks like.
+    """
+    dim: int
+    spacing: float
+    ids: bytes
+
+    def material_at(self, ix: int, iz: int) -> int:
+        ix = max(0, min(self.dim - 1, ix))
+        iz = max(0, min(self.dim - 1, iz))
+        return self.ids[iz * self.dim + ix]
+
+    def histogram(self) -> dict[int, int]:
+        counts: dict[int, int] = {}
+        for value in self.ids:
+            counts[value] = counts.get(value, 0) + 1
+        return dict(sorted(counts.items()))
+
+
+def decode_material_map(data: bytes, world_size: float) -> MaterialMap:
+    """One byte per sample, square, same grid as the heightmap."""
+    dim = int(math.isqrt(len(data)))
+    if not data or dim * dim != len(data):
+        raise ValueError(f"material map is not square ({len(data)} bytes)")
+    return MaterialMap(dim=dim, spacing=world_size / dim, ids=bytes(data))
+
+
 def decode_heightmap(data: bytes, world_size: float, y_scale: float) -> Heightmap:
     if len(data) < 2 or len(data) % 2:
         raise ValueError(f"heightmap length {len(data)} is not a uint16 grid")

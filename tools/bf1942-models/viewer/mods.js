@@ -42,9 +42,15 @@ const VANILLA = {
   id: 'bf1942',
   name: 'Battlefield 1942',
   short: 'BF1942',
+  icon: 'icons/mods/bf1942.png',
   paths: { models: 'models', maps: 'maps', poses: 'models/poses' },
   counts: { models: 1, maps: 1, poses: 1 },
 };
+
+function modIconUrl(mod) {
+  if (mod?.icon) return mod.icon;
+  return `icons/mods/${mod?.id || 'bf1942'}.png`;
+}
 
 function stored() {
   try { return localStorage.getItem(STORE_KEY); } catch { return null; }
@@ -136,6 +142,17 @@ function install(available, active, tab) {
   label.setAttribute('for', 'shell-mod-select');
   label.textContent = 'Mod ·';
 
+  const wrap = document.createElement('span');
+  wrap.className = 'shell-mods-select-wrap';
+
+  const icon = document.createElement('img');
+  icon.className = 'shell-mod-icon';
+  icon.src = modIconUrl(active);
+  icon.alt = '';
+  icon.width = 16;
+  icon.height = 16;
+  icon.onerror = () => { icon.style.display = 'none'; };
+
   const select = document.createElement('select');
   select.id = 'shell-mod-select';
   select.title = 'Which game or mod to browse';
@@ -146,10 +163,26 @@ function install(available, active, tab) {
   }
   select.value = active.id;
   select.addEventListener('change', () => {
+    const chosen = available.find(m => m.id === select.value);
+    if (chosen) {
+      icon.src = modIconUrl(chosen);
+      icon.style.display = '';
+    }
     remember(select.value);
     location.href = withMod(location.href, select.value);
   });
-  pick.append(label, select);
+
+  wrap.addEventListener('click', (e) => {
+    if (e.target !== select) {
+      if (typeof select.showPicker === 'function') {
+        try { select.showPicker(); return; } catch {}
+      }
+      select.focus();
+    }
+  });
+
+  wrap.append(icon, select);
+  pick.append(label, wrap);
 
   // The active mod's size on every tab, with this tab's figure in full ink.
   const counts = document.createElement('span');

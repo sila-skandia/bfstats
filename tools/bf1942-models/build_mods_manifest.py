@@ -72,10 +72,10 @@ def _count(path: Path, key: str | None = None) -> int:
     return len(data) if isinstance(data, (list, dict)) else 0
 
 
-def describe(mod_id: str, models_dir: Path, maps_dir: Path) -> dict:
+def describe(mod_id: str, models_dir: Path, maps_dir: Path, viewer: Path | None = None) -> dict:
     name, short = MOD_NAMES.get(mod_id, (mod_id, mod_id))
     poses_dir = models_dir / "poses"
-    return {
+    entry = {
         "id": mod_id,
         "name": name,
         "short": short,
@@ -85,11 +85,19 @@ def describe(mod_id: str, models_dir: Path, maps_dir: Path) -> dict:
             "poses": poses_dir.as_posix(),
         },
     }
+    if viewer is not None:
+        mod_icon = models_dir / "icon.png"
+        static_icon = Path("icons") / "mods" / f"{mod_id}.png"
+        if (viewer / mod_icon).is_file():
+            entry["icon"] = mod_icon.as_posix()
+        elif (viewer / static_icon).is_file():
+            entry["icon"] = static_icon.as_posix()
+    return entry
 
 
 def scan(viewer: Path) -> list[dict]:
     """Vanilla first, then every mod subtree under either asset root."""
-    entries: list[dict] = [describe("bf1942", Path("models"), Path("maps"))]
+    entries: list[dict] = [describe("bf1942", Path("models"), Path("maps"), viewer)]
 
     ids: list[str] = []
     for root in (viewer / "models" / "mods", viewer / "maps" / "mods"):
@@ -103,6 +111,7 @@ def scan(viewer: Path) -> list[dict]:
             mod_id,
             Path("models") / "mods" / mod_id,
             Path("maps") / "mods" / mod_id,
+            viewer,
         ))
 
     for entry in entries:
