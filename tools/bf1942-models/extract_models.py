@@ -50,6 +50,24 @@ CATEGORY_PREFIXES = {
     "objects/handweapons/": "handweapon",
 }
 
+# Template kinds that are a spawnable object wherever they are declared.
+#
+# The folder rule below — a template named after the directory holding its
+# `.con` — covers the game's usual one-folder-per-object layout, and it is the
+# only rule that can separate a driveable vehicle from the twenty-odd
+# `PlayerControlObject` turrets and sub-vehicles its own folder also declares.
+# Hand weapons break it: `Objects/HandWeapons/K98/Objects.con` declares *two*
+# `HandFireArms`, `K98` and `K98Sniper`, and `No4/Objects.con` does the same.
+# The sniper is a full weapon with its own render bundle and its own scope
+# mesh — and the primary weapon of all eight Scout kits, the only scoped optic
+# in the game — but it is not named after any folder, so a folder-only walk
+# never sees it. For these kinds the declaration is the authority: what the
+# template *is* decides, not where the author happened to file it.
+CATALOGUE_KINDS = {
+    "handweapon": frozenset({"handfirearms"}),
+    "soldier": frozenset({"bfsoldier"}),
+}
+
 
 def mod_chain(game_dir: Path, mod: str) -> list[Path]:
     """A mod and the mods it inherits from, nearest first.
@@ -250,17 +268,29 @@ def spawn_folder(source: str) -> str:
 
 
 def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary) -> list[tuple[str, str, str]]:
-    """Every template declared in a folder that identifies it as a spawnable object."""
+    """Every template a category folder declares as a spawnable object.
+
+    Two ways in, because two different things make a template the object. Most
+    of the game is one folder per object, so a template named after the folder
+    holding its `.con` is that folder's thing. A few are not — see
+    `CATALOGUE_KINDS` — and those are admitted on their declared kind instead.
+    A template that satisfies both (`K98` is a `HandFireArms` *and* named after
+    `HandWeapons/K98/`) appears once: the library is keyed by name.
+    """
     out: list[tuple[str, str, str]] = []
     for template in library.objects.values():
         source = template.source.lower()
         category = next((v for k, v in CATEGORY_PREFIXES.items() if source.startswith(k)), None)
         if category is None:
             continue
-        if category == "soldier" and template.kind.lower() != "bfsoldier":
+        kind = template.kind.lower()
+        # A soldier folder also holds his parachute and his 1P arms; only the
+        # BFSoldier is a thing you can spawn.
+        if category == "soldier" and kind != "bfsoldier":
             continue
         folder = spawn_folder(template.source)
-        if folder and template.name.lower() == folder.lower():
+        if (folder and template.name.lower() == folder.lower()) \
+                or kind in CATALOGUE_KINDS.get(category, ()):
             out.append((template.name, category, template.source))
     return sorted(out, key=lambda r: (r[1], r[0].lower()))
 

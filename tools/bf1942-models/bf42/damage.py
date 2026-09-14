@@ -171,12 +171,23 @@ class DamageTables:
         grouped: dict[str, dict[str, float]] = {}
         for (att, deff), mod in sorted(self.modifiers.items()):
             grouped.setdefault(str(att), {})[str(deff)] = mod
+        # `setEffectTemplate` sits on the same `attGroup`/`defGroup` cursor as
+        # `damageMod` and answers the other half of the question: not how much
+        # a hit takes off, but what it *looks and sounds like*. A Sherman round
+        # (material 236) resolves to `e_waterimpact` in water, `GroundExplDry`
+        # in El Alamein's sand, `Exp2CascadesStone` into concrete and
+        # `e_ExplArmor` into another tank's hull. Same shape as `modifiers`,
+        # nested attacker -> defender, so one lookup serves both.
+        effects: dict[str, dict[str, str]] = {}
+        for (att, deff), template in sorted(self.effects.items()):
+            effects.setdefault(str(att), {})[str(deff)] = template
         return {
             "source": SETTINGS_SCRIPT,
             "scripts": list(self.scripts),
             "missingScripts": list(self.missing_scripts),
             "materials": {str(k): v.as_dict() for k, v in sorted(self.materials.items())},
             "modifiers": grouped,
+            "effects": effects,
         }
 
 

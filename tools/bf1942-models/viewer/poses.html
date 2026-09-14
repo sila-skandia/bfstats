@@ -172,6 +172,122 @@
     font-size: 11px;
     pointer-events: none;
   }
+
+  .inspector-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .inspector-header h1 {
+    margin: 0;
+  }
+  .controls-collapse-btn {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    background: var(--mm-bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    color: var(--muted);
+    font: 10px var(--mm-font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .controls-collapse-btn:hover,
+  .controls-collapse-btn:focus-visible {
+    color: var(--text);
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .stage-controls-fab {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    z-index: 15;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    background: rgba(19, 19, 19, 0.9);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text);
+    font: 11px var(--mm-font-mono);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .stage-controls-fab:hover,
+  .stage-controls-fab:focus-visible {
+    background: var(--mm-bg-soft);
+    border-color: var(--accent);
+    outline: none;
+  }
+  .stage-controls-fab[hidden] { display: none !important; }
+
+  @media (max-width: 720px) {
+    body {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: var(--nav-h) minmax(0, 46vh) minmax(0, 1fr);
+      transition: grid-template-rows .2s ease;
+    }
+    body.controls-collapsed {
+      grid-template-rows: var(--nav-h) minmax(0, 1fr) 0px;
+    }
+    body.controls-collapsed aside {
+      display: none;
+    }
+    body.controls-collapsed main {
+      grid-row: 2;
+      height: 100%;
+    }
+    main {
+      grid-row: 2;
+      position: relative;
+    }
+    aside {
+      grid-row: 3;
+      border-right: 0;
+      border-top: 1px solid var(--line);
+      padding: 10px 12px 20px;
+    }
+    .controls-collapse-btn { display: inline-flex; }
+    .hint { display: none; }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .field-grid .field {
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 6px;
+      margin-bottom: 0;
+    }
+    .display-toggles {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px 10px;
+    }
+    #pairs {
+      max-height: 160px;
+      min-height: 90px;
+    }
+    h2 {
+      margin: 12px 0 6px;
+      padding-top: 8px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -182,6 +298,7 @@
       <a href="./index.html">Models</a>
       <a href="./map.html">Maps</a>
       <a href="./poses.html" aria-current="page">Poses</a>
+      <a href="./kits.html">Kits</a>
     </span>
     <span class="shell-sub">soldier animation states &middot; weapon grip welds</span>
     <span class="shell-spacer"></span>
@@ -191,11 +308,19 @@
     </a>
   </div>
 </nav>
-<aside>
-  <h1>Grip inspector</h1>
+<aside id="inspector-aside">
+  <div class="inspector-header">
+    <h1>Grip inspector</h1>
+    <button type="button" class="controls-collapse-btn" id="controls-collapse-btn" aria-label="Collapse controls" aria-expanded="true">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3 6 5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Hide</span>
+    </button>
+  </div>
 
-  <div class="field"><span>Soldier</span><select id="soldier"></select></div>
-  <div class="field"><span>Weapon</span><select id="weapon"></select></div>
+  <div class="field-grid">
+    <div class="field"><span>Soldier</span><select id="soldier"></select></div>
+    <div class="field"><span>Weapon</span><select id="weapon"></select></div>
+  </div>
   <div class="steppers">
     <button type="button" id="prev-weapon" title="previous weapon">&larr; weapon</button>
     <button type="button" id="next-weapon" title="next weapon">weapon &rarr;</button>
@@ -222,10 +347,12 @@
   game's stance, not a weld error.</div>
 
   <h2>Display</h2>
-  <label class="toggle"><input type="checkbox" id="spin"> auto-rotate</label>
-  <label class="toggle"><input type="checkbox" id="wireframe"> wireframe</label>
-  <label class="toggle"><input type="checkbox" id="skeleton"> skeleton</label>
-  <label class="toggle"><input type="checkbox" id="axes" checked> axes + ground grid</label>
+  <div class="display-toggles">
+    <label class="toggle"><input type="checkbox" id="spin"> auto-rotate</label>
+    <label class="toggle"><input type="checkbox" id="wireframe"> wireframe</label>
+    <label class="toggle"><input type="checkbox" id="skeleton"> skeleton</label>
+    <label class="toggle"><input type="checkbox" id="axes" checked> axes + grid</label>
+  </div>
   <div class="views">
     <button type="button" id="view-figure" class="active">figure</button>
     <button type="button" id="view-grip">grip</button>
@@ -237,7 +364,13 @@
   <div id="pairs"></div>
   <div id="pair-count"></div>
 </aside>
-<main><div id="status">loading&hellip;</div></main>
+<main>
+  <div id="status">loading&hellip;</div>
+  <button type="button" class="stage-controls-fab" id="stage-controls-fab" aria-label="Show controls" hidden>
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h7M13 4h1M2 8h2M8 8h6M2 12h9M15 12h-1M9 2.5v3M4 6.5v3M11 10.5v3"/></svg>
+    <span>Controls</span>
+  </button>
+</main>
 
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
@@ -548,7 +681,25 @@ function resize() {
   invalidate();
 }
 addEventListener('resize', resize);
+new ResizeObserver(() => resize()).observe(main);
 resize();
+
+const collapseBtn = document.getElementById('controls-collapse-btn');
+const fabBtn = document.getElementById('stage-controls-fab');
+
+function setControlsCollapsed(collapsed) {
+  document.body.classList.toggle('controls-collapsed', collapsed);
+  if (collapseBtn) {
+    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+  }
+  if (fabBtn) {
+    fabBtn.hidden = !collapsed;
+  }
+  resize();
+}
+
+collapseBtn?.addEventListener('click', () => setControlsCollapsed(true));
+fabBtn?.addEventListener('click', () => setControlsCollapsed(false));
 
 // --- Matrix + UI wiring -----------------------------------------------------
 
