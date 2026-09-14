@@ -2632,6 +2632,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x081d78e0",
+   "name": "dice::ref2::world::RotationalBundle::handleUpdate",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Linux. The one place a Refractor node is posed from setMinRotation/setMaxRotation/setMaxSpeed: calls calculateAndClipAngle (0x081d7490) once per axis, then setRotation(Matrix4,Vec3) (0x8060d30), Matrix4::mult, Bundle::getBundleTransformation (0x81a7440), Matrix4::mult, then the node's own vtable+0x78 setter. Anything that does NOT inherit this - PhysicsEngine, which is a PhysicsNode - does not pose itself from its declared axes, whatever its template's makeScript accepted."
+  },
+  {
+   "address": "0x0824c6f0",
+   "name": "dice::ref2::world::PhysicsEngine::PhysicsEngine",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Linux ctor. Calls PhysicsNode::PhysicsNode (0x8252b70) and nothing else - a PhysicsEngine is a PhysicsNode, NOT a RotationalBundle. EngineTemplate::EngineTemplate (0x0823efc0 lnx) does call RotationalBundleTemplate::RotationalBundleTemplate, which is why a .con may write setInputToRoll/setMinRotation/setMaxRotation/setMaxSpeed on an Engine at all (EngineTemplate::getMaxRotation at 0x0823fd50 returns the inherited Vec3 at +0x15c). But the template inheriting the vocabulary does not make the object pose itself: RotationalBundle::handleUpdate (0x081d78e0 lnx) is the only code that turns those numbers into a transform - calculateAndClipAngle per axis, then setRotation, Bundle::getBundleTransformation, matrix mult, node setter - and PhysicsEngine does not inherit it. So an Engine's declared rotation axis never rotates the Engine node, and never its children. This is what tools/bf1942-models/bf42/assemble.py encodes as extras.spinsChildren."
   }
  ]
 }
