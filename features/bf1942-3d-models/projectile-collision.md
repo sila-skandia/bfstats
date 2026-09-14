@@ -207,13 +207,20 @@ into 1,054 cells, and 270,400 terrain vertices snapped into the lattice.
 nose over, trigger held for 420 frames, 84 rounds:
 
 ```
-16 recorded hits (the record is a ring of 16), all four surface kinds:
-  water    material  1  ->  e_RichoWaterHeavy   y exactly 95.0
-  terrain  material  3  ->  e_RichoPHeavy       (Juicy grass)
-  terrain  material 10  ->  e_richoPHeavy       (Dry sand)
-  object   material 93  ->  e_richoPHeavy       (Reinforced Concrete)
+16 recorded hits (the record is a ring of 16), all three surface kinds:
+  8x water    material  1  ->  e_RichoWaterHeavy   y exactly 95.0
+  2x terrain  material  3  ->  e_RichoPHeavy       (Juicy grass)
+  4x terrain  material 10  ->  e_richoPHeavy       (Dry sand)
+  2x object   material 93  ->  e_richoPHeavy       (Reinforced Concrete)
 tracers in flight after the trigger released: 0
 ```
+
+**It does not shoot itself.** The failure mode that would read as "the guns
+stopped working" rather than as a bug is a round detonating on the firer's own
+hull, which is where every muzzle sits. The Corsair resolved to owner id 812;
+every object hit came back owner **431** — the concrete bunker it was parked
+beside, struck at 5.6 m and 6.3 m — and **zero** hits had `owner === firer`.
+The hit record carries both ids so this stays checkable.
 
 Geometric probes against the loaded level agreed: a ray fired horizontally at
 Wake's `supplyde_m1` from 40 m out stopped on it at t = 40.9 m against material
@@ -260,10 +267,15 @@ Named honestly, because each one is a separate piece of work.
   block and skips it, so Wake's ~370 palms are fly-through. Roughly 20 lines,
   with the layout already written down in the skip code.
 - **Only re-extracted maps have hulls.** Collision is in the export path but
-  every level has to be re-run to get it; at time of writing that is Wake and
-  Bocage. A map without hulls still collides against terrain and water and says
-  so in the stats panel (`collision hulls not exported`) rather than failing
-  quietly.
+  every level has to be re-run to get it. A map without hulls still collides
+  against terrain and water and says so in the stats panel (`collision hulls not
+  exported`) rather than failing quietly.
+- **A stale extract can have a sparse heightfield, and it is not this code's
+  fault.** Berlin's pre-collision export carries 4 terrain tiles and nothing
+  else, so the lattice rebuilds at **6.3% coverage** and 94% of the world has no
+  ground to hit — rounds there fall to the sea. That is the terrain export, not
+  the collider; re-extracting fills it (Wake and Bocage both come back at 1.0).
+  `__collision().heightfield.coverage` is there to make it visible.
 
 ---
 
