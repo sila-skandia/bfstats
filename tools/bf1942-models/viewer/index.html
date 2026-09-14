@@ -473,7 +473,7 @@
      prop `main` open, and a viewport that only ever grows can never shrink back
      (setSize(w, h, false) deliberately leaves the element's style alone). */
   main { position: relative; flex: 1; min-height: 0; overflow: hidden; }
-  main > canvas { position: absolute; inset: 0; }
+  main > canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
   canvas { display: block; transition: opacity 120ms ease; }
   main[data-load-state="loading"] canvas { opacity: .55; }
   main[data-collision="true"] canvas { cursor: crosshair; }
@@ -2014,7 +2014,9 @@ function portraitExtent(root) {
 function setCameraView(index, total = 3) {
   if (!framing) return;
   const angle = -Math.PI * .22 + (Math.PI * 2 * index / Math.max(total, 1));
-  const distance = framing.radius * 1.85;
+  const aspect = camera.aspect || (main.clientWidth / (main.clientHeight || 1));
+  const fitMult = aspect < 1.0 ? 1.85 / Math.max(aspect, 0.45) : 1.85;
+  const distance = framing.radius * fitMult;
   camera.position.set(
     framing.centre.x + Math.cos(angle) * distance,
     framing.centre.y + framing.radius * .72,
