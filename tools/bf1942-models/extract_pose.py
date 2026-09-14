@@ -94,7 +94,8 @@ def weapon_main_geometry(library: con_mod.ObjectLibrary, name: str,
             return template.geometry
         children = template.children
         if template.is_lod_selector and children:
-            children = [con_mod.select_lod_alternative(children, "complex")]
+            children = [con_mod.select_lod_alternative(
+                children, "complex", library.selector(template.lod_selector))]
         for ref in children:
             child = con_mod.instance_template_name(ref, library.object)
             if child and (found := visit(child, depth + 1)):
