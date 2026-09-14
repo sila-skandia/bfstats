@@ -30,6 +30,15 @@
 
 import * as THREE from 'three';
 import { impactEffect, materialFamily } from './collision.js';
+// The world's downward acceleration, signed, taken from the module that owns
+// it rather than declared again here. It is -14.73 m/s^2 and not Earth's
+// -9.81: `BasicPhysicsSystem`'s constructor at `0x00578f00` writes 0xC16BAE14
+// into the gravity field and no vanilla `.con` overrides it. This file carried
+// its own 9.81 until the client was read, which flew every shell, bomb and
+// torpedo under two thirds of the gravity the game drops them under.
+// `physics.js` imports nothing, so taking the constant from there costs this
+// module no new dependency beyond the one line.
+import { GRAVITY } from './physics.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -64,7 +73,6 @@ export const TRACER_MIN_SCREEN_PX = 2.5;
 // c_ETRocket motors light after launch; a gentle ramp reads as the Katyusha's
 // kick without turning the rocket into a bullet.
 const ROCKET_ACCEL = 25;         // m/s^2
-const GRAVITY = 9.81;
 const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
 const MAX_TRAIL_PUFFS = 96;
 // Per-frame lid on collision queries. `features/flyable-vehicles/collision-and-crash.md`
@@ -588,7 +596,8 @@ export class GunFire {
   }
 
   #spawnProjectile(muzzle, group, spec) {
-    const speed = this.#displaySpeed(group, group.stats.velocity || 100);
+    const authored = group.stats.velocity || 100;
+    const speed = this.#displaySpeed(group, authored);
     const velocity = this.#muzzleVelocity(muzzle, group, speed, new THREE.Vector3());
     const mesh = group.projectilePool.pop() || group.projectileMesh.clone();
     mesh.visible = true;
@@ -606,6 +615,16 @@ export class GunFire {
       // Shells fall (`gravityModifier` defaults to 1); rockets are carried by
       // their motor and fly flat here.
       gravity: spec.kind === 'shell' ? (spec.gravity ?? 1) : 0,
+      // `speedScale` slows a fast round for legibility, and a round slowed in
+      // speed alone is not slowed in *time*: it spends 1/scale as long over
+      // every metre, so a full-strength g bends its path by 1/scale^2 more than
+      // the engine bends it. Scaling g by the square is what makes the slowed
+      // round draw the same shape as the real one, just later. 1 wherever the
+      // round flies at its authored speed, which is every round on the map page
+      // (`speedScale: 1`) and every round under the browser's 150 m/s cutoff —
+      // so this is inert for tank guns and live only for the five naval guns
+      // fast enough to be scaled and heavy enough to fall.
+      gravityScale: (speed / authored) ** 2,
       ttl: Math.min(spec.timeToLive || 10, 20),
       trail: group.trailQuad ? spec.trail : null,
       age: 0,
@@ -872,7 +891,13 @@ export class GunFire {
         const speed = shot.velocity.length();
         shot.velocity.multiplyScalar((speed + ROCKET_ACCEL * dt) / speed);
       }
-      if (shot.gravity) shot.velocity.y -= GRAVITY * shot.gravity * dt;
+      // `GRAVITY` is signed downward, so this adds. `gravityModifier` scales it
+      // per projectile: 0 on every bullet (a tracer never reaches this loop at
+      // all), 0.5 on the Panzer IV's and the Chi-ha's rounds, and unset — so 1
+      // — on every other tank gun, howitzer, naval gun, bomb and torpedo.
+      if (shot.gravity) {
+        shot.velocity.y += GRAVITY * shot.gravity * shot.gravityScale * dt;
+      }
       const step = shot.velocity.length() * dt;
       shot.travelled += step;
       shot.mesh.position.addScaledVector(shot.velocity, dt);

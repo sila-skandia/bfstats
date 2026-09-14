@@ -779,8 +779,8 @@ are hardcoded constants rather than derived values, and the comments say so.
 | viewer constant | `gunfire.js` | authored source |
 |---|---|---|
 | `ROCKET_ACCEL = 25` m/s² | `:65` | nothing — `c_ETRocket` appears **once** in the game (`Objects/Vehicles/Land/KatyushaRocket/Physics.con:8`); the real thrust would come from the Engine template + `mass 20` + `drag 1.0` |
-| `GRAVITY = 9.81` | `:66` | fine, but `spec.gravity` multiplies it (`:501`) only for `kind === 'shell'` — rockets are pinned to `gravity: 0` regardless of their own `gravityModifier` |
-| `TRACER_SPEED_SCALE = 0.15`, `PROJECTILE_SCALE_CUTOFF = 150` | `:37-38` | a deliberate display hack for the turntable; `map.html:1897` passes `speedScale: 1` |
+| `GRAVITY`, imported from `physics.js` | `:40` | **closed.** Was a local `9.81`; it is the engine's signed `-14.73` now (`BasicPhysicsSystem` ctor, `0x00578f00`), taken from the module that owns the constant. Still open on the same row: `spec.gravity` multiplies it only for `kind === 'shell'` — rockets are pinned to `gravity: 0` regardless of their own `gravityModifier`, so the Katyusha's declared default of 1 is ignored |
+| `TRACER_SPEED_SCALE = 0.15`, `PROJECTILE_SCALE_CUTOFF = 150` | `:37-38` | a deliberate display hack for the turntable; `map.html` passes `speedScale: 1`. A round slowed in speed alone is not slowed in time, so `gravityScale` now carries the square of the applied scale and the slowed round draws the real arc; inert wherever the scale is 1 |
 | `TRAIL_PUFF_SPACING = 0.9` m, `MAX_TRAIL_PUFFS = 96` | `:67-68` | the bundle's own emitter `intensity` (particles/second) is parsed for flashes but not used to rate the trail |
 | `ttl: Math.min(spec.timeToLive \|\| 10, 20)` | `:502` | clamps the authored value; `KatyushaRocket` declares `timeToLive 20` |
 | `maxRange` 250 m (browser) / 1500 m (map) | `:40`, `map.html:1898` | invented; the game ends a round on ttl or a hit |
