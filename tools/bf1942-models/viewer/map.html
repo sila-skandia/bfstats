@@ -203,9 +203,143 @@
   }
   #fullmap .fm-swatch.axis { background: #d2564b; color: #e88379; }
   #fullmap .fm-swatch.allied { background: #4f8fd0; color: #86b6e6; }
-  #fullmap .fm-swatch.neutral { background: #9a9a9a; color: #c4c4c4; }
-  #fullmap .fm-swatch.zone { background: transparent; color: #c4c4c4; border-style: dashed; }
   a { color: var(--accent); }
+
+  .side-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .side-header h1 { margin: 0; }
+  .controls-collapse-btn {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    color: var(--muted);
+    font: 10px var(--mm-font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .controls-collapse-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  .map-controls-fab {
+    position: absolute;
+    bottom: 18px;
+    right: 18px;
+    z-index: 10;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text);
+    font: 11px var(--mm-font-mono);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  }
+  .map-controls-fab:hover { border-color: var(--accent); }
+  .map-controls-fab[hidden] { display: none !important; }
+
+  .speed-control {
+    position: absolute;
+    bottom: 18px;
+    left: 18px;
+    z-index: 10;
+    pointer-events: auto;
+  }
+  .speed-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text);
+    font: 11px var(--mm-font-mono);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .speed-toggle-btn:hover { border-color: var(--accent); }
+  .speed-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: .08em;
+  }
+  .speed-toggle-btn[data-speed="fast"] .speed-badge {
+    background: var(--accent);
+    color: var(--mm-highlight-ink);
+  }
+  .speed-toggle-btn[data-speed="slow"] .speed-badge {
+    background: var(--muted);
+    color: var(--mm-highlight-ink);
+  }
+  .speed-hint {
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  @media (max-width: 720px) {
+    #minimap {
+      --mm-size: 110px;
+      top: 10px;
+      right: 10px;
+    }
+    #side {
+      top: auto;
+      bottom: 16px;
+      left: 12px;
+      right: 12px;
+      width: auto;
+      max-height: 48vh;
+      overflow-y: auto;
+      border-radius: 4px;
+    }
+    #side.side-collapsed {
+      display: none;
+    }
+    .controls-collapse-btn { display: inline-flex; }
+    .map-controls-fab { display: inline-flex; }
+    #hud {
+      bottom: 64px;
+      font-size: 11px;
+      width: auto;
+      max-width: calc(100% - 24px);
+      padding: 4px 10px;
+      background: rgba(18, 17, 14, 0.82);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      pointer-events: none;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .speed-control {
+      bottom: 18px;
+      left: 12px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -216,6 +350,7 @@
       <a href="./index.html">Models</a>
       <a href="./map.html" aria-current="page">Maps</a>
       <a href="./poses.html">Poses</a>
+      <a href="./kits.html">Kits</a>
     </span>
     <span class="shell-sub">extracted levels &middot; terrain, lightmaps and sky</span>
     <span class="shell-spacer"></span>
@@ -227,7 +362,10 @@
 </nav>
 <div id="stage">
   <aside id="side">
-    <h1>Map flythrough</h1>
+    <div class="side-header">
+      <h1>Map flythrough</h1>
+      <button type="button" class="controls-collapse-btn" id="side-collapse-btn" aria-label="Collapse map controls">Hide</button>
+    </div>
     <select id="maps" aria-label="Level"></select>
     <div id="stats" class="stat">extract a level first</div>
     <label class="opt"><input type="checkbox" id="game-fog" checked> fog</label>
@@ -238,12 +376,22 @@
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
     <label class="opt" style="display:flex;align-items:center;gap:6px;"><input type="range" id="sound-vol" min="0" max="1" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:var(--accent);"> vol</label>
   </aside>
+  <button type="button" class="map-controls-fab" id="map-controls-fab" aria-label="Show map controls" hidden>
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h7M13 4h1M2 8h2M8 8h6M2 12h9M15 12h-1M9 2.5v3M4 6.5v3M11 10.5v3"/></svg>
+    <span>Maps</span>
+  </button>
   <div id="minimap" hidden>
     <canvas id="minimap-canvas" width="376" height="376"></canvas>
     <div class="mm-cap"><span id="minimap-grid">&mdash;</span><b>M</b></div>
   </div>
+  <div id="speed-control" class="speed-control">
+    <button type="button" id="speed-toggle-btn" class="speed-toggle-btn" data-speed="fast" aria-label="Toggle flight speed">
+      <span class="speed-badge">FAST</span>
+      <span class="speed-hint">Tap for slow</span>
+    </button>
+  </div>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; M map &middot; Esc</div>
-  <div id="gate"><span>Click to fly</span></div>
+  <div id="gate"><span>Tap or click to fly</span></div>
   <div id="fullmap" hidden>
     <div class="fm-frame">
       <canvas id="fullmap-canvas" width="1024" height="1024"></canvas>
@@ -350,9 +498,10 @@ let cloudUniforms = null;
 let waterUniforms = null;
 let waterAssets = [];     // textures owned by the water/cloud shaders
 let simTime = 0;
-// Drives the control-point flags. One mixer over the level root plays every
-// `FlagBlow <name>` clip the glb carries — one per flag, over that flag's own
-// joints — which is the animation state `AnimatedFlag` declares.
+// Drives everything the level glb animates. One mixer over the level root
+// plays every clip it carries: `FlagBlow <name>` per control point, over that
+// flag's own joints, which is the animation state `AnimatedFlag` declares —
+// and `spin`/`spin.N`, the `setContinousRotationSpeed` parts grouped by period.
 let flagMixer = null;
 
 const params = new URLSearchParams(location.search);
@@ -365,7 +514,10 @@ const optSound = document.getElementById('sound');
 const optSoundVol = document.getElementById('sound-vol');
 const optPilot = document.getElementById('pilot');
 const hud = document.getElementById('hud');
+const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 720);
 const HUD_FLY = hud.textContent;
+const HUD_TOUCH = 'Hold to fly · Drag to steer';
+if (isTouchDevice) hud.textContent = HUD_TOUCH;
 
 let audioListener = null;
 let audioLoader = null;
@@ -382,9 +534,27 @@ function uiFocused() {
   return t && (t.tagName === 'SELECT' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
 }
 
+let speedMode = 'fast'; // 'fast' or 'slow'
+
 function isSlow() {
-  return keys.has('ShiftLeft') || keys.has('ShiftRight');
+  return keys.has('ShiftLeft') || keys.has('ShiftRight') || speedMode === 'slow';
 }
+
+const speedToggleBtn = document.getElementById('speed-toggle-btn');
+function setSpeedMode(mode) {
+  speedMode = mode;
+  if (speedToggleBtn) {
+    speedToggleBtn.dataset.speed = mode;
+    const badge = speedToggleBtn.querySelector('.speed-badge');
+    const hint = speedToggleBtn.querySelector('.speed-hint');
+    if (badge) badge.textContent = mode.toUpperCase();
+    if (hint) hint.textContent = mode === 'fast' ? 'Tap for slow' : 'Tap for fast';
+  }
+}
+speedToggleBtn?.addEventListener('click', e => {
+  e.stopPropagation();
+  setSpeedMode(speedMode === 'fast' ? 'slow' : 'fast');
+});
 
 function flySpeed() {
   return FLY_SPEED * (isSlow() ? FLY_SLOW : 1);
@@ -459,22 +629,72 @@ gate.querySelector('span').addEventListener('click', e => {
   e.stopPropagation();
   capture();
 });
+let touchFlying = false;
+let activeTouchId = null;
+
 renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') {
+    touchFlying = true;
+    activeTouchId = e.pointerId;
+    dragging = true;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+    setFly(true);
+    ensureAudioContext();
+    try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
+    return;
+  }
   if (e.button !== 0) return;
   dragging = true;
   lastPointerX = e.clientX;
   lastPointerY = e.clientY;
-  renderer.domElement.setPointerCapture(e.pointerId);
+  try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
   capture();
 });
 renderer.domElement.addEventListener('pointerup', e => {
-  dragging = false;
-  if (renderer.domElement.hasPointerCapture(e.pointerId)) {
-    renderer.domElement.releasePointerCapture(e.pointerId);
+  if (e.pointerType === 'touch') {
+    if (e.pointerId === activeTouchId) {
+      touchFlying = false;
+      activeTouchId = null;
+      dragging = false;
+    }
+  } else {
+    dragging = false;
   }
+  try {
+    if (renderer.domElement.hasPointerCapture(e.pointerId)) {
+      renderer.domElement.releasePointerCapture(e.pointerId);
+    }
+  } catch {}
 });
-renderer.domElement.addEventListener('pointercancel', () => { dragging = false; });
-document.getElementById('side').addEventListener('pointerdown', () => release());
+renderer.domElement.addEventListener('pointercancel', e => {
+  if (e.pointerType === 'touch' && e.pointerId === activeTouchId) {
+    touchFlying = false;
+    activeTouchId = null;
+  }
+  dragging = false;
+});
+document.getElementById('side').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+});
+
+const sideEl = document.getElementById('side');
+const sideCollapseBtn = document.getElementById('side-collapse-btn');
+const mapFabBtn = document.getElementById('map-controls-fab');
+
+function setSideCollapsed(collapsed) {
+  sideEl.classList.toggle('side-collapsed', collapsed);
+  if (mapFabBtn) mapFabBtn.hidden = !collapsed;
+}
+sideCollapseBtn?.addEventListener('click', e => {
+  e.stopPropagation();
+  setSideCollapsed(true);
+});
+mapFabBtn?.addEventListener('click', e => {
+  e.stopPropagation();
+  setSideCollapsed(false);
+});
+
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === renderer.domElement) {
     lockHeld = true;
@@ -523,7 +743,7 @@ function applyLook() {
 function fly(dt) {
   if (!captured) return;
   const step = flySpeed() * dt;
-  const fwd = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+  const fwd = (keys.has('KeyW') || touchFlying ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
   const strafe = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
   const vert = (keys.has('KeyE') ? 1 : 0) - (keys.has('KeyQ') ? 1 : 0);
   const d = lookVector();
@@ -1995,7 +2215,7 @@ function setPilot(on) {
   }
   stick.roll = 0;
   stick.pitch = 0;
-  hud.textContent = on ? HUD_PILOT : HUD_FLY;
+  hud.textContent = on ? HUD_PILOT : (isTouchDevice ? HUD_TOUCH : HUD_FLY);
 }
 
 const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · Space guns · '
@@ -2509,12 +2729,19 @@ async function show(entry) {
         || obj.userData?.projectileTrail) obj.visible = false;
   });
   scene.add(currentRoot);
-  // The flags. Every clip is started: each targets one flag's joints, and a
-  // clip left unplayed leaves that flag frozen at its frame-0 pose.
+  // The flags, and the level's always-on rotators — windmills, watermills,
+  // radar dishes — which the extractor bakes as `ambient`/`ambient.N`.
+  // `spin*` is deliberately NOT played: that is throttle-gated rotation, and
+  // a parked aircraft's propeller is stationary in the game. The one aircraft
+  // that should turn is the flown one, whose propeller `advancePropeller` in
+  // flight.js already accumulates from its rate axes — playing the baked clip
+  // here as well would drive it twice.
   flagMixer = null;
-  if (gltf.animations?.length) {
+  const ambient = (gltf.animations || []).filter(
+    c => !/^spin(\.\d+)?$/.test(c.name));
+  if (ambient.length) {
     flagMixer = new THREE.AnimationMixer(currentRoot);
-    for (const clip of gltf.animations) {
+    for (const clip of ambient) {
       const action = flagMixer.clipAction(clip);
       // The engine gives each flag a random start phase so a row of them does
       // not beat in unison; `randomStartPitch` in `flag.ssc` does the same for

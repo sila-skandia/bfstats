@@ -49,6 +49,7 @@ from extract_models import (  # noqa: E402
     build_library,
     build_pools,
     discover_level_textures,
+    load_damage_tables,
     mod_chain,
 )
 
@@ -65,6 +66,7 @@ from bf42.level import (  # noqa: E402
     LevelInfo,
     index_object_lightmaps,
     decode_heightmap,
+    decode_material_map,
     discover_level_sounds,
     find_level_archives,
     load_gameplay_objects,
@@ -788,6 +790,77 @@ def write_cloud_assets(info: LevelInfo, meshes, textures, out_dir: Path) -> dict
     }
 
 
+def write_damage_tables(tables, shared_dir: Path, rel_base: Path) -> dict | None:
+    """`damage.json` in the shared directory, plus the path to reach it.
+
+    The MaterialManager tables are mod-wide, so they are written once beside
+    the deduplicated sounds and referenced from each level's `scene.json` by a
+    relative path — the same arrangement, and for the same reason, as
+    `../_shared/sounds/*.mp3`.
+    """
+    if tables is None:
+        return None
+    shared_dir.mkdir(parents=True, exist_ok=True)
+    target = shared_dir / "damage.json"
+    payload = tables.as_dict()
+    target.write_text(json.dumps(payload, separators=(",", ":")))
+    return {
+        "path": os.path.relpath(target, rel_base).replace(os.sep, "/"),
+        "materials": len(payload["materials"]),
+        "modifiers": sum(len(row) for row in payload["modifiers"].values()),
+        "effects": sum(len(row) for row in payload["effects"].values()),
+        "effectTemplates": sorted({
+            name for row in payload["effects"].values() for name in row.values()}),
+    }
+
+
+def write_terrain_materials(files, info: LevelInfo, out_dir: Path,
+                            damage_tables=None) -> dict | None:
+    """`Materialmap.raw` as a lossless image, so a ground hit knows its surface.
+
+    One byte per heightmap sample, written into the red channel of a PNG at the
+    map's own resolution — 512x512 on nearly every vanilla level, which
+    compresses to a couple of kilobytes because the ids come in large flat
+    regions. Nothing is resampled and nothing is scaled: a nearest sample at
+    `(x / spacing, z / spacing)` gives back the exact authored byte, and a
+    filtered read would invent ids that are not in the table.
+
+    Green and blue carry the same value so the file is legible as a greyscale
+    map when a human opens it; the viewer only ever reads red.
+
+    The labels ride along because the ids alone are unreadable — the viewer
+    shows "Dry sand" in a hit readout, not "10".
+    """
+    entry = files.find("Materialmap.raw")
+    if entry is None:
+        return None
+    try:
+        materials = decode_material_map(files.read(entry), info.terrain.world_size)
+    except ValueError:
+        return None
+    dest = out_dir / "terrain"
+    dest.mkdir(parents=True, exist_ok=True)
+    rgba = bytearray(materials.dim * materials.dim * 4)
+    for i, value in enumerate(materials.ids):
+        rgba[i * 4:i * 4 + 4] = bytes((value, value, value, 255))
+    (dest / "materials.png").write_bytes(
+        encode_png(materials.dim, materials.dim, bytes(rgba), drop_alpha=True))
+    histogram = materials.histogram()
+    labels: dict[str, str] = {}
+    if damage_tables is not None:
+        for ident in histogram:
+            material = damage_tables.materials.get(ident)
+            if material is not None and material.label:
+                labels[str(ident)] = material.label
+    return {
+        "image": "terrain/materials.png",
+        "dim": materials.dim,
+        "spacing": materials.spacing,
+        "histogram": {str(k): v for k, v in histogram.items()},
+        "labels": labels,
+    }
+
+
 def write_water_assets(info: LevelInfo, heightmap, textures, out_dir: Path,
                        max_texture: int) -> dict | None:
     """The engine water's inputs: scroll layers, normal map, depth ramp.
@@ -1338,6 +1411,12 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         placed_flags = set()
         report = Report(root=info.name, configuration="complex", lod=0)
         seen_fail: set[str] = set()
+        # `build_node` gathers `setContinousRotationSpeed` parts as it walks,
+        # but only `Assembler.export` bakes them — and a level never calls it,
+        # because the scene owns the builder. Bracket the object pass so the
+        # level gets its clips too, or every windmill, watermill, radar bunker
+        # and ship radar in it stands still.
+        assembler.begin_animations()
         for inst in info.static_objects:
             node = _place_template(
                 assembler, builder, inst.template, inst, report, seen_fail)
@@ -1408,6 +1487,9 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                 children=flag_nodes,
                 extras={"kind": "controlPoints"},
             )))
+        # After every placement, so one clip covers every instance sharing a
+        # period — the level's nine radar-bunker dishes turn on one timeline.
+        object_report["rotatingParts"] = assembler.flush_animations(builder)
         object_report["parts"] = report.parts
         object_report["triangles"] = report.triangles
         object_report["texturesResolved"] = len(report.resolved_textures)
@@ -1415,6 +1497,18 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         object_report["unresolvedTemplates"] = sorted(set(report.unresolved_templates))
         object_report["missingMeshes"] = sorted(set(report.missing_meshes))
         object_report["lightmaps"] = len(lightmaps or {})
+        # The hull budget, so the viewer can size its index before it walks the
+        # scene and a load bar can account for it. These are the *unique* hulls
+        # in the glb buffer — one per geometry, shared by every placement of it
+        # — which is why the number is two orders smaller than the world-space
+        # triangle count the viewer ends up holding.
+        if assembler.include_collision:
+            object_report["collision"] = {
+                "parts": report.collision_parts,
+                "triangles": report.collision_triangles,
+                "materials": sorted(set(report.collision_materials)),
+                "fromOtherLod": sorted(set(report.collision_makeup)),
+            }
 
     lighting = {}
     if info.lighting.ambient_color:
@@ -1484,6 +1578,11 @@ def main() -> int:
                     help="skip StaticObjects (faster, for judging the ground)")
     ap.add_argument("--texture-fallback", action="append", default=[],
                     help="mod folder to borrow object textures from (repeatable)")
+    ap.add_argument("--no-collision", action="store_true",
+                    help="leave the collision hulls out of the glb. They are "
+                         "never drawn and cost about one percent of the scene, "
+                         "but a consumer that only wants pictures does not "
+                         "need them, and this reproduces the older export.")
     ap.add_argument("--shared-sounds", type=Path, default=None,
                     help="directory every level's samples are deduplicated "
                          "into (default: <out>/_shared/sounds). scene.json "
@@ -1534,7 +1633,16 @@ def main() -> int:
     if not _vanilla_texture_rfa_present(chain):
         extra_names += list(TEXTURE_GAP_MODS)
     fallbacks = _mod_dirs(game_dir, extra_names)
-    meshes, textures, objects, _game = build_pools(chain, fallbacks)
+    meshes, textures, objects, game = build_pools(chain, fallbacks)
+    # `Game.rfa` is the MaterialManager: what every material is worth, what a
+    # round of material X does to a surface of material Y, and — the half the
+    # model browser never needed — which authored EffectBundle the impact
+    # plays. A level that never loads it can collide but cannot show the hit.
+    try:
+        damage_tables = load_damage_tables(game)
+    except Exception as exc:                       # a mod with no Game.rfa
+        print(f"damage:   tables unavailable ({exc})", file=sys.stderr)
+        damage_tables = None
     textures.absorb_images(meshes)
     for level_name, level_path in discover_level_textures(chain):
         textures.add_level(level_path, label=level_name)
@@ -1560,9 +1668,16 @@ def main() -> int:
                 library.add_con(cpt, files.read(cpt).decode("latin-1", "replace"))
                 detach_flag_cloth(library, info)
         lightmaps = write_object_lightmaps(files, out_dir)
+        # Collision hulls ride along. They are never drawn — `map.html` hides
+        # anything carrying `extras.collision` on load — and they are what a
+        # round in flight tests against. The budget is small because the hulls
+        # are per *geometry*, not per placement: El Alamein's 898 statics
+        # resolve to about 5k unique collision triangles, roughly 0.3 MB of
+        # buffer against a 40 MB scene.
         assembler = Assembler(
             meshes, textures, objects, library,
-            lod=0, max_texture=args.max_texture, include_collision=False,
+            lod=0, max_texture=args.max_texture,
+            include_collision=not args.no_collision,
             lightmaps=lightmaps)
 
     sky_faces = prepare_sky(info, meshes, textures)
@@ -1586,6 +1701,12 @@ def main() -> int:
         extras["skybox"] = extras["envmap"]
     extras["water"] = write_water_assets(
         info, heightmap, textures, out_dir, args.max_texture)
+    # Merged into the terrain block rather than sitting beside it: the material
+    # ids are addressed on the heightmap's own grid, so they belong with the
+    # thing they index.
+    if (surfaces := write_terrain_materials(
+            files, info, out_dir, damage_tables)) is not None:
+        extras["terrain"]["materials"] = surfaces
     # Merge rather than replace: `build_scene` already put the projection in,
     # and a level that ships no art still needs it so markers can be drawn on
     # a blank grid.
@@ -1610,6 +1731,12 @@ def main() -> int:
     # staging directories that are moved into the tree afterwards.
     shared_dir = args.shared_sounds or (args.out / "_shared" / "sounds")
     final_root = args.final_out or args.out
+    # The damage tables are a property of the *mod*, not the level — the same
+    # 158 materials, 5,165 modifiers and 4,099 impact effects answer for every
+    # map in it. 157 KB once beside the sounds, referenced relatively, rather
+    # than 157 KB in each of 23 level directories.
+    extras["damage"] = write_damage_tables(
+        damage_tables, shared_dir.parent, final_root / info.name.lower())
     extras["sounds"] = extract_sounds(info, files, sounds, out_dir,
                                       library=library, objects=objects,
                                       vehicles=spawned,
