@@ -61,10 +61,6 @@
   #current { order: -3; }
   .panel { padding: 12px 0; border-top: 1px solid var(--mm-rule); }
   .panel[hidden] { display: none; }
-  /* A duel is the question on screen once an opponent is parked, so its
-     answer and the armour it depends on move to the top of the column. */
-  body[data-compare="true"] #compare-panel { order: -2; }
-  body[data-compare="true"] #armour-panel { order: -1; }
   .panel-title {
     margin: 0 0 10px;
     color: var(--mm-ink-muted);
@@ -87,7 +83,6 @@
     gap: 10px;
   }
   .field + .field, .toggle + .field { margin-top: 8px; }
-  #compare-panel .field { grid-template-columns: 64px minmax(0, 1fr); }
   .field > span {
     color: var(--mm-ink-muted);
     font-size: 9.5px;
@@ -112,7 +107,6 @@
   select.select:hover { border-color: var(--mm-rule-strong); }
   select.select:focus-visible { border-color: var(--mm-ink); outline: none; }
   select.select:disabled { color: var(--mm-ink-muted); cursor: default; }
-  select.select.is-set { border-color: var(--mm-ink); }
   select option, select optgroup { background: var(--mm-bg); color: var(--mm-ink); }
 
   .callout {
@@ -125,19 +119,9 @@
     line-height: 1.5;
   }
   .callout:empty { display: none; }
-  .callout--win { border-left-color: var(--mm-success); }
-  .callout--even { border-left-color: var(--mm-ink-faint); }
-  .callout-label {
-    margin-bottom: 4px;
-    color: var(--mm-ink-muted);
-    font-size: 9.5px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-  }
   .callout b { color: var(--mm-ink); font-weight: 400; }
   .tone-ok { color: var(--mm-accent-soft); }
   .tone-warn { color: var(--mm-load-busy); }
-  .tone-win { color: var(--mm-success); }
 
   .toggle {
     display: flex;
@@ -451,10 +435,6 @@
     text-align: right;
     overflow-wrap: anywhere;
   }
-
-  /* Compare */
-  #compare-verdict[hidden] { display: none; }
-  #compare-verdict .toggle { margin-top: 8px; }
 
   /* Model */
   .model-details { margin-top: 9px; }
@@ -870,283 +850,6 @@
   .trigger[aria-pressed="true"] .trigger-meta,
   .trigger[aria-pressed="true"] .trigger-kind,
   .trigger[aria-pressed="true"] kbd { color: var(--mm-highlight-ink); border-color: rgba(0, 0, 0, .35); }
-
-  /* --- Head-on duel ---------------------------------------------------------
-     Solid page surface on a strong hairline, like the modal pattern. The
-     verdict is the olive anchor chip pointing at the winner. */
-
-  #versus {
-    position: absolute;
-    top: 24px;
-    left: 50%;
-    z-index: 3;
-    width: min(760px, calc(100% - 32px));
-    max-height: calc(100% - 48px);
-    overflow-y: auto;
-    transform: translateX(-50%);
-    background: var(--mm-bg);
-    border: 1px solid var(--mm-rule-strong);
-    border-radius: 2px;
-  }
-  #versus[hidden] { display: none; }
-  .eyebrow {
-    color: var(--mm-ink-muted);
-    font-size: 10px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-  }
-  .rule { height: 1px; margin: 0; background: var(--mm-rule); border: 0; }
-  .vs-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 12px 16px 10px;
-  }
-  .vs-top-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .vs-title { color: var(--mm-ink); font: 400 16px/1.3 var(--mm-font-display); }
-  .vs-close {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: 1px solid var(--mm-rule);
-    border-radius: 999px;
-    color: var(--mm-ink-muted);
-    cursor: pointer;
-    transition: color .15s ease, border-color .15s ease;
-  }
-  .vs-close svg { width: 10px; height: 10px; }
-  .vs-close:hover,
-  .vs-close:focus-visible { color: var(--mm-ink); border-color: var(--mm-ink); outline: none; }
-  .vs-combatants {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr);
-    align-items: center;
-  }
-  .vs-side { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 16px; }
-  .vs-us { border-right: 1px solid var(--mm-rule); }
-  .vs-them { flex-direction: row-reverse; border-left: 1px solid var(--mm-rule); text-align: right; }
-  .vs-thumb {
-    flex: 0 0 56px;
-    width: 56px;
-    height: 56px;
-    object-fit: contain;
-    background: var(--mm-stage);
-  }
-  .vs-thumb[hidden] { display: none; }
-  .vs-id { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .vs-them .vs-id { align-items: flex-end; }
-  .vs-name {
-    max-width: 100%;
-    overflow: hidden;
-    color: var(--mm-ink);
-    font: 500 19px/1.1 var(--mm-font-display);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .vs-side-line {
-    max-width: 100%;
-    color: var(--side-tint, var(--mm-ink-muted));
-    font-size: 9.5px;
-    letter-spacing: .14em;
-    line-height: 1.45;
-    text-transform: uppercase;
-  }
-  .vs-side.side-none .vs-side-line { color: var(--mm-ink-muted); }
-  .vs-kit {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 100%;
-    min-width: 0;
-    color: var(--mm-ink-soft);
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .vs-kit select {
-    appearance: none;
-    -webkit-appearance: none;
-    min-width: 0;
-    max-width: 180px;
-    padding: 2px 16px 2px 4px;
-    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 3.5 5 7l3.5-3.5' fill='none' stroke='%238a8a8a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 3px center / 8px 8px;
-    border: 1px solid transparent;
-    border-radius: 2px;
-    color: var(--mm-ink-soft);
-    font-size: 11px;
-    text-overflow: ellipsis;
-    cursor: pointer;
-  }
-  .vs-kit select:hover,
-  .vs-kit select:focus-visible { border-color: var(--mm-rule-strong); color: var(--mm-ink); outline: none; }
-  .vs-verdict { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0; }
-  .vs-verdict-label {
-    color: var(--mm-ink-faint);
-    font-size: 10px;
-    letter-spacing: .18em;
-    text-transform: uppercase;
-  }
-  .vs-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 6px 12px;
-    background: var(--mm-highlight);
-    border: 1px solid var(--mm-highlight);
-    border-radius: 2px;
-    color: var(--mm-highlight-ink);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: .2em;
-    white-space: nowrap;
-    animation: vs-in 220ms ease;
-  }
-  .vs-chip svg { width: 11px; height: 11px; }
-  .vs-chip[data-winner="even"] { background: transparent; border-color: var(--mm-rule-strong); color: var(--mm-ink-soft); }
-  @keyframes vs-in { from { opacity: 0; } to { opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { .vs-chip { animation: none; } }
-  .vs-stats {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    padding: 0 16px;
-    border-bottom: 1px solid var(--mm-rule);
-  }
-  .vs-stat { min-width: 0; padding: 14px 18px; border-right: 1px solid var(--mm-rule); }
-  .vs-stat:first-child { padding-left: 0; }
-  .vs-stat:last-child { padding-right: 0; border-right: 0; }
-  .vs-stat-label {
-    margin-bottom: 8px;
-    overflow: hidden;
-    color: var(--mm-ink-muted);
-    font-size: 10px;
-    letter-spacing: .14em;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-  .vs-stat-value {
-    color: var(--mm-ink);
-    font: 300 clamp(22px, 2.4vw, 30px)/1 var(--mm-font-display);
-    letter-spacing: -.01em;
-    font-variant-numeric: tabular-nums;
-  }
-  .vs-stat-value small {
-    margin-left: 4px;
-    color: var(--mm-ink-muted);
-    font: 11px var(--mm-font-mono);
-    text-transform: uppercase;
-    vertical-align: 6px;
-  }
-  .vs-stat-value.is-good { color: var(--mm-kd-good); }
-  .vs-stat-value.is-muted { color: var(--mm-ink-muted); font-size: 16px; font-family: var(--mm-font-mono); }
-  .vs-meter-wrap { padding: 14px 16px; }
-  .vs-meter-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 7px;
-    color: var(--mm-ink-muted);
-    font-size: 9.5px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    font-variant-numeric: tabular-nums;
-  }
-  .vs-meter-head .is-mid { color: var(--mm-ink-faint); }
-  .vs-meter-head .is-win { color: var(--mm-success); }
-  .vs-meter { position: relative; display: flex; height: 8px; background: var(--mm-bg-mute); }
-  .vs-meter span { display: block; height: 100%; }
-  .vs-meter .is-us { width: var(--us, 50%); background: var(--us-fill, var(--mm-ink-faint)); }
-  .vs-meter .is-them { flex: 1; background: var(--them-fill, var(--mm-ink-faint)); }
-  .vs-meter i {
-    position: absolute;
-    top: -3px;
-    left: var(--us, 50%);
-    width: 2px;
-    height: 14px;
-    margin-left: -1px;
-    background: var(--mm-ink);
-  }
-  .vs-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 8px 16px;
-    background: var(--mm-highlight);
-    color: var(--mm-highlight-ink);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-  }
-  .vs-bar span:last-child { opacity: .7; letter-spacing: .1em; }
-  .vs-lanes { padding: 0 16px 6px; }
-  .vs-lane,
-  .vs-lane-head {
-    display: grid;
-    grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 150px;
-    align-items: center;
-    gap: 0 14px;
-  }
-  .vs-lane-head {
-    padding: 8px 0 6px;
-    border-bottom: 1px solid var(--mm-rule);
-    color: var(--mm-ink-faint);
-    font-size: 9px;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-  }
-  .vs-lane-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .vs-lane { padding: 9px 0; border-bottom: 1px solid var(--mm-rule); font-size: 11px; }
-  .vs-lane:last-child { border-bottom: 0; }
-  .vs-face {
-    color: var(--mm-ink-muted);
-    font-size: 9.5px;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-  }
-  .vs-shots { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .vs-shots b {
-    flex: none;
-    width: 38px;
-    color: var(--mm-ink);
-    font-weight: 400;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-    white-space: nowrap;
-  }
-  .vs-shots.is-muted b {
-    color: var(--mm-ink-muted);
-    font-size: 9px;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-  }
-  .vs-shots i { position: relative; flex: 1; height: 4px; background: var(--mm-bg-mute); }
-  .vs-shots i::after {
-    content: '';
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: var(--w, 0%);
-    background: var(--fill, var(--mm-ink-faint));
-  }
-  .vs-shots.is-elite b { color: var(--mm-kd-elite); }
-  .vs-edge {
-    overflow: hidden;
-    color: var(--mm-ink-muted);
-    font-size: 9.5px;
-    letter-spacing: .06em;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-  .vs-edge.is-elite { color: var(--mm-kd-elite); }
-  .vs-foot { padding: 0 16px 14px; color: var(--mm-ink-muted); font-size: 10px; line-height: 1.5; }
-
   /* Thumbnail shots: nothing over or around the canvas, and no half-faded
      loading state. The nav row goes too, and shoot.mjs gets its square canvas
      back: at the 820x500 shooting viewport the column leaves exactly 500x500,
@@ -1156,8 +859,7 @@
   body.is-portrait #hints,
   body.is-portrait #crew,
   body.is-portrait #crumb,
-  body.is-portrait #banner,
-  body.is-portrait #versus { display: none; }
+  body.is-portrait #banner { display: none; }
   body.is-portrait canvas { opacity: 1; transition: none; }
   /* Hiding the bar takes it out of the grid, so auto-placement would pull the
      column and stage up into the collapsed first row. Pin them to the second
@@ -1554,10 +1256,6 @@
     .crew-keys, #hints { display: none; }
     #browser { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
     #facets { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--mm-rule); }
-    .vs-combatants { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-    .vs-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .vs-lane, .vs-lane-head { grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr); }
-    .vs-edge, .vs-lane-head span:last-child { display: none; }
   }
 </style>
 </head>
@@ -1570,7 +1268,6 @@
       <a href="./map.html">Maps</a>
       <a href="./poses.html">Poses</a>
     </span>
-    <span class="shell-sub">vehicles and weapons &middot; armour, damage and duels</span>
     <span class="shell-spacer"></span>
     <button type="button" class="shell-search" id="shell-search" aria-haspopup="dialog">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -1640,19 +1337,6 @@
     </div>
   </section>
 
-  <section class="panel" id="compare-panel">
-    <h2 class="panel-title">Compare</h2>
-    <label class="field"><span>Opponent</span><select id="opponent" class="select"></select></label>
-    <p class="note">Parks a second vehicle and answers who wins a head-on fight. Armour inspection stays on Weapon.</p>
-    <div id="compare-verdict" hidden>
-      <div class="callout callout--win" id="compare-verdict-box">
-        <div class="callout-label">Verdict</div>
-        <div id="compare-verdict-text"></div>
-      </div>
-      <label class="toggle"><input type="checkbox" id="duel-hud" checked><span>show duel HUD</span></label>
-    </div>
-  </section>
-
   <section class="panel" id="model-panel">
     <h2 class="panel-title">Model</h2>
     <details class="disclosure">
@@ -1671,7 +1355,6 @@
   <main>
     <div id="crumb" hidden></div>
     <div id="banner" hidden></div>
-    <div id="versus" hidden></div>
   </main>
   <div id="hints" aria-hidden="true"></div>
   <section id="crew" class="crew" data-collapsed="false" hidden aria-label="Crew stations">
@@ -1891,17 +1574,6 @@ function portraitExtent(root) {
 
 function setCameraView(index, total = 3) {
   if (!framing) return;
-  if (framing.pair) {
-    const distance = framing.radius * 1.2;
-    camera.position.set(
-      framing.centre.x - framing.radius * .55,
-      framing.centre.y + framing.radius * .32,
-      framing.centre.z + distance,
-    );
-    controls.target.copy(framing.centre);
-    controls.update();
-    return;
-  }
   const angle = -Math.PI * .22 + (Math.PI * 2 * index / Math.max(total, 1));
   const distance = framing.radius * 1.85;
   camera.position.set(
@@ -2002,8 +1674,6 @@ const collisionLegend = document.getElementById('collision-legend');
 const legendMaterials = document.getElementById('legend-materials');
 const weaponSelect = document.getElementById('weapon');
 const weaponSummary = document.getElementById('weapon-summary');
-const opponentSelect = document.getElementById('opponent');
-const versusPanel = document.getElementById('versus');
 const isCollisionMesh = obj => obj.isMesh && obj.geometry?.userData?.collision;
 
 // The MaterialManager tables out of Game.rfa, written by the extractor as
@@ -2064,90 +1734,6 @@ function headOnFor(weapon, material) {
 // or null when the table has no entry (the round does nothing to that face).
 function headOnDamage(material) {
   return headOnFor(damageState.weapon, material);
-}
-
-function heaviestWeapon(entry) {
-  const names = entry?.weapons || [];
-  let best = null;
-  let bestBase = -1;
-  for (const name of names) {
-    const weapon = weaponsByName.get(name.toLowerCase());
-    if (!weapon || weapon.material == null) continue;
-    const base = baseDamage(weapon.material) ?? -1;
-    if (base > bestBase) {
-      best = weapon;
-      bestBase = base;
-    }
-  }
-  return best;
-}
-
-function bestWeaponAgainst(entry, targetReport) {
-  const names = entry?.weapons || [];
-  const materials = [...new Set(targetReport?.collisionMaterials || [])];
-  if (!materials.length) return heaviestWeapon(entry);
-  let best = null;
-  let bestShots = Infinity;
-  let bestDamage = -1;
-  let bestVelocity = -1;
-  let fallback = null;
-  let fallbackBase = -1;
-  for (const name of names) {
-    const weapon = weaponsByName.get(name.toLowerCase());
-    if (!weapon || weapon.material == null) continue;
-    const base = baseDamage(weapon.material) ?? -1;
-    if (base > fallbackBase) {
-      fallback = weapon;
-      fallbackBase = base;
-    }
-    const strike = aspectStrike(targetReport, weapon, materials);
-    if (strike.immune || strike.shots == null) continue;
-    const damage = Math.max(0, ...strike.plates.map(plate => plate.headOn || 0));
-    const velocity = weapon.velocity || 0;
-    const better = strike.shots < bestShots
-      || (strike.shots === bestShots && velocity > bestVelocity)
-      || (strike.shots === bestShots && velocity === bestVelocity && damage > bestDamage);
-    if (better) {
-      best = weapon;
-      bestShots = strike.shots;
-      bestDamage = damage;
-      bestVelocity = velocity;
-    }
-  }
-  return best || fallback || heaviestWeapon(entry);
-}
-
-function regionFace(material) {
-  if (material === 50) return 'rear';
-  if (material === 51) return 'side';
-  if (material === 52) return 'side / nose';
-  if (material === 53) return 'front';
-  if (material === 54) return 'glacis';
-  return null;
-}
-
-function regionLabel(material) {
-  const face = regionFace(material);
-  const cls = collisionMaterialClass(material);
-  return face ? `${cls} ${face}` : cls;
-}
-
-function strikeRows(report, weapon) {
-  if (!report || !weapon) return [];
-  const hp = report.armor?.hitpoints ?? report.armor?.maxHitpoints ?? null;
-  const materials = [...new Set(report.collisionMaterials || [])].sort((a, b) => a - b);
-  return materials.map(material => {
-    const headOn = headOnFor(weapon, material);
-    const shots = hp != null && headOn > 0 ? shotsFor(hp, headOn) : null;
-    return {
-      material,
-      label: regionLabel(material),
-      headOn,
-      shots,
-      immune: !(headOn > 0),
-      kill: hp != null && headOn >= hp,
-    };
-  });
 }
 
 function splashAtCentre(report) {
@@ -2252,703 +1838,12 @@ function setWeapon(name) {
 
 weaponSelect.addEventListener('change', () => setWeapon(weaponSelect.value));
 
-const FACE_SHORT = {
-  50: 'rear', 51: 'side', 52: 'nose', 53: 'front', 54: 'glacis',
-  55: 'rear', 56: 'side', 57: 'front', 58: 'front', 59: 'front',
-  60: 'airframe', 61: 'airframe', 62: 'airframe', 63: 'airframe',
-  43: 'hull', 44: 'hull', 45: 'hull', 46: 'wheels', 47: 'hull',
-};
-const ASPECT_DEFS = [
-  { id: 'front', label: 'front', materials: [52, 53, 54, 57, 58, 59] },
-  { id: 'side', label: 'side', materials: [51, 56] },
-  { id: 'rear', label: 'rear', materials: [50, 55] },
-  { id: 'airframe', label: 'airframe', materials: [60, 61, 62, 63] },
-  { id: 'hull', label: 'hull', materials: [43, 44, 45, 46, 47] },
-];
-const ASPECT_PRIORITY = ['front', 'side', 'rear', 'airframe', 'hull'];
-
-const compare = {
-  entry: null,
-  report: null,
-  root: null,
-  targets: [],
-  ourGun: null,
-  theirGun: null,
-  // The duel card's visibility, independent of whether an opponent is parked.
-  hud: true,
-};
-
-function hideOpponentCollision() {
-  for (const obj of compare.targets) obj.visible = false;
-}
-
-function clearOpponent() {
-  if (compare.root) {
-    scene.remove(compare.root);
-    disposeModel(compare.root);
-  }
-  compare.entry = null;
-  compare.report = null;
-  compare.root = null;
-  compare.targets = [];
-  compare.ourGun = null;
-  compare.theirGun = null;
-  opponentSelect.value = '';
-  opponentSelect.classList.remove('is-set');
-  versusPanel.hidden = true;
-  versusPanel.innerHTML = '';
-  document.getElementById('compare-verdict').hidden = true;
-  document.body.dataset.compare = 'false';
-  renderHints();
-}
-
-function buildOpponentSelect(entry) {
-  const previous = compare.entry?.name;
-  opponentSelect.innerHTML = '';
-  opponentSelect.appendChild(new Option('none', ''));
-  for (const other of manifest) {
-    if (other.name === entry?.name) continue;
-    opponentSelect.appendChild(new Option(other.name, other.name));
-  }
-  opponentSelect.disabled = opponentSelect.options.length < 2;
-  if (previous && [...opponentSelect.options].some(option => option.value === previous)) {
-    opponentSelect.value = previous;
-  } else if (compare.entry) {
-    clearOpponent();
-  }
-}
-
-function parkOpponent() {
-  if (!compare.root || !current) return;
-  current.updateMatrixWorld(true);
-  compare.root.position.set(0, 0, 0);
-  compare.root.updateMatrixWorld(true);
-  const here = new THREE.Box3().setFromObject(current);
-  const there = new THREE.Box3().setFromObject(compare.root);
-  const gap = Math.max(here.getSize(new THREE.Vector3()).x, there.getSize(new THREE.Vector3()).x) * 1.15;
-  compare.root.position.set(
-    here.max.x - there.min.x + gap,
-    here.min.y - there.min.y,
-    here.getCenter(new THREE.Vector3()).z - there.getCenter(new THREE.Vector3()).z,
-  );
-  compare.root.updateMatrixWorld(true);
-  const union = here.clone().union(new THREE.Box3().setFromObject(compare.root));
-  const size = union.getSize(new THREE.Vector3());
-  framing = {
-    centre: union.getCenter(new THREE.Vector3()),
-    radius: Math.max(size.x, size.y, size.z),
-    pair: true,
-  };
-  grid.position.y = union.min.y;
-}
-
-function reportHp(report) {
-  return report?.armor?.hitpoints ?? report?.armor?.maxHitpoints ?? null;
-}
-
-function armorKind(materials) {
-  const have = new Set(materials || []);
-  if ([60, 61, 62, 63].some(id => have.has(id))) return 'air';
-  if ([55, 56, 57, 58, 59].some(id => have.has(id))) return 'naval';
-  if ([50, 51, 52, 53, 54].some(id => have.has(id))) return 'tank';
-  if ([43, 44, 45, 46, 47].some(id => have.has(id))) return 'light';
-  return 'other';
-}
-
-function aspectsOf(report) {
-  const have = new Set(report?.collisionMaterials || []);
-  const skipHull = armorKind(have) !== 'light';
-  return ASPECT_DEFS.filter(def => {
-    if (def.id === 'hull' && skipHull) return false;
-    return def.materials.some(id => have.has(id));
-  }).map(def => ({
-    id: def.id,
-    label: def.label,
-    materials: def.materials.filter(id => have.has(id)),
-  }));
-}
-
-function aspectStrike(report, weapon, materials) {
-  if (!materials.length) {
-    return { hasPlate: false, noGun: false, immune: true, shots: null, shotsMax: null, plates: [], headOn: null };
-  }
-  if (!weapon) {
-    return { hasPlate: true, noGun: true, immune: true, shots: null, shotsMax: null, plates: [], headOn: null };
-  }
-  const hp = reportHp(report);
-  const plates = materials.map(material => {
-    const headOn = headOnFor(weapon, material);
-    const shots = hp != null && headOn > 0 ? shotsFor(hp, headOn) : null;
-    return {
-      material,
-      label: FACE_SHORT[material] || regionFace(material) || String(material),
-      headOn,
-      shots,
-      immune: !(headOn > 0),
-    };
-  });
-  const live = plates.filter(plate => !plate.immune && plate.shots != null);
-  if (!live.length) {
-    return { hasPlate: true, noGun: false, immune: true, shots: null, shotsMax: null, plates, headOn: 0 };
-  }
-  const easiest = live.reduce((best, plate) => (plate.shots < best.shots ? plate : best));
-  const hardest = live.reduce((best, plate) => (plate.shots > best.shots ? plate : best));
-  return {
-    hasPlate: true,
-    noGun: false,
-    immune: false,
-    shots: easiest.shots,
-    shotsMax: hardest.shots,
-    plates,
-    headOn: hardest.headOn,
-  };
-}
-
-function versusShots(strike) {
-  if (!strike?.hasPlate) return { text: '—', muted: true, kind: 'open' };
-  if (strike.noGun) return { text: 'no gun', muted: true, kind: 'nogun' };
-  if (strike.immune || strike.shots == null) return { text: 'no effect', muted: true, kind: 'immune' };
-  if (strike.shots !== strike.shotsMax) {
-    return { text: `${strike.shots}–${strike.shotsMax}`, muted: false, kind: 'range' };
-  }
-  return { text: String(strike.shots), muted: false, kind: 'shots' };
-}
-
-function versusDecisiveShots(strike) {
-  if (!strike?.hasPlate) return { text: '—', muted: true, kind: 'open' };
-  if (strike.noGun) return { text: 'no gun', muted: true, kind: 'nogun' };
-  if (strike.immune || strike.shotsMax == null) return { text: 'no effect', muted: true, kind: 'immune' };
-  return { text: String(strike.shotsMax), muted: false, kind: 'shots' };
-}
-
-function versusTip(strike, hp, shooterName, targetName) {
-  if (!strike?.hasPlate) {
-    return `${targetName || 'target'} has no armour plate on this facing`;
-  }
-  if (strike.noGun) return `${shooterName || 'shooter'} has no gun selected`;
-  if (!strike.plates.length) return 'no effect';
-  const plates = strike.plates.map(plate => {
-    if (plate.immune) return `${plate.label}: no effect`;
-    const hpText = plate.headOn != null ? `${formatHp(plate.headOn)} HP per hit` : '';
-    const shotText = plate.shots != null ? `${plate.shots} shots to destroy` : '';
-    return `${plate.label}: ${[hpText, shotText].filter(Boolean).join(', ')}`;
-  }).join(' · ');
-  return plates + (hp != null ? ` · ${targetName || 'target'} has ${hp} HP` : '');
-}
-
-function laneEdge(win, ours, theirs) {
-  if (win === 'us') return 'you stronger';
-  if (win === 'them') return 'them stronger';
-  if (!ours.muted && !theirs.muted) return 'even';
-  if (ours.kind === 'open' || theirs.kind === 'open') return 'one-sided';
-  if (ours.kind === 'immune' || theirs.kind === 'immune') return 'one-sided';
-  return '—';
-}
-
-function duelShotCaption(strike, targetName, whose) {
-  if (!strike?.hasPlate) return whose === 'them' ? 'nothing for them to shoot' : 'nothing for you to shoot';
-  if (strike.noGun) return whose === 'them' ? 'no gun selected' : 'no gun selected';
-  if (strike.immune || strike.shotsMax == null) {
-    return whose === 'them' ? `cannot damage ${targetName}` : `cannot damage ${targetName}`;
-  }
-  return whose === 'them'
-    ? `their shots to kill ${targetName}`
-    : `your shots to kill ${targetName}`;
-}
-
-function versusWin(ours, theirs) {
-  if (!ours?.hasPlate || !theirs?.hasPlate) return '';
-  if (ours.immune && theirs.immune) return '';
-  if (ours.immune) return 'them';
-  if (theirs.immune) return 'us';
-  if (ours.shotsMax == null || theirs.shotsMax == null) return '';
-  if (ours.shotsMax < theirs.shotsMax) return 'us';
-  if (theirs.shotsMax < ours.shotsMax) return 'them';
-  return '';
-}
-
-function formatDecisiveNeed(strike) {
-  if (!strike?.hasPlate) return 'has no plate there';
-  if (strike.noGun) return 'has no gun';
-  if (strike.immune || strike.shotsMax == null) return 'cannot damage it';
-  return `${strike.shotsMax} shot${strike.shotsMax === 1 ? '' : 's'}`;
-}
-
-function meterShare(ours, theirs) {
-  const ourPower = ours?.immune || !(ours?.shotsMax > 0) ? 0 : 1 / ours.shotsMax;
-  const theirPower = theirs?.immune || !(theirs?.shotsMax > 0) ? 0 : 1 / theirs.shotsMax;
-  const total = ourPower + theirPower;
-  if (!(total > 0)) return { us: 0.5, them: 0.5 };
-  return { us: ourPower / total, them: theirPower / total };
-}
-
-function buildDuel() {
-  if (!compare.entry || !currentEntry || !currentReport || !compare.report) return null;
-  const ourHp = reportHp(currentReport);
-  const theirHp = reportHp(compare.report);
-  const ourAspects = new Map(aspectsOf(currentReport).map(aspect => [aspect.id, aspect]));
-  const theirAspects = new Map(aspectsOf(compare.report).map(aspect => [aspect.id, aspect]));
-  const ids = [...new Set([...ourAspects.keys(), ...theirAspects.keys()])]
-    .sort((a, b) => ASPECT_PRIORITY.indexOf(a) - ASPECT_PRIORITY.indexOf(b));
-  const lanes = ids.map(id => {
-    const label = ASPECT_DEFS.find(def => def.id === id)?.label || id;
-    const atThem = aspectStrike(compare.report, compare.ourGun, theirAspects.get(id)?.materials || []);
-    const atUs = aspectStrike(currentReport, compare.theirGun, ourAspects.get(id)?.materials || []);
-    return { id, label, atThem, atUs, win: versusWin(atThem, atUs) };
-  }).filter(lane => lane.atThem.shots != null || lane.atUs.shots != null
-    || (lane.atThem.hasPlate && lane.atUs.hasPlate));
-  const shared = lanes.filter(lane => lane.atThem.hasPlate && lane.atUs.hasPlate);
-  const ourKind = armorKind(currentReport.collisionMaterials);
-  const theirKind = armorKind(compare.report.collisionMaterials);
-  const sameClass = ourKind === theirKind && ourKind !== 'other';
-  const front = shared.find(lane => lane.id === 'front');
-  let decisive = null;
-  let winner = '';
-  if (front) {
-    decisive = front;
-    winner = front.win || shared.find(lane => lane.win)?.win || 'even';
-  } else if (sameClass && shared.length) {
-    decisive = shared.find(lane => lane.win) || shared[0];
-    winner = decisive.win || 'even';
-  } else {
-    const coverThem = aspectStrike(
-      compare.report,
-      compare.ourGun,
-      [...theirAspects.values()].flatMap(aspect => aspect.materials),
-    );
-    const coverUs = aspectStrike(
-      currentReport,
-      compare.theirGun,
-      [...ourAspects.values()].flatMap(aspect => aspect.materials),
-    );
-    decisive = {
-      id: 'overall',
-      label: sameClass ? (shared[0]?.label || 'armour') : 'strongest armour',
-      atThem: coverThem,
-      atUs: coverUs,
-      win: versusWin(coverThem, coverUs),
-    };
-    winner = decisive.win || 'even';
-  }
-  const story = duelStory(currentEntry.name, compare.entry.name, decisive, winner);
-  const share = meterShare(decisive?.atThem, decisive?.atUs);
-  return {
-    us: currentEntry.name,
-    them: compare.entry.name,
-    ourGun: compare.ourGun?.name || null,
-    theirGun: compare.theirGun?.name || null,
-    ourHp,
-    theirHp,
-    winner,
-    decisive: decisive?.id || null,
-    decisiveLabel: decisive?.label || null,
-    decisiveAtThem: decisive?.atThem || null,
-    decisiveAtUs: decisive?.atUs || null,
-    story,
-    share,
-    lanes,
-    atUs: strikeRows(currentReport, compare.theirGun),
-    atThem: strikeRows(compare.report, compare.ourGun),
-  };
-}
-
-function duelStory(usName, themName, decisive, winner) {
-  if (!decisive) return 'No comparable armour on these two vehicles.';
-  const facing = decisive.label && decisive.id !== 'overall' ? ` ${decisive.label}-on` : '';
-  const ours = decisive.atThem;
-  const theirs = decisive.atUs;
-  if (winner === 'even') {
-    if (ours.hasPlate && theirs.hasPlate && !ours.immune && !theirs.immune) {
-      return `Even${facing}: ${formatDecisiveNeed(ours)} either way.`;
-    }
-    return `Even match${facing}.`;
-  }
-  const winnerName = winner === 'us' ? usName : themName;
-  const loserName = winner === 'us' ? themName : usName;
-  const winnerStrike = winner === 'us' ? ours : theirs;
-  const loserStrike = winner === 'us' ? theirs : ours;
-  if (loserStrike.noGun) {
-    return `${loserName} has no gun in this matchup.`;
-  }
-  if (loserStrike.immune && !winnerStrike.immune) {
-    return `${winnerName} shrugs off ${loserName}'s gun${facing}, and kills in ${formatDecisiveNeed(winnerStrike)}.`;
-  }
-  if (!winnerStrike.hasPlate) {
-    return `${loserName} has no ${decisive.label} armour to shoot.`;
-  }
-  return `${winnerName} needs ${formatDecisiveNeed(winnerStrike)}${facing}; ${loserName} needs ${formatDecisiveNeed(loserStrike)}.`;
-}
-
-function winnerStamp(duel) {
-  if (!duel) return 'VS';
-  if (duel.winner === 'us') return duel.us;
-  if (duel.winner === 'them') return duel.them;
-  if (duel.winner === 'even') return 'even';
-  return 'VS';
-}
-
-function winnerSubline(duel) {
-  if (!duel) return '';
-  const facing = duel.decisiveLabel && duel.decisive !== 'overall'
-    ? ` ${duel.decisiveLabel}-on`
-    : '';
-  if (duel.winner === 'even') return `even match${facing}`;
-  if (duel.winner === 'us' || duel.winner === 'them') return `stronger${facing}`;
-  return '';
-}
-
-function fillVersusGunSelect(select, selected, entry) {
-  const previous = selected || select.value;
-  select.innerHTML = '';
-  select.appendChild(new Option('none', ''));
-  if (!damageTables) return;
-  const own = new Set((entry?.weapons || []).map(name => name.toLowerCase()));
-  const groups = new Map();
-  if (own.size) groups.set('this vehicle', []);
-  for (const weapon of damageTables.weapons) {
-    if (weapon.material == null) continue;
-    const key = own.has(weapon.name.toLowerCase()) ? 'this vehicle' : (weapon.category || 'other');
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(weapon);
-  }
-  for (const [label, weapons] of groups) {
-    if (!weapons.length) continue;
-    const group = document.createElement('optgroup');
-    group.label = label;
-    for (const weapon of weapons) {
-      // The vehicle's own guns need no owner prefix; the select is narrow.
-      const text = label === 'this vehicle' ? weapon.name : weaponLabel(weapon);
-      group.appendChild(new Option(text, weapon.name));
-    }
-    select.appendChild(group);
-  }
-  select.value = previous && [...select.options].some(option => option.value === previous)
-    ? previous
-    : '';
-}
-
-function bindVersusGuns() {
-  const ourSelect = versusPanel.querySelector('#versus-our-gun');
-  const theirSelect = versusPanel.querySelector('#versus-their-gun');
-  if (!ourSelect || ourSelect.dataset.bound) return;
-  ourSelect.dataset.bound = 'true';
-  theirSelect.dataset.bound = 'true';
-  ourSelect.addEventListener('change', () => {
-    compare.ourGun = ourSelect.value
-      ? weaponsByName.get(ourSelect.value.toLowerCase()) || null
-      : null;
-    renderVersus();
-  });
-  theirSelect.addEventListener('change', () => {
-    compare.theirGun = theirSelect.value
-      ? weaponsByName.get(theirSelect.value.toLowerCase()) || null
-      : null;
-    renderVersus();
-  });
-}
-
 function attr(value) {
   return String(value)
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;');
 }
-
-/** Seconds from the first round to the killing one: the gaps at the gun's
- *  rate of fire, plus a reload for every magazine emptied on the way. Null
- *  when the tables do not say how fast the gun fires. */
-function timeToKill(weapon, shots) {
-  if (!weapon || !(shots > 0) || !(weapon.roundOfFire > 0)) return null;
-  const gaps = shots - 1;
-  let seconds = gaps / weapon.roundOfFire;
-  if (weapon.magSize > 0 && weapon.reloadTime > 0) {
-    seconds += Math.floor(gaps / weapon.magSize) * weapon.reloadTime;
-  }
-  return seconds;
-}
-
-function formatSeconds(seconds) {
-  if (seconds == null) return null;
-  return seconds < 10 ? seconds.toFixed(1) : String(Math.round(seconds));
-}
-
-/** Shots and time to kill on the facing that decides the headline. */
-function duelTimes(duel) {
-  const shotsOf = strike => (!strike?.hasPlate || strike.noGun || strike.immune
-    ? null : strike.shotsMax ?? null);
-  const ourShots = shotsOf(duel.decisiveAtThem);
-  const theirShots = shotsOf(duel.decisiveAtUs);
-  return {
-    ourShots,
-    theirShots,
-    ourTtk: timeToKill(compare.ourGun, ourShots),
-    theirTtk: timeToKill(compare.theirGun, theirShots),
-  };
-}
-
-const ARROW_LEFT = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M10.5 6h-9M5 2.5 1.5 6 5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const ARROW_RIGHT = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M7 2.5 10.5 6 7 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const CLOSE_ICON = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="m2 2 6 6M8 2 2 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-
-function versusSkeleton() {
-  const side = (which, gunId) => {
-    const hp = '<span class="vs-hp"></span>';
-    const gun = `<select id="${gunId}" aria-label="Gun"></select>`;
-    const kit = which === 'us' ? `${hp}<span class="sep">·</span>${gun}` : `${gun}<span class="sep">·</span>${hp}`;
-    return `<div class="vs-side vs-${which}"><img class="vs-thumb" alt="" hidden>`
-      + `<div class="vs-id"><div class="vs-name"></div><div class="vs-side-line"></div>`
-      + `<div class="vs-kit">${kit}</div></div></div>`;
-  };
-  return '<div class="vs-top"><div class="vs-top-text">'
-    + '<div class="eyebrow">Head-on duel · from damage.json</div>'
-    + '<div class="vs-title" id="versus-title"></div></div>'
-    + `<button type="button" class="vs-close" id="versus-close" aria-label="Hide the duel HUD" title="Hide the duel HUD">${CLOSE_ICON}</button>`
-    + '</div><hr class="rule">'
-    + '<div class="vs-combatants">'
-    + side('us', 'versus-our-gun')
-    + '<div class="vs-verdict" aria-live="polite"><div class="vs-verdict-label">Verdict</div>'
-    + '<div class="vs-chip" id="versus-chip"></div></div>'
-    + side('them', 'versus-their-gun')
-    + '</div><hr class="rule">'
-    + '<div class="vs-stats" id="versus-stats"></div>'
-    + '<div class="vs-meter-wrap"><div class="vs-meter-head" id="versus-meter-head"></div>'
-    + '<div class="vs-meter" id="versus-meter" aria-hidden="true"><span class="is-us"></span><span class="is-them"></span><i></i></div></div>'
-    + '<div class="vs-bar"><span># By facing</span><span>Shots to kill · fewer wins</span></div>'
-    + '<div class="vs-lanes"><div class="vs-lane-head" id="versus-lane-head"></div><div id="versus-lanes"></div></div>'
-    + '<div class="vs-foot" id="versus-foot"></div>';
-}
-
-function fillCombatant(selector, entry, hp) {
-  const side = versusPanel.querySelector(selector);
-  side.className = `vs-side ${selector.slice(1)} ${sideClass(entry)}`;
-  side.querySelector('.vs-name').textContent = entry.name;
-  side.querySelector('.vs-side-line').textContent = sideLine(entry, true);
-  side.querySelector('.vs-hp').textContent = hp != null ? `${hp} HP` : 'HP unknown';
-  const thumb = side.querySelector('.vs-thumb');
-  const source = thumbFor(entry);
-  thumb.hidden = !source;
-  if (source && thumb.getAttribute('src') !== source) thumb.src = source;
-}
-
-function laneVerdict(lane, ours, theirs, duel, decisive) {
-  if (decisive && lane.win) return { text: 'Decides the duel', elite: true };
-  if (lane.win === 'us') return { text: `${duel.us} favoured` };
-  if (lane.win === 'them') return { text: `${duel.them} favoured` };
-  const edge = laneEdge(lane.win, ours, theirs);
-  if (edge === 'even') return { text: decisive ? 'Even · decides the duel' : 'Even trade' };
-  if (edge === 'one-sided') return { text: 'One-sided' };
-  return { text: 'No plate' };
-}
-
-function renderVersusLanes(duel) {
-  const head = versusPanel.querySelector('#versus-lane-head');
-  const lanes = versusPanel.querySelector('#versus-lanes');
-  if (!lanes || !duel) return;
-  head.innerHTML = `<span>Face</span><span>${attr(duel.us)} fires</span>`
-    + `<span>${attr(duel.them)} fires</span><span>Edge</span>`;
-  const countOf = strike => (!strike.hasPlate || strike.noGun || strike.immune ? 0 : strike.shotsMax || 0);
-  // Bars share one scale across both columns: a shorter bar is a quicker kill.
-  const most = Math.max(1, ...duel.lanes.flatMap(lane => [countOf(lane.atThem), countOf(lane.atUs)]));
-  lanes.innerHTML = duel.lanes.map(lane => {
-    const ours = versusShots(lane.atThem);
-    const theirs = versusShots(lane.atUs);
-    const decisive = lane.id === duel.decisive;
-    const fill = side => {
-      if (!lane.win) return 'var(--mm-ink-faint)';
-      if (lane.win !== side) return 'var(--mm-kill-soft)';
-      return decisive ? 'var(--mm-kd-elite)' : 'var(--mm-accent)';
-    };
-    const cell = (shots, strike, side) =>
-      `<div class="vs-shots${shots.muted ? ' is-muted' : ''}${decisive && lane.win === side ? ' is-elite' : ''}"`
-      + ` style="--w:${(countOf(strike) / most * 100).toFixed(1)}%;--fill:${fill(side)}">`
-      + `<b>${shots.text}</b><i></i></div>`;
-    const edge = laneVerdict(lane, ours, theirs, duel, decisive);
-    const tip = `${versusTip(lane.atThem, duel.theirHp, duel.us, duel.them)} | ${versusTip(lane.atUs, duel.ourHp, duel.them, duel.us)}`;
-    return `<div class="vs-lane" data-win="${lane.win}" data-aspect="${lane.id}" data-decisive="${decisive}" title="${attr(tip)}">`
-      + `<div class="vs-face">${lane.label}</div>`
-      + cell(ours, lane.atThem, 'us')
-      + cell(theirs, lane.atUs, 'them')
-      + `<div class="vs-edge${edge.elite ? ' is-elite' : ''}">${attr(edge.text)}</div>`
-      + '</div>';
-  }).join('');
-}
-
-/** The one-line answer in the Compare panel, readable with the HUD hidden. */
-function renderCompareVerdict(duel) {
-  const box = document.getElementById('compare-verdict-box');
-  const text = document.getElementById('compare-verdict-text');
-  document.getElementById('compare-verdict').hidden = false;
-  const decided = duel.winner === 'us' || duel.winner === 'them';
-  box.className = `callout ${decided ? 'callout--win' : 'callout--even'}`;
-  if (!decided) {
-    text.textContent = duel.story;
-    return;
-  }
-  const times = duelTimes(duel);
-  const usWon = duel.winner === 'us';
-  const winner = usWon ? duel.us : duel.them;
-  const [winTtk, loseTtk] = usWon ? [times.ourTtk, times.theirTtk] : [times.theirTtk, times.ourTtk];
-  const [winShots, loseShots] = usWon ? [times.ourShots, times.theirShots] : [times.theirShots, times.ourShots];
-  // The winner is whoever needs fewer shots; a slow-firing gun can still take
-  // longer, so a time margin is only quoted when it points the same way.
-  let how = '';
-  if (winTtk != null && loseTtk != null && loseTtk - winTtk > 0.05) {
-    how = ` by <span class="tone-win">${formatSeconds(loseTtk - winTtk)} s</span>`;
-  } else if (winShots != null) {
-    how = ` in <span class="tone-win">${winShots} shot${winShots === 1 ? '' : 's'}</span>`
-      + (loseShots != null ? ` to ${loseShots}` : '');
-  }
-  text.innerHTML = `<b>${attr(winner)}</b> wins${how}`;
-}
-
-function setDuelHud(on) {
-  compare.hud = Boolean(on);
-  document.getElementById('duel-hud').checked = compare.hud;
-  versusPanel.hidden = !compare.hud || !compare.entry;
-}
-
-function renderVersus() {
-  const duel = buildDuel();
-  if (!duel) {
-    versusPanel.hidden = true;
-    versusPanel.innerHTML = '';
-    versusPanel.removeAttribute('data-winner');
-    document.getElementById('compare-verdict').hidden = true;
-    return;
-  }
-  renderCompareVerdict(duel);
-  versusPanel.hidden = !compare.hud;
-  versusPanel.dataset.winner = duel.winner;
-  if (!versusPanel.querySelector('.vs-top')) {
-    versusPanel.innerHTML = versusSkeleton();
-    bindVersusGuns();
-    versusPanel.querySelector('#versus-close').addEventListener('click', () => setDuelHud(false));
-  }
-  const facing = duel.decisiveLabel && duel.decisive !== 'overall' ? duel.decisiveLabel : null;
-  versusPanel.querySelector('#versus-title').textContent = facing
-    ? `${facing.charAt(0).toUpperCase()}${facing.slice(1)}-on, point blank, perpendicular`
-    : 'Best armour, point blank, perpendicular';
-  fillCombatant('.vs-us', currentEntry, duel.ourHp);
-  fillCombatant('.vs-them', compare.entry, duel.theirHp);
-
-  const usWins = duel.winner === 'us';
-  const themWins = duel.winner === 'them';
-  const chip = versusPanel.querySelector('#versus-chip');
-  chip.dataset.winner = duel.winner;
-  chip.innerHTML = usWins ? `${ARROW_LEFT}Winner` : themWins ? `Winner${ARROW_RIGHT}` : 'Even';
-  chip.title = usWins ? `${duel.us} wins` : themWins ? `${duel.them} wins` : duel.story;
-
-  const times = duelTimes(duel);
-  const ttkNote = 'Gaps between rounds at the gun’s rate of fire, plus a reload per emptied magazine';
-  const cell = (label, value, good, unit, title) => {
-    const muted = value == null;
-    return `<div class="vs-stat" title="${attr(title)}"><div class="vs-stat-label">${attr(label)}</div>`
-      + `<div class="vs-stat-value${muted ? ' is-muted' : good ? ' is-good' : ''}">`
-      + `${muted ? '—' : value}${!muted && unit ? `<small>${unit}</small>` : ''}</div></div>`;
-  };
-  versusPanel.querySelector('#versus-stats').innerHTML = [
-    cell(`${duel.us} TTK`, formatSeconds(times.ourTtk), usWins, 's', ttkNote),
-    cell('Shots to kill', times.ourShots, usWins, '', `${duel.us} firing on ${duel.them}`),
-    cell(`${duel.them} TTK`, formatSeconds(times.theirTtk), themWins, 's', ttkNote),
-    cell('Shots to kill', times.theirShots, themWins, '', `${duel.them} firing on ${duel.us}`),
-  ].join('');
-
-  const usShare = Math.round(duel.share.us * 100);
-  versusPanel.querySelector('#versus-meter-head').innerHTML =
-    `<span class="${usWins ? 'is-win' : ''}">${attr(duel.us)} ${usShare}%</span>`
-    + '<span class="is-mid" title="Share of kill speed on the deciding facing: 1 ÷ shots to kill, normalised">Edge</span>'
-    + `<span class="${themWins ? 'is-win' : ''}">${attr(duel.them)} ${100 - usShare}%</span>`;
-  const meter = versusPanel.querySelector('#versus-meter');
-  const win = 'var(--mm-accent)';
-  const lose = 'var(--mm-kill-soft)';
-  const even = 'var(--mm-ink-faint)';
-  meter.style.setProperty('--us', `${(duel.share.us * 100).toFixed(1)}%`);
-  meter.style.setProperty('--us-fill', usWins ? win : themWins ? lose : even);
-  meter.style.setProperty('--them-fill', themWins ? win : usWins ? lose : even);
-
-  versusPanel.querySelector('#versus-foot').textContent = duel.story;
-  fillVersusGunSelect(versusPanel.querySelector('#versus-our-gun'), compare.ourGun?.name, currentEntry);
-  fillVersusGunSelect(versusPanel.querySelector('#versus-their-gun'), compare.theirGun?.name, compare.entry);
-  renderVersusLanes(duel);
-}
-
-async function setOpponent(name) {
-  if (!name) {
-    clearOpponent();
-    if (current) {
-      const box = new THREE.Box3().setFromObject(current);
-      const size = box.getSize(new THREE.Vector3());
-      framing = { centre: box.getCenter(new THREE.Vector3()), radius: Math.max(size.x, size.y, size.z) };
-      grid.position.y = box.min.y;
-      setCameraView(0);
-    }
-    invalidate();
-    return;
-  }
-  const entry = manifest.find(item => item.name === name);
-  if (!entry) return;
-  const variant = entry.variants.find(item => item.glb === entry.glb) || entry.variants[0];
-  const load = overlay.begin(`${entry.name} (opponent)`);
-  load.step('model', { label: 'model', weight: 40 });
-  load.step('report', { label: 'armour report', weight: 1 });
-  let gltf;
-  let report;
-  try {
-    [gltf, report] = await Promise.all([
-      loader.loadAsync(
-        `${MODELS_BASE}/${variant.glb}${bust()}`,
-        e => load.bytes('model', e.loaded, e.lengthComputable ? e.total : 0),
-      ),
-      fetch(`${MODELS_BASE}/${variant.report}${bust()}`).then(response => {
-        if (!response.ok) throw new Error(`opponent report ${response.status}`);
-        return response.json();
-      }).then(json => { load.finish('report'); return json; }),
-    ]);
-    load.end();
-  } catch (error) {
-    load.fail(error.message);
-    throw error;
-  }
-  if (compare.root) {
-    scene.remove(compare.root);
-    disposeModel(compare.root);
-  }
-  compare.entry = entry;
-  compare.report = report;
-  compare.root = gltf.scene;
-  compare.targets = [];
-  compare.ourGun = bestWeaponAgainst(currentEntry, report);
-  compare.theirGun = bestWeaponAgainst(entry, currentReport);
-  compare.root.traverse(node => {
-    if (node.isMesh && !isCollisionMesh(node)) {
-      for (const material of [node.material].flat().filter(Boolean)) {
-        material.transparent = true;
-        material.opacity = .42;
-        material.needsUpdate = true;
-      }
-    }
-    if (!node.userData?.collision) return;
-    node.traverse(obj => {
-      if (!isCollisionMesh(obj)) return;
-      obj.userData.collisionRoot = node;
-      obj.visible = false;
-      compare.targets.push(obj);
-    });
-  });
-  scene.add(compare.root);
-  opponentSelect.value = entry.name;
-  opponentSelect.classList.add('is-set');
-  document.body.dataset.compare = 'true';
-  renderHints();
-  parkOpponent();
-  hideOpponentCollision();
-  renderVersus();
-  setCameraView(0);
-  invalidate();
-}
-
-opponentSelect.addEventListener('change', () => void setOpponent(opponentSelect.value));
-document.getElementById('duel-hud').addEventListener('change', event => setDuelHud(event.target.checked));
 
 function clearHit() {
   lastHit = null;
@@ -3109,7 +2004,6 @@ function applyCollisionState() {
   legendMaterials.dataset.filtered = String(state.collisionMaterial !== null);
   main.dataset.collision = String(state.collision);
   collisionLegend.hidden = !state.collision || !collisionRoots.length;
-  hideOpponentCollision();
   if (!state.collision) clearHit();
   renderHints();
 }
@@ -4738,7 +3632,6 @@ document.getElementById('view-orbit').addEventListener('click', orbitView);
 function renderHints() {
   const hints = ['Drag orbit', 'Scroll zoom', 'Right-drag pan'];
   if (state.collision) hints.push('Click a face to place a shot');
-  if (compare.entry) hints.push('Esc drops the opponent');
   hints.push('/ armoury');
   document.getElementById('hints').innerHTML =
     hints.map(hint => `<span>${hint}</span>`).join('<span class="sep">·</span>');
@@ -4969,22 +3862,13 @@ async function show(entry, variant) {
   guns.collect(current);
   collectViews(current);
   cameraGlide = null;
-  buildOpponentSelect(entry);
   buildCrew(entry);
   applyState();
 
   const box = new THREE.Box3().setFromObject(current);
   const size = box.getSize(new THREE.Vector3());
-  if (compare.entry) {
-    compare.ourGun = bestWeaponAgainst(entry, compare.report) || compare.ourGun;
-    compare.theirGun = bestWeaponAgainst(compare.entry, currentReport) || compare.theirGun;
-    parkOpponent();
-    hideOpponentCollision();
-    renderVersus();
-  } else {
-    framing = { centre: box.getCenter(new THREE.Vector3()), radius: Math.max(size.x, size.y, size.z) };
-    grid.position.y = box.min.y;
-  }
+  framing = { centre: box.getCenter(new THREE.Vector3()), radius: Math.max(size.x, size.y, size.z) };
+  grid.position.y = box.min.y;
   setCameraView(0);
   camera.near = framing.radius / 200; camera.far = framing.radius * 60;
   camera.updateProjectionMatrix();
@@ -5651,12 +4535,11 @@ function closeBrowser() {
 }
 
 /** "Axis · Japanese" — the sides, then the armies that field it. */
-function sideLine(entry, withClass = false) {
+function sideLine(entry) {
   const factions = entry?.factions || [];
   return [
     (entry?.sides || []).join(' / '),
     factions.length > 2 ? `${factions.length} nations` : factions.join(', '),
-    withClass ? CATEGORY_LABELS[entry?.category] || entry?.category : null,
   ].filter(Boolean).join(' · ');
 }
 
@@ -5714,9 +4597,6 @@ addEventListener('keydown', event => {
   if (event.key === 'Escape' && !browser.hidden) {
     event.preventDefault();
     closeBrowser();
-  } else if (event.key === 'Escape' && compare.entry && !typing) {
-    event.preventDefault();
-    void setOpponent(null);
   } else if (!typing && (event.key === '/' || (event.key === 'k' && (event.metaKey || event.ctrlKey)))) {
     event.preventDefault();
     if (browser.hidden) openBrowser(); else searchInput.focus();
@@ -5843,7 +4723,6 @@ window.__modelInspector = {
   setImpactAngle: setHitAngle,
   setCollisionMaterial,
   setWeapon,
-  setOpponent,
   pickCenterHit: () => {
     const visible = collisionTargets.filter(obj => obj.visible);
     if (!visible.length) return null;
@@ -5862,8 +4741,6 @@ window.__modelInspector = {
     selectCollisionHit(hit);
     return lastHit;
   },
-  getOpponent: () => compare.entry ? compare.entry.name : null,
-  getDuel: () => buildDuel(),
   getWeapons: () => (damageTables?.weapons || []).map(weapon => weapon.name),
   getDamageTables: () => damageTables,
   getDamage: computeHitDamage,
