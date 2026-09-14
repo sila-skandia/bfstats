@@ -72,8 +72,11 @@ subshader "MuzzHeavy_m1_Material0" "StandardMesh/Default" {
         self.assertEqual("sourceAlpha", shader.blend_src)
         self.assertEqual("one", shader.blend_dest)
         self.assertTrue(shader.additive)
-        # alphaTestRef is not alphaTest: no cutoff may be inferred from it.
-        self.assertIsNone(shader.alpha_test)
+        # The parser reads `alphaTestRef` as the cutoff it is. Keeping it out
+        # of the *material* is a separate decision, made by `add_material`:
+        # `additive` is tested before `alpha_cutoff`, so a flash stays BLEND
+        # whatever cutoff its shader declares.
+        self.assertEqual(0.7, shader.alpha_test)
 
     def test_plain_transparency_is_not_additive(self) -> None:
         shaders = rs.parse(
@@ -116,6 +119,29 @@ subshader "tracklight_m1_Material0" "StandardMesh/Default" {
         # And a shader that says nothing is lit, which is the common case.
         silent = rs.parse('shader "Material4" { texture "texture/x"; }')
         self.assertTrue(rs.lookup(silent, "Material4").lighting)
+
+    def test_alpha_test_ref_is_the_other_spelling(self) -> None:
+        # `standardMesh/*.rs` writes the D3D reference value on its own and
+        # leaves the comparison implied. Missing it is how a scout helmet's
+        # foliage net became a solid sheet: the block never says
+        # `transparent true` either, so there was nothing else to key off.
+        shaders = rs.parse(
+            """
+subshader "Brit_Scouthelm_m1_Material1" "StandardMesh/Default" {
+  alphaTestRef 0.7;
+  texture "texture/brit_scouthelm";
+}
+"""
+        )
+        self.assertEqual(
+            rs.lookup(shaders, "Brit_Scouthelm_m1_Material1").alpha_test, 0.7)
+
+    def test_operator_spelling_still_wins_over_ref(self) -> None:
+        # A block carrying both is the explicit form plus a leftover; the
+        # operator spelling is the one with the comparison in it.
+        shaders = rs.parse(
+            'shader "M" { alphaTest greater 0.8; alphaTestRef 0.2; }')
+        self.assertEqual(rs.lookup(shaders, "M").alpha_test, 0.8)
 
 
 if __name__ == "__main__":
