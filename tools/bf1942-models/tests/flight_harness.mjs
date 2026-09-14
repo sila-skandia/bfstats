@@ -16,9 +16,15 @@
 // are shaped exactly as `ObjectTemplate.rig()` emits them (bf42/con.py), so
 // `advanceSurfaces` rate-limits the elevator over its real 60 deg/s and the
 // stick reaches full deflection in the time the config says it does.
+//
+// ALTITUDES ARE DELIBERATE AND SMALL. `PhysicsWing::updatePhysics` fades every
+// surface's lift to nothing at `airDensityZeroAtHeight` = 1000 m, so a scenario
+// staged at 2000 m — as these were before the model was rebuilt on the read
+// equations — is a scenario staged where no Refractor aircraft can fly. Nothing
+// here starts above 900 m, and the one case that does is the ceiling test.
 
 import * as THREE from 'three';
-import { Aircraft, CORSAIR, VehicleCamera, findVehicle } from './flight.mjs';
+import { Aircraft, CORSAIR, GRAVITY, calculateLift, VehicleCamera, findVehicle } from './flight.mjs';
 
 const DEG = 180 / Math.PI;
 const DT = 1 / 60;
@@ -66,8 +72,8 @@ function corsairNode() {
  * An aircraft in the air, trimmed to a state rather than flown into one, so a
  * scenario measures the model and not the hundred seconds before it.
  */
-function aircraft({ speed = 0, pitch = 0, altitude = 500, throttle = 1,
-                    ground = 0 } = {}) {
+function aircraft({ speed = 0, pitch = 0, altitude = 200, throttle = 1,
+                    ground = -100000 } = {}) {
   const plane = new Aircraft(corsairNode(), null, { cockpit: false });
   plane.groundHeight = () => ground;
   const s = plane.state;
@@ -112,6 +118,12 @@ function alphaDeg(plane) {
 /** Airspeed resolved along the nose. Negative means tail-first. */
 const alongOf = plane => plane.state.velocity.dot(forwardOf(plane));
 
+/** Body pitch rate, rad/s, nose-up positive. */
+function pitchRate(plane) {
+  return plane.state.angularVelocity.clone()
+    .applyQuaternion(plane.state.orientation.clone().invert()).x;
+}
+
 const round = (value, places = 3) => +value.toFixed(places);
 
 function snapshot(plane) {
@@ -153,11 +165,9 @@ const holding = inputs => plane => {
 /**
  * A proportional elevator that holds the nose at a given elevation.
  *
- * Needed for exactly one measurement: terminal velocity. An aircraft with a
- * lift regulator cannot hold a vertical dive hands-off — 9.82 m/s^2 along a
- * horizontal body-up curves the flight path out of it — so `g / drag` is only
- * observable with somebody holding the dive, which is also how it would be
- * measured in the game.
+ * Needed for exactly one measurement: terminal velocity, which is only
+ * observable with somebody holding the dive, because an aircraft with any lift
+ * at all curves out of a vertical one.
  */
 const holdingNose = (target, throttle = 0) => plane => {
   const error = noseDeg(plane) - target;
@@ -166,12 +176,18 @@ const holdingNose = (target, throttle = 0) => plane => {
 };
 
 /**
- * The same, on the flight path rather than the nose.
- *
- * dfe5bb9 measured its climb against a path angle, which is the only reading
- * the steady-state solution is written in — the two were the same number then
- * because the flight path was welded to the nose, and they are not now.
+ * Hold an *altitude*, which is what "level top speed" means once lift fades
+ * with height. A nose-holding pilot flies level only by accident; this one
+ * keeps the aircraft in the band where its lift and its thrust belong.
  */
+const holdingAltitude = (target, throttle = 1) => plane => {
+  const s = plane.state;
+  const error = (s.position.y - target) * 0.06 + s.velocity.y * 0.35;
+  plane.setInput('c_PIPitch', Math.max(-1, Math.min(1, error * 0.09)));
+  plane.setInput('c_PIThrottle', throttle);
+};
+
+/** The same, on the flight path. */
 const holdingPath = (target, throttle = 1) => plane => {
   const error = pathDeg(plane) - target;
   plane.setInput('c_PIPitch', Math.max(-1, Math.min(1, error * 0.08)));
@@ -180,62 +196,130 @@ const holdingPath = (target, throttle = 1) => plane => {
 
 const results = {};
 
+// --- the equation itself ---------------------------------------------------
+//
+// `calculateLift` is exported, so its three read properties can be asserted
+// directly rather than inferred from a flight: the +-45 degree hard cutoff, the
+// coefficient peaking at exactly 1.0 at 22.5 degrees, and the speed exponent
+// of 2. Nothing downstream can be right if this is wrong.
+
+{
+  const up = new THREE.Vector3(0, 1, 0);
+  // A surface at `angle` degrees of attack, unit coefficient, and the reading
+  // negated because the caller applies `-lift * surfaceUp`: the numbers below
+  // are upward acceleration, which is the sign everything else here is in.
+  const at = (angle, speed = 1) => {
+    const a = angle / DEG;
+    return -calculateLift(
+      new THREE.Vector3(0, -Math.sin(a), Math.cos(a)).multiplyScalar(speed), up, 1);
+  };
+  const curve = {};
+  for (const angle of [0, 1, 5, 10, 22.5, 30, 44, 44.9, 45, 45.1, 60, 90]) {
+    // Divide out the speed^2 x 0.0025, leaving the bare (0.75c + 0.25s).
+    curve[angle] = round(at(angle) / 0.0025, 6);
+  }
+  results.liftEquation = {
+    curve,
+    // Peak of the 0.75c term is exactly 1.0 at 22.5 degrees, so the whole
+    // bracket there is 0.75 + 0.25 sin(22.5).
+    peak: round(at(22.5) / 0.0025, 6),
+    peakExpected: round(0.75 + 0.25 * Math.sin(22.5 / DEG), 6),
+    // The stall, and it is a cliff in the COEFFICIENT rather than in the
+    // return: past +-45 degrees `c` is hard zero and only the 0.25 sin term
+    // survives, so a surface loses three quarters of its lift in the width of
+    // a floating-point step. The residual is what keeps a tumbling aircraft
+    // from being weightless.
+    justBelow45: round(at(44.9) / 0.0025, 6),
+    justAbove45: round(at(45.1) / 0.0025, 6),
+    residualExpected: round(0.25 * Math.sin(45.1 / DEG), 6),
+    // Small-angle slope per degree: 0.75 x 45/506.25 + 0.25 x pi/180.
+    slopePerDegree: round(at(0.001) / 0.0025 / 0.001, 6),
+    slopeExpected: round(0.75 * 45 / 506.25 + 0.25 * Math.PI / 180, 6),
+    // Speed exponent: doubling the flow must quadruple the acceleration.
+    speedRatio: round(at(10, 2) / at(10, 1), 6),
+    // Zero flow is zero lift, and the guard is an exact `len == 0`.
+    zeroFlow: calculateLift(new THREE.Vector3(), up, 1),
+  };
+}
+
 // --- the constants ---------------------------------------------------------
 
 results.constants = {
-  gravity: CORSAIR.gravity,
-  thrust: CORSAIR.thrust,
+  gravity: GRAVITY,
+  specGravity: CORSAIR.gravity,
+  mass: CORSAIR.mass,
   drag: CORSAIR.drag,
-  thrustFadeSpeed: CORSAIR.thrustFadeSpeed,
-  regulateToLift: CORSAIR.regulateToLift,
-  regulatorSpeed: CORSAIR.regulatorSpeed,
-  incidence: CORSAIR.incidence,
-  liftSlope: CORSAIR.liftSlope,
-  aoaClamp: CORSAIR.aoaClamp,
-  rollRate: CORSAIR.rollRate,
-  pitchRate: CORSAIR.pitchRate,
-  yawRate: CORSAIR.yawRate,
-  weathervane: CORSAIR.weathervane,
-  weathervaneYaw: CORSAIR.weathervaneYaw,
-  slipDamp: CORSAIR.slipDamp,
+  inertiaModifier: CORSAIR.inertiaModifier,
+  engines: CORSAIR.engines.length,
+  differential: CORSAIR.engines[0].differential,
+  fadeSpeed: CORSAIR.engines[0].noPropellerEffectAtSpeed,
+  surfaces: CORSAIR.surfaces.length,
+  // Every constant the retired lumped model carried. They must all be gone:
+  // a spec that still answers to any of these is a spec that still has a free
+  // parameter where the engine has arithmetic.
+  retired: ['thrust', 'thrustFadeSpeed', 'cruiseSpeed', 'liftSlope', 'aoaClamp',
+    'rollRate', 'pitchRate', 'yawRate', 'weathervane', 'weathervaneYaw',
+    'slipDamp', 'regulateToLift', 'regulatorSpeed', 'incidence']
+    .filter(name => name in CORSAIR),
 };
 
-// The two solved speeds, so a constant that moves without its calibration
-// moving with it is caught here rather than in a flight test's error bar.
-// flight-model.md section 9a: thrust fade against linear drag, and gravity
-// against linear drag.
-results.solved = {
-  // 15 x (1 - v/70) = 0.0652 v
-  cruise: round(CORSAIR.thrust
-    / (CORSAIR.thrust / CORSAIR.thrustFadeSpeed + CORSAIR.drag)),
-  // g / drag
-  terminal: round(CORSAIR.gravity / CORSAIR.drag),
-  // Lift at the solved cruise with the nose on the flight path: the regulator
-  // pair plus the incidence term, which the calibration makes exactly g.
-  liftAtCruise: round(CORSAIR.regulateToLift * 2
-    + CORSAIR.liftSlope * (CORSAIR.incidence / DEG) * 53.6676),
-  // Where the regulator servo runs out of its +-2 degrees.
-  regulatorSaturation: round(CORSAIR.regulatorSpeed),
-  // The closure the restoring moment is calibrated against (section 9d): full
-  // elevator at cruise must trim to exactly the angle `aoaClamp` saturates at,
-  // which is the angle section 9a sized that clamp for. If either constant
-  // moves without the other, this stops being `aoaClamp`.
-  fullStickTrim: round((CORSAIR.pitchRate / DEG) / CORSAIR.weathervane, 4),
-};
+{
+  // The engine's thrust scalar, assembled from the read pieces, and the two
+  // level-flight roots it solves to. `getCurrentRatio` = 3.5 x setDifferential
+  // / gearRatioCurve[100], and gearRatioCurve[100] is 0.94 (EngineTemplate
+  // ctor, client 0x005715d0).
+  const ratio = 3.5 * CORSAIR.engines[0].differential / 0.94;
+  const thrustAt = (speed, altitude, throttle = 1) => {
+    const rho = 1 - Math.max(0, Math.min(1, altitude / 1000));
+    const e = throttle - rho * speed / CORSAIR.engines[0].noPropellerEffectAtSpeed;
+    return (0.1 * Math.abs(throttle) + e * Math.abs(e)) * ratio;
+  };
+  // Thrust against linear drag, solved by bisection because K is a signed
+  // square rather than the linear fade the old model used.
+  const levelSpeed = altitude => {
+    let low = 1, high = 300;
+    for (let i = 0; i < 200; i++) {
+      const mid = (low + high) / 2;
+      if (thrustAt(mid, altitude) > CORSAIR.drag * mid) low = mid; else high = mid;
+    }
+    return (low + high) / 2;
+  };
+  results.solved = {
+    ratio: round(ratio),
+    deck: round(levelSpeed(0)),
+    at200: round(levelSpeed(200)),
+    // Thrust rises as speed falls, and it is highest standing still: the
+    // signed square is +1 at rest and goes negative past the fade speed.
+    thrustCurve: [0, 20, 40, 60, 70, 90, 120].map(speed => ({
+      speed, accel: round(thrustAt(speed, 0)),
+    })),
+    // ...and with the throttle shut the propeller is a brake, which is what
+    // caps a dive far below the old model's g/drag = 226.
+    idleCurve: [20, 50, 70, 100].map(speed => ({
+      speed, accel: round(thrustAt(speed, 0, 0)),
+    })),
+    // The same speed at three heights: `rho` scales only the speed term, so a
+    // high propeller does not know how fast it is going and thrust GROWS.
+    thrustByAltitude: [0, 300, 600, 1000].map(altitude => ({
+      altitude, accel: round(thrustAt(50, altitude)),
+    })),
+  };
+}
 
 // --- the rig still drives -------------------------------------------------
 
 {
-  const plane = aircraft({ speed: 53.67 });
+  const plane = aircraft({ speed: 50 });
   // Part-way through the servo travel, so the rate limit is visible rather than
   // only its endpoint: a slammed stick is not an instant control moment.
   //
-  // Recorded rather than predicted, because the rate is not the one the config
-  // declares. `advanceSurfaces` keys a deflection on control/input/axis, and
-  // the Corsair's two elevators share all three, so each of them steps the one
-  // shared entry and it travels at twice the declared 60 deg/s. Pre-existing,
-  // unrelated to the flight model, and left alone here; this line is what would
-  // notice if it were fixed.
+  // And the rates are now the declared ones. `advanceSurfaces` used to key a
+  // deflection on control/input/axis and then step it once per *part*, so the
+  // Corsair's two elevators — which share all three — drove the one shared
+  // entry twice a frame and it travelled at 120 deg/s against its own
+  // `setMaxSpeed 60`. Elevator: 60 deg/s over a 20 degree half-range is 3 of
+  // normalised travel a second, so 1/12 s is 0.25. Aileron: 120 over 30 is 4,
+  // so 1/3. The elevator entry reading 0.5 here is the defect returning.
   fly(plane, 1 / 12, holding({ c_PIPitch: -1, c_PIRoll: 1 }));
   const partial = Object.fromEntries(
     [...plane.state.surfaces].map(([key, value]) => [key, round(value)]));
@@ -247,152 +331,174 @@ results.solved = {
   spawners.add(corsairNode());
   results.rig = {
     parts: plane.parts.length,
-    partial,
-    surfaces: Object.fromEntries(
-      [...plane.state.surfaces].map(([key, value]) => [key, round(value)])),
+    physicsSurfaces: plane.surfaces.length,
+    servos: plane.servoAxes().size,
+    elevator: round(partial['Corsair/c_PIPitch/pitch']),
+    aileron: round(partial['Corsair/c_PIRoll/pitch']),
+    stops: Object.fromEntries(['c_PIPitch', 'c_PIRoll', 'c_PIYaw'].map(input =>
+      [input, round(plane.state.surfaces.get(`Corsair/${input}/pitch`) ?? 0)])),
     hasCamera: !!plane.cameraNode,
     found: findVehicle(spawners, 'Corsair')?.userData?.control ?? null,
   };
 }
 
-// --- level flight ----------------------------------------------------------
+// --- what the surface table works out to -----------------------------------
+//
+// The per-surface coefficients, which are the whole of the aerodynamics now.
+// `flapShare` is the finding that tells `setWingLift` and `setFlapLift` apart
+// once they have been summed into `coeff`.
 
-// dfe5bb9's headline measurement: 148 m held for 40 s at 53.7 m/s, vy -0.06.
 {
-  const plane = aircraft({ speed: 53.6676, altitude: 148 });
+  const plane = aircraft({ speed: 50 });
+  results.surfaceTable = plane.surfaces.map(surface => ({
+    id: surface.id,
+    coeff: round(surface.coeff),
+    flapShare: round(surface.flapShare),
+    pitchOffset: surface.pitchOffset,
+    apply: [round(surface.apply.x), round(surface.apply.y), round(surface.apply.z)],
+    regulates: !!surface.regulateToLift,
+  }));
+  results.inertia = {
+    pitch: round(plane.inertia.x, 0),
+    yaw: round(plane.inertia.y, 0),
+    roll: round(plane.inertia.z, 0),
+  };
+}
+
+// --- level top speed, at two heights ---------------------------------------
+//
+// The corroboration that costs nothing: the AI's authored
+// `aiTemplatePlugIn.maxSpeed` for the Corsair is 55.0, and the model is
+// supposed to bracket it rather than hit it, because thrust fades with speed
+// and the fade is scaled by an air density that thins with height.
+
+results.topSpeed = [];
+for (const altitude of [40, 200]) {
+  const plane = aircraft({ speed: 30, altitude, throttle: 1 });
+  fly(plane, 180, holdingAltitude(altitude, 1));
+  results.topSpeed.push({ altitude, ...snapshot(plane) });
+}
+
+// --- trim ------------------------------------------------------------------
+//
+// Hands off at the deck. This is a real equilibrium — it converges from either
+// side and holds for four minutes — and it is a shallow powered DESCENT, not
+// level flight, because thrust is applied at the propeller hub 0.446 m above
+// the centre of mass and the nose-down moment that makes costs about a quarter
+// of a degree of trimmed angle of attack.
+
+{
+  const plane = aircraft({ speed: 49.4, altitude: 40, throttle: 1 });
+  fly(plane, 150, holding({ c_PIThrottle: 1 }));
+  const before = snapshot(plane);
+  fly(plane, 90, holding({ c_PIThrottle: 1 }));
+  results.trim = {
+    ...snapshot(plane),
+    settled: round(Math.abs(snapshot(plane).vy - before.vy)),
+    regulator: round(plane.deflection(plane.surfaces.find(s => s.id === 'regL'))),
+  };
+}
+
+// How much stick it takes to hold height, and that it is a small amount.
+results.levelStick = [];
+for (const stick of [0, -0.05, -0.1]) {
+  const plane = aircraft({ speed: 49.4, altitude: 400, throttle: 1 });
   const start = plane.state.position.y;
-  let low = start, high = start;
-  for (let i = 0; i < 40 * 60; i++) {
-    plane.integrate(DT);
-    low = Math.min(low, plane.state.position.y);
-    high = Math.max(high, plane.state.position.y);
-  }
-  results.levelFlight = {
-    ...snapshot(plane),
-    drift: round(plane.state.position.y - start),
-    band: round(high - low),
-  };
+  fly(plane, 30, holding({ c_PIThrottle: 1, c_PIPitch: stick }));
+  results.levelStick.push({ stick, drop: round(start - plane.state.position.y), ...snapshot(plane) });
 }
 
-// Two minutes, to catch a phugoid that only diverges slowly.
+// --- the stall, as a curve rather than an outcome --------------------------
+//
+// The most lift the aircraft can make at a given speed, swept over every angle
+// of attack it can reach. `calculateLift`'s coefficient peaks at 22.5 degrees
+// and is zero past 45, so this curve has a real maximum — the engine's stall
+// model — and where it crosses gravity is the speed below which no stick
+// position holds the aircraft up.
+
+results.liftCeiling = [];
+for (const speed of [60, 50, 40, 30, 20, 18, 17, 16, 12, 8]) {
+  const plane = aircraft({ speed, altitude: 5 });
+  let best = -Infinity, bestAlpha = 0;
+  for (let alpha = -2; alpha <= 50; alpha += 0.25) {
+    plane.state.orientation.setFromEuler(new THREE.Euler(alpha / DEG, 0, 0));
+    plane.state.velocity.set(0, 0, -speed);
+    plane.state.angularVelocity.set(0, 0, 0);
+    // Let the regulator servo find its position at this speed.
+    for (let i = 0; i < 120; i++) { plane.regulate(); plane.advanceSurfaces(1 / 120); }
+    const lift = plane.surfaces.reduce((total, surface) => {
+      const q = new THREE.Quaternion();
+      surface.orient(plane.deflection(surface), q);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q.premultiply(plane.state.orientation));
+      const r = surface.apply.clone().applyQuaternion(plane.state.orientation);
+      const raw = calculateLift(plane.state.velocity, up, surface.coeff)
+        * plane.medium(plane.state.position.y + r.y);
+      return total - Math.max(-200, Math.min(200, raw)) * up.y;
+    }, 0);
+    if (lift > best) { best = lift; bestAlpha = alpha; }
+  }
+  results.liftCeiling.push({ speed, maxLift: round(best), atAlpha: round(bestAlpha, 2) });
+}
+
+// --- altitude: the 1000 m ceiling ------------------------------------------
+
+results.medium = [];
 {
-  const plane = aircraft({ speed: 53.6676, altitude: 1000 });
-  let low = 1000, high = 1000;
-  for (let i = 0; i < 120 * 60; i++) {
-    plane.integrate(DT);
-    low = Math.min(low, plane.state.position.y);
-    high = Math.max(high, plane.state.position.y);
+  const plane = aircraft({ speed: 50 });
+  for (const y of [0, 250, 500, 900, 1000, 1400]) {
+    results.medium.push({ y, medium: round(plane.medium(y), 4) });
   }
-  results.levelFlightLong = { ...snapshot(plane), low: round(low), high: round(high) };
+  // And submerged, which is the other branch of the same expression.
+  plane.waterHeight = 0;
+  results.submergedMedium = round(plane.medium(-1), 4);
 }
 
-// Knocked off trim by 3 m/s of sink: what follows must decay, not grow. A
-// model with the flight path welded to the nose passes this trivially because
-// the perturbation is deleted on the next frame; one with a divergent long
-// period fails it.
+// A full-throttle best-effort climb has to stop short of 1000 m, because that
+// is where a Refractor wing stops making lift entirely.
 {
-  const plane = aircraft({ speed: 53.6676, altitude: 1000 });
-  plane.state.velocity.y -= 3;
-  const sink = [];
-  let worst = 0;
-  for (let i = 0; i < 180 * 60; i++) {
+  const plane = aircraft({ speed: 49.4, altitude: 40, throttle: 1 });
+  let best = 40;
+  for (let i = 0; i < 400 * 60; i++) {
+    plane.setInput('c_PIThrottle', 1);
+    holdingPath(10, 1)(plane);
     plane.integrate(DT);
-    worst = Math.max(worst, Math.abs(plane.state.velocity.y));
-    if ((i + 1) % (20 * 60) === 0) sink.push(round(plane.state.velocity.y));
+    best = Math.max(best, plane.state.position.y);
   }
-  results.phugoid = { sink, worst: round(worst), final: snapshot(plane) };
+  results.serviceCeiling = { best: round(best), end: snapshot(plane) };
 }
 
-// dfe5bb9's other steady state: a 15 degree climb, which it measured at
-// 10.1 m/s and 40.3 m/s against a solution of 10.36 and 40.0. Excess thrust
-// along an inclined path, no gravity in the level cruise it starts from:
-// 15 (1 - v/70) - 0.0652 v = g sin 15  ->  v = 40.03, vy = 10.36.
-{
-  const plane = aircraft({ speed: 53.6676, altitude: 1000 });
-  fly(plane, 90, holdingPath(15, 1));
-  results.climb = {
-    ...snapshot(plane),
-    solvedSpeed: round(
-      (CORSAIR.thrust - CORSAIR.gravity * Math.sin(15 / DEG))
-      / (CORSAIR.thrust / CORSAIR.thrustFadeSpeed + CORSAIR.drag)),
-  };
-}
+// --- the loop --------------------------------------------------------------
+//
+// The ground truth for this whole change: a retail SBD-T closes a 360 degree
+// loop from low level at full throttle in about 11 seconds. A Corsair is a
+// fighter and should be quicker. Measured as total BODY pitch travel, because
+// a loop is not a change in heading and an attitude angle folds at vertical.
 
-// --- sink: what happens when it runs out of speed ---------------------------
-
-// Hands off, wings level, nose level, from each entry speed. The aircraft may
-// only hold altitude at the one speed the calibration solves for; below it the
-// lift deficit has to show up as a descent.
-results.sink = [];
-for (const speed of [53.6676, 45, 35, 25, 20, 16.7, 12.4, 8]) {
-  for (const throttle of [0, 1]) {
-    const plane = aircraft({ speed, altitude: 2000, throttle });
-    const start = plane.state.position.y;
-    fly(plane, 10, holding({ c_PIThrottle: throttle }));
-    results.sink.push({
-      entry: round(speed, 2),
-      throttle,
-      drop: round(start - plane.state.position.y),
-      ...snapshot(plane),
-    });
-  }
-}
-
-// The lift the model makes at a speed, nose on the flight path, against the
-// 14.7295 it has to find. This is the stall curve as a table rather than as a
-// flown outcome, so a regression in the speed law is visible directly.
-results.liftCurve = [];
-for (const speed of [60, 53.6676, 40, 30, 20, 12.4, 10, 5, 2]) {
-  const regulated = 2 * CORSAIR.regulateToLift * Math.min(1, speed / CORSAIR.regulatorSpeed);
-  const passive = CORSAIR.liftSlope * (CORSAIR.incidence / DEG) * speed;
-  const maxAlpha = CORSAIR.liftSlope * CORSAIR.aoaClamp * speed;
-  results.liftCurve.push({
-    speed: round(speed, 2),
-    trimmed: round(regulated + passive),
-    ceiling: round(regulated + maxAlpha),
-  });
-}
-
-// --- the hard pull ---------------------------------------------------------
-
-// Full back stick from cruise until it runs out of energy, then hands off. The
-// nose must come back to the flight path and the aircraft must end up flying,
-// rather than hanging on a vertical fuselage climbing at a metre a second,
-// which is what dfe5bb9's report recorded and could not account for.
-for (const [name, throttle] of [['hardPull', 1], ['hardPullIdle', 0]]) {
-  const plane = aircraft({ speed: 53.6676, altitude: 3000, throttle });
-  const track = [];
-  let peakNose = -90, recoveredAt = null, apex = 3000;
-  for (let i = 0; i < 90 * 60; i++) {
-    plane.setInput('c_PIPitch', i < 4 * 60 ? -1 : 0);
-    plane.setInput('c_PIThrottle', throttle);
+results.loop = [];
+for (const [entry, altitude] of [[49.4, 60], [55, 60], [60, 60]]) {
+  const plane = aircraft({ speed: entry, altitude, throttle: 1 });
+  let travel = 0, closedAt = null, slowest = Infinity, apex = altitude;
+  for (let i = 0; i < 30 * 60; i++) {
+    plane.setInput('c_PIPitch', -1);
+    plane.setInput('c_PIThrottle', 1);
     plane.integrate(DT);
-    plane.clock = (plane.clock ?? 0) + DT;
-    peakNose = Math.max(peakNose, noseDeg(plane));
+    travel += pitchRate(plane) * DT;
+    slowest = Math.min(slowest, plane.state.velocity.length());
     apex = Math.max(apex, plane.state.position.y);
-    // Recovered: stick long released, nose back near the flight path, and
-    // enough airspeed to be flying rather than falling.
-    if (recoveredAt === null && plane.clock > 5
-      && Math.abs(alphaDeg(plane)) < 10 && plane.state.velocity.length() > 30) {
-      recoveredAt = round(plane.clock - 4, 2);
-    }
-    if (i % (5 * 60) === 0) track.push(snapshot(plane));
+    if (closedAt === null && travel >= 2 * Math.PI) closedAt = round((i + 1) * DT, 2);
   }
-  results[name] = {
-    peakNose: round(peakNose),
-    apex: round(apex),
-    recoveredAt,
-    end: snapshot(plane),
-    track,
-  };
+  results.loop.push({
+    entry, closedAt, slowest: round(slowest), gain: round(apex - altitude),
+    // Four loops in thirty seconds means the second one is as good as the
+    // first: an aircraft that can only do it once has an energy problem.
+    loops: round(travel / (2 * Math.PI), 2),
+  });
 }
 
 // A sustained pull from cruise, sampled every half second: how fast the flight
 // path comes round, how far the nose leads it, and what that costs in speed.
-// The nose lead is the number the calibration predicts — full elevator should
-// trim the angle of attack to `aoaClamp` and no further.
 {
-  const plane = aircraft({ speed: 53.6676, altitude: 4000 });
+  const plane = aircraft({ speed: 49.4, altitude: 300 });
   const pull = [];
   let path = 0;
   for (let i = 0; i < 4 * 60; i++) {
@@ -407,17 +513,89 @@ for (const [name, throttle] of [['hardPull', 1], ['hardPullIdle', 0]]) {
   results.sustainedPull = pull;
 }
 
-// --- does the nose follow the flight path ----------------------------------
+// --- roll, which nothing commands any more ---------------------------------
+//
+// There is no `rollRate` constant. The rate below is the ailerons' own lift on
+// their own levers against their own damping, and it has to land in the
+// surveyed 180-220 deg/s and be symmetric, because the mirroring is authored
+// config (`sign(setAcceleration)`) and a broken sign shows up as one direction
+// rolling and the other not.
 
+results.roll = {};
+for (const [name, stick] of [['left', -1], ['right', 1]]) {
+  const plane = aircraft({ speed: 49.4, altitude: 300 });
+  fly(plane, 1.5, holding({ c_PIRoll: stick }));
+  const before = plane.state.orientation.clone();
+  // Quarter of a second, because the geodesic angle between two quaternions
+  // folds at 180 and a full second at 210 deg/s is past it.
+  fly(plane, 0.25, holding({ c_PIRoll: stick }));
+  const delta = before.invert().multiply(plane.state.orientation);
+  results.roll[name] = round(4 * 2 * Math.acos(Math.min(1, Math.abs(delta.w))) * DEG);
+}
+
+// --- sink: what happens when it runs out of speed ---------------------------
+
+results.sink = [];
+for (const speed of [49.4, 45, 35, 25, 20, 16.7, 12.4, 8]) {
+  for (const throttle of [0, 1]) {
+    // 150 m, where `medium` is still 0.85. Staged any higher and every entry
+    // speed sinks for the same reason — there is no air up there — and the
+    // measurement stops being about speed.
+    const plane = aircraft({ speed, altitude: 150, throttle });
+    const start = plane.state.position.y;
+    fly(plane, 10, holding({ c_PIThrottle: throttle }));
+    results.sink.push({
+      entry: round(speed, 2),
+      throttle,
+      drop: round(start - plane.state.position.y),
+      ...snapshot(plane),
+    });
+  }
+}
+
+// --- terminal dive ---------------------------------------------------------
+//
+// Not g/drag any more. Past `setNoPropellerEffectAtSpeed` the signed square
+// goes negative and the propeller becomes an airbrake worth several g, so a
+// dive tops out far below the 226 m/s the old linear fade allowed.
+
+results.terminalDive = [];
+for (const throttle of [0, 1]) {
+  // Entered at 900 m and flown straight down through sea level and out the
+  // bottom, because the brake is scaled by an air density that thickens as it
+  // falls: the terminal speed is an altitude-dependent number and the one
+  // worth quoting is the one at the deck.
+  const plane = aircraft({ speed: 60, pitch: -Math.PI / 2, altitude: 900, throttle });
+  let peak = 0;
+  for (let i = 0; i < 60 * 60; i++) {
+    holdingNose(-90, throttle)(plane);
+    plane.integrate(DT);
+    peak = Math.max(peak, plane.state.velocity.length());
+  }
+  results.terminalDive.push({ throttle, peak: round(peak), end: snapshot(plane) });
+}
+
+// Hands off from the same dive entry, which is a different question and worth
+// recording: an aircraft that still makes lift cannot stay in a vertical dive.
+{
+  const plane = aircraft({ speed: 80, pitch: -Math.PI / 2, altitude: 900, throttle: 0 });
+  fly(plane, 30, holding({ c_PIThrottle: 0 }));
+  results.diveRecovery = snapshot(plane);
+}
+
+// --- does the nose follow the flight path ----------------------------------
+//
 // The restoring moment, measured on its own rather than through a manoeuvre.
 // The nose is rotated off the flight path without touching the velocity — a
-// stick cannot produce that state cleanly, because the lift it makes on the
-// way curves the path too — and then the aircraft is left alone. The angle has
-// to close. With no pitch-restoring moment in the model it simply sits there,
-// which is the third leg of the reported bug.
+// stick cannot produce that state cleanly — and then the aircraft is left
+// alone. The angle has to close, and it has to close because the NOSE moved.
+//
+// A per-surface model gets this out of `r x F` over the tail surfaces and
+// carries no constant for it. The lumped model it replaces needed two.
+
 results.noseTracking = [];
 for (const [axis, offset, speed, throttle] of [
-  ['pitch', 25, 53.6676, 1], ['pitch', -25, 53.6676, 1], ['yaw', 20, 53.6676, 1],
+  ['pitch', 25, 49.4, 1], ['pitch', -25, 49.4, 1], ['yaw', 20, 49.4, 1],
   // The one that matters for the stall, and it reads differently. At cruise the
   // wing can whip the flight path up to meet the nose in a fraction of a
   // second, so a fast convergence there does not by itself prove a restoring
@@ -427,7 +605,7 @@ for (const [axis, offset, speed, throttle] of [
   // ever close it is the nose itself travelling. Watch `noseEnd`.
   ['pitch', 40, 15, 0],
 ]) {
-  const plane = aircraft({ speed, altitude: 4000, throttle });
+  const plane = aircraft({ speed, altitude: 400, throttle });
   plane.setInput('c_PIThrottle', throttle);
   const radians = offset / DEG;
   plane.state.orientation.multiply(new THREE.Quaternion().setFromEuler(
@@ -443,20 +621,16 @@ for (const [axis, offset, speed, throttle] of [
   const start = round(measure());
   const noseStart = round(noseDeg(plane));
   const decay = [];
-  let halfLife = null, settledWorst = 0;
-  for (let i = 0; i < 10 * 60; i++) {
+  let halfLife = null;
+  for (let i = 0; i < 12 * 60; i++) {
     plane.integrate(DT);
     const angle = Math.abs(measure());
     if (halfLife === null && angle < Math.abs(start) / 2) halfLife = round((i + 1) * DT, 2);
-    // Once it has converged once, does it stay converged? Sampled from two
-    // seconds on, which is past every transient in these four cases.
-    if (i > 2 * 60) settledWorst = Math.max(settledWorst, angle);
     if ((i + 1) % 30 === 0 && decay.length < 12) decay.push(round(measure(), 2));
   }
   results.noseTracking.push({
     axis, speed: round(speed, 2), start, halfLife, decay,
     settled: round(measure(), 2),
-    settledWorst: round(settledWorst),
     // Which end moved. A restoring moment shows up as the nose travelling; the
     // wing pulling the flight path round shows up as it not.
     noseStart, noseEnd: round(noseDeg(plane)),
@@ -464,38 +638,35 @@ for (const [axis, offset, speed, throttle] of [
 }
 
 // --- backward flight -------------------------------------------------------
+//
+// There must be no resting state here. A tumble through the vertical is
+// allowed — that is what a departure looks like — but the aircraft has to come
+// out of it flying forwards.
 
-// Launched tail-first, hands off. There must be no resting state here: the
-// aircraft has to turn around and fly, or fall out of the sky nose-first.
 {
-  const plane = aircraft({ speed: 0, altitude: 4000, throttle: 0 });
+  const plane = aircraft({ speed: 0, altitude: 400, throttle: 0 });
   plane.setInput('c_PIThrottle', 0);
   plane.state.velocity.set(0, 0, 30);   // nose is -Z, so this is pure tail-first
-  let turnedAt = null, backwardTicks = 0;
+  let turnedAt = null;
   const track = [];
   for (let i = 0; i < 30 * 60; i++) {
     plane.integrate(DT);
     plane.clock = (plane.clock ?? 0) + DT;
-    if (alongOf(plane) < 0) backwardTicks++;
-    else if (turnedAt === null) turnedAt = round(plane.clock, 2);
+    if (turnedAt === null && alongOf(plane) > 0) turnedAt = round(plane.clock, 2);
     if (i % (5 * 60) === 0) track.push(snapshot(plane));
   }
-  results.tailFirst = {
-    turnedAt,
-    backwardSeconds: round(backwardTicks * DT, 2),
-    end: snapshot(plane),
-    track,
-  };
+  results.tailFirst = { turnedAt, end: snapshot(plane), track };
 }
 
-// Held full back stick for half a minute, which is how a player gets there:
-// pull until the speed is gone, keep pulling. The nose-to-path angle must
-// never settle past 90 degrees.
+// Held full back stick for two minutes, which is how a player gets there: pull
+// until the speed is gone, keep pulling. A Corsair that can loop can hold this
+// indefinitely, and must never end up on its back going backwards.
 {
-  const plane = aircraft({ speed: 53.6676, altitude: 6000 });
+  const plane = aircraft({ speed: 49.4, altitude: 300 });
   let worstAlong = Infinity, backwardTicks = 0, worstAlpha = 0;
-  for (let i = 0; i < 60 * 60; i++) {
+  for (let i = 0; i < 120 * 60; i++) {
     plane.setInput('c_PIPitch', -1);
+    plane.setInput('c_PIThrottle', 1);
     plane.integrate(DT);
     const along = alongOf(plane);
     worstAlong = Math.min(worstAlong, along);
@@ -513,51 +684,44 @@ for (const [axis, offset, speed, throttle] of [
 // Dropped from rest, nose up, no airspeed at all — the classic way into a
 // tail-slide, and the case an `asin` angle of attack reads as zero.
 {
-  const plane = aircraft({ speed: 0, pitch: Math.PI / 2, altitude: 4000, throttle: 0 });
+  const plane = aircraft({ speed: 0, pitch: Math.PI / 2, altitude: 500, throttle: 0 });
   plane.setInput('c_PIThrottle', 0);
-  let backwardTicks = 0, turnedAt = null;
+  let turnedAt = null, settledForward = 0;
   for (let i = 0; i < 40 * 60; i++) {
     plane.integrate(DT);
     plane.clock = (plane.clock ?? 0) + DT;
-    if (alongOf(plane) < 0) backwardTicks++;
-    else if (turnedAt === null && plane.clock > 1) turnedAt = round(plane.clock, 2);
+    if (turnedAt === null && plane.clock > 1 && alongOf(plane) > 0) turnedAt = round(plane.clock, 2);
+    if (i > 25 * 60 && alongOf(plane) > 0) settledForward++;
   }
   results.tailSlide = {
     turnedAt,
-    backwardSeconds: round(backwardTicks * DT, 2),
+    settledForward: round(settledForward / (15 * 60), 3),
     end: snapshot(plane),
   };
 }
 
-// --- terminal dive ---------------------------------------------------------
-
-{
-  const plane = aircraft({ speed: 150, pitch: -Math.PI / 2, altitude: 60000, throttle: 0 });
-  plane.groundHeight = () => -Infinity;
-  let peak = 0;
-  for (let i = 0; i < 120 * 60; i++) {
-    holdingNose(-90, 0)(plane);
+// The hard pull, then hands off: the departure the retail game shows. An idle
+// pull to the vertical must fall out of it and come back flying, not hang on
+// the propeller.
+for (const [name, throttle] of [['hardPull', 1], ['hardPullIdle', 0]]) {
+  const plane = aircraft({ speed: 49.4, altitude: 300, throttle });
+  let peakNose = -90, recoveredAt = null;
+  for (let i = 0; i < 40 * 60; i++) {
+    plane.setInput('c_PIPitch', i < 4 * 60 ? -1 : 0);
+    plane.setInput('c_PIThrottle', throttle);
     plane.integrate(DT);
-    peak = Math.max(peak, plane.state.velocity.length());
+    plane.clock = (plane.clock ?? 0) + DT;
+    peakNose = Math.max(peakNose, noseDeg(plane));
+    if (recoveredAt === null && plane.clock > 5
+      && Math.abs(alphaDeg(plane)) < 10 && plane.state.velocity.length() > 25) {
+      recoveredAt = round(plane.clock - 4, 2);
+    }
   }
-  results.terminalDive = { peak: round(peak), end: snapshot(plane) };
-}
-
-// Hands off from the same dive entry, which is a different question and worth
-// recording: an aircraft whose regulator makes 9.82 along body-up cannot stay
-// in a vertical dive, and pulls out of it on its own.
-{
-  const plane = aircraft({ speed: 150, pitch: -Math.PI / 2, altitude: 20000, throttle: 0 });
-  plane.setInput('c_PIThrottle', 0);
-  fly(plane, 60);
-  results.diveRecovery = snapshot(plane);
+  results[name] = { peakNose: round(peakNose), recoveredAt, end: snapshot(plane) };
 }
 
 // --- takeoff ---------------------------------------------------------------
 
-// Parked on the strip, full throttle, rotate at 40 m/s, hold the climb to 120 m
-// and then fly level. The aircraft must unstick, stay unstuck, and not arrive
-// back on the ground.
 {
   const plane = aircraft({ speed: 0, altitude: 1.2, throttle: 0, ground: 0 });
   plane.state.throttle = 0;
@@ -568,10 +732,9 @@ for (const [axis, offset, speed, throttle] of [
     const speed = plane.state.velocity.length();
     plane.setInput('c_PIThrottle', 1);
     // Rotate at 40, then stop pulling once the climb is established: an
-    // elevator held to the stop indefinitely is a prop-hang, not a takeoff.
-    plane.setInput('c_PIPitch',
-      speed > 40 && plane.state.position.y < 120 ? -0.6
-        : noseDeg(plane) > 4 ? 0.25 : 0);
+    // elevator held to the stop indefinitely is a loop, not a takeoff.
+    if (plane.state.position.y < 120) plane.setInput('c_PIPitch', speed > 40 ? -0.6 : 0);
+    else holdingAltitude(150, 1)(plane);
     plane.integrate(DT);
     if (unstuckAt === null && plane.state.position.y > 3) {
       unstuckAt = round(t, 2);
@@ -588,63 +751,44 @@ for (const [axis, offset, speed, throttle] of [
   };
 }
 
-// --- roll, which the change must not have touched --------------------------
-
-results.roll = {};
-for (const [name, stick] of [['left', -1], ['right', 1]]) {
-  const plane = aircraft({ speed: 53.6676, altitude: 2000 });
-  fly(plane, 1, holding({ c_PIRoll: stick }));
-  const before = plane.state.orientation.clone();
-  // Quarter of a second, because the geodesic angle between two quaternions
-  // folds at 180 and a full second at 190 deg/s is past it.
-  fly(plane, 0.25, holding({ c_PIRoll: stick }));
-  const delta = before.invert().multiply(plane.state.orientation);
-  results.roll[name] = {
-    // Full-stick roll rate at cruise, deg/s. dfe5bb9 measured 191 either way.
-    rate: round(4 * 2 * Math.acos(Math.min(1, Math.abs(delta.w))) * DEG),
-    commanded: round(Math.abs(plane.state.angularVelocity.z) * DEG),
-  };
-}
-
 // --- frame rate ------------------------------------------------------------
-
+//
 // `map.html` drives this from `THREE.Clock` clamped at 0.1 s, so the model runs
-// at whatever the browser gives it. The restoring moment is a rate applied per
-// step, which is exactly the shape of thing that can go unstable on a long
-// frame, so hold the same two scenarios at three step sizes.
+// at whatever the browser gives it. The sub-step count scales with the frame,
+// and the servos run inside it — which is the only reason the trim is the same
+// number at all three: the lift regulator is a proportional loop closed through
+// a rate-limited servo, and a whole 0.1 s frame lets that servo cross its
+// entire +-2 degree range in one step and go bang-bang.
+
 results.frameRate = [];
 for (const dt of [1 / 60, 1 / 30, 0.1]) {
-  const level = aircraft({ speed: 53.6676, altitude: 1000 });
-  for (let t = 0; t < 40; t += dt) level.integrate(dt);
-  const back = aircraft({ speed: 0, altitude: 4000, throttle: 0 });
+  const level = aircraft({ speed: 49.4, altitude: 40, throttle: 1 });
+  for (let t = 0; t < 150; t += dt) {
+    level.setInput('c_PIThrottle', 1);
+    level.integrate(dt);
+  }
+  const back = aircraft({ speed: 0, altitude: 400, throttle: 0 });
   back.setInput('c_PIThrottle', 0);
   back.state.velocity.set(0, 0, 30);
-  let backwardTicks = 0;
+  let turnedAt = null;
   for (let t = 0; t < 30; t += dt) {
     back.integrate(dt);
-    if (alongOf(back) < 0) backwardTicks++;
+    if (turnedAt === null && alongOf(back) > 0) turnedAt = round(t, 2);
   }
   results.frameRate.push({
     dt: round(dt, 4),
-    levelDrift: round(level.state.position.y - 1000),
-    levelSpeed: round(level.state.velocity.length()),
-    backwardSeconds: round(backwardTicks * dt, 2),
+    trimSpeed: round(level.state.velocity.length()),
+    trimSink: round(level.state.velocity.y),
+    trimAlpha: round(alphaDeg(level)),
+    turnedAt,
     tailFirstEnd: snapshot(back),
   });
-}
-
-// --- level top speed -------------------------------------------------------
-
-{
-  const plane = aircraft({ speed: 20, altitude: 2000, throttle: 1 });
-  fly(plane, 120, holdingNose(0, 1));
-  results.topSpeed = snapshot(plane);
 }
 
 // --- the camera still reads the same state ---------------------------------
 
 {
-  const plane = aircraft({ speed: 53.6676, altitude: 300 });
+  const plane = aircraft({ speed: 49.4, altitude: 300 });
   const camera = new VehicleCamera(plane, { groundHeight: () => 0 });
   fly(plane, 2);
   const cockpit = camera.update(DT);
