@@ -462,9 +462,18 @@ pick a group whose control point declares `unableToChangeTeam 1` — that is the
 uncapturable HQ, and on Bocage it is group 1 (`AXISBASE_Cpoint`, team 1) and
 group 2 (`ALLIESBase_Cpoint`, team 2).
 
-**489 spawn points across vanilla set `setSpawnAsParaTroper`** — those drop you
-in mid-air under a chute. Filter them out of a stage-1 spawn pick, or the first
-thing the user experiences is a fall.
+**`setSpawnAsParaTroper` is declared 489 times across vanilla and is live 43 of
+them** — those drop you in mid-air under a chute. Corrected during the build,
+because the raw occurrence count is the wrong unit three times over: 446 of the
+489 are an explicit `0`; the 43 live ones are Market Garden 36, Liberation of
+Caen 6 and Coral Sea 1; and of those, Caen's six are on an
+`Objects/ParaTrooperSpawnObject` template rather than a `SpawnPoint`, while
+Market Garden's 36 are the same 12 templates repeated across its Conquest,
+SinglePlayer and TDM directories. **In the Conquest data the extractor actually
+reads it is 13 — 12 on Market Garden and 1 on Coral Sea** (and Coral Sea places
+no soldier spawns in Conquest at all, so the count that can ever reach a player
+is 12, all on one map). Filter them out of a spawn pick anyway, or the first
+thing a Market Garden visitor experiences is a fall.
 
 **The kit wiring, for when it is no longer deferred**, is four lines of
 `Init.con` per level:
@@ -863,6 +872,156 @@ level" like the ground changing under you.
 | 3b — footsteps | extractor + viewer | ~40 `.wav` | `extract_map.py` or a new step, `soldier.js` | **S** |
 | 4 — firing | extractor + viewer | none | `assemble.py`, `con.py`, `soldier.js` | **S–M** |
 | 5 — third person, kits | viewer + extractor | none | `map.html`, `extract_map.py` | **S** each |
+
+---
+
+## 6a. Stage 1, as built
+
+Shipped. `viewer/soldier.js` (new, imports nothing), `tests/test_soldier.py` +
+`tests/soldier_harness.mjs` (29 assertions, suite 401 -> 430), 175 lines in
+`viewer/map.html`, and `setSpawnAsParaTroper` through `bf42/level.py` +
+`extract_map.py`.
+
+### What the plan got right
+
+| predicted | built |
+|---|---|
+| viewer-only, size M, nothing re-extracted | held — the only Python is the paratrooper flag, which is optional |
+| eye 1.56 / 1.03 / 0.21 | exact, and measured back out of the running page |
+| speeds 2.28 / 1.08 / 1.58 / 0.69 | exact, and Shift is the slow gait |
+| pitch clamped +-38, FOV ~54 | 38.00 / -38.00 measured, FOV 53.86 |
+| 0.31 m capsule sliding against `WorldCollider.cast` | held |
+| bob from the declared `setCameraShake*` | amplitudes held; the *rate* did not — see below |
+| "three to five casts per frame" | **wrong: 11.** Nine sweep probes, one floor, one post-move step test |
+
+### What the plan got wrong, and what the build had to change
+
+**The bob's frequency term is not usable.** The amplitudes (`0.08` run, `0.06`
+walk) are the game's and they are what ships. The third argument is not: read as
+Hz, `15` against a 2.78 steps/s run cadence is five times too fast, and the
+walk/run ratio it implies (7:15 = 2.14) does not match the step-rate ratio the
+same archive declares (0.66:0.36 = 1.83). The phase now comes off the footstep
+clock instead — which is unambiguous, is in the same file, and puts the bob in
+step with the footstep audio stage 3 hangs on the same clock.
+
+**Stance transitions are data, which the plan did not notice.** The plan had an
+invented ease constant. The state machine declares a clip *and a rate* for every
+transition, so they are measurable: `Lb_StandToCrouch` 5 frames at 4x = 48 ms,
+`Lb_CrouchToLie` 9 at 1.6x = 216 ms, `Lb_LieToStand` 9 at -3.0x = 115 ms. All
+three now come from there. BF1942 drops prone in 48 ms and takes 115 ms to get
+up, and that asymmetry is most of how going down and coming up feel.
+
+**Step-up cannot live in the sweep.** The plan said "allow a 0.4 m step-up". The
+first attempt put the lowest horizontal probe below the step height so it could
+see a kerb — which also makes every slope past 31 degrees read as a wall, and
+refuses terrain the slope limit explicitly allows. The probes now start *above*
+the step height and see only walls; kerbs and slopes are settled afterwards by
+one probe from head height against the floor you actually landed on. They are
+two different questions and they needed two different tests.
+
+**`STEP_UP` is 0.43, not 0.4, and it is derived.** The posed standing knee
+(`Bip01 L Calf`) is at 0.547 m and the ankle at 0.121 m, so a foot rises 0.426 m
+without the hip moving. Prone gets 0.12 m, which is ours and is only there
+because crawling over a knee-high kerb is silly.
+
+**45 degrees stayed, and stopped being a guess.** Sampled against each level's
+own `Heightmap.raw` on its 4 m lattice, the fraction of cells at or under 45
+degrees is Bocage 98.5%, Wake 98.7%, El Alamein 98.5%, Berlin 100%, Omaha Beach
+96.9% — so it admits essentially all walkable ground and rejects Omaha's bluff
+faces, which you cannot walk up in game either. Still ours; no longer arbitrary.
+
+**`setSpawnAsParaTroper` needed correcting twice** — see §2.5. The viewer skips
+them two ways: the flag where a level has been re-extracted, and an
+altitude-over-terrain fallback where it has not, so no already-shipped map has
+to be rebuilt.
+
+### Four bugs the node harness caught that a browser would have hidden
+
+Worth recording because they are the argument for the harness existing:
+
+1. **The skin gap was subtracted from every move**, not only from a contact,
+   scaling a run down 53% and stopping a walk dead. In a browser this reads as
+   "feels a bit slow".
+2. **`WorldCollider`'s terrain march bisects against `maxDist`**, so its
+   precision is `maxDist / 256` — 2.3 m on the 600 m probe a spawn drop wants.
+   That put a spawned soldier a fifth of a metre under his own feet and
+   silently ate the first jump. `floorAt` now asks the two halves separately:
+   hulls through the grid, ground and sea through `surfaceHeight`, no ray.
+3. **A flat radius over-reserves on oblique contact** — a 45-degree approach
+   stopped 0.39 m from a wall instead of 0.31, because the leading probe starts
+   17 cm nearer and a radius along the diagonal is only 22 cm of plane
+   clearance. Both terms are recoverable from the normal the collider already
+   returns.
+4. **Any surface within a step's height pulled the body up, every frame**, with
+   no cause required — so standing still inside stacked geometry ratchets you
+   onto the roof. Raising now has to be a step you walked onto or a surface you
+   came down on. Tightening that broke landing, which the suite caught in the
+   same run: the floor probe is now swept from wherever the feet were higher
+   during the frame, because a probe starting where gravity just put you passes
+   straight through the ground at fall speed.
+
+### Verified in a browser
+
+Headless Chromium (the vendored Playwright), SwiftShader, against the real
+extracted Bocage — 21,661 collision triangles, heightfield 512^2 at 4 m. Driven
+through the page's own paths: the checkbox, the flag `<select>`, real
+`KeyboardEvent`s, and `window.__look` (which calls the same `lookDelta` a
+pointer-lock `pointermove` calls). Readings come back through `window.__soldier()`.
+
+| | measured |
+|---|---|
+| spawn | `2nd_Panzer_Division_HQ`, 5 flags found, feet exactly on the terrain, grounded |
+| eye above feet | **1.5600** |
+| FOV / near plane | 53.86 / 0.2 |
+| one second of each gait | run **2.28 m**, walk **1.08**, crouch **1.58**, prone **0.69** |
+| stance eye heights | stand **1.56**, crouch **1.03**, prone **0.21**, and 1.56 again both ways back |
+| pitch clamp | **+38.00 / -38.00 degrees** |
+| page errors | **none** |
+
+**Forty runs, eight headings from each of the five flags, two seconds each.** A
+clear run is 4.56 m. Three ended short against a hull (3.04 m, 4.50 m, 4.00 m)
+and reported `blocked`; that is a lower bound, because `blocked` is sampled on
+the final frame only, so a run that struck a wall and then slid clear of it
+reads as unblocked. The feet tracked the terrain to **0.00 m on 39 of 40** runs
+while the ground moved between -1.10 m and +1.54 m beneath them; the fortieth
+ended 0.18 m above terrain, standing on a placed object, which is the hull floor
+path working. None ended on water.
+
+**What I could not verify visually.** The synthetic cases — a 0.30 m kerb
+climbed, a 0.80 m kerb refused, a 20-degree ramp walked up, a 60-degree face
+refused, a 4 m ledge fallen off, a beam too low to stand under — are asserted in
+`tests/test_soldier.py` against a world built for them, **not** demonstrated in
+the browser. Bocage has no geometry at known heights to aim at, and I did not
+find a real kerb or cliff on it and photograph the result. The browser run
+proves the integration; the harness proves the geometry.
+
+### Cost, measured
+
+Eleven collider queries per frame: nine horizontal sweep probes, one floor
+probe, one post-move step test. Two of the eleven resolve ground through
+`surfaceHeight` without a ray, so the collider's own counter sees nine.
+
+| | per frame |
+|---|---|
+| node harness, synthetic world (48 triangles) | **1.85 us** for the whole `step()` |
+| Bocage, the collider's own accumulator over 1200 sim frames | 203.7 us |
+| Bocage, batched 20,000 iterations of one frame's nine probes, through `__castRay` | 179 us |
+| Bocage, the same batch straight at `collider.cast` — no wrapper, no allocation | **189 us** |
+
+Three independent measurements inside 15% of each other, so this is not the
+`performance.now()` granularity artefact `projectile-collision.md` ran into — it
+is real time. It is also **1.1% of a 16.7 ms frame**, against a page spending
+4.1 ms/frame on the SwiftShader render alone, so it is not close to being the
+thing that limits this page.
+
+Two honest caveats. The wrapper is not the cost: going straight at
+`collider.cast` measured *slower* than going through `__castRay`, which puts
+both inside the noise and means the ~21 us per cast is the grid query itself in
+this environment. And the environment matters — headless CPU rasterisation with
+the JIT under load. `projectile-collision.md` measured **1.23 us** per cast on
+this same Bocage index under its own harness, which would put a frame at 11 us.
+**This build did not reproduce that figure and does not claim it**; 189 us/frame
+is what was measured here, and the gap between the two is unexplained.
 
 ---
 
