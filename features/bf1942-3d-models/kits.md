@@ -33,15 +33,13 @@ Then **Kits**, the fourth tab of the mesh viewer, beside Models / Maps / Poses.
   `bf42/roster.py` learned EoD's nations.
 - `tests/test_kit.py` — 16 tests, installation-free like the rest.
 
-Measured in the browser against the real extraction: **89 of 89 vanilla worn
-parts place** (35 head, 22 back, 32 hip) and head parts land at y = 1.73–1.77 m
-against a naive ungrafted y ≈ 0. Orientation is checked by recovering the
-rotation between each part standalone and grafted, which must be the identity:
-**447 of 447 parts across vanilla and EoD, maximum deviation 0.00°.**
+Measured in the browser against the real extraction: **447 of 447 worn parts
+place** — 89 vanilla (35 head, 22 back, 32 hip) and 358 EoD — with head parts at
+y = 1.73–1.77 m against a naive ungrafted y ≈ 0.
 
-It took three metrics to get there, and the first two were each green while the
-helmets were visibly wrong. That story is worth more than the number — see
-"The graft, and the trap it walked into".
+Orientation has **no automated check**. Three of them passed while every helmet
+was upside down or 90° out; it was settled by eye. That story is worth more than
+any number here — see "The graft, and the trap it walked into".
 
 ## Scope
 
@@ -145,16 +143,10 @@ the last is the typo `0^`. Ignore it.
 
 ### The graft, and the trap it walked into
 
-A KitPart mesh comes out of the exporter **crown up**, centred on its own origin.
-That is measurable without looking at it: slice the vertex cloud at both ends of
-each axis and compare the spread of the other two. A helmet is a dome, so the
-open rim is wide and the crown converges — `Us_Helmet` reads 0.163 at −Y against
-0.101 at +Y, and `Jap_Helmet` 0.196 against 0.096. Rim at the bottom, crown at
-the top.
-
-The bone it hangs on is a different matter. `Bip01 Head` — and `A`, its
-pure-translation child, which inherits its rotation exactly — carries a 3ds Max
-Biped frame that runs along the limb and has nothing to do with world up:
+A KitPart mesh comes out of the exporter centred on its own origin, and the bone
+it hangs on carries a 3ds Max Biped frame that runs along the limb rather than
+along world up — `Bip01 Head`, and `A`, its pure-translation child which inherits
+its rotation exactly:
 
 ```
 A / Bip01 Head rest rotation
@@ -162,6 +154,10 @@ A / Bip01 Head rest rotation
   [ 0.348  0.924  0.158 ]
   [ 0.919 -0.370  0.139 ]
 ```
+
+Stare at that matrix and the natural conclusion is that the graft has to cancel
+it, the way a skinned mesh's inverse-bind matrices do. That conclusion is wrong,
+and chasing it cost four attempts.
 
 **A KitPart is authored in bone space.** The hip pack is the proof: it needs no
 rotation at all. Parent it to `HipPack` and it is correct. So the bone's Biped
@@ -214,38 +210,38 @@ and a person looking at the screen. Head took one X+90; back took three; hip too
 Z+90, Y+90, Z+90 — which composes to the identity, the tell that it had been
 right all along.
 
-### Two blind metrics in a row
+### Three blind metrics in a row
 
-This is [`weapon-grip.md`](weapon-grip.md)'s fourth trap, hit twice more.
+This is [`weapon-grip.md`](weapon-grip.md)'s fourth trap, hit three more times.
+Every one of these came back green on a graft that was visibly wrong, and a
+person looking at the screen caught all three.
 
-**A distance cannot see a rotation.** The first check here was a gap metric and
-it passed everything: 1 cm helmet-to-head-bone, median 8.4 cm across 89 parts,
-against a naive ungrafted control of ~1.75 m. All green, every helmet upside
-down. A human looking at the screen caught it.
+**A distance cannot see a rotation.** A gap metric: 1 cm helmet-to-head-bone,
+median 8.4 cm across 89 parts, against a naive ungrafted control of ~1.75 m. All
+green, every helmet upside down.
 
-**A dome cannot see a yaw.** The replacement was a rim test — slice the vertex
-cloud at both ends of world Y and compare the spread of the other two axes; the
-open rim is wide, the crown converges. It correctly caught the inversion (9 of 12
-heads flagged without the correction, 0 with it). But a helmet is *rotationally
-symmetric about its own axis*, so the rim test is structurally incapable of
-seeing a yaw — and the parts were still 90 degrees off. A human caught that one
-too.
+**A dome cannot see a yaw.** A rim test — slice the vertex cloud at both ends of
+world Y, compare the spread of the other two axes; the open rim is wide, the
+crown converges. It genuinely caught the inversion (9 of 12 heads flagged without
+the correction, 0 with it). But a helmet is *rotationally symmetric about its own
+axis*, so the test cannot see a yaw, and the parts were still 90 degrees out.
 
-The check that actually works is Kabsch: recover the rotation that best maps the
-standalone part's vertex cloud onto the grafted one, and require it to be the
-identity. It is sensitive to yaw, pitch and roll together, it needs no assumption
-about the part's shape — so it covers `Us_Glasses` and the 0.6 m `VCCamoHat` bush
-as well as it covers a helmet — and it is one number per part:
+**A comparison cannot see a wrong reference.** Kabsch: recover the rotation that
+best maps the standalone part's vertex cloud onto the grafted one, require the
+identity. Shape-independent, sensitive to yaw, pitch and roll together, estimator
+validated against a known 61.44° rotation. It reported **447 of 447 parts at
+0.00°** — and it was meaningless, because "matches the standalone file" is not
+what correct means. The file is not the target; the soldier is.
 
-> **447 of 447 parts** (89 vanilla, 358 EoD), **maximum deviation 0.00°.**
+Each metric was sound in its own terms. Each had a *structural* blind spot that
+no amount of running it would surface, and the third was the most dangerous
+precisely because it was the most rigorous — a validated estimator and a perfect
+score, measuring the wrong thing.
 
-Validate the estimator against a known rotation before trusting it; a recovery
-routine that silently returns the identity would report a perfect score. The
-version here recovers a 61.44° test rotation to within 0.00°.
-
-The through-line: each metric was fine as far as it went, and each had a
-*structural* blind spot that no amount of running it would reveal. Ask what a
-measurement cannot see before trusting a green result from it.
+The honest summary: **this feature has no automated orientation check.** The
+placement numbers below are real; orientation was settled by eye, and any future
+change to `SLOT_ROTATION` needs the same treatment. A metric here should be
+distrusted until it can be shown to *fail* on a deliberately broken graft.
 
 ### This is the weapon weld again
 
@@ -751,14 +747,11 @@ Three things are checked, and only the third one earns its keep.
 89 of 89 vanilla, 358 of 358 EoD. Head parts sit at y = 1.73–1.77 m against a
 naive ungrafted y ≈ 0, which is the control that makes the number mean something.
 
-**Orientation — the one that matters.** Recover the rotation between the part
-standalone and the part grafted (Kabsch, via the polar decomposition of the
-cross-covariance) and require the identity. Shape-independent, so it covers
-glasses and foliage hats as well as helmets, and sensitive to yaw, pitch and roll
-together — which the two metrics it replaced were not. **447 of 447 parts,
-maximum deviation 0.00°.** Validate the estimator against a known rotation first:
-it recovers a 61.44° test case to 0.00°, so a green score is not just the routine
-returning the identity.
+**Orientation — by eye, and only by eye.** Three automated checks passed this
+graft while it was visibly wrong (see "Three blind metrics in a row"). There is
+no numeric gate on `SLOT_ROTATION`; it was dialled in with a temporary 90°-nudge
+panel and confirmed on screen. Treat a change to those three quaternions as
+needing a look, not a test run.
 
 **Textures.** Per-part `texturesMissing` in each `.kit.report.json`, because an
 unresolved texture paints a white helmet that is indistinguishable on screen from
