@@ -567,5 +567,397 @@ ObjectTemplate.sizeOverTime 0/0.12009|100/9.40001
                          particle.size_over_time)
 
 
+class PhysicsVocabularyTests(unittest.TestCase):
+    """The `.con` physics vocabulary, out of the shipped files verbatim.
+
+    Every block below is copied from vanilla `Objects.rfa` with nothing
+    normalised — including `setTorque 4.0` written with a decimal point and
+    `setTorque 2` without, and `ObjectTemplate.Grip` being the one physics
+    directive with no `set` prefix. Where a number looks wrong it is quoted
+    from the file anyway and the reason is in the test.
+    """
+
+    @staticmethod
+    def library(text: str, path: str = "Objects/Vehicles/Land/Test/Physics.con") -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(path, text)
+        return library
+
+    def test_tank_drivetrain_is_read_off_the_engine(self) -> None:
+        # Objects/Vehicles/Land/Sherman/Physics.con:4-27.
+        library = self.library("""
+ObjectTemplate.create Engine ShermanEngine
+ObjectTemplate.setMinRotation -1/0/-1
+ObjectTemplate.setMaxRotation 1/0/1
+ObjectTemplate.setInputToYaw c_PIYaw
+ObjectTemplate.setInputToRoll c_PIThrottle
+ObjectTemplate.setEngineType c_ETTank
+ObjectTemplate.setTorque 4.0
+ObjectTemplate.setDifferential 4.0
+ObjectTemplate.setNumberOfGears 5
+ObjectTemplate.setGearUp 0.95
+ObjectTemplate.setGearDown 0.45
+ObjectTemplate.setGearChangeTime 0.05
+""")
+
+        self.assertEqual(
+            {"engineType": "c_ETTank", "torque": 4.0, "differential": 4.0,
+             "numberOfGears": 5, "gearUp": 0.95, "gearDown": 0.45,
+             "gearChangeTime": 0.05},
+            library.object("ShermanEngine").physics(),
+        )
+
+    def test_ship_engine_declares_a_thrust_zero_speed_and_no_gearbox(self) -> None:
+        # Objects/Vehicles/Sea/fletcher/Physics.con:28-40.
+        library = self.library("""
+ObjectTemplate.create Engine Fletcher_Engine
+ObjectTemplate.setEngineType c_ETShip
+ObjectTemplate.setTorque 2
+ObjectTemplate.setDifferential 2
+ObjectTemplate.setNoPropellerEffectAtSpeed 120
+""", "Objects/Vehicles/Sea/fletcher/Physics.con")
+
+        self.assertEqual(
+            {"engineType": "c_ETShip", "torque": 2.0, "differential": 2.0,
+             "noPropellerEffectAtSpeed": 120.0},
+            library.object("Fletcher_Engine").physics(),
+        )
+
+    def test_grip_is_a_bitfield_and_a_zeroed_spring_is_not_an_absent_one(self) -> None:
+        """`c_PGFEngineDummyGrip` is EngineGrip|DummyGrip, not a fifth class.
+
+        Both templates are Objects/Vehicles/Land/Sherman/Physics.con, the
+        load-bearing wheel at :57-66 and the cosmetic one at :29-37. Telling
+        them apart is the difference between a Sherman riding on four springs
+        and riding on twelve, and it is a bit test — 0x24 & 0x04 is true.
+        """
+        library = self.library("""
+ObjectTemplate.create Spring ShermanWheelL3
+ObjectTemplate.Grip c_PGFEngineGrip
+ObjectTemplate.setStrength 18
+ObjectTemplate.setDamping 4
+
+ObjectTemplate.create Spring ShermanWheelL3Dummy
+ObjectTemplate.Grip c_PGFEngineDummyGrip
+ObjectTemplate.setStrength 0
+ObjectTemplate.setDamping 0
+""")
+
+        real = library.object("ShermanWheelL3").physics()
+        dummy = library.object("ShermanWheelL3Dummy").physics()
+
+        self.assertEqual(
+            {"grip": "c_PGFEngineGrip", "gripFlags": 0x04,
+             "strength": 18.0, "damping": 4.0},
+            real)
+        self.assertEqual(
+            {"grip": "c_PGFEngineDummyGrip", "gripFlags": 0x24,
+             "strength": 0.0, "damping": 0.0},
+            dummy)
+        self.assertTrue(dummy["gripFlags"] & 0x04)   # engine-driven
+        self.assertTrue(dummy["gripFlags"] & 0x20)   # and cosmetic
+        # A zeroed spring keeps its zeros. Pruning falsy values instead of
+        # None ones would delete exactly the field that identifies it.
+        self.assertIn("strength", dummy)
+
+    def test_spring_strength_is_not_normalised_by_gravity(self) -> None:
+        """The engine multiplies; the exporter must not.
+
+        `PhysicsSpring::updatePhysics` (0x0057f0d0) applies
+        `strength * displacement * |g|/9.82`, so at the engine's real
+        -14.73 m/s^2 a spring pushes about 1.5x as hard as its `.con` value.
+        Folding that in here would make the export disagree with the file.
+        """
+        library = self.library("""
+ObjectTemplate.create Spring CorsairWheelLeft
+ObjectTemplate.Grip c_PGFRollGripWhenOccupied
+ObjectTemplate.setStrength 24
+ObjectTemplate.setDamping 12
+""", "Objects/Vehicles/Air/Corsair/Physics.con")
+
+        self.assertEqual(24.0, library.object("CorsairWheelLeft").physics()["strength"])
+
+    def test_unknown_grip_name_keeps_the_name_and_claims_no_bits(self) -> None:
+        library = self.library("""
+ObjectTemplate.create Spring ModdedWheel
+ObjectTemplate.Grip c_PGFHoverGrip
+ObjectTemplate.setStrength 5
+""")
+
+        physics = library.object("ModdedWheel").physics()
+
+        self.assertEqual("c_PGFHoverGrip", physics["grip"])
+        self.assertNotIn("gripFlags", physics)
+
+    def test_wing_carries_both_lift_terms_and_its_application_point(self) -> None:
+        # Objects/Vehicles/Air/Corsair/Physics.con — the left regulator flap,
+        # whose offset is the exact negation of its attach position so that
+        # sustaining lift acts at the centre of mass and produces no torque.
+        library = self.library("""
+ObjectTemplate.create Wing CorsairFlapLeftMiddle
+ObjectTemplate.setMinRotation 0/-2/0
+ObjectTemplate.setMaxRotation 0/2/0
+ObjectTemplate.setPitchOffset 0.5
+ObjectTemplate.setPositionOffset 2.564/0.135/-0.895
+ObjectTemplate.setFlapLift 4
+ObjectTemplate.setRegulateToLift 4.91
+ObjectTemplate.setWingToRegulatorRatio 1
+""", "Objects/Vehicles/Air/Corsair/Physics.con")
+
+        self.assertEqual(
+            {"flapLift": 4.0, "pitchOffset": 0.5,
+             "positionOffset": [2.564, 0.135, -0.895],
+             "regulateToLift": 4.91, "wingToRegulatorRatio": 1.0},
+            library.object("CorsairFlapLeftMiddle").physics(),
+        )
+
+    def test_ship_rudder_keeps_its_zero_wing_lift(self) -> None:
+        """A rudder aligned with the flow must make no force, so `setWingLift
+        0` is the datum, not a missing value. Same class as an aileron —
+        Objects/Vehicles/Sea/fletcher/Physics.con:14-25."""
+        library = self.library("""
+ObjectTemplate.create Wing Fletcher_rudder
+ObjectTemplate.setMinRotation 0/-25/0
+ObjectTemplate.setMaxRotation 0/25/0
+ObjectTemplate.setInputToPitch c_PIYaw
+ObjectTemplate.setPositionOffset 0/0/0
+ObjectTemplate.setWingLift 0
+ObjectTemplate.setFlapLift 2
+""", "Objects/Vehicles/Sea/fletcher/Physics.con")
+
+        physics = library.object("Fletcher_rudder").physics()
+
+        self.assertEqual(0.0, physics["wingLift"])
+        self.assertEqual(2.0, physics["flapLift"])
+
+    def test_elevator_remembers_excess_input(self) -> None:
+        library = self.library("""
+ObjectTemplate.create Wing CorsairFlapTailLeft
+ObjectTemplate.rememberExcessInput 1
+ObjectTemplate.setWingLift 0.5
+ObjectTemplate.setFlapLift 0.5
+""", "Objects/Vehicles/Air/Corsair/Physics.con")
+
+        self.assertIs(True,
+                      library.object("CorsairFlapTailLeft").physics()["rememberExcessInput"])
+
+    def test_buoyancy_point_and_the_asymmetric_lift_that_is_a_dive(self) -> None:
+        # Objects/Vehicles/Sea/fletcher/Physics.con:47-50 and
+        # Objects/Vehicles/Sea/Gato/Physics.con:93-103. The submarine's
+        # min/max spread is the whole of its dive model.
+        library = self.library("""
+ObjectTemplate.create FloatingBundle Fletcher_Floater
+ObjectTemplate.setHullHeight 20
+ObjectTemplate.setFloatMaxLift 2
+ObjectTemplate.setFloatMinLift 2
+
+ObjectTemplate.create FloatingBundle GatoFloater
+ObjectTemplate.setHullHeight 3.3
+ObjectTemplate.setFloatMaxLift 1.6275
+ObjectTemplate.setFloatMinLift 0.8275
+""", "Objects/Vehicles/Sea/fletcher/Physics.con")
+
+        self.assertEqual(
+            {"hullHeight": 20.0, "floatMaxLift": 2.0, "floatMinLift": 2.0},
+            library.object("Fletcher_Floater").physics())
+        self.assertEqual(
+            {"hullHeight": 3.3, "floatMaxLift": 1.6275, "floatMinLift": 0.8275},
+            library.object("GatoFloater").physics())
+
+    def test_hull_drag_and_sinking_speed_ride_on_the_floater(self) -> None:
+        library = self.library("""
+ObjectTemplate.create FloatingBundle HatsuzukiFloater
+ObjectTemplate.setHullHeight 10
+ObjectTemplate.setFloatMaxLift 2
+ObjectTemplate.setFloatMinLift 2
+ObjectTemplate.setSinkingSpeedMod 7
+ObjectTemplate.setDragModifier 8000.0
+""", "Objects/Vehicles/Sea/Hatsuzuki/Physics.con")
+
+        physics = library.object("HatsuzukiFloater").physics()
+
+        self.assertEqual(7.0, physics["sinkingSpeedMod"])
+        self.assertEqual(8000.0, physics["dragModifier"])
+
+    def test_landing_gear_thresholds_are_not_the_engines_gearbox(self) -> None:
+        """Two unrelated vocabularies that share the word "gear".
+
+        `setGearUp`/`setGearDown` on an Engine are transmission shift points
+        as a fraction of max revs; `setGearUpHeight` and friends on a
+        LandingGear are metres and throttle positions. The Corsair declares
+        both, with different numbers.
+        """
+        library = self.library("""
+ObjectTemplate.create Engine CorsairEngine
+ObjectTemplate.setEngineType c_ETPlane
+ObjectTemplate.setTorque 15
+ObjectTemplate.setGearUp 0.7
+ObjectTemplate.setGearDown 0.3
+ObjectTemplate.setNoPropellerEffectAtSpeed 70
+
+ObjectTemplate.create LandingGear CorsairLandingGearLeft
+ObjectTemplate.setGearUpHeight 23
+ObjectTemplate.setGearDownHeight 25
+ObjectTemplate.setGearUpEngineInput 0.7
+ObjectTemplate.setGearDownEngineInput 0.4
+""", "Objects/Vehicles/Air/Corsair/Physics.con")
+
+        engine = library.object("CorsairEngine").physics()
+        gear = library.object("CorsairLandingGearLeft").physics()
+
+        self.assertEqual(0.7, engine["gearUp"])
+        self.assertEqual(0.3, engine["gearDown"])
+        self.assertNotIn("gearUpHeight", engine)
+        self.assertEqual(
+            {"gearUpHeight": 23.0, "gearDownHeight": 25.0,
+             "gearUpEngineInput": 0.7, "gearDownEngineInput": 0.4},
+            gear)
+
+    def test_body_carries_mass_drag_inertia_and_the_occupancy_scalars(self) -> None:
+        # Objects/Vehicles/Land/Willy/Objects.con:1-44, trimmed to the
+        # physics-bearing lines; `setVehicleType` really is written with two
+        # spaces after it in the shipped file.
+        library = self.library("""
+ObjectTemplate.create PlayerControlObject Willy
+ObjectTemplate.damageFromWater 1
+ObjectTemplate.drag 1.5
+ObjectTemplate.mass 2500
+ObjectTemplate.speedMod 1
+ObjectTemplate.exitTimer 0.75
+ObjectTemplate.hpLostWhileUpSideDown 5
+ObjectTemplate.hpLostWhileDamageFromWater 5
+ObjectTemplate.setSoldierExitLocation -1.5/0/-0.8 0/0/0
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.setVehicleType  VTScoutCar
+ObjectTemplate.hasRestrictedExit 1
+""", "Objects/Vehicles/Land/Willy/Objects.con")
+
+        self.assertEqual(
+            {"mass": 2500.0, "drag": 1.5, "speedMod": 1.0,
+             "vehicleCategory": "VCLand", "vehicleType": "VTScoutCar",
+             "exitTimer": 0.75, "hasRestrictedExit": True,
+             "soldierExitLocation": {"position": [-1.5, 0.0, -0.8],
+                                     "rotation": [0.0, 0.0, 0.0]},
+             "damageFromWater": True,
+             "hpLostWhileDamageFromWater": 5.0,
+             "hpLostWhileUpSideDown": 5.0},
+            library.object("Willy").physics(),
+        )
+
+    def test_aircraft_body_keeps_per_axis_inertia_ratios(self) -> None:
+        # Corsair/Objects.con:12 against B17/Objects.con:13 — the ratios are
+        # shipped data even though the base tensor is not.
+        library = self.library("""
+ObjectTemplate.create PlayerControlObject Corsair
+ObjectTemplate.mass 2500
+ObjectTemplate.drag 0.0652
+ObjectTemplate.inertiaModifier 1.05/0.850/0.94
+ObjectTemplate.angleMod 1
+ObjectTemplate.speedMod 2
+ObjectTemplate.setVehicleCategory VCAir
+""", "Objects/Vehicles/Air/Corsair/Objects.con")
+
+        physics = library.object("Corsair").physics()
+
+        self.assertEqual([1.05, 0.85, 0.94], physics["inertiaModifier"])
+        self.assertEqual(0.0652, physics["drag"])
+        self.assertEqual(1.0, physics["angleMod"])
+
+    def test_malformed_vehicle_category_is_passed_through_not_repaired(self) -> None:
+        """`AA_Allies` declares bare `Land` where 56 templates say `VCLand`.
+
+        Normalising it would hide a shipped data bug from anything that keys
+        on the exact string.
+        """
+        library = self.library("""
+ObjectTemplate.create PlayerControlObject AA_Allies
+ObjectTemplate.setVehicleCategory Land
+ObjectTemplate.setVehicleType AAGun
+""", "Objects/Vehicles/Land/AA_Base/Objects.con")
+
+        self.assertEqual("Land",
+                         library.object("AA_Allies").physics()["vehicleCategory"])
+
+    def test_submarine_data_is_seven_unnamed_floats_in_declaration_order(self) -> None:
+        """Nothing establishes what any of the seven mean, so nothing is named.
+
+        Objects/Vehicles/Sea/Gato/Objects.con:73-75. The two vanilla
+        submarines differ in exactly one position, the fifth.
+        """
+        library = self.library("""
+ObjectTemplate.create PlayerControlObject Gato
+ObjectTemplate.mass 800000
+ObjectTemplate.submarineData 0.009 0.03 1 10 19.5 40 5
+ObjectTemplate.setSubmarineHudDepthModifier 5.9
+ObjectTemplate.setSubmarineHudDirModifier 0.01
+""", "Objects/Vehicles/Sea/Gato/Objects.con")
+
+        physics = library.object("Gato").physics()
+
+        self.assertEqual([0.009, 0.03, 1.0, 10.0, 19.5, 40.0, 5.0],
+                         physics["submarineData"])
+        self.assertEqual(5.9, physics["submarineHudDepthModifier"])
+        self.assertEqual(0.01, physics["submarineHudDirModifier"])
+
+    def test_soldier_exit_location_keeps_its_rotation_and_survives_without_one(self) -> None:
+        library = self.library("""
+ObjectTemplate.create PlayerControlObject Fletcher_Back_Canons_PCO
+ObjectTemplate.setSoldierExitLocation 0.5/4/-26 120/0/0
+
+ObjectTemplate.create PlayerControlObject TestNoRotation
+ObjectTemplate.setSoldierExitLocation 1.2/0.2/0
+""", "Objects/Vehicles/Sea/fletcher/Objects.con")
+
+        self.assertEqual(
+            {"position": [0.5, 4.0, -26.0], "rotation": [120.0, 0.0, 0.0]},
+            library.object("Fletcher_Back_Canons_PCO").physics()["soldierExitLocation"])
+        self.assertEqual(
+            {"position": [1.2, 0.2, 0.0], "rotation": [0.0, 0.0, 0.0]},
+            library.object("TestNoRotation").physics()["soldierExitLocation"])
+
+    def test_inert_pivot_position_is_dropped_and_a_real_one_kept(self) -> None:
+        # 22 of the 30 vanilla uses are 0/0/0. LynxCamera is one that is not.
+        library = self.library("""
+ObjectTemplate.create Camera LynxCamera
+ObjectTemplate.setPivotPosition 0/0.25/0.3
+
+ObjectTemplate.create Wing SBDFlapLeft
+ObjectTemplate.setPivotPosition 0/0/0
+ObjectTemplate.setWingLift 1
+""", "Objects/Vehicles/Land/Lynx/Objects.con")
+
+        self.assertEqual({"pivotPosition": [0.0, 0.25, 0.3]},
+                         library.object("LynxCamera").physics())
+        self.assertEqual({"wingLift": 1.0}, library.object("SBDFlapLeft").physics())
+
+    def test_directive_names_are_case_insensitive(self) -> None:
+        """The shipped files are not consistent and the engine does not care.
+
+        `ObjectTemplate.Grip` is capitalised, `objectTemplate.cullRadiusScale`
+        lower-cases the namespace, and mods spell everything else however they
+        like.
+        """
+        library = self.library("""
+objectTemplate.create SPRING TestWheel
+OBJECTTEMPLATE.grip C_PGFENGINEGRIP
+ObjectTemplate.SETSTRENGTH 18
+objecttemplate.setdamping 4
+""")
+
+        self.assertEqual(
+            {"grip": "C_PGFENGINEGRIP", "gripFlags": 0x04,
+             "strength": 18.0, "damping": 4.0},
+            library.object("TestWheel").physics())
+
+    def test_a_part_with_no_physics_declares_none(self) -> None:
+        library = self.library("""
+ObjectTemplate.create RotationalBundle ShermanTower
+ObjectTemplate.geometry Sherman_Tower_M1
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+""")
+
+        self.assertIsNone(library.object("ShermanTower").physics())
+
+
 if __name__ == "__main__":
     unittest.main()
