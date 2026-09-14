@@ -253,18 +253,26 @@
   .map-controls-fab:hover { border-color: var(--accent); }
   .map-controls-fab[hidden] { display: none !important; }
 
-  .speed-control {
+  .speed-control,
+  .map-actions {
     position: absolute;
     bottom: 18px;
     left: 18px;
     z-index: 10;
-    pointer-events: auto;
-  }
-  .speed-toggle-btn {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 8px;
+    pointer-events: auto;
+  }
+  .speed-toggle-btn,
+  .map-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     padding: 6px 12px;
+    height: 32px;
+    box-sizing: border-box;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 999px;
@@ -276,9 +284,17 @@
     text-transform: uppercase;
     cursor: pointer;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    transition: background-color .15s ease, border-color .15s ease;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
   }
-  .speed-toggle-btn:hover { border-color: var(--accent); }
+  .speed-toggle-btn:hover,
+  .map-action-btn:hover { border-color: var(--accent); }
+  .speed-toggle-btn:active,
+  .map-action-btn:active { background: rgba(255, 255, 255, 0.14); }
+  .map-action-btn svg { flex-shrink: 0; }
+  .action-badge,
   .speed-badge {
     display: inline-block;
     padding: 2px 6px;
@@ -287,14 +303,25 @@
     font-size: 10px;
     letter-spacing: .08em;
   }
-  .speed-toggle-btn[data-speed="fast"] .speed-badge {
+  [data-speed="fast"] .action-badge,
+  [data-speed="fast"] .speed-badge {
     background: var(--accent);
     color: var(--mm-highlight-ink);
   }
-  .speed-toggle-btn[data-speed="slow"] .speed-badge {
+  [data-speed="slow"] .action-badge,
+  [data-speed="slow"] .speed-badge {
     background: var(--muted);
     color: var(--mm-highlight-ink);
   }
+  [data-mode="fly"] .action-badge {
+    background: var(--accent);
+    color: var(--mm-highlight-ink);
+  }
+  [data-mode="pan"] .action-badge {
+    background: #5dade2;
+    color: #0b1520;
+  }
+  .action-hint,
   .speed-hint {
     color: var(--muted);
     font-size: 10px;
@@ -335,9 +362,28 @@
       text-overflow: ellipsis;
       overflow: hidden;
     }
-    .speed-control {
+    .speed-control,
+    .map-actions {
       bottom: 18px;
       left: 12px;
+      gap: 6px;
+    }
+    #side:not(.side-collapsed) ~ .map-actions {
+      display: none !important;
+    }
+    .map-controls-fab {
+      bottom: 18px;
+      right: 12px;
+    }
+    .speed-toggle-btn,
+    .map-action-btn {
+      padding: 6px 10px;
+      font-size: 10px;
+      height: 34px;
+    }
+    .action-hint,
+    .speed-hint {
+      display: none;
     }
   }
 </style>
@@ -384,10 +430,18 @@
     <canvas id="minimap-canvas" width="376" height="376"></canvas>
     <div class="mm-cap"><span id="minimap-grid">&mdash;</span><b>M</b></div>
   </div>
-  <div id="speed-control" class="speed-control">
-    <button type="button" id="speed-toggle-btn" class="speed-toggle-btn" data-speed="fast" aria-label="Toggle flight speed">
-      <span class="speed-badge">FAST</span>
-      <span class="speed-hint">Tap for slow</span>
+  <div id="map-actions" class="map-actions speed-control">
+    <button type="button" id="speed-toggle-btn" class="map-action-btn speed-toggle-btn" data-speed="fast" aria-label="Toggle flight speed">
+      <span class="action-badge speed-badge">FAST</span>
+      <span class="action-hint speed-hint">Tap for slow</span>
+    </button>
+    <button type="button" id="mode-toggle-btn" class="map-action-btn mode-toggle-btn" data-mode="fly" aria-label="Toggle Fly or Pan navigation mode">
+      <span class="action-badge mode-badge">FLY</span>
+      <span class="action-hint mode-hint">Tap for pan</span>
+    </button>
+    <button type="button" id="reset-cam-btn" class="map-action-btn reset-cam-btn" aria-label="Reset camera position">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9L2 6.5M2 2.5v4h4"/></svg>
+      <span>Reset</span>
     </button>
   </div>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; M map &middot; Esc</div>
@@ -516,8 +570,22 @@ const optPilot = document.getElementById('pilot');
 const hud = document.getElementById('hud');
 const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 720);
 const HUD_FLY = hud.textContent;
-const HUD_TOUCH = 'Hold to fly · Drag to steer';
-if (isTouchDevice) hud.textContent = HUD_TOUCH;
+let navMode = 'fly'; // 'fly' or 'pan'
+function getTouchHudText() {
+  return navMode === 'fly'
+    ? 'Hold to fly · Drag to steer · 2-finger pan'
+    : 'Drag to pan · Pinch to zoom';
+}
+function updateHud() {
+  if (optPilot.checked) {
+    hud.textContent = HUD_PILOT;
+  } else if (isTouchDevice) {
+    hud.textContent = getTouchHudText();
+  } else {
+    hud.textContent = HUD_FLY;
+  }
+}
+if (isTouchDevice) hud.textContent = getTouchHudText();
 
 let audioListener = null;
 let audioLoader = null;
@@ -532,6 +600,129 @@ let soundsGeneration = 0;
 function uiFocused() {
   const t = document.activeElement;
   return t && (t.tagName === 'SELECT' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+}
+
+/**
+ * Ground height under a world (x, z), from the terrain mesh already in the scene.
+ */
+const groundRay = new THREE.Raycaster();
+const DOWN = new THREE.Vector3(0, -1, 0);
+const rayOrigin = new THREE.Vector3();
+let terrainMeshes = [];
+const terrainBBox = new THREE.Box3();
+
+function groundHeight(x, z) {
+  const sea = extras?.waterLevel ?? -Infinity;
+  if (!terrainMeshes.length) return sea;
+  rayOrigin.set(x, 2000, z);
+  groundRay.set(rayOrigin, DOWN);
+  groundRay.far = 4000;
+  const hit = groundRay.intersectObjects(terrainMeshes, false)[0];
+  return hit ? Math.max(hit.point.y, sea) : sea;
+}
+
+function collectTerrain(root) {
+  terrainMeshes = [];
+  terrainBBox.makeEmpty();
+  root.traverse(obj => {
+    if (obj.isMesh && kindOf(obj) === 'terrain') {
+      terrainMeshes.push(obj);
+      if (obj.geometry) {
+        if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+        terrainBBox.union(obj.geometry.boundingBox);
+      }
+    }
+  });
+}
+
+function getFloorAltitude(x, z) {
+  const gh = groundHeight(x, z);
+  if (Number.isFinite(gh) && gh > -1000) return gh + 1.5;
+  if (Number.isFinite(terrainBBox.min.y) && terrainBBox.min.y > -1000) {
+    const base = Number.isFinite(extras?.waterLevel) ? Math.max(terrainBBox.min.y, extras.waterLevel) : terrainBBox.min.y;
+    return base + 1.5;
+  }
+  if (Number.isFinite(extras?.waterLevel)) return extras.waterLevel + 1.5;
+  return -50;
+}
+
+function clampAltitude() {
+  if (optPilot.checked && aircraft) return;
+  const floor = getFloorAltitude(camera.position.x, camera.position.z);
+  if (camera.position.y < floor) {
+    camera.position.y = floor;
+  }
+}
+
+function panCamera(dx, dy) {
+  const gh = groundHeight(camera.position.x, camera.position.z);
+  const alt = Number.isFinite(gh) ? Math.max(camera.position.y - gh, 15) : Math.max(camera.position.y, 15);
+  const panSpeed = alt * 0.0018 * (isSlow() ? 0.35 : 1.0);
+
+  const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw);
+  const cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
+
+  const rx = -cy, rz = sy;
+  const ux = -sy * sp, uy = cp, uz = -cy * sp;
+
+  camera.position.x += (-rx * dx - ux * dy) * panSpeed;
+  camera.position.y += (-uy * dy) * panSpeed;
+  camera.position.z += (-rz * dx - uz * dy) * panSpeed;
+
+  clampAltitude();
+}
+
+function dollyCamera(delta) {
+  const d = lookVector();
+  const gh = groundHeight(camera.position.x, camera.position.z);
+  const alt = Number.isFinite(gh) ? Math.max(camera.position.y - gh, 15) : Math.max(camera.position.y, 15);
+  const zoomFactor = alt * 0.003 * (isSlow() ? 0.35 : 1.0);
+  const step = delta * zoomFactor;
+
+  camera.position.x += d.x * step;
+  camera.position.y += d.y * step;
+  camera.position.z += d.z * step;
+  clampAltitude();
+}
+
+let initialCameraPose = null;
+
+function placeCamera() {
+  // ?cam=x,y,z,yaw,pitch pins the camera for reproducible screenshots.
+  const pinned = (params.get('cam') || '').split(',').map(Number);
+  if (pinned.length === 5 && pinned.every(Number.isFinite)) {
+    camera.position.set(pinned[0], pinned[1], pinned[2]);
+    look.yaw = pinned[3];
+    look.pitch = pinned[4];
+    applyLook();
+    initialCameraPose = { x: pinned[0], y: pinned[1], z: pinned[2], yaw: pinned[3], pitch: pinned[4] };
+    return;
+  }
+  const cam = extras.camera;
+  if (cam) {
+    camera.position.set(cam[0], cam[1] + 55, cam[2]);
+  } else {
+    camera.position.set(0, 80, 0);
+  }
+  look.yaw = Math.PI;
+  look.pitch = -0.22;
+  applyLook();
+  initialCameraPose = { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: look.yaw, pitch: look.pitch };
+}
+
+function resetCamera() {
+  if (optPilot.checked) {
+    optPilot.checked = false;
+    setPilot(false);
+  }
+  if (initialCameraPose) {
+    camera.position.set(initialCameraPose.x, initialCameraPose.y, initialCameraPose.z);
+    look.yaw = initialCameraPose.yaw;
+    look.pitch = initialCameraPose.pitch;
+    applyLook();
+  } else {
+    placeCamera();
+  }
 }
 
 let speedMode = 'fast'; // 'fast' or 'slow'
@@ -554,6 +745,36 @@ function setSpeedMode(mode) {
 speedToggleBtn?.addEventListener('click', e => {
   e.stopPropagation();
   setSpeedMode(speedMode === 'fast' ? 'slow' : 'fast');
+});
+
+const modeToggleBtn = document.getElementById('mode-toggle-btn');
+const resetCamBtn = document.getElementById('reset-cam-btn');
+const mapActionsBar = document.getElementById('map-actions');
+
+function setNavMode(mode) {
+  navMode = mode;
+  if (modeToggleBtn) {
+    modeToggleBtn.dataset.mode = mode;
+    const badge = modeToggleBtn.querySelector('.mode-badge') || modeToggleBtn.querySelector('.action-badge');
+    const hint = modeToggleBtn.querySelector('.mode-hint') || modeToggleBtn.querySelector('.action-hint');
+    if (badge) badge.textContent = mode.toUpperCase();
+    if (hint) hint.textContent = mode === 'fly' ? 'Tap for pan' : 'Tap for fly';
+  }
+  updateHud();
+}
+
+modeToggleBtn?.addEventListener('click', e => {
+  e.stopPropagation();
+  setNavMode(navMode === 'fly' ? 'pan' : 'fly');
+});
+
+resetCamBtn?.addEventListener('click', e => {
+  e.stopPropagation();
+  resetCamera();
+});
+
+mapActionsBar?.addEventListener('pointerdown', e => {
+  e.stopPropagation();
 });
 
 function flySpeed() {
@@ -589,10 +810,14 @@ addEventListener('keydown', e => {
     return;
   }
   keys.add(e.code);
-  if (e.code === 'KeyR' && optPilot.checked && aircraft) {
-    aircraft.reset();
-    stick.roll = 0;
-    stick.pitch = 0;
+  if (e.code === 'KeyR') {
+    if (optPilot.checked && aircraft) {
+      aircraft.reset();
+      stick.roll = 0;
+      stick.pitch = 0;
+    } else if (!optPilot.checked) {
+      resetCamera();
+    }
   }
   // C cycles the view, which is `c_PIToggleCameraMode` bound to IDKey_C in every
   // one of the game's own control maps.
@@ -605,10 +830,30 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => keys.delete(e.code));
 
+const sideEl = document.getElementById('side');
+const sideCollapseBtn = document.getElementById('side-collapse-btn');
+const mapFabBtn = document.getElementById('map-controls-fab');
+
+function setSideCollapsed(collapsed) {
+  sideEl.classList.toggle('side-collapsed', collapsed);
+  if (mapFabBtn) mapFabBtn.hidden = !collapsed;
+}
+sideCollapseBtn?.addEventListener('click', e => {
+  e.stopPropagation();
+  setSideCollapsed(true);
+});
+mapFabBtn?.addEventListener('click', e => {
+  e.stopPropagation();
+  setSideCollapsed(false);
+});
+
 const gate = document.getElementById('gate');
 function setFly(on) {
   captured = on;
   gate.hidden = on;
+  if (on && isTouchDevice && !sideEl.classList.contains('side-collapsed')) {
+    setSideCollapsed(true);
+  }
   if (!on) {
     dragging = false;
     lockHeld = false;
@@ -630,69 +875,134 @@ gate.querySelector('span').addEventListener('click', e => {
   capture();
 });
 let touchFlying = false;
-let activeTouchId = null;
+const activeTouches = new Map();
+let touchPinchDist = 0;
+let touchMidX = 0;
+let touchMidY = 0;
+let isPanning = false;
+
+function getTouchesCenterAndDist() {
+  const pts = Array.from(activeTouches.values());
+  if (pts.length < 2) return null;
+  const dx = pts[1].x - pts[0].x;
+  const dy = pts[1].y - pts[0].y;
+  return {
+    midX: (pts[0].x + pts[1].x) / 2,
+    midY: (pts[0].y + pts[1].y) / 2,
+    dist: Math.hypot(dx, dy)
+  };
+}
 
 renderer.domElement.addEventListener('pointerdown', e => {
   if (e.pointerType === 'touch') {
-    touchFlying = true;
-    activeTouchId = e.pointerId;
-    dragging = true;
-    lastPointerX = e.clientX;
-    lastPointerY = e.clientY;
+    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
     setFly(true);
     ensureAudioContext();
-    try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
+
+    if (activeTouches.size === 1) {
+      lastPointerX = e.clientX;
+      lastPointerY = e.clientY;
+      dragging = true;
+      if (navMode === 'fly') {
+        touchFlying = true;
+        isPanning = false;
+      } else {
+        touchFlying = false;
+        isPanning = true;
+      }
+    } else if (activeTouches.size === 2) {
+      touchFlying = false;
+      isPanning = true;
+      const geom = getTouchesCenterAndDist();
+      if (geom) {
+        touchMidX = geom.midX;
+        touchMidY = geom.midY;
+        touchPinchDist = geom.dist;
+      }
+    }
     return;
   }
-  if (e.button !== 0) return;
-  dragging = true;
-  lastPointerX = e.clientX;
-  lastPointerY = e.clientY;
-  try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
-  capture();
+
+  // Desktop mouse
+  if (e.button === 0) {
+    dragging = true;
+    isPanning = false;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+    try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
+    capture();
+  } else if (e.button === 1 || e.button === 2) {
+    dragging = true;
+    isPanning = true;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+    try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
+    setFly(true);
+    ensureAudioContext();
+  }
 });
+
 renderer.domElement.addEventListener('pointerup', e => {
   if (e.pointerType === 'touch') {
-    if (e.pointerId === activeTouchId) {
+    activeTouches.delete(e.pointerId);
+    try {
+      if (renderer.domElement.hasPointerCapture(e.pointerId)) {
+        renderer.domElement.releasePointerCapture(e.pointerId);
+      }
+    } catch {}
+
+    if (activeTouches.size === 0) {
       touchFlying = false;
-      activeTouchId = null;
       dragging = false;
+      isPanning = false;
+    } else if (activeTouches.size === 1) {
+      const remaining = activeTouches.values().next().value;
+      lastPointerX = remaining.x;
+      lastPointerY = remaining.y;
+      if (navMode === 'fly') {
+        touchFlying = true;
+        isPanning = false;
+      } else {
+        touchFlying = false;
+        isPanning = true;
+      }
+    } else {
+      const geom = getTouchesCenterAndDist();
+      if (geom) {
+        touchMidX = geom.midX;
+        touchMidY = geom.midY;
+        touchPinchDist = geom.dist;
+      }
     }
-  } else {
-    dragging = false;
+    return;
   }
+
+  dragging = false;
+  isPanning = false;
   try {
     if (renderer.domElement.hasPointerCapture(e.pointerId)) {
       renderer.domElement.releasePointerCapture(e.pointerId);
     }
   } catch {}
 });
+
 renderer.domElement.addEventListener('pointercancel', e => {
-  if (e.pointerType === 'touch' && e.pointerId === activeTouchId) {
-    touchFlying = false;
-    activeTouchId = null;
+  if (e.pointerType === 'touch') {
+    activeTouches.delete(e.pointerId);
   }
-  dragging = false;
+  if (activeTouches.size === 0) {
+    touchFlying = false;
+    dragging = false;
+    isPanning = false;
+  }
+});
+
+renderer.domElement.addEventListener('contextmenu', e => {
+  e.preventDefault();
 });
 document.getElementById('side').addEventListener('pointerdown', e => {
   e.stopPropagation();
-});
-
-const sideEl = document.getElementById('side');
-const sideCollapseBtn = document.getElementById('side-collapse-btn');
-const mapFabBtn = document.getElementById('map-controls-fab');
-
-function setSideCollapsed(collapsed) {
-  sideEl.classList.toggle('side-collapsed', collapsed);
-  if (mapFabBtn) mapFabBtn.hidden = !collapsed;
-}
-sideCollapseBtn?.addEventListener('click', e => {
-  e.stopPropagation();
-  setSideCollapsed(true);
-});
-mapFabBtn?.addEventListener('click', e => {
-  e.stopPropagation();
-  setSideCollapsed(false);
 });
 
 document.addEventListener('pointerlockchange', () => {
@@ -713,16 +1023,62 @@ document.addEventListener('pointermove', e => {
     lookDelta(e.movementX, e.movementY);
     return;
   }
+
+  if (e.pointerType === 'touch') {
+    if (!activeTouches.has(e.pointerId)) return;
+    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activeTouches.size >= 2) {
+      const geom = getTouchesCenterAndDist();
+      if (geom) {
+        const dMidX = geom.midX - touchMidX;
+        const dMidY = geom.midY - touchMidY;
+        touchMidX = geom.midX;
+        touchMidY = geom.midY;
+
+        panCamera(dMidX, dMidY);
+
+        const dDist = geom.dist - touchPinchDist;
+        touchPinchDist = geom.dist;
+        if (Math.abs(dDist) > 1) {
+          dollyCamera(dDist * 0.7);
+        }
+      }
+      return;
+    }
+
+    if (!dragging) return;
+    const dx = e.clientX - lastPointerX;
+    const dy = e.clientY - lastPointerY;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+
+    if (isPanning) {
+      panCamera(dx, dy);
+    } else {
+      lookDelta(dx, dy);
+    }
+    return;
+  }
+
   if (!dragging) return;
-  lookDelta(e.clientX - lastPointerX, e.clientY - lastPointerY);
+  const dx = e.clientX - lastPointerX;
+  const dy = e.clientY - lastPointerY;
   lastPointerX = e.clientX;
   lastPointerY = e.clientY;
+
+  if (isPanning) {
+    panCamera(dx, dy);
+  } else {
+    lookDelta(dx, dy);
+  }
 });
 document.addEventListener('wheel', e => {
   if (!captured) return;
   e.preventDefault();
   const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 80 : 1;
   camera.position.y -= e.deltaY * scale * 0.12 * (isSlow() ? FLY_SLOW : 1);
+  clampAltitude();
 }, { passive: false });
 
 function lookVector() {
@@ -750,6 +1106,7 @@ function fly(dt) {
   camera.position.x += (d.x * fwd - d.cy * strafe) * step;
   camera.position.y += (d.y * fwd + vert) * step;
   camera.position.z += (d.z * fwd + d.sy * strafe) * step;
+  clampAltitude();
 }
 
 function resize() {
@@ -2139,36 +2496,6 @@ const HEAD_SENS = 0.0022;
 // `CVMFrontChase`, `CVMFlyBy`) and never where they sit. See flight.js.
 let view = null;
 
-/**
- * Ground height under a world (x, z), from the terrain mesh already in the scene.
- *
- * Raycasting the heightfield is honest and needs no extra data — the terrain is
- * 16 tiles of 512x512 geometry, and one downward ray per frame against it costs
- * nothing next to the render. The sea floor is the water level, because on Wake
- * most of the map is ocean and ditching has to stop somewhere.
- */
-const groundRay = new THREE.Raycaster();
-const DOWN = new THREE.Vector3(0, -1, 0);
-let terrainMeshes = [];
-
-function groundHeight(x, z) {
-  const sea = extras?.waterLevel ?? -Infinity;
-  if (!terrainMeshes.length) return sea;
-  groundRay.set(new THREE.Vector3(x, 2000, z), DOWN);
-  groundRay.far = 4000;
-  const hit = groundRay.intersectObjects(terrainMeshes, false)[0];
-  return hit ? Math.max(hit.point.y, sea) : sea;
-}
-
-function collectTerrain(root) {
-  // The exporter stamps `kind: "terrain"` on each of the 16 tile meshes itself,
-  // so this needs no name matching.
-  terrainMeshes = [];
-  root.traverse(obj => {
-    if (obj.isMesh && kindOf(obj) === 'terrain') terrainMeshes.push(obj);
-  });
-}
-
 function setPilot(on) {
   if (on && !aircraft) {
     const node = findVehicle(currentRoot, 'Corsair')
@@ -2302,27 +2629,6 @@ function pilot(dt) {
   const pose = view.update(dt);
   camera.position.copy(pose.position);
   camera.quaternion.copy(pose.quaternion);
-}
-
-function placeCamera() {
-  // ?cam=x,y,z,yaw,pitch pins the camera for reproducible screenshots.
-  const pinned = (params.get('cam') || '').split(',').map(Number);
-  if (pinned.length === 5 && pinned.every(Number.isFinite)) {
-    camera.position.set(pinned[0], pinned[1], pinned[2]);
-    look.yaw = pinned[3];
-    look.pitch = pinned[4];
-    applyLook();
-    return;
-  }
-  const cam = extras.camera;
-  if (cam) {
-    camera.position.set(cam[0], cam[1] + 55, cam[2]);
-  } else {
-    camera.position.set(0, 80, 0);
-  }
-  look.yaw = Math.PI;
-  look.pitch = -0.22;
-  applyLook();
 }
 
 function wireframe(on) {
