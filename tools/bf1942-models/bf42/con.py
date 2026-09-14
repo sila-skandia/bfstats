@@ -251,6 +251,14 @@ class ObjectTemplate:
     rotation: tuple[float, float, float] = (0.0, 0.0, 0.0)
     source: str = ""
 
+    # `setTeamGeometry <team> <mesh>` — which mesh a ControlPoint's flag wears
+    # for each side. Team colour in Refractor is a whole-mesh swap, never a
+    # texture swap: all six vanilla flags bind the same `texture/flags_o` atlas
+    # and differ only by the UV rect their `.sm` reads out of it. Without this
+    # every flag falls back to `AnimatedFlag`'s own placeholder, which is the
+    # Soviet flag — a Soviet flag on Midway.
+    team_geometry: dict[int, str] = field(default_factory=dict)
+
     # Most vehicle movement in Refractor is not an animation file. A
     # RotationalBundle declares an axis, a range and a player input, and the engine
     # drives it every frame; `.baf` clips are for soldiers. See `rig` below.
@@ -494,6 +502,17 @@ class ObjectLibrary:
                     continue
                 elif cmd == "geometry":
                     obj.geometry = args.split()[0] if args else None
+                elif cmd == "setteamgeometry":
+                    # `setTeamGeometry <team> <mesh>`. Written after the
+                    # `addTemplate AnimatedFlag` it retargets, but it belongs to
+                    # the ControlPoint being defined, not to the child instance —
+                    # so it reads onto `obj` the way `lodSelector` does.
+                    parts = args.split()
+                    if len(parts) >= 2:
+                        try:
+                            obj.team_geometry[int(parts[0])] = parts[1]
+                        except ValueError:
+                            pass
                 elif cmd == "lodselector":
                     # Names the rule, never a child instance, so it is read onto
                     # the template even though it is written after the

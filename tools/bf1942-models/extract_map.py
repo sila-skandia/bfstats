@@ -18,13 +18,27 @@ from the heightmap so the viewer can reproduce the engine's shore-alpha and
 deep-colour ramps. `textureManager.alternativePath` (Texture/Africa on the
 desert maps) is honoured, which is what turns spawned vehicles desert-yellow.
 Open `viewer/map.html` through the model-viewer launch config.
+
+Sound is deduplicated and compressed. Samples go to `<out>/_shared/sounds` as
+MP3 (LAME -V2) rather than to a per-level `sounds/` directory as wav, and
+`scene.json` references them relatively — `../_shared/sounds/x.mp3`. 239 EoD
+levels shipped 8,828 wav files that were only 260 distinct payloads, 3.24 GB of
+the same ambient beds and engine layers copied once per level. MP3 specifically
+because it is the only candidate that survives a loop: measured through
+Chromium's own `decodeAudioData`, it returns *exactly* the source sample count,
+where Vorbis retains up to 12.3 ms of encoder padding inside every loop and AAC
+does not decode at all. That property lives in LAME's Xing header, so nothing
+downstream may rewrite or strip ID3/Xing tags. `--audio-format wav` opts out;
+see `features/mesh-mod-assets/audio-compression.md` for the measurements.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -39,8 +53,13 @@ from extract_models import (  # noqa: E402
 )
 
 from bf42 import gltf, stdmesh  # noqa: E402
+from bf42 import baf as baf_mod  # noqa: E402
 from bf42 import rs as rs_mod  # noqa: E402
+from bf42 import ske as ske_mod  # noqa: E402
 from bf42.assemble import Assembler, Report  # noqa: E402
+# The flag cloth is a skinned mesh, and the pose extractor already knows how to
+# build one; these two are the whole of what that needs.
+from extract_pose import _match_skn_vertices, read_skin  # noqa: E402
 from bf42.level import (  # noqa: E402
     LevelFiles,
     LevelInfo,
@@ -48,6 +67,7 @@ from bf42.level import (  # noqa: E402
     decode_heightmap,
     discover_level_sounds,
     find_level_archives,
+    load_gameplay_objects,
     load_level_files,
     parse_cubemap_rcm,
     parse_init_con,
@@ -155,12 +175,17 @@ def load_level(game_dir: Path, mod: str, level: str,
     if files.find("StaticObjects.con"):
         info.static_objects = parse_static_objects(_read_text(files, "StaticObjects.con"))
     info.sounds = discover_level_sounds(files, info.static_objects)
-    if files.find("Conquest/ObjectSpawnTemplates.con"):
+    # Conquest is what every stock level ships and what these paths assumed,
+    # but a mod map may only carry Ctf or ObjectiveMode — asking for the mode
+    # the level actually has is what gets those their vehicles and flags.
+    info.gameplay = load_gameplay_objects(files)
+    mode = info.gameplay.mode or "Conquest"
+    if files.find(f"{mode}/ObjectSpawnTemplates.con"):
         info.spawn_templates = parse_spawn_templates(
-            _read_text(files, "Conquest/ObjectSpawnTemplates.con"))
-    if files.find("Conquest/ObjectSpawns.con"):
+            _read_text(files, f"{mode}/ObjectSpawnTemplates.con"))
+    if files.find(f"{mode}/ObjectSpawns.con"):
         info.spawn_objects = parse_static_objects(
-            _read_text(files, "Conquest/ObjectSpawns.con"))
+            _read_text(files, f"{mode}/ObjectSpawns.con"))
     heightmap = decode_heightmap(
         files.read("Heightmap.raw"), info.terrain.world_size, info.terrain.y_scale,
     )
@@ -346,22 +371,127 @@ def _modulator_report(effect) -> dict:
     }
 
 
+def ffmpeg_available() -> bool:
+    try:
+        return subprocess.run(["ffmpeg", "-version"],
+                              capture_output=True).returncode == 0
+    except (OSError, FileNotFoundError):
+        return False
+
+
+class TranscodeError(RuntimeError):
+    """ffmpeg could not encode a sample.
+
+    Raised rather than quietly writing the wav instead. A fallback would ship
+    the format this pipeline exists to stop shipping, and it would do it
+    invisibly — a run that lost its encoder would still report success while
+    producing the 3.2 GB tree the shared directory was built to avoid. It also
+    would not help: ffmpeg failing on a sample means a corrupt source (EoD's
+    `objects.rfa` has LZO entries that overrun their window), so the wav
+    written in its place is corrupt too.
+
+    One level failing is already a handled outcome — `extract_maps_all.py`
+    counts it, finishes the rest and lists it for a re-run.
+    """
+
+
+def transcode_to_mp3(data: bytes, dest: Path) -> None:
+    """PCM wav bytes to MP3 -V2 at `dest`, atomically. Raises on failure.
+
+    `-q:a 2` is LAME's -V2. Measured against this corpus (see
+    features/mesh-mod-assets/audio-compression.md) it beat Opus on every file
+    and, unlike Vorbis, comes back from Chromium's `decodeAudioData`
+    sample-exact — the encoder delay is carried in LAME's Xing header and
+    honoured, so a two-second engine layer loops without a tick. That property
+    is the whole reason for MP3 here, and it lives entirely in that header:
+    **nothing downstream may rewrite or strip ID3/Xing tags.**
+
+    Written to a temp file and `os.replace`d because levels are extracted in
+    parallel and several will resolve the same sample at once; a half-written
+    file in the shared directory would be served to a browser as a truncated
+    buffer.
+    """
+    tmp_wav = dest.with_suffix(dest.suffix + f".{os.getpid()}.wav")
+    tmp_mp3 = dest.with_suffix(dest.suffix + f".{os.getpid()}.part")
+    try:
+        tmp_wav.write_bytes(data)
+        result = subprocess.run(
+            # `-f mp3` is not optional: ffmpeg picks the muxer from the output
+            # extension, and the atomic temp name deliberately does not end in
+            # `.mp3`, so without it every transcode fails with "unable to
+            # choose an output format".
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+             "-i", str(tmp_wav), "-codec:a", "libmp3lame", "-q:a", "2",
+             "-f", "mp3", str(tmp_mp3)],
+            capture_output=True)
+        if result.returncode != 0 or not tmp_mp3.is_file():
+            detail = result.stderr.decode("utf-8", "replace").strip().splitlines()
+            raise TranscodeError(
+                f"ffmpeg failed on {dest.name}: "
+                f"{detail[-1] if detail else f'exit {result.returncode}'}")
+        os.replace(tmp_mp3, dest)
+    except OSError as exc:
+        raise TranscodeError(f"ffmpeg could not run for {dest.name}: {exc}") from exc
+    finally:
+        tmp_wav.unlink(missing_ok=True)
+        tmp_mp3.unlink(missing_ok=True)
+
+
 def extract_sounds(info: LevelInfo, level_files: LevelFiles,
                    sounds: ArchivePool, out_dir: Path,
                    library=None, objects: ArchivePool | None = None,
-                   vehicles: list[str] | None = None) -> dict:
-    """Extract referenced sound wav files and produce the sounds report dict."""
-    sounds_dir = out_dir / "sounds"
+                   vehicles: list[str] | None = None,
+                   shared_dir: Path | None = None,
+                   audio_format: str = "mp3",
+                   final_dir: Path | None = None) -> dict:
+    """Extract referenced sounds and produce the sounds report dict.
+
+    Samples land in `shared_dir` rather than the level's own `sounds/`, and
+    `scene.json` points at them relatively (`../_shared/sounds/x.mp3`). 239 EoD
+    levels shipped 8,828 wav files that were only 260 distinct payloads —
+    3.24 GB of the same ambient beds and engine layers re-copied per level.
+    Sharing costs nothing at playback: the viewer builds
+    `${MAPS_BASE}/${dir}/${relPath}` and a relative path resolves as a URL, so
+    a sample now also arrives as one browser cache entry and one decode across
+    every level that uses it.
+
+    The directory is per-mod, not global, even though 67 of vanilla's payloads
+    are byte-identical to EoD's. `viewer/maps/mods/<id>/` has to stay a
+    self-contained subtree or publishing a mod stops being one recursive upload
+    of one directory — which the mod layout leans on. Duplicating 67 files
+    across two mods is the cheaper half of that trade.
+    """
     sound_report: dict = {"ambient": None, "areas": [], "vehicles": []}
-    written_files: set[str] = set()
+    if shared_dir is None:
+        shared_dir = out_dir.parent / "_shared" / "sounds"
+    # Paths in scene.json are relative to where the level will *live*, which is
+    # not where it is being written when a batch run stages each level in its
+    # own directory and moves it afterwards. Computing against `out_dir` there
+    # yields the staging depth — `../../../_shared/...` for a path that needs
+    # to be `../_shared/...`, pointing outside the published tree.
+    rel_base = final_dir or out_dir
+    seen: dict[str, str] = {}
 
     def write(resolved: tuple[str, bytes]) -> str:
         basename, data = resolved
-        if basename not in written_files:
-            sounds_dir.mkdir(parents=True, exist_ok=True)
-            (sounds_dir / basename).write_bytes(data)
-            written_files.add(basename)
-        return f"sounds/{basename}"
+        if basename in seen:
+            return seen[basename]
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        if audio_format == "mp3":
+            target = shared_dir / (Path(basename).stem + ".mp3")
+            # Another level may have transcoded it already: this directory is
+            # shared across every level in the mod and across runs.
+            if not target.is_file():
+                transcode_to_mp3(data, target)
+        else:
+            target = shared_dir / basename
+            if not target.is_file():
+                tmp = shared_dir / f"{basename}.{os.getpid()}.part"
+                tmp.write_bytes(data)
+                os.replace(tmp, target)
+        rel = os.path.relpath(target, rel_base).replace(os.sep, "/")
+        seen[basename] = rel
+        return rel
 
     if info.sounds.ambient is not None:
         resolved = resolve_sound(info.sounds.ambient.file, level_files, sounds)
@@ -387,7 +517,80 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
         sound_report["vehicles"] = extract_vehicle_sounds(
             library, objects, sounds, vehicles, write)
 
+    if objects is not None and info.gameplay.control_points:
+        flags = extract_flag_sound(info, objects, sounds, write)
+        if flags is not None:
+            sound_report["flags"] = flags
+
     return sound_report
+
+
+# `AnimatedFlag` carries `loadSoundScript Sounds/flag.ssc`, whose one patch is
+# a looping `flag.wav` with a distance-to-volume ramp. Same script for every
+# flag on every level, so it is read from the object pool by its own path
+# rather than hunted per template.
+FLAG_SOUND_SCRIPT = "Objects/Items/Flag/Sounds/flag.ssc"
+
+
+def extract_flag_sound(info: LevelInfo, objects: ArchivePool,
+                       sounds: ArchivePool, write) -> dict | None:
+    """The flap, and where each flag flies it.
+
+    One sample and one set of emitter positions rather than a patch per flag:
+    the engine instantiates the same script at every flag, and the viewer only
+    needs to know where to stand them up. `randomStartPitch` is carried
+    through because without it a row of flags beats in unison.
+    """
+    def read_script(path: str) -> str | None:
+        hit = objects.find(path)
+        return objects.read(hit).decode("latin-1") if hit else None
+
+    text = read_script(FLAG_SOUND_SCRIPT)
+    if text is None:
+        return None
+    patches = parse_ssc(text, level=VEHICLE_SOUND_LEVEL,
+                        include=read_script, source=FLAG_SOUND_SCRIPT)
+    samples = patches[0].samples if patches else []
+    if not samples:
+        return None
+    sample = samples[0]
+    resolved = resolve_sound(sample.file, None, sounds, rates=VEHICLE_RATES)
+    if resolved is None:
+        return None
+
+    # Only the flags that actually fly a cloth make the noise; a bare pole on a
+    # neutral point has nothing to flap, and a zone-only point has no pole.
+    positions = []
+    for inst in info.gameplay.control_points:
+        tpl = info.gameplay.template_for(inst)
+        if tpl is None or not tpl.visible:
+            continue
+        team = inst.team if inst.team is not None else tpl.team
+        if not tpl.flag_mesh(team):
+            continue
+        positions.append(_to_gltf_vec((
+            inst.position[0] + tpl.flag_offset[0],
+            inst.position[1] + tpl.flag_offset[1],
+            inst.position[2] + tpl.flag_offset[2])))
+    if not positions:
+        return None
+
+    # `controlDestination Volume / controlSource Distance / envelope Ramp`
+    # with params (near, far, at-near, at-far).
+    ramp = next((e.params for e in sample.effects
+                 if e.destination == "volume" and e.source == "distance"
+                 and e.envelope == "ramp" and len(e.params) >= 2), None)
+    entry = {
+        "file": write(resolved),
+        "loop": bool(sample.loop),
+        "volume": sample.volume,
+        "minDistance": sample.min_distance,
+        "randomStartPitch": sample.random_start_pitch,
+        "positions": positions,
+    }
+    if ramp:
+        entry["nearDistance"], entry["farDistance"] = ramp[0], ramp[1]
+    return entry
 
 
 def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
@@ -650,6 +853,331 @@ def write_water_assets(info: LevelInfo, heightmap, textures, out_dir: Path,
     }
 
 
+# A `.baf` stores frame counts, never a rate, so the playback speed is a viewer
+# choice. 30 fps puts `FlagBlow`'s 49 frames at 1.63 s a cycle, which reads as
+# a steady breeze rather than a flutter or a flap.
+FLAG_FPS = 30.0
+
+# Every flag on every level shares one skeleton and one clip; parse them once.
+_FLAG_RIG: dict[str, object] = {}
+
+
+def _flag_skeleton(meshes):
+    if "ske" not in _FLAG_RIG:
+        raw = meshes.try_read("animations/flag.ske")
+        try:
+            _FLAG_RIG["ske"] = ske_mod.parse(raw) if raw else None
+        except Exception:
+            _FLAG_RIG["ske"] = None
+    return _FLAG_RIG["ske"]
+
+
+def _flag_clip(meshes):
+    if "clip" not in _FLAG_RIG:
+        raw = meshes.try_read("animations/Flag/FlagBlow.baf")
+        try:
+            _FLAG_RIG["clip"] = baf_mod.parse(raw) if raw else None
+        except Exception:
+            _FLAG_RIG["clip"] = None
+    return _FLAG_RIG["clip"]
+
+
+def _build_flag_cloth(builder, assembler, meshes, library, geometry_name: str,
+                      offset, report, name: str) -> tuple[int, int] | None:
+    """A control point's flag: skinned to the flag skeleton and flapping.
+
+    The cloth is not a StandardMesh, which is what the level's `addTemplate`
+    makes it look like. `Objects/Items/Flag/Geometries.con` declares every flag
+    as `GeometryTemplate.create AnimatedMesh` with
+    `setSkin animations/flag.skn`, and the `AnimatedFlag` bundle adds
+    `createSkeleton animations/flag.ske` and `setAnimationState FlagBlow`.
+    Drawn from its raw `.sm` the cloth sits in its authoring pose — a flat
+    sheet centred on its own origin — so at the declared `0/8.2/0` it straddles
+    the top of an 8.52 m pole and reads upside down. Posed through the skeleton
+    it hangs off one side and below the attachment, which is what the engine
+    draws.
+
+    Returns `(anchor node, skinned mesh node)`. The anchor carries the flag
+    offset and is the caller's to parent under the control point, so the joints
+    inherit the placement. The mesh node must go to the scene root untouched:
+    glTF ignores a skinned mesh node's own transform.
+
+    The bind pose is recovered rather than solved. Every vertex carries exactly
+    one influence at weight 1.0, so a bone's bind *rotation* is unconstrained —
+    which is why `pose.refine_binds`, which needs three points per bone, finds
+    nothing here. Any consistent choice works, and identity is the simplest:
+    with `bind = (I, rest - offset)` the inverse bind takes a vertex to its
+    bone-local offset, and glTF's `jointWorld * inverseBind * v` reduces to
+    `posed_world * offset` — exactly what `pose.skinned_positions` computes.
+    """
+    geom = library.geometry(geometry_name)
+    if geom is None or not geom.skin:
+        return None
+    entry = meshes.resolve_ext(f"standardMesh/{geom.mesh_file}", (".sm",))
+    skn = read_skin(meshes, geom.skin)
+    skeleton = _flag_skeleton(meshes)
+    clip = _flag_clip(meshes)
+    if not entry or skn is None or skeleton is None or clip is None:
+        return None
+    try:
+        mesh = stdmesh.parse(meshes.read(entry), entry)
+    except Exception:
+        return None
+    if not mesh.lods:
+        return None
+
+    identity = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+    bind_by_bone: dict[str, tuple] = {}
+    for vertex in skn.vertices:
+        for inf in vertex.influences:
+            key = ske_mod.canonical(skn.bones[inf.bone])
+            if key in bind_by_bone:
+                continue
+            bind_by_bone[key] = (identity, tuple(
+                vertex.rest[i] - inf.offset[i] for i in range(3)))
+
+    joint_bones = [b.name for b in skeleton.bones]
+    slot = {ske_mod.canonical(b): i for i, b in enumerate(joint_bones)}
+    if not any(ske_mod.canonical(b) in bind_by_bone for b in joint_bones):
+        return None
+
+    # Frame 0 as the node hierarchy's own pose, so a viewer that ignores
+    # animations still shows a correctly hung flag rather than the sheet.
+    anchor = builder.add_node(gltf.Node(
+        name=f"{name} flag", translation=tuple(offset),
+        extras={"kind": "flagAnchor"}))
+    locals_map = clip.local_pose(0)
+    joint_nodes: dict[str, int] = {}
+    children_of: dict[int, list[int]] = {}
+    order: list[tuple[int, int]] = []
+    for index, bone in enumerate(skeleton.bones):
+        key = ske_mod.canonical(bone.name)
+        rotation, translation = locals_map.get(
+            key, (bone.rotation, bone.translation))
+        node = builder.add_node(gltf.Node(
+            name=f"{name} {bone.name}", translation=translation,
+            rotation=gltf.quat_from_matrix(rotation), extras={"joint": True}))
+        joint_nodes[key] = node
+        order.append((index, node))
+        if 0 <= bone.parent < index:
+            children_of.setdefault(bone.parent, []).append(node)
+    for bone_index, node_index in order:
+        builder._nodes[node_index].children = children_of.get(bone_index, [])
+    builder._nodes[anchor].children = [
+        node for index, node in order if skeleton.bones[index].parent < 0]
+
+    def vertex_slots(skn_index: int):
+        joints, weights = [], []
+        for inf in skn.vertices[skn_index].influences:
+            key = ske_mod.canonical(skn.bones[inf.bone])
+            if key not in slot:
+                continue
+            joints.append(slot[key])
+            weights.append(inf.weight)
+        if not joints:
+            joints, weights = [0], [1.0]
+        total = sum(weights) or 1.0
+        weights = [w / total for w in weights]
+        return ((joints + [0, 0, 0, 0])[:4], (weights + [0.0, 0.0, 0.0, 0.0])[:4])
+
+    primitives = []
+    triangles = 0
+    for material in mesh.lods[0].materials:
+        tris = material.triangles()
+        if not tris:
+            continue
+        positions = material.positions()
+        slots = [vertex_slots(i) for i in _match_skn_vertices(positions, skn)]
+        triangles += len(tris)
+        primitives.append(gltf.Primitive(
+            positions=positions,
+            normals=material.normals(),
+            uvs=material.uvs(),
+            indices=[i for tri in tris for i in tri],
+            material=assembler.material_for(
+                builder, geometry_name, material.name, report),
+            joints=[s[0] for s in slots],
+            weights=[s[1] for s in slots],
+        ))
+    if not primitives:
+        return None
+
+    skin_index = builder.add_skin(
+        [joint_nodes[ske_mod.canonical(b)] for b in joint_bones],
+        [bind_by_bone.get(ske_mod.canonical(b), (identity, (0.0, 0.0, 0.0)))
+         for b in joint_bones],
+        name=name)
+    mesh_node = builder.add_node(gltf.Node(
+        name=f"{name} cloth", mesh=builder.add_mesh(geom.mesh_file, primitives),
+        skin=skin_index, extras={"kind": "flagCloth"}))
+
+    # `FlagBlow`, the state the flag bundle declares, over this flag's own
+    # joints so a mixer playing every clip animates every flag.
+    times = tuple(f / FLAG_FPS for f in range(clip.frames))
+    frames = [clip.local_pose(f) for f in range(clip.frames)]
+    tracks = []
+    for bone in skeleton.bones:
+        key = ske_mod.canonical(bone.name)
+        node = joint_nodes.get(key)
+        if node is None:
+            continue
+        rest = (bone.rotation, bone.translation)
+        tracks.append((node, times, [f.get(key, rest) for f in frames]))
+    if tracks:
+        builder.add_animation(f"FlagBlow {name}", tracks)
+    report.parts += 1
+    report.triangles += triangles
+    return anchor, mesh_node
+
+
+def detach_flag_cloth(library, info: LevelInfo) -> int:
+    """Strip the `AnimatedFlag` child off every control point template.
+
+    The cloth is a skinned mesh and `_build_flag_cloth` builds it separately;
+    left in place the assembler would also emit it as a rigid child at its
+    authoring pose, which is the flat sheet straddling the pole. The pole
+    itself — the template's own `geometry` — is untouched, so a control point
+    whose cloth cannot be built still gets its pole.
+
+    Returns how many templates were stripped.
+    """
+    stripped = 0
+    for inst in info.gameplay.control_points:
+        tpl = info.gameplay.template_for(inst)
+        if tpl is None or not tpl.flag_child:
+            continue
+        obj = library.objects.get(inst.template.lower())
+        if obj is None or not obj.children:
+            continue
+        wanted = tpl.flag_child.lower()
+        keep = [c for c in obj.children if c.template.lower() != wanted]
+        if len(keep) != len(obj.children):
+            obj.children = keep
+            stripped += 1
+    return stripped
+
+
+def write_minimap(files, out_dir: Path, max_size: int = 512) -> dict | None:
+    """The level's own map art — the same image the HUD minimap and the
+    fullscreen map both draw, at different on-screen sizes.
+
+    There is no separate full-map texture and no separate grid overlay: the
+    grid letters and numbers are painted into this one image. Neither the size
+    nor the extension can be assumed — 1193 of the installed levels ship
+    512x512 `.dds`, but 42 ship 1024 or 2048 and 8 ship `.tga` — so the decoded
+    dimensions are taken from the file and the extension is probed.
+    """
+    for stem in ("Textures/InGameMap", "Texture/InGameMap", "Textures/Minimap"):
+        for ext in (".dds", ".tga"):
+            path = files.find(stem + ext)
+            if not path:
+                continue
+            try:
+                raw = files.read(path)
+                if ext == ".dds":
+                    width, height, rgba = decode_dds(raw)
+                else:
+                    width, height, rgba = decode_tga(raw)
+            except Exception:
+                continue
+            if max_size and max(width, height) > max_size:
+                width, height, rgba = downscale(width, height, rgba, max_size)
+            dest = out_dir / "minimap"
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "minimap.png").write_bytes(
+                encode_png(width, height, rgba, drop_alpha=True))
+            return {
+                "image": "minimap/minimap.png",
+                "pixels": [width, height],
+                "source": path,
+            }
+    return None
+
+
+def _world_to_image(info: LevelInfo) -> list[float]:
+    """The affine mapping glTF world metres onto the level's map art, 0..1.
+
+        u = m[0]*x + m[1]*z + m[2]
+        v = m[3]*x + m[4]*z + m[5]
+
+    The art frames the level's **active combat area**, not the world. Most
+    levels declare none and the two coincide, which is why `x / worldSize`
+    looked right for so long — but 142 of the 1018 installed levels declare a
+    sub-world one and every marker lands wrong on them. Berlin's is
+    `1536 1536 512 512` against a 2048 world: a 4x error per axis.
+
+    Refractor's combat area is declared as origin plus size, not as two
+    corners. `x` is east and needs no sign work. The `v` row carries two
+    inversions that cancel to a positive scale, which is easy to get backwards:
+
+        Refractor    v = 1 - (z_ref - minZ) / sizeZ      image V runs down
+        glTF         z_gltf = -z_ref                     the exporter negates Z
+        substituting v = 1 + z_gltf / sizeZ + minZ / sizeZ
+    """
+    world = info.terrain.world_size or 1.0
+    if info.combat is not None and info.combat.size_x and info.combat.size_z:
+        min_x, min_z = info.combat.min_x, info.combat.min_z
+        size_x, size_z = info.combat.size_x, info.combat.size_z
+    else:
+        min_x = min_z = 0.0
+        size_x = size_z = world
+    return [1.0 / size_x, 0.0, -min_x / size_x,
+            0.0, 1.0 / size_z, 1.0 + min_z / size_z]
+
+
+def _control_point_report(info: LevelInfo, placed: set[str] | None) -> list[dict]:
+    """`placed` is the set of templates that actually assembled into the glb,
+    or None when objects were not built at all (`--terrain-only`).
+
+    The distinction matters: a terrain-only run has placed nothing, and
+    reporting every control point as invisible would tell the viewer these
+    levels are all zone-only. Without an assembler the template's own reading
+    is the best answer available.
+    """
+    out: list[dict] = []
+    for inst in info.gameplay.control_points:
+        tpl = info.gameplay.template_for(inst)
+        entry = {
+            "name": inst.template,
+            "position": _to_gltf_vec(inst.position),
+            "rotation": list(inst.rotation),
+            # A placement may override the template's starting owner.
+            "team": inst.team if inst.team is not None else (tpl.team if tpl else 0),
+            "displayName": (tpl.display_name or inst.template) if tpl else inst.template,
+            "radius": tpl.radius if tpl else 0.0,
+            "areaValue": tpl.area_value if tpl else 0.0,
+            "spawnGroupId": tpl.spawn_group_id if tpl else None,
+            "objectSpawnerId": tpl.object_spawner_id if tpl else None,
+            "unableToChangeTeam": tpl.unable_to_change_team if tpl else False,
+            "flagMesh": tpl.flag_mesh() if tpl else None,
+            "flagHeight": tpl.flag_offset[1] if tpl else 0.0,
+            # False for a capture zone the level deliberately left invisible.
+            "visible": bool(tpl and tpl.visible
+                            and (placed is None or inst.template.lower() in placed)),
+        }
+        out.append(entry)
+    return out
+
+
+def _soldier_spawn_report(info: LevelInfo) -> list[dict]:
+    gameplay = info.gameplay
+    out: list[dict] = []
+    for inst in gameplay.soldier_spawns:
+        tpl = gameplay.soldier_spawn_templates.get(inst.template.lower())
+        group = tpl.group if tpl else None
+        out.append({
+            "name": inst.template,
+            "position": _to_gltf_vec(inst.position),
+            "rotation": list(inst.rotation),
+            "group": group,
+            "spawnId": tpl.spawn_id if tpl else None,
+            # A spawn point declares no team; it inherits from the flag whose
+            # spawnGroupId matches its setGroup.
+            "team": gameplay.team_of_group(group),
+        })
+    return out
+
+
 def _place_template(assembler: Assembler, builder, name: str, inst, report,
                      seen_fail: set[str]) -> int | None:
     key = name.lower()
@@ -796,12 +1324,18 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "placed": 0,
         "skipped": [],
         "spawners": 0,
+        "controlPoints": 0,
+        "soldierSpawns": len(info.gameplay.soldier_spawns),
         "parts": 0,
         "triangles": 0,
         "texturesResolved": 0,
         "texturesMissing": [],
     }
+    # None until the object pass runs, so a terrain-only extract is not
+    # mistaken for a level whose flags all failed to assemble.
+    placed_flags: set[str] | None = None
     if include_objects and assembler is not None:
+        placed_flags = set()
         report = Report(root=info.name, configuration="complex", lod=0)
         seen_fail: set[str] = set()
         for inst in info.static_objects:
@@ -833,6 +1367,46 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                 name="spawners",
                 children=spawner_nodes,
                 extras={"kind": "spawners"},
+            )))
+        flag_nodes: list[int] = []
+        flag_fail: set[str] = set()
+        for inst in info.gameplay.control_points:
+            tpl = info.gameplay.template_for(inst)
+            if tpl is None or not tpl.visible:
+                continue
+            node = _place_template(
+                assembler, builder, inst.template, inst, report, flag_fail)
+            if node is None:
+                # The fourth zone-only mechanism: a geometry that resolves but
+                # carries no drawable primitive (Interstate 82's 53-byte
+                # `nothing.sm`). Only the assembler can see that.
+                continue
+            flag_nodes.append(node)
+            placed_flags.add(inst.template.lower())
+            object_report["controlPoints"] += 1
+            # The cloth, skinned and animated. Its joints hang under the
+            # control point node so they inherit its placement; the mesh node
+            # goes to the scene root because glTF ignores a skinned mesh
+            # node's own transform.
+            team = inst.team if inst.team is not None else tpl.team
+            cloth_mesh = tpl.flag_mesh(team)
+            if not cloth_mesh:
+                continue          # neutral: pole only, no cloth to fly
+            built = _build_flag_cloth(
+                builder, assembler, assembler.meshes, assembler.library,
+                cloth_mesh, tpl.flag_offset, report, inst.template)
+            if built is None:
+                object_report.setdefault("flagsUnskinned", []).append(cloth_mesh)
+                continue
+            anchor, mesh_node = built
+            builder._nodes[node].children.append(anchor)
+            roots.append(mesh_node)
+            object_report["flagCloths"] = object_report.get("flagCloths", 0) + 1
+        if flag_nodes:
+            roots.append(builder.add_node(gltf.Node(
+                name="controlPoints",
+                children=flag_nodes,
+                extras={"kind": "controlPoints"},
             )))
         object_report["parts"] = report.parts
         object_report["triangles"] = report.triangles
@@ -885,6 +1459,12 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "water": None,
         "lighting": lighting or None,
         "drawDistance": view_distance,
+        "gameplayMode": info.gameplay.mode or None,
+        "controlPoints": _control_point_report(info, placed_flags),
+        "soldierSpawns": _soldier_spawn_report(info),
+        # `image` is filled in by `write_minimap` once the art is decoded; the
+        # projection is known from the con files alone and stands on its own.
+        "minimap": {"image": None, "worldToImage": _world_to_image(info)},
     }
     if not roots:
         raise ValueError("nothing renderable in this level")
@@ -904,7 +1484,35 @@ def main() -> int:
                     help="skip StaticObjects (faster, for judging the ground)")
     ap.add_argument("--texture-fallback", action="append", default=[],
                     help="mod folder to borrow object textures from (repeatable)")
+    ap.add_argument("--shared-sounds", type=Path, default=None,
+                    help="directory every level's samples are deduplicated "
+                         "into (default: <out>/_shared/sounds). scene.json "
+                         "references it relatively, so it must stay inside the "
+                         "tree that gets published.")
+    ap.add_argument("--final-out", type=Path, default=None,
+                    help="the maps root this level will live under once it is "
+                         "published, when that differs from --out (default: "
+                         "--out). Only affects the relative sound paths "
+                         "written into scene.json — `extract_maps_all.py` "
+                         "stages each level in its own directory and moves it "
+                         "afterwards, so the write location is the wrong base "
+                         "to measure those paths from.")
+    ap.add_argument("--audio-format", choices=("mp3", "wav"), default="mp3",
+                    help="mp3 (default) transcodes samples to LAME -V2, which "
+                         "measured sample-exact through decodeAudioData so "
+                         "engine layers still loop seamlessly; wav keeps the "
+                         "raw PCM at roughly 8x the bytes")
     args = ap.parse_args()
+
+    # Checked before any extraction rather than at the first sample: a level is
+    # minutes of work, and a batch run is hours of it. Failing at the point the
+    # encoder is missing — instead of after the terrain, objects and lightmaps
+    # are already built — is the difference between a one-line fix and a
+    # wasted run.
+    if args.audio_format == "mp3" and not ffmpeg_available():
+        sys.exit("ffmpeg is not on PATH, so samples cannot be transcoded.\n"
+                 "Install it, or pass --audio-format wav to keep raw PCM "
+                 "(roughly 8x the bytes).")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
@@ -941,6 +1549,16 @@ def main() -> int:
         objects.add_level_objects(path, label=f"{info.name} objects")
     if not args.terrain_only:
         library = build_library(objects)
+        # A level's flags are ObjectTemplates like any other, but they live in
+        # `<mode>/ControlPointTemplates.con` rather than under `Objects/`, so
+        # `add_level_objects` does not see them and `build_library` never reads
+        # them. Without this the pole and cloth resolve to nothing and every
+        # control point comes out as a bare zone.
+        if info.gameplay.mode:
+            cpt = files.find(f"{info.gameplay.mode}/ControlPointTemplates.con")
+            if cpt:
+                library.add_con(cpt, files.read(cpt).decode("latin-1", "replace"))
+                detach_flag_cloth(library, info)
         lightmaps = write_object_lightmaps(files, out_dir)
         assembler = Assembler(
             meshes, textures, objects, library,
@@ -968,6 +1586,11 @@ def main() -> int:
         extras["skybox"] = extras["envmap"]
     extras["water"] = write_water_assets(
         info, heightmap, textures, out_dir, args.max_texture)
+    # Merge rather than replace: `build_scene` already put the projection in,
+    # and a level that ships no art still needs it so markers can be drawn on
+    # a blank grid.
+    if (minimap := write_minimap(files, out_dir)) is not None:
+        extras["minimap"].update(minimap)
 
     sounds = ArchivePool()
     for mod_dir in chain:
@@ -981,9 +1604,18 @@ def main() -> int:
         vehicle = spawn_vehicle(inst.template, inst.team, info.spawn_templates)
         if vehicle and vehicle not in spawned:
             spawned.append(vehicle)
+    # Defaults to a sibling of the level directories so a standalone run and a
+    # batch run put samples in the same place; `extract_maps_all.py` passes the
+    # real destination explicitly, because its workers write to per-level
+    # staging directories that are moved into the tree afterwards.
+    shared_dir = args.shared_sounds or (args.out / "_shared" / "sounds")
+    final_root = args.final_out or args.out
     extras["sounds"] = extract_sounds(info, files, sounds, out_dir,
                                       library=library, objects=objects,
-                                      vehicles=spawned)
+                                      vehicles=spawned,
+                                      shared_dir=shared_dir,
+                                      audio_format=args.audio_format,
+                                      final_dir=final_root / info.name.lower())
 
     (out_dir / "scene.glb").write_bytes(glb)
     (out_dir / "scene.json").write_text(json.dumps(extras, indent=2))
