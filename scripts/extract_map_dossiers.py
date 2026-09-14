@@ -705,7 +705,39 @@ def _numeric(value: str) -> bool:
         return False
 
 
-def parse_control_points(files: LevelFiles, world_size: float | None) -> list[dict]:
+def map_frame(files: LevelFiles, world_size: float | None
+              ) -> tuple[float, float, float, float] | None:
+    """The rectangle the level's minimap art covers: `(minX, minZ, sizeX, sizeZ)`.
+
+    The art frames the level's **active combat area**, not the whole world.
+    `x / worldSize` only looks right because most levels declare no combat
+    area and the two then coincide — but 142 of the 1018 installed levels
+    declare a sub-world one, and on those every marker lands wrong. Berlin
+    declares `1536 1536 512 512` against a 2048 m world, a 4x error per axis
+    that puts all four flags in a corner of featureless rubble.
+
+    Note the declaration is origin plus size, not two corners: Berlin's last
+    two values are smaller than its first two, so the corner reading would be
+    an inside-out rectangle.
+
+    Verified by projection: Liberation of Caen's five bridges land on dry
+    ground under the naive rule and squarely on water under this one.
+    """
+    tokens = con_values(files.get("init.con"), "Game.setActiveCombatArea", 4)
+    if tokens:
+        try:
+            min_x, min_z, size_x, size_z = (float(t) for t in tokens[0])
+        except ValueError:
+            min_x = min_z = size_x = size_z = 0.0
+        if size_x > 0 and size_z > 0:
+            return (min_x, min_z, size_x, size_z)
+    if world_size:
+        return (0.0, 0.0, world_size, world_size)
+    return None
+
+
+def parse_control_points(files: LevelFiles,
+                         frame: tuple[float, float, float, float] | None) -> list[dict]:
     placements = files.get("conquest/controlpoints.con")
     templates = files.get("conquest/controlpointtemplates.con")
 
@@ -738,11 +770,13 @@ def parse_control_points(files: LevelFiles, world_size: float | None) -> list[di
                     "id": current_name.lower(),
                     "team": owners.get(current_name.lower(), 0),
                 }
-                if world_size:
-                    # Refractor world space is x east, z north, origin at a map corner.
-                    # Screen space runs top-down, so z inverts.
-                    point["x"] = round(min(max(x / world_size, 0.0), 1.0), 4)
-                    point["y"] = round(min(max(1.0 - z / world_size, 0.0), 1.0), 4)
+                if frame:
+                    # Refractor world space is x east, z north, origin at a map
+                    # corner, measured against the frame the art covers — see
+                    # `map_frame`. Screen space runs top-down, so z inverts.
+                    min_x, min_z, size_x, size_z = frame
+                    point["x"] = round(min(max((x - min_x) / size_x, 0.0), 1.0), 4)
+                    point["y"] = round(min(max(1.0 - (z - min_z) / size_z, 0.0), 1.0), 4)
                 points.append(point)
             current_name = None
     return points
@@ -855,7 +889,7 @@ def build_dossier(mod: str, level: str, files: LevelFiles, categories: dict[str,
     world_size = float(world_raw) if world_raw and _numeric(world_raw) else None
 
     teams = parse_teams(files, kit_types)
-    control_points = parse_control_points(files, world_size)
+    control_points = parse_control_points(files, map_frame(files, world_size))
     arsenal = parse_arsenal(files, categories, kit_types)
 
     # A level that yields nothing on every axis is a stub (menu-only or broken archive)

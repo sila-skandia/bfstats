@@ -59,8 +59,8 @@ reads as broken layout rather than a preview. Nothing is available only on hover
 
 | Source file | What it yields |
 |---|---|
-| `Init.con` | `setTeamSkin` (the nationality), `setKit` (kit roles), `assaultTeam` |
-| `Init/Terrain.con` | `worldSize`, which turns flag positions into map coordinates |
+| `Init.con` | `setTeamSkin` (the nationality), `setKit` (kit roles), `assaultTeam`, `setActiveCombatArea` (the rectangle the minimap art covers) |
+| `Init/Terrain.con` | `worldSize`, the fallback framing for a level declaring no combat area |
 | `GameTypes/Conquest.con` | starting tickets and the per-minute bleed, per team |
 | `Conquest/ControlPoints.con` | each flag's name and world position |
 | `Conquest/ControlPointTemplates.con` | who holds each flag at round start |
@@ -74,17 +74,38 @@ retuned by a patch.
 
 ## Two things that are not as simple as they look
 
-**A minimap is hand-drawn art, not a render of the terrain.** The transform from world
-position to map coordinate is `x / worldSize` and `1 - z / worldSize`, and it is exact
-on 20 of the 21 stock maps — flags land on the runway, the beach, the road junction
-they are named after. Berlin is the exception: its `ingamemap.dds` is framed
-differently from its terrain, and plotting against it scatters the flags into a corner
-of unrelated ground. Nothing in the level config distinguishes it, so the extractor
-falls back to a property of the result — if the whole flag cluster ends up crushed
-against a world edge, where a combat area never sits, the framing is not to be
-trusted. `controlPointsPlottable: false` then tells the UI to list the flags instead of
-plotting them. Across all 864 maps this flags 6, Berlin among them; the other five are
-tiny arena maps whose flags genuinely do occupy one corner of a large world.
+**A minimap is hand-drawn art, and it frames the level's combat area, not its
+world.** The transform is
+
+```
+Game.setActiveCombatArea minX minZ sizeX sizeZ   (Init.con; absent -> 0 0 worldSize worldSize)
+x = (worldX - minX) / sizeX
+y = 1 - (worldZ - minZ) / sizeZ
+```
+
+declared as origin plus **size**, not two corners — Berlin's `1536 1536 512 512` only
+parses one way. This document used to say the transform was `x / worldSize` and
+`1 - z / worldSize`, and that Berlin was an unexplained exception whose framing
+"nothing in the level config distinguishes". Both were wrong: the world rule is the
+special case where a level declares no combat area, which is most of them, and
+Berlin's config states its framing outright. **142 of the 1018 installed levels
+declare a sub-world combat area**, and every flag on those was misplaced — Berlin by
+a factor of four on each axis, which is what scattered its flags into a corner of
+unrelated ground.
+
+`controlPointsPlottable` stays, and it earned its keep: it is what stopped the UI
+drawing Berlin's flags wrong for as long as the transform was. It refuses a map whose
+whole flag cluster is crushed against a frame edge, where a combat area never sits.
+
+Across the current 1,260 maps with flags it now refuses **two**, both Interstate 82
+race maps (`deathrace`, `tsunami`). Neither declares a combat area, and both genuinely
+string three flags along a narrow band at one edge of a 2048 m world — the check is
+reading them correctly. `controlPointsPlottable: false` tells the UI to list those
+flags rather than plot them. Berlin now passes.
+
+The projection is pinned by `scripts/tests/test_map_dossiers.py`, and the same
+transform is derived at length — with the empirical check that settled it — in
+[`features/bf1942-3d-models/minimap-and-fullmap.md`](../bf1942-3d-models/minimap-and-fullmap.md).
 
 **A mod's level inherits files, not just levels.** Desert Combat ships its own Gazala
 that redefines the vehicles and kits but contains no `ControlPoints.con` and no
