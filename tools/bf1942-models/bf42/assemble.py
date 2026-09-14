@@ -1627,15 +1627,38 @@ class Assembler:
                 child_indices.append(child)
                 built_children.append((ref, child_name, child))
 
-        # An Engine's accumulated rotation reaches its plain visual children —
-        # the propeller LodObject — but never the sub-parts that are physics
-        # bodies of their own (`hasMobilePhysics 1`): a Corsair's landing gear
-        # hangs off its Engine without turning with the prop. An Engine with a
-        # mesh of its own (carrier screws) simply is the propeller, and spins
-        # itself instead.
+        # An Engine's rotation axis does not pose the Engine. `EngineTemplate`
+        # derives from `RotationalBundleTemplate` (`EngineTemplate::
+        # EngineTemplate`, 0x0823efc0 lnx, calls the RotationalBundleTemplate
+        # ctor), which is the only reason a `.con` may write `setInputToRoll
+        # c_PIThrottle` / `setMaxSpeed 500` on one at all — but the object the
+        # template creates is a `PhysicsEngine`, and *that* derives from
+        # `PhysicsNode` (`PhysicsEngine::PhysicsEngine`, 0x0824c6f0 lnx), not
+        # from `RotationalBundle`. `RotationalBundle::handleUpdate`
+        # (0x081d78e0 lnx) is the code that turns those three numbers into a
+        # transform — `calculateAndClipAngle` per axis, `setRotation`,
+        # `Bundle::getBundleTransformation`, then the node's setter — and a
+        # PhysicsEngine does not inherit it. So the engine never applies the
+        # declared rotation to its own node, and therefore never to the
+        # nineteen nodes hanging under a Corsair's.
+        #
+        # What it does instead is the tail of `PhysicsEngine::updatePhysics`
+        # (0x0057bfb0): two interface queries down to one specific object,
+        # then a rotation speed (`throttle * 400` while |throttle| < 0.08,
+        # else `throttle * 20`) and the LOD comparison value pushed into it.
+        # That object is the propeller. The spin is a hand-off to one named
+        # visual part, not a parent transform — Refractor's physics tree and
+        # its visual tree are not the same tree.
+        #
+        # We reproduce the hand-off: the plain visual children (the propeller
+        # LodObject), never the sub-parts that are physics bodies of their own
+        # (`hasMobilePhysics 1`). An Engine with a mesh of its own (carrier
+        # screws) simply is the propeller, and spins itself instead.
         spin_axes = engine_spin_axes(template)
         engine_self_spins = bool(spin_axes) and mesh_index is not None
+        spun_children: list[str] | None = None
         if spin_axes and not engine_self_spins:
+            spun_children = []
             for ref, child_name, node_index in built_children:
                 child_template = self.library.object(child_name)
                 if child_template is None or child_template.has_mobile_physics:
@@ -1651,6 +1674,7 @@ class Assembler:
                 # orbiting its own propeller.
                 spun = builder.node(node_index)
                 spun.extras = {**(spun.extras or {}), "spinsWithEngine": True}
+                spun_children.append(child_name)
                 for axis, speed in spin_axes.items():
                     # `frame="parent"`: the spin happens about the Engine's
                     # axis, which the child sees as a pre-multiplied rotation
@@ -1813,6 +1837,27 @@ class Assembler:
                 ) and (mesh_index is not None or child_indices or is_physics_body):
             rig["control"] = control or "vehicle"
             extras["rig"] = rig
+            # The rig's rate axis is the one thing on a node that does NOT pose
+            # that node, so say so on the node that carries it rather than
+            # leaving it to be inferred from flags on the children. `rig` alone
+            # reads as "rotate me", and a consumer that believes it swings a
+            # Corsair's gear, wheels and bay hatches around the prop shaft.
+            #
+            # The list is exhaustive and it is emitted even when empty, which
+            # is the whole point: an empty `spinsChildren` says "this Engine's
+            # axis reaches no drawn geometry" — true of the Willy and the
+            # KettenKrad, whose every wheel is its own mobile-physics body —
+            # and that is a different statement from the field being absent,
+            # which only means the asset predates it. Inferring the first from
+            # the second is what put a jeep's wheels on the prop shaft.
+            #
+            # An Engine that carries a mesh is left without the field, because
+            # there the naive reading is the right one: it *is* the propeller
+            # (a carrier's screws) and rotating its node is what the engine
+            # does. So the rule a consumer needs is total — a meshless Engine
+            # with a rate axis always carries `spinsChildren`.
+            if spun_children is not None:
+                extras["spinsChildren"] = spun_children
             report.rigged_parts.append(
                 f"[{rig['control']}] {template.name}: " + ", ".join(
                     f"{axis} " + ("free" if a["free"] else f"{a['min']:g}..{a['max']:g}")

@@ -271,6 +271,110 @@ GeometryTemplate.create StandardMesh Radar_M1
                          report.animated_parts)
 
 
+JEEP_CON = """
+ObjectTemplate.create PlayerControlObject Jeep
+ObjectTemplate.addTemplate JeepHull
+ObjectTemplate.addTemplate JeepEngine
+
+ObjectTemplate.create SimpleObject JeepHull
+ObjectTemplate.geometry Jeep_Hull_M1
+
+ObjectTemplate.create Engine JeepEngine
+ObjectTemplate.addTemplate JeepFrontWheelR
+ObjectTemplate.setPosition 0.7/-0.4/1.1
+ObjectTemplate.addTemplate JeepFrontWheelL
+ObjectTemplate.setPosition -0.7/-0.4/1.1
+ObjectTemplate.setMinRotation 0/0/-5000
+ObjectTemplate.setMaxRotation 0/0/5000
+ObjectTemplate.setMaxSpeed 0/0/55000
+ObjectTemplate.setInputToRoll c_PIThrottle
+
+ObjectTemplate.create Spring JeepFrontWheelR
+ObjectTemplate.geometry Jeep_wheel
+ObjectTemplate.hasMobilePhysics 1
+
+ObjectTemplate.create Spring JeepFrontWheelL
+ObjectTemplate.geometry Jeep_wheel
+ObjectTemplate.hasMobilePhysics 1
+
+GeometryTemplate.create StandardMesh Jeep_Hull_M1
+GeometryTemplate.create StandardMesh Jeep_wheel
+"""
+
+
+class EngineSpinTargetTests(unittest.TestCase):
+    """What an Engine's rotation axis turns, said on the Engine itself.
+
+    An Engine's declared axis does not pose the Engine. `EngineTemplate`
+    inherits the `setInputToRoll` / `setMaxSpeed` vocabulary from
+    `RotationalBundleTemplate`, but the object it creates is a `PhysicsEngine`,
+    which derives from `PhysicsNode` and not from `RotationalBundle` — so it
+    never runs `RotationalBundle::handleUpdate`, the only code that turns those
+    numbers into a transform. `PhysicsEngine::updatePhysics` instead hands a
+    rotation speed to one specific visual object: the propeller.
+
+    A consumer reading `extras.rig` alone sees a rate axis on the Engine node
+    and rotates it, which drags every physics body below it — a Corsair's gear,
+    wheels and bay hatches orbiting the prop shaft. `spinsChildren` is the
+    Engine node's own answer, and it is exhaustive so that "reaches nothing"
+    and "this asset predates the field" cannot be confused.
+    """
+
+    def test_engine_names_the_propeller_and_not_the_landing_gear(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Plane/Objects.con", PLANE_CON)
+        document, _, _ = assemble(
+            library, "PlaneComplex", ["Plane_prp1", "Plane_wheel"])
+
+        nodes = {node["name"]: node for node in document["nodes"]}
+        engine = nodes["PlaneEngine"]["extras"]
+        self.assertEqual(["lodPlanePropeller"], engine["spinsChildren"])
+        # The rig stays on the Engine — it is the only record of the declared
+        # span and servo rate — so the two must be read together.
+        self.assertEqual("rate", engine["rig"]["axes"]["roll"]["driver"])
+        self.assertTrue(
+            nodes["lodPlanePropeller"]["extras"]["spinsWithEngine"])
+        self.assertNotIn(
+            "spinsWithEngine", nodes["PlaneLandingGear"].get("extras", {}))
+
+    def test_an_engine_that_reaches_nothing_says_so_explicitly(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Jeep/Objects.con", JEEP_CON)
+        document, _, report = assemble(
+            library, "Jeep", ["Jeep_Hull_M1", "Jeep_wheel"])
+
+        nodes = {node["name"]: node for node in document["nodes"]}
+        engine = nodes["JeepEngine"]["extras"]
+        # Every wheel is its own mobile-physics body, so the axis turns no
+        # drawn geometry. The empty list is the finding, not the absence of
+        # one: a viewer that fell back to rotating the Engine on an absent
+        # field would spin the whole drivetrain about the roll axis.
+        self.assertEqual([], engine["spinsChildren"])
+        self.assertEqual("rate", engine["rig"]["axes"]["roll"]["driver"])
+        self.assertEqual([], document.get("animations", []))
+        self.assertEqual([], report.animated_parts)
+
+    def test_every_meshless_engine_with_a_rate_axis_carries_the_field(self) -> None:
+        """The rule a consumer needs has to be total, or it is not a rule."""
+        for label, con, root, meshes in (
+                ("plane", PLANE_CON, "PlaneComplex", ["Plane_prp1", "Plane_wheel"]),
+                ("jeep", JEEP_CON, "Jeep", ["Jeep_Hull_M1", "Jeep_wheel"]),
+        ):
+            with self.subTest(label):
+                library = ObjectLibrary()
+                library.add_con(f"Objects/{label}/Objects.con", con)
+                document, _, _ = assemble(library, root, meshes)
+                for node in document["nodes"]:
+                    extras = node.get("extras") or {}
+                    rig = extras.get("rig")
+                    if not rig or node.get("mesh") is not None:
+                        continue
+                    if not any(axis["driver"] == "rate"
+                               for axis in rig["axes"].values()):
+                        continue
+                    self.assertIn("spinsChildren", extras, node["name"])
+
+
 class CameraExportTests(unittest.TestCase):
     def test_camera_nodes_survive_with_their_seat_scope(self) -> None:
         library = ObjectLibrary()
