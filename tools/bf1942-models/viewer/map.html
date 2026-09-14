@@ -114,6 +114,97 @@
     font-size: 11px;
     background: var(--panel);
   }
+  /* The map art, top right. That corner is free: #side is top left, #hud is
+     bottom centre. Sized in one place so the canvas backing store and the
+     frame agree. */
+  #minimap {
+    --mm-size: 188px;
+    /* Not covered by the `#hud, #gate, #side` positioning rule above. */
+    position: absolute;
+    z-index: 3;
+    top: 16px; right: 16px;
+    width: var(--mm-size);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+  }
+  #minimap[hidden] { display: none; }
+  #minimap canvas {
+    position: static;
+    display: block;
+    width: 100%;
+    /* Square, so the art is not stretched: the border eats a pixel off the
+       width and a fixed height would not match it. */
+    aspect-ratio: 1;
+    /* The art is a top-down render with hard grid lines; smoothing it while
+       zoomed in just makes it muddy. */
+    image-rendering: pixelated;
+  }
+  #minimap .mm-cap {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 8px;
+    border-top: 1px solid var(--line);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #minimap .mm-cap b { color: var(--accent); font-weight: 500; }
+  /* The fullscreen map. Covers the stage, not the viewport — the shared nav
+     bar stays reachable. */
+  #fullmap {
+    position: absolute;
+    z-index: 5;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(8, 8, 8, .86);
+    backdrop-filter: blur(3px);
+    pointer-events: auto;
+  }
+  #fullmap[hidden] { display: none; }
+  #fullmap .fm-frame {
+    position: relative;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .6);
+  }
+  #fullmap canvas {
+    position: static;
+    display: block;
+    /* Square art, and the stage is the limit in both axes. */
+    width: min(78vh, 78vw);
+    height: min(78vh, 78vw);
+  }
+  #fullmap .fm-cap {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    letter-spacing: .08em;
+    color: var(--muted);
+  }
+  #fullmap .fm-cap b {
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    font-weight: 500;
+  }
+  #fullmap .fm-legend { display: flex; gap: 14px; align-items: center; }
+  #fullmap .fm-key { display: inline-flex; gap: 5px; align-items: center; }
+  #fullmap .fm-swatch {
+    width: 8px; height: 8px;
+    border: 1px solid currentColor;
+  }
+  #fullmap .fm-swatch.axis { background: #d2564b; color: #e88379; }
+  #fullmap .fm-swatch.allied { background: #4f8fd0; color: #86b6e6; }
+  #fullmap .fm-swatch.neutral { background: #9a9a9a; color: #c4c4c4; }
+  #fullmap .fm-swatch.zone { background: transparent; color: #c4c4c4; border-style: dashed; }
   a { color: var(--accent); }
 </style>
 </head>
@@ -147,8 +238,27 @@
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
     <label class="opt" style="display:flex;align-items:center;gap:6px;"><input type="range" id="sound-vol" min="0" max="1" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:var(--accent);"> vol</label>
   </aside>
-  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; Esc</div>
+  <div id="minimap" hidden>
+    <canvas id="minimap-canvas" width="376" height="376"></canvas>
+    <div class="mm-cap"><span id="minimap-grid">&mdash;</span><b>M</b></div>
+  </div>
+  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; M map &middot; Esc</div>
   <div id="gate"><span>Click to fly</span></div>
+  <div id="fullmap" hidden>
+    <div class="fm-frame">
+      <canvas id="fullmap-canvas" width="1024" height="1024"></canvas>
+      <div class="fm-cap">
+        <b id="fullmap-name">map</b>
+        <span class="fm-legend">
+          <span class="fm-key"><i class="fm-swatch axis"></i>axis</span>
+          <span class="fm-key"><i class="fm-swatch allied"></i>allied</span>
+          <span class="fm-key"><i class="fm-swatch neutral"></i>neutral</span>
+          <span class="fm-key"><i class="fm-swatch zone"></i>zone</span>
+        </span>
+        <span id="fullmap-meta"></span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script type="importmap">
@@ -240,6 +350,10 @@ let cloudUniforms = null;
 let waterUniforms = null;
 let waterAssets = [];     // textures owned by the water/cloud shaders
 let simTime = 0;
+// Drives the control-point flags. One mixer over the level root plays every
+// `FlagBlow <name>` clip the glb carries — one per flag, over that flag's own
+// joints — which is the animation state `AnimatedFlag` declares.
+let flagMixer = null;
 
 const params = new URLSearchParams(location.search);
 
@@ -292,10 +406,18 @@ function lookDelta(dx, dy) {
 
 addEventListener('keydown', e => {
   if (e.code === 'Escape') {
-    release();
+    // The map is the topmost thing Escape can dismiss.
+    if (!fullmapBox.hidden) toggleFullMap(false);
+    else release();
     return;
   }
   if (uiFocused()) return;
+  // M is the map, which is `c_PIMap` bound to IDKey_M in every one of the
+  // game's own control maps. N (`c_PIZoomMap`) is left free for a zoom cycle.
+  if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    toggleFullMap();
+    return;
+  }
   keys.add(e.code);
   if (e.code === 'KeyR' && optPilot.checked && aircraft) {
     aircraft.reset();
@@ -1085,6 +1207,7 @@ function updateSky() {
 
 function advanceSim(dt) {
   simTime += dt;
+  if (flagMixer) flagMixer.update(dt);
   if (waterUniforms) waterUniforms.uTime.value = simTime;
   if (cloudUniforms) {
     const speed = extras.sky?.clouds?.speed || [0, 0];
@@ -1182,9 +1305,29 @@ async function setupSounds(report, dir) {
   // two loops of the same sample audible at once through separate HRTF panners
   // reads as a hall echo, not louder surf. updateAudio moves the single
   // anchor to the closest point across every polyline in the group.
-  if (cfg.areas && cfg.areas.length > 0) {
+  // Flags join the area pool as one-point emitters. They group by file like
+  // everything else, so every flag on the map shares a single looping voice
+  // anchored at whichever one is nearest — which is the same reason the
+  // shorelines do it, and the reason five flags do not phase against each
+  // other. `flag.ssc` supplies the near/far ramp the group already honours.
+  const areaList = [...(cfg.areas || [])];
+  const flags = cfg.flags;
+  if (flags && flags.file && flags.positions?.length) {
+    for (const point of flags.positions) {
+      areaList.push({
+        name: 'flag',
+        file: flags.file,
+        points: [point],
+        volume: flags.volume ?? 1.0,
+        nearDistance: flags.nearDistance ?? flags.minDistance ?? 4.0,
+        farDistance: flags.farDistance ?? 15.0,
+      });
+    }
+  }
+
+  if (areaList.length > 0) {
     const groups = new Map();
-    for (const area of cfg.areas) {
+    for (const area of areaList) {
       if (!area.file || !area.points || area.points.length === 0) continue;
       const key = area.file.toLowerCase();
       if (!groups.has(key)) groups.set(key, { file: area.file, areas: [] });
@@ -1605,7 +1748,24 @@ function kindOf(obj) {
   return obj.userData?.kind || '';
 }
 
+const cullBonePos = new THREE.Vector3();
 function tagCull(obj) {
+  // A skinned flag cloth sits at the scene root carrying no transform of its
+  // own — glTF requires that of any skinned mesh — so its bind-pose geometry
+  // boxes around the world origin and a distance test would hide it
+  // everywhere except there. Its real position is wherever its joints are.
+  if (obj.isSkinnedMesh && obj.skeleton && obj.skeleton.bones.length) {
+    const box = new THREE.Box3();
+    for (const bone of obj.skeleton.bones) {
+      box.expandByPoint(bone.getWorldPosition(cullBonePos));
+    }
+    const sphere = new THREE.Sphere();
+    box.getBoundingSphere(sphere);
+    obj.userData.cullCenter = sphere.center.clone();
+    // The joints are a lattice inside the cloth, not its extent; pad for it.
+    obj.userData.cullRadius = sphere.radius + 2;
+    return;
+  }
   const box = new THREE.Box3().setFromObject(obj);
   const sphere = new THREE.Sphere();
   box.getBoundingSphere(sphere);
@@ -1992,6 +2152,319 @@ texManager.onProgress = (url, loaded, total) => {
   texReport();
 };
 
+// ---------------------------------------------------------------------------
+// The map art. The HUD minimap and the fullscreen map are the same picture at
+// different sizes and zooms — that is what the engine does too: `menu/InGame`
+// hot-swaps one picture node built from a single `Textures/InGameMap.tga`
+// path, and there is no second map asset anywhere in the archives.
+//
+// The art frames the level's *active combat area*, not the world. `scene.json`
+// carries the projection as an affine so the viewer never re-derives it:
+//     u = m[0]*x + m[1]*z + m[2]
+//     v = m[3]*x + m[4]*z + m[5]
+// with (x, z) in glTF world metres and (u, v) in 0..1 from the top left.
+// ---------------------------------------------------------------------------
+const minimapBox = document.getElementById('minimap');
+const minimapCanvas = document.getElementById('minimap-canvas');
+const minimapGrid = document.getElementById('minimap-grid');
+const fullmapBox = document.getElementById('fullmap');
+const fullmapCanvas = document.getElementById('fullmap-canvas');
+const fullmapName = document.getElementById('fullmap-name');
+const fullmapMeta = document.getElementById('fullmap-meta');
+
+// How much of the map the HUD window shows. The engine's zoom steps were not
+// recovered from the binary, so this is a viewer choice: a quarter of the
+// combat area keeps a 2 km level readable without losing the grid letters.
+const MINIMAP_SPAN = 0.25;
+// Marker sizes below are in CSS pixels and get multiplied by the canvas's own
+// backing ratio, so a flag is the same size on the 188 px HUD widget as on the
+// fullscreen map and stays put on a hidpi display.
+const MARKER_SCALE = 1.25;
+const TEAM_FILL = { 1: '#d2564b', 2: '#4f8fd0', 0: '#9a9a9a' };
+const TEAM_EDGE = { 1: '#f0a49c', 2: '#a8cdf2', 0: '#d0d0d0' };
+
+let mapArt = null;          // HTMLImageElement once the PNG has decoded
+let mapArtToken = 0;        // guards against a slow load landing after a switch
+
+function loadMapArt(dir) {
+  mapArt = null;
+  const token = ++mapArtToken;
+  const rel = extras.minimap?.image;
+  minimapBox.hidden = !extras.minimap;
+  if (!rel) return;
+  const img = new Image();
+  img.onload = () => { if (token === mapArtToken) mapArt = img; };
+  // A level with no art still gets markers on a blank grid, so a failed
+  // decode is not worth surfacing.
+  img.onerror = () => {};
+  img.src = `${MAPS_BASE}/${dir}/${rel}${bust()}`;
+}
+
+function projectToArt(x, z) {
+  const m = extras.minimap?.worldToImage;
+  if (!m) return null;
+  return { u: m[0] * x + m[1] * z + m[2], v: m[3] * x + m[4] * z + m[5] };
+}
+
+/** Grid reference under a world position, the way the art is lettered: A-H
+ *  across, 1-8 down. The labels are painted into the image, so this only has
+ *  to agree with them, not with any engine call. */
+function gridRef(x, z) {
+  const p = projectToArt(x, z);
+  if (!p || p.u < 0 || p.u > 1 || p.v < 0 || p.v > 1) return '—';
+  const col = Math.min(7, Math.max(0, Math.floor(p.u * 8)));
+  const row = Math.min(7, Math.max(0, Math.floor(p.v * 8)));
+  return `${'ABCDEFGH'[col]}${row + 1}`;
+}
+
+/** Camera heading as a screen-space angle, 0 pointing up the image.
+ *
+ *  Taken from the camera's world direction rather than `look.yaw` so it stays
+ *  correct in the pilot and vehicle camera modes, which drive the camera by
+ *  quaternion and never touch `look`. The image's V axis grows with glTF +Z,
+ *  so "up the image" is -Z. */
+const headingVec = new THREE.Vector3();
+function cameraHeading() {
+  camera.getWorldDirection(headingVec);
+  return Math.atan2(headingVec.x, -headingVec.z);
+}
+
+function drawArt(ctx, size, u0, v0, span) {
+  ctx.fillStyle = '#0d0f10';
+  ctx.fillRect(0, 0, size, size);
+  if (!mapArt) return;
+  const sx = u0 * mapArt.width;
+  const sy = v0 * mapArt.height;
+  const sw = span * mapArt.width;
+  const sh = span * mapArt.height;
+  ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, size);
+}
+
+function drawControlPoint(ctx, cp, px, py, scale) {
+  const r = 5 * scale;
+  ctx.lineWidth = Math.max(1, 1.5 * scale);
+  if (!cp.visible) {
+    // A capture zone the level deliberately left without a flag: Kasserine
+    // Pass is five of them. Drawn as a dashed ring so it reads as a place you
+    // capture rather than a thing you can see.
+    ctx.strokeStyle = TEAM_EDGE[cp.team] || TEAM_EDGE[0];
+    ctx.setLineDash([3 * scale, 3 * scale]);
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    return;
+  }
+  // A flag on a staff: the staff marks the exact world position, the banner
+  // hangs off it, which is how the game's own map icons read.
+  const h = 13 * scale;
+  ctx.strokeStyle = 'rgba(0,0,0,.75)';
+  ctx.lineWidth = Math.max(1, 2.5 * scale);
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.lineTo(px, py - h);
+  ctx.stroke();
+  ctx.strokeStyle = '#f0f0f0';
+  ctx.lineWidth = Math.max(1, 1 * scale);
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.lineTo(px, py - h);
+  ctx.stroke();
+  ctx.fillStyle = TEAM_FILL[cp.team] || TEAM_FILL[0];
+  ctx.strokeStyle = 'rgba(0,0,0,.8)';
+  ctx.beginPath();
+  ctx.moveTo(px + 1, py - h);
+  ctx.lineTo(px + 1 + 9 * scale, py - h + 3.5 * scale);
+  ctx.lineTo(px + 1, py - h + 7 * scale);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
+
+function drawPlayer(ctx, px, py, scale) {
+  const a = cameraHeading();
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(a);
+  const s = 7 * scale;
+  ctx.fillStyle = '#f5d76e';
+  ctx.strokeStyle = 'rgba(0,0,0,.85)';
+  ctx.lineWidth = Math.max(1, 1.2 * scale);
+  ctx.beginPath();
+  ctx.moveTo(0, -s);
+  ctx.lineTo(s * 0.62, s * 0.72);
+  ctx.lineTo(0, s * 0.34);
+  ctx.lineTo(-s * 0.62, s * 0.72);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Match a canvas's backing store to the box it is displayed in.
+ *
+ *  Returns the device ratio so markers can be sized in CSS pixels. Without
+ *  this the HUD widget draws into a 376 px buffer shown at 186 px and every
+ *  marker comes out half the size it was asked for. */
+function fitCanvas(canvas) {
+  const css = canvas.getBoundingClientRect().width;
+  if (!css) return canvas.__ratio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const want = Math.round(css * dpr);
+  if (canvas.width !== want) {
+    canvas.width = want;
+    canvas.height = want;
+  }
+  canvas.__ratio = dpr;
+  return dpr;
+}
+
+/** One map surface. `span` is the fraction of the art shown, `u0`/`v0` its
+ *  top-left corner — the fullscreen map passes the whole image, the HUD a
+ *  window centred on the camera. */
+function paintMap(canvas, u0, v0, span, opts) {
+  const ctx = canvas.getContext('2d');
+  const ratio = fitCanvas(canvas);
+  const size = canvas.width;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  drawArt(ctx, size, u0, v0, span);
+  if (!extras.minimap?.worldToImage) return;
+
+  const toPx = p => ({
+    x: ((p.u - u0) / span) * size,
+    y: ((p.v - v0) / span) * size,
+  });
+  const scale = MARKER_SCALE * ratio * (opts.scale || 1);
+
+  if (opts.combatArea && extras.combatArea) {
+    // Only worth drawing when it is not the whole frame, which it is whenever
+    // the level declares one — so this shows up only on the levels that do not.
+    const a = projectToArt(extras.combatArea.min[0], extras.combatArea.min[2]);
+    const b = projectToArt(extras.combatArea.max[0], extras.combatArea.max[2]);
+    if (a && b) {
+      const p = toPx(a), q = toPx(b);
+      ctx.strokeStyle = 'rgba(245,215,110,.35)';
+      ctx.setLineDash([6, 5]);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(Math.min(p.x, q.x), Math.min(p.y, q.y),
+                     Math.abs(q.x - p.x), Math.abs(q.y - p.y));
+      ctx.setLineDash([]);
+    }
+  }
+
+  if (opts.spawns) {
+    for (const sp of extras.soldierSpawns || []) {
+      const p = projectToArt(sp.position[0], sp.position[2]);
+      if (!p) continue;
+      const q = toPx(p);
+      ctx.fillStyle = sp.team ? (TEAM_FILL[sp.team] || TEAM_FILL[0]) : TEAM_FILL[0];
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, Math.max(1.2, 2 * scale), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  const labels = [];
+  for (const cp of extras.controlPoints || []) {
+    const p = projectToArt(cp.position[0], cp.position[2]);
+    if (!p) continue;
+    const q = toPx(p);
+    if (opts.radius && cp.radius > 0) {
+      // The capture radius is a world distance, so it scales with the art.
+      const m = extras.minimap.worldToImage;
+      const rUv = cp.radius * Math.abs(m[0]);
+      ctx.strokeStyle = TEAM_EDGE[cp.team] || TEAM_EDGE[0];
+      ctx.globalAlpha = 0.28;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, (rUv / span) * size, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    drawControlPoint(ctx, cp, q.x, q.y, scale);
+    if (opts.labels) labels.push({ cp, q });
+  }
+
+  // Labels last, and placed against what is already down. Control points
+  // cluster — Wake puts Village and North Base within a flag's width of each
+  // other — and drawn blindly the two names overprint into one unreadable
+  // run of letters.
+  if (opts.labels && labels.length) {
+    ctx.font = `${Math.round(9 * scale)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const placed = [];
+    const gap = 17 * scale;
+    for (const { cp, q } of labels) {
+      const text = cp.displayName.replace(/_/g, ' ');
+      const w = ctx.measureText(text).width + 6 * scale;
+      const h = 11 * scale;
+      // Below first — it is clear of the flag, which flies up and to the
+      // right of the staff — then above, then out to either side.
+      const spots = [
+        [q.x, q.y + gap], [q.x, q.y - gap * 1.25],
+        [q.x + w / 2 + 6 * scale, q.y], [q.x - w / 2 - 6 * scale, q.y],
+        [q.x, q.y + gap * 1.9], [q.x, q.y - gap * 2],
+      ];
+      let spot = null;
+      for (const [cx, cy] of spots) {
+        const box = { x0: cx - w / 2, x1: cx + w / 2, y0: cy - h / 2, y1: cy + h / 2 };
+        if (box.x0 < 0 || box.x1 > size) continue;
+        if (placed.some(p => box.x0 < p.x1 && box.x1 > p.x0
+                          && box.y0 < p.y1 && box.y1 > p.y0)) continue;
+        spot = [cx, cy]; placed.push(box); break;
+      }
+      if (!spot) continue;      // nowhere clear: the flag alone has to say it
+      ctx.fillStyle = 'rgba(0,0,0,.82)';
+      ctx.fillText(text, spot[0] + 1, spot[1] + 1);
+      ctx.fillStyle = '#e8e8e8';
+      ctx.fillText(text, spot[0], spot[1]);
+    }
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  const here = projectToArt(camera.position.x, camera.position.z);
+  if (here) {
+    const q = toPx(here);
+    drawPlayer(ctx, q.x, q.y, scale);
+  }
+}
+
+function drawMinimap() {
+  if (minimapBox.hidden) return;
+  const here = projectToArt(camera.position.x, camera.position.z);
+  if (!here) return;
+  // North-up with a rotating arrow. That is the game's own shipped default —
+  // every stock profile sets `game.setStaticMinimap 1` — and it keeps the
+  // baked-in grid letters upright.
+  const half = MINIMAP_SPAN / 2;
+  const u0 = Math.min(Math.max(here.u - half, 0), 1 - MINIMAP_SPAN);
+  const v0 = Math.min(Math.max(here.v - half, 0), 1 - MINIMAP_SPAN);
+  paintMap(minimapCanvas, u0, v0, MINIMAP_SPAN,
+           { spawns: false, radius: false, labels: false });
+  minimapGrid.textContent = gridRef(camera.position.x, camera.position.z);
+}
+
+function drawFullMap() {
+  if (fullmapBox.hidden) return;
+  // Bigger markers than the HUD widget: this surface is three times the size
+  // and carries labels, spawn dots and capture rings on top of the flags.
+  paintMap(fullmapCanvas, 0, 0, 1,
+           { scale: 1.5, spawns: true, radius: true, labels: true, combatArea: true });
+}
+
+function toggleFullMap(on) {
+  const want = on ?? fullmapBox.hidden;
+  fullmapBox.hidden = !want;
+  // Holding the map is not flying. Releasing the pointer lock also stops the
+  // movement keys running under the overlay.
+  if (want && captured) release();
+  if (want) drawFullMap();
+}
+fullmapBox.addEventListener('click', () => toggleFullMap(false));
+
 async function show(entry) {
   const load = overlay.begin(entry.name);
   load.step('report', { label: 'level report', weight: 1 });
@@ -2036,6 +2509,20 @@ async function show(entry) {
         || obj.userData?.projectileTrail) obj.visible = false;
   });
   scene.add(currentRoot);
+  // The flags. Every clip is started: each targets one flag's joints, and a
+  // clip left unplayed leaves that flag frozen at its frame-0 pose.
+  flagMixer = null;
+  if (gltf.animations?.length) {
+    flagMixer = new THREE.AnimationMixer(currentRoot);
+    for (const clip of gltf.animations) {
+      const action = flagMixer.clipAction(clip);
+      // The engine gives each flag a random start phase so a row of them does
+      // not beat in unison; `randomStartPitch` in `flag.ssc` does the same for
+      // the sound. Without it five flags on one map flap as one object.
+      action.time = Math.random() * clip.duration;
+      action.play();
+    }
+  }
   const dir = entry.glb.replace(/\/[^/]+$/, '');
   currentDir = dir;
   bindLightmaps(currentRoot, dir);
@@ -2044,6 +2531,14 @@ async function show(entry) {
   setupSky(currentRoot, dir);
   setupWater(currentRoot, dir);
   setupSounds(extras, dir);
+  loadMapArt(dir);
+  // A map held open across a level switch would be showing the old level.
+  toggleFullMap(false);
+  fullmapName.textContent = extras.level || entry.name;
+  const cps = (extras.controlPoints || []).length;
+  fullmapMeta.textContent = cps
+    ? `${cps} control point${cps === 1 ? '' : 's'} · ${(extras.soldierSpawns || []).length} spawns`
+    : '';
   // After the baked paths and the sky/water shaders have claimed their
   // meshes, everything still on a lit glTF material is the engine's
   // fixed-function path: vehicles and non-lightmapped statics.
@@ -2157,6 +2652,8 @@ function frame(dt) {
   updateAudio(dt);
   updateSky();
   renderer.render(scene, camera);
+  drawMinimap();
+  drawFullMap();
 }
 renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
 if (params.has('shots')) {
@@ -2180,6 +2677,10 @@ if (params.has('shots')) {
   // __renderOnce, so a test can step it frame by frame and read the result.
   Object.defineProperty(window, '__aircraft', { get: () => aircraft });
   window.__stick = stick;
+  // Free-fly heading. Setting `camera.rotation` directly is pointless here —
+  // `applyLook` rewrites it from `look` on every frame — so a headless check
+  // that wants to face the camera somewhere has to move this instead.
+  window.__look = look;
   // The view rig, which the mouse and the C key drive and a headless run cannot.
   // `__view.turn()` is the pilot's head in the cockpit — a Corsair's guns sit 40
   // degrees off the nose, so framing them means looking at them — and the orbit
