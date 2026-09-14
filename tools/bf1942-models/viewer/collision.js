@@ -223,7 +223,12 @@ export class CollisionIndex {
     this.stats = { queries: 0, cells: 0, candidates: 0, tests: 0 };
   }
 
-  /** The owner id of whichever placed object `node` sits under, or -1. */
+  /**
+   * The owner id of whichever placed object `node` sits under, or -1.
+   *
+   * Linear in the placement count, so this is a load-time or once-per-gun
+   * question, never a per-round one — `GunFire` caches what it gets back.
+   */
   ownerOf(node) {
     for (let n = node; n; n = n.parent) {
       const id = this.ownerNodes.indexOf(n);
@@ -247,8 +252,9 @@ export class CollisionIndex {
     stats.queries++;
     const stamp = ++this._query;
     const size = this.cellSize;
-    // Cell coordinates of the start, clamped: a round outside the indexed area
-    // still has to be able to fly into it.
+    // Cell coordinates of the start, deliberately *not* clamped: a round can
+    // begin outside the indexed area and fly into it, and the per-cell bounds
+    // check below is what keeps an out-of-range index harmless.
     let ix = Math.floor((ox - this.minX) / size);
     let iz = Math.floor((oz - this.minZ) / size);
     const stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
