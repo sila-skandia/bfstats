@@ -790,7 +790,29 @@ def write_cloud_assets(info: LevelInfo, meshes, textures, out_dir: Path) -> dict
     }
 
 
-def write_damage_tables(tables, shared_dir: Path, rel_base: Path) -> dict | None:
+def projectile_materials(library) -> dict[str, dict]:
+    """`projectileTemplate -> attacker material`, for the impact-effect lookup.
+
+    The effect table is keyed `(attacker material, defender material)`, and a
+    viewer holding a round in flight knows only the round's *template* name —
+    `fireArms.projectile.template` in the node extras. `ObjectTemplate.material`
+    on the Projectile is the attacker id (236 for an allied tank gun, 218 for a
+    rifle), `material2` is the separate id its splash pass uses, and `radius`
+    is that pass's extent. All three are already parsed by `con.py`, so this
+    costs one walk of a library that is built anyway.
+    """
+    if library is None:
+        return {}
+    out: dict[str, dict] = {}
+    for name, template in library.objects.items():
+        if template.kind.lower() != "projectile" or template.material is None:
+            continue
+        out[name] = {"material": template.material}
+    return out
+
+
+def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
+                        projectiles: dict | None = None) -> dict | None:
     """`damage.json` in the shared directory, plus the path to reach it.
 
     The MaterialManager tables are mod-wide, so they are written once beside
@@ -803,12 +825,14 @@ def write_damage_tables(tables, shared_dir: Path, rel_base: Path) -> dict | None
     shared_dir.mkdir(parents=True, exist_ok=True)
     target = shared_dir / "damage.json"
     payload = tables.as_dict()
+    payload["projectiles"] = projectiles or {}
     target.write_text(json.dumps(payload, separators=(",", ":")))
     return {
         "path": os.path.relpath(target, rel_base).replace(os.sep, "/"),
         "materials": len(payload["materials"]),
         "modifiers": sum(len(row) for row in payload["modifiers"].values()),
         "effects": sum(len(row) for row in payload["effects"].values()),
+        "projectiles": len(payload["projectiles"]),
         "effectTemplates": sorted({
             name for row in payload["effects"].values() for name in row.values()}),
     }
@@ -1736,7 +1760,8 @@ def main() -> int:
     # map in it. 157 KB once beside the sounds, referenced relatively, rather
     # than 157 KB in each of 23 level directories.
     extras["damage"] = write_damage_tables(
-        damage_tables, shared_dir.parent, final_root / info.name.lower())
+        damage_tables, shared_dir.parent, final_root / info.name.lower(),
+        projectile_materials(library))
     extras["sounds"] = extract_sounds(info, files, sounds, out_dir,
                                       library=library, objects=objects,
                                       vehicles=spawned,
