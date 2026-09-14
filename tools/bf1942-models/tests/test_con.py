@@ -253,6 +253,46 @@ GeometryTemplate.file TestBody
         self.assertEqual("TestBody", geometry.mesh_file)
         self.assertEqual("animations/TestBody.skn", geometry.skin)
 
+    def test_type_qualified_geometry_reference_resolves_to_the_bare_template(self) -> None:
+        # `Fx_Shell792mm`, the shell-eject emitter payload, writes
+        # `ObjectTemplate.geometry StandardMesh:Shell792mmHI_m1` while the
+        # GeometryTemplate is declared under the bare name.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Geometries.con",
+            """
+GeometryTemplate.create StandardMesh Shell792mmHI_m1
+GeometryTemplate.file shell792mmHi_m1
+""",
+        )
+
+        qualified = library.geometry("StandardMesh:Shell792mmHI_m1")
+
+        self.assertIs(library.geometry("Shell792mmHI_m1"), qualified)
+        self.assertEqual("shell792mmHi_m1", qualified.mesh_file)
+        self.assertEqual(
+            "Objects/Vehicles/Test/Art",
+            library.art_dir("StandardMesh:Shell792mmHI_m1"),
+        )
+
+    def test_geometry_qualifier_is_matched_case_insensitively(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Geometries.con",
+            "GeometryTemplate.create StandardMesh Shell9mmHI_m1\n",
+        )
+
+        self.assertIsNotNone(library.geometry("standardMesh:shell9mmHI_m1"))
+
+    def test_geometry_qualifier_disagreeing_with_the_declaration_does_not_resolve(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Geometries.con",
+            "GeometryTemplate.create StandardMesh TestHull\n",
+        )
+
+        self.assertIsNone(library.geometry("TreeMesh:TestHull"))
+
     def test_soldier_children_skip_first_person_and_distant_head(self) -> None:
         library = ObjectLibrary()
         library.add_con(
