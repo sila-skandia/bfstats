@@ -118,6 +118,11 @@ class SoldierSpawnTemplate:
     name: str
     spawn_id: int | None = None
     group: int | None = None
+    # `setSpawnAsParaTroper 1` drops you out of an aeroplane instead of onto the
+    # ground. Declared 489 times across vanilla's levels and live 43 of them —
+    # Market Garden 36, Liberation of Caen 6, Coral Sea 1; every other
+    # declaration is an explicit zero.
+    paratrooper: bool = False
 
 
 @dataclass
@@ -662,6 +667,8 @@ def parse_soldier_spawn_templates(text: str) -> dict[str, SoldierSpawnTemplate]:
             current.spawn_id = _opt_int(tokens)
         elif cmd == "setgroup":
             current.group = _opt_int(tokens)
+        elif cmd == "setspawnasparatroper":
+            current.paratrooper = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
     return out
 
 
