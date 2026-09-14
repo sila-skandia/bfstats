@@ -350,6 +350,15 @@ in the data (`confirmed` absence — the full Wing command inventory is in
   Steady rates are where control lift balances this — which is why DICE
   gave the ailerons `wingLift 1.85` even though "the wing" is nominally the
   body's job.
+
+  The same mechanism, at zero rate, is **static stability**: the tail
+  surfaces carry `wingLift` and no incidence 3.5 m behind the CoM, so flow
+  arriving at any angle to the fuselage makes lift on a long lever and pushes
+  the nose back onto the flight path. Nothing declares it; it is §4b's table
+  plus `r × F`. A lumped model does *not* get it for free, and §9d is what it
+  costs to put back — a model with no restoring moment has nothing that can
+  move the nose except the stick, and therefore no way to recover from a
+  stall, because what recovers an aeroplane from a stall is the nose falling.
 - **Stall**: lift authority scales with airspeed while the required 14.73
   does not. A fighter's regulators only budget 9.82 of that (§2c), so the
   balance rides on the passive `wingLift` surfaces at their +0.5° incidence,
@@ -409,9 +418,12 @@ equilibria under §8's model):
   (`Ai/Objects.con`), and the fleet's AI values (40–60) bracket every
   plane's prediction (43–54). A hard cutoff at 70 fits the AI data worse.
 - **Terminal dive**: g/drag ≈ **226 m/s** (thrust is zero above 70).
-- **Stall**: sink onset ~17 m/s with the re-derived constants below; the
-  regulators themselves do not saturate until ~12.4 m/s, which is the change
-  the gravity correction made to this line (§9).
+- **Stall**: hands off, with the nose on the flight path, the lift comes to
+  exactly g at **53.67 m/s** and is short of it at every speed below — so a
+  Corsair holds altitude hands-off at one speed and descends at all the rest.
+  The regulators do not saturate until **12.4 m/s**, and no achievable angle
+  of attack makes 1 g below **6.5 m/s**. (This line read "sink onset ~17 m/s"
+  until the arithmetic behind it was checked; §9a has the correction.)
 - **Climb**: excess thrust along an inclined flight path. The AI caps itself
   at `maxClimbAngle 0.3333` (rad, ≈ 19°), and the corrected g makes that cap
   look chosen rather than arbitrary: at 19° a Corsair's steady climb settles
@@ -658,9 +670,24 @@ What falls out, none of it calibrated, all of it checkable:
 | Quantity | Was (g = 9.81) | Now (g = 14.7295) |
 |---|---|---|
 | Regulator saturation speed | 25.1 m/s | 4.91 / (4 × 2° × K) = **12.4 m/s** |
-| Hands-off sink onset | same 25.1 (they were one number) | (0.2793 + 0.0323) × K × v = g → **16.7 m/s** |
+| Hands-off sink onset | same 25.1 (they were one number) | 9.82 + 0.0323 × K × v = g → **53.67 m/s**, i.e. cruise itself |
+| Below which no AoA makes 1 g | — | (0.2793 + 3.7 × 0.14) × K × v = g → **6.5 m/s** |
 | Terminal dive, g/drag | 150 m/s | **226 m/s** |
 | Level cruise | 53.67 m/s | 53.67 m/s (unchanged — no g in it) |
+
+**The sink-onset row said 16.7 m/s and was wrong.** It solved
+`(0.2793 + 0.0323) × K × v = g`, where 0.2793 is the regulator pair *at the
+±2° stop* — an expression that only applies below the 12.4 m/s in the row
+above it. At 16.7 m/s the regulators are regulating, not saturated: they
+contribute their flat 9.82, not the 13.2 that expression credits them with,
+and the aircraft is 3.4 m/s² short of holding altitude. Solved in the regime
+that actually obtains, sink onset *is* cruise — which is what §4c's prose
+already said ("holds altitude hands-off at cruise, sinks gently as it slows");
+only the table disagreed with it. The 6.5 m/s row is the number the retired
+one was reaching for: the speed below which the aircraft is beyond saving at
+any angle of attack, which is the closest thing this model has to a stall
+speed. It was never observed, because until the restoring moment of §9d
+existed there was nothing to make the aircraft sink at all.
 
 **`AOA_CLAMP`, re-derived**: 0.35 rad was set loosely against "keep a 20°
 body-AoA pull from producing 10 g", and against a slope a seventh as stiff it
@@ -685,8 +712,9 @@ therefore not independent evidence about anything.
   also unsatisfiable: the ratio of regulator-saturated lift to incidence lift
   is fixed by data at 8.65 : 1, so one `K_LIFT` cannot put sink onset at 22
   *and* hold cruise level. Level flight is the constraint with data on both
-  sides; it wins. Sink onset lands at 16.7 m/s and is a prediction now, not a
-  target.
+  sides; it wins. Sink onset lands at cruise itself, and the speed below which
+  no angle of attack will hold the aircraft up is 6.5 m/s; both are predictions
+  now, not targets.
 - **Loop 40 deg/s** is still what an in-game measurement should be compared
   against, but it is no longer something the constants can be tuned to hit.
   A 42 deg/s pull at 53.67 m/s describes a loop 73 m in radius, so 146 m of
@@ -729,6 +757,112 @@ sink onset. Two of those four now carry more weight than they used to,
 because §9b retired the guessed targets: whether a Corsair can loop from
 level cruise, and what speed it starts sinking at, are the measurements that
 would either confirm this calibration or indict `setTorque`'s units.
+
+### 9d. The three constants the lumped model needs and the real one does not
+
+`viewer/flight.js` is an authority shim over §8, not §8. It applies body rates
+from the stick instead of deriving them from each surface's off-centre lift,
+and that one substitution loses two things the per-surface model has for
+nothing: the restoring moment of §4c, and side drag. Both had to be named.
+
+The shim went a long time without either, and what it had instead was a single
+line that lerped the whole velocity onto the fuselage axis at a 0.45 s time
+constant. That is not side drag. It is a kinematic constraint welding the
+flight path to the nose, and welding those together deletes the angle of
+attack — the term every other term in the model is expressed in. With α
+pinned at zero the aircraft flew exactly where it pointed at any speed: it
+could not sink — §9a's sink-onset row was never going to be observable
+whatever number it held — could not stall, and when `v · fwd` went negative the
+same lerp preserved the sign and pinned it into stable backward flight, nose
+up, falling tail-first at 77 m/s. All three reported symptoms were that one
+line.
+
+**`WEATHERVANE` = 5.24**, radians of nose travel per second per radian of flow
+angle, referenced to cruise and linear in airspeed like every other
+aerodynamic term here. Solved two ways off data already in §8, and they agree
+to within a percent:
+
+```
+aerodynamic:  M_alpha = m × K_LIFT × Σ(tail wingLift) × v* × r
+                      = 2500 × 2.83 × (0.5 + 0.5) × 53.67 × 3.539
+                      = 1.344e6 N·m/rad
+              I_pitch = m (L² + H²)/12 × INERTIA_MOD_p
+                      = 2500 × (10.2² + 3.1²)/12 × 0.850 = 20126 kg·m²
+              ω = sqrt(M_alpha / I_pitch) = 8.17 rad/s, period 0.769 s
+              a first-order rate closing in the same quarter period
+                      = 1 / 0.192                            ->  5.20
+
+stick:        full elevator at cruise should trim α to exactly where
+              per-surface lift saturates — which is the angle §9a sized
+              AOA_CLAMP for, so this is the same closure, not a new one
+                      = pitchRate / AOA_CLAMP = 0.7330 / 0.14  ->  5.24
+```
+
+The ceiling is numerical, not aerodynamic: `map.html` clamps `THREE.Clock` at
+0.1 s, and a gain of 7 over-rotates a tail-slide on a frame that long. 5.24
+sits inside that with room, and 40 s of level flight drifts identically at
+1/60, 1/30 and 0.1 s.
+
+**`WEATHERVANE_YAW` = 2.78**, the same arithmetic on the yaw axis, and softer
+because the aircraft is: the rudder's `wingLift 1` on a 2.649 m lever and the
+body fin's `wingLift 2` on 0.1 m, against a yaw inertia (56939) nearly three
+times the pitch one. ω = 4.36 rad/s → 2.78. One gain for both axes would have
+made a Corsair as stiff in yaw as in pitch, which §4b's table plainly says it
+is not.
+
+**`SLIP_DAMP` = 8.49 s⁻¹**, and it is the only one of the three with no free
+parameter in it beyond `K_LIFT`. The surfaces mounted rolled −89.999° make
+their lift sideways, so for a small sideslip `K_LIFT × wingLift × (u/|v|) ×
+|v|` is `K_LIFT × wingLift × u` — the airspeed cancels, leaving a plain rate
+on the lateral velocity. 2.83 × (fin 2 + rudder 1) = 8.49. That the speed
+term cancels is why writing side drag as a rate is legitimate at all, and why
+writing the *whole* velocity error as a rate was not.
+
+None of the three belongs in §8. A per-surface implementation gets all of them
+out of `r × F` over the surface table and should not carry a constant for any.
+
+### 9e. Measured, before and after
+
+`tests/test_flight.py` drives `viewer/flight.js` through node and asserts on
+these; `tests/flight_harness.mjs` is the rig. Entries marked * are the
+dfe5bb9 measurements this change had to leave alone.
+
+| | before | after |
+|---|---|---|
+| * level flight, 40 s hands-off drift | −0.00 m | −0.22 m |
+| * 15° climb steady state | 39.96 m/s, 10.34 vy | 40.13 m/s, 10.24 vy (solved: 40.03 / 10.36) |
+| * terminal dive, held vertical | 225.9 m/s | 225.0 m/s (solved: 225.9) |
+| * level top speed | 53.67 m/s | 53.67 m/s |
+| * full-stick roll at cruise | 190.8 °/s | 194.1 °/s |
+| * takeoff unstick | 10.9 s, 41.7 m/s | 11.0 s, 42.0 m/s |
+| hands off at 20 m/s, 10 s: drop / vy / nose | 2.9 m / −0.4 / 0° | 26.6 m / −5.7 / −13.0° |
+| hands off at 8 m/s, 10 s: drop / vy / nose | 9.7 m / −1.8 / 0° | 42.6 m / −9.4 / −18.8° |
+| 4 s full back stick, then hands off | never recovers; nose 89.7°, 1.0 m/s, still climbing at 90 s | recovers at 12.3 s; nose 1.7°, 52.0 m/s |
+| launched tail-first at 30 m/s | backwards for all 30 s | turns at 0.3 s |
+| dropped nose-up from rest | backwards for all 40 s | turns at 1.1 s |
+| 60 s of held full back stick | 0 s backwards, worst α 14.7° | 0 s backwards, worst α 8.5° |
+| nose displaced 25° off the path at cruise | angle closes in 0.12 s, **nose travels 0°** | closes in 0.08 s, nose travels 13.2° |
+| nose 40° above the path at 15 m/s, idle | settles at 179.7° — flying backwards | nose drops 71.5°, settles at 0.1° |
+
+The row that says what the bug was is the second to last. The old model closed
+the nose-to-path angle *faster* than the new one and would have passed a naive
+convergence test, because it closed it by dragging the flight path onto the
+nose. The nose never moved. Measuring which end moved is the test that
+distinguishes an aircraft from a pointer.
+
+Flown as well as measured, on Wake through `map.html` and the real input path.
+Hanging on the propeller at 58° nose-up and 9 m/s — thrust-to-weight is 1.02,
+so a Corsair genuinely can do that — and then closing the throttle: four
+seconds later the flight path has collapsed from +58° to +3° with the nose
+still at 52°, two seconds after that the nose has fallen to −0.4° and the
+aircraft is descending at 28°, and from there it converges on the path (α 0.9°
+→ 0.0°) and accelerates away in an 18° glide. `v · fwd` never goes negative;
+its minimum over the whole 25 s is 0.8 m/s. On the same entry the old model
+fell tail-first at 77 m/s with the fuselage vertical and stayed that way.
+
+The prop-hang itself is not a bug and is not new — §9b's energy arithmetic
+says a Corsair at full throttle can hold a steep nose-up attitude at walking
+pace, and it does. What changed is that the nose now comes down out of it.
 
 ### For the engine-reference ledger (not yet recorded there)
 
