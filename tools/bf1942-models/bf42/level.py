@@ -56,6 +56,71 @@ class SpawnTemplate:
 
 
 @dataclass
+class ControlPointTemplate:
+    """A `ControlPoint` block out of `<mode>/ControlPointTemplates.con`.
+
+    The flag is not a special engine primitive: it is `geometry flagbase_m1`
+    (the pole) plus `addTemplate AnimatedFlag` at `setPosition 0/8.2/0` (the
+    cloth), both ordinary meshes the level names for itself. A control point
+    that renders as a bare capture zone is one whose author removed those
+    names — see `visible` for the four ways they did that.
+    """
+
+    name: str
+    display_name: str = ""              # setControlPointName
+    team: int = 0                       # starting owner, 0 = neutral
+    radius: float = 0.0
+    area_value: float = 0.0
+    spawn_group_id: int | None = None   # joins a SpawnPoint template's setGroup
+    second_spawn_group_id: int | None = None
+    object_spawner_id: int | None = None
+    unable_to_change_team: bool = False
+    time_to_get_control: float | None = None
+    geometry: str | None = None         # the pole
+    flag_child: str | None = None       # addTemplate, normally `AnimatedFlag`
+    flag_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    team_geometry: dict[int, str] = field(default_factory=dict)
+
+    def flag_mesh(self, team: int | None = None) -> str | None:
+        """Which cloth mesh this point flies, or None for pole-only.
+
+        Neutral points declare team geometry for 1 and 2 only, so falling
+        through to `AnimatedFlag`'s own placeholder would fly a Soviet flag on
+        Midway. Render neutral as pole-only instead.
+        """
+        want = self.team if team is None else team
+        return self.team_geometry.get(want)
+
+    @property
+    def visible(self) -> bool:
+        """False when the level meant this point to be a zone with no object.
+
+        Four mechanisms, each found in the wild and each failing differently if
+        unhandled: the names commented out (vanilla Kasserine_Pass, all five),
+        a blank argument (FH Pegasus), an unresolvable name (DC_Sea_Rigs writes
+        `null`), and a real but empty mesh (Interstate 82's 53-byte
+        `nothing.sm`). The first three are visible here; the fourth can only be
+        caught after the mesh resolves, so the caller drops a node that
+        assembles to zero primitives.
+        """
+        name = (self.geometry or "").strip().lower()
+        return bool(name) and name not in ("null", "none")
+
+
+@dataclass
+class SoldierSpawnTemplate:
+    """A `SpawnPoint` block: where a player materialises.
+
+    Nothing renders one. Zero of the 41,086 `SpawnPoint` templates across the
+    installed mods carry a `geometry`, so these exist only as map markers.
+    """
+
+    name: str
+    spawn_id: int | None = None
+    group: int | None = None
+
+
+@dataclass
 class SkyInfo:
     """The sky the engine actually draws: a StandardMesh box, not the env map.
 
@@ -285,6 +350,7 @@ class LevelInfo:
     static_objects: list[StaticInstance] = field(default_factory=list)
     spawn_templates: dict[str, SpawnTemplate] = field(default_factory=dict)
     spawn_objects: list[StaticInstance] = field(default_factory=list)
+    gameplay: "GameplayObjects" = field(default_factory=lambda: GameplayObjects())
     sky: SkyInfo = field(default_factory=SkyInfo)
     water: WaterInfo = field(default_factory=WaterInfo)
     lighting: LightingInfo = field(default_factory=LightingInfo)
@@ -493,6 +559,183 @@ def parse_static_objects(text: str) -> list[StaticInstance]:
             except (ValueError, IndexError):
                 continue
     return instances
+
+
+def _opt_int(tokens: list[str]) -> int | None:
+    try:
+        return int(float(tokens[0]))
+    except (ValueError, IndexError):
+        return None
+
+
+def _opt_float(tokens: list[str]) -> float | None:
+    try:
+        return float(tokens[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_control_point_templates(text: str) -> dict[str, ControlPointTemplate]:
+    """`ControlPoint` name -> its flag geometry and capture parameters.
+
+    Keyed lowercase: a level may `Object.create` a placement whose case differs
+    from the `ObjectTemplate.create` that defined it (Berlin writes
+    `create controlpoint`, Wake writes `create ControlPoint`).
+    """
+    out: dict[str, ControlPointTemplate] = {}
+    current: ControlPointTemplate | None = None
+    current_child: str | None = None
+    for ns, cmd, args in _commands(text):
+        if ns != "objecttemplate":
+            continue
+        tokens = args.split()
+        if cmd == "create":
+            current = None
+            current_child = None
+            if len(tokens) >= 2 and tokens[0].lower() == "controlpoint":
+                current = ControlPointTemplate(name=tokens[1])
+                out[tokens[1].lower()] = current
+        elif current is None:
+            continue
+        elif cmd == "setcontrolpointname" and tokens:
+            current.display_name = tokens[0]
+        elif cmd == "team":
+            current.team = _opt_int(tokens) or 0
+        elif cmd == "radius":
+            current.radius = _opt_float(tokens) or 0.0
+        elif cmd == "areavalue":
+            current.area_value = _opt_float(tokens) or 0.0
+        elif cmd == "spawngroupid":
+            current.spawn_group_id = _opt_int(tokens)
+        elif cmd == "secondspawngroupid":
+            current.second_spawn_group_id = _opt_int(tokens)
+        elif cmd == "objectspawnerid":
+            current.object_spawner_id = _opt_int(tokens)
+        elif cmd == "timetogetcontrol":
+            current.time_to_get_control = _opt_float(tokens)
+        elif cmd == "unabletochangeteam":
+            current.unable_to_change_team = bool(_opt_int(tokens))
+        elif cmd == "geometry":
+            # Kept even when it will not resolve: `visible` needs to tell a
+            # level that wrote `null` from one that wrote nothing at all.
+            current.geometry = tokens[0] if tokens else ""
+        elif cmd == "addtemplate" and tokens:
+            current_child = tokens[0]
+            # The *first* child is the cloth. Vanilla control points have
+            # exactly one, but a mod may hang extra parts on a flag and taking
+            # the last would name one of those as the thing `setTeamGeometry`
+            # retargets — and then detach it instead of the cloth.
+            if current.flag_child is None:
+                current.flag_child = current_child
+        elif cmd == "setposition" and tokens and current_child:
+            # Follows the `addTemplate` it positions, so it only describes the
+            # cloth while that is still the child being built.
+            if current_child == current.flag_child:
+                try:
+                    current.flag_offset = con_mod.vec3(tokens[0])
+                except ValueError:
+                    pass
+        elif cmd == "setteamgeometry" and len(tokens) >= 2:
+            try:
+                current.team_geometry[int(tokens[0])] = tokens[1]
+            except ValueError:
+                pass
+    return out
+
+
+def parse_soldier_spawn_templates(text: str) -> dict[str, SoldierSpawnTemplate]:
+    """`SpawnPoint` name -> its spawn id and the group binding it to a flag."""
+    out: dict[str, SoldierSpawnTemplate] = {}
+    current: SoldierSpawnTemplate | None = None
+    for ns, cmd, args in _commands(text):
+        if ns != "objecttemplate":
+            continue
+        tokens = args.split()
+        if cmd == "create":
+            current = None
+            if len(tokens) >= 2 and tokens[0].lower() == "spawnpoint":
+                current = SoldierSpawnTemplate(name=tokens[1])
+                out[tokens[1].lower()] = current
+        elif current is None:
+            continue
+        elif cmd == "setspawnid":
+            current.spawn_id = _opt_int(tokens)
+        elif cmd == "setgroup":
+            current.group = _opt_int(tokens)
+    return out
+
+
+# A level ships one directory per game mode it supports and the same flag can
+# sit in a different place in each. Conquest is what the stats site cares about
+# and what every stock level ships; the rest are a fallback so a Ctf-only or
+# objective-only mod map still yields flags.
+GAMEPLAY_MODES = ("Conquest", "ObjectiveMode", "Ctf", "Tdm", "CoOp", "SinglePlayer")
+
+
+def find_gameplay_mode(files: LevelFiles) -> str | None:
+    """The first mode directory carrying gameplay objects, Conquest first.
+
+    Keying on `ControlPoints.con` alone would lose vanilla Coral_Sea, which
+    ships no control points whatsoever — it is carrier versus carrier, decided
+    on ship kills — but does ship 24 soldier spawns. Either file counts.
+    """
+    for mode in GAMEPLAY_MODES:
+        if files.find(f"{mode}/ControlPoints.con") or files.find(f"{mode}/SoldierSpawns.con"):
+            return mode
+    return None
+
+
+@dataclass
+class GameplayObjects:
+    """Everything a level's mode directory says about flags and spawns."""
+
+    mode: str = ""
+    control_points: list[StaticInstance] = field(default_factory=list)
+    control_point_templates: dict[str, ControlPointTemplate] = field(default_factory=dict)
+    soldier_spawns: list[StaticInstance] = field(default_factory=list)
+    soldier_spawn_templates: dict[str, SoldierSpawnTemplate] = field(default_factory=dict)
+
+    def template_for(self, inst: StaticInstance) -> ControlPointTemplate | None:
+        return self.control_point_templates.get(inst.template.lower())
+
+    def team_of_group(self, group: int | None) -> int | None:
+        """Which side owns a spawn group, via the flag that declares it.
+
+        A soldier spawn carries no team of its own — it inherits from the
+        control point whose `spawnGroupId` matches its `setGroup`.
+        """
+        if group is None:
+            return None
+        for tpl in self.control_point_templates.values():
+            if group in (tpl.spawn_group_id, tpl.second_spawn_group_id):
+                return tpl.team
+        return None
+
+
+def load_gameplay_objects(files: LevelFiles, mode: str | None = None) -> GameplayObjects:
+    """Read a level's control points and soldier spawns.
+
+    Every file here is optional and levels really do omit them: vanilla
+    Coral_sea ships `ControlPoints.con` with no `ControlPointTemplates.con` at
+    all, so a placement with no template is normal and yields a point with
+    default parameters rather than an error.
+    """
+    mode = mode or find_gameplay_mode(files)
+    out = GameplayObjects(mode=mode or "")
+    if not mode:
+        return out
+
+    def text(rel: str) -> str:
+        hit = files.find(rel)
+        return files.read(hit).decode("latin-1", "replace") if hit else ""
+
+    out.control_points = parse_static_objects(text(f"{mode}/ControlPoints.con"))
+    out.control_point_templates = parse_control_point_templates(
+        text(f"{mode}/ControlPointTemplates.con"))
+    out.soldier_spawns = parse_static_objects(text(f"{mode}/SoldierSpawns.con"))
+    out.soldier_spawn_templates = parse_soldier_spawn_templates(
+        text(f"{mode}/SoldierSpawnTemplates.con"))
+    return out
 
 
 def parse_spawn_templates(text: str) -> dict[str, SpawnTemplate]:
