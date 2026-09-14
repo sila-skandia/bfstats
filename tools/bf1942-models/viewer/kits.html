@@ -781,9 +781,6 @@ function applyWireframe() {
 // the mixer moves Bip01 Head, the helmet on `A` goes with it.
 const partCache = new Map();
 let grafted = [];
-// Per bone, the local rotation that seats a part on it: the bone's inverse
-// bind. Captured once per figure, in the standing pose, by `captureBinds()`.
-let boneBinds = new Map();
 
 async function loadPart(glb) {
   if (!partCache.has(glb))
@@ -791,49 +788,52 @@ async function loadPart(glb) {
   return partCache.get(glb);
 }
 
-/** Capture each kit bone's inverse bind, from the figure, in the stand pose.
+/** The up-axis conversion a KitPart never receives.
  *
- * A KitPart mesh is authored in the soldier's mesh space: the exporter hands
- * back a helmet already crown-up. The bone it hangs on is not in that space —
- * `Bip01 Head` carries a Biped frame that runs along the limb. A *skinned* mesh
- * never notices, because its inverse-bind matrices cancel that frame for it. A
- * rigid graft has none, so it must supply one, and the right one is exactly
- * `inverse(world(bone))` in the pose the mesh was authored against.
+ * A `.sm` is authored Refractor Z-up. `assemble.py` stands a `BFSoldier` up on
+ * glTF +Y with `pitch -= 90` on its root node — but that branch is keyed on the
+ * template *kind*, so a `KitPart` exported on its own comes out still Z-up. The
+ * soldier it has to sit on has been converted; the hat has not.
  *
- * Derived from the loaded glb rather than computed from `UsSoldier.ske`,
- * because this is the only place every conversion in the pipeline has already
- * been applied — the `.ske` Z-mirror, the glTF mirror, and the `pitch -= 90`
- * that stands the figure up on +Y. Computing it from the raw skeleton was tried
- * and lands 77-95 degrees out; measured against the standalone part, this lands
- * at 0.
+ * This quaternion is that missing conversion: (x, y, z) -> (-x, z, y), a Y/Z
+ * swap with X negated. Applied as the graft's local rotation it acts on the
+ * mesh before the bone's transform, so one constant serves all three bones.
  *
- * Always captured with the STANDING clip applied, never whatever stance the
- * viewer happens to be in: the value is a property of the bind pose, and taking
- * it mid-crouch would freeze the crouch's head tilt into the helmet for good.
+ * Measured rather than assumed. Sweeping all 24 axis-aligned orientations
+ * against four national helmets and scoring "is the open rim the end facing the
+ * neck bone", this wins on every one of them (1.33-1.97 rim-to-crown) and the
+ * runner-up field sits at or below 1.02. The identity — no rotation — lands at
+ * exactly 180 degrees from it, which is why the first version of this graft
+ * showed every helmet upside down.
  */
-function captureBinds(root) {
-  boneBinds = new Map();
-  const stand = stanceActions.stand;
-  const weights = Object.fromEntries(Object.entries(stanceActions)
-    .map(([name, action]) => [name, action.getEffectiveWeight()]));
-  if (stand) {
-    for (const [name, action] of Object.entries(stanceActions))
-      action.setEffectiveWeight(name === 'stand' ? 1 : 0);
-    mixer?.update(0);
-  }
-  root.updateMatrixWorld(true);
-  for (const bone of ['A', 'backpack', 'HipPack']) {
-    const node = boneNamed(root, bone);
-    if (node) boneBinds.set(bone.toLowerCase(),
-      node.getWorldQuaternion(new THREE.Quaternion()).invert());
-  }
-  if (stand) {
-    for (const [name, action] of Object.entries(stanceActions))
-      action.setEffectiveWeight(weights[name] ?? 0);
-    mixer?.update(0);
-    root.updateMatrixWorld(true);
-  }
-}
+// The graft's local rotation, per slot: `world = world(bone) * SLOT_ROTATION`.
+//
+// A KitPart is authored in BONE space — the hip pack proves it, needing no
+// rotation at all — so the bone's 3ds Max Biped frame stays in. Cancelling it
+// was tried and is wrong: putting every part in one figure-wide orientation
+// reads acceptably on the helmet and lays the backpack through the torso
+// perpendicular to the spine.
+//
+// What the other two need is a 180-degree flip, on a different axis each:
+//
+//     head  180 about Y     back  180 about Z     hip  none
+//
+// 180-degree flips are the signature of a mirror, not of an up-axis conversion.
+// `ske.py` records that a `.ske` is stored mirrored in Z against the `.sm` it
+// poses, and `gltf.py` applies the Refractor-to-glTF mirror on the way out; two
+// mirrors on different axes compose to exactly a half-turn. The hip pack escapes
+// because its bone frame happens to already agree.
+//
+// These came off the `?tune` panel — a human rotating the thing 90 degrees at a
+// time and looking. Three automated checks passed this graft while it was
+// visibly wrong (see kits.md), so the eye stayed the instrument of record.
+const SLOT_ROTATION = {
+  head: new THREE.Quaternion(0, 1, 0, 0),
+  back: new THREE.Quaternion(0, 0, -1, 0),
+  hip: new THREE.Quaternion(0, 0, 0, 1),
+};
+const IDENTITY_ROTATION = new THREE.Quaternion();
+const slotTarget = slot => SLOT_ROTATION[slot] || IDENTITY_ROTATION;
 
 function boneNamed(root, want) {
   // "HipPack" survives sanitization intact, but match loosely anyway — the
@@ -858,8 +858,7 @@ async function applyWorn(kit) {
     // The inverse bind, captured off this figure's own skeleton. Without it the
     // part inherits the bone's raw 3ds Max Biped frame — which runs along the
     // limb, not along world up — and arrives rotated by 115-147 degrees.
-    const bind = boneBinds.get(part.bone.toLowerCase());
-    if (bind) node.quaternion.copy(bind);
+    node.quaternion.copy(slotTarget(part.slot));
     // `setPosition` / `setRotation` on a KitPart are further offsets from the
     // bone. Vanilla and EoD use neither; FH and FHSW do, so compose them on top
     // rather than discovering the gap the day a mod is added.
@@ -954,7 +953,6 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   mixer?.update(0);
   updateStanceButtons();
 
-  captureBinds(current);
   await applyWorn(kit);
   refit();
   applyWireframe();
