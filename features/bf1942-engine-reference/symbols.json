@@ -1077,6 +1077,15 @@
    "note": "Composes a soldier's three AnimationStateMachineInstances (array based at BFSoldier +0x294 in lnxded; 0 = lower body, 1 = upper body, 2 = camera-shake triggers, the last proven by triggerCameraShake). Passes dt straight through with NO speed term. The lower-body instance - which owns every Lb_Walk/Run/Crouch/Lie locomotion state and therefore the whole walking view bob - is multiplied by cameraShakeFactor (DAT_0099000c). The upper-body and trigger instances get a hardcoded 1.0f."
   },
   {
+   "address": "0x005013f8",
+   "name": "BFSoldier movement speed indexing",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Indexes the hardcoded speed tables. pose = (flags & 0x20) ? 1 : (flags & 0x40) >> 5 (0 stand, 1 crouch, 2 prone); index = pose*2 + (forwardInput <= 0 ? 1 : 0); speed = directionalSpeed[index] * perSoldierScale * factor. This is what settles the {fwd,back} x {stand,crouch,prone} pairing of the table at 0x009581b4 - previously inferred from layout alone."
+  },
+  {
    "address": "0x00502e60",
    "name": "calcStringHashValueNoCase",
    "kind": "function",
@@ -1156,6 +1165,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Binds .con command names to EngineTemplate field offsets by writing them out again. In ITS base: setTorque +0x414, setDifferential +0x410, setNumberOfGears +0x40c (int, default 1), setGearUp +0x418 (default 0.3), setGearDown +0x41c (default 0.7), setGearChangeTime +0x420 (default 1.0), setNoPropellerEffectAtSpeed +0x5cc (default 100.0), HeatIncrement +0x5d4 (default -1.0), CoolingFactor +0x5d8, setHeatBarType +0x5dc, InverseHeatBar +0x5e0. Add 4 to reach the base the physics code uses. This is the evidence that settles which of setTorque/setDifferential drives thrust."
+  },
+  {
+   "address": "0x005715d0",
+   "name": "dice::ref2::world::EngineTemplate::EngineTemplate",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Constructor. Seeds the gear-ratio curve: 101 floats at template+0x42c, filled 1.0, then five control points - [20]=3.5, [40]=2.2, [60]=1.5, [80]=1.1, [100]=0.94. No .con binding exists so no mod can move it. The sampled index is 100 forever: PhysicsEngine's ctor seeds gear=1 (lnxded 0x0824c770), there is no gear-shifting code in the client, and no aircraft authors setNumberOfGears (default 1). Closes the last scale unknown in thrust."
   },
   {
    "address": "0x005721e0",
@@ -2686,6 +2704,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Linux ctor. Calls PhysicsNode::PhysicsNode (0x8252b70) and nothing else - a PhysicsEngine is a PhysicsNode, NOT a RotationalBundle. EngineTemplate::EngineTemplate (0x0823efc0 lnx) does call RotationalBundleTemplate::RotationalBundleTemplate, which is why a .con may write setInputToRoll/setMinRotation/setMaxRotation/setMaxSpeed on an Engine at all (EngineTemplate::getMaxRotation at 0x0823fd50 returns the inherited Vec3 at +0x15c). But the template inheriting the vocabulary does not make the object pose itself: RotationalBundle::handleUpdate (0x081d78e0 lnx) is the only code that turns those numbers into a transform - calculateAndClipAngle per axis, then setRotation, Bundle::getBundleTransformation, matrix mult, node setter - and PhysicsEngine does not inherit it. So an Engine's declared rotation axis never rotates the Engine node, and never its children. This is what tools/bf1942-models/bf42/assemble.py encodes as extras.spinsChildren."
+  },
+  {
+   "address": "0x08250950",
+   "name": "dice::ref2::world::Wing::handleUpdate",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "lnxded address, not client. Subtracts setPitchOffset from the posed angle every update for every Wing - so setPitchOffset DOES bias the surface rest orientation, it is not only the regulator's reference incidence. The same instruction shows how setWingLift and setFlapLift are told apart despite being summed into one coefficient: angle = deflection * flapLift/(wingLift+flapLift) - pitchOffset. setFlapLift is the MOVING SHARE of one surface's area, which is why a rudder (0/2) and a fin (2/0) run identical arithmetic but are not interchangeable."
   }
  ]
 }

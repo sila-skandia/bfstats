@@ -159,9 +159,20 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
-233 symbols from bf42plus, 16 from this session, across 15 subsystems.
-Everything about the file formats is `open`: the corpus has the anchors and the
-tooling, and one assumption under active investigation.
+233 symbols from bf42plus and 51 read since, across 16 subsystems.
+
+**The `physics` subsystem is the worked example of what this corpus is for.**
+34 symbols, almost all `verified`, written up as a narrative in
+[subsystems/physics.md](subsystems/physics.md): the lift equation, the
+integrator, gravity, thrust, springs, the grip bitfield, the soldier speed
+tables and the camera shake. It replaced nine fitted constants in the viewer's
+flight model with read ones, and settled several things the feature docs had
+asserted wrongly for months — `setTorque` drives the engine *sound*, not thrust;
+`setRegulateToLift 4.91` is g/3 because gravity is −14.73, not 9.81; and retail
+BF1942 has no first-person walking view bob at all.
+
+File formats remain mostly `open`: the corpus has the anchors and the tooling,
+and one assumption under active investigation.
 
 Open investigation: **SM-1/SM-2** — our `.sm` reader infers vertex layout from
 stride and ignores the format's own `flags` word. A 234,144-descriptor survey
