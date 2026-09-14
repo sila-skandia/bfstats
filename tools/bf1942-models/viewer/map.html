@@ -2523,7 +2523,8 @@ async function loadDamageTables(dir) {
   const ref = extras?.damage;
   if (!ref?.path) return null;
   try {
-    return await fetch(`${dir}/${ref.path}${bust()}`).then(r => r.ok ? r.json() : null);
+    return await fetch(`${MAPS_BASE}/${dir}/${ref.path}${bust()}`)
+      .then(r => r.ok ? r.json() : null);
   } catch { return null; }
 }
 
@@ -2538,7 +2539,8 @@ async function loadTerrainMaterials(dir) {
   const spec = extras?.terrain?.materials;
   if (!spec?.image) return null;
   try {
-    const blob = await fetch(`${dir}/${spec.image}${bust()}`).then(r => r.ok ? r.blob() : null);
+    const blob = await fetch(`${MAPS_BASE}/${dir}/${spec.image}${bust()}`)
+      .then(r => r.ok ? r.blob() : null);
     if (!blob) return null;
     const bitmap = await createImageBitmap(blob);
     const canvas = document.createElement('canvas');
