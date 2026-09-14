@@ -268,6 +268,71 @@ def find_engine_script(library, objects: ArchivePool,
     return resolve_ssc_path(engine.source, entry[1]), engine.name
 
 
+def find_weapon_scripts(library, objects: ArchivePool,
+                        template: str) -> list[tuple[str, str, str]]:
+    """Every `.ssc` bound to a FireArms under a vehicle.
+
+    The same two hops `find_engine_script` makes, with two differences. A
+    vehicle has one Engine but several guns — a Corsair carries `CorsairGuns`
+    and `CorsairBombDummy` — so the walk collects rather than stops at the
+    first hit. And the script is bound to the FireArms template itself
+    (`Weapons.con` puts `loadSoundScript Sounds/CorsairMG.ssc` directly on
+    `CorsairGuns`), not to a child of it.
+
+    Returns `(fire arms name, archive path, script path)` per gun that has one;
+    a bomb rack has no sound script and simply does not appear.
+    """
+    root = library.objects.get(template.lower())
+    if root is None:
+        return []
+    seen: set[str] = set()
+    queue = [root]
+    found: list[tuple[str, str, str]] = []
+    while queue:
+        node = queue.pop(0)
+        key = node.name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if node.kind.lower() == "firearms" and node.source:
+            con_hit = objects.find(node.source)
+            if con_hit is not None:
+                scripts = parse_sound_scripts(
+                    objects.read(con_hit).decode("latin-1"))
+                entry = scripts.get(node.name.lower())
+                if entry is not None:
+                    found.append((node.name, node.source,
+                                  resolve_ssc_path(node.source, entry[1])))
+        for ref in node.children:
+            child = library.objects.get(ref.template.lower())
+            if child is not None:
+                queue.append(child)
+    return found
+
+
+# `silence.wav` is how a gun script says "this patch is not used". Every vanilla
+# weapon script declares the full six-patch set — Fire, Reload, Release, Shell
+# Bounce, MG distance, Fire Loop — and an MG fills only the last of them, so a
+# patch is "real" exactly when something other than silence survives.
+_SILENCE = "silence.wav"
+
+
+def _firing_patch(patches):
+    """The patch a held trigger plays: the first with a non-silence sample.
+
+    For a machine gun that is the Fire Loop, five silent patches down. For a
+    single-shot weapon whose Fire patch carries the report it is the first,
+    which is the same rule reaching the other answer rather than a special
+    case.
+    """
+    for patch in patches:
+        samples = [s for s in patch.samples
+                   if not s.file.replace("\\", "/").lower().endswith(_SILENCE)]
+        if samples:
+            return samples
+    return []
+
+
 def _modulator_report(effect) -> dict:
     # `Extern #map<Engine::Rpm>` is flattened to a plain source name: the viewer
     # only ever needs to know which control channel to feed the curve, and the
@@ -354,37 +419,72 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
         # An Engine is a single-patch object: triggered while it runs, released
         # when it stops. Anything past the first patch is not engine sound.
         samples = patches[0].samples if patches else []
-        layers: list[dict] = []
-        for sample in samples:
-            resolved = resolve_sound(sample.file, None, sounds, VEHICLE_RATES)
-            if resolved is None:
-                continue
-            layers.append({
-                "file": write(resolved),
-                "loop": sample.loop,
-                "volume": sample.volume,
-                "minDistance": sample.min_distance,
-                "priority": sample.priority,
-                "trigger": sample.trigger or None,
-                "stop": sample.stop or None,
-                "stereo": sample.stereo,
-                "doppler": not sample.doppler_off,
-                "randomStartPitch": (list(sample.random_start_pitch)
-                                     if sample.random_start_pitch else None),
-                "relativePosition": (_to_gltf_vec(sample.relative_position)
-                                     if sample.relative_position else None),
-                "modulators": [_modulator_report(e) for e in sample.effects],
-            })
+        layers = _sound_layers(samples, sounds, write)
         if not layers:
             continue
-        out.append({
+        entry = {
             "template": template,
             "engine": engine_name,
             "script": script_path,
             "level": VEHICLE_SOUND_LEVEL,
             "layers": layers,
-        })
+        }
+        # The guns ride along with the vehicle that carries them: one lookup in
+        # the viewer, and a weapon patch can never outlive the engine it was
+        # found next to.
+        weapons: list[dict] = []
+        for arms_name, _, arms_script in find_weapon_scripts(
+                library, objects, template):
+            arms_text = read_script(arms_script)
+            if arms_text is None:
+                continue
+            arms_layers = _sound_layers(
+                _firing_patch(parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
+                                        include=read_script,
+                                        source=arms_script)),
+                sounds, write)
+            if not arms_layers:
+                continue
+            weapons.append({
+                "fireArms": arms_name,
+                "script": arms_script,
+                "layers": arms_layers,
+            })
+        if weapons:
+            entry["weapons"] = weapons
+        out.append(entry)
     return out
+
+
+def _sound_layers(samples, sounds: ArchivePool, write) -> list[dict]:
+    """One `.ssc` patch's samples as the viewer's layer dicts, wavs written.
+
+    Shared by the engine and the guns because a layer is a layer: the viewer
+    evaluates whatever modulators come with it, so nothing here needs to know
+    which one it is looking at.
+    """
+    layers: list[dict] = []
+    for sample in samples:
+        resolved = resolve_sound(sample.file, None, sounds, VEHICLE_RATES)
+        if resolved is None:
+            continue
+        layers.append({
+            "file": write(resolved),
+            "loop": sample.loop,
+            "volume": sample.volume,
+            "minDistance": sample.min_distance,
+            "priority": sample.priority,
+            "trigger": sample.trigger or None,
+            "stop": sample.stop or None,
+            "stereo": sample.stereo,
+            "doppler": not sample.doppler_off,
+            "randomStartPitch": (list(sample.random_start_pitch)
+                                 if sample.random_start_pitch else None),
+            "relativePosition": (_to_gltf_vec(sample.relative_position)
+                                 if sample.relative_position else None),
+            "modulators": [_modulator_report(e) for e in sample.effects],
+        })
+    return layers
 
 
 def _load_level_dds(files, stem: str):
@@ -926,7 +1026,10 @@ def main() -> int:
     print(f"  sounds: ambient {amb['file'] if amb else 'none'}, "
           f"{len(areas)} area/emitter sound(s), "
           f"{len(engines)} vehicle engine(s) "
-          f"({sum(len(v['layers']) for v in engines)} layers)", file=sys.stderr)
+          f"({sum(len(v['layers']) for v in engines)} layers), "
+          f"{sum(len(v.get('weapons') or []) for v in engines)} weapon(s) "
+          f"({sum(len(w['layers']) for v in engines for w in v.get('weapons') or [])}"
+          " layers)", file=sys.stderr)
     return 0
 
 

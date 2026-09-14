@@ -47,6 +47,19 @@ export const RECOIL_KICK_SCALE = 0.1;
 // the late ramp plays on particles that have left the muzzle; parked here,
 // the scale gets a lid instead.
 export const FLASH_RAMP_MAX = 3;
+// Minimum apparent width of a tracer streak, in pixels.
+//
+// The streak's real cross-section is honest: `TLight_m1` at `tracerScaler 50`
+// is 0.30 m across and 50 m long, and broadside that is exactly what it draws.
+// Fired down the boresight it is seen end-on, and 0.30 m at the Corsair's 116 m
+// convergence subtends 1.1 px at 60 deg over 620 — a fragment that modern GL
+// drops whenever the triangle misses a pixel centre, which is why the stream
+// read as "barely visible little lines" pointing straight at the gunsight.
+// Refractor's fixed-function rasteriser kept that same sub-pixel triangle as
+// one bright additive pixel, so flooring the *apparent* width restores the
+// engine's picture rather than inventing one. Length is never touched — only
+// the cross-section, and only upward, so nothing shrinks below the real mesh.
+export const TRACER_MIN_SCREEN_PX = 2.5;
 // c_ETRocket motors light after launch; a gentle ramp reads as the Katyusha's
 // kick without turning the rocket into a bullet.
 const ROCKET_ACCEL = 25;         // m/s^2
@@ -54,8 +67,12 @@ const GRAVITY = 9.81;
 const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
 const MAX_TRAIL_PUFFS = 96;
 
-// Game tracers are 0.006 m wide TLight quads; 0.01 m keeps them visible in a
-// viewer without turning into glow sticks.
+// Fallback streak, for a GLB baked before the tracer mesh was exported. The
+// game's own `TLight_m1` is a tapered 0.0061 m spike trailing 1 m behind the
+// round, scaled bodily by the projectile's `tracerScaler` (50 for every vanilla
+// MG) — so the real thing is 0.3 m across, not 0.02. Two centimetres at the
+// Corsair's 116 m convergence subtends a quarter of a pixel at 60 deg FOV over
+// 1100 px, which is exactly the "barely visible little lines" this replaced.
 const tracerGeometry = new THREE.CylinderGeometry(0.01, 0.01, 1, 6, 1, true);
 tracerGeometry.rotateX(Math.PI / 2);   // length along Z so lookAt aims it
 export const tracerMaterial = new THREE.MeshBasicMaterial({
@@ -90,6 +107,7 @@ const _billboard = new THREE.Quaternion();
 const _spinAxis = new THREE.Vector3(0, 0, 1);
 const _drift = new THREE.Vector3();
 const _aimBack = new THREE.Vector3();
+const _extent = new THREE.Vector3();
 
 /**
  * Every gun in one scene, and the rounds they have in the air.
@@ -102,11 +120,16 @@ const _aimBack = new THREE.Vector3();
  * cannot mangle it.
  */
 export class GunFire {
-  constructor({ scene, camera, onMaterial = null, onShot = null } = {}) {
+  constructor({ scene, camera, onMaterial = null, onShot = null,
+                viewportHeight = null } = {}) {
     this.scene = scene;
     this.camera = camera;
     this.onMaterial = onMaterial;
     this.onShot = onShot;
+    // Drawing-buffer height in pixels, for the tracer width floor. A callback
+    // rather than a number because both pages resize, and the default is right
+    // for a canvas that fills the window.
+    this.viewportHeight = viewportHeight || (() => window.innerHeight || 800);
     // Which flash the observer gets. Refractor bundles both and marks each
     // with the view it belongs to: from outside, `em_MuzzHeavy`'s 1.76 m mesh
     // ramping to nine times its own length; from the seat, `em_1P_MuzzHeavy`'s
@@ -124,7 +147,11 @@ export class GunFire {
   clear() {
     for (const tracer of this.tracers) {
       this.scene.remove(tracer.mesh);
-      this.tracerPool.push(tracer.mesh);
+      tracer.mesh.visible = false;
+      // Cylinders go back to the shared pool; baked streaks go back to the
+      // group they were cloned from, which `collect(replace: true)` then drops
+      // along with the group itself.
+      tracer.pool.push(tracer.mesh);
     }
     this.tracers.length = 0;
     // Projectile and puff meshes are clones of the outgoing model's baked
@@ -165,7 +192,8 @@ export class GunFire {
       // in place.
       root.traverse(obj => {
         if (obj.userData?.effect || obj.userData?.projectileMesh
-            || obj.userData?.projectileTrail) obj.visible = false;
+            || obj.userData?.projectileTrail
+            || obj.userData?.tracerMesh) obj.visible = false;
       });
     }
     root.traverse(obj => {
@@ -175,10 +203,12 @@ export class GunFire {
       const emitters = [];
       let projectileMesh = null;
       let trailQuad = null;
+      let tracerMesh = null;
       obj.traverse(node => {
         if (node.userData?.muzzle) muzzles.push(node);
         if (node.userData?.projectileMesh) projectileMesh = node;
         if (node.userData?.projectileTrail) trailQuad = node;
+        if (node.userData?.tracerMesh) tracerMesh = node;
         const spec = node.userData?.effect;
         if (!spec || spec.kind === 'bundle') return;
         // Emitter materials are shared through the exporter's cache (both wing
@@ -223,6 +253,37 @@ export class GunFire {
       // Bomb racks declare no flash, no tracer and no recoil: nothing to show.
       if (!emitters.length && !stats.tracer && !stats.recoil
           && !(stats.velocity > 0)) return;
+      // The template's cross-section, measured once, so the width floor is
+      // expressed against real metres rather than a guess at what a tracer mesh
+      // is shaped like. Measured on the *geometry*, in the streak's own frame:
+      // `Box3.setFromObject` works in world space, and the AABB of a thin spike
+      // rotated by the airframe reads 0.42 m across instead of its real 0.0061,
+      // which silently pinned the floor below the streak's own scale.
+      let tracerWidth = 0;
+      if (tracerMesh) {
+        tracerMesh.traverse(part => {
+          if (!part.isMesh || !part.geometry) return;
+          if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
+          const size = part.geometry.boundingBox.getSize(_extent);
+          tracerWidth = Math.max(tracerWidth, size.x, size.y);
+        });
+        // The streak's own `.rs` says `blendDest one` and `depthWrite false`,
+        // and the exporter carries both through as the same `additive` extras
+        // flag the flash emitters use. Applied once on the template rather than
+        // per clone: every round of a gun looks identical, so unlike a flash
+        // (tinted per shot by its colour ramp) there is nothing to keep apart,
+        // and one shared material is one draw-call state change.
+        tracerMesh.traverse(part => {
+          if (!part.isMesh) return;
+          for (const material of [part.material].flat()) {
+            if (!material.userData?.additive) continue;
+            material.blending = THREE.AdditiveBlending;
+            material.transparent = true;
+            material.depthWrite = false;
+            material.needsUpdate = true;
+          }
+        });
+      }
       // The recoil path poses the gun node from its authored rest position.
       // The model browser stamps `home` on every node at load for its explode
       // slider; the map path does not, so take it here when it is missing.
@@ -234,8 +295,11 @@ export class GunFire {
         emitters,
         projectileMesh,
         trailQuad,
+        tracerMesh,
+        tracerWidth,
         projectilePool: [],
         puffPool: [],
+        tracerMeshPool: [],
         firing: false,
         cooldown: 0,
         shots: 0,
@@ -352,23 +416,51 @@ export class GunFire {
     const velocity = this.#muzzleVelocity(muzzle, group, speed, new THREE.Vector3());
     const direction = velocity.clone().normalize();
     // `setTracerTemplate` points at `Tracer_Projectile`, whose `tracerScaler
-    // 50` stretches `TLight_m1` (0.006 x 0.006 x 1.0 m) fifty times along its
-    // flight — the game's tracer is a 50 m streak, and that length is the only
-    // reason a round travelling 6.7 m per frame reads as anything at all.
-    // A 50 m streak leaving a model on a turntable runs off the stage, so the
-    // browser keeps its 1..4 m stand-in and the world path takes the data.
+    // 50` scales `TLight_m1` (a 0.0061 m spike trailing 1 m behind the round)
+    // bodily — the game's tracer is a 50 m streak 0.3 m across, and that size
+    // is the only reason a round travelling 6.7 m per frame reads as anything
+    // at all. A 50 m streak leaving a model on a turntable runs off the stage,
+    // so the browser keeps its 1..4 m stand-in and the world path takes the
+    // data.
     const scaler = group.stats.tracer?.scaler ?? 50;
-    const length = group.tracerLength === 'data'
-      ? Math.max(scaler, 1)
-      : Math.min(Math.max(scaler * 0.04, 1), 4);
-    const mesh = this.tracerPool.pop() || new THREE.Mesh(tracerGeometry, tracerMaterial);
-    mesh.material = bright ? tracerMaterial : shellMaterial;
-    mesh.scale.set(1, 1, length);
-    mesh.position.copy(_origin).addScaledVector(direction, length / 2);
-    mesh.lookAt(_aimBack.copy(mesh.position).add(direction));
+    const data = group.tracerLength === 'data';
+    let mesh;
+    let pool;
+    let lengthScale = 0;   // non-zero only for the baked streak
+    if (group.tracerMesh && bright) {
+      // The real streak. Its head sits at the mesh origin and the taper runs
+      // back along +Z (Refractor's -Z, mirrored by the exporter), so pointing
+      // the node's -Z down the line of flight leaves the tail behind the round
+      // where it belongs — no half-length offset, unlike the centred cylinder.
+      pool = group.tracerMeshPool;
+      mesh = pool.pop() || group.tracerMesh.clone();
+      mesh.visible = true;
+      // Scaled uniformly: `tracerScaler` is one number, and reading it as
+      // length alone leaves the streak 6 mm wide — a fifty-metre thread.
+      // `advance` then widens the cross-section if the streak would otherwise
+      // fall under TRACER_MIN_SCREEN_PX.
+      lengthScale = data ? Math.max(scaler, 1) : Math.max(scaler * 0.04, 1);
+      mesh.scale.setScalar(lengthScale);
+      mesh.position.copy(_origin);
+      mesh.lookAt(_aimBack.copy(mesh.position).add(direction));
+    } else {
+      const length = data
+        ? Math.max(scaler, 1)
+        : Math.min(Math.max(scaler * 0.04, 1), 4);
+      mesh = this.tracerPool.pop() || new THREE.Mesh(tracerGeometry, tracerMaterial);
+      mesh.visible = true;   // recycled meshes are parked hidden
+      mesh.material = bright ? tracerMaterial : shellMaterial;
+      mesh.scale.set(1, 1, length);
+      mesh.position.copy(_origin).addScaledVector(direction, length / 2);
+      mesh.lookAt(_aimBack.copy(mesh.position).add(direction));
+      pool = this.tracerPool;
+    }
     this.scene.add(mesh);
     this.tracers.push({
       mesh,
+      pool,
+      lengthScale,
+      width: group.tracerWidth,
       bright,
       velocity,
       // How long the streak lives. `fixed` is the turntable policy — a tracer
@@ -518,15 +610,33 @@ export class GunFire {
         }
       }
     }
+    // Metres per pixel at one metre from the eye; the floor below scales it by
+    // the streak's own distance. Recomputed per frame because both the camera
+    // and the canvas can change between them.
+    const height = Math.max(this.viewportHeight() || 0, 1);
+    const metresPerPxAt1m = this.camera?.isPerspectiveCamera
+      ? (2 * Math.tan(this.camera.fov * Math.PI / 360)) / height
+      : 0;
     for (let i = this.tracers.length - 1; i >= 0; i--) {
       const tracer = this.tracers[i];
       tracer.age += dt;
       const step = tracer.velocity.length() * dt;
       tracer.travelled += step;
       tracer.mesh.position.addScaledVector(tracer.velocity, dt);
+      if (tracer.lengthScale && tracer.width && metresPerPxAt1m) {
+        // Hold the cross-section at TRACER_MIN_SCREEN_PX, never below the real
+        // mesh. Length keeps its own scale, so a streak stays 50 m long and
+        // only stops being a thread.
+        const distance = tracer.mesh.position.distanceTo(this.camera.position);
+        const floor = (distance * metresPerPxAt1m * TRACER_MIN_SCREEN_PX)
+          / tracer.width;
+        const across = Math.max(tracer.lengthScale, floor);
+        tracer.mesh.scale.set(across, across, tracer.lengthScale);
+      }
       if (tracer.age > tracer.ttl || tracer.travelled > tracer.maxRange) {
         this.scene.remove(tracer.mesh);
-        this.tracerPool.push(tracer.mesh);
+        tracer.mesh.visible = false;
+        tracer.pool.push(tracer.mesh);
         this.tracers.splice(i, 1);
       } else {
         active = true;

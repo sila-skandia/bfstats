@@ -80,6 +80,43 @@ subshader "MuzzHeavy_m1_Material0" "StandardMesh/Default" {
             'shader "Material4" { transparent true; texture "texture/x"; }')
         self.assertFalse(rs.lookup(shaders, "Material4").additive)
 
+    def test_lighting_false_marks_the_surface_as_its_own_light(self) -> None:
+        # Verbatim from TLight_m1.rs, the tracer streak: unlit and additive.
+        shaders = rs.parse(
+            """
+subshader "Tlight_m1_Material1" "StandardMesh/Default" {
+  lighting false;
+  transparent true;
+  blendSrc sourceAlpha;
+  blendDest one;
+  depthWrite false;
+  alphaTestRef 0.7;
+  texture "texture/tracklight_s";
+}
+"""
+        )
+        shader = rs.lookup(shaders, "Tlight_m1_Material1")
+        self.assertFalse(shader.lighting)
+        self.assertTrue(shader.additive)
+
+    def test_lighting_defaults_true_and_specular_does_not_clear_it(self) -> None:
+        # `lightingSpecular` starts with the same eight characters; a sloppy
+        # pattern would read its value as `lighting`'s and unlit the mesh.
+        shaders = rs.parse(
+            """
+subshader "tracklight_m1_Material0" "StandardMesh/Default" {
+  lighting true;
+  lightingSpecular true;
+  materialDiffuse 1 1 1;
+  texture "texture/tracklight_o";
+}
+"""
+        )
+        self.assertTrue(rs.lookup(shaders, "tracklight_m1_Material0").lighting)
+        # And a shader that says nothing is lit, which is the common case.
+        silent = rs.parse('shader "Material4" { texture "texture/x"; }')
+        self.assertTrue(rs.lookup(silent, "Material4").lighting)
+
 
 if __name__ == "__main__":
     unittest.main()
