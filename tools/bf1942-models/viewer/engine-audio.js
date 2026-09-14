@@ -100,6 +100,16 @@ function modulate(modulators, c, initial) {
 // its script asks for, which is what makes the crossfade checkable.
 const BUS_HEADROOM = 0.28;
 
+// A gun patch is a far shorter stack and needs its own figure, or the engine's
+// eleven-layer divisor would bury it. `CorsairMG.ssc` has four layers split
+// into a near pair and a far pair by their own `Volume <- Distance` ramps, so
+// only two are ever up: CAMG1 + CAMG2 at 0.7 each in the cockpit, the two
+// distant layers at 1.0 each outside 4 m. 0.75 puts the close pair's 1.4 at
+// 1.05 — level with what the engine bus peaks at, which for something as
+// transient as gunfire is what makes it read as sitting on top of the engine
+// rather than under it.
+export const WEAPON_HEADROOM = 0.75;
+
 // Speed of sound, m/s, for the doppler shift the engine loops keep (they are
 // the samples that pointedly do *not* set `dopplerOff`; gunfire and the
 // start/stop one-shots do). Clamped hard: a hard manoeuvre past the listener
@@ -151,8 +161,9 @@ class Voice {
  * thrown away without ever having made a sound.
  */
 export class EngineAudio {
-  constructor(spec, layers, buffers, listener) {
+  constructor(spec, layers, buffers, listener, headroom = BUS_HEADROOM) {
     this.spec = spec;
+    this.headroom = headroom;
     this.listener = listener;
     this.ctx = listener.context;
     this.disposed = false;
@@ -337,7 +348,7 @@ export class EngineAudio {
         this.#ramp(voice.source.playbackRate, voice.targetRate, now, PITCH_TAU);
       }
     }
-    this.#ramp(this.bus.gain, master * BUS_HEADROOM, now, GAIN_TAU);
+    this.#ramp(this.bus.gain, master * this.headroom, now, GAIN_TAU);
   }
 
   #ramp(param, value, now, tau) {
@@ -443,7 +454,8 @@ export class EngineAudio {
  * why the Corsair's two cockpit layers share a single decoded `b17hirpm.wav`
  * instead of two copies drifting apart.
  */
-export async function loadEngineAudio(spec, { listener, getBuffer }) {
+export async function loadEngineAudio(spec, { listener, getBuffer,
+                                              headroom = BUS_HEADROOM }) {
   if (!spec || !spec.layers || !spec.layers.length || !listener) return null;
   const buffers = new Map();
   for (const layer of spec.layers) {
@@ -452,7 +464,7 @@ export async function loadEngineAudio(spec, { listener, getBuffer }) {
   }
   const layers = spec.layers.filter(l => buffers.get(l.file));
   if (!layers.length) return null;
-  return new EngineAudio(spec, layers, buffers, listener);
+  return new EngineAudio(spec, layers, buffers, listener, headroom);
 }
 
 /**
@@ -467,4 +479,25 @@ export function findEngineSpec(report, template) {
   if (!list || !template) return null;
   const want = template.toLowerCase();
   return list.find(v => (v.template || '').toLowerCase() === want) || null;
+}
+
+/**
+ * The gun patches for one vehicle, in the same shape `loadEngineAudio` takes.
+ *
+ * The extractor hangs weapons off the vehicle that carries them, so this is the
+ * engine lookup plus one hop. `engine` is set to the FireArms name because that
+ * is what the field means to every caller — the node the voices belong on — and
+ * for a gun that is the gun.
+ */
+export function findWeaponSpecs(report, template) {
+  const vehicle = findEngineSpec(report, template);
+  if (!vehicle?.weapons?.length) return [];
+  return vehicle.weapons.map(weapon => ({
+    template,
+    engine: weapon.fireArms,
+    fireArms: weapon.fireArms,
+    script: weapon.script,
+    level: vehicle.level,
+    layers: weapon.layers,
+  }));
 }

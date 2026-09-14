@@ -27,7 +27,10 @@ from dataclasses import dataclass, field
 # `shader "X"` / `subshader "X" "StandardMesh/Default"`
 _BLOCK_START = re.compile(r'\b(sub)?shader\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{', re.IGNORECASE)
 _TEXTURE = re.compile(r'\btexture\s+"([^"]+)"', re.IGNORECASE)
-_BOOL = re.compile(r'\b(twosided|transparent)\s+(true|false)\s*;', re.IGNORECASE)
+# `lightingSpecular true;` does not match: `\blighting` needs whitespace after
+# it, and that line has none.
+_BOOL = re.compile(r'\b(twosided|transparent|lighting)\s+(true|false)\s*;',
+                   re.IGNORECASE)
 _ALPHATEST = re.compile(r'\balphaTest\s+(\w+)\s+([0-9.]+)\s*;', re.IGNORECASE)
 _CULLMODE = re.compile(r'\bcullMode\s+(\w+)\s*;', re.IGNORECASE)
 _BLENDFUNC = re.compile(r'\bblend(Src|Dest)\s+(\w+)\s*;', re.IGNORECASE)
@@ -40,6 +43,10 @@ class Shader:
     textures: list[str] = field(default_factory=list)
     twosided: bool = False
     transparent: bool = False
+    # `lighting false;` is the shader saying "this surface *is* light": tracer
+    # streaks and glows declare it so the engine skips N.L entirely. Defaults
+    # true because that is what a `.rs` that says nothing means.
+    lighting: bool = True
     alpha_test: float | None = None
     blend_src: str | None = None
     blend_dest: str | None = None

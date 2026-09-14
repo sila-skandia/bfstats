@@ -17,6 +17,67 @@ from bf42.level import (  # noqa: E402
     parse_ssc,
     resolve_ssc_path,
 )
+from extract_map import _firing_patch  # noqa: E402
+
+
+class WeaponPatchTests(unittest.TestCase):
+    """Which patch of a weapon script a held trigger actually plays."""
+
+    # The shape every vanilla weapon script has: six patches, and an MG fills
+    # only the last. Trimmed to one sample each.
+    MG_SCRIPT = """
+#templateLevel HIGH
+newPatch
+### Fire ###
+load @ROOT/Sound/@RTD/silence.wav
+volume 0
+
+newPatch
+### Reload ###
+load @ROOT/Sound/@RTD/silence.wav
+volume 0
+
+newPatch
+### Fire Loop ###
+load @ROOT/Sound/@RTD/CAMG1.wav
+minDistance 2
+loop
+volume .7
+"""
+
+    def test_firing_patch_skips_the_silent_patches(self) -> None:
+        patches = parse_ssc(self.MG_SCRIPT, level="high")
+        samples = _firing_patch(patches)
+        self.assertEqual(["@ROOT/Sound/@RTD/CAMG1.wav"],
+                         [s.file for s in samples])
+        self.assertTrue(samples[0].loop)
+        self.assertAlmostEqual(0.7, samples[0].volume)
+
+    def test_a_weapon_whose_first_patch_fires_takes_the_first_patch(self) -> None:
+        # A single-shot gun puts the report in the Fire patch; the same rule
+        # reaches the other answer without a special case.
+        script = """
+#templateLevel HIGH
+newPatch
+load @ROOT/Sound/@RTD/ShermanFire.wav
+volume 1
+
+newPatch
+load @ROOT/Sound/@RTD/silence.wav
+volume 0
+"""
+        samples = _firing_patch(parse_ssc(script, level="high"))
+        self.assertEqual(["@ROOT/Sound/@RTD/ShermanFire.wav"],
+                         [s.file for s in samples])
+
+    def test_an_entirely_silent_script_yields_nothing(self) -> None:
+        script = """
+#templateLevel HIGH
+newPatch
+load @ROOT/Sound/@RTD/silence.wav
+volume 0
+"""
+        self.assertEqual([], _firing_patch(parse_ssc(script, level="high")))
 
 
 class SoundScriptTests(unittest.TestCase):

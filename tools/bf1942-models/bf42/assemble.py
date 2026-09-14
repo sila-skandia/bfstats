@@ -417,6 +417,11 @@ class Assembler:
             return None
 
         texture_path = shader.base_texture
+        # A caller can force unlit (foliage sprites, whose normals make N.L
+        # meaningless); a shader can also declare it for itself with
+        # `lighting false`, which is how `TLight_m1` — the tracer streak — says
+        # it is a light source rather than a lit surface.
+        unlit = unlit or not shader.lighting
         key = (texture_path, shader.twosided, shader.transparent,
                shader.alpha_test, unlit, emissive_floor, shader.additive)
         if key in self._material_cache:
@@ -963,6 +968,25 @@ class Assembler:
                     tracer["timeToLive"] = projectile.time_to_live
                 if projectile.tracer_scaler is not None:
                     tracer["scaler"] = projectile.tracer_scaler
+                # The tracer is the only part of a bullet the game ever draws,
+                # so unlike the projectile body it is never optional: bake its
+                # mesh the same way, as a hidden tagged node, and the streak
+                # arrives with its own `.rs` — `TLight_m1` is additive
+                # (`blendDest one`) and unlit (`lighting false`), which is what
+                # makes it read as light instead of a grey tube.
+                if projectile.geometry:
+                    mesh_index, _ = self._mesh_index(
+                        builder, projectile.geometry, report)
+                    if mesh_index is not None:
+                        tracer["geometry"] = projectile.geometry
+                        nodes.append(builder.add_node(gltf.Node(
+                            name=f"{template.name} tracer",
+                            mesh=mesh_index,
+                            extras={"templateKind": projectile.kind,
+                                    "tracerMesh": {
+                                        "template": projectile.name,
+                                        "geometry": projectile.geometry}},
+                        )))
         projectile_spec, projectile_nodes = self._projectile_spec(
             builder, template, report)
         nodes += projectile_nodes
@@ -983,7 +1007,9 @@ class Assembler:
             f"[{control or 'vehicle'}] {template.name}: {len(muzzles)} muzzle(s)"
             + (f", {template.round_of_fire:g} rps" if template.round_of_fire else "")
             + (f", {template.velocity:g} m/s" if template.velocity else "")
-            + (f", tracer every {tracer['interval']}" if tracer else "")
+            + (f", tracer every {tracer['interval']}"
+               + (f" [{tracer['geometry']}]" if tracer.get("geometry") else "")
+               if tracer else "")
             + (f", projectile {projectile_spec['kind']}"
                if projectile_spec else "")
             + (f", flash {template.visible_barrel_template}"
