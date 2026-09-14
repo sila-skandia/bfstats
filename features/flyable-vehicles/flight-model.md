@@ -12,9 +12,17 @@ files of all 13 vanilla aircraft parsed and tabulated
 value tallies across the whole of `Objects.rfa` (141 `setFlapLift` lines, 27
 `setRegulateToLift`, 54 `setPitchOffset`, ...) and a grep of all 72 vanilla
 archives for global physics settings. Survey script:
-`survey_flightmodel.py` in the session scratchpad. Ghidra was not opened;
-nothing below needed it. Confidence tags: `confirmed` (data proves it),
-`strong inference` (one sensible reading of the data), `speculative`.
+`survey_flightmodel.py` in the session scratchpad. Confidence tags:
+`confirmed` (data proves it), `strong inference` (one sensible reading of the
+data), `speculative`.
+
+Ghidra was opened once, afterwards, and for one number: **gravity**. The value
+this document originally inferred was wrong, and because everything in section
+8 is calibrated against it, being wrong about it was expensive. Section 2c
+carries the correction and the evidence; section 9 carries the re-derivation
+it forced. The lesson is in the ledger: a constant that the whole model hangs
+off is worth an hour of decompiling even when the data "corroborates" the
+guess, because a corroboration you went looking for is not evidence.
 
 Coordinate convention used throughout (matches the extracted scenes):
 **x right, y up, z forward (nose)**; rotation triples are **yaw/pitch/roll**.
@@ -114,7 +122,7 @@ else exists in shipped data.
 | `setFlapLift` | dimensionless coefficient | **Control lift ∝ hinge deflection**. Ship rudders have `wingLift 0, flapLift 2`: force from deflection only | 0 (fins) – 4 (regulators) | confirmed role, see §4 |
 | `setPositionOffset` | metres, **parent-body frame**, added to the part's attach position | Moves the force application point: `apply = attachPos + positionOffset` | regulators: exact negation of attach (→ CoM); ailerons/elevators: ±0.5 pulled inboard; rudders: 0/−0.5/0 pulled down the fin | confirmed (see §4b) |
 | `setPitchOffset` | degrees | Static incidence added to the surface's aero angle — a built-in +0.5° AoA so lifting surfaces lift at zero body AoA. Value is 0.5 in 53 of 54 vanilla uses; the single 0 is the Katyusha rocket's fin, which must not veer | 0.5 | strong inference |
-| `setRegulateToLift` | m/s² | Target for the closed-loop lift regulator; **4.91 = g/2 in every one of the 27 vanilla uses** — two regulator surfaces per plane sum to 9.81 | 4.91 only | confirmed value, strong inference units |
+| `setRegulateToLift` | m/s² | Target for the closed-loop lift regulator; **4.91 = g/3 in every one of the 27 vanilla uses** (g = 14.7295, §2c; 14.7295/3 = 4.9098). A fighter's two surfaces therefore budget two thirds of gravity, the SBD's three exactly all of it | 4.91 only | confirmed value, strong inference units |
 | `setWingToRegulatorRatio` | dimensionless | Regulator scaling; 1 everywhere except the B17's two ±30° brakes (3.0). Exact semantics not recoverable from data (loop gain vs target multiplier) | 1, 3.0 | speculative |
 | `setPivotPosition` | metres | Hinge pivot relocation; only 2 vanilla uses, both `0/0/0` (SBD flaps) — a no-op. Ignore | 0/0/0 | confirmed inert in vanilla |
 | `geometry` | — | Optional. A Wing without geometry is an invisible force generator (Ilyushin) | — | confirmed |
@@ -161,16 +169,65 @@ body-lean documented in `bf42/con.py`); `Fletcher_Engine` `c_ETShip` torque
 | Command | Meaning | Corsair | Fleet range | Confidence |
 |---|---|---|---|---|
 | `mass` | kg | 2500 | 2500–3000 fighters/DBs, 25000 B17 | confirmed |
-| `drag` | **Linear velocity damping, s⁻¹**: dragAccel = −drag·v. Terminal dive velocity = g/drag ≈ 150 m/s (Corsair), 78 (B17) — quadratic drag would give an absurd 12 m/s, so it is linear | 0.0652 | 0.061–0.125 | strong inference |
+| `drag` | **Linear velocity damping, s⁻¹**: dragAccel = −drag·v. Terminal dive velocity = g/drag ≈ 226 m/s (Corsair), 118 (B17) — quadratic drag would give an absurd 15 m/s, so it is linear. (Both figures moved with the gravity correction below; the reading they support did not) | 0.0652 | 0.061–0.125 | strong inference |
 | `inertiaModifier` | y/p/r multipliers on the engine-computed inertia tensor | 1.05/0.850/0.94 | 0.6–1.125 | confirmed field, inference on base tensor |
 | `hpLostWhileUpSideDown` | HP/s while inverted (100 max HP → 10 s inverted = dead) | 10 | 10 all aircraft | confirmed value; whether it requires ground contact untested |
 | `angleMod` / `speedMod` | collision-damage modifiers, not flight | 1 / 2 | identical | speculative |
 | `explosionForceMod`, `hpLostWhileDamageFromWater`, etc. | damage system, out of scope | — | — | — |
 
-**Gravity**: no `physics.gravity` (or any `physics.*`, or air density)
-appears anywhere in the 72 vanilla archives — `confirmed` absence. The
-engine default is −9.81, `strong inference`, corroborated *from inside the
-data* by `setRegulateToLift 4.91` × 2 surfaces = 9.82.
+### Gravity — CORRECTED
+
+**This section used to say the engine default was −9.81. It is −14.7295.**
+`confirmed`, by decompilation. Recording the correction in full, because the
+wrong number was load-bearing for everything in §8 and §9.
+
+**What it said**: "no `physics.gravity` (or any `physics.*`, or air density)
+appears anywhere in the 72 vanilla archives — `confirmed` absence. The engine
+default is −9.81, `strong inference`, corroborated *from inside the data* by
+`setRegulateToLift 4.91` × 2 surfaces = 9.82."
+
+**What the client says**: `BasicPhysicsSystem::BasicPhysicsSystem` at
+**`0x00578f00`** in the retail client writes the literal `0xC16BAE14` into the
+field at +0x8 — the one the get/set vtable slots touch — which is the IEEE-754
+single **−14.7295379**. The same constructor writes `0x447A0000` = 1000.0 to
+`airDensityZeroAtHeight` at +0x30, and zeroes the wind vector at +0xc..+0x14.
+
+**Why no override can be hiding**: the question is closed by exhaustion, not by
+absence of evidence. All 31 xrefs to the singleton (`DAT_0097d770`) are
+classified. The only `setGravity` callers are the chat cheat handler at
+`0x00729b30` — `EarthWalk` → −10.0, `MoonWalk` → −1.67, `SpaceWalk` → −0.1 —
+and the `Physics` console property setter registered at `0x004c2370`. No map
+load path touches it; everything else is a getter. The original finding stands
+and gains force: `physics.gravity` appears in no vanilla file, and the default
+*is* the value the game runs at.
+
+Addresses are in `features/bf1942-engine-reference/symbols.json` under
+subsystem `physics`; browse with `./xref.py list physics` and
+`./xref.py sym 0x00578f00` from that directory.
+
+**How the "corroboration" misled**: `setRegulateToLift 4.91` really is a
+gravity fraction — it is g/**3**, not g/2. 14.7295/3 = 4.9098, which rounds to
+4.91 with 0.0002 to spare; 9.81/2 = 4.905 needs 0.005. The tighter fit is the
+true one, and the fleet confirms it by distribution rather than by arithmetic:
+
+| Aircraft | Regulators × 4.91 | Fraction of g | Balance comes from |
+|---|---|---|---|
+| SBD / SBD-T | 3 → 14.73 | **exactly 1** | nothing needed |
+| Corsair and the other fighters | 2 → 9.82 | 2/3 | `wingLift` surfaces at +0.5° incidence |
+| Ilyushin | 1 → 4.91 | 1/3 | its `setWingLift 3` main wings, same way |
+
+§5 already recorded the three-and-one counts as an unresolved bookkeeping
+oddity ("the target is per surface with saturation doing the balancing, not an
+exact global budget"). With g = 14.7295 they stop being odd: the regulator
+budget is a per-surface third of gravity, and an aircraft carries as many
+thirds as its passive wing area does not already provide. That is a stronger
+reading of the data than the one it replaces, and it was reachable from the
+data alone — the 9.81 assumption is what prevented it.
+
+**Consequences elsewhere in this document**: terminal dive g/drag moves from
+150 to 226 m/s (§2c, §5); the stall account in §4c is no longer "regulators
+versus 9.81" but "regulators plus incidence versus 14.73"; and `K_LIFT` is
+re-derived in §9, because its old value was fitted against the old g.
 
 **CoM**: the PCO origin. `confirmed` by authoring: the regulator offsets
 negate their attach positions to land exactly there, and `lodCorsair` /
@@ -293,10 +350,20 @@ in the data (`confirmed` absence — the full Wing command inventory is in
   Steady rates are where control lift balances this — which is why DICE
   gave the ailerons `wingLift 1.85` even though "the wing" is nominally the
   body's job.
-- **Stall**: lift authority scales with airspeed while the required 9.81
-  does not. Below the speed where the regulators saturate (±2° at
-  `flapLift 4`) the plane simply sinks — the mushy low-speed behaviour of
-  BF1942 planes, with no explicit stall model. `strong inference`.
+- **Stall**: lift authority scales with airspeed while the required 14.73
+  does not. A fighter's regulators only budget 9.82 of that (§2c), so the
+  balance rides on the passive `wingLift` surfaces at their +0.5° incidence,
+  and *that* term is the one that gives out first: a Corsair holds altitude
+  hands-off at cruise, sinks gently as it slows, and is beyond saving well
+  before the regulators themselves saturate at ±2°. Mushy low-speed
+  behaviour, with no explicit stall model. `strong inference`.
+
+  Note what the correction changed here. Under g = 9.81 the two regulators
+  were exactly 1 g on their own, so the aircraft was on rails at *every*
+  speed above saturation and stall was a single cliff at that speed. Under
+  g = 14.7295 it is on rails at one speed — cruise — and trades altitude for
+  airspeed either side of it, which is both closer to an aeroplane and closer
+  to how BF1942 planes are remembered flying.
 
 ---
 
@@ -319,16 +386,19 @@ ObjectTemplate.setWingToRegulatorRatio 1
 ```
 
 The engine servos each one's deflection (±2° range, 30 deg/s, at the CoM)
-until its lift contribution reaches `setRegulateToLift` = **4.905 m/s² =
-g/2 — two surfaces = exactly gravity**. All 27 uses in vanilla say 4.91.
-This closed loop, not player skill, is what holds a BF1942 plane level at
-any speed above saturation; it is also why there is no flaps key. Bookkeeping
-caveats (`confirmed` data, unresolved semantics): the SBD carries *three*
-4.91 regulators and the Ilyushin only one (its big `wingLift 3` main wings
-make up the difference through the +0.5° incidence), so the target is per
-surface with saturation doing the balancing, not an exact global budget.
-B17's `wingToRegulatorRatio 3.0` on a ±30° range compensates its 10× mass;
-1 everywhere else.
+until its lift contribution reaches `setRegulateToLift` = **4.91 m/s² = g/3**
+(§2c). All 27 uses in vanilla say 4.91. The count per aircraft is then a
+budget, not an oddity: the SBD's three surfaces come to exactly 1 g, a
+fighter's two to two thirds, the Ilyushin's one to a third, and in the last
+two cases the passive `wingLift` surfaces at +0.5° incidence make up the
+remainder. This closed loop, not player skill, is most of what holds a BF1942
+plane level; it is also why there is no flaps key. B17's
+`wingToRegulatorRatio 3.0` on a ±30° range compensates its 10× mass; 1
+everywhere else.
+
+(This paragraph used to read "4.905 m/s² = g/2 — two surfaces = exactly
+gravity", and filed the three-and-one counts as an unresolved bookkeeping
+caveat. Both were artefacts of the wrong g.)
 
 Level top speed, climb and stall are then set by (`strong inference`,
 equilibria under §8's model):
@@ -338,11 +408,16 @@ equilibria under §8's model):
   Corsair — the AI's authored `aiTemplatePlugIn.maxSpeed` is **55.0**
   (`Ai/Objects.con`), and the fleet's AI values (40–60) bracket every
   plane's prediction (43–54). A hard cutoff at 70 fits the AI data worse.
-- **Terminal dive**: g/drag ≈ **150 m/s** (thrust is zero above 70).
-- **Stall**: regulator saturation, ~20–25 m/s with the recommended
-  constants below.
-- **Climb**: excess thrust along an inclined flight path; the AI caps
-  itself at `maxClimbAngle 0.3333` (rad, ≈ 19°).
+- **Terminal dive**: g/drag ≈ **226 m/s** (thrust is zero above 70).
+- **Stall**: sink onset ~17 m/s with the re-derived constants below; the
+  regulators themselves do not saturate until ~12.4 m/s, which is the change
+  the gravity correction made to this line (§9).
+- **Climb**: excess thrust along an inclined flight path. The AI caps itself
+  at `maxClimbAngle 0.3333` (rad, ≈ 19°), and the corrected g makes that cap
+  look chosen rather than arbitrary: at 19° a Corsair's steady climb settles
+  at 36.5 m/s, comfortably flying, whereas under g = 9.81 the same cap left
+  42 m/s of margin it did not need. Weak corroboration, but it points the
+  right way.
 
 ---
 
@@ -428,23 +503,23 @@ inputs   {pitch, roll, yaw, throttle} each -1..1
 ```
 MASS   = 2500        kg                [data]
 DRAG   = 0.0652      s^-1 linear      [data]
-G      = 9.81                          [data-corroborated]
+G      = 14.7295                       [data: client 0x00578f00, §2c]
 THRUST = 15          m/s^2 peak        [data: setTorque]
 V_FADE = 70          m/s               [data: setNoPropellerEffectAtSpeed]
 REVERSE= 0.6         reverse-thrust factor            [free-ish: accumulator ratio]
+INCIDENCE = 0.5      deg               [data: setPitchOffset]
 INERTIA_MOD = (1.05, 0.850, 0.94)      y/p/r          [data]
 // base inertia: solid-box estimate from the mesh bbox (span 12.5 m,
 // length 10.2 m, height 3.1 m) times INERTIA_MOD                  [free]
-K_LIFT = 1.4         m/s^2 per (unit coeff · rad · m/s)            [free]
-AOA_CLAMP = 0.35     rad — per-surface lift saturation             [free]
+K_LIFT = 2.83        m/s^2 per (unit coeff · rad · m/s)            [free]
+AOA_CLAMP = 0.14     rad — per-surface lift saturation             [free]
 ```
 
-`K_LIFT = 1.4` is calibrated so the two regulators saturate (stall) at
-~25 m/s: 2 × 4 × 2° × K × v = 9.81 → v ≈ 25. Tuning targets for the free
-constants: stall 20–25 m/s, level top speed ≈ 55, terminal dive ≈ 150,
-full-stick roll ≈ 180–220 deg/s at cruise, sustained loop ≈ 40 deg/s.
-`AOA_CLAMP` is what keeps a 20° body-AoA pull from producing 10 g; the real
-engine necessarily has some equivalent saturation.
+`K_LIFT` and `AOA_CLAMP` are both re-derived from the corrected g; the working
+is in §9. Tuning targets for the free constants: level top speed ≈ 55,
+terminal dive ≈ 226, full-stick roll ≈ 180–220 deg/s at cruise. The old
+"stall 20–25 m/s" and "sustained loop ≈ 40 deg/s" targets are retired as
+independent constraints — see §9 for why.
 
 ### Surface table (Corsair) — [data]
 
@@ -479,13 +554,15 @@ their lift sideways — do not special-case them.
    in `excess`; opposite input unwinds `excess` before moving delta
 
 2. REGULATOR SERVO (regL/regR)
-   err = 4.905 - currentLiftAccelOf(surface)
+   err = 4.91 - currentLiftAccelOf(surface)        // g/3, per surface
    drive delta toward saturation in the err direction at 30 deg/s, ±2°
+   // The pair tops out at 9.82, which is NOT gravity. The missing 4.91 is
+   // step 3's passive term at INCIDENCE; do not "fix" it here.
 
 3. AERO FORCES (per surface, including fin and regulators)
    vLocal   = bodyVel + w x r_apply            // flow at the surface, body frame
    flowDir  = -normalize(vLocal)
-   aoa      = clamp(angleInLiftPlane(flowDir, surfacePlane) + inc + 0, ±AOA_CLAMP)
+   aoa      = clamp(angleInLiftPlane(flowDir, surfacePlane) + inc, ±AOA_CLAMP)
    accel    = (wingLift * aoa_rad + flapLift * delta_rad) * |vLocal| * K_LIFT
    F        = accel * MASS * liftDir(surface)
    forces  += F ;  torques += r_apply x F
@@ -530,7 +607,99 @@ roll +90, right −90, tail pitch +90, hatches roll ∓90) at 30 deg/s
 
 ---
 
-## 9. What would settle the open points
+## 9. Calibrating the free constants, and what would settle the rest
+
+### 9a. `K_LIFT`, re-derived against the corrected g
+
+The old derivation was: `K_LIFT = 1.4`, calibrated so the two regulators
+saturate at ~25 m/s — 2 × 4 × 2° × K × v = 9.81 → v ≈ 25. It has one
+constraint and it is the wrong one. It only worked because the regulator pair
+was believed to make exactly 1 g, which made "the speed they stop making it"
+and "the speed the aircraft stops flying" the same number. At g = 14.7295 the
+pair makes 9.82 and those are two different speeds, so the calibration has to
+hang off something else.
+
+**The constraint that replaces it**: a Corsair holds altitude hands-off at
+cruise. That is the one behaviour of a BF1942 fighter nobody disputes, and
+every term in it is now data except `K_LIFT`:
+
+```
+regulators + passive incidence lift = g,  at the speed level flight settles at
+```
+
+Left to right:
+
+- **Cruise speed** is fixed by thrust against drag, neither of which involves
+  gravity: `15 × (1 − v/70) = 0.0652 v` → `v* = 15 / 0.279486` = **53.67 m/s**
+  (§5's 53.7, and the AI's authored 55.0 is 2.5% away).
+- **Regulators**: 2 × 4.91 = **9.82** m/s², data, §2c.
+- **Required from the passive surfaces**: 14.7295 − 9.82 = **4.9095** m/s² —
+  which is 4.91 again, i.e. exactly the third of gravity a fighter is short of
+  a regulator. The arithmetic closing on the authored constant is the check
+  that this reading is the right one.
+- **What the passive surfaces offer**, per §8 step 3, is
+  `K_LIFT × Σ(wingLift × inc) × v`. The Corsair's incidence-carrying lifting
+  surfaces are the two outer wings at `wingLift 1.85` and `setPitchOffset
+  0.5`; the elevators carry `inc 0`, and the rudder and fin are mounted −90°
+  and lift sideways. So Σ = 2 × 1.85 × 0.0087266 rad = **0.0322886**.
+
+```
+K_LIFT = 4.9095 / (0.0322886 × 53.67)
+       = 4.9095 / 1.732936
+       = 2.833                                  ->  K_LIFT = 2.83
+```
+
+Doubled-and-a-bit from 1.4, and it had to be: the old value was sized to make
+a ±2° flap at `flapLift 4` do all the work, and now it has to make a fixed
++0.5° incidence do a third of it.
+
+What falls out, none of it calibrated, all of it checkable:
+
+| Quantity | Was (g = 9.81) | Now (g = 14.7295) |
+|---|---|---|
+| Regulator saturation speed | 25.1 m/s | 4.91 / (4 × 2° × K) = **12.4 m/s** |
+| Hands-off sink onset | same 25.1 (they were one number) | (0.2793 + 0.0323) × K × v = g → **16.7 m/s** |
+| Terminal dive, g/drag | 150 m/s | **226 m/s** |
+| Level cruise | 53.67 m/s | 53.67 m/s (unchanged — no g in it) |
+
+**`AOA_CLAMP`, re-derived**: 0.35 rad was set loosely against "keep a 20°
+body-AoA pull from producing 10 g", and against a slope a seventh as stiff it
+never bound at all. Tie it to the ceiling the model already has instead — the
+6 g cap on total lift — so per-surface saturation and the global cap agree at
+cruise rather than fighting:
+
+```
+K_LIFT × Σ(wingLift) × aoa × v* + 9.82 = 6 g
+2.83 × 3.7 × aoa × 53.67 = 88.38 − 9.82
+aoa = 78.56 / 561.9 = 0.1398                    ->  AOA_CLAMP = 0.14 rad (8°)
+```
+
+### 9b. Two tuning targets that were retired, and why
+
+`stall 20–25 m/s` and `sustained loop ≈ 40 deg/s` are gone from §8's target
+list. Neither was ever measured; both were downstream of g = 9.81 and are
+therefore not independent evidence about anything.
+
+- **Stall 20–25** was the old `K_LIFT` calibration restated. Using it as a
+  check on a constant it defined is circular, and under the corrected g it is
+  also unsatisfiable: the ratio of regulator-saturated lift to incidence lift
+  is fixed by data at 8.65 : 1, so one `K_LIFT` cannot put sink onset at 22
+  *and* hold cruise level. Level flight is the constraint with data on both
+  sides; it wins. Sink onset lands at 16.7 m/s and is a prediction now, not a
+  target.
+- **Loop 40 deg/s** is still what an in-game measurement should be compared
+  against, but it is no longer something the constants can be tuned to hit.
+  A 42 deg/s pull at 53.67 m/s describes a loop 73 m in radius, so 146 m of
+  climb, costing 2150 J/kg against the 1440 J/kg a Corsair carries at cruise.
+  Under g = 9.81 that budget balanced almost exactly, which is why the loop
+  target looked achievable; under the real g the aircraft is energy-limited in
+  the vertical and a loop needs a dive entry. Thrust-to-weight is 15/14.7295 =
+  1.02, so this is not a modelling artefact — it is what `setTorque 15`
+  against the real gravity means, and if in-game Corsairs do loop from level
+  cruise then `setTorque`'s units (§2b, `strong inference`) are the thing that
+  is wrong, not the gravity.
+
+### 9c. What would settle the open points
 
 In order of value; all are `bf1942_lnxded.static` targets (the Linux
 dedicated server is unstripped — 54,895 symbols, per
@@ -547,10 +716,19 @@ findable by name there, far cheaper than the stripped client):
 5. The fighter Engine's ±0.3° yaw axis.
 6. `hpLostWhileUpSideDown` ground-contact gating.
 
+Item 1 is now the *only* thing standing between §8 and a fully data-derived
+lift term: with g known and `setRegulateToLift` read correctly, `K_LIFT`'s
+value is pinned by level flight (§9a) and only its *shape* — linear in v
+versus dynamic pressure, degrees versus radians — is still a guess. A
+`Wing::update` that turns out to be quadratic in v changes the value but not
+the method: re-solve the same level-flight equation at 53.67 m/s.
+
 In-game measurement (wine + vanilla install) settles 1 and 3 without
 decompiling: time a full roll, a loop, 0→top-speed on the deck, and the
-stall sink onset; the free constants above are chosen to be directly
-recoverable from exactly those four numbers.
+sink onset. Two of those four now carry more weight than they used to,
+because §9b retired the guessed targets: whether a Corsair can loop from
+level cruise, and what speed it starts sinking at, are the measurements that
+would either confirm this calibration or indict `setTorque`'s units.
 
 ### For the engine-reference ledger (not yet recorded there)
 
@@ -561,8 +739,16 @@ recoverable from exactly those four numbers.
   paired with cosmetic RotationalBundles).
 - `setPositionOffset` = force application point delta in parent frame;
   regulator offsets exactly negate attach positions.
-- `setRegulateToLift` universally 4.91 = g/2; no gravity/air-density
-  override exists anywhere in vanilla data.
+- Engine gravity is **−14.7295**, not −9.81: `BasicPhysicsSystem`'s ctor at
+  `0x00578f00` seeds it with `0xC16BAE14`, and no map-load path overrides it
+  (31 singleton xrefs audited; only the chat cheats and the console property
+  write it). Already in `symbols.json` under subsystem `physics`; the point
+  worth carrying is the *methodological* one — the 9.81 guess survived a year
+  because a corroboration was gone looking for and duly found.
+- `setRegulateToLift` universally 4.91 = **g/3**, and the per-aircraft count
+  is a budget: SBD 3 (all of g), fighters 2, Ilyushin 1, balance from passive
+  `wingLift` at +0.5° incidence. No gravity/air-density override exists
+  anywhere in vanilla data.
 - `setNoPropellerEffectAtSpeed` = thrust-zero speed (raft 15 / fighter 70 /
   PT boat 150 / rocket 1000 gradient).
 - Open: `setMaxSpeed 0` semantics on a bound axis (§3).
