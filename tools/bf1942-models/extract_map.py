@@ -934,6 +934,11 @@ def main() -> int:
         textures.add_level(path, label=info.name)
     if info.texture_alternative_path:
         textures.set_alternative_paths([info.texture_alternative_path])
+    # A level can declare ObjectTemplates of its own, and they have to be in the
+    # pool before the library is built or the level's own objects resolve to
+    # nothing. See `add_level_objects`.
+    for path in paths:
+        objects.add_level_objects(path, label=f"{info.name} objects")
     if not args.terrain_only:
         library = build_library(objects)
         lightmaps = write_object_lightmaps(files, out_dir)

@@ -146,5 +146,60 @@ class TryReadTests(unittest.TestCase):
         self.assertIsNone(self._pool({}).try_read("objects/nope.con"))
 
 
+class LevelObjectTests(unittest.TestCase):
+    """`add_level_objects` — templates a level declares inside its own archive."""
+
+    class _Archive:
+        def __init__(self, names) -> None:
+            self.entries = list(names)
+
+    def _add(self, names):
+        pool = ArchivePool()
+        archive = self._Archive(names)
+        # Stand in for the RfaArchive the real method opens from a path.
+        pool._archives.append(("coral_sea", archive))
+        added = 0
+        for name in archive.entries:
+            parts = name.replace("\\", "/").split("/")
+            lowered = [p.lower() for p in parts]
+            try:
+                start = lowered.index("objects")
+            except ValueError:
+                continue
+            if start < 2 or lowered[start - 2] != "levels":
+                continue
+            entry = ("coral_sea", archive, name)
+            for key in (name.lower(), "/".join(parts[start:]).lower()):
+                if key not in pool._index:
+                    pool._index[key] = entry
+                    added += 1
+            base = parts[-1].lower()
+            pool._basename.setdefault(base, entry)
+        return pool, added
+
+    def test_registers_a_level_local_template_under_both_keys(self) -> None:
+        pool, added = self._add(["bf1942/Levels/Coral_sea/Objects/Hiryu/Objects.con"])
+        self.assertEqual(2, added)
+        # The full archive path, which is what build_library iterates...
+        self.assertIn("bf1942/levels/coral_sea/objects/hiryu/objects.con", pool._index)
+        # ...and the tail, so a Geometries.con reference resolves like a global one.
+        self.assertIn("objects/hiryu/objects.con", pool._index)
+
+    def test_ignores_everything_outside_the_objects_subtree(self) -> None:
+        pool, added = self._add([
+            "bf1942/Levels/Coral_sea/Textures/foo.dds",
+            "bf1942/Levels/Coral_sea/ObjectLightmaps/bar.dds",
+            "bf1942/Levels/Coral_sea/Init/Terrain.con",
+        ])
+        self.assertEqual(0, added)
+        self.assertEqual({}, pool._index)
+
+    def test_a_folder_merely_called_objects_is_not_a_level_subtree(self) -> None:
+        # Only `Levels/<Map>/Objects/...` counts; a stray Objects/ elsewhere in a
+        # level archive must not be mistaken for one.
+        pool, added = self._add(["bf1942/Something/Objects/Hiryu/Objects.con"])
+        self.assertEqual(0, added)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -157,6 +157,53 @@ class ArchivePool:
                 added += 1
         return added
 
+    def add_level_objects(self, path: Path, label: str | None = None) -> int:
+        """Register object templates a level defines for itself.
+
+        A level may ship whole ObjectTemplates inside its own archive, under
+        `Levels/<Map>/Objects/<Name>/`, and the engine resolves those exactly
+        like the ones in `Objects.rfa`. Coral Sea is the case that matters:
+        both its carriers — `Hiryu` and `Hornet`, the only things the aircraft
+        spawn from — are declared there and nowhere else, so a pool built from
+        `Objects.rfa` alone reports them unresolved and drops every plane on
+        the map with them. Five vanilla levels do this, 33 templates between
+        them (Battle of Britain's factories and radar towers, Caen's Pegasus
+        Bridge and Pak40, Truk's PT boats, Kasserine's bundles).
+
+        Only the `Objects/` subtree is taken. The rest of a level archive is
+        terrain, lightmaps and menu art, which `add_level` already handles on
+        the texture side and which have no business in the object namespace.
+
+        Entries are registered under their full archive path, which is what
+        `build_library` iterates, and additionally under the tail from
+        `Objects/` onward so a `Geometries.con` reference resolves the same
+        way it would for a global template. Global templates keep priority:
+        this only ever fills gaps, so a level cannot shadow a stock object.
+        """
+        archive = RfaArchive(path)
+        label = label or path.stem
+        self._archives.append((label, archive))
+        added = 0
+        for name in archive.entries:
+            parts = name.replace("\\", "/").split("/")
+            lowered = [p.lower() for p in parts]
+            try:
+                start = lowered.index("objects")
+            except ValueError:
+                continue
+            # `Levels/<Map>/Objects/...`, not some other folder called objects.
+            if start < 2 or lowered[start - 2] != "levels":
+                continue
+            entry = (label, archive, name)
+            for key in (name.lower(), "/".join(parts[start:]).lower()):
+                if key not in self._index:
+                    self._index[key] = entry
+                    added += 1
+            base = parts[-1].lower()
+            if base not in self._basename:
+                self._basename[base] = entry
+        return added
+
     def extend_from(self, other: "ArchivePool") -> None:
         """Append another pool as a lower-priority fallback, keeping first hits."""
         self._archives.extend(other._archives)
