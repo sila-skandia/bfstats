@@ -164,11 +164,21 @@ def browse_rig(template: con_mod.ObjectTemplate, *,
     steer and throttle with nothing the viewer can usefully pose — unless the
     vehicle still has visible Springs (Willy). Aircraft Engines keep throttle
     even without springs; that is the propeller, not a lever.
+
+    The same exemption covers every physics class, for the same reason and one
+    more: a `Wing` bound to `c_PIYaw` is a rudder, and on a ship it is the
+    entire steering model (`Fletcher_rudder`: `setWingLift 0`,
+    `setFlapLift 2`, +/-25 degrees at 15 deg/s). Filtering that out leaves a
+    destroyer's `extras.physics` saying how hard the rudder pushes and never
+    how far it turns. In vanilla this reaches only parts that had no node at
+    all before — the twelve already-exported Wings the filter can touch are
+    all aircraft rudders, and every vanilla aircraft has visible wheel
+    Springs, so the branch never fires on them.
     """
     rig = template.rig()
     if not rig:
         return None
-    if has_visible_springs or template.kind.lower() == "engine":
+    if has_visible_springs or template.kind.lower() in con_mod.PHYSICS_TEMPLATE_KINDS:
         return rig
     axes = {
         axis: spec for axis, spec in rig["axes"].items()
@@ -204,6 +214,9 @@ class Report:
     animated_parts: list[str] = field(default_factory=list)
     cameras: list[str] = field(default_factory=list)
     seats: list[str] = field(default_factory=list)
+    # One line per part carrying an `extras.physics` block, so a glance at the
+    # report says whether a vehicle came out simulatable or came out scenery.
+    physics_parts: list[str] = field(default_factory=list)
     skinned_parts: list[str] = field(default_factory=list)
     bound_parts: list[str] = field(default_factory=list)
     unreadable_skeletons: list[str] = field(default_factory=list)
@@ -240,6 +253,7 @@ class Report:
             "animatedParts": self.animated_parts,
             "cameras": self.cameras,
             "seats": self.seats,
+            "physicsParts": self.physics_parts,
             "skinnedParts": self.skinned_parts,
             "boundParts": self.bound_parts,
             "skeletonsNotRead": sorted(set(self.unreadable_skeletons)),
@@ -1689,10 +1703,26 @@ class Assembler:
         # seat is where the occupant sits. Dropping them cost the viewer 69
         # entry points and 66 seats across vanilla, which is every answer to
         # "where do you get in, and where do you end up".
+        # A meshless physics part is a third kind of node whose placement is
+        # the datum. The Ilyushin proves it on purpose: its visible ailerons
+        # are RotationalBundles with geometry and no aerodynamics, and its
+        # *physics* ailerons are Wings with no geometry at all, driven by the
+        # same input at the same rates. Drop those and the aircraft has no
+        # roll authority in data. A destroyer is worse — the eight
+        # `Fletcher_Floater` instances an export carries are the whole reason
+        # the hull sits level, and every one of them is a bare buoyancy
+        # point.
+        #
+        # Keyed on there being physics to carry, not on the class: an Engine
+        # whose every wheel was `createInvisible` still has nothing to say,
+        # and a node for it would be a node for nothing.
         kind = template.kind.lower()
         is_camera = kind == "camera"
         is_placement = kind in ("entrypoint", "seatobject")
-        if mesh_index is None and not child_indices and not (is_camera or is_placement):
+        is_physics_body = kind in con_mod.PHYSICS_TEMPLATE_KINDS
+        physics = template.physics()
+        if (mesh_index is None and not child_indices
+                and not (is_camera or is_placement or physics)):
             return None
 
         if mesh_index is not None:
@@ -1725,6 +1755,17 @@ class Assembler:
                 f"[{seat['control']}] {template.name} ({kind})"
                 + (f" r={template.entry_radius:g}m" if template.entry_radius else "")
                 + (" " + ",".join(template.seat_flags) if template.seat_flags else ""))
+        if physics:
+            # Raw `.con` values in `.con` units, on the part that declared
+            # them. Nothing is summed onto the body: a Sherman's drive
+            # acceleration lives on `ShermanEngine` and its suspension on
+            # twelve separate `ShermanWheel*` nodes, only four of which carry
+            # any load. That is where the engine applies them, and an
+            # aggregate would lose which wheel is which.
+            extras["physics"] = physics
+            report.physics_parts.append(
+                f"[{control or 'vehicle'}] {template.name} ({template.kind}): "
+                + ", ".join(f"{key} {value}" for key, value in physics.items()))
         yaw, pitch, roll = rotation
         if template.kind.lower() == "bfsoldier":
             # Bind-pose soldier meshes stand along Refractor +Z (3ds Max Biped).
@@ -1748,9 +1789,15 @@ class Assembler:
             extras["alignedBone"] = bone
         # A RotationalBundle with no mesh of its own still drives children, but
         # once every visible child is gone (hidden land wheels, skipped 1P
-        # cockpit meshes) the leftover slider would pose empty air.
+        # cockpit meshes) the leftover slider would pose empty air. A physics
+        # part is the exception the rule was not written for: a meshless Wing's
+        # deflection is a force, not a pose, so its range and servo rates are
+        # the surface's specification rather than a slider with nothing on it.
+        # Deliberately keyed on the class and not on `physics` being non-empty,
+        # which would hand a rig to the eight vanilla Cameras that happen to
+        # declare a non-zero `setPivotPosition` and to none of the other 46.
         if (rig := browse_rig(template, has_visible_springs=self._visible_springs)
-                ) and (mesh_index is not None or child_indices):
+                ) and (mesh_index is not None or child_indices or is_physics_body):
             rig["control"] = control or "vehicle"
             extras["rig"] = rig
             report.rigged_parts.append(
