@@ -18,6 +18,7 @@ truth. See [Replay-shaped from day one](#replay-shaped-from-day-one).
 |---|---|
 | Flight model — `Wing`/`Engine` templates, lift, torque, throttle | [flight-model.md](flight-model.md) |
 | Player input enum, seats, cockpit camera | [input-and-cockpit.md](input-and-cockpit.md) |
+| Cockpit / chase / front / fly-by views — which are data, which are ours | [camera-modes.md](camera-modes.md) |
 | Collision hulls, terrain, crash damage, wrecks | [collision-and-crash.md](collision-and-crash.md) |
 | `.ssc` sound scripts, RPM crossfade, Web Audio recipe | [engine-sound.md](engine-sound.md) |
 

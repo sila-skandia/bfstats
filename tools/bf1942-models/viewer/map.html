@@ -159,7 +159,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
-import { Aircraft, findVehicle } from './flight.js';
+import { Aircraft, VehicleCamera, findVehicle } from './flight.js';
 import { loadEngineAudio, findEngineSpec } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 
@@ -278,10 +278,11 @@ function flySpeed() {
 function lookDelta(dx, dy) {
   if (!dx && !dy) return;
   if (optPilot.checked && aircraft) {
-    // A head inside the cockpit, not a stick: the arrow keys fly the aircraft.
-    head.yaw = Math.max(-HEAD_YAW, Math.min(HEAD_YAW, head.yaw - dx * HEAD_SENS));
-    head.pitch = Math.max(HEAD_PITCH_DOWN,
-      Math.min(HEAD_PITCH_UP, head.pitch - dy * HEAD_SENS));
+    // Not a stick: the arrow keys fly the aircraft. What the mouse does depends
+    // on the view — a head inside the cockpit, an orbit outside it, and nothing
+    // at all in fly-by, which is a camera standing in the world. `VehicleCamera`
+    // owns that distinction and the per-mode clamps that go with it.
+    view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
     return;
   }
   look.yaw -= dx * LOOK_SENS;
@@ -299,8 +300,12 @@ addEventListener('keydown', e => {
     aircraft.reset();
     stick.roll = 0;
     stick.pitch = 0;
-    head.yaw = 0;
-    head.pitch = 0;
+  }
+  // C cycles the view, which is `c_PIToggleCameraMode` bound to IDKey_C in every
+  // one of the game's own control maps.
+  if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey
+      && optPilot.checked && view) {
+    showView(view.cycle());
   }
   if (captured && (FLY_KEYS.has(e.code)
       || (optPilot.checked && AIR_KEYS.has(e.code)))) e.preventDefault();
@@ -1589,7 +1594,13 @@ function applyVisibility() {
 //
 // Freeing the mouse from the stick lets it do what the game's own hold-LShift
 // free-look does: swivel the pilot's head inside a cockpit that is still flying
-// straight. The clamps below are the ones the Corsair's camera declares.
+// straight, within the clamps the Corsair's camera declares.
+//
+// C cycles the view — `c_PIToggleCameraMode`, IDKey_C in the game's own control
+// maps — through cockpit, chase, front and fly-by. `VehicleCamera` in flight.js
+// owns all four and is explicit about which of them the data actually describes:
+// the cockpit, and only the cockpit. Outside it the mouse orbits instead of
+// swivelling, and fly-by ignores it entirely.
 
 let aircraft = null;
 const AIR_KEYS = new Set([
@@ -1653,13 +1664,12 @@ function releaseGuns() {
 const stick = { roll: 0, pitch: 0 };
 const STICK_RATE = 2.4;      // to full deflection in ~0.4 s
 const STICK_RETURN = 3.2;    // and back to centre a little faster
-// `CorsairCamera` look limits, from the template: +-70 deg yaw, -40..+5 pitch.
-const HEAD_YAW = THREE.MathUtils.degToRad(70);
-const HEAD_PITCH_DOWN = THREE.MathUtils.degToRad(-40);
-const HEAD_PITCH_UP = THREE.MathUtils.degToRad(5);
-const head = { yaw: 0, pitch: 0 };
 const HEAD_SENS = 0.0022;
-const cockpit = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+// The four views C cycles. Only `cockpit` is reconstructed from data — the look
+// clamps it applies are `CorsairCamera`'s own setMin/setMaxRotation. Chase,
+// front and fly-by are ours; the engine declares that they exist (`CVMChase`,
+// `CVMFrontChase`, `CVMFlyBy`) and never where they sit. See flight.js.
+let view = null;
 
 /**
  * Ground height under a world (x, z), from the terrain mesh already in the scene.
@@ -1702,6 +1712,14 @@ function setPilot(on) {
     }
     aircraft = new Aircraft(node, currentRoot);
     aircraft.groundHeight = groundHeight;
+    // `Aircraft` defaults to forcing first person every step, because a page
+    // with a single view has no other way to say "someone is sitting in it".
+    // This page now has four, so it takes the decision over: `VehicleCamera`
+    // calls `setFirstPerson` on every mode change, and the swap follows the view
+    // rather than the sim. Leaving both on would have `integrate` slam the
+    // interior back every frame the moment you pressed C.
+    aircraft.autoFirstPerson = false;
+    view = new VehicleCamera(aircraft, { groundHeight });
     // The flown vehicle must outlive the vehicles toggle and the distance cull;
     // reparenting out of `spawners` already took it off both lists, but the
     // spawn pose puts it on the deck, so lift it clear of its own wheels.
@@ -1719,17 +1737,36 @@ function setPilot(on) {
     stopEngineAudio();
     releaseGuns();
     aircraft.reset();
+    // `reset()` only restores the exterior when it owns the swap, and it no
+    // longer does. Vacating the seat has to put the fuselage back explicitly or
+    // the parked plane sits on the strip as an open cockpit tub.
+    view.setMode('cockpit');
+    aircraft.setFirstPerson(false);
     aircraft.applyTransform();
     aircraft.applyRig();
   }
   stick.roll = 0;
   stick.pitch = 0;
-  head.yaw = 0;
-  head.pitch = 0;
-  hud.textContent = on
-    ? 'W/S throttle · A/D rudder · arrows pitch and roll · Space guns · '
-      + 'mouse look around · R reset · Esc'
-    : HUD_FLY;
+  hud.textContent = on ? HUD_PILOT : HUD_FLY;
+}
+
+const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · Space guns · '
+  + 'C view · mouse look around · R reset · Esc';
+
+/** Announce the view C just selected, then fall back to the control list. */
+const VIEW_BLURB = {
+  cockpit: 'cockpit · first person, from the pilot\'s eye point',
+  chase: 'chase · behind and above, horizon held level',
+  front: 'front · ahead of the nose, looking back',
+  flyby: 'fly-by · planted in the world, re-plants as you pull away',
+};
+let hudViewTimer = 0;
+function showView(mode) {
+  hud.textContent = `view: ${VIEW_BLURB[mode]}`;
+  clearTimeout(hudViewTimer);
+  hudViewTimer = setTimeout(() => {
+    if (optPilot.checked) hud.textContent = HUD_PILOT;
+  }, 2200);
 }
 
 /**
@@ -1790,15 +1827,13 @@ function pilot(dt) {
     guns.setFiring(group, aircraft.input(group.stats.input || 'c_PIFire') > 0);
   }
 
-  // The camera rides the cockpit node, with the free-look offset applied in the
-  // aircraft's frame so the head turns with the plane rather than against it.
-  aircraft.cameraPose(cockpit);
-  camera.position.copy(cockpit.position);
-  camera.quaternion.copy(cockpit.quaternion);
-  if (head.yaw || head.pitch) {
-    camera.quaternion.multiply(new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(head.pitch, head.yaw, 0, 'YXZ')));
-  }
+  // The view rig owns all four modes and their smoothing; this just takes the
+  // pose. It runs after `integrate` so an external camera hangs off this frame's
+  // attitude rather than last frame's — at 55 m/s that is a metre of lag, and on
+  // a chase camera it reads as the aircraft sliding around inside the frame.
+  const pose = view.update(dt);
+  camera.position.copy(pose.position);
+  camera.quaternion.copy(pose.quaternion);
 }
 
 function placeCamera() {
@@ -1936,8 +1971,10 @@ async function show(entry) {
   }
   indexScene(currentRoot);
   collectTerrain(currentRoot);
-  // A new level means a new scene graph; the old aircraft's node is gone.
+  // A new level means a new scene graph; the old aircraft's node is gone, and
+  // the view rig holds a reference to it.
   aircraft = null;
+  view = null;
   if (optPilot.checked) setPilot(true);
   applyFar();
   if (!skyRoot) await loadSky(entry);
@@ -2055,10 +2092,17 @@ if (params.has('shots')) {
   // __renderOnce, so a test can step it frame by frame and read the result.
   Object.defineProperty(window, '__aircraft', { get: () => aircraft });
   window.__stick = stick;
-  // The pilot's head, which the mouse drives and a headless run cannot: a
-  // Corsair's guns sit 40 degrees off the nose, so framing them means looking
-  // at them.
-  window.__head = head;
+  // The view rig, which the mouse and the C key drive and a headless run cannot.
+  // `__view.turn()` is the pilot's head in the cockpit — a Corsair's guns sit 40
+  // degrees off the nose, so framing them means looking at them — and the orbit
+  // outside it. `__setView(mode)` selects a mode without walking the cycle.
+  Object.defineProperty(window, '__view', { get: () => view });
+  window.__setView = mode => {
+    if (!view) return null;
+    const set = view.setMode(mode);
+    showView(set);
+    return set;
+  };
   // Headless checks fly through the real input path rather than poking the
   // aircraft: add key codes to __keys and open the gate with __setFly(true).
   window.__keys = keys;

@@ -335,6 +335,12 @@ per-station 1P meshes for gunner PCOs (`1p_B17_Bellygun_m1`, `1p_Aichi_Val_Gunne
   the outside/chase view (every plane declares one; name says it positions the HUD
   reticle anchor in outside view; `strong inference` on exact semantics). There is no
   per-vehicle chase-camera distance in data — chase framing is engine behaviour.
+  > **Settled — see `camera-modes.md` §4.** Refractor's +Z is forward (measured off
+  > `CorsairComplex`: propeller at z=+4.149, rudder at z=-2.649), so that offset is
+  > 4.45 m *ahead* of the origin, 0.3 m past the propeller hub. It cannot be a camera
+  > position. The "no chase distance in data" reading survives a sweep of ~37,000
+  > `.con` files across fourteen mods: the `Camera` vocabulary has no distance,
+  > offset, lag or damping term at all.
 - **Mode switching** is player-driven: `c_PIToggleCameraMode` (C) cycles,
   `c_PICameraMode1..4` (F9-F12) select directly. Which modes a camera allows is
   data-driven via `CVM*` flags: `SoldierCamera` declares the complete set —
@@ -351,6 +357,11 @@ per-station 1P meshes for gunner PCOs (`1p_B17_Bellygun_m1`, `1p_Aichi_Val_Gunne
   Vehicle 1P FOV is an engine constant. Only hand weapons scale it:
   `ObjectTemplate.zoomFov` / `soldierZoomFov` (fractions, e.g. sniper `zoomFov 0.1`).
   Absence `confirmed`; "hardcoded" `strong inference`.
+  > **Corrected in part — see `camera-modes.md` §5a.** Absence from vanilla holds,
+  > and so does absence from the `Camera` template. But `ObjectTemplate.vehicleFov`
+  > is a real engine command, live 426 times across 11 mods (FHSW 173, bg42 188) as
+  > a multiplier — it sits on the `PlayerControlObject`, which is why a Camera-only
+  > sweep missed it. Vanilla FOV is a constant; the engine's is not.
 
 ### Do we have the cockpit meshes?
 
