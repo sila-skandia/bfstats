@@ -1140,6 +1140,24 @@
    "note": "c_PGFNoGrip=0, c_PGFContactGrip=1(default case), c_PGFRollGrip=2, c_PGFEngineGrip=4, c_PGFRollGripWhenOccupied=8, c_PGFDummyGrip=0x20, c_PGFEngineDummyGrip=0x24=Engine|Dummy, c_PGFStaticFriction=0x80. It is a bitfield. Force semantics of each bit live in the response solver (open)."
   },
   {
+   "address": "0x00571290",
+   "name": "dice::ref2::world::EngineTemplate::makeScript",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Binds .con command names to EngineTemplate field offsets by writing them out again. In ITS base: setTorque +0x414, setDifferential +0x410, setNumberOfGears +0x40c (int, default 1), setGearUp +0x418 (default 0.3), setGearDown +0x41c (default 0.7), setGearChangeTime +0x420 (default 1.0), setNoPropellerEffectAtSpeed +0x5cc (default 100.0), HeatIncrement +0x5d4 (default -1.0), CoolingFactor +0x5d8, setHeatBarType +0x5dc, InverseHeatBar +0x5e0. Add 4 to reach the base the physics code uses. This is the evidence that settles which of setTorque/setDifferential drives thrust."
+  },
+  {
+   "address": "0x005721e0",
+   "name": "dice::ref2::world::WingTemplate::makeScript",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Binds .con names to WingTemplate offsets. In ITS base: setWingLift +0x25c (default 1.0), setFlapLift +0x260 (default 0.1), setPitchOffset +0x264 (default 0.0), setPositionOffset +0x268/+0x26c/+0x270, regulateToLift-enabled bool +0x274, setRegulateToLift +0x278, setWingToRegulatorRatio +0x27c. Add 4 for the base PhysicsWing holds at +0x9c; PhysicsWing's second template pointer at +0xa0 is that base +0x100, which is why the lift coefficient reads as +0x160/+0x164 there - those are setWingLift and setFlapLift."
+  },
+  {
    "address": "0x00578990",
    "name": "PointPhysicsNode::updatePositionalDragSimple",
    "kind": "function",
@@ -1176,6 +1194,51 @@
    "note": "Defaults: gravity(+0x8) = 0xC16BAE14 = -14.73; wind(+0xc..+0x14) = 0; airDensityZeroAtHeight(+0x30) = 1000.0. No caller overrides gravity at init or map load (all 31 xrefs to singleton DAT_0097d770 audited: ctor, 3 chat cheats, Physics console get/set, rest are getters)."
   },
   {
+   "address": "0x00578f30",
+   "name": "BasicPhysicsSystem::airDensityZeroAtHeight default (1000.0)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "The BasicPhysicsSystem ctor at 0x00578f00 seeds field +0x30 with 0x447a0000 = 1000.0f. Offset identified by dice::ref2::world::BasicPhysicsSystem::setAirDensityZeroAtHeight at 0x08251f20 in bf1942_lnxded.static, which writes +0x30. Both PhysicsWing::updatePhysics and PhysicsEngine::updatePhysics multiply by 1 - clamp(y/this, 0, 1), so lift AND thrust fade linearly with altitude and reach zero at 1000 m. No vanilla .con authors it. This address is the field's location within the singleton, not a static - the ctor's store is at 0x00578f4x."
+  },
+  {
+   "address": "0x0057bd90",
+   "name": "dice::ref2::world::PhysicsEngine::getCurrentRatio",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "returns 3.5 * EngineTemplate.setDifferential / lerp(gearRatioCurve, (gear/numberOfGears)*100). THIS is the scalar that multiplies aircraft thrust. Template base here is queryInterface(0x8c230)-0x260, which is EngineTemplate::makeScript's base +4 (fixed by setNoPropellerEffectAtSpeed appearing at makeScript+0x5cc and at updatePhysics+0x5d0). setDifferential therefore sits at +0x414 in this base and setTorque at +0x418. The gearRatioCurve's default contents were NOT read; for setDifferential 5 the shipped top speeds only work out if it is ~1.0. Linux twin: 0x0824ca70."
+  },
+  {
+   "address": "0x0057be10",
+   "name": "dice::ref2::world::PhysicsEngine::getCurrentTorque",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "returns lerp(torqueCurve[101], |throttle|*100) * EngineTemplate.setTorque (base+0x418). Called from exactly one place in the whole binary - feedbackLoop - where it only normalises the engine-load ratio. setTorque therefore does NOT scale thrust. Linux twin: 0x0824cb10, likewise single-caller."
+  },
+  {
+   "address": "0x0057be90",
+   "name": "dice::ref2::world::PhysicsEngine::feedbackLoop",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "feedbackLoop(Vec3 force BY VALUE, const Vec3& dir). ratio = getCurrentRatio() * dot(force, dir) / getCurrentTorque(); clamped to +-1 when EngineTemplate flag bit 1 is set; then folded into the engine's RPM state: this[+0xa4] = ((this[+0xac]*this[+0xa4] + ratio)*0.99)/(this[+0xac]+1) when flag bit 2 is clear, else a directional peak-hold. The force argument is passed by value and the caller re-derives the applied force afterwards, so nothing feedbackLoop does can reach the thrust. This is the RPM/sound path. Linux twin: 0x0824c850."
+  },
+  {
+   "address": "0x0057bfb0",
+   "name": "dice::ref2::world::PhysicsEngine::updatePhysics",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Thrust. Found via the PhysicsEngine vtable at 0x008fdf50. rho = 1 - clamp(pos.y/getAirDensityZeroAtHeight(), 0, 1); e = throttle - rho*(vel . fwd)/EngineTemplate.setNoPropellerEffectAtSpeed; K = 0.1*|throttle| + e*|e| (a SIGNED SQUARE, not the linear fade flight-model.md 6 assumes); force = fwd * K * getCurrentRatio(), applied at the ENGINE NODE'S OWN POSITION (not the CoM) via rootNode vtable+0x68. setTorque is absent from this expression. Medium gate: an engine runs only when its EngineTemplate flag bit 3 matches the medium (submerged vs air), which is what separates c_ETShip from c_ETPlane. Tail is prop visuals: spin rate = throttle*400 below |throttle|<0.08, else throttle*20. Linux twin: 0x0824cbb0."
+  },
+  {
    "address": "0x0057f0d0",
    "name": "PhysicsSpring::updatePhysics",
    "kind": "function",
@@ -1183,6 +1246,33 @@
    "confidence": "verified",
    "source": "decompiled; assert strings 'Root parent not mobile in spring.', 'Child not composite object in spring.'",
    "note": "Spring accel = -(setStrength * displacement * getGravity()*(-0.101833 = -1/9.82) + setDamping * d(displacement)/dt), applied at wheel contact via addAccelerationAt (virtual +0x6c). Gravity-normalized: at default g=-14.73 springs act at 1.5x .con strength. Also: c_PGFRollGripWhenOccupied wheels get grip rewritten to 10 (Roll|?) when vehicle occupied (+0x11e), 9 (Contact|?) when empty - parked vehicles do not roll away."
+  },
+  {
+   "address": "0x0057fa90",
+   "name": "dice::ref2::world::calculateLift",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "THE lift equation, whole. calculateLift(const Vec3& vel, const Vec3& unused, const Vec3& surfaceUp, float coeff) -> acceleration m/s^2. len=|vel|; if len==0 return 0; s=clamp(dot(vel/len, surfaceUp),-1,1); a=asin(s)*57.29578 (DEGREES); c = 0 if |a|>=45 else a*(45-a)/506.25 for a>=0, a*(45+a)/506.25 for a<0; return (0.75*c + 0.25*s) * len*len * coeff * 0.0025. SPEED EXPONENT IS 2 (len*len), settling flyable-vehicles/flight-model.md 9c item 1. Peak coefficient 1.0 at 22.5 deg, hard zero at +-45 deg = a built-in stall model. MSVC folded /506.25 into *0.0019753086419753087, which is why a byte search for 506.25 misses. Small-angle slope: 0.75*45/506.25 + 0.25*pi/180 = 0.07103 per degree = 4.0699 per radian. Matched instruction-for-instruction against dice::ref2::world::calculateLift at 0x0824eb20 in bf1942_lnxded.static (which carries a 4th leading Vec3 param that the body never reads)."
+  },
+  {
+   "address": "0x0057fbf0",
+   "name": "dice::ref2::world::PhysicsWing::updatePhysics",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Per-surface aero. Found via the PhysicsWing vtable at 0x008fead8. coeff = (WingTemplate.setWingLift + WingTemplate.setFlapLift) * getGravity() * -0.101833 (= -1/9.82), i.e. the two .con lift values are SUMMED into one coefficient and scaled by g/9.82 = 1.49995 at the shipped g=-14.7295. There is no separate flapLift*deflection term: hinge deflection reaches the maths only through the surface's world matrix. force = -clamp(calculateLift(...) * medium, -200, 200) * surfaceUp(row1 of the surface matrix), applied as an ACCELERATION at the surface's world position via rootNode vtable+0x68. medium = 10.0 when below the water/terrain height (World vtable+0x5c), else 1 - clamp(y/getAirDensityZeroAtHeight(), 0, 1). Regulator, gated on WingTemplate+0x278: recomputes the flow as parentForward*|v|, then wingObj[+0x15c] = clamp((L_ref + calculateNeutralLift(refFlow, -setPitchOffset, coeff)*setWingToRegulatorRatio + setRegulateToLift) * getGravity() * 0.101833, -1, +1) - a proportional servo command, which is why setRegulateToLift 4.91 really is 'hold this surface at 4.91 m/s^2'. Linux twin: 0x0824ed10."
+  },
+  {
+   "address": "0x00580280",
+   "name": "dice::ref2::world::Wing::calculateNeutralLift",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "calculateNeutralLift(const Vec3& refFlow, float minusPitchOffset, float coeff). Builds identity Mat4, rotates it by the passed angle (= -WingTemplate.setPitchOffset), composes with the wing's parent transform, extracts row 1, and calls calculateLift with it. So it is the lift the surface WOULD make undeflected at its authored incidence; setWingToRegulatorRatio weights it into the regulator error. This is the only place setPitchOffset is read in the update path - whether it also biases the surface's rest orientation at setup is NOT established. Linux twin: 0x08250690."
   },
   {
    "address": "0x00580eb0",
@@ -2182,6 +2272,33 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-12",
    "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x008fdf50",
+   "name": "PhysicsEngine vtable",
+   "kind": "vtable",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Holds the pointer to PhysicsEngine::updatePhysics (0x0057bfb0), found the same way."
+  },
+  {
+   "address": "0x008fead8",
+   "name": "PhysicsWing vtable",
+   "kind": "vtable",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Holds the pointer to PhysicsWing::updatePhysics (0x0057fbf0); the DATA xref is how that function's entry was found, Ghidra having never defined a function there."
+  },
+  {
+   "address": "0x008feb30",
+   "name": "calculateLift 0.0025 scale constant",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "float 0.0025, the final multiplier in calculateLift; sole reader is 0x0057fbdd inside FUN_0057fa90. 45.0f sits beside it at 0x008feb48. Searching for this constant is how calculateLift was located in the stripped client."
   },
   {
    "address": "0x009035dc",
