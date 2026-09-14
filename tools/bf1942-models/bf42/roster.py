@@ -45,6 +45,16 @@ NATION_LABELS = {
     "jap": "Japanese",
     "japanese": "Japanese",
     "specialforces": "Special Forces",
+    # Road to Rome files Italy under `ItKit`, and its three cross-nation
+    # engineers under `ItBritKit` / `ItGerKit` / `ItUSKit` — the theatre prefixed
+    # onto the nation rather than suffixed. Secret Weapons names its two elite
+    # formations instead of a country.
+    "it": "Italian",
+    "itbrit": "British",
+    "itger": "German",
+    "itus": "US",
+    "commando": "British Commandos",
+    "gerelite": "German Elite",
     "vietcong": "Viet Cong",
     # Eve of Destruction files its kits under short faction folders the WWII
     # spellings above do not cover — `VCKit`, `NVAKit`, `ARVNKit`. Without these

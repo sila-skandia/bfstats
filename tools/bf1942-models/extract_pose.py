@@ -731,7 +731,34 @@ def main() -> int:
                       f"  {status if status != 'ok' else ''}".rstrip(),
                       file=sys.stderr)
         args.out.mkdir(parents=True, exist_ok=True)
-        (args.out / "poses-matrix.json").write_text(json.dumps({
+        matrix_path = args.out / "poses-matrix.json"
+
+        # Merge rather than overwrite. A mod extracted with `--own` wants two
+        # targeted passes, not the full cross product — its own soldiers against
+        # every weapon their kits carry, then every soldier against its own
+        # weapons — because the rest of the product is byte-identical to
+        # vanilla's poses. Overwriting leaves the second pass's rows describing
+        # a directory that holds both passes' `.glb` files, and the viewer
+        # believes the manifest, so the first pass silently vanishes from the UI.
+        #
+        # Keyed on (soldier, weapon) lowercased, this run winning, so re-running
+        # one pass refreshes its own rows and leaves the other's alone.
+        merged: dict[tuple[str, str], dict] = {}
+        if matrix_path.exists():
+            try:
+                previous = json.loads(matrix_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                previous = {}
+            for row in previous.get("pairs", []):
+                merged[(str(row.get("soldier", "")).lower(),
+                        str(row.get("weapon", "")).lower())] = row
+            soldiers = sorted({*previous.get("soldiers", []), *soldiers}, key=str.lower)
+            weapons = sorted({*previous.get("weapons", []), *weapons}, key=str.lower)
+        for row in rows:
+            merged[(row["soldier"].lower(), row["weapon"].lower())] = row
+        rows = [merged[key] for key in sorted(merged)]
+
+        matrix_path.write_text(json.dumps({
             "state": args.state, "frame": args.frame,
             "soldiers": soldiers, "weapons": weapons,
             "weaponsWithoutTemplate": skipped,
