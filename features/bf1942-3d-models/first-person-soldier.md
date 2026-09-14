@@ -987,13 +987,32 @@ while the ground moved between -1.10 m and +1.54 m beneath them; the fortieth
 ended 0.18 m above terrain, standing on a placed object, which is the hull floor
 path working. None ended on water.
 
-**What I could not verify visually.** The synthetic cases — a 0.30 m kerb
-climbed, a 0.80 m kerb refused, a 20-degree ramp walked up, a 60-degree face
-refused, a 4 m ledge fallen off, a beam too low to stand under — are asserted in
-`tests/test_soldier.py` against a world built for them, **not** demonstrated in
-the browser. Bocage has no geometry at known heights to aim at, and I did not
-find a real kerb or cliff on it and photograph the result. The browser run
-proves the integration; the harness proves the geometry.
+**Walking into a wall, photographed.** Spawned at `US_HQ` /
+`alliesSpawnPoint_hangar2` — inside the hangar, facing a concrete wall — and
+held W for three simulated seconds:
+
+```
+frame   0   x 1162.04  z -589.99  speed 2.28  blocked false
+frame  40   x 1163.50  z -589.57  speed 2.28  blocked false
+frame  80   x 1164.96  z -589.14  speed 2.28  blocked false
+frame 100   x 1165.58  z -588.93  speed 0.65  blocked TRUE
+frame 120   x 1165.58  z -588.71  speed 0.65  blocked TRUE
+frame 160   x 1165.58  z -588.28  speed 0.65  blocked TRUE
+```
+
+**`x` freezes at 1165.58 and stays frozen for ninety frames while `z` keeps
+advancing** — stopped dead by the wall and sliding along it at the parallel
+component of his speed. 4.07 m covered of a possible 6.84. The screenshot shows
+the wall filling the view with the 0.2 m near plane not clipping through it, and
+holding Ctrl against it drops the eye to 1.03 m in place.
+
+**What I could not verify visually.** The rest of the geometry cases — a 0.30 m
+kerb climbed, a 0.80 m kerb refused, a 20-degree ramp walked up, a 60-degree
+face refused, a 4 m ledge fallen off, a beam too low to stand under — are
+asserted in `tests/test_soldier.py` against a world built for them, **not**
+demonstrated in the browser. Bocage has no geometry at known heights to aim at,
+and I did not go looking for a real kerb or cliff on it to photograph. The
+browser run proves the integration and the wall; the harness proves the rest.
 
 ### Cost, measured
 
