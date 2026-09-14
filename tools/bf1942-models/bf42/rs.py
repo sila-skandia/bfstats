@@ -32,6 +32,12 @@ _TEXTURE = re.compile(r'\btexture\s+"([^"]+)"', re.IGNORECASE)
 _BOOL = re.compile(r'\b(twosided|transparent|lighting)\s+(true|false)\s*;',
                    re.IGNORECASE)
 _ALPHATEST = re.compile(r'\balphaTest\s+(\w+)\s+([0-9.]+)\s*;', re.IGNORECASE)
+# The other spelling, and the commoner one inside `standardMesh/*.rs`:
+# `alphaTestRef 0.7;` is the D3D reference value with the comparison left
+# implied. Missing it exported the scout helmets' foliage nets, the parachute
+# canopy and three fence types as sorted alpha-blend or — where the block
+# never said `transparent true` — as solid opaque sheets.
+_ALPHATESTREF = re.compile(r'\balphaTestRef\s+([0-9.]+)\s*;', re.IGNORECASE)
 _CULLMODE = re.compile(r'\bcullMode\s+(\w+)\s*;', re.IGNORECASE)
 _BLENDFUNC = re.compile(r'\bblend(Src|Dest)\s+(\w+)\s*;', re.IGNORECASE)
 
@@ -104,6 +110,8 @@ def parse(text: str) -> dict[str, Shader]:
             setattr(shader, flag.lower(), value.lower() == "true")
         if at := _ALPHATEST.search(body):
             shader.alpha_test = float(at.group(2))
+        elif ref := _ALPHATESTREF.search(body):
+            shader.alpha_test = float(ref.group(1))
         for which, mode in _BLENDFUNC.findall(body):
             setattr(shader, f"blend_{which.lower()}", mode)
         if cm := _CULLMODE.search(body):
