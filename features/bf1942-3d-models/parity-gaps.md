@@ -65,10 +65,25 @@ Three audits found the impact-effect table and counted it three ways:
 | audio | 3,047 | 52 | 39 `damage_system/*.con` |
 | effects | 4,929 | 76 | **`Bf1942/Game.rfa`** |
 
-The third names an archive the other two do not. Someone shipping the lower
-figure would ship a partial table and not know it. **Unresolved as of writing** —
-it has been handed to the agent implementing that table, with instructions to
-establish the real total rather than trust any one number.
+**Resolved: all three are right, and they were counting different things.**
+`Bf1942/Game.rfa` holds **4,985** raw `setEffectTemplate` lines across 44 files —
+that is the effects audit's number, modulo `rem`'d lines. Replaying them the way
+the engine does collapses to **4,099 distinct (attacker, defender) pairs over 73
+templates**, which is the projectiles audit's number and is exactly what the
+shipped `_shared/damage.json` now carries. The audio audit's 3,047 counted a
+narrower set of `damage_system/*.con` files.
+
+The pipeline does read `Game.rfa`, following `materialManagerSettings.con` and
+its includes — 41 scripts. It reports 10 more as missing, and **those 10 are
+genuinely absent from every archive in the install**: `materialManagerSettings.con`
+names files the game never shipped. No rows are being lost.
+
+```bash
+python3 -c "
+import json; d=json.load(open('viewer/maps/_shared/damage.json'))
+print(sum(len(v) for v in d['effects'].values()), 'rows',
+      len({t for v in d['effects'].values() for t in v.values()}), 'templates')"
+```
 
 ## Corrections to documents already in this repo
 
