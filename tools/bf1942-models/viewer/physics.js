@@ -439,6 +439,18 @@ export const MAX_GROUND_SLOPE = Math.cos(60 * Math.PI / 180);
  */
 export const AIR_CONTROL = 0.35;
 
+/**
+ * Seconds the eye takes to travel between two poses, when nobody says otherwise.
+ *
+ * A pose change that teleported the camera half a metre reads as a glitch
+ * rather than as ducking, so the eye is animated. 0.09 s is a placeholder for a
+ * caller that does not care; `soldier.js` passes the real per-transition
+ * durations, which come off the animation clips
+ * (`animations/AnimationStatesCrouching.con` and `...Lie.con`) and differ by a
+ * factor of four between dropping prone and standing back up.
+ */
+export const POSE_TRANSITION = 0.09;
+
 /** Gap kept between a body and whatever it stops against, in metres. */
 const SKIN = 0.01;
 
@@ -451,6 +463,9 @@ const SLIDE_PASSES = 4;
 const _contact = {
   t: 0, nx: 0, ny: 1, nz: 0, px: 0, py: 0, pz: 0, material: 0, owner: -1,
 };
+
+/** Scratch for `Heightfield.normal`, which writes into a caller's array. */
+const _normal = [0, 1, 0];
 
 /**
  * Nearest contact for a stack of spheres swept together, or null.
@@ -500,9 +515,14 @@ export class SoldierBody {
     this.grounded = false;
     this.parachute = false;
     // Eye height is animated rather than snapped: a pose change that teleported
-    // the camera 50 cm reads as a glitch, not as ducking.
+    // the camera 50 cm reads as a glitch, not as ducking. The travel is linear
+    // over a duration the caller may set per transition, because it stands in
+    // for an animation clip playing at a declared rate rather than for a spring.
     this.eyeHeight = EYE_HEIGHT[POSE_STAND];
     this.previousEyeHeight = this.eyeHeight;
+    this.eyeFrom = this.eyeHeight;
+    this.eyeProgress = 1;
+    this.eyeDuration = POSE_TRANSITION;
     this.material = -1;      // what the feet are on, for footsteps later
     this.contacts = 0;       // hull contacts resolved in the last tick
     this._offsets = [];
@@ -526,6 +546,12 @@ export class SoldierBody {
     this.body.setVelocity(0, 0, 0);
     this.yaw = yaw;
     this.grounded = false;
+    // A placed body is standing where it was put, not halfway through ducking
+    // into it: the eye snaps rather than easing in from wherever it last was.
+    this.eyeHeight = EYE_HEIGHT[this.pose];
+    this.previousEyeHeight = this.eyeHeight;
+    this.eyeFrom = this.eyeHeight;
+    this.eyeProgress = 1;
   }
 
   /**
@@ -533,20 +559,32 @@ export class SoldierBody {
    *
    * Crouch and prone are the two bits at 0x20 and 0x40 and the pose falls out
    * of `poseFromFlags`; nothing here decides a priority of its own.
+   *
+   * `duration` is how long the eye takes to arrive, and it only restarts the
+   * travel when the pose actually changed — so holding crouch does not pin the
+   * eye at the start of the transition forever. Travel begins from where the
+   * eye *is*, not from the old pose's nominal height, so reversing a transition
+   * halfway does not jump.
    */
-  setPoseFlags(flags) {
+  setPoseFlags(flags, duration = POSE_TRANSITION) {
+    const pose = poseFromFlags(flags);
+    if (pose !== this.pose) {
+      this.eyeFrom = this.eyeHeight;
+      this.eyeProgress = 0;
+      this.eyeDuration = duration > 0 ? duration : 1e-6;
+    }
     this.poseFlags = flags;
-    this.pose = poseFromFlags(flags);
+    this.pose = pose;
   }
 
-  setCrouch(on) {
+  setCrouch(on, duration = POSE_TRANSITION) {
     this.setPoseFlags(on ? ((this.poseFlags | POSE_FLAG_CROUCH) & ~POSE_FLAG_PRONE)
-      : (this.poseFlags & ~POSE_FLAG_CROUCH));
+      : (this.poseFlags & ~POSE_FLAG_CROUCH), duration);
   }
 
-  setProne(on) {
+  setProne(on, duration = POSE_TRANSITION) {
     this.setPoseFlags(on ? ((this.poseFlags | POSE_FLAG_PRONE) & ~POSE_FLAG_CROUCH)
-      : (this.poseFlags & ~POSE_FLAG_PRONE));
+      : (this.poseFlags & ~POSE_FLAG_PRONE), duration);
   }
 
   /** The parachute is a drag swap and nothing else: 1.0 becomes 24. */
@@ -616,14 +654,18 @@ export class SoldierBody {
 
     // --- and our resolve --------------------------------------------------
     this.#resolve();
+    this.#refuseSteepGround();
     this.#settle();
 
     if (this.grounded) this.poseFlags &= ~POSE_FLAG_JUMP;
     this.previousEyeHeight = this.eyeHeight;
-    // 0.09 s to a new pose, which is about as fast as the crouch animation.
     const target = EYE_HEIGHT[this.pose];
-    const rate = dt / 0.09;
-    this.eyeHeight += (target - this.eyeHeight) * Math.min(1, rate);
+    if (this.eyeProgress >= 1) {
+      this.eyeHeight = target;
+    } else {
+      this.eyeProgress = Math.min(1, this.eyeProgress + dt / this.eyeDuration);
+      this.eyeHeight = this.eyeFrom + (target - this.eyeFrom) * this.eyeProgress;
+    }
   }
 
   /** Eye position for a render, interpolated between the last two ticks. */
@@ -710,6 +752,72 @@ export class SoldierBody {
     body.position.x = px;
     body.position.y = py;
     body.position.z = pz;
+  }
+
+  /**
+   * Refuse a horizontal move onto ground too steep to have walked up.
+   *
+   * `#resolve` cannot see this and is not meant to: the heightfield is never in
+   * the sweep (see `WorldCollider.sweepSphere`), because a body standing on a
+   * function of (x, z) is one lookup and a clamp rather than half a million
+   * triangles. But that clamp is unconditional, so without this a body walks
+   * into a cliff face and the clamp ratchets it up the outside — six metres a
+   * second of forward input turning into six metres a second of climb.
+   *
+   * So the *same* `MAX_GROUND_SLOPE` the hull contacts are judged by is applied
+   * to the terrain here, once, after the sweep and before the clamp: if the
+   * move would put the feet on ground steeper than that and *higher* than where
+   * they are, the uphill component of it is stripped and the across-the-face
+   * component is kept, which is the wall behaviour in `#resolve` written for a
+   * surface that is not in the sweep. Walking downhill, or off the world, is
+   * never refused — you are allowed to fall off anything.
+   *
+   * Note this deliberately does not fire while airborne. Landing on a cliff is
+   * landing; what happens next is a walk attempt, and that is judged here.
+   */
+  #refuseSteepGround() {
+    const world = this.world;
+    if (!this.grounded || !world || !world.surfaceHeight) return;
+    const field = world.heightfield;
+    if (!field || !field.normal) return;
+    const p = this.body.position;
+    const q = this.body.previous;
+    let dx = p.x - q.x, dz = p.z - q.z;
+    if (Math.abs(dx) < 1e-9 && Math.abs(dz) < 1e-9) return;
+    if (!this.#tooSteep(p.x, p.z, p.y)) return;
+    this.contacts++;
+    // The heightfield normal's horizontal part points downhill, so a move with
+    // a negative dot against it is a move up the face.
+    const nx = _normal[0], nz = _normal[2];
+    const flat = Math.hypot(nx, nz);
+    const v = this.body.velocity;
+    if (flat > 1e-6) {
+      const ux = nx / flat, uz = nz / flat;
+      const into = dx * ux + dz * uz;
+      if (into < 0) { dx -= ux * into; dz -= uz * into; }
+      const vInto = v.x * ux + v.z * uz;
+      if (vInto < 0) { v.x -= ux * vInto; v.z -= uz * vInto; }
+      p.x = q.x + dx;
+      p.z = q.z + dz;
+      // One pass, then give up: sliding across a face can land on another face
+      // just as steep (the inside of a gully), and creeping up that one is the
+      // bug this exists to stop.
+      if (!this.#tooSteep(p.x, p.z, p.y)) return;
+    }
+    p.x = q.x;
+    p.z = q.z;
+    v.x = 0;
+    v.z = 0;
+  }
+
+  /** Is the ground at (x, z) both above `y` and steeper than a body may climb? */
+  #tooSteep(x, z, y) {
+    const ground = this.world.surfaceHeight(x, z);
+    // Level or downhill is always allowed, and so is a step small enough that
+    // it is the lattice's own bilinear wobble rather than a face.
+    if (!Number.isFinite(ground) || ground <= y + SKIN) return false;
+    this.world.heightfield.normal(x, z, _normal);
+    return Number.isFinite(_normal[1]) && _normal[1] < MAX_GROUND_SLOPE;
   }
 
   /**
