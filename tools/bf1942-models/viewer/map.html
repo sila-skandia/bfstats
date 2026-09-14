@@ -1350,15 +1350,28 @@ function engineControl(dt) {
   };
 }
 
+// Sitting in a vehicle, its engine is essentially all you can hear — the map's
+// wind and surf do not compete with a radial a metre in front of your knees.
+// Ducking the ambience is how to get there: the engine bus is already pinned at
+// BUS_HEADROOM because its layers sum well past unity, so raising it would clip
+// rather than get louder. Eased rather than switched, or entering and leaving
+// the cockpit pops.
+const AMBIENT_DUCK = 0.12;
+const AMBIENT_DUCK_TAU = 0.4;
+let ambientDuck = 1;
+
 function updateAudio(dt = 0) {
   const master = masterVolume();
+  const duckTarget = (optPilot.checked && aircraft) ? AMBIENT_DUCK : 1;
+  ambientDuck += (duckTarget - ambientDuck)
+    * (dt > 0 ? Math.min(1, dt / AMBIENT_DUCK_TAU) : 1);
   if (engineAudio) {
     engineAudio.setMaster(master);
     engineAudio.update(engineControl(dt));
   }
   if (ambientAudio) {
     const base = extras.sounds?.ambient?.volume ?? 0.6;
-    ambientAudio.setVolume(base * master);
+    ambientAudio.setVolume(base * master * ambientDuck);
   }
 
   if (activeAreaAudios.length === 0) return;
@@ -1416,7 +1429,7 @@ function updateAudio(dt = 0) {
       const denom = Math.max(far - near, 0.001);
       ramp = 1.0 - (dist - near) / denom;
     }
-    item.sound.setVolume((bestArea.volume ?? 0.6) * ramp * master);
+    item.sound.setVolume((bestArea.volume ?? 0.6) * ramp * master * ambientDuck);
   }
 }
 
