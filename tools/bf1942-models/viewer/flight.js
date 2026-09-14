@@ -570,6 +570,41 @@ export const CORSAIR = {
   rollRate: 200,
   pitchRate: 42,
   yawRate: 16,
+  // How hard the airflow pushes the nose back onto the flight path: radians of
+  // nose travel per second per radian of flow angle, referenced to cruise.
+  //
+  // The per-surface model gets this for nothing. The two elevators sit 3.539 m
+  // behind the CoM carrying `wingLift 0.5` each and no incidence, so flow that
+  // stops coming down the fuselage makes lift on a long lever and `r x F` puts
+  // the nose back. A lumped model has to name it, and until it did there was no
+  // moment anywhere in this file that could move the nose except the stick.
+  //
+  // Solved rather than dialled in, and it comes out the same number twice. See
+  // flight-model.md section 9d; both are the section 8 surface table and the
+  // section 8 inertia estimate, no new data.
+  //
+  //   aerodynamic:  omega = sqrt(m K sum(wingLift) v* r / I_pitch) = 8.17 rad/s,
+  //                 a quarter period of 0.192 s  ->  5.20
+  //   stick:        full elevator at cruise should trim to exactly the angle
+  //                 AOA_CLAMP saturates at, which is what section 9a sized that
+  //                 clamp for:  pitchRate / AOA_CLAMP = 0.733 / 0.14  ->  5.24
+  //
+  // 7 is where a 0.1 s frame (`map.html` clamps `THREE.Clock` there) starts to
+  // over-rotate a tail-slide; 5.24 is inside that with room. [free]
+  weathervane: 5.24,
+  // The same, in yaw, and it is softer because the aircraft is: the rudder's
+  // 2.649 m lever and the body fin's 0.1 m work against a yaw inertia nearly
+  // three times the pitch one. omega = 4.36 rad/s -> 2.78. A single gain for
+  // both axes would have made a Corsair as stiff in yaw as in pitch, which the
+  // surface table plainly says it is not. [free]
+  weathervaneYaw: 2.78,
+  // Side drag, s^-1. The surfaces mounted rolled -90 degrees — the rudder at
+  // `wingLift 1` and the body's vertical fin at 2 — make their lift sideways,
+  // and for a small sideslip the airspeed cancels out of it: K_LIFT x wingLift
+  // x (u/v) x v is K_LIFT x wingLift x u, a plain rate on the lateral velocity
+  // with no speed term left. 2.83 x 3 = 8.49. Without it the aircraft slides
+  // through a turn like a hovercraft. [free, but only K_LIFT is free in it]
+  slipDamp: 8.49,
   // `setMaxSpeed 500` over the engine's 5000-degree accumulator is a tenth of
   // the range per second, i.e. a ten-second spool from idle to full.
   throttleRate: 0.1,
@@ -638,6 +673,56 @@ export class Aircraft extends Vehicle {
       THREE.MathUtils.degToRad(-deflect('c_PIYaw') * k.yawRate) * q,
       THREE.MathUtils.degToRad(-deflect('c_PIRoll') * k.rollRate) * q,
     );
+
+    // Where the flight path is, relative to where the nose is pointing. Read
+    // once: the lift below needs `alpha`, and the nose needs both.
+    //
+    // `atan2` rather than the `asin` this used to be, because the two disagree
+    // exactly where it matters. `asin(-flow . up)` folds at 90 degrees, so an
+    // aircraft sliding backwards down its own fuselage reads as zero angle of
+    // attack and gets no restoring moment at all; `atan2` reads that as 180
+    // degrees and flips it over, which is the only reason backward flight
+    // cannot become a resting state. For a nose within a few degrees of the
+    // flight path — every ordinary frame — the two are the same number.
+    /** Nose to flight path in the symmetry plane, signed, over +-180. */
+    let alpha = 0;
+    /** The same angle as a wing sees it: folded at +-90, because a surface
+     *  flown backwards is at no angle to the flow, not at a huge one. */
+    let alphaWing = 0;
+    /** Sideslip, the yaw axis's equivalent of `alpha`. */
+    let beta = 0;
+    if (speed > 1) {
+      const flow = s.velocity.clone().divideScalar(speed);
+      const ahead = flow.dot(fwd);
+      const across = -flow.dot(up);
+      alpha = Math.atan2(across, ahead);
+      alphaWing = Math.asin(Math.max(-1, Math.min(1, across)));
+      beta = Math.atan2(flow.dot(right), ahead);
+    }
+
+    // Weathervane, and this is what makes it an aircraft rather than a pointer.
+    //
+    // The tail surfaces sit 3.5 m behind the CoM (`CorsairFlapTailLeft`, z =
+    // -3.539) and the fin behind them, carrying `wingLift` and no incidence:
+    // flow that stops coming straight down the fuselage makes lift on a long
+    // lever, and pushes the tail back into line. flight-model.md section 4b is
+    // the geometry and section 8 step 3 the force; a per-surface model gets the
+    // moment out of `r x F` for free. This one has to say it, and before it did
+    // there was no moment in the whole model that could move the nose except
+    // the stick — so a hard pull left the nose frozen wherever it stopped and
+    // the aircraft climbing on a vertical fuselage indefinitely, which is
+    // exactly what dfe5bb9's report recorded and could not explain.
+    //
+    // Linear in airspeed, like every other aerodynamic term here. A stalled
+    // aircraft's tail barely works, which is why the nose keeps falling once it
+    // has started: the restoring rate grows with the speed the fall is
+    // building, not with the speed that was lost.
+    if (speed > 1) {
+      const vane = speed / k.cruiseSpeed;
+      rate.x -= alpha * k.weathervane * vane;
+      rate.y -= beta * k.weathervaneYaw * vane;
+    }
+
     s.angularVelocity.copy(rate);
     if (rate.lengthSq() > 0) {
       const spin = new THREE.Quaternion().setFromEuler(
@@ -661,17 +746,14 @@ export class Aircraft extends Vehicle {
     // `setPitchOffset` incidence. That second term is what holds a fighter up in
     // level flight, what lets it turn, and what stops it flying when the nose
     // gets too far from the flight path.
-    let alpha = 0;
-    if (speed > 1) {
-      const flow = s.velocity.clone().divideScalar(speed);
-      alpha = Math.asin(Math.max(-1, Math.min(1, -flow.dot(up))));
-    }
+    //
+    // The angle itself is read above, once, because the nose needs it too.
     // Linear in speed, like the alpha term below and like the per-surface model
     // in the spec: a surface's lift is coefficient x angle x |v|. The regulator
     // reaches its 4.91 target from `regulatorSpeed` up and runs out below it.
     const authority = Math.min(1, speed / k.regulatorSpeed);
     const regulated = k.regulateToLift * 2 * authority;
-    const surfaceAngle = alpha + THREE.MathUtils.degToRad(k.incidence);
+    const surfaceAngle = alphaWing + THREE.MathUtils.degToRad(k.incidence);
     const alphaLift = k.liftSlope
       * Math.max(-k.aoaClamp, Math.min(k.aoaClamp, surfaceAngle)) * speed;
     // 6 g either way. The ceiling used to be one-sided because the slope was too
@@ -685,13 +767,22 @@ export class Aircraft extends Vehicle {
 
     s.velocity.addScaledVector(accel, dt);
 
-    // A wing only makes lift along its own direction of travel; without this
-    // the plane slides sideways through a turn like a hovercraft. Bleeding the
-    // lateral component toward the nose is the cheap stand-in for side drag.
-    if (speed > 1) {
-      const along = fwd.clone().multiplyScalar(s.velocity.dot(fwd));
-      s.velocity.lerp(along.setLength(Math.max(along.length(), 0.001)), Math.min(1, 2.2 * dt));
-    }
+    // Side drag: the fin and the fuselage's flank kill sideways velocity, so
+    // the aircraft does not slide through a turn like a hovercraft.
+    //
+    // ONLY THE LATERAL COMPONENT. This used to lerp the whole velocity onto
+    // `fwd * (v . fwd)`, which is not side drag but a kinematic constraint: it
+    // welds the flight path to the nose at a 0.45 s time constant, and welding
+    // those together deletes the angle of attack, which is the term everything
+    // else in this model is made of. The aircraft then flew exactly where it
+    // pointed at any speed — it could not sink, could not stall, and when
+    // `v . fwd` went negative the same lerp pinned it into backward flight,
+    // nose up, falling tail-first at 77 m/s with the fuselage vertical. All
+    // three of those were one line.
+    //
+    // There is no degenerate case left to guard: this is a projection onto a
+    // unit axis, so it has no direction to lose when the velocity is small.
+    s.velocity.addScaledVector(right, -s.velocity.dot(right) * Math.min(1, k.slipDamp * dt));
 
     s.position.addScaledVector(s.velocity, dt);
 
