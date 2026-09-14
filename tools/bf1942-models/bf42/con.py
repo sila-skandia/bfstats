@@ -195,6 +195,19 @@ def lod_alternative_role(template_name: str) -> str | None:
     return None
 
 
+def split_geometry_qualifier(name: str) -> tuple[str | None, str]:
+    """Split a `Type:Name` geometry reference into its parts.
+
+    Refractor lets an ObjectTemplate qualify the geometry it names with the
+    template type — the shell-casing emitter payloads write
+    `ObjectTemplate.geometry StandardMesh:Shell792mmHI_m1`. The
+    GeometryTemplate itself is always declared under the bare name, so the
+    qualifier has to come off before any lookup.
+    """
+    kind, separator, bare = name.partition(":")
+    return (kind, bare) if separator else (None, name)
+
+
 def select_lod_alternative(children: list[ChildRef], configuration: str) -> ChildRef:
     """Choose one LodObject alternative without ever stacking its siblings."""
     if not children:
@@ -708,13 +721,20 @@ class ObjectLibrary:
         return self.objects.get(name.lower())
 
     def geometry(self, name: str) -> GeometryTemplate | None:
-        return self.geometries.get(name.lower())
+        kind, bare = split_geometry_qualifier(name)
+        template = self.geometries.get(bare.lower())
+        if template is None or kind is None:
+            return template
+        # A qualifier that disagrees with the declaration is not this template:
+        # report it missing rather than paint the wrong mesh.
+        return template if template.kind.lower() == kind.lower() else None
 
     def selector(self, name: str | None) -> LodSelector | None:
         return self.selectors.get(name.lower()) if name else None
 
     def art_dir(self, geometry_name: str) -> str | None:
-        folder = self.geometry_dir.get(geometry_name.lower())
+        _, bare = split_geometry_qualifier(geometry_name)
+        folder = self.geometry_dir.get(bare.lower())
         return f"{folder}/Art" if folder else None
 
     def available_configurations(self, root_name: str) -> list[str]:
