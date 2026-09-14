@@ -1356,10 +1356,23 @@ class Assembler:
                 self.library, template_name)
         return self._first_person_reach[key]
 
+    def _lod_alternative(self, template: con_mod.ObjectTemplate,
+                         children_refs: list[con_mod.ChildRef],
+                         ) -> con_mod.ChildRef:
+        """This LodObject's alternative, judged by its own declared selector.
+
+        The selector is what separates a building's LOD ladder from a
+        cockpit's state swap; without it a building resolves to its far shell.
+        See `con.select_lod_alternative`.
+        """
+        return con_mod.select_lod_alternative(
+            children_refs, self.configuration,
+            self.library.selector(template.lod_selector))
+
     def _select_lod_children(self, children_refs: list[con_mod.ChildRef],
-                             report: Report, template_name: str,
+                             report: Report, template: con_mod.ObjectTemplate,
                              ) -> list[con_mod.ChildRef]:
-        selected = con_mod.select_lod_alternative(children_refs, self.configuration)
+        selected = self._lod_alternative(template, children_refs)
         if self.first_person:
             # The cockpit export wants exactly the alternative every other
             # export refuses. Only the geometry name can find it: the exterior
@@ -1380,7 +1393,7 @@ class Assembler:
             if third_person is not None:
                 selected = third_person
         report.selected_lod_alternatives.append(
-            f"{template_name} -> {selected.template}")
+            f"{template.name} -> {selected.template}")
         report.skipped_lod_alternatives += [
             child.template for child in children_refs if child is not selected
         ]
@@ -1446,7 +1459,7 @@ class Assembler:
         stack = stack | {key}
         children = template.children
         if template.is_lod_selector and children:
-            selected = con_mod.select_lod_alternative(children, self.configuration)
+            selected = self._lod_alternative(template, children)
             if self._geometry_is_first_person(selected.template):
                 third_person = next(
                     (child for child in children
@@ -1495,7 +1508,7 @@ class Assembler:
         stack = stack | {key}
         children = template.children
         if template.is_lod_selector and children:
-            children = [con_mod.select_lod_alternative(children, self.configuration)]
+            children = [self._lod_alternative(template, children)]
         return any(
             (name := con_mod.instance_template_name(ref, self.library.object))
             and self._spin_reaches_visible_mesh(
@@ -1573,7 +1586,7 @@ class Assembler:
         collision_makeup: con_mod.ChildRef | None = None
         if template.is_lod_selector and children_refs:
             selected_refs = self._select_lod_children(
-                children_refs, report, template.name)
+                children_refs, report, template)
             if self.first_person:
                 lod_swap = self._lod_swap(template, children_refs, selected_refs[0])
             if self.include_collision and not self.first_person:
