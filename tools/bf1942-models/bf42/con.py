@@ -82,6 +82,36 @@ GEAR_INPUT = "c_PILandingGear"
 
 MODEL_CONFIGURATIONS = ("complex", "wreck")
 
+# The template kinds that *are* a physics body — the ones whose declared
+# motion is a force rather than a pose. A Camera's `setPivotPosition` is
+# physics-adjacent data on a part the solver never touches, which is why it is
+# not in here; a PlayerControlObject is the body those forces are applied to
+# rather than one of the things applying them, and it always has children, so
+# it never needs the exemptions this set grants.
+PHYSICS_TEMPLATE_KINDS = frozenset({
+    "engine", "spring", "wing", "floatingbundle", "landinggear",
+})
+
+# `ObjectTemplate.Grip` on a Spring. Not an enum — a bitfield, read out of
+# `PhysicsGripFlags::operator<<` at 0x0054bb10 in the retail client and
+# recorded under subsystem `physics` in
+# `features/bf1942-engine-reference/symbols.json`. `c_PGFEngineDummyGrip` is
+# 0x24 = EngineGrip | DummyGrip, which is why the "dummy" wheels a Sherman
+# rides on read as engine-driven *and* cosmetic rather than as a fifth
+# traction class; a consumer that string-compares the name instead of testing
+# the bit gets that wrong. Vanilla uses four of the eight, the installed mods
+# seven (no `c_PGFStaticFriction` anywhere).
+PHYSICS_GRIP_FLAGS = {
+    "c_pgfnogrip": 0x00,
+    "c_pgfcontactgrip": 0x01,
+    "c_pgfrollgrip": 0x02,
+    "c_pgfenginegrip": 0x04,
+    "c_pgfrollgripwhenoccupied": 0x08,
+    "c_pgfdummygrip": 0x20,
+    "c_pgfenginedummygrip": 0x24,
+    "c_pgfstaticfriction": 0x80,
+}
+
 
 def vec3(token: str) -> tuple[float, float, float]:
     parts = token.replace(",", "/").split("/")
@@ -403,6 +433,129 @@ class ObjectTemplate:
     # after launch (the Katyusha rocket's motor), vs. propellers and wheels.
     engine_type: str | None = None
 
+    # -- Physics ----------------------------------------------------------- #
+    # Refractor 1 has no `PhysicsType` directive and no `c_PT*` constants —
+    # those are Refractor 2. Here the physics class *is* the template type on
+    # `ObjectTemplate.create`, so every field below is read only where its
+    # class declares it and the class is already on the node as `templateKind`:
+    #
+    #   Engine           drivetrain / propeller / screw
+    #   Spring           one sprung wheel
+    #   Wing             one aerodynamic surface — also every ship's rudder
+    #   FloatingBundle   one buoyancy point on a hull
+    #   LandingGear      a retracting leg, driven by altitude and throttle
+    #   PlayerControlObject   the body the other four push around
+    #
+    # Values are kept exactly as authored. The engine's own constants are not
+    # folded in here even where they are known: gravity is -14.73 m/s², not
+    # -9.81 (`BasicPhysicsSystem::BasicPhysicsSystem`, 0x00578f00), and a
+    # spring's force law normalises by it —
+    # `accel = -(strength * displacement * |g|/9.82 + damping * d/dt)`
+    # (`PhysicsSpring::updatePhysics`, 0x0057f0d0) — so a wheel pushes about
+    # 1.5x as hard as `setStrength` reads. Pre-multiplying that in would make
+    # the exported number disagree with the `.con` file it came from; the
+    # runtime applies the law. Both from `features/bf1942-engine-reference/`.
+    #
+    # Forces throughout are accelerations in m/s², not newtons: `setTorque 4`
+    # is 4 m/s² regardless of the 25-tonne hull it drives.
+
+    # Engine. `setTorque` is peak drive acceleration and `setDifferential` the
+    # final-drive ratio; `setGearUp`/`setGearDown` are gearbox shift points as
+    # a fraction of max revs and have nothing to do with landing gear, which
+    # carries its own `setGearUpHeight` family below.
+    torque: float | None = None
+    differential: float | None = None
+    number_of_gears: int | None = None
+    gear_up: float | None = None
+    gear_down: float | None = None
+    gear_change_time: float | None = None
+    # Forward speed in m/s at which propeller thrust reaches zero — rafts 15,
+    # fighters 70, PT boats 150, the Katyusha's rocket 1000 (a rocket never
+    # loses thrust with speed).
+    no_propeller_effect_at_speed: float | None = None
+
+    # Spring. `Grip` is a *bitfield*, not an enum
+    # (`PhysicsGripFlags::operator<<`, 0x0054bb10), which is why
+    # `c_PGFEngineDummyGrip` is 0x24 = Engine|Dummy rather than a fifth
+    # traction class: a consumer has to bit-test it, so the numeric value
+    # rides out alongside the name.
+    grip: str | None = None
+    strength: float | None = None
+    damping: float | None = None
+
+    # Wing. `setWingLift` is passive lift per angle of attack and
+    # `setFlapLift` control lift per hinge deflection; a ship's rudder zeroes
+    # the first and keeps the second. `setPositionOffset` moves the force
+    # application point, `applyPoint = attachPosition + positionOffset`, in the
+    # parent body frame. `setRegulateToLift` is the closed-loop target of the
+    # paired amidships regulator surfaces — 4.91 m/s² in all 27 vanilla uses.
+    wing_lift: float | None = None
+    flap_lift: float | None = None
+    pitch_offset: float | None = None
+    position_offset: tuple[float, float, float] | None = None
+    regulate_to_lift: float | None = None
+    wing_to_regulator_ratio: float | None = None
+    remember_excess_input: bool | None = None
+
+    # FloatingBundle. One buoyancy point, placed by its `addTemplate` offset —
+    # a Fletcher hangs eight of them along its hull, two at each end and two
+    # a side amidships, which is what makes it sit level. Asymmetric min/max
+    # lift is where a real buoyancy curve lives, and on the two submarines the
+    # 0.8275/1.6275 spread *is* the dive.
+    hull_height: float | None = None
+    float_max_lift: float | None = None
+    float_min_lift: float | None = None
+    sinking_speed_mod: float | None = None
+    drag_modifier: float | None = None
+
+    # LandingGear retraction thresholds. `con.py` already synthesises the gear
+    # *axes* from the rotation bounds (`_landing_gear_axes`); these are the
+    # altitudes and throttle positions that decide when to drive them, which
+    # animation does not need and automation cannot work without.
+    gear_up_height: float | None = None
+    gear_down_height: float | None = None
+    gear_up_engine_input: float | None = None
+    gear_down_engine_input: float | None = None
+
+    # The body. `drag` is a velocity damping term, `inertiaModifier` a per-axis
+    # (yaw/pitch/roll) multiplier on the engine-computed inertia tensor, and
+    # `speedMod`/`angleMod` scale collision damage rather than motion.
+    mass: float | None = None
+    drag: float | None = None
+    inertia_modifier: tuple[float, float, float] | None = None
+    speed_mod: float | None = None
+    angle_mod: float | None = None
+    # `setVehicleCategory VCLand|VCSea|VCAir` and `setVehicleType VTSherman`-
+    # style role. Both are as authored, including the nine `Sea` and one `Land`
+    # that drop the `VC` prefix — normalising them would hide a data bug that a
+    # consumer keyed on the exact string will hit.
+    vehicle_category: str | None = None
+    vehicle_type: str | None = None
+    # Egress. `exitTimer` is negative on four vanilla templates and is kept
+    # signed; `setSoldierExitLocation <pos> <ypr>` is where the occupant is put
+    # down, in the vehicle's own frame.
+    exit_timer: float | None = None
+    has_restricted_exit: bool | None = None
+    exit_speed_mod: float | None = None
+    soldier_exit_location: tuple[tuple[float, float, float],
+                                 tuple[float, float, float]] | None = None
+    damage_from_water: bool | None = None
+    hp_lost_while_damage_from_water: float | None = None
+    hp_lost_while_upside_down: float | None = None
+    # `submarineData <7 floats>`. The seven parameters are undocumented and
+    # nothing in the shipped data or the survey fixes what any one of them
+    # means, so they are passed through in order and unnamed. Only two
+    # templates in vanilla declare it (Gato, Sub7C) and they differ in exactly
+    # one position — the fifth, 19.5 against 12.5.
+    submarine_data: tuple[float, ...] | None = None
+    submarine_hud_depth_modifier: float | None = None
+    submarine_hud_dir_modifier: float | None = None
+
+    # `setPivotPosition y/p/r` — the rotation centre, declared on Cameras,
+    # RotationalBundles and a handful of Wings and Engines. 22 of the 30
+    # vanilla uses are `0/0/0`, i.e. inert.
+    pivot_position: tuple[float, float, float] | None = None
+
     # -- HandFireArms handling -------------------------------------------- #
     # What separates one rifle from another once the mesh is on screen. A
     # vehicle gun is described by `roundOfFire` and `velocity` and little else;
@@ -582,6 +735,126 @@ class ObjectTemplate:
                 "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
             }
         return axes
+
+    def physics(self) -> dict | None:
+        """The motion parameters this template declares, or None.
+
+        Flat, because the physics class is the template kind and a kind
+        declares one vocabulary: an Engine never carries `setWingLift` and a
+        Wing never carries `setTorque`. The kind is already on the node as
+        `templateKind`, so it is not repeated here.
+
+        Every key is omitted when the data does not declare it — an empty
+        result is None rather than a dict of nulls, so "this part has no
+        physics" and "this part has physics that happen to be zero" stay
+        distinguishable. `setStrength 0` on a Sherman's dummy road wheels is
+        the second kind and matters: it is how a cosmetic wheel is told apart
+        from one of the four that carry the tank.
+
+        Units are the `.con` file's own and nothing is rescaled — see the
+        field block above for the gravity normalisation that is deliberately
+        *not* applied here.
+
+        The same goes for handedness. Vectors (`positionOffset`,
+        `soldierExitLocation`, `pivotPosition`) stay in Refractor's
+        left-handed frame — x right, y up, **z forward** — while the glTF node
+        tree they ride on has had its Z negated by the exporter. That is the
+        convention `rig` already uses for its yaw/pitch angles, and the
+        viewer's existing `SIGN = {yaw: -1, pitch: -1, roll: 1}` is the same
+        fix applied at the same boundary. A consumer that mixes an
+        `extras.physics` vector with a node translation without negating Z
+        will mount the Fletcher's rudder on its bow.
+        """
+        def prune(values: dict) -> dict:
+            return {k: v for k, v in values.items() if v is not None}
+
+        kind = self.kind.lower()
+        if kind == "engine":
+            return prune({
+                "engineType": self.engine_type,
+                "torque": self.torque,
+                "differential": self.differential,
+                "numberOfGears": self.number_of_gears,
+                "gearUp": self.gear_up,
+                "gearDown": self.gear_down,
+                "gearChangeTime": self.gear_change_time,
+                "noPropellerEffectAtSpeed": self.no_propeller_effect_at_speed,
+                "pivotPosition": self._pivot(),
+            }) or None
+        if kind == "spring":
+            return prune({
+                "grip": self.grip,
+                # Omitted rather than guessed when the name is not one of the
+                # eight the engine knows: a wrong bitmask reads as a real
+                # traction class downstream, an absent one reads as unknown.
+                "gripFlags": (PHYSICS_GRIP_FLAGS.get(self.grip.lower())
+                              if self.grip else None),
+                "strength": self.strength,
+                "damping": self.damping,
+            }) or None
+        if kind == "wing":
+            return prune({
+                "wingLift": self.wing_lift,
+                "flapLift": self.flap_lift,
+                "pitchOffset": self.pitch_offset,
+                "positionOffset": (list(self.position_offset)
+                                   if self.position_offset else None),
+                "regulateToLift": self.regulate_to_lift,
+                "wingToRegulatorRatio": self.wing_to_regulator_ratio,
+                "rememberExcessInput": self.remember_excess_input,
+                "pivotPosition": self._pivot(),
+            }) or None
+        if kind == "floatingbundle":
+            return prune({
+                "hullHeight": self.hull_height,
+                "floatMaxLift": self.float_max_lift,
+                "floatMinLift": self.float_min_lift,
+                "sinkingSpeedMod": self.sinking_speed_mod,
+                "dragModifier": self.drag_modifier,
+            }) or None
+        if kind == "landinggear":
+            return prune({
+                "gearUpHeight": self.gear_up_height,
+                "gearDownHeight": self.gear_down_height,
+                "gearUpEngineInput": self.gear_up_engine_input,
+                "gearDownEngineInput": self.gear_down_engine_input,
+            }) or None
+
+        body = prune({
+            "mass": self.mass,
+            "drag": self.drag,
+            "inertiaModifier": (list(self.inertia_modifier)
+                                if self.inertia_modifier else None),
+            "speedMod": self.speed_mod,
+            "angleMod": self.angle_mod,
+            "vehicleCategory": self.vehicle_category,
+            "vehicleType": self.vehicle_type,
+            "exitTimer": self.exit_timer,
+            "hasRestrictedExit": self.has_restricted_exit,
+            "exitSpeedMod": self.exit_speed_mod,
+            "soldierExitLocation": (
+                {"position": list(self.soldier_exit_location[0]),
+                 "rotation": list(self.soldier_exit_location[1])}
+                if self.soldier_exit_location else None),
+            "damageFromWater": self.damage_from_water,
+            "hpLostWhileDamageFromWater": self.hp_lost_while_damage_from_water,
+            "hpLostWhileUpSideDown": self.hp_lost_while_upside_down,
+            # Seven unnamed floats. See the field comment: the meanings are
+            # not established, so they ship in declaration order under the
+            # directive's own name and nothing more is claimed about them.
+            "submarineData": (list(self.submarine_data)
+                              if self.submarine_data else None),
+            "submarineHudDepthModifier": self.submarine_hud_depth_modifier,
+            "submarineHudDirModifier": self.submarine_hud_dir_modifier,
+            "pivotPosition": self._pivot(),
+        })
+        return body or None
+
+    def _pivot(self) -> list[float] | None:
+        """`setPivotPosition`, dropped when it is the inert `0/0/0`."""
+        if not self.pivot_position or not any(self.pivot_position):
+            return None
+        return list(self.pivot_position)
 
     def weapon_stats(self) -> dict | None:
         """How this weapon handles — magazine, optic, deviation, recoil.
@@ -819,6 +1092,116 @@ class ObjectLibrary:
                         "criticaldamage": "critical_damage",
                         "hplostwhilecriticaldamage": "hp_lost_while_critical_damage",
                     }[cmd], value)
+                # -- Physics. See the `physics()` field block: which of these
+                # a template may legally declare is decided by its kind, so
+                # they are read unconditionally and sorted out there.
+                elif cmd in (
+                    "settorque", "setdifferential", "setgearup", "setgeardown",
+                    "setgearchangetime", "setnopropellereffectatspeed",
+                    "setstrength", "setdamping",
+                    "setwinglift", "setflaplift", "setpitchoffset",
+                    "setregulatetolift", "setwingtoregulatorratio",
+                    "sethullheight", "setfloatmaxlift", "setfloatminlift",
+                    "setsinkingspeedmod", "setdragmodifier",
+                    "setgearupheight", "setgeardownheight",
+                    "setgearupengineinput", "setgeardownengineinput",
+                    "mass", "drag", "speedmod", "anglemod",
+                    "exittimer", "exitspeedmod",
+                    "hplostwhiledamagefromwater", "hplostwhileupsidedown",
+                    "setsubmarinehuddepthmodifier", "setsubmarinehuddirmodifier",
+                ):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "settorque": "torque",
+                        "setdifferential": "differential",
+                        "setgearup": "gear_up",
+                        "setgeardown": "gear_down",
+                        "setgearchangetime": "gear_change_time",
+                        "setnopropellereffectatspeed": "no_propeller_effect_at_speed",
+                        "setstrength": "strength",
+                        "setdamping": "damping",
+                        "setwinglift": "wing_lift",
+                        "setflaplift": "flap_lift",
+                        "setpitchoffset": "pitch_offset",
+                        "setregulatetolift": "regulate_to_lift",
+                        "setwingtoregulatorratio": "wing_to_regulator_ratio",
+                        "sethullheight": "hull_height",
+                        "setfloatmaxlift": "float_max_lift",
+                        "setfloatminlift": "float_min_lift",
+                        "setsinkingspeedmod": "sinking_speed_mod",
+                        "setdragmodifier": "drag_modifier",
+                        "setgearupheight": "gear_up_height",
+                        "setgeardownheight": "gear_down_height",
+                        "setgearupengineinput": "gear_up_engine_input",
+                        "setgeardownengineinput": "gear_down_engine_input",
+                        "mass": "mass",
+                        "drag": "drag",
+                        "speedmod": "speed_mod",
+                        "anglemod": "angle_mod",
+                        "exittimer": "exit_timer",
+                        "exitspeedmod": "exit_speed_mod",
+                        "hplostwhiledamagefromwater": "hp_lost_while_damage_from_water",
+                        "hplostwhileupsidedown": "hp_lost_while_upside_down",
+                        "setsubmarinehuddepthmodifier": "submarine_hud_depth_modifier",
+                        "setsubmarinehuddirmodifier": "submarine_hud_dir_modifier",
+                    }[cmd], value)
+                elif cmd == "setnumberofgears":
+                    try:
+                        obj.number_of_gears = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd in ("setpositionoffset", "inertiamodifier",
+                             "setpivotposition"):
+                    try:
+                        value = vec3_lenient(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "setpositionoffset": "position_offset",
+                        "inertiamodifier": "inertia_modifier",
+                        "setpivotposition": "pivot_position",
+                    }[cmd], value)
+                elif cmd in ("rememberexcessinput", "hasrestrictedexit",
+                             "damagefromwater"):
+                    if (value := truthy(args)) is not None:
+                        setattr(obj, {
+                            "rememberexcessinput": "remember_excess_input",
+                            "hasrestrictedexit": "has_restricted_exit",
+                            "damagefromwater": "damage_from_water",
+                        }[cmd], value)
+                elif cmd in ("grip", "setvehiclecategory", "setvehicletype"):
+                    # `Grip` is the one physics directive with no `set` prefix,
+                    # and the two vehicle classifiers are bare enum names. All
+                    # three are stored as authored — nine vanilla templates
+                    # write `Sea` where every other one writes `VCSea`.
+                    if token := args.strip():
+                        setattr(obj, {
+                            "grip": "grip",
+                            "setvehiclecategory": "vehicle_category",
+                            "setvehicletype": "vehicle_type",
+                        }[cmd], token.split()[0])
+                elif cmd == "submarinedata":
+                    # Seven whitespace-separated floats whose meanings are not
+                    # established. Kept as authored, in order, unnamed.
+                    if (values := floats(args)) is not None:
+                        obj.submarine_data = values
+                elif cmd == "setsoldierexitlocation":
+                    # `<position> <yaw/pitch/roll>`. All 751 uses across the
+                    # installed mods write both; the missing-rotation fallback
+                    # is the same defence `addFireArmsPosition` takes, not an
+                    # observed spelling.
+                    tokens = args.split()
+                    if not tokens:
+                        continue
+                    try:
+                        pos = vec3_lenient(tokens[0])
+                        ypr = vec3_lenient(tokens[1]) if len(tokens) > 1 else (0.0, 0.0, 0.0)
+                    except ValueError:
+                        continue
+                    obj.soldier_exit_location = (pos, ypr)
                 elif cmd == "addfirearmsposition":
                     tokens = args.split()
                     if not tokens:

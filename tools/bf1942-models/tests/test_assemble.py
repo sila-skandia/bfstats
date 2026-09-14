@@ -391,6 +391,284 @@ class BrowseRigTests(unittest.TestCase):
 
         self.assertEqual("rate", rig["axes"]["roll"]["driver"])
 
+    def test_a_ship_rudder_keeps_its_steer_axis(self) -> None:
+        """A `Wing` on `c_PIYaw` is the whole steering model of a destroyer.
+
+        Same shape as the helm above and the opposite answer, because the
+        helm is a lever with nothing on the end of it and this is a force.
+        """
+        rudder = ObjectTemplate(name="Fletcher_rudder", kind="Wing")
+        rudder.min_rotation = (0.0, -25.0, 0.0)
+        rudder.max_rotation = (0.0, 25.0, 0.0)
+        rudder.max_speed = (0.0, 15.0, 0.0)
+        rudder.inputs = {"pitch": "c_PIYaw"}
+
+        rig = browse_rig(rudder, has_visible_springs=False)
+
+        self.assertEqual(-25.0, rig["axes"]["pitch"]["min"])
+        self.assertEqual(25.0, rig["axes"]["pitch"]["max"])
+
+
+class PhysicsExportTests(unittest.TestCase):
+    """`extras.physics`, on the part that declared it.
+
+    The .con below is a trimmed transcription of the shipped
+    `Objects/Vehicles/Sea/fletcher/{Objects,Physics}.con` — a hull, an engine
+    aft, a bow hull-wing against a stern rudder, and buoyancy points. Three of
+    those four are meshless in the shipped data, which is the whole test: a
+    `mesh_index is None and not child_indices` walk deletes a destroyer's
+    entire physics and leaves a 10,000-triangle ornament.
+    """
+
+    SHIP_CON = """
+ObjectTemplate.create PlayerControlObject Fletcher
+ObjectTemplate.mass 2500000
+ObjectTemplate.drag 3
+ObjectTemplate.setVehicleCategory VCSea
+ObjectTemplate.setVehicleType VTDestroyer
+ObjectTemplate.addTemplate FletcherHull
+ObjectTemplate.addTemplate Fletcher_HullWing
+ObjectTemplate.setPosition 0/-5/55
+ObjectTemplate.addTemplate Fletcher_rudder
+ObjectTemplate.setPosition 0/-5/-55
+ObjectTemplate.addTemplate Fletcher_Engine
+ObjectTemplate.setPosition 0/-4/-40
+ObjectTemplate.addTemplate Fletcher_Floater
+ObjectTemplate.setPosition -2/7.5/50
+ObjectTemplate.addTemplate Fletcher_Floater
+ObjectTemplate.setPosition 2/7.5/50
+ObjectTemplate.addTemplate FletcherCamera
+
+ObjectTemplate.create SimpleObject FletcherHull
+ObjectTemplate.geometry Fletcher_Hull
+
+ObjectTemplate.create Wing Fletcher_HullWing
+ObjectTemplate.setMinRotation 0/-25/0
+ObjectTemplate.setMaxRotation 0/25/0
+ObjectTemplate.setMaxSpeed 0/15/0
+ObjectTemplate.setAcceleration 0/-10/0
+ObjectTemplate.setInputToPitch c_PIYaw
+ObjectTemplate.setAutomaticReset 1
+ObjectTemplate.setPositionOffset 0/0/0
+ObjectTemplate.setWingLift 0
+ObjectTemplate.setFlapLift 2
+
+ObjectTemplate.create Wing Fletcher_rudder
+ObjectTemplate.setMinRotation 0/-25/0
+ObjectTemplate.setMaxRotation 0/25/0
+ObjectTemplate.setMaxSpeed 0/15/0
+ObjectTemplate.setAcceleration 0/10/0
+ObjectTemplate.setInputToPitch c_PIYaw
+ObjectTemplate.setAutomaticReset 1
+ObjectTemplate.setPositionOffset 0/0/0
+ObjectTemplate.setWingLift 0
+ObjectTemplate.setFlapLift 2
+
+ObjectTemplate.create Engine Fletcher_Engine
+ObjectTemplate.setEngineType c_ETShip
+ObjectTemplate.setTorque 2
+ObjectTemplate.setDifferential 2
+ObjectTemplate.setNoPropellerEffectAtSpeed 120
+
+ObjectTemplate.create FloatingBundle Fletcher_Floater
+ObjectTemplate.setHullHeight 20
+ObjectTemplate.setFloatMaxLift 2
+ObjectTemplate.setFloatMinLift 2
+
+ObjectTemplate.create Camera FletcherCamera
+ObjectTemplate.setPivotPosition 0/0.25/0.3
+
+GeometryTemplate.create StandardMesh Fletcher_Hull
+"""
+
+    def _assemble(self, con_text: str, root: str, path: str, *, geometry: str):
+        library = ObjectLibrary()
+        library.add_con(path, con_text)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        mesh_index = builder.add_mesh(geometry, [gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])])
+        assembler._geom_mesh[geometry.lower()] = (mesh_index, 1)
+        assembler._geom_collisions[geometry.lower()] = []
+        assembler._visible_springs = assembler._has_visible_spring(root)
+        report = Report(root=root, configuration="complex", lod=0)
+        node = assembler.build_node(builder, root, report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict())), report
+
+    def ship_document(self):
+        return self._assemble(self.SHIP_CON, "Fletcher",
+                              "Objects/Vehicles/Sea/fletcher/Objects.con",
+                              geometry="Fletcher_Hull")[0]
+
+    def ship(self):
+        document, report = self._assemble(
+            self.SHIP_CON, "Fletcher",
+            "Objects/Vehicles/Sea/fletcher/Objects.con",
+            geometry="Fletcher_Hull")
+        return {node["name"]: node for node in document["nodes"]}, report
+
+    def test_meshless_physics_parts_survive_with_their_own_placement(self) -> None:
+        nodes, _ = self.ship()
+
+        self.assertIn("Fletcher_rudder", nodes)
+        self.assertIn("Fletcher_HullWing", nodes)
+        self.assertIn("Fletcher_Engine", nodes)
+        # Bow at Refractor +55, stern at -55, and the exporter negates Z.
+        self.assertEqual([0.0, -5.0, -55.0], nodes["Fletcher_HullWing"]["translation"])
+        self.assertEqual([0.0, -5.0, 55.0], nodes["Fletcher_rudder"]["translation"])
+
+    def test_every_buoyancy_point_is_its_own_node(self) -> None:
+        document = self.ship_document()
+        floaters = [node for node in document["nodes"]
+                    if node["name"] == "Fletcher_Floater"]
+
+        # Two `addTemplate Fletcher_Floater` lines, two nodes carrying the
+        # same numbers at different points on the hull. Collapsing them onto
+        # one would sink the bow.
+        self.assertEqual(2, len(floaters))
+        self.assertEqual([[-2.0, 7.5, -50.0], [2.0, 7.5, -50.0]],
+                         [node["translation"] for node in floaters])
+        self.assertEqual(1, len({json.dumps(node["extras"]["physics"])
+                                 for node in floaters}))
+
+    def test_hull_carries_the_body_scalars_and_the_engine_its_own(self) -> None:
+        nodes, _ = self.ship()
+
+        self.assertEqual(
+            {"mass": 2500000.0, "drag": 3.0,
+             "vehicleCategory": "VCSea", "vehicleType": "VTDestroyer"},
+            nodes["Fletcher"]["extras"]["physics"])
+        self.assertEqual(
+            {"engineType": "c_ETShip", "torque": 2.0, "differential": 2.0,
+             "noPropellerEffectAtSpeed": 120.0},
+            nodes["Fletcher_Engine"]["extras"]["physics"])
+        self.assertEqual(
+            {"hullHeight": 20.0, "floatMaxLift": 2.0, "floatMinLift": 2.0},
+            nodes["Fletcher_Floater"]["extras"]["physics"])
+
+    def test_bow_and_stern_surfaces_deflect_opposite_ways(self) -> None:
+        """`setAcceleration` -10 against +10 is what makes the hull carve.
+
+        Both Wings carry the same lift coefficients and the same +/-25 degree
+        range; the sign is the only thing that separates them, and it reaches
+        the glb through the rig's `direction`.
+        """
+        nodes, _ = self.ship()
+
+        bow = nodes["Fletcher_HullWing"]["extras"]
+        stern = nodes["Fletcher_rudder"]["extras"]
+
+        self.assertEqual(bow["physics"], stern["physics"])
+        self.assertEqual(-1.0, bow["rig"]["axes"]["pitch"]["direction"])
+        self.assertEqual(1.0, stern["rig"]["axes"]["pitch"]["direction"])
+        self.assertEqual(15.0, stern["rig"]["axes"]["pitch"]["maxSpeed"])
+
+    def test_a_camera_pivot_is_physics_data_but_not_a_rig(self) -> None:
+        """The exemption that lets a meshless Wing keep its servo is keyed on
+        the class, so it does not hand a rig to the eight vanilla Cameras that
+        declare a non-zero `setPivotPosition` and to none of the other 46."""
+        nodes, _ = self.ship()
+
+        camera = nodes["FletcherCamera"]["extras"]
+
+        self.assertEqual({"pivotPosition": [0.0, 0.25, 0.3]}, camera["physics"])
+        self.assertNotIn("rig", camera)
+
+    def test_a_part_with_no_physics_gets_no_physics_key(self) -> None:
+        nodes, _ = self.ship()
+
+        self.assertNotIn("physics", nodes["FletcherHull"]["extras"])
+
+    def test_the_report_names_every_part_that_carries_physics(self) -> None:
+        _, report = self.ship()
+
+        self.assertEqual(
+            ["Fletcher_HullWing", "Fletcher_rudder", "Fletcher_Engine",
+             "Fletcher_Floater", "Fletcher_Floater", "FletcherCamera",
+             "Fletcher"],
+            [line.split()[1] for line in report.physics_parts])
+        self.assertEqual(report.physics_parts, report.as_dict()["physicsParts"])
+
+    def test_a_tanks_dummy_wheels_stay_distinguishable_from_its_real_ones(self) -> None:
+        """Twelve road wheels, four of them load-bearing.
+
+        Objects/Vehicles/Land/Sherman/Physics.con. A suspension model that
+        cannot tell `c_PGFEngineDummyGrip` with `setStrength 0` from
+        `c_PGFEngineGrip` with `setStrength 18` puts a Sherman on twelve
+        springs.
+        """
+        document, _ = self._assemble("""
+ObjectTemplate.create PlayerControlObject Sherman
+ObjectTemplate.mass 25000
+ObjectTemplate.drag 2
+ObjectTemplate.addTemplate ShermanEngine
+
+ObjectTemplate.create Engine ShermanEngine
+ObjectTemplate.setEngineType c_ETTank
+ObjectTemplate.setTorque 4.0
+ObjectTemplate.setNumberOfGears 5
+ObjectTemplate.addTemplate ShermanWheelL3
+ObjectTemplate.setPosition -1/0.12/1.2
+ObjectTemplate.addTemplate ShermanWheelL3Dummy
+ObjectTemplate.setPosition -1/0.12/2.05
+
+ObjectTemplate.create Spring ShermanWheelL3
+ObjectTemplate.geometry Sherman_whe3L_M1
+ObjectTemplate.Grip c_PGFEngineGrip
+ObjectTemplate.setStrength 18
+ObjectTemplate.setDamping 4
+
+ObjectTemplate.create Spring ShermanWheelL3Dummy
+ObjectTemplate.geometry Sherman_whe3L_M1
+ObjectTemplate.Grip c_PGFEngineDummyGrip
+ObjectTemplate.setStrength 0
+ObjectTemplate.setDamping 0
+
+GeometryTemplate.create StandardMesh Sherman_whe3L_M1
+""", "Sherman", "Objects/Vehicles/Land/Sherman/Physics.con",
+            geometry="Sherman_whe3L_M1")
+        nodes = {node["name"]: node for node in document["nodes"]}
+
+        real = nodes["ShermanWheelL3"]["extras"]["physics"]
+        dummy = nodes["ShermanWheelL3Dummy"]["extras"]["physics"]
+
+        self.assertEqual(18.0, real["strength"])
+        self.assertEqual(0.0, dummy["strength"])
+        self.assertEqual(0x04, real["gripFlags"])
+        self.assertEqual(0x24, dummy["gripFlags"])
+        self.assertEqual(4.0, nodes["ShermanEngine"]["extras"]["physics"]["torque"])
+
+    def test_a_drivetrain_of_only_hidden_wheels_still_contributes_nothing(self) -> None:
+        """The meshless-physics escape must not resurrect an empty Engine.
+
+        A boat's land drivetrain is `createInvisible 1` wheels under an Engine
+        that declares no physics of its own; before this change it was
+        dropped, and it still is.
+        """
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Sea/Test/Objects.con", """
+ObjectTemplate.create Engine LandEngine
+ObjectTemplate.addTemplate HiddenWheel
+
+ObjectTemplate.create Spring HiddenWheel
+ObjectTemplate.geometry Willy_WheelR_M1
+ObjectTemplate.createInvisible 1
+ObjectTemplate.Grip c_PGFEngineGrip
+ObjectTemplate.setStrength 25
+
+GeometryTemplate.create StandardMesh Willy_WheelR_M1
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        report = Report(root="LandEngine", configuration="complex", lod=0)
+
+        self.assertIsNone(
+            assembler.build_node(gltf.GlbBuilder(), "LandEngine", report))
+        self.assertEqual([], report.physics_parts)
+
 
 if __name__ == "__main__":
     unittest.main()
