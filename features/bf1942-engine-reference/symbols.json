@@ -942,6 +942,15 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
+   "address": "0x004b6cb0",
+   "name": "World::update physics dispatch",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "working",
+   "source": "decompiled",
+   "note": "Passes frame dt UNMODIFIED to ResponsePhysicsManager(DAT_0097d764 slot +0x14, args (dt,0,3)) and PhysicsNodeManager(DAT_0097d758 slot +0x14, args (dt,0,0)). No accumulator or clamp at this level or below. Outer frame-loop quantization not traced (open); lockFps + updateFrequency exist as float console properties."
+  },
+  {
    "address": "0x004b6f30",
    "name": "BfMenu__func_4B6F30",
    "kind": "function",
@@ -1012,6 +1021,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004c2370",
+   "name": "ConsoleProperty gravity (Physics class) registration",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "decompiled; 'gravity' string 0x008de084; class name 'Physics' pushed at 0x0084d912",
+   "note": "physics.gravity is a registered float console property (sibling: wind). Zero uses in vanilla .con data, so ctor default is the live value."
   },
   {
    "address": "0x004f54a0",
@@ -1111,6 +1129,60 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x0054bb10",
+   "name": "PhysicsGripFlags::operator<< (enum values)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "decompiled switch",
+   "note": "c_PGFNoGrip=0, c_PGFContactGrip=1(default case), c_PGFRollGrip=2, c_PGFEngineGrip=4, c_PGFRollGripWhenOccupied=8, c_PGFDummyGrip=0x20, c_PGFEngineDummyGrip=0x24=Engine|Dummy, c_PGFStaticFriction=0x80. It is a bitfield. Force semantics of each bit live in the response solver (open)."
+  },
+  {
+   "address": "0x00578990",
+   "name": "PointPhysicsNode::updatePositionalDragSimple",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "working",
+   "source": "disassembled fully; pi constant at 0x008fdaf0",
+   "note": "dragAccel -= (scale*v - wind) * pi * arg1^2 * dragField(+0x38) * (1/mass(+0x3c)) into accel accumulator. Drag is wind-relative and area/mass-scaled, NOT plain -drag*v. arg1 from virtual +0x1c (getBoundingRadius per lnxded vtable order, working); arg2 scale = 1 + 24*clamp(field(+0x44)/arg1, 0, 1) - the 25x factor and field +0x44 meaning are open (water submersion suspected)."
+  },
+  {
+   "address": "0x00578aa0",
+   "name": "PointPhysicsNode positional integrator (4 substeps)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "read instruction-by-instruction; h = dt*0.25 at 0x00578aa8",
+   "note": "Semi-implicit Euler, 4 fixed sub-steps of dt/4: each does v += accel*h (vel at +0x10..0x18, accel accumulator at +0x1c..0x24) THEN accumulates pos delta with the updated v. Epilogue writes position via virtual +0x38 and zeroes the accel accumulator."
+  },
+  {
+   "address": "0x00578ca0",
+   "name": "PointPhysicsNode::updatePhysics (drag+integrate+gravity seed)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "working",
+   "source": "decompiled; assert string 'Mass 0 when calculating drag.'",
+   "note": "Order per call: (1) if drag>0 apply dragSimple, (2) run 4-substep integrator with dt, (3) re-seed accel.y += getGravity()*gravityModifier(+0x40) for next update. Name from role match with lnxded PointPhysicsNode::updatePhysics(float); not signature-proven."
+  },
+  {
+   "address": "0x00578f00",
+   "name": "BasicPhysicsSystem::BasicPhysicsSystem",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "byte-identical field init to lnxded ctor; vtable 0x008fdbe8",
+   "note": "Defaults: gravity(+0x8) = 0xC16BAE14 = -14.73; wind(+0xc..+0x14) = 0; airDensityZeroAtHeight(+0x30) = 1000.0. No caller overrides gravity at init or map load (all 31 xrefs to singleton DAT_0097d770 audited: ctor, 3 chat cheats, Physics console get/set, rest are getters)."
+  },
+  {
+   "address": "0x0057f0d0",
+   "name": "PhysicsSpring::updatePhysics",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "decompiled; assert strings 'Root parent not mobile in spring.', 'Child not composite object in spring.'",
+   "note": "Spring accel = -(setStrength * displacement * getGravity()*(-0.101833 = -1/9.82) + setDamping * d(displacement)/dt), applied at wheel contact via addAccelerationAt (virtual +0x6c). Gravity-normalized: at default g=-14.73 springs act at 1.5x .con strength. Also: c_PGFRollGripWhenOccupied wheels get grip rewritten to 10 (Roll|?) when vehicle occupied (+0x11e), 9 (Contact|?) when empty - parked vehicles do not roll away."
   },
   {
    "address": "0x00580eb0",
@@ -1986,6 +2058,15 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x00729b30",
+   "name": "chatCheatHandler(devNames+gravity)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "decompiled; references all three GRAVITY strings",
+   "note": "Chat cheats: EarthWalk -> setGravity(-10.0), MoonWalk -> setGravity(-1.67), SpaceWalk -> setGravity(-0.1) via vtable slot +0x10 on DAT_0097d770. Slot map: +0x10 setGravity, +0x14 getGravity, +0x18 setWind, +0x1c getWind, +0x20 setAirDensityZeroAtHeight, +0x24 getAirDensityZeroAtHeight."
+  },
+  {
    "address": "0x007444a0",
    "name": "Packet__func_7444A0",
    "kind": "function",
@@ -2254,6 +2335,33 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009581b4",
+   "name": "BFSoldierTemplate::directionalSpeed[6]",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "byte-identical to lnxded 0x0872edec; indexing code at 0x005013f8 read",
+   "note": "{6,4,2,2,1,1} m/s. Index = pose*2 + (forwardInput<=0 ? 1 : 0); pose: 0 stand, 1 crouch (poseFlags bit5), 2 prone (bit6). So stand fwd 6 / back 4, crouch 2/2, prone 1/1. Result further scaled by per-soldier field +0x150 and a second factor before use."
+  },
+  {
+   "address": "0x009581cc",
+   "name": "BFSoldierTemplate::strafeSpeed[3]",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "adjacent table, xref 0x004f1187",
+   "note": "{4,2,1} m/s by pose (stand/crouch/prone)."
+  },
+  {
+   "address": "0x009581d8",
+   "name": "BFSoldierTemplate::walkSpeedFactor",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "reads at 0x0050146d, 0x00501502; write at 0x004f1302",
+   "note": "0.33333 - walk-toggle multiplier on directional and strafe speed."
   },
   {
    "address": "0x0095f8d4",
