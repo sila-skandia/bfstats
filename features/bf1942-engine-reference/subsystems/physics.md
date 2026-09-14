@@ -1,0 +1,302 @@
+# Refractor physics, read out of the client
+
+What the engine actually computes, with the address that says so. Every claim
+here was read in `BF1942.exe` (sha256 `60c945…cd3699`) through the Ghidra
+bridge; `bf1942_lnxded.static` supplied names and signatures only, per
+[README](../README.md). Addresses are in [symbols.json](../symbols.json) —
+`./xref.py sym 0x…` for the note, `./xref.py decompile 0x…` to re-read it.
+
+Confidence is the corpus ladder. Anything still `open` says so; do not promote
+it without an address.
+
+Established 2026-09-14/15. Before this, the viewer's flight model rested on nine
+fitted constants and the wrong gravity. It now rests on one free number.
+
+---
+
+## 1. The shape of it
+
+Physics is a tree of `PhysicsNode`s. Forces enter as **accelerations, not
+newtons** — the API is `addAccelerationAtAbsolutePosition` / `AtRelativePosition`
+and there is no `addForceAt` anywhere in the binary. So `.con` tuning values like
+`setRegulateToLift 4.91` are m/s², mass-independent. Mass matters for collision
+response and inertia, not for reading the numbers.
+
+Behaviour lives in subnode classes constructed from their templates —
+`PhysicsEngine`, `PhysicsSpring`, `PhysicsWing`, `PhysicsFloatingBundle` — each
+with its own `updatePhysics(float)`.
+
+**There is no `PhysicsType` / `c_PT*`.** That is BF2 vocabulary. In Refractor 1
+the physics class *is* the template type. Zero `c_PT*` across 1,753 vanilla
+`.con` files, and the binary agrees.
+
+| | |
+|---|---|
+| `BasicPhysicsSystem::BasicPhysicsSystem` | `0x00578f00` |
+| `World::update` physics dispatch | `0x004b6cb0` (`working`) |
+
+---
+
+## 2. Gravity is −14.73 m/s²
+
+The constructor writes `0xC16BAE14` = **−14.73** to the gravity field, and
+`0x447A0000` = 1000.0 to `airDensityZeroAtHeight`.
+
+Closed by exhaustion, not inference: the singleton has 31 xrefs, all classified
+by vtable slot. The only `setGravity` callers are the chat cheat handler
+(`0x00729b30` — `EarthWalk` → −10.0, `MoonWalk` → −1.67, `SpaceWalk` → −0.1;
+note EARTH does *not* restore the default) and the console property setter
+(`0x004c2370`). No map-load path touches it, and `physics.gravity` appears in no
+vanilla file.
+
+Corroboration from the other direction: the SBD's three `setRegulateToLift 4.91`
+surfaces sum to 14.73 exactly. **`4.91` is g/3, not g/2** — 14.7295/3 = 4.9098
+rounds to 4.91 with room to spare, where 9.81/2 = 4.905 does not.
+
+---
+
+## 3. Integration: four sub-steps, semi-implicit
+
+`PointPhysicsNode` integrator at `0x00578aa0`. Per update, with frame `dt`:
+
+```
+h = dt * 0.25
+repeat 4:  v += accel * h          // velocity first
+           pos += v * h            // then position, with the UPDATED v
+accel = 0                          // accumulator cleared
+accel.y += gravity * gravityModifier    // re-seeded for the next update
+```
+
+Semi-implicit (symplectic) Euler, four fixed sub-steps. `World::update`
+(`0x004b6cb0`) passes the frame `dt` straight through with no accumulator and no
+clamp, so **retail physics is frame-rate coupled**. Whether the frame timer
+clamps `dt` upstream is `open`.
+
+> The viewer deliberately diverges: a fixed 60 Hz outer tick for determinism,
+> with the engine's four sub-steps *inside* each tick. Copy the model, not the
+> bug.
+
+Drag (`0x00578990`, `working`) is wind-relative and area/mass-scaled, **not**
+the plain `−drag·v` the viewer once assumed:
+`accel -= (scale*v − wind) * π * r² * drag / mass`. The role of `r`
+(bounding radius by lnxded vtable order) and the `scale` multiplier are
+`working`/`open` — implemented in shape, flagged in the source.
+
+---
+
+## 4. Lift — `calculateLift`, `0x0057fa90`
+
+The single most valuable function in this subsystem.
+
+```c
+float calculateLift(const Vec3& vel, const Vec3& surfaceUp, float coeff) {
+    float len = |vel|;  if (len == 0) return 0;
+    float s = clamp(dot(vel/len, surfaceUp), -1, 1);
+    float a = asin(s) * 57.29578;                        // DEGREES
+    float c = (fabs(a) >= 45) ? 0
+            : (a >= 0) ? a*(45 - a)/506.25
+                       : a*(45 + a)/506.25;
+    return (0.75*c + 0.25*s) * len*len * coeff * 0.0025; // m/s^2
+}
+```
+
+**The speed exponent is 2** — `len*len`, unambiguous. MSVC folds `/506.25` into
+`*0.0019753086419753087`, which is why grepping for `506.25` finds nothing.
+
+**The engine ships a stall model nobody had gone looking for.** The coefficient
+peaks at exactly 1.0 at 22.5° (`22.5²/506.25 = 1`) and is cut to hard zero past
+±45°. Small-angle slope is 4.0699 per radian.
+
+Note the cutoff is in the coefficient `c`, **not** the return: the `0.25*s` term
+survives, so a surface keeps ~21% of peak lift at 45° and 0.25 at 90°. That
+residual is what stops a tumbling aircraft being weightless.
+
+The `0.0025` scale constant is at `0x008feb30`.
+
+### How a Wing feeds it — `PhysicsWing::updatePhysics`, `0x0057fbf0`
+
+- `coeff = (setWingLift + setFlapLift) * getGravity() * -0.101833`. That constant
+  is **−1/9.82** — the same earth-gravity normalisation `PhysicsSpring` uses. At
+  the shipped g this is a flat ×1.49995.
+- `setWingLift` and `setFlapLift` are **summed into one coefficient**. There is
+  no `flapLift × deflection` term; a hinge reaches the arithmetic only by
+  rotating the surface's world matrix.
+- Force = `−clamp(L * medium, ±200) * surfaceUp`, applied at the **surface's
+  world position**. `medium` = 10.0 submerged, else `1 − clamp(y/1000, 0, 1)`.
+- Regulator servo command:
+  `clamp((L_ref + neutralLift*setWingToRegulatorRatio + setRegulateToLift) * g * 0.101833, −1, +1)`.
+  Equilibrium is "this surface makes `setRegulateToLift` m/s² upward" —
+  approximately, since the feed-forward and the proportional servo's
+  steady-state error both bite.
+
+`Wing::calculateNeutralLift` is at `0x00580280`.
+
+### `setPitchOffset` and the flapLift/wingLift split
+
+`Wing::handleUpdate` (lnxded `0x08250950`) subtracts `setPitchOffset` from the
+posed angle every update, for every Wing — so it biases the **rest orientation**,
+not only the regulator's reference incidence. The same instruction shows how the
+two lift terms are told apart despite being summed:
+
+```
+angle = deflection * flapLift/(wingLift + flapLift) − pitchOffset
+```
+
+**`setFlapLift` is the moving share of one surface's area.** A rudder (`0/2`) and
+a fin (`2/0`) run identical arithmetic but are not interchangeable — the fin's
+moving share is zero, so nothing moves it.
+
+---
+
+## 5. Thrust — and `setTorque`'s alibi
+
+`PhysicsEngine::updatePhysics`, `0x0057bfb0`:
+
+```
+rho = 1 - clamp(y/airDensityZeroAtHeight, 0, 1)
+e   = throttle - rho*(vel·fwd)/setNoPropellerEffectAtSpeed
+K   = 0.1*|throttle| + e*|e|          // SIGNED SQUARE, not a linear fade
+F   = fwd * K * getCurrentRatio()     // at the ENGINE NODE, not the CoM
+```
+
+**`setTorque` is not in that expression.** It scales `getCurrentTorque()`
+(`0x0057be10`), whose only caller in the entire binary is `feedbackLoop`
+(`0x0057be90`), which spends it on the RPM accumulator behind the **engine
+sound**. The force `feedbackLoop` receives is passed by value and the caller
+re-derives the applied force afterwards, so nothing it does can reach thrust.
+
+This mattered: `flight-model.md` carried `setTorque` as the thrust parameter
+through seven audits and a full recalibration, and the "a loop cannot close from
+level cruise" conclusion was arithmetic on an audio parameter.
+
+Thrust scale is `getCurrentRatio()` (`0x0057bd90`) = `3.5 * setDifferential /
+gearRatioCurve` — `setDifferential` being the field previously marked
+speculative and "not needed".
+
+**Thrust does not fade with altitude; it grows.** `rho` multiplies only the
+speed term, so a high propeller does not know how fast it is going. The 1000 m
+figure is a *lift* ceiling only.
+
+### The gear-ratio curve — `EngineTemplate::EngineTemplate`, `0x005715d0`
+
+101 floats at `template+0x42c`, filled 1.0, then five control points:
+`[20]=3.5, [40]=2.2, [60]=1.5, [80]=1.1, [100]=0.94`. No `.con` binding exists,
+so no mod can move it. The sampled index is **100 forever**: `PhysicsEngine`'s
+ctor seeds `gear = 1` (lnxded `0x0824c770`), there is no gear-shifting code in
+the client, and no aircraft authors `setNumberOfGears` (default 1).
+
+`EngineTemplate::makeScript` (`0x00571290`) prints fields back out with their
+`.con` names attached — the anchor that settles which offset is which.
+`WingTemplate::makeScript` is `0x005721e0`.
+
+---
+
+## 6. Springs — `PhysicsSpring::updatePhysics`, `0x0057f0d0`
+
+```
+accel = −( setStrength * displacement * |g|/9.82 + setDamping * d(displacement)/dt )
+```
+
+The `−0.101833` = −1/9.82 normalises to earth gravity, so suspension sag is
+gravity-invariant **by design** — and at the shipped g every spring acts at
+**1.5× its `.con` strength**. Units: strength is m/s² per metre of displacement,
+damping m/s² per m/s.
+
+`c_PGFRollGripWhenOccupied` is mechanical, not descriptive: a wheel with bit 8
+set is rewritten every update to grip `10` (…|RollGrip) while occupied and `9`
+(…|ContactGrip) while empty. That is how parked vehicles stop creeping downhill.
+
+### Grip is a bitfield, not an enum — `0x0054bb10`
+
+```
+NoGrip=0  ContactGrip=1  RollGrip=2  EngineGrip=4  RollGripWhenOccupied=8
+DummyGrip=0x20  EngineDummyGrip=0x24  StaticFriction=0x80
+```
+
+`EngineDummyGrip = EngineGrip | DummyGrip` proves the bitfield reading. What each
+bit does to lateral vs longitudinal velocity at the contact — the thing that
+produces the BF1942 power slide — lives in the response solver behind
+`ResponsePhysicsManager` and is still **open**.
+
+---
+
+## 7. An Engine node never poses its own subtree
+
+`EngineTemplate` derives from `RotationalBundleTemplate`, which is the *only*
+reason a `.con` may legally write `setInputToRoll c_PIThrottle` on an Engine. But
+the object it creates is a `PhysicsEngine` deriving from `PhysicsNode`
+(lnxded `0x0824c6f0`) — **not** `RotationalBundle`.
+
+`RotationalBundle::handleUpdate` (lnxded `0x081d78e0`) is the one place those
+numbers become a transform, and `PhysicsEngine` does not inherit it. The tail of
+`PhysicsEngine::updatePhysics` instead walks two interface queries to one object
+and pushes a rotation speed into it: the propeller.
+
+So the axis never poses the Engine node, and never poses its children. The `.con`
+syntax looks like it spins the engine and does not. A viewer that falls back to
+rotating the Engine node takes the landing gear and wheels round the prop shaft
+with it — which is exactly what shipped to production for two days.
+
+---
+
+## 8. Soldier locomotion is hardcoded
+
+Table at `0x009581b4`, indexing at `0x005013f8`:
+
+```
+pose  = (flags & 0x20) ? 1 : (flags & 0x40) >> 5     // 0 stand, 1 crouch, 2 prone
+index = pose*2 + (forwardInput <= 0 ? 1 : 0)
+directionalSpeed[6] = {6, 4, 2, 2, 1, 1}             // 0x009581b4
+strafeSpeed[3]      = {4, 2, 1}                      // 0x009581cc
+walkSpeedFactor     = 1/3                            // 0x009581d8
+```
+
+Stand 6 forward / 4 back, crouch 2/2, prone 1/1. The **pairing** is settled by
+the indexing code, not inferred from table layout. `walkSpeedFactor` has a write
+xref (`0x004f1302`), so it is mutable at runtime.
+
+`aiTemplatePlugIn.maxSpeed 5.0` is the **AI plugin's** number and is not the
+player's. A walk mode built to that line is visibly wrong.
+
+**Jump velocity is still `open`** — the state exists (`c_SstJump`, flag 0x80) but
+the impulse constant was not located. Measure it in wine.
+
+There is no ragdoll because the bones were never dynamics:
+`setSkeletonCollisionBone` capsules are hit regions for damage only.
+
+---
+
+## 9. The walking view bob is multiplied by a shipped zero
+
+See ledger rows **CS-1..CS-6** for the full evidence. In short:
+
+- `getCameraShakeTransform` (`0x00613e90`): per channel,
+  `amplitude * sin(rate * t) * fade * cameraShakeFactor`, `t` a seconds
+  accumulator advanced `t += dt`. **The third `.con` argument is an angular rate
+  in radians per second** — 15 rad/s is 2.387 Hz. Not Hz, not a duration.
+- The **first** argument is a slot index 0..2; a state may chain three shakes.
+  All of vanilla uses slot 0.
+- `fadeIn`/`fadeOut` are **rates**, not durations: `0.6` is a 1.67 s ramp.
+- **Nothing scales the shake by ground speed.**
+- `BFSoldier::updateCameraShake` (`0x004facd0`) passes `cameraShakeFactor`
+  (`0x0099000c`) to the **lower-body** state machine — which owns every
+  `Lb_Walk/Run/Crouch/Lie` state — and a hardcoded `1.0f` to the upper-body and
+  trigger machines. That global is `00 00 00 00` in initialized `.data` and no
+  vanilla file assigns it.
+
+**Retail BF1942 has no first-person walking view bob.** DICE authored the
+amplitudes, tuned them, and shipped them inert. Weapon recoil and explosion
+shakes are unaffected.
+
+---
+
+## Still open
+
+| | |
+|---|---|
+| Jump impulse velocity | not located; measure in wine |
+| Per-bit grip force semantics | in the response solver, behind `ResponsePhysicsManager` |
+| Whether the frame timer clamps `dt` before `World::update` | not reached |
+| `submarineData`'s 7 parameters | unnamed, passed through verbatim |
+| Drag's `r` and `scale` factors | `working` / `open`; shape implemented, factors flagged |
+| B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
