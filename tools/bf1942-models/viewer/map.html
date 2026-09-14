@@ -1748,8 +1748,10 @@ function pilot(dt) {
       (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
   stick.roll = axisToward(stick.roll,
     (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0), dt);
+  // Pitch is inverted, which is a real stick and the game's own default for
+  // aircraft: pull back to climb. Up arrow puts the nose down.
   stick.pitch = axisToward(stick.pitch,
-    (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0), dt);
+    (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0), dt);
   aircraft.setInput('c_PIRoll', stick.roll);
   aircraft.setInput('c_PIPitch', stick.pitch);
 
