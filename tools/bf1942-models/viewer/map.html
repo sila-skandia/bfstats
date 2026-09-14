@@ -160,7 +160,8 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
 import { Aircraft, VehicleCamera, findVehicle } from './flight.js';
-import { loadEngineAudio, findEngineSpec } from './engine-audio.js';
+import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
+         WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -1245,9 +1246,29 @@ let engineAccel = 0;
 const ACCEL_SMOOTHING = 5;          // 1/s
 const engineWorldPos = new THREE.Vector3();
 const engineWorldQuat = new THREE.Quaternion();
+const weaponWorldPos = new THREE.Vector3();
+const weaponWorldQuat = new THREE.Quaternion();
 // The longest shut-down one-shot in the vanilla set is willyenginestp at
 // 1.94 s; the loops are gone 0.2 s in.
 const ENGINE_RELEASE_MS = 2400;
+
+// The guns, from the same `.ssc` machinery as the engine.
+//
+// `CorsairMG.ssc` is a six-patch weapon script whose first five patches are
+// `silence.wav`; the extractor ships only the one that is not, the Fire Loop,
+// and its four layers are two pairs that hand over on distance — CAMG1/CAMG2
+// up to 4 m, CAMGdist/BFMGdist from 4 m out to 250. So the cockpit hears the
+// gun and a chase camera hears the same gun from outside, and neither costs
+// this page a decision: the ramps are in the data and `EngineAudio` already
+// evaluates them.
+//
+// The loops run from the moment the patch is built and are muted by gain
+// alone, which is the one-voice-per-role rule the hall-echo postmortem left
+// behind (`map-sounds.md`). Starting and stopping a buffer source per trigger
+// pull would restart its loop phase against the other layer every time and
+// comb; holding it and moving the bus cannot. It also means a held Space adds
+// no voices at all, which is the thing worth asserting headlessly.
+let weaponAudio = [];
 
 function disposeEngineAudio() {
   engineGeneration++;
@@ -1255,6 +1276,8 @@ function disposeEngineAudio() {
     engineAudio.dispose();
     engineAudio = null;
   }
+  for (const weapon of weaponAudio) weapon.audio.dispose();
+  weaponAudio = [];
   engineNode = null;
   engineAccel = 0;
   enginePrevVelocity.set(0, 0, 0);
@@ -1293,6 +1316,43 @@ async function setupEngineAudio() {
   engineAudio = built;
   engineAudio.setMaster(masterVolume());
   engineAudio.start();
+  await setupWeaponAudio(gen, dir, template);
+}
+
+/**
+ * Build and start every gun patch this vehicle carries.
+ *
+ * Shares the engine's generation counter rather than keeping its own: the guns
+ * are only ever set up and torn down with the vehicle they are bolted to, so a
+ * second counter would be two names for one fact.
+ */
+async function setupWeaponAudio(gen, dir, template) {
+  const specs = findWeaponSpecs(extras, template);
+  if (!specs.length) return;
+  const built = [];
+  for (const spec of specs) {
+    const audio = await loadEngineAudio(spec, {
+      listener: ensureListener(),
+      getBuffer: (relPath) => soundBuffer(dir, relPath),
+      headroom: WEAPON_HEADROOM,
+    });
+    if (audio) built.push({ spec, audio, node: null });
+  }
+  // Decoding took several awaits. Nothing has been started, so a superseded
+  // load is dropped without ever having made a sound.
+  if (gen !== engineGeneration || !aircraft) {
+    for (const weapon of built) weapon.audio.dispose();
+    return;
+  }
+  for (const weapon of built) {
+    // The voices belong on the gun, not the vehicle origin: a Corsair's guns
+    // are 2.2 m out each wing, and the panner is what puts the rattle there.
+    weapon.node = aircraft.node.getObjectByName(weapon.spec.fireArms)
+      || aircraft.node;
+    weapon.audio.setMaster(0);   // silent until the trigger is pulled
+    weapon.audio.start();
+  }
+  weaponAudio = built;
 }
 
 /**
@@ -1373,6 +1433,26 @@ function updateAudio(dt = 0) {
   if (engineAudio) {
     engineAudio.setMaster(master);
     engineAudio.update(engineControl(dt));
+  }
+  for (const weapon of weaponAudio) {
+    // The trigger comes from the gun runtime rather than the key, so a weapon
+    // that has run its magazine dry or is not the seat's gun stays quiet for
+    // the same reason it stops drawing tracers.
+    const group = aircraftGuns.find(g => g.node.name === weapon.spec.fireArms);
+    weapon.audio.setMaster(group?.firing ? master : 0);
+    if (weapon.node) {
+      weapon.node.getWorldPosition(weaponWorldPos);
+      weapon.node.getWorldQuaternion(weaponWorldQuat);
+    }
+    // No control channel in a weapon patch reads anything but Distance and
+    // Default, both of which the module derives itself, so the gun needs none
+    // of the engine's rpm/speed/dive plumbing.
+    weapon.audio.update({
+      dt,
+      position: weaponWorldPos,
+      quaternion: weaponWorldQuat,
+      listenerPosition: camera.position,
+    });
   }
   if (ambientAudio) {
     const base = extras.sounds?.ambient?.volume ?? 0.6;
@@ -1639,7 +1719,15 @@ const AIR_KEYS = new Set([
 //     lives its declared 3 s, which at 400 m/s is 1200 m — past Wake's 500 m
 //     draw distance, so in practice the stream fades into the fog and expires
 //     unseen, exactly as it does in game.
-const guns = new GunFire({ scene, camera });
+//   - `viewportHeight` is the tracer width floor's denominator. Read off the
+//     drawing buffer rather than the window because `__renderOnce` resizes it
+//     to whatever a headless check asked for, and a floor measured against the
+//     wrong height is a streak that grows or vanishes only under test.
+const _bufferSize = new THREE.Vector2();
+const guns = new GunFire({
+  scene, camera,
+  viewportHeight: () => renderer.getDrawingBufferSize(_bufferSize).y,
+});
 let aircraftGuns = [];
 
 function collectGuns() {
@@ -2140,10 +2228,17 @@ if (params.has('shots')) {
       bright: tracer.bright,
       age: tracer.age,
       ttl: tracer.ttl,
+      // What the width floor settled on this frame, against the streak's own
+      // length scale: equal means the real mesh was already wide enough.
+      scale: tracer.mesh.scale.toArray(),
+      lengthScale: tracer.lengthScale,
       parent: tracer.mesh.parent === scene ? 'scene' : (tracer.mesh.parent?.name ?? null),
     })),
     projectiles: guns.projectiles.length,
     pooled: guns.tracerPool.length,
+    // Baked streaks recycle into their own group's pool, not the shared
+    // cylinder pool, so a leak there is invisible to `pooled` alone.
+    meshPooled: aircraftGuns.reduce((n, g) => n + g.tracerMeshPool.length, 0),
   });
   window.__getAudioState = () => ({
     audioListener,
@@ -2153,6 +2248,15 @@ if (params.has('shots')) {
     // to be asserted on the graph: per-layer gain and playback rate, and the
     // voice count, which is the number the hall-echo bug moved.
     engine: engineAudio ? engineAudio.snapshot() : null,
+    // Same reason as the engine, plus one of its own: a gun patch is gated by
+    // gain per trigger pull, so "no voice was added while Space was held" is
+    // the assertion that keeps the hall-echo bug from coming back through the
+    // weapons.
+    weapons: weaponAudio.map(w => ({
+      fireArms: w.spec.fireArms,
+      node: w.node?.name ?? null,
+      ...w.audio.snapshot(),
+    })),
   });
 }
 </script>

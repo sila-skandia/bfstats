@@ -827,6 +827,80 @@ GeometryTemplate.create StandardMesh Rocket_m1
         self.assertIn("ShellGun projectile", nodes)
 
 
+class TracerBakeTests(unittest.TestCase):
+    """A bullet's tracer is the only part of it the game draws, so its mesh
+    is baked like a projectile body rather than left to the viewer to invent."""
+
+    GUN_CON = """
+ObjectTemplate.create FireArms WingGuns
+ObjectTemplate.projectileTemplate TestBullet
+ObjectTemplate.setTracerTemplate Tracer_Projectile CRD_NONE/3/0/0
+ObjectTemplate.velocity 400
+ObjectTemplate.roundOfFire 12
+ObjectTemplate.addFireArmsPosition 2.229/-0.245/2.6 -1.1/0/0
+ObjectTemplate.addFireArmsPosition -2.229/-0.245/2.6 1.1/0/0
+
+ObjectTemplate.create Projectile TestBullet
+ObjectTemplate.timeToLive CRD_NONE/1.5/0/0
+
+ObjectTemplate.create Projectile Tracer_Projectile
+ObjectTemplate.geometry TLight_m1
+ObjectTemplate.timeToLive CRD_NONE/3/0/0
+ObjectTemplate.tracerScaler 50.0
+
+GeometryTemplate.create StandardMesh TLight_m1
+"""
+
+    def _assemble(self, con: str, root: str):
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Test/Weapons.con", con)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        assembler._geom_mesh["tlight_m1"] = (
+            builder.add_mesh("TLight_m1", [triangle]), 1)
+        assembler._geom_collisions["tlight_m1"] = []
+        report = Report(root=root, configuration="complex", lod=0)
+        node = assembler.build_node(builder, root, report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict()))
+
+    def test_tracer_mesh_is_baked_under_the_gun(self) -> None:
+        document = self._assemble(self.GUN_CON, "WingGuns")
+        nodes = {node["name"]: node for node in document["nodes"]}
+
+        tracer = nodes["WingGuns"]["extras"]["fireArms"]["tracer"]
+        self.assertEqual("Tracer_Projectile", tracer["template"])
+        self.assertEqual(3, tracer["interval"])
+        self.assertEqual(3.0, tracer["timeToLive"])
+        self.assertEqual(50.0, tracer["scaler"])
+        # The geometry name rides along so a stale GLB is distinguishable from
+        # a gun whose tracer genuinely has no mesh.
+        self.assertEqual("TLight_m1", tracer["geometry"])
+
+        streak = nodes["WingGuns tracer"]
+        self.assertEqual(
+            {"template": "Tracer_Projectile", "geometry": "TLight_m1"},
+            streak["extras"]["tracerMesh"])
+        self.assertIn("mesh", streak)
+        self.assertIn(document["nodes"].index(streak),
+                      nodes["WingGuns"]["children"])
+
+    def test_tracer_without_geometry_bakes_no_node(self) -> None:
+        con = self.GUN_CON.replace("ObjectTemplate.geometry TLight_m1\n", "")
+        document = self._assemble(con, "WingGuns")
+        names = [node["name"] for node in document["nodes"]]
+        tracer = {node["name"]: node
+                  for node in document["nodes"]}["WingGuns"]["extras"]["fireArms"]["tracer"]
+        self.assertNotIn("geometry", tracer)
+        self.assertNotIn("WingGuns tracer", names)
+        # The rest of the tracer metadata still ships.
+        self.assertEqual(50.0, tracer["scaler"])
+
+
 class EmitterMotionBakeTests(unittest.TestCase):
     """Emitter drift along the direction of fire rides the effect extras."""
 
