@@ -283,15 +283,84 @@ class SoldierModuleTests(unittest.TestCase):
 
     # -- view bob ----------------------------------------------------------- #
 
-    def test_view_bob_peaks_at_the_declared_amplitude(self) -> None:
-        bob = self.results["bob"]
-        # `setCameraShakeUpDown 0 0.08 15` on Lb_RunForward, `0 0.06 7` on walk.
-        self.assertAlmostEqual(bob["declaredRun"], bob["runPeak"], delta=0.002)
-        self.assertAlmostEqual(bob["declaredWalk"], bob["walkPeak"], delta=0.002)
-        self.assertGreater(bob["runPeak"], bob["walkPeak"])
+    def test_the_shipped_soldier_has_no_walking_bob(self) -> None:
+        # The headline. `BFSoldier::updateCameraShake` (0x004facd0) scales the
+        # lower body's shake — every Lb_Walk/Run/Crouch/Lie state, i.e. the whole
+        # walking bob — by `cameraShakeFactor`, and that global (0x0099000c, in
+        # initialized .data) ships as 0.0 with nothing in vanilla setting it.
+        # Retail BF1942 does not bob your view when you walk. The amplitudes in
+        # `AnimationStatesLower.con` are real and inert.
+        shipped = self.results["bobShipped"]
+        self.assertEqual(0, shipped["constant"])
+        self.assertEqual(0, shipped["factor"])
+        for gait in ("run", "walk", "crouch", "prone"):
+            with self.subTest(gait=gait):
+                self.assertEqual(0, shipped[gait]["upPeak"])
+                self.assertEqual(0, shipped[gait]["sidePeak"])
+                self.assertEqual(0, shipped[gait]["yawPeak"])
 
-    def test_view_bob_fades_out_when_you_stop(self) -> None:
-        self.assertEqual(0, self.results["bob"]["restPeak"])
+    def test_view_bob_peaks_at_the_declared_amplitude(self) -> None:
+        # With the factor turned up the shape underneath must be the game's.
+        shape, declared = self.results["bobShape"], self.results["bobDeclared"]
+        for gait in ("run", "walk", "crouch", "prone"):
+            with self.subTest(gait=gait):
+                self.assertAlmostEqual(
+                    declared[gait]["up"], shape[gait]["upPeak"], delta=0.002)
+        # Crouching and lying declare a vertical bob and nothing else.
+        for gait in ("crouch", "prone"):
+            with self.subTest(gait=gait):
+                self.assertEqual(0, declared[gait]["side"])
+                self.assertEqual(0, shape[gait]["sidePeak"])
+                self.assertEqual(0, shape[gait]["yawPeak"])
+
+    def test_view_bob_runs_at_the_declared_rate_in_radians_per_second(self) -> None:
+        # The whole point of the exercise. `setCameraShakeUpDown 0 0.08 15` is
+        # 15 rad/s, which is 2.387 Hz — not 15 Hz, and not a beat of the 0.36 s
+        # footstep clock. Reading it as a step-driven phase ran the run bob at
+        # 5.56 Hz, which is the "little bobble" this replaced.
+        shape, declared = self.results["bobShape"], self.results["bobDeclared"]
+        for gait in ("run", "walk", "crouch", "prone"):
+            for channel in ("up", "side", "yaw"):
+                rate = declared[gait].get(f"{channel}Rate")
+                if not rate:
+                    continue
+                with self.subTest(gait=gait, channel=channel):
+                    self.assertAlmostEqual(
+                        rate / (2 * math.pi), shape[gait][f"{channel}Hz"],
+                        delta=0.02)
+
+    def test_view_bob_does_not_depend_on_ground_speed(self) -> None:
+        # `Lb_RunBackward` and `Lb_StrafeLeft/Right` declare exactly what
+        # `Lb_RunForward` declares, and the engine has no speed term anywhere in
+        # `getCameraShakeTransform`. So a 4 m/s backpedal and a 4 m/s strafe must
+        # bob identically to a 6 m/s run — same amplitude AND same rate.
+        shape = self.results["bobShape"]
+        run = shape["run"]
+        self.assertAlmostEqual(6.0, run["speed"], delta=0.02)
+        for gait in ("backpedal", "strafe"):
+            with self.subTest(gait=gait):
+                other = shape[gait]
+                self.assertAlmostEqual(4.0, other["speed"], delta=0.02)
+                self.assertAlmostEqual(run["upPeak"], other["upPeak"], places=6)
+                self.assertAlmostEqual(run["upHz"], other["upHz"], delta=0.01)
+                self.assertAlmostEqual(run["yawHz"], other["yawHz"], delta=0.01)
+
+    def test_the_bob_fade_is_a_rate_not_a_duration(self) -> None:
+        # `setCameraShakeFadeIn 0 0.6` is 0.6 per second — `fade += fadeIn * dt`
+        # clamped to one, at 0x0832bd78 — so a full ramp is 1.67 s, not 0.6.
+        fade = self.results["bobFade"]
+        self.assertTrue(fade["monotonic"])
+        self.assertAlmostEqual(
+            fade["expected"], fade["phaseAfterHalfARamp"], delta=0.02)
+        self.assertLess(fade["phaseAfterHalfARamp"], 1.0)
+
+    def test_view_bob_stops_dead_when_you_stop(self) -> None:
+        # No locomotion state declares `setCameraShakeFadeOut`; entering an idle
+        # state that carries no shake zeroes the accumulator on the spot.
+        stop = self.results["bobStop"]
+        self.assertGreater(stop["movingPeak"], 0)
+        self.assertEqual(0, stop["afterOneStillFrame"])
+        self.assertEqual(0, self.results["bobShape"]["still"]["upPeak"])
 
     def test_footsteps_land_on_the_declared_clock(self) -> None:
         steps = self.results["steps"]

@@ -627,13 +627,17 @@ setCameraShakeLeftRight 0 0.01 0.5        0 0.02 5
 setCameraShakeFadeIn    0 0.6             0 0.6
 ```
 
-Three arguments, of which the first is always 0 and the last two read as
-amplitude and frequency (**UNVERIFIED**, but the walk/run relationship — same
-amplitude class, double the frequency — only works that way round).
-`AnimationStatesCameraShakes.con` is 15,906 B more of the same for every
-weapon's fire state and for `BigExplosion` / `SmallExplosion` / `HitShake` /
-`DieShake`. If you want the game's head-bob rather than a sine wave you invent,
-it is right there.
+Three arguments, and all three have since been read out of the binary — see
+§6c. Briefly: the first is a **slot index** (a state may chain three shakes;
+vanilla always uses 0), the second is an amplitude, and the third is an
+**angular rate in radians per second**, because it is the multiplier on seconds
+inside the engine's own `sin()`. `AnimationStatesCameraShakes.con` is 15,906 B
+more of the same for every weapon's fire state and for `BigExplosion` /
+`SmallExplosion` / `HitShake` / `DieShake`.
+
+The sting is also in §12: the engine multiplies the *locomotion* half of this
+by `cameraShakeFactor`, which ships as zero. The weapon-fire and explosion
+shakes are unaffected, and those are the ones worth having.
 
 **The repo's own parser already reads the 1P half.** `bf42/animstates.py:57`
 `ClipRef.is_first_person` discriminates on a `/1p/` path segment, and
@@ -833,7 +837,10 @@ before (see stage 5).
   `WorldCollider.cast` calls per frame against a budget that already carries
   192.
 - View bob straight from `setCameraShakeUpDown` / `Yaw` / `LeftRight` on
-  `Lb_WalkForward` / `Lb_RunForward`, with the declared 0.6 s fade-in.
+  `Lb_WalkForward` / `Lb_RunForward`, with the declared 0.6 s fade-in. (Two
+  errors here, both settled in §6c: the fade is a *rate*, so 0.6 is a 1.67 s
+  ramp; and the engine multiplies the whole locomotion shake by a
+  `cameraShakeFactor` that ships as zero, so there is no bob to take.)
 
 **Why this first, and why it is worth shipping alone:** it is the whole
 experience minus the props. Standing in Bocage's bunker at eye height, walking
@@ -970,7 +977,7 @@ Shipped, then superseded. `viewer/soldier.js` (new, imports nothing),
 | speeds 2.28 / 1.08 / 1.58 / 0.69 | exact, and Shift is the slow gait |
 | pitch clamped +-38, FOV ~54 | 38.00 / -38.00 measured, FOV 53.86 |
 | 0.31 m capsule sliding against `WorldCollider.cast` | held |
-| bob from the declared `setCameraShake*` | amplitudes held; the *rate* did not — see below |
+| bob from the declared `setCameraShake*` | amplitudes held; the *rate* did not — see below, and then §6c, which settled it and then took the bob away again |
 | "three to five casts per frame" | **wrong: 11.** Nine sweep probes, one floor, one post-move step test |
 
 ### What the plan got wrong, and what the build had to change
@@ -982,6 +989,12 @@ walk/run ratio it implies (7:15 = 2.14) does not match the step-rate ratio the
 same archive declares (0.66:0.36 = 1.83). The phase now comes off the footstep
 clock instead — which is unambiguous, is in the same file, and puts the bob in
 step with the footstep audio stage 3 hangs on the same clock.
+
+> **Superseded by §6c.** The reasoning above is sound and the conclusion is
+> wrong. `15` is not five times too fast because it is not in Hz: it is radians
+> per second, which is 2.39 Hz. Substituting the footstep clock ran the run bob
+> at 5.56 Hz — 2.3x the engine's rate — and that is the "little bobble" a player
+> reported the moment this landed on the corrected movement speeds.
 
 **Stance transitions are data, which the plan did not notice.** The plan had an
 invented ease constant. The state machine declares a clip *and a rate* for every
@@ -1154,8 +1167,8 @@ resolve; it imports all of them. There is exactly one of each in the tree.
 
 All of the presentation layer, which is the half this document was always
 strongest on: `FOV_DEG = 53.86` from `set1pFov 0.47`; `PITCH_LIMIT_DEG = 38`
-from `setPointUpDownAngle`; the `BOB` amplitudes off `setCameraShake*` with the
-phase driven from the footstep clock; `STEP_PERIOD` from `SoldierSound.inc`; the
+from `setPointUpDownAngle`; the `BOB` amplitudes off `setCameraShake*` (the
+*phase* did not survive — §6c); `STEP_PERIOD` from `SoldierSound.inc`; the
 six `STANCE_TRANSITION` durations read off the animation clips; `spawnFlags` /
 `pickSpawn` / `spawnYaw` and the paratrooper filtering; the "a soldier may only
 be raised by a step he took or a landing" rule, which was a real fix and is now
@@ -1244,6 +1257,139 @@ geometry they were aimed at. Full suite 529.
 
 ---
 
+## 6c. The view bob, settled in the binary — and then removed
+
+A player walking Wake in first person reported that "walking has degraded since
+merging to main… now it has this little bobble." It had. The merge put §6a's
+presentation layer, whose bob phase came off the footstep clock, on top of
+§6b's corrected movement speeds — and the bob had never been calibrated against
+a body that moves at the engine's 6 m/s rather than the derivation's 2.28.
+
+The open question was the third argument of `setCameraShakeUpDown 0 0.08 15`,
+which §6a could not pin down and substituted a guess for. It is answerable, and
+the answer changes the outcome twice over.
+
+### What `getCameraShakeTransform` actually computes
+
+`0x00613e90` in the client;
+`dice::anim::AnimationStateMachineInstance::getCameraShakeTransform(Mat4&, float, float)`
+at `0x0832b6c0` in the Linux dedicated server, which is where the name comes
+from. Per channel, per frame:
+
+```
+value = amplitude * sin(rate * t) * fade * cameraShakeFactor
+```
+
+`t` is a seconds accumulator the same function advances with `t += dt`. Six
+`sin()` call sites, one per channel, each `fld [block+rate]; fmul [this+8];
+call sin; fmul <amp*factor>`. That makes the third argument's unit mechanical
+rather than interpretive: **it is an angular rate in radians per second**,
+because it is the multiplier on seconds inside a sine. 15 rad/s is 2.39 Hz.
+
+Four more things fell out of the same read:
+
+- **The first argument is a slot index**, clamped 0..2. A state may chain three
+  shakes, each with its own `timeToShake` and `fadeOut`; the engine advances to
+  the next as one expires. All of vanilla uses slot 0, which is why it looked
+  like a constant.
+- **`fadeIn` and `fadeOut` are rates per second, not durations.**
+  `fade += fadeIn * dt` clamped to 1. `setCameraShakeFadeIn 0 0.6` is a 1.67 s
+  ramp, not a 0.6 s one. `fadeIn <= 0` snaps straight to full.
+- **Channels map to a transform, and the rotations are degrees.** `UpDown` →
+  translate Y, `LeftRight` → translate X, `InOut` → translate Z; `Pitch`/`Yaw`/
+  `Roll` → `setRotateXDeg`/`YDeg`/`ZDeg`.
+- **Nothing scales by ground speed.** `BFSoldier::updateCameraShake`
+  (`0x004facd0`) passes its `dt` straight down. The gait's only job is to choose
+  which animation state is current.
+
+And the data is richer than the two states §6a quoted. Crouching and lying
+declare a vertical bob and **nothing else** — no sway, no yaw — where §6a had
+invented both for them:
+
+| state | `UpDown` | `LeftRight` | `Yaw` | `FadeIn` |
+|---|---|---|---|---|
+| `Lb_WalkForward` / `Backward` | 0.06 @ 7 | 0.01 @ 0.5 | 0.10 @ 3.0 | 0.6 |
+| `Lb_RunForward` / `Backward` / `Strafe*` | 0.08 @ 15 | 0.02 @ 5 | 0.15 @ 8.0 | 0.6 |
+| `Lb_CrouchForward` / `Backward` | 0.07 @ 10.0 | — | — | 0.3 |
+| `Lb_LieForward` / `Backward` / `Strafe*` | 0.04 @ 5.0 | — | — | 0.3 |
+
+Backpedalling and strafing declaring *exactly* the run's numbers, at two-thirds
+the run's speed, is the data agreeing with the code: there is no speed term.
+
+### The sting: it is multiplied by a shipped zero
+
+A `BFSoldier` holds three `AnimationStateMachineInstance`s (an array based at
+`+0x294` in the server build; 0 lower body, 1 upper body, 2 camera-shake
+triggers, the last proven by `triggerCameraShake`). `updateCameraShake`
+composes all three — and passes a hardcoded `1.0f` to the upper body and the
+trigger machine, but `cameraShakeFactor` to the **lower** body. The lower body
+is where every `Lb_Walk`/`Run`/`Crouch`/`Lie` state lives. It is the entire
+walking view bob.
+
+`cameraShakeFactor` is `DAT_0099000c`, a `PlayerControlObjectTemplate` console
+property. It sits in BF1942.exe's *initialized* `.data` and the shipped bytes
+are `00 00 00 00`. No static initialiser writes it; its only writers are the
+console accessor behind the registrar at `0x004f1310`. Every `.con`, `.inc` and
+`.tweak` in `Objects.rfa`, `animations.rfa`, `Game.rfa` and `menu.rfa` was
+searched, along with both `Settings/` trees. Nothing assigns it.
+
+**Retail BF1942 has no first-person walking view bob.** The `Lb_*` shakes are
+real, carefully authored, and inert. Weapon-fire (`Ub_*`) and explosion / hit /
+death shakes are unaffected — those run at `1.0`.
+
+This is the trap in reading `AnimationStatesLower.con` on its own, and §6a fell
+into it in good faith: the data is sitting right there, it is obviously a view
+bob, and it is obviously meant. It is also obviously switched off.
+
+### What ships
+
+`soldier.js` implements the engine's arithmetic exactly — per-channel
+`amplitude * sin(rate * t) * fade`, `fade` climbing at `fadeIn` per second, no
+speed term — and sets `CAMERA_SHAKE_FACTOR = 0`, the engine's value. A caller
+that wants the bob sets `soldier.cameraShakeFactor`, which is what the console
+property does, and gets the engine's real shape rather than an invention.
+
+Two behaviours are the engine's rather than the obvious choice. A locomotion
+shake does not fade *out*, because no `Lb_*` state declares
+`setCameraShakeFadeOut`: stopping zeroes it on the spot. And changing gait
+restarts the fade but not the clock, because `setCurrentState` (`0x006127f0`)
+zeroes the fade factor and leaves the time accumulator alone — so the sine never
+jumps mid-stride.
+
+`STEP_PERIOD` stays, unchanged and still from `SoldierSound.inc`, but it is now
+only the footstep clock. A stride and a camera shake turn out to be unrelated
+clocks; tying them together was the bug.
+
+### Measured, before and after
+
+Driven headlessly through `Soldier` over a 40 s hold, sampling the last 30, with
+rates taken off interpolated rising zero crossings. `still` is 0 everywhere in
+both.
+
+| gait | speed | before: vertical | after: vertical | declared |
+|---|---|---|---|---|
+| run | 6.00 | 0.080 m @ **5.556 Hz** | 0.080 m @ **2.387 Hz** | 15 rad/s = 2.387 Hz |
+| walk | 2.00 | 0.060 m @ **3.030 Hz** | 0.060 m @ **1.114 Hz** | 7 rad/s = 1.114 Hz |
+| crouch | 2.00 | 0.040 m @ 4.000 Hz | **0.070 m** @ 1.592 Hz | 10 rad/s = 1.592 Hz |
+| prone | 1.00 | 0.020 m @ 3.333 Hz | **0.040 m** @ 0.796 Hz | 5 rad/s = 0.796 Hz |
+| backpedal | 4.00 | 0.080 m @ 5.556 Hz | 0.080 m @ 2.387 Hz | run's, exactly |
+| strafe | 4.00 | 0.080 m @ 5.556 Hz | 0.080 m @ 2.387 Hz | run's, exactly |
+
+Every "after" rate matches its declaration to three decimals, in every channel,
+including the walk's 0.5 rad/s sway at 0.080 Hz — a 12.6 s period, which is why
+the measurement window is 30 s. The run's vertical bob was running at **2.33x**
+the engine's rate. At 0.08 m amplitude that is the reported bobble.
+
+And then, with `cameraShakeFactor` at the value the game ships: every number in
+the "after" column is zero, which is the state the player was comparing against
+when he said it used to be almost perfect.
+
+Evidence is recorded in `features/bf1942-engine-reference/`: `symbols.json` rows
+`0x00613e90`, `0x004facd0`, `0x0099000c`, `0x005dd6e0`, and `ledger.md` rows
+CS-1 through CS-6.
+
+---
+
 ## 7. What is still unknown
 
 Named individually, because each is a separate piece of work and none of them
@@ -1293,8 +1439,10 @@ changed its preferred reading from 1.56 to 1.65; both are inferences off
 - **Whether `SkeletonCollisionMesh` really is synthesised from the eight
   `setSkeletonCollisionBone` lines.** The named mesh `bodycollision_m1` ships
   nowhere in any mod, which leaves no other reading, but it is inference.
-- **`setCameraShake*`'s first argument.** Always 0 in all of vanilla. The other
-  two read as amplitude and frequency.
+- ~~**`setCameraShake*`'s first argument.**~~ **Settled** — a slot index,
+  0..2, for chaining up to three shakes per state. All of vanilla uses 0. The
+  other two are an amplitude and an angular rate in radians per second, and the
+  locomotion half of the whole system ships multiplied by zero. §6c.
 - **Swim.** `setSwimFrequency 1`, eight `3PSwim*` clips, `DamageFromWater 1` /
   `WaterDamageDelay 90` / `hpLostWhileDamageFromWater 1`. Not investigated; the
   collider already knows where the water is.
