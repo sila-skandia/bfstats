@@ -83,12 +83,27 @@ falsified something.
   instead of their declared `0.812/0.832/0.921`. Found independently by two
   audits. The fog work was correct about the engine and incomplete about the
   vocabulary.
-- **`kits.md`** prescribes a kit liveness filter that returns 40 of 45 vanilla
-  kits rather than the 35 it claims, and *keeps* the Canadian kits it expects to
-  drop: `Liberation_of_Caen/Init.con` binds all five via `game.setKit`. The same
-  file binds `game.setTeamSkin 2` twice, refuting the doc's "no level ever binds
-  two skins to one team". The real rule is last-write-wins per (team, slot).
-  Everything else in `kits.md` verified.
+- **`kits.md`** — the audit reported that the doc's liveness filter returns 40 of
+  45 kits rather than the 35 it claims, and *keeps* the Canadian kits the doc
+  expects to drop. **That conclusion is wrong, and was checked rather than
+  believed.** `Liberation_of_Caen/Init.con` does bind all five Canadian kits via
+  `game.setKit` — and then rebinds the same five slots:
+
+  ```con
+  game.setTeamSkin 2 CanadianSoldier
+  game.setKit 2 0 Canadian_Scout        rem ...and 1..4
+  game.setTeamSkin 2 BritishSoldier
+  game.setKit 2 0 GB_Scout              rem ...and 1..4
+  ```
+
+  Under last-write-wins per (team, slot) — the rule the audit itself named — the
+  GB kits replace the Canadians, which are therefore *not* live. The doc's 35 was
+  right. `extract_kits.py --list` reports `45 kits declared, 23 levels swept, 35
+  bound, 35 browsable` and no Canadian row, which is the correct answer.
+
+  What the audit got right, and what matters, is the **rule**: liveness is
+  last-write-wins per slot, not "a binding exists". The doc's claim that no level
+  binds two skins to one team is genuinely refuted by the same four lines.
 - **`spawn-points.md`** mentions the `Object.geometry.scale` grammar but frames
   it as an FHSW curiosity. It is vanilla, it is everywhere, and it is dropped —
   see below.
@@ -110,11 +125,20 @@ Merged across all seven reports, deduplicated, and ordered by impact over size.
 
 ### Landed in this pass
 
-| Gap | What it was |
+| Gap | What it was, and how it was verified |
 |---|---|
-| Level rotators frozen | `build_node` gathered spin specs; only `Assembler.export` baked them, and a level never calls it. 38 rotators across 20 of 23 maps stood still |
-| Entry points and seats deleted | A meshless node was dropped unless it was a `Camera`, taking all 69 `EntryPoint` and 66 `SeatObject` templates with it. `setEntryRadius` and `seatFlags` were never parsed either |
+| Level rotators frozen | `build_node` gathered spin specs; only `Assembler.export` baked them, and a level never calls it. 38 rotators across 20 of 23 maps stood still. Bocage now bakes `ambient -> euwindmillWings` on a 36 s period |
+| Rotators gated on the wrong thing | The first fix span parked aircraft propellers, which the game does not. Settled against the dedicated-server binary: `RotationalBundle::handleUpdate` runs off `deltaTime` alone and never reads a player, an input or an occupancy value, while throttle rotation is a separate virtual. Baked as two clip namespaces — `ambient*` always runs, `spin*` is throttle-gated. Both obvious shortcuts were wrong in both directions: either would have frozen all 21 ship radars to fix 8 propellers |
+| Entry points and seats deleted | A meshless node was dropped unless it was a `Camera`, taking all 69 `EntryPoint` and 66 `SeatObject` templates with it. `setEntryRadius` and `seatFlags` were never parsed either. Sherman now reports 5 seats with radii and display flags |
 | `alphaTestRef` unparsed | The other alpha-test spelling. 122 shaders gain a cutoff; 11 were exporting fully opaque — every scout helmet's foliage net, the church and iron-bridge fences |
+| Collision absent from map scenes | Now on by default (`--no-collision` opts out), and resolved from the high-detail LOD alternative, which was the trap that would have made it silently half-fail. Bocage: **537 collision nodes, 21,661 triangles, 50 distinct `defenseMaterial` ids**, including `eu_churchInterior collision 1`. Cost +1.1% on scene.glb |
+| Impact-effect table dropped | `damage.py` now parses `setEffectTemplate` and emits `effects[attacker][defender] -> template` |
+| Soldiers bare-headed | `bf42/kit.py` + `extract_kits.py` walk the `KitPart` / `setBoneName` tree. 45 kits declared, 35 live, 77 distinct worn meshes, resolved per nation and class |
+| Weapon behaviour discarded | `con.py` now parses the recoil, magazine, reload, zoom, scope, deviation, crosshair and ammo-type families |
+
+**Still open, and the point of the exercise:** the projectile collision loop
+itself. The geometry is in the scene and the effect table is in the manifest;
+nothing in `gunfire.js` yet raycasts against either.
 
 ### Keystones — do these first
 

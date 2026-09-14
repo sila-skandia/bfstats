@@ -17,7 +17,8 @@ work that came later, and each carries its own reproduce commands:
 | [`spawn-points.md`](spawn-points.md) | Control points and spawn points: what the engine draws for a flag, and why some maps show a bare capture zone instead. |
 | [`minimap-and-fullmap.md`](minimap-and-fullmap.md) | The map art, and the projection from world metres onto it. Corrects the rule the map-images skill documented. |
 | [`map-hud-plan.md`](map-hud-plan.md) | The viewer-side plan the HUD minimap and fullscreen map were built from. |
-| [`kits.md`](kits.md) | Why every extracted soldier is bare-headed, and what it would take not to be. `KitPart` + `setBoneName`, the three bones that exist, and a kit browser separate from the pose viewer. Vanilla + EoD, then the XPacks. Design only — not built. |
+| [`kits.md`](kits.md) | Why every extracted soldier was bare-headed, and what it took not to be. `KitPart` + `setBoneName`, the three bones that exist, and a kit browser separate from the pose viewer. Built — `extract_kits.py`. |
+| [`parity-gaps.md`](parity-gaps.md) | What the game does that we do not. Seven audits ([`parity-audit/`](parity-audit/)), what two or three of them found independently, where they disagree, and which repo docs they falsified. |
 
 ```bash
 cd tools/bf1942-models
