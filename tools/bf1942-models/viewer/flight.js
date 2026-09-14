@@ -517,21 +517,56 @@ export const CORSAIR = {
   thrustFadeSpeed: 70,
   cruiseSpeed: 55,        // where faded thrust balances drag; control authority reference
   drag: 0.0652,           // linear, s^-1 [data]
-  gravity: 9.81,
-  // The two inner wings are lift *regulators*: `setRegulateToLift 4.91` on each
-  // — exactly g/2, so the pair holds precisely 1 g and the aircraft flies on
-  // rails. They saturate at their +-2 degree travel, and below roughly 25 m/s
-  // they can no longer find the lift. That is BF1942's entire stall model.
-  regulateToLift: 4.905,
-  stallSpeed: 25,
-  // Lift accel per radian of angle of attack per (m/s). K_LIFT in the spec,
-  // calibrated so the regulators saturate at the stall speed. [free]
-  liftSlope: 1.4,
-  aoaClamp: 0.35,         // rad — per-surface lift saturation [free]
-  // Tuning targets from the surveyed data: full-stick roll 180-220 deg/s at
-  // cruise, sustained loop about 40 deg/s. Expressed here as body rates
-  // because this model applies them directly rather than deriving them from
-  // each surface's off-centre lift; see the header note.
+  // NOT 9.81. `BasicPhysicsSystem`'s constructor (retail client, 0x00578f00)
+  // seeds its gravity field with the literal 0xC16BAE14 = -14.7295, and nothing
+  // in a map load path ever writes it again: all 31 xrefs to the singleton are
+  // accounted for and the only `setGravity` callers are the chat cheats
+  // (EarthWalk -10, MoonWalk -1.67, SpaceWalk -0.1) and the console property.
+  // `physics.gravity` appears in no vanilla file, so the default is the value.
+  //
+  // The data agrees once you stop assuming: `setRegulateToLift 4.91` is g/3, not
+  // g/2 — 14.7295/3 = 4.9098, which is what 4.91 is a rounding of — and the SBD,
+  // which carries three regulators, therefore budgets exactly 1 g of regulated
+  // lift. See features/flyable-vehicles/flight-model.md section 2c.
+  //
+  // Kept local on purpose. `viewer/physics.js` is growing a shared constants
+  // module; when it lands this should read from it rather than declaring its own
+  // g, and `gunfire.js`'s own GRAVITY with it.
+  gravity: 14.7295,
+  // The two inner wings are lift *regulators*: `setRegulateToLift 4.91` each, so
+  // the pair holds 9.82 — two thirds of g, not all of it. A fighter makes the
+  // last third passively, off the +0.5 degree `setPitchOffset` incidence its
+  // wingLift surfaces carry (`incidence` below), which is why a Corsair holds
+  // altitude hands-off at cruise and sinks when it is slow. The regulators
+  // saturate at their +-2 degree travel below `regulatorSpeed`.
+  regulateToLift: 4.91,
+  // Where 4 (flapLift) x 2 deg x K_LIFT x v stops reaching 4.91 — see the
+  // calibration in flight-model.md section 9. Hands-off sink starts higher,
+  // near 17 m/s, because the incidence term gives out before the regulators do.
+  regulatorSpeed: 12.4,
+  // `setPitchOffset`, degrees: the static incidence on every lifting surface
+  // (0.5 in 53 of 54 vanilla uses), so a wing lifts at zero body attitude. [data]
+  incidence: 0.5,
+  // Lift accel per radian of surface angle per (m/s). The lumped whole-aircraft
+  // stand-in for the spec's per-surface K_LIFT = 2.83: K_LIFT x the 3.7 of
+  // wingLift the Corsair's two outer wings carry at incidence. Calibrated so
+  // regulators + incidence come to exactly g at the speed the model cruises at
+  // (53.7 m/s), which is the same "level flight is hands-off" target the old
+  // 1.4 met when the regulators alone were believed to make 1 g. [free]
+  liftSlope: 10.48,
+  // rad — per-surface lift saturation. 8 degrees, set so a full back-stick pull
+  // at cruise runs into the 6 g ceiling below rather than blowing past it; the
+  // old 0.35 was loose against a slope a seventh as stiff. [free]
+  aoaClamp: 0.14,
+  // Nose rates, not flight-path rates. Expressed here as body rates because
+  // this model applies them directly rather than deriving them from each
+  // surface's off-centre lift; see the header note. `rollRate` still meets the
+  // surveyed 180-220 deg/s at cruise (measured 191). `pitchRate` is left where
+  // it was, but the loop it used to imply is gone: at the corrected gravity a
+  // Corsair's thrust-to-weight is 1.02, so a 42 deg/s pull from level cruise is
+  // energy-limited and hangs before it comes over the top. It loops from a dive
+  // entry. flight-model.md section 9b has the energy arithmetic and says which
+  // constant to suspect if the real game disagrees.
   rollRate: 200,
   pitchRate: 42,
   yawRate: 16,
@@ -619,20 +654,31 @@ export class Aircraft extends Vehicle {
     const fade = Math.max(0, Math.min(1, 1 - forwardSpeed / k.thrustFadeSpeed));
     accel.addScaledVector(fwd, k.thrust * s.throttle * fade);
 
-    // Lift: the regulator pair holding 1 g, plus what angle of attack adds. The
-    // regulator is what makes the aircraft self-levelling; the alpha term is
-    // what lets it turn, and what makes it stop flying when the nose gets too
-    // far from the flight path.
+    // Lift, in the two terms the surface table actually has. The regulator pair
+    // is the closed loop that makes the aircraft self-levelling, but at 4.91
+    // each it only budgets two thirds of g; the rest is passive wing lift, and
+    // the angle it works on is the body's angle of attack *plus* the built-in
+    // `setPitchOffset` incidence. That second term is what holds a fighter up in
+    // level flight, what lets it turn, and what stops it flying when the nose
+    // gets too far from the flight path.
     let alpha = 0;
     if (speed > 1) {
       const flow = s.velocity.clone().divideScalar(speed);
       alpha = Math.asin(Math.max(-1, Math.min(1, -flow.dot(up))));
     }
-    const authority = Math.min(1, (speed / k.stallSpeed) ** 2);
+    // Linear in speed, like the alpha term below and like the per-surface model
+    // in the spec: a surface's lift is coefficient x angle x |v|. The regulator
+    // reaches its 4.91 target from `regulatorSpeed` up and runs out below it.
+    const authority = Math.min(1, speed / k.regulatorSpeed);
     const regulated = k.regulateToLift * 2 * authority;
+    const surfaceAngle = alpha + THREE.MathUtils.degToRad(k.incidence);
     const alphaLift = k.liftSlope
-      * Math.max(-k.aoaClamp, Math.min(k.aoaClamp, alpha)) * speed;
-    accel.addScaledVector(up, Math.min(regulated + alphaLift, k.gravity * 6));
+      * Math.max(-k.aoaClamp, Math.min(k.aoaClamp, surfaceAngle)) * speed;
+    // 6 g either way. The ceiling used to be one-sided because the slope was too
+    // gentle to reach it pushing over; at the calibrated slope it is not.
+    const ceiling = k.gravity * 6;
+    accel.addScaledVector(up,
+      Math.max(-ceiling, Math.min(regulated + alphaLift, ceiling)));
 
     accel.y -= k.gravity;
     accel.addScaledVector(s.velocity, -k.drag);
