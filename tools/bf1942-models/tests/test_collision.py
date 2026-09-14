@@ -123,6 +123,35 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertEqual(92, hit["material"])         # concrete
         self.assertTrue(self.results["nearestWins"])
 
+    def test_a_swept_sphere_stops_its_own_radius_short(self) -> None:
+        # The body query beside the round query. A ray down the middle of a
+        # doorway reports clear while the shoulders are already in the frame;
+        # this is the version that does not.
+        sweep = self.results["sweptSphere"]
+        self.assertIsNotNone(sweep)
+        self.assertEqual("object", sweep["kind"])
+        self.assertAlmostEqual(7.5, sweep["t"], places=4)
+        self.assertAlmostEqual(8.0, sweep["px"], places=4)    # the wall itself
+        self.assertAlmostEqual(-1.0, sweep["nx"], places=5)
+        self.assertEqual(92, sweep["material"])
+
+    def test_the_sweep_honours_the_owner_skip(self) -> None:
+        # Same rule as `cast`: a body must not collide with its own hull.
+        hit = self.results["sweptOwnerSkipped"]
+        self.assertAlmostEqual(11.5, hit["t"], places=4)
+        self.assertEqual(85, hit["material"])
+
+    def test_a_zero_radius_sweep_agrees_with_the_ray(self) -> None:
+        # Two independent narrowphases (Moller-Trumbore and a plane crossing)
+        # over the same triangle; they have to meet at radius 0.
+        self.assertAlmostEqual(8.0, self.results["sweptZeroRadiusMatchesTheRay"],
+                               places=4)
+
+    def test_a_level_with_no_hulls_sweeps_to_nothing(self) -> None:
+        # Levels exported before the collision flip have a heightfield and a sea
+        # and no statics; a body on one must fall back rather than throw.
+        self.assertTrue(self.results["sweptWithoutStatics"])
+
     def test_the_normal_faces_the_incoming_round(self) -> None:
         nx, ny, nz = self.results["facingNormal"]
         self.assertAlmostEqual(-1.0, nx, places=5)
