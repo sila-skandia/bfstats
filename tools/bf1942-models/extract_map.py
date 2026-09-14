@@ -1874,7 +1874,18 @@ def write_skybox(files, out_dir: Path) -> list[str] | None:
         path = mapping.get(face)
         if not path or not files.find(path):
             return None
-        width, height, rgba = decode_dds(files.read(path))
+        try:
+            width, height, rgba = decode_dds(files.read(path))
+        except Exception as exc:
+            # A cubemap is all six faces or none, and one unreadable face must
+            # not cost the level. Secret Weapons ships `env_EaglesNest_06.dds`
+            # with a scrambled header — it is the right length for the 128x128
+            # DXT1 its five clean siblings are, so only the header is wrong, and
+            # the engine loads Eagle's Nest regardless. Letting the exception out
+            # took a 1024 m map down over one skybox face.
+            print(f"  skybox face {face} ({path}): {exc}; extracting without a sky",
+                  file=sys.stderr)
+            return None
         rgba = _mirror_rgba(width, height, rgba, _FACE_MIRROR[face])
         (sky_dir / f"{face}.png").write_bytes(
             encode_png(width, height, rgba, drop_alpha=True))

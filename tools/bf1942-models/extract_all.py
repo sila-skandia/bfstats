@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR, build_library, build_pools, catalogue, mod_chain,
+    own_templates,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -79,6 +80,9 @@ def main() -> int:
                     help="restrict to these catalogue categories (default: all)")
     ap.add_argument("--exclude", nargs="*", default=[],
                     help="template names to leave out")
+    ap.add_argument("--own", action="store_true",
+                    help="only templates this mod declares itself, not the ones "
+                         "it inherits (Road to Rome: 15 rather than 113)")
     ap.add_argument("--level-all", action="store_true",
                     help="pass through: export theatre skin variants from level archives")
     ap.add_argument("--configuration-all", action="store_true",
@@ -110,12 +114,20 @@ def main() -> int:
     library = build_library(objects)
     entries = catalogue(objects, library)
 
+    # An expansion inherits its parent wholesale, so most of its catalogue is
+    # vanilla's. Extracting that again writes a second copy of every vanilla
+    # mesh into the mod's subtree; the viewer's mod picker can fall back to
+    # vanilla for those instead.
+    own = own_templates(chain, library) if args.own else None
+
     excluded = {name.lower() for name in args.exclude}
     wanted_categories = set(args.categories or CATEGORIES)
     selected: list[str] = []
     skipped: list[tuple[str, str]] = []
     for name, category, _source in entries:
-        if category not in wanted_categories:
+        if own is not None and name.lower() not in own:
+            skipped.append((name, "inherited from a parent mod (--own)"))
+        elif category not in wanted_categories:
             skipped.append((name, f"category {category} not requested"))
         elif name.lower() in excluded:
             skipped.append((name, "excluded by --exclude"))

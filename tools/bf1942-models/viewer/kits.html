@@ -513,6 +513,33 @@ import { selectMod } from './mods.js';
 const activeMod = await selectMod('models');
 const MODELS_BASE = activeMod.paths.models;
 const POSES_BASE = activeMod.paths.poses;
+
+// An expansion is extracted with `--own`: only the templates it declares for
+// itself, because Road to Rome's catalogue is 113 templates and 94 of them are
+// vanilla's. Its *kits* are not filtered the same way — a Road to Rome map
+// fields British riflemen, and a roster that hid them would misrepresent the
+// pack — so the page has to reach assets the mod's own subtree does not hold.
+//
+// Vanilla is the floor for exactly the reason inheritance works in the engine:
+// a Road to Rome British rifleman IS a vanilla British rifleman. Falling back to
+// it costs one extra fetch only on a miss, and only for mods.
+const VANILLA_MODELS = 'models';
+const VANILLA_POSES = 'models/poses';
+const isVanilla = activeMod.id === 'bf1942';
+
+/** Fetch from the mod's subtree, then vanilla. Null if neither has it. */
+async function fetchJson(relative, bases) {
+  for (const base of bases) {
+    try {
+      const response = await fetch(`${base}/${relative}${bust()}`);
+      if (response.ok) return await response.json();
+    } catch { /* try the next base */ }
+  }
+  return null;
+}
+
+const MODEL_BASES = isVanilla ? [MODELS_BASE] : [MODELS_BASE, VANILLA_MODELS];
+const POSE_BASES = isVanilla ? [POSES_BASE] : [POSES_BASE, VANILLA_POSES];
 const DEV_ORIGIN = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
 const NO_CACHE = DEV_ORIGIN || new URLSearchParams(location.search).has('nocache');
 const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
@@ -555,33 +582,39 @@ const loader = new GLTFLoader();
 // actually binds. A tree published before kits existed simply has no such file;
 // the page then says so rather than erroring, the same contract mods.js already
 // honours for a missing mods.json.
-const kitData = await fetch(`${MODELS_BASE}/kits.json${bust()}`)
-  .then(response => (response.ok ? response.json() : null))
-  .catch(() => null);
+const kitData = await fetchJson('kits.json', [MODELS_BASE]);
 
 // Whether a soldier can be shown *holding* a weapon is already recorded, per
 // pair, in the pose matrix. Joining against it beats having extract_kits.py
 // restate the fact: one source of truth, and a pose extraction that has not run
 // yet degrades on its own instead of making the manifest a liar.
-const poseMatrix = await fetch(`${POSES_BASE}/poses-matrix.json${bust()}`)
-  .then(response => (response.ok ? response.json() : null))
-  .catch(() => null);
-// Keyed lowercased, valued with the matrix's own spelling. The two halves are
-// not the same string: a `.con` file spells its templates however the author
-// felt that day — vanilla kits carry `MP40`, `walterp38` and `k98Sniper` while
-// the pose extraction wrote `Mp40`, `WalterP38` and `K98Sniper` — so a URL
-// built from the kit's spelling 404s on any case-sensitive server. Match
-// case-insensitively, then build the URL from what the matrix says.
-const posedPairs = new Map((poseMatrix?.pairs || [])
-  .filter(pair => !pair.error)
-  .map(pair => [`${pair.soldier}|${pair.weapon}`.toLowerCase(), pair]));
+// Keyed lowercased, valued with the matrix's own spelling AND the base it came
+// from. The two halves of the key are not the same string: a `.con` file spells
+// its templates however the author felt that day — vanilla kits carry `MP40`,
+// `walterp38` and `k98Sniper` while the pose extraction wrote `Mp40`,
+// `WalterP38` and `K98Sniper` — so a URL built from the kit's spelling 404s on
+// any case-sensitive server. Match case-insensitively, then build the URL from
+// what the matrix says.
+//
+// The mod's own matrix wins; vanilla fills the gaps `--own` left behind.
+const posedPairs = new Map();
+for (const base of [...POSE_BASES].reverse()) {
+  const matrix = await fetchJson('poses-matrix.json', [base]);
+  for (const pair of matrix?.pairs || []) {
+    if (pair.error) continue;
+    posedPairs.set(`${pair.soldier}|${pair.weapon}`.toLowerCase(), { ...pair, base });
+  }
+}
 
 // models.json gives the rack its thumbnails and its true-scale numbers. Absent
 // (or a weapon that was never extracted) is a visible gap, never a hidden one.
-const models = await fetch(`${MODELS_BASE}/models.json${bust()}`)
-  .then(response => (response.ok ? response.json() : []))
-  .catch(() => []);
-const modelByName = new Map(models.map(entry => [entry.name.toLowerCase(), entry]));
+// Same shape: the mod's entries win, vanilla's fill the gaps, and each carries
+// the base its `glb`/`thumb` paths are relative to.
+const modelByName = new Map();
+for (const base of [...MODEL_BASES].reverse()) {
+  for (const entry of (await fetchJson('models.json', [base])) || [])
+    modelByName.set(entry.name.toLowerCase(), { ...entry, base });
+}
 
 if (!kitData || !(kitData.kits || []).length) {
   statusLine.textContent = 'no kits extracted — run extract_kits.py';
@@ -783,8 +816,15 @@ const partCache = new Map();
 let grafted = [];
 
 async function loadPart(glb) {
-  if (!partCache.has(glb))
-    partCache.set(glb, (await loader.loadAsync(`${MODELS_BASE}/${glb}${bust()}`)).scene);
+  if (!partCache.has(glb)) {
+    let scene = null;
+    for (const base of MODEL_BASES) {
+      try { scene = (await loader.loadAsync(`${base}/${glb}${bust()}`)).scene; break; }
+      catch { /* a mod that ships only its own worn meshes falls back to vanilla */ }
+    }
+    if (!scene) return null;
+    partCache.set(glb, scene);
+  }
   return partCache.get(glb);
 }
 
@@ -854,6 +894,7 @@ async function applyWorn(kit) {
     const bone = boneNamed(current, part.bone);
     if (!bone) continue;                       // no such bone: silently bare, and the row says so
     const source = await loadPart(part.glb);
+    if (!source) continue;
     const node = source.clone(true);
     // The inverse bind, captured off this figure's own skeleton. Without it the
     // part inherits the bone's raw 3ds Max Biped frame — which runs along the
@@ -903,11 +944,11 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   // No pose clip for anything this kit carries — a soldier the pose extraction
   // never covered. The kit is still worth showing: fall back to the static
   // armoury figure so the worn parts and the rack still read.
-  const fallback = modelByName.get(String(state.soldier || '').toLowerCase())?.glb;
+  const figure = modelByName.get(String(state.soldier || '').toLowerCase());
   const pair = posedPair(state.soldier, state.held);
   const url = pair
-    ? `${POSES_BASE}/${pair.soldier}__${pair.weapon}.pose.glb${bust()}`
-    : fallback && `${MODELS_BASE}/${fallback}${bust()}`;
+    ? `${pair.base}/${pair.soldier}__${pair.weapon}.pose.glb${bust()}`
+    : figure?.glb && `${figure.base}/${figure.glb}${bust()}`;
 
   if (!url) {
     statusLine.hidden = false;
@@ -1030,7 +1071,7 @@ function renderRack(kit) {
     const thumb = item.entry?.thumb;
     const art = document.createElement(thumb ? 'img' : 'div');
     art.className = thumb ? 'slot-art' : 'slot-art is-absent';
-    if (thumb) { art.src = `${MODELS_BASE}/${thumb}`; art.alt = ''; art.loading = 'lazy'; }
+    if (thumb) { art.src = `${item.entry.base}/${thumb}`; art.alt = ''; art.loading = 'lazy'; }
 
     const name = document.createElement('div');
     name.className = 'slot-name';
