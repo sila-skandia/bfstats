@@ -161,6 +161,7 @@ import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
 import { Aircraft, findVehicle } from './flight.js';
 import { loadEngineAudio, findEngineSpec } from './engine-audio.js';
+import { GunFire } from './gunfire.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -675,6 +676,14 @@ function bindDynamicShading(root) {
   const cacheKey = `bf-dynamic-lit:${floorGlsl}|${sunGlsl}|${dirGlsl}`;
   root.traverse(obj => {
     if (!obj.isMesh || !obj.material) return;
+    // A muzzle flash is light, not a surface: the exporter bakes the sprite
+    // payloads unlit for exactly that reason, and the mesh payloads carry
+    // `extras.additive` instead. Both have to survive this pass — rebuilding
+    // them as MeshBasicMaterial here drops the userData the additive mark
+    // rides in, and `gunfire.js` would then blend the flash as ordinary alpha
+    // over the cockpit rail. Shading them would dim the one thing the shot is
+    // showing anyway.
+    if (obj.userData?.effect) return;
     const source = Array.isArray(obj.material) ? obj.material : [obj.material];
     if (!source.some(m => m.isMeshStandardMaterial)) return;
     const bound = source.map(m => {
@@ -1571,9 +1580,60 @@ function applyVisibility() {
 
 let aircraft = null;
 const AIR_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'Space',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
 ]);
+
+// --- the guns ---------------------------------------------------------------
+//
+// Same runtime as the model browser (`gunfire.js`), pointed at the flown
+// vehicle instead of a model on a turntable. The Corsair's `CorsairGuns` is a
+// two-barrel FireArms at 12 rounds a second, 400 m/s, tracer every third round,
+// and all of that is read out of the scene — nothing about the Corsair appears
+// below.
+//
+// Three things differ from firing a parked model, and all three are options:
+//
+//   - Rounds are parented to `scene`, never to the aircraft, or a tracer would
+//     hang off the wing at a fixed distance for its whole life. That is the
+//     module's own contract, so it costs nothing here beyond passing the
+//     world in.
+//   - `platformVelocity` adds the airframe's velocity to the muzzle's. Fired
+//     level it barely shows against 400 m/s; fired in a dive or a hard yaw the
+//     stream visibly leans away from the nose, which is the tell that the
+//     rounds are really in the world and not glued to the gun.
+//     Not modelled: the muzzle's own `omega x r` from the roll rate. At the
+//     Corsair's 200 deg/s and a 2.23 m semi-span that is 7.8 m/s across a
+//     400 m/s round — 1.1 degrees, the same order as the gun convergence the
+//     muzzle nodes already carry, and it needs the body-rate sign convention
+//     to be right to be worth having.
+//   - Real muzzle velocity (`speedScale: 1`) and the round's declared
+//     `timeToLive`. The browser slows fast rounds to 15% because a 400 m/s
+//     round crosses a parked model between two frames; from a cockpit moving
+//     at 50 m/s the round's motion *relative to you* is the picture, and it
+//     reads as the dashed stream the game draws. A `Tracer_Projectile` then
+//     lives its declared 3 s, which at 400 m/s is 1200 m — past Wake's 500 m
+//     draw distance, so in practice the stream fades into the fog and expires
+//     unseen, exactly as it does in game.
+const guns = new GunFire({ scene, camera });
+let aircraftGuns = [];
+
+function collectGuns() {
+  aircraftGuns = aircraft
+    ? guns.collect(aircraft.node, {
+      speedScale: 1,
+      maxRange: 1500,
+      roundLifetime: 'data',
+      tracerLength: 'data',
+      platformVelocity: () => aircraft?.state.velocity ?? null,
+    })
+    : [];
+}
+
+function releaseGuns() {
+  for (const group of aircraftGuns) guns.setFiring(group, false);
+  guns.clear();
+}
 // Stick position, -1..1. Held keys drive it toward full deflection and it
 // springs back to centre when they are released, which is what the surfaces'
 // own `setAutomaticReset 1` does in the engine.
@@ -1633,6 +1693,7 @@ function setPilot(on) {
     // reparenting out of `spawners` already took it off both lists, but the
     // spawn pose puts it on the deck, so lift it clear of its own wheels.
     aircraft.state.position.y += 0.2;
+    collectGuns();
   }
   if (on && aircraft) {
     // Ticking the box is the user gesture the autoplay policy wants; the same
@@ -1643,6 +1704,7 @@ function setPilot(on) {
   }
   if (!on && aircraft) {
     stopEngineAudio();
+    releaseGuns();
     aircraft.reset();
     aircraft.applyTransform();
     aircraft.applyRig();
@@ -1652,7 +1714,8 @@ function setPilot(on) {
   head.yaw = 0;
   head.pitch = 0;
   hud.textContent = on
-    ? 'W/S throttle · A/D rudder · arrows pitch and roll · mouse look around · R reset · Esc'
+    ? 'W/S throttle · A/D rudder · arrows pitch and roll · Space guns · '
+      + 'mouse look around · R reset · Esc'
     : HUD_FLY;
 }
 
@@ -1690,7 +1753,27 @@ function pilot(dt) {
   aircraft.setInput('c_PIRoll', stick.roll);
   aircraft.setInput('c_PIPitch', stick.pitch);
 
+  // The trigger is an input like any other, so a replay frame that writes
+  // `c_PIFire` fires the guns without knowing a keyboard exists. Which gun a
+  // given input pulls is the gun's own business: `CorsairGuns` declares
+  // `c_PIFire` and `CorsairBombDummy` declares `c_PIAltFire`, and the extractor
+  // ships both, so nothing here names either one.
+  aircraft.setInput('c_PIFire', held.has('Space') ? 1 : 0);
+
   aircraft.integrate(dt);
+
+  // After `integrate`, so a round leaves this frame's muzzle pose rather than
+  // last frame's — at 55 m/s that is a metre of lag, and it shows as tracers
+  // spawning behind the wing.
+  //
+  // `integrate` is also what settles the cockpit swap, and the flash follows
+  // the view: the pilot gets `em_1P_MuzzHeavy`'s 0.4 m sprite, an observer
+  // outside gets the 1.76 m `MuzzHeavy_m1` mesh that would otherwise hang five
+  // metres off the wing two metres from his eye.
+  guns.firstPerson = aircraft.firstPerson;
+  for (const group of aircraftGuns) {
+    guns.setFiring(group, aircraft.input(group.stats.input || 'c_PIFire') > 0);
+  }
 
   // The camera rides the cockpit node, with the free-look offset applied in the
   // aircraft's frame so the head turns with the plane rather than against it.
@@ -1798,6 +1881,11 @@ async function show(entry) {
     throw error;
   }
   extras = report;
+  // Before the old root is disposed: every gun is indexed off a node in it, and
+  // the rounds in the air are clones of nodes it owns.
+  releaseGuns();
+  guns.groups.length = 0;
+  aircraftGuns = [];
   dispose(currentRoot);
   disposeSky();
   disposeSounds();
@@ -1921,6 +2009,9 @@ function frame(dt) {
     fly(dt);
     applyLook();
   }
+  // Unconditional: rounds already in the air have to finish their flight even
+  // if the trigger, the pilot mode or the whole aircraft has gone away.
+  guns.advance(dt);
   applyVisibility();
   advanceSim(dt);
   updateAudio(dt);
@@ -1949,10 +2040,52 @@ if (params.has('shots')) {
   // __renderOnce, so a test can step it frame by frame and read the result.
   Object.defineProperty(window, '__aircraft', { get: () => aircraft });
   window.__stick = stick;
+  // The pilot's head, which the mouse drives and a headless run cannot: a
+  // Corsair's guns sit 40 degrees off the nose, so framing them means looking
+  // at them.
+  window.__head = head;
   // Headless checks fly through the real input path rather than poking the
   // aircraft: add key codes to __keys and open the gate with __setFly(true).
   window.__keys = keys;
   window.__setFly = setFly;
+  // Gun state, for headless checks. Muzzle world positions are what settles the
+  // question the moving-vehicle port exists to answer: a tracer's position must
+  // diverge from the muzzle it left, not travel with it.
+  window.__getFire = () => ({
+    groups: aircraftGuns.map(group => ({
+      name: group.node.name,
+      input: group.stats.input,
+      roundOfFire: group.stats.roundOfFire,
+      velocity: group.stats.velocity,
+      tracerInterval: group.stats.tracer?.interval ?? null,
+      firing: group.firing,
+      shots: group.shots,
+      muzzles: group.muzzles.map(node => {
+        node.updateWorldMatrix(true, false);
+        return {
+          name: node.name,
+          world: node.getWorldPosition(new THREE.Vector3()).toArray(),
+        };
+      }),
+      flashes: group.emitters.map(emitter => ({
+        name: emitter.node.name,
+        muzzle: emitter.muzzle?.name ?? null,
+        visible: emitter.node.visible,
+        additive: [emitter.node.material].flat()
+          .every(m => m.blending === THREE.AdditiveBlending),
+      })),
+    })),
+    tracers: guns.tracers.map(tracer => ({
+      position: tracer.mesh.position.toArray(),
+      velocity: tracer.velocity.toArray(),
+      bright: tracer.bright,
+      age: tracer.age,
+      ttl: tracer.ttl,
+      parent: tracer.mesh.parent === scene ? 'scene' : (tracer.mesh.parent?.name ?? null),
+    })),
+    projectiles: guns.projectiles.length,
+    pooled: guns.tracerPool.length,
+  });
   window.__getAudioState = () => ({
     audioListener,
     ambientAudio,

@@ -869,5 +869,80 @@ ObjectTemplate.destBlendMode BMOne
         self.assertEqual(-5.0, effect["speedInDof"])
 
 
+class EmitterViewBakeTests(unittest.TestCase):
+    """`showInFirstPerson` / `showInThirdPerson` ride along as `effect.view`.
+
+    This is `e_MuzzHeavy` in miniature — the bundle every vanilla aircraft gun
+    names as its `visibleBarrelTemplate`. It carries two flashes, and which one
+    the engine draws is the difference between a 0.4 m sprite at the pilot's
+    eye and a 1.76 m mesh ramped to nine times its own length.
+    """
+
+    def _bake(self):
+        library = ObjectLibrary()
+        library.add_con("Objects/Effects/e_TestMuzz/Effects.con", """
+ObjectTemplate.create EffectBundle e_TestMuzz
+ObjectTemplate.addTemplate em_TestMuzz
+ObjectTemplate.addTemplate em_1P_TestMuzz
+ObjectTemplate.addTemplate em_TestBoth
+
+ObjectTemplate.create Emitter em_TestMuzz
+ObjectTemplate.template Fx_TestMuzz
+ObjectTemplate.showInThirdPerson 1
+
+ObjectTemplate.create Emitter em_1P_TestMuzz
+ObjectTemplate.template Fx_1P_TestMuzz
+ObjectTemplate.showInFirstPerson 1
+
+ObjectTemplate.create Emitter em_TestBoth
+ObjectTemplate.template Fx_TestBoth
+
+ObjectTemplate.create SpriteParticle Fx_TestMuzz
+ObjectTemplate.timeToLive CRD_NONE/0.07/0/0
+ObjectTemplate.texture e_muz1_I
+ObjectTemplate.destBlendMode BMOne
+
+ObjectTemplate.create SpriteParticle Fx_1P_TestMuzz
+ObjectTemplate.timeToLive CRD_NONE/0.05/0/0
+ObjectTemplate.texture e_muz1_I
+ObjectTemplate.destBlendMode BMOne
+
+ObjectTemplate.create SpriteParticle Fx_TestBoth
+ObjectTemplate.timeToLive CRD_NONE/0.05/0/0
+ObjectTemplate.texture e_muz1_I
+ObjectTemplate.destBlendMode BMOne
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="e_TestMuzz", configuration="complex", lod=0)
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        assembler._sprite_mesh_cache["e_muz1_i"] = builder.add_mesh(
+            "fx quad", [triangle])
+        bundle = library.object("e_TestMuzz")
+        emitters = assembler._effect_emitter_nodes(builder, bundle, report)
+        document = glb_document(builder.build(emitters, extras=report.as_dict()))
+        return {node["name"]: node["extras"]["effect"]
+                for node in document["nodes"] if "extras" in node}
+
+    def test_first_person_emitters_are_kept_not_dropped(self) -> None:
+        # They used to be skipped outright, which is right for a browse
+        # thumbnail and wrong the moment a camera sits in a cockpit.
+        self.assertIn("em_1P_TestMuzz", self._bake())
+
+    def test_restricted_emitters_name_their_view(self) -> None:
+        baked = self._bake()
+        self.assertEqual("first", baked["em_1P_TestMuzz"]["view"])
+        self.assertEqual("third", baked["em_TestMuzz"]["view"])
+
+    def test_unrestricted_emitters_declare_no_view(self) -> None:
+        # 341 of vanilla's 364 emitters declare neither flag and are drawn in
+        # both views; so is every emitter in a glb baked before the flag was
+        # exported, which is why absence has to mean "both".
+        self.assertNotIn("view", self._bake()["em_TestBoth"])
+
+
 if __name__ == "__main__":
     unittest.main()
