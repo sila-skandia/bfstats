@@ -275,6 +275,11 @@ class ObjectTemplate:
     # pair into moving the same way.
     acceleration: tuple[float, float, float] | None = None
     inputs: dict[str, str] = field(default_factory=dict)   # yaw|pitch|roll -> input name
+    # An EntryPoint's boarding reach in metres, and a SeatObject's display
+    # flags. Both templates are meshless — their placement is the datum, so
+    # without these the node says where but never how close or who is drawn.
+    entry_radius: float | None = None
+    seat_flags: list[str] = field(default_factory=list)
     automatic_reset: bool = False
     skeleton: str | None = None
     # Which bone of that skeleton the object's own origin sits on. Weapon
@@ -282,6 +287,21 @@ class ObjectTemplate:
     # soldier, not where its geometry is centred — so bound parts are measured
     # against this bone rather than the root.
     skeleton_main: str | None = None
+    # `setBoneName <bone>` — a KitPart's attachment point on the *wearer's*
+    # skeleton. This is the whole of Refractor's kit-appearance channel: a
+    # soldier's own template declares a body, a head and two hands and nothing
+    # else, so every helmet, pack and hat in the game reaches him as a KitPart
+    # bolted to one of three bones of `animations/UsSoldier.ske` — `A` (a child
+    # of `Bip01 Head`, so headgear rides the animated head), `backpack` and
+    # `HipPack`. Distinct from `skeleton_part` above, which is a weapon sub-part
+    # naming a bone of *its own* skeleton.
+    bone_name: str | None = None
+    # `setType` / `setKitTeam` on a Kit. `setType` is the engine's own role
+    # vocabulary — Assault, AT, Engineer, Medic, Scout — and it is stable across
+    # every mod in the install, which the folder name is not, so it is the
+    # better source for a kit's class.
+    kit_type: str | None = None
+    kit_team: int | None = None
     invisible: bool = False
     animated_texture_speed: tuple[float, float] | None = None
     # Parts flagged `hasMobilePhysics 1` are separate physics bodies: an
@@ -513,6 +533,25 @@ class ObjectLibrary:
                             obj.team_geometry[int(parts[0])] = parts[1]
                         except ValueError:
                             pass
+                elif cmd == "settype":
+                    obj.kit_type = args.split()[0] if args else None
+                elif cmd == "setkitteam":
+                    try:
+                        obj.kit_team = int(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "setbonename":
+                    # Always the template's own attachment, never a child's, and
+                    # written before any `addTemplate` in every kit file in the
+                    # install. GCMOD quotes a bone with a space in it
+                    # (`"Bip01 R UpperArm"`), so take the quoted run when there
+                    # is one rather than the first whitespace token.
+                    text = args.strip()
+                    if text.startswith('"'):
+                        end = text.find('"', 1)
+                        obj.bone_name = text[1:end] if end > 0 else text[1:]
+                    else:
+                        obj.bone_name = text.split()[0] if text else None
                 elif cmd == "lodselector":
                     # Names the rule, never a child instance, so it is read onto
                     # the template even though it is written after the
@@ -548,6 +587,20 @@ class ObjectLibrary:
                 elif cmd in ("setinputtoyaw", "setinputtopitch", "setinputtoroll"):
                     if args:
                         obj.inputs[cmd.removeprefix("setinputto")] = args.split()[0]
+                elif cmd == "setentryradius":
+                    # How close a soldier has to stand to board. Vanilla runs
+                    # 1.1 m (a motorcycle) to 9 m (a battleship's deck).
+                    try:
+                        obj.entry_radius = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "seatflags":
+                    # Whether the occupant is drawn, and how much of him:
+                    # c_SeatIsOutside, c_SeatShow{Half,Full}BodySoldier,
+                    # c_SeatShowStandingSoldier. Accumulates — a template may
+                    # declare several.
+                    if flag := args.split()[0] if args.split() else None:
+                        obj.seat_flags.append(flag)
                 elif cmd == "setautomaticreset":
                     obj.automatic_reset = args.strip().startswith("1")
                 elif cmd == "createskeleton":
