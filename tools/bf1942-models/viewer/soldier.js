@@ -179,6 +179,31 @@ export const JUMP_SPEED = 3.0;
 /** m/s^2. Not declared for a soldier either; `gunfire.js` already uses 9.81. */
 export const GRAVITY = 9.81;
 
+/**
+ * How long the eye takes to travel between stances, seconds. Not invented —
+ * the animation state machine declares a clip and a rate for every one of these
+ * transitions, and `frames / (fps x speed)` is how long it plays:
+ *
+ *     Lb_StandToCrouch  3PStand2CrouchLower.baf  5 frames  4.0x   48 ms
+ *     Lb_CrouchToStand  3PStand2CrouchLower.baf  5 frames -4.0x   48 ms
+ *     Lb_StandToLie     3PStand2CrouchLower.baf  5 frames  4.0x   48 ms
+ *     Lb_CrouchToLie    3PCrouch2LieLower.baf    9 frames  1.6x  216 ms
+ *     Lb_LieToCrouch    3PCrouch2LieLower.baf    9 frames -2.0x  173 ms
+ *     Lb_LieToStand     3PCrouch2LieLower.baf    9 frames -3.0x  115 ms
+ *
+ * (`animations/AnimationStatesCrouching.con` and `...Lie.con`.) The one soft
+ * term is the nominal clip rate, which no header states; 26 fps is what the
+ * walk cycle implies against its own declared step period, and it is the same
+ * assumption `JUMP_SPEED` rests on. Getting dropping-prone right at 48 ms and
+ * standing-up-from-prone right at 115 ms is most of why BF1942 feels the way it
+ * does going down and coming up.
+ */
+export const STANCE_TRANSITION = {
+  'stand>crouch': 0.048, 'crouch>stand': 0.048,
+  'stand>prone': 0.048, 'prone>stand': 0.115,
+  'crouch>prone': 0.216, 'prone>crouch': 0.173,
+};
+
 // -- tuning that is purely runtime ------------------------------------------
 
 /** How far a foot may be above the floor before it is falling rather than standing. */
@@ -187,8 +212,6 @@ const GROUND_SNAP = 0.35;
 const SKIN = 0.02;
 /** Slide passes per frame. Three resolves a corner; more buys nothing. */
 const SLIDE_PASSES = 3;
-/** Stance change takes this long to travel, so the eye rises instead of teleporting. */
-const STANCE_EASE = 0.16;
 /** Terminal velocity, so a fall off the world cannot integrate to infinity. */
 const MAX_FALL = 80;
 
@@ -258,6 +281,9 @@ export class Soldier {
     // Eased so the eye travels between stances instead of cutting.
     this.eyeHeight = EYE.stand;
     this.height = HEIGHT.stand;
+    this.stanceFrom = EYE.stand;
+    this.stanceProgress = 1;
+    this.stanceDuration = STANCE_TRANSITION['stand>crouch'];
 
     this.speed = 0;           // horizontal, m/s, as actually achieved
     this.gait = 'stand';      // run | walk | crouch | prone | stand
@@ -285,6 +311,8 @@ export class Soldier {
     this.grounded = false;
     this.eyeHeight = EYE.stand;
     this.height = HEIGHT.stand;
+    this.stanceFrom = EYE.stand;
+    this.stanceProgress = 1;
     this.speed = 0;
     this.bobPhase = 0; this.stepPhase = 0; this.steps = 0;
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
@@ -389,7 +417,25 @@ export class Soldier {
       this.casts++;
       const probe = this.collider.cast(ox, oy, oz, dx, 0, dz, reach);
       if (!probe) continue;
-      const free = probe.t - RADIUS;
+      // How much travel to give up so the *body centre* ends one radius from
+      // the surface's plane, rather than the probe ending one radius from it.
+      //
+      // Subtracting a flat RADIUS is only right when the surface faces straight
+      // back down the direction of travel. Walk into a wall at 45 degrees and
+      // it is wrong twice over — the leading probe starts 17 cm nearer the
+      // wall, and a radius measured along the diagonal is only 22 cm of plane
+      // clearance — which together stopped the capsule 0.39 m out instead of
+      // 0.31. Both terms are exactly recoverable: `along` converts distance
+      // along the plane normal into distance along the direction of travel, and
+      // `offsetIntoPlane` is how much of the probe's lateral offset was already
+      // spent closing on the plane.
+      const along = Math.abs(dx * probe.nx + dz * probe.nz);
+      // A surface whose normal is perpendicular to the travel cannot stop it;
+      // the slide handles grazing contact.
+      if (along < 1e-3) continue;
+      const offsetX = sideX * lateral * RADIUS, offsetZ = sideZ * lateral * RADIUS;
+      const offsetIntoPlane = offsetX * probe.nx + offsetZ * probe.nz;
+      const free = probe.t - (RADIUS + offsetIntoPlane) / along;
       if (free < best) {
         best = free;
         nx = probe.nx; nz = probe.nz;
@@ -455,16 +501,24 @@ export class Soldier {
         && !this.headroom(HEIGHT[want])) {
       want = this.stance;
     }
-    this.stance = want;
-    // Ease the eye; snap the collision height, so a crouch under a beam takes
-    // effect on the frame you ask for it rather than 160 ms later.
+    if (want !== this.stance) {
+      // Travel from where the eye actually is, not from the stance's nominal
+      // height: reversing a transition halfway must not jump.
+      this.stanceFrom = this.eyeHeight;
+      this.stanceProgress = 0;
+      this.stanceDuration = STANCE_TRANSITION[`${this.stance}>${want}`] || 0.05;
+      this.stance = want;
+    }
+    // The collision height snaps even though the eye eases, so a crouch under a
+    // beam takes effect on the frame you asked for it rather than 200 ms later.
     this.height = HEIGHT[want];
-    const rate = dt / STANCE_EASE;
     const target = EYE[want];
-    const gap = target - this.eyeHeight;
-    this.eyeHeight = Math.abs(gap) <= Math.abs(rate * (EYE.stand - EYE.prone))
-      ? target
-      : this.eyeHeight + Math.sign(gap) * rate * (EYE.stand - EYE.prone);
+    if (this.stanceProgress >= 1) {
+      this.eyeHeight = target;
+      return;
+    }
+    this.stanceProgress = Math.min(1, this.stanceProgress + dt / this.stanceDuration);
+    this.eyeHeight = this.stanceFrom + (target - this.stanceFrom) * this.stanceProgress;
   }
 
   /** Is there room to be `height` tall here? */

@@ -151,17 +151,22 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   const s = fresh(4, 5, RUNWAY_Z, NORTH);
   results.spawnSettles = { y: s.y, grounded: s.grounded, eyeY: s.eyeY };
 
-  // Crouch is held; the eye eases rather than cutting.
-  const midway = [];
-  for (let i = 0; i < 4; i++) { s.step(DT, { crouch: true }); midway.push(s.eyeY); }
   walk(s, { crouch: true }, 60);
   results.crouchEye = s.eyeY;
-  results.crouchEased = midway[0] > midway[3] && midway[3] > EYE.crouch;
 
-  walk(s, { prone: true }, 90);
+  // crouch -> prone is the slowest declared transition (216 ms, 13 frames at
+  // 60 Hz), so it is the one where the ease is observable at all.
+  const down = [];
+  for (let i = 0; i < 20; i++) { s.step(DT, { prone: true }); down.push(s.eyeY); }
   results.proneEye = s.eyeY;
-  walk(s, {}, 90);
+  results.crouchToProneFrames = down.findIndex(y => Math.abs(y - EYE.prone) < 1e-6) + 1;
+  results.proneEaseMonotonic = down.slice(0, 12).every((y, i) => i === 0 || y <= down[i - 1] + 1e-9);
+
+  // prone -> stand is declared at 115 ms, about 7 frames.
+  const up = [];
+  for (let i = 0; i < 20; i++) { s.step(DT, {}); up.push(s.eyeY); }
   results.standEye = s.eyeY;
+  results.proneToStandFrames = up.findIndex(y => Math.abs(y - EYE.stand) < 1e-6) + 1;
 }
 
 // --- the four speeds, and Shift being the slow one -------------------------
@@ -218,15 +223,26 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
 // --- step up, and refuse to -----------------------------------------------
 
 {
+  // The 0.30 m kerb spans x 13..15, so a walk from 11.5 crosses it and steps off
+  // the far side again — the height while *on* it is what matters, not the end.
   const low = fresh(11.5, 0.5, -10);
   low.yaw = Math.PI / 2;
-  walk(low, { forward: 1 }, 120);
-  results.stepUp = { x: low.x, y: low.y, onKerb: low.y > 0.25 };
+  let lowPeak = 0, climbedAt = 0;
+  for (let i = 0; i < 120; i++) {
+    low.step(DT, { forward: 1 });
+    if (low.y > lowPeak) { lowPeak = low.y; climbedAt = low.x; }
+  }
+  results.stepUp = { peakY: lowPeak, climbedAt, endX: low.x, endY: low.y };
 
+  // The 0.80 m kerb spans x 16..18 and must stop him dead in front of it.
   const high = fresh(15.2, 0.5, -10);
   high.yaw = Math.PI / 2;
-  walk(high, { forward: 1 }, 120);
-  results.stepRefused = { x: high.x, y: high.y, stayedDown: high.y < 0.1 };
+  let highPeak = 0;
+  for (let i = 0; i < 120; i++) {
+    high.step(DT, { forward: 1 });
+    highPeak = Math.max(highPeak, high.y);
+  }
+  results.stepRefused = { x: high.x, peakY: highPeak, blocked: high.blocked };
 }
 
 // --- slopes ----------------------------------------------------------------
