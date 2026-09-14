@@ -163,43 +163,56 @@ A / Bip01 Head rest rotation
   [ 0.919 -0.370  0.139 ]
 ```
 
-A *skinned* mesh never notices, because its inverse-bind matrices cancel that
-frame for it. **A rigid graft has no inverse bind**, so parenting a helmet
-straight onto the bone hands it the Biped frame raw — 115 to 147 degrees out,
-depending on the bone. The graft must supply the inverse bind itself:
+**A KitPart is authored in bone space.** The hip pack is the proof: it needs no
+rotation at all. Parent it to `HipPack` and it is correct. So the bone's Biped
+frame is not an obstacle to cancel — it is the frame the artist worked in.
+
+The other two need a **180-degree flip**, on a different axis each:
+
+| slot | local rotation | quaternion |
+|---|---|---|
+| head (`A`) | 180° about Y | `(0, 1, 0, 0)` |
+| back (`backpack`) | 180° about Z | `(0, 0, -1, 0)` |
+| hip (`HipPack`) | none | identity |
+
+Half-turns are the signature of a **mirror**, not of an up-axis conversion.
+`ske.py` records that a `.ske` is stored mirrored in Z against the `.sm` it
+poses, and `gltf.py` applies the Refractor-to-glTF mirror on the way out; two
+mirrors about different axes compose to exactly a half-turn. The hip pack escapes
+because its bone frame already agrees. So:
 
 ```
-world = posed(bone) * inverse(world_rest(bone)) * mesh
+world = world(bone) * SLOT_ROTATION[slot]
 ```
 
-which is rigid skinning to a single bone, and is what the engine does with a
-KitPart.
+and nothing is captured, cancelled or derived at load time.
 
-**Where that rotation comes from is the whole lesson.** Computing it in
-`extract_kits.py` from `UsSoldier.ske` — transpose the bone's rest rotation, ship
-it in the manifest — is the obvious move and it is wrong, by 77 to 95 degrees.
-The skeleton file is several conversions upstream of the thing being posed: the
-`.ske` is stored mirrored in Z against the `.sm` it drives, `gltf.py` applies the
-Refractor-to-glTF mirror on the way out, and `assemble.py` adds `pitch -= 90` to
-stand a `BFSoldier` up on +Y. Reproducing that stack by hand is how you land 80
-degrees out.
+### Three wrong theories, in order
 
-The exported pose glb is the one place where **every** conversion has already
-been applied. So the viewer reads the correction straight off the loaded
-skeleton — `inverse(bone.getWorldQuaternion())`, captured once per figure — and
-measures 0.00 degrees. Three candidates, measured against the standalone part:
+Worth recording, because each was plausible and each produced a *measurement*
+that agreed with it.
 
-| local rotation | head | back | hip |
-|---|---|---|---|
-| none | 125.5° | 146.9° | 115.5° |
-| `inverse(rest)` from `UsSoldier.ske` | 77.7° | 94.9° | 79.3° |
-| **`inverse(world(bone))` off the pose glb** | **0°** | **0°** | **0°** |
+1. **"The graft needs no rotation."** Parent the mesh to the bone and let the
+   bone do the work. Every helmet came out upside down.
+2. **"It needs the bone's inverse bind, from `UsSoldier.ske`."** Transpose the
+   rest rotation, ship it in the manifest. Wrong by 77-95 degrees — the skeleton
+   file sits several conversions upstream of the posed figure, and reproducing
+   that stack by hand is how you miss by eighty degrees.
+3. **"It needs the inverse bind, read off the loaded pose glb."** Correct
+   reasoning, wrong target: `inverse(world(bone))` puts the part at world
+   *identity*, but the soldier's own mesh does not render at identity — it
+   renders about 92° about X. This scored **0.00°** on a check that asked "does
+   the grafted part match the standalone file", which is the wrong question.
+4. **"Then cancel the bone frame and pick a fixed world orientation."** This
+   makes orientation bone-independent, which sounded like the elegant answer and
+   read acceptably on the helmet. It lays the backpack through the torso,
+   perpendicular to the spine — which is what falsified the whole
+   bone-independence premise and pointed at bone space.
 
-It is captured with the **standing** clip forced on, never whatever stance the
-viewer happens to be in: the value is a property of the bind pose, and taking it
-mid-crouch would freeze that crouch's head tilt into the helmet permanently.
-Being a *local* rotation it then costs nothing per stance — the bone moves, the
-helmet moves.
+The answer came from a `?tune` panel: three buttons per slot, 90 degrees a click,
+and a person looking at the screen. Head took one X+90; back took three; hip took
+Z+90, Y+90, Z+90 — which composes to the identity, the tell that it had been
+right all along.
 
 ### Two blind metrics in a row
 

@@ -1271,6 +1271,9 @@ def _soldier_spawn_report(info: LevelInfo) -> list[dict]:
             # A spawn point declares no team; it inherits from the flag whose
             # spawnGroupId matches its setGroup.
             "team": gameplay.team_of_group(group),
+            # `setSpawnAsParaTroper` — this one puts you in the air under a
+            # chute, so an on-foot mode has to skip it.
+            "paratrooper": bool(tpl and tpl.paratrooper),
         })
     return out
 

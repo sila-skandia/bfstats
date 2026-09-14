@@ -419,7 +419,8 @@
     <label class="opt"><input type="checkbox" id="vehicles" checked> vehicles</label>
     <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
     <label class="opt"><input type="checkbox" id="pilot"> pilot the plane</label>
-    <label class="opt"><input type="checkbox" id="walk"> walk the map</label>
+    <label class="opt"><input type="checkbox" id="onfoot"> spawn on foot</label>
+    <select id="spawn-flag" aria-label="Spawn point" hidden></select>
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
     <label class="opt" style="display:flex;align-items:center;gap:6px;"><input type="range" id="sound-vol" min="0" max="1" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:var(--accent);"> vol</label>
   </aside>
@@ -477,7 +478,7 @@ import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
-import { SoldierBody, FixedStep, POSE_CROUCH, POSE_PRONE } from './physics.js';
+import { Soldier, spawnFlags, pickSpawn, spawnYaw, FOV_DEG as FOOT_FOV } from './soldier.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -493,11 +494,13 @@ const FLY_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE',
   'ShiftLeft', 'ShiftRight',
 ]);
-// The soldier's own bindings, which are the game's: Ctrl crouch, Z prone, Space
-// jump, Shift walk. Space and Ctrl both scroll or shortcut the page otherwise.
-const WALK_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyZ',
-  'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight',
+// On foot the keys are the game's own, from Settings/Default/Controls/Infantry.con:
+// W/S c_PIThrottle, A/D c_PIYaw (strafe), Shift c_PIWalk (the *slower* gait),
+// LeftCtrl c_PICrouch, Z c_PILie, Space c_PIAction. Space and Ctrl both scroll
+// or shortcut the page otherwise, which is why they are preventDefault'ed.
+const FOOT_KEYS = new Set([
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight',
+  'ControlLeft', 'ControlRight', 'KeyZ', 'Space',
 ]);
 
 // ?shots keeps the drawing buffer so canvas.toDataURL() works for external
@@ -576,7 +579,8 @@ const optEntire = document.getElementById('entire-map');
 const optSound = document.getElementById('sound');
 const optSoundVol = document.getElementById('sound-vol');
 const optPilot = document.getElementById('pilot');
-const optWalk = document.getElementById('walk');
+const optOnFoot = document.getElementById('onfoot');
+const spawnFlagSelect = document.getElementById('spawn-flag');
 const hud = document.getElementById('hud');
 const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 720);
 const HUD_FLY = hud.textContent;
@@ -589,8 +593,8 @@ function getTouchHudText() {
 function updateHud() {
   if (optPilot.checked) {
     hud.textContent = HUD_PILOT;
-  } else if (optWalk.checked) {
-    hud.textContent = HUD_WALK;
+  } else if (optOnFoot.checked) {
+    hud.textContent = HUD_FOOT;
   } else if (isTouchDevice) {
     hud.textContent = getTouchHudText();
   } else {
@@ -682,9 +686,9 @@ function clampAltitude() {
 }
 
 function panCamera(dx, dy) {
-  // A body owns the camera while it is walking; pan and dolly would fight it
+  // A body owns the camera while it is on foot; pan and dolly would fight it
   // for one frame and then lose to the next tick anyway.
-  if (optWalk.checked) return;
+  if (optOnFoot.checked) return;
   const gh = groundHeight(camera.position.x, camera.position.z);
   const alt = Number.isFinite(gh) ? Math.max(camera.position.y - gh, 15) : Math.max(camera.position.y, 15);
   const panSpeed = alt * 0.0018 * (isSlow() ? 0.35 : 1.0);
@@ -703,7 +707,7 @@ function panCamera(dx, dy) {
 }
 
 function dollyCamera(delta) {
-  if (optWalk.checked) return;
+  if (optOnFoot.checked) return;
   const d = lookVector();
   const gh = groundHeight(camera.position.x, camera.position.z);
   const alt = Number.isFinite(gh) ? Math.max(camera.position.y - gh, 15) : Math.max(camera.position.y, 15);
@@ -746,14 +750,12 @@ function resetCamera() {
     optPilot.checked = false;
     setPilot(false);
   }
-  // Walking stays walking: R puts the body back on the level's own camera spot
-  // rather than kicking the player out of the mode.
-  if (optWalk.checked) {
-    const cam = extras.camera;
-    look.yaw = initialCameraPose?.yaw ?? Math.PI;
-    look.pitch = 0;
-    dropSoldier(cam ? cam[0] : (initialCameraPose?.x ?? 0),
-                cam ? cam[2] : (initialCameraPose?.z ?? 0));
+  // On foot R respawns rather than resetting the camera — the keydown handler
+  // routes it to `spawnAtFlag` before it ever reaches here — but a reset that
+  // arrives from the on-screen button must not kick the player out of the mode
+  // or move a camera the body owns.
+  if (optOnFoot.checked && soldier) {
+    spawnAtFlag(true);
     return;
   }
   if (initialCameraPose) {
@@ -832,6 +834,13 @@ function lookDelta(dx, dy) {
     view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
     return;
   }
+  if (optOnFoot.checked && soldier) {
+    // The soldier owns the look: `setPointUpDownAngle 38.0 38.0` clamps the
+    // pitch, and the body yaws bodily because `SoldierCamera` declares no
+    // rotation of its own.
+    soldier.look(-dx * LOOK_SENS, -dy * LOOK_SENS);
+    return;
+  }
   look.yaw -= dx * LOOK_SENS;
   look.pitch = Math.max(-1.2, Math.min(1.2, look.pitch - dy * LOOK_SENS));
 }
@@ -852,23 +861,14 @@ addEventListener('keydown', e => {
   }
   keys.add(e.code);
   if (e.code === 'KeyR') {
-    if (optPilot.checked && aircraft) {
+    if (optOnFoot.checked && soldier) {
+      spawnAtFlag(true);
+    } else if (optPilot.checked && aircraft) {
       aircraft.reset();
       stick.roll = 0;
       stick.pitch = 0;
     } else if (!optPilot.checked) {
       resetCamera();
-    }
-  }
-  // The soldier's own keys, which are the game's bindings: Ctrl crouch and Z
-  // prone are toggles the way BF1942's are, Space is the jump.
-  if (optWalk.checked && soldier && captured && !e.repeat) {
-    if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
-      soldier.setCrouch(soldier.pose !== POSE_CROUCH);
-    } else if (e.code === 'KeyZ') {
-      soldier.setProne(soldier.pose !== POSE_PRONE);
-    } else if (e.code === 'Space') {
-      soldier.jump();
     }
   }
   // C cycles the view, which is `c_PIToggleCameraMode` bound to IDKey_C in every
@@ -877,8 +877,10 @@ addEventListener('keydown', e => {
       && optPilot.checked && view) {
     showView(view.cycle());
   }
+  // Z is `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
+  if (e.code === 'KeyZ' && !e.repeat && optOnFoot.checked && soldier) prone = !prone;
   if (captured && (FLY_KEYS.has(e.code)
-      || (optWalk.checked && WALK_KEYS.has(e.code))
+      || (optOnFoot.checked && FOOT_KEYS.has(e.code))
       || (optPilot.checked && AIR_KEYS.has(e.code)))) e.preventDefault();
 });
 addEventListener('keyup', e => keys.delete(e.code));
@@ -1160,79 +1162,6 @@ function fly(dt) {
   camera.position.y += (d.y * fwd + vert) * step;
   camera.position.z += (d.z * fwd + d.sy * strafe) * step;
   clampAltitude();
-}
-
-// --- walking ---------------------------------------------------------------
-//
-// The free-fly camera is a point with no mass; this is a body. `physics.js`
-// owns the arithmetic — the engine's -14.73 gravity, its four-sub-step
-// integrator, its hardcoded soldier speed tables and the pose camera offsets
-// out of `CommonSoldierData.inc` — and all this does is feed it the keyboard
-// and hang the camera off its eye.
-//
-// The clock is the one place the viewer deliberately disagrees with retail:
-// a fixed 60 Hz accumulator with render interpolation, where `World::update`
-// passes the raw frame dt straight down. Reason in the header of `physics.js`.
-
-let soldier = null;
-const walkClock = new FixedStep();
-const walkInput = { forward: 0, strafe: 0, walk: false };
-const walkEye = { x: 0, y: 0, z: 0 };
-const NO_KEYS = new Set();
-
-const HUD_WALK = 'WASD walk · Shift walk slowly · Ctrl crouch · Z prone · '
-  + 'Space jump · mouse look · R reset · M map · Esc';
-
-/** Put the body on the ground under a world (x, z), facing the current look. */
-function dropSoldier(x, z) {
-  if (!soldier) soldier = new SoldierBody({ world: collider });
-  soldier.world = collider;
-  const gh = groundHeight(x, z);
-  soldier.place(x, Number.isFinite(gh) ? gh : camera.position.y, z, look.yaw);
-  soldier.setCrouch(false);
-  soldier.setProne(false);
-  walkClock.reset();
-}
-
-function setWalk(on) {
-  if (on) {
-    // One camera, one owner. Piloting and walking cannot both hold it.
-    if (optPilot.checked) {
-      optPilot.checked = false;
-      setPilot(false);
-    }
-    // Straight down from wherever the free camera was looking, which is what
-    // makes "I want to stand *there*" one click rather than a hunt.
-    dropSoldier(camera.position.x, camera.position.z);
-    look.pitch = 0;
-  }
-  updateHud();
-}
-
-/**
- * Read the keyboard into the body and run whole ticks of it.
- *
- * Everything the player does between two ticks is collapsed into the input the
- * next tick reads — except the jump, which is latched inside `SoldierBody`
- * precisely so a tap that lands between ticks is not swallowed.
- */
-function walk(dt) {
-  if (!soldier) return;
-  // The level may have been rebuilt under it since the last frame.
-  soldier.world = collider;
-  soldier.yaw = look.yaw;
-  const held = captured ? keys : NO_KEYS;
-  walkInput.forward = (held.has('KeyW') || touchFlying ? 1 : 0)
-    - (held.has('KeyS') ? 1 : 0);
-  walkInput.strafe = (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0);
-  walkInput.walk = held.has('ShiftLeft') || held.has('ShiftRight');
-  const ticks = walkClock.advance(dt);
-  for (let i = 0; i < ticks; i++) soldier.step(walkClock.dt, walkInput);
-  // Drawn between the last two tick states, so a 144 Hz monitor sees smooth
-  // motion out of a 60 Hz sim rather than a 60 Hz stutter.
-  soldier.eye(walkClock.alpha, walkEye);
-  camera.position.set(walkEye.x, walkEye.y, walkEye.z);
-  applyLook();
 }
 
 function resize() {
@@ -2758,6 +2687,120 @@ function setPilot(on) {
 const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · Space guns · '
   + 'C view · mouse look around · R reset · Esc';
 
+// --- on foot ----------------------------------------------------------------
+//
+// All the arithmetic is in `soldier.js`, which imports nothing and is driven by
+// `tests/test_soldier.py` under node. This page only feeds it the keyboard and
+// takes the eye pose back, the same seam `flight.js` keeps between VehicleState
+// and the presentation layer.
+
+let soldier = null;
+let flags = [];
+let prone = false;           // `c_PILie` is a toggle, not a hold
+const FLY_FOV = camera.fov;
+const FLY_NEAR = camera.near;
+
+/** Fill the flag picker from the level's own control points. */
+function buildSpawnFlags() {
+  flags = spawnFlags(extras);
+  spawnFlagSelect.innerHTML = '';
+  for (const [index, flag] of flags.entries()) {
+    const option = document.createElement('option');
+    const side = flag.team === 1 ? 'Axis' : flag.team === 2 ? 'Allied' : 'neutral';
+    option.value = String(index);
+    option.textContent = `${flag.name} (${side}, ${flag.spawns.length})`;
+    spawnFlagSelect.appendChild(option);
+  }
+  spawnFlagSelect.hidden = !flags.length || !optOnFoot.checked;
+  return flags.length;
+}
+
+/** Put the soldier at the selected flag, on the next of its spawn points. */
+let spawnIndex = 0;
+function spawnAtFlag(advance = false) {
+  if (!soldier || !flags.length) return false;
+  const flag = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
+  if (advance) spawnIndex++;
+  const spawn = pickSpawn(flag, spawnIndex, { groundAt: groundHeight });
+  if (!spawn) return false;
+  soldier.collider = collider;
+  soldier.spawn(spawn.position[0], spawn.position[1], spawn.position[2],
+                spawnYaw(spawn));
+  prone = false;
+  hud.textContent = `${flag.name} · ${spawn.name}`;
+  clearTimeout(hudViewTimer);
+  hudViewTimer = setTimeout(() => {
+    if (optOnFoot.checked) hud.textContent = HUD_FOOT;
+  }, 2200);
+  return true;
+}
+
+function setOnFoot(on) {
+  if (on && optPilot.checked) {      // the two modes are exclusive
+    optPilot.checked = false;
+    setPilot(false);
+  }
+  if (on) {
+    soldier = new Soldier({ collider, worldSize: extras?.worldSize || 0 });
+    if (!buildSpawnFlags() || !spawnAtFlag()) {
+      // A level with no control point that owns a spawn group has nowhere to
+      // put a soldier; say so rather than dropping him at the origin.
+      soldier = null;
+      optOnFoot.checked = false;
+      spawnFlagSelect.hidden = true;
+      hud.textContent = 'this level declares no flag with soldier spawns';
+      return;
+    }
+    // `set1pFov 0.47`, and a near plane that clears the capsule so a wall you
+    // are pressed against is drawn rather than clipped through.
+    camera.fov = FOOT_FOV;
+    camera.near = 0.2;
+    camera.updateProjectionMatrix();
+    spawnFlagSelect.hidden = false;
+    hud.textContent = HUD_FOOT;
+  } else {
+    soldier = null;
+    spawnFlagSelect.hidden = true;
+    camera.fov = FLY_FOV;
+    camera.near = FLY_NEAR;
+    camera.updateProjectionMatrix();
+    // `getTouchHudText()`, not `HUD_TOUCH` — the latter is referenced twice in
+    // this file and declared nowhere, so reading it would throw on a phone.
+    hud.textContent = isTouchDevice ? getTouchHudText() : HUD_FLY;
+  }
+}
+
+const HUD_FOOT ='WASD move · mouse look · Shift walk · Ctrl crouch · Z prone · '
+  + 'Space jump · R respawn · Esc';
+
+/** Read the keyboard into the soldier and put the camera behind his eyes. */
+function onFoot(dt) {
+  if (!soldier) return;
+  soldier.collider = collider;
+  const held = captured ? keys : EMPTY_KEYS;
+  soldier.step(dt, {
+    forward: (held.has('KeyW') || touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
+    strafe: (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
+    walk: held.has('ShiftLeft') || held.has('ShiftRight'),
+    crouch: held.has('ControlLeft') || held.has('ControlRight'),
+    prone,
+    jump: held.has('Space'),
+  });
+  // `soldier.eye()` is the eye pose with the bob already on it, interpolated
+  // between the last two 60 Hz ticks — the sim runs on a fixed step inside
+  // `step()` above, so drawing at the last tick would stutter on any monitor
+  // that is not exactly 60 Hz. The bob's amplitudes are the game's
+  // `setCameraShake*`; `soldier.js` has the citation.
+  soldier.eye(footEye);
+  camera.position.set(footEye.x, footEye.y, footEye.z);
+  look.yaw = soldier.viewYaw;
+  look.pitch = soldier.pitch;
+  applyLook();
+}
+
+const EMPTY_KEYS = new Set();
+const footEye = { x: 0, y: 0, z: 0 };
+
 /** Announce the view C just selected, then fall back to the control list. */
 const VIEW_BLURB = {
   cockpit: 'cockpit · first person, from the pilot\'s eye point',
@@ -3308,14 +3351,13 @@ async function show(entry) {
   // the view rig holds a reference to it.
   aircraft = null;
   view = null;
+  soldier = null;
   if (optPilot.checked) setPilot(true);
+  if (optOnFoot.checked) setOnFoot(true);
   applyFar();
   if (!skyRoot) await loadSky(entry);
   applyFog();
   placeCamera();
-  // After `placeCamera`, because the body is dropped from wherever the camera
-  // ended up, and that is the level's own camera spot.
-  if (optWalk.checked) setWalk(true);
   wireframe(optWire.checked);
   applyVisibility();
   const t = extras.terrain || {};
@@ -3393,24 +3435,28 @@ optSoundVol.addEventListener('input', () => {
   updateAudio();
 });
 optPilot.addEventListener('change', () => {
-  if (optPilot.checked && optWalk.checked) {
-    optWalk.checked = false;
-    setWalk(false);
+  if (optPilot.checked && optOnFoot.checked) {
+    optOnFoot.checked = false;
+    setOnFoot(false);
   }
   setPilot(optPilot.checked);
   if (!optPilot.checked) placeCamera();
 });
-optWalk.addEventListener('change', () => {
-  setWalk(optWalk.checked);
-  if (!optWalk.checked) placeCamera();
+optOnFoot.addEventListener('change', () => {
+  setOnFoot(optOnFoot.checked);
+  if (!optOnFoot.checked) placeCamera();
+});
+spawnFlagSelect.addEventListener('change', () => {
+  spawnIndex = 0;
+  spawnAtFlag();
 });
 
 const clock = new THREE.Clock();
 function frame(dt) {
   if (optPilot.checked && aircraft) {
     pilot(dt);
-  } else if (optWalk.checked && soldier) {
-    walk(dt);
+  } else if (optOnFoot.checked && soldier) {
+    onFoot(dt);
   } else {
     fly(dt);
     applyLook();
@@ -3467,26 +3513,6 @@ if (params.has('shots')) {
   // aircraft: add key codes to __keys and open the gate with __setFly(true).
   window.__keys = keys;
   window.__setFly = setFly;
-  // The walking body, for the same reason: the sim is deterministic under
-  // __renderOnce, so a check can step it and read where the feet ended up.
-  // `__setWalk` drives the real toggle so the mode exclusion runs too.
-  Object.defineProperty(window, '__soldier', { get: () => soldier });
-  window.__setWalk = on => {
-    optWalk.checked = Boolean(on);
-    optWalk.dispatchEvent(new Event('change'));
-    return Boolean(soldier);
-  };
-  window.__walkState = () => soldier && ({
-    position: { ...soldier.position },
-    velocity: { ...soldier.velocity },
-    pose: soldier.pose,
-    grounded: soldier.grounded,
-    eyeHeight: soldier.eyeHeight,
-    contacts: soldier.contacts,
-    material: soldier.material,
-    ticks: walkClock.ticks,
-    dropped: walkClock.dropped,
-  });
   // Gun state, for headless checks. Muzzle world positions are what settles the
   // question the moving-vehicle port exists to answer: a tracer's position must
   // diverge from the muzzle it left, not travel with it.
@@ -3537,6 +3563,52 @@ if (params.has('shots')) {
     // cylinder pool, so a leak there is invisible to `pooled` alone.
     meshPooled: aircraftGuns.reduce((n, g) => n + g.tracerMeshPool.length, 0),
   });
+  // Turning, for the screenshot harness. It calls the same `lookDelta` a
+  // pointer-lock `pointermove` calls, so it exercises the real routing rather
+  // than writing yaw behind it — headless Chromium does not reliably grant
+  // pointer lock, and without this a harness can only ever walk one way.
+  //
+  // Named `__lookDelta` and not `__look`: `window.__look` is already the
+  // free-fly `look` object above, and an assignment here would silently take it
+  // away from every check that steers the free camera by writing yaw into it.
+  window.__lookDelta = (dx, dy) => { lookDelta(dx, dy); return window.__soldier(); };
+  // `__setOnFoot` drives the real checkbox so the pilot/on-foot exclusion, the
+  // flag list and the FOV swap all run exactly as a click would run them.
+  // `__setWalk` is the same thing under the name the walk checks use.
+  window.__setOnFoot = on => {
+    optOnFoot.checked = Boolean(on);
+    optOnFoot.dispatchEvent(new Event('change'));
+    return Boolean(soldier);
+  };
+  window.__setWalk = window.__setOnFoot;
+  // The man on the ground, for the same reason: his pose has to be readable
+  // from outside to assert that a wall stopped him where the capsule says.
+  //
+  // Both halves are reported — the presentation state this page consumes
+  // (stance, gait, bob, eye) and the body state `physics.js` integrates
+  // (position, velocity, pose index, contacts, ticks) — because a walk check
+  // asserting 6 m/s has to read the velocity the integrator produced, not the
+  // distance a frame happened to cover.
+  window.__soldier = () => soldier && ({
+    x: soldier.x, y: soldier.y, z: soldier.z,
+    eyeY: soldier.eyeY, yaw: soldier.yaw, pitch: soldier.pitch,
+    stance: soldier.stance, gait: soldier.gait, speed: soldier.speed,
+    grounded: soldier.grounded, blocked: soldier.blocked, onWater: soldier.onWater,
+    steps: soldier.steps, casts: soldier.casts,
+    bobUp: soldier.bobUp, bobSide: soldier.bobSide,
+    ground: groundHeight(soldier.x, soldier.z),
+    fov: camera.fov, near: camera.near,
+    flag: flags[Number(spawnFlagSelect.value) || 0]?.name || null,
+    flags: flags.map(f => ({ name: f.name, team: f.team, spawns: f.spawns.length })),
+    position: { ...soldier.body.position },
+    velocity: { ...soldier.body.velocity },
+    pose: soldier.body.pose,
+    contacts: soldier.body.contacts,
+    material: soldier.body.material,
+    ticks: soldier.clock.ticks,
+    dropped: soldier.clock.dropped,
+  });
+  window.__walkState = window.__soldier;
   // The collider itself, for measuring rather than for asserting: `__collision()`
   // drains the accumulated cast cost, so calling it once a second gives the real
   // microseconds-per-query number the feature doc quotes.
@@ -3556,6 +3628,10 @@ if (params.has('shots')) {
     },
     cost: collider.drainCost(),
   });
+  // The collider itself, for batch timing: `__castRay` allocates a point array
+  // and a result object per call, which is most of what a per-cast number
+  // measures if you time it through the wrapper.
+  window.__colliderRef = () => collider;
   window.__castRay = (from, dir, dist) => {
     const length = Math.hypot(dir[0], dir[1], dir[2]) || 1;
     const hit = collider?.cast(from[0], from[1], from[2],
