@@ -254,6 +254,36 @@ def build_library(objects: ArchivePool) -> con_mod.ObjectLibrary:
     return library
 
 
+def own_templates(chain: list[Path], library: con_mod.ObjectLibrary) -> set[str]:
+    """Template names the *first* mod in the chain declares for itself.
+
+    A mod inherits its parents wholesale — Road to Rome's catalogue is 113
+    templates, and 94 of them are vanilla's, because a Road to Rome map fields
+    Shermans like any other. Extracting those again writes a second copy of
+    every vanilla mesh into the mod's subtree.
+
+    `ArchivePool.source_of` cannot tell them apart: it returns the archive's
+    *filename*, and both vanilla and the expansion call theirs `Objects.rfa`.
+    So ask a narrower pool instead — one built from the mod's own archives and
+    nothing else. If the `.con` that declared a template is readable there, the
+    mod declared it; if it is not, the template arrived by inheritance.
+
+    An *override* counts as the mod's own, which is what you want: when DC Final
+    redefines `Medic_helm_us` it ships its own `.con` at the same path, and that
+    path resolves in its own pool.
+    """
+    own = ArchivePool()
+    archives = find_archives_dir(chain[0])
+    if archives is None:
+        return {name.lower() for name in library.objects}
+    own.add_dir(archives, OBJECT_ARCHIVES)
+    declared: set[str] = set()
+    for template in library.objects.values():
+        if own.try_read(template.source) is not None:
+            declared.add(template.name.lower())
+    return declared
+
+
 def spawn_folder(source: str) -> str:
     """Directory that contains this `.con` — the spawnable object's name.
 
