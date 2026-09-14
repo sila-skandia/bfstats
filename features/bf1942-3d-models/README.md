@@ -4,7 +4,7 @@ Pulls vehicles, soldiers and hand weapons out of the Refractor archives as
 textured glTF, and gives them a viewer to be judged in. Tooling lives in
 [`tools/bf1942-models/`](../../tools/bf1942-models).
 
-This file is the format and assembly record. Four companion docs go deeper on
+This file is the format and assembly record. The companion docs go deeper on
 work that came later, and each carries its own reproduce commands:
 
 | Doc | What it settles |
@@ -13,6 +13,11 @@ work that came later, and each carries its own reproduce commands:
 | [`extraction-rollout.md`](extraction-rollout.md) | Extracting and *verifying* the whole catalogue without eyeballing a render. Texture coverage re-measured at 96%. |
 | [`map-parity.md`](map-parity.md) | Why an extracted level did not look like the game — sky, water and terrain textures — and what remains. |
 | [`rendering-technology.md`](rendering-technology.md) | Whether the browser is the limit. Measured: it is not. No WASM or WebGPU pivot. |
+| [`map-hud.md`](map-hud.md) | What shipped: flags in the scene, the HUD minimap, the fullscreen map, and the `scene.json` fields behind them. |
+| [`spawn-points.md`](spawn-points.md) | Control points and spawn points: what the engine draws for a flag, and why some maps show a bare capture zone instead. |
+| [`minimap-and-fullmap.md`](minimap-and-fullmap.md) | The map art, and the projection from world metres onto it. Corrects the rule the map-images skill documented. |
+| [`map-hud-plan.md`](map-hud-plan.md) | The viewer-side plan the HUD minimap and fullscreen map were built from. |
+| [`kits.md`](kits.md) | Why every extracted soldier is bare-headed, and what it would take not to be. `KitPart` + `setBoneName`, the three bones that exist, and a kit browser separate from the pose viewer. Vanilla + EoD, then the XPacks. Design only — not built. |
 
 ```bash
 cd tools/bf1942-models
@@ -716,19 +721,11 @@ approach a grazing hit. Source geometry, collision material, def group and — w
 a weapon — projectile, att material and muzzle velocity are under **Technical
 details**.
 
-**Compare** is separate from armour inspection. Opponent parks a ghosted second
-vehicle to the right and opens a VS panel between the hulls. The panel answers
-one question first: **who is stronger**. The winner name is the hero line; under
-it a head-on duel scoreboard shows how many shots each side needs to kill the
-other through the decisive facing (front for tanks, or strongest shared armour
-when classes differ). Lower shots wins. Facings below that are a secondary
-breakdown — front / side / rear for tanks, hull for light vehicles, airframe
-for aircraft — each labelled you-stronger / them-stronger / even, with shot
-counts. Plate jargon (nose, glacis, …) stays in the tooltip, not the main
-readout. Each side picks its own gun (defaults to that vehicle's best against
-the opponent). The sidebar **Weapon** control is left alone for face inspection.
-Tiger is in the default extract set for the Panzer matchup (125 HP, plates
-51/53/54 against the Panzer's 100 HP and 50/51/52).
+A **Compare** panel used to sit beside this: it parked a ghosted opponent and
+scored a head-on duel between the two hulls. It was removed — reading a
+who-wins verdict off a shots-to-kill scoreboard turned out to be an unintuitive
+way to ask the question, and everything it computed is in the armour panel one
+face at a time.
 
 ## Where the game rules live
 
