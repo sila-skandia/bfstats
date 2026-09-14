@@ -686,6 +686,347 @@ export class Aircraft extends Vehicle {
   }
 }
 
+// --- camera modes ----------------------------------------------------------
+//
+// BF1942 cycles a vehicle's view on C (`c_PIToggleCameraMode`) and selects one
+// directly on F9-F12 (`c_PICameraMode1..4`). Which views a given seat offers is
+// data: `SoldierCamera` is the one vanilla template that spells the set out —
+// `CVMInside 1, CVMChase 0, CVMFrontChase 0, CVMFlyBy 0, CVMTrace 0,
+// CVMExternTrace 0`, an infantryman locked to first person. Vehicle cameras omit
+// the flags and get the engine's default cycle.
+//
+// BE CLEAR ABOUT WHAT IS RECONSTRUCTED AND WHAT IS INVENTED.
+//
+// Only `cockpit` below is read from data. Its eye point is the `<Vehicle>Camera`
+// node's own place in the vehicle (`CorsairCamera` at 0.028/1.202/0.04), its look
+// limits are that template's `setMinRotation -70/-40/0` / `setMaxRotation 70/5/0`,
+// and the interior mesh swap is its LodObject's `DistCompareSelector`.
+//
+// `chase`, `front` and `flyby` are OURS. A survey of every `Camera` template in
+// vanilla `Objects.rfa` plus thirteen installed mods — ~37,000 `.con` files —
+// finds a 13-command vocabulary on that template (setMinRotation, setMaxRotation,
+// setMaxSpeed, setAcceleration, setInputToYaw/Pitch/Roll, setPivotPosition,
+// toggleMouseLook, OutsideHudOffset, setHasTarget, setContinousRotationSpeed,
+// CVM*) and not one distance, offset, lag, spring or damping term among them. The
+// `CVM*` flags are booleans: they say a mode exists, never where it sits. So the
+// engine's chase framing is a hardcoded constant we cannot read, and every number
+// in this section is a viewer choice tuned by eye.
+//
+// `OutsideHudOffset` is the one per-vehicle datum that mentions the outside view
+// at all, and it is not a camera. Vanilla declares it 13 times, aircraft only,
+// Corsair `0/-0.4/4.45`. Refractor's +Z is forward (`CorsairEngine`, the
+// propeller, sits at z=+4.149; `CorsairRudder` at z=-2.649), so that point is
+// 0.3 m *past the propeller hub* — ahead of the aircraft, where a chase camera
+// can never be. It anchors the outside-view HUD reticle, exactly as its name
+// says, and nothing here uses it.
+//
+// See `features/flyable-vehicles/camera-modes.md`.
+
+/** The cycle order C walks, matching the game's inside -> outside progression. */
+export const CAMERA_MODES = ['cockpit', 'chase', 'front', 'flyby'];
+
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * Framing per external mode. Offsets are metres in the *follow frame* (the
+ * aircraft's heading with roll removed, see `followFrame`), -Z forward, so a
+ * positive `back` is behind the aircraft and a negative one is ahead of it.
+ *
+ * `tau` is the follow frame's smoothing time constant in seconds — the lag that
+ * makes these watchable rather than nauseating.
+ */
+const CHASE = {
+  // Far enough back that the Corsair's 12 m span sits inside the frame, high
+  // enough to see over the fuselage at the horizon.
+  back: 17, up: 4.2,
+  // Aim ahead of the nose rather than at it: the aircraft settles into the lower
+  // third and you can see where you are going, which is the whole point of a
+  // chase view and what makes it flyable.
+  lead: 22,
+  // 0.32 s. Long enough that a 200 deg/s full-stick roll is visibly absorbed,
+  // short enough that the aircraft never leaves the frame in a hard turn.
+  tau: 0.32,
+};
+const FRONT = {
+  // `roughly from the propeller`: the prop disc is 4.15 m ahead of the vehicle
+  // origin, so 11 m clears it and still frames the whole aircraft.
+  back: -11, up: 1.6,
+  // Aim behind the nose so the aircraft fills the frame looking back at you.
+  lead: -4,
+  // Tighter than the chase. A front camera that lags badly swings wide of the
+  // nose and shows the aircraft in profile instead of head-on; a little lag is
+  // still wanted, because it is what banks the aircraft across the frame in a
+  // turn rather than pivoting it in place.
+  tau: 0.18,
+};
+
+/**
+ * Fly-by compositions, cycled in order so successive plants differ on purpose.
+ *
+ * `lateral` is the closest-approach distance (the camera plants this far off the
+ * flight path), `up` its height relative to the aircraft. The three are a level
+ * close pass, a low wide one that throws the aircraft against the sky, and a high
+ * one that puts it against the terrain.
+ */
+const FLYBY_SHOTS = [
+  { lateral: 38, up: 5 },
+  { lateral: 64, up: -14 },
+  { lateral: 46, up: 26 },
+];
+const FLYBY = {
+  // How far ahead to plant, as seconds of flight. The aircraft then takes about
+  // this long to arrive, which is the pause that makes it read as a held shot
+  // rather than a jump cut.
+  lead: 3.2,
+  minLead: 70, maxLead: 260,
+  // Speed floor for the lead, so a parked or stalled aircraft still plants a
+  // camera a sensible distance away instead of on top of itself.
+  minSpeed: 35,
+  // Re-plant once the aircraft is this far *and receding*. Both terms matter:
+  // the plant distance itself is already ~180 m, so a bare distance test would
+  // re-plant every frame.
+  replant: 300,
+  // Never plant inside the terrain or the sea.
+  clearance: 4,
+};
+
+/** Mouse-look limits per mode, radians. Cockpit's pair is the only one in data. */
+const LOOK_LIMITS = {
+  // `CorsairCamera`: setMinRotation -70/-40/0, setMaxRotation 70/5/0. [data]
+  cockpit: { yaw: Math.PI * 70 / 180, pitchDown: -Math.PI * 40 / 180, pitchUp: Math.PI * 5 / 180 },
+  // An external camera orbits rather than swivels a neck, so it gets the full
+  // circle and a pitch stopping short of the poles where the frame would flip.
+  chase: { yaw: Infinity, pitchDown: -1.2, pitchUp: 1.2 },
+  front: { yaw: Infinity, pitchDown: -1.2, pitchUp: 1.2 },
+  // Fly-by is a camera on a tripod in the world. It has no operator's head.
+  flyby: null,
+};
+
+/**
+ * The view rig for a flown vehicle: the four modes, and the state that smooths
+ * them.
+ *
+ * Kept out of the page because it needs the vehicle's orientation every frame and
+ * nothing else, so a replay viewer or a second page gets it for free. The one
+ * thing it cannot know on its own is where the ground is; `groundHeight` is
+ * injected the same way `Aircraft.groundHeight` is.
+ */
+export class VehicleCamera {
+  /**
+   * @param {Vehicle} vehicle
+   * @param {{mode?: string, groundHeight?: (x: number, z: number) => number}} [options]
+   */
+  constructor(vehicle, options = {}) {
+    this.vehicle = vehicle;
+    this.mode = options.mode || CAMERA_MODES[0];
+    this.groundHeight = options.groundHeight || (() => -Infinity);
+    /** Mouse-look offset, radians, clamped per mode by `look()`. */
+    this.look = { yaw: 0, pitch: 0 };
+    /**
+     * The roll-free heading frame the external views hang off, carried between
+     * frames. It is the smoothing state *and* the continuity state: a basis
+     * rebuilt from scratch each frame would flip as the nose passes vertical,
+     * where `fwd x worldUp` degenerates.
+     */
+    this.follow = new THREE.Quaternion();
+    this.followValid = false;
+    /** Fly-by: where the tripod is standing, and which composition is next. */
+    this.anchor = new THREE.Vector3();
+    this.anchored = false;
+    this.shot = 0;
+    this.side = 1;
+    this.pose = {
+      position: new THREE.Vector3(),
+      quaternion: new THREE.Quaternion(),
+    };
+    // Scratch, so a per-frame update allocates nothing.
+    this._fwd = new THREE.Vector3();
+    this._right = new THREE.Vector3();
+    this._up = new THREE.Vector3();
+    this._offset = new THREE.Vector3();
+    this._target = new THREE.Vector3();
+    this._basis = new THREE.Matrix4();
+    this._q = new THREE.Quaternion();
+  }
+
+  /** Does this mode show the first-person interior? Exactly one does. */
+  get firstPerson() {
+    return this.mode === 'cockpit';
+  }
+
+  /** Select a mode by name, or fall back to the cockpit. */
+  setMode(mode) {
+    if (!CAMERA_MODES.includes(mode)) mode = CAMERA_MODES[0];
+    if (mode === this.mode) return this.mode;
+    this.mode = mode;
+    // A head turned 70 degrees left in the cockpit should not become an orbit
+    // 70 degrees round the tail, and an orbit should not survive back into the
+    // cockpit as a crick in the pilot's neck. Every mode starts looking forward.
+    this.look.yaw = 0;
+    this.look.pitch = 0;
+    // Re-plant on entering fly-by rather than resuming the tripod the aircraft
+    // left behind minutes ago, which would otherwise open on an empty sky.
+    if (mode === 'flyby') this.anchored = false;
+    this.vehicle.setFirstPerson(this.firstPerson);
+    return this.mode;
+  }
+
+  /** What C does: the next view round the cycle. */
+  cycle() {
+    const i = CAMERA_MODES.indexOf(this.mode);
+    return this.setMode(CAMERA_MODES[(i + 1) % CAMERA_MODES.length]);
+  }
+
+  /** Feed mouse motion in, already scaled to radians. Clamped per mode. */
+  turn(dyaw, dpitch) {
+    const limit = LOOK_LIMITS[this.mode];
+    if (!limit) return;
+    this.look.yaw = limit.yaw === Infinity
+      ? this.look.yaw + dyaw
+      : Math.max(-limit.yaw, Math.min(limit.yaw, this.look.yaw + dyaw));
+    this.look.pitch = Math.max(limit.pitchDown,
+      Math.min(limit.pitchUp, this.look.pitch + dpitch));
+  }
+
+  /**
+   * Rebuild the roll-free follow frame from the aircraft's nose, and ease the
+   * carried one toward it.
+   *
+   * This is the anti-nausea mechanism, and it is one decision rather than two.
+   * A camera rigidly parented to the airframe inherits a 200 deg/s roll, which
+   * is unusable; a camera that merely lags a rigid parent still rolls, just
+   * late. So the *target* has the roll taken out of it before any smoothing —
+   * the frame keeps the aircraft's heading and pitch and derives its up from
+   * world up, which leaves the horizon level while the aircraft rolls inside
+   * the frame, where you can actually see it happening.
+   *
+   * The smoothing on top is then only about lag, and because position hangs off
+   * this same frame, one time constant buys both the orientation ease and the
+   * positional swing behind the aircraft in a turn.
+   *
+   * Refractor's own precedent for decoupling a mount from its platform is
+   * `setAutomaticYawStabilization` / `setAutomaticPitchStabilization`, 15 live
+   * uses in vanilla — all of them pintle MG mounts on open-top vehicles, none of
+   * them a camera. The idea is the engine's; pointing it at a camera is ours.
+   */
+  followFrame(dt) {
+    const s = this.vehicle.state;
+    this._fwd.set(0, 0, -1).applyQuaternion(s.orientation);
+    this._right.crossVectors(this._fwd, WORLD_UP);
+    if (this._right.lengthSq() < 1e-6) {
+      // Nose within a fraction of a degree of vertical: world up gives no
+      // heading at all. Borrow the airframe's own right, which is continuous
+      // through the top of a loop and is the only frame available there.
+      this._right.set(1, 0, 0).applyQuaternion(s.orientation);
+    }
+    this._right.normalize();
+    this._up.crossVectors(this._right, this._fwd).normalize();
+    this._basis.makeBasis(this._right, this._up, this._fwd.clone().negate());
+    this._q.setFromRotationMatrix(this._basis);
+    if (!this.followValid) {
+      this.follow.copy(this._q);
+      this.followValid = true;
+      return;
+    }
+    const tau = (this.mode === 'front' ? FRONT : CHASE).tau;
+    // Frame-rate independent exponential ease: the fraction of the remaining gap
+    // to close this step. A bare `slerp(q, 0.1)` would smooth twice as hard at
+    // 120 Hz as at 60.
+    this.follow.slerp(this._q, 1 - Math.exp(-dt / Math.max(tau, 1e-4)));
+  }
+
+  /**
+   * Stand the fly-by camera up somewhere ahead of the aircraft.
+   *
+   * The rule, so that it reads as a deliberate shot and not a dice roll: plant
+   * `lead` seconds of flight ahead along the *heading* (the roll-free frame, so
+   * a camera is never planted sideways because the aircraft happened to be
+   * inverted), `lateral` metres to one side, and alternate sides each plant so
+   * two consecutive fly-bys never mirror each other. The composition rotates
+   * through `FLYBY_SHOTS`. Finally lift the anchor clear of the terrain, because
+   * a trackside camera buried in a hillside films a hillside.
+   */
+  plant() {
+    const s = this.vehicle.state;
+    const shot = FLYBY_SHOTS[this.shot % FLYBY_SHOTS.length];
+    this.shot += 1;
+    const speed = Math.max(s.velocity.length(), FLYBY.minSpeed);
+    const lead = Math.max(FLYBY.minLead, Math.min(FLYBY.maxLead, speed * FLYBY.lead));
+    this.anchor.copy(s.position)
+      .addScaledVector(this._fwd, lead)
+      .addScaledVector(this._right, this.side * shot.lateral);
+    this.anchor.y += shot.up;
+    const floor = this.groundHeight(this.anchor.x, this.anchor.z);
+    if (Number.isFinite(floor)) {
+      this.anchor.y = Math.max(this.anchor.y, floor + FLYBY.clearance);
+    }
+    this.side = -this.side;
+    this.anchored = true;
+  }
+
+  /**
+   * Advance one frame and return the world pose the page should give the camera.
+   *
+   * @param {number} dt seconds
+   * @returns {{position: THREE.Vector3, quaternion: THREE.Quaternion}}
+   */
+  update(dt) {
+    const s = this.vehicle.state;
+    const out = this.pose;
+
+    if (this.mode === 'cockpit') {
+      // Straight off the `<Vehicle>Camera` node, which is already posed in world
+      // space by `applyTransform`. The head offset goes on in the aircraft's own
+      // frame so the pilot turns with the plane rather than against it.
+      this.vehicle.cameraPose(out);
+      if (this.look.yaw || this.look.pitch) {
+        out.quaternion.multiply(this._q.setFromEuler(
+          new THREE.Euler(this.look.pitch, this.look.yaw, 0, 'YXZ')));
+      }
+      // Keep the follow frame warm so switching to an external view opens
+      // already settled behind the aircraft rather than snapping into place.
+      this.followFrame(dt);
+      return out;
+    }
+
+    this.followFrame(dt);
+
+    if (this.mode === 'flyby') {
+      // A planted camera, tracking. Re-plant only once the aircraft is both far
+      // away and going further — the anchor starts ~180 m out, so a bare
+      // distance test would re-plant on the frame it was planted.
+      const receding = this.anchored
+        && s.velocity.dot(this._target.subVectors(this.anchor, s.position)) < 0;
+      if (!this.anchored
+        || (receding && s.position.distanceTo(this.anchor) > FLYBY.replant)) {
+        this.plant();
+      }
+      out.position.copy(this.anchor);
+      // Level: a tripod does not roll, so world up, and the aircraft centred.
+      this._basis.lookAt(out.position, s.position, WORLD_UP);
+      out.quaternion.setFromRotationMatrix(this._basis);
+      return out;
+    }
+
+    const rig = this.mode === 'front' ? FRONT : CHASE;
+    // Orbit the offset inside the follow frame, so the mouse swings the camera
+    // around the aircraft and a centred mouse is the framing above.
+    this._offset.set(0, rig.up, rig.back)
+      .applyEuler(new THREE.Euler(this.look.pitch, this.look.yaw, 0, 'YXZ'))
+      .applyQuaternion(this.follow);
+    out.position.copy(s.position).add(this._offset);
+    // Aim at a point along the *smoothed* heading rather than the live nose, or
+    // the aim would reintroduce the high-frequency motion the frame just took
+    // out. Up comes from the same frame, which is what holds the horizon level
+    // through a roll and stays continuous over the top of a loop.
+    this._target.set(0, 0, -rig.lead).applyQuaternion(this.follow).add(s.position);
+    this._up.set(0, 1, 0).applyQuaternion(this.follow);
+    this._basis.lookAt(out.position, this._target, this._up);
+    out.quaternion.setFromRotationMatrix(this._basis);
+    return out;
+  }
+}
+
 // --- discovery -------------------------------------------------------------
 
 /**
