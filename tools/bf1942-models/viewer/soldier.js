@@ -486,7 +486,7 @@ export class Soldier {
     const travelled = demand > 0 ? this.moveHorizontal(wishX, wishZ, demand) : 0;
     this.speed = dt > 0 ? travelled / dt : 0;
 
-    this.moveVertical(dt, input);
+    this.moveVertical(dt, input, travelled > 1e-5);
     this.advanceBob(dt, travelled);
     return this;
   }
@@ -603,12 +603,13 @@ export class Soldier {
   }
 
   /** Gravity, the jump, the floor, and the ceiling. */
-  moveVertical(dt, input) {
+  moveVertical(dt, input, movedHorizontally) {
     if (this.grounded && input.jump && this.stance === 'stand') {
       this.velocityY = JUMP_SPEED;
       this.grounded = false;
     }
 
+    const wasAt = this.y;
     if (!this.grounded) {
       this.velocityY = Math.max(-MAX_FALL, this.velocityY - GRAVITY * dt);
       const rise = this.velocityY * dt;
@@ -619,22 +620,43 @@ export class Soldier {
       }
     }
 
-    // Where is the floor now? Probe from a little above the feet so a step
-    // climbed this frame is found, and far enough below to catch a short drop.
-    const floor = this.floorAt(this.x, this.z, this.y + STEP_UP,
-                               STEP_UP + GROUND_SNAP + Math.abs(this.velocityY * dt));
-    if (floor && this.y <= floor.y + 1e-4) {
-      this.y = floor.y;
-      this.velocityY = 0;
-      this.grounded = true;
-    } else if (floor && this.grounded && this.velocityY <= 0
-               && this.y - floor.y <= GROUND_SNAP) {
+    // Where is the floor now? Probe from a step's height above the feet while
+    // standing, so a kerb crossed this frame is found; from barely above them
+    // while airborne, so a fall is not teleported onto a ledge it is passing.
+    //
+    // The probe starts from wherever the feet were *higher* this frame, which is
+    // what makes it swept: at terminal speed a frame covers 1.3 m, and a probe
+    // that began where gravity had already put you would pass straight through
+    // the ground and never find it again.
+    const probeUp = this.grounded ? this.stepUp() : 0.02;
+    const from = Math.max(this.y, wasAt) + probeUp;
+    const floor = this.floorAt(this.x, this.z, from,
+                               from - (this.y - GROUND_SNAP));
+    if (!floor) {
+      if (this.velocityY <= 0) this.grounded = false;
+      this.onWater = false;
+      return;
+    }
+    const rise = floor.y - this.y;
+    if (rise > 1e-4) {
+      // Being raised has to be *caused* by something. A step you walked onto,
+      // or a surface you came down on — never simply standing still, or a body
+      // parked inside stacked geometry ratchets a step's height upward every
+      // frame until it is on the roof.
+      const stepping = this.grounded && movedHorizontally && rise <= this.stepUp();
+      const landing = !this.grounded || this.velocityY < 0;
+      if (stepping || landing) {
+        this.y = floor.y;
+        this.velocityY = 0;
+        this.grounded = true;
+      }
+    } else if (this.grounded && this.velocityY <= 0 && -rise <= GROUND_SNAP) {
       this.y = floor.y;                       // walked down a kerb, stayed glued
       this.velocityY = 0;
     } else if (this.velocityY <= 0) {
-      this.grounded = false;
+      this.grounded = false;                  // walked off a ledge
     }
-    this.onWater = this.grounded && !!floor && floor.kind === 'water';
+    this.onWater = this.grounded && floor.kind === 'water';
   }
 
   /**
