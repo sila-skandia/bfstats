@@ -39,8 +39,9 @@ from bf42 import roster as roster_mod
 from bf42.assemble import Assembler
 from bf42.rfa import ArchivePool
 
-from extract_models import (DEFAULT_GAME_DIR, build_library, build_pools,
-                            discover_levels, mod_chain)
+from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, build_library,
+                            build_pools, discover_levels, mod_chain)
+from bf42.rfa import find_archives_dir
 
 # The rotation that seats a part on its bone is NOT computed here. It is the
 # bone's inverse bind, and the only place every coordinate conversion in this
@@ -70,10 +71,20 @@ def theatre_label(theatre: str | None) -> str | None:
 WWII_NATIONS = roster_mod.AXIS_NATIONS | {
     "US", "US Marines", "British", "Canadian", "Soviet", "French", "Polish",
     "Australian", "Dutch",
+    # Secret Weapons' two elite formations are a side each, not a country.
+    "British Commandos",
 }
 
 
+# `German Elite` is Axis but is not a nation `side_of` knows, and its name does
+# not start with "German" by accident — keep the mapping explicit rather than
+# doing prefix matching on a display string.
+EXTRA_AXIS = {"German Elite"}
+
+
 def side_label(nation: str | None) -> str | None:
+    if nation in EXTRA_AXIS:
+        return "Axis"
     return roster_mod.side_of(nation) if nation in WWII_NATIONS else None
 
 
@@ -123,6 +134,9 @@ def main() -> int:
                     help="report the kits and worn parts without exporting anything")
     ap.add_argument("--all", action="store_true",
                     help="include kits no level binds (declared-but-dead content)")
+    ap.add_argument("--own", action="store_true",
+                    help="only kits this mod declares itself, not the ones it "
+                         "inherits (Road to Rome: 13 rather than 48)")
     args = ap.parse_args()
 
     chain = mod_chain(args.game_dir, args.mod)
@@ -137,6 +151,22 @@ def main() -> int:
     read = kit_mod.sweep_levels(kits, levels)
     chosen = (sorted(kits.values(), key=lambda k: k.template)
               if args.all else kit_mod.browsable(kits))
+
+    # An expansion inherits vanilla's kits and its levels bind them, so its
+    # roster is mostly British and German riflemen it did not write. `--own`
+    # keeps only what the pack declares, tested the same way `extract_all --own`
+    # tests a model: is the declaring `.con` readable in an archive pool built
+    # from this mod alone? `ArchivePool.source_of` cannot answer that — it
+    # returns the archive's filename, and every mod calls its own `Objects.rfa`.
+    if args.own:
+        archives = find_archives_dir(chain[0])
+        if archives is not None:
+            own_pool = ArchivePool()
+            own_pool.add_dir(archives, OBJECT_ARCHIVES)
+            before = len(chosen)
+            chosen = [k for k in chosen if own_pool.try_read(k.source) is not None]
+            print(f"  --own: {len(chosen)} of {before} kits are this mod's",
+                  file=sys.stderr)
 
     print(f"{args.mod}: {len(kits)} kits declared, {read} levels swept, "
           f"{sum(1 for k in kits.values() if k.live)} bound, "
