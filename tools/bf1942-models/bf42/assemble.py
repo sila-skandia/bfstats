@@ -203,6 +203,7 @@ class Report:
     rigged_parts: list[str] = field(default_factory=list)
     animated_parts: list[str] = field(default_factory=list)
     cameras: list[str] = field(default_factory=list)
+    seats: list[str] = field(default_factory=list)
     skinned_parts: list[str] = field(default_factory=list)
     bound_parts: list[str] = field(default_factory=list)
     unreadable_skeletons: list[str] = field(default_factory=list)
@@ -234,6 +235,7 @@ class Report:
             "riggedParts": self.rigged_parts,
             "animatedParts": self.animated_parts,
             "cameras": self.cameras,
+            "seats": self.seats,
             "skinnedParts": self.skinned_parts,
             "boundParts": self.bound_parts,
             "skeletonsNotRead": sorted(set(self.unreadable_skeletons)),
@@ -283,9 +285,10 @@ class Assembler:
         self._skeleton_cache: dict[str, ske.Skeleton | None] = {}
         self._sprite_mesh_cache: dict[str, int | None] = {}
         # Spin keyframe specs gathered during the tree walk; `export` bakes
-        # them into glTF animation clips against its own builder. Callers that
-        # drive `build_node` with an external builder (the level exporter)
-        # simply never flush them.
+        # them into glTF animation clips against its own builder. A caller
+        # that drives `build_node` with an external builder (the level
+        # exporter) brackets its own pass with `begin_animations` /
+        # `flush_animations`.
         self._spin_tracks: list[dict] = []
 
     # -- shaders ------------------------------------------------------------ #
@@ -1483,8 +1486,16 @@ class Assembler:
         # inside the turret it was authored in so it traverses with it.
         # Meshless FireArms survive the same way: their muzzles are the seat's
         # guns (a Spitfire's wing guns are nodes on empty air).
-        is_camera = template.kind.lower() == "camera"
-        if mesh_index is None and not child_indices and not is_camera:
+        # An EntryPoint and a SeatObject are meshless for the same reason a
+        # Camera is: their placement *is* the datum. The entry point is where
+        # a soldier walks in from (with `setEntryRadius` as its reach) and the
+        # seat is where the occupant sits. Dropping them cost the viewer 69
+        # entry points and 66 seats across vanilla, which is every answer to
+        # "where do you get in, and where do you end up".
+        kind = template.kind.lower()
+        is_camera = kind == "camera"
+        is_placement = kind in ("entrypoint", "seatobject")
+        if mesh_index is None and not child_indices and not (is_camera or is_placement):
             return None
 
         if mesh_index is not None:
@@ -1506,6 +1517,17 @@ class Assembler:
         if is_camera:
             extras["cameraView"] = {"control": control or "vehicle"}
             report.cameras.append(f"[{control or 'vehicle'}] {template.name}")
+        if is_placement:
+            seat = {"control": control or "vehicle"}
+            if template.entry_radius is not None:
+                seat["entryRadius"] = template.entry_radius
+            if template.seat_flags:
+                seat["flags"] = list(template.seat_flags)
+            extras["seat"] = seat
+            report.seats.append(
+                f"[{seat['control']}] {template.name} ({kind})"
+                + (f" r={template.entry_radius:g}m" if template.entry_radius else "")
+                + (" " + ",".join(template.seat_flags) if template.seat_flags else ""))
         yaw, pitch, roll = rotation
         if template.kind.lower() == "bfsoldier":
             # Bind-pose soldier meshes stand along Refractor +Z (3ds Max Biped).
@@ -1607,6 +1629,22 @@ class Assembler:
                 + " deg/s")
 
         return node_index
+
+    def begin_animations(self) -> None:
+        """Start gathering spin specs for a caller that owns the builder.
+
+        `export` does this for itself. A level exporter drives `build_node`
+        many times against one shared builder, so it brackets the whole pass
+        with this and `flush_animations` instead.
+        """
+        self._spin_tracks = []
+
+    def flush_animations(self, builder: gltf.GlbBuilder) -> int:
+        """Bake everything gathered since `begin_animations`. Returns the
+        number of rotating parts baked, for the caller's report."""
+        baked = len(self._spin_tracks)
+        self._flush_spin_animations(builder)
+        return baked
 
     def _flush_spin_animations(self, builder: gltf.GlbBuilder) -> None:
         """Bake the gathered spin specs as looping glTF rotation clips.
