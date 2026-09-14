@@ -1729,6 +1729,7 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
+import { GunFire } from './gunfire.js';
 
 // Which game's assets this page serves, and the directory they hang off:
 // 'models' for vanilla, 'models/mods/eod' for a mod. Resolved before anything
@@ -1973,7 +1974,7 @@ function startAnimating() {
     advanceScroll(dt);
     advanceGlide(dt);
     const gearMoving = advanceGear(dt);
-    const hasFire = advanceFire(dt);
+    const hasFire = guns.advance(dt);
     if (mixer && engineRunning) mixer.update(dt);
     // controls.update() returns true while damping or auto-rotate is still
     // moving the camera, false once it has settled.
@@ -3792,445 +3793,20 @@ function setEngine(on) {
 
 // --- gun fire ----------------------------------------------------------------
 //
-// A FireArms template is the gun a seat fires: the extractor stamps its node
-// with `fireArms` (roundOfFire in rounds/second, velocity, magSize, tracer
-// interval, recoil, a typed `projectile` dict), hangs a mesh-less `muzzle`
-// node per barrel (plane wing guns carry their authored convergence there),
-// and bakes the additive emitters of the flash EffectBundle — plus the
-// projectile's drawn body and trail sprite, when it has them — as hidden
-// tagged nodes. The viewer strobes the emitters per shot, replays their
-// authored sizeOverTime / colorRGBAOverTime ramps over each one's
-// timeToLive, and flies what the gun actually launches: tracer streaks on
-// tracer rounds for bullets, the baked mesh for shells and rockets.
-
-const fireGroups = [];
-const activeTracers = [];
-const tracerPool = [];
-const activeProjectiles = [];
-const activePuffs = [];
-
-// Real muzzle velocities (400-1000 m/s) cross the whole scene between two
-// frames; scaled down so a burst reads as a stream instead of a strobe.
-// Slow rounds (a Katyusha rocket leaves at 45 m/s, a tank shell at 100) are
-// already watchable and fly at their real speed.
-const TRACER_SPEED_SCALE = 0.15;
-const PROJECTILE_SCALE_CUTOFF = 150;  // m/s; below this, no scaling
-const TRACER_MAX_AGE = 1.5;      // seconds before a streak is recycled
-const TRACER_MAX_RANGE = 250;    // metres of travel before recycling
-// `recoilSize 3` as 3 m of barrel travel is not a picture; a tenth reads as
-// a gun. Recovery runs at the same scale so size/speed keeps the engine's
-// ratio (Sherman: 0.3 m kick recovered in 0.3 s).
-const RECOIL_KICK_SCALE = 0.1;
-// `fx_MuzzHeavy` ramps sizeOverTime 0.12 -> 9.4 on a mesh already 1.76 m
-// long: replayed as absolute node scale that is a 16.5 m fireball. In game
-// the late ramp plays on particles that have left the muzzle; parked here,
-// the scale gets a lid instead.
-const FLASH_RAMP_MAX = 3;
-// c_ETRocket motors light after launch; a gentle ramp reads as the Katyusha's
-// kick without turning the rocket into a bullet.
-const ROCKET_ACCEL = 25;         // m/s^2
-const GRAVITY = 9.81;
-const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
-const MAX_TRAIL_PUFFS = 96;
-
-// Game tracers are 0.006 m wide TLight quads; 0.01 m keeps them visible in a
-// viewer without turning into glow sticks.
-const tracerGeometry = new THREE.CylinderGeometry(0.01, 0.01, 1, 6, 1, true);
-tracerGeometry.rotateX(Math.PI / 2);   // length along Z so lookAt aims it
-const tracerMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffd9a0, transparent: true, opacity: 0.9,
-  blending: THREE.AdditiveBlending, depthWrite: false,
+// The runtime lives in `gunfire.js` so the map flythrough's flown Corsair can
+// fire the same guns off the same data; what stays here is the wiring the model
+// browser adds on top — the per-gun FIRE button and its round counter.
+const guns = new GunFire({
+  scene,
+  camera,
+  // Material.clone() through userData would mangle the parked Texture; the
+  // browser's texture-toggle bookkeeping stays in this WeakMap instead.
+  onMaterial: material => originalMap.set(material, material.map),
+  onShot: group => {
+    if (group.ui) group.ui.count.textContent = `${group.shots} rds`;
+  },
 });
-// Legacy manifests only (fireArms.projectile still a bare template name):
-// rounds between tracers show as a dim streak. Typed manifests draw nothing
-// between tracer rounds, like the game.
-const shellMaterial = new THREE.MeshBasicMaterial({
-  color: 0xc9b89a, transparent: true, opacity: 0.4,
-  blending: THREE.AdditiveBlending, depthWrite: false,
-});
-
-function recycleTracers() {
-  for (const tracer of activeTracers) {
-    scene.remove(tracer.mesh);
-    tracerPool.push(tracer.mesh);
-  }
-  activeTracers.length = 0;
-  // Projectile and puff meshes are clones of the outgoing model's baked
-  // nodes; drop them rather than pooling across models.
-  for (const shot of activeProjectiles) scene.remove(shot.mesh);
-  activeProjectiles.length = 0;
-  for (const puff of activePuffs) scene.remove(puff.mesh);
-  activePuffs.length = 0;
-}
-
-function collectFireArms(root) {
-  recycleTracers();
-  fireGroups.length = 0;
-  // Every baked effect stays dark until a shot strobes it — this also parks
-  // non-gun effects (water-touch planes, shell ejects on unarmed variants).
-  // Projectile bodies and trail sprites are spawn templates, never drawn
-  // in place.
-  root.traverse(obj => {
-    if (obj.userData?.effect || obj.userData?.projectileMesh
-        || obj.userData?.projectileTrail) obj.visible = false;
-  });
-  root.traverse(obj => {
-    const stats = obj.userData?.fireArms;
-    if (!stats) return;
-    const muzzles = [];
-    const emitters = [];
-    let projectileMesh = null;
-    let trailQuad = null;
-    obj.traverse(node => {
-      if (node.userData?.muzzle) muzzles.push(node);
-      if (node.userData?.projectileMesh) projectileMesh = node;
-      if (node.userData?.projectileTrail) trailQuad = node;
-      const spec = node.userData?.effect;
-      if (!spec || spec.kind === 'bundle') return;
-      // Emitter materials are shared through the exporter's cache (both wing
-      // flashes, or two seats' glows, reference one material); tinting a
-      // shared one would flash every gun at once. Clone per emitter.
-      const materials = [];
-      node.traverse(part => {
-        if (!part.isMesh) return;
-        const cloned = [part.material].flat().map(m => {
-          const clone = m.clone();
-          originalMap.set(clone, clone.map);
-          materials.push(clone);
-          return clone;
-        });
-        part.material = cloned.length === 1 ? cloned[0] : cloned;
-      });
-      emitters.push({
-        node, spec, materials, age: Infinity, spin: 0,
-        // Authored placement, kept aside so drift along the direction of
-        // fire (offsetInDof + speedInDof x age) and billboarding never
-        // accumulate into the node's own transform.
-        basePos: node.position.clone(),
-        baseQuat: node.quaternion.clone(),
-      });
-    });
-    // Bomb racks declare no flash, no tracer and no recoil: nothing to show.
-    if (!emitters.length && !stats.tracer && !stats.recoil
-        && !(stats.velocity > 0)) return;
-    fireGroups.push({
-      node: obj,
-      stats,
-      muzzles: muzzles.length ? muzzles : [obj],
-      emitters,
-      projectileMesh,
-      trailQuad,
-      projectilePool: [],
-      puffPool: [],
-      firing: false,
-      cooldown: 0,
-      shots: 0,
-      // 1 = barrel home; a shot resets to 0 and it eases forward again.
-      recoil: stats.recoil ? 1 : null,
-    });
-  });
-}
-
-function fireShot(group) {
-  group.shots += 1;
-  if (group.ui) group.ui.count.textContent = `${group.shots} rds`;
-  for (const emitter of group.emitters) {
-    emitter.age = 0;
-    emitter.node.visible = true;
-    // The engine rolls each flash particle (`startRotation CRD_UNIFORM
-    // 0/180`), which is what keeps a held burst from looking like one frame.
-    emitter.spin = Math.random() * Math.PI * 2;
-    // Bundle wrappers between the FireArms node and the emitter are hidden
-    // too; walk them visible up to the gun.
-    for (let node = emitter.node.parent;
-         node && node !== group.node; node = node.parent) {
-      node.visible = true;
-    }
-  }
-  if (group.recoil !== null) group.recoil = 0;
-  const tracer = group.stats.tracer;
-  const tracerRound = tracer
-    ? group.shots % Math.max(tracer.interval, 1) === 0
-    : false;
-  const projectile = group.stats.projectile;
-  const spec = projectile && typeof projectile === 'object' ? projectile : null;
-  if (spec && (spec.kind === 'shell' || spec.kind === 'rocket')
-      && group.projectileMesh) {
-    for (const muzzle of group.muzzles) spawnProjectile(muzzle, group, spec);
-  } else if (spec && spec.kind === 'bullet') {
-    // The game draws nothing between tracer rounds — a Spitfire's
-    // projectile has no geometry at all, and only every traceInterval-th
-    // round carries the TLight streak.
-    if (tracerRound) {
-      for (const muzzle of group.muzzles) spawnTracer(muzzle, group, true);
-    }
-  } else if (group.stats.velocity > 0) {
-    // Stale GLB (`projectile` is a bare template name, or the drawn body
-    // failed to bake): the old streak per round.
-    for (const muzzle of group.muzzles) spawnTracer(muzzle, group, tracerRound);
-  }
-}
-
-const _tracerOrigin = new THREE.Vector3();
-const _tracerAim = new THREE.Quaternion();
-
-function spawnTracer(muzzle, group, bright) {
-  muzzle.updateWorldMatrix(true, false);
-  muzzle.getWorldPosition(_tracerOrigin);
-  // A muzzle node's forward is the gun's forward: Refractor +Z, glTF -Z —
-  // wing-gun convergence is already in the node's rotation.
-  const direction = new THREE.Vector3(0, 0, -1)
-    .applyQuaternion(muzzle.getWorldQuaternion(_tracerAim));
-  const scaler = group.stats.tracer?.scaler ?? 50;
-  const length = Math.min(Math.max(scaler * 0.04, 1), 4);
-  const mesh = tracerPool.pop() || new THREE.Mesh(tracerGeometry, tracerMaterial);
-  mesh.material = bright ? tracerMaterial : shellMaterial;
-  mesh.scale.set(1, 1, length);
-  mesh.position.copy(_tracerOrigin).addScaledVector(direction, length / 2);
-  mesh.lookAt(_tracerOrigin.clone().add(direction));
-  scene.add(mesh);
-  activeTracers.push({
-    mesh,
-    direction,
-    speed: (group.stats.velocity || 100) * TRACER_SPEED_SCALE,
-    age: 0,
-    travelled: 0,
-  });
-}
-
-function displaySpeed(velocity) {
-  return velocity > PROJECTILE_SCALE_CUTOFF
-    ? velocity * TRACER_SPEED_SCALE : velocity;
-}
-
-function spawnProjectile(muzzle, group, spec) {
-  muzzle.updateWorldMatrix(true, false);
-  muzzle.getWorldPosition(_tracerOrigin);
-  muzzle.getWorldQuaternion(_tracerAim);
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(_tracerAim);
-  const mesh = group.projectilePool.pop() || group.projectileMesh.clone();
-  mesh.visible = true;
-  mesh.scale.setScalar(1);
-  mesh.position.copy(_tracerOrigin);
-  // The baked body was Z-mirrored like every vehicle mesh, so its nose
-  // points down -Z — the muzzle's own forward.
-  mesh.quaternion.copy(_tracerAim);
-  scene.add(mesh);
-  activeProjectiles.push({
-    mesh,
-    group,
-    velocity: direction.multiplyScalar(displaySpeed(group.stats.velocity || 100)),
-    kind: spec.kind,
-    // Shells fall (`gravityModifier` defaults to 1); rockets are carried by
-    // their motor and fly flat here.
-    gravity: spec.kind === 'shell' ? (spec.gravity ?? 1) : 0,
-    ttl: Math.min(spec.timeToLive || 10, 20),
-    trail: group.trailQuad ? spec.trail : null,
-    age: 0,
-    travelled: 0,
-    sincePuff: 0,
-  });
-}
-
-function spawnPuff(shot) {
-  if (activePuffs.length >= MAX_TRAIL_PUFFS) return;
-  const group = shot.group;
-  let mesh = group.puffPool.pop();
-  const materials = [];
-  if (mesh) {
-    mesh.traverse(part => {
-      if (part.isMesh) materials.push(...[part.material].flat());
-    });
-  } else {
-    // Clone materials so each puff fades on its own; the baked quad's
-    // material is shared through the exporter's cache.
-    mesh = group.trailQuad.clone();
-    mesh.traverse(part => {
-      if (!part.isMesh) return;
-      const cloned = [part.material].flat().map(m => {
-        const clone = m.clone();
-        originalMap.set(clone, clone.map);
-        materials.push(clone);
-        return clone;
-      });
-      part.material = cloned.length === 1 ? cloned[0] : cloned;
-    });
-  }
-  mesh.visible = true;
-  mesh.position.copy(shot.mesh.position);
-  mesh.quaternion.copy(camera.quaternion);
-  scene.add(mesh);
-  activePuffs.push({
-    mesh, materials, spec: shot.trail, age: 0, pool: group.puffPool,
-  });
-}
-
-/** Piecewise-linear sample of an over-time ramp at `phase` (0..100). */
-function sampleCurve(points, phase) {
-  if (phase <= points[0][0]) return points[0].slice(1);
-  for (let i = 1; i < points.length; i++) {
-    if (phase <= points[i][0]) {
-      const [t0, ...v0] = points[i - 1];
-      const [t1, ...v1] = points[i];
-      const k = t1 === t0 ? 1 : (phase - t0) / (t1 - t0);
-      return v0.map((v, j) => v + (v1[j] - v) * k);
-    }
-  }
-  return points[points.length - 1].slice(1);
-}
-
-const _billboard = new THREE.Quaternion();
-const _spinAxis = new THREE.Vector3(0, 0, 1);
-const _drift = new THREE.Vector3();
-const _aimBack = new THREE.Vector3();
-
-/** Advance flashes, recoil, firing cadence and tracers. True while active. */
-function advanceFire(dt) {
-  let active = false;
-  for (const group of fireGroups) {
-    for (const emitter of group.emitters) {
-      if (!emitter.node.visible) continue;
-      emitter.age += dt;
-      const ttl = emitter.spec.timeToLive || 0.1;
-      if (emitter.age >= ttl) {
-        emitter.node.visible = false;
-        continue;
-      }
-      active = true;
-      const phase = (emitter.age / ttl) * 100;
-      // `sizeOverTime` is the absolute size ramp; a bare `size` is the fixed
-      // size of particles that declare no ramp. Capped: the ramp's tail was
-      // authored for particles streaming away from the muzzle, not for one
-      // node parked on it.
-      const size = emitter.spec.sizeOverTime
-        ? sampleCurve(emitter.spec.sizeOverTime, phase)[0]
-        : (emitter.spec.size ?? 1);
-      emitter.node.scale.setScalar(Math.min(Math.max(size, 1e-4), FLASH_RAMP_MAX));
-      // Emitter motion along the direction of fire: muzzle smoke recedes
-      // (`positionalSpeedInDof` -5), glows sit slightly ahead
-      // (`relativePositionInDof` 0.2). DOF is the effect frame's Refractor
-      // +Z, i.e. local -Z after the exporter's mirror.
-      if (emitter.spec.offsetInDof || emitter.spec.speedInDof) {
-        const drift = (emitter.spec.offsetInDof ?? 0)
-          + (emitter.spec.speedInDof ?? 0) * emitter.age;
-        _drift.set(0, 0, -drift).applyQuaternion(emitter.baseQuat);
-        emitter.node.position.copy(emitter.basePos).add(_drift);
-      }
-      if (emitter.spec.colorOverTime) {
-        const [r, g, b, a] = sampleCurve(emitter.spec.colorOverTime, phase);
-        for (const material of emitter.materials) {
-          material.color.setRGB(r / 255, g / 255, b / 255);
-          material.opacity = a / 255;
-        }
-      }
-      if (emitter.spec.billboard) {
-        // Face the camera, then the per-shot roll about the view axis.
-        emitter.node.parent.getWorldQuaternion(_billboard).invert();
-        emitter.node.quaternion.copy(_billboard).multiply(camera.quaternion)
-          .multiply(new THREE.Quaternion().setFromAxisAngle(_spinAxis, emitter.spin));
-      }
-    }
-    if (group.recoil !== null && group.recoil < 1) {
-      active = true;
-      const recoil = group.stats.recoil;
-      const recover = Math.max(recoil.size / (recoil.speed || 10), 0.05);
-      group.recoil = Math.min(1, group.recoil + dt / recover);
-      const kick = recoil.size * RECOIL_KICK_SCALE * (1 - group.recoil);
-      const home = group.node.userData.home;
-      if (home) {
-        // The barrel mesh was Z-mirrored into glTF, so it points down -Z and
-        // recoils along +Z of its own frame.
-        const back = new THREE.Vector3(0, 0, kick).applyQuaternion(group.node.quaternion);
-        group.node.position.copy(home).add(back);
-      }
-    }
-    if (group.firing) {
-      active = true;
-      group.cooldown -= dt;
-      const period = 1 / (group.stats.roundOfFire || 1);
-      while (group.cooldown <= 0) {
-        fireShot(group);
-        group.cooldown += period;
-      }
-    }
-  }
-  for (let i = activeTracers.length - 1; i >= 0; i--) {
-    const tracer = activeTracers[i];
-    tracer.age += dt;
-    const step = tracer.speed * dt;
-    tracer.travelled += step;
-    tracer.mesh.position.addScaledVector(tracer.direction, step);
-    if (tracer.age > TRACER_MAX_AGE || tracer.travelled > TRACER_MAX_RANGE) {
-      scene.remove(tracer.mesh);
-      tracerPool.push(tracer.mesh);
-      activeTracers.splice(i, 1);
-    } else {
-      active = true;
-    }
-  }
-  for (let i = activeProjectiles.length - 1; i >= 0; i--) {
-    const shot = activeProjectiles[i];
-    shot.age += dt;
-    if (shot.kind === 'rocket') {
-      const speed = shot.velocity.length();
-      shot.velocity.multiplyScalar((speed + ROCKET_ACCEL * dt) / speed);
-    }
-    if (shot.gravity) shot.velocity.y -= GRAVITY * shot.gravity * dt;
-    const step = shot.velocity.length() * dt;
-    shot.travelled += step;
-    shot.mesh.position.addScaledVector(shot.velocity, dt);
-    // Nose (local -Z) along the velocity, so shells arc over.
-    _aimBack.copy(shot.mesh.position).sub(shot.velocity);
-    shot.mesh.lookAt(_aimBack);
-    if (shot.age > shot.ttl || shot.travelled > TRACER_MAX_RANGE) {
-      scene.remove(shot.mesh);
-      shot.mesh.visible = false;
-      shot.group.projectilePool.push(shot.mesh);
-      activeProjectiles.splice(i, 1);
-      continue;
-    }
-    active = true;
-    if (shot.trail) {
-      shot.sincePuff += step;
-      while (shot.sincePuff >= TRAIL_PUFF_SPACING) {
-        shot.sincePuff -= TRAIL_PUFF_SPACING;
-        spawnPuff(shot);
-      }
-    }
-  }
-  for (let i = activePuffs.length - 1; i >= 0; i--) {
-    const puff = activePuffs[i];
-    puff.age += dt;
-    const spec = puff.spec || {};
-    const ttl = spec.timeToLive || 1;
-    if (puff.age >= ttl) {
-      scene.remove(puff.mesh);
-      puff.mesh.visible = false;
-      puff.pool.push(puff.mesh);
-      activePuffs.splice(i, 1);
-      continue;
-    }
-    active = true;
-    const phase = (puff.age / ttl) * 100;
-    const size = spec.sizeOverTime
-      ? sampleCurve(spec.sizeOverTime, phase)[0]
-      : (spec.size ?? 1);
-    puff.mesh.scale.setScalar(Math.max(size, 1e-4));
-    puff.mesh.quaternion.copy(camera.quaternion);
-    if (spec.colorOverTime) {
-      const [r, g, b, a] = sampleCurve(spec.colorOverTime, phase);
-      for (const material of puff.materials) {
-        material.color.setRGB(r / 255, g / 255, b / 255);
-        material.opacity = a / 255;
-      }
-    } else {
-      for (const material of puff.materials) {
-        material.opacity = 1 - phase / 100;
-      }
-    }
-  }
-  return active;
-}
+const fireGroups = guns.groups;
 
 /** "Gun Barrel", "Coaxial browning": a FireArms node name without its vehicle. */
 function partLabel(name, entry) {
@@ -4275,16 +3851,13 @@ function fireTitle(group) {
 }
 
 function startFiring(group) {
-  if (group.firing) return;
-  group.firing = true;
-  group.cooldown = 0;   // first round leaves immediately
+  if (!guns.setFiring(group, true)) return;
   group.ui?.button.setAttribute('aria-pressed', 'true');
   startAnimating();
 }
 
 function stopFiring(group) {
-  if (!group.firing) return;
-  group.firing = false;
+  if (!guns.setFiring(group, false)) return;
   group.ui?.button.setAttribute('aria-pressed', 'false');
   startAnimating();     // let flashes decay and tracers fly out
 }
@@ -5393,7 +4966,7 @@ async function show(entry, variant) {
   collectCollisions(current, report);
   collectScrolling(current);
   collectAnimations(gltf);
-  collectFireArms(current);
+  guns.collect(current);
   collectViews(current);
   cameraGlide = null;
   buildOpponentSelect(entry);
@@ -6210,9 +5783,9 @@ window.__modelInspector = {
         visible: emitter.node.visible,
       })),
     })),
-    tracers: activeTracers.map(tracer => ({
+    tracers: guns.tracers.map(tracer => ({
       position: tracer.mesh.position.toArray(),
-      bright: tracer.mesh.material === tracerMaterial,
+      bright: tracer.bright,
     })),
   }),
   setFiring: (index, firing) => {
