@@ -5904,9 +5904,21 @@ async function show(entry) {
   // Baked fire-effect payloads (muzzle flashes, projectile bodies, trail
   // quads) ride every assembled vehicle; only the model viewer animates
   // them, so here they must stay hidden or they render parked on the guns.
+  //
+  // `extras.propellerBlur` (see `_propeller_blur` in assemble.py) keeps both
+  // the blade mesh and the blurred disc as real siblings, because the one
+  // aircraft that should ever show the disc is the flown one — `applyRig` in
+  // flight.js toggles it from live throttle. Every parked spawner here has no
+  // throttle at all, so it gets the engine-off state the comment above already
+  // establishes: blades visible, disc hidden.
   currentRoot.traverse(obj => {
     if (obj.userData?.effect || obj.userData?.projectileMesh
         || obj.userData?.projectileTrail) obj.visible = false;
+    const blur = obj.userData?.propellerBlur;
+    if (blur) {
+      const blurred = obj.children.find(child => child.name === blur.blurred);
+      if (blurred) blurred.visible = false;
+    }
   });
   scene.add(currentRoot);
   // The flags, and the level's always-on rotators — windmills, watermills,

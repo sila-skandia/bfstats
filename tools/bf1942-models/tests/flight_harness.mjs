@@ -406,6 +406,66 @@ results.constants = {
   };
 }
 
+// --- the blade mesh gives way to the blurred disc --------------------------
+//
+// `extras.propellerBlur` (assemble.py's `_propeller_blur`) names both meshes
+// and carries the engine's own `addLodComparison` — 0.07 on every vanilla
+// propeller — onto the LodObject wrapper. `applyRig` reads it back rather
+// than hardcoding a constant, so this is the one place that threshold is
+// asserted against the node rather than assumed.
+
+{
+  const buildPropeller = () => {
+    const root = new THREE.Object3D();
+    root.name = 'Corsair';
+    root.userData = { control: 'Corsair', templateKind: 'PlayerControlObject' };
+    const wrapper = new THREE.Object3D();
+    wrapper.name = 'lodCorsairPropeller';
+    wrapper.userData = {
+      propellerBlur: {
+        static: 'CorsairPropellerStatic',
+        blurred: 'CorsairPropellerBlurred',
+        comparisons: [0.07],
+      },
+    };
+    const blade = new THREE.Object3D();
+    blade.name = 'CorsairPropellerStatic';
+    const disc = new THREE.Object3D();
+    disc.name = 'CorsairPropellerBlurred';
+    wrapper.add(blade, disc);
+    root.add(wrapper);
+    return new Aircraft(root, null, { cockpit: false });
+  };
+
+  const visibilityAt = throttle => {
+    const plane = buildPropeller();
+    plane.state.throttle = throttle;
+    plane.applyRig();
+    return {
+      static: plane.node.getObjectByName('CorsairPropellerStatic').visible,
+      blurred: plane.node.getObjectByName('CorsairPropellerBlurred').visible,
+    };
+  };
+
+  results.propellerBlur = {
+    idle: visibilityAt(0),
+    belowThreshold: visibilityAt(0.05),
+    // Exactly the declared comparison: still the blade, not yet the disc.
+    atThreshold: visibilityAt(0.07),
+    justAboveThreshold: visibilityAt(0.08),
+    fullThrottle: visibilityAt(1),
+    // A vehicle without the extras block (an asset extracted before this
+    // field existed, or a plain ground vehicle) must collect no pairs at all
+    // and cost nothing per frame.
+    noExtras: (() => {
+      const plane = new Aircraft(corsairNode(), null, { cockpit: false });
+      plane.state.throttle = 1;
+      plane.applyRig();
+      return plane.propellerBlurPairs.length;
+    })(),
+  };
+}
+
 // --- what the surface table works out to -----------------------------------
 //
 // The per-surface coefficients, which are the whole of the aerodynamics now.
