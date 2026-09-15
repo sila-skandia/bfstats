@@ -176,6 +176,108 @@ GeometryTemplate.create StandardMesh PT_Steering_M1
         self.assertEqual(["lodHelm -> LowHelm"], report.selected_lod_alternatives)
 
 
+# A propeller LodObject exactly as every vanilla plane declares one: a
+# `CompareSelector` bound to engine input, `addLodComparison 0.07`, and two
+# alternatives whose names match neither role `select_lod_alternative` knows.
+PROPELLER_CON = """
+ObjectTemplate.create PlayerControlObject Corsair
+ObjectTemplate.addTemplate CorsairEngine
+
+ObjectTemplate.create Engine CorsairEngine
+ObjectTemplate.addTemplate lodCorsairPropeller
+ObjectTemplate.setMinRotation 0/0/-3000
+ObjectTemplate.setMaxRotation 0/0/5000
+ObjectTemplate.setMaxSpeed 0/0/500
+ObjectTemplate.setInputToRoll c_PIThrottle
+
+ObjectTemplate.create LodObject lodCorsairPropeller
+ObjectTemplate.lodSelector CorsairPropSelector
+ObjectTemplate.addTemplate CorsairPropellerStatic
+ObjectTemplate.addTemplate CorsairPropellerBlurred
+
+ObjectTemplate.create SimpleObject CorsairPropellerStatic
+ObjectTemplate.geometry Corsair_prp1
+
+ObjectTemplate.create SimpleObject CorsairPropellerBlurred
+ObjectTemplate.geometry Corsair_prp2
+
+LodSelectorTemplate.create CompareSelector CorsairPropSelector
+LodSelectorTemplate.addLodComparison 0.07
+
+GeometryTemplate.create StandardMesh Corsair_prp1
+GeometryTemplate.create StandardMesh Corsair_prp2
+"""
+
+
+def propeller_library() -> ObjectLibrary:
+    library = ObjectLibrary()
+    library.add_con("Objects/Vehicles/Air/Corsair/Objects.con", PROPELLER_CON)
+    return library
+
+
+class PropellerBlurExportTests(unittest.TestCase):
+    def test_third_person_export_keeps_both_the_blade_and_the_blurred_disc(self) -> None:
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, propeller_library(), include_collision=False)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Corsair", configuration="complex", lod=0)
+        stub_meshes(assembler, builder, "Corsair_prp1", "Corsair_prp2")
+
+        root = assembler.build_node(builder, "Corsair", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        # Neither is skipped: this is the one LodObject in the whole exporter
+        # where both alternatives are meant to survive to the glb.
+        self.assertIn("CorsairPropellerStatic", names)
+        self.assertIn("CorsairPropellerBlurred", names)
+        self.assertEqual(
+            ["lodCorsairPropeller -> CorsairPropellerStatic + CorsairPropellerBlurred"],
+            report.selected_lod_alternatives,
+        )
+        self.assertEqual([], report.skipped_lod_alternatives)
+
+    def test_the_wrapper_stamps_the_swap_and_the_engines_declared_threshold(self) -> None:
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, propeller_library(), include_collision=False)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Corsair", configuration="complex", lod=0)
+        stub_meshes(assembler, builder, "Corsair_prp1", "Corsair_prp2")
+
+        root = assembler.build_node(builder, "Corsair", report)
+        document = glb_document(builder.build([root], extras={}))
+        blur = next(node["extras"]["propellerBlur"] for node in document["nodes"]
+                    if node["name"] == "lodCorsairPropeller")
+
+        self.assertEqual("CorsairPropellerStatic", blur["static"])
+        self.assertEqual("CorsairPropellerBlurred", blur["blurred"])
+        self.assertEqual("CompareSelector", blur["selectorKind"])
+        self.assertEqual([0.07], blur["comparisons"])
+        self.assertEqual(
+            ["lodCorsairPropeller: CorsairPropellerStatic / CorsairPropellerBlurred "
+             "at [0.07]"],
+            report.propeller_blurs,
+        )
+
+    def test_a_cockpit_export_never_reaches_for_the_blur_pair(self) -> None:
+        # The blur pair is a third-person concern only — neither propeller
+        # mesh is first person, so a cockpit export prunes the whole subtree
+        # (the same reachability guard every other non-1P branch loses to)
+        # and `propellerBlur` is never computed at all.
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, propeller_library(),
+                              first_person=True, include_collision=False)
+        builder = gltf.GlbBuilder()
+        report = Report(root="lodCorsairPropeller", configuration="complex", lod=0,
+                        first_person=True)
+        stub_meshes(assembler, builder, "Corsair_prp1", "Corsair_prp2")
+
+        root = assembler.build_node(builder, "lodCorsairPropeller", report)
+
+        self.assertIsNone(root)
+        self.assertEqual([], report.propeller_blurs)
+
+
 # A cut-down Corsair with the shape that matters: a PCO, a configuration
 # LodObject, a cockpit LodObject whose first alternative is the hull, a camera,
 # and one control surface that has nothing to do with first person.
