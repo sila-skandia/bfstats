@@ -163,6 +163,14 @@ const IDLE_INTERVAL = 100;
  * rather than by reading the code: the decal emitters declare `intensity 2`
  * over `timeToLive 0.1`, one fifth of a spawn by the arithmetic, and every hit
  * in the reference recording leaves a hole.
+ *
+ * Two edges (ledger EMT-2, re-read 2026-09-16): when a `delay` runs out
+ * mid-tick, `age` grows by the delay's own pre-tick value, not by the
+ * leftover past zero (0x081e32ae-0x081e32ce) — the tail of that tick, past
+ * where the delay hit zero, is simply not simulated, so the clock
+ * permanently lags real time by that much. And the burst ends at
+ * `age >= timeToLive` (0x081e3305): a burst is no longer alive on the exact
+ * tick `age` reaches `timeToLive`, not one tick later.
  */
 export class EmitterClock {
   constructor(spec, rand = Math.random) {
@@ -189,15 +197,20 @@ export class EmitterClock {
   step(dt, speed = 0) {
     if (this.done || this.stopped) return 0;
     if (this.delay > 0) {
+      const preDelay = this.delay;
       this.delay -= dt;
       if (this.delay > 0) return 0;
-      dt = -this.delay;
+      // Emitter::handleUpdate (0x081e32ae-0x081e32ce): the tick the delay
+      // runs out advances age by the delay's own pre-tick value, not by the
+      // leftover past zero — the rest of this tick's dt is never simulated.
+      dt = preDelay;
       this.delay = 0;
     }
     this.age += dt;
     let count = 0;
     // A ttl of -1 (`CRD_NONE/-1/0/0`, the trails) lives as long as its parent.
-    const alive = this.ttl < 0 || this.age <= this.ttl;
+    // Otherwise the burst ends at age >= timeToLive (0x081e3305), not after.
+    const alive = this.ttl < 0 || this.age < this.ttl;
     while (alive && this.age >= this.next && count < 64) {
       count++;
       this.next += this.interval(speed);
