@@ -121,15 +121,18 @@ export const PITCH_LIMIT_DEG = 38;
 export const LIE_POINT_UP_DOWN_DEG = [0.0, -6.0];
 
 /**
- * Vertical FOV, degrees. `ObjectTemplate.set1pFov 0.47` — the only first-person
- * FOV in vanilla, identical in all 18 places any installed mod declares it.
- *
- * Its unit does not survive the data: read as a half-angle in radians it is
- * 2 x 0.47 rad = 53.9 degrees, read as the tangent of one it is
- * 2 x atan(0.47) = 50.4. Both land inside four degrees of each other, so the
- * ambiguity costs nothing; this takes the first.
+ * Vertical FOV, degrees: `renderer.fieldOfView 1` (Settings/VideoDefault.con),
+ * one radian. `RenderView::setFieldOfView` (lnxded 0x08444260) keeps the value
+ * and its tan(fov/2) ratio against the start-up value, and
+ * `Frustum::setupFrustum` (0x08440c70) halves it for the top and bottom planes
+ * and divides by the 0.75 aspect for the sides — a whole vertical angle in
+ * radians, 57.30 degrees. `set1pFov 0.47` is not this camera's FOV at all: it
+ * is what `setFirstPersonFov` hands each first-person part (corpus doc
+ * `handweapon-view-and-deviation.md` §3), and the soldier's `vehicleFov`
+ * (PlayerControlObjectTemplate +0x248) is a different field, unset for
+ * soldiers, so the view keeps the renderer's default.
  */
-export const FOV_DEG = 53.86;
+export const FOV_DEG = 57.30;
 
 /**
  * Seconds between footsteps, per gait.
