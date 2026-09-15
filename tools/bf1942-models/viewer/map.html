@@ -3551,27 +3551,42 @@ const footEye = { x: 0, y: 0, z: 0 };
 
 // --- the weapon in hand ------------------------------------------------------
 //
-// A spawned soldier holds one hand-weapon glb, loaded from the models tree the
-// way `flight.js` fetches a cockpit, parented to the camera as a classic FPS
-// viewmodel and indexed by the same `GunFire` that fires the vehicles. The glb
-// carries everything this needs: document-level `weapon` extras (rate, spread,
-// magazine, zoom, recoil — see `first-person-soldier.md` §2.7) and a node
-// stamped `fireArms` with a `muzzle` child, so nothing about any weapon is
-// declared below.
+// A spawned soldier holds one glb, loaded from the models tree the way
+// `flight.js` fetches a cockpit, parented to the camera and indexed by the
+// same `GunFire` that fires the vehicles. For the pairings §11 of
+// `first-person-soldier.md` has extracted, that glb is the first-person arms
+// rig — camo sleeves and full-detail hands welded around the weapon, the six
+// clip families baked in — mounted at the data's own `center1pHands` and
+// driven by an AnimationMixer off the soldier's gait. Every other weapon
+// draws its bare 3P glb at the eyeballed stand-in offset, exactly as before.
+// Either way the document extras carry the armoury block (rate, spread,
+// magazine, zoom, recoil) and a node stamped `fireArms` with a `muzzle`
+// child, so nothing about any weapon is declared below.
 //
-// Three deliberate v1 shortcuts, all visible and all documented:
-//   - The viewmodel is drawn in the world pass, no depth trickery. Pressed
-//     nose-first into a wall the stock can clip; a second render pass (or
-//     depthTest off, which mis-sorts the gun against its own flash) buys
-//     little for what this page is, so the clip is accepted.
-//   - The gun draws the weapon's 3P mesh. The 1P arms-and-hands geometry is
-//     still blocked in the exporter (feature doc §4), so there are no hands.
+// Two deliberate shortcuts remain, both visible and both documented:
 //   - Scoped weapons get the data's FOV change and no scope art.
+//   - Crouch and prone play the standing aim: their 1P clip families exist
+//     in the data but are not yet baked into the fp.glb (§11 keeps the list).
 
 // Which weapon a flag's team hands out when `?weapon=` does not say. The
 // game's kits decide this per level; hardcoding the two definitive SMGs is a
 // stand-in until kits are wired into spawning.
 const TEAM_WEAPON = { 1: 'Mp40', 2: 'Thompson' };
+// The extracted first-person arms rigs, by the weapon welded inside them:
+// `<Soldier>__<Weapon>.fp.glb` under models/viewmodels (§11). A weapon
+// absent here — or a mod tree without the folder — draws its bare 3P glb.
+const VIEWMODEL_RIGS = {
+  Thompson: 'USSoldier__Thompson',
+  Mp40: 'GermanSoldier__MP40',
+};
+// The rig and everything in it render in their own pass over a cleared depth
+// buffer (frame(), below) so a wall pressed against the chest can never
+// truncate the barrel — the game's equivalent is drawing 1P parts in their
+// own pass (§11 step 6). A light only reaches a pass whose camera mask it
+// shares, so the two scene lights are enrolled in the layer here.
+const VIEWMODEL_LAYER = 1;
+hemi.layers.enable(VIEWMODEL_LAYER);
+sun.layers.enable(VIEWMODEL_LAYER);
 // Viewmodel placement in camera space, metres. The per-weapon half is data:
 // `soldierCameraPosition` (hip) / `soldierZoomPosition` (zoomed) displace the
 // first-person weapon rig in the soldier's view frame — `FireArms::setZoom`
@@ -3580,19 +3595,26 @@ const TEAM_WEAPON = { 1: 'Mp40', 2: 'Thompson' };
 // `weapon.view` extras, Refractor axes (x lateral, y vertical, z forward; the
 // x sign convention is OPEN in the corpus and taken as-is here).
 //
-// The base half is an OPEN STAND-IN: `BFSoldier::updateAnimations` adds a
+// The base half depends on the file. The fp arms rig is feet-at-origin and
+// mounts at the data's `center1pHands` (§11 step 2) — nothing invented left.
+// The bare 3P fallback still needs this OPEN STAND-IN for the engine's
 // template base vector (`BFSoldierTemplate+0x15c`, name and value not yet
-// extracted) before transforming the rig, and without it the data offsets
-// alone put the gun 9 cm from the eye. This constant stands in for that
-// vector, chosen so the Thompson's hip pose lands where the eyeballed
-// viewmodel used to sit; the hip<->zoom *shift* is entirely the data's.
-const VIEWMODEL_BASE = { x: 0.17, y: -0.10, z: -0.26 };   // OPEN [stand-in]
+// extracted): without it the data offsets alone put the gun 9 cm from the
+// eye. Chosen so the Thompson's hip pose lands where the eyeballed viewmodel
+// used to sit; the hip<->zoom *shift* is entirely the data's.
+const VIEWMODEL_BASE = { x: 0.17, y: -0.10, z: -0.26 };   // OPEN [bare fallback]
 // The eases are the engine's, both frame-rate dependent by design (no dt in
 // either): the rig moves 25% of the remaining distance per visual update
 // (constant 0.25f, lnxded .rodata 0x086c08ac), the FOV factor converges
 // 0.7·cur + 0.3·target and snaps within 0.001.
 const VIEW_EASE = 0.25;
 const FOV_SNAP = 0.001;
+// Crossfade between viewmodel clips, seconds. OPEN [stand-in]: the animation
+// state machine declares per-transition rates the extractor does not yet
+// read, so one short blend stands for all of them — and fire gets a
+// near-snap, or the first round of a burst would smear through the fade.
+const VIEWMODEL_FADE = 0.15;        // OPEN [stand-in]
+const VIEWMODEL_FIRE_FADE = 0.02;   // OPEN [stand-in]
 const CROSSHAIR_MIN_PX = 4;        // bar gap floor, so the cross never closes
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -3645,8 +3667,15 @@ function disposeHandWeapon() {
     if (index >= 0) guns.groups.splice(index, 1);
   }
   camera.remove(hw.rig);
+  // The mixer first, while its bindings still resolve, then the GPU half —
+  // a skinned rig also owns bone textures its skeleton has to give back.
+  if (hw.mixer) {
+    hw.mixer.stopAllAction();
+    hw.mixer.uncacheRoot(hw.mixer.getRoot());
+  }
   hw.rig.traverse(obj => {
     obj.geometry?.dispose();
+    obj.skeleton?.dispose?.();
     for (const m of [obj.material].flat().filter(Boolean)) {
       m.map?.dispose();
       m.dispose();
@@ -3659,32 +3688,61 @@ function disposeHandWeapon() {
   }
 }
 
-/** Load `name`.glb, hang it off the camera and index its gun. */
+/** Load the weapon into hand — the arms rig where one is extracted, the
+ *  bare `name`.glb where not — hang it off the camera and index its gun. */
 async function loadHandWeapon(name) {
   disposeHandWeapon();
   const token = weaponToken;
-  let gltf;
-  try {
-    gltf = await loader.loadAsync(`${MODELS_BASE}/${name}.glb${bust()}`);
-  } catch {
-    // A `?weapon=` naming nothing extracted, or a mod tree without the glb:
-    // on foot bare-handed, which already worked.
-    return null;
+  let gltf = null;
+  let fp = false;
+  // The arms first: §11's `<Soldier>__<Weapon>.fp.glb`, sleeves and hands
+  // welded around the weapon with the six clip families baked in. A pairing
+  // without one falls through to the bare weapon, which works as it did.
+  const rigFile = VIEWMODEL_RIGS[name];
+  if (rigFile) {
+    try {
+      gltf = await loader.loadAsync(
+        `${MODELS_BASE}/viewmodels/${rigFile}.fp.glb${bust()}`);
+      fp = true;
+    } catch { /* the bare path below */ }
+  }
+  if (!gltf) {
+    try {
+      gltf = await loader.loadAsync(`${MODELS_BASE}/${name}.glb${bust()}`);
+    } catch {
+      // A `?weapon=` naming nothing extracted, or a mod tree without the glb:
+      // on foot bare-handed, which already worked.
+      return null;
+    }
   }
   if (token !== weaponToken || !optOnFoot.checked || !soldier) return null;
   // Document-level extras land on `gltf.userData` (GLTFLoader's
   // `assignExtrasToUserData(result, json)`); the fallbacks cover a vendored
-  // loader that files them elsewhere.
-  const data = gltf.userData?.weapon ?? gltf.scene?.userData?.weapon
-    ?? gltf.parser?.json?.extras?.weapon ?? null;
+  // loader that files them elsewhere. The fp rig spells its armoury block
+  // `weaponStats` — the same shape the bare glb calls `weapon`, and
+  // everything downstream reads it through `hw.data` without caring.
+  const doc = (Object.keys(gltf.userData ?? {}).length ? gltf.userData : null)
+    ?? gltf.parser?.json?.extras ?? {};
+  const data = fp
+    ? doc.weaponStats ?? null
+    : doc.weapon ?? gltf.scene?.userData?.weapon ?? null;
+  // Where the rig hangs in camera space. The fp rig is feet-at-origin: §11
+  // mounts it at `center1pHands`, read from the extras and not retyped, whose
+  // −1.56 puts the feet 1.56 m below the eye — sleeves at the bottom of the
+  // frame, weapon raked up-forward, the reference footage exactly. The bare
+  // fallback keeps the eyeballed VIEWMODEL_BASE; only it still needs one.
+  const hands = fp ? doc.view?.center1pHands : null;
+  const base = hands
+    ? { x: hands[0], y: hands[1], z: -hands[2] }
+    : VIEWMODEL_BASE;
   // The rig's two authored poses, camera space. Refractor's z is forward,
   // three's camera looks down -z, so z is negated; a weapon that declares no
   // `soldierCameraPosition` (the Bazooka) sits at the base alone, and one
   // with no `soldierZoomPosition` zooms to its hip pose.
   const toCamera = v => ({
-    x: VIEWMODEL_BASE.x + (v?.[0] ?? 0),
-    y: VIEWMODEL_BASE.y + (v?.[1] ?? 0),
-    z: VIEWMODEL_BASE.z - (v?.[2] ?? 0),
+    x: base.x + (v?.[0] ?? 0),
+    y: base.y + (v?.[1] ?? 0),
+    z: base.z - (v?.[2] ?? 0),
   });
   const viewHip = toCamera(data?.view?.cameraPosition);
   const viewZoom = data?.view?.zoomPosition
@@ -3692,7 +3750,19 @@ async function loadHandWeapon(name) {
   const rig = new THREE.Group();
   rig.name = `${name} viewmodel`;
   rig.position.set(viewHip.x, viewHip.y, viewHip.z);
+  // The fp rig stands +Y up with its arms extending along +Z, and a three.js
+  // camera looks down −Z: half a revolution about Y turns the arms into the
+  // view (§11 step 1). The bare weapon glbs are authored view-ready.
+  if (fp) gltf.scene.rotation.y = Math.PI;
   rig.add(gltf.scene);
+  // The whole rig lives on the near layer, drawn by frame()'s second pass
+  // over cleared depth. Culling goes with it: skinned bounds computed at
+  // bind pose lie about where animated sleeves actually are, and a rig this
+  // small is cheaper to draw than to test.
+  rig.traverse(obj => {
+    obj.layers.set(VIEWMODEL_LAYER);
+    if (obj.isMesh) obj.frustumCulled = false;
+  });
   // The additive mark the exporter leaves on flash and glow materials. The
   // model browser applies it model-wide at load and `GunFire.collect` applies
   // it to the emitter clones it makes; this covers whatever additive surface
@@ -3712,9 +3782,31 @@ async function loadHandWeapon(name) {
   // spawn beside a jeep and press E inside the fetch — and a viewmodel must
   // not materialise over a windscreen. `exitVehicle` shows it again.
   rig.visible = !(optPilot.checked && (aircraft || car));
+  // The six baked families become mixer actions. Locomotion loops; the
+  // one-shots clamp on their last frame — the clamped fire pose is what
+  // "holds between shots" against the 0.1 s cycle (§11 step 4), and a
+  // clamped deploy or reload simply waits for the crossfade home.
+  let mixer = null;
+  const actions = {};
+  if (fp && gltf.animations?.length) {
+    mixer = new THREE.AnimationMixer(gltf.scene);
+    for (const clip of gltf.animations) {
+      const action = mixer.clipAction(clip);
+      if (LOCO_LOOP.has(clip.name)) {
+        action.setLoop(THREE.LoopRepeat, Infinity);
+      } else {
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+      }
+      actions[clip.name] = action;
+    }
+  }
   const magazine = data?.magazine || null;
   const hw = {
     name, data, rig,
+    mixer, actions,        // the arms rig's state machine; both empty when bare
+    clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras
+    active: null,          // the clip currently owning the arms
     group: null,
     // The loaded magazine plus the spares. `magazines 5` is read as the
     // total carried, which is how the game's HUD counts them.
@@ -3751,6 +3843,14 @@ async function loadHandWeapon(name) {
     hw.group = found[0] || null;
   }
   handWeapon = hw;
+  if (mixer && actions.idle) {
+    // Idle underneath from the first frame — the breathing sway, slow enough
+    // at its declared 0.1x to read as stillness — and the raise over it:
+    // §11's deploy one-shot on spawn.
+    actions.idle.play();
+    hw.active = 'idle';
+    playViewmodelClip(hw, 'deploy', { restart: true });
+  }
   loadHandFireSound(hw);
   updateAmmoHud();
   return hw;
@@ -3760,8 +3860,75 @@ async function loadHandWeapon(name) {
 function ensureHandWeapon(flag) {
   const name = weaponTemplateFor(flag);
   if (handWeapon?.name === name
-      && (!handWeapon.group || guns.groups.includes(handWeapon.group))) return;
+      && (!handWeapon.group || guns.groups.includes(handWeapon.group))) {
+    // Same weapon, new life: the raise plays again on every spawn.
+    playViewmodelClip(handWeapon, 'deploy', { restart: true });
+    return;
+  }
   loadHandWeapon(name);
+}
+
+// How a gait names a locomotion clip. Walk and run are one baked clip at two
+// rates — the export carries both names so the distinction stays data (§11).
+// Crouch and prone fall back to the aim until their families are baked.
+const LOCO_CLIP = { run: 'run', walk: 'walk', stand: 'idle', crouch: 'idle', prone: 'idle' };
+const LOCO_LOOP = new Set(['idle', 'walk', 'run']);
+
+/**
+ * Bring `name` to full weight and fade whatever held the arms before it.
+ * Loops keep their phase across a fade-out — a walk cycle returned to
+ * mid-burst has not restarted — and one-shots pass `restart` to rewind.
+ * Silently a no-op for the bare-weapon fallback, which has no mixer.
+ */
+function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
+                                       fade = VIEWMODEL_FADE } = {}) {
+  const to = hw?.actions?.[name];
+  if (!to || !hw.mixer) return;
+  if (hw.active === name && !restart) return;
+  const from = hw.active && hw.active !== name ? hw.actions[hw.active] : null;
+  if (restart) to.reset();
+  to.setEffectiveTimeScale(timeScale);
+  to.enabled = true;
+  to.play();
+  if (from) {
+    to.crossFadeFrom(from, fade, false);
+  } else if (restart) {
+    to.setEffectiveWeight(1);
+  }
+  hw.active = name;
+}
+
+/**
+ * The clip this frame owes, then the mixer tick. Priority is the engine's
+ * upper-body machine read off this page's own state: a reload in progress
+ * owns the arms; a deploy still raising, or a clamped fire pose inside the
+ * shot cycle, holds; otherwise the gait chooses the locomotion loop.
+ */
+function updateViewmodelAnimation(hw, dt) {
+  if (!hw.mixer) return;
+  let want;
+  if (hw.reload > 0) {
+    want = 'reload';
+    if (hw.active !== 'reload') {
+      // Rescaled so the last frame lands exactly on the magazine swap: the
+      // clip is baked at 25 fps against an undeclared authoring rate, and
+      // `bakedSpan / reloadTime` — 3.75 for the Thompson — is §11's shipped
+      // correction for that one unverified number.
+      const span = hw.clips?.reload?.duration
+        || hw.actions.reload?.getClip().duration || 0;
+      const reloadTime = hw.data?.magazine?.reloadTime || span || 1;
+      playViewmodelClip(hw, 'reload',
+        { restart: true, timeScale: span ? span / reloadTime : 1 });
+    }
+  } else if (hw.active === 'deploy' && hw.actions.deploy?.isRunning()) {
+    want = 'deploy';
+  } else if (hw.active === 'fire' && hw.cool > 0) {
+    want = 'fire';
+  } else {
+    want = LOCO_CLIP[soldier?.gait] || 'idle';
+  }
+  if (want !== hw.active) playViewmodelClip(hw, want);
+  hw.mixer.update(dt);
 }
 
 /** Begin a magazine change. True if one actually started. */
@@ -3892,6 +4059,10 @@ guns.onShot = group => {
   const hw = handWeapon;
   if (!hw || group !== hw.group) return;
   playHandFire(hw.fire);
+  // The arms answer the round: fire is a one-shot per shot, near-snapped in
+  // and clamped on its last frame so a burst holds the pose between rounds
+  // (a 0.028 s clip against the 0.1 s cycle — §11).
+  playViewmodelClip(hw, 'fire', { restart: true, fade: VIEWMODEL_FIRE_FADE });
   if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
   hw.model.onShot();
   hw.cool = 1 / (hw.data?.roundOfFire || 1);
@@ -4019,6 +4190,10 @@ function footFire(dt, input = null) {
       if (!firing) releaseHandFireLoop();
     }
   }
+
+  // The arms last, once the reload clock and the trigger have settled what
+  // this frame is: a reload begun above starts its clip this same frame.
+  updateViewmodelAnimation(hw, dt);
 
   updateCrosshair();
   updateAmmoHud();
@@ -5148,6 +5323,19 @@ function frame(dt) {
   updateAudio(dt);
   updateSky();
   renderer.render(scene, camera);
+  // The near pass: everything on VIEWMODEL_LAYER — the arms rig and the
+  // muzzle emitters inside it — drawn again over a cleared depth buffer, so
+  // the world can occlude none of it (§11 step 6, the game's own 1P pass).
+  // Same camera, same FOV: whether retail gives the rig its own projection
+  // is OPEN in the corpus, and the world FOV matches every measurement.
+  if (handWeapon?.rig.visible) {
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    camera.layers.set(VIEWMODEL_LAYER);
+    renderer.render(scene, camera);
+    camera.layers.set(0);
+    renderer.autoClear = true;
+  }
   drawMinimap();
   drawFullMap();
 }
@@ -5332,6 +5520,10 @@ if (params.has('shots')) {
   window.__handWeapon = () => handWeapon && ({
     name: handWeapon.name,
     hasGroup: !!handWeapon.group,
+    // The arms rig, when the weapon has one: which clip owns the arms, so a
+    // headless check can walk, fire and reload and read the machine back.
+    viewmodel: !!handWeapon.mixer,
+    clip: handWeapon.active,
     rounds: handWeapon.rounds,
     mags: handWeapon.mags,
     reloading: handWeapon.reload > 0,
