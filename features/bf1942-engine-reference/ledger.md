@@ -258,7 +258,7 @@ every address: [subsystems/handweapon-view-and-deviation.md](subsystems/handweap
 
 ---
 
-## Menu node graphs — `MemeFile 2.0` (settled 2026-09-15)
+## Menu node graphs — `MemeFile 2.0` (format settled 2026-09-15; MEME-10, -11, -13, MMAP-1, -2 and FONT-1 open)
 
 `menu/InGame` and the other extensionless entries in `menu.rfa` are the
 serialized `dice::meme::*` object graphs behind the HUD, spawn screen,
@@ -279,6 +279,13 @@ frame layout then read out of the engine's own reader and writer.
 | MEME-7 | `BfButtonNode` draws its plate at texture size; Width/Height is the pointer region | **confirmed by measurement** | `FUN_007d9b50` reads two pictures then Width/Height; the `knapp*` art occupies (3,1)-(110,26) of a 128x128 sheet against W/H 109x25 |
 | MEME-8 | The spawn map's rectangle is in the data | **refuted** | the `ShowMap` cull holds an empty `ClipNode`; the map picture is hot-swapped at runtime. The viewer's rect is measured from a capture and marked so |
 | MEME-9 | The strings the InGame text nodes show come from `lexiconAll.dat` | **confirmed** | `u32 count, u32 columns, then key + 8 UTF-16LE NUL-terminated translations per record`; `RESPAWN_AT` = `ANTI-TANK` |
+| MEME-10 | The spawn screen dims the map pane (the capture shows a black sea and a faint grid; the art is full colour) | **open** | Not in the data: `ShowMap` is `SplitNode > [CullNode(ShowMap), empty ClipNode]`, with no `EffectNode` near it. The multiplier and the pane rect must be set where the map picture is swapped in, `minimap_resolveMapPath` 0x0045d7c0. The viewer draws the art undimmed at a measured rect |
+| MEME-11 | Classes with unread trailing fields (`ActionListAction`, `CallFunctionAction`, `CullEventActionNode` and the other event nodes) can be skipped to their frame end without losing layout | **open** | Safe by construction, since the size field bounds every frame. But those fields, which say what each button actually does, were never read |
+| MEME-12 | The HUD minimap has no rect of its own in `menu/InGame` | **confirmed by data** | Same empty `ClipNode` as MEME-8. Its neighbours are declared: `ShowTicket` (620,4) 256x32, `Coordinates/ShowMapCoordinates` (627,185) 50x20 in `Style/InGameLatin11`, `ControlPoint/ShowControlPoints` (620,207) 256x16 |
+| MEME-13 | The minimap's size and its small/large toggle are runtime values | **open** | Follows from MEME-12. Neither the size nor the toggle has been found in code; start from 0x0045d7c0 |
+| MMAP-1 | Minimap zoom (`c_PIZoomMap`, N) cycles fixed steps | **open** | `minimap_screenTransform` 0x00469360 scales by `pow(..)` of `1 - member +0x40`. The write site, step count and step values were not found; likely in the undefined `.text` range 0x0046a5c0-0x0046e230 |
+| MMAP-2 | Minimap rotation member `+0x64` is the player's yaw, zeroed by `game.setStaticMinimap 1` (the shipped default) | **open** | Inferred from the option's name and default ([minimap-and-fullmap.md](../bf1942-3d-models/minimap-and-fullmap.md) §3); no write site read. The viewer draws north-up, which is the default either way |
+| FONT-1 | `Font/BF1942.font` (the HUD font) is a `key = value` header followed by `char x0 y x1` rows at a fixed `Height` | **open** | Read from the file; no reader uses it yet. The installed copy is the 2012 double-size variant (256 px atlas, `Height = 20`); `Font-Original.zip` holds the 128 px, `Height = 11` original. Unlike the `.dif` fonts, the two copies' metrics differ |
 
 Primitive encodings via the `ClassIStream` vtable `0x00947288`: `+0x24` ushort,
 `+0x34` float, `+0x38` bool (1 byte), `+0x3c` int, `+0x40` string (u32 length),
