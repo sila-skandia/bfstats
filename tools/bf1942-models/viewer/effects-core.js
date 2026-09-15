@@ -163,6 +163,14 @@ const IDLE_INTERVAL = 100;
  * rather than by reading the code: the decal emitters declare `intensity 2`
  * over `timeToLive 0.1`, one fifth of a spawn by the arithmetic, and every hit
  * in the reference recording leaves a hole.
+ *
+ * Two edges (ledger EMT-2, re-read 2026-09-16): when a `delay` runs out
+ * mid-tick, `age` grows by the delay's own pre-tick value, not by the
+ * leftover past zero (0x081e32ae-0x081e32ce) — the tail of that tick, past
+ * where the delay hit zero, is simply not simulated, so the clock
+ * permanently lags real time by that much. And the burst ends at
+ * `age >= timeToLive` (0x081e3305): a burst is no longer alive on the exact
+ * tick `age` reaches `timeToLive`, not one tick later.
  */
 export class EmitterClock {
   constructor(spec, rand = Math.random) {
@@ -189,15 +197,20 @@ export class EmitterClock {
   step(dt, speed = 0) {
     if (this.done || this.stopped) return 0;
     if (this.delay > 0) {
+      const preDelay = this.delay;
       this.delay -= dt;
       if (this.delay > 0) return 0;
-      dt = -this.delay;
+      // Emitter::handleUpdate (0x081e32ae-0x081e32ce): the tick the delay
+      // runs out advances age by the delay's own pre-tick value, not by the
+      // leftover past zero — the rest of this tick's dt is never simulated.
+      dt = preDelay;
       this.delay = 0;
     }
     this.age += dt;
     let count = 0;
     // A ttl of -1 (`CRD_NONE/-1/0/0`, the trails) lives as long as its parent.
-    const alive = this.ttl < 0 || this.age <= this.ttl;
+    // Otherwise the burst ends at age >= timeToLive (0x081e3305), not after.
+    const alive = this.ttl < 0 || this.age < this.ttl;
     while (alive && this.age >= this.next && count < 64) {
       count++;
       this.next += this.interval(speed);
@@ -256,6 +269,14 @@ export function spawnParticle(spec, basis, origin, emitterVelocity, rand = Math.
     rotation: sampleCrd(p.initRotation, rand),
     spin: sampleCrd(p.rotationSpeed, rand),
     xy: p.xySizeRatio ? sampleCrd(p.xySizeRatio, rand) : 1,
+    // Texture-atlas flipbooks (ledger SPR-6): a sprite with more than one
+    // `numAnimationFrames` rolls its starting frame and its speed once per
+    // particle, the same as `initRotation`/`rotationSpeed`
+    // (`geom::ParticleSystem::addParticle`, client 0x0060a680). Zero on
+    // every other particle, so `integrateParticle` can skip the whole thing
+    // with one comparison.
+    animFrame: p.numAnimationFrames > 1 ? sampleCrd(p.initAnimationFrame, rand) : 0,
+    animSpeed: p.numAnimationFrames > 1 ? sampleCrd(p.animationSpeed, rand) : 0,
   };
 }
 
@@ -287,6 +308,18 @@ export function integrateParticle(p, dt, gravity = GRAVITY) {
   p.position[1] += v[1] * dt;
   p.position[2] += v[2] * dt;
   if (p.spin) p.rotation += p.spin * dt;
+  // Flipbook advance (ledger SPR-6): `draw` (client 0x0060a0e0, the block at
+  // 0x0060a5c4-0x0060a60e) adds `animationSpeed * animationSpeedOverTime(phase)
+  // * dt / numAnimationFrames` to the particle's frame position every call —
+  // frames per second, not phase-indexed like a lookup table, and in frame
+  // units (not full cycles: dividing by the frame count happens once, here,
+  // not twice). `p.animFrame` is left exactly as `FUN_00609ea0` seeds it
+  // (the raw `initAnimationFrame`, e.g. 8 of 16 for `fx_expl_core`) until the
+  // first call that has a frame count to divide by.
+  if (p.spec.numAnimationFrames > 1) {
+    const ramp = sampleCurve(p.spec.animationSpeedOverTime, phase);
+    p.animFrame += p.animSpeed * (ramp ? ramp[0] : 1) * dt / p.spec.numAnimationFrames;
+  }
   return p.age < p.ttl;
 }
 
@@ -329,6 +362,53 @@ export function evalParticle(p) {
   const alpha = sampleCurve(spec.alphaOverTime, phase);
   if (alpha) opacity *= alpha[0];
   return { scale, color, opacity, rotation: p.rotation, phase };
+}
+
+/**
+ * The square grid a flipbook sprite's frames sit in: `{columns, rows, cell}`
+ * (`rows` always equals `columns`, `cell` the fraction of the texture one
+ * frame occupies on each axis).
+ *
+ * `SpriteParticleNewTemplate::makeScript` reads `numAnimationFrames` as a
+ * plain count, and `draw` (client 0x0060a0e0, 0x0060a56a-0x0060a5c1) turns it
+ * into a column count with `FSQRT` then round-to-nearest (`FUN_00804af0`, the
+ * compiler's float-to-int helper — not sqrt itself), bumped up by one when
+ * the frame count does not divide evenly by it; there is no second dimension
+ * computed anywhere in the function, so rows is the same number, and the
+ * texture's own width/height are never read — the grid is square from the
+ * frame count alone, not the texture's aspect ratio. `e_ExplAni06` (16
+ * frames, `fx_expl_core`'s texture) and `e_FireEngine256` (16 frames, the
+ * aircraft-fire templates) are both 256x256 — a clean 4x4 — and
+ * `e_Blood_subtl` (4 frames) is 64x64, a 2x2, consistent with the rule on
+ * every flipbook texture checked.
+ */
+export function atlasGrid(numAnimationFrames) {
+  if (!numAnimationFrames || numAnimationFrames <= 1) return null;
+  let columns = Math.round(Math.sqrt(numAnimationFrames));
+  if (numAnimationFrames % columns !== 0) columns += 1;
+  return { columns, rows: columns, cell: 1 / columns };
+}
+
+/**
+ * `p`'s current flipbook frame, wrapped into `[0, numAnimationFrames)`.
+ *
+ * Where the accumulated frame position (`p.animFrame`, advanced in
+ * `integrateParticle`) is turned into a cell was not found: `draw`'s one call
+ * that takes the particle's render record — `RendPCDX8` vtable +0x90, client
+ * 0x00667830 — turned out to be point-size bucketing
+ * (`FUN_0062ce00`, a size-sorted linked-list insert), not the quad/UV
+ * builder, and that builder was not located (open, see the doc). Every
+ * vanilla template that uses `numAnimationFrames` (29 checked, `fx_expl_core`
+ * through the aircraft engine fires) advances at most 4.4 frames over its own
+ * particle's lifetime and never reaches the far end of its strip within it,
+ * so wrap vs. clamp makes no observed difference on real data; this wraps,
+ * the ordinary choice for a looping flipbook texture.
+ */
+export function frameIndex(p) {
+  const frames = p.spec.numAnimationFrames;
+  if (!frames || frames <= 1) return 0;
+  const n = Math.floor(p.animFrame) % frames;
+  return n < 0 ? n + frames : n;
 }
 
 /**
