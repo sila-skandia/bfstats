@@ -6,45 +6,57 @@
       "upperClip": "Animations/StandWalkRun/1p/Mp40/1PStandAimMp40.baf",
       "speed": 0.1,
       "loop": true,
+      "morphFactor": 0.7,
+      "returnTo": "Ub_StandAimMp40",
       "frames": 13,
-      "duration": 4.8
+      "duration": 10.0
     },
     "walk": {
       "upperClip": "Animations/StandWalkRun/1p/Mp40/1pRunMp40.baf",
       "speed": 0.5,
       "loop": true,
+      "morphFactor": 0.5,
+      "returnTo": "Ub_StandAimMp40",
       "frames": 17,
-      "duration": 1.28
+      "duration": 2.0
     },
     "run": {
       "upperClip": "Animations/StandWalkRun/1p/Mp40/1pRunMp40.baf",
-      "speed": 0.7,
+      "speed": 1.41,
       "loop": true,
+      "morphFactor": 0.5,
+      "returnTo": "Ub_StandAimMp40",
       "frames": 17,
-      "duration": 0.9143
+      "duration": 0.7092
     },
     "fire": {
       "upperClip": "Animations/WeaponHandling/1p/Mp40/1PFireMp40.baf",
-      "speed": 10.0,
+      "speed": 2.37,
       "loop": true,
+      "morphFactor": 4.0,
+      "returnTo": "_POSE_",
       "frames": 7,
-      "duration": 0.024
+      "duration": 0.4219
     },
     "reload": {
       "upperClip": "Animations/WeaponHandling/1p/Mp40/1PReloadMp40.baf",
-      "speed": 0.4,
+      "speed": 0.22,
       "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
       "weaponClip": "Animations/Weapons/Mp40/Mp40Reload.baf",
-      "weaponSpeed": 0.4,
+      "weaponSpeed": 0.22,
       "frames": 165,
-      "duration": 16.4
+      "duration": 4.5455
     },
     "deploy": {
       "upperClip": "Animations/WeaponHandling/1p/Mp40/1PDeployMp40.baf",
       "speed": 1.0,
       "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
       "frames": 31,
-      "duration": 1.2
+      "duration": 1.0
     }
   },
   "view": {
@@ -67,7 +79,7 @@
     "soldierZoomFov": 0.9,
     "zoomFov": 0.6
   },
-  "bafFps": 25.0,
+  "clipTiming": "1/speed",
   "weaponStats": {
     "roundOfFire": 9.0,
     "velocity": 1000.0,
