@@ -53,8 +53,14 @@ NATION_LABELS = {
     "itbrit": "British",
     "itger": "German",
     "itus": "US",
+    # A formation's kit folder and its soldier template disagree on the
+    # spelling the same way `ger`/`german` do: `GerEliteKit` beside
+    # `GermanEliteSoldier`, `CommandoKit` beside `BritishCommandoSoldier`.
+    # Without both halves the soldier resolves to no nation at all.
     "commando": "British Commandos",
+    "britishcommando": "British Commandos",
     "gerelite": "German Elite",
+    "germanelite": "German Elite",
     "vietcong": "Viet Cong",
     # Eve of Destruction files its kits under short faction folders the WWII
     # spellings above do not cover — `VCKit`, `NVAKit`, `ARVNKit`. Without these
@@ -86,7 +92,13 @@ NATION_LABELS = {
     "polish": "Polish",
 }
 
-AXIS_NATIONS = {"German", "Japanese", "Italian", "Hungarian", "Finnish"}
+# `side_of` reads every label absent from this set as Allied, so a label that
+# names an Axis formation without naming its country has to be listed in its own
+# right: Secret Weapons' `GerEliteKit` resolves to "German Elite", which shares
+# no string with "German" and so put the whole elite-soldier kit line — its
+# rifles, its knife, the soldier himself — on the Allied side.
+AXIS_NATIONS = {"German", "German Elite", "Japanese", "Italian", "Hungarian",
+                "Finnish"}
 
 # `GB_AT` and `Canadian_Assault` spell their class differently to the folder that
 # holds them; the folder is the one that is consistent.
