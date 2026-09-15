@@ -111,11 +111,45 @@ Known IDs and layouts (all `working`, struct sizes are `static_assert`ed):
 | 0x39 | SetTeam `{playerid, teamid}` | team switch |
 | 0x3A | RadioMessage | optional |
 
-IDs 0x02–0x07, 0x09–0x0B, 0x0D–0x11, 0x13–0x16, 0x18–0x1B, 0x1E–0x23, 0x25,
-0x26, 0x29, 0x2B–0x33, 0x35, 0x37, 0x38 exist in the client's factory table but
-are unnamed (`open`). `GameClient::processEvent` (`0x004933D0`) is one big
-switch over them; `0x004B4C20` handles 0x2B. The recorder should log unknown IDs
-with their raw payload so the list fills in from real traffic.
+The exe registers exactly 51 event types, read from the registration calls
+themselves by `event_sizes.py` (`working`): 0x02–0x1B, 0x1E, 0x23–0x2B,
+0x2F–0x37, 0x39–0x3E. That replaces an inferred list that stood here before and
+was wrong in places — it claimed 0x1F–0x22, 0x2C–0x2E and 0x38, which the exe
+never registers, and missed 0x3B–0x3E. 0x01, 0x1C and 0x1D are bf42plus's own.
+Everything not in the table above is unnamed (`open`).
+`GameClient::processEvent` (`0x004933D0`) is one big switch over them;
+`0x004B4C20` handles 0x2B.
+
+Each event's exact size is a literal in the engine's code: every maker's
+`createEvent` opens with `mov ecx, sizeof(T); call GameEvent::allocate`
+(`0x004A6290`). So the whole table comes out of the exe without Ghidra, and it
+agrees with all 10 structs bf42plus `static_assert`s. Sizes include the 12-byte
+header, so the payload is size − 12 (`working`):
+
+| id | size | id | size | id | size | id | size | id | size | id | size |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0x02 | 16 | 0x03 | 16 | 0x04 | 17 | 0x05 | 22 | 0x06 | 14 | 0x07 | 43 |
+| 0x08 | 57 | 0x09 | 15 | 0x0A | 15 | 0x0B | 14 | 0x0C | 13 | 0x0D | 50 |
+| 0x0E | 14 | 0x0F | 13 | 0x10 | 13 | 0x11 | 13 | 0x12 | 29 | 0x13 | 112 |
+| 0x14 | 52 | 0x15 | 135 | 0x16 | 31 | 0x17 | 84 | 0x18 | 16 | 0x19 | 119 |
+| 0x1A | 63 | 0x1B | 45 | 0x1E | 14 | 0x23 | 15 | 0x24 | 51 | 0x25 | 14 |
+| 0x26 | 15 | 0x27 | 13 | 0x28 | 38 | 0x29 | 20 | 0x2A | 26 | 0x2B | 149 |
+| 0x2F | 14 | 0x30 | 74 | 0x31 | 74 | 0x32 | 74 | 0x33 | 12 | 0x34 | 16 |
+| 0x35 | 12 | 0x36 | 158 | 0x37 | 76 | 0x39 | 14 | 0x3A | 16 | 0x3B | 16 |
+| 0x3C | 14 | 0x3D | 84 | 0x3E | 13 | | | | | | |
+
+Things the table settles on its own:
+
+- `DataBaseComplete` (0x34) is 16 bytes, so it carries a 4-byte payload; it is
+  not a bare signal.
+- 0x33 and 0x35 are 12 bytes — header only. Those two *are* pure signals.
+- `SetLevel` (0x36) is the largest event at 158 bytes. The phase 1 recorder's
+  fixed 48-byte dump, capped by a 64-byte buffer, could never have recovered
+  the map name from it.
+
+The recorder reads the same literal at runtime and dumps each unknown event's
+exact payload (format v2, §9), so layouts fill in from real traffic without
+guessing where an event ends.
 
 Join sequence, observed by the DLL author (`working`): after connect the server
 replays its "database" — a CreatePlayer for every player, each followed by a
@@ -372,7 +406,7 @@ crash loses at most that.
 | `k` | meaning | fields |
 |---|---|---|
 | `h` | header | `v` format version, `plus` DLL version, `start` local time, `hz` sample rate |
-| `e` | game event | `e` name and per-event fields (see `replay_onEvent`); `e:"raw"` carries `type` and the first 48 payload bytes as hex for events whose struct is unmapped |
+| `e` | game event | `e` name and per-event fields (see `replay_onEvent`). `e:"raw"` is an event whose struct is unmapped: `type`, `size` (sizeof the event class read from the engine's maker, header included) and exactly `size - 12` payload bytes as hex. `size:null` means the maker could not be read and `raw` is a fixed 48-byte prefix that may run past the end of the event. Format v1 had no `size` and always dumped 48 bytes. |
 | `o` | networked object first seen | `id` network ID, `gid` object-manager ID, `tmpl` template name, `tid` template ID, `team` |
 | `s` | sample | `o` is a list of `[id, x, y, z, qx, qy, qz, qw]`, only objects whose transform moved since their last write |
 | `d` | object gone | `id` |
@@ -456,8 +490,10 @@ elapsed round time in seconds rather than a ticket count (tickets do not move
 at a fixed 1/s, and would fall, not rise). The round would have started ~490 s
 before recording began, which fits a session already in progress. `u32[0]` is 0
 throughout and may be a team or type selector that a two-team round would
-disambiguate. Everything past the first 8 bytes is zero, so the struct is
-probably 8–12 bytes and the rest of the 48-byte dump is over-read.
+disambiguate. Everything past the first 8 bytes was zero, and that is now
+explained exactly: 0x29 is a 20-byte class (§2.2), so its payload is those two
+`u32`s and nothing else. The other 40 bytes of the dump were read past the end
+of the event.
 
 `0x29` was unnamed in §2.2's table. This does not yet locate tickets, which
 §3 still lists as `open`.
