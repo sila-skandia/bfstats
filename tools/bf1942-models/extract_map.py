@@ -1291,6 +1291,11 @@ def _place_template(assembler: Assembler, builder, name: str, inst, report,
     if node is None:
         seen_fail.add(key)
         return None
+    # `Object.geometry.scale` is a per-placement stretch, so it belongs to
+    # the placed instance, not the shared template — stamped on the root
+    # node after assembly so every child inherits it.
+    if getattr(inst, "scale", None):
+        builder.node(node).scale = inst.scale
     return node
 
 
@@ -1682,6 +1687,11 @@ def main() -> int:
     # nothing. See `add_level_objects`.
     for path in paths:
         objects.add_level_objects(path, label=f"{info.name} objects")
+    # And its own meshes: a level's `StandardMesh/` folder is resolved by the
+    # engine exactly like the global archive, and it is where every mesh the
+    # vanilla extraction used to report missing actually lives.
+    for path in paths:
+        meshes.add_level_meshes(path, label=f"{info.name} meshes")
     if not args.terrain_only:
         library = build_library(objects)
         # A level's flags are ObjectTemplates like any other, but they live in

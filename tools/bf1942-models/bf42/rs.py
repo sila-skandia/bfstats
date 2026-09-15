@@ -29,7 +29,7 @@ _BLOCK_START = re.compile(r'\b(sub)?shader\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{', r
 _TEXTURE = re.compile(r'\btexture\s+"([^"]+)"', re.IGNORECASE)
 # `lightingSpecular true;` does not match: `\blighting` needs whitespace after
 # it, and that line has none.
-_BOOL = re.compile(r'\b(twosided|transparent|lighting)\s+(true|false)\s*;',
+_BOOL = re.compile(r'\b(twosided|transparent|lighting|textureFade)\s+(true|false)\s*;',
                    re.IGNORECASE)
 _ALPHATEST = re.compile(r'\balphaTest\s+(\w+)\s+([0-9.]+)\s*;', re.IGNORECASE)
 # The other spelling, and the commoner one inside `standardMesh/*.rs`:
@@ -53,6 +53,13 @@ class Shader:
     # streaks and glows declare it so the engine skips N.L entirely. Defaults
     # true because that is what a `.rs` that says nothing means.
     lighting: bool = True
+    # `textureFade true;` — the surface fades with camera distance. Vanilla
+    # declares it on exactly one texture, `texture/black_o`: the darkness
+    # plane sealing every doorway and window of a building's interior model.
+    # Up close the engine fades it out so you see the room through the
+    # opening; at range it fades in and the opening reads as solid dark.
+    # Exported opaque it is the "black door" bug.
+    texture_fade: bool = False
     alpha_test: float | None = None
     blend_src: str | None = None
     blend_dest: str | None = None
@@ -107,7 +114,8 @@ def parse(text: str) -> dict[str, Shader]:
             textures=[t.replace("\\", "/") for t in _TEXTURE.findall(body)],
         )
         for flag, value in _BOOL.findall(body):
-            setattr(shader, flag.lower(), value.lower() == "true")
+            attr = "texture_fade" if flag.lower() == "texturefade" else flag.lower()
+            setattr(shader, attr, value.lower() == "true")
         if at := _ALPHATEST.search(body):
             shader.alpha_test = float(at.group(2))
         elif ref := _ALPHATESTREF.search(body):
