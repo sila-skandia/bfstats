@@ -185,6 +185,24 @@ They do **not** move the camera. The chain, all in `dice::ref2::world`:
    **`dice::anim::Skeleton::transform`** (0x083420f0) on the soldier's skeleton
    (0x0826f0dd..0x0826e9a3).
 
+   **Constructor follow-up (VERIFIED, lnxded):** the base Vec3 at `+0x15c`
+   **zero-initialises**. `BFSoldierTemplate::BFSoldierTemplate` (C2 at
+   0x0827a210) writes 0 to `0x15c/0x160/0x164` (`mov %ecx,0x15c(%ebx)` with
+   `%ecx = 0` at 0x0827a236, then `mov %ecx,0x4(%eax)` / `0x8(%eax)` off
+   `lea 0x15c(%ebx)`). Neighbouring fields anchor the layout: `+0x158`
+   initialises to 0xbf666666 = **−0.9f**, and the Vec3 at `+0x168` is
+   `nameTagOffset` (`setNameTagOffset`, 0x0827fdf0, writes
+   `0x168/0x16c/0x170`). Implication: unless some console setter assigns
+   `+0x15c` at load — none identified; no `BFSoldierTemplate` setter in the
+   symbol table writes it, and `center1pHands` turned out to be a *global*
+   console word (name string 0x086d5708, registered in the console block at
+   0x082b1e84 into 0x0879eccc), not this field — vanilla's shipped base
+   offset is **(0, 0, 0)** and the whole 1P placement is the eased
+   `soldierCameraPosition` under the aim/view rotation. A viewer that still
+   needs a framing correction after applying those should look at the aim
+   frame and `rotate90aroundX` composition, not hunt for a hidden base
+   vector.
+
 So: **the offsets displace the first-person arms+weapon rig, expressed in the
 soldier's view frame.** The camera eye stays on the head; hip→zoom moves the gun.
 Axis meaning from the data (Thompson hip `-0.01/-0.04/0.09` → zoom
@@ -281,7 +299,11 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
 ## 7. Open items
 
 - Exact client cadence of `handlePlayerInput` (deviation/easing clock in Hz).
-- Name of `BFSoldierTemplate+0x15c` (the 1P base offset the weapon offset adds to).
+- Name of `BFSoldierTemplate+0x15c` — PARTLY CLOSED: the constructor
+  zero-initialises it and no template setter or .con assignment was found
+  (see the follow-up under §3), so vanilla's value is (0,0,0) and only its
+  *name* stays open. What remains load-bearing is the aim/view rotation and
+  `rotate90aroundX` composition the offset passes through.
 - Sign convention of the x component of the placement vectors.
 - Renderer-side handling of the 1P rig (own projection? near plane?) — client
   renderer only, untraced.
