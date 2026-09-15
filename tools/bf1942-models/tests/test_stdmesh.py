@@ -60,12 +60,13 @@ def collision_layer() -> bytes:
     return struct.pack("<I", len(payload)) + payload
 
 
-def standard_mesh_fixture() -> bytes:
+def standard_mesh_fixture(version: int = 10) -> bytes:
     data = bytearray()
-    data += struct.pack("<II", 10, 0)
+    data += struct.pack("<II", version, 0)
     data += struct.pack("<3f", -1.0, -1.0, -1.0)
     data += struct.pack("<3f", 1.0, 1.0, 1.0)
-    data += struct.pack("<B", 0)
+    if version > 9:
+        data += struct.pack("<B", 0)  # qflag: version 10 only
     data += struct.pack("<I", 1)
     data += collision_layer()
     data += struct.pack("<I", 2)
@@ -208,6 +209,26 @@ class StandardMeshTests(unittest.TestCase):
         self.assertFalse(material.stride_matches_flags)
         self.assertEqual((0.25, 0.5), material.uvs()[0])
         self.assertEqual((0.0, 0.0), material.uvs2()[0])
+
+    def test_accepts_versions_8_9_and_10_only(self) -> None:
+        # SM-8: client 0x005b61f0 tests 7 < v < 0xb (i.e. 8, 9, 10); lnxded
+        # loadHeader 0x083a6200 agrees. No installed file is 8 or 11, but the
+        # reader must still draw the line exactly where the engine does.
+        for version in (8, 9, 10):
+            mesh = stdmesh.parse(standard_mesh_fixture(version), f"v{version}.sm")
+            self.assertEqual(version, mesh.version)
+
+        for version in (7, 11):
+            with self.assertRaises(stdmesh.MeshError):
+                stdmesh.parse(standard_mesh_fixture(version), f"v{version}.sm")
+
+    def test_version_8_has_no_qflag_byte(self) -> None:
+        # qflag is version > 9 only; an 8 and a 9 file are byte-identical
+        # apart from the version word itself.
+        v8 = bytearray(standard_mesh_fixture(8))
+        v9 = bytearray(standard_mesh_fixture(9))
+        struct.pack_into("<I", v8, 0, 9)
+        self.assertEqual(bytes(v9), bytes(v8))
 
     def test_format_without_components_has_none(self) -> None:
         material = stdmesh.Material(
