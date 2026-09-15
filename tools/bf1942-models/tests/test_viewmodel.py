@@ -118,6 +118,8 @@ ANIM_CON = """
 AnimationStateMachine.createState Ub_StandAimThompson
 AnimationStateMachine.addAnimation Animations/3p/Thompson/3PStandAim.baf 0.8 1
 AnimationStateMachine.addAnimation Animations/1p/Thompson/1PStandAim.baf 0.1 1
+AnimationStateMachine.returnToState Ub_StandAimThompson
+AnimationStateMachine.setMorphFactor 0.7
 
 AnimationStateMachine.createState WeaponReloadThompson
 AnimationStateMachine.addAnimation Animations/Weapons/Thompson/ThompsonReload.baf 0.4 c_AsmPlayOnce
@@ -126,10 +128,17 @@ AnimationStateMachine.createState Ub_StandReloadThompson
 AnimationStateMachine.setOtherState c_AsmWeaponState WeaponReloadThompson
 AnimationStateMachine.addAnimation Animations/3p/Thompson/3PReload.baf 0.4 c_AsmPlayOnce
 AnimationStateMachine.addAnimation Animations/1p/Thompson/1PReload.baf 0.4 c_AsmPlayOnce
+AnimationStateMachine.addTransitionWhenDone Ub_StandAimThompson
+AnimationStateMachine.setMorphFactor 3.0
 AnimationStateMachine.copyState2 Colt Thompson
 
 AnimationStateMachine.createState Ub_FireThompson
 AnimationStateMachine.addAnimation Animations/1p/Thompson/1PFire.baf 10 c_AsmLooping
+AnimationStateMachine.returnToState _POSE_
+
+rem the tweaking scripts run last and name the state outright
+AnimationStateMachine.set1pAnimationSpeed Ub_StandReloadColt 0.6
+AnimationStateMachine.set3pAnimationSpeed Ub_StandReloadColt 0.52
 """
 
 
@@ -167,6 +176,29 @@ class ResolveFamiliesTests(unittest.TestCase):
         self.assertNotIn("walk", resolved)
         self.assertIn("Ub_WalkForwardThompson", report["walk"]["error"])
 
+    def test_tweaking_lines_replace_the_declared_speed_by_state_name(self) -> None:
+        machine = parsed_machine()
+
+        colt = machine.state("Ub_StandReloadColt")
+        thompson = machine.state("Ub_StandReloadThompson")
+        self.assertAlmostEqual(0.6, colt.clip_1p().speed)
+        self.assertAlmostEqual(0.52, colt.clip_3p().speed)
+        # The tweak named the Colt; the Thompson keeps its declaration.
+        self.assertAlmostEqual(0.4, thompson.clip_1p().speed)
+
+    def test_morph_factor_and_return_state_are_read_and_cloned(self) -> None:
+        machine = parsed_machine()
+
+        aim = machine.state("Ub_StandAimThompson")
+        self.assertAlmostEqual(0.7, aim.morph_factor)
+        self.assertEqual("Ub_StandAimThompson", aim.return_to)
+        colt = machine.state("Ub_StandReloadColt")
+        self.assertAlmostEqual(3.0, colt.morph_factor)
+        self.assertEqual("Ub_StandAimColt", colt.return_to)
+        self.assertEqual("_POSE_", machine.state("Ub_FireThompson").return_to)
+        # The engine's constructor default when a state never sets one.
+        self.assertAlmostEqual(5.0, machine.state("WeaponReloadThompson").morph_factor)
+
     def test_a_cloned_state_renames_its_weapon_channel(self) -> None:
         machine = parsed_machine()
 
@@ -176,24 +208,53 @@ class ResolveFamiliesTests(unittest.TestCase):
 
 
 class ClipTimesTests(unittest.TestCase):
-    def test_times_run_frames_at_the_declared_rate(self) -> None:
-        times = extract_viewmodel.clip_times(13, 0.1)
+    """The engine has no frame rate: a pass of a clip lasts 1/|speed| s
+    (`updateState` advances a normalized phase by dt*speed and
+    `applyOnSkeleton` maps frac(phase)*N onto the frames)."""
 
-        self.assertEqual(13, len(times))
+    def test_a_pass_lasts_one_over_speed_whatever_the_frame_count(self) -> None:
+        self.assertAlmostEqual(10.0, extract_viewmodel.clip_span(0.1))
+        self.assertAlmostEqual(0.1, extract_viewmodel.clip_span(10.0))
+        self.assertAlmostEqual(2.5, extract_viewmodel.clip_span(0.4))
+
+    def test_a_loop_has_frames_intervals_and_a_wrap_key(self) -> None:
+        times = extract_viewmodel.clip_times(13, 0.1, loop=True)
+
+        # 13 frames, 13 intervals (12 -> 0 is one of them), a 14th key at the
+        # full span holding frame 0 again so LoopRepeat crosses the wrap.
+        self.assertEqual(14, len(times))
         self.assertAlmostEqual(0.0, times[0])
-        # 25 fps at a 0.1x state speed is 2.5 effective fps.
-        self.assertAlmostEqual(12 / 2.5, times[-1])
+        self.assertAlmostEqual(10.0, times[-1])
+        self.assertAlmostEqual(10.0 / 13, times[1])
+
+    def test_a_one_shot_has_frames_minus_one_intervals(self) -> None:
+        times = extract_viewmodel.clip_times(29, 1.0, loop=False)
+
+        self.assertEqual(29, len(times))
+        self.assertAlmostEqual(1.0, times[-1])
+        self.assertAlmostEqual(1.0 / 28, times[1])
 
     def test_a_negative_speed_is_a_reversed_clip_not_reversed_time(self) -> None:
-        times = extract_viewmodel.clip_times(17, -0.5)
+        times = extract_viewmodel.clip_times(17, -0.5, loop=True)
 
         self.assertGreater(times[-1], 0.0)
+        self.assertAlmostEqual(2.0, times[-1])
 
     def test_a_single_frame_clip_still_has_a_span(self) -> None:
-        times = extract_viewmodel.clip_times(1, 1.0)
+        times = extract_viewmodel.clip_times(1, 1.0, loop=False)
 
         self.assertEqual(2, len(times))
         self.assertGreater(times[-1], times[0])
+
+    def test_the_loop_flag_is_read_off_the_declaration(self) -> None:
+        self.assertTrue(extract_viewmodel.clip_loops(
+            animstates.ClipRef("a.baf", 1.0, "1")))
+        self.assertTrue(extract_viewmodel.clip_loops(
+            animstates.ClipRef("a.baf", 1.0, "c_AsmLooping")))
+        self.assertFalse(extract_viewmodel.clip_loops(
+            animstates.ClipRef("a.baf", 1.0, "c_AsmPlayOnce")))
+        self.assertFalse(extract_viewmodel.clip_loops(
+            animstates.ClipRef("a.baf", 1.0, "0")))
 
 
 class WeaponPartLocalsTests(unittest.TestCase):
@@ -342,6 +403,11 @@ class ThompsonViewmodelArtifactTests(unittest.TestCase):
                          extras["view"]["soldierCameraPosition"])
         self.assertIn("idle", extras["clips"])
         self.assertAlmostEqual(0.1, extras["clips"]["idle"]["speed"])
+        # One pass of the aim sway is 1/0.1 = 10 s in the engine, and the
+        # blend into that state runs at its `setMorphFactor` 0.7 per second.
+        self.assertAlmostEqual(10.0, extras["clips"]["idle"]["duration"])
+        self.assertAlmostEqual(0.7, extras["clips"]["idle"]["morphFactor"])
+        self.assertEqual("1/speed", extras["clipTiming"])
 
 
 if __name__ == "__main__":
