@@ -16,10 +16,11 @@ minDev is the floor and devMod does NOT scale it; each dynamic channel raises
 by M² against a cap of a·M and decays d/M per tick; the speed gates are
 binary on the 0.01 deadzone; the turn terms are analog; miscDev is the jump
 channel; firing adds fireDev.b per shot clamped to fireDev.a and decays
-fireDev.c/M per tick; and aiming changes nothing at all. Only the tick
-cadence (TICK_HZ) and the AT family's floor-and-lid remain OPEN, and no
-assertion below depends on either beyond the per-tick amounts being applied
-at the declared 60 Hz.
+fireDev.c/M per tick; and aiming changes nothing at all. The tick is the
+engine's fixed 1/30 s simulation step (`g_simulationFps` = 30 in both
+binaries, one `handlePlayerInput` per tick — corpus doc §2, "Clock"); only
+the AT family's floor-and-lid remains OPEN. No assertion below depends on
+the rate beyond the per-tick amounts being applied at the declared 30 Hz.
 """
 
 from __future__ import annotations
@@ -126,9 +127,11 @@ class DeviationModelTests(unittest.TestCase):
     def test_turning_is_analog_and_unsigned(self) -> None:
         turning = self.results["turning"]
         self.assertAlmostEqual(MIN_DEV, turning["still"], places=9)
-        # One tick at 6 rad/s vs 3 rad/s: the term scales with the input.
+        # One tick at 6 rad/s vs 3 rad/s: the term scales with the input. The
+        # per-tick look sample is rad/s over the engine's 30 Hz tick.
         self.assertLess(turning["oneTickHalf"], turning["oneTickFull"])
-        expect_full = MIN_DEV + TURNER[1] * (6 / 60) - TURNER[3]
+        tick_hz = self.results["constants"]["tickHz"]
+        expect_full = MIN_DEV + TURNER[1] * (6 / tick_hz) - TURNER[3]
         self.assertAlmostEqual(expect_full, turning["oneTickFull"], places=9)
         self.assertAlmostEqual(turning["oneTickFull"], turning["oneTickNegative"],
                                places=9)
@@ -160,7 +163,7 @@ class DeviationModelTests(unittest.TestCase):
 
     def test_the_bloom_decays_linearly_back_to_the_floor(self) -> None:
         # fireDev.c / M per tick: standing M = 1.2 empties 2.0 in exactly 40
-        # ticks (0-indexed 39) — two thirds of a second at the 60 Hz clock.
+        # ticks (0-indexed 39) — 1.33 s at the engine's 30 Hz simulation tick.
         fire = self.results["fire"]
         self.assertTrue(fire["monotonic"])
         self.assertAlmostEqual(fire["rest"], fire["end"], places=9)
@@ -222,7 +225,7 @@ class DeviationModelTests(unittest.TestCase):
     def test_the_constants_are_the_engines(self) -> None:
         constants = self.results["constants"]
         self.assertEqual(0.01, constants["deadzone"])    # both binaries
-        self.assertEqual(60, constants["tickHz"])        # OPEN stand-in
+        self.assertEqual(30, constants["tickHz"])        # g_simulationFps, both binaries
         self.assertEqual({"stand": 0, "crouch": 1, "prone": 2},
                          constants["stanceIndex"])
 

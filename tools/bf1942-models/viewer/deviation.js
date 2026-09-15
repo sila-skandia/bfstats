@@ -37,11 +37,16 @@
 //   Aiming/zoom appears NOWHERE in the formula. There is no aim multiplier
 //   in either binary on any path between the accumulators and the total.
 //
+// The clock is no longer open either. The engine has no dt anywhere in
+// updateDeviation — decay and raise are per `handlePlayerInput` call — and
+// that call is made once per fixed simulation tick, 1/30 s, on the client as
+// on the server: `g_simulationFps` (client 0x00957640, lnxded 0x08716b5c) is
+// 30.0, the input manager accumulates whole ticks of it, `Setup::mainLoop`
+// hands `Game::update(nTicks, 1/30)` that many, and each tick pops exactly
+// one buffered input into `handlePlayerInput(..., 1/30)` (corpus doc §2,
+// "Clock"). So a per-tick amount in a .con file is a per-1/30-s amount.
+//
 // What remains OPEN, each marked at its declaration:
-//   - The tick cadence. The engine has no dt anywhere in updateDeviation —
-//     decay and raise are per `handlePlayerInput` call, and the client's
-//     call rate for the local player was not traced. This module ticks at
-//     `TICK_HZ`, the viewer's own soldier sim rate.
 //   - The units of MouseLookX/Y. This module takes view slew in rad/s and
 //     samples it per tick; every vanilla weapon ships `setTurnDev 0 0 0 0`,
 //     so nothing shipped can calibrate (or feel) the scale.
@@ -60,14 +65,18 @@
 export const STANCE_INDEX = { stand: 0, crouch: 1, prone: 2 };
 
 /**
- * The deviation clock, ticks per second. OPEN: the engine's rule is per
- * `handlePlayerInput` call with no dt (corpus doc, "Clock"), and the client
- * cadence of that call was not traced. 60 is the viewer's own fixed soldier
- * sim step (`soldier.js`), which is the closest thing this page has to the
- * engine's update loop — the per-tick amounts are shipped data, the rate is
- * the stand-in.
+ * The deviation clock, ticks per second. VERIFIED: the engine's rule is per
+ * `handlePlayerInput` call with no dt, and the client makes that call once
+ * per fixed 1/30 s simulation tick — `g_simulationFps` = 30.0 in both
+ * binaries (client 0x00957640, lnxded 0x08716b5c), never written, no console
+ * word; the tick count per frame is `InputManager::update` 0x0049ce70's
+ * accumulator and `GameClient::update` 0x0048fca0 runs `simulateFrame(1/30)`
+ * that many times, each popping one buffered input into `handlePlayerInput`
+ * (`GameClient::simulatePlayerUpdate` 0x004b6a30). Not the render rate, and
+ * not the viewer's 60 Hz soldier sim step in `soldier.js` — the deviation
+ * cone steps half as often as the body does. [data]
  */
-export const TICK_HZ = 60;
+export const TICK_HZ = 30;
 
 /**
  * The input deadzone on the binary speed gates. Engine constant, VERIFIED in
