@@ -132,6 +132,15 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
+   "address": "0x0040c3b0",
+   "name": "Game::handleCollisionForProjectile (base stub, \"old handleCollision\")",
+   "kind": "address",
+   "subsystem": "effects",
+   "confidence": "inferred",
+   "source": "ghidra-session",
+   "note": "Site referencing the string \"old handleCollision\" (0x008c514c); in lnxded dice::bf::Game::handleCollisionForProjectile 0x0805f640 is a debug stub that only formats that string. The live override is GameServer/GameClient::handleCollisionForProjectile (lnxded server 0x08153ba0: getEffectTemplate(att, def, |v.n|), playCollisionEffect at other.pos+relPos, then splash damage). Client override not located; undefined code."
+  },
+  {
    "address": "0x0040cd5e",
    "name": "patch__cdkey_validation1",
    "kind": "patch_site",
@@ -139,6 +148,33 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x0040d2e0",
+   "name": "BaseMatrix4::mult(a, b)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Decompiled: this[i][j] = sum_k a[i][k]*b[k][j] for i<3, row 3 = a[3].B + b[3]; last column forced (0,0,0,1). Row-vector affine product, translation in m[12..14]: v' = v.a.b applies a first. Same as lnxded 0x08062440."
+  },
+  {
+   "address": "0x0040e360",
+   "name": "BaseVector3::makeOrthonormalBasis",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x08061bd0 (decompiled, identical): this = a x b, normalize; b = this x a, normalize; this = a x b again; returns 0xffffb1dd (-20003) when any normalize fails. Called by playCollisionEffect with this=Right row, a=Up row holding the surface normal, b=DOF row."
+  },
+  {
+   "address": "0x0040e590",
+   "name": "Game::playCollisionEffect",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x0805de20 (decompiled, identical). (pos, IObjectTemplate* effect, Vec3 normal, float dot, float speed): createObject, QI IID_IPlayerObject (client 0xc378), setPosition, copy transform, write normal into row 1 (Up), makeOrthonormalBasis(row0, row1, row2), setTransform, init; if template classID == CID_EffectBundleTemplate (client 0x9474) store dot at obj+0x128 and speed at +0x12c; activate(0,0). So an impact effect frame is Up=surface normal, DOF=projection of world +Z onto the surface."
   },
   {
    "address": "0x0040ecb0",
@@ -1068,6 +1104,15 @@
    "note": "physics.gravity is a registered float console property (sibling: wind). Zero uses in vanilla .con data, so ctor default is the live value."
   },
   {
+   "address": "0x004ca700",
+   "name": "console:BFSoldierTemplate.center1pHands execute",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Registrar FUN_004ca600 (string 0x008dfd44, type Math::Vec3). Set path writes +0x20c/0x210/0x214 of the current template from FUN_005091c0(); get path reads them back. These are exactly the template fields BFSoldier::updateAnimations (0x004fb150) adds to the eased soldierCameraPosition, so center1pHands IS the 1P base vector (lnxded ConsoleClass178::executeObjectMethod 0x082bbaf0 writes BFSoldierTemplate +0x15c/0x160/0x164 via getActiveTemplate(CID_BFSoldierTemplate)). The corpus doc's 'ships as (0,0,0)' reading was wrong: the ctor zero is only the default."
+  },
+  {
    "address": "0x004cf9d0",
    "name": "console:HandFireArmsTemplate.setDevMod",
    "kind": "function",
@@ -1095,6 +1140,15 @@
    "note": "executeObjectMethod (registrar FUN_004d2b40, string 0x008e1c8c): Vec3 at FireArmsTemplate +0x3f0 via the adjusted (+4) interface ptr from FUN_005091c0 = +0x3ec base-relative. This is the UNZOOMED 1P weapon-rig offset, applied via BFSoldier::updateAnimations -> Skeleton::transform (see subsystems doc)."
   },
   {
+   "address": "0x004da850",
+   "name": "console:ProjectileTemplate.distToStartLoseDamage registrar",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "ConsoleClass registrar object for \"distToStartLoseDamage\" (string 0x008e3cf4); the property get/set pair follows at 0x004da9a0: reads/writes float at template+0x27c through the class-id lookup FUN_005091c0(0x008dcd18). minDamage registrar FUN_004da6a0 (get/set 0x004da7f0, +0x278); distToMinDamage FUN_004daa00 (0x004dab50, +0x280)."
+  },
+  {
    "address": "0x004f54a0",
    "name": "Game__func_4F54A0",
    "kind": "function",
@@ -1111,6 +1165,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x004f7120",
+   "name": "dice::ref2::world::setFirstPersonFov(ICompositeObject*, float)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Decompiled; lnxded 0x0826b330. Walks the child list (+0x54 sibling), skips KitPartTemplate 0x94a3 / ActiveKitPartTemplate 0x94bc, sets +0x11c on EffectBundleTemplate 0x9474 subtrees, and for every part with a geometry component (+0x5c) queryInterface(IID_IViewModifier 0xf0e2bbfa) -> vfn+0xc(fov) = the mesh's own field of view; recurses. Called by BFSoldier::setFirstPerson with template set1pFov (lnxded +0x1a0 / client +0x250) and by applyFovModifier with set1pFov * eased SoldierZoomFov factor, -1.0 = off."
   },
   {
    "address": "0x004f7910",
@@ -1140,6 +1203,15 @@
    "note": "Composes a soldier's three AnimationStateMachineInstances (array based at BFSoldier +0x294 in lnxded; 0 = lower body, 1 = upper body, 2 = camera-shake triggers, the last proven by triggerCameraShake). Passes dt straight through with NO speed term. The lower-body instance - which owns every Lb_Walk/Run/Crouch/Lie locomotion state and therefore the whole walking view bob - is multiplied by cameraShakeFactor (DAT_0099000c). The upper-body and trigger instances get a hardcoded 1.0f."
   },
   {
+   "address": "0x004fb150",
+   "name": "BFSoldier::updateAnimations",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Decompiled in full; lnxded twin 0x0826e630 (same flag ladder on soldier+0x416, -0.8f/+0.8f/-0.4f/+0.5f lean targets into +0x3f0, 0x10004 mask). First-person branch (local_15c==-1 path): B = mult(S=soldier+0x54c, M=camera.getRelativeTransformation() via ICompositeObject 0xc378 vfn+0x70); B.translation += (eased +0x27c/0x280/0x284 + template +0x20c/0x210/0x214) . B_rot; A = mult(rotate90aroundX=DAT_00990170, B); Skeleton::transform(&A, -1). No yaw or pitch term exists in the chain."
+  },
+  {
    "address": "0x004fc8b6",
    "name": "code:zoomCameraModeSwitch",
    "kind": "address",
@@ -1147,6 +1219,24 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Gap code (raw-byte read): on zoom state change, switches the camera state machine between modes 0 and 2 - transitions (0,2)/(2,0) chosen off current zoom flag; reads tmpl SoldierZoomFov +0x3dc vs 0.0 as the has-soldier-zoom gate. Zoom is a press-toggle; each AltFire press flips it."
+  },
+  {
+   "address": "0x004fc910",
+   "name": "code:soldierShakeMatrixReset",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "inferred",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Writes identity into soldier+0x54c (the camera-shake / externCameraTrans matrix S that updateAnimations composes into the 1P rig), then resets the animation machines and looks up 'Bip01 Pelvis'. A (re)initialisation path of BFSoldier; exact name open."
+  },
+  {
+   "address": "0x004ff440",
+   "name": "BFSoldier::BFSoldier(BFSoldierTemplate const*)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Constructor: identity into the shake matrix at +0x54c (param_1[0x153]..[0x162]) among the field inits, matching lnxded 0x0826b400 / 0x0826bf00 which set +0x4fc the same way."
   },
   {
    "address": "0x0050095f",
@@ -1176,6 +1266,24 @@
    "note": "bf42plus section: Game Functions"
   },
   {
+   "address": "0x005097a0",
+   "name": "EmitterTemplate::makeScript",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Created at prologue (2308 bytes). Client EmitterTemplate: template +0x3dc, looping +0x1e0, addEmitterSpeed +0x1e1, emitterSpeedScale +0x1e4 (1.0), startAtCreation +0x1e8, startProbability +0x1ec (1.0), IntensityAtSpeed +0x1f0, delay CRD +0x1fc, timeToLive +0x210, intensity +0x224, useCameraOrientation +0x3f8, relativePositionInDof/Up/Right +0x414/+0x428/+0x43c, positionalSpeedInDof/Up/Right +0x450/+0x464/+0x478, rotationalSpeedInDof/Up/Right +0x48c/+0x4a0/+0x4b4, startRotation +0x4c8, hasOverDamage +0x4d8, noPhysics +0x4d9, addChild +0x4da, showInFirstPerson +0x4db, showInThirdPerson +0x4dc, moveToWaterSurface +0x4dd, IsSpawnEffect +0x4de. Twin of lnxded 0x081e61c0."
+  },
+  {
+   "address": "0x005384d0",
+   "name": "ParticleTemplate::makeScript",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Created at prologue (1230 bytes). Client ParticleTemplate: geometry +0x58/+0x6c, hasCollisionPhysics +0x78, sizeModifier +0x7c/+0x80/+0x84 (default 0/0/0 = draw the mesh at authored size), timeToLive CRD +0x88/+0x8c, size +0x9c/+0xa0 (default 1), gravityModifier +0xb0/+0xb4 (default 1), drag +0xc4/+0xc8 (default 0), curve lists sizeOverTime/gravityModifierOverTime/dragOverTime/alphaOverTime via +0x14 list nodes. Twin of lnxded 0x0820b260."
+  },
+  {
    "address": "0x005389c9",
    "name": "patch__Particle_handleUpdate_crashfix",
    "kind": "patch_site",
@@ -1203,6 +1311,15 @@
    "note": "Serializes the template back to .con - the offset->property rosetta for the client FireArmsTemplate: UnZoomBetweenFireTime +0x3d0, useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc, soldierZoomPosition +0x3e0, soldierCameraPosition +0x3ec, fireDev.c +0x4f0, minDev +0x4f8. lnxded equivalent 0x0828e3b0."
   },
   {
+   "address": "0x00541a60",
+   "name": "ProjectileTemplate::makeScript",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Created at the MSVC prologue after FUN_005419e0; serialises the client ProjectileTemplate. Offsets: timeToLive CRD ~+0x1f8, endEffectTemplate +0x21c/+0x230, gravityModifier +0x214 (default 1.0), damageType +0x210, material +0x10c, material2 +0x298, radius +0x270 (default 10), invisible +0x28a, stopAtEndEffect +0x289, dieAfterColl +0x287 (default 1), hasOnTimeEffect +0x285, hasCollisionEffect +0x284, detonateOnWaterCollision +0x28c, explodeNearEnemyDistance +0x218 (default -1). minDamage/distToStartLoseDamage/distToMinDamage at +0x278/+0x27c/+0x280 from the console accessors FUN_004da6a0/FUN_004da850/FUN_004daa00 (+0x1a0 bytes each: registrar, execute, get/set)."
+  },
+  {
    "address": "0x00541f50",
    "name": "Projectile__resetProjectile",
    "kind": "function",
@@ -1210,6 +1327,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Object System"
+  },
+  {
+   "address": "0x00542e80",
+   "name": "Projectile::getDamage",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x0831f3c0 (decompiled, identical). base = template+0x2a0 override ->+8 else MaterialManager::getDamageForMaterial(material). If minDamage(tmpl+0x278) < 1 and distToStartLoseDamage(+0x27c) > 0: d = |hit - start(this+0x14c)|; d <= start: base; d > distToMinDamage(+0x280): base*minDamage; else base*(minDamage + (1-minDamage)*(end-d)/(end-start)). Linear falloff."
   },
   {
    "address": "0x00543110",
@@ -1590,6 +1716,15 @@
    "note": "bf42plus section: Console"
   },
   {
+   "address": "0x005ad800",
+   "name": "BStandardMesh::queryInterface",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Interface table returning this+0x18 for IID_IViewModifier, matching the lnxded this-adjust-24 thunk on BStandardMesh::setFieldOfView; other IIDs at +4, +8, +0xc, +0x20, +0x144. Class identity inferred from the layout, not from a name."
+  },
+  {
    "address": "0x005b42d0",
    "name": "StandardMeshTemplate_readMaterials",
    "kind": "function",
@@ -1714,6 +1849,33 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Deferred render-state queue flusher: dispatch loop applying queued states to the device. Cases include SetMaterial(+0xA8) from queue at 0x9c0568, D3DRS_AMBIENT (0x8b) global ambient, D3DRS_*MATERIALSOURCE (0x91+), SetLight(+0xB0) for 8 slots via FUN_0045f210, LightEnable(+0xB8). Confirms fixed-function D3D lighting drives DIFFUSE for dynamic meshes."
+  },
+  {
+   "address": "0x00611690",
+   "name": "dice::anim::Skeleton::transform(Mat4 const*, int)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Client twin of lnxded 0x083420f0 (call position in updateAnimations, argument shape). Root bone world = mult(root.local, *M): the matrix passed is the skeleton root's placement in the soldier's frame; children chain below it."
+  },
+  {
+   "address": "0x00613280",
+   "name": "AnimationStateMachineInstance::updateAnimations(Skeleton&, int clipIndex, int)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "lnxded 0x0832aed0. Second arg is the clip slot (0 = 3P clip, 1 = 1P clip); returns without touching the skeleton when clipIndex >= the state's clip count (lnxded 0x0832af36). BFSoldier::updateAnimations passes isFirstPerson&&(soldier+0x50==0) here, so in first person every Lb_* state (none declares a 1P clip) applies nothing and root/pelvis/legs stay at the .ske rest."
+  },
+  {
+   "address": "0x00613c60",
+   "name": "AnimationStateMachineInstance::updateState(float, int clipIndex, string const&)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "lnxded 0x0832b270. Int arg selects the clip slot; 0x3a is the magic 'slot 1 if the state has two clips, else slot 0' (lnxded 0x0832b4a5), which BFSoldier::updateAnimations passes for the lower-body machine in first person (client decompile local_168 = 0x3a)."
   },
   {
    "address": "0x00613e90",
@@ -2526,6 +2688,15 @@
    "note": "495KB of undefined code, 0x00838b5e-0x008b191f: the CRT static-initializer block. Ten of the 17 refs to \"StandardMesh/\" live here and are just global std::string constructions. Rule them out when chasing a string."
   },
   {
+   "address": "0x00850d00",
+   "name": "static init: world::rotate90aroundX",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Not a Ghidra-defined function (raw-byte disassembly 0x00850d00-0x00850e66). SUB ESP,0x44; FLD pi; FMUL -0.5; inlined FSIN/FCOS with the CRT +/-1000 range guards; row3=(0,0,0,1) at ESP+4, row2=(0,s,c,0), row1=(0,c,-s,0), row0=(1,0,0,0); PUSHes the four rows, ECX=0x00990170, CALL 0x004020d0. The sibling matrix DAT_00990130 (lnxded 0x0879d300, used for 3P attached parts) is built by the code just before it."
+  },
+  {
    "address": "0x008c3000",
    "name": "exe_text_end",
    "kind": "range",
@@ -2650,6 +2821,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "float 0.0025, the final multiplier in calculateLift; sole reader is 0x0057fbdd inside FUN_0057fa90. 45.0f sits beside it at 0x008feb48. Searching for this constant is how calculateLift was located in the stripped client."
+  },
+  {
+   "address": "0x0090350c",
+   "name": "dice::ref2::geom::IID_IViewModifier",
+   "kind": "data",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "0xf0e2bbfa, same value as lnxded 0x086e6788. The per-mesh interface behind set1pFov: BStandardMesh implements it at +0x18 (lnxded Thn24 thunk to BStandardMesh::setFieldOfView, which stores the float at mesh+0xf0, -1.0 = none). Users: 0x004f7188 (setFirstPersonFov), 0x0050aeca (object-level re-apply of +0x11c), 0x005ad87a and 0x0062a866 (queryInterface tables)."
   },
   {
    "address": "0x009035dc",
@@ -2902,6 +3082,15 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15",
    "note": "float. Scales the soldier's LOCOMOTION camera shake only (see BFSoldier::updateCameraShake). Lives in initialized .data (0x00952000-0x00a9298b) and the shipped bytes are 0x00000000, i.e. 0.0f. Its only writers are the console accessor for the PlayerControlObjectTemplate property 'cameraShakeFactor' (registrar FUN_004f1310, string 0x008e9604), which clamps to [lo, 1.0]; no static initialiser touches it. No vanilla .con, .inc or .tweak in Objects.rfa, animations.rfa, Game.rfa or menu.rfa sets it, and neither does any Settings file. CONSEQUENCE: retail BF1942 multiplies the declared Lb_* setCameraShake* walk/run bob by zero - the authored walking view bob is inert unless a console command enables it. Weapon-fire (Ub_*) and explosion/hit shakes are unaffected, they run at 1.0."
+  },
+  {
+   "address": "0x00990170",
+   "name": "dice::ref2::world::rotate90aroundX",
+   "kind": "data",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-mount",
+   "note": "Static Mat4, zero in the file image, built at start-up by the initializer at 0x00850d00: theta = [0x008ea530]=pi * [0x008eb504]=-0.5 = -pi/2; rows (1,0,0,0),(0,cos,-sin,0),(0,sin,cos,0),(0,0,0,1) = (1,0,0,0),(0,0,1,0),(0,-1,0,0),(0,0,0,1) handed to Mat4::set (FUN_004020d0). Maps (x,y,z)->(x,-z,y). Identical to lnxded 0x0879d340 (init 0x0827ecb0, site 0x0827eda5)."
   },
   {
    "address": "0x009a2170",
