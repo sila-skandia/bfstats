@@ -228,8 +228,10 @@ trigger, a plain move still turns the view). **Not yet confirmed with a real
 mouse — Dylan should verify the snap is gone.**
 
 **Closing the tab mid-play now asks first.** Crouch stays on left Ctrl for
-game parity; the browser owns Ctrl+W outright and no page can intercept it,
-even in fullscreen, so there was no fix on the page's own binding. A
+game parity; the browser owns Ctrl+W outright by default, so there was no fix
+on the page's own binding short of Keyboard Lock (see Open items — Chromium's
+`navigator.keyboard.lock()` can reserve it, but only inside a fullscreen
+session the page would have to request, which this pass didn't add). A
 `beforeunload` handler now asks for confirmation, scoped to mid-play
 (captured, on foot, a live soldier) so it never fires over the gate screen or
 a free-fly pan. Logic-verified against the same gate `footButtonChange` uses;
