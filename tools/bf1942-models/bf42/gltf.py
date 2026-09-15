@@ -137,6 +137,26 @@ def quat_from_matrix(rotation: tuple[tuple[float, float, float], ...]) -> tuple[
     )
 
 
+def _hemisphere_align(quats: list[tuple[float, float, float, float]],
+                      ) -> list[tuple[float, float, float, float]]:
+    """Flip keyframe quaternions so consecutive pairs take the short arc.
+
+    `q` and `-q` name the same rotation, and `_quat_from_rows` picks its
+    branch from the matrix alone, so a bone that passes through a branch
+    boundary mid-clip emits a sign flip. Interpolating across that flip is
+    the 360-degree "long way round" — three.js happens to slerp defensively
+    (`Quaternion.slerpFlat` negates on a negative dot) but a spec-literal
+    reader need not, and the flipped sample is also what a consumer sees if
+    it reads the accessor directly. Fixing it at the source costs one dot
+    product per key and leaves single-key and constant tracks untouched.
+    """
+    out = list(quats)
+    for i in range(1, len(out)):
+        if sum(a * b for a, b in zip(out[i - 1], out[i])) < 0.0:
+            out[i] = tuple(-c for c in out[i])
+    return out
+
+
 def _quat_from_rows(m00, m01, m02, m10, m11, m12, m20, m21, m22):
     trace = m00 + m11 + m22
     if trace > 0.0:
@@ -399,7 +419,8 @@ class GlbBuilder:
             time_acc = self._accessor(
                 self._view(time_data), COMPONENT_FLOAT, len(times), "SCALAR",
                 [min(times)], [max(times)])
-            quats = [quat_from_matrix(rotation) for rotation, _ in transforms]
+            quats = _hemisphere_align(
+                [quat_from_matrix(rotation) for rotation, _ in transforms])
             rot_acc = self._accessor(
                 self._view(b"".join(struct.pack("<4f", *q) for q in quats)),
                 COMPONENT_FLOAT, len(quats), "VEC4")
@@ -450,11 +471,15 @@ class GlbBuilder:
             "scene": 0,
             "scenes": [{"nodes": roots}],
             "nodes": nodes,
-            "meshes": self._meshes,
             "accessors": self._accessors,
             "bufferViews": self._views,
             "buffers": [{"byteLength": len(self._blob)}],
         }
+        # glTF 2.0 gives every top-level array `minItems: 1`, so an array that
+        # would be empty has to be absent instead. Only a clips-only file (a
+        # gait sidecar: joints and animations, no geometry) can have no meshes.
+        if self._meshes:
+            doc["meshes"] = self._meshes
         if self._skins:
             doc["skins"] = self._skins
         if self._animations:
