@@ -573,6 +573,7 @@ import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collisio
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV } from './soldier.js';
 import { DeviationModel } from './deviation.js';
+import { createReplayController, recordingLevel } from './replay.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -4184,7 +4185,9 @@ function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
 function updateViewmodelAnimation(hw, dt) {
   if (!hw.mixer) return;
   let want;
-  if (hw.reload > 0 && hw.active !== 'reload' && !hw.reloadPlayed) {
+  // Keyed on the magazine change, not on which clip holds the arms: a change
+  // begun while the last reload clip is still clamped rewinds it.
+  if (hw.reload > 0 && !hw.reloadPlayed) {
     // The clip runs at the engine's own span — one pass is 1/speed seconds,
     // 4.76 s for the Thompson's tweaked 0.21 against its 4.8 s `reloadTime`
     // (DICE fitted the rate to the timer in 1pAnimationsTweaking.con). When
@@ -4454,11 +4457,9 @@ function footFire(dt, input = null) {
     }
   } else if (magazine && hw.rounds <= 0 && hw.mags > 0) {
     // Dry means a magazine change, asked for or not — `autoReload` in the
-    // data or no. R merely asks early. Like an asked-for reload, it drops
-    // zoom (`FireArms::Reload` -> setZoom(false)).
-    hw.reload = magazine.reloadTime ?? 2;
-    hw.zoomed = false;
-    hw.rezoom = 0;
+    // data or no. R merely asks early. Both go through startReload, so every
+    // change drops zoom and owes the arms a fresh pass of the reload clip.
+    startReload();
   }
 
   if (hw.group) {
@@ -5894,6 +5895,12 @@ optEntire.addEventListener('change', () => {
   applyVisibility();
 });
 
+// A round to play back over the level: `?replay=<recording.ndjson>`, with
+// `&serverlog=<ev_*.xml>` to overlay the server's own event log, or a
+// recording dropped onto the view. See replay.js.
+const replayUrl = params.get('replay');
+let replayController = null;
+
 const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
   .then(r => r.ok ? r.json() : [])
   .catch(() => []);
@@ -5910,10 +5917,28 @@ if (!manifest.length) {
     const entry = manifest.find(e => e.name === select.value);
     if (entry) show(entry);
   });
-  const wanted = (params.get('map') || '').toLowerCase();
+  // A recording names the level it was made on; ?map= still wins.
+  const replayLevel = replayUrl ? await recordingLevel(replayUrl).catch(() => '') : '';
+  const wanted = (params.get('map') || replayLevel || '').toLowerCase();
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
   select.value = first.name;
   await show(first);
+}
+
+replayController = createReplayController({
+  scene, camera, loader, bust,
+  stage: document.getElementById('stage'),
+  modelsBase: MODELS_BASE,
+  levelName: () => extras?.level || select.value || '',
+  // The level's own parked vehicles would double every recorded one.
+  hideBakedVehicles: () => { optVehicles.checked = false; },
+  // The engine's vehicle lighting, as the level's own vehicles get it.
+  // Not bindTextureFade: that one resets the level's list of fading meshes.
+  shadeModel: root => bindDynamicShading(root),
+});
+if (replayUrl) {
+  replayController.openFromUrl(replayUrl, params.get('serverlog'))
+    .catch(error => console.warn('replay unavailable', error));
 }
 
 optSound.addEventListener('change', () => {
@@ -5967,6 +5992,8 @@ function frame(dt) {
   advanceSim(dt);
   updateAudio(dt);
   updateSky();
+  // After the camera controls: a followed replay places the camera last.
+  replayController?.update(dt);
   renderer.render(scene, camera);
   // The near pass: everything in vmScene — the arms rig and the muzzle
   // emitters inside it, all on VIEWMODEL_LAYER — drawn over a cleared depth buffer, so
