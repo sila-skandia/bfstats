@@ -3544,7 +3544,11 @@ function footFire(dt) {
 
   if (hw.group) {
     hw.cool = Math.max(0, hw.cool - dt);
-    const canFire = captured && hw.reload <= 0 && hw.rounds > 0;
+    // `__setTrigger` stands in for the mouse under ?shots, where headless
+    // Chromium never grants pointer lock — the capture gate would otherwise
+    // dead-trigger every harness shot.
+    const canFire = (captured || params.has('shots'))
+      && hw.reload <= 0 && hw.rounds > 0;
     if (hw.data?.fireOnce) {
       // Semi-auto: one queued click becomes exactly one frame of trigger,
       // which `advance` turns into exactly one round; `cool` holds the
