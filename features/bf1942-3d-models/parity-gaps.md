@@ -197,6 +197,20 @@ sounds, splash damage, or any damage bookkeeping when a round lands.
 | Sun lens flare | Fully declared on 21 of 23 levels. Flare textures only recoverable from another mod's archive |
 | No dynamic shadows | A flown aircraft casts nothing |
 
+### Interface: spawn screen, HUD, menus
+
+Added 2026-09-15, after the spawn screen was rebuilt from `menu/InGame`. The
+game's interface ships as data (layouts, textures, bitmap fonts, strings), so
+these are extraction and plumbing gaps, not missing art. The full ranked list
+with leads is in [`../authentic-spawn-map/README.md`](../authentic-spawn-map/README.md) §8.
+
+| Gap | Evidence |
+|---|---|
+| The spawn-map pane is full colour; the game dims it heavily | Not in the layout data: `ShowMap` holds an empty `ClipNode`, filled at runtime by `0x0045d7c0` (ledger MEME-10) |
+| Ticket counters decoded but not drawn | Round-start tickets are already parsed by `scripts/extract_map_dossiers.py`, but never reach `scene.json` |
+| 260 mod and expansion levels draw vanilla chrome | 241 EoD, 8 XPack1 and 11 XPack2 levels are in the viewer tree; the HUD pack, fonts and lexicon are read from `Mods/bf1942` only, though 16 mods ship their own |
+| The in-game HUD beyond the minimap is not drawn from data | `menu/InGame` declares about 50 top-level HUD groups with rects (weapon bar, soldier and vehicle panels, action icons, timers, messages, scoreboard, map vote); none reach the viewer |
+
 ## Two things that are cheaper than they look
 
 - **Audio is not a size problem.** Every `.wav` any vanilla `.ssc` references —
