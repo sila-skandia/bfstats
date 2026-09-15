@@ -446,9 +446,12 @@ export class Soldier {
     this._tickInput.strafe = strafe;
     this._tickInput.walk = !!input.walk;
     // Latched in the body, so a tap that lands between two ticks is not
-    // swallowed. Held, it re-latches and you hop again on landing, which is
-    // what holding Space does in the game.
-    if (input.jump) this.body.jump();
+    // swallowed — but only on the press edge. The game never re-jumps a held
+    // Space: landing with the key still down leaves you on the floor until
+    // it is released and pressed again. (An earlier build re-latched every
+    // frame, which read as the soldier bouncing whenever Space was held.)
+    if (input.jump && !this._jumpHeld) this.body.jump();
+    this._jumpHeld = !!input.jump;
 
     const startX = this.x, startZ = this.z;
     const ticks = this.clock.advance(frameDt);
