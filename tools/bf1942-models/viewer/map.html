@@ -1141,11 +1141,14 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => keys.delete(e.code));
 
 // Crouch is left Ctrl, for game parity with `c_PICrouch` -- but the browser
-// owns Ctrl+W outright and a page cannot intercept it even in fullscreen, so
-// firing while crouching still closes the tab. There is no key remap that
-// fixes that; the only lever left is asking before the tab actually goes,
-// the way any unsaved-work page does. Scoped to mid-play (captured, on
-// foot, a live soldier) so it never fires over the gate screen or a fly-by.
+// owns Ctrl+W outright by default, so firing while crouching still closes
+// the tab. Chromium's Keyboard Lock API (`navigator.keyboard.lock()`) can
+// reserve it, but only inside a fullscreen session the page would have to
+// request first (features/mesh-viewer-performance/README.md, open items) --
+// not built here. Short of that, the only lever a page has is asking before
+// the tab actually goes, the way any unsaved-work page does. Scoped to
+// mid-play (captured, on foot, a live soldier) so it never fires over the
+// gate screen or a fly-by.
 addEventListener('beforeunload', e => {
   if (!(captured && optOnFoot.checked && soldier)) return;
   e.preventDefault();
