@@ -188,6 +188,13 @@ database.
 - Use record types for DTOs and data structures that are primarily data carriers.
 - All timestamp properties use NodaTime Instant type—must configure HasConversion() in OnModelCreating() with InstantPattern.ExtendedIso for EF Core mapping.
 - Confirm every time you run a kubectl command, even if I've approved a kubectl command in the same chat, unless I explicitly say otherwise.
+- **Exception — BF1942 asset extraction and publishing.** Extracting assets out of the
+  game archives and uploading them to the assets volume is routine work that proceeds
+  without asking. Run the extraction scripts, upload through the filebrowser/API pod,
+  verify what landed, and report once at the end. New assets a feature needs are part of
+  delivering that feature — do not finish with the extraction step handed back as a
+  suggestion. Scaling deployments, applying manifests, and deleting or overwriting
+  existing volume content are still confirm-first.
 
 ### Server and player name rendering
 
