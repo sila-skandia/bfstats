@@ -3682,8 +3682,10 @@ function setOnFoot(on) {
       hud.textContent = 'this level declares no flag with soldier spawns';
       return;
     }
-    // `set1pFov 0.47`, and a near plane that clears the capsule so a wall you
-    // are pressed against is drawn rather than clipped through.
+    // The world's own FOV (`renderer.fieldOfView 1`, not `set1pFov` — the
+    // arms rig's near pass picks its own, see frame()), and a near plane
+    // that clears the capsule so a wall you are pressed against is drawn
+    // rather than clipped through.
     camera.fov = FOOT_FOV;
     camera.near = 0.2;
     camera.updateProjectionMatrix();
@@ -6162,12 +6164,17 @@ function frame(dt) {
   // 0x005ad160): the render view's own perspective for `set1pFov` × the
   // eased `SoldierZoomFov` factor as a whole vertical angle, the window's
   // aspect, and the world's near plane — 0.1 m, nothing moves it. That is
-  // the code (corpus doc §3, "The drawFov pass"). The retail capture is
-  // not: under 0.47 rad this rig's right hand lands at (1042, 939), off the
-  // frame, and retail has it at (816, 614) — the world's 57.3°. Until the
-  // runtime cause is found (§7) the pass keeps the world FOV × the factor,
-  // which matches the footage, and `?fov1p=engine` renders what the code
-  // says so the two can be put side by side.
+  // the code (corpus doc §3, "The drawFov pass"), and retail has now been
+  // caught drawing it: an Engineer's Garand and Type 5, screenshotted at
+  // 2560x1440, reproduce the 0.47 rad framing (forearm only, hand off the
+  // corner) at 1.7-2.1x this rig's old 57.3 degree size. Retail also has a
+  // *smaller* first-person state — Thompson-at-the-hip OBS clips that
+  // measure at the world's 57.3 degrees instead — with the trigger between
+  // the two still open (corpus doc §7). So this pass now defaults to
+  // `set1pFov`, the value the code actually bakes, and keeps the world's
+  // FOV only for `?fov1p=world` and the bare 3P fallback, whose
+  // VIEWMODEL_BASE was eyeballed under it. See first-person-soldier.md's
+  // 2026-09-16 note and handweapon-view-and-deviation.md §3/§7.
   if (handWeapon?.rig.visible) {
     renderer.autoClear = false;
     renderer.clearDepth();
@@ -6191,9 +6198,15 @@ function frame(dt) {
     vmSun.position.copy(sun.position);
     vmCamera.matrixWorld.copy(camera.matrixWorld);
     vmCamera.matrixWorldInverse.copy(camera.matrixWorld).invert();
-    const engineFov = params.get('fov1p') === 'engine' && handWeapon.fov1p
+    // `set1pFov` (handWeapon.fov1p) by default now that retail is confirmed
+    // to draw it; `?fov1p=world` forces the old world-FOV reading (`fov1p=
+    // engine` still works — it is no longer a distinct branch, just not
+    // `world`). A bare 3P fallback (no fov1p) keeps FOOT_FOV unconditionally,
+    // because its VIEWMODEL_BASE was eyeballed under that projection, not
+    // set1pFov.
+    const baseFov = handWeapon.fov1p && params.get('fov1p') !== 'world'
       ? handWeapon.fov1p / DEG_TO_RAD : FOOT_FOV;
-    vmCamera.fov = engineFov * handWeapon.fovCur;
+    vmCamera.fov = baseFov * handWeapon.fovCur;
     vmCamera.aspect = camera.aspect;
     vmCamera.near = 0.1;   // the engine's render-view near, baked unchanged
     vmCamera.far = camera.far;

@@ -592,22 +592,43 @@ site (0x004f9610, 0x004f9867, 0x004f9c24, 0x004fa103, and `setFirstPerson`
 0x004fae80 itself); `applyFovModifier` 0x004f7290 runs from
 `handleVisualUpdate` 0x004fc2d0 **only while the zoom factor is easing**.
 
-**Where it stops matching: the retail capture.** With the placement chain of
-this section, the world's 57.3° puts the right-hand bone at (816, 614) — in
-the retail box (800–840, 590–640) — while the engine's own 0.47 rad puts it at
-(1042, 939), off the frame, the left hand at (768, 631) against retail
-(690, 545), and the muzzle at (762, 492) against the front sight (720, 485).
-Ten frames across both clips show the arms at natural size; none is zoomed.
-So the retail client draws the parts at the world's projection, which no
-static path above produces once `mesh+0xf0` holds 0.47. The data says 0.47
+**Where it stops matching: the small-state capture.** The capture this
+section fits against is the user's own OBS recordings of BF1942's smaller
+first-person state — `~/2026-09-15 14-22-53.mp4` and `14-25-32.mp4`
+(`00-54-28.mp4` shows the same state), 1280×720, Thompson, US Medic, Wake.
+With the placement chain of this section, the world's 57.3° puts the
+right-hand bone at (816, 614) — in that capture's box (800–840, 590–640) —
+while the engine's own 0.47 rad puts it at (1042, 939), off the frame, the
+left hand at (768, 631) against the capture's (690, 545), and the muzzle at
+(762, 492) against the front sight (720, 485). Ten frames across the two
+trimmed clips show the arms at natural size; none is zoomed. So in this
+state the client draws the parts at the world's projection, which no static
+path above produces once `mesh+0xf0` holds 0.47.
+
+The static reading is not wrong, though — it is what retail shows in its
+other, larger state. The user's 2560×1440 screenshots — a Japanese
+Engineer's Type 5 on a carrier deck (`Screenshot From 2026-09-15
+23-06-13.png`) and a US Engineer's M1 Garand on Wake (`23-08-05.png`) — put
+the rig at 1.7–2.1× this rig's 57.3° render (Garand 2.06× by a
+scale-plus-offset fit and 2.09× by sight length, Type 5 ≈1.7–1.8× on the
+rear sight and receiver) against 0.47 rad's predicted 2.28×, and
+rendered at 0.47 rad the Garand reproduces the in-game framing: forearm
+only, receiver filling the right, right hand off the corner. Same
+corpus-pinned binary (sha256 `60c9452d…cd3699`), same
+Wine/dgVoodoo/bf42plus stack, nothing changed between sessions — retail
+really does draw both states, not one bad capture. The data says 0.47
 (`CommonSoldierData.inc` read from the archive), bf42plus patches nothing on
 this path, and the parts' geometry exists when `setFirstPerson` walks them.
-What is left is runtime: something between spawn and the frame either never
-delivers 0.47 to these meshes or hands them back −1. See §7.
 
-### Verified against the retail capture (1280×720, Thompson on Wake)
+What is left is runtime: something between spawn and the frame, in the
+small state only, either never delivers 0.47 to these meshes or hands them
+back −1. See §7.
 
-With the chain above, the rest lower body, `center1pHands` and the hip
+### Verified against the small-state capture (1280×720, Thompson on Wake, OBS)
+
+This is the small retail state (above): the user's OBS recordings, not the
+large-state screenshots the note above now also accounts for. With the
+chain above, the rest lower body, `center1pHands` and the hip
 offset, the world at 57.3° vertical and no free parameter: the right hand
 bone projects to (819, 615) and the retail right hand sits at about
 (800–840, 590–640); the gun runs up into the screen at the retail angle
@@ -795,22 +816,30 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
   57.3° at 16:9 and only the sides widen. Resume from `drawFov` 0x0062cb00
   (vtable 0x00916800 slot +0x18, read) and the client twin of
   `Camera::getRelativeTransformation`.
-- **Why retail draws the 1P parts at the world's FOV.** The projection, the
-  pass and every draw path are read (§3, "The drawFov pass") and all of them
-  apply the baked `set1pFov` matrix, yet the capture shows the arms at 57.3°
-  and the measured rig under 0.47 rad is off the frame. The static reading
-  leaves only runtime causes. Resume from: `BFSoldier::setFirstPerson` client
-  0x004fae80 (the walk at its `FUN_004f7120` call — confirm each child's
-  `+0x5c` geometry is the instance later drawn, and whether
-  `updateFlags(1,0)`/`(2,0)` (ICompositeObject slot +0x28) re-creates it);
-  the client callers of `setFirstPerson` (0x004fc910 twice, 0x004fea30,
-  0x004feab0, 0x004fe8f0, 0x00564c90, 0x004ae4a0) for the order against kit
-  and camera attach; `StandardMesh_drawLod` 0x005aeec0 at 0x005aef80 under a
-  debugger, watching `mesh+0xf0` for the hand meshes. The decisive live test
-  is a zoom: `applyFovModifier` only runs while the factor eases, so if the
+- **What leaves the parts at the world projection in the small state.** The
+  projection, the pass and every draw path are read (§3, "The drawFov
+  pass") and all of them apply the baked `set1pFov` matrix — and retail has
+  now been caught doing exactly that in its large state (§3: an Engineer's
+  Garand and Type 5 at 1.7–2.1×). The small state — Thompson at the hip,
+  the OBS clips (§3) — still shows the arms at 57.3° with the measured
+  0.47 rad rig off the frame, so the static reading alone does not explain
+  *that* state; only runtime causes are left for it. Resume from:
+  `BFSoldier::setFirstPerson` client 0x004fae80 (the walk at its
+  `FUN_004f7120` call — confirm each child's `+0x5c` geometry is the
+  instance later drawn, and whether `updateFlags(1,0)`/`(2,0)`
+  (ICompositeObject slot +0x28) re-creates it); the client callers of
+  `setFirstPerson` (0x004fc910 twice, 0x004fea30, 0x004feab0, 0x004fe8f0,
+  0x00564c90, 0x004ae4a0) for the order against kit and camera attach;
+  `StandardMesh_drawLod` 0x005aeec0 at 0x005aef80 under a debugger,
+  watching `mesh+0xf0` for the hand meshes. The decisive live test is a
+  zoom: `applyFovModifier` only runs while the factor eases, so if the
   meshes carry −1 at the hip they would jump to `0.47 × 0.6` on the first
-  right-click. Until then the viewer keeps the footage-matching world FOV in
-  its near pass and exposes the engine value behind `?fov1p=engine`.
+  right-click — proposed, not yet run: spawn Medic (Thompson), screenshot
+  untouched; right-click to zoom and release, screenshot; respawn
+  Engineer, screenshot untouched, all under a minute. Until then the
+  viewer's near pass defaults to `set1pFov × factor` — the large state,
+  and what the code actually bakes — and exposes the small state's
+  world-FOV reading behind `?fov1p=world`.
 - ~~**The reader of component 0x5000.**~~ Closed 2026-09-16: there is no such
   component. The three `push 0x5000` sites call
   `BCompositeObject<IPlayerObject>::updateFlags` (lnxded 0x08164570), not
