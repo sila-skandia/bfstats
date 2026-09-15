@@ -477,11 +477,12 @@ faster (0.7·cur + 0.3·target) and snaps within 0.001, each step calling
   pass; was inferred).** Client `FireArms::setZoom` 0x005391b0 (twin of lnxded
   0x082881a0, read side by side in objdump) saves
   `g_renderView(0x009ab868)->getFieldOfView()` (IRenderView slot +0x18) into
-  `weapon+0x1f4`, copies `zoomFov` into `+0x1f8`, publishes it as **component
-  0x5000** through its own `setComponent` (slot +0x28; lnxded slot +0x2c at
-  0x0828826c–0x08288283, the only other publisher being the
-  `UnZoomBetweenFireTime` re-zoom in `FireArms::handleUpdate`, client
-  0x0053eaad), and on the apply/restore path at 0x005393d9–0x005393f6 writes
+  `weapon+0x1f4`, copies `zoomFov` into `+0x1f8`, sets its own flag bits
+  0x1000 and 0x4000 with `updateFlags(0x5000, 0)` (slot +0x28; lnxded vptr
+  +0x2c at 0x0828826c–0x08288283 — corrected 2026-09-16: not `setComponent`,
+  and there is no component 0x5000; the `UnZoomBetweenFireTime` re-zoom in
+  `FireArms::handleUpdate`, client 0x0053eaad, clears the same bits), and on
+  the apply/restore path at 0x005393d9–0x005393f6 writes
   the `+0x1f8` value straight into slot +0x14 = `RenderView::setFieldOfView
   (float)` — the same slot `Camera::setVehicleFOV` 0x081aadd0 uses for
   `vehicleFov` (lnxded RenderView vtable 0x0874c600: vptr+0x14 set, +0x18
@@ -657,7 +658,7 @@ Current viewer approximations, judged:
 | Hip↔zoom ease steps on the same clock as deviation | **REFUTED** — `handleVisualUpdate` is called from the drawer (`ObjectDrawer::objectsVisualUpdate`), once per rendered frame; the viewer's per-frame ease is right |
 | Zoom scales the mouse by `SoldierZoomFov` | **CORRECTED** — by `zoomFov` (0x0050095f reads +0x3dc off the weapon's template pointer, which is `zoomFov` there) |
 | `zoomFov` is in the render FOV's unit (radians, whole vertical angle) | **CONFIRMED** — `FireArms::setZoom` 0x005391b0 writes it into `RenderView::setFieldOfView` verbatim |
-| Speed/turn terms ~ analog input | **Half right** — turn terms scale with |mouse look| (channels 4/5); speed terms are *binary* gates (>0.01) on throttle/yaw, constant magnitude |
+| Speed/turn terms ~ analog input | **Half right** — turn terms scale with \|mouse look\| (channels 4/5); speed terms are *binary* gates (>0.01) on throttle/yaw, constant magnitude |
 | miscDev = airborne/swim/vehicle? | **SETTLED** — jump (c_PIAction) only |
 | Weapon drawn in world pass at soldier FOV 53.86 | **REFUTED on both counts** — the camera runs at `renderer.fieldOfView 1` = 57.30° vertical; `set1pFov 0.47` is the 1P parts' own FOV (`setFirstPersonFov` → `IViewModifier::setFieldOfView`, own `drawFov` pass), multiplied by `SoldierZoomFov` when zoomed while the camera goes to `zoomFov`. Placement: rig = rotate90aroundX(skeleton) + center1pHands + eased offset in view space, no rotation term |
 | Calibrated x/y/z/yaw on top of `center1pHands` (VIEWMODEL_CAL) | **REFUTED** — the chain has no free parameter; the 0.35 rad yaw compensated for posing the rig on `Lb_Stand` frame 0, which the engine never applies in first person |
@@ -709,7 +710,7 @@ Current viewer approximations, judged:
 | 0x00488840 | `GameClient::processLocalPlayersInputs` | decompiled; lnxded 0x081379b0 |
 | 0x004b6cb0 | `GameClient::simulateFrame(float)` — relabels bf42plus's "`World::update`" | decompiled; GameClient vtable +0x13c at 0x008d8ee4; lnxded 0x0815c2a0 |
 | 0x004b6c20 / 0x004b6a30 | `simulatePlayersUpdate` / `simulatePlayerUpdate` (the `handlePlayerInput(…, 1/30)` call, 0x004b6b56) | decompiled; lnxded 0x0815bfa0 / 0x0815bd00 |
-| 0x005391b0 | `FireArms::setZoom(bool)` (`zoomFov` → component 0x5000 → `RenderView::setFieldOfView`) | objdump; lnxded 0x082881a0 |
+| 0x005391b0 | `FireArms::setZoom(bool)` (`zoomFov` → `RenderView::setFieldOfView`; flag bits 0x1000/0x4000 via `updateFlags`) | objdump; lnxded 0x082881a0 |
 | 0x0050ee00 | `FireArms::isZoomed` (HandFireArms vtable slot +0xf8) | vtable read; lnxded 0x08290160 |
 | 0x009ab868 / 0x0095f8d4 / 0x0097d764 | `g_renderView` / `g_game` / `objectManager` | slot use matched to lnxded 0x0874c600 / 0x0870d918 / 0x0871dc24 |
 | 0x005ad160 / 0x005ad0b0 | `BStandardMesh::setFieldOfView` / `getFieldOfView` (IViewModifier table 0x0090567c; bakes mesh+0xf4 from `pRenderView`) | raw-byte disassembly, then function created; matches lnxded 0x083b5560 |
@@ -810,26 +811,23 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
   meshes carry −1 at the hip they would jump to `0.47 × 0.6` on the first
   right-click. Until then the viewer keeps the footage-matching world FOV in
   its near pass and exposes the engine value behind `?fov1p=engine`.
-- **The reader of component 0x5000.** `FireArms::setZoom` publishes `zoomFov`
-  as component 0x5000 and, on its own apply path, also writes it into
-  `RenderView::setFieldOfView`; which object *queries* 0x5000 (the soldier
-  camera, presumably, to drive the same call) was not located — no `cmp`
-  against 0x5000 exists in either binary, so the id travels through a global
-  or a table. Resume from the three `push 0x5000` sites (client 0x00539281,
-  0x00539348, 0x0053eaad) and `BCompositeObject::setComponent` (lnxded
-  0x08165360) to see where the value is stored, then who reads that slot. The
-  unit itself is closed (§3).
-- **The client's normal frame cap.** `Setup+0x17c` is the cap `mainLoop`
-  busy-waits to (`1/cap`); the one writer found sets it to `2 × g_simulationFps`
-  = 60 only in the client-hosted-server branch (0x00455e0a, gated on
-  `Setup+0x3ee`). The plain client's default was not read; lnxded's ctor
-  stores 100.0f (0x42c80000) in its twin field `Setup+0xc4` (0x080b7cf1). It
-  does not affect the simulation, only how often `handleVisualUpdate` runs.
-- **The AT/thrown family's vocabulary.** `deviation` / `deviationCorrectionTime`
-  (lnxded strings 0x086f5487 / 0x086f546f) are registered by the **AI-layer**
-  initializer 0x084a2050, not by any FireArms console block, so they are not
-  the `minDeviation`/`maxDeviation` words the viewer's `deviation.js` stands
-  in for. Where that family's floor-and-lid is stored and read is still open.
+- ~~**The reader of component 0x5000.**~~ Closed 2026-09-16: there is no such
+  component. The three `push 0x5000` sites call
+  `BCompositeObject<IPlayerObject>::updateFlags` (lnxded 0x08164570), not
+  `setComponent`: `setZoom`'s two calls set flag bits 0x1000 and 0x4000, and
+  the `UnZoomBetweenFireTime` re-zoom (client 0x0053eaad) clears them. Bit
+  0x1000 notifies the object manager on both edges (vtable +0xec set, +0xf0
+  clear); nothing reacts to 0x4000. The FOV itself travels only through
+  `RenderView::setFieldOfView` (§3; ledger VIEW-12).
+- ~~**The client's normal frame cap.**~~ Closed 2026-09-16: `Setup::Setup`
+  (client 0x004568b0) sets 100, like the server; the client-hosted-server
+  branch sets 60, and `Renderer_drawFrame` 0x00466d80 flips it between 100 and
+  60 with a `RendPCDX8` state (ledger GL-2). It still only paces rendering.
+- ~~**The AT/thrown family's vocabulary.**~~ Closed 2026-09-16 (ledger DEV-8):
+  those weapons are plain `HandFireArms` using the ordinary `setMinDev` words,
+  and the `minDeviation`/`maxDeviation`/`addDev…`/`subDev…` words some mods
+  write are registered in neither binary. `deviation` and
+  `deviationCorrectionTime` belong to the bot-AI `weaponTemplate`.
 
 Closed in the third pass (2026-09-15), left here so nobody reopens them:
 

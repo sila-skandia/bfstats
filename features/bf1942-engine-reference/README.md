@@ -95,6 +95,26 @@ It exposes 239 tools, which is a large context cost for what `xref.py` already
 does. `curl http://127.0.0.1:8089/mcp/schema` returns the full self-describing
 endpoint list if you need an endpoint the script does not cover.
 
+### Traps that cost real time
+
+- **gcc vtables begin 8 bytes before the vptr.** In lnxded, `call [reg+N]` is the
+  entry at `vtable for X` + 8 + N; counting from the symbol lands two slots
+  early. That produced the old "component 0x5000" and a misread `getClassID`.
+- **Direct3D 8 has `CreateImageSurface` at slot 27**, which D3D9 dropped. Device
+  offsets: `SetTransform` +0x94, `SetRenderState` +0xc8, `SetTexture` +0xf4,
+  `SetTextureStageState` +0xfc, `DrawPrimitive` +0x118, `DrawIndexedPrimitive`
+  +0x11c, `DrawPrimitiveUP` +0x120, `SetVertexShader` +0x130. The client keeps
+  the device in `ds:0x9c0184`.
+- **x87 comparisons invert easily.** Work every `fnstsw` / `test ah,…` out from
+  the flags, and decode register-pair `fsub`/`fdiv` forms from their bytes or
+  from Ghidra's decompile of the client twin. Several first readings in the
+  2026-09-16 round had a comparison backwards.
+- **The client's `.data` holds raw bytes only up to 0x00960000**; the loader
+  zero-fills the rest.
+- **Functions created through the bridge can be missing later** — several from
+  2026-09-15 sessions were, presumably because the project was not saved. Check
+  `/get_function_by_address` before decompiling.
+
 ---
 
 ## Layout
@@ -159,7 +179,7 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
-233 symbols from bf42plus and 223 read since, across 18 subsystems.
+576 symbols across 22 subsystems: 225 from bf42plus, the rest read from the binaries — 138 of them in the 2026-09-16 research round.
 
 **The game loop is settled (2026-09-15).** The client is a fixed-step
 simulation at `g_simulationFps` = 30 Hz (`0x00957640`; the same 30.0 in the
@@ -183,7 +203,36 @@ asserted wrongly for months — `setTorque` drives the engine *sound*, not thrus
 `setRegulateToLift 4.91` is g/3 because gravity is −14.73, not 9.81; and retail
 BF1942 has no first-person walking view bob at all.
 
-File formats remain mostly `open`: the corpus has the anchors and the tooling.
+**Research round, 2026-09-16.** Nine agents took the open ledger items that
+needed nobody at the game, four more followed their best leads, and a second
+agent re-derived every report's claims from the binaries before anything was
+recorded here. Settled:
+
+- **Formats** — SM-3, SM-4, SM-6, SM-7 and a new SM-9 confirmed; TM-1 refuted
+  (the tree mesh's "collision magic" is a class id); RFA-1's case rule and
+  first-mounted-wins precedence confirmed; BAF-1 confirmed (`toMat` is
+  row-vector, so `baf.py`'s conjugate is a transpose — and `baf.py` divides
+  positions by `2^p` where the engine uses `2^p − 1`); the ten unparseable
+  meshes explained.
+- **Menus and HUD** — every menu action and event class read (MEME-11),
+  including a 1-byte "Event type" that `meme.py` reads as 4; the `.font` grammar
+  (FONT-1); the minimap's size, zoom and rotation (MEME-13, MMAP-1, MMAP-2).
+- **Rendering** — the object-lightmap combine (LM-1…LM-4).
+- **Physics and effects** — particle drag is an acceleration, not an
+  exponential (EMT-5), and vehicles have a second, box-shaped drag law
+  (physics.md §3, PHY-4); the first spawn and `startRotation`'s degrees (EMT-2,
+  EMT-3); the client's sprite particles (SPR-2…SPR-6), including 791 flipbook
+  sprites our pipeline ignores; wheel grip and `submarineData` (PHY-2, PHY-3);
+  the client's jump gate, down to its `c_SstJump` sound-trigger test (PHY-1); the anti-tank deviation words the engine
+  ignores (DEV-8); the default frame cap (GL-2).
+
+The corpus itself had five things wrong: +0x31 of a StandardMesh sub-shader is
+`textureFade`, not `transparent`; `FireArms::setZoom` sets flag bits through
+`updateFlags` and publishes no component 0x5000; `cameraShakeFactor` lies in
+zero-filled `.data`; a `BFSoldier` holds four animation machines, not three; and
+`c_SstJump` is sound trigger 4, not a name for the jump bit 0x80. Still open from the round: MEME-10, SM-5, LM-3's
+apply/reset pairing, jump velocity, what selects `PhysicsNode`'s Advanced drag,
+and the blend-mode mapping (SPR-5).
 
 **SM-1/SM-2 are settled** ([subsystems/standardmesh-vertex-format.md](subsystems/standardmesh-vertex-format.md)):
 a `.sm` material's `flags` word is the engine's vertex format, the stride is
