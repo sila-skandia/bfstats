@@ -8,6 +8,7 @@
 //
 //   node perfbench.cjs bench --base http://localhost:5573 --out before.json
 //   node perfbench.cjs bench --dpr 2 --throttle 4 --realtime 120
+//   node perfbench.cjs bench --headed --uncap --gpu-timer --skip-stepped --dpr 2 --aa 0 --realtime 20
 //   node perfbench.cjs shot --dir shots/before
 //   node perfbench.cjs compare shots/before shots/after
 //
@@ -18,6 +19,22 @@
 // that matters for "choppy": frame intervals under CPU throttle at the given
 // device pixel ratio, with every long frame attributed to what the page did
 // in it (spawns, ticks, casts, program compiles, draw calls).
+//
+// The renderer-settings matrix (features/mesh-viewer-performance, renderer
+// settings):
+//   --aa 0              the page's `?aa=0`: no MSAA on the WebGL context
+//   --pixel-ratio <r>   the page's `?dpr=<r>`: the WebGL canvas's pixel ratio,
+//                       replacing min(devicePixelRatio, 2); --dpr stays the
+//                       window's device scale factor
+//   --uncap             --disable-gpu-vsync --disable-frame-rate-limit, so a
+//                       frame's interval is its cost and not the next vsync
+//   --gpu-timer         EXT_disjoint_timer_query_webgl2 around each render
+//                       pass, per real-time frame
+//   --fire 0            the real-time and stepped phases walk, turn and crouch
+//                       with the trigger released
+//   --still             ... and stand still: no walking, turning or crouching
+//   --mapgate 0         `__mapGate(false)`: the map surfaces repaint every
+//                       frame, as before rule 7
 //
 // Frame TIMES swing 2x between back-to-back runs of identical code on this
 // hardware; compare workload counters, profile shares and pacing percentiles
@@ -53,6 +70,7 @@ const opts = {
   width: 1600, height: 900,
   dpr: 1, throttle: 1, realtime: 60, headed: false,
   out: null, dir: null, seed: 7, profile: true,
+  aa: 1, 'pixel-ratio': null, uncap: false, 'gpu-timer': false, fire: 1, still: false, mapgate: 1,
 };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -63,6 +81,7 @@ for (let i = 0; i < argv.length; i++) {
     else { opts[key] = /^-?\d+(\.\d+)?$/.test(next) ? Number(next) : next; i++; }
   } else opts._ = [...(opts._ || []), a];
 }
+const firing = opts.fire !== 0;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pct = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
@@ -78,10 +97,13 @@ async function launch() {
   // also cannot create a WebGL context under the ANGLE flags on this
   // machine, so --headed takes the system GL unless --angle is given.
   const angle = opts.headed && !opts.angle ? [] : ['--use-angle=vulkan', '--enable-features=Vulkan'];
+  // Uncapped, a frame's interval is what the frame cost rather than the next
+  // vsync; a 60 Hz cap hides whether a cheaper frame would have been faster.
+  const uncap = opts.uncap ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : [];
   const browser = await chromium.launch({
     headless: !opts.headed,
     args: [
-      ...angle, '--ignore-gpu-blocklist',
+      ...angle, ...uncap, '--ignore-gpu-blocklist',
       '--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required',
     ],
   });
@@ -99,13 +121,38 @@ async function load(page) {
   // `nopreserve` drops the per-frame drawing-buffer copy `?shots` turns on,
   // so a pacing run measures the page a player gets; `shot` mode needs the
   // buffer kept for toDataURL and does not pass it.
-  const url = `${opts.base}/map.html?mod=${opts.mod}&map=${opts.map}&weapon=${opts.weapon}&shots${opts.preserve ? '' : '&nopreserve'}`;
+  const settings = `${opts.aa === 0 ? '&aa=0' : ''}${opts['pixel-ratio'] ? `&dpr=${opts['pixel-ratio']}` : ''}`;
+  const url = `${opts.base}/map.html?mod=${opts.mod}&map=${opts.map}&weapon=${opts.weapon}&shots${opts.preserve ? '' : '&nopreserve'}${settings}`;
   const t0 = Date.now();
   await page.goto(url, { waitUntil: 'load', timeout: 300000 });
   await page.waitForFunction(() => window.__renderOnce && window.__deploy && window.__scene, null, { timeout: 300000 });
   await page.waitForLoadState('networkidle', { timeout: 300000 }).catch(() => {});
   await sleep(3000);
   return (Date.now() - t0) / 1000;
+}
+
+/** What the context actually came up with, so every run records the settings
+ *  it measured rather than the flags it was asked for: MSAA samples, whether
+ *  the drawing buffer is preserved, the pixel ratio, the GL behind it. Also
+ *  arms a count of real `webglcontextlost` events and applies --mapgate. */
+async function rendererInfo(page) {
+  return page.evaluate(gate => {
+    const r = window.__renderer, gl = r.getContext();
+    const attrs = gl.getContextAttributes();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    window.__lostEvents = 0;
+    r.domElement.addEventListener('webglcontextlost', () => { window.__lostEvents++; });
+    if (gate === 0) window.__mapGate?.(false);
+    return {
+      gl: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+      antialias: attrs.antialias, samples: gl.getParameter(gl.SAMPLES),
+      preserveDrawingBuffer: attrs.preserveDrawingBuffer,
+      pixelRatio: r.getPixelRatio(), devicePixelRatio: window.devicePixelRatio,
+      buffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+      timerQuery: gl.getSupportedExtensions().includes('EXT_disjoint_timer_query_webgl2'),
+      mapGate: window.__mapGate?.() ?? null,
+    };
+  }, opts.mapgate);
 }
 
 /** Install the in-page stepped bench: N deterministic frames, counters on the last. */
@@ -183,34 +230,80 @@ function selfTime(profile) {
   };
 }
 
-/** Descendant processes of the browser, by Chromium process type, RSS in MB.
- *  Playwright exposes no browser pid; the browser is this node process's
- *  child, so it is the chromium row whose parent is us. */
+/** The browser's process tree, each process with its Chromium type. Playwright
+ *  exposes no browser pid; the browser is this node process's child, so it is
+ *  the chromium row whose parent is us. */
+function browserTree() {
+  const rows = execSync('ps -eo pid=,ppid=,rss=,args=', { encoding: 'utf8' }).trim().split('\n').map(l => {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(l);
+    return m && { pid: +m[1], ppid: +m[2], rssMB: Math.round(+m[3] / 1024), args: m[4] };
+  }).filter(Boolean);
+  const kids = new Map();
+  for (const r of rows) { if (!kids.has(r.ppid)) kids.set(r.ppid, []); kids.get(r.ppid).push(r); }
+  const rootPid = rows.find(r => r.ppid === process.pid && /chrom/i.test(r.args) && !/--type=/.test(r.args))?.pid;
+  if (!rootPid) return [];
+  const out = [];
+  const stack = [rootPid];
+  while (stack.length) {
+    const pid = stack.pop();
+    const self = rows.find(r => r.pid === pid);
+    if (self) {
+      const type = /--type=(\S+)/.exec(self.args)?.[1];
+      const kind = pid === rootPid ? 'browser' : type === 'gpu-process' ? 'gpu' : type === 'renderer' ? 'renderer' : type === 'utility' ? 'utility' : 'other';
+      out.push({ ...self, kind });
+    }
+    for (const k of kids.get(pid) || []) stack.push(k.pid);
+  }
+  return out;
+}
+
+/** Descendant processes of the browser, by Chromium process type, RSS in MB. */
 function processRss() {
   try {
-    const rows = execSync('ps -eo pid=,ppid=,rss=,args=', { encoding: 'utf8' }).trim().split('\n').map(l => {
-      const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(l);
-      return m && { pid: +m[1], ppid: +m[2], rssMB: Math.round(+m[3] / 1024), args: m[4] };
-    }).filter(Boolean);
-    const kids = new Map();
-    for (const r of rows) { if (!kids.has(r.ppid)) kids.set(r.ppid, []); kids.get(r.ppid).push(r); }
-    const rootPid = rows.find(r => r.ppid === process.pid && /chrom/i.test(r.args) && !/--type=/.test(r.args))?.pid;
-    if (!rootPid) return null;
     const out = { browser: 0, gpu: 0, renderer: 0, utility: 0, other: 0, total: 0 };
-    const stack = [rootPid];
-    while (stack.length) {
-      const pid = stack.pop();
-      const self = rows.find(r => r.pid === pid);
-      if (self) {
-        const type = /--type=(\S+)/.exec(self.args)?.[1];
-        const kind = pid === rootPid ? 'browser' : type === 'gpu-process' ? 'gpu' : type === 'renderer' ? 'renderer' : type === 'utility' ? 'utility' : 'other';
-        out[kind] += self.rssMB;
-        out.total += self.rssMB;
-      }
-      for (const k of kids.get(pid) || []) stack.push(k.pid);
-    }
+    const tree = browserTree();
+    if (!tree.length) return null;
+    for (const p of tree) { out[p.kind] += p.rssMB; out.total += p.rssMB; }
     return out;
   } catch { return null; }
+}
+
+/** CPU clock ticks by process type and thread name across the browser's tree,
+ *  from /proc: the renderer's main thread against its compositor, the GPU
+ *  process's command decoder against the display compositor. Diffed over a
+ *  phase, it says which thread a frame is waiting on. */
+const CLK_TCK = (() => { try { return Number(execSync('getconf CLK_TCK', { encoding: 'utf8' }).trim()) || 100; } catch { return 100; } })();
+function threadTicks() {
+  const out = {};
+  try {
+    for (const p of browserTree()) {
+      let tids = [];
+      try { tids = fs.readdirSync(`/proc/${p.pid}/task`); } catch { continue; }
+      for (const tid of tids) {
+        try {
+          const stat = fs.readFileSync(`/proc/${p.pid}/task/${tid}/stat`, 'utf8');
+          // The name sits in parentheses and may hold spaces; utime and stime
+          // are fields 14 and 15, counted from the state after the ')'.
+          const rest = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+          const name = stat.slice(stat.indexOf('(') + 1, stat.lastIndexOf(')'));
+          const key = `${p.kind}:${name}`;
+          out[key] = (out[key] || 0) + Number(rest[11]) + Number(rest[12]);
+        } catch { /* the thread exited between the listing and the read */ }
+      }
+    }
+  } catch { /* no /proc; the phase reports no thread breakdown */ }
+  return out;
+}
+function threadCpu(before, after, seconds) {
+  const pctOf = ticks => +(100 * ticks / CLK_TCK / seconds).toFixed(1);
+  const byThread = Object.keys(after).map(k => [k, (after[k] || 0) - (before[k] || 0)])
+    .filter(([, t]) => t > 0).sort((a, b) => b[1] - a[1]);
+  const byKind = {};
+  for (const [k, t] of byThread) { const kind = k.split(':')[0]; byKind[kind] = (byKind[kind] || 0) + t; }
+  return {
+    pctOfOneCore: Object.fromEntries(Object.entries(byKind).map(([k, t]) => [k, pctOf(t)])),
+    threads: byThread.slice(0, 12).map(([k, t]) => ({ thread: k, pct: pctOf(t) })),
+  };
 }
 
 /**
@@ -223,21 +316,94 @@ function processRss() {
  * sampled from a requestAnimationFrame that runs after the renderer's own
  * loop (registered later, so it fires later in the same frame), which is
  * what lets `renderer.info` read as "the frame just drawn".
+ *
+ * `--fire 0` releases the trigger and `--still` stops the walking, turning
+ * and crouching. Each frame also records how long the main thread took from
+ * the frame's start to the end of the page's `frame()` (three's loop callback
+ * runs its loop before re-requesting, so this callback is next), the CPU time
+ * inside the two `renderer.render` calls, and with `--gpu-timer` the GPU's:
+ * `main` the level pass, `near` the arms pass, `tail` everything the GPU did
+ * from the end of one frame's near pass to the next frame's main pass — the
+ * drawing buffer's MSAA resolve and hand-off, the compositors, and idle when
+ * nothing was waiting. Timer queries cannot nest, so the three are a chain.
  */
 async function realtime(page, seconds) {
-  return page.evaluate(async (ms) => {
-    const r = window.__renderer;
+  return page.evaluate(async ([ms, fire, still, gpuTimer]) => {
+    const r = window.__renderer, gl = r.getContext();
     r.info.autoReset = false;
     r.info.reset();
     const start = window.__soldier();
     window.__setFly(true);
-    window.__keys.add('KeyW');
-    window.__setTrigger(true);
+    if (!still) window.__keys.add('KeyW');
+    window.__setTrigger(fire);
+    // Map-surface repaints, counted at the one call every repaint makes
+    // (`drawArt`'s clearRect), so a run says how often rule 7 let one through.
+    const repaints = { minimap: 0, fullmap: 0 };
+    const unwrap = [];
+    for (const [key, id] of [['minimap', 'minimap-canvas'], ['fullmap', 'fullmap-canvas']]) {
+      const ctx = document.getElementById(id)?.getContext('2d');
+      if (!ctx) continue;
+      const clear = ctx.clearRect;
+      ctx.clearRect = function (...a) { repaints[key]++; return clear.apply(this, a); };
+      unwrap.push(() => { delete ctx.clearRect; });
+    }
+    const ext = gpuTimer ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
+    const gpu = { main: [], between: [], near: [], tail: [] };
+    const js = { main: [], near: [] };
+    const pending = [];
+    let frameNo = 0, active = null, disjoint = 0;
+    const boundary = next => {
+      if (!ext) return;
+      if (active) { gl.endQuery(ext.TIME_ELAPSED_EXT); pending.push(active); active = null; }
+      if (next) { const q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); active = { q, kind: next, frame: frameNo }; }
+    };
+    const poll = () => {
+      if (!ext || !pending.length) return;
+      if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+        disjoint++;
+        for (const p of pending) gl.deleteQuery(p.q);
+        pending.length = 0;
+        return;
+      }
+      let i = 0;
+      for (; i < pending.length; i++) {
+        const p = pending[i];
+        if (!gl.getQueryParameter(p.q, gl.QUERY_RESULT_AVAILABLE)) break;
+        gpu[p.kind][p.frame] = gl.getQueryParameter(p.q, gl.QUERY_RESULT) / 1e6;
+        gl.deleteQuery(p.q);
+      }
+      pending.splice(0, i);
+    };
+    // `pre` is requested from inside three's loop callback, before three
+    // re-requests its own frame, so next frame it runs first: this tick minus
+    // `pre` is the page's whole loop callback, simulation included. The rAF
+    // timestamp is no substitute uncapped — it is the begin-frame's time, and
+    // begin-frames queue ahead of a busy main thread.
+    let preT = null, running = true;
+    const pre = () => { preT = performance.now(); };
+    const render = r.render;
+    r.render = function (scene, camera) {
+      const main = scene === window.__scene;
+      if (main) {
+        frameNo++;
+        if (running) requestAnimationFrame(pre);
+      }
+      boundary(main ? 'main' : 'near');
+      const a = performance.now();
+      render.call(this, scene, camera);
+      (main ? js.main : js.near)[frameNo] = performance.now() - a;
+      boundary(main ? 'between' : 'tail');
+    };
     const frames = [];
-    let last = performance.now(), running = true;
+    let last = performance.now();
     let lastSpawned = window.__effects().spawned, lastShots = window.__handWeapon()?.shots ?? 0;
     let lastTicks = window.__soldier()?.ticks ?? 0;
     const tick = t => {
+      const now = performance.now();
+      const loopMs = preT == null ? null : now - preT;
+      preT = null;
+      const sinceBegin = now - t;
+      poll();
       const fx = window.__effects(), hw = window.__handWeapon(), sol = window.__soldier();
       frames.push([
         +(t - last).toFixed(2),
@@ -248,7 +414,9 @@ async function realtime(page, seconds) {
         r.info.programs.length, r.info.memory.textures, r.info.memory.geometries,
         performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : 0,
         window.__scene.children.length,
+        loopMs == null ? null : +loopMs.toFixed(2), frameNo,
       ]);
+      frames[frames.length - 1].sinceBegin = +sinceBegin.toFixed(2);
       lastSpawned = fx.spawned; lastShots = hw?.shots ?? 0; lastTicks = sol?.ticks ?? 0;
       r.info.reset();
       last = t;
@@ -256,8 +424,8 @@ async function realtime(page, seconds) {
     };
     requestAnimationFrame(tick);
     let k = 0;
-    const pan = setInterval(() => { window.__lookDelta((k++ % 40) < 20 ? 25 : -25, 0); }, 8);
-    const crouch = setInterval(() => {
+    const pan = still ? null : setInterval(() => { window.__lookDelta((k++ % 40) < 20 ? 25 : -25, 0); }, 8);
+    const crouch = still ? null : setInterval(() => {
       if (window.__keys.has('ControlLeft')) window.__keys.delete('ControlLeft'); else window.__keys.add('ControlLeft');
     }, 3000);
     const refill = setInterval(() => {
@@ -269,10 +437,33 @@ async function realtime(page, seconds) {
     clearInterval(pan); clearInterval(crouch); clearInterval(refill);
     window.__setTrigger(false);
     window.__keys.delete('KeyW'); window.__keys.delete('ControlLeft');
+    r.render = render;
+    boundary(null);
+    for (let n = 0; n < 60 && pending.length; n++) {
+      await new Promise(res => requestAnimationFrame(res));
+      poll();
+    }
+    for (const f of unwrap) f();
     r.info.autoReset = true;
     frames.shift();
-    return frames;
-  }, seconds * 1000);
+    // Per-frame GPU and render-call CPU columns, joined on the frame number,
+    // then the time from the begin-frame's timestamp to the end of frame().
+    for (const f of frames) {
+      const n = f[14];
+      f.push(gpu.main[n] ?? null, gpu.near[n] ?? null, gpu.tail[n] ?? null, js.main[n] ?? null, js.near[n] ?? null, f.sinceBegin);
+    }
+    return {
+      frames, repaints, disjoint, timer: !!ext, unread: pending.length,
+      buffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+      lostEvents: window.__lostEvents ?? null,
+    };
+  }, [seconds * 1000, firing, !!opts.still, !!opts['gpu-timer']]);
+}
+
+function stats(xs) {
+  const v = xs.filter(x => x != null).sort((a, b) => a - b);
+  if (!v.length) return null;
+  return { n: v.length, mean: round(v.reduce((a, b) => a + b, 0) / v.length, 2), p50: round(pct(v, 0.5), 2), p95: round(pct(v, 0.95), 2) };
 }
 
 function pacing(frames) {
@@ -288,8 +479,11 @@ function pacing(frames) {
     p50: round(pct(s, 0.5)), p95: round(pct(s, 0.95)), p99: round(pct(s, 0.99)), max: round(s[s.length - 1]),
     jitterMs: round(jitter / Math.max(1, dts.length - 1), 2),
     over33ms: long.length, over50ms: dts.filter(x => x > 50).length, over100ms: dts.filter(x => x > 100).length,
+    over16_7ms: dts.filter(x => x > 16.7).length,
     drawCalls: { mean: Math.round(frames.reduce((a, f) => a + f[1], 0) / frames.length), max: Math.max(...frames.map(f => f[1])) },
+    trisMean: Math.round(frames.reduce((a, f) => a + f[2], 0) / frames.length),
     particlesMax: Math.max(...frames.map(f => f[3])),
+    shots: frames.reduce((a, f) => a + f[7], 0),
     spawnsPerFrameMax: Math.max(...frames.map(f => f[4])),
     ticksPerFrameMax: Math.max(...frames.map(f => f[5])),
     castsPerFrameMax: Math.max(...frames.map(f => f[6])),
@@ -297,10 +491,14 @@ function pacing(frames) {
     textures: { start: frames[0][9], end: frames[frames.length - 1][9] },
     heapMB: { start: frames[0][11], end: frames[frames.length - 1][11], max: Math.max(...frames.map(f => f[11])) },
     sceneChildrenMax: Math.max(...frames.map(f => f[12])),
+    loopCpuMs: stats(frames.map(f => f[13])),
+    beginToEndMs: stats(frames.map(f => f[20])),
+    renderCpuMs: { main: stats(frames.map(f => f[18])), near: stats(frames.map(f => f[19])) },
+    gpuMs: { main: stats(frames.map(f => f[15])), near: stats(frames.map(f => f[16])), tail: stats(frames.map(f => f[17])) },
     // The worst frames, each with what the page did in it.
     longest: [...frames.map((f, i) => [i, ...f])].sort((a, b) => b[1] - a[1]).slice(0, 12).map(f => ({
       i: f[0], ms: f[1], calls: f[2], particles: f[4], spawned: f[5], ticks: f[6], casts: f[7], shots: f[8],
-      programs: f[9], textures: f[10], heapMB: f[12],
+      programs: f[9], textures: f[10], heapMB: f[12], mainMs: f[14], gpuMain: f[16], gpuNear: f[17], gpuTail: f[18],
     })),
   };
 }
@@ -309,8 +507,13 @@ async function bench() {
   const { browser, page, logs } = await launch();
   const results = { mode: 'bench', opts, startedAt: new Date().toISOString(), phases: [], rss: [] };
   const rssTimer = setInterval(() => { const r = processRss(); if (r) results.rss.push({ t: Date.now(), ...r }); }, 5000);
+  // The browser's own pid, so a script that runs this can confirm afterwards
+  // that no window it opened outlived the run.
+  try { results.browserPid = browserTree()[0]?.pid ?? null; } catch { results.browserPid = null; }
   try {
     results.loadS = await load(page);
+    results.renderer = await rendererInfo(page);
+    console.log(JSON.stringify({ label: 'renderer', browserPid: results.browserPid, ...results.renderer }));
     await page.evaluate(flag => { window.__perfFlag = flag; }, opts.flag);
     await installBench(page);
     const phase = async (label, n, src) => {
@@ -330,6 +533,7 @@ async function bench() {
     // whatever the first rounds have to build — programs, texture uploads,
     // pool misses — lands in these frames. Under the run's throttle, since a
     // compile that hides at 60 Hz on a desktop is the hitch a laptop feels.
+    // It fires under --fire 0 too, so both arms start from warmed pools.
     const cdp = await page.context().newCDPSession(page);
     if (opts.throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: opts.throttle });
     const first = await page.evaluate(async (ms) => {
@@ -378,15 +582,23 @@ async function bench() {
         await cdp.send('Profiler.enable');
         await cdp.send('Profiler.setSamplingInterval', { interval: 250 });
       }
-      await page.evaluate(() => { window.__setFly(true); window.__keys.add('KeyW'); window.__setTrigger(true); });
+      await page.evaluate(([fire, still]) => {
+        window.__setFly(true);
+        if (!still) window.__keys.add('KeyW');
+        window.__setTrigger(fire);
+      }, [firing, !!opts.still]);
       if (opts.profile) await cdp.send('Profiler.start');
+      const script = opts.still ? 'if (i % 100 === 0) window.__refill();'
+        : 'window.__lookDelta(i % 60 < 30 ? 14 : -14, 0); if (i % 90 === 0) { if (window.__keys.has("ControlLeft")) window.__keys.delete("ControlLeft"); else window.__keys.add("ControlLeft"); } if (i % 100 === 0) window.__refill();';
       for (let b = 0; b < 6; b++) {
-        await phase(`firing-walk-pan-${b}`, 150,
-          'window.__lookDelta(i % 60 < 30 ? 14 : -14, 0); if (i % 90 === 0) { if (window.__keys.has("ControlLeft")) window.__keys.delete("ControlLeft"); else window.__keys.add("ControlLeft"); } if (i % 100 === 0) window.__refill();');
+        await phase(`${firing ? 'firing' : 'moving'}-${opts.still ? 'still' : 'walk-pan'}-${b}`, 150, script);
       }
       if (opts.profile) {
         const { profile } = await cdp.send('Profiler.stop');
         results.profileStepped = selfTime(profile);
+        // The raw profile, for DevTools or for the inclusive time under one
+        // function (`drawMinimap`, say), which a self-time table cannot give.
+        if (opts.cpuprofile) fs.writeFileSync(opts.cpuprofile, JSON.stringify(profile));
       }
       await page.evaluate(() => { window.__setTrigger(false); window.__keys.delete('KeyW'); window.__keys.delete('ControlLeft'); });
       await phase('after-release', 120);
@@ -395,16 +607,28 @@ async function bench() {
     // the page's own; --profile-realtime turns it on for attribution.
     if (opts.throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: opts.throttle });
     if (opts['profile-realtime']) await cdp.send('Profiler.start');
-    const frames = await realtime(page, opts.realtime);
+    const ticks0 = threadTicks();
+    const t0 = Date.now();
+    const rt = await realtime(page, opts.realtime);
+    const cpu = threadCpu(ticks0, threadTicks(), (Date.now() - t0) / 1000);
+    const frames = rt.frames;
     if (opts['profile-realtime']) {
       const { profile } = await cdp.send('Profiler.stop');
       results.profileRealtime = selfTime(profile);
     }
     if (opts.throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
-    results.realtime = { label: `realtime-firing-walk-pan-${opts.realtime}s`, dpr: opts.dpr, throttle: opts.throttle, headed: !!opts.headed, ...pacing(frames) };
+    results.realtime = {
+      label: `realtime-${firing ? 'firing' : 'moving'}-${opts.still ? 'still' : 'walk-pan'}-${opts.realtime}s`,
+      dpr: opts.dpr, pixelRatio: results.renderer.pixelRatio, antialias: results.renderer.antialias,
+      throttle: opts.throttle, headed: !!opts.headed, uncapped: !!opts.uncap, mapGate: results.renderer.mapGate,
+      buffer: rt.buffer, ...pacing(frames),
+      gpuTimer: rt.timer ? { disjoint: rt.disjoint, unread: rt.unread } : null,
+      mapRepaints: rt.repaints, cpu,
+    };
     // A run whose context was lost draws nothing and paces perfectly; say so
     // rather than report it.
     results.realtime.contextLost = results.realtime.drawCalls.max === 0;
+    results.realtime.lostEvents = rt.lostEvents;
     results.realtime.hw = await page.evaluate(() => window.__handWeapon());
     results.realtime.effects = await page.evaluate(() => window.__effects());
     results.realtime.collider = await page.evaluate(() => window.__collision?.());
@@ -415,7 +639,7 @@ async function bench() {
     if (results.realtime.matrixDrift) console.log(`--- matrix drift after real time: ${JSON.stringify(results.realtime.matrixDrift)}`);
     results.frames = frames;
     console.log(JSON.stringify({ ...results.realtime, longest: undefined, hw: undefined }));
-    console.log('--- longest frames (i, ms, calls, particles, spawned, ticks, casts, shots, programs, textures, heapMB)');
+    console.log('--- longest frames (i, ms, calls, particles, spawned, ticks, casts, shots, programs, textures, heapMB, mainMs, gpu main/near/tail)');
     for (const f of results.realtime.longest) console.log(JSON.stringify(f));
     await phase('after-realtime', 120);
     if (results.profileStepped) {
