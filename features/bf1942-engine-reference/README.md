@@ -159,7 +159,19 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
-233 symbols from bf42plus and 135 read since, across 18 subsystems.
+233 symbols from bf42plus and 161 read since, across 18 subsystems.
+
+**The game loop is settled (2026-09-15).** The client is a fixed-step
+simulation at `g_simulationFps` = 30 Hz (`0x00957640`; the same 30.0 in the
+Linux server) with a frame-rate-independent tick count per rendered frame:
+`Setup::mainLoop` 0x0044abc0 → `GameClient::update(nTicks, 1/30)` 0x0048fca0 →
+`GameClient::simulateFrame(1/30)` 0x004b6cb0 (the address bf42plus labelled
+"`World::update`"). One buffered `PlayerInput` per tick reaches
+`handlePlayerInput(…, 1/30)`, so every per-call quantity in the weapon code —
+deviation decay, fire bloom — is a per-1/30-s quantity, while
+`handleVisualUpdate` (the hip↔zoom ease) runs once per rendered frame from the
+drawer. Write-up in [subsystems/physics.md](subsystems/physics.md) §3 and
+[subsystems/handweapon-view-and-deviation.md](subsystems/handweapon-view-and-deviation.md) §2.
 
 **The `physics` subsystem is the worked example of what this corpus is for.**
 34 symbols, almost all `verified`, written up as a narrative in

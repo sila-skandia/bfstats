@@ -3603,7 +3603,12 @@ const VIEWMODEL_BASE = { x: 0.17, y: -0.10, z: -0.26 };   // OPEN [bare fallback
 // The eases are the engine's, both frame-rate dependent by design (no dt in
 // either): the rig moves 25% of the remaining distance per visual update
 // (constant 0.25f, lnxded .rodata 0x086c08ac), the FOV factor converges
-// 0.7·cur + 0.3·target and snaps within 0.001.
+// 0.7·cur + 0.3·target and snaps within 0.001. "Visual update" is the
+// drawer's clock, VERIFIED: `BFSoldier::handleVisualUpdate` is IObject slot
+// vptr+0x4c, called from `ObjectDrawer::objectsVisualUpdate` inside
+// `drawVisible(float)` — once per rendered frame — while the deviation cone
+// below steps on the fixed 30 Hz simulation tick (`deviation.js`). Two
+// clocks, and this page keeps them apart the way the engine does.
 const VIEW_EASE = 0.25;
 const FOV_SNAP = 0.001;
 // Crossfade between viewmodel clips, seconds. OPEN [stand-in]: the animation
@@ -4210,7 +4215,9 @@ function footFire(dt, input = null) {
   // what is NOT fed: zoom — aiming has no effect on deviation, in either
   // binary. `jumping` gates miscDev; the engine's gate is the c_PIAction
   // input masked by a soldier state bit, and airborne is this page's
-  // stand-in for that mask.
+  // stand-in for that mask. `dt` here is the frame's; the model converts it
+  // to whole 1/30 s ticks itself (`TICK_HZ`), the engine's simulation step,
+  // so the cone decays at the same rate on every monitor.
   hw.model.update(dt, {
     stance: soldier.stance,
     throttle: input?.forward ?? 0,
