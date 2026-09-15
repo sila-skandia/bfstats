@@ -354,3 +354,34 @@ file exists.
 - Is a dedicated always-connected spectator client acceptable as the recording
   source, or must recording work from a normal playing client? (T4 answers
   whether it matters.)
+
+---
+
+## 9. Phase 1 as built (bf42plus `recordReplays`)
+
+Implemented in bf42plus on branch `claude/wizardly-cray-kdmhan` as
+`src/replay.cpp`. Enable with `recordReplays=on` in `bf42plus.ini` or
+`plus.recordReplays 1` in the console. Output is
+`replays/replay_<yyyymmdd-hhmmss>.ndjson` in the game directory, one JSON
+object per line, `t` in seconds since the file was opened. Closed on
+`GameStatus(ENDMAP)` or when the setting is turned off; flushed every 2 s so a
+crash loses at most that.
+
+| `k` | meaning | fields |
+|---|---|---|
+| `h` | header | `v` format version, `plus` DLL version, `start` local time, `hz` sample rate |
+| `e` | game event | `e` name and per-event fields (see `replay_onEvent`); `e:"raw"` carries `type` and the first 48 payload bytes as hex for events whose struct is unmapped |
+| `o` | networked object first seen | `id` network ID, `gid` object-manager ID, `tmpl` template name, `tid` template ID, `team` |
+| `s` | sample | `o` is a list of `[id, x, y, z, qx, qy, qz, qw]`, only objects whose transform moved since their last write |
+| `d` | object gone | `id` |
+| `p` | player state changed | `p` is a list of `[pid, team, vehicleNetId]` |
+| `cp` | control point | `id`, `team`; on first sight also `name`, `tmpl`, `pos` |
+| `end` | file closed cleanly | |
+
+Run `summarize.py` on a recording to answer T1 (object count and template
+list), T2 (per-object update rates), T5 (first-seen times), and to read the
+`SetLevel` (0x36) raw dump so its layout can be added to `gameevent.h`.
+
+Known gaps in this cut, on purpose: no map name (it is in the 0x36 raw dump
+until the struct is mapped), no health or ammo, no turret or child transforms,
+and the local player's soldier is client-predicted.
