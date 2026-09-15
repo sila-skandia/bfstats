@@ -260,6 +260,28 @@ class FlightModelTests(unittest.TestCase):
             self.assertAlmostEqual(0.0, spin[case]["engine"], places=1, msg=case)
             self.assertAlmostEqual(0.0, spin[case]["gear"], places=1, msg=case)
 
+    def test_the_blade_mesh_gives_way_to_the_blurred_disc_at_the_declared_threshold(
+            self) -> None:
+        # A user reported the browser's propeller spinning but never blurring
+        # — because the extractor threw the real `PropellerBlurred` mesh away
+        # and the viewer had nothing to swap to. `_propeller_blur` keeps both
+        # and stamps the engine's own `addLodComparison` (0.07 on every
+        # vanilla propeller) on the wrapper; this is that threshold read back
+        # from the node, not hardcoded a second time.
+        blur = self.results["propellerBlur"]
+
+        for case in ("idle", "belowThreshold", "atThreshold"):
+            self.assertTrue(blur[case]["static"], case)
+            self.assertFalse(blur[case]["blurred"], case)
+        for case in ("justAboveThreshold", "fullThrottle"):
+            self.assertFalse(blur[case]["static"], case)
+            self.assertTrue(blur[case]["blurred"], case)
+
+        # No `extras.propellerBlur` at all (a ground vehicle, or an asset
+        # extracted before this field existed) collects no pairs — and so
+        # costs nothing per frame, same guarantee `spinsChildren` makes.
+        self.assertEqual(0, blur["noExtras"])
+
     def test_the_inertia_is_the_box_estimate_times_the_authored_modifier(self) -> None:
         # `inertiaModifier 1.05/0.850/0.94` is yaw/pitch/roll [data]; the
         # solid-box base it multiplies is the last free number in the model.

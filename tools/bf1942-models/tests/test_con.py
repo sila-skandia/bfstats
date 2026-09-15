@@ -11,6 +11,7 @@ from bf42.con import (  # noqa: E402
     ObjectLibrary,
     ObjectTemplate,
     instance_template_name,
+    is_propeller_blur_pair,
     select_lod_alternative,
 )
 
@@ -240,6 +241,27 @@ ObjectTemplate.addTemplate CorsairCockpitExternal
             "CorsairCockpitExternal",
             select_lod_alternative(lod.children, "complex", selector).template,
         )
+
+    def test_propeller_static_and_blurred_are_recognised_regardless_of_order(self) -> None:
+        # Neither name matches an interior/wreck/simple/complex role, so
+        # `select_lod_alternative` would otherwise fall back to child order —
+        # this is the pair `_select_lod_children` has to catch first.
+        self.assertTrue(is_propeller_blur_pair(
+            [ChildRef("CorsairPropellerStatic"), ChildRef("CorsairPropellerBlurred")]))
+        self.assertTrue(is_propeller_blur_pair(
+            [ChildRef("CorsairPropellerBlurred"), ChildRef("CorsairPropellerStatic")]))
+
+    def test_propeller_blur_pair_requires_exactly_the_two_named_alternatives(self) -> None:
+        # An ordinary complex/wreck LodObject must never be mistaken for one.
+        self.assertFalse(is_propeller_blur_pair(
+            [ChildRef("CorsairComplex"), ChildRef("CorsairWreck")]))
+        # A third alternative (unseen in the shipped data) is not the swap
+        # either — the engine's `CompareSelector` only ever holds two.
+        self.assertFalse(is_propeller_blur_pair([
+            ChildRef("CorsairPropellerStatic"),
+            ChildRef("CorsairPropellerBlurred"),
+            ChildRef("CorsairPropellerExtra"),
+        ]))
 
     def test_lod_selector_block_is_parsed_and_bound_to_its_lod_object(self) -> None:
         library = ObjectLibrary()

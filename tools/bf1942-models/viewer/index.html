@@ -3098,6 +3098,11 @@ let engineRunning = false;
 
 // Names of the nodes the baked clips move, for the station that owns them.
 let animatedNodes = [];
+// Each propeller's blade mesh and blurred disc, kept as real siblings by
+// `extras.propellerBlur` (assemble.py's `_propeller_blur`) instead of the
+// export picking one. Neither is animation, so `collectAnimations` finds
+// them itself rather than reading them off a clip.
+let propellerBlurPairs = [];
 
 function collectAnimations(gltf) {
   mixer = null;
@@ -3105,6 +3110,15 @@ function collectAnimations(gltf) {
   ambientActions = [];
   engineRunning = false;
   animatedNodes = [];
+  propellerBlurPairs = [];
+  gltf.scene.traverse(obj => {
+    const blur = obj.userData?.propellerBlur;
+    if (!blur) return;
+    const staticNode = obj.children.find(child => child.name === blur.static);
+    const blurredNode = obj.children.find(child => child.name === blur.blurred);
+    if (staticNode && blurredNode) propellerBlurPairs.push({ static: staticNode, blurred: blurredNode });
+  });
+  setPropellerBlur(false);
   const clips = gltf.animations || [];
   if (!clips.length) return;
   mixer = new THREE.AnimationMixer(gltf.scene);
@@ -3123,9 +3137,18 @@ function collectAnimations(gltf) {
     clip.tracks.map(track => track.name.split('.')[0])))];
 }
 
+/** Blades stopped (off) or the blurred disc (on) — same gate as `setEngine`. */
+function setPropellerBlur(on) {
+  for (const pair of propellerBlurPairs) {
+    pair.static.visible = !on;
+    pair.blurred.visible = on;
+  }
+}
+
 function setEngine(on) {
-  if (!mixer) return;
   engineRunning = Boolean(on);
+  setPropellerBlur(engineRunning);
+  if (!mixer) return;
   if (engineRunning) {
     for (const action of clipActions) { action.paused = false; action.play(); }
     startAnimating();

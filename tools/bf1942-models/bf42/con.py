@@ -332,6 +332,27 @@ def lod_alternative_role(template_name: str) -> str | None:
     return None
 
 
+def is_propeller_blur_pair(children: list["ChildRef"]) -> bool:
+    """Whether a LodObject's two alternatives are the engine's blade/blur swap.
+
+    Every vanilla propeller aircraft (and the mods that keep the convention)
+    names them literally `<X>PropellerStatic` / `<X>PropellerBlurred` under a
+    `CompareSelector` bound to engine input (`addLodComparison 0.07` — see
+    `LodSelector`). Unlike every other LodObject in this file, the two halves
+    are not alternatives to pick between at export time: the engine swaps
+    which one is visible every frame as the propeller spins up, so a viewer
+    needs both meshes to reproduce it and toggles visibility itself at the
+    declared threshold. `select_lod_alternative` would otherwise fall back to
+    child order — neither name matches an `interior`/`wreck`/`simple`/`complex`
+    role — and silently keep only whichever was declared first.
+    """
+    if len(children) != 2:
+        return False
+    names = [child.template.lower() for child in children]
+    return (any(name.endswith("static") for name in names)
+            and any(name.endswith("blurred") for name in names))
+
+
 def split_geometry_qualifier(name: str) -> tuple[str | None, str]:
     """Split a `Type:Name` geometry reference into its parts.
 

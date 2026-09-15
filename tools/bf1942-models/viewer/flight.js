@@ -282,7 +282,7 @@ export class Vehicle {
 
     this.parts = [];
     this.cameraNode = null;
-    this.propellerNodes = [];
+    this.propellerBlurPairs = [];
     this.collect();
 
     // Occupying a seat is what the cockpit swap keys off, and the only reason
@@ -392,7 +392,7 @@ export class Vehicle {
     // The servo list is derived from `parts`, so it dies with this index.
     this._servos = null;
     this.parts.length = 0;
-    this.propellerNodes.length = 0;
+    this.propellerBlurPairs.length = 0;
     this.node.traverse(obj => {
       const data = obj.userData || {};
       if (data.rig?.axes) this.parts.push(indexed.get(obj) || new RiggedPart(obj, data.rig));
@@ -402,7 +402,23 @@ export class Vehicle {
       if (!this.cameraNode && (data.cameraView || data.templateKind === 'Camera')) {
         this.cameraNode = obj;
       }
-      if (/propeller/i.test(obj.name || '')) this.propellerNodes.push(obj);
+      // `_propeller_blur` in assemble.py stamps the wrapper LodObject with
+      // both children's names and the engine's own swap point (`comparisons`,
+      // from `addLodComparison 0.07` — uniform across every vanilla
+      // propeller, but read rather than assumed). Both meshes are real
+      // siblings under `obj`, kept apart from every other LodObject this
+      // export collapses to one alternative.
+      if (data.propellerBlur) {
+        const staticNode = obj.children.find(child => child.name === data.propellerBlur.static);
+        const blurredNode = obj.children.find(child => child.name === data.propellerBlur.blurred);
+        if (staticNode && blurredNode) {
+          this.propellerBlurPairs.push({
+            static: staticNode,
+            blurred: blurredNode,
+            threshold: data.propellerBlur.comparisons?.[0] ?? 0.07,
+          });
+        }
+      }
     });
   }
 
@@ -510,6 +526,14 @@ export class Vehicle {
       part.spun.forEach((node, i) => {
         node.quaternion.copy(spin).multiply(part.spunBases[i]);
       });
+    }
+    // The blade mesh and the blurred disc are siblings under the same spun
+    // node, so nothing above has to know two meshes exist — only which one is
+    // drawn. `threshold` is the engine's own `addLodComparison`, not a guess.
+    for (const pair of this.propellerBlurPairs) {
+      const blurred = this.state.throttle > pair.threshold;
+      pair.static.visible = !blurred;
+      pair.blurred.visible = blurred;
     }
   }
 
