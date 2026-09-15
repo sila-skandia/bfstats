@@ -33,6 +33,33 @@ def one_trunk_tree() -> bytes:
     data += struct.pack("<I", len(tex)) + tex
     data += struct.pack("<I", 0)  # sprites
     data += struct.pack("<I", 0)  # billboards
+    data += struct.pack("<I", 0)  # collision slot: CID none
+    data += struct.pack("<I", 3)  # vertices
+    for i, pos in enumerate(((0, 0, 0), (1, 0, 0), (0, 2, 0))):
+        data += struct.pack("<3f", *pos)
+        data += struct.pack("<3f", 0, 1, 0)
+        data += struct.pack("<I", 0x80808080)
+        data += struct.pack("<2f", float(i), 0.0)
+        data += struct.pack("<2f", 0.0, 0.0)
+    data += struct.pack("<I", 3)
+    data += struct.pack("<3H", 0, 1, 2)
+    return bytes(data)
+
+
+def tree_with_collider(collider: bytes) -> bytes:
+    """A trunk-only tree whose collision slot holds exactly `collider`."""
+    data = bytearray()
+    data += struct.pack("<III", 3, 0, 8)
+    data += struct.pack("<6f", 0, 0, 0, 1, 2, 1)
+    data += struct.pack("<6f", 0, 0, 0, 1, 2, 1)
+    data += struct.pack("<I", 0)  # branches
+    tex = b"texture/trunk"
+    data += struct.pack("<I", 1)  # one trunk mesh
+    data += struct.pack("<II", 0, 1)  # indexStart, numFaces
+    data += struct.pack("<I", len(tex)) + tex
+    data += struct.pack("<I", 0)  # sprites
+    data += struct.pack("<I", 0)  # billboards
+    data += collider  # collision slot: a class id, not a magic/vertex-count switch
     data += struct.pack("<I", 3)  # vertices
     for i, pos in enumerate(((0, 0, 0), (1, 0, 0), (0, 2, 0))):
         data += struct.pack("<3f", *pos)
@@ -79,6 +106,7 @@ class TreeMeshTests(unittest.TestCase):
         data += struct.pack("<I", 0)  # trunks
         data += struct.pack("<I", 0)  # sprites
         data += struct.pack("<I", 0)  # billboards
+        data += struct.pack("<I", 0)  # collision slot: CID none
         data += struct.pack("<I", 3)  # vertices
         for i in range(3):
             data += struct.pack("<3f", float(i), 0.0, 0.0)
@@ -95,6 +123,44 @@ class TreeMeshTests(unittest.TestCase):
         self.assertEqual(1, len(tree.parts))
         # Both blocks, in file order - not just the first silhouette.
         self.assertEqual([0, 1, 2, 2, 1, 0], tree.parts[0].indices)
+
+
+class CollisionSlotTests(unittest.TestCase):
+    """TM-1: the word is a collider class id, not a magic-or-vertex-count
+    switch - lnxded `TreeMeshTemplate::load` 0x083bd380 passes it straight to
+    `SmartItf<IVectorCollider>::create` (0x083bd85d, entry read at 0x083bd651)
+    and never rewinds. 0 is CID none; 0xEB97C2FA is `CID_SimpleCollisionMesh`
+    (lnxded 0x086e9e08), the only other id across 401 installed tree meshes.
+    """
+
+    def test_zero_word_is_no_collider(self) -> None:
+        tree = treemesh.parse(tree_with_collider(struct.pack("<I", 0)), "none.tm")
+
+        self.assertEqual(1, len(tree.parts))
+        self.assertEqual((0.0, 2.0, 0.0), tree.parts[0].positions[2])
+
+    def test_simple_collision_mesh_id_reads_its_body(self) -> None:
+        # class id, format 5, zero collision vertices, zero collision faces,
+        # then an empty BSP (totalFaceListCount, numBspNodes, faceCount - all
+        # 0 - followed by the root node's own bounding box and face list).
+        collider = struct.pack("<II", treemesh.COL_MAGIC, 5)
+        collider += struct.pack("<II", 0, 0)  # collision vertex count, face count
+        collider += struct.pack("<III", 0, 0, 0)  # BSP: totalFaceListCount, numBspNodes, faceCount
+        collider += struct.pack("<6f", 0, 0, 0, 0, 0, 0)  # root node bounding box
+        collider += struct.pack("<I", 0)  # root node's own face count
+        collider += struct.pack("<BB", 0, 0)  # root node: no children
+
+        tree = treemesh.parse(tree_with_collider(collider), "collider.tm")
+
+        self.assertEqual(1, len(tree.parts))
+        self.assertEqual((0.0, 2.0, 0.0), tree.parts[0].positions[2])
+
+    def test_unrecognised_collider_id_raises(self) -> None:
+        # Never observed (0 of 401 installed tree meshes), and the engine has
+        # no rewind branch to fall back on - an unknown id is an error, not a
+        # reinterpretation as a vertex count.
+        with self.assertRaises(treemesh.MeshError):
+            treemesh.parse(tree_with_collider(struct.pack("<I", 0x12345678)), "unknown-collider.tm")
 
 
 if __name__ == "__main__":
