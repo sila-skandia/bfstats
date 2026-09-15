@@ -421,6 +421,81 @@ load @ROOT/Sound/@RTD/right.wav
                          [s.file for s in parse_ssc(script)[0].samples])
 
 
+class IncludeLevelScopeTests(unittest.TestCase):
+    """`#templateLevel` is scoped to the file that declares it.
+
+    The Thompson is the proof. Its `High.ssc` includes `MGdist.ssc`, which is
+    a HIGH/MEDIUM/LOW dispatcher of its own and ends on LOW — read as pure
+    text, every line after that include is LOW, the Fire Loop patch among
+    them, and an SMG has no fire sound at the quality the game actually
+    plays. So an include starts at the including file's tier, may switch
+    tiers internally, and the includer's tier resumes when it returns.
+    """
+
+    WEAPON_HIGH = """
+newPatch
+### Fire ###
+load @ROOT/Sound/@RTD/silence.wav
+volume 0
+
+newPatch
+#include MGdist.ssc
+
+newPatch
+### Fire Loop ###
+load @ROOT/Sound/@RTD/thompmlp.wav
+loop
+stop FinishSample
+"""
+
+    MGDIST_DISPATCHER = """
+#templateLevel HIGH
+load @ROOT/Sound/@RTD/mgdist1.wav
+#templateLevel LOW
+load @ROOT/Sound/@RTD/silence.wav
+"""
+
+    TREE = {
+        "Objects/HandWeapons/Thompson/Sounds/High.ssc": WEAPON_HIGH,
+        "Objects/HandWeapons/Thompson/Sounds/MGdist.ssc": MGDIST_DISPATCHER,
+    }
+
+    def parse(self, level: str | None = "high"):
+        source = "Objects/HandWeapons/Thompson/Sounds/High.ssc"
+        return parse_ssc(self.TREE[source], level=level,
+                         include=self.TREE.get, source=source)
+
+    def test_the_patch_after_a_dispatching_include_keeps_the_tier(self) -> None:
+        patches = self.parse("high")
+        self.assertEqual(3, len(patches))
+        self.assertEqual(["thompmlp.wav"],
+                         [s.file.rsplit("/", 1)[-1]
+                          for s in patches[2].samples])
+        self.assertTrue(patches[2].samples[0].loop)
+
+    def test_the_include_still_switches_its_own_tiers(self) -> None:
+        # Scoping the level must not stop the included dispatcher from
+        # dispatching: its HIGH section joins the open patch, its LOW
+        # section is filtered out.
+        patches = self.parse("high")
+        self.assertEqual(["mgdist1.wav"],
+                         [s.file.rsplit("/", 1)[-1]
+                          for s in patches[1].samples])
+
+    def test_the_include_inherits_the_tier_at_the_include_line(self) -> None:
+        # `#templateLevel MEDIUM` then `#include Medium.ssc`: a file with no
+        # tier of its own is filed under the includer's — the Corsair's
+        # EngineLow.ssc has worked this way all along.
+        tree = {
+            "a.ssc": "#templateLevel MEDIUM\n#include b.ssc\n",
+            "b.ssc": "newPatch\nload @ROOT/Sound/@RTD/med.wav\n",
+        }
+        patches = parse_ssc(tree["a.ssc"], level="medium",
+                            include=tree.get, source="a.ssc")
+        self.assertEqual(["@ROOT/Sound/@RTD/med.wav"],
+                         [s.file for s in patches[0].samples])
+
+
 class SoundScriptBindingTests(unittest.TestCase):
     def test_parse_sound_scripts_binds_per_template(self) -> None:
         # One Physics.con binds four scripts to four different children, so the
