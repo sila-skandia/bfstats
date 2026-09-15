@@ -143,6 +143,24 @@ subshader "Brit_Scouthelm_m1_Material1" "StandardMesh/Default" {
             'shader "M" { alphaTest greater 0.8; alphaTestRef 0.2; }')
         self.assertEqual(rs.lookup(shaders, "M").alpha_test, 0.8)
 
+    def test_texture_fade_is_read(self) -> None:
+        # The darkness plane in every building doorway: vanilla declares
+        # `textureFade true` on 69 shaders, all of them texture/black_o.
+        # Exported without the flag it renders as an opaque black door.
+        shaders = rs.parse(
+            """
+subshader "pacificfarm1_m1_Material4" "StandardMesh/Default" {
+  lighting true;
+  textureFade true;
+  texture "texture/black_o";
+}
+"""
+        )
+        shader = rs.lookup(shaders, "Material4")
+        self.assertTrue(shader.texture_fade)
+        self.assertFalse(rs.parse('shader "M" { texture "texture/x"; }')
+                         ["m"].texture_fade)
+
 
 if __name__ == "__main__":
     unittest.main()

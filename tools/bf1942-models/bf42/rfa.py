@@ -204,6 +204,40 @@ class ArchivePool:
                 self._basename[base] = entry
         return added
 
+    def add_level_meshes(self, path: Path, label: str | None = None) -> int:
+        """Register meshes a level ships for itself.
+
+        The same contract as `add_level_objects`, one folder over: a level
+        archive may carry its own `Levels/<Map>/StandardMesh/` tree and the
+        engine resolves those meshes exactly like the ones in
+        `standardMesh.rfa`. Every mesh the vanilla extraction reported
+        missing — 45 of 45 — was sitting in the level's own archive the
+        whole time. Global meshes keep priority: this only fills gaps.
+        """
+        archive = RfaArchive(path)
+        label = label or path.stem
+        self._archives.append((label, archive))
+        added = 0
+        for name in archive.entries:
+            parts = name.replace("\\", "/").split("/")
+            lowered = [p.lower() for p in parts]
+            try:
+                start = lowered.index("standardmesh")
+            except ValueError:
+                continue
+            # `Levels/<Map>/StandardMesh/...`, not the global archive layout.
+            if start < 2 or lowered[start - 2] != "levels":
+                continue
+            entry = (label, archive, name)
+            for key in (name.lower(), "/".join(parts[start:]).lower()):
+                if key not in self._index:
+                    self._index[key] = entry
+                    added += 1
+            base = parts[-1].lower()
+            if base not in self._basename:
+                self._basename[base] = entry
+        return added
+
     def extend_from(self, other: "ArchivePool") -> None:
         """Append another pool as a lower-priority fallback, keeping first hits."""
         self._archives.extend(other._archives)

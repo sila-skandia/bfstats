@@ -449,7 +449,8 @@ class Assembler:
         # it is a light source rather than a lit surface.
         unlit = unlit or not shader.lighting
         key = (texture_path, shader.twosided, shader.transparent,
-               shader.alpha_test, unlit, emissive_floor, shader.additive)
+               shader.alpha_test, unlit, emissive_floor, shader.additive,
+               shader.texture_fade)
         if key in self._material_cache:
             return self._material_cache[key]
 
@@ -466,6 +467,7 @@ class Assembler:
             unlit=unlit,
             emissive_floor=emissive_floor,
             additive=shader.additive,
+            texture_fade=shader.texture_fade,
         )
         self._material_cache[key] = index
         return index
