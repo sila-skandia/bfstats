@@ -398,8 +398,7 @@ file exists.
 
 ## 9. Phase 1 as built (bf42plus `recordReplays`)
 
-Implemented in bf42plus on branch `claude/wizardly-cray-kdmhan` as
-`src/replay.cpp`. Enable with `recordReplays=on` in `bf42plus.ini` or
+Implemented in bf42plus as `src/replay.cpp` (sila-skandia/bf42plus, `master`). Enable with `recordReplays=on` in `bf42plus.ini` or
 `plus.recordReplays 1` in the console. Output is
 `replays/replay_<yyyymmdd-hhmmss>.ndjson` in the game directory, one JSON
 object per line, `t` in seconds since the file was opened. From format v3 a
@@ -702,9 +701,8 @@ Not established:
 
 ## 12. Playback in the map viewer
 
-Phase 2 has a first cut: `tools/bf1942-models/viewer/replay.js` on branch
-`replay-viewer`, built on `main`'s viewer (this branch's copy is 42 commits
-behind it). It plays a recording over the level `map.html` loads:
+Phase 2 has a first cut: `tools/bf1942-models/viewer/replay.js`. It plays a
+recording over the level `map.html` loads:
 
 ```
 map.html?replay=replays/<recording>.ndjson
