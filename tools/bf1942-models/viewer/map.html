@@ -1241,12 +1241,25 @@ function pointerLocked() {
 // `scratchpad/chord.cjs` (a held left + a right press/release fires
 // `pointermove button=2 buttons=3` then `buttons=1`, no `pointerdown`/`up`
 // at all for the right button).
+//
+// A release is handled before the gate, not after it: death or a redeploy
+// while the trigger is held nulls `soldier` out from under it (see the
+// `soldier = null` sites), and the pointerup that follows must still clear
+// `triggerHeld`/`aimHeld` or the next life starts with the trigger stuck.
+// A fresh press still needs the full gate -- there is no weapon, no rig and
+// no meaning to "zoomed" without one. Zoom is never touched on a release;
+// `altFireOnce` only toggles on a fresh press.
 function footButtonChange(e) {
-  if (!(captured && optOnFoot.checked && soldier && pointerLocked())) return;
   const pressed = !!(e.buttons & BUTTON_BIT[e.button]);
+  if (!pressed) {
+    if (e.button === 0) triggerHeld = false;
+    else if (e.button === 2) aimHeld = false;
+    return;
+  }
+  if (!(captured && optOnFoot.checked && soldier && pointerLocked())) return;
   if (e.button === 0) {
-    triggerHeld = pressed;
-    if (pressed) clickQueued = true;
+    triggerHeld = true;
+    clickQueued = true;
   } else if (e.button === 2) {
     const hw = handWeapon;
     if (hw?.data?.zoom?.toggle) {
@@ -1254,9 +1267,10 @@ function footButtonChange(e) {
       // (0x00500901, mask 0x800000) so only a fresh press reaches the
       // weapon -- the button that just transitioned to pressed is a fresh
       // press whether it arrived alone or as half of a chord.
-      if (pressed) { hw.zoomed = !hw.zoomed; hw.rezoom = 0; }
+      hw.zoomed = !hw.zoomed;
+      hw.rezoom = 0;
     } else {
-      aimHeld = pressed;
+      aimHeld = true;
     }
   }
 }
