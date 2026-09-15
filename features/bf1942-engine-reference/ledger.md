@@ -311,6 +311,36 @@ assumption, where it lives in our code, status, evidence.
 
 ---
 
+## Sound scripts (.ssc) — comments (settled 2026-09-16)
+
+| # | Assumption in our code | Where | Status | Evidence |
+|---|---|---|---|---|
+| SSC-1 | Comments are only `rem`, `//`, `***`, `;` lines; `/* */` is not a comment | [level.py](../../tools/bf1942-models/bf42/level.py) `_ssc_lines` | **refuted** (reader fixed 2026-09-16) | `SoundScript__skipFilter` 0x007f9a80 is the whole of it, and `/*` and `beginSkip` are **one** mechanism sharing the flag `g_sscSkipping` 0x00a8fb30. It runs *first* in the per-line pipeline `SoundScript__handleLine` 0x007fb0e0, ahead of `#templateLevel`, `#beginMap`, `#map`, `#include` and the 23-entry command table, so a skipped region swallows directives too. 849 of 52,310 shipped `.ssc` files across 17 mods use the markers |
+| SSC-2 | A block comment is a character span, as in C | — | **refuted** | The filter tests whole lines (`operator==` for `beginSkip`/`endSkip`, `std::string::find` for the markers) and returns "consumed" for the entire line. So `/*load @ROOT/Sound/@RTD/bulletair3.wav` — XPack2 `Gewehr43_zf4/Sounds/High.ssc` — loses the `load` with the marker, and a self-contained `/* ... */` on one line never opens a skip at all, because the close test matches first |
+| SSC-3 | An opener must be closed | — | **refuted** | There is no terminator requirement: the flag simply stays set. 373 of the 849 files never close one. Vanilla `Lynx/Sounds/High/LynxHorn.ssc` is a horn, then `/*`, then a whole copy-pasted Willy engine stack to EOF — read as live it made honking start a looping jeep engine (7 layers instead of 1) |
+| SSC-4 | A `*/` with no opener is meaningful | — | **refuted** | The close test runs first and unconditionally, so it clears an already-clear flag and the line is dropped. Vanilla `KettenKrad/Sounds/High/KettenKradEngine.ssc` ships exactly this (an edit left it behind); the layers on both sides of it are live. 16 shipped files have a lone `*/` |
+| SSC-5 | Skip state is per file | [level.py](../../tools/bf1942-models/bf42/level.py) `_ssc_lines` | **confirmed as global** | `g_sscSkipping` is cleared only by `SoundScript__resetParseState` 0x007fb040, called once at the end of `SoundScript__parse` 0x007fb1c0 — never per included file, since the same function also clears the accumulated patch list. The EOF test walks the include stream stack (0x00a8fc5c), so includes run through the same loop and the same flag: an unterminated `/*` inside an include keeps skipping in the includer |
+
+### What it changed in our extracts
+
+Measured over all 17 installed mods, comparing every `parse_ssc` consumer
+before and after (49,980 hand-weapon / vehicle-engine / vehicle-gun decisions,
+plus `discover_level_sounds` for the 23 published levels):
+
+- **919 entries changed**, every one of them dead data that had been read as live.
+- **Map ambience and area sounds: no change at all** (23 levels, 35 area sounds).
+- **Vanilla hand weapons: no change** — every sample inside a `/* */` block in
+  vanilla's hand-weapon data carries its own `Volume <- Time` ramp gating it to
+  zero at the trigger, so `fire_sample`'s immediate-gain pick never chose one.
+  Mods are not so lucky: XPack2's and WarFront's `Gewehr43` picked
+  `sniperstereo.wav`, a sniper sample sitting inside a comment, where the live
+  report is `k98lr.wav` / `gewehrshot.wav`.
+- The three vanilla horns (Lynx, KettenKrad, BlackMedal) drop from 7 layers to
+  1, and the Elco80 / Type38 PT boats lose a commented-out `Pitch <- Default`
+  modulator on their bubble layer.
+
+---
+
 ## Parse failures worth explaining (explained 2026-09-16)
 
 Ten meshes across the installed mods fail to parse outright. None is a gap in
