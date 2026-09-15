@@ -2755,8 +2755,12 @@ function applyFog() {
   const draw = drawDistance();
   let start, end;
   if (optGameFog.checked) {
-    start = extras.fogStart || 150;
-    end = extras.fogEnd || 300;
+    // Nullish, not falsy: Berlin authors `fogstart 0` — fog from the eye
+    // out — and a || default replaced that 0 with 150 against its declared
+    // end of 100, which inverts the ramp and paints the whole world as one
+    // fog wall.
+    start = extras.fogStart ?? 150;
+    end = extras.fogEnd ?? 300;
   } else if (!optEntire.checked) {
     start = draw * 0.55;
     end = draw;
