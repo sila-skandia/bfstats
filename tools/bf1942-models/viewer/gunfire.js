@@ -313,6 +313,20 @@ export class GunFire {
    * vehicle out of a scene of many and passes `replace: false` so a second
    * vehicle does not evict the first.
    */
+  /**
+   * A detached group holding one mesh per shared stand-in material — the
+   * bright tracer and the dim shell streak — so the page can compile them
+   * before the first round instead of on it (`renderer.compileAsync`). A
+   * gun's own baked streak, projectile body and trail quad are nodes inside
+   * the model it was collected from and compile with that model.
+   */
+  warm() {
+    const group = new THREE.Group();
+    group.add(new THREE.Mesh(tracerGeometry, tracerMaterial),
+              new THREE.Mesh(tracerGeometry, shellMaterial));
+    return group;
+  }
+
   collect(root, options = {}) {
     const {
       replace = true,

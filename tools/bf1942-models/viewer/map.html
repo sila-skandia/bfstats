@@ -2680,6 +2680,11 @@ function applyFog() {
   const fogColor = new THREE.Color().setRGB(
     color[0], color[1], color[2], THREE.SRGBColorSpace);
   scene.fog = new THREE.Fog(fogColor, start, end);
+  // The near pass's scene shares the object, so the arms' materials compile
+  // against the same fog the world does — here, before the rig's warm-up
+  // compile, and not per frame, or that compile would be for a fogless
+  // program the first drawn frame then replaces.
+  vmScene.fog = scene.fog;
   scene.background = skybox || fogColor;
   syncWaterFog();
 }
@@ -3105,9 +3110,28 @@ function buildCollider(root) {
   guns.damageEffects = damageTables?.effects || null;
   guns.projectileMaterials = damageTables?.projectiles || null;
   guns.materials = damageTables?.materials || null;
-  effects.clear();
+  // Pools and all: a mesh particle's materials are built under the level's
+  // lighting, and show() warms a fresh set once this level's fog is up.
+  effects.flush();
   loadEffectLibrary();
   return { heightfield, statics };
+}
+
+// Every effect and gun material built, compiled and uploaded before the
+// first shot, while the level is still settling. A program linked in the
+// middle of a burst is a stall of unknown length: three's first-use shader
+// check blocks the frame on the link, and on this Iris Xe's system GL the
+// perf harness watched one block for 8 s and take the WebGL context with it
+// (features/mesh-viewer-performance, rule 6). Runs after applyFog(), so the
+// programs it links are the fogged ones the frame will ask for.
+function warmEffects() {
+  const stand = guns.warm();
+  const materials = effects.warm();
+  for (const m of materials) if (m.map) renderer.initTexture(m.map);
+  return Promise.all([
+    renderer.compileAsync(effects.root, camera, scene),
+    renderer.compileAsync(stand, camera, scene),
+  ]).catch(() => {});
 }
 // Stick position, -1..1. Held keys drive it toward full deflection and it
 // springs back to centre when they are released, which is what the surfaces'
@@ -3999,6 +4023,22 @@ async function loadHandWeapon(name, soldierName = null) {
   // spawn beside a jeep and press E inside the fetch — and a viewmodel must
   // not materialise over a windscreen. `exitVehicle` shows it again.
   rig.visible = !(optPilot.checked && (aircraft || car));
+  // Hidden again until its programs are linked and its textures are on the
+  // GPU: the arms, the flash emitters `collect` clones below and the baked
+  // streak all compile here, in one parallel batch, rather than one at a
+  // time on the frame that first draws each — three's first-use shader
+  // check blocks that frame on the link (features/mesh-viewer-performance,
+  // rule 6). The seat is checked again when the compile lands, for the same
+  // reason as above.
+  const armsShown = rig.visible;
+  rig.visible = false;
+  rig.traverse(obj => {
+    for (const m of [obj.material].flat()) if (m?.map) renderer.initTexture(m.map);
+  });
+  renderer.compileAsync(rig, vmCamera, vmScene).catch(() => {}).then(() => {
+    if (token !== weaponToken) return;
+    rig.visible = armsShown && !(optPilot.checked && (aircraft || car));
+  });
   // The six baked families become mixer actions. Locomotion loops; the
   // one-shots clamp on their last frame — the clamped fire pose is what
   // "holds between shots" against the 0.1 s cycle (§11 step 4), and a
@@ -5771,6 +5811,8 @@ async function show(entry) {
   placeCamera();
   wireframe(optWire.checked);
   applyVisibility();
+  // The fog is up, so the programs this links are the ones the frame wants.
+  loadEffectLibrary()?.then(library => library && warmEffects());
   const t = extras.terrain || {};
   const o = extras.objects || {};
   document.getElementById('stats').innerHTML =
