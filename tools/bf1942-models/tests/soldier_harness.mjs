@@ -354,6 +354,27 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
                    underEarthGravity: (JUMP_SPEED * JUMP_SPEED) / (2 * 9.81) };
 }
 
+// --- a held Space jumps once -----------------------------------------------
+
+{
+  // The game jumps on the press edge only: land with Space still down and
+  // you stay on the floor until it is released and pressed again. Count
+  // liftoffs across three airborne seconds of held key, then release and
+  // press again to prove the latch re-arms.
+  const s = runway();
+  let liftoffs = 0, wasGrounded = true;
+  for (let i = 0; i < 180; i++) {
+    s.step(DT, { jump: true });
+    if (wasGrounded && !s.grounded) liftoffs++;
+    wasGrounded = s.grounded;
+  }
+  const heldLiftoffs = liftoffs;
+  s.step(DT, {});                       // release
+  s.step(DT, { jump: true });           // fresh press
+  for (let i = 0; i < 5 && s.grounded; i++) s.step(DT, { jump: true });
+  results.heldJump = { heldLiftoffs, rearmed: !s.grounded };
+}
+
 // --- head clearance --------------------------------------------------------
 
 {
