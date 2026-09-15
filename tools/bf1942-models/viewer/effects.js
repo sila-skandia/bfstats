@@ -99,14 +99,33 @@ export class EffectLibrary {
 /**
  * Live bundles and their particles.
  *
- * `scene` is where particles are parented — the world. `camera` is what
- * sprites face and what the emitters' `lodDistance` is measured from.
+ * `scene` is the world the particles live in. They are parented to one
+ * group under it, `root`, and a pooled particle stays there hidden between
+ * lives: `scene.add` and `scene.remove` per particle (an `indexOf`, a
+ * `splice` and two events each, 20-30 times a frame under a Thompson) was
+ * the churn, and the group's matrix walk skips what is hidden so the pool
+ * costs nothing while parked (features/mesh-viewer-performance, rule 4).
+ * `camera` is what sprites face and what the emitters' `lodDistance` is
+ * measured from.
  */
 export class EffectPlayer {
   constructor({ scene, camera, library = null, gravity = GRAVITY,
                 onMaterial = null, onMesh = null, firstPerson = false } = {}) {
     this.scene = scene;
     this.camera = camera;
+    this.root = new THREE.Group();
+    this.root.name = 'effects';
+    // The group never moves, so it never forces its children, and only the
+    // live particles are composed each frame — a hidden pooled mesh is not
+    // even visited. (three r169 walks and recomposes every child otherwise;
+    // map.html's freezeStatics has the arithmetic.)
+    this.root.matrixAutoUpdate = false;
+    this.root.updateMatrixWorld = function (force) {
+      for (const child of this.children) {
+        if (child.visible) child.updateMatrixWorld(force);
+      }
+    };
+    scene.add(this.root);
     this.library = library;
     this.gravity = gravity;
     this.onMaterial = onMaterial;
@@ -268,7 +287,10 @@ export class EffectPlayer {
     }
     if (p.kind === 'mesh') {
       frameQuaternion(p.frame, p.mesh.quaternion);
-      p.baseQuaternion = p.mesh.quaternion.clone();
+      // The rest orientation the tumble turns about, kept on the pooled mesh
+      // rather than allocated per spawn.
+      const base = p.mesh.userData.baseQuaternion ??= new THREE.Quaternion();
+      p.baseQuaternion = base.copy(p.mesh.quaternion);
       p.tumble = 0;
     }
     this.particles.push(p);
@@ -297,9 +319,9 @@ export class EffectPlayer {
         mesh = new THREE.Mesh(source.geometry, material);
         mesh.userData.poolKey = key;
         mesh.frustumCulled = false;
+        this.root.add(mesh);
       }
       mesh.visible = true;
-      this.scene.add(mesh);
       return mesh;
     }
     const key = template.uuid;
@@ -309,20 +331,25 @@ export class EffectPlayer {
     if (!mesh) {
       mesh = template.clone();
       const fades = !!p.spec.alphaOverTime;
-      mesh.traverse(part => {
-        if (!part.isMesh) return;
-        part.frustumCulled = false;
-        const cloned = [part.material].flat().map(m => m.clone());
-        part.material = cloned.length === 1 ? cloned[0] : cloned;
+      // A particle owns its materials — opacity is per particle — but the
+      // clone shares the template's. The page's lighting pass may replace
+      // them wholesale (the map page rebuilds every lit material under its
+      // own combine), so it runs first, and only a material it left shared
+      // with the template is cloned; cloning ahead of it built a material
+      // per part per pool miss that was thrown away unrendered.
+      const shared = new Set();
+      template.traverse(part => {
+        if (part.isMesh) for (const m of [part.material].flat()) shared.add(m);
       });
-      // The page's lighting pass may replace the materials wholesale; the
-      // flags below go on whatever it leaves behind.
+      mesh.traverse(part => { if (part.isMesh) part.frustumCulled = false; });
       this.onMesh?.(mesh);
       mesh.userData.poolKey = key;
       mesh.userData.materials = [];
       mesh.traverse(part => {
         if (!part.isMesh) return;
-        for (const c of [part.material].flat()) {
+        const own = [part.material].flat().map(m => (shared.has(m) ? m.clone() : m));
+        part.material = own.length === 1 ? own[0] : own;
+        for (const c of own) {
           if (fades) {
             // `IStandardMesh::setAlpha` on the engine's side; here the
             // material's opacity, under the decal's own alphaTest 0.5. Lifted
@@ -343,17 +370,16 @@ export class EffectPlayer {
           mesh.userData.materials.push(c);
         }
       });
+      this.root.add(mesh);
     }
     mesh.visible = true;
-    this.scene.add(mesh);
     return mesh;
   }
 
   #recycle(p) {
     const mesh = p.mesh;
     if (!mesh) return;
-    this.scene.remove(mesh);
-    mesh.visible = false;
+    mesh.visible = false;   // parked in `root`, out of the walk and the draw
     const pool = p.kind === 'sprite' ? this.spritePool : this.meshPool;
     pool.get(mesh.userData.poolKey)?.push(mesh);
     if (p.decal) {
