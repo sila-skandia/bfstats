@@ -1,7 +1,8 @@
 """Refractor v1 StandardMesh (.sm) reader.
 
 Layout below follows the reference implementation in BfMeshView's `modStdMesh.bas`
-(github.com/art567/BfMeshView), which is the only public description of the format.
+(github.com/art567/BfMeshView), cross-checked against the engine where the
+corpus in `features/bf1942-engine-reference/` has read it.
 
     u32   version              9 or 10
     u32   unknown              0
@@ -20,7 +21,7 @@ Layout below follows the reference implementation in BfMeshView's `modStdMesh.ba
     u32   lodCount             1 for a simple part, 6 for a full LOD chain
       per lod:
         u32 materialCount
-          per material:  u32 nameLen, name, 3 x u32 unknown, u32 primitive,
+          per material:  u32 nameLen, name, 12 reserved bytes, u32 primitive,
                          u32 flags, u32 vertexStride, u32 vertexCount, u32 indexCount,
                          u32 unknown
           then, in the same order, each material's vertex block followed by its
@@ -28,7 +29,17 @@ Layout below follows the reference implementation in BfMeshView's `modStdMesh.ba
     u32   cid
     u32   csize + csize bytes
 
-Vertices at the universal stride of 32 bytes are position(3f) normal(3f) uv(2f).
+The vertex layout is the `flags` word, which is the engine's vertex format
+(`dice::ref2::rend`): a component bitfield the renderer turns into a Direct3D
+FVF code, so the components sit in Direct3D order — position, normal, colours,
+then texture-coordinate sets 0..3. The engine derives the stride from that word
+(`rend::getStride`, client 0x00640f20) and never lays anything out from the
+file's `vertexStride`; the loader (client 0x005b42d0) uses `vertexStride *
+vertexCount` only as the number of bytes to pull from the stream. One mod mesh
+(bf1918 `o_WoodenCart_M2.sm`) writes stride 64 against flags 0x411 and is only
+readable this way. See `features/bf1942-engine-reference/subsystems/
+standardmesh-vertex-format.md` (ledger rows SM-1 / SM-2).
+
 The engine draws vehicle parts as an indexed triangle list (`primitive == 4`);
 soldier parts use the strip form (`primitive == 5`).
 
@@ -38,15 +49,87 @@ so exporting negates Z (see `gltf.py`) rather than mangling anything here.
 
 from __future__ import annotations
 
+import functools
 import struct
 from dataclasses import dataclass, field
 
 PRIM_TRIANGLE_LIST = 4
 PRIM_TRIANGLE_STRIP = 5
 
+# Vertex format bits, as `rend::getStride` (client 0x00640f20, lnxded 0x084451d0)
+# and the D3DFVF builder (client 0x00672a40) read them. Sizes are bytes.
+VF_POSITION = 0x00000001          # 3 floats            -> D3DFVF_XYZ
+VF_POSITION_RHW = 0x00000004      # 4 floats            -> D3DFVF_XYZRHW   (engine bit, unseen in .sm)
+VF_NORMAL = 0x00000010            # 3 floats            -> D3DFVF_NORMAL
+VF_DIFFUSE = 0x00000040           # 1 packed colour     -> D3DFVF_DIFFUSE  (unseen in .sm)
+VF_SPECULAR = 0x00000100          # 1 packed colour     -> D3DFVF_SPECULAR (unseen in .sm)
+VF_BLEND_WEIGHTS = (0x00200000, 0x00400000, 0x00800000, 0x01000000)   # 1..4 floats -> D3DFVF_XYZB1..4
+VF_BIT29 = 0x20000000             # 16 bytes in getStride; the FVF builder disagrees. Unnamed, unseen.
+# Texture-coordinate sets 0..3; within a set the four bits are 1, 2, 3 or 4 floats,
+# tested in that order, first match wins.
+VF_TEXCOORD_SETS = (
+    (0x00000200, 0x00000400, 0x00000800, 0x02000000),
+    (0x00001000, 0x00002000, 0x00004000, 0x04000000),
+    (0x00008000, 0x00010000, 0x00020000, 0x08000000),
+    (0x00040000, 0x00080000, 0x00100000, 0x10000000),
+)
+
+VF_STANDARD = 0x0411       # position + normal + uv0(2f)            = 32 bytes; every vanilla mesh
+VF_LIGHTMAPPED = 0x2411    # position + normal + uv0(2f) + uv1(2f)  = 40 bytes; lightmapped statics
+
 
 class MeshError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class VertexComponent:
+    name: str
+    offset: int   # bytes from the start of the vertex
+    size: int     # bytes
+
+
+@functools.lru_cache(maxsize=None)
+def vertex_layout(flags: int) -> tuple[VertexComponent, ...]:
+    """Components of a vertex with this format word, in memory order.
+
+    Mirrors `rend::getStride`: the same bits, the same sizes, summed in the same
+    order, which is Direct3D's FVF order.
+    """
+    components: list[VertexComponent] = []
+    offset = 0
+
+    def put(name: str, size: int) -> None:
+        nonlocal offset
+        components.append(VertexComponent(name, offset, size))
+        offset += size
+
+    if flags & VF_POSITION:
+        put("position", 12)
+    if flags & VF_POSITION_RHW:
+        put("position_rhw", 16)
+    for count, bit in enumerate(VF_BLEND_WEIGHTS, 1):
+        if flags & bit:
+            put("blend_weights", 4 * count)
+    if flags & VF_BIT29:
+        put("reserved_bit29", 16)
+    if flags & VF_NORMAL:
+        put("normal", 12)
+    if flags & VF_DIFFUSE:
+        put("diffuse", 4)
+    if flags & VF_SPECULAR:
+        put("specular", 4)
+    for set_index, bits in enumerate(VF_TEXCOORD_SETS):
+        for count, bit in enumerate(bits, 1):
+            if flags & bit:
+                put(f"uv{set_index}", 4 * count)
+                break
+    return tuple(components)
+
+
+def engine_stride(flags: int) -> int:
+    """Bytes per vertex the engine allocates for this format word: `rend::getStride`."""
+    return sum(c.size for c in vertex_layout(flags))
 
 
 @dataclass
@@ -58,39 +141,69 @@ class Material:
     vertex_count: int
     index_count: int
     unknown: tuple[int, int, int, int]
+    # The vertex payload as the stream holds it: `stride * vertex_count` bytes as
+    # floats (zero-padded to the engine's size when the file is short). Read it
+    # through the accessors, which use the format word, not `stride`.
     vertices: list[float] = field(default_factory=list)
     indices: list[int] = field(default_factory=list)
 
     @property
     def floats_per_vertex(self) -> int:
+        """Floats per vertex in the *file's* stride - what the stream consumes."""
         return self.stride // 4
 
-    def positions(self) -> list[tuple[float, float, float]]:
-        n = self.floats_per_vertex
+    @property
+    def layout(self) -> tuple[VertexComponent, ...]:
+        return vertex_layout(self.flags)
+
+    @property
+    def engine_stride(self) -> int:
+        return engine_stride(self.flags)
+
+    @property
+    def stride_matches_flags(self) -> bool:
+        """False when the file's stride is not what the engine derives from `flags`.
+
+        The engine still draws such a mesh from the first `engine_stride *
+        vertex_count` bytes of the payload; this only says the file is odd.
+        """
+        return self.stride == self.engine_stride
+
+    def component(self, name: str) -> VertexComponent | None:
+        for c in self.layout:
+            if c.name == name:
+                return c
+        return None
+
+    def _component_floats(self, comp: VertexComponent) -> list[tuple[float, ...]]:
+        step = self.engine_stride // 4
+        base = comp.offset // 4
+        width = comp.size // 4
         v = self.vertices
-        return [tuple(v[i * n: i * n + 3]) for i in range(self.vertex_count)]
+        needed = step * self.vertex_count
+        if len(v) < needed:
+            v = v + [0.0] * (needed - len(v))
+        return [tuple(v[i * step + base: i * step + base + width]) for i in range(self.vertex_count)]
+
+    def positions(self) -> list[tuple[float, float, float]]:
+        comp = self.component("position")
+        return [] if comp is None else self._component_floats(comp)  # type: ignore[return-value]
 
     def normals(self) -> list[tuple[float, float, float]] | None:
-        if self.stride < 24:
-            return None
-        n = self.floats_per_vertex
-        v = self.vertices
-        return [tuple(v[i * n + 3: i * n + 6]) for i in range(self.vertex_count)]
+        comp = self.component("normal")
+        return None if comp is None else self._component_floats(comp)  # type: ignore[return-value]
+
+    def uv_set(self, index: int) -> list[tuple[float, ...]] | None:
+        """Texture-coordinate set 0..3, or None when the format has no such set."""
+        comp = self.component(f"uv{index}")
+        return None if comp is None else self._component_floats(comp)
 
     def uvs(self) -> list[tuple[float, float]] | None:
-        if self.stride < 32:
-            return None
-        n = self.floats_per_vertex
-        v = self.vertices
-        return [tuple(v[i * n + 6: i * n + 8]) for i in range(self.vertex_count)]
+        return self.uv_set(0)  # type: ignore[return-value]
 
     def uvs2(self) -> list[tuple[float, float]] | None:
-        """Lightmap channel. Stride 40 is position/normal/uv/uv2."""
-        if self.stride < 40:
-            return None
-        n = self.floats_per_vertex
-        v = self.vertices
-        return [tuple(v[i * n + 8: i * n + 10]) for i in range(self.vertex_count)]
+        """Second texture-coordinate set; vanilla's object-lightmap channel (flags 0x2411)."""
+        return self.uv_set(1)  # type: ignore[return-value]
 
     def triangles(self) -> list[tuple[int, int, int]]:
         idx = self.indices
@@ -284,9 +397,14 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
                 vertex_count=vertex_count, index_count=index_count,
                 unknown=(u2, u3, u4, u7),
             ))
-        # Payloads follow all descriptors, in descriptor order.
+        # Payloads follow all descriptors, in descriptor order. The stream
+        # advances by the file's stride times the count - that is what the
+        # engine reads - and the accessors then lay the bytes out by `flags`.
         for m in materials:
             m.vertices = c.floats(m.vertex_count * m.floats_per_vertex)
+            engine_floats = m.vertex_count * (m.engine_stride // 4)
+            if len(m.vertices) < engine_floats:
+                m.vertices.extend([0.0] * (engine_floats - len(m.vertices)))
             m.indices = c.uint16s(m.index_count)
         lods.append(Lod(materials))
 
