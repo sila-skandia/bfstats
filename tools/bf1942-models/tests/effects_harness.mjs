@@ -4,6 +4,7 @@
 import {
   sampleCrd, sampleCurve, basisFromNormal, basisFromAxes, rollBasis, inFrame,
   EmitterClock, spawnParticle, integrateParticle, evalParticle, damageFactor,
+  atlasGrid, frameIndex,
 } from './effects-core.mjs';
 
 // A deterministic generator so the assertions are exact.
@@ -47,10 +48,21 @@ const dense = new EmitterClock({ timeToLive: ['n', 0.1, 0, 0], intensity: ['n', 
 let denseCount = 0;
 for (let i = 0; i < 12; i++) denseCount += dense.step(1 / 60);
 out.clock.dense = denseCount;
-// A delay holds the first spawn back.
-const delayed = new EmitterClock({ delay: ['n', 0.2, 0, 0], timeToLive: ['n', 0.1, 0, 0], intensity: ['n', 10, 0, 0] }, lcg(7));
+// A delay holds the first spawn back. EMT-2: on the tick the delay runs out,
+// age grows by the delay's own pre-tick value (0.2 - 0.1 = 0.1), not by the
+// leftover past zero (0.5 - 0.1 = 0.4) — so a big second dt (0.5, comfortably
+// overshooting) still only advances age by 0.1, two spawns due at 0.1 s
+// intervals (t=0 and t=0.1), not the five a leftover-based age would owe.
+const delayed = new EmitterClock({ delay: ['n', 0.2, 0, 0], timeToLive: ['n', 1, 0, 0], intensity: ['n', 10, 0, 0] }, lcg(7));
 out.clock.delayedFirstStep = delayed.step(0.1);
-out.clock.delayedSecondStep = delayed.step(0.15);
+out.clock.delayedSecondStep = delayed.step(0.5);
+out.clock.delayedAgeAfterSecondStep = delayed.age;
+// EMT-2's other edge: the burst ends at age >= timeToLive, not age > timeToLive.
+// A single step landing exactly on timeToLive must not spawn there and must
+// already be done, not wait one more tick.
+const edge = new EmitterClock({ timeToLive: ['n', 0.1, 0, 0], intensity: ['n', 10, 0, 0] }, lcg(17));
+out.clock.edgeSpawnsAtTtl = edge.step(0.1);
+out.clock.edgeDoneAtTtl = edge.done;
 // A looping emitter never finishes; a -1 lifetime runs until stopped.
 const loop = new EmitterClock({ looping: true, timeToLive: ['n', 0.05, 0, 0], intensity: ['n', 10, 0, 0] }, lcg(9));
 for (let i = 0; i < 30; i++) loop.step(1 / 60);
@@ -100,6 +112,39 @@ for (let i = 0; i < 6; i++) integrateParticle(puff, 1 / 60);
 out.puff.speedAfter100ms = Math.hypot(...puff.velocity);
 out.puff.travelled = -puff.position[2];
 out.puff.look = evalParticle(puff);
+
+// Texture-atlas flipbooks (SPR-6). fx_expl_core's own numbers: 16 frames,
+// initAnimationFrame 8, animationSpeed 70 (frames/second, no ramp) — over its
+// full 1 s life that is 8 + 70*1/16 = 12.375, floor 12, still inside the
+// strip (every checked vanilla template stays inside its own strip; see
+// effects-core.js). 16 frames is a 4x4 grid, so frame 12 is column 0, row 3.
+out.atlas = { grid16: atlasGrid(16), grid9: atlasGrid(9), grid5: atlasGrid(5), grid1: atlasGrid(1) };
+const explCore = spawnParticle({
+  particle: { kind: 'sprite', timeToLive: ['n', 1, 0, 0], numAnimationFrames: 16,
+              initAnimationFrame: ['n', 8, 0, 0], animationSpeed: ['n', 70, 0, 0] },
+}, ground, [0, 0, 0], null, lcg(43));
+out.atlas.explCoreStartFrame = frameIndex(explCore);
+integrateParticle(explCore, 1.0);
+out.atlas.explCoreFrameAfterOneSecond = explCore.animFrame;
+out.atlas.explCoreIndexAfterOneSecond = frameIndex(explCore);
+const g16 = atlasGrid(16);
+out.atlas.explCoreCell = { col: frameIndex(explCore) % g16.columns, row: Math.floor(frameIndex(explCore) / g16.columns) };
+// animationSpeedOverTime must actually scale the rate: a flat 2x ramp over a
+// 10-frame strip at speed 10 covers 2 full frames in one second, not 1.
+const ramped = spawnParticle({
+  particle: { kind: 'sprite', timeToLive: ['n', 10, 0, 0], numAnimationFrames: 10,
+              initAnimationFrame: ['n', 0, 0, 0], animationSpeed: ['n', 10, 0, 0],
+              animationSpeedOverTime: [[0, 2], [100, 2]] },
+}, ground, [0, 0, 0], null, lcg(45));
+integrateParticle(ramped, 1.0);
+out.atlas.rampedFrameAfterOneSecond = ramped.animFrame;
+// frameIndex wraps both directions: 19 of 16 frames comes back as 3; a
+// negative accumulator (never produced by integrateParticle on real data,
+// but the function must still be safe) comes back positive.
+out.atlas.wrapPositive = frameIndex({ spec: { numAnimationFrames: 16 }, animFrame: 19 });
+out.atlas.wrapNegative = frameIndex({ spec: { numAnimationFrames: 16 }, animFrame: -1 });
+// A non-sprite / non-flipbook particle never touches any of this.
+out.atlas.notAnimated = frameIndex({ spec: {}, animFrame: 123 });
 
 // Gravity: a chip with gravityModifier 0.6 falls at 0.6 g.
 const chip = spawnParticle({ particle: { kind: 'mesh', timeToLive: ['n', 1, 0, 0], gravityModifier: ['n', 0.6, 0, 0] } },
