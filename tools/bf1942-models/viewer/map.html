@@ -514,7 +514,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
-import { Aircraft, VehicleCamera, findVehicle } from './flight.js';
+import { Aircraft, VehicleCamera, findVehicle, findVehicles } from './flight.js';
+import { GroundVehicle } from './ground.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
@@ -643,7 +644,7 @@ function getTouchHudText() {
 }
 function updateHud() {
   if (optPilot.checked) {
-    hud.textContent = HUD_PILOT;
+    hud.textContent = car ? HUD_DRIVE : HUD_PILOT;
   } else if (optOnFoot.checked) {
     hud.textContent = HUD_FOOT;
   } else if (isTouchDevice) {
@@ -729,7 +730,7 @@ function getFloorAltitude(x, z) {
 }
 
 function clampAltitude() {
-  if (optPilot.checked && aircraft) return;
+  if (optPilot.checked && (aircraft || car)) return;
   const floor = getFloorAltitude(camera.position.x, camera.position.z);
   if (camera.position.y < floor) {
     camera.position.y = floor;
@@ -877,11 +878,12 @@ function flySpeed() {
 
 function lookDelta(dx, dy) {
   if (!dx && !dy) return;
-  if (optPilot.checked && aircraft) {
-    // Not a stick: the arrow keys fly the aircraft. What the mouse does depends
-    // on the view — a head inside the cockpit, an orbit outside it, and nothing
-    // at all in fly-by, which is a camera standing in the world. `VehicleCamera`
-    // owns that distinction and the per-mode clamps that go with it.
+  if (optPilot.checked && (aircraft || car)) {
+    // Not a stick: the arrow keys fly the aircraft and A/D steer the car. What
+    // the mouse does depends on the view — a head inside the cockpit, an orbit
+    // outside it, and nothing at all in fly-by, which is a camera standing in
+    // the world. `VehicleCamera` owns that distinction and the per-mode clamps
+    // that go with it.
     view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
     return;
   }
@@ -916,19 +918,31 @@ addEventListener('keydown', e => {
   }
   keys.add(e.code);
   if (e.code === 'KeyR') {
-    if (optOnFoot.checked && soldier) {
+    // The seat is checked before the soldier: a driver who walked in on foot
+    // still has his rifle slung, and R must reset the vehicle he is actually
+    // holding the wheel of, not work the bolt.
+    if (optPilot.checked && (aircraft || car)) {
+      (aircraft || car).reset();
+      stick.roll = 0;
+      stick.pitch = 0;
+    } else if (optOnFoot.checked && soldier) {
       // R is the reload once there is a magazine to reload — the game's own
       // binding — and stays the respawn only for a soldier holding nothing
       // (a weapon glb that failed to load). Respawning moved to the flag
       // picker, where changing the selection already respawns.
       if (handWeapon?.data?.magazine) startReload();
       else spawnAtFlag(true);
-    } else if (optPilot.checked && aircraft) {
-      aircraft.reset();
-      stick.roll = 0;
-      stick.pitch = 0;
     } else if (!optPilot.checked) {
       resetCamera();
+    }
+  }
+  // E is `c_PIEnterExitVehicle`, bound to IDKey_E in the game's own control
+  // maps: walk up and get in, or get out where you stopped. In free fly E is
+  // already the vertical thrust, so both branches ask for a mode first.
+  if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (optPilot.checked && (aircraft || car)) exitVehicle();
+    else if (optOnFoot.checked && soldier && captured && nearEntry) {
+      enterVehicle(nearEntry.vehicle);
     }
   }
   // C cycles the view, which is `c_PIToggleCameraMode` bound to IDKey_C in every
@@ -2198,8 +2212,9 @@ function disposeEngineAudio() {
 async function setupEngineAudio() {
   disposeEngineAudio();
   const gen = engineGeneration;
-  if (!aircraft) return;
-  const template = aircraft.node.userData?.control || aircraft.node.name;
+  const vehicle = aircraft || car;
+  if (!vehicle) return;
+  const template = vehicle.node.userData?.control || vehicle.node.name;
   const spec = findEngineSpec(extras, template);
   if (!spec) {
     // A stale scene.json, a vehicle with no Engine sound script and an
@@ -2212,7 +2227,7 @@ async function setupEngineAudio() {
   // The voices hang off the `Engine` node the script is bound to, not the
   // vehicle origin: on a Corsair that is the propeller hub at z -4.15, four
   // metres ahead of the pilot's ear, which is where the noise actually is.
-  engineNode = aircraft.node.getObjectByName(spec.engine) || aircraft.node;
+  engineNode = vehicle.node.getObjectByName(spec.engine) || vehicle.node;
   const dir = currentDir;
   const built = await loadEngineAudio(spec, {
     listener: ensureListener(),
@@ -2221,7 +2236,7 @@ async function setupEngineAudio() {
   if (!built) return;
   // Decoding took several awaits; anything could have happened. Nothing has
   // been started yet, so a superseded load is thrown away silently.
-  if (gen !== engineGeneration || !aircraft) {
+  if (gen !== engineGeneration || (!aircraft && !car)) {
     built.dispose();
     return;
   }
@@ -2252,15 +2267,16 @@ async function setupWeaponAudio(gen, dir, template) {
   }
   // Decoding took several awaits. Nothing has been started, so a superseded
   // load is dropped without ever having made a sound.
-  if (gen !== engineGeneration || !aircraft) {
+  const vehicle = aircraft || car;
+  if (gen !== engineGeneration || !vehicle) {
     for (const weapon of built) weapon.audio.dispose();
     return;
   }
   for (const weapon of built) {
     // The voices belong on the gun, not the vehicle origin: a Corsair's guns
     // are 2.2 m out each wing, and the panner is what puts the rattle there.
-    weapon.node = aircraft.node.getObjectByName(weapon.spec.fireArms)
-      || aircraft.node;
+    weapon.node = vehicle.node.getObjectByName(weapon.spec.fireArms)
+      || vehicle.node;
     weapon.audio.setMaster(0);   // silent until the trigger is pulled
     weapon.audio.start();
   }
@@ -2290,7 +2306,7 @@ function masterVolume() {
 
 /** Everything the `.ssc` control sources are worth this frame. */
 function engineControl(dt) {
-  const state = aircraft?.state;
+  const state = (aircraft || car)?.state;
   if (engineNode) {
     engineNode.getWorldPosition(engineWorldPos);
     engineNode.getWorldQuaternion(engineWorldQuat);
@@ -2339,7 +2355,7 @@ let ambientDuck = 1;
 
 function updateAudio(dt = 0) {
   const master = masterVolume();
-  const duckTarget = (optPilot.checked && aircraft) ? AMBIENT_DUCK : 1;
+  const duckTarget = (optPilot.checked && (aircraft || car)) ? AMBIENT_DUCK : 1;
   ambientDuck += (duckTarget - ambientDuck)
     * (dt > 0 ? Math.min(1, dt / AMBIENT_DUCK_TAU) : 1);
   if (engineAudio) {
@@ -2350,7 +2366,7 @@ function updateAudio(dt = 0) {
     // The trigger comes from the gun runtime rather than the key, so a weapon
     // that has run its magazine dry or is not the seat's gun stays quiet for
     // the same reason it stops drawing tracers.
-    const group = aircraftGuns.find(g => g.node.name === weapon.spec.fireArms);
+    const group = vehicleGuns.find(g => g.node.name === weapon.spec.fireArms);
     weapon.audio.setMaster(group?.firing ? master : 0);
     if (weapon.node) {
       weapon.node.getWorldPosition(weaponWorldPos);
@@ -2612,10 +2628,59 @@ function applyVisibility() {
 // swivelling, and fly-by ignores it entirely.
 
 let aircraft = null;
+// The driven land vehicle — `ground.js`'s half of the same seam. At most one
+// of `aircraft`/`car` is ever non-null: one seat, one body, one view rig.
+let car = null;
 const AIR_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'Space',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
 ]);
+
+/**
+ * What kind of seat a spawned PlayerControlObject offers, read off its own
+ * drivetrain rather than its name: the one `Engine` node every powered
+ * vehicle carries declares `engineType` straight out of `Physics.con`, and
+ * that is the engine's own taxonomy — `c_ETPlane` flies, `c_ETCar` drives.
+ * Ships and tanks return null until a model exists for them (`c_ETTank`
+ * steers by differential, which `ground.js` documents as an open gap), and so
+ * do the engineless Defguns and Brownings that share the class.
+ *
+ * The walk stops at every nested PlayerControlObject: a Willys' passenger
+ * seat has no engine of its own and must not borrow the driver's, and a
+ * carrier's deck must not be classified by whatever is parked on it.
+ */
+function classifyVehicle(node) {
+  if (!node) return null;
+  const stack = [...node.children];
+  while (stack.length) {
+    const obj = stack.pop();
+    const data = obj.userData || {};
+    if (data.templateKind === 'PlayerControlObject') continue;
+    if (data.templateKind === 'Engine' && data.physics?.engineType) {
+      const type = data.physics.engineType;
+      if (type === 'c_ETPlane') return 'air';
+      if (type === 'c_ETCar') return 'ground';
+      return null;
+    }
+    stack.push(...obj.children);
+  }
+  return null;
+}
+
+/**
+ * The seat the pilot checkbox takes when nobody points at one: the first
+ * aircraft the scene spawns, else the first drivable car. The name trio at
+ * the end is for scenes extracted before `extras.physics` existed, whose
+ * engines cannot say what they are.
+ */
+function pickVehicle() {
+  const found = findVehicles(currentRoot);
+  return found.find(node => classifyVehicle(node) === 'air')
+    || found.find(node => classifyVehicle(node) === 'ground')
+    || findVehicle(currentRoot, 'Corsair')
+    || findVehicle(currentRoot, 'Spitfire')
+    || findVehicle(currentRoot, 'Zero');
+}
 
 // --- the guns ---------------------------------------------------------------
 //
@@ -2657,23 +2722,36 @@ const guns = new GunFire({
   scene, camera,
   viewportHeight: () => renderer.getDrawingBufferSize(_bufferSize).y,
 });
-let aircraftGuns = [];
+let vehicleGuns = [];
 
 function collectGuns() {
-  aircraftGuns = aircraft
-    ? guns.collect(aircraft.node, {
+  releaseGuns();
+  const vehicle = aircraft || car;
+  // `replace: false`, the same courtesy `loadHandWeapon` extends the other
+  // way: a soldier who walked into this seat still owns his rifle's group,
+  // and a wholesale `clear()` here would silently disarm him for the walk out.
+  vehicleGuns = vehicle
+    ? guns.collect(vehicle.node, {
+      replace: false,
       speedScale: 1,
       maxRange: 1500,
       roundLifetime: 'data',
       tracerLength: 'data',
-      platformVelocity: () => aircraft?.state.velocity ?? null,
+      platformVelocity: () => (aircraft || car)?.state.velocity ?? null,
     })
     : [];
 }
 
 function releaseGuns() {
-  for (const group of aircraftGuns) guns.setFiring(group, false);
-  guns.clear();
+  // Surgical, like `disposeHandWeapon`: only this vehicle's groups leave the
+  // index, and rounds already in the air keep their reference and finish
+  // their flight.
+  for (const group of vehicleGuns) {
+    guns.setFiring(group, false);
+    const index = guns.groups.indexOf(group);
+    if (index >= 0) guns.groups.splice(index, 1);
+  }
+  vehicleGuns = [];
 }
 
 // --- what the rounds run into ----------------------------------------------
@@ -2772,57 +2850,308 @@ const HEAD_SENS = 0.0022;
 // `CVMFrontChase`, `CVMFlyBy`) and never where they sit. See flight.js.
 let view = null;
 
-function setPilot(on) {
-  if (on && !aircraft) {
-    const node = findVehicle(currentRoot, 'Corsair')
-      || findVehicle(currentRoot, 'Spitfire')
-      || findVehicle(currentRoot, 'Zero');
-    if (!node) {
+function setPilot(on, node = null) {
+  if (on && node && aircraft?.node !== node && car?.node !== node) {
+    // A different seat than the one already built. The old vehicle was
+    // already parked by `leaveVehicle`; dropping the references leaves it
+    // standing where its driver left it, a fixture of the level now.
+    aircraft = null;
+    car = null;
+    view = null;
+  }
+  if (on && !aircraft && !car) {
+    const picked = node || pickVehicle();
+    if (!picked) {
       optPilot.checked = false;
       return;
     }
-    aircraft = new Aircraft(node, currentRoot);
-    aircraft.groundHeight = groundHeight;
-    // `Aircraft` defaults to forcing first person every step, because a page
+    const kind = classifyVehicle(picked) || 'air';
+    const vehicle = kind === 'ground'
+      ? new GroundVehicle(picked, currentRoot, { groundHeight })
+      : new Aircraft(picked, currentRoot);
+    if (kind === 'ground') car = vehicle;
+    else {
+      aircraft = vehicle;
+      aircraft.groundHeight = groundHeight;
+      // The spawn pose puts the aircraft on the deck; lift it clear of its
+      // own wheels. The car stays put — its springs are the lift.
+      aircraft.state.position.y += 0.2;
+    }
+    // `Vehicle` defaults to forcing first person every step, because a page
     // with a single view has no other way to say "someone is sitting in it".
     // This page now has four, so it takes the decision over: `VehicleCamera`
     // calls `setFirstPerson` on every mode change, and the swap follows the view
     // rather than the sim. Leaving both on would have `integrate` slam the
     // interior back every frame the moment you pressed C.
-    aircraft.autoFirstPerson = false;
-    view = new VehicleCamera(aircraft, { groundHeight });
-    // The flown vehicle must outlive the vehicles toggle and the distance cull;
-    // reparenting out of `spawners` already took it off both lists, but the
-    // spawn pose puts it on the deck, so lift it clear of its own wheels.
-    aircraft.state.position.y += 0.2;
+    vehicle.autoFirstPerson = false;
+    view = new VehicleCamera(vehicle, { groundHeight });
     collectGuns();
   }
-  if (on && aircraft) {
+  if (on && (aircraft || car)) {
     // Ticking the box is the user gesture the autoplay policy wants; the same
     // call on a map load is not one, and resume() there fails harmlessly until
     // the fly gate is clicked.
     ensureAudioContext();
     setupEngineAudio();
   }
-  if (!on && aircraft) {
+  if (!on && (aircraft || car)) {
+    const vehicle = aircraft || car;
     stopEngineAudio();
     releaseGuns();
-    aircraft.reset();
+    vehicle.reset();
     // `reset()` only restores the exterior when it owns the swap, and it no
     // longer does. Vacating the seat has to put the fuselage back explicitly or
     // the parked plane sits on the strip as an open cockpit tub.
     view.setMode('cockpit');
-    aircraft.setFirstPerson(false);
-    aircraft.applyTransform();
-    aircraft.applyRig();
+    vehicle.setFirstPerson(false);
+    vehicle.applyTransform();
+    vehicle.applyRig();
+    ammoEl.hidden = true;      // the dashboard line rides the ammo element
   }
   stick.roll = 0;
   stick.pitch = 0;
-  hud.textContent = on ? HUD_PILOT : (isTouchDevice ? HUD_TOUCH : HUD_FLY);
+  hud.textContent = on
+    ? (car ? HUD_DRIVE : HUD_PILOT)
+    : (optOnFoot.checked && soldier ? HUD_FOOT
+      : isTouchDevice ? getTouchHudText() : HUD_FLY);
 }
 
 const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · Space guns · '
-  + 'C view · mouse look around · R reset · Esc';
+  + 'C view · mouse look around · R reset · E out on the ground · Esc';
+const HUD_DRIVE = 'W/S drive and brake · A/D steer · C view · mouse look around · '
+  + 'R reset · E get out · Esc';
+
+/** Read the keyboard into the car and step the drive model. */
+function drive(dt) {
+  if (!car) return;
+  const held = captured ? keys : EMPTY_KEYS;
+
+  // One axis, three jobs — accelerate, brake, reverse — which is exactly the
+  // split `ground.js` reads off `c_PIThrottle`. Unlike the aircraft's
+  // latching quadrant this springs back to centre: a lifted pedal is engine
+  // braking, not a held power setting.
+  car.setInput('c_PIThrottle', axisToward(car.input('c_PIThrottle'),
+    (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0), dt));
+  car.setInput('c_PIYaw', axisToward(car.input('c_PIYaw'),
+    (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
+  // A Willys carries no guns, but the input costs nothing and whatever
+  // armed car arrives next inherits the trigger with it.
+  car.setInput('c_PIFire', held.has('Space') ? 1 : 0);
+
+  car.integrate(dt);
+
+  guns.firstPerson = car.firstPerson;
+  for (const group of vehicleGuns) {
+    guns.setFiring(group, car.input(group.stats.input || 'c_PIFire') > 0);
+  }
+
+  const pose = view.update(dt);
+  camera.position.copy(pose.position);
+  camera.quaternion.copy(pose.quaternion);
+
+  // The dashboard, on the element the rifleman's ammo line uses: road speed
+  // and the automatic's gear, which `ground.js` keeps readable for exactly
+  // this. Reverse is a mode there rather than a slot, so it is read off the
+  // signed forward speed here.
+  const fwd = driveFwd.set(0, 0, -1).applyQuaternion(car.state.orientation);
+  const vf = car.state.velocity.dot(fwd);
+  ammoEl.hidden = false;
+  ammoEl.textContent = `${car.control} · ${Math.round(Math.abs(vf) * 3.6)} km/h`
+    + ` · gear ${vf < -0.25 ? 'R' : car.gear}`;
+}
+const driveFwd = new THREE.Vector3();
+
+// --- walking up to a seat ----------------------------------------------------
+//
+// Every assembled vehicle carries its `EntryPoint` nodes — meshless, placed
+// where a soldier walks in from, with `setEntryRadius` as their reach
+// (`extras.seat.entryRadius`, 2.3 m on a Willys) — and the PCO root carries
+// `setSoldierExitLocation` for the walk back out. Both are the game's own
+// data; the only invention here is the 4 m fallback radius for a mod entry
+// point that declares none.
+const ENTRY_RADIUS_FALLBACK = 4;
+const ENTRY_SCAN_PERIOD = 0.25;   // seconds between proximity sweeps on foot
+let entryPoints = null;           // [{node, vehicle, control, radius}]
+let nearEntry = null;             // the seat the HUD is currently offering
+let entryScan = 0;
+
+/**
+ * Index every walkable seat once per level. Only the root seat of a vehicle
+ * the page can actually drive or fly: the passenger PCOs and the manned guns
+ * keep their entry points for the day seat switching exists.
+ */
+function collectEntryPoints() {
+  entryPoints = [];
+  const roots = findVehicles(currentRoot);
+  // A vehicle someone has flown was reparented out of `spawners` and is
+  // invisible to `findVehicles`; it is still standing in the level and still
+  // has a door.
+  for (const owned of [aircraft?.node, car?.node]) {
+    if (owned && !roots.includes(owned)) roots.push(owned);
+  }
+  for (const vehicle of roots) {
+    if (!classifyVehicle(vehicle)) continue;
+    const control = vehicle.userData?.control || vehicle.name || 'vehicle';
+    vehicle.traverse(obj => {
+      if (obj.userData?.templateKind !== 'EntryPoint') return;
+      if ((obj.userData.seat?.control || '') !== control) return;
+      entryPoints.push({
+        node: obj, vehicle, control,
+        radius: obj.userData.seat?.entryRadius || ENTRY_RADIUS_FALLBACK,
+      });
+    });
+  }
+}
+
+const entryWorld = new THREE.Vector3();
+
+/** The closest entry point whose declared radius reaches the soldier. */
+function nearestEntry() {
+  if (!entryPoints) collectEntryPoints();
+  let best = null;
+  let bestDistance = Infinity;
+  for (const entry of entryPoints) {
+    entry.node.getWorldPosition(entryWorld);
+    const distance = Math.hypot(entryWorld.x - soldier.x,
+      entryWorld.y - (soldier.y + 1), entryWorld.z - soldier.z);
+    if (distance <= entry.radius && distance < bestDistance) {
+      best = entry;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * Watch for a door within reach, a few times a second rather than every
+ * frame, and offer it on the HUD. Runs from `onFoot`.
+ */
+function scanForEntry(dt) {
+  entryScan -= dt;
+  if (entryScan > 0) return;
+  entryScan = ENTRY_SCAN_PERIOD;
+  const near = nearestEntry();
+  if (near?.vehicle !== nearEntry?.vehicle) {
+    hud.textContent = near ? `E — enter the ${near.control}` : HUD_FOOT;
+  }
+  nearEntry = near;
+}
+
+/**
+ * From on foot into a seat. The soldier is suspended rather than torn down —
+ * his weapon, magazines and flag selection all wait for the walk back out —
+ * so only the presentation is packed away: the viewmodel, the crosshair, the
+ * on-foot FOV.
+ */
+function enterVehicle(node) {
+  if (handWeapon) {
+    if (handWeapon.group) guns.setFiring(handWeapon.group, false);
+    handWeapon.rig.visible = false;
+  }
+  triggerHeld = false;
+  clickQueued = false;
+  aimHeld = false;
+  aimBlend = 0;
+  crosshairEl.hidden = true;
+  ammoEl.hidden = true;
+  camera.fov = FLY_FOV;
+  camera.near = FLY_NEAR;
+  camera.updateProjectionMatrix();
+  nearEntry = null;
+  // Checked without an event on purpose: the change handler would tear the
+  // waiting soldier down, and the checkbox is only being told the truth —
+  // someone is in a vehicle.
+  optPilot.checked = true;
+  setPilot(true, node);
+  if (!aircraft && !car) {
+    // The seat refused (an extract this page cannot classify). Back on foot
+    // as if nothing happened.
+    camera.fov = FOOT_FOV;
+    camera.near = 0.2;
+    camera.updateProjectionMatrix();
+    if (handWeapon) handWeapon.rig.visible = true;
+    hud.textContent = HUD_FOOT;
+  }
+}
+
+/**
+ * Park the vehicle exactly where it stands — engine off, controls centred,
+ * exterior restored — without `reset()`'s teleport back to spawn. This is
+ * the difference between vacating a seat and returning the vehicle.
+ */
+function leaveVehicle() {
+  const vehicle = aircraft || car;
+  if (!vehicle) return;
+  stopEngineAudio();
+  releaseGuns();
+  vehicle.state.velocity.set(0, 0, 0);
+  vehicle.state.angularVelocity.set(0, 0, 0);
+  vehicle.state.throttle = 0;
+  vehicle.setInput('c_PIThrottle', 0);
+  vehicle.setInput('c_PIYaw', 0);
+  vehicle.setInput('c_PIFire', 0);
+  view.setMode('cockpit');
+  vehicle.setFirstPerson(false);
+  vehicle.applyTransform();
+  vehicle.applyRig();
+  stick.roll = 0;
+  stick.pitch = 0;
+  ammoEl.hidden = true;
+}
+
+/**
+ * Where the occupant steps out, in world space: the vehicle's own
+ * `setSoldierExitLocation` when it declares one (the Willys puts its driver
+ * 1.5 m off the left running board), else two metres to the vehicle's left.
+ * The declared vector is in Refractor's frame — z forward — so its Z is
+ * negated at this boundary, the same fix `rig` angles get.
+ */
+function exitPose(vehicle) {
+  const declared = vehicle.node.userData?.physics?.soldierExitLocation;
+  const local = declared
+    ? new THREE.Vector3(declared.position[0], declared.position[1],
+      -declared.position[2])
+    : new THREE.Vector3(-2, 0.5, 0);
+  const position = local.applyQuaternion(vehicle.state.orientation)
+    .add(vehicle.state.position);
+  const fwd = driveFwd.set(0, 0, -1).applyQuaternion(vehicle.state.orientation);
+  return {
+    x: position.x, y: position.y, z: position.z,
+    // The soldier's convention: forward is (sin yaw, 0, cos yaw). Stepping
+    // out facing the way the vehicle faces reads right for both doors.
+    yaw: Math.atan2(fwd.x, fwd.z),
+  };
+}
+
+/**
+ * E from a seat: back onto the ground beside it. An aircraft only opens its
+ * canopy on the ground — grounded, or slow enough that the distinction has
+ * stopped mattering.
+ */
+function exitVehicle() {
+  const vehicle = aircraft || car;
+  if (!vehicle) return;
+  if (aircraft && !(aircraft.state.grounded || aircraft.state.airspeed < 3)) {
+    return;
+  }
+  const exit = exitPose(vehicle);
+  leaveVehicle();
+  optPilot.checked = false;
+  if (optOnFoot.checked && soldier) {
+    soldier.collider = collider;
+    soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
+    camera.fov = FOOT_FOV;
+    camera.near = 0.2;
+    camera.updateProjectionMatrix();
+    if (handWeapon) handWeapon.rig.visible = true;
+    hud.textContent = HUD_FOOT;
+  } else {
+    // Nobody was waiting in the seat — the pilot box was ticked from free
+    // fly — so E hands back the free camera where the vehicle stopped.
+    placeCamera();
+    updateHud();
+  }
+}
 
 // --- on foot ----------------------------------------------------------------
 //
@@ -2908,8 +3237,8 @@ function setOnFoot(on) {
     camera.fov = FLY_FOV;
     camera.near = FLY_NEAR;
     camera.updateProjectionMatrix();
-    // `getTouchHudText()`, not `HUD_TOUCH` — the latter is referenced twice in
-    // this file and declared nowhere, so reading it would throw on a phone.
+    // `getTouchHudText()`, not the `HUD_TOUCH` this file once believed in —
+    // that name was never declared, and reading it would throw on a phone.
     hud.textContent = isTouchDevice ? getTouchHudText() : HUD_FLY;
   }
 }
@@ -2943,6 +3272,8 @@ function onFoot(dt) {
   // After the camera pose is final: the weapon fires down this frame's view
   // axis, and the crosshair is drawn against this frame's FOV.
   footFire(dt);
+  // And after everything the frame owed: is there a door within reach.
+  scanForEntry(dt);
 }
 
 const EMPTY_KEYS = new Set();
@@ -3069,6 +3400,10 @@ async function loadHandWeapon(name) {
     }
   });
   camera.add(rig);
+  // The load can resolve after its owner has already climbed into a seat —
+  // spawn beside a jeep and press E inside the fetch — and a viewmodel must
+  // not materialise over a windscreen. `exitVehicle` shows it again.
+  rig.visible = !(optPilot.checked && (aircraft || car));
   const magazine = data?.magazine || null;
   const hw = {
     name, data, rig,
@@ -3259,7 +3594,9 @@ function updateCrosshair() {
 function updateAmmoHud() {
   const hw = handWeapon;
   const magazine = hw?.data?.magazine;
-  if (!hw || !magazine || !optOnFoot.checked) {
+  // A seated soldier's optOnFoot box is still ticked — he is only suspended —
+  // but the element belongs to the vehicle's dashboard while he sits.
+  if (!hw || !magazine || !optOnFoot.checked || aircraft || car) {
     ammoEl.hidden = true;
     return;
   }
@@ -3281,7 +3618,7 @@ function showView(mode) {
   hud.textContent = `view: ${VIEW_BLURB[mode]}`;
   clearTimeout(hudViewTimer);
   hudViewTimer = setTimeout(() => {
-    if (optPilot.checked) hud.textContent = HUD_PILOT;
+    if (optPilot.checked) hud.textContent = car ? HUD_DRIVE : HUD_PILOT;
   }, 2200);
 }
 
@@ -3339,7 +3676,7 @@ function pilot(dt) {
   // outside gets the 1.76 m `MuzzHeavy_m1` mesh that would otherwise hang five
   // metres off the wing two metres from his eye.
   guns.firstPerson = aircraft.firstPerson;
-  for (const group of aircraftGuns) {
+  for (const group of vehicleGuns) {
     guns.setFiring(group, aircraft.input(group.stats.input || 'c_PIFire') > 0);
   }
 
@@ -3742,8 +4079,11 @@ async function show(entry) {
   // Before the old root is disposed: every gun is indexed off a node in it, and
   // the rounds in the air are clones of nodes it owns.
   releaseGuns();
+  // `releaseGuns` is surgical now; a level switch is not, so the rounds in
+  // the air go back to their pools here and every group goes with them.
+  guns.clear();
   guns.groups.length = 0;
-  aircraftGuns = [];
+  vehicleGuns = [];
   dispose(currentRoot);
   disposeSky();
   disposeSounds();
@@ -3817,10 +4157,13 @@ async function show(entry) {
   ]);
   const collision = buildCollider(currentRoot);
   // A new level means a new scene graph; the old aircraft's node is gone, and
-  // the view rig holds a reference to it.
+  // the view rig holds a reference to it. So are every cached door.
   aircraft = null;
+  car = null;
   view = null;
   soldier = null;
+  entryPoints = null;
+  nearEntry = null;
   if (optPilot.checked) setPilot(true);
   if (optOnFoot.checked) setOnFoot(true);
   applyFar();
@@ -3924,6 +4267,8 @@ const clock = new THREE.Clock();
 function frame(dt) {
   if (optPilot.checked && aircraft) {
     pilot(dt);
+  } else if (optPilot.checked && car) {
+    drive(dt);
   } else if (optOnFoot.checked && soldier) {
     onFoot(dt);
   } else {
@@ -3963,6 +4308,8 @@ if (params.has('shots')) {
   // Flight state for headless checks: the sim is deterministic under
   // __renderOnce, so a test can step it frame by frame and read the result.
   Object.defineProperty(window, '__aircraft', { get: () => aircraft });
+  // The driven car, its dashboard numbers included, for the same reason.
+  Object.defineProperty(window, '__car', { get: () => car });
   window.__stick = stick;
   // Free-fly heading. Setting `camera.rotation` directly is pointless here —
   // `applyLook` rewrites it from `look` on every frame — so a headless check
@@ -3987,7 +4334,7 @@ if (params.has('shots')) {
   // question the moving-vehicle port exists to answer: a tracer's position must
   // diverge from the muzzle it left, not travel with it.
   window.__getFire = () => ({
-    groups: aircraftGuns.map(group => ({
+    groups: vehicleGuns.map(group => ({
       name: group.node.name,
       input: group.stats.input,
       roundOfFire: group.stats.roundOfFire,
@@ -4031,7 +4378,7 @@ if (params.has('shots')) {
     pooled: guns.tracerPool.length,
     // Baked streaks recycle into their own group's pool, not the shared
     // cylinder pool, so a leak there is invisible to `pooled` alone.
-    meshPooled: aircraftGuns.reduce((n, g) => n + g.tracerMeshPool.length, 0),
+    meshPooled: vehicleGuns.reduce((n, g) => n + g.tracerMeshPool.length, 0),
   });
   // Turning, for the screenshot harness. It calls the same `lookDelta` a
   // pointer-lock `pointermove` calls, so it exercises the real routing rather

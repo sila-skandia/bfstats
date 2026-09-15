@@ -145,3 +145,61 @@ over 15 s.
 - **Passenger seat.** `WillyPassengerPCO` is discovered as its own
   PlayerControlObject; seat switching is the same future problem the B17's
   gunners are.
+
+## The page wiring: drive mode and the E key (`viewer/map.html`)
+
+The "next, separate step" above is done. The pilot checkbox and the E key
+share one seat-management path, and the model is untouched — everything below
+is presentation and routing.
+
+**Classification is the engine's own taxonomy, not a name table.**
+`classifyVehicle(node)` walks a spawned PCO's subtree for the one `Engine`
+node with `extras.physics.engineType` — stopping at every nested
+PlayerControlObject, so a passenger seat cannot borrow the driver's engine
+and a carrier is not classified by its parked aircraft — and maps `c_ETPlane`
+to the flight model, `c_ETCar` to `GroundVehicle`. Ships (`c_ETShip`), tanks
+(`c_ETTank`, the differential-steering gap above) and engineless mounts
+(Defgun, Stationary_Browning) classify null and stay furniture. `setPilot`
+now takes an optional node — `setPilot(true, node)` binds the mode to THAT
+vehicle — and without one prefers the first aircraft, then the first car,
+then the old Corsair/Spitfire/Zero name trio for extracts that predate
+`extras.physics`.
+
+**Drive mode is the pilot shell with car pedals.** `drive(dt)` mirrors
+`pilot(dt)`: W/S onto `c_PIThrottle` and A/D onto `c_PIYaw` through the same
+`axisToward` spring (unlike the aircraft's latching throttle, the pedal
+springs back — a lifted foot is engine braking), Space onto `c_PIFire` for
+whatever armed car arrives later, `integrate`, guns, `VehicleCamera` pose. C
+cycles the same four views; the engine audio, ambience duck and weapon-audio
+paths all read `aircraft || car` now. The dashboard — `<control> · km/h ·
+gear` (gear `R` below −0.25 m/s of signed forward speed) — rides the `#ammo`
+element, which is the rifleman's ammo line and is exactly vacant while he
+drives.
+
+**E is `c_PIEnterExitVehicle`.** On foot, `scanForEntry` sweeps every cached
+`EntryPoint` node four times a second (`extras.seat.entryRadius`, 2.3 m on a
+Willys; 4 m [free] when a mod declares none; only entry points whose
+`seat.control` matches the vehicle root's control — the driver's door, not
+the passenger's) and offers the nearest on the HUD: `E — enter the Willy`.
+Entering suspends the soldier rather than tearing him down — weapon,
+magazines and flag selection all wait; only the viewmodel, crosshair and
+on-foot FOV are packed away — so gun groups now coexist: `collectGuns` passes
+`replace: false` and `releaseGuns` splices surgically, the same courtesy
+`loadHandWeapon` already extended in the other direction.
+
+**Exit placement is the vehicle's own datum.** E from a seat (aircraft only
+when grounded or under 3 m/s) parks the vehicle exactly where it stands via
+`leaveVehicle` — velocity zeroed, controls centred, exterior restored, and
+deliberately *not* `reset()`, which is the teleport back to spawn that the R
+key remains — then places the soldier at `extras.physics.soldierExitLocation`
+off the PCO root (`setSoldierExitLocation`; the Willys declares
+`-1.5/0/-0.8`, its left running board). The declared vector is in Refractor's
+z-forward frame, so its Z is negated at the boundary, the same fix `rig`
+angles get; a vehicle that declares none puts the soldier 2 m to its left
+[free]. `soldier.spawn` then settles him to the floor and he steps out facing
+the vehicle's heading, rifle back in hand.
+
+Constants added by the wiring, all [free]: the 4 m fallback entry radius, the
+0.25 s entry-scan period, the 3 m/s airborne-exit threshold, and the 2 m
+left-side exit fallback. Headless surface: `?shots` now exposes `__car`
+beside `__aircraft`.
