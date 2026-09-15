@@ -16,8 +16,9 @@
 // and decay d/M per tick; the speed gates are binary on the 0.01 deadzone;
 // the turn terms are analog in the look input; miscDev is the jump channel;
 // firing blooms +b per shot to cap a and decays c/M per tick; and aiming
-// changes NOTHING. What stays approximate is only the clock (TICK_HZ) and
-// the AT family's floor-and-lid, both marked OPEN in the module.
+// changes NOTHING. The clock (TICK_HZ) is the engine's fixed 30 Hz simulation
+// tick; what stays approximate is only the AT family's floor-and-lid, marked
+// OPEN in the module.
 
 import {
   DeviationModel, STANCE_INDEX, TICK_HZ, INPUT_DEADZONE,
