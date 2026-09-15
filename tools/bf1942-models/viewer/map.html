@@ -3492,9 +3492,12 @@ vmCamera.layers.set(VIEWMODEL_LAYER);
 // yawed it left and showed the whole side profile, which is what read as
 // "the left arm is too long". 0.35 rad of yaw turns the muzzle into the
 // screen and the left hand lands on the magazine. OPEN [footage]: the
-// engine adds an unextracted template base vector plus the aim frame on
-// top of the eased weapon offset — these numbers stand in until they are
-// read from the binary. ?cal=x,y,z,pitch,yaw overrides for calibration.
+// engine's template base vector at BFSoldierTemplate+0x15c turned out to
+// ship as (0,0,0) — the ctor zero-initialises it and nothing assigns it
+// (corpus doc §3, constructor follow-up) — so what these numbers really
+// stand in for is the aim/view rotation and rotate90aroundX composition
+// the offset passes through in BFSoldier::updateAnimations, which is
+// still unreplicated. ?cal=x,y,z,pitch,yaw overrides for calibration.
 const VIEWMODEL_CAL = (() => {
   // ?cal=x,y,z,pitch,yaw overrides for calibration sessions.
   const t = (params.get('cal') || '').split(',').map(Number);
