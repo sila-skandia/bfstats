@@ -1665,3 +1665,91 @@ for lvl in ('Bocage','Wake','El_Alamein','Omaha_Beach','Berlin'):
           f'p25 {d[len(d)//4]:+.3f}  p75 {d[3*len(d)//4]:+.3f}')
 EOF
 ```
+
+## 9. Firing from the hip, as built
+
+Stage: on-foot weapon firing with a data-driven crosshair, in `viewer/map.html`
+on top of `viewer/gunfire.js` and a new `viewer/deviation.js`. Everything below
+reads the `weapon` document extras and the `fireArms`/`muzzle` nodes the
+extractor now bakes into every hand-weapon glb (§2.7); nothing about any
+individual weapon appears in the viewer's source.
+
+### What was built
+
+- **`viewer/deviation.js`** — `DeviationModel`, the cone a shot is sampled
+  inside, in degrees of half-angle. Import-free and DOM-free like `physics.js`,
+  driven under node by `tests/test_deviation.py` via
+  `tests/deviation_harness.mjs` (14 tests, run with the soldier/collision/
+  physics suites).
+- **`GunFire` extensions** (`viewer/gunfire.js`), both options, both `null` on
+  every existing caller so `index.html` and the pilot path are untouched:
+  - `aimRay: () => ({origin, dir})` — the round leaves the caller's origin
+    along the caller's direction instead of the muzzle transform. This is
+    `fireInCameraDof 1` (all 25 armed hand weapons): the eye down the camera
+    axis, the muzzle node placing only the flash.
+  - `spreadDeg: () => degrees` — each shot's direction is rotated by a random
+    polar/azimuthal offset inside that cone, `theta = spread x sqrt(u)` so a
+    burst paints a disc, not a ring.
+  - A typed `bullet` round with no tracer stat now spawns the dim stand-in
+    streak *when the group has an `aimRay`*: hand weapons declare no tracer at
+    all, and a round that is never spawned never sweeps and never hits.
+    Vehicle guns keep the old contract exactly.
+- **The viewmodel** — one hand-weapon glb per spawned soldier, default per
+  flag team (axis Mp40, allies Thompson, `?weapon=<Template>` overrides),
+  loaded from the mod-resolved models base, parented to the camera (which is
+  now in the scene graph for exactly this reason), collected into the shared
+  `GunFire` with `replace: false`. Disposed on respawn-to-other-team, mode
+  exit and map switch.
+- **Trigger** — left mouse under pointer lock. Full-auto holds `setFiring`;
+  `fireOnce` weapons queue one shot per click and hold the declared cycle
+  (`roundOfFire 0.37` on a No4 is a 2.7 s bolt) across clicks. Magazine from
+  `magazine.size`; dry triggers an automatic magazine change after
+  `reloadTime`, R asks early; the count draws bottom-right in the HUD's voice.
+- **Crosshair** — DOM over the canvas, four bars and a dot off `tokens.css`
+  ink, gap per frame `0.5 x viewportHeight x tan(dev) / tan(vfov/2)` at the
+  *current* (aim-blended) FOV. `CHTCrossHair` draws the cross, `CHTIcon` keeps
+  the dot alone (its authored icon art is not extracted), `CHTNone` and a
+  scoped aim draw nothing.
+- **Aim** — right mouse eases `camera.fov` to `set1pFov x zoomSoldierFov` over
+  120 ms and slides the viewmodel toward the axis; scoped weapons also hide
+  the rifle past half-blend. Release restores.
+- **Recoil** — per shot, degrees sampled uniformly inside `recoil.up` /
+  `recoil.leftRight`, written into `soldier.look()` unscaled, so the standing
+  pitch clamp catches a mag dump the same way it catches the mouse.
+
+### The deviation approximation, and its free constants
+
+PROVISIONAL, marked so in the module header the way `flight.js` marks its roll
+model. The shipped blocks are carried verbatim; the combining rule is ours:
+
+    dev = min x mod[stance]                      (the floor; both factors data)
+        + speed[0] x clamp(v / runSpeed, 0, 1)   (runSpeed = 6, the engine's table)
+        + turn[0]  x clamp(|slew| / TURN_REF, 0, 1)
+        + fire                                    (accumulated bloom, below)
+        + misc[0] if airborne                     (else floor x AIRBORNE_MULT)
+    clamped to [floor, maxDeviation ?? DEV_CAP_DEG], halved while aiming.
+
+`setFireDev a b c` is read as `[cap, addPerShot, subPerFrame]` — the reading
+that makes the Thompson (2.0/0.35/0.06) and the Colt (2.5/1.5/0.07) plausible
+at once — with the frame rate of the decay clock assumed.
+
+Free constants (`deviation.js`, each annotated at its declaration):
+`FIRE_DECAY_HZ = 60`, `TURN_REF = PI rad/s`, `AIM_FACTOR = 0.5`,
+`AIRBORNE_MULT = 4`, `DEV_CAP_DEG = 10`. Data used but provisionally indexed:
+which element of the four-wide `turn`/`speed` tuples applies, `misc[0]` as the
+airborne penalty, `fire`'s indexing above. The AT family's per-stance floors
+and `addDev*`/`subDev` terms are not extracted yet, so a Bazooka's cone sits
+at its `minDeviation` floor.
+
+### What remains
+
+- Real 1P hands and arms, and the fire/reload animations — still blocked in
+  the exporter (§4); the viewmodel is the 3P weapon mesh with no hands.
+- Scope overlay art (`sniper.tga` is named in the data), and CHTIcon's
+  authored crosshair icons.
+- Hand-weapon fire *sound* — the vehicle weapon-audio path keys off a
+  vehicle's own sound scripts and does not yet know about kits.
+- The exact engine deviation rule. It is readable: the Ghidra corpus under
+  `features/bf1942-engine-reference/` is the same route that settled gravity
+  and the speed tables, and everything downstream of `DeviationModel.current()`
+  survives the swap untouched.
