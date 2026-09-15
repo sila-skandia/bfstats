@@ -1,6 +1,8 @@
 # Hand-weapon first-person placement, deviation, and zoom
 
-Settled 2026-09-15, first-person mount closed in a second pass the same day. Two binaries were read side by side:
+Settled 2026-09-15, first-person mount closed in a second pass the same day, the
+clock and the zoom unit closed in a third (§2 "Clock", §3 "Fields of view",
+§7). Two binaries were read side by side:
 
 - **Client** `BF1942.exe` (sha256 `60c9452d…`, the corpus binary) — addresses `0x00xxxxxx`.
 - **Server** `bf1942_lnxded.static` (54,895 symbols) — addresses `0x08xxxxxx`, cited
@@ -23,6 +25,16 @@ accessors (`ConsoleClass` thunks) reach the template through an adjusted interfa
 pointer that is **+4** from the base used by `makeScript`; base-relative offsets are
 given here. Client `FireArmsTemplate::makeScript` = `FUN_0053a110`, the
 offset→property rosetta.
+
+**Pointer caveat (third pass).** `makeScript`'s `this` is itself an interface
+subobject 4 bytes into the template: the pointer the *weapon* holds at
+`FireArms+0x4c` — the one `FireArms::setZoom` 0x005391b0, the zoom camera-mode
+switch 0x004fc849 and the zoomed mouse-scale 0x0050095f all dereference — sees
+every row below **4 bytes higher** (`useScope` +0x3d8, `zoomFov` +0x3dc,
+`SoldierZoomFov` +0x3e0, `soldierZoomPosition` +0x3e4, `soldierCameraPosition`
++0x3f0, `UnZoomBetweenFireTime` +0x3d4). Read the table against whichever
+pointer the code in front of you is using; the lnxded column has no such split
+(GCC's `[this+0x4c]` is the object start, `zoomFov` +0x270 in `setZoom`).
 
 | property | client | lnxded | shape |
 |---|---|---|---|
@@ -140,13 +152,38 @@ additionally masked by a soldier state bit — i.e. **miscDev is the jump/airbor
 deviation**. It does not fire for swimming or vehicles (vehicle guns are plain
 `FireArms` and have no misc/turn/speed channels at all).
 
-### Clock (VERIFIED structure, cadence partly OPEN)
+### Clock (VERIFIED, both binaries: one call per fixed 1/30 s tick)
 
 There is **no dt anywhere** in either updateDeviation. Decay and raise amounts are
-per *call*, and the call is one per `handlePlayerInput`. On the server that is the
-server tick. On the client the exact cadence of handlePlayerInput for the local
-player (render frame vs fixed step) was not traced — OPEN — but whatever it is, the
-deviation clock is that cadence, not seconds.
+per *call*, and the call is one per `handlePlayerInput`. That call is made **once
+per simulation tick of 1/30 s, on the client exactly as on the server**, and the
+tick is independent of the frame rate. The chain, every link read in the client
+and matched to its named lnxded twin (third pass, 2026-09-15):
+
+| step | client | lnxded | what it does |
+|---|---|---|---|
+| the rate | `g_simulationFps` **0x00957640** = 30.0f | `g_simulationFps` 0x08716b5c = 30.0 | a `.data` float with 50 READ xrefs and no writer in the client, no console word in either binary (the only static initializer that touches it, lnxded 0x0813ad50, truncates it to an int for a `GhostManager` table) |
+| the tick length | `Setup::initInputDevices` **0x00444e70**: `Setup+0x220 = new InputManager(g_simulationFps, 0x400)`, `Setup+0x184 = 1.0f / inputManager+0x1c` | `Setup::initInputDevices` 0x080be490: `Setup+0xcc = 1 / g_simulationFps` | the ctor (**0x0049d610**) stores the fps at +0x1c and sizes a ring of 1024 samples |
+| the accumulator | `InputManager::update` **0x0049ce70** | `Setup::updateInputs` 0x080bc540 | `n = floor((getExactTime() − lastTick) / tickDt)` by repeated subtraction, `lastTick += n·tickDt`; a backlog above 10 ticks is dropped to 1 (statics 0x0097b5f8/…; lnxded `oldTime`/`thisSecond`/`ticksThisSecond` 0x08716b80/88/90). The client then polls the device once with `n·tickDt` and samples every registered input map `n` times (the extra ticks with 0 elapsed); `+0xc` = produced |
+| the frame | `Setup::mainLoop` **0x0044abc0** | `Setup::mainLoop` 0x080bc090 | busy-waits to the frame cap `1/Setup+0x17c`, stores the frame dt at `Setup+0x180`, loops `Setup::updateInputs` **0x00449470** until `Setup+0x31c` (= produced − consumed, `InputManager::getPendingTicks` **0x0049d1c0**) is non-zero, then `g_game(0x0095f8d4)->update(nTicks, Setup+0x184)` (Game vtable vptr+0x28). The frame dt goes to rendering and `ObjectManager::handleFrameUpdates` (slot +0x18) — never into the simulation |
+| the input | `Setup::updateInputs` **0x00449470** per tick: pop one `gameInput` sample (`FUN_0049cd40`), map it per local player (`FUN_0049d5b0`), hand it to **0x00448520** → `g_game->addPlayerInput` (vptr+0x2c = `Game::addPlayerInput` **0x0040ecb0**, a `list::push_back` on the `Game+0x2c` queue map; defined in Ghidra this pass), consumed++ (`FUN_0049cd80`) | `Game::addPlayerInput` 0x0805d900 | **one `PlayerInput` per local player per tick** |
+| the update | `GameClient::update(int nTicks, float tickDt)` **0x0048fca0** | `GameServer::update` 0x08132940 | `nTicks > 9 → 1`; `processLocalPlayersInputs(nTicks)` **0x00488840** moves one queued input per tick into the `ActionBuffer` (`PlayerAction::set` 0x00483e70, `ActionBuffer::pushBack` 0x00484890, zero-filled when the queue is dry); then `nTicks ×` `simulateFrame(tickDt)` (vptr+0x13c; lnxded +0x140); then the queues are cleared |
+| the tick | `GameClient::simulateFrame(float)` **0x004b6cb0** — the address bf42plus labelled "`World::update`" | `GameServer::simulateFrame` 0x0815c2a0 | `simulatePlayersUpdate(dt)` **0x004b6c20** → per player `simulatePlayerUpdate(player, dt)` **0x004b6a30**: `PlayerAction::get` 0x004913a0 pops **one** buffered action, then either `BFPlayer::handleInput(input, dt)` (slot +0x30, 0x004b6b90) or `controlObject->handlePlayerInput(player, input, dt)` (IObject slot +0x94, 0x004b6b56; GCC slot +0x98, lnxded 0x0815bde0); then `objectManager(0x0097d764)->updateObjects(dt,0,3)`, physics, collisions, game logic — all with the same `dt` |
+
+So `dt` at `handlePlayerInput` is always **1/30 s**, and the deviation clock is
+**30 Hz** — not the render rate, and not seconds. Two corroborations from the same
+read: `BFSoldier::handlePlayerInput` advances the aim angles by
+`look × dt × g_simulationFps` (lnxded 0x08274305 / 0x08274526), a factor that is
+exactly 1 at the fixed tick and shows the engine treating an input sample as a
+per-tick quantity; and `FireArmsTemplate::makeScript` 0x0053a110 multiplies a
+stored per-tick field by `g_simulationFps` at 0x0053a9ba to print it back as
+per-second. The viewer's `deviation.js` now ticks at `TICK_HZ = 30`.
+
+The hip↔zoom **ease** is on a different clock: `BFSoldier::handleVisualUpdate` is
+IObject vtable slot vptr+0x4c and its only callers are inside
+`ObjectDrawer::objectsVisualUpdate` (lnxded 0x08198130, from `drawVisible(float)`)
+— the draw pass, once per rendered frame. Deviation at 30 Hz, easing per frame;
+the viewer keeps them apart the way the engine does.
 
 ### What consumes the total (VERIFIED, lnxded)
 
@@ -305,11 +342,31 @@ faster (0.7·cur + 0.3·target) and snaps within 0.001, each step calling
   in the client are all setters) — **OPEN**. What the footage rules out: a
   0.47 rad whole angle under the world's formula would draw the arms 2.3×
   larger and off the bottom of the frame; at the hip they appear at the
-  world's FOV. `SoldierZoomFov` also scales the zoomed mouse deltas
-  (0x0050095f), as before.
-- `zoomFov` (the camera side of zoom) is taken as an absolute FOV in the same
-  unit — INFERRED from the `vehicleFov` path replacing the view FOV wholesale;
-  the camera-mode switch itself (0x004fc8b6) remains a raw-byte read.
+  world's FOV.
+- **`zoomFov` is an absolute FOV in the render view's unit — VERIFIED (third
+  pass; was inferred).** Client `FireArms::setZoom` 0x005391b0 (twin of lnxded
+  0x082881a0, read side by side in objdump) saves
+  `g_renderView(0x009ab868)->getFieldOfView()` (IRenderView slot +0x18) into
+  `weapon+0x1f4`, copies `zoomFov` into `+0x1f8`, publishes it as **component
+  0x5000** through its own `setComponent` (slot +0x28; lnxded slot +0x2c at
+  0x0828826c–0x08288283, the only other publisher being the
+  `UnZoomBetweenFireTime` re-zoom in `FireArms::handleUpdate`, client
+  0x0053eaad), and on the apply/restore path at 0x005393d9–0x005393f6 writes
+  the `+0x1f8` value straight into slot +0x14 = `RenderView::setFieldOfView
+  (float)` — the same slot `Camera::setVehicleFOV` 0x081aadd0 uses for
+  `vehicleFov` (lnxded RenderView vtable 0x0874c600: vptr+0x14 set, +0x18
+  get). No conversion anywhere: the Thompson's `zoomFov 0.5` is a 28.6°
+  vertical field, a sniper's 0.1 is 5.7°. The camera-mode switch
+  (0x004fc849–0x004fc8ea, decoded from the PE bytes) only picks the 0↔2
+  camera transition: `isZoomed() && useScope` → `(0, 2)` on soldier and weapon
+  (slot +0x28), else `zoomFov > 0` → `(2, 0)`; it never touches the value.
+- **Correction:** the zoomed mouse deltas are scaled by **`zoomFov`, not
+  `SoldierZoomFov`**. The site 0x0050095f multiplies the two look locals by
+  `[[weapon+0x4c]+0x3dc]`, and off that pointer +0x3dc is the field `setZoom`
+  tests first and publishes as the zoom FOV; `SoldierZoomFov` is +0x3e0 there
+  (§1 pointer caveat). Since `renderer.fieldOfView 1` makes the default FOV
+  1.0 rad, multiplying by `zoomFov` is multiplying by the zoomed/default FOV
+  ratio — which is also why the unit had to be radians.
 
 ### Verified against the retail capture (1280×720, Thompson on Wake)
 
@@ -360,7 +417,10 @@ Current viewer approximations, judged:
 | `dev = min·devMod[stance] + …` (devMod multiplies minDev) | **REFUTED** — minDev is *not* scaled by devMod; devMod scales the dynamic channels (caps ·M, raises ·M², decays ÷M) |
 | Aiming/zoom × 0.5 | **REFUTED** — zoom has zero effect on deviation |
 | Fire bloom: add per shot, linear decay | **CONFIRMED** — +fireDev.b per shot clamped to fireDev.a; decay fireDev.c/M per tick (hand weapons) |
-| 60 Hz decay clock | **REFUTED as stated** — decay is per handlePlayerInput call with no dt; cadence = game update rate, not a fixed 60 Hz |
+| 60 Hz decay clock | **REFUTED — it is a fixed 30 Hz** — decay is per handlePlayerInput call with no dt, and the client makes one call per simulation tick of `1/g_simulationFps` = 1/30 s regardless of frame rate (§2 "Clock"). `deviation.js` `TICK_HZ` is now 30 |
+| Hip↔zoom ease steps on the same clock as deviation | **REFUTED** — `handleVisualUpdate` is called from the drawer (`ObjectDrawer::objectsVisualUpdate`), once per rendered frame; the viewer's per-frame ease is right |
+| Zoom scales the mouse by `SoldierZoomFov` | **CORRECTED** — by `zoomFov` (0x0050095f reads +0x3dc off the weapon's template pointer, which is `zoomFov` there) |
+| `zoomFov` is in the render FOV's unit (radians, whole vertical angle) | **CONFIRMED** — `FireArms::setZoom` 0x005391b0 writes it into `RenderView::setFieldOfView` verbatim |
 | Speed/turn terms ~ analog input | **Half right** — turn terms scale with |mouse look| (channels 4/5); speed terms are *binary* gates (>0.01) on throttle/yaw, constant magnitude |
 | miscDev = airborne/swim/vehicle? | **SETTLED** — jump (c_PIAction) only |
 | Weapon drawn in world pass at soldier FOV 53.86 | **REFUTED on both counts** — the camera runs at `renderer.fieldOfView 1` = 57.30° vertical; `set1pFov 0.47` is the 1P parts' own FOV (`setFirstPersonFov` → `IViewModifier::setFieldOfView`, own `drawFov` pass), multiplied by `SoldierZoomFov` when zoomed while the camera goes to `zoomFov`. Placement: rig = rotate90aroundX(skeleton) + center1pHands + eased offset in view space, no rotation term |
@@ -382,8 +442,8 @@ Current viewer approximations, judged:
 | 0x004d2a30 | console `soldierZoomPosition` execute | decompiled; +0x3e4 via adjusted ptr |
 | 0x008f9750 | `HandFireArms` vtable (updateDeviation slot +0x174) | memory read; slot pointers resolved |
 | 0x008dcd10 | `CID_BFSoldierTemplate` global (0x9493) | read in getDevMod |
-| 0x0050095f | zoomed mouse-scale + SoldierZoomFov read | raw-byte disassembly (function gap) |
-| 0x004fc8b6 | zoom camera-mode 0↔2 switch | raw-byte disassembly (function gap) |
+| 0x0050095f | zoomed mouse-scale × **`zoomFov`** (`[[weapon+0x4c]+0x3dc]`; corrected from "SoldierZoomFov") | raw-byte disassembly (function gap), gated by `FireArms::isZoomed` slot +0xf8 |
+| 0x004fc849–0x004fc8ea | zoom camera-mode 0↔2 switch, decoded: `isZoomed && useScope` → (0,2), else `zoomFov > 0` → (2,0), slot +0x28 on soldier and weapon | objdump of the PE bytes (function gap) |
 | 0x00500901 | altFireOnce edge filter (mask 0x800000) | raw-byte disassembly (function gap) |
 | 0x004fb150 | `BFSoldier::updateAnimations` | decompiled in full; the 1P chain above |
 | 0x00990170 | `world::rotate90aroundX` (static Mat4) | initializer 0x00850d00 read from raw bytes |
@@ -396,6 +456,20 @@ Current viewer approximations, judged:
 | 0x004f7120 | `setFirstPersonFov` | decompiled; IID_IViewModifier slot +0xc |
 | 0x0090350c | `IID_IViewModifier` = 0xf0e2bbfa | memory read; matches lnxded 0x086e6788 |
 | 0x00440790 | `convertWorldPosToScreenPos` (handedness: divide by view z, +x → right) | decompiled |
+| 0x00957640 | `g_simulationFps` = 30.0f | memory read; 50 READ xrefs, no writer; lnxded 0x08716b5c |
+| 0x0044abc0 | `Setup::mainLoop` | decompiled; `game->update(Setup+0x31c, Setup+0x184)`; lnxded 0x080bc090 |
+| 0x00449470 | `Setup::updateInputs` (one input per local player per tick) | decompiled; lnxded 0x080bc540 |
+| 0x00444e70 | `Setup::initInputDevices` (`Setup+0x184 = 1/fps`) | decompiled; lnxded 0x080be490 |
+| 0x0049d610 / 0x0049ce70 / 0x0049d1c0 | input manager ctor / `update` (the tick accumulator) / `getPendingTicks` | decompiled |
+| 0x00448520 | per-player hand-off → `Game::addPlayerInput` | decompiled (ends in vptr+0x2c) |
+| 0x0040ecb0 | `Game::addPlayerInput` (queue push; **defined in Ghidra this pass**) | raw bytes then decompiled; lnxded 0x0805d900 |
+| 0x0048fca0 | `GameClient::update(int nTicks, float tickDt)` (**defined in Ghidra this pass**) | decompiled; lnxded 0x08132940 |
+| 0x00488840 | `GameClient::processLocalPlayersInputs` | decompiled; lnxded 0x081379b0 |
+| 0x004b6cb0 | `GameClient::simulateFrame(float)` — relabels bf42plus's "`World::update`" | decompiled; GameClient vtable +0x13c at 0x008d8ee4; lnxded 0x0815c2a0 |
+| 0x004b6c20 / 0x004b6a30 | `simulatePlayersUpdate` / `simulatePlayerUpdate` (the `handlePlayerInput(…, 1/30)` call, 0x004b6b56) | decompiled; lnxded 0x0815bfa0 / 0x0815bd00 |
+| 0x005391b0 | `FireArms::setZoom(bool)` (`zoomFov` → component 0x5000 → `RenderView::setFieldOfView`) | objdump; lnxded 0x082881a0 |
+| 0x0050ee00 | `FireArms::isZoomed` (HandFireArms vtable slot +0xf8) | vtable read; lnxded 0x08290160 |
+| 0x009ab868 / 0x0095f8d4 / 0x0097d764 | `g_renderView` / `g_game` / `objectManager` | slot use matched to lnxded 0x0874c600 / 0x0870d918 / 0x0871dc24 |
 
 Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
 `FireArms::updateDeviation` 0x0828d410, `FireArms::Fire` 0x0828a090,
@@ -435,17 +509,44 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
   plane, is untraced. Start from the client's `StandardMeshRenderer` vtable
   (lnxded order: `draw`, `drawFov`, `drawOpaque`, `drawTransparent`,
   `drawSilhouettes`, …) or from `RendPCDX8` reads of mesh `+0xf0`.
-- **Exact client cadence of `handlePlayerInput`** (the deviation and easing
-  clock). Every `handlePlayerInput` in both binaries is reached through the
-  `IPlayerControlObject` vtable — no direct call site to anchor a read; the
-  server calls it once per tick, the client per input dispatch. Still per
-  call with no dt; the Hz is unmeasured.
-- `zoomFov`'s unit on the camera side is inferred from the `vehicleFov` path,
-  not read off the camera-mode switch (0x004fc8b6).
-- `deviation` / `deviationCorrectionTime` .con words: registered in a different
-  (dice::bf-layer) console block; `FireArmsTemplate+0x2ec` (lnxded) is a
-  per-projectile random spread applied in `Fire` when > 0 — which .con word maps
-  to it is unconfirmed.
-- The `turnDev.b`↔MouseLookY / `turnDev.c`↔MouseLookX assignment relies on the
-  string-table ordering of the c_PI enum plus the verified Fire=8 anchor;
-  channels 4/5 themselves not independently confirmed.
+- **The reader of component 0x5000.** `FireArms::setZoom` publishes `zoomFov`
+  as component 0x5000 and, on its own apply path, also writes it into
+  `RenderView::setFieldOfView`; which object *queries* 0x5000 (the soldier
+  camera, presumably, to drive the same call) was not located — no `cmp`
+  against 0x5000 exists in either binary, so the id travels through a global
+  or a table. Resume from the three `push 0x5000` sites (client 0x00539281,
+  0x00539348, 0x0053eaad) and `BCompositeObject::setComponent` (lnxded
+  0x08165360) to see where the value is stored, then who reads that slot. The
+  unit itself is closed (§3).
+- **The client's normal frame cap.** `Setup+0x17c` is the cap `mainLoop`
+  busy-waits to (`1/cap`); the one writer found sets it to `2 × g_simulationFps`
+  = 60 only in the client-hosted-server branch (0x00455e0a, gated on
+  `Setup+0x3ee`). The plain client's default was not read; lnxded's ctor
+  stores 100.0f (0x42c80000) in its twin field `Setup+0xc4` (0x080b7cf1). It
+  does not affect the simulation, only how often `handleVisualUpdate` runs.
+- **The AT/thrown family's vocabulary.** `deviation` / `deviationCorrectionTime`
+  (lnxded strings 0x086f5487 / 0x086f546f) are registered by the **AI-layer**
+  initializer 0x084a2050, not by any FireArms console block, so they are not
+  the `minDeviation`/`maxDeviation` words the viewer's `deviation.js` stands
+  in for. Where that family's floor-and-lid is stored and read is still open.
+
+Closed in the third pass (2026-09-15), left here so nobody reopens them:
+
+- ~~Exact client cadence of `handlePlayerInput`~~ — one call per fixed 1/30 s
+  simulation tick, frame-rate independent; the ease is per rendered frame
+  (§2 "Clock"; ledger DEV-5, VIEW-11, GL-1).
+- ~~`zoomFov`'s unit~~ — written verbatim into `RenderView::setFieldOfView` by
+  `FireArms::setZoom` 0x005391b0; radians, whole vertical angle (§3; VIEW-9).
+  The mouse-scale at 0x0050095f is by `zoomFov`, not `SoldierZoomFov` (VIEW-10).
+- ~~Which .con word writes `FireArmsTemplate+0x2ec`~~ — `fireingForce` (sic),
+  `ConsoleClass334::executeObjectMethod` 0x082d5350; and it is not a spread at
+  all but a recoil impulse: `Fire` multiplies it into the barrel's negated
+  forward and hands the vector to `getRootParent(this)->addForce` (slot +0x68)
+  at the weapon's position (lnxded 0x0828a48f–0x0828a4cc). Ledger FA-1.
+- ~~Channels 4/5 = MouseLookX/Y~~ — read out of the enum-indexed jump table of
+  lnxded `operator<<(ostream&, PlayerInputMap)` 0x081d89f0 (table 0x086c88c4:
+  4 MouseLookX, 5 MouseLookY, 8 Fire, 9 Action, 23 AltFire) and out of
+  `BFSoldier::handlePlayerInput`, which copies in[4] into the unclamped angle
+  at +0x288 and in[5] into the pitch-clamped angle at +0x284 (0x08273e3c–
+  0x08273e8b). So `turnDev.b` (× |in[5]|) is the pitch term and `turnDev.c`
+  (× |in[4]|) the yaw term, as §1 has it. Ledger DEV-6.

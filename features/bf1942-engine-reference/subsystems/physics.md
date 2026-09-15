@@ -33,7 +33,8 @@ the physics class *is* the template type. Zero `c_PT*` across 1,753 vanilla
 | | |
 |---|---|
 | `BasicPhysicsSystem::BasicPhysicsSystem` | `0x00578f00` |
-| `World::update` physics dispatch | `0x004b6cb0` (`working`) |
+| `GameClient::simulateFrame(float tickDt)` — the physics dispatch, formerly labelled "`World::update`" | `0x004b6cb0` (`verified`, relabelled 2026-09-15) |
+| `g_simulationFps` = 30.0 | `0x00957640` (`verified`; lnxded `0x08716b5c`) |
 
 ---
 
@@ -67,14 +68,35 @@ accel = 0                          // accumulator cleared
 accel.y += gravity * gravityModifier    // re-seeded for the next update
 ```
 
-Semi-implicit (symplectic) Euler, four fixed sub-steps. `World::update`
-(`0x004b6cb0`) passes the frame `dt` straight through with no accumulator and no
-clamp, so **retail physics is frame-rate coupled**. Whether the frame timer
-clamps `dt` upstream is `open`.
+Semi-implicit (symplectic) Euler, four fixed sub-steps. The `dt` that reaches
+the dispatch at `0x004b6cb0` is **not the frame time**. That function is
+`GameClient::simulateFrame(float tickDt)` (GameClient vtable slot vptr+0x13c,
+twin of lnxded `GameServer::simulateFrame` 0x0815c2a0), and it is called
+`nTicks` times per rendered frame by `GameClient::update(int nTicks, float
+tickDt)` (`0x0048fca0`, twin of `GameServer::update` 0x08132940) with a
+**fixed `tickDt = 1/g_simulationFps = 1/30 s`**. The count comes from a
+plain fixed-step accumulator — `InputManager::update` (`0x0049ce70`; lnxded
+`Setup::updateInputs` 0x080bc540): `n = floor((now − lastTick) / tickDt)`,
+`lastTick += n·tickDt`, and a backlog above 10 ticks is dropped to 1
+(`GameClient::update` drops above 9 as well). `Setup::mainLoop`
+(`0x0044abc0`; lnxded 0x080bc090) then calls `game->update(n, Setup+0x184)`
+where `Setup+0x184` was set to `1.0f / inputManager+0x1c` by
+`Setup::initInputDevices` (`0x00444e70`; lnxded 0x080be490 stores
+`1/g_simulationFps` at Setup+0xcc) and `+0x1c` is the constructor argument
+`g_simulationFps` (`0x00957640`, 30.0f, 50 READ xrefs and no writer; lnxded
+`0x08716b5c`, also 30.0, no console word in either binary). The frame `dt`
+(`Setup+0x180`) goes only to rendering and to `ObjectManager::
+handleFrameUpdates` (slot +0x18), never into the physics.
 
-> The viewer deliberately diverges: a fixed 60 Hz outer tick for determinism,
-> with the engine's four sub-steps *inside* each tick. Copy the model, not the
-> bug.
+So **retail physics is a fixed 30 Hz step, not frame-rate coupled**, and the
+"clamp" is on the tick count, not on `dt`: every physics call sees exactly
+1/30 s, whatever the frame rate. The four sub-steps inside are therefore
+1/120 s each. The earlier reading of "frame `dt` straight through, no clamp"
+was true of the dispatch itself but wrong about what it was handed.
+
+> The viewer's fixed outer tick is therefore the engine's own design, with one
+> number to correct: the engine ticks at 30 Hz, not 60. The four sub-steps
+> *inside* each tick stand.
 
 Drag (`0x00578990`, `working`) is wind-relative and area/mass-scaled, **not**
 the plain `−drag·v` the viewer once assumed:
@@ -296,7 +318,7 @@ shakes are unaffected.
 |---|---|
 | Jump impulse velocity | not located; measure in wine |
 | Per-bit grip force semantics | in the response solver, behind `ResponsePhysicsManager` |
-| Whether the frame timer clamps `dt` before `World::update` | not reached |
+| ~~Whether the frame timer clamps `dt` before `World::update`~~ | **closed 2026-09-15** — there is no frame `dt` to clamp: the dispatch is `GameClient::simulateFrame(1/30)` run `nTicks` times per frame (§3); the tick *count* is clamped (>10 → 1 in `InputManager::update`, >9 → 1 in `GameClient::update`) |
 | `submarineData`'s 7 parameters | unnamed, passed through verbatim |
 | Drag's `r` and `scale` factors | `working` / `open`; shape implemented, factors flagged |
 | B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
