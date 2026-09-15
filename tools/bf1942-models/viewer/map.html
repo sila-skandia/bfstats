@@ -5113,10 +5113,37 @@ function drawMinimapChrome(ctx, size, ratio) {
   ctx.fillText(text, tx, ty);
 }
 
+// What each map surface last painted, so a frame in which nothing it shows
+// has moved paints nothing: the art plus every sprite, at DPR 2, was a 2D
+// canvas repaint and a texture upload to the compositor every frame whether
+// the soldier stood still or not (features/mesh-viewer-performance, rule
+// 7). The key is what the surface draws — the player's art position to the
+// backing pixel, the heading to a hundredth of a radian (under a pixel of
+// arrow at this size), the canvas size, the art and sprites having landed,
+// the flown vehicle's position for a camera planted away from it in fly-by
+// — and a 250 ms ceiling catches what has no key, a captured flag's colour.
+const mapSurfaceLast = new Map();   // canvas -> { key, at }
+function mapSurfaceStale(canvas, key, force) {
+  const last = mapSurfaceLast.get(canvas);
+  const now = performance.now();
+  if (!force && last && last.key === key && now - last.at < 250) return false;
+  mapSurfaceLast.set(canvas, { key, at: now });
+  return true;
+}
+function mapSurfaceKey(canvas, here, span) {
+  const size = Math.round((cssWidthOf(canvas) || 0) * Math.min(window.devicePixelRatio || 1, 2));
+  const px = size / span;   // backing pixels per unit of art
+  const vehicle = (aircraft || car)?.state.position;
+  return `${Math.round(here.u * px)},${Math.round(here.v * px)},`
+    + `${Math.round(cameraHeading() * 100)},${size},${mapArt ? mapArtToken : -1},`
+    + `${hudPack.sprites.size},${vehicle ? `${Math.round(vehicle.x)},${Math.round(vehicle.z)}` : ''}`;
+}
+
 function drawMinimap() {
   if (minimapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z);
   if (!here) return;
+  if (!mapSurfaceStale(minimapCanvas, mapSurfaceKey(minimapCanvas, here, MINIMAP_SPAN))) return;
   // North-up with a rotating arrow. That is the game's own shipped default —
   // every stock profile sets `game.setStaticMinimap 1` — and it keeps the
   // baked-in grid letters upright.
@@ -5127,8 +5154,13 @@ function drawMinimap() {
   drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
 }
 
-function drawFullMap() {
+/** `force` repaints regardless: the deploy screen's layout and the M key
+ *  open the surface at a size or in a state the key has not seen. */
+function drawFullMap(force = false) {
   if (fullmapBox.hidden) return;
+  const here = projectToArt(camera.position.x, camera.position.z) || { u: 0, v: 0 };
+  const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployActive()},${deployRejoin}`;
+  if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
   // Bigger sprites than the HUD widget: this surface is several times the
   // size. In the deploy state the art dims to the spawn screen's silhouette
   // and the rings come out; a dead man has no marker, so the player shows
@@ -5158,7 +5190,7 @@ function toggleFullMap(on) {
   // Holding the map is not flying. Releasing the pointer lock also stops the
   // movement keys running under the overlay.
   if (want && captured) release();
-  if (want) drawFullMap();
+  if (want) drawFullMap(true);
 }
 fullmapBox.addEventListener('click', () => {
   // The plain map closes on any click; the deploy state does not — its
@@ -5403,7 +5435,7 @@ function layoutDeploy() {
     if (el.kind === 'button' && buttons[el.id]) placeHit(buttons[el.id], el.rect, s);
   }
   paintDeployChrome();
-  drawFullMap();
+  drawFullMap(true);
 }
 
 /** One frame of the chrome: the layout's leaves in file order, each drawn
