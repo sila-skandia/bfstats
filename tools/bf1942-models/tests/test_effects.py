@@ -199,6 +199,50 @@ class SpecTests(unittest.TestCase):
                          effects.projectile_trail_bundle(lib, lib.object("BazookaProjectile")))
         self.assertIn("e_rocketFume", effects.effect_names_for_projectiles(lib))
 
+    def test_flipbook_sprite_carries_the_animation_words(self) -> None:
+        # SPR-6: SpriteParticleNewTemplate::makeScript reads these four words;
+        # numAnimationFrames is a plain count (not a CRD), the other two are
+        # rolled per particle the same as initRotation/rotationSpeed, and the
+        # OverTime word is a ramp like every other one. fx_expl_core's own
+        # numbers: 16 frames, starts at frame 8, speed 70, no ramp.
+        lib = library()
+        lib.add_con("Objects/Effects/Common/effects.con", """
+ObjectTemplate.create SpriteParticleNew Fx_Expl_Core
+ObjectTemplate.texture e_ExplAni06
+ObjectTemplate.timeToLive CRD_NONE/1/0/0
+ObjectTemplate.numAnimationFrames 16
+ObjectTemplate.initAnimationFrame CRD_NONE/8/0/0
+ObjectTemplate.animationSpeed CRD_NONE/70/0/0
+ObjectTemplate.destBlendMode BMOne
+""")
+        spec = effects.particle_spec(lib.object("Fx_Expl_Core"))
+        self.assertEqual(16, spec["numAnimationFrames"])
+        self.assertEqual(["n", 8.0, 0.0, 0], spec["initAnimationFrame"])
+        self.assertEqual(["n", 70.0, 0.0, 0], spec["animationSpeed"])
+        self.assertNotIn("animationSpeedOverTime", spec, "not authored on this template")
+
+    def test_ramped_flipbook_sprite_carries_the_curve(self) -> None:
+        lib = library()
+        lib.add_con("Objects/Effects/Common/effects.con", """
+ObjectTemplate.create SpriteParticleNew Fx_AichiValFire
+ObjectTemplate.texture e_FireEngine256
+ObjectTemplate.timeToLive CRD_UNIFORM/0.8/0.8/0
+ObjectTemplate.numAnimationFrames 16
+ObjectTemplate.initAnimationFrame CRD_NONE/1/0/0
+ObjectTemplate.animationSpeed CRD_NONE/95/100/0
+ObjectTemplate.animationSpeedOverTime 0/1|100/0.200049
+""")
+        spec = effects.particle_spec(lib.object("Fx_AichiValFire"))
+        self.assertEqual([[0.0, 1.0], [100.0, 0.200049]], spec["animationSpeedOverTime"])
+
+    def test_single_frame_sprite_is_not_a_flipbook(self) -> None:
+        # A single declared frame means no atlas math at all: the key is
+        # simply absent, so effects-core.js's `p.spec.numAnimationFrames > 1`
+        # gate skips it exactly like a sprite that never mentions the word.
+        lib = library()
+        spec = effects.particle_spec(lib.object("Fx_richoBasic"))
+        self.assertNotIn("numAnimationFrames", spec)
+
 
 class BakeTests(unittest.TestCase):
     def test_library_bakes_specs_onto_hidden_nodes(self) -> None:
@@ -353,6 +397,49 @@ class CoreModuleTests(unittest.TestCase):
     def test_damage_falloff_is_the_engine_line(self) -> None:
         self.assertEqual([1, 1, 0.75, 0.5, 0.5], self.results["damage"])
         self.assertEqual(1, self.results["damageNone"])
+
+    def test_atlas_grid_is_square_from_frame_count(self) -> None:
+        # draw() (client 0x0060a56a-0x0060a5c1): columns = round(sqrt(frames)),
+        # bumped by one when that does not divide frames evenly; rows is the
+        # same number, never a separate computation, and the texture's own
+        # aspect ratio is never read. 16 and 9 are perfect squares (no bump);
+        # 5 is not (round(sqrt(5))=2, 5%2!=0, so 3); 1 frame is no atlas.
+        atlas = self.results["atlas"]
+        self.assertEqual({"columns": 4, "rows": 4, "cell": 0.25}, atlas["grid16"])
+        self.assertEqual({"columns": 3, "rows": 3, "cell": 1 / 3}, atlas["grid9"])
+        self.assertEqual({"columns": 3, "rows": 3, "cell": 1 / 3}, atlas["grid5"])
+        self.assertIsNone(atlas["grid1"])
+
+    def test_flipbook_frame_advances_per_second_not_per_phase(self) -> None:
+        # fx_expl_core's own numbers (16 frames, initAnimationFrame 8,
+        # animationSpeed 70, no ramp): draw() (0x0060a5c4-0x0060a60e) adds
+        # animationSpeed * ramp * dt / numAnimationFrames every call — frames
+        # per second, seeded from initAnimationFrame at spawn
+        # (`FUN_00609ea0`), not a phase-indexed lookup. Over the particle's
+        # full 1 s life that is 8 + 70*1/16 = 12.375: still inside the strip,
+        # cell (0, 3) of the 4x4 grid.
+        atlas = self.results["atlas"]
+        self.assertEqual(8, atlas["explCoreStartFrame"])
+        self.assertAlmostEqual(12.375, atlas["explCoreFrameAfterOneSecond"], places=6)
+        self.assertEqual(12, atlas["explCoreIndexAfterOneSecond"])
+        self.assertEqual({"col": 0, "row": 3}, atlas["explCoreCell"])
+
+    def test_animation_speed_over_time_scales_the_rate(self) -> None:
+        # A flat 2x animationSpeedOverTime ramp on a speed-10 strip covers 2
+        # frames in one second, not 1 — the ramp must actually multiply in,
+        # not just exist on the spec unread.
+        self.assertAlmostEqual(2.0, self.results["atlas"]["rampedFrameAfterOneSecond"], places=6)
+
+    def test_frame_index_wraps_both_directions(self) -> None:
+        # Where the far end of the strip is handled was not found in the
+        # engine (SPR-6 is open on wrap vs. clamp); this wraps, which every
+        # checked vanilla template is equally consistent with since none of
+        # them ever reach it. frameIndex must still be safe on a value below
+        # zero even though integrateParticle never produces one on real data.
+        atlas = self.results["atlas"]
+        self.assertEqual(3, atlas["wrapPositive"])
+        self.assertEqual(15, atlas["wrapNegative"])
+        self.assertEqual(0, atlas["notAnimated"])
 
 
 if __name__ == "__main__":
