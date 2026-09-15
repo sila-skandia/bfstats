@@ -411,6 +411,15 @@
    "note": "bf42plus section: UI / BfMenu"
   },
   {
+   "address": "0x0045cf00",
+   "name": "minimap_buildMapTexturePath",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "minimap-and-fullmap.md",
+   "note": "Concatenates '../../' + level path + 'Textures/InGameMap.tga' (string 0x008d56f8) to name the one map texture"
+  },
+  {
    "address": "0x0045d110",
    "name": "BfMenu__func_45D110",
    "kind": "function",
@@ -427,6 +436,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x0045d7c0",
+   "name": "minimap_resolveMapPath",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "minimap-and-fullmap.md",
+   "note": "Resolves the MapPath placeholder in menu/InGame at runtime and hot-swaps the level's map picture node into it (the spawn-screen map, HUD minimap and fullscreen map share it). Likely home of the spawn-screen map pane rect and dimming, which are not in the layout data (ledger MEME-8, MEME-10)"
   },
   {
    "address": "0x0045dd69",
@@ -546,6 +564,15 @@
    "note": "bf42plus section: UI / BfMenu"
   },
   {
+   "address": "0x00469360",
+   "name": "minimap_screenTransform",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "minimap-and-fullmap.md",
+   "note": "Minimap-class vtable override: full 2x2 rotation from cos/sin of member +0x64 (inferred player yaw, zeroed by setStaticMinimap -- OPEN, write site not found), divided by a zoom scale pow(..) of 1 - member +0x40 (zoom step values OPEN, write site not found). Ledger MMAP-1, MMAP-2"
+  },
+  {
    "address": "0x0046a2a0",
    "name": "BfMap__addPlayerToBuddyListByID",
    "kind": "function",
@@ -553,6 +580,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x0046a5c0",
+   "name": "range_minimap_undefined",
+   "kind": "range",
+   "subsystem": "ui",
+   "confidence": "open",
+   "source": "minimap-and-fullmap.md",
+   "note": "~15 KB of undefined .text 0x0046a5c0-0x0046e230; likely minimap update/draw code and the +0x40 zoom / +0x64 rotation write sites. Recover functions by vtable, do not global-reanalyse"
   },
   {
    "address": "0x0046b130",
@@ -2542,6 +2578,15 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-12",
    "note": "contiguous ASCII table of mounted archive names: menu.rfa, Bf1942/game.rfa, standardMesh.rfa, treeMesh.rfa, texture.rfa, animations.rfa, sound.rfa, ai.rfa, aiMeshes.rfa, font.rfa and their _001 patch variants"
+  },
+  {
+   "address": "0x008d56f8",
+   "name": "str_Textures_InGameMap_tga",
+   "kind": "string",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "minimap-and-fullmap.md",
+   "note": "'Textures/InGameMap.tga'; one xref in the binary (FUN_0045cf00). There is no second map asset"
   },
   {
    "address": "0x008d5a7c",

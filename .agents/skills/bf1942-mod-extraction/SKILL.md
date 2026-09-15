@@ -370,10 +370,15 @@ double-size replacement. Its `.dif` metrics match the original, but `BF1942.font
 - `tools/bf1942-models/bf42/meme.py`, `bf42/font.py` — readers, tested in `tests/`
 - Output: `viewer/maps/_shared/hud/`, served at `https://mesh.bfstats.io/maps/_shared/hud/`
 
-Two gaps are known. The spawn map's on-screen rectangle is **not** in the layout data: the
-engine loads the map into an empty `ClipNode` at runtime, so `(280,33) 512x512` was measured
-from a capture. And the front-end menus have not been decoded at all, though `meme.py`
-reads the whole format.
+**Open items live in two places. Read them before starting, and add to them when you
+stop.** Viewer and interface next steps, ranked with leads, are in
+`features/authentic-spawn-map/README.md` §8 (spawn-map dimming, ticket counters, minimap
+frame and zoom, mod-specific chrome, scoreboard, the rest of the HUD) and are summarised in
+`features/bf1942-3d-models/parity-gaps.md` under *Interface*. Engine questions are `open`
+rows in `features/bf1942-engine-reference/ledger.md` (MEME-10, -11, -13, MMAP-1, -2,
+FONT-1), with addresses in `symbols.json` (`./xref.py list ui`). The key one: the spawn
+map's rect and dimming are **not** in the layout data. The engine fills an empty `ClipNode`
+at runtime, so `(280,33) 512x512` was measured from a capture.
 
 Full detail: `features/authentic-spawn-map/README.md` sections 2 and 7, and
 `features/bf1942-3d-models/minimap-and-fullmap.md`.

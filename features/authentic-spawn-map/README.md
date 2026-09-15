@@ -326,3 +326,26 @@ Still approximated or absent:
 - Text is drawn with nearest-neighbour glyphs; the game's are bilinear-filtered
   and read slightly softer.
 - Kit counts show the game's idle value, 0.
+
+## 8. Open items and next steps
+
+Ranked by what a player would notice first. The engine questions behind them are
+`open` rows in `features/bf1942-engine-reference/ledger.md` (MEME-10, -11, -13,
+MMAP-1, -2, FONT-1), and the addresses are in `symbols.json` (`./xref.py list ui`).
+The interface is data, so almost every item here is extraction or plumbing, not art.
+
+| # | Item | State | Lead |
+|---|---|---|---|
+| 1 | Spawn-map pane too bright | The capture dims it heavily (black sea, faint grid); the viewer draws full-colour art | Not in the layout: `ShowMap` holds an empty `ClipNode` (ledger MEME-10). Quick route: take a multiplier from `ref_02` by comparing sea and land pixels against `InGameMap`. Proper route: decompile `0x0045d7c0`, where the map is swapped in |
+| 2 | Map pane rect is measured | `(280,33) 512x512`, flagged `measured` in `spawn-layout.json` | Same function as item 1 (MEME-8) |
+| 3 | Ticket counters not drawn | `ShowTicket` is decoded into `spawn-layout.json` at `(620,4) 256x32`, with `flag_ticket_<nation>` and `icon_ticketbar` in the pack | Round-start tickets are static level data: `Game.setNumberOfTickets` in `GameTypes/Conquest.con`, already parsed per team by `scripts/extract_map_dossiers.py` (`tickets`). Carry them into `scene.json` on the next re-extract, or read the dossier |
+| 4 | HUD minimap frame chosen by the viewer | The widget's position and size are ours | No rect of its own (MEME-12), but its neighbours pin it: ticket bar `(620,4) 256x32`, grid readout `Coordinates/ShowMapCoordinates` `(627,185) 50x20` in `Style/InGameLatin11`, control-point strip `(620,207) 256x16`. So the art sits at x=620 between y=36 and y=207. Defaults: `game.setMinimapTransparency 20`, `game.setStaticMinimap 1` |
+| 5 | No minimap zoom (N) or rotating mode | Not implemented | Step values and rotation source unknown (MMAP-1, MMAP-2); likely in the undefined code range `0x0046a5c0-0x0046e230` |
+| 6 | Mod levels draw vanilla chrome | The pack, layout, fonts and strings come from `Mods/bf1942` only. The viewer tree holds 241 EoD, 8 XPack1 and 11 XPack2 levels | 16 installed mods ship their own `menu.rfa` and lexicon. Resolve along `game.addModPath` per mod, write `_shared/hud/<mod>/`, and pick by the level's mod |
+| 7 | SCORE BOARD does nothing | Button only | `Scoreboard/SpawnScoreBoard` `(0,-15) 800x800` and `ScoreboardMapVote/MapVoteActive` decode with the same `Flattener`; art is `Voting/scoreboard_512x470` and `scoreboard_buttonframe_780x64`. The viewer has no player rows, so it would be an empty board |
+| 8 | Rest of the in-game HUD not drawn from data | The weapon and ammo readout is plain viewer text | `menu/InGame` declares about 50 top-level groups with rects: weapon bar `Weapon/SelectingWeapon` `(210,525) 512x64`, soldier and vehicle panels `(600,505) 233x83`, action icons at x=720 (heal, repair, reload, parachute), `Time/ShowTime`, chat, kill and status messages. Textures are under `menu/Texture/Ingame/`. Same method as the spawn screen |
+| 9 | Live-state layers unused | Capture ring, friend/enemy dots, medic/engineer calls | Need round state; not feasible from level data (`features/bf1942-3d-models/minimap-and-fullmap.md` §5) |
+| 10 | Two kit rows lit in the harness capture | Unverified | Believed to be the selected row plus the 0.2 mouse-over fill under the harness pointer. Confirm the hover follows the pointer and clears on leave |
+| 11 | Front-end menus undecoded | 91 layout files; only `InGame` groups are used | `meme.py` reads the whole format. Nothing in the viewer needs them yet |
+| 12 | Text is sharper than the game's | Nearest-neighbour glyphs; the game filters bilinearly | Cosmetic |
+| 13 | Non-Conquest layouts | Only `Conquest/` is read | See the open questions in `minimap-and-fullmap.md` |
