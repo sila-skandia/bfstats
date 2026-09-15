@@ -1441,6 +1441,10 @@ function bindLightmaps(root, dir) {
           transparent: m.transparent,
         });
         mat.name = m.name;
+        // The exporter's extras marks ride in userData (additive,
+        // textureFade); a rebuild that drops them silently un-marks the
+        // material for every later pass.
+        mat.userData = m.userData;
         mat.lightMap = tex;
         // MeshBasicMaterial's lightmap term is INLINE in its fragment shader
         // (r169 has no <lightmap_fragment> chunk anywhere), so the combine
@@ -1539,6 +1543,9 @@ function bindDynamicShading(root) {
         depthWrite: m.depthWrite,
       });
       mat.name = m.name;
+      // Keep the exporter's extras marks (additive, textureFade) — a rebuild
+      // that drops userData un-marks the material for every later pass.
+      mat.userData = m.userData;
       // The glb's emissive slot carries a 0.45 translucency floor on branch
       // cards (see assemble.py) - a crutch calibrated against the OLD
       // under-lit rig, where pure N.L blackened sun-away fronds. The
@@ -1585,6 +1592,55 @@ function bindDynamicShading(root) {
     });
     obj.material = Array.isArray(obj.material) ? bound : bound[0];
   });
+}
+
+// `textureFade true` — the black_o darkness plane sealing every building
+// doorway and window. The engine fades it with camera distance: up close it
+// is gone and the room shows through the opening; at range it is solid and
+// the opening reads as dark. The exporter marks the material in extras and
+// this pass gives each flagged mesh its own clone so one building's doorway
+// can be open while a distant one's is sealed. The band is PROVISIONAL
+// [free]: fully open inside 20 m, fully sealed past 55 m, chosen to sit
+// inside the 70 m interior-LOD switch the engine used — measure against a
+// recording to pin it.
+const FADE_NEAR = 20;   // [free] m, alpha 0 at or below
+const FADE_FAR = 55;    // [free] m, alpha 1 at or beyond
+let fadeMeshes = [];
+
+function bindTextureFade(root) {
+  fadeMeshes = [];
+  root.traverse(obj => {
+    if (!obj.isMesh) return;
+    const source = [obj.material].flat();
+    if (!source.some(m => m?.userData?.textureFade)) return;
+    const bound = source.map(m => {
+      if (!m?.userData?.textureFade) return m;
+      // clone() keeps map/lightMap but not onBeforeCompile — irrelevant
+      // here, the texture is pure black and lighting black is black.
+      const mat = m.clone();
+      mat.userData = m.userData;
+      mat.transparent = true;
+      mat.depthWrite = false;
+      return mat;
+    });
+    obj.material = Array.isArray(obj.material) ? bound : bound[0];
+    // Statics never move; cache the world position once.
+    const at = new THREE.Vector3();
+    obj.getWorldPosition(at);
+    fadeMeshes.push({ obj, at });
+  });
+}
+
+function updateTextureFade() {
+  for (const { obj, at } of fadeMeshes) {
+    const d = camera.position.distanceTo(at);
+    const a = Math.min(1, Math.max(0, (d - FADE_NEAR) / (FADE_FAR - FADE_NEAR)));
+    for (const m of [obj.material].flat()) {
+      if (m?.userData?.textureFade) m.opacity = a;
+    }
+    // A fully-faded plane still costs a draw call; drop it.
+    obj.visible = a > 0;
+  }
 }
 
 function disposeSky() {
@@ -3741,6 +3797,7 @@ async function show(entry) {
   // meshes, everything still on a lit glTF material is the engine's
   // fixed-function path: vehicles and non-lightmapped statics.
   bindDynamicShading(currentRoot);
+  bindTextureFade(currentRoot);
   applyLighting();
   if (extras.sunDirection) {
     // The sun light points along -sunLightDirectionVec toward the origin.
@@ -3877,6 +3934,7 @@ function frame(dt) {
   // if the trigger, the pilot mode or the whole aircraft has gone away.
   guns.advance(dt);
   applyVisibility();
+  updateTextureFade();
   advanceSim(dt);
   updateAudio(dt);
   updateSky();
