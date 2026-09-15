@@ -1,14 +1,17 @@
 # Handoff: map page frame pacing while firing
 
 **Superseded by `features/mesh-viewer-performance/README.md`.** The merge,
-the chorded-button and Ctrl+W input fixes, `webglcontextlost` handling, and
-the README itself (problem, hot-path rules 1-7, the Iris Xe context-loss
-log, the two input fixes, open items) are all done. What's left is the
-real-time pacing re-measurement and the pixel-parity re-capture against the
-final build — both held off because the machine was mid-extraction; see
-README's Open items for the exact commands. This file stays for the protocol
-detail (the teleport-back note, the pitfalls below) that re-measurement will
-still need.
+the chorded-button and Ctrl+W input fixes (plus the release-gating and
+`position: absolute` corrections a review pass caught), `webglcontextlost`
+handling, the real-time pacing re-measurement, the pixel-parity re-capture,
+the repaint/deploy/warm-up functional checks, and the README itself (problem,
+before/after tables, hot-path rules 1-7, the Iris Xe context-loss log with
+today's re-measurement caveat, both input fixes, open items) are all done.
+What's left is real-hardware confirmation of the two input fixes (a real
+mouse, a real Ctrl+W) and finding which one material rule 6's warm-up still
+misses — see README's Open items. This file stays for the protocol detail
+(the teleport-back note, the pitfalls below) in case that warm-up follow-up
+needs it again.
 
 ## Where things are
 

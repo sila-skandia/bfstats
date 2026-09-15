@@ -48,18 +48,24 @@ below are deterministic and the profile shares move together.
 | + arms near pass draws the rig only | 9.2 s | 14.1% | 4.0% | 1.8% | 7.7 ms |
 | + static subtrees frozen out of the matrix walk | 6.4 s | off profile | 6.8%* | 2.4% | 6.4 ms |
 | + no forced layout | 6.6 s | off profile | 6.4%* | off profile | 6.4 ms |
+| **final (all 9 commits, fresh same-session A/B)** | **5.3 s** | **2.7%** | **7.0%** | **off profile** | **5.4 ms** |
 
 \* `projectObject`'s *share* rose because the total it is a share of got much
 smaller, not because it got slower.
 
-Particles, allocation, warm-up and the minimap repaint (the remaining four
-commits) were not individually re-profiled this way — HANDOFF.md has each
-one's own before/after where it exists. A final cumulative run of this same
-profile against the merged build is pending (see Open items); it should
-mainly confirm `updateMatrixWorld` and `getBoundingClientRect` both stay off
-the profile and check that `renderer.info.programs.length` does not grow
-during the first burst (proving the warm-up actually linked everything the
-pool needs).
+The intermediate rows are the previous agent's, one commit at a time, on
+different hardware/session conditions than the final row — read the trend,
+not a direct ms-for-ms comparison against the last row. The final row is a
+fresh `before`/`final` pair captured back to back in the same session
+(`perfbench.cjs bench --base http://localhost:557{4,5}`, before = `93105a2`,
+final = this branch's tip): before came out to **8.75 s** self time this
+session (`updateMatrixWorld` 17.3%, `getBoundingClientRect` 1.5%, heaviest
+phase mean 7.26 ms) against final's 5.3 s — a 39% cut, with
+`updateMatrixWorld` down to 2.7% and `getBoundingClientRect` gone from the
+top-25 self-time list entirely. `renderer.info.programs.length` in the
+`first-burst-4s` phase stayed flat (25 → 25) on the final build headless;
+see the real-time section below for the headed number, which is not quite
+as clean.
 
 Baseline scene: fly-through 709 draw calls / 325k tris; on-foot idle 191 / 134k;
 firing + walking + panning 77-1,474 draw calls; 5,075 objects (3,529 meshes),
@@ -68,28 +74,87 @@ firing + walking + panning 77-1,474 draw calls; 5,075 objects (3,529 meshes),
 
 ### Real-time pacing (headed, system GL, DPR 2, 4x CPU throttle, 60 s of held trigger + W + crouch toggles + panning)
 
-*Pending re-measurement with the teleport-back protocol against the final
-merged build. The machine was mid-extraction (`extract_maps_all.py`) when this
-section was drafted; browser-based benchmarking was held off rather than
-taking numbers a concurrent CPU hog would have made meaningless. See Open
-items for the exact commands.*
+Re-measured once the machine cleared (the map extraction that held this off
+had finished; a few other sessions' background load stayed in the 3-15
+1-minute-load range throughout — not idle in the strictest sense, but nothing
+pushed a run itself over budget, and `before`/`final` ran back to back under
+the same conditions, minutes apart, teleport-back protocol built into
+`perfbench.cjs`'s own `realtime()`):
 
-| build | fps | p50 | p95 | p99 | frames over 33 ms | jitter | context lost? |
-|---|---|---|---|---|---|---|---|
-| `93105a2` (before, harness only) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| final (this branch) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+```
+node perfbench.cjs bench --headed --skip-stepped --base http://localhost:557{4,5} \
+  --dpr 2 --throttle 4 --realtime 60 --out ...
+```
+
+| build | fps | p50 | p95 | p99 | max | frames over 33 ms | jitter | context lost? |
+|---|---|---|---|---|---|---|---|---|
+| `93105a2` (before) | 39.5 | 16.8 ms | 33.5 ms | 50.1 ms | 66.8 ms | 1,124 / 2,368 (47.5%) | 11.52 ms | no |
+| final (this branch, `53f420d`) | 51.9 | 16.7 ms | 33.4 ms | 33.4 ms | 50.1 ms | 474 / 3,112 (15.2%) | 4.36 ms | no |
+
+`first-burst-4s` (the opening 4 s of the burst, where the historical stall
+happened): before 77/160 frames over 33 ms, max 66.7 ms; final 1/238 over
+33 ms, max 33.3 ms — the burst opening in particular got much smoother, not
+just the 60 s average.
+
+Both today's numbers are noticeably better across the board than the
+previous agent's own `before` capture (23.7 fps / p95 59.7 / p99 68.3 ms) —
+plausibly a quieter desktop that day vs. this one, per the harness's own
+2x-run-to-run-swing caveat; read the *shape* of before-vs-final (fps up
+~31%, p99 down 33%, jitter down 62%, frames-over-budget down two-thirds),
+not the absolute fps, as the result. Neither run lost the WebGL context or
+hit a multi-second stall — see the next section for what that does and does
+not prove about the Iris Xe finding specifically.
 
 For scale, the previous agent's unwarmed intermediate builds (not comparable
 to each other — the walk protocol changed mid-run — but illustrative of the
 range): before 23.7 fps / p95 59.7 / p99 68.3 ms, 1,335 of 1,422 frames over
 33 ms; near-pass and freeze both improved fps (25.2, 30.2) but both also hit
-the 8-9.5 s stall and lost the WebGL context, so their numbers aren't a fair
-comparison until the warm-up commit is confirmed to stop it.
+the 8-9.5 s stall and lost the WebGL context on that run.
 
 ### Pixel parity
 
-*Pending: `perfbench.cjs shot`/`compare`, final build against `93105a2` as the
-seeded baseline, once the machine is free for headed/GPU work again.*
+`perfbench.cjs shot`/`compare`, final build (`53f420d`) against `93105a2`,
+same seeded dice (`__seedRandom`), headless:
+
+| capture | pixels differing | pixels over an 8/255 channel delta | max channel delta |
+|---|---|---|---|
+| `arms.png` (1600x900, before any shot) | 0 (0.000%) | 0 (0.000%) | 0 |
+| `burst.png` (mid-burst) | 482 (0.033%) | 114 (0.008%) | 83 |
+| `minimap.png` (188x188) | 0 (0.000%) | 0 (0.000%) | 0 |
+| `settled.png` (240 frames after release) | 18 (0.001%) | 18 (0.001%) | 178 |
+
+Arms and minimap are pixel-identical. `burst`/`settled` carry the same tiny,
+already-diagnosed discrepancy the previous agent found isolating the warm-up
+commit alone (HANDOFF.md: "burst capture differs 0.008% of pixels (flash
+first frame)") — a handful of pixels on the muzzle flash's first rendered
+frame, not a new regression from anything landed since. Workload counters
+matched exactly between the two captures (7 shots, 5 particles, 3 decals),
+which is the part that has to be exact for the pixel diff to mean anything.
+
+### Functional checks: repaint gate, deploy screen, warm-up on a level switch
+
+HANDOFF steps 3-4, `scratchpad/s-repaint-warm-check.mjs`, 12/12 checks:
+
+- **The repaint gate (rule 7) still lets M and the deploy screen force a
+  paint.** M opens the full map from fly mode and the canvas actually
+  repaints (grows from a stale ~33 KB PNG to ~670 KB once the map art and
+  sprites land); requesting on-foot opens the deploy screen with its own
+  distinct repaint (dim, spawn rings); pressing M again mid-life (after
+  spawning, canceling back out of a reopened deploy screen) reopens it
+  rather than silently no-op'ing behind the staleness check.
+- **The arms rig appears once its own compile lands.** After a spawn settles,
+  `rig.visible` is true and the weapon has a viewmodel mixer — it does not
+  get stuck hidden waiting on a compile that already finished.
+- **A level switch re-warms.** Switching the `<select>` from Wake to
+  Aberdeen, then spawning fresh (different kit, different weapon — `Sg44`
+  in the German desert loadout, not the Thompson) and firing a burst:
+  `renderer.info.programs.length` stayed flat (21 → 21) across the new
+  level's own first burst, and the burst actually fired (7 shots) rather
+  than silently failing. First attempt at this check chained the level
+  switch straight off an already-mid-life state left by the deploy-screen
+  check above and got 0 shots on the new level — not a bug in the fix, an
+  artifact of the check switching levels from a state a real level switch
+  doesn't start from; leaving foot mode first before switching fixed it.
 
 ## The hot-path rules
 
@@ -192,9 +257,35 @@ available).
 
 Rule 6 (warm-up, above) exists specifically to make this impossible: every
 program the burst can need is linked before the first shot, not during it.
-Whether it actually stops the stall is the pending real-time re-measurement
-above. Independently of whether warm-up holds up, `map.html` no longer goes
-silently black when a context loss happens anyway — see Input fixes.
+
+**What today's re-measurement does and does not show.** Neither the
+`93105a2` before build nor the final build lost the context or hit a
+multi-second stall in this session's headed runs — but *neither did the
+before build*, which the previous agent's own historical data (above) did
+lose context on in 3 of 5 runs. That means today's clean run is not
+independent confirmation that warm-up fixed it; it is equally consistent
+with today's hardware/driver/thermal conditions simply not reproducing the
+stall for either build. The headed `first-burst-4s` program count is the
+one number that moved in the fix's favor either way: before, `programs`
+stayed flat at 19 through the burst (this session); final grew 24 → 25 — one
+program still linked mid-burst even after warm-up, though without the
+multi-second stall that used to come with it. So warm-up is not linking
+*everything* the pool needs before the first shot; it is closer than before,
+and nothing this session stalled because of it, but rule 6 is not fully
+closed out. Worth another look at which single material is still missing
+from `EffectPlayer.warm()`/`GunFire.warm()`'s pooled set.
+
+Independently of whether warm-up holds up, `map.html` no longer goes
+silently black when a context loss happens anyway. Verified with a forced
+loss (`gl.getExtension('WEBGL_lose_context').loseContext()` under `?shots`,
+`scratchpad/s-gllost-check.mjs`, 7/7 checks, screenshot saved alongside it):
+the card is hidden before the loss, `position: absolute` (the 6b04669 fix —
+it was missing and the card sat in the stage's normal flow instead of over
+the canvas), visible and covering the stage center after the loss, and a
+forced `restoreContext()` afterward switches the message to the reload
+prompt rather than making the card disappear (three's own `onContextLost`
+already calls `preventDefault()`, so `restored` fires regardless of this
+page's own redundant call — see 6b04669).
 
 ## Input fixes
 
@@ -217,15 +308,25 @@ Fix: `pointerdown`, `pointerup`, and a chorded `pointermove` (`e.button !==
 -1`) all now funnel through one `footButtonChange(e)`, which derives
 press/release from `e.buttons` via a button-to-bit lookup rather than
 trusting which listener fired. The pointer-move handler skips `lookDelta`
-entirely for a button-change event. Gating is unchanged: captured, on foot,
-pointer-locked; a `?shots` bypass (`pointerLocked()`) stands the query param
-in for real pointer lock, matching the existing `canFire` precedent, since
-headless Chromium never grants it. Verified with a new `__chordEvent` hook
-that dispatches real events at the real listeners (`scratchpad/s-chordcheck.mjs`,
-9/9 checks passing: chorded press toggles zoom and applies no look, chorded
-release does not re-toggle zoom and applies no look, left-up clears the
-trigger, a plain move still turns the view). **Not yet confirmed with a real
-mouse — Dylan should verify the snap is gone.**
+entirely for a button-change event. A fresh press is gated as before —
+captured, on foot, a live soldier, pointer-locked, with a `?shots` bypass
+(`pointerLocked()`) standing the query param in for real pointer lock the
+same way `canFire` already stands it in for `captured`, since headless
+Chromium never grants pointer lock. **A release is not gated** (`bedcfc2`,
+found in review): the original code gated both directions identically, so a
+release arriving after death or a redeploy nulled `soldier` out from under
+it (see the `soldier = null` sites) and `triggerHeld` stuck true into the
+next life; a release now always clears its button's state and never
+re-touches the zoom toggle.
+
+Verified with a new `__chordEvent` hook that dispatches real
+pointerdown/pointerup/pointermove events at the real listeners
+(`scratchpad/s-chordcheck.mjs`, 10/10 checks passing): chorded press toggles
+zoom and applies no look, chorded release does not re-toggle zoom and
+applies no look, left-up clears the trigger, a plain move still turns the
+view, and a release after `__setOnFoot(false)` nulls `soldier` mid-hold
+still clears `triggerHeld`. **Not yet confirmed with a real mouse — Dylan
+should verify the snap is gone.**
 
 **Closing the tab mid-play now asks first.** Crouch stays on left Ctrl for
 game parity; the browser owns Ctrl+W outright by default, so there was no fix
@@ -234,25 +335,26 @@ on the page's own binding short of Keyboard Lock (see Open items — Chromium's
 session the page would have to request, which this pass didn't add). A
 `beforeunload` handler now asks for confirmation, scoped to mid-play
 (captured, on foot, a live soldier) so it never fires over the gate screen or
-a free-fly pan. Logic-verified against the same gate `footButtonChange` uses;
-not live-tested against a real Ctrl+W (native `beforeunload` dialogs are
-awkward to assert headless, and browser checks were on hold for this pass —
-see Open items). Dylan should confirm the "Leave site?" prompt appears while
-firing/crouched and does not appear before capture or in fly mode.
+a free-fly pan. Logic-verified against the same gate `footButtonChange` uses.
+Still not live-tested against a real Ctrl+W: a native `beforeunload`
+confirmation dialog is the one check in this pass genuinely awkward to
+assert headless (Playwright treats it as a browser-level dialog it
+auto-dismisses rather than page state to read back), so this one stayed a
+logic check rather than a live one. **Dylan should confirm the "Leave site?"
+prompt appears while firing/crouched and does not appear before capture or
+in fly mode.**
 
 ## Open items
 
-- **Real-time pacing re-measurement** against the final merged build, with
-  the teleport-back protocol (`scratchpad/stage5.sh`), and a final headless
-  stepped run checking `renderer.info.programs.length` stays flat during the
-  first burst. Held off because the machine was running a map extraction;
-  see the table above for the exact commands once it's free.
-- **Pixel parity** of the final build against `93105a2`, all commits'
-  captures re-seeded through the same dice (`perfbench.cjs shot`/`compare`).
-- **Live confirmation of both input fixes** with a real mouse and a real
-  Ctrl+W, and live confirmation of the `webglcontextlost` banner against
-  either a real repeat of the stall or a forced loss
-  (`WEBGL_lose_context` extension).
+- **Live confirmation of the mouse-chord fix and the Ctrl+W prompt with real
+  hardware.** Everything else in this pass that needed a browser was
+  re-verified this session (real-time pacing, pixel parity, the repaint/
+  deploy/warm-up functional checks, a forced context loss) — these two are
+  the ones only a person at a real keyboard and mouse can close out.
+- **Rule 6 (warm-up) is not fully closed.** The headed final build's first
+  burst still linked one program mid-burst (`programs` 24 → 25) — see The
+  Iris Xe context loss above. Worth finding which material `EffectPlayer.warm()`/
+  `GunFire.warm()`'s pooled set is still missing.
 - **Instanced sprite pool** for draw-call count itself was designed during
   this pass but not built — needs per-instance opacity via
   `onBeforeCompile` and a per-pool depth sort.
