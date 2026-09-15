@@ -95,6 +95,36 @@ class DecodeConventionTests(unittest.TestCase):
         self.assertAlmostEqual(0.50, at_14.bones[0].translations[0][0], places=3)
         self.assertEqual(at_15.bones[0].rotations[0], at_14.bones[0].rotations[0])
 
+    def test_position_scale_is_two_pow_precision_minus_one(self) -> None:
+        # BAF-1: CompressedAnim::GetValue divides by 2^precision - 1, not
+        # 2^precision. places=3 in test_precision_scales_positions_only
+        # cannot tell the two apart (they differ by ~0.003% at precision 15);
+        # this pins the exact divisor at two precisions the mods actually use.
+        for precision, raw in ((15, 8192), (11, 400)):
+            bones = [("Bip01", quat_channels(0, 0, 0, 1) +
+                      [hold(raw, 1), hold(0, 1), hold(0, 1)])]
+            clip = baf.parse(pack_baf(bones, frames=1, precision=precision),
+                             f"p{precision}.baf")
+
+            want = raw / ((1 << precision) - 1)
+            got = clip.bones[0].translations[0][0]
+            self.assertNotAlmostEqual(raw / (1 << precision), got, places=6)
+            self.assertAlmostEqual(want, got, places=9)
+
+    def test_rotation_matrix_is_invariant_to_quaternion_scale(self) -> None:
+        # BAF-1: BaseQuaternion::toMat's s = 2/(x^2+y^2+z^2+w^2) normalizes
+        # away whatever scale fed it, which is why the position-divisor bug
+        # (fixed above) never touched rotations, and why a fixed quat_scale
+        # (in place of the engine's per-precision 2^precision - 1) is not a
+        # second instance of the same bug.
+        unit = baf.matrix_from_quat((0.5, -0.2, 0.1, 0.6))
+        for factor in (2.0, 8.0, 16.0, 0.001):
+            scaled = baf.matrix_from_quat(
+                tuple(c * factor for c in (0.5, -0.2, 0.1, 0.6)))
+            for row_u, row_s in zip(unit, scaled):
+                for u, s in zip(row_u, row_s):
+                    self.assertAlmostEqual(u, s, places=9)
+
     def test_root_align_is_a_proper_half_turn_about_up(self) -> None:
         """Clip world to mesh world is a 180-degree yaw, not a mirror —
         chirality was pinned by the 48-permutation fit in the docstring."""
