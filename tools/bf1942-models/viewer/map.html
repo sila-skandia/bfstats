@@ -161,6 +161,45 @@
     font-size: 11px;
     background: var(--panel);
   }
+  /* A lost WebGL context leaves the canvas exactly as it last drew -- there
+     is no repaint to hint anything went wrong, so this has to be loud enough
+     to read over a frozen frame rather than blend in like #gate does. */
+  #gl-lost {
+    position: absolute;
+    z-index: 8;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(10, 8, 6, .72);
+  }
+  #gl-lost[hidden] { display: none; }
+  #gl-lost .gl-lost-card {
+    pointer-events: auto;
+    max-width: min(420px, calc(100% - 32px));
+    border: 1px solid var(--warn);
+    padding: 14px 18px;
+    background: var(--panel);
+    text-align: center;
+  }
+  #gl-lost .gl-lost-title {
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--warn);
+    margin-bottom: 8px;
+  }
+  #gl-lost .gl-lost-body { color: var(--text); font-size: 12px; line-height: 1.5; }
+  #gl-lost button {
+    margin-top: 12px;
+    cursor: pointer;
+    border: 1px solid var(--accent);
+    padding: 8px 14px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-size: 11px;
+    background: transparent;
+    color: var(--text);
+  }
   /* The map art, top right. That corner is free: #side is top left, #hud is
      bottom centre. Sized in one place so the canvas backing store and the
      frame agree. No CSS chrome: the game's own `icon_mapbar_small` bezel is
@@ -531,6 +570,13 @@
   <div id="crosshair" hidden><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
   <div id="ammo" hidden></div>
   <div id="gate"><span>Tap or click to fly</span></div>
+  <div id="gl-lost" hidden>
+    <div class="gl-lost-card">
+      <div class="gl-lost-title">Graphics context lost</div>
+      <div class="gl-lost-body" id="gl-lost-body"></div>
+      <button type="button" id="gl-lost-reload">Reload</button>
+    </div>
+  </div>
   <div id="fullmap" hidden>
     <div class="fm-frame">
       <div class="fm-map-frame">
@@ -604,21 +650,59 @@ const FOOT_KEYS = new Set([
 
 // ?shots keeps the drawing buffer so canvas.toDataURL() works for external
 // screenshot tooling; off by default because it costs a buffer copy per frame.
+// `&nopreserve` gives the perf harness the hooks without the copy, so it can
+// measure the page a player gets.
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
-  preserveDrawingBuffer: new URLSearchParams(location.search).has('shots'),
+  preserveDrawingBuffer: new URLSearchParams(location.search).has('shots')
+    && !new URLSearchParams(location.search).has('nopreserve'),
 });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const stage = document.getElementById('stage');
 stage.appendChild(renderer.domElement);
 
+// A lost context leaves the canvas showing whatever it last drew -- there is
+// no repaint to hint that anything is wrong, so without this the page just
+// goes quietly stale. Measured cause on this machine: a GPU-side stall
+// during a firing burst at DPR 2 (features/mesh-viewer-performance/README.md,
+// the Iris Xe log) took 8-9.5 s on one frame and the browser gave up on the
+// context rather than waiting it out. `renderer`'s own `onContextLost`
+// (`vendor/three.module.js`) already calls `preventDefault()` -- that is
+// what tells Chromium a restore is worth attempting, and `restored` would
+// fire without this listener too -- the call here is redundant, not load-
+// bearing, kept only because a second listener calling it is harmless and
+// this one should not depend on three's internals staying that way. What
+// this listener actually adds is the visible message: nothing here tries
+// to rebuild the scene on restore -- every texture and compiled program the
+// renderer held is gone, and re-uploading all of it is out of scope for "no
+// silent black canvas" -- so restore just offers a reload instead of
+// pretending play can continue.
+const glLostEl = document.getElementById('gl-lost');
+const glLostBody = document.getElementById('gl-lost-body');
+document.getElementById('gl-lost-reload')?.addEventListener('click', () => location.reload());
+renderer.domElement.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  release();
+  glLostBody.textContent = 'The GPU dropped the WebGL context mid-frame. Waiting to see whether the browser restores it...';
+  glLostEl.hidden = false;
+}, false);
+renderer.domElement.addEventListener('webglcontextrestored', () => {
+  glLostBody.textContent = 'The context came back, but nothing it was holding did -- reload to keep playing.';
+}, false);
+
 const scene = new THREE.Scene();
+// The scene never moves, and in three r169 an auto-updating root is what
+// forces every descendant's world matrix to be recomputed each frame
+// (freezeStatics, below, has the arithmetic). Its matrix stays the identity
+// it was born with.
+scene.matrixAutoUpdate = false;
 const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 8000);
 camera.position.set(0, 80, 0);
 // In the scene graph, not just pointed at it, so things may hang off it: the
-// on-foot viewmodel is a child of the camera, and a parentless camera's
-// children are never rendered at all.
+// audio listener is a child of the camera, and a parentless camera's
+// children are never rendered at all. (The on-foot arms are not — they hang
+// off `vmRoot`, a camera-following node in the near pass's own scene.)
 scene.add(camera);
 
 const hemi = new THREE.HemisphereLight(0xe8dcc0, 0x5a4a32, 1.35);
@@ -677,6 +761,9 @@ let simTime = 0;
 // plays every clip it carries: `FlagBlow <name>` per control point, over that
 // flag's own joints, which is the animation state `AnimatedFlag` declares —
 // and `spin`/`spin.N`, the `setContinousRotationSpeed` parts grouped by period.
+// The clips the mixer plays are kept for `freezeStatics`, which must leave
+// every node they drive in three's matrix walk.
+let levelClips = [];
 let flagMixer = null;
 
 const params = new URLSearchParams(location.search);
@@ -1053,6 +1140,21 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => keys.delete(e.code));
 
+// Crouch is left Ctrl, for game parity with `c_PICrouch` -- but the browser
+// owns Ctrl+W outright by default, so firing while crouching still closes
+// the tab. Chromium's Keyboard Lock API (`navigator.keyboard.lock()`) can
+// reserve it, but only inside a fullscreen session the page would have to
+// request first (features/mesh-viewer-performance/README.md, open items) --
+// not built here. Short of that, the only lever a page has is asking before
+// the tab actually goes, the way any unsaved-work page does. Scoped to
+// mid-play (captured, on foot, a live soldier) so it never fires over the
+// gate screen or a fly-by.
+addEventListener('beforeunload', e => {
+  if (!(captured && optOnFoot.checked && soldier)) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
 const sideEl = document.getElementById('side');
 const sideCollapseBtn = document.getElementById('side-collapse-btn');
 const mapFabBtn = document.getElementById('map-controls-fab');
@@ -1121,6 +1223,67 @@ function getTouchesCenterAndDist() {
   };
 }
 
+// The bit a button sets in `e.buttons`, indexed by its own `e.button` number.
+// The two numberings disagree on middle vs. right: `button` calls middle 1
+// and right 2, `buttons` puts right at bit 2 (0x2) and middle at bit 4 (0x4).
+// Getting this backwards would read a right-click as a middle-click, so it
+// is a lookup table, not an arithmetic guess.
+const BUTTON_BIT = [1, 4, 2, 8, 16];
+
+// Real pointer lock, or -- under `?shots` -- captured and stood in for it,
+// the same way `canFire` (Infantry advance) already treats `?shots` as a
+// substitute for `captured` itself: headless Chromium never grants pointer
+// lock, so a harness has nothing else to gate on.
+function pointerLocked() {
+  return document.pointerLockElement === renderer.domElement || params.has('shots');
+}
+
+// Left is `c_PIFire`, right is `c_PIAltFire` (`Infantry.con`) while captured,
+// on foot and pointer-locked -- the same gate `pointerdown` always checked.
+// A second button pressed while the first is already held never reaches
+// `pointerdown`: the browser reports it as a `pointermove` carrying the
+// button that changed (`e.button`) and the new chord (`e.buttons`), plus a
+// `mousedown` this page does not listen for. Releasing one of two held
+// buttons is the same story on `pointerup`'s side. `pointerdown`, `pointerup`
+// and that chorded `pointermove` all funnel through here so a chord is never
+// silently dropped -- confirmed against real Chromium event order with
+// `scratchpad/chord.cjs` (a held left + a right press/release fires
+// `pointermove button=2 buttons=3` then `buttons=1`, no `pointerdown`/`up`
+// at all for the right button).
+//
+// A release is handled before the gate, not after it: death or a redeploy
+// while the trigger is held nulls `soldier` out from under it (see the
+// `soldier = null` sites), and the pointerup that follows must still clear
+// `triggerHeld`/`aimHeld` or the next life starts with the trigger stuck.
+// A fresh press still needs the full gate -- there is no weapon, no rig and
+// no meaning to "zoomed" without one. Zoom is never touched on a release;
+// `altFireOnce` only toggles on a fresh press.
+function footButtonChange(e) {
+  const pressed = !!(e.buttons & BUTTON_BIT[e.button]);
+  if (!pressed) {
+    if (e.button === 0) triggerHeld = false;
+    else if (e.button === 2) aimHeld = false;
+    return;
+  }
+  if (!(captured && optOnFoot.checked && soldier && pointerLocked())) return;
+  if (e.button === 0) {
+    triggerHeld = true;
+    clickQueued = true;
+  } else if (e.button === 2) {
+    const hw = handWeapon;
+    if (hw?.data?.zoom?.toggle) {
+      // `altFireOnce` masks the *held* alt-fire input on the client
+      // (0x00500901, mask 0x800000) so only a fresh press reaches the
+      // weapon -- the button that just transitioned to pressed is a fresh
+      // press whether it arrived alone or as half of a chord.
+      hw.zoomed = !hw.zoomed;
+      hw.rezoom = 0;
+    } else {
+      aimHeld = true;
+    }
+  }
+}
+
 renderer.domElement.addEventListener('pointerdown', e => {
   if (e.pointerType === 'touch') {
     activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1156,24 +1319,8 @@ renderer.domElement.addEventListener('pointerdown', e => {
   // being a drag and become the game's own bindings — `c_PIFire` on the left,
   // `c_PIAltFire` (aim) on the right, `Infantry.con` — so the very first
   // click still captures and only the clicks after it pull the trigger.
-  if (captured && optOnFoot.checked && soldier
-      && document.pointerLockElement === renderer.domElement) {
-    if (e.button === 0) {
-      triggerHeld = true;
-      clickQueued = true;
-    } else if (e.button === 2) {
-      // `altFireOnce` (`zoom.toggle`) masks the *held* alt-fire input on the
-      // client (0x00500901, mask 0x800000) so only fresh presses reach the
-      // weapon: each press flips zoom, and every vanilla hand weapon
-      // declares it. A mod weapon without it keeps hold-to-zoom.
-      const hw = handWeapon;
-      if (hw?.data?.zoom?.toggle) {
-        hw.zoomed = !hw.zoomed;
-        hw.rezoom = 0;
-      } else {
-        aimHeld = true;
-      }
-    }
+  if (captured && optOnFoot.checked && soldier && pointerLocked()) {
+    footButtonChange(e);
     return;
   }
   if (e.button === 0) {
@@ -1231,9 +1378,10 @@ renderer.domElement.addEventListener('pointerup', e => {
 
   dragging = false;
   isPanning = false;
-  // Unconditional: whatever mode the press started in, the release ends it.
-  if (e.button === 0) triggerHeld = false;
-  if (e.button === 2) aimHeld = false;
+  // Same gate and the same function as the press: `footButtonChange` reads
+  // `pressed` off `e.buttons`, which is already false for the button that
+  // just came up, so this clears the right one without repeating the check.
+  footButtonChange(e);
   try {
     if (renderer.domElement.hasPointerCapture(e.pointerId)) {
       renderer.domElement.releasePointerCapture(e.pointerId);
@@ -1273,7 +1421,16 @@ document.addEventListener('pointerlockchange', () => {
 });
 document.addEventListener('pointermove', e => {
   if (!captured) return;
-  if (document.pointerLockElement === renderer.domElement) {
+  if (pointerLocked()) {
+    // `e.button !== -1` means this move is really a chorded button change
+    // (see `footButtonChange` above), not the cursor moving: `movementX/Y`
+    // on that kind of event can be a large synthetic delta rather than real
+    // mouse travel, and feeding it to `lookDelta` is what snapped the view
+    // ~90 degrees when a second button joined one already held.
+    if (e.button !== -1) {
+      footButtonChange(e);
+      return;
+    }
     lookDelta(e.movementX, e.movementY);
     return;
   }
@@ -1363,15 +1520,25 @@ function fly(dt) {
   clampAltitude();
 }
 
+// The stage's size, taken here and only here. A `clientHeight` read in the
+// middle of a frame, after that frame's own DOM writes, forces a synchronous
+// layout every frame (features/mesh-viewer-performance, rule 3); the frame
+// reads these instead.
+let stageWidth = 0;
+let stageHeight = 0;
 function resize() {
   // Stage, not window: the shared nav bar takes a grid row above it.
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
+  stageWidth = w;
+  stageHeight = h;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
+// The side panel collapsing resizes the stage without resizing the window.
+new ResizeObserver(resize).observe(stage);
 resize();
 
 function dispose(root) {
@@ -2659,6 +2826,11 @@ function applyFog() {
   const fogColor = new THREE.Color().setRGB(
     color[0], color[1], color[2], THREE.SRGBColorSpace);
   scene.fog = new THREE.Fog(fogColor, start, end);
+  // The near pass's scene shares the object, so the arms' materials compile
+  // against the same fog the world does — here, before the rig's warm-up
+  // compile, and not per frame, or that compile would be for a fogless
+  // program the first drawn frame then replaces.
+  vmScene.fog = scene.fog;
   scene.background = skybox || fogColor;
   syncWaterFog();
 }
@@ -2717,6 +2889,96 @@ function indexScene(root) {
     if (kindOf(child) === 'water') continue;
     tagCull(child);
     cull.push(child);
+  }
+  freezeStatics(root);
+}
+
+// --- static matrices --------------------------------------------------------
+//
+// `WebGLRenderer.render` opens with `scene.updateMatrixWorld()`, and in three
+// r169 that walk recomposes and multiplies EVERY object's world matrix every
+// frame: `updateMatrix()` on an auto-updating node flags it changed, and the
+// `force` that sets cascades down the whole subtree whether or not anything
+// under it moved. Over ~5,100 nodes, twice a frame, it was 18-21% of the
+// frame's JS time (features/mesh-viewer-performance, rule 2). The level is
+// mostly furniture — terrain tiles, buildings, palms, parked vehicles — that
+// never moves once show() has placed it, so those subtrees leave the walk:
+// their `updateMatrixWorld` is a no-op unless an ancestor genuinely forces
+// it, and the nodes above them (`scene`, the level root, the spawners group)
+// stop re-composing matrices they never change, so no force ever arrives.
+//
+// The contract: anything that moves a frozen node calls
+// `updateMatrixWorld(true)` on it, or thaws it. A driven vehicle is thawed
+// for the ride (setPilot) and frozen again where it is parked (leaveVehicle,
+// setPilot(false)). `__matrixDrift()` under ?shots checks every world matrix
+// against a fresh recompute, and the perf harness runs it after a minute of
+// walking, firing and turning.
+let frozenCount = 0;
+// Vehicles a level clip animates while they are parked — the Hatsuzuki's
+// radar dish turns under an `ambient` clip — never leave the walk, ride or
+// no ride. Found by freezeStatics; `__matrixDrift` is what caught the dish
+// standing still.
+const neverFrozen = new WeakSet();
+const staticUpdateMatrixWorld = function (force) {
+  if (force === true) THREE.Object3D.prototype.updateMatrixWorld.call(this, force);
+};
+function freeze(obj) {
+  obj.updateMatrixWorld(true);   // commit wherever it was last posed
+  obj.updateMatrixWorld = staticUpdateMatrixWorld;
+}
+function thaw(obj) {
+  if (Object.hasOwn(obj, 'updateMatrixWorld')) delete obj.updateMatrixWorld;
+}
+/** The spawner child that owns `node`: the vehicle itself, or the one a
+ *  nested seat sits in. Null for a node outside the spawners group. */
+function spawnerVehicleOf(node) {
+  for (let n = node; n; n = n.parent) if (n.parent === spawnersRoot) return n;
+  return null;
+}
+function thawVehicle(node) {
+  const vehicle = spawnerVehicleOf(node);
+  if (vehicle) thaw(vehicle);
+}
+function freezeVehicle(node) {
+  const vehicle = spawnerVehicleOf(node);
+  if (vehicle && !neverFrozen.has(vehicle)) freeze(vehicle);
+}
+/** Take every level subtree that nothing animates out of the per-frame
+ *  matrix walk. Runs once per level, after `root.updateMatrixWorld(true)`
+ *  has composed everything where the extract put it. */
+function freezeStatics(root) {
+  // What moves: bones and skinned cloth (the flags), input-driven `rig`
+  // parts, and any node an ambient clip targets, with its ancestors.
+  const animated = new Set();
+  for (const clip of levelClips) {
+    for (const track of clip.tracks) {
+      const { nodeName } = THREE.PropertyBinding.parseTrackName(track.name);
+      const node = THREE.PropertyBinding.findNode(root, nodeName);
+      for (let n = node; n && n !== root; n = n.parent) animated.add(n);
+    }
+  }
+  const moves = obj => obj.isBone || obj.isSkinnedMesh
+    || !!obj.userData?.rig || animated.has(obj);
+  frozenCount = 0;
+  root.matrixAutoUpdate = false;
+  for (const child of root.children) {
+    if (child === spawnersRoot) {
+      child.matrixAutoUpdate = false;
+      // Every parked vehicle, rigs and all: none of it moves until someone
+      // climbs in, and setPilot thaws the one they climb into. Except the
+      // ones a clip keeps moving while parked.
+      for (const vehicle of child.children) {
+        if (animated.has(vehicle)) { neverFrozen.add(vehicle); continue; }
+        freeze(vehicle);
+        frozenCount++;
+      }
+      continue;
+    }
+    let dynamic = false;
+    child.traverse(obj => { if (moves(obj)) dynamic = true; });
+    if (dynamic) continue;
+    freeze(child);
+    frozenCount++;
   }
 }
 
@@ -2994,9 +3256,28 @@ function buildCollider(root) {
   guns.damageEffects = damageTables?.effects || null;
   guns.projectileMaterials = damageTables?.projectiles || null;
   guns.materials = damageTables?.materials || null;
-  effects.clear();
+  // Pools and all: a mesh particle's materials are built under the level's
+  // lighting, and show() warms a fresh set once this level's fog is up.
+  effects.flush();
   loadEffectLibrary();
   return { heightfield, statics };
+}
+
+// Every effect and gun material built, compiled and uploaded before the
+// first shot, while the level is still settling. A program linked in the
+// middle of a burst is a stall of unknown length: three's first-use shader
+// check blocks the frame on the link, and on this Iris Xe's system GL the
+// perf harness watched one block for 8 s and take the WebGL context with it
+// (features/mesh-viewer-performance, rule 6). Runs after applyFog(), so the
+// programs it links are the fogged ones the frame will ask for.
+function warmEffects() {
+  const stand = guns.warm();
+  const materials = effects.warm();
+  for (const m of materials) if (m.map) renderer.initTexture(m.map);
+  return Promise.all([
+    renderer.compileAsync(effects.root, camera, scene),
+    renderer.compileAsync(stand, camera, scene),
+  ]).catch(() => {});
 }
 // Stick position, -1..1. Held keys drive it toward full deflection and it
 // springs back to centre when they are released, which is what the surfaces'
@@ -3054,6 +3335,8 @@ function setPilot(on, node = null) {
     // the fly gate is clicked.
     ensureAudioContext();
     setupEngineAudio();
+    // Back into three's matrix walk for the ride (freezeStatics).
+    thawVehicle((aircraft || car).node);
   }
   if (!on && (aircraft || car)) {
     const vehicle = aircraft || car;
@@ -3067,6 +3350,7 @@ function setPilot(on, node = null) {
     vehicle.setFirstPerson(false);
     vehicle.applyTransform();
     vehicle.applyRig();
+    freezeVehicle(vehicle.node);   // parked at its spawn: furniture again
     ammoEl.hidden = true;      // the dashboard line rides the ammo element
   }
   stick.roll = 0;
@@ -3260,6 +3544,7 @@ function leaveVehicle() {
   vehicle.setFirstPerson(false);
   vehicle.applyTransform();
   vehicle.applyRig();
+  freezeVehicle(vehicle.node);   // parked where it stands: furniture again
   stick.roll = 0;
   stick.pitch = 0;
   ammoEl.hidden = true;
@@ -3554,11 +3839,42 @@ function viewmodelRigFor(weapon, soldier) {
 // The rig and everything in it render in their own pass over a cleared depth
 // buffer (frame(), below) so a wall pressed against the chest can never
 // truncate the barrel — the game's equivalent is drawing 1P parts in their
-// own pass (§11 step 6). A light only reaches a pass whose camera mask it
-// shares, so the two scene lights are enrolled in the layer here.
+// own pass (§11 step 6).
 const VIEWMODEL_LAYER = 1;
-hemi.layers.enable(VIEWMODEL_LAYER);
-sun.layers.enable(VIEWMODEL_LAYER);
+// The pass has a scene of its own, not a layer mask over the world.
+// `WebGLRenderer.render` walks every node of whatever scene it is handed —
+// `updateMatrixWorld` and `projectObject` across all ~5,100 level objects —
+// before the mask drops any of them, and that second walk to find one rig
+// was 9% of the frame (features/mesh-viewer-performance, rule 1). The arms
+// hang off `vmRoot`, whose world matrix IS the main camera's: both ways
+// three arrives at a matrix — the renderer's top-down `updateMatrixWorld`
+// and a muzzle's bottom-up `updateWorldMatrix(true)` when a shot asks where
+// the barrel is — read the camera's pose fresh, so the rig sits where the
+// camera is this frame, not last.
+const vmScene = new THREE.Scene();
+const vmRoot = new THREE.Group();
+vmRoot.name = 'viewmodel root';
+vmRoot.matrixAutoUpdate = false;
+vmRoot.updateMatrixWorld = function () {
+  camera.updateWorldMatrix(true, false);
+  this.matrixWorld.copy(camera.matrixWorld);
+  for (const child of this.children) child.updateMatrixWorld(true);
+};
+vmRoot.updateWorldMatrix = function (updateParents, updateChildren) {
+  camera.updateWorldMatrix(true, false);
+  this.matrixWorld.copy(camera.matrixWorld);
+  if (!updateChildren) return;
+  for (const child of this.children) child.updateWorldMatrix(false, true);
+};
+vmScene.add(vmRoot);
+// A light reaches only the scene it is in, so the pass carries proxies of
+// the two world lights; frame() copies colour, intensity and position across
+// before each pass, so applyLighting() and show() keep writing the originals.
+const vmHemi = new THREE.HemisphereLight();
+const vmSun = new THREE.DirectionalLight();
+vmHemi.layers.enable(VIEWMODEL_LAYER);
+vmSun.layers.enable(VIEWMODEL_LAYER);
+vmScene.add(vmHemi, vmSun);
 // The near pass's own camera: it sees only the rig's layer and copies the
 // main camera's matrices each frame (frame(), below). matrixAutoUpdate off —
 // the copied world matrix IS its pose; letting three recompose it from an
@@ -3726,7 +4042,7 @@ function disposeHandWeapon() {
     const index = guns.groups.indexOf(hw.group);
     if (index >= 0) guns.groups.splice(index, 1);
   }
-  camera.remove(hw.rig);
+  vmRoot.remove(hw.rig);
   // The mixer first, while its bindings still resolve, then the GPU half —
   // a skinned rig also owns bone textures its skeleton has to give back.
   if (hw.mixer) {
@@ -3750,7 +4066,7 @@ function disposeHandWeapon() {
 
 /** Load the weapon into hand — the arms rig where one is extracted for
  *  `soldierName` holding it, the bare `name`.glb where not — hang it off the
- *  camera and index its gun. The template name must not be called `soldier`:
+ *  camera-following `vmRoot` and index its gun. The template name must not be called `soldier`:
  *  that would shadow the live soldier the guard and `platformVelocity` read. */
 async function loadHandWeapon(name, soldierName = null) {
   disposeHandWeapon();
@@ -3848,11 +4164,27 @@ async function loadHandWeapon(name, soldierName = null) {
       m.needsUpdate = true;
     }
   });
-  camera.add(rig);
+  vmRoot.add(rig);
   // The load can resolve after its owner has already climbed into a seat —
   // spawn beside a jeep and press E inside the fetch — and a viewmodel must
   // not materialise over a windscreen. `exitVehicle` shows it again.
   rig.visible = !(optPilot.checked && (aircraft || car));
+  // Hidden again until its programs are linked and its textures are on the
+  // GPU: the arms, the flash emitters `collect` clones below and the baked
+  // streak all compile here, in one parallel batch, rather than one at a
+  // time on the frame that first draws each — three's first-use shader
+  // check blocks that frame on the link (features/mesh-viewer-performance,
+  // rule 6). The seat is checked again when the compile lands, for the same
+  // reason as above.
+  const armsShown = rig.visible;
+  rig.visible = false;
+  rig.traverse(obj => {
+    for (const m of [obj.material].flat()) if (m?.map) renderer.initTexture(m.map);
+  });
+  renderer.compileAsync(rig, vmCamera, vmScene).catch(() => {}).then(() => {
+    if (token !== weaponToken) return;
+    rig.visible = armsShown && !(optPilot.checked && (aircraft || car));
+  });
   // The six baked families become mixer actions. Locomotion loops; the
   // one-shots clamp on their last frame — the clamped fire pose is what
   // "holds between shots" against the 0.1 s cycle (§11 step 4), and a
@@ -4177,7 +4509,8 @@ guns.onShot = group => {
     const draw = range => {
       if (!range) return 0;
       const lo = Math.min(range[0], range[1]);
-      return lo + Math.random() * (Math.max(range[0], range[1]) - lo);
+      // The gun's dice, so a seeded check kicks the same way every run.
+      return lo + guns.rand() * (Math.max(range[0], range[1]) - lo);
     };
     soldier.look(draw(recoil.leftRight) * DEG_TO_RAD,
                  draw(recoil.up) * DEG_TO_RAD);
@@ -4331,16 +4664,26 @@ function updateCrosshair() {
   const show = optOnFoot.checked && !!soldier && !!hw
     && (style === 'CHTCrossHair' || style === 'CHTIcon')
     && !(scoped && isZoomed());
-  crosshairEl.hidden = !show;
+  // Written only on change, and read back from the element rather than a
+  // cache because enterVehicle and disposeHandWeapon hide it behind this
+  // function's back: every DOM write here invalidates style, and a frame
+  // with nothing new to say must cost the page nothing (rule 3).
+  if (crosshairEl.hidden !== !show) crosshairEl.hidden = !show;
   if (!show) return;
   // CHTIcon weapons draw an authored icon in the game; until that art is
   // extracted they keep the centre dot alone.
-  crosshairEl.classList.toggle('ch-icon', style === 'CHTIcon');
-  const height = stage.clientHeight || 800;
+  const icon = style === 'CHTIcon';
+  if (crosshairEl.classList.contains('ch-icon') !== icon) {
+    crosshairEl.classList.toggle('ch-icon', icon);
+  }
+  const height = stageHeight || 800;
   const floor = (hw.model.floor?.() ?? 0) * DEG_TO_RAD;
   const dev = Math.max(0, hw.model.current() * DEG_TO_RAD - floor);
   const px = 0.5 * height * Math.tan(dev) / Math.tan(camera.fov * DEG_TO_RAD / 2);
-  crosshairEl.style.setProperty('--ch-gap', `${px.toFixed(1)}px`);
+  const gap = `${px.toFixed(1)}px`;
+  if (crosshairEl.style.getPropertyValue('--ch-gap') !== gap) {
+    crosshairEl.style.setProperty('--ch-gap', gap);
+  }
 }
 
 function updateAmmoHud() {
@@ -4349,13 +4692,16 @@ function updateAmmoHud() {
   // A seated soldier's optOnFoot box is still ticked — he is only suspended —
   // but the element belongs to the vehicle's dashboard while he sits.
   if (!hw || !magazine || !optOnFoot.checked || aircraft || car) {
-    ammoEl.hidden = true;
+    if (!ammoEl.hidden) ammoEl.hidden = true;
     return;
   }
-  ammoEl.hidden = false;
-  ammoEl.textContent = hw.reload > 0
+  if (ammoEl.hidden) ammoEl.hidden = false;
+  // A fresh text node per frame is a style and layout pass per frame; the
+  // line changes per round and per tenth of a reload second, not per frame.
+  const text = hw.reload > 0
     ? `${hw.name} · reloading ${hw.reload.toFixed(1)}s`
     : `${hw.name} · ${hw.rounds} / ${magazine.size} · ${hw.mags} mags`;
+  if (ammoEl.textContent !== text) ammoEl.textContent = text;
 }
 
 /** Announce the view C just selected, then fall back to the control list. */
@@ -4504,6 +4850,25 @@ const minimapBox = document.getElementById('minimap');
 const minimapCanvas = document.getElementById('minimap-canvas');
 const fullmapBox = document.getElementById('fullmap');
 const fullmapCanvas = document.getElementById('fullmap-canvas');
+// The CSS widths of the two map canvases, kept by a ResizeObserver so no
+// frame asks layout for them: `getBoundingClientRect` after the frame's own
+// DOM writes forces a synchronous layout, 1.4-1.8% of the on-foot frame on
+// its own (features/mesh-viewer-performance, rule 3). A canvas the observer
+// has not reported yet — or reports at 0 because it is hidden — falls back
+// to one measured read, so the first frame after the map opens is right.
+const canvasCssWidth = new Map();
+const canvasObserver = new ResizeObserver(entries => {
+  for (const entry of entries) canvasCssWidth.set(entry.target, entry.contentRect.width);
+});
+canvasObserver.observe(minimapCanvas);
+canvasObserver.observe(fullmapCanvas);
+function cssWidthOf(canvas) {
+  const known = canvasCssWidth.get(canvas);
+  if (known) return known;
+  const measured = canvas.getBoundingClientRect().width;
+  if (measured) canvasCssWidth.set(canvas, measured);
+  return measured;
+}
 const fullmapName = document.getElementById('fullmap-name');
 const fullmapMeta = document.getElementById('fullmap-meta');
 
@@ -4789,7 +5154,7 @@ function drawSpawnRings(ctx, toPx, sc) {
  *  this the HUD widget draws into a 376 px buffer shown at 186 px and every
  *  marker comes out half the size it was asked for. */
 function fitCanvas(canvas) {
-  const css = canvas.getBoundingClientRect().width;
+  const css = cssWidthOf(canvas);
   if (!css) return canvas.__ratio || 1;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const want = Math.round(css * dpr);
@@ -4894,10 +5259,37 @@ function drawMinimapChrome(ctx, size, ratio) {
   ctx.fillText(text, tx, ty);
 }
 
+// What each map surface last painted, so a frame in which nothing it shows
+// has moved paints nothing: the art plus every sprite, at DPR 2, was a 2D
+// canvas repaint and a texture upload to the compositor every frame whether
+// the soldier stood still or not (features/mesh-viewer-performance, rule
+// 7). The key is what the surface draws — the player's art position to the
+// backing pixel, the heading to a hundredth of a radian (under a pixel of
+// arrow at this size), the canvas size, the art and sprites having landed,
+// the flown vehicle's position for a camera planted away from it in fly-by
+// — and a 250 ms ceiling catches what has no key, a captured flag's colour.
+const mapSurfaceLast = new Map();   // canvas -> { key, at }
+function mapSurfaceStale(canvas, key, force) {
+  const last = mapSurfaceLast.get(canvas);
+  const now = performance.now();
+  if (!force && last && last.key === key && now - last.at < 250) return false;
+  mapSurfaceLast.set(canvas, { key, at: now });
+  return true;
+}
+function mapSurfaceKey(canvas, here, span) {
+  const size = Math.round((cssWidthOf(canvas) || 0) * Math.min(window.devicePixelRatio || 1, 2));
+  const px = size / span;   // backing pixels per unit of art
+  const vehicle = (aircraft || car)?.state.position;
+  return `${Math.round(here.u * px)},${Math.round(here.v * px)},`
+    + `${Math.round(cameraHeading() * 100)},${size},${mapArt ? mapArtToken : -1},`
+    + `${hudPack.sprites.size},${vehicle ? `${Math.round(vehicle.x)},${Math.round(vehicle.z)}` : ''}`;
+}
+
 function drawMinimap() {
   if (minimapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z);
   if (!here) return;
+  if (!mapSurfaceStale(minimapCanvas, mapSurfaceKey(minimapCanvas, here, MINIMAP_SPAN))) return;
   // North-up with a rotating arrow. That is the game's own shipped default —
   // every stock profile sets `game.setStaticMinimap 1` — and it keeps the
   // baked-in grid letters upright.
@@ -4908,8 +5300,13 @@ function drawMinimap() {
   drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
 }
 
-function drawFullMap() {
+/** `force` repaints regardless: the deploy screen's layout and the M key
+ *  open the surface at a size or in a state the key has not seen. */
+function drawFullMap(force = false) {
   if (fullmapBox.hidden) return;
+  const here = projectToArt(camera.position.x, camera.position.z) || { u: 0, v: 0 };
+  const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployActive()},${deployRejoin}`;
+  if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
   // Bigger sprites than the HUD widget: this surface is several times the
   // size. In the deploy state the art dims to the spawn screen's silhouette
   // and the rings come out; a dead man has no marker, so the player shows
@@ -4918,7 +5315,7 @@ function drawFullMap() {
   // Sprites grow with the surface, not with the window: the game's spawn map
   // shows a 16 px flag at about a fifth of a grid square, and so does this
   // one whatever the canvas's CSS size came out as.
-  const css = fullmapCanvas.getBoundingClientRect().width || 610;
+  const css = cssWidthOf(fullmapCanvas) || 610;
   paintMap(fullmapCanvas, 0, 0, 1, {
     scale: Math.min(2, Math.max(0.8, css / 610)),
     dim: deploy,
@@ -4939,7 +5336,7 @@ function toggleFullMap(on) {
   // Holding the map is not flying. Releasing the pointer lock also stops the
   // movement keys running under the overlay.
   if (want && captured) release();
-  if (want) drawFullMap();
+  if (want) drawFullMap(true);
 }
 fullmapBox.addEventListener('click', () => {
   // The plain map closes on any click; the deploy state does not — its
@@ -5184,7 +5581,7 @@ function layoutDeploy() {
     if (el.kind === 'button' && buttons[el.id]) placeHit(buttons[el.id], el.rect, s);
   }
   paintDeployChrome();
-  drawFullMap();
+  drawFullMap(true);
 }
 
 /** One frame of the chrome: the layout's leaves in file order, each drawn
@@ -5522,6 +5919,7 @@ async function show(entry) {
   flagMixer = null;
   const ambient = (gltf.animations || []).filter(
     c => !/^spin(\.\d+)?$/.test(c.name));
+  levelClips = ambient;
   if (ambient.length) {
     flagMixer = new THREE.AnimationMixer(currentRoot);
     for (const clip of ambient) {
@@ -5591,6 +5989,8 @@ async function show(entry) {
   placeCamera();
   wireframe(optWire.checked);
   applyVisibility();
+  // The fog is up, so the programs this links are the ones the frame wants.
+  loadEffectLibrary()?.then(library => library && warmEffects());
   const t = extras.terrain || {};
   const o = extras.objects || {};
   document.getElementById('stats').innerHTML =
@@ -5740,8 +6140,8 @@ function frame(dt) {
   // After the camera controls: a followed replay places the camera last.
   replayController?.update(dt);
   renderer.render(scene, camera);
-  // The near pass: everything on VIEWMODEL_LAYER — the arms rig and the
-  // muzzle emitters inside it — drawn again over a cleared depth buffer, so
+  // The near pass: everything in vmScene — the arms rig and the muzzle
+  // emitters inside it, all on VIEWMODEL_LAYER — drawn over a cleared depth buffer, so
   // the world can occlude none of it (§11 step 6). Retail does exactly this:
   // `Renderer_drawView` (0x004662c0) draws the world, clears depth to 1.0,
   // forces the finest mip and calls `StandardMeshRenderer::drawFov`
@@ -5760,14 +6160,23 @@ function frame(dt) {
     renderer.autoClear = false;
     renderer.clearDepth();
     // Two traps in an overlay pass, both learned the hard way. Three draws
-    // `scene.background` in EVERY render call, autoClear or not — left in
-    // place, this pass painted the fog-coloured backdrop over the entire
-    // world each frame, and every on-foot map read as one wall of colour.
-    // And the pass gets its own camera rather than flipping the main
-    // camera's layer mask, so nothing the pass does can leak into the
-    // world render's view of that camera.
-    const worldBackground = scene.background;
-    scene.background = null;
+    // `scene.background` in EVERY render call, autoClear or not — rendered
+    // over the world scene, this pass painted the fog-coloured backdrop over
+    // the entire frame, and every on-foot map read as one wall of colour.
+    // `vmScene` has no background to paint (and nothing to walk but the rig:
+    // the reason it exists, see its declaration). And the pass gets its own
+    // camera rather than flipping the main camera's layer mask, so nothing
+    // the pass does can leak into the world render's view of that camera.
+    // The fog is the world's own object, shared, so the rig's materials
+    // compile and shade against exactly the fog they always did.
+    vmScene.fog = scene.fog;
+    vmHemi.color.copy(hemi.color);
+    vmHemi.groundColor.copy(hemi.groundColor);
+    vmHemi.intensity = hemi.intensity;
+    vmHemi.position.copy(hemi.position);
+    vmSun.color.copy(sun.color);
+    vmSun.intensity = sun.intensity;
+    vmSun.position.copy(sun.position);
     vmCamera.matrixWorld.copy(camera.matrixWorld);
     vmCamera.matrixWorldInverse.copy(camera.matrixWorld).invert();
     const engineFov = params.get('fov1p') === 'engine' && handWeapon.fov1p
@@ -5777,8 +6186,7 @@ function frame(dt) {
     vmCamera.near = 0.1;   // the engine's render-view near, baked unchanged
     vmCamera.far = camera.far;
     vmCamera.updateProjectionMatrix();
-    renderer.render(scene, vmCamera);
-    scene.background = worldBackground;
+    renderer.render(vmScene, vmCamera);
     renderer.autoClear = true;
   }
   drawMinimap();
@@ -6029,6 +6437,31 @@ if (params.has('shots')) {
     triggerHeld = !!on;
     if (on) clickQueued = true;
   };
+  // A full pouch again, for the perf harness: a Thompson carries 150 rounds
+  // and a several-minute burst phase would otherwise fall silent at 15 s.
+  window.__refill = () => {
+    const hw = handWeapon;
+    const magazine = hw?.data?.magazine;
+    if (!magazine) return false;
+    hw.rounds = magazine.size;
+    hw.mags = magazine.magazines ?? hw.mags;
+    hw.reload = 0;
+    return true;
+  };
+  // Seed every random draw the shot path makes — the spread cone, the
+  // flash roll, the recoil, the emitters' distributions — so two captures
+  // of the same stepped frames are the same picture and a pixel diff
+  // between builds measures the build, not the dice. The guns and the
+  // effects each hold their own `rand` for exactly this; `Math.random`
+  // itself is left alone, because three draws it for every uuid and a build
+  // that allocates one object more would otherwise fire a different burst.
+  window.__seedRandom = (seed = 1) => {
+    let s = seed >>> 0;
+    const lcg = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    guns.rand = lcg;
+    effects.rand = lcg;
+    return true;
+  };
   // Zoom is a press-toggle on every vanilla weapon (`altFireOnce`), so the
   // harness verb sets the latch directly rather than faking a held button.
   window.__setAim = on => {
@@ -6039,6 +6472,23 @@ if (params.has('shots')) {
     } else {
       aimHeld = !!on;
     }
+  };
+  // Fires a real pointerdown/pointerup/pointermove at the real listeners --
+  // pointerdown, pointerup and a chorded pointermove all resolve through
+  // `footButtonChange` -- so a check exercises the actual wiring instead of
+  // a re-implementation of it. `pointerLocked()` stands `?shots` in for
+  // real pointer lock (headless Chromium never grants it), the same way
+  // `__setTrigger` already stands in for the mouse. `kind` is 'down' | 'up'
+  // | 'move'; a 'move' carries `movementX/Y` so a check can assert
+  // `lookDelta` was, or was not, applied from a chorded event.
+  window.__chordEvent = (kind, button, buttons, movementX = 0, movementY = 0) => {
+    const type = kind === 'down' ? 'pointerdown' : kind === 'up' ? 'pointerup' : 'pointermove';
+    const ev = new PointerEvent(type, {
+      button, buttons, movementX, movementY,
+      pointerId: 1, pointerType: 'mouse', bubbles: true, cancelable: true,
+    });
+    (type === 'pointermove' ? document : renderer.domElement).dispatchEvent(ev);
+    return { triggerHeld, aimHeld, zoomed: isZoomed(), yaw: soldier?.yaw ?? null };
   };
   // The collider itself, for measuring rather than for asserting: `__collision()`
   // drains the accumulated cast cost, so calling it once a second gives the real
@@ -6070,6 +6520,34 @@ if (params.has('shots')) {
                                dist, -1);
     return hit && { t: hit.t, point: [hit.x, hit.y, hit.z], kind: hit.kind,
                     material: hit.material, owner: hit.owner };
+  };
+  // Every world matrix in the scene checked against a fresh recompute, for
+  // the perf harness: static subtrees opt out of three's per-frame matrix
+  // walk (freezeStatics), and this is the proof that nothing frozen has
+  // moved since. Returns the worst absolute element difference, the object
+  // it was found on, how many objects were checked and how many are frozen.
+  window.__matrixDrift = () => {
+    const local = new THREE.Matrix4();
+    const expect = new THREE.Matrix4();
+    let worst = 0, checked = 0, worstName = null;
+    const walk = (obj, parentWorld) => {
+      if (obj.matrixAutoUpdate) local.compose(obj.position, obj.quaternion, obj.scale);
+      else local.copy(obj.matrix);
+      if (obj === vmRoot) expect.copy(camera.matrixWorld);
+      else if (parentWorld) expect.multiplyMatrices(parentWorld, local);
+      else expect.copy(local);
+      const a = expect.elements, b = obj.matrixWorld.elements;
+      for (let i = 0; i < 16; i++) {
+        const d = Math.abs(a[i] - b[i]);
+        if (d > worst) { worst = d; worstName = obj.name || obj.type; }
+      }
+      checked++;
+      const here = expect.clone();
+      for (const child of obj.children) walk(child, here);
+    };
+    walk(scene, null);
+    walk(vmScene, null);
+    return { worst, checked, worstName, frozen: frozenCount };
   };
   window.__getAudioState = () => ({
     audioListener,
