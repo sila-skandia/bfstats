@@ -2,8 +2,8 @@
 
 Settled 2026-09-15, first-person mount closed in a second pass the same day, the
 clock and the zoom unit closed in a third (§2 "Clock", §3 "Fields of view",
-§7) and the renderer's `drawFov` pass read in the same pass (§3 "The drawFov
-pass"). Two binaries were read side by side:
+§7), the renderer's `drawFov` pass and the animation runtime under the arms
+read in the same pass (§3). Two binaries were read side by side:
 
 - **Client** `BF1942.exe` (sha256 `60c9452d…`, the corpus binary) — addresses `0x00xxxxxx`.
 - **Server** `bf1942_lnxded.static` (54,895 symbols) — addresses `0x08xxxxxx`, cited
@@ -281,6 +281,139 @@ forward, up). Under `center1pHands` −1.56 the rest pose puts the head bone
 number against the pose the engine actually shows. `extract_viewmodel.py` now
 bakes the rest lower body.
 
+### What the upper-body machine does with that clip, in time (VERIFIED, both binaries; third pass)
+
+Read to answer §7's pose question — is the retail pose a frame, a blend or a
+pitch-driven sweep of `1PStandAimThompson` that "frame 0 over the rest" misses?
+It is none of those. The runtime, from `AnimationStateMachineInstance::
+updateState` (lnxded 0x0832b270, client `FUN_00613c60` decompiled) and
+`BoneAnimation::applyOnSkeleton` (lnxded 0x0832ed60, client `FUN_0066b740`
+decompiled), with the instance laid out as `+0x00 speedFactor (1.0 from the
+ctor 0x0832ad90, never written by the soldier) · +0x20 state · +0x24 lastState
+· +0x28 idleTimer · +0x2c AnimationInfo* cur · +0x30 phase · +0x34 weight ·
++0x38 AnimationInfo* prev · +0x3c prevPhase · +0x40 startPhase` and
+`AnimationInfo = {Animation*, float speed, bool loop}` (12 bytes, the state's
+vector at lnxded `+0xf4` / client `+0x150`):
+
+- **The clip is indexed by a normalized phase, not by frames or seconds.**
+  Each tick `phase += dt × clip.speed × speedFactor` (0x0832b4fa; client
+  `param_1[0xc] += speed × *param_1 × dt`). `applyOnSkeleton(skel, phase,
+  weight, mask)` takes `frac = modf(phase)` (+1 if negative), `frameA =
+  int(frac × N) % frames`, `frameB = (frameA + 1) % frames`, and slerps
+  the quaternion / lerps the translation by the remainder (0x832f1ed–
+  0x832f26d, client lines 94–105). `N = frames` for a looping clip, so the
+  wrap 12→0 is an ordinary interpolated interval; `N = frames − 1` for a
+  one-shot, whose phase < 0 clamps to the first frame and > 1 to the last.
+  **A full pass of any clip therefore lasts `1/|speed|` seconds whatever its
+  frame count** — there is no frames-per-second anywhere in the engine.
+  `1PStandAimThompson` at 0.1 is a 10 s breath; `1PFireThompson` at 10.0 is
+  exactly the 0.1 s of the 600 rpm cycle; `1PReloadThompson` at its tweaked
+  **0.21** is a 4.76 s pass against the 4.8 s `reloadtime` — DICE fitted the
+  rate to the timer; `1PDeployThompson` at 1.0 is one second. The exporter's
+  `BAF_FPS = 25` (which put the reload at 18 s and the sway at 4.8 s) is
+  withdrawn, and with it the reload's `bakedSpan / reloadTime` stretch,
+  which had been reproducing the 4.8 s by construction.
+- **Speeds are what `set1pAnimationSpeed` / `set3pAnimationSpeed` say,
+  not the `addAnimation` value.** `animations/{1p,3p}AnimationsTweaking.con`
+  run from `AnimationStates.con` after every state is created and cloned
+  and name the state outright; `Ub_RunForwardThompson` is declared at 0.7
+  and plays at **1.40**. The files are the output of a developer hot-key
+  tuner — `BFSoldier::handleFrameUpdate` 0x08271820–0x0827192c probes four
+  key codes through the input service and adds `±1·dt` / `±3·dt` to the
+  current state's clip speeds via `AnimationStateMachineInstance::
+  changeAnimationSpeed(float, float)` 0x0832be00 →
+  `AnimationState::changeAnimationSpeed` 0x083287a0 (adds to
+  `clips[0].speed` / `clips[1].speed`, sets the `+0x5` dirty flag that
+  `writeAnimationSpeedChanges` 0x08328aa0 serialises). Those two call sites
+  are the **only** callers of `changeAnimationSpeed` in the binary; nothing
+  in gameplay changes a clip's rate. `bf42/animstates.py` now applies the
+  tweaking lines.
+- **Entering a state blends toward its clip at `setMorphFactor` per
+  second, against whatever the skeleton currently holds.** `weight` (+0x34)
+  starts at 0 on entry (or 1 when the state's factor exceeds `.rodata`
+  1000.0, 0x0832b481) and climbs `dt × state+0x2c` (client `state+0x34`)
+  per tick (0x0832b50c), clamped at 1. `Skeleton::setRelativeBoneTransform
+  (idx, quat, trans*, weight)` (lnxded 0x0832f6e0, client `FUN_0066b5c0`)
+  writes the pose outright at `weight ≥ 1` and otherwise `slerp(fromMat
+  (current local), quat, weight)` / `cur + (trans − cur)·weight`. The
+  `+0x38` "previous clip" slot that `setCurrentState` 0x0832b150 parks is
+  cleared by `updateState` on the very next tick whenever the new state has
+  a clip at the slot (`if (prev && cur) prev = 0`, both binaries), so the
+  two-clip path in `updateAnimations` (0x0832af74, weight `1 − w` on the
+  old clip) is dead in practice: the crossfade is a single clip fading in
+  over the last pose. Constructor default 5.0 (0x08328bf8, a 0.2 s fade).
+  `Ub_StandAimThompson` sets **0.7** (1.4 s to settle onto the sights after a
+  burst), `Ub_FireThompson` 4.0, `Ub_StandRaiseWeaponThompson` 10000 (a cut).
+  The viewer's 0.15 s / 0.02 s stand-ins are withdrawn for
+  `1 / morphFactor`, carried per family in the glb extras.
+- **What ends a one-shot, and the idles.** `AnimationState::update(phase,
+  weaponName)` (lnxded 0x08329f00, client `FUN_00613a80`) returns the
+  state's `returnToState` / `addTransitionWhenDone` target (`+0xc0`,
+  resolved lazily from the `+0xc4` string; the literal `_POSE_` → 0xffff →
+  the instance's base state `+0x1c`) once `phase > 1` (or `< 0` for a
+  negative speed), else −1; `updateState` then `setCurrentState`s and
+  recurses once. Idle fidgets: on every state change `+0x28 = (rand & 3) +
+  4.0` s (0x0832b2d9, `.rodata` 0x086c0304), counted down per tick;
+  `AnimationStateMachineInstance::checkTransitions()` 0x0832be50 (from
+  `AnimatedBundle::handleVisualUpdate` 0x08265730) hands it to
+  `AnimationState::checkTransitions(float)` 0x0832a390, which at ≤ 0 picks
+  `rand() % n` of the `addIdle` vector (`+0xd4`, `CompoundStateInfo` pairs)
+  — `Ub_IdleThompson1..3`, one-shots at their tweaked 0.52 / 0.39 / 0.50
+  whose `addTransitionWhenDone Ub_StandAimThompson` brings the aim clip
+  back through the 0.7 fade. `setUserRandomStartTime` (`state+0xa`) starts a
+  loop at `(rand & 0xff) / 255` (0x0832b413, `.rodata` 0x086c08a0 = 255.0);
+  vanilla uses it once, not on any weapon state. Instance `+0x40` is a
+  start phase applied when > 0; nothing on the soldier writes it.
+- **The mask.** `BFSoldier::updateAnimations` passes −1 in first person and
+  `0x10004` in third when the soldier is farther than 100 m
+  (`soldier+0x264`, client decompile `local_15c`). `applyOnSkeleton` strips
+  bit 0x10000 as "write frame A straight into the bone local, no blend, no
+  interpolation" (0x0832eeb7, client line 108) and treats the rest as the
+  highest bone level to touch (`bone+0xcc`, 0x0832ef1b) — a distant-LOD
+  cheapening. In first person every one of the clip's 52 bones is applied,
+  interpolated and weighted.
+- **Nothing else reaches a first-person bone.** `Skeleton::transform`
+  (0x083420f0, read in full) has exactly two hooks besides the parent
+  chain: a post-absolute rotation (`bone+0x88` Mat4*, multiplied into the
+  world rotation with the translation kept, 0x8342308–0x8342454) and an IK
+  slot (`bone+0xe0` → `applyIK2BoneSolver` 0x083418f0, whose result rows
+  overwrite the world rotation). The post-absolute writer is virtual
+  (`AnimatedBundle::setPostAbsoluteBoneTransform` 0x082656d0, no direct
+  call site) and on the client is called only inside the third-person
+  block of `FUN_004fb150` (the `FUN_004f7ca0(pitch)` calls, lines 200–330,
+  all under `if (local_16c == 0)`); `setFirstPerson` clears them
+  (`removeAllPostAbsoluteBoneTransforms` 0x083418b0). The IK slot's only
+  writer is `Skeleton::applyIk` 0x08342610, whose only caller
+  `AnimatedBundle::updateIk` 0x08265880 walks the parent chain for
+  `IID_IPlayerControlObject` (0x086d3c50) and checks the occupant against
+  `CID_BFSoldierTemplate` (0x086c2b88) before touching a bone — hands on a
+  vehicle's controls, never a soldier on foot. The lower-body machine's
+  `updateAnimations` is not even called in first person (client loop
+  `if (!isFirstPerson || i != 0)`), the third-person lean
+  (`soldier+0x3ec × 90°`, eased at 3/s from the `+0x416` movement bits) sits
+  in the same third-person block, and the three by-reference floats
+  `AnimationState::checkTransitions` returns (`state+0xc8/0xcc/0xd0`,
+  default 1.0) are per-state locomotion multipliers consumed by
+  `handlePlayerInput` 0x0827562a and `BFSoldierNetworkable`, not pose.
+  Lead 5 of the pose question is closed: **no aim-pitch, IK or lean term
+  runs on the first-person path.**
+
+**So the first-person pose is exactly the current `Ub_*` state's 1P clip,
+sampled at a phase that only advances with time, over the `.ske` rest.**
+Measured on the shipped data under the §3 chain (57.30° vertical, 1280×720,
+`center1pHands` + the Thompson hip offset): across all 13 frames of
+`1PStandAimThompson` the right hand bone moves 3.6 px vertically, the left
+hand 2.8 px, a point 0.55 m down the barrel 3.2 px; the walk/run clip
+(`1pRunThompson`, 17 frames) holds the far end ~20 px lower than the aim
+clip and swings the near hand 47 px laterally; `1PDeployThompson`'s last
+frame is the aim clip's frame 0 to the pixel. No frame, blend or idle of the
+aim family can put the far end 60–70 px lower, and nothing in the machine
+depends on the aim pitch. The residual in the capture is not an animation.
+Re-rendered headless with the re-exported rig (engine timing, tweaked
+speeds, morph factors): right hand bone (819.5, 614.8), left hand (697.9,
+478.1), muzzle end (702.8, 427.8) at 57.30° / 1280×720 — the same pixels as
+before the pass, as the measurement predicts.
+
 ### Axis and sign conventions (VERIFIED)
 
 - The view frame is D3D's, left-handed: +x right, +y up, +z forward.
@@ -529,6 +662,12 @@ Current viewer approximations, judged:
 | Weapon drawn in world pass at soldier FOV 53.86 | **REFUTED on both counts** — the camera runs at `renderer.fieldOfView 1` = 57.30° vertical; `set1pFov 0.47` is the 1P parts' own FOV (`setFirstPersonFov` → `IViewModifier::setFieldOfView`, own `drawFov` pass), multiplied by `SoldierZoomFov` when zoomed while the camera goes to `zoomFov`. Placement: rig = rotate90aroundX(skeleton) + center1pHands + eased offset in view space, no rotation term |
 | Calibrated x/y/z/yaw on top of `center1pHands` (VIEWMODEL_CAL) | **REFUTED** — the chain has no free parameter; the 0.35 rad yaw compensated for posing the rig on `Lb_Stand` frame 0, which the engine never applies in first person |
 | Rig posed on `Lb_Stand` + 1P idle | **REFUTED** — the lower-body machine applies nothing in first person (clip slot 1 absent); root, pelvis and legs are the `.ske` rest |
+| The 1P pose is the idle clip's frame 0 | **CONFIRMED to within 4 px** — the engine samples the clip at a time-only phase with slerp between adjacent frames; all 13 frames of `1PStandAimThompson` are within 3.6 px of each other, so frame 0 is representative, and the 5° residual is not a frame choice |
+| A clip lasts `frames / 25 fps / speed` (`BAF_FPS`) | **REFUTED** — a pass is `1/\|speed\|` s regardless of frame count (`updateState` phase += dt·speed, `applyOnSkeleton` frac(phase)·N); the fire clip at 10.0 is the 0.1 s shot cycle, the sway 10 s, the reload 4.76 s at its tweaked 0.21 |
+| Clip rates are the `addAnimation` values | **REFUTED** — `{1p,3p}AnimationsTweaking.con` (run last, by state name) override them; run 0.7 → 1.40, reload 0.4 → 0.21. Parser now applies them |
+| Reload rescaled by `bakedSpan / reloadTime` | **WITHDRAWN** — the engine plays the reload at 1/0.21 = 4.76 s against the 4.8 s timer; the fit was reproducing the data |
+| Crossfade 0.15 s (fire 0.02 s) stand-ins | **REFUTED** — weight ramps at the target state's `setMorphFactor` per second against the current pose (default 5, ≥1000 cuts): aim 0.7 → 1.4 s, fire 4.0 → 0.25 s, deploy/reload 10000 → cut |
+| An aim-pitch, IK or lean term shapes the 1P arms | **REFUTED** — none on the first-person path in either binary; IK is seated-in-vehicle only, post-absolute rotations third-person only |
 
 ---
 
@@ -591,6 +730,13 @@ Current viewer approximations, judged:
 | 0x006038c0 / 0x00603900 / 0x00604750 | deferred-state push / pop / flush | decompiled |
 | 0x00570630 | `RendPCDX8_bindVertexShader` (`Shaders/SkinningShader2Bones`) | decompiled |
 | 0x004f7290 / 0x004fae80 / 0x004fc2d0 | `BFSoldier::applyFovModifier` / `setFirstPerson` / `handleVisualUpdate` (client) | decompiled |
+| 0x0066b740 | `BoneAnimation::applyOnSkeleton(Skeleton&, float phase, float weight, int mask)` | decompiled in full; lnxded 0x0832ed60 read alongside — phase→frame, slerp, 0x10000 flag |
+| 0x0066b5c0 | `Skeleton::setRelativeBoneTransform(int, Quat const&, Vec3 const*, float)` | lnxded 0x0832f6e0 read in full; the weight blend |
+| 0x00613a80 | `AnimationState::update(float phase, string const&)` → next state | decompiled via updateState; lnxded 0x08329f00 |
+| 0x00613480 | `AnimationStateMachineInstance::setCurrentState(int)` | lnxded 0x0832b150 |
+| 0x0054edd0 | `AnimationState` clip count (AnimationInfo stride 12) | call shape in both twins |
+| 0x006937d0 / 0x00693820 | `CompressedAnim::GetQuat` / `GetTrans` | lnxded 0x0832fc90 / 0x0832fcf0 |
+| 0x00462ca0 | `BaseQuaternion<float>::slerp` | lnxded 0x08226460 |
 
 Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
 `FireArms::updateDeviation` 0x0828d410, `FireArms::Fire` 0x0828a090,
@@ -615,15 +761,39 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
 
 ## 7. Open items
 
-- **The pose the upper-body machine holds in first person.** The mount is
-  closed, but the retail capture holds the far end of the rig about 5° lower
-  than the baked `1PStandAimThompson` frame 0 does, and the retail front sight
-  drifts ~20 px between looking up and down, which a fixed pose in camera
-  space cannot do. Suspects: an aim-pitch-dependent frame or blend inside the
-  `Ub_*` state (the 13-frame clip may be a pitch sweep rather than a sway),
-  or `AnimationState::update`'s idle/transition logic. Trace
-  `AnimationStateMachineInstance::updateState` past 0x0832b388 and
-  `BoneAnimation::applyOnSkeleton` (0x0832ed60) with the client twins.
+- **The ~5° residual at the far end of the rig, and its ~20 px drift with
+  pitch, are not the animation.** Closed on the animation side (§3, third
+  pass): the upper-body machine holds the current state's 1P clip at a
+  phase that advances only with time, blended in over the previous pose at
+  `setMorphFactor`; `applyOnSkeleton`, `updateState`, `AnimationState::
+  update`, `checkTransitions`, `Skeleton::transform`'s post-absolute and IK
+  hooks and the client `updateAnimations` were all read, and none carries
+  an aim-pitch, IK or lean term on the first-person path. Every frame of
+  `1PStandAimThompson` lands within 4 px of every other; the deploy clip
+  ends on the aim clip's frame 0; the run clip is only ~20 px lower at the
+  far end. What is left, with the numbers to beat — retail front sight
+  ≈ (720, 485), left hand ≈ (690, 545), right hand (800–840, 590–640) at
+  1280×720 against the chain's (700, 415) / (700, 470) / (819, 615) — is a
+  rotation of the rig by roughly 5° about the near hand, and it must come
+  from something between the skeleton and the pixels: (a) the `drawFov`
+  pass's projection (the sibling item below; a symmetric FOV change scales
+  uniformly about the centre and does not fit, an asymmetric or
+  differently-placed near plane might — and the pass as read bakes a
+  symmetric perspective at the world's 0.1 m near plane, §3 "The drawFov
+  pass", so (a) waits on the runtime answer the next item is after), (b) how the camera's
+  `getRelativeTransformation` `M` relates to the view the pass actually
+  renders with — the chain is rigid only if the pass's view is
+  `inverse(M × soldierWorld)`, (c) whether the client camera really rides
+  `S` (inferred from the server stub `getExternCameraTrans`; the `Ub_*`
+  shakes are sinusoidal, so `S` cannot hold a 5° offset but could account
+  for the drift if the camera does not follow it), or (d) the 16:9 capture's
+  vertical field of view — `Frustum::setupFrustum` takes `fov/2` as the
+  vertical half-angle and divides by an aspect the constructor sets to 0.75;
+  read since (§3 "The drawFov pass"): `Renderer_initDevice` 0x00462f50 sets
+  aspect = height/width from the display mode, so the vertical field stays
+  57.3° at 16:9 and only the sides widen. Resume from `drawFov` 0x0062cb00
+  (vtable 0x00916800 slot +0x18, read) and the client twin of
+  `Camera::getRelativeTransformation`.
 - **Why retail draws the 1P parts at the world's FOV.** The projection, the
   pass and every draw path are read (§3, "The drawFov pass") and all of them
   apply the baked `set1pFov` matrix, yet the capture shows the arms at 57.3°
@@ -663,6 +833,10 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
 
 Closed in the third pass (2026-09-15), left here so nobody reopens them:
 
+- ~~The pose the upper-body machine holds in first person~~ — it is the
+  current state's 1P clip at a time-driven phase, blended in at
+  `setMorphFactor`, with no aim-pitch, IK or lean term on the first-person
+  path (§3; ledger ANIM-1..6). The residual is the first item above.
 - ~~The projection of the `drawFov` pass~~ — the mesh bakes the render view's
   own perspective for `set1pFov` into `mesh+0xf4` when the field is set, and
   every draw path applies it; near plane unchanged at 0.1 m (§3 "The drawFov
