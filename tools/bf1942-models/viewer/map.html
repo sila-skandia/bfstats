@@ -3673,6 +3673,10 @@ async function loadHandWeapon(name) {
   const base = hands
     ? { x: hands[0], y: hands[1], z: -hands[2] }
     : VIEWMODEL_BASE;
+  // `set1pFov`, radians, from the same extras: the whole vertical angle the
+  // engine bakes into each first-person part's own projection (the near
+  // pass in frame() says what becomes of it).
+  const fov1p = fp ? (doc.view?.fov1p ?? null) : null;
   // The rig's two authored poses, camera space. Refractor's z is forward,
   // three's camera looks down -z, so z is negated; a weapon that declares no
   // `soldierCameraPosition` (the Bazooka) sits at the base alone, and one
@@ -3745,6 +3749,7 @@ async function loadHandWeapon(name) {
   const magazine = data?.magazine || null;
   const hw = {
     name, data, rig,
+    fov1p,                 // `set1pFov` in radians, or null for a bare weapon
     mixer, actions,        // the arms rig's state machine; both empty when bare
     clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras
     active: null,          // the clip currently owning the arms
@@ -5559,15 +5564,20 @@ function frame(dt) {
   renderer.render(scene, camera);
   // The near pass: everything on VIEWMODEL_LAYER — the arms rig and the
   // muzzle emitters inside it — drawn again over a cleared depth buffer, so
-  // the world can occlude none of it (§11 step 6). Retail does the same and
-  // more: each first-person part carries its own field of view (`set1pFov`
-  // × the eased `SoldierZoomFov` factor, through `IViewModifier::
-  // setFieldOfView`) and `StandardMeshRenderer` draws them in a dedicated
-  // `drawFov` pass, so the arms never follow the world's zoom. Same pose,
-  // own projection: FOOT_FOV × the factor. How that pass turns the value
-  // into a projection, and whether it moves the near plane, is renderer
-  // code still unread — OPEN — and at the hip the footage puts the arms at
-  // the world's FOV, which is what a factor of 1 gives.
+  // the world can occlude none of it (§11 step 6). Retail does exactly this:
+  // `Renderer_drawView` (0x004662c0) draws the world, clears depth to 1.0,
+  // forces the finest mip and calls `StandardMeshRenderer::drawFov`
+  // (0x0062cb00), where each first-person part is drawn with a projection
+  // baked when its field of view was set (`BStandardMesh::setFieldOfView`
+  // 0x005ad160): the render view's own perspective for `set1pFov` × the
+  // eased `SoldierZoomFov` factor as a whole vertical angle, the window's
+  // aspect, and the world's near plane — 0.1 m, nothing moves it. That is
+  // the code (corpus doc §3, "The drawFov pass"). The retail capture is
+  // not: under 0.47 rad this rig's right hand lands at (1042, 939), off the
+  // frame, and retail has it at (816, 614) — the world's 57.3°. Until the
+  // runtime cause is found (§7) the pass keeps the world FOV × the factor,
+  // which matches the footage, and `?fov1p=engine` renders what the code
+  // says so the two can be put side by side.
   if (handWeapon?.rig.visible) {
     renderer.autoClear = false;
     renderer.clearDepth();
@@ -5582,9 +5592,11 @@ function frame(dt) {
     scene.background = null;
     vmCamera.matrixWorld.copy(camera.matrixWorld);
     vmCamera.matrixWorldInverse.copy(camera.matrixWorld).invert();
-    vmCamera.fov = FOOT_FOV * handWeapon.fovCur;
+    const engineFov = params.get('fov1p') === 'engine' && handWeapon.fov1p
+      ? handWeapon.fov1p / DEG_TO_RAD : FOOT_FOV;
+    vmCamera.fov = engineFov * handWeapon.fovCur;
     vmCamera.aspect = camera.aspect;
-    vmCamera.near = camera.near;
+    vmCamera.near = 0.1;   // the engine's render-view near, baked unchanged
     vmCamera.far = camera.far;
     vmCamera.updateProjectionMatrix();
     renderer.render(scene, vmCamera);
@@ -5789,6 +5801,8 @@ if (params.has('shots')) {
     zoomed: isZoomed(),
     fovFactor: handWeapon.fovCur,
     worldFov: handWeapon.worldFov,
+    fov1p: handWeapon.fov1p,          // `set1pFov`, radians, from the rig extras
+    nearPassFov: vmCamera.fov,        // degrees the near pass last drew with
     rezoom: handWeapon.rezoom,
     firing: !!handWeapon.group?.firing,
     shots: handWeapon.group?.shots ?? 0,
