@@ -38,49 +38,63 @@
 #define BF42_PRIM_TRIANGLE_STRIP  5   /* soldiers */
 
 /* --------------------------------------------------------------------------
- * Vertex component flags  -  THE OPEN QUESTION
+ * Vertex format  -  the `flags` word                                 [verified]
  *
- * Each material descriptor carries BOTH a `flags` word and a `vertex_stride`.
- * Our reader (stdmesh.py) ignores `flags` entirely and infers the component
- * layout from `stride` alone:
+ * Each material descriptor carries a `flags` word and a `vertex_stride`.  The
+ * engine treats `flags` as the vertex format (dice::ref2::rend) and derives the
+ * stride from it; the file's `vertex_stride` is used exactly once, as
+ * `vertex_stride * vertex_count` bytes to pull from the stream.  Read out of:
  *
- *     stride >= 24  ->  assume normals at float[3..5]
- *     stride >= 32  ->  assume uv0     at float[6..7]
- *     stride >= 40  ->  assume uv1     at float[8..9]   (lightmap channel)
+ *   StandardMeshTemplate_readMaterials  0x005b42d0  (lnxded loadLod 0x083a6f00)
+ *     -> RendPCDX8 vtbl 0x00917a00 +0x1c = createVertexBlock(1|0xc, flags, count)
+ *   rend::getStride(format)             0x00640f20  (lnxded 0x084451d0)
+ *   MemVertexBlock::create              0x006410d0  (lnxded 0x08445530): +0x1c = getStride
+ *   format -> D3DFVF                    0x00672a40
+ *   IDirect3DDevice8::CreateVertexBuffer(..., FVF, ...)  from 0x00675520 (device vtbl +0x5c)
  *
- * A survey of 234,144 material descriptors across vanilla + 14 mods found
- * `flags` to be an exact function of stride, with ONE exception:
+ * The buffer is an FVF buffer, so Direct3D fixes the memory order: position
+ * (with blend weights), normal, diffuse, specular, texcoord sets 0..3.  These
+ * are Refractor's own bits, not D3DFVF values (D3DFVF_XYZ|NORMAL|TEX1 = 0x112).
  *
- *     stride  32 (8f)   flags 0x00411    x167,425
- *     stride  40 (10f)  flags 0x02411    x 66,718
- *     stride  64 (16f)  flags 0x00411    x      1  <-- bf1918
- *                                                      standardMesh/o_WoodenCart_M2.sm
- *
- * The outlier declares the 8-float component set but reserves 16 floats of
- * space.  Our stride-based reader therefore emits a lightmap UV channel built
- * from float[8..9] of a vertex whose own declaration says it has only one UV
- * set.  It fails silently - no exception, just a wrong channel handed to the
- * lightmap pass.
- *
- * 0x0411 = bits 0, 4, 10.   0x2411 adds bit 13, and bit 13 is exactly the
- * difference between one UV set and two.  So `flags` is a component bitfield
- * and `stride` is only a coincidental proxy for it in vanilla data.
- *
- * These are NOT Direct3D 8 FVF values (D3DFVF_XYZ|NORMAL|TEX1 would be 0x112);
- * this is Refractor's own encoding.  The lnxded symbols show the engine has a
- * `vertexFormat` concept (dice::bf::ai::AIMeshVertex::vertexFormat).
- *
- * WHAT IS STILL UNKNOWN: whether the engine reads `flags` or `stride` to lay
- * out a vertex, and what the other bits mean.  Until that is settled, treat the
- * names below as placeholders.                                       [open]
+ * Survey: 234,144 descriptors across vanilla + 14 mods carry only 0x0411 (32 B)
+ * and 0x2411 (40 B).  One mesh, bf1918 standardMesh/o_WoodenCart_M2.sm, says
+ * stride 64 against 0x0411; the engine allocates 32 * count and reads 64 * count
+ * into it, and the first 32 * count bytes are the cart (bounds match the header).
+ * See ../subsystems/standardmesh-vertex-format.md and ledger SM-1 / SM-2.
  * -------------------------------------------------------------------------- */
-#define BF42_VF_POSITION   0x0001u  /* [open] bit 0  - present in every observed mesh */
-#define BF42_VF_NORMAL     0x0010u  /* [open] bit 4  - present in every observed mesh */
-#define BF42_VF_UV0        0x0400u  /* [open] bit 10 - present in every observed mesh */
-#define BF42_VF_UV1        0x2000u  /* [open] bit 13 - lightmap channel; only in 0x2411 */
+#define BF42_VF_POSITION      0x00000001u  /* 3 floats        -> D3DFVF_XYZ                 */
+#define BF42_VF_POSITION_RHW  0x00000004u  /* 4 floats        -> D3DFVF_XYZRHW   [engine bit, unseen in .sm] */
+#define BF42_VF_BLEND1        0x00200000u  /* 1 float         -> D3DFVF_XYZB1    [unseen]   */
+#define BF42_VF_BLEND2        0x00400000u  /* 2 floats        -> D3DFVF_XYZB2    [unseen]   */
+#define BF42_VF_BLEND3        0x00800000u  /* 3 floats        -> D3DFVF_XYZB3    [unseen]   */
+#define BF42_VF_BLEND4        0x01000000u  /* 4 floats        -> D3DFVF_XYZB4    [unseen]   */
+#define BF42_VF_BIT29         0x20000000u  /* 16 B in getStride, 4 B and FVF|=4 in the FVF
+                                              builder; inconsistent, unseen      [open]     */
+#define BF42_VF_NORMAL        0x00000010u  /* 3 floats        -> D3DFVF_NORMAL              */
+#define BF42_VF_DIFFUSE       0x00000040u  /* 1 packed colour -> D3DFVF_DIFFUSE  [unseen]   */
+#define BF42_VF_SPECULAR      0x00000100u  /* 1 packed colour -> D3DFVF_SPECULAR [unseen]   */
+/* Texture-coordinate set n (0..3): one of four size bits, tested 1,2,3,4 floats,
+ * first match wins.  1..3 floats are (0x200|0x400|0x800) << 3n; 4 floats is
+ * 0x2000000 << n.  The number of sets present becomes D3DFVF_TEX1..TEX4.       */
+#define BF42_VF_TEX0_1F       0x00000200u
+#define BF42_VF_TEX0_2F       0x00000400u  /* every .sm has this                            */
+#define BF42_VF_TEX0_3F       0x00000800u
+#define BF42_VF_TEX0_4F       0x02000000u
+#define BF42_VF_TEX1_1F       0x00001000u
+#define BF42_VF_TEX1_2F       0x00002000u  /* lightmapped statics                           */
+#define BF42_VF_TEX1_3F       0x00004000u
+#define BF42_VF_TEX1_4F       0x04000000u
+#define BF42_VF_TEX2_1F       0x00008000u
+#define BF42_VF_TEX2_2F       0x00010000u
+#define BF42_VF_TEX2_3F       0x00020000u
+#define BF42_VF_TEX2_4F       0x08000000u
+#define BF42_VF_TEX3_1F       0x00040000u
+#define BF42_VF_TEX3_2F       0x00080000u
+#define BF42_VF_TEX3_3F       0x00100000u
+#define BF42_VF_TEX3_4F       0x10000000u
 
-#define BF42_VF_STANDARD   0x0411u  /* position + normal + uv0            [observed] */
-#define BF42_VF_LIGHTMAPPED 0x2411u /* position + normal + uv0 + uv1      [observed] */
+#define BF42_VF_STANDARD      0x0411u  /* position + normal + tex0(2f)             = 32 B  [verified] */
+#define BF42_VF_LIGHTMAPPED   0x2411u  /* position + normal + tex0(2f) + tex1(2f)  = 40 B  [verified] */
 
 /* --------------------------------------------------------------------------
  * File layout
@@ -129,19 +143,20 @@ typedef struct {
  *                                                    of 33,038 real meshes]   */
 typedef struct {
     /* uint32_t name_len; char name[name_len]; */
-    uint32_t reserved1;        /* 0 across all 234,144 observed        [observed] */
-    uint32_t reserved2;        /* 0 across all 234,144 observed        [observed] */
-    uint32_t reserved3;        /* 0 across all 234,144 observed        [observed] */
+    uint8_t  reserved[12];     /* 0 across all 234,144 observed; both loaders read
+                                  it as ONE 12-byte raw read into a zeroed local and
+                                  the server never touches it again        [open] */
     uint32_t primitive;        /* BF42_PRIM_*                          [observed] */
-    uint32_t flags;            /* vertex component bitfield - see above    [open] */
-    uint32_t vertex_stride;    /* bytes per vertex; 32, 40, once 64    [observed] */
+    uint32_t flags;            /* the vertex format; layout comes from here [verified] */
+    uint32_t vertex_stride;    /* bytes the loader reads per vertex; NOT the layout.
+                                  Equals getStride(flags) in all but one mesh   [verified] */
     uint32_t vertex_count;
     uint32_t index_count;
     uint32_t unknown7;         /* takes 0, 1, 2, 4. Meaning unknown.       [open] */
 } bf42_sm_material;
 
-/* The vertex layout our reader assumes for stride 32.  Whether the engine
- * derives this from `flags` or from `vertex_stride` is the open question. */
+/* The two formats that occur in shipped data, laid out in D3DFVF order as the
+ * engine's getStride / FVF builder define them.                     [verified] */
 typedef struct {
     float position[3];
     float normal[3];
@@ -152,7 +167,7 @@ typedef struct {
     float position[3];
     float normal[3];
     float uv0[2];
-    float uv1[2];              /* lightmap channel */
+    float uv1[2];              /* texcoord set 1; vanilla's object-lightmap channel */
 } bf42_sm_vertex_lightmapped;  /* 40 bytes, flags 0x2411 */
 
 /* Indices are int16.  A strip is converted to a list by walking triples and
@@ -167,8 +182,7 @@ typedef struct {
  * -------------------------------------------------------------------------- */
 
 /* 0x00908a90  "dice.ref2.geom.GeometryTemplate.StandardMesh"
- *   Sole xref at 0x005d06a2, which Ghidra has not resolved into a function.
- *   Creating a function there is the next step toward the loader. [verified] */
+ *   Sole xref at 0x005d06a2 (registration).                        [verified] */
 
 /* 0x005d0140  StandardMeshTemplate destructor (shape only - installs four
  *   vtables, tears down members, object is >= 0x67 dwords).       [inferred] */
@@ -182,14 +196,18 @@ typedef struct {
  *   +0x9c  0x005b42d0  readMaterials   per-LOD material + payload reader
  *
  * readMaterials reads a material's vertices as ONE flat blob of
- * stride * count bytes and its indices as count * 2, then hands both to
- * RendPCDX8_singleton (DAT_009a99d4): +0x1c makes the vertex buffer, +0x20 the
- * index buffer.  `stride` is used ONLY as a byte length.  Nothing on the load
- * path decides where a position, normal or UV sits inside a vertex.
+ * stride * count bytes and its indices as count * 2.  The vertex block comes
+ * from RendPCDX8_singleton (DAT_009a99d4) -> vtbl 0x00917a00 +0x1c
+ * (0x0063ed70) as createVertexBlock(blockFormat, flags, vertexCount): the
+ * stride is not passed, the block derives it with rend::getStride(flags)
+ * (0x00640f20) and the DX8 block builds its D3DFVF from the same word
+ * (0x00672a40).  +0x20 (0x0063ede0) makes the index block.
  *
- * CONSEQUENCE: the vertex layout question above cannot be settled in the
- * loader.  It is decided at draw time when the vertex declaration or shader is
- * built - StandardMeshRenderer / SubShaderBuilder - which is client-only code.
- * See ../ledger.md rows SM-1 and SM-2.                                        */
+ * Twin in the server: BStandardMeshTemplate<...>::loadLod 0x083a6f00, which
+ * keeps {format, stride, count, indexCount} in a 16-byte BlockInfo and skips
+ * stride * count / indexCount * 2 bytes.  g_vertexFormat 0x087473a4 and
+ * g_vertexStride 0x087473a8 are dead globals of an unfinished
+ * m_simplifyMeshes path in loadLods 0x083a65b0.
+ * See ../subsystems/standardmesh-vertex-format.md; ledger SM-1 / SM-2.       */
 
 #endif /* BF42_GEOM_STDMESH_H */
