@@ -670,6 +670,11 @@ class ObjectTemplate:
     # crosshair because the scope overlay is the sight.
     cross_hair_type: str | None = None
     hud_ammo_type: str | None = None
+    # `fireInCameraDof 1` — the round leaves along the camera axis, not the
+    # muzzle. 25 of 28 vanilla hand weapons declare it, so a first-person
+    # shot is a camera ray and `projectilePosition 0/0/0` is only where the
+    # flash draws. See first-person-soldier.md §2.7.
+    fire_in_camera_dof: bool | None = None
 
     # Effect chain: EffectBundle -> Emitter (`ObjectTemplate.template` names
     # the payload) -> Particle (mesh) or SpriteParticle (textured quad).
@@ -964,6 +969,7 @@ class ObjectTemplate:
             "fireOnce": self.fire_once,
             "velocity": self.velocity,
             "projectile": self.projectile_template,
+            "fireInCameraDof": self.fire_in_camera_dof,
             "crossHair": self.cross_hair_type,
             "hudAmmo": self.hud_ammo_type,
             "magazine": magazine or None,
@@ -1109,7 +1115,11 @@ class ObjectLibrary:
                     obj.skeleton = args.split()[0] if args else None
                 elif cmd == "useskeletonpartasmain":
                     obj.skeleton_main = args.split()[0] if args else None
-                elif cmd == "createinvisible":
+                elif cmd in ("createinvisible", "invisible"):
+                    # `createInvisible` hides a placed object; `invisible 1` on
+                    # a Projectile is the engine's own "never draw the body"
+                    # (every hand-weapon bullet declares it — only the tracer
+                    # is ever visible).
                     obj.invisible = args.strip().startswith("1")
                 elif cmd == "hasmobilephysics":
                     obj.has_mobile_physics = args.strip().startswith("1")
@@ -1348,7 +1358,7 @@ class ObjectLibrary:
                     }[cmd], value)
                 elif cmd in ("fireonce", "autoreload", "usescope",
                              "setsnipersight", "sethasrecoilforce",
-                             "setgobackonrecoil"):
+                             "setgobackonrecoil", "fireincameradof"):
                     if (value := truthy(args)) is not None:
                         setattr(obj, {
                             "fireonce": "fire_once",
@@ -1357,6 +1367,7 @@ class ObjectLibrary:
                             "setsnipersight": "sniper_sight",
                             "sethasrecoilforce": "has_recoil_force",
                             "setgobackonrecoil": "go_back_on_recoil",
+                            "fireincameradof": "fire_in_camera_dof",
                         }[cmd], value)
                 elif cmd in ("setfiredev", "setdevmod", "setturndev",
                              "setspeeddev", "setmiscdev"):
