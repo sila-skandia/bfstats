@@ -1133,6 +1133,53 @@ function getTouchesCenterAndDist() {
   };
 }
 
+// The bit a button sets in `e.buttons`, indexed by its own `e.button` number.
+// The two numberings disagree on middle vs. right: `button` calls middle 1
+// and right 2, `buttons` puts right at bit 2 (0x2) and middle at bit 4 (0x4).
+// Getting this backwards would read a right-click as a middle-click, so it
+// is a lookup table, not an arithmetic guess.
+const BUTTON_BIT = [1, 4, 2, 8, 16];
+
+// Real pointer lock, or -- under `?shots` -- captured and stood in for it,
+// the same way `canFire` (Infantry advance) already treats `?shots` as a
+// substitute for `captured` itself: headless Chromium never grants pointer
+// lock, so a harness has nothing else to gate on.
+function pointerLocked() {
+  return document.pointerLockElement === renderer.domElement || params.has('shots');
+}
+
+// Left is `c_PIFire`, right is `c_PIAltFire` (`Infantry.con`) while captured,
+// on foot and pointer-locked -- the same gate `pointerdown` always checked.
+// A second button pressed while the first is already held never reaches
+// `pointerdown`: the browser reports it as a `pointermove` carrying the
+// button that changed (`e.button`) and the new chord (`e.buttons`), plus a
+// `mousedown` this page does not listen for. Releasing one of two held
+// buttons is the same story on `pointerup`'s side. `pointerdown`, `pointerup`
+// and that chorded `pointermove` all funnel through here so a chord is never
+// silently dropped -- confirmed against real Chromium event order with
+// `scratchpad/chord.cjs` (a held left + a right press/release fires
+// `pointermove button=2 buttons=3` then `buttons=1`, no `pointerdown`/`up`
+// at all for the right button).
+function footButtonChange(e) {
+  if (!(captured && optOnFoot.checked && soldier && pointerLocked())) return;
+  const pressed = !!(e.buttons & BUTTON_BIT[e.button]);
+  if (e.button === 0) {
+    triggerHeld = pressed;
+    if (pressed) clickQueued = true;
+  } else if (e.button === 2) {
+    const hw = handWeapon;
+    if (hw?.data?.zoom?.toggle) {
+      // `altFireOnce` masks the *held* alt-fire input on the client
+      // (0x00500901, mask 0x800000) so only a fresh press reaches the
+      // weapon -- the button that just transitioned to pressed is a fresh
+      // press whether it arrived alone or as half of a chord.
+      if (pressed) { hw.zoomed = !hw.zoomed; hw.rezoom = 0; }
+    } else {
+      aimHeld = pressed;
+    }
+  }
+}
+
 renderer.domElement.addEventListener('pointerdown', e => {
   if (e.pointerType === 'touch') {
     activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1168,24 +1215,8 @@ renderer.domElement.addEventListener('pointerdown', e => {
   // being a drag and become the game's own bindings — `c_PIFire` on the left,
   // `c_PIAltFire` (aim) on the right, `Infantry.con` — so the very first
   // click still captures and only the clicks after it pull the trigger.
-  if (captured && optOnFoot.checked && soldier
-      && document.pointerLockElement === renderer.domElement) {
-    if (e.button === 0) {
-      triggerHeld = true;
-      clickQueued = true;
-    } else if (e.button === 2) {
-      // `altFireOnce` (`zoom.toggle`) masks the *held* alt-fire input on the
-      // client (0x00500901, mask 0x800000) so only fresh presses reach the
-      // weapon: each press flips zoom, and every vanilla hand weapon
-      // declares it. A mod weapon without it keeps hold-to-zoom.
-      const hw = handWeapon;
-      if (hw?.data?.zoom?.toggle) {
-        hw.zoomed = !hw.zoomed;
-        hw.rezoom = 0;
-      } else {
-        aimHeld = true;
-      }
-    }
+  if (captured && optOnFoot.checked && soldier && pointerLocked()) {
+    footButtonChange(e);
     return;
   }
   if (e.button === 0) {
@@ -1243,9 +1274,10 @@ renderer.domElement.addEventListener('pointerup', e => {
 
   dragging = false;
   isPanning = false;
-  // Unconditional: whatever mode the press started in, the release ends it.
-  if (e.button === 0) triggerHeld = false;
-  if (e.button === 2) aimHeld = false;
+  // Same gate and the same function as the press: `footButtonChange` reads
+  // `pressed` off `e.buttons`, which is already false for the button that
+  // just came up, so this clears the right one without repeating the check.
+  footButtonChange(e);
   try {
     if (renderer.domElement.hasPointerCapture(e.pointerId)) {
       renderer.domElement.releasePointerCapture(e.pointerId);
@@ -1285,7 +1317,16 @@ document.addEventListener('pointerlockchange', () => {
 });
 document.addEventListener('pointermove', e => {
   if (!captured) return;
-  if (document.pointerLockElement === renderer.domElement) {
+  if (pointerLocked()) {
+    // `e.button !== -1` means this move is really a chorded button change
+    // (see `footButtonChange` above), not the cursor moving: `movementX/Y`
+    // on that kind of event can be a large synthetic delta rather than real
+    // mouse travel, and feeding it to `lookDelta` is what snapped the view
+    // ~90 degrees when a second button joined one already held.
+    if (e.button !== -1) {
+      footButtonChange(e);
+      return;
+    }
     lookDelta(e.movementX, e.movementY);
     return;
   }
@@ -6327,6 +6368,23 @@ if (params.has('shots')) {
     } else {
       aimHeld = !!on;
     }
+  };
+  // Fires a real pointerdown/pointerup/pointermove at the real listeners --
+  // pointerdown, pointerup and a chorded pointermove all resolve through
+  // `footButtonChange` -- so a check exercises the actual wiring instead of
+  // a re-implementation of it. `pointerLocked()` stands `?shots` in for
+  // real pointer lock (headless Chromium never grants it), the same way
+  // `__setTrigger` already stands in for the mouse. `kind` is 'down' | 'up'
+  // | 'move'; a 'move' carries `movementX/Y` so a check can assert
+  // `lookDelta` was, or was not, applied from a chorded event.
+  window.__chordEvent = (kind, button, buttons, movementX = 0, movementY = 0) => {
+    const type = kind === 'down' ? 'pointerdown' : kind === 'up' ? 'pointerup' : 'pointermove';
+    const ev = new PointerEvent(type, {
+      button, buttons, movementX, movementY,
+      pointerId: 1, pointerType: 'mouse', bubbles: true, cancelable: true,
+    });
+    (type === 'pointermove' ? document : renderer.domElement).dispatchEvent(ev);
+    return { triggerHeld, aimHeld, zoomed: isZoomed(), yaw: soldier?.yaw ?? null };
   };
   // The collider itself, for measuring rather than for asserting: `__collision()`
   // drains the accumulated cast cost, so calling it once a second gives the real
