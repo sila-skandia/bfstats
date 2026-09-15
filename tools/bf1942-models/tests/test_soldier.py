@@ -113,8 +113,10 @@ class SoldierModuleTests(unittest.TestCase):
     def test_the_declared_look_clamp_and_fov(self) -> None:
         constants = self.results["constants"]
         self.assertEqual(38, constants["pitchLimitDeg"])
-        # `set1pFov 0.47` read as a half-angle in radians.
-        self.assertAlmostEqual(2 * 0.47 * 180 / math.pi, constants["fovDeg"], places=1)
+        # `renderer.fieldOfView 1`: the whole vertical angle, one radian.
+        # `set1pFov 0.47` is the first-person parts' own draw FOV, not the
+        # camera's (soldier.js `FOV_DEG`, corpus rows VIEW-3..VIEW-8).
+        self.assertAlmostEqual(180 / math.pi, constants["fovDeg"], places=1)
 
     def test_the_capsule_and_step_are_the_bodys(self) -> None:
         constants = self.results["constants"]

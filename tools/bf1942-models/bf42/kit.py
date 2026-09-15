@@ -67,6 +67,16 @@ TYPE_LABELS = {
 }
 
 KIT_PART_KINDS = {"kitpart", "activekitpart"}
+HAND_FIRE_ARMS = "handfirearms"
+
+# `itemIndex` is the inventory slot a weapon occupies in the soldier's hands —
+# the number key that selects it. Which slot is "the primary" is settled by a
+# census of vanilla's 28 `HandFireArms`: 1 is the knife, 2 the pistol, 4 the
+# grenade or explosive pack, 5 binoculars, mine or medpack, 6 the repair pack,
+# 11 the detonator — and 3 is every rifle, SMG, LMG and launcher, exactly one
+# per kit. It is also the slot the engine selects on spawn, which is why a
+# soldier appears holding his Thompson and not his knife.
+PRIMARY_ITEM_INDEX = 3
 
 # EoD ships every kit twice: `VC_Scout` and `VC_Scout_CHUTE` differ by the base
 # carrying a `nochute` flag its twin does not. Same weapons, same hat. 115 of the
@@ -107,6 +117,9 @@ class Kit:
     pickup: str | None = None       # the kit's own geometry: what it looks like on the ground
     worn: list[WornPart] = field(default_factory=list)
     carried: list[str] = field(default_factory=list)
+    # The weapon in hand on spawn — `primary_weapon`. None for a kit that
+    # carries nothing at `PRIMARY_ITEM_INDEX`, which vanilla never does.
+    primary: str | None = None
     # Filled by `sweep_levels`.
     levels: list[str] = field(default_factory=list)
     soldiers: list[str] = field(default_factory=list)
@@ -215,6 +228,52 @@ def kit_parts(library: con_mod.ObjectLibrary,
     return worn, carried
 
 
+def carried_templates(library: con_mod.ObjectLibrary,
+                      kit: con_mod.ObjectTemplate, depth: int = 4) -> list[str]:
+    """Every template a kit reaches through `addTemplate`, declaration order.
+
+    Depth-first, so a weapon a mod wraps in a bundle still comes out in the
+    place the kit declared the wrapper. Bounded because a weapon's own tree
+    (magazine, muzzle, projectile launcher) is not what a kit carries.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def walk(template: con_mod.ObjectTemplate, level: int) -> None:
+        for child in template.children:
+            key = child.template.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(child.template)
+            resolved = library.object(child.template)
+            if resolved is not None and level < depth:
+                walk(resolved, level + 1)
+
+    walk(kit, 0)
+    return found
+
+
+def primary_weapon(library: con_mod.ObjectLibrary,
+                   kit: con_mod.ObjectTemplate) -> str | None:
+    """The weapon a soldier spawns holding: the kit's `HandFireArms` at slot 3.
+
+    Declaration order is the tie-break — `GerKit/Assault/Objects.con` says so
+    itself, "The order is important, first the best weapons!" — so a mod that
+    files two weapons at `PRIMARY_ITEM_INDEX` spawns with the first. The name
+    comes back as the weapon's own `create` line spells it (`K98Sniper`,
+    `Mp40`), not as the kit spells it (`k98Sniper`, `MP40`): the exported glb
+    is named from the former, and a case-mismatched URL is a 404.
+    """
+    for name in carried_templates(library, kit):
+        template = library.object(name)
+        if template is None or template.kind.lower() != HAND_FIRE_ARMS:
+            continue
+        if template.item_index == PRIMARY_ITEM_INDEX:
+            return template.name
+    return None
+
+
 def collect(library: con_mod.ObjectLibrary) -> dict[str, Kit]:
     """Every `Kit` template in the library, keyed lowercased."""
     kits: dict[str, Kit] = {}
@@ -236,7 +295,8 @@ def collect(library: con_mod.ObjectLibrary) -> dict[str, Kit]:
             template=template.name, source=template.source, nation=nation,
             kit_class=kit_class, theatre=theatre, unit=unit,
             team=template.kit_team, pickup=template.geometry,
-            worn=worn, carried=carried)
+            worn=worn, carried=carried,
+            primary=primary_weapon(library, template))
     return kits
 
 
@@ -246,16 +306,55 @@ SET_KIT = re.compile(r"^\s*game\.setkit\s+(\d+)\s+(\d+)\s+(\S+)", re.IGNORECASE)
 SET_TEAM_SKIN = re.compile(r"^\s*game\.setteamskin\s+(\d+)\s+(\S+)", re.IGNORECASE)
 
 
-def sweep_levels(kits: dict[str, Kit], level_paths: list[tuple[str, Path]]) -> int:
-    """Bind kits to the levels and soldiers that field them.
+@dataclass
+class TeamLoadout:
+    """What a level's `Init.con` hands one team: its soldier, and a kit per slot.
 
-    This is also the liveness test. `game.setKit` is the only thing in the game
-    that says a kit is in play, and the install is full of kits that nothing
-    names: vanilla's five `BaseKit` entries, all five Canadian kits, XPack2's
-    seven, 46 of EoD's. Filtering on it costs nothing — the sweep has to happen
-    anyway for the map list.
+    The slot number is the row of the spawn screen's kit column — the game's
+    `Kit/SelectedKit` — so slot 2 is the third row whatever kit sits there.
+    Kit names are kept as the level spells them; `extract_loadouts` resolves
+    them against the library.
     """
-    read = 0
+    soldier: str | None = None
+    slots: dict[int, str] = field(default_factory=dict)
+
+
+def parse_level_kits(text: str) -> dict[int, TeamLoadout]:
+    """`game.setTeamSkin` and `game.setKit` out of an `Init.con`, replayed.
+
+    Last write wins, per team and per slot, because that is what the engine
+    does: `Init.con` is executed top to bottom and a later
+    `game.setKit 2 0 <x>` replaces slot 0 rather than adding to it.
+
+    This is not pedantry. `Liberation_of_Caen` sets team 2 twice — the five
+    `Canadian_*` kits under `CanadianSoldier`, then immediately the five `GB_*`
+    kits under `BritishSoldier`. Counting mentions makes all five Canadian kits
+    look live; replaying the file shows they are overwritten before the map
+    ever loads, and Canada is a nation whose kits never spawn anywhere in
+    vanilla. That is also why all five wear the same `Canadian_helmet` and why
+    `CanadianKit/Medic/Objects.con` declares a `Medic_helm_brit` part it never
+    uses: unfinished content.
+    """
+    teams: dict[int, TeamLoadout] = {}
+    for line in text.splitlines():
+        skin = SET_TEAM_SKIN.match(line)
+        if skin:
+            teams.setdefault(int(skin.group(1)), TeamLoadout()).soldier = skin.group(2)
+            continue
+        bound = SET_KIT.match(line)
+        if bound:
+            team = teams.setdefault(int(bound.group(1)), TeamLoadout())
+            team.slots[int(bound.group(2))] = bound.group(3)
+    return teams
+
+
+def level_loadouts(level_paths: list[tuple[str, Path]]) -> dict[str, dict[int, TeamLoadout]]:
+    """Per level, what each team is handed — every level archive with an `Init.con`.
+
+    Patch layers (`Berlin_003.rfa`) and archives that will not open are
+    skipped, the way `roster.add_levels` skips them.
+    """
+    loadouts: dict[str, dict[int, TeamLoadout]] = {}
     for level_name, path in level_paths:
         if roster_mod.LEVEL_PATCH.search(path.stem):
             continue
@@ -269,43 +368,33 @@ def sweep_levels(kits: dict[str, Kit], level_paths: list[tuple[str, Path]]) -> i
                      and "menu" not in name.lower()), None)
         if init is None:
             continue
-        read += 1
+        loadouts[level_name] = parse_level_kits(pool.read(init).decode("latin-1"))
+    return loadouts
 
-        # Last write wins, per team and per slot, because that is what the
-        # engine does: `Init.con` is executed top to bottom and a later
-        # `game.setKit 2 0 <x>` replaces slot 0 rather than adding to it.
-        #
-        # This is not pedantry. `Liberation_of_Caen` sets team 2 twice — the
-        # five `Canadian_*` kits under `CanadianSoldier`, then immediately the
-        # five `GB_*` kits under `BritishSoldier`. Counting mentions makes all
-        # five Canadian kits look live; replaying the file shows they are
-        # overwritten before the map ever loads, and Canada is a nation whose
-        # kits never spawn anywhere in vanilla. That is also why all five wear
-        # the same `Canadian_helmet` and why `CanadianKit/Medic/Objects.con`
-        # declares a `Medic_helm_brit` part it never uses: unfinished content.
-        skins: dict[int, str] = {}
-        bound_slots: dict[tuple[int, int], str] = {}
-        for line in pool.read(init).decode("latin-1").splitlines():
-            skin = SET_TEAM_SKIN.match(line)
-            if skin:
-                skins[int(skin.group(1))] = skin.group(2)
-                continue
-            bound = SET_KIT.match(line)
-            if bound:
-                bound_slots[(int(bound.group(1)), int(bound.group(2)))] = bound.group(3)
 
-        for (team, slot), name in bound_slots.items():
-            kit = kits.get(name.lower())
-            if kit is None:
-                continue
-            if level_name not in kit.levels:
-                kit.levels.append(level_name)
-            if slot not in kit.slots:
-                kit.slots.append(slot)
-            soldier = skins.get(team)
-            if soldier and soldier not in kit.soldiers:
-                kit.soldiers.append(soldier)
-    return read
+def sweep_levels(kits: dict[str, Kit], level_paths: list[tuple[str, Path]]) -> int:
+    """Bind kits to the levels and soldiers that field them.
+
+    This is also the liveness test. `game.setKit` is the only thing in the game
+    that says a kit is in play, and the install is full of kits that nothing
+    names: vanilla's five `BaseKit` entries, all five Canadian kits, XPack2's
+    seven, 46 of EoD's. Filtering on it costs nothing — the sweep has to happen
+    anyway for the map list.
+    """
+    loadouts = level_loadouts(level_paths)
+    for level_name, teams in loadouts.items():
+        for team_id, team in teams.items():
+            for slot, name in team.slots.items():
+                kit = kits.get(name.lower())
+                if kit is None:
+                    continue
+                if level_name not in kit.levels:
+                    kit.levels.append(level_name)
+                if slot not in kit.slots:
+                    kit.slots.append(slot)
+                if team.soldier and team.soldier not in kit.soldiers:
+                    kit.soldiers.append(team.soldier)
+    return len(loadouts)
 
 
 def browsable(kits: dict[str, Kit]) -> list[Kit]:
