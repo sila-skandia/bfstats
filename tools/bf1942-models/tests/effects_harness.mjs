@@ -47,10 +47,21 @@ const dense = new EmitterClock({ timeToLive: ['n', 0.1, 0, 0], intensity: ['n', 
 let denseCount = 0;
 for (let i = 0; i < 12; i++) denseCount += dense.step(1 / 60);
 out.clock.dense = denseCount;
-// A delay holds the first spawn back.
-const delayed = new EmitterClock({ delay: ['n', 0.2, 0, 0], timeToLive: ['n', 0.1, 0, 0], intensity: ['n', 10, 0, 0] }, lcg(7));
+// A delay holds the first spawn back. EMT-2: on the tick the delay runs out,
+// age grows by the delay's own pre-tick value (0.2 - 0.1 = 0.1), not by the
+// leftover past zero (0.5 - 0.1 = 0.4) — so a big second dt (0.5, comfortably
+// overshooting) still only advances age by 0.1, two spawns due at 0.1 s
+// intervals (t=0 and t=0.1), not the five a leftover-based age would owe.
+const delayed = new EmitterClock({ delay: ['n', 0.2, 0, 0], timeToLive: ['n', 1, 0, 0], intensity: ['n', 10, 0, 0] }, lcg(7));
 out.clock.delayedFirstStep = delayed.step(0.1);
-out.clock.delayedSecondStep = delayed.step(0.15);
+out.clock.delayedSecondStep = delayed.step(0.5);
+out.clock.delayedAgeAfterSecondStep = delayed.age;
+// EMT-2's other edge: the burst ends at age >= timeToLive, not age > timeToLive.
+// A single step landing exactly on timeToLive must not spawn there and must
+// already be done, not wait one more tick.
+const edge = new EmitterClock({ timeToLive: ['n', 0.1, 0, 0], intensity: ['n', 10, 0, 0] }, lcg(17));
+out.clock.edgeSpawnsAtTtl = edge.step(0.1);
+out.clock.edgeDoneAtTtl = edge.done;
 // A looping emitter never finishes; a -1 lifetime runs until stopped.
 const loop = new EmitterClock({ looping: true, timeToLive: ['n', 0.05, 0, 0], intensity: ['n', 10, 0, 0] }, lcg(9));
 for (let i = 0; i < 30; i++) loop.step(1 / 60);
