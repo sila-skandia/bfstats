@@ -1,0 +1,164 @@
+{
+  "soldier": "USSoldier",
+  "weapon": "Thompson",
+  "clips": {
+    "idle": {
+      "upperClip": "Animations/StandWalkRun/1p/Thompson/1PStandAimThompson.baf",
+      "speed": 0.1,
+      "loop": true,
+      "frames": 13,
+      "duration": 4.8
+    },
+    "walk": {
+      "upperClip": "Animations/StandWalkRun/1p/Thompson/1pRunThompson.baf",
+      "speed": 0.5,
+      "loop": true,
+      "frames": 17,
+      "duration": 1.28
+    },
+    "run": {
+      "upperClip": "Animations/StandWalkRun/1p/Thompson/1pRunThompson.baf",
+      "speed": 0.7,
+      "loop": true,
+      "frames": 17,
+      "duration": 0.9143
+    },
+    "fire": {
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1PFireThompson.baf",
+      "speed": 10.0,
+      "loop": true,
+      "frames": 8,
+      "duration": 0.028
+    },
+    "reload": {
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1PReloadThompson.baf",
+      "speed": 0.4,
+      "loop": false,
+      "weaponClip": "Animations/Weapons/Thompson/ThompsonReload.baf",
+      "weaponSpeed": 0.4,
+      "frames": 181,
+      "duration": 18.0
+    },
+    "deploy": {
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1PDeployThompson.baf",
+      "speed": 1.0,
+      "loop": false,
+      "frames": 29,
+      "duration": 1.12
+    }
+  },
+  "view": {
+    "center1pHands": [
+      -0.12,
+      -1.56,
+      0.1
+    ],
+    "fov1p": 0.47,
+    "soldierCameraPosition": [
+      -0.01,
+      -0.04,
+      0.09
+    ],
+    "soldierZoomPosition": [
+      -0.05,
+      -0.01,
+      0.08
+    ],
+    "soldierZoomFov": 0.6,
+    "zoomFov": 0.5
+  },
+  "bafFps": 25.0,
+  "weaponStats": {
+    "roundOfFire": 10.0,
+    "velocity": 1000.0,
+    "projectile": "ThomsonProjectile",
+    "fireInCameraDof": true,
+    "crossHair": "CHTCrossHair",
+    "hudAmmo": "ATAmmoBar",
+    "soundScript": "Sounds/Thompson.ssc",
+    "magazine": {
+      "size": 30,
+      "magazines": 5,
+      "type": 0,
+      "reloadTime": 4.8
+    },
+    "zoom": {
+      "fov": 0.5,
+      "soldierFov": 0.6,
+      "toggle": true
+    },
+    "view": {
+      "cameraPosition": [
+        -0.01,
+        -0.04,
+        0.09
+      ],
+      "zoomPosition": [
+        -0.05,
+        -0.01,
+        0.08
+      ]
+    },
+    "deviation": {
+      "min": 0.4,
+      "fire": [
+        2.0,
+        0.35,
+        0.06
+      ],
+      "mod": [
+        1.2,
+        1.05,
+        0.9
+      ],
+      "turn": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "speed": [
+        0.8,
+        0.2,
+        0.2,
+        0.1
+      ],
+      "misc": [
+        2.5,
+        2.5,
+        0.1
+      ]
+    },
+    "recoil": {
+      "up": [
+        0.21,
+        0.25
+      ],
+      "leftRight": [
+        -0.1,
+        0.1
+      ],
+      "hasForce": true,
+      "goBack": true
+    }
+  },
+  "soldierParts": {
+    "anchors": {
+      "USSoldier1PBody": "Bone08",
+      "1pUSSoldierRightHand": "Bip01 R Hand",
+      "1pUSSoldierLeftHand": "Bip01 L Hand"
+    },
+    "parts": [
+      "USSoldier1PBody [Soldier/1PUsBody] 438 tris, 8 joints",
+      "1pUSSoldierRightHand [Soldier/1pUSRightHand] 612 tris, 17 joints",
+      "1pUSSoldierLeftHand [Soldier/1pUSLeftHand] 612 tris, 17 joints"
+    ]
+  },
+  "weaponParts": 3,
+  "boundParts": [
+    "flerp",
+    "magasin"
+  ],
+  "texturesMissing": [],
+  "glb": "USSoldier__Thompson.fp.glb"
+}

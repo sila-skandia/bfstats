@@ -1,0 +1,165 @@
+{
+  "soldier": "GermanSoldier",
+  "weapon": "MP40",
+  "clips": {
+    "idle": {
+      "upperClip": "Animations/StandWalkRun/1p/Mp40/1PStandAimMp40.baf",
+      "speed": 0.1,
+      "loop": true,
+      "frames": 13,
+      "duration": 4.8
+    },
+    "walk": {
+      "upperClip": "Animations/StandWalkRun/1p/Mp40/1pRunMp40.baf",
+      "speed": 0.5,
+      "loop": true,
+      "frames": 17,
+      "duration": 1.28
+    },
+    "run": {
+      "upperClip": "Animations/StandWalkRun/1p/Mp40/1pRunMp40.baf",
+      "speed": 0.7,
+      "loop": true,
+      "frames": 17,
+      "duration": 0.9143
+    },
+    "fire": {
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1PFireMp40.baf",
+      "speed": 10.0,
+      "loop": true,
+      "frames": 7,
+      "duration": 0.024
+    },
+    "reload": {
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1PReloadMp40.baf",
+      "speed": 0.4,
+      "loop": false,
+      "weaponClip": "Animations/Weapons/Mp40/Mp40Reload.baf",
+      "weaponSpeed": 0.4,
+      "frames": 165,
+      "duration": 16.4
+    },
+    "deploy": {
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1PDeployMp40.baf",
+      "speed": 1.0,
+      "loop": false,
+      "frames": 31,
+      "duration": 1.2
+    }
+  },
+  "view": {
+    "center1pHands": [
+      -0.12,
+      -1.56,
+      0.1
+    ],
+    "fov1p": 0.47,
+    "soldierCameraPosition": [
+      0.01,
+      -0.04,
+      0.09
+    ],
+    "soldierZoomPosition": [
+      -0.02,
+      -0.0,
+      -0.08
+    ],
+    "soldierZoomFov": 0.9,
+    "zoomFov": 0.6
+  },
+  "bafFps": 25.0,
+  "weaponStats": {
+    "roundOfFire": 9.0,
+    "velocity": 1000.0,
+    "projectile": "mp40Projectile",
+    "fireInCameraDof": true,
+    "crossHair": "CHTCrossHair",
+    "hudAmmo": "ATAmmoBar",
+    "soundScript": "Sounds/mp40.ssc",
+    "magazine": {
+      "size": 32,
+      "magazines": 5,
+      "type": 0,
+      "reloadTime": 4.3
+    },
+    "zoom": {
+      "fov": 0.6,
+      "soldierFov": 0.9,
+      "toggle": true
+    },
+    "view": {
+      "cameraPosition": [
+        0.01,
+        -0.04,
+        0.09
+      ],
+      "zoomPosition": [
+        -0.02,
+        -0.0,
+        -0.08
+      ]
+    },
+    "deviation": {
+      "min": 0.4,
+      "fire": [
+        2.0,
+        0.35,
+        0.06
+      ],
+      "mod": [
+        1.2,
+        1.05,
+        0.9
+      ],
+      "turn": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "speed": [
+        0.8,
+        0.2,
+        0.2,
+        0.1
+      ],
+      "misc": [
+        2.5,
+        2.5,
+        0.1
+      ]
+    },
+    "recoil": {
+      "up": [
+        0.21,
+        0.25
+      ],
+      "leftRight": [
+        -0.1,
+        0.1
+      ],
+      "hasForce": true,
+      "goBack": true
+    }
+  },
+  "soldierParts": {
+    "anchors": {
+      "GerSoldier1PBody": "Bone08",
+      "1PGerSoldierRightHand": "Bip01 R Hand",
+      "1PGerSoldierLeftHand": "Bip01 L Hand"
+    },
+    "parts": [
+      "GerSoldier1PBody [Soldier/1PGerBody] 438 tris, 8 joints",
+      "1PGerSoldierRightHand [Soldier/1PGerRightHand] 612 tris, 17 joints",
+      "1PGerSoldierLeftHand [Soldier/1PGerLeftHand] 612 tris, 17 joints"
+    ]
+  },
+  "weaponParts": 4,
+  "boundParts": [
+    "mag",
+    "plupp",
+    "trigger"
+  ],
+  "texturesMissing": [],
+  "glb": "GermanSoldier__MP40.fp.glb"
+}
