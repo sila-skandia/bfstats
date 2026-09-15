@@ -573,6 +573,7 @@ import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collisio
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV } from './soldier.js';
 import { DeviationModel } from './deviation.js';
+import { createReplayController, recordingLevel } from './replay.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -5639,6 +5640,12 @@ optEntire.addEventListener('change', () => {
   applyVisibility();
 });
 
+// A round to play back over the level: `?replay=<recording.ndjson>`, with
+// `&serverlog=<ev_*.xml>` to overlay the server's own event log, or a
+// recording dropped onto the view. See replay.js.
+const replayUrl = params.get('replay');
+let replayController = null;
+
 const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
   .then(r => r.ok ? r.json() : [])
   .catch(() => []);
@@ -5655,10 +5662,28 @@ if (!manifest.length) {
     const entry = manifest.find(e => e.name === select.value);
     if (entry) show(entry);
   });
-  const wanted = (params.get('map') || '').toLowerCase();
+  // A recording names the level it was made on; ?map= still wins.
+  const replayLevel = replayUrl ? await recordingLevel(replayUrl).catch(() => '') : '';
+  const wanted = (params.get('map') || replayLevel || '').toLowerCase();
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
   select.value = first.name;
   await show(first);
+}
+
+replayController = createReplayController({
+  scene, camera, loader, bust,
+  stage: document.getElementById('stage'),
+  modelsBase: MODELS_BASE,
+  levelName: () => extras?.level || select.value || '',
+  // The level's own parked vehicles would double every recorded one.
+  hideBakedVehicles: () => { optVehicles.checked = false; },
+  // The engine's vehicle lighting, as the level's own vehicles get it.
+  // Not bindTextureFade: that one resets the level's list of fading meshes.
+  shadeModel: root => bindDynamicShading(root),
+});
+if (replayUrl) {
+  replayController.openFromUrl(replayUrl, params.get('serverlog'))
+    .catch(error => console.warn('replay unavailable', error));
 }
 
 optSound.addEventListener('change', () => {
@@ -5712,6 +5737,8 @@ function frame(dt) {
   advanceSim(dt);
   updateAudio(dt);
   updateSky();
+  // After the camera controls: a followed replay places the camera last.
+  replayController?.update(dt);
   renderer.render(scene, camera);
   // The near pass: everything on VIEWMODEL_LAYER — the arms rig and the
   // muzzle emitters inside it — drawn again over a cleared depth buffer, so
