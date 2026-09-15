@@ -1964,6 +1964,33 @@ baked), fire as a clamped one-shot per `guns.onShot`, reload rescaled by
 muzzle emitters strobe on foot. Crossfade durations remain OPEN stand-ins
 (0.15 s, fire near-snap) until the ASM transition rates are extracted.
 
+**Second pass (2026-09-15, corpus doc §3).** The mount is now the engine's
+arithmetic with no free parameter, and two of the numbers above changed
+under it:
+
+- The engine applies **no lower-body clip in first person** —
+  `AnimationStateMachineInstance::updateAnimations` returns when the state
+  has no 1P clip slot, and no `Lb_*` state declares one — so Bip01, the
+  pelvis and the legs are the `.ske` rest, restored by
+  `BFSoldier::setFirstPerson` from the template skeleton. The exporter bakes
+  that now instead of `Lb_Stand` frame 0; the arms come out 9 cm lower and
+  6 cm further out, and the head bone lands 1.8 cm under the eye at
+  `center1pHands` −1.56 (the clip root had put it 7 cm above). The rig is no
+  longer feet-at-origin: the rest legs sit bent, at y ≈ 0.38, unseen.
+- `center1pHands` *is* the engine's base vector (`BFSoldierTemplate+0x15c`,
+  written by the console word of that name); the calibrated x/y/z/yaw that
+  `map.html` carried on top of it (`VIEWMODEL_CAL`) is gone. The 0.35 rad of
+  yaw was compensating for the Lb_Stand pose.
+- The world camera is `renderer.fieldOfView 1` = 57.30° vertical, not
+  `set1pFov`; `set1pFov 0.47` is what `setFirstPersonFov` hands each
+  first-person part, multiplied by `SoldierZoomFov` when zoomed, drawn in
+  the renderer's own `drawFov` pass. The viewer's near pass now takes
+  `FOOT_FOV × the factor` and the world camera takes `zoomFov` on zoom.
+
+Against the retail capture the right hand and the gun's direction now land
+without calibration; the front sight and left hand sit ~60–70 px (≈5°)
+higher than retail, a pose-level residual the corpus doc §7 keeps open.
+
 The engine's own chain is decompiled in
 [`../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md`](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md)
 §3: the offsets displace the **rig**, in the soldier's view frame — the
@@ -1973,10 +2000,11 @@ camera never moves.
    extending along **+Z** (same root pitch as the pose glbs). A three.js
    camera looks down −Z, so the mount is a child group with a 180° Y turn.
 2. **Place it at `center1pHands`**, read from the extras, not retyped:
-   x lateral, y vertical, z along view (the corpus doc's axis reading). With
-   vanilla's −0.12/−1.56/0.1 the rig's feet sit 1.56 m below the eye —
-   which puts the sleeves at the bottom of the frame, weapon raked
-   up-forward, exactly the reference footage.
+   x lateral (positive = the viewer's right), y vertical, z along view. It
+   is the engine's own base vector, added to the eased weapon offset in
+   camera space; with vanilla's −0.12/−1.56/0.1 the skeleton root sits
+   1.56 m below the eye and the head bone 2 cm under it — sleeves at the
+   bottom of the frame, weapon raked up-forward.
 3. **Add the weapon's own nudge**: `soldierCameraPosition` at the hip,
    `soldierZoomPosition` zoomed, **eased at 25% of the remaining distance
    per frame** (the engine's constant, dt-free); while zoomed multiply the
@@ -1996,10 +2024,11 @@ camera never moves.
    `effect.view: "first"`) that the 3P glb also has but a 1P mount should
    prefer.
 6. **Render on a near layer** (separate pass or depth-clear) so the rig
-   never intersects walls; the game equivalent is drawing 1P parts in their
-   own pass. Whether retail gives the rig its own projection is still OPEN
-   in the corpus doc; until read, the world FOV (53.86°) is the answer that
-   matches every measurement here.
+   never intersects walls; the game draws 1P parts in their own `drawFov`
+   pass with their own field of view, `set1pFov × SoldierZoomFov`
+   (`setFirstPersonFov` → `IViewModifier::setFieldOfView`). The projection
+   that pass builds is still unread; at the hip the footage puts the arms at
+   the world's 57.3°, so the viewer's near pass takes `FOOT_FOV × factor`.
 
 What §11 leaves undone, so nobody hunts for it: the crouch/lie/crawl and
 idle-fidget families (resolve today, one tuple each in `FAMILIES`), the

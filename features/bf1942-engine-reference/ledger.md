@@ -235,7 +235,7 @@ each — 0 lower body, 1 upper body, 2 camera-shake triggers. Slot 2 is proven b
 
 ---
 
-## Hand-weapon deviation & first-person view (settled 2026-09-15)
+## Hand-weapon deviation & first-person view (settled 2026-09-15; mount closed the same day, VIEW-3..8)
 
 The mesh-viewer's firing-feel and 1P-placement approximations, checked against
 `HandFireArms::updateDeviation` (client `0x00551f50`, decompiled in full; lnxded
@@ -255,6 +255,12 @@ every address: [subsystems/handweapon-view-and-deviation.md](subsystems/handweap
 | VIEW-2 | hip↔zoom snaps | **refuted** | `BFSoldier::handleVisualUpdate` 0x08270fd0: cur += (target−cur)·0.25 per visual update (const 0x086c08ac), no dt; FOV factor 0.7/0.3 blend, snap at Δ≤0.001, applied via applyFovModifier 0x0826d490 |
 | ZOOM-1 | Right-mouse zoom is a hold state | **refuted** | press-toggle: altFireOnce edge filter client 0x00500901 (AltFire bit 23 masked unless fresh press); camera mode 0↔2 switch 0x004fc8b6 |
 | ZOOM-2 | Firing breaks zoom | **confirmed conditionally** | only when `UnZoomBetweenFireTime` > 0 (tmpl +0x3d0 client / +0x268 lnxded): pending flag +0x20c, un/re-zoom in `FireArms::handleUpdate` 0x08288890. Reload and weapon switch always unzoom; movement never does (no path found) |
+| VIEW-3 | The 1P base vector `BFSoldierTemplate+0x15c` ships as (0,0,0) | **refuted** | it is `center1pHands`: lnxded `ConsoleClass178::executeObjectMethod` 0x082bbaf0 writes +0x15c/0x160/0x164 via `getActiveTemplate(CID_BFSoldierTemplate)`; client execute 0x004ca700 writes template +0x20c/0x210/0x214, the fields `BFSoldier::updateAnimations` 0x004fb150 adds. Vanilla −0.12/−1.56/0.1 |
+| VIEW-4 | The rig needs a calibrated x/y/z/yaw on top of `center1pHands` (VIEWMODEL_CAL) | **refuted** | the chain is `rotate90aroundX · T(center1pHands + eased) · S · M` → `Skeleton::transform` (client 0x004fb150 decompiled; lnxded 0x0826ecf8–0x0826f0e8) with no rotation term; `rotate90aroundX` = rows (1,0,0,0)(0,0,1,0)(0,−1,0,0)(0,0,0,1) from cos/sin(−π/2) in both initializers (lnxded 0x0827ecb0, client 0x00850d00); `S` = the camera-shake matrix (client 0x004facd0 → +0x54c), `M` = the camera's `getRelativeTransformation` (Camera vtable 0x087209a0 slot +0x74) |
+| VIEW-5 | The x component of `soldierCameraPosition` / `center1pHands` might be mirrored | **settled: +x = the viewer's right** | view frame is D3D left-handed: `convertWorldPosToScreenPos` 0x00440790 divides by view z and maps +x to screen-right; `rotate90aroundX` only swaps y/z |
+| VIEW-6 | The 1P rig is posed on `Lb_Stand` frame 0 + the 1P idle | **refuted** | the lower-body machine applies nothing in first person: `AnimationStateMachineInstance::updateAnimations` returns when clipIndex ≥ clip count (lnxded 0x0832af36) and `updateState`'s 0x3a rule (0x0832b4a5) finds no 1P slot on any `Lb_*` state; `setFirstPerson` restores the template skeleton's rest locals (0x0826d3d9). Exporter now bakes the rest lower body |
+| VIEW-7 | The 1P parts are drawn under the world camera's projection | **refuted (renderer half open)** | `setFirstPerson`/`applyFovModifier` → `setFirstPersonFov` (lnxded 0x0826b330, client 0x004f7120) → `IID_IViewModifier` 0xf0e2bbfa slot +0xc = `BStandardMesh::setFieldOfView` (mesh +0xf0) with `set1pFov × SoldierZoomFov`; `StandardMeshRenderer::drawFov` is a separate pass. The projection that pass builds, and its near plane, are client-only and unread |
+| VIEW-8 | The soldier's view FOV is `set1pFov 0.47` (53.86°) | **refuted** | `renderer.fieldOfView 1` (VideoDefault.con) → `RenderView::setFieldOfView` 0x08444260, a whole vertical angle in radians (`Frustum::setupFrustum` 0x08440c70 halves it, divides by aspect 0.75 for the sides) = 57.30°; soldier `vehicleFov` (+0x248, 0x0831c060) unset, `Camera::setVehicleFOV` 0x081aadd0 keeps the default |
 
 ---
 

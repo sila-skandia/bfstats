@@ -272,21 +272,23 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
         raise PoseError(clip_report[PRIMARY]["error"])
     result["clips"] = clip_report
 
-    # The static base pose: the standing lower clip (for the parent chain the
-    # arms hang from) with the idle 1P clip on top.
-    lower_state = machine.state("Lb_Stand")
-    lower_ref = lower_state.clip_3p() if lower_state else None
-    if lower_ref is None:
-        raise PoseError("state machine has no Lb_Stand clip")
-    lower = read_clip(meshes, lower_ref.path)
-    if lower is None:
-        raise PoseError(f"lower clip unreadable: {lower_ref.path}")
+    # The static base pose: the idle 1P clip over the skeleton's own rest,
+    # which is what the engine shows. In first person the lower-body state
+    # machine applies nothing to the skeleton: `BFSoldier::updateAnimations`
+    # hands `AnimationStateMachineInstance::updateAnimations` clip slot 1 (the
+    # 1P clip), that returns when the state has no such slot (lnxded
+    # 0x0832af36), and no `Lb_*` state declares one -- so Bip01, the pelvis
+    # and the legs sit at the `.ske` rest that `BFSoldier::setFirstPerson`
+    # restores from the template skeleton (lnxded 0x0826d3d9). `Lb_Stand`
+    # frame 0 is the third-person answer; under `center1pHands` it held the
+    # arms 9 cm higher and 6 cm nearer the eye than the game does, and put
+    # the head bone 7 cm above the eye where the rest pose puts it 2 cm
+    # below. Corpus: features/bf1942-engine-reference/subsystems/
+    # handweapon-view-and-deviation.md, section 3.
     idle = read_clip(meshes, resolved[PRIMARY]["ref"].path)
     if idle is None:
         raise PoseError(f"idle clip unreadable: {resolved[PRIMARY]['ref'].path}")
-    base_locals = lower.local_pose(0)
-    base_locals.update(idle.local_pose(0))
-    base_locals = pose_mod.align_clip_roots(skeleton, base_locals)
+    base_locals = pose_mod.align_clip_roots(skeleton, idle.local_pose(0))
 
     # Read every family's clips up front; a family whose file is unreadable
     # records the error and drops out rather than costing the export.
