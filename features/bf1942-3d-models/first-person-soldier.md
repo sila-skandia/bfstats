@@ -1986,6 +1986,10 @@ under it:
   first-person part, multiplied by `SoldierZoomFov` when zoomed, drawn in
   the renderer's own `drawFov` pass. The viewer's near pass now takes
   `FOOT_FOV × the factor` and the world camera takes `zoomFov` on zoom.
+  Third pass (2026-09-15): the pass and its projection are read on the
+  client — see step 6 — and the engine's 0.47 rad does not reproduce the
+  capture, so the world FOV stays the viewer's default with the engine
+  value behind a query flag.
 
 Against the retail capture the right hand and the gun's direction now land
 without calibration; the front sight and left hand sit ~60–70 px (≈5°)
@@ -2025,10 +2029,17 @@ camera never moves.
    prefer.
 6. **Render on a near layer** (separate pass or depth-clear) so the rig
    never intersects walls; the game draws 1P parts in their own `drawFov`
-   pass with their own field of view, `set1pFov × SoldierZoomFov`
-   (`setFirstPersonFov` → `IViewModifier::setFieldOfView`). The projection
-   that pass builds is still unread; at the hip the footage puts the arms at
-   the world's 57.3°, so the viewer's near pass takes `FOOT_FOV × factor`.
+   pass, after the world, over a depth buffer cleared to 1.0, with the
+   finest mip forced. Each part carries a projection baked when its field of
+   view was set (`setFirstPersonFov` → `IViewModifier::setFieldOfView`):
+   the render view's own perspective for `set1pFov × SoldierZoomFov` as a
+   whole vertical angle, `height/width` aspect, and the **world's near
+   plane, 0.1 m** — nothing moves it. That is what the code applies per
+   mesh (corpus doc §3, "The drawFov pass"). The retail capture, measured,
+   does not show it: under 0.47 rad the right hand lands at (1042, 939) and
+   retail has it at (816, 614), which is the world's 57.3°. So the viewer's
+   near pass keeps `FOOT_FOV × factor` at near 0.1, and `?fov1p=engine`
+   renders the engine's value for the day the difference is understood.
 
 What §11 leaves undone, so nobody hunts for it: the crouch/lie/crawl and
 idle-fidget families (resolve today, one tuple each in `FAMILIES`), the
