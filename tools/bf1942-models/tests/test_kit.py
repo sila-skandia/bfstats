@@ -9,11 +9,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import (  # noqa: E402
     BONE_SLOTS,
+    PRIMARY_ITEM_INDEX,
     Kit,
     browsable,
+    carried_templates,
     classify,
     collect,
     kit_parts,
+    parse_level_kits,
+    primary_weapon,
 )
 
 
@@ -218,6 +222,187 @@ class BrowsableTests(unittest.TestCase):
         twin = self.kit("VC_Scout_CHUTE", levels=["Hue"])
         kept = browsable({"vc_scout": base, "vc_scout_chute": twin})
         self.assertEqual(["VC_Scout_CHUTE"], [k.template for k in kept])
+
+
+class PrimaryWeaponTests(unittest.TestCase):
+    """The weapon in hand on spawn is the kit's `HandFireArms` at `itemIndex 3`."""
+
+    def library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        # The German scout, as the kit file spells its weapons — lower-case
+        # `k98Sniper` and `walterp38` — with the knife declared first, the way
+        # `JapKit/Scout` orders its binoculars last and its grenade before.
+        library.add_con("Objects/Items/GerKit/Scout/Objects.con", """
+ObjectTemplate.create Kit German_Scout
+ObjectTemplate.setType Scout
+ObjectTemplate.setKitTeam 1
+ObjectTemplate.geometry Kit_Axis_Scout
+ObjectTemplate.addTemplate German_Helmet
+ObjectTemplate.addTemplate KnifeAxis
+ObjectTemplate.addTemplate k98Sniper
+ObjectTemplate.addTemplate walterp38
+ObjectTemplate.addTemplate Binoculars
+ObjectTemplate.addTemplate GrenadeAxis
+""")
+        library.add_con("Objects/Items/GerKit/Common/Objects.con", """
+ObjectTemplate.create KitPart German_Helmet
+ObjectTemplate.geometry German_Helmet
+ObjectTemplate.setBoneName A
+""")
+        library.add_con("Objects/HandWeapons/K98/Objects.con", """
+ObjectTemplate.create HandFireArms K98
+ObjectTemplate.itemIndex 3
+ObjectTemplate.projectileTemplate K98Projectile
+
+ObjectTemplate.create HandFireArms K98Sniper
+ObjectTemplate.itemIndex 3
+ObjectTemplate.projectileTemplate K98Projectile
+""")
+        library.add_con("Objects/HandWeapons/WalterP38/Objects.con", """
+ObjectTemplate.create HandFireArms WalterP38
+ObjectTemplate.itemIndex 2
+""")
+        library.add_con("Objects/HandWeapons/KnifeAxis/Objects.con", """
+ObjectTemplate.create HandFireArms KnifeAxis
+ObjectTemplate.itemIndex 1
+""")
+        library.add_con("Objects/HandWeapons/Binoculars/Objects.con", """
+ObjectTemplate.create HandFireArms Binoculars
+ObjectTemplate.itemIndex 5
+""")
+        library.add_con("Objects/HandWeapons/GrenadeAxis/Objects.con", """
+ObjectTemplate.create HandFireArms GrenadeAxis
+ObjectTemplate.itemIndex 4
+""")
+        return library
+
+    def test_item_index_is_read_onto_the_weapon(self) -> None:
+        library = self.library()
+        self.assertEqual(3, library.object("K98Sniper").item_index)
+        self.assertEqual(2, library.object("WalterP38").item_index)
+        self.assertIsNone(library.object("German_Scout").item_index)
+
+    def test_the_primary_is_the_slot_3_weapon_not_the_first_declared(self) -> None:
+        # The knife is declared first and the pistol is a HandFireArms too;
+        # neither is what the soldier appears holding.
+        library = self.library()
+        self.assertEqual("K98Sniper",
+                         primary_weapon(library, library.object("German_Scout")))
+
+    def test_the_primary_is_spelled_as_its_own_create_line(self) -> None:
+        # The kit says `k98Sniper`; the glb is `K98Sniper.glb`, named from the
+        # weapon's declaration. A case-mismatched URL is a 404.
+        library = self.library()
+        self.assertEqual("K98Sniper",
+                         primary_weapon(library, library.object("German_Scout")))
+        self.assertEqual(3, PRIMARY_ITEM_INDEX)
+
+    def test_collect_records_the_primary_on_the_kit(self) -> None:
+        kits = collect(self.library())
+        self.assertEqual("K98Sniper", kits["german_scout"].primary)
+
+    def test_two_weapons_at_slot_3_spawn_with_the_first_declared(self) -> None:
+        # "The order is important, first the best weapons!" — GerKit/Assault.
+        library = ObjectLibrary()
+        library.add_con("Objects/Items/USKit/Assault/Objects.con", """
+ObjectTemplate.create Kit Us_Assault
+ObjectTemplate.addTemplate Bar1918
+ObjectTemplate.addTemplate Thompson
+""")
+        library.add_con("Objects/HandWeapons/Bar1918/Objects.con", """
+ObjectTemplate.create HandFireArms Bar1918
+ObjectTemplate.itemIndex 3
+""")
+        library.add_con("Objects/HandWeapons/Thompson/Objects.con", """
+ObjectTemplate.create HandFireArms Thompson
+ObjectTemplate.itemIndex 3
+""")
+        self.assertEqual("Bar1918",
+                         primary_weapon(library, library.object("Us_Assault")))
+
+    def test_a_weapon_behind_a_wrapper_is_still_found(self) -> None:
+        # A mod that bundles its weapons: the kit names the wrapper, the
+        # wrapper names the HandFireArms.
+        library = ObjectLibrary()
+        library.add_con("Objects/Items/NVAKit/Assault/Objects.con", """
+ObjectTemplate.create Kit NVA_Assault
+ObjectTemplate.addTemplate NVA_Rifle_Bundle
+""")
+        library.add_con("Objects/HandWeapons/AK47/Objects.con", """
+ObjectTemplate.create Bundle NVA_Rifle_Bundle
+ObjectTemplate.addTemplate AK47
+
+ObjectTemplate.create HandFireArms AK47
+ObjectTemplate.itemIndex 3
+""")
+        self.assertEqual(["NVA_Rifle_Bundle", "AK47"],
+                         carried_templates(library, library.object("NVA_Assault")))
+        self.assertEqual("AK47",
+                         primary_weapon(library, library.object("NVA_Assault")))
+
+    def test_a_kit_with_nothing_at_slot_3_has_no_primary(self) -> None:
+        # EoD's pilot kits: a pistol and a knife, nothing to raise on spawn.
+        library = ObjectLibrary()
+        library.add_con("Objects/Items/USKit/JetPilot/Objects.con", """
+ObjectTemplate.create Kit US_JetPilot
+ObjectTemplate.addTemplate Colt
+ObjectTemplate.addTemplate KnifeAllies
+""")
+        library.add_con("Objects/HandWeapons/Colt/Objects.con", """
+ObjectTemplate.create HandFireArms Colt
+ObjectTemplate.itemIndex 2
+
+ObjectTemplate.create HandFireArms KnifeAllies
+ObjectTemplate.itemIndex 1
+""")
+        self.assertIsNone(primary_weapon(library, library.object("US_JetPilot")))
+
+
+class LevelKitTests(unittest.TestCase):
+    """`Init.con`'s `setTeamSkin` / `setKit` lines, replayed as the engine does."""
+
+    def test_each_team_gets_its_soldier_and_a_kit_per_slot(self) -> None:
+        teams = parse_level_kits("""
+game.setTeamSkin 1 JapaneseSoldier
+game.setKit 1 0 Jap_Scout
+game.setKit 1 1 Jap_Assault
+game.setKit 1 2 Jap_AT
+game.setTeamSkin 2 USSoldier
+game.setKit 2 0 US_Scout
+game.setKit 2 2 Us_AT
+""")
+        self.assertEqual({1, 2}, set(teams))
+        self.assertEqual("JapaneseSoldier", teams[1].soldier)
+        self.assertEqual({0: "Jap_Scout", 1: "Jap_Assault", 2: "Jap_AT"}, teams[1].slots)
+        self.assertEqual("USSoldier", teams[2].soldier)
+        self.assertEqual({0: "US_Scout", 2: "Us_AT"}, teams[2].slots)
+
+    def test_a_later_binding_replaces_the_slot(self) -> None:
+        # Liberation_of_Caen sets team 2 twice; the Canadians never load.
+        teams = parse_level_kits("""
+game.setTeamSkin 2 CanadianSoldier
+game.setKit 2 0 Canadian_Scout
+game.setKit 2 1 Canadian_Assault
+game.setTeamSkin 2 BritishSoldier
+game.setKit 2 0 GB_Scout
+game.setKit 2 1 GB_Assault
+""")
+        self.assertEqual("BritishSoldier", teams[2].soldier)
+        self.assertEqual({0: "GB_Scout", 1: "GB_Assault"}, teams[2].slots)
+
+    def test_case_and_indentation_do_not_matter(self) -> None:
+        teams = parse_level_kits("   Game.SetKit 1 4 German_Engineer\n")
+        self.assertEqual({4: "German_Engineer"}, teams[1].slots)
+        self.assertIsNone(teams[1].soldier)
+
+    def test_unrelated_lines_are_ignored(self) -> None:
+        teams = parse_level_kits("""
+game.setNumberOfTickets 1 200
+game.setTeamSkin 1 GermanSoldier
+rem game.setKit 1 0 Commented_Out
+""")
+        self.assertEqual({1: "GermanSoldier"}, {t: v.soldier for t, v in teams.items()})
+        self.assertEqual({}, teams[1].slots)
 
 
 if __name__ == "__main__":
