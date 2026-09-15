@@ -303,7 +303,7 @@ export class Vehicle {
     this.swaps = [];
     this.cockpitReady = options.cockpit === false
       ? Promise.resolve(null)
-      : this.loadCockpit(options.modelsBase);
+      : this.loadCockpit(options.modelsBase, options.prepareCockpit);
   }
 
   /**
@@ -314,11 +314,16 @@ export class Vehicle {
    * existed has none for anything. Either way the 404 leaves the vehicle
    * exactly as it was.
    */
-  async loadCockpit(modelsBase) {
+  async loadCockpit(modelsBase, prepare = null) {
     const base = modelsBase || defaultModelsBase();
     const url = new URL(`${this.control}.cockpit.glb`, base).href;
     try {
       const gltf = await cockpitLoader.loadAsync(url);
+      // `prepare` gets the detached interior before the swap first shows it:
+      // map.html links its programs and uploads its textures there, so the
+      // first cockpit frame is not also a link (features/mesh-viewer-
+      // performance, rule 6). A failure costs that head start, not the cockpit.
+      if (prepare) await Promise.resolve().then(() => prepare(gltf.scene)).catch(() => {});
       return this.attachCockpit(gltf.scene);
     } catch {
       return null;
