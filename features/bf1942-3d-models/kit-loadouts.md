@@ -74,6 +74,40 @@ files write `k98Sniper`, `MP40`, `walterp38`; the weapons declare `K98Sniper`,
 `Mp40`, `WalterP38`; the exported glb is named from the latter, and a
 case-mismatched URL is a 404.
 
+## Patch archives win, not just the base
+
+`Init.con` above is not always read from the level's own `<Level>.rfa`.
+Refractor overlays a level with `<Level>_NNN.rfa` siblings in the same
+directory — `Wake_003.rfa` over `Wake.rfa`, case and all (vanilla ships
+`Berlin.rfa`, `Berlin_000.rfa` *and* `berlin_003.rfa` side by side) — and the
+patch is what the shipped game actually loads. `extract_models.discover_levels`
+already strips these siblings from the level list, correctly, because they are
+not levels of their own; but until this was fixed, both `kit.level_loadouts`
+and `roster.add_levels` then went and opened only the base archive underneath,
+so a patched level reported the kit binding the patch had already replaced.
+
+Five vanilla `_003` layers rewrite the Pacific maps' US side from
+`game.setTeamSkin 2 USSoldier` / `US_*` kits to `USMarineSoldier` / `USMarine_*`
+— Wake, Midway, Coral Sea, Guadalcanal, Iwo Jima. A screenshot of Wake's US
+engineer in-game shows Marine camo sleeves and an M1 Garand, not the Army
+`USSoldier` skin the base archive alone would report. `roster.level_pool(path)`
+is the fix: it finds `path`'s numbered siblings, adds the highest-numbered one
+first (`ArchivePool.add` is first-registered-wins), then lower numbers, then
+the base last, so patch entries win and the base only fills in what no patch
+touches. Both readers now build their pool through it instead of opening
+`path` directly.
+
+The same mechanism picks up two things this feature's own note above did not
+anticipate, because `level_pool` merges the *whole* patch archive, not just
+`Init.con`: XPack1's `baytown_003`/`husky_003` rebind team 2's medic from
+`GB_Medic` to a cross-nation `It_GB_Medic`, and Kharkov/Kursk's `_003` swaps
+`ObjectSpawnTemplates.con`'s `DiveBomberSpawner` from a `yak9` fighter to the
+`Ilyushin` the name always claimed. Both are plain, unconditional lines in the
+patch, not the host-guarded AI/ControlPoints rewrites the same archives also
+carry. Neither reader here opens AI.con or ControlPoints.con; `extract_map.py`,
+which does read the control points, already layers patches through
+`bf42/level.py`'s own archive lookup.
+
 ## The table, from the data
 
 `extract_loadouts.py --list`, vanilla. Rows are the spawn screen's order.
@@ -81,7 +115,7 @@ case-mismatched URL is a 404.
 | nation (soldier) | scout | assault | anti-tank | medic | engineer |
 |---|---|---|---|---|---|
 | US (`USSoldier`) | No4Sniper | Bar1918 | Bazooka | Thompson | No4 |
-| US Marines (`USMarineSoldier`, Philippines only) | No4Sniper | Bar1918 | Bazooka | Thompson | M1Garand |
+| US Marines (`USMarineSoldier`, Philippines + Wake/Midway/Coral Sea/Guadalcanal/Iwo Jima's `_003` patch) | No4Sniper | Bar1918 | Bazooka | Thompson | M1Garand |
 | British (`BritishSoldier`) | No4Sniper | Bar1918 | Bazooka | Thompson | No4 |
 | Soviet (`RussianSoldier`) | No4Sniper | DP | Bazooka | Mp18 | No4 |
 | German (`GermanSoldier`, `GermanDesertSoldier`) | K98Sniper | Sg44 | Panzershreck | Mp40 | K98 |
@@ -91,8 +125,13 @@ Three things in it that a hand-written table would have got wrong: the
 Japanese scout carries a K98 sniper and the Japanese AT a Panzershreck (the
 data has no Type 97 or Type 4 launcher); the Soviet and British riflemen
 carry the No4 and the Bazooka; and the Marines differ from the Army by one
-weapon, the Garand, on one level. Kasserine Pass dresses `GermanDesertSoldier`
-in the non-desert `German_*` kits — same primaries, different helmet.
+weapon, the Garand — worn on six levels total, not the one Philippines alone
+would suggest, once the five Pacific `_003` patches are read (see "Patch
+archives win, not just the base" above). Kasserine Pass dresses
+`GermanDesertSoldier` in the non-desert `German_*` kits — same primaries,
+different helmet. Truk is its own middle case: its base archive (no patch
+involved) keeps the soldier as `USSoldier` but already binds the `USMarine_*`
+kits directly, mixing Army mesh with Marine equipment from the day it shipped.
 
 XPack1 binds 48 kits over 29 levels, XPack2 46 over 32, EoD 209 over 239.
 Every vanilla and XPack kit has a slot-3 weapon; EoD's ten `*Pilot*_CHUTE`
@@ -117,7 +156,7 @@ kits carry a pistol and a knife and nothing else, and are written with
       "1": { "soldier": "JapaneseSoldier",
              "slots": { "0": "Jap_Scout", "1": "Jap_Assault", "2": "Jap_AT",
                         "3": "Jap_Medic", "4": "Jap_Engineer" } },
-      "2": { "soldier": "USSoldier", "slots": { "0": "US_Scout", "..." : "..." } }
+      "2": { "soldier": "USMarineSoldier", "slots": { "0": "USMarine_Scout", "..." : "..." } }
     }
   }
 }
@@ -172,9 +211,9 @@ answer came from the file (`fromFile`).
 
 | level | side | soldier | rows proven | rigs |
 |---|---|---|---|---|
-| Wake | Allied | USSoldier | 5/5 | USSoldier__* |
+| Wake | Allied | USMarineSoldier | 5/5 | USMarineSoldier__* |
 | Guadalcanal | Axis | JapaneseSoldier | 5/5 | JapaneseSoldier__* |
-| Guadalcanal | Allied | USSoldier | 5/5 | USSoldier__* |
+| Guadalcanal | Allied | USMarineSoldier | 5/5 | USMarineSoldier__* |
 | Bocage | Axis | GermanSoldier | 5/5 | GermanSoldier__* |
 | Bocage | Allied | USSoldier | 5/5 | USSoldier__* |
 | Berlin | Axis | GermanSoldier | 5/5 | GermanSoldier__* |
@@ -199,7 +238,14 @@ and every rig came up with its mixer on `idle`. Two more checks on top:
 Wake itself has no Axis-held ring in the viewer — every control point opens
 US-held and the Japanese come from the fleet, which `spawnFlags` does not list
 — so on Wake the Axis tab cannot select a flag and a spawn lands at the US
-one, as a US soldier with US kits. The Japanese kits are proven on Guadalcanal.
+one, as a US Marine soldier with Marine kits (Wake's `_003` patch — see
+"Patch archives win, not just the base"). The Japanese kits are proven on
+Guadalcanal. Midway is the mirror case: both its control points open neutral
+(team 0) at match start, so *no* flag is selectable on either tab there; its
+Marine kits are proven by reading `__loadouts()` directly rather than through
+`__deploy.select`, which is exactly what `tests/test_kit.py`'s
+`RealWakePatchTests` and `tests/test_roster.py`'s `LevelPoolTests` do at the
+Python level instead of relying on the deploy screen's flag list.
 
 ## Decisions
 
