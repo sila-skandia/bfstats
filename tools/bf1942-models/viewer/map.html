@@ -1374,15 +1374,25 @@ function fly(dt) {
   clampAltitude();
 }
 
+// The stage's size, taken here and only here. A `clientHeight` read in the
+// middle of a frame, after that frame's own DOM writes, forces a synchronous
+// layout every frame (features/mesh-viewer-performance, rule 3); the frame
+// reads these instead.
+let stageWidth = 0;
+let stageHeight = 0;
 function resize() {
   // Stage, not window: the shared nav bar takes a grid row above it.
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
+  stageWidth = w;
+  stageHeight = h;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
+// The side panel collapsing resizes the stage without resizing the window.
+new ResizeObserver(resize).observe(stage);
 resize();
 
 function dispose(root) {
@@ -4468,16 +4478,26 @@ function updateCrosshair() {
   const show = optOnFoot.checked && !!soldier && !!hw
     && (style === 'CHTCrossHair' || style === 'CHTIcon')
     && !(scoped && isZoomed());
-  crosshairEl.hidden = !show;
+  // Written only on change, and read back from the element rather than a
+  // cache because enterVehicle and disposeHandWeapon hide it behind this
+  // function's back: every DOM write here invalidates style, and a frame
+  // with nothing new to say must cost the page nothing (rule 3).
+  if (crosshairEl.hidden !== !show) crosshairEl.hidden = !show;
   if (!show) return;
   // CHTIcon weapons draw an authored icon in the game; until that art is
   // extracted they keep the centre dot alone.
-  crosshairEl.classList.toggle('ch-icon', style === 'CHTIcon');
-  const height = stage.clientHeight || 800;
+  const icon = style === 'CHTIcon';
+  if (crosshairEl.classList.contains('ch-icon') !== icon) {
+    crosshairEl.classList.toggle('ch-icon', icon);
+  }
+  const height = stageHeight || 800;
   const floor = (hw.model.floor?.() ?? 0) * DEG_TO_RAD;
   const dev = Math.max(0, hw.model.current() * DEG_TO_RAD - floor);
   const px = 0.5 * height * Math.tan(dev) / Math.tan(camera.fov * DEG_TO_RAD / 2);
-  crosshairEl.style.setProperty('--ch-gap', `${px.toFixed(1)}px`);
+  const gap = `${px.toFixed(1)}px`;
+  if (crosshairEl.style.getPropertyValue('--ch-gap') !== gap) {
+    crosshairEl.style.setProperty('--ch-gap', gap);
+  }
 }
 
 function updateAmmoHud() {
@@ -4486,13 +4506,16 @@ function updateAmmoHud() {
   // A seated soldier's optOnFoot box is still ticked — he is only suspended —
   // but the element belongs to the vehicle's dashboard while he sits.
   if (!hw || !magazine || !optOnFoot.checked || aircraft || car) {
-    ammoEl.hidden = true;
+    if (!ammoEl.hidden) ammoEl.hidden = true;
     return;
   }
-  ammoEl.hidden = false;
-  ammoEl.textContent = hw.reload > 0
+  if (ammoEl.hidden) ammoEl.hidden = false;
+  // A fresh text node per frame is a style and layout pass per frame; the
+  // line changes per round and per tenth of a reload second, not per frame.
+  const text = hw.reload > 0
     ? `${hw.name} · reloading ${hw.reload.toFixed(1)}s`
     : `${hw.name} · ${hw.rounds} / ${magazine.size} · ${hw.mags} mags`;
+  if (ammoEl.textContent !== text) ammoEl.textContent = text;
 }
 
 /** Announce the view C just selected, then fall back to the control list. */
@@ -4641,6 +4664,25 @@ const minimapBox = document.getElementById('minimap');
 const minimapCanvas = document.getElementById('minimap-canvas');
 const fullmapBox = document.getElementById('fullmap');
 const fullmapCanvas = document.getElementById('fullmap-canvas');
+// The CSS widths of the two map canvases, kept by a ResizeObserver so no
+// frame asks layout for them: `getBoundingClientRect` after the frame's own
+// DOM writes forces a synchronous layout, 1.4-1.8% of the on-foot frame on
+// its own (features/mesh-viewer-performance, rule 3). A canvas the observer
+// has not reported yet — or reports at 0 because it is hidden — falls back
+// to one measured read, so the first frame after the map opens is right.
+const canvasCssWidth = new Map();
+const canvasObserver = new ResizeObserver(entries => {
+  for (const entry of entries) canvasCssWidth.set(entry.target, entry.contentRect.width);
+});
+canvasObserver.observe(minimapCanvas);
+canvasObserver.observe(fullmapCanvas);
+function cssWidthOf(canvas) {
+  const known = canvasCssWidth.get(canvas);
+  if (known) return known;
+  const measured = canvas.getBoundingClientRect().width;
+  if (measured) canvasCssWidth.set(canvas, measured);
+  return measured;
+}
 const fullmapName = document.getElementById('fullmap-name');
 const fullmapMeta = document.getElementById('fullmap-meta');
 
@@ -4926,7 +4968,7 @@ function drawSpawnRings(ctx, toPx, sc) {
  *  this the HUD widget draws into a 376 px buffer shown at 186 px and every
  *  marker comes out half the size it was asked for. */
 function fitCanvas(canvas) {
-  const css = canvas.getBoundingClientRect().width;
+  const css = cssWidthOf(canvas);
   if (!css) return canvas.__ratio || 1;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const want = Math.round(css * dpr);
@@ -5055,7 +5097,7 @@ function drawFullMap() {
   // Sprites grow with the surface, not with the window: the game's spawn map
   // shows a 16 px flag at about a fifth of a grid square, and so does this
   // one whatever the canvas's CSS size came out as.
-  const css = fullmapCanvas.getBoundingClientRect().width || 610;
+  const css = cssWidthOf(fullmapCanvas) || 610;
   paintMap(fullmapCanvas, 0, 0, 1, {
     scale: Math.min(2, Math.max(0.8, css / 610)),
     dim: deploy,
