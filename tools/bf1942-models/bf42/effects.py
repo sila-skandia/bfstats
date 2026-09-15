@@ -15,8 +15,11 @@ way the engine does it.
 
 Everything named here was read out of the engine — the emitter and particle
 template serialisers (`EmitterTemplate::makeScript`, lnxded 0x081e61c0 /
-client 0x005097a0; `ParticleTemplate::makeScript` 0x0820b260 / 0x005384d0)
-list exactly these properties, and the update loops give them their meaning.
+client 0x005097a0; `ParticleTemplate::makeScript` 0x0820b260 / 0x005384d0;
+`SpriteParticleNewTemplate::makeScript`, client-only, for the flipbook words
+`numAnimationFrames`/`initAnimationFrame`/`animationSpeed`/
+`animationSpeedOverTime`) list exactly these properties, and the update loops
+give them their meaning.
 See `features/bf1942-engine-reference/subsystems/projectiles-and-impacts.md`.
 """
 
@@ -67,6 +70,10 @@ _PARTICLE_CRD = {
     "rotationspeed": "rotationSpeed",
     "xysizeratio": "xySizeRatio",
     "alphatestref": "alphaTestRef",
+    # Texture-atlas flipbooks (ledger SPR-6). `numAnimationFrames` itself is a
+    # plain count, not a CRD — handled separately below, only for sprites.
+    "initanimationframe": "initAnimationFrame",
+    "animationspeed": "animationSpeed",
 }
 _PARTICLE_CURVE = {
     "sizeovertime": "sizeOverTime",
@@ -76,6 +83,7 @@ _PARTICLE_CURVE = {
     "colorrgbaovertime": "colorRGBAOverTime",
     "xysizeratioovertime": "xySizeRatioOverTime",
     "rotationspeedovertime": "rotationSpeedOverTime",
+    "animationspeedovertime": "animationSpeedOverTime",
 }
 _PARTICLE_BOOL = {
     "turnsinmovingdirection": "turnsInMovingDirection",
@@ -110,6 +118,16 @@ def particle_spec(payload: con_mod.ObjectTemplate) -> dict | None:
     sizeModifier` (`Particle::handleUpdate`, lnxded 0x0820ad20). The decals
     declare `sizeModifier 1/1/1` for exactly that reason and the flying stone
     chips do not.
+
+    A sprite's `numAnimationFrames` (ledger SPR-6) makes it a texture-atlas
+    flipbook — 791 of 7,159 vanilla-plus-mods sprite templates do, among them
+    `fx_expl_core` and every aircraft engine fire. `initAnimationFrame` and
+    `animationSpeed` are CRDs rolled once per particle
+    (`geom::ParticleSystem::addParticle`, client 0x0060a680), exactly like
+    `initRotation`/`rotationSpeed`; `animationSpeedOverTime` ramps the speed
+    over the particle's own life like every other `…OverTime` curve. See
+    `effects-core.js`'s `atlasGrid`/`frameIndex` for what the viewer does with
+    them.
     """
     kind = payload.kind.lower()
     props = payload.effect_props
@@ -118,6 +136,15 @@ def particle_spec(payload: con_mod.ObjectTemplate) -> dict | None:
                       "texture": payload.sprite_texture, "blend": _blend(props)}
         if not payload.sprite_texture:
             return None
+        if raw := props.get("numanimationframes"):
+            try:
+                frames = int(float(raw.split()[0]))
+            except ValueError:
+                frames = 0
+            # A single frame is the same as no flipbook at all; the viewer
+            # gates every bit of atlas math on this key being present.
+            if frames > 1:
+                spec["numAnimationFrames"] = frames
     elif kind == "particle":
         if not payload.geometry:
             return None
