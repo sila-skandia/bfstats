@@ -616,6 +616,11 @@ const stage = document.getElementById('stage');
 stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+// The scene never moves, and in three r169 an auto-updating root is what
+// forces every descendant's world matrix to be recomputed each frame
+// (freezeStatics, below, has the arithmetic). Its matrix stays the identity
+// it was born with.
+scene.matrixAutoUpdate = false;
 const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 8000);
 camera.position.set(0, 80, 0);
 // In the scene graph, not just pointed at it, so things may hang off it: the
@@ -680,6 +685,9 @@ let simTime = 0;
 // plays every clip it carries: `FlagBlow <name>` per control point, over that
 // flag's own joints, which is the animation state `AnimatedFlag` declares —
 // and `spin`/`spin.N`, the `setContinousRotationSpeed` parts grouped by period.
+// The clips the mixer plays are kept for `freezeStatics`, which must leave
+// every node they drive in three's matrix walk.
+let levelClips = [];
 let flagMixer = null;
 
 const params = new URLSearchParams(location.search);
@@ -2721,6 +2729,96 @@ function indexScene(root) {
     tagCull(child);
     cull.push(child);
   }
+  freezeStatics(root);
+}
+
+// --- static matrices --------------------------------------------------------
+//
+// `WebGLRenderer.render` opens with `scene.updateMatrixWorld()`, and in three
+// r169 that walk recomposes and multiplies EVERY object's world matrix every
+// frame: `updateMatrix()` on an auto-updating node flags it changed, and the
+// `force` that sets cascades down the whole subtree whether or not anything
+// under it moved. Over ~5,100 nodes, twice a frame, it was 18-21% of the
+// frame's JS time (features/mesh-viewer-performance, rule 2). The level is
+// mostly furniture — terrain tiles, buildings, palms, parked vehicles — that
+// never moves once show() has placed it, so those subtrees leave the walk:
+// their `updateMatrixWorld` is a no-op unless an ancestor genuinely forces
+// it, and the nodes above them (`scene`, the level root, the spawners group)
+// stop re-composing matrices they never change, so no force ever arrives.
+//
+// The contract: anything that moves a frozen node calls
+// `updateMatrixWorld(true)` on it, or thaws it. A driven vehicle is thawed
+// for the ride (setPilot) and frozen again where it is parked (leaveVehicle,
+// setPilot(false)). `__matrixDrift()` under ?shots checks every world matrix
+// against a fresh recompute, and the perf harness runs it after a minute of
+// walking, firing and turning.
+let frozenCount = 0;
+// Vehicles a level clip animates while they are parked — the Hatsuzuki's
+// radar dish turns under an `ambient` clip — never leave the walk, ride or
+// no ride. Found by freezeStatics; `__matrixDrift` is what caught the dish
+// standing still.
+const neverFrozen = new WeakSet();
+const staticUpdateMatrixWorld = function (force) {
+  if (force === true) THREE.Object3D.prototype.updateMatrixWorld.call(this, force);
+};
+function freeze(obj) {
+  obj.updateMatrixWorld(true);   // commit wherever it was last posed
+  obj.updateMatrixWorld = staticUpdateMatrixWorld;
+}
+function thaw(obj) {
+  if (Object.hasOwn(obj, 'updateMatrixWorld')) delete obj.updateMatrixWorld;
+}
+/** The spawner child that owns `node`: the vehicle itself, or the one a
+ *  nested seat sits in. Null for a node outside the spawners group. */
+function spawnerVehicleOf(node) {
+  for (let n = node; n; n = n.parent) if (n.parent === spawnersRoot) return n;
+  return null;
+}
+function thawVehicle(node) {
+  const vehicle = spawnerVehicleOf(node);
+  if (vehicle) thaw(vehicle);
+}
+function freezeVehicle(node) {
+  const vehicle = spawnerVehicleOf(node);
+  if (vehicle && !neverFrozen.has(vehicle)) freeze(vehicle);
+}
+/** Take every level subtree that nothing animates out of the per-frame
+ *  matrix walk. Runs once per level, after `root.updateMatrixWorld(true)`
+ *  has composed everything where the extract put it. */
+function freezeStatics(root) {
+  // What moves: bones and skinned cloth (the flags), input-driven `rig`
+  // parts, and any node an ambient clip targets, with its ancestors.
+  const animated = new Set();
+  for (const clip of levelClips) {
+    for (const track of clip.tracks) {
+      const { nodeName } = THREE.PropertyBinding.parseTrackName(track.name);
+      const node = THREE.PropertyBinding.findNode(root, nodeName);
+      for (let n = node; n && n !== root; n = n.parent) animated.add(n);
+    }
+  }
+  const moves = obj => obj.isBone || obj.isSkinnedMesh
+    || !!obj.userData?.rig || animated.has(obj);
+  frozenCount = 0;
+  root.matrixAutoUpdate = false;
+  for (const child of root.children) {
+    if (child === spawnersRoot) {
+      child.matrixAutoUpdate = false;
+      // Every parked vehicle, rigs and all: none of it moves until someone
+      // climbs in, and setPilot thaws the one they climb into. Except the
+      // ones a clip keeps moving while parked.
+      for (const vehicle of child.children) {
+        if (animated.has(vehicle)) { neverFrozen.add(vehicle); continue; }
+        freeze(vehicle);
+        frozenCount++;
+      }
+      continue;
+    }
+    let dynamic = false;
+    child.traverse(obj => { if (moves(obj)) dynamic = true; });
+    if (dynamic) continue;
+    freeze(child);
+    frozenCount++;
+  }
 }
 
 function inRange(obj, cam, limit) {
@@ -3057,6 +3155,8 @@ function setPilot(on, node = null) {
     // the fly gate is clicked.
     ensureAudioContext();
     setupEngineAudio();
+    // Back into three's matrix walk for the ride (freezeStatics).
+    thawVehicle((aircraft || car).node);
   }
   if (!on && (aircraft || car)) {
     const vehicle = aircraft || car;
@@ -3070,6 +3170,7 @@ function setPilot(on, node = null) {
     vehicle.setFirstPerson(false);
     vehicle.applyTransform();
     vehicle.applyRig();
+    freezeVehicle(vehicle.node);   // parked at its spawn: furniture again
     ammoEl.hidden = true;      // the dashboard line rides the ammo element
   }
   stick.roll = 0;
@@ -3263,6 +3364,7 @@ function leaveVehicle() {
   vehicle.setFirstPerson(false);
   vehicle.applyTransform();
   vehicle.applyRig();
+  freezeVehicle(vehicle.node);   // parked where it stands: furniture again
   stick.roll = 0;
   stick.pitch = 0;
   ammoEl.hidden = true;
@@ -5557,6 +5659,7 @@ async function show(entry) {
   flagMixer = null;
   const ambient = (gltf.animations || []).filter(
     c => !/^spin(\.\d+)?$/.test(c.name));
+  levelClips = ambient;
   if (ambient.length) {
     flagMixer = new THREE.AnimationMixer(currentRoot);
     for (const clip of ambient) {
@@ -6112,6 +6215,34 @@ if (params.has('shots')) {
                                dist, -1);
     return hit && { t: hit.t, point: [hit.x, hit.y, hit.z], kind: hit.kind,
                     material: hit.material, owner: hit.owner };
+  };
+  // Every world matrix in the scene checked against a fresh recompute, for
+  // the perf harness: static subtrees opt out of three's per-frame matrix
+  // walk (freezeStatics), and this is the proof that nothing frozen has
+  // moved since. Returns the worst absolute element difference, the object
+  // it was found on, how many objects were checked and how many are frozen.
+  window.__matrixDrift = () => {
+    const local = new THREE.Matrix4();
+    const expect = new THREE.Matrix4();
+    let worst = 0, checked = 0, worstName = null;
+    const walk = (obj, parentWorld) => {
+      if (obj.matrixAutoUpdate) local.compose(obj.position, obj.quaternion, obj.scale);
+      else local.copy(obj.matrix);
+      if (obj === vmRoot) expect.copy(camera.matrixWorld);
+      else if (parentWorld) expect.multiplyMatrices(parentWorld, local);
+      else expect.copy(local);
+      const a = expect.elements, b = obj.matrixWorld.elements;
+      for (let i = 0; i < 16; i++) {
+        const d = Math.abs(a[i] - b[i]);
+        if (d > worst) { worst = d; worstName = obj.name || obj.type; }
+      }
+      checked++;
+      const here = expect.clone();
+      for (const child of obj.children) walk(child, here);
+    };
+    walk(scene, null);
+    walk(vmScene, null);
+    return { worst, checked, worstName, frozen: frozenCount };
   };
   window.__getAudioState = () => ({
     audioListener,
