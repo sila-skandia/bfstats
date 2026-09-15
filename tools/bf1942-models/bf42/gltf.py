@@ -45,6 +45,11 @@ class Node:
     name: str
     translation: tuple[float, float, float] = (0.0, 0.0, 0.0)
     rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # xyzw
+    # `Object.geometry.scale` — per-placement stretch of a shared template.
+    # 47% of vanilla's placed statics carry one; dropping it renders every
+    # forest as identical clones. None means "not authored", exactly 1/1/1
+    # is authored-but-inert and also skipped at serialisation.
+    scale: tuple[float, float, float] | None = None
     mesh: int | None = None
     children: list[int] = field(default_factory=list)
     extras: dict | None = None
@@ -226,7 +231,7 @@ class GlbBuilder:
                      double_sided: bool = False, alpha_cutoff: float | None = None,
                      blend: bool = False, base_color=(1.0, 1.0, 1.0, 1.0),
                      unlit: bool = False, emissive_floor: float = 0.0,
-                     additive: bool = False) -> int:
+                     additive: bool = False, texture_fade: bool = False) -> int:
         pbr: dict = {"baseColorFactor": list(base_color),
                      "metallicFactor": 0.0, "roughnessFactor": 0.85}
         if texture is not None:
@@ -248,6 +253,14 @@ class GlbBuilder:
             # material.userData) and switches to real additive blending.
             mat["alphaMode"] = "BLEND"
             mat["extras"] = {"additive": True}
+        elif texture_fade:
+            # `textureFade true;` — Refractor fades this surface with camera
+            # distance (the black_o darkness plane in every doorway). glTF has
+            # no distance fade either, so the same extras pattern: BLEND so a
+            # naive viewer draws something translucent-capable, and ours reads
+            # the flag and drives opacity from range.
+            mat["alphaMode"] = "BLEND"
+            mat["extras"] = {"textureFade": True}
         elif alpha_cutoff is not None:
             mat["alphaMode"] = "MASK"
             mat["alphaCutoff"] = alpha_cutoff
@@ -417,6 +430,11 @@ class GlbBuilder:
                 entry["translation"] = [x, y, -z]
             if n.rotation != (0.0, 0.0, 0.0, 1.0):
                 entry["rotation"] = list(n.rotation)
+            if n.scale is not None and n.scale != (1.0, 1.0, 1.0):
+                # Scale is a magnitude per axis; the RH->LH handedness flip
+                # lives entirely in the translation/rotation conversion, so
+                # the triple passes through unnegated.
+                entry["scale"] = list(n.scale)
             if n.mesh is not None:
                 entry["mesh"] = n.mesh
             if n.skin is not None:

@@ -46,6 +46,10 @@ class StaticInstance:
     position: tuple[float, float, float]
     rotation: tuple[float, float, float]
     team: int | None = None
+    # `Object.geometry.scale x/y/z` — a per-placement stretch of the shared
+    # template. 8,596 of vanilla's 18,258 placed statics carry one; it is how
+    # one birch mesh becomes a forest of different trees.
+    scale: tuple[float, float, float] | None = None
 
 
 @dataclass
@@ -558,6 +562,11 @@ def parse_static_objects(text: str) -> list[StaticInstance]:
                 current.rotation = con_mod.vec3(args.split()[0])
             except ValueError:
                 continue
+        elif cmd == "geometry.scale":
+            try:
+                current.scale = con_mod.vec3(args.split()[0])
+            except (ValueError, IndexError):
+                continue
         elif cmd == "setteam":
             try:
                 current.team = int(float(args.split()[0]))
@@ -853,14 +862,18 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 info.sky.cloud_mesh = pending_geometry_file
             pending_geometry_create = None
         elif ns == "renderer":
-            if cmd == "fogcolorvec" and tokens:
+            # Fog has two spellings per knob and vanilla uses both:
+            # `fogColorVec` (38) vs `setFogColorVec` (3), `fogLinearStart/End`
+            # (9 each) vs `fogstart/fogend` (14 each). Missing the second
+            # spelling left 8 levels fogged to defaults and 2 fogged grey.
+            if cmd in ("fogcolorvec", "setfogcolorvec") and tokens:
                 try:
                     info.fog_color = con_mod.vec3(tokens[0])
                 except ValueError:
                     pass
-            elif cmd == "foglinearstart" and tokens:
+            elif cmd in ("foglinearstart", "fogstart") and tokens:
                 info.fog_start = float(tokens[0])
-            elif cmd == "foglinearend" and tokens:
+            elif cmd in ("foglinearend", "fogend") and tokens:
                 info.fog_end = float(tokens[0])
             elif cmd == "setviewdistance" and tokens:
                 info.view_distance = float(tokens[0])
@@ -1093,11 +1106,17 @@ def tile_world_origin(tex_offset_x: int, tex_offset_y: int,
     return origin_x + col * patch, origin_z + row * patch
 
 
+# Like con.py's _COMMAND but the command part may itself be dotted:
+# `Object.geometry.scale 1.2/1.4/1.2` is one command named `geometry.scale`,
+# and the shared single-dot regex silently drops the whole line.
+_DOTTED_COMMAND = re.compile(r"^(\w+)\.([\w.]+?)(?:[ \t]+(.*?))?[ \t]*$")
+
+
 def _commands(text: str) -> list[tuple[str, str, str]]:
     text = con_mod.strip_comments(text)
     out: list[tuple[str, str, str]] = []
     for line in text.splitlines():
-        match = con_mod._COMMAND.match(line.strip())
+        match = _DOTTED_COMMAND.match(line.strip())
         if match:
             ns, cmd, args = match.group(1).lower(), match.group(2).lower(), match.group(3) or ""
             out.append((ns, cmd, args))

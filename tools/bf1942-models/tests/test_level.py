@@ -142,6 +142,23 @@ Object.absolutePosition 3361.73/25/18.94
         self.assertIsNone(instances[0].team)
         self.assertEqual("coastline", instances[1].template)
 
+    def test_geometry_scale_survives_its_second_dot(self) -> None:
+        # `Object.geometry.scale` has a dotted command name, which the shared
+        # single-dot regex silently dropped — 8,596 of vanilla's 18,258
+        # placed statics carry one, which is why every forest rendered as
+        # identical clones.
+        instances = parse_static_objects(
+            """
+Object.create birch1_M1
+Object.absolutePosition 100/10/200
+Object.geometry.scale 0.932941/0.935059/0.990118
+Object.create birch1_M1
+Object.absolutePosition 120/10/210
+"""
+        )
+        self.assertEqual((0.932941, 0.935059, 0.990118), instances[0].scale)
+        self.assertIsNone(instances[1].scale)
+
     def test_set_team_belongs_to_the_spawn(self) -> None:
         instances = parse_static_objects(
             """
