@@ -1412,12 +1412,15 @@ changed its preferred reading from 1.56 to 1.65; both are inferences off
   angle at which the legs shuffle.
 - **`soldierZoomFov` vs `zoomFov`.** 0.6 > 0.47 rules out "zoomed camera FOV"
   for the first (§2.1). The viewmodel-FOV reading is inference.
-- **The `.baf` nominal frame rate.** The walk cycle against
-  `setWalkFrequency 0.66` implies 26 fps; the run cycle against
-  `setRunFrequency 0.36` implies 11.3. They cannot both be right, so the run
-  animation is over-cranked relative to its footsteps — which is what BF1942's
-  fast-legged run looks like. 25 fps (PAL) is the best guess for the authoring
-  rate and it is **UNVERIFIED**.
+- **The `.baf` nominal frame rate — settled: there is none.** The engine
+  advances a normalized phase by `dt × speed` and maps `frac(phase) × N`
+  onto the frames (`AnimationStateMachineInstance::updateState` /
+  `BoneAnimation::applyOnSkeleton`, both binaries, §11 third pass), so a
+  clip cycle lasts `1/|speed|` seconds and the frame count never enters.
+  The walk-vs-run "they cannot both be right" puzzle dissolves: the 1P walk
+  plays `1pRun` at 0.5 (a 2.0 s stride cycle) and the run at its tweaked
+  1.40 (0.71 s), whatever `setWalkFrequency` / `setRunFrequency` say about
+  the footstep sounds.
 - **Jump impulse, step-up height, slope limit, movement capsule radius.** None
   exist in vanilla data and none were found in the client either — the jump
   state (`c_SstJump`, pose flag 0x80) exists in the state machine at
@@ -1850,14 +1853,14 @@ the 1,154-clip archive). The exporter bakes the six families a viewmodel
 needs; every clip is 52 bones — spine chain, neck, head, both arms, every
 finger, no pelvis, no legs:
 
-| baked as | state | clip | frames | declared speed | baked span |
-|---|---|---|---|---|---|
-| `idle` | `Ub_StandAimThompson` | `1PStandAimThompson.baf` | 13 | 0.1, looping | 4.8 s |
-| `walk` | `Ub_WalkForwardThompson` | `1pRunThompson.baf` | 17 | 0.5, looping | 1.28 s |
-| `run` | `Ub_RunForwardThompson` | `1pRunThompson.baf` | 17 | 0.7, looping | 0.91 s |
-| `fire` | `Ub_FireThompson` | `1PFireThompson.baf` | 8 | 10.0, looping | 0.028 s |
-| `reload` | `Ub_StandReloadThompson` | `1PReloadThompson.baf` | 181 | 0.4, once | 18.0 s |
-| `deploy` | `Ub_StandRaiseWeaponThompson` | `1PDeployThompson.baf` | 29 | 1.0, once | 1.12 s |
+| baked as | state | clip | frames | speed (after tweaking) | span = 1/speed | morph factor |
+|---|---|---|---|---|---|---|
+| `idle` | `Ub_StandAimThompson` | `1PStandAimThompson.baf` | 13 | 0.1, looping | 10 s | 0.7 |
+| `walk` | `Ub_WalkForwardThompson` | `1pRunThompson.baf` | 17 | 0.5, looping | 2.0 s | 0.5 |
+| `run` | `Ub_RunForwardThompson` | `1pRunThompson.baf` | 17 | 1.40 (declared 0.7), looping | 0.71 s | 0.5 |
+| `fire` | `Ub_FireThompson` | `1PFireThompson.baf` | 8 | 10.0, looping | 0.1 s | 4.0 |
+| `reload` | `Ub_StandReloadThompson` | `1PReloadThompson.baf` | 181 | 0.21 (declared 0.4), once | 4.76 s | 10000 (cut) |
+| `deploy` | `Ub_StandRaiseWeaponThompson` | `1PDeployThompson.baf` | 29 | 1.0, once | 1.0 s | 10000 (cut) |
 
 Also in the data and not yet baked: crouch/lie aim variants
 (`Ub_CrouchThompson` plays the stand-aim clip at 0.5, `Ub_LieThompson` a
@@ -1868,16 +1871,14 @@ three idle one-shots `1pIdle1..3Thompson`. All resolve through the same
 **The walk/run distinction is a rate, not a clip** — both play `1pRun` and
 only the state speed differs, which is why the export carries both names.
 
-**The baked spans are the one non-data number.** The `.baf` authoring rate
-is nowhere declared (§7); the exporter uses 25 fps and writes every clip's
-frames, declared speed and resulting span into the glb extras so the viewer
-can rescale. The tell that a rescale is needed: the reload bakes to 18.0 s
-under the 25 fps reading while the Thompson declares `reloadtime 4.8` — the
-gameplay number. **Play `reload` with `timeScale = bakedSpan / reloadTime`**
-(3.75 for the Thompson) and the animation lands exactly on the magazine
-swap; the other spans are close enough at 1.0 that nothing visibly drags
-(fire loops at 0.028 s against the 0.1 s shot cycle and holds between
-shots).
+**The spans are data after all** (third pass, below). The engine has no
+authoring rate: a full pass of a clip lasts `1/|speed|` seconds however
+many frames it holds, and the speed is the one the tweaking scripts set.
+The reload at its tweaked 0.21 is a 4.76 s pass against the Thompson's
+`reloadtime 4.8` — DICE fitted the rate to the timer, which is why the
+earlier `bakedSpan / reloadTime` stretch (3.75 under a 25 fps reading)
+happened to land, and why it is gone. Fire at 10.0 is a 0.1 s pass, the
+shot cycle itself.
 
 ### The weapon channel is declared, not conventional
 
@@ -1946,10 +1947,13 @@ Doc extras (`extras` on the glb root document, mirrored in the
 - `view`: `center1pHands`, `fov1p`, `soldierCameraPosition`,
   `soldierZoomPosition`, `soldierZoomFov`, `zoomFov` — everything the mount
   needs, per weapon.
-- `clips`: per family — source clip path, frames, declared speed, loop flag,
-  baked span, and the weapon-channel clip where one is declared.
-- `weaponStats`: the armoury block (`magazine.reloadTime` is the reload
-  rescale target), `bafFps: 25`.
+- `clips`: per family — source clip path, frames, the state's speed (after
+  the `{1p,3p}AnimationsTweaking.con` overrides), loop flag, `duration` =
+  one full pass in seconds (the engine's `1/|speed|`, third pass below),
+  `morphFactor` (the per-second blend-in rate, `setMorphFactor`),
+  `returnTo`, and the weapon-channel clip where one is declared.
+- `weaponStats`: the armoury block; `clipTiming: "1/speed"` marks the
+  timing convention (the former `bafFps: 25` is gone — the engine has none).
 
 ### How the viewer should mount it (wired — map.html follows this recipe)
 
@@ -1958,11 +1962,11 @@ steps below say: camera-parented at `center1pHands` (the `VIEWMODEL_BASE`
 stand-in now serves only the bare-weapon fallback), 180° about Y, the eased
 hip/zoom offsets unchanged, an AnimationMixer running idle/walk/run off
 `soldier.gait` (crouch and prone play the aim until their families are
-baked), fire as a clamped one-shot per `guns.onShot`, reload rescaled by
-`bakedSpan / reloadTime`, deploy on every spawn, and the whole rig on a
-`VIEWMODEL_LAYER` near pass over cleared depth. Only the `view: "first"`
-muzzle emitters strobe on foot. Crossfade durations remain OPEN stand-ins
-(0.15 s, fire near-snap) until the ASM transition rates are extracted.
+baked), fire as a clamped one-shot per `guns.onShot`, reload at its own engine
+span (one pass = `1/speed`, 4.76 s), deploy on every spawn, and the whole
+rig on a `VIEWMODEL_LAYER` near pass over cleared depth. Only the
+`view: "first"` muzzle emitters strobe on foot. Crossfades last
+`1 / morphFactor` of the clip being entered, from the extras (third pass).
 
 **Second pass (2026-09-15, corpus doc §3).** The mount is now the engine's
 arithmetic with no free parameter, and two of the numbers above changed
@@ -1989,7 +1993,40 @@ under it:
 
 Against the retail capture the right hand and the gun's direction now land
 without calibration; the front sight and left hand sit ~60–70 px (≈5°)
-higher than retail, a pose-level residual the corpus doc §7 keeps open.
+higher than retail, a residual the corpus doc §7 keeps open.
+
+**Third pass (2026-09-15, corpus doc §3 "in time").** The animation runtime
+under the arms was read in both binaries to ask whether that residual is a
+frame, a blend or an aim-driven sweep of the idle clip. It is none of them,
+and three numbers in this section changed under it:
+
+- **A clip's pass is `1/|speed|` seconds, whatever its frame count.** The
+  engine advances a normalized phase by `dt × speed` and maps
+  `frac(phase) × N` onto the frames with a slerp between neighbours; there
+  is no authoring rate anywhere. `BAF_FPS = 25` is withdrawn. The fire clip
+  at 10.0 is the 0.1 s of the 600 rpm cycle, the aim sway at 0.1 a 10 s
+  breath (not 4.8 s), the deploy 1 s, and the reload — at its *tweaked* 0.21
+  — 4.76 s against the 4.8 s `reloadTime`, so the `bakedSpan / reloadTime`
+  stretch was reproducing the data and is gone.
+- **The tweaking scripts are the rates.** `1pAnimationsTweaking.con` /
+  `3pAnimationsTweaking.con`, run last from `AnimationStates.con`, replace
+  the `addAnimation` speeds by state name: run 0.7 → 1.40, reload 0.4 →
+  0.21. `bf42/animstates.py` applies them now; they are the saved output of
+  a developer hot-key tuner in `BFSoldier::handleFrameUpdate`, the only
+  thing in the binary that changes a clip's rate.
+- **Crossfades are `1/setMorphFactor` of the state being entered**, blending
+  from whatever pose the skeleton holds: aim 0.7 (a 1.4 s settle back onto
+  the sights after a burst), fire 4.0, deploy and reload 10000 (a cut). The
+  0.15 s / 0.02 s stand-ins are gone; the factor rides in the extras.
+
+On the pose itself: all 13 frames of `1PStandAimThompson` project within
+4 px of one another, the deploy clip ends on the aim clip's frame 0, and
+nothing on the first-person path — no aim pitch, no IK (seated-in-vehicle
+only), no post-absolute rotation (third person only) — touches the 52 bones
+beyond the clip. Frame 0 over the rest is the engine's pose to within the
+sway. The ~5° residual lives between the skeleton and the pixels (the
+`drawFov` projection, the camera's relative transform, or the 16:9 vertical
+field of view); the corpus doc §7 carries the numbers to beat.
 
 The engine's own chain is decompiled in
 [`../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md`](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md)
@@ -2013,10 +2050,12 @@ camera never moves.
 4. **Drive the mixer off the soldier state**: `idle` looping always (it is
    the breathing sway — at its declared 0.1x it is slow enough to read as
    idle sway, not animation); crossfade to `walk`/`run` by gait; `fire` while
-   the trigger is down (it loops); `reload` one-shot at
-   `timeScale = bakedSpan / weaponStats.magazine.reloadTime`; `deploy`
-   one-shot on weapon raise. The stance-transition timings §6a measured
-   apply to crossfade durations.
+   the trigger is down (it loops); `reload` one-shot at its baked span (the
+   engine's `1/speed` — 4.76 s for the Thompson's tweaked 0.21 against the
+   4.8 s `reloadTime`; the earlier `bakedSpan / reloadTime` stretch is
+   gone); `deploy` one-shot on weapon raise. Each crossfade lasts
+   `1 / clips.<family>.morphFactor` (the target state's `setMorphFactor`;
+   ≥ 1000 is a cut) — the third pass below.
 5. **Keep firing from the camera.** `fireInCameraDof 1` (§2.7) — the rig is
    presentation; the shot ray, deviation and recoil paths do not change.
    The in-file muzzle nodes are where the *flash* draws, and the weapon tree
@@ -2034,5 +2073,5 @@ What §11 leaves undone, so nobody hunts for it: the crouch/lie/crawl and
 idle-fidget families (resolve today, one tuple each in `FAMILIES`), the
 other six nations' arms (one CLI pair each — the meshes total 885 KB for
 all eight), knives (their fire states are `Ub_FireKnife*A..E` variants and
-need a family alias), and the `.baf` base rate, still 25 fps UNVERIFIED
-with the reload rescale as the shipped workaround.
+need a family alias). The `.baf` base rate is no longer on the list: there
+is none, a pass is `1/speed` (third pass).

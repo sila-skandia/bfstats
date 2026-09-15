@@ -6,45 +6,57 @@
       "upperClip": "Animations/StandWalkRun/1p/Thompson/1PStandAimThompson.baf",
       "speed": 0.1,
       "loop": true,
+      "morphFactor": 0.7,
+      "returnTo": "Ub_StandAimThompson",
       "frames": 13,
-      "duration": 4.8
+      "duration": 10.0
     },
     "walk": {
       "upperClip": "Animations/StandWalkRun/1p/Thompson/1pRunThompson.baf",
       "speed": 0.5,
       "loop": true,
+      "morphFactor": 0.5,
+      "returnTo": "Ub_StandAimThompson",
       "frames": 17,
-      "duration": 1.28
+      "duration": 2.0
     },
     "run": {
       "upperClip": "Animations/StandWalkRun/1p/Thompson/1pRunThompson.baf",
-      "speed": 0.7,
+      "speed": 1.4,
       "loop": true,
+      "morphFactor": 0.5,
+      "returnTo": "Ub_StandAimThompson",
       "frames": 17,
-      "duration": 0.9143
+      "duration": 0.7143
     },
     "fire": {
       "upperClip": "Animations/WeaponHandling/1p/Thompson/1PFireThompson.baf",
       "speed": 10.0,
       "loop": true,
+      "morphFactor": 4.0,
+      "returnTo": "_POSE_",
       "frames": 8,
-      "duration": 0.028
+      "duration": 0.1
     },
     "reload": {
       "upperClip": "Animations/WeaponHandling/1p/Thompson/1PReloadThompson.baf",
-      "speed": 0.4,
+      "speed": 0.21,
       "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
       "weaponClip": "Animations/Weapons/Thompson/ThompsonReload.baf",
-      "weaponSpeed": 0.4,
+      "weaponSpeed": 0.21,
       "frames": 181,
-      "duration": 18.0
+      "duration": 4.7619
     },
     "deploy": {
       "upperClip": "Animations/WeaponHandling/1p/Thompson/1PDeployThompson.baf",
       "speed": 1.0,
       "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
       "frames": 29,
-      "duration": 1.12
+      "duration": 1.0
     }
   },
   "view": {
@@ -67,7 +79,7 @@
     "soldierZoomFov": 0.6,
     "zoomFov": 0.5
   },
-  "bafFps": 25.0,
+  "clipTiming": "1/speed",
   "weaponStats": {
     "roundOfFire": 10.0,
     "velocity": 1000.0,

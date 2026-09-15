@@ -66,6 +66,22 @@ class State:
     # *weapon's own* skeleton plays alongside this body state (the moving
     # magazine during a reload). Other kinds (`c_AsmFaceState`) are not kept.
     weapon_state: str | None = None
+    # `setMorphFactor f` — the rate, per second, at which the blend weight
+    # ramps 0 -> 1 when this state is *entered*
+    # (`AnimationStateMachineInstance::updateState`, lnxded 0x0832b50f:
+    # `w += dt * state+0x2c`; client 0x00613c60 `state+0x34`). 5.0 is the
+    # constructor default (lnxded 0x08328bf8); a value above 1000 snaps
+    # (lnxded 0x0832b481 against `.rodata` 1000.0). So `Ub_StandAimThompson`'s
+    # 0.7 is a 1.4 s fade *into* the aim pose, and the deploy state's 10000
+    # is an instant cut to the raise clip.
+    morph_factor: float = 5.0
+    # `returnToState X` / `addTransitionWhenDone X` — where a one-shot goes
+    # once its phase passes 1 (`AnimationState::update`, lnxded 0x08329f00).
+    # `_POSE_` is the engine's sentinel for "the machine's base state".
+    return_to: str | None = None
+    # `setUserRandomStartTime` — a looping clip starts at a random phase
+    # (rand & 0xff) / 255 instead of 0 (lnxded 0x0832b413).
+    random_start: bool = False
 
     def clip_3p(self) -> ClipRef | None:
         for clip in self.clips:
@@ -132,7 +148,10 @@ class StateMachine:
             if latest is None or src_weapon.lower() not in latest.name.lower():
                 return None
         new_name = _substitute(latest.name, src_weapon, new_weapon)
-        clone = State(new_name)
+        clone = State(new_name, morph_factor=latest.morph_factor,
+                      random_start=latest.random_start)
+        if latest.return_to:
+            clone.return_to = _substitute(latest.return_to, src_weapon, new_weapon)
         if latest.weapon_state:
             # The paired weapon-channel state follows the body state's name:
             # `WeaponReloadThompson` -> `WeaponReloadColt`. Donors do not
@@ -226,6 +245,35 @@ def parse(read: Callable[[str], str | None],
             elif command == "setotherstate" and latest is not None and len(args) >= 2:
                 if args[0].lower() == "c_asmweaponstate":
                     latest.weapon_state = args[1]
+            elif command in ("set1panimationspeed", "set3panimationspeed") \
+                    and len(args) >= 2:
+                # `animations/{1p,3p}AnimationsTweaking.con`, run from
+                # `AnimationStates.con` *after* every state has been created
+                # and cloned, name the state outright and replace the clip's
+                # rate. The engine's dev hot-keys wrote these files
+                # (`AnimationStateMachine::writeAnimationSpeedChanges`), which
+                # is why `Ub_RunForwardThompson` is declared at 0.7 and plays
+                # at 1.40.
+                target = machine.states.get(args[0].lower())
+                try:
+                    speed = float(args[1])
+                except ValueError:
+                    speed = None
+                if target is not None and speed is not None:
+                    want_1p = command.startswith("set1p")
+                    for i, clip in enumerate(target.clips):
+                        if clip.is_first_person == want_1p:
+                            target.clips[i] = ClipRef(clip.path, speed, clip.looping)
+            elif command == "setmorphfactor" and latest is not None and args:
+                try:
+                    latest.morph_factor = float(args[0])
+                except ValueError:
+                    pass
+            elif command in ("returntostate", "addtransitionwhendone") \
+                    and latest is not None and args:
+                latest.return_to = args[0]
+            elif command == "setuserrandomstarttime" and latest is not None:
+                latest.random_start = True
             elif command == "copystate2" and len(args) >= 2:
                 machine._copy_latest(latest, args[0], args[1])
             elif command == "copystate" and len(args) >= 2:
