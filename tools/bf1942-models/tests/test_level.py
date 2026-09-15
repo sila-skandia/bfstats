@@ -569,7 +569,7 @@ def _sky_quad(name: str) -> Material:
                        (2000.0, 2098.0, 1.0, 0.0), (-2000.0, 2098.0, 0.0, 0.0)):
         verts += [x, y, 2000.0, 0.0, 0.0, -1.0, u, v]
     return Material(
-        name=name, primitive=4, flags=0, stride=32, vertex_count=4,
+        name=name, primitive=4, flags=0x411, stride=32, vertex_count=4,
         index_count=6, unknown=(0, 0, 0, 0), vertices=verts,
         indices=[0, 1, 2, 0, 2, 3],
     )

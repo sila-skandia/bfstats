@@ -1731,7 +1731,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "ghidra-session",
-   "note": "vtable +0x9c. Per-LOD material reader. Vertex payload is read as ONE flat blob of stride*count bytes and the index block as count*2; no per-component parsing happens at load. Creates GPU buffers via RendPCDX8_singleton +0x1c (vertex) and +0x20 (index)."
+   "note": "vtable +0x9c. Per-LOD material reader; twin of lnxded BStandardMeshTemplate<...>::loadLod 0x083a6f00. Per material: string name, 12 raw bytes (one read(void*,0xc) into a zeroed 12-byte POD), int primitive, then u32 d0 vertexFormat (the 'flags' word), d1 stride, d2 vertexCount, d3 indexCount, u32 trailer. Creates the vertex block via RendPCDX8 +0x1c (0x0063ed70) as (1|0xc, d0, d2) - stride is NOT passed; the GPU buffer is getStride(d0)*d2 bytes laid out by D3DFVF(d0). d1 is used only as d1*d2 = bytes to read from the stream (lock(&p,0,0) then stream->read(p, d1*d2)), and skipped as such when no renderer. Index block via +0x20 as (1|4, 0, d3), d3*2 bytes. No component parsing at load; layout is the format word's."
   },
   {
    "address": "0x005b54e0",
@@ -1896,6 +1896,24 @@
    "note": "bf42plus section: Patched Locations (for reference)"
   },
   {
+   "address": "0x0063ed70",
+   "name": "RendPCDX8_createVertexBlock",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtbl 0x00917a00 slot +0x1c. Args (blockFormat, vertexFormat, numVertices): new(0x50) -> 0x006773d0, or new(0x48) -> 0x00677890 when blockFormat & 0x20. StandardMeshTemplate_readMaterials 0x005b42d0 calls it as (1 or 0xc, descriptor flags word, vertexCount) - the descriptor's stride is not an argument."
+  },
+  {
+   "address": "0x0063ede0",
+   "name": "RendPCDX8_createIndexBlock",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "vtbl 0x00917a00 slot +0x20. new(0x38) -> 0x00677c60, or 0x00678230 when blockFormat & 0x20. readMaterials calls it as (1 or 4, 0, indexCount); index bytes are indexCount*2."
+  },
+  {
    "address": "0x0063f00e",
    "name": "RendPCDX8__getDisplaySettingID",
    "kind": "patch_site",
@@ -1932,6 +1950,24 @@
    "note": "bf42plus section: Resolution / Display Patches"
   },
   {
+   "address": "0x00640f20",
+   "name": "rend_getStride",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Twin of lnxded dice::ref2::rend::getStride(unsigned int) 0x084451d0, identical bit table. Byte sizes: 0x1->12 (XYZ), 0x4->16 (XYZRHW), 0x200000/0x400000/0x800000/0x1000000->4/8/12/16 (blend weights 1-4), 0x20000000->16, 0x10->12 (normal), 0x40->4 (diffuse), 0x100->4 (specular); texcoord set n=0..3 sized 1/2/3 floats by (0x200,0x400,0x800)<<3n and 4 floats by 0x2000000<<n, one size per set. getStride(0x411)=32, getStride(0x2411)=40. Sole caller 0x006410d0 (MemVertexBlock::create). Settles ledger SM-1/SM-2."
+  },
+  {
+   "address": "0x006410d0",
+   "name": "MemVertexBlock_create",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded MemVertexBlock::create(blockFormat, vertexFormat, numVertices) 0x08445530, same field writes: +0xc numVertices, +0x10 vertexFormat, +0x14 blockFormat, +0x1c = getStride(vertexFormat) (0x00640f20), +0x18 = stride*numVertices, +0x8 = malloc(+0x18). Slot +0x2c of vtbl 0x00917cc4. Stride is derived from the format word, never passed in."
+  },
+  {
    "address": "0x00664560",
    "name": "RendPCDX8_flushMaterialStages",
    "kind": "function",
@@ -1939,6 +1975,42 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "DX8 material flush for the SIMPLE texture path (param+0x90008 texture cache): stage0 MODULATE(1x, TEXTURE x DIFFUSE); no-texture SELECTARG DIFFUSE; +0x5e flag path ADD(TEXTURE,TFACTOR) then stage1 MODULATE(CURRENT,DIFFUSE). NOT the StandardMesh path - vehicles/statics go through StandardMeshSubShader_applyRenderState 0x005bf690 which uses MODULATE2X. Do not calibrate mesh lighting off this function."
+  },
+  {
+   "address": "0x00672a40",
+   "name": "rend_vertexFormatToD3DFVF",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "(uint format, uint out[3]): out[0] = D3DFVF code, out[1] = out[2] = stride. 0x1->D3DFVF_XYZ 0x002, 0x4->XYZRHW 0x004, 0x200000..0x1000000->XYZB1..XYZB4 0x006..0x00c, 0x10->NORMAL 0x010, 0x40->DIFFUSE 0x040, 0x100->SPECULAR 0x080; texcoord set n bits -> D3DFVF_TEXCOORDSIZE1/2/3/4(n) (3/0/1/2 << (16+2n)), then TEX1..TEX4 (0x100..0x400) from the number of sets; 5 sets -> Debug 'Feeeeel!'. Bit 0x20000000 -> FVF|=4, +4 (getStride says +16; never seen in .sm data). Callers: DX8 vertex block ctors 0x006773d0 / 0x00677890, dynamic VB 0x00675520, undefined sites 0x00667d6c, 0x00675c0e. The buffer is an FVF buffer, so component order is Direct3D's: position(+weights), normal, diffuse, specular, tex0..tex3."
+  },
+  {
+   "address": "0x00675520",
+   "name": "DynamicVertexBlockDX8_createD3DBuffer",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "IDirect3DDevice8::CreateVertexBuffer through the device vtable +0x5c: (Length this+0x48, Usage 8|0x200 [|0x10], FVF = 0x00672a40(this+0x1c)[0] or 0 when this+0x20 & 0x10 (vertex-shader block), Pool 0 or 2 (SYSTEMMEM on weak devices), &this+0x28). 'Dynamic:<KB>' block names size the buffer. The FVF built from the Refractor format word is what the device receives."
+  },
+  {
+   "address": "0x006773d0",
+   "name": "VertexBlockDX8_ctor",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "DX8 vertex block, vtable 0x0091b5d8. (this, renderer, blockFormat, vertexFormat, numVertices): renderer +0x10, blockFormat +0x30, vertexFormat +0x28, numVertices +0x14; 0x00672a40(vertexFormat) -> stride +0x20, bytes = stride*count +0x18, D3DFVF +0x2c. Stats counters 0x00672dc0/dd0/de0 by blockFormat bits 1/4/2."
+  },
+  {
+   "address": "0x00677890",
+   "name": "VertexBlockDX8_ctor_variant",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "inferred",
+   "source": "ghidra-session",
+   "note": "Sibling of 0x006773d0 chosen when blockFormat & 0x20 (vtable 0x0091b6d0); same 0x00672a40 call and field layout for stride/bytes/FVF."
   },
   {
    "address": "0x0069f4ae",
@@ -2877,6 +2949,15 @@
    "note": "\"StandardMesh\" bare type name"
   },
   {
+   "address": "0x009059a8",
+   "name": "str_format_diff",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "' format diff. ' - readMaterials 0x005b42d0 logs '<mesh> format diff. <prevStride> != <stride> : <prevFormat> != <format>' when consecutive materials of one mesh differ; DAT_009c9b18 holds the previous stride, DAT_009c9b14 the previous format word."
+  },
+  {
    "address": "0x00905a90",
    "name": "GeometryTemplate_vtable_A",
    "kind": "vtable",
@@ -2965,6 +3046,24 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-12",
    "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00917a00",
+   "name": "vtbl_RendPCDX8_resources",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "The vtable RendPCDX8_singleton (0x009a99d4) points at: +0x14 0x0063ed10, +0x18 0x0063ed50, +0x1c 0x0063ed70 createVertexBlock(blockFormat, vertexFormat, numVertices), +0x20 0x0063ede0 createIndexBlock, +0x24 0x00835e60, +0x28 0x006677b0, +0x2c 0x00667bb0, then ASCII. Base fixed by 0x0063ed70's single DATA xref at 0x00917a1c against readMaterials' '+0x1c' call."
+  },
+  {
+   "address": "0x00917cc4",
+   "name": "vtbl_MemVertexBlock",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "dice.ref2.rend.VertexBlock.Memory vtable, base derived from create's DATA xref 0x00917cf0 = slot +0x2c; slot order matches lnxded vtable 0x0874c720: +0x0c lock 0x00641070, +0x14 update 0x00641090, +0x18 getVertexFormat 0x0040fab0, +0x1c getBlockFormat, +0x20 getVertexStride 0x0040fad0, +0x28 getNumVertices, +0x2c create 0x006410d0, +0x30 getData, +0x34 dtor 0x00641120."
   },
   {
    "address": "0x00947288",
@@ -3163,6 +3262,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x009c9b14",
+   "name": "g_lastMaterialVertexFormat",
+   "kind": "data",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Previous material's format word, written by readMaterials 0x005b42d0 for the ' format diff. ' warning."
+  },
+  {
+   "address": "0x009c9b18",
+   "name": "g_lastMaterialVertexStride",
+   "kind": "data",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Previous material's stride, written by readMaterials 0x005b42d0 for the ' format diff. ' warning."
   },
   {
    "address": "0x009c9bc0",
