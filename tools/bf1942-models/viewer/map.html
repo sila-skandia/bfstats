@@ -3998,7 +3998,9 @@ function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
 function updateViewmodelAnimation(hw, dt) {
   if (!hw.mixer) return;
   let want;
-  if (hw.reload > 0 && hw.active !== 'reload' && !hw.reloadPlayed) {
+  // Keyed on the magazine change, not on which clip holds the arms: a change
+  // begun while the last reload clip is still clamped rewinds it.
+  if (hw.reload > 0 && !hw.reloadPlayed) {
     // The clip runs at the engine's own span — one pass is 1/speed seconds,
     // 4.76 s for the Thompson's tweaked 0.21 against its 4.8 s `reloadTime`
     // (DICE fitted the rate to the timer in 1pAnimationsTweaking.con). When
@@ -4267,11 +4269,9 @@ function footFire(dt, input = null) {
     }
   } else if (magazine && hw.rounds <= 0 && hw.mags > 0) {
     // Dry means a magazine change, asked for or not — `autoReload` in the
-    // data or no. R merely asks early. Like an asked-for reload, it drops
-    // zoom (`FireArms::Reload` -> setZoom(false)).
-    hw.reload = magazine.reloadTime ?? 2;
-    hw.zoomed = false;
-    hw.rezoom = 0;
+    // data or no. R merely asks early. Both go through startReload, so every
+    // change drops zoom and owes the arms a fresh pass of the reload clip.
+    startReload();
   }
 
   if (hw.group) {
