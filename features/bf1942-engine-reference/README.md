@@ -159,7 +159,7 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
-233 symbols from bf42plus and 122 read since, across 18 subsystems.
+233 symbols from bf42plus and 135 read since, across 18 subsystems.
 
 **The `physics` subsystem is the worked example of what this corpus is for.**
 34 symbols, almost all `verified`, written up as a narrative in
@@ -171,11 +171,13 @@ asserted wrongly for months — `setTorque` drives the engine *sound*, not thrus
 `setRegulateToLift 4.91` is g/3 because gravity is −14.73, not 9.81; and retail
 BF1942 has no first-person walking view bob at all.
 
-File formats remain mostly `open`: the corpus has the anchors and the tooling,
-and one assumption under active investigation.
+File formats remain mostly `open`: the corpus has the anchors and the tooling.
 
-Open investigation: **SM-1/SM-2** — our `.sm` reader infers vertex layout from
-stride and ignores the format's own `flags` word. A 234,144-descriptor survey
-found one mesh where the two disagree, and our reader silently invents a
-lightmap UV channel for it. The loader has not been located yet. Full write-up
-and the three routes forward are in [ledger.md](ledger.md).
+**SM-1/SM-2 are settled** ([subsystems/standardmesh-vertex-format.md](subsystems/standardmesh-vertex-format.md)):
+a `.sm` material's `flags` word is the engine's vertex format, the stride is
+derived from it (`rend::getStride`, client `0x00640f20`) and the buffer is a
+Direct3D FVF buffer (`0x00672a40`), so the components sit in D3D order. The file's
+stride is only a byte count for the stream read. The reader now lays vertices out
+from `flags`; the one mesh in 234,144 descriptors where the two disagreed decodes
+to geometry whose bounds equal its header. Still open there: bit 29's meaning, the
+static DX8 block's `CreateVertexBuffer` site, and the vertex-shader declaration path.
