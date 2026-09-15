@@ -168,11 +168,13 @@ header bounds.
   `+0x20 & 0x10`; the `D3DVSD_*` stream declaration that replaces it is built
   elsewhere — the two undefined callers of `0x00672a40` at `0x00667d6c` and
   `0x00675c0e` are the place to start.
-- **Which texcoord set the lightmap stage samples.** `uvs2()` is texcoord
-  set 1; that vanilla binds the object lightmap to it is an inference from
-  `0x2411` appearing only on lightmapped statics. The `D3DTSS_TEXCOORDINDEX`
-  writes in `StandardMeshSubShader_applyRenderState` `0x005bf690` would settle
-  it.
+- **Which texcoord set the lightmap stage samples** — mostly settled
+  2026-09-16 (ledger LM-1…LM-4). The lightmap is stage 1 and nothing on its
+  path writes stage 1's `D3DTSS_TEXCOORDINDEX`, so it samples set 1
+  (`uvs2()`) by Direct3D's default. What is left: the envmap branch overrides
+  that index, and its reset (`0x005bee20`, the next vtable slot) is not yet
+  shown to run after every envmap draw.
 - The 12-byte POD before `primitive` and the trailing u32 are read and, on the
   server, dropped (SM-5 stays open with that evidence). `primitive` is read as
-  a signed `int` (SM-3 unchanged).
+  a signed `int` and is the Direct3D `D3DPRIMITIVETYPE` (SM-3, confirmed
+  2026-09-16).

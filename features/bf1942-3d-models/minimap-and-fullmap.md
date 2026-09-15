@@ -332,10 +332,12 @@ user option that pins it north-up.
 - `menu/InGame` also carries `dice::meme::RotateEffect`,
   `dice::meme::RotateAroundCoordinateEffect` and a node named `IconLookRotation`.
 
-*Inference (not verified against the binary): that `+0x64` angle is the player's yaw, and it
-is forced to zero when the static-minimap option is on. The option's name, its default, and
-the existence of the rotation term together make any other reading implausible, but I did not
-find the write site.*
+*Read from the binary 2026-09-16 (ledger MMAP-2):* `+0x64` is the displayed angle, not the
+yaw itself. `BfMap__animate` (`0x00468fb0`) recomputes it every frame, unsmoothed, as
+`(1 − zoom) ×` the wrapped target angle at `+0x68`, so the enlarged map (zoom 1) is always
+north-up. A byte at `+0x58` switches the target off, and the angle holds still while zoom is
+below 0.8 and a flag (`+0xa9`) on the object `playerManager` returns is clear. Who writes
+`+0x68` and `+0x58` — and so how `StaticMinimap` takes effect — is still unread.
 
 The player's own marker is `minimap_icon_ring_32x32.dds`, a disc with an arrowhead — so in
 static mode you get a north-up map with a rotating arrow, and in rotating mode the arrow
@@ -434,19 +436,21 @@ superseded. The §5 *vehicle icons* row is also built: `extract_hud_pack.py` wri
 [`../authentic-spawn-map/README.md`](../authentic-spawn-map/README.md) §8, and engine
 questions in the ledger. The addresses below are recorded in `symbols.json` under `ui`.
 
-- **Zoom steps** (ledger MMAP-1). The transform in `FUN_00469360` reads a zoom parameter at
-  minimap member offset `+0x40` and scales by `pow(…)` of `1 - that`. I did not find where it
-  is written, so the number of discrete steps `N` cycles through and their values are unknown.
-  About 15 KB of `.text` between `0x0046a5c0` and `0x0046e230` is still undefined in Ghidra
-  and is the likely home of the minimap update/draw code.
-- **Rotation source** (ledger MMAP-2). Same function, member `+0x64` is the map rotation
-  angle. That it is the player's yaw, and that `StaticMinimap` zeroes it, is inference from
-  the option's name and default, not from a decompiled write site.
-- **Minimap on-screen geometry** (ledger MEME-12, MEME-13). Decoded: the minimap has no rect
-  of its own. `ShowMap` is a `CullNode` over an empty `ClipNode` that the engine fills at
-  runtime. Its neighbours in `menu/InGame` bound it: ticket bar `(620,4) 256x32`, grid readout
-  `(627,185) 50x20`, control-point strip `(620,207) 256x16`, in 800x600 units. Where its size
-  and the small/large toggle come from is still open.
+- ~~**Zoom steps**~~ (ledger MMAP-1, refuted 2026-09-16). There are no steps. `BfMap__animate`
+  (`0x00468fb0`) eases the zoom fraction at `+0x40` toward 0 or 1 — a byte at `+0x3c` picks
+  which — by `1 − e^(−9·dt)` per frame, and `FUN_00469360` crops the art by
+  `pow(2.3, (1 − zoom)·[+0x44])`. Still unread: what writes `+0x3c` (the N key) and `+0x48`,
+  the value `+0x44` eases toward. The undefined 15 KB at `0x0046a5c0` turned out to be an STL
+  helper plus `BfMap::update` (`0x0046a680`). `map.html`'s `MINIMAP_SPAN` comment predates this.
+- **Rotation source** (ledger MMAP-2). `+0x64` is the displayed angle, recomputed from the
+  target angle at `+0x68` (see *Rotation* above). What writes `+0x68` and `+0x58`, and how
+  `StaticMinimap` reaches them, is open.
+- ~~**Minimap on-screen geometry**~~ (ledger MEME-12, MEME-13, settled 2026-09-16). The minimap
+  has no rect in `menu/InGame` because `BfMap__animate` writes its `TransformNode` position and
+  size every frame: `(400 + 220(1 − z) − 120z, 30)` and a square of `175 + 337z`, in 800x600
+  units, z being the zoom. The small/large toggle is the zoom. Closed, it sits at `(620, 30)`,
+  sharing its left edge with the ticket bar `(620,4) 256x32` and ending just above the
+  control-point strip `(620,207) 256x16`.
 - **The 43 non-512 mod maps.** 30 levels ship a 1024x1024 map, 12 ship 2048x2048 and one
   ships 584x584. The projection is resolution-independent so this should not matter, but none
   of the 43 was individually verified against its combat area.

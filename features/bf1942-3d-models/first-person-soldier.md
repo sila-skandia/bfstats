@@ -1318,17 +1318,18 @@ the run's speed, is the data agreeing with the code: there is no speed term.
 
 ### The sting: it is multiplied by a shipped zero
 
-A `BFSoldier` holds three `AnimationStateMachineInstance`s (an array based at
+A `BFSoldier` holds four `AnimationStateMachineInstance`s (68 bytes each from
 `+0x294` in the server build; 0 lower body, 1 upper body, 2 camera-shake
-triggers, the last proven by `triggerCameraShake`). `updateCameraShake`
-composes all three — and passes a hardcoded `1.0f` to the upper body and the
+triggers, the last proven by `triggerCameraShake`; the fourth takes no part
+here). `updateCameraShake` composes the first three — and passes a hardcoded `1.0f` to the upper body and the
 trigger machine, but `cameraShakeFactor` to the **lower** body. The lower body
 is where every `Lb_Walk`/`Run`/`Crouch`/`Lie` state lives. It is the entire
 walking view bob.
 
 `cameraShakeFactor` is `DAT_0099000c`, a `PlayerControlObjectTemplate` console
-property. It sits in BF1942.exe's *initialized* `.data` and the shipped bytes
-are `00 00 00 00`. No static initialiser writes it; its only writers are the
+property. It sits in BF1942.exe's `.data`, past the section's raw bytes (they
+end at `0x00960000`), so the loader zero-fills it: `0.0f` at start-up. No static
+initialiser writes it; its only writers are the
 console accessor behind the registrar at `0x004f1310`. Every `.con`, `.inc` and
 `.tweak` in `Objects.rfa`, `animations.rfa`, `Game.rfa` and `menu.rfa` was
 searched, along with both `Settings/` trees. Nothing assigns it.
@@ -1423,7 +1424,7 @@ changed its preferred reading from 1.56 to 1.65; both are inferences off
   the footstep sounds.
 - **Jump impulse, step-up height, slope limit, movement capsule radius.** None
   exist in vanilla data and none were found in the client either — the jump
-  state (`c_SstJump`, pose flag 0x80) exists in the state machine at
+  state (pose flag 0x80; its states carry sound trigger `c_SstJump` = 4) exists in the state machine at
   `0x005013f8` but only the flag is read there, and the impulse is not in either
   speed table nor in `CommonSoldierData.inc`. Ours to choose; `physics.js`
   labels all four. The jump is the one worth measuring and it is an evening's
