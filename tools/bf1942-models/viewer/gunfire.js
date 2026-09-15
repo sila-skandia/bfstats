@@ -187,6 +187,14 @@ const _extent = new THREE.Vector3();
 const _step = new THREE.Vector3();
 const _tip = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+// Scratch for the per-frame and per-shot paths below: a flash's roll, a
+// gun's recoil offset and a round's unit direction were each a fresh
+// allocation before, per emitter per frame and per shot, and a frame that
+// allocates is a frame that will pay for it at the collector's convenience
+// (features/mesh-viewer-performance, rule 5).
+const _spin = new THREE.Quaternion();
+const _recoil = new THREE.Vector3();
+const _direction = new THREE.Vector3();
 
 /**
  * Every gun in one scene, and the rounds they have in the air.
@@ -252,6 +260,12 @@ export class GunFire {
     this.impactPool = [];
     /** The last few hits, newest first, for the debug readout and headless checks. */
     this.hits = [];
+    // The dice for the spread cone and the flash roll, the module's own the
+    // way `EffectPlayer.rand` is: a headless check seeds these two and
+    // nothing else. Seeding `Math.random` itself would also seed three's
+    // UUIDs, so a build that clones one material more or less per pool miss
+    // would fire a different burst and fail a pixel diff for no reason.
+    this.rand = Math.random;
   }
 
   /** Attacker material for a projectile template, or null. */
@@ -299,6 +313,20 @@ export class GunFire {
    * vehicle out of a scene of many and passes `replace: false` so a second
    * vehicle does not evict the first.
    */
+  /**
+   * A detached group holding one mesh per shared stand-in material — the
+   * bright tracer and the dim shell streak — so the page can compile them
+   * before the first round instead of on it (`renderer.compileAsync`). A
+   * gun's own baked streak, projectile body and trail quad are nodes inside
+   * the model it was collected from and compile with that model.
+   */
+  warm() {
+    const group = new THREE.Group();
+    group.add(new THREE.Mesh(tracerGeometry, tracerMaterial),
+              new THREE.Mesh(tracerGeometry, shellMaterial));
+    return group;
+  }
+
   collect(root, options = {}) {
     const {
       replace = true,
@@ -496,7 +524,7 @@ export class GunFire {
       emitter.node.visible = true;
       // The engine rolls each flash particle (`startRotation CRD_UNIFORM
       // 0/180`), which is what keeps a held burst from looking like one frame.
-      emitter.spin = Math.random() * Math.PI * 2;
+      emitter.spin = this.rand() * Math.PI * 2;
       // Bundle wrappers between the FireArms node and the emitter are hidden
       // too; walk them visible up to the gun.
       for (let node = emitter.node.parent;
@@ -582,12 +610,12 @@ export class GunFire {
    * The polar angle is `spread x sqrt(u)` — uniform over the cone's cross
    * section rather than over its rim or its axis, so a burst paints a disc the
    * way a target card looks, not a ring and not a hot centre. The azimuth is
-   * free. Both draws are unseeded `Math.random()`, the same authority the
-   * flash roll already answers to.
+   * free. Both draws come from `this.rand`, the same authority the flash
+   * roll already answers to — `Math.random` unless a check has seeded it.
    */
   #wander(dir, degrees) {
-    const theta = degrees * (Math.PI / 180) * Math.sqrt(Math.random());
-    const phi = Math.random() * Math.PI * 2;
+    const theta = degrees * (Math.PI / 180) * Math.sqrt(this.rand());
+    const phi = this.rand() * Math.PI * 2;
     // An orthonormal frame around the direction of fire. The up reference
     // flips to +X when the shot is near-vertical, where up and dir would be
     // parallel and the cross product degenerate.
@@ -608,8 +636,11 @@ export class GunFire {
 
   #spawnTracer(muzzle, group, bright) {
     const speed = this.#displaySpeed(group, group.stats.velocity || 100);
+    // The velocity is the round's own for as long as it flies, so it is a
+    // real allocation per shot; the unit direction is only needed to point
+    // the streak and lives in scratch.
     const velocity = this.#muzzleVelocity(muzzle, group, speed, new THREE.Vector3());
-    const direction = velocity.clone().normalize();
+    const direction = _direction.copy(velocity).normalize();
     // `setTracerTemplate` points at `Tracer_Projectile`, whose `tracerScaler
     // 50` scales `TLight_m1` (a 0.0061 m spike trailing 1 m behind the round)
     // bodily — the game's tracer is a 50 m streak 0.3 m across, and that size
@@ -927,7 +958,7 @@ export class GunFire {
           // Face the camera, then the per-shot roll about the view axis.
           emitter.node.parent.getWorldQuaternion(_billboard).invert();
           emitter.node.quaternion.copy(_billboard).multiply(this.camera.quaternion)
-            .multiply(new THREE.Quaternion().setFromAxisAngle(_spinAxis, emitter.spin));
+            .multiply(_spin.setFromAxisAngle(_spinAxis, emitter.spin));
         }
       }
       if (group.recoil !== null && group.recoil < 1) {
@@ -940,8 +971,8 @@ export class GunFire {
         if (home) {
           // The barrel mesh was Z-mirrored into glTF, so it points down -Z and
           // recoils along +Z of its own frame.
-          const back = new THREE.Vector3(0, 0, kick).applyQuaternion(group.node.quaternion);
-          group.node.position.copy(home).add(back);
+          _recoil.set(0, 0, kick).applyQuaternion(group.node.quaternion);
+          group.node.position.copy(home).add(_recoil);
         }
       }
       if (group.firing) {
