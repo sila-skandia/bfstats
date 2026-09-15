@@ -675,6 +675,14 @@ class ObjectTemplate:
     # shot is a camera ray and `projectilePosition 0/0/0` is only where the
     # flash draws. See first-person-soldier.md §2.7.
     fire_in_camera_dof: bool | None = None
+    # The authored first-person placement, per weapon: where the weapon sits
+    # against the soldier's eye at the hip and zoomed (Refractor metres,
+    # x/y/z). The viewer guessed these before they were parsed — with them,
+    # taste leaves the viewmodel. `altFireOnce 1` makes the right-mouse zoom
+    # a press-toggle rather than a held state.
+    soldier_camera_position: tuple[float, float, float] | None = None
+    soldier_zoom_position: tuple[float, float, float] | None = None
+    alt_fire_once: bool | None = None
 
     # Effect chain: EffectBundle -> Emitter (`ObjectTemplate.template` names
     # the payload) -> Particle (mesh) or SpriteParticle (textured quad).
@@ -946,6 +954,13 @@ class ObjectTemplate:
             "sniperSight": self.sniper_sight,
             "icon": self.scope_icon,
             "unZoomBetweenFire": self.unzoom_between_fire_time,
+            "toggle": self.alt_fire_once,
+        })
+        view = prune({
+            "cameraPosition": (list(self.soldier_camera_position)
+                               if self.soldier_camera_position else None),
+            "zoomPosition": (list(self.soldier_zoom_position)
+                             if self.soldier_zoom_position else None),
         })
         deviation = prune({
             "min": self.min_dev,
@@ -974,6 +989,7 @@ class ObjectTemplate:
             "hudAmmo": self.hud_ammo_type,
             "magazine": magazine or None,
             "zoom": zoom or None,
+            "view": view or None,
             "deviation": deviation or None,
             "recoil": recoil or None,
         })
@@ -1219,7 +1235,8 @@ class ObjectLibrary:
                     except (ValueError, IndexError):
                         continue
                 elif cmd in ("setpositionoffset", "inertiamodifier",
-                             "setpivotposition"):
+                             "setpivotposition", "soldiercameraposition",
+                             "soldierzoomposition"):
                     try:
                         value = vec3_lenient(args.split()[0])
                     except (ValueError, IndexError):
@@ -1228,6 +1245,8 @@ class ObjectLibrary:
                         "setpositionoffset": "position_offset",
                         "inertiamodifier": "inertia_modifier",
                         "setpivotposition": "pivot_position",
+                        "soldiercameraposition": "soldier_camera_position",
+                        "soldierzoomposition": "soldier_zoom_position",
                     }[cmd], value)
                 elif cmd in ("rememberexcessinput", "hasrestrictedexit",
                              "damagefromwater"):
@@ -1358,7 +1377,8 @@ class ObjectLibrary:
                     }[cmd], value)
                 elif cmd in ("fireonce", "autoreload", "usescope",
                              "setsnipersight", "sethasrecoilforce",
-                             "setgobackonrecoil", "fireincameradof"):
+                             "setgobackonrecoil", "fireincameradof",
+                             "altfireonce"):
                     if (value := truthy(args)) is not None:
                         setattr(obj, {
                             "fireonce": "fire_once",
@@ -1368,6 +1388,7 @@ class ObjectLibrary:
                             "sethasrecoilforce": "has_recoil_force",
                             "setgobackonrecoil": "go_back_on_recoil",
                             "fireincameradof": "fire_in_camera_dof",
+                            "altfireonce": "alt_fire_once",
                         }[cmd], value)
                 elif cmd in ("setfiredev", "setdevmod", "setturndev",
                              "setspeeddev", "setmiscdev"):
