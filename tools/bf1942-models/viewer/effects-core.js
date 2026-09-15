@@ -1,0 +1,348 @@
+// The Refractor effect system's arithmetic, with no renderer attached.
+//
+// What an EffectBundle does when it plays was read out of the engine — the
+// Linux dedicated server's named code and the retail client's stripped code,
+// side by side; the addresses are in
+// `features/bf1942-engine-reference/subsystems/projectiles-and-impacts.md`.
+// This module is that reading as functions: how a CRD random variable is
+// sampled, how the bundle's frame is stood up on a surface normal, how an
+// emitter's clock spaces its spawns, where in the frame a particle starts and
+// with what velocity, and how it falls, slows, scales and fades. `effects.js`
+// gives these three.js meshes; nothing here imports anything, so
+// `tests/effects_harness.mjs` can run it under node and assert on numbers.
+
+// The world's downward acceleration. `BasicPhysicsSystem`'s constructor
+// (client 0x00578f00) writes -14.73, not -9.81; `physics.js` owns the same
+// constant, but this module keeps its own copy so it stays import-free.
+export const GRAVITY = -14.73;
+
+/**
+ * Sample a CRD random variable `[dist, a, b, mirror]`.
+ *
+ * `Random::getContinuousRandom` (lnxded 0x081e28b0) and the emitter's inline
+ * copy (0x081e2f10): NONE is `a`; UNIFORM is `a + r(b - a)` with `r` in
+ * (0, 1] — the two numbers are the ends, in the order written, so
+ * `CRD_UNIFORM/15/1/0` runs 15 down to 1; EXPONENTIAL is `-a ln r`; NORMAL is
+ * `a + b N(0,1)`. The mirror flag flips the sign with probability one half
+ * (0x081e3037: `r > 0.5 ? -x : x`), which is how one `positionalSpeedInRight
+ * CRD_UNIFORM/0/3/1` spreads a burst to both sides.
+ */
+export function sampleCrd(crd, rand = Math.random) {
+  if (crd == null) return 0;
+  if (typeof crd === 'number') return crd;
+  const [dist, a, b, mirror] = crd;
+  let value;
+  switch (dist) {
+    case 'u': { const r = 1 - rand(); value = a + r * (b - a); break; }
+    case 'e': { const r = Math.max(1 - rand(), 1e-7); value = -a * Math.log(r); break; }
+    case 'g': value = a + b * gaussian(rand); break;
+    default: value = a;
+  }
+  if (mirror && rand() > 0.5) value = -value;
+  return value;
+}
+
+/** Box-Muller, one draw. `Random::getNormal` caches the second; this does not. */
+export function gaussian(rand = Math.random) {
+  let u = 0;
+  while (u === 0) u = rand();
+  const v = rand();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/** Piecewise-linear sample of an over-time ramp at `phase` (0..100). */
+export function sampleCurve(points, phase) {
+  if (!points || !points.length) return null;
+  if (phase <= points[0][0]) return points[0].slice(1);
+  for (let i = 1; i < points.length; i++) {
+    if (phase <= points[i][0]) {
+      const [t0, ...v0] = points[i - 1];
+      const [t1, ...v1] = points[i];
+      const k = t1 === t0 ? 1 : (phase - t0) / (t1 - t0);
+      return v0.map((v, j) => v + (v1[j] - v) * k);
+    }
+  }
+  return points[points.length - 1].slice(1);
+}
+
+function norm(v) {
+  const l = Math.hypot(v[0], v[1], v[2]);
+  return l > 1e-12 ? [v[0] / l, v[1] / l, v[2] / l] : null;
+}
+function cross(a, b) {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+// Refractor's world is Z-forward and the exporter mirrors Z into glTF, so
+// every cross product here is taken on the Refractor side of that mirror and
+// the result mirrored back — otherwise the frame's handedness flips and Right
+// comes out on the left.
+const mirror = (v) => [v[0], v[1], -v[2]];
+
+/**
+ * The frame an impact effect is stood up in: `{right, up, dof}`, Refractor
+ * axes (X right, Y up, Z forward), given and returned in the viewer's
+ * glTF-handed world.
+ *
+ * `Game::playCollisionEffect` (client 0x0040e590, lnxded 0x0805de20) writes
+ * the surface normal into the fresh object's Up row and calls
+ * `makeOrthonormalBasis` (client 0x0040e360, lnxded 0x08061bd0): Right =
+ * Up x DOF (DOF being the object's own, which for a just-created object is
+ * the world's +Z), then DOF = Right x Up, then Right = Up x DOF again. So the
+ * bullet hole lies flat in the surface and the burst's forward axis is the
+ * projection of world forward onto the surface. A wall facing exactly along
+ * the world axis leaves the engine's cross product zero and its call failing;
+ * this falls back to world +X there, which is the one departure and the
+ * reason it is named.
+ */
+export function basisFromNormal(normal) {
+  const up = norm(mirror(normal));
+  if (!up) return null;
+  let right = norm(cross(up, [0, 0, 1]));
+  if (!right) right = norm(cross(up, [1, 0, 0]));
+  const dof = norm(cross(right, up));
+  right = norm(cross(up, dof));
+  return { right: mirror(right), up: mirror(up), dof: mirror(dof) };
+}
+
+/** The same frame from an explicit forward and up (an attached trail's). */
+export function basisFromAxes(dof, up) {
+  const d = norm(mirror(dof));
+  let u = norm(mirror(up));
+  if (!d) return null;
+  if (!u || Math.abs(d[0] * u[0] + d[1] * u[1] + d[2] * u[2]) > 0.999) {
+    u = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  }
+  const right = norm(cross(u, d));
+  const upOrtho = norm(cross(d, right));
+  return { right: mirror(right), up: mirror(upOrtho), dof: mirror(d) };
+}
+
+/**
+ * Roll a frame about its own DOF by `degrees` — `dice::ref2::roll`
+ * (lnxded 0x08061df0) rotating about matrix row 2. This is what
+ * `startRotation` does to an emitter's frame per spawn; the data writes it in
+ * degrees (`CRD_UNIFORM/1/360/0`).
+ */
+export function rollBasis(basis, degrees) {
+  if (!degrees) return basis;
+  const t = degrees * Math.PI / 180;
+  const c = Math.cos(t), s = Math.sin(t);
+  const { right, up, dof } = basis;
+  return {
+    dof,
+    right: [right[0] * c + up[0] * s, right[1] * c + up[1] * s, right[2] * c + up[2] * s],
+    up: [up[0] * c - right[0] * s, up[1] * c - right[1] * s, up[2] * c - right[2] * s],
+  };
+}
+
+/** `a·right + b·up + c·dof`, as a fresh array. */
+export function inFrame(basis, r, u, d) {
+  const { right, up, dof } = basis;
+  return [
+    right[0] * r + up[0] * u + dof[0] * d,
+    right[1] * r + up[1] * u + dof[1] * d,
+    right[2] * r + up[2] * u + dof[2] * d,
+  ];
+}
+
+// How long an emitter waits between spawns when its intensity is zero: the
+// engine's `calcInvItensity` answers 100 s for a non-finite reciprocal.
+const IDLE_INTERVAL = 100;
+
+/**
+ * One emitter's clock.
+ *
+ * `Emitter::handleUpdate` (lnxded 0x081e3200): the delay counts down first;
+ * then a lifetime sampled from `timeToLive` runs, during which a spawn falls
+ * due every `|1 / intensity|` seconds — the reciprocal, unsigned, of an
+ * intensity resampled per spawn (`calcInvItensity`, 0x081e2f10) and scaled by
+ * the emitter's own speed over `IntensityAtSpeed` when that is set. A looping
+ * emitter resamples and starts over when its lifetime ends; any other stops.
+ *
+ * The first spawn is due at once. That is the one rule here settled by data
+ * rather than by reading the code: the decal emitters declare `intensity 2`
+ * over `timeToLive 0.1`, one fifth of a spawn by the arithmetic, and every hit
+ * in the reference recording leaves a hole.
+ */
+export class EmitterClock {
+  constructor(spec, rand = Math.random) {
+    this.spec = spec;
+    this.rand = rand;
+    this.delay = Math.max(0, sampleCrd(spec.delay, rand));
+    this.ttl = sampleCrd(spec.timeToLive, rand);
+    this.age = 0;
+    this.next = 0;
+    this.done = false;
+    this.stopped = false;
+    this.spawned = 0;
+  }
+
+  interval(speed) {
+    let intensity = sampleCrd(this.spec.intensity, this.rand);
+    const atSpeed = this.spec.intensityAtSpeed;
+    if (atSpeed > 1e-7) intensity *= speed / atSpeed;
+    const inv = Math.abs(1 / intensity);
+    return Number.isFinite(inv) ? inv : IDLE_INTERVAL;
+  }
+
+  /** Advance by `dt`; returns how many particles fall due this step. */
+  step(dt, speed = 0) {
+    if (this.done || this.stopped) return 0;
+    if (this.delay > 0) {
+      this.delay -= dt;
+      if (this.delay > 0) return 0;
+      dt = -this.delay;
+      this.delay = 0;
+    }
+    this.age += dt;
+    let count = 0;
+    // A ttl of -1 (`CRD_NONE/-1/0/0`, the trails) lives as long as its parent.
+    const alive = this.ttl < 0 || this.age <= this.ttl;
+    while (alive && this.age >= this.next && count < 64) {
+      count++;
+      this.next += this.interval(speed);
+    }
+    if (!alive) {
+      if (this.spec.looping) {
+        this.ttl = sampleCrd(this.spec.timeToLive, this.rand);
+        this.age = 0;
+        this.next = 0;
+      } else {
+        this.done = true;
+      }
+    }
+    this.spawned += count;
+    return count;
+  }
+}
+
+/**
+ * A freshly spawned particle, in world space.
+ *
+ * Position: the emitter's origin plus `relativePosition` along the (rolled)
+ * frame's DOF/Up/Right. Velocity: `positionalSpeed` along the same axes,
+ * plus the emitter's own velocity times `emitterSpeedScale` when
+ * `addEmitterSpeed` is set — the rocket trail's puffs inherit 50 m/s and
+ * `drag 20` stops them, which is the trail. Every scalar is a fresh CRD draw.
+ */
+export function spawnParticle(spec, basis, origin, emitterVelocity, rand = Math.random) {
+  const p = spec.particle;
+  const frame = rollBasis(basis, sampleCrd(spec.startRotation, rand));
+  const rel = spec.relativePosition || {};
+  const spd = spec.positionalSpeed || {};
+  const offset = inFrame(frame, sampleCrd(rel.right, rand), sampleCrd(rel.up, rand),
+                         sampleCrd(rel.dof, rand));
+  const velocity = inFrame(frame, sampleCrd(spd.right, rand), sampleCrd(spd.up, rand),
+                           sampleCrd(spd.dof, rand));
+  if (spec.addEmitterSpeed && emitterVelocity) {
+    const k = spec.emitterSpeedScale ?? 1;
+    velocity[0] += emitterVelocity[0] * k;
+    velocity[1] += emitterVelocity[1] * k;
+    velocity[2] += emitterVelocity[2] * k;
+  }
+  const ttl = Math.max(sampleCrd(p.timeToLive, rand), 0.01);
+  return {
+    kind: p.kind,
+    spec: p,
+    position: [origin[0] + offset[0], origin[1] + offset[1], origin[2] + offset[2]],
+    velocity,
+    frame,
+    age: 0,
+    ttl,
+    // The particle's own base numbers, drawn once; the ramps multiply them.
+    size: p.size ? sampleCrd(p.size, rand) : 1,
+    gravity: p.gravityModifier ? sampleCrd(p.gravityModifier, rand) : (p.kind === 'mesh' && !p.debris ? 0 : 1),
+    drag: p.drag ? sampleCrd(p.drag, rand) : 0,
+    rotation: sampleCrd(p.initRotation, rand),
+    spin: sampleCrd(p.rotationSpeed, rand),
+    xy: p.xySizeRatio ? sampleCrd(p.xySizeRatio, rand) : 1,
+  };
+}
+
+/**
+ * Move a particle by `dt`: gravity (`gravityModifier`, ramped by
+ * `gravityModifierOverTime` — `Particle::handleUpdate`, lnxded 0x0820ad20,
+ * feeds the product to the body each tick) and drag as an exponential
+ * velocity decay. The drag law is the one open item: the engine hands `drag`
+ * to its physics body and that body's integrator was not read; `v *= e^(-k dt)`
+ * is the usual meaning and reproduces the authored numbers' intent (`drag 20`
+ * on the rocket smoke stops a 50 m/s puff within a tenth of a second).
+ */
+export function integrateParticle(p, dt, gravity = GRAVITY) {
+  p.age += dt;
+  const phase = Math.min(p.age / p.ttl, 1) * 100;
+  let g = p.gravity;
+  const gRamp = sampleCurve(p.spec.gravityModifierOverTime, phase);
+  if (gRamp) g *= gRamp[0];
+  let drag = p.drag;
+  const dRamp = sampleCurve(p.spec.dragOverTime, phase);
+  if (dRamp) drag *= dRamp[0];
+  const v = p.velocity;
+  if (g) v[1] += gravity * g * dt;
+  if (drag > 0) {
+    const k = Math.exp(-drag * dt);
+    v[0] *= k; v[1] *= k; v[2] *= k;
+  }
+  p.position[0] += v[0] * dt;
+  p.position[1] += v[1] * dt;
+  p.position[2] += v[2] * dt;
+  if (p.spin) p.rotation += p.spin * dt;
+  return p.age < p.ttl;
+}
+
+/**
+ * What a particle looks like right now: `{scale, xy, color, opacity, rotation}`.
+ *
+ * Sprites: size x `sizeOverTime`, colour and alpha from `colorRGBAOverTime`
+ * (0..255), the quad spun by `initRotation + rotationSpeed t` degrees.
+ * Meshes: `sizeModifier` set means scale = size x sizeOverTime x
+ * sizeModifier, unset means the authored mesh size; alpha from
+ * `alphaOverTime` (0..1), sent to the mesh the way the engine sends it to
+ * `IStandardMesh::setAlpha` — and the decal's own `alphaTestRef 0.5` then
+ * cuts it off at half, so a hole fades to 50% and vanishes, which is the
+ * engine's behaviour too, not a shortcut.
+ */
+export function evalParticle(p) {
+  const spec = p.spec;
+  const phase = Math.min(p.age / p.ttl, 1) * 100;
+  const ramp = sampleCurve(spec.sizeOverTime, phase);
+  const size = ramp ? ramp[0] : 1;
+  let scale;
+  if (p.kind === 'sprite') {
+    scale = [p.size * size, p.size * size, 1];
+    const xyRamp = sampleCurve(spec.xySizeRatioOverTime, phase);
+    const xy = p.xy * (xyRamp ? xyRamp[0] : 1);
+    if (xy !== 1) scale[0] *= xy;
+  } else if (spec.sizeModifier && (spec.sizeModifier[0] || spec.sizeModifier[1] || spec.sizeModifier[2])) {
+    const m = spec.sizeModifier;
+    scale = [p.size * size * m[0], p.size * size * m[1], p.size * size * m[2]];
+  } else {
+    scale = [1, 1, 1];
+  }
+  let color = null;
+  let opacity = 1;
+  const rgba = sampleCurve(spec.colorRGBAOverTime, phase);
+  if (rgba) {
+    color = [rgba[0] / 255, rgba[1] / 255, rgba[2] / 255];
+    opacity = rgba[3] / 255;
+  }
+  const alpha = sampleCurve(spec.alphaOverTime, phase);
+  if (alpha) opacity *= alpha[0];
+  return { scale, color, opacity, rotation: p.rotation, phase };
+}
+
+/**
+ * Damage falloff by distance — `Projectile::getDamage` (client 0x00542e80,
+ * lnxded 0x0831f3c0): full out to `distToStartLoseDamage`, a straight line
+ * down to `minDamage` (a fraction of full) at `distToMinDamage`, flat after.
+ * Skipped entirely when `minDamage` is 1 or the start distance is 0.
+ */
+export function damageFactor(damage, distance) {
+  if (!damage) return 1;
+  const min = damage.minDamage ?? 1;
+  const start = damage.distToStartLoseDamage ?? 0;
+  const end = damage.distToMinDamage ?? 0;
+  if (min >= 1 || start <= 0 || distance <= start) return 1;
+  if (distance >= end || end <= start) return min;
+  return min + (1 - min) * (end - distance) / (end - start);
+}
