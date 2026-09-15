@@ -24,165 +24,62 @@ only break on mods.
 
 | # | Assumption in our code | Where | Status | Evidence |
 |---|---|---|---|---|
-| SM-1 | Vertex layout is determined by `vertex_stride`; `flags` is decorative | [stdmesh.py:73-93](../../tools/bf1942-models/bf42/stdmesh.py#L73) | **open — moved to the renderer** | loader reads the block opaquely, `0x005b42d0` |
-| SM-2 | Stride 40 always means the extra 8 bytes are a lightmap UV pair | [stdmesh.py:87](../../tools/bf1942-models/bf42/stdmesh.py#L87) | **open — moved to the renderer** | as SM-1 |
+| SM-1 | Vertex layout is determined by `vertex_stride`; `flags` is decorative | [stdmesh.py](../../tools/bf1942-models/bf42/stdmesh.py) `vertex_layout` | **refuted** (reader fixed 2026-09-15) | `flags` is the engine's vertex format. `readMaterials` `0x005b42d0` (lnxded `loadLod` `0x083a6f00`) creates the buffer as `createVertexBlock(1\|0xc, flags, vertexCount)` — vtbl `0x00917a00` +0x1c = `0x0063ed70` — with no stride argument; the block computes it with `rend::getStride(flags)` (`0x00640f20`, lnxded `0x084451d0`) and the DX8 block turns the same bits into a `D3DFVF` (`0x00672a40`) that reaches `CreateVertexBuffer` (`0x00675520`). The file's stride is used once, as `stride * count` bytes to read from the stream. [subsystems/standardmesh-vertex-format.md](subsystems/standardmesh-vertex-format.md) |
+| SM-2 | Stride 40 always means the extra 8 bytes are a lightmap UV pair | [stdmesh.py](../../tools/bf1942-models/bf42/stdmesh.py) `uvs2` | **refuted** | Bit 13 (`0x2000`) is "texture-coordinate set 1 with 2 floats" in `getStride` and `D3DFVF_TEX2 \| TEXCOORDSIZE2(1)` in the FVF builder; the stride follows from it, not the other way round. That vanilla binds the object lightmap to set 1 is still an inference from data (the `D3DTSS_TEXCOORDINDEX` writes in `0x005bf690` were not read) |
 | SM-3 | `primitive` 4 is a triangle list, 5 is a strip | [stdmesh.py:95-105](../../tools/bf1942-models/bf42/stdmesh.py#L95) | open | — |
 | SM-8 | Accepted file versions are 9 and 10 | [stdmesh.py:6](../../tools/bf1942-models/bf42/stdmesh.py#L6) | **refuted** | `0x005b61f0` accepts `7 < v < 0xb`, i.e. **8**, 9 and 10 |
 | SM-4 | Descriptors for a LOD precede all their payloads | [stdmesh.py:285-288](../../tools/bf1942-models/bf42/stdmesh.py#L285) | open | 33,038 meshes parse with zero structural failures, which is strong but is data, not code |
-| SM-5 | The three `unknown` u32s before `primitive` are reserved | [stdmesh.py:271](../../tools/bf1942-models/bf42/stdmesh.py#L271) | open | all zero across 234,144 descriptors |
+| SM-5 | The three `unknown` u32s before `primitive` are reserved | [stdmesh.py](../../tools/bf1942-models/bf42/stdmesh.py) | open | all zero across 234,144 descriptors. Both loaders read them as **one 12-byte raw read** into a zero-initialised 12-byte local (lnxded `0x083a7025` `read(IStream*, void*, 0xc)`; client `FUN_0061acd0(0xc)` in `0x005b42d0`) and the server never looks at it again — a POD, not three fields; meaning still unknown |
 | SM-6 | The 4th float per collision vertex is not a position component | [stdmesh.py:230](../../tools/bf1942-models/bf42/stdmesh.py#L230) | open | — |
 | SM-7 | Collision face `material` is the armour-region id; 50-54 is the tank range | [damage.py](../../tools/bf1942-models/bf42/damage.py) | open | official BF1942 Damage System tutorial, not the binary |
 
-### SM-1 / SM-2 — the live investigation
+### SM-1 / SM-2 — settled 2026-09-15
 
-**The claim.** `stdmesh.py` reads a vertex by measuring `vertex_stride` and
-assuming a fixed component order. The `flags` word is parsed, stored on the
-`Material` dataclass, and never read.
+Full narrative, every address and the bit table:
+[subsystems/standardmesh-vertex-format.md](subsystems/standardmesh-vertex-format.md).
 
-**Why it is suspect.** Across vanilla plus 14 installed mods — 33,038 meshes,
-234,144 material descriptors — `flags` is an exact function of stride except
-once:
+**The claim** was that `stdmesh.py` could lay a vertex out from `vertex_stride`
+and ignore `flags`. Across vanilla plus 14 mods (33,038 meshes, 234,144
+descriptors) the two agreed except once — `bf1918/standardMesh/o_WoodenCart_M2.sm`,
+flags `0x411` in a 64-byte stride — and there the reader took every other
+vertex and invented a lightmap channel from the neighbour's position.
 
-| stride | flags | count |
+**What the engine does.** The loader reads a material's payload as one blob
+and creates the GPU buffer from `(flags, vertexCount)` alone:
+
+| step | client | lnxded |
 |---|---|---|
-| 32 (8f) | `0x00411` | 167,425 |
-| 40 (10f) | `0x02411` | 66,718 |
-| **64 (16f)** | **`0x00411`** | **1** |
+| per-LOD material reader; descriptor dwords `d0 flags, d1 stride, d2 count, d3 indexCount`; `createVertexBlock(1\|0xc, d0, d2)`; `stream->read(p, d1*d2)` | `0x005b42d0` | `0x083a6f00` (skips `d1*d2`) |
+| `RendPCDX8` resource vtable; `+0x1c` createVertexBlock, `+0x20` createIndexBlock | `0x00917a00` → `0x0063ed70` / `0x0063ede0` | — |
+| `rend::getStride(format)`: bit-sum, `0x411→32`, `0x2411→40` | `0x00640f20` | `0x084451d0` |
+| `MemVertexBlock::create(blockFormat, format, count)`: `+0x1c = getStride(format)`, `+0x18 = stride*count` | `0x006410d0` (vtbl `0x00917cc4`) | `0x08445530` (vtbl `0x0874c720`) |
+| format → `D3DFVF` (`XYZ`, `XYZRHW`, `XYZB1..4`, `NORMAL`, `DIFFUSE`, `SPECULAR`, `TEXCOORDSIZEn(k)`, `TEX1..4`) | `0x00672a40` | — |
+| DX8 block ctor stores FVF `+0x2c`, stride `+0x20`; `CreateVertexBuffer(…, FVF, …)` via device `+0x5c` | `0x006773d0`; `0x00675520` | — |
 
-`0x411` is bits 0, 4, 10; `0x2411` adds bit 13, which is precisely the
-one-UV-set / two-UV-set difference. That is a component bitfield. Stride merely
-correlates with it.
+Because the buffer is an FVF buffer, Direct3D fixes the component order:
+position (with blend weights), normal, diffuse, specular, texcoord sets 0..3.
+`position[3] normal[3] uv[2] (uv2[2])` was right for both vanilla words by
+coincidence of stride.
 
-**The counterexample.** `bf1918/standardMesh/o_WoodenCart_M2.sm` declares the
-8-float component set in a 16-float stride. `uvs2()` gates on `stride >= 40`, so
-our reader manufactures a lightmap UV channel out of float[8..9] of a vertex
-that, by its own declaration, has no second UV set. No exception is raised.
+**The counterexample, decoded the engine's way** — `getStride(0x411) * 288`
+bytes of a `64 * 288`-byte payload, at 32 bytes per vertex — gives 288 vertices
+with unit normals whose bounding box equals the file's header bounds; the
+trailing half is not geometry. The file's stride is an exporter bug the retail
+client survives (it overruns the locked buffer by 9,216 bytes and draws the
+cart correctly).
 
-**Why it matters beyond one cart.** The extraction targets mods. Nothing
-guarantees a mod's exporter kept vanilla's stride/flags correspondence, and the
-failure mode is silent — wrong UVs, not a crash.
+**Two earlier notes, resolved.** The client never tests the format word against
+a literal because it is bit-tested in `getStride` / the FVF builder, not
+compared. And `dice::ref2::geom::g_vertexFormat` `0x087473a4` /
+`g_vertexStride` `0x087473a8` are dead: `0` in `.data`, never written, and the
+stride is only the divisor of six `divl`s inside the
+`StandardMeshTemplate::m_simplifyMeshes` branch of `loadLods` (`0x083a65b0`,
+`0x083821b0`) — an unfinished mesh-simplify tool, not the loader.
 
-**Reproduce the survey:**
-
-```bash
-python3 features/bf1942-engine-reference/surveys/stride_vs_flags.py
-```
-
-**Evidence so far (client, `BF1942.exe`).**
-
-*The client never mentions either format value as an immediate.* Scanning all
-1,314,071 instructions for an operand of `0x2411` returns **zero** matches;
-`0x411` returns 5, all of which are addresses in the `0x411xxx` range
-(`MOV dword ptr [ESP + 0x44], 0x411b40`), not the constant.
-
-```bash
-curl -s 'http://127.0.0.1:8089/search_instructions?operand_pattern=0x2411&limit=25'
-```
-
-That rules out one shape of answer: there is no `switch`/compare on known format
-values anywhere in the client. The flags word is never tested against a literal.
-It is either consumed opaquely (stored, or used as a table index), or bit-tested
-with masks that are not these composites — so the next probe is `TEST`/`AND`
-against `0x2000` reaching a lightmap path, not another constant hunt.
-
-It does **not** yet tell us whether layout comes from `flags` or `stride`.
-
-*Ghidra's analysis of this binary is badly incomplete.* `find_code_gaps` reports
-**4,574 undefined code regions** in `.text`. Of the 17 references to
-`"StandardMesh/"`, only one sits inside a defined function. Expect to create
-functions by hand; `read_memory` at a gap start shows the `0x90` padding and the
-MSVC prologue (`SUB ESP,imm` then `PUSH EBX/EBP/ESI/EDI`) that marks the entry.
-
-*Ten of those 17 references are a red herring.* They lie in a single 495 KB
-undefined span, `0x00838b5e-0x008b191f`, which is the CRT static-initializer
-block — each one is a global `std::string` being constructed:
-
-```
-68 90 19 8D 00    PUSH 0x008d1990        ; "StandardMesh/"
-B9 C0 9B 9C 00    MOV  ECX, 0x009c9bc0   ; the global
-FF 15 34 31 8C 00 CALL [0x008c3134]      ; std::string ctor
-```
-
-The constructed global `0x009c9bc0` has only three xrefs, all inside that block,
-so consumers reach the path indirectly. Chasing the string literal does not lead
-to the loader.
-
-*The template class is located.* Two near-identical destructors, `0x005b7660`
-and `0x005d0140`, share a member layout and install vtables at `0x00905a90` and
-`0x00908830` whose contents are byte-identical (verified against a control
-address — `read_memory` is not returning stale data). Two instantiations of one
-template. Their implementations cluster at `0x005cdxxx` and `0x005b5exx`.
-
-Slots examined so far are accessors and dispatch, not the reader:
-`0x005cd0a0` assigns a `std::string` to `+0x2c`; `0x005cd130` calls vtable slots
-`+0x80`/`+0x84`; `0x005cd260` (created by us, 315 bytes) walks collections at
-`+0x164`/`+0x174` issuing QueryInterface-style calls tagged `0x53ce75fe` and
-`0xd0867dfb`.
-
-### The loader chain, recovered
-
-The vtable's real slots run `+0x00`..`+0xb8`; past that `.rdata` continues into
-this class's string constants, which is where the useful anchor was:
-
-```
-+0xbc  "Texture/ObjectLightmaps/"   @ 0x00905b4c
-+0xd8  ".tga"                       @ 0x00905b68
-+0xe0  ".sm"                        @ 0x00905b70
-+0xe4  "ShadowStandardMesh/"        @ 0x00905b74
-```
-
-Creating a function at each of the 43 distinct slot targets recovered 32
-previously-undefined functions with no failures — no global re-analysis needed,
-because a vtable is an exact list of entry points.
-
-| Slot | Address | Role |
-|---|---|---|
-| `+0x8c` | `0x005b6080` | appends `".sm"`, opens the stream, delegates to `+0x88` |
-| `+0x88` | `0x005b5f50` | parse orchestrator; loads the object lightmap at the end |
-| `+0x90` | `0x005b61f0` | header / version |
-| `+0x98` | `0x005b54e0` | LOD loop |
-| `+0x9c` | `0x005b42d0` | per-LOD material reader |
-
-### Why SM-1 cannot be answered in the loader
-
-`0x005b42d0` reads a material's vertex block as **one flat blob**:
-
-```c
-*(iVar11 + 0x2c) = piVar12[1] * *piVar12;    // vertex bytes = stride * count
-uVar7 = FUN_0045baf0(iVar2 * iVar3);         // malloc
-(**(code **)(*param_2 + 0xc))(uVar7, ...);   // single stream read
-*(iVar11 + 0x38) = piVar12[2] << 1;          // index bytes = count * 2
-```
-
-then hands it to `RendPCDX8_singleton` (`DAT_009a99d4`) — `+0x1c` creates the
-vertex buffer, `+0x20` the index buffer. **No component-wise parsing happens at
-load time at all.** `stride * count` is only ever used as a byte length; nothing
-in this path decides where a normal or a UV sits.
-
-So the layout decision is made at draw time, in the renderer, when the vertex
-declaration or shader is built — `StandardMeshRenderer` / `SubShaderBuilder`.
-That is client-only code by definition, and it is where `flags` is consumed if
-it is consumed anywhere.
-
-**Next probe:** `str_StandardMeshRenderer_Standard` (`0x00908a60`) and
-`str_SubShaderBuilder_StandardMesh` (`0x008d5c30`), and the `RendPCDX8` vtable
-around `+0x1c`/`+0x20` to see what the buffer-creation arguments actually mean.
-
-**To settle it.** Find the `.sm` loader and read how it lays out a vertex.
-Current position: `dice.ref2.geom.GeometryTemplate.StandardMesh` is at
-`0x00908a90` with a single xref at `0x005d06a2`, which Ghidra has not resolved
-into a function. `0x005d0140` is the template destructor, not the loader.
-
-Three routes, cheapest first:
-
-1. Create a function at `0x005d06a2` and decompile the registration around it.
-2. Cross-reference `dice::ref2::geom::*` in `bf1942_lnxded.static` (not
-   stripped, 54,895 symbols) to name the shared parsing code in the client. The
-   server loads meshes for collision and AI, so the reader is present there even
-   though the renderer is not.
-3. Find where `vertex_stride` or `flags` reaches a D3D8 vertex-buffer creation
-   call. The function that maps a Refractor flags word onto a D3D vertex
-   declaration *is* the answer to SM-1.
+**Reader.** `vertex_layout(flags)` / `engine_stride(flags)` in `stdmesh.py`;
+accessors step by the engine stride; the stream still advances by
+`stride * count`; `Material.stride_matches_flags` reports the disagreement.
+Survey: `python3 features/bf1942-engine-reference/surveys/stride_vs_flags.py`.
 
 ---
 
