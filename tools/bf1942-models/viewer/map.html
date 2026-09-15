@@ -163,7 +163,8 @@
   }
   /* The map art, top right. That corner is free: #side is top left, #hud is
      bottom centre. Sized in one place so the canvas backing store and the
-     frame agree. */
+     frame agree. No CSS chrome: the game's own `icon_mapbar_small` bezel is
+     drawn into the canvas, over the art, the way the engine composes it. */
   #minimap {
     --mm-size: 188px;
     /* Not covered by the `#hud, #gate, #side` positioning rule above. */
@@ -171,34 +172,18 @@
     z-index: 3;
     top: 16px; right: 16px;
     width: var(--mm-size);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    backdrop-filter: blur(8px);
   }
   #minimap[hidden] { display: none; }
   #minimap canvas {
     position: static;
     display: block;
     width: 100%;
-    /* Square, so the art is not stretched: the border eats a pixel off the
-       width and a fixed height would not match it. */
+    /* Square, so the art is not stretched. */
     aspect-ratio: 1;
     /* The art is a top-down render with hard grid lines; smoothing it while
        zoomed in just makes it muddy. */
     image-rendering: pixelated;
   }
-  #minimap .mm-cap {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 5px 8px;
-    border-top: 1px solid var(--line);
-    font-size: 10px;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  #minimap .mm-cap b { color: var(--accent); font-weight: 500; }
   /* The fullscreen map. Covers the stage, not the viewport — the shared nav
      bar stays reachable. */
   #fullmap {
@@ -212,8 +197,8 @@
     pointer-events: auto;
   }
   #fullmap[hidden] { display: none; }
-  #fullmap .fm-frame {
-    position: relative;
+  #fullmap .fm-frame { position: relative; }
+  #fullmap .fm-map-frame {
     border: 1px solid var(--line);
     background: var(--panel);
     box-shadow: 0 18px 60px rgba(0, 0, 0, .6);
@@ -242,77 +227,178 @@
     letter-spacing: .14em;
     font-weight: 500;
   }
-  #fullmap .fm-legend { display: flex; gap: 14px; align-items: center; }
-  #fullmap .fm-key { display: inline-flex; gap: 5px; align-items: center; }
-  #fullmap .fm-swatch {
-    width: 8px; height: 8px;
-    border: 1px solid currentColor;
+  /* The deploy state: the game's own spawn screen. One surface, two panes —
+     the kit-selector column on the left, the heavily dimmed map on near-black
+     on the right, the SUICIDE / SCORE BOARD / RESUME bar under the map. The
+     column and the footer live in the markup at all times and show only while
+     #fullmap carries .deploy, so the plain M map keeps its old silhouette. */
+  #fullmap .fm-kits, #fullmap .fm-deploy-foot { display: none; }
+  #fullmap.deploy {
+    place-items: stretch;
+    background: #05070b;
+    backdrop-filter: none;
+    /* Over the flight-speed buttons too: the screen owns the whole stage. */
+    z-index: 11;
   }
-  #fullmap .fm-swatch.axis { background: #d2564b; color: #e88379; }
-  #fullmap .fm-swatch.allied { background: #4f8fd0; color: #86b6e6; }
-  /* The deploy state. The same map, wearing the join screen's chrome: a
-     header above the art and a commit bar below it, both present in the
-     markup at all times and shown only while #fullmap carries .deploy, so
-     the plain M map keeps its old silhouette. */
-  #fullmap .fm-deploy-head, #fullmap .fm-deploy-foot { display: none; }
-  #fullmap.deploy .fm-deploy-head {
+  #fullmap.deploy .fm-frame {
+    display: flex;
+    width: 100%;
+    height: 100%;
+  }
+  #fullmap.deploy .fm-map-pane {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-rows: 1fr auto;
+  }
+  #fullmap.deploy .fm-map-frame {
+    border: 0;
+    background: none;
+    box-shadow: none;
+    display: grid;
+    place-items: center;
+    min-height: 0;
+  }
+  #fullmap.deploy .fm-cap { display: none; }
+  /* In deploy the map is the target surface, and the cursor should say so. */
+  #fullmap.deploy canvas {
+    width: min(calc(100vh - var(--nav-h) - 92px), 100%);
+    height: auto;
+    aspect-ratio: 1;
+    cursor: crosshair;
+  }
+  /* The kit column. Chrome colours are sampled from the game's own
+     `Ingame/respawn` panel textures (extracted alongside the sprites); the
+     frames are CSS so they stay crisp at any column height. */
+  #fullmap.deploy .fm-kits {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 300px;
+    flex: none;
+    padding: 22px 18px;
+    overflow-y: auto;
+    font-family: 'Arial Narrow', 'Liberation Sans Narrow', var(--mm-font-mono);
+  }
+  .fm-tabs { display: flex; margin-bottom: 2px; }
+  .fm-tab {
+    flex: 1;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 6px 0 5px;
+    cursor: pointer;
+    background: #2c2d27;
+    color: #8f9184;
+    border: 1px solid #55564c;
+    border-radius: 4px 4px 0 0;
+  }
+  .fm-tab.active {
+    background: #c9c6a4;
+    color: #22231a;
+    border-color: #e4e2c8;
+  }
+  .fm-teamhead {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 14px;
+    border: 2px solid #b9b7a2;
+    border-radius: 6px;
+    background: #191a15;
+  }
+  .fm-teamhead img { width: 58px; height: 58px; object-fit: contain; }
+  .fm-teamhead b {
+    font-size: 21px;
+    letter-spacing: .14em;
+    color: #f0efe6;
+    text-transform: uppercase;
+  }
+  #kit-list { display: flex; flex-direction: column; gap: 9px; }
+  .fm-kit {
+    font: inherit;
+    text-align: left;
+    padding: 0;
+    border: 2px solid #b9b7a2;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    background: #15160f;
+    color: inherit;
+  }
+  .fm-kit-head {
+    position: relative;
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
-    gap: 16px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--line);
-    font-size: 11px;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  #fullmap.deploy .fm-deploy-head b {
-    color: var(--accent);
-    letter-spacing: .14em;
-    font-weight: 500;
-  }
-  #fullmap.deploy .fm-deploy-foot {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-top: 1px solid var(--line);
-  }
-  /* In deploy the flags are targets, and the cursor should say so. */
-  #fullmap.deploy canvas { cursor: crosshair; }
-  #fullmap .fm-team {
-    justify-self: start;
+    background: #6c7140;
+    color: #1f210f;
     font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 3px 8px 2px 26px;
+  }
+  .fm-kit-glyph {
+    position: absolute;
+    left: 3px; top: 3px;
+    width: 15px; height: 15px;
+    border: 1px solid #b9b7a2;
+    border-radius: 2px;
+    background: #15160f;
+    color: #e9e8da;
+    display: grid;
+    place-items: center;
+  }
+  .fm-kit-glyph svg { display: block; }
+  .fm-kit-body {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 14px 4px 8px;
+  }
+  .fm-kit-body img { width: 58px; height: 58px; object-fit: contain; }
+  .fm-kit-count {
+    margin-left: auto;
+    font-size: 26px;
+    font-weight: 700;
+    color: #f2f1e5;
+  }
+  .fm-kit.active .fm-kit-body { background: #6c7140; }
+  .fm-kit.active .fm-kit-count { color: #23250f; }
+  /* The footer bar, on the game's own `ingame_respawn_long` chrome. */
+  #fullmap.deploy .fm-deploy-foot {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8%;
+    margin: 6px 18px 14px;
+    padding: 12px 24px;
+    border-image: url('maps/_shared/hud/ingame_respawn_long_512x64.png') 14 fill / 10px stretch;
+    font-family: 'Arial Narrow', 'Liberation Sans Narrow', var(--mm-font-mono);
+  }
+  .fm-btn {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
     letter-spacing: .12em;
     text-transform: uppercase;
-    padding: 3px 8px;
-    border: 1px solid currentColor;
-  }
-  #fullmap .fm-team.axis { color: #e88379; }
-  #fullmap .fm-team.allied { color: #86b6e6; }
-  #fullmap .fm-team.neutral { color: var(--muted); }
-  #fullmap .fm-spawn-btn {
-    justify-self: center;
-    font: inherit;
-    font-size: 12px;
-    letter-spacing: .22em;
-    text-transform: uppercase;
-    padding: 9px 36px;
+    padding: 5px 26px;
     cursor: pointer;
-    background: var(--mm-accent);
-    color: var(--mm-highlight-ink);
-    border: 1px solid var(--mm-accent-soft);
+    border-radius: 999px;
+    background: #6c7140;
+    color: #1f210f;
+    border: 2px solid #b6bb84;
   }
-  #fullmap .fm-spawn-btn:hover { background: var(--mm-accent-soft); }
-  #fullmap .fm-hint {
-    justify-self: end;
-    font-size: 10px;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: var(--muted);
+  .fm-btn:hover { background: #7d8250; }
+  .fm-btn-danger {
+    background: #3d1013;
+    color: #d8b8b8;
+    border-color: #7c2d31;
   }
+  .fm-btn-danger:hover { background: #55181c; }
   a { color: var(--accent); }
 
   .side-header {
@@ -540,7 +626,6 @@
   </button>
   <div id="minimap" hidden>
     <canvas id="minimap-canvas" width="376" height="376"></canvas>
-    <div class="mm-cap"><span id="minimap-grid">&mdash;</span><b>M</b></div>
   </div>
   <div id="map-actions" class="map-actions speed-control">
     <button type="button" id="speed-toggle-btn" class="map-action-btn speed-toggle-btn" data-speed="fast" aria-label="Toggle flight speed">
@@ -562,25 +647,30 @@
   <div id="gate"><span>Tap or click to fly</span></div>
   <div id="fullmap" hidden>
     <div class="fm-frame">
-      <div class="fm-deploy-head">
-        <b id="deploy-level">map</b>
-        <span>select spawn point</span>
-      </div>
-      <canvas id="fullmap-canvas" width="1024" height="1024"></canvas>
-      <div class="fm-cap">
-        <b id="fullmap-name">map</b>
-        <span class="fm-legend">
-          <span class="fm-key"><i class="fm-swatch axis"></i>axis</span>
-          <span class="fm-key"><i class="fm-swatch allied"></i>allied</span>
-          <span class="fm-key"><i class="fm-swatch neutral"></i>neutral</span>
-          <span class="fm-key"><i class="fm-swatch zone"></i>zone</span>
-        </span>
-        <span id="fullmap-meta"></span>
-      </div>
-      <div class="fm-deploy-foot">
-        <span id="deploy-team" class="fm-team neutral">neutral</span>
-        <button type="button" id="deploy-spawn" class="fm-spawn-btn">Spawn</button>
-        <span class="fm-hint">1-9 select &middot; Enter spawn &middot; Esc</span>
+      <aside class="fm-kits" aria-label="Kit selection">
+        <div class="fm-tabs">
+          <button type="button" class="fm-tab" data-team="1">Axis</button>
+          <button type="button" class="fm-tab active" data-team="2">Allied</button>
+        </div>
+        <div class="fm-teamhead">
+          <img id="deploy-flag" alt="" width="64" height="64">
+          <b id="deploy-teamname">Allied</b>
+        </div>
+        <div id="kit-list"></div>
+      </aside>
+      <div class="fm-map-pane">
+        <div class="fm-map-frame">
+          <canvas id="fullmap-canvas" width="1024" height="1024"></canvas>
+          <div class="fm-cap">
+            <b id="fullmap-name">map</b>
+            <span id="fullmap-meta"></span>
+          </div>
+        </div>
+        <div class="fm-deploy-foot">
+          <button type="button" id="deploy-suicide" class="fm-btn fm-btn-danger">Suicide</button>
+          <button type="button" id="deploy-score" class="fm-btn">Score board</button>
+          <button type="button" id="deploy-resume" class="fm-btn">Resume</button>
+        </div>
       </div>
     </div>
   </div>
@@ -4124,7 +4214,6 @@ texManager.onProgress = (url, loaded, total) => {
 // ---------------------------------------------------------------------------
 const minimapBox = document.getElementById('minimap');
 const minimapCanvas = document.getElementById('minimap-canvas');
-const minimapGrid = document.getElementById('minimap-grid');
 const fullmapBox = document.getElementById('fullmap');
 const fullmapCanvas = document.getElementById('fullmap-canvas');
 const fullmapName = document.getElementById('fullmap-name');
@@ -4134,15 +4223,122 @@ const fullmapMeta = document.getElementById('fullmap-meta');
 // recovered from the binary, so this is a viewer choice: a quarter of the
 // combat area keeps a 2 km level readable without losing the grid letters.
 const MINIMAP_SPAN = 0.25;
-// Marker sizes below are in CSS pixels and get multiplied by the canvas's own
-// backing ratio, so a flag is the same size on the 188 px HUD widget as on the
-// fullscreen map and stays put on a hidpi display.
+// Sprite scale in CSS pixels, multiplied by the canvas's own backing ratio so
+// a flag is the same size on the 188 px HUD widget as on the fullscreen map
+// and stays put on a hidpi display.
 const MARKER_SCALE = 1.25;
+// Only for the moment before the sprite pack lands: a dot in the side's colour
+// so a level opened on a cold cache is not a bare grid.
 const TEAM_FILL = { 1: '#d2564b', 2: '#4f8fd0', 0: '#9a9a9a' };
-const TEAM_EDGE = { 1: '#f0a49c', 2: '#a8cdf2', 0: '#d0d0d0' };
 
 let mapArt = null;          // HTMLImageElement once the PNG has decoded
 let mapArtToken = 0;        // guards against a slow load landing after a switch
+
+// --- the sprite pack --------------------------------------------------------
+//
+// Every marker on every map surface is the game's own sprite out of
+// `menu.rfa`: `extract_hud_pack.py` decodes them once into
+// `maps/_shared/hud/`, shared by every mod because the menu art is vanilla's
+// even when the level tree hangs off `maps/mods/<mod>`. `hud.json` names the
+// sprites and carries the flag-mesh-to-nation table; `minimap-icons.json` is
+// `ObjectTemplate.setMinimapIcon` per vehicle template. They are point art
+// and are drawn unsmoothed at whole multiples where the surface allows.
+const HUD_BASE = 'maps/_shared/hud';
+const hudPack = { sprites: new Map(), icons: {}, nations: {} };
+
+/** The player marker ships as a black cut-out — a solid arrowhead inside a
+ *  translucent disc, colour left to the engine. Painted once the way the HUD
+ *  shows it, grey disc and green arrow, and kept as a canvas. */
+function tintPlayerRing(img) {
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, c.width, c.height);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3];
+    if (!a) continue;
+    if (a >= 200) {
+      px[i] = 118; px[i + 1] = 214; px[i + 2] = 92;
+    } else {
+      px[i] = 214; px[i + 1] = 214; px[i + 2] = 208;
+      px[i + 3] = Math.min(215, Math.round(a * 1.45));
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  return c;
+}
+
+async function loadHudPack() {
+  let manifest, icons;
+  try {
+    [manifest, icons] = await Promise.all([
+      fetch(`${HUD_BASE}/hud.json${bust()}`).then(r => r.json()),
+      fetch(`${HUD_BASE}/minimap-icons.json${bust()}`).then(r => r.json()),
+    ]);
+  } catch (error) {
+    // The surfaces still draw — fallback dots, no chrome — so this is a
+    // warning, not a failure.
+    console.warn('hud sprite pack unavailable', error);
+    return;
+  }
+  hudPack.nations = manifest.flagMeshNation || {};
+  hudPack.icons = icons || {};
+  for (const [name, entry] of Object.entries(manifest.sprites || {})) {
+    const img = new Image();
+    img.onload = () => {
+      hudPack.sprites.set(name, name === 'minimap_icon_ring_32x32'
+        ? tintPlayerRing(img) : img);
+    };
+    img.onerror = () => {};
+    img.src = `${HUD_BASE}/${entry.file}${bust()}`;
+  }
+}
+loadHudPack();
+
+const sprite = name => hudPack.sprites.get(name) || null;
+
+/** Draw a sprite centred on (x, y) at `sc` times its own pixels. Returns
+ *  false when the pack has not delivered it yet, so callers can fall back. */
+function drawSprite(ctx, name, x, y, sc, { angle = 0, alpha = 1 } = {}) {
+  const img = sprite(name);
+  if (!img) return false;
+  const w = img.width * sc;
+  const h = img.height * sc;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  if (angle) ctx.rotate(angle);
+  ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  ctx.restore();
+  return true;
+}
+
+/** `flagus_m1` -> `us` through the manifest's table. A mesh the vanilla pack
+ *  has no flag for — Road to Rome's Italians and French — falls back to its
+ *  side's founding nation so it still reads as a side rather than as neutral. */
+function cpNation(cp) {
+  const m = /^flag([a-z]+)_/i.exec(cp.flagMesh || '');
+  const code = m ? hudPack.nations[m[1].toLowerCase()] : null;
+  if (code) return code;
+  return cp.team === 1 ? 'ger' : cp.team === 2 ? 'us' : null;
+}
+
+/** The nation a whole side flies on this level: the flag most of its control
+ *  points hoist. Wake's Axis are Japanese, Kharkov's Allies Soviet. */
+function teamNation(team) {
+  const tally = new Map();
+  for (const cp of extras.controlPoints || []) {
+    if (cp.team !== team || !cp.flagMesh) continue;
+    const n = cpNation(cp);
+    if (n) tally.set(n, (tally.get(n) || 0) + 1);
+  }
+  let best = null;
+  for (const [n, count] of tally) if (!best || count > tally.get(best)) best = n;
+  return best || nationFromVehicles(team) || (team === 1 ? 'ger' : 'us');
+}
 
 function loadMapArt(dir) {
   mapArt = null;
@@ -4187,76 +4383,115 @@ function cameraHeading() {
   return Math.atan2(headingVec.x, -headingVec.z);
 }
 
-function drawArt(ctx, size, u0, v0, span) {
-  ctx.fillStyle = '#0d0f10';
+/** The art, three ways. The spawn screen dims it to a silhouette on
+ *  near-black; the HUD widget leaves the world showing through, the game's
+ *  own `setMinimapTransparency` default; the plain M map draws it as is. */
+function drawArt(ctx, size, u0, v0, span, opts) {
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = opts.dim ? '#05070b'
+    : opts.translucent ? 'rgba(13, 15, 16, .78)' : '#0d0f10';
   ctx.fillRect(0, 0, size, size);
   if (!mapArt) return;
   const sx = u0 * mapArt.width;
   const sy = v0 * mapArt.height;
   const sw = span * mapArt.width;
   const sh = span * mapArt.height;
+  ctx.globalAlpha = opts.dim ? 0.3 : opts.translucent ? 0.85 : 1;
   ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, size);
+  ctx.globalAlpha = 1;
 }
 
-function drawControlPoint(ctx, cp, px, py, scale) {
-  const r = 5 * scale;
-  ctx.lineWidth = Math.max(1, 1.5 * scale);
-  if (!cp.visible) {
-    // A capture zone the level deliberately left without a flag: Kasserine
-    // Pass is five of them. Drawn as a dashed ring so it reads as a place you
-    // capture rather than a thing you can see.
-    ctx.strokeStyle = TEAM_EDGE[cp.team] || TEAM_EDGE[0];
-    ctx.setLineDash([3 * scale, 3 * scale]);
-    ctx.beginPath();
-    ctx.arc(px, py, r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    return;
-  }
-  // A flag on a staff: the staff marks the exact world position, the banner
-  // hangs off it, which is how the game's own map icons read.
-  const h = 13 * scale;
-  ctx.strokeStyle = 'rgba(0,0,0,.75)';
-  ctx.lineWidth = Math.max(1, 2.5 * scale);
-  ctx.beginPath();
-  ctx.moveTo(px, py);
-  ctx.lineTo(px, py - h);
-  ctx.stroke();
-  ctx.strokeStyle = '#f0f0f0';
-  ctx.lineWidth = Math.max(1, 1 * scale);
-  ctx.beginPath();
-  ctx.moveTo(px, py);
-  ctx.lineTo(px, py - h);
-  ctx.stroke();
+/** A control point is its flag sprite: `conp_<nation>` for one that can
+ *  change hands, the red-ringed `baseflag_conp_<nation>` for a main base,
+ *  `conp_neutral` for one nobody holds. Kasserine's flagless capture zones
+ *  get the same icon — the map marks the point, not the cloth. */
+function drawControlPoint(ctx, cp, px, py, sc) {
+  const nation = cp.team ? cpNation(cp) : null;
+  const name = !nation ? 'conp_neutral'
+    : cp.unableToChangeTeam ? `baseflag_conp_${nation}` : `conp_${nation}`;
+  if (drawSprite(ctx, name, px, py, sc)) return;
   ctx.fillStyle = TEAM_FILL[cp.team] || TEAM_FILL[0];
-  ctx.strokeStyle = 'rgba(0,0,0,.8)';
   ctx.beginPath();
-  ctx.moveTo(px + 1, py - h);
-  ctx.lineTo(px + 1 + 9 * scale, py - h + 3.5 * scale);
-  ctx.lineTo(px + 1, py - h + 7 * scale);
-  ctx.closePath();
+  ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
   ctx.fill();
-  ctx.stroke();
 }
 
-function drawPlayer(ctx, px, py, scale) {
-  const a = cameraHeading();
-  ctx.save();
-  ctx.translate(px, py);
-  ctx.rotate(a);
-  const s = 7 * scale;
-  ctx.fillStyle = '#f5d76e';
-  ctx.strokeStyle = 'rgba(0,0,0,.85)';
-  ctx.lineWidth = Math.max(1, 1.2 * scale);
+/** The vehicles, by template: every `spawners` child in the scene carries its
+ *  template name, and `minimap-icons.json` says which silhouette that template
+ *  declared. A template with no icon of its own is a vehicle dot, the way the
+ *  HUD marks anything it has no picture for. */
+const vehiclePos = new THREE.Vector3();
+const vehicleQuat = new THREE.Quaternion();
+const vehicleFwd = new THREE.Vector3();
+function drawVehicles(ctx, toPx, sc) {
+  if (!spawnersRoot) return;
+  for (const vehicle of spawnersRoot.children) {
+    vehicle.getWorldPosition(vehiclePos);
+    const p = projectToArt(vehiclePos.x, vehiclePos.z);
+    if (!p) continue;
+    const q = toPx(p);
+    const entry = hudPack.icons[vehicle.name.toLowerCase()];
+    const icon = entry?.icon && !entry.icon.startsWith('flag_') ? entry.icon : null;
+    // The silhouettes point up the sprite and the game turns them with the
+    // vehicle; same forward axis and the same screen angle as the player.
+    vehicle.getWorldQuaternion(vehicleQuat);
+    vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
+    const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z);
+    if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc, { angle, alpha: 0.9 })) {
+      drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc);
+    }
+  }
+}
+
+/** The vehicles a side fields, for the levels where its flags say nothing:
+ *  Wake's Japanese hold no control point at the start and arrive by sea, so
+ *  their nation is read off the carrier and the Zeros instead. Only the
+ *  templates that belong to one nation alone are listed. */
+const NATION_VEHICLES = {
+  jp: ['zero', 'aichival', 'chi-ha', 'ho-ha', 'type38', 'hatsuzuki', 'yamato', 'shokaku'],
+  rus: ['t34', 'katyusha', 'ilyushin', 'yak9'],
+  brit: ['spitfire', 'sexton', 'blackmedal', 'princeow'],
+};
+function nationFromVehicles(team) {
+  if (!spawnersRoot) return null;
+  const names = new Set(spawnersRoot.children.map(v => v.name.toLowerCase()));
+  const has = nation => NATION_VEHICLES[nation].some(stem =>
+    [...names].some(name => name === stem || name.startsWith(`${stem}_`)));
+  if (team === 1) return has('jp') ? 'jp' : null;
+  return has('rus') ? 'rus' : has('brit') ? 'brit' : null;
+}
+
+function drawPlayer(ctx, px, py, sc) {
+  if (drawSprite(ctx, 'minimap_icon_ring_32x32', px, py, sc * 0.8,
+                 { angle: cameraHeading() })) return;
+  ctx.fillStyle = '#76d65c';
   ctx.beginPath();
-  ctx.moveTo(0, -s);
-  ctx.lineTo(s * 0.62, s * 0.72);
-  ctx.lineTo(0, s * 0.34);
-  ctx.lineTo(-s * 0.62, s * 0.72);
-  ctx.closePath();
+  ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
   ctx.fill();
-  ctx.stroke();
-  ctx.restore();
+}
+
+/** The spawn screen's targets: one `map_circle` per flag the chosen side can
+ *  spawn at, never one per spawn entry. The chosen one is drawn larger and
+ *  solid; the rest sit back. */
+function drawSpawnRings(ctx, toPx, sc) {
+  const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
+  for (const index of deployFlagIndices()) {
+    const flag = flags[index];
+    if (!flag.position) continue;
+    const p = projectToArt(flag.position[0], flag.position[2]);
+    if (!p) continue;
+    const q = toPx(p);
+    const active = index === chosen;
+    if (!drawSprite(ctx, 'map_circle', q.x, q.y, sc * (active ? 1.4 : 1.05),
+                    { alpha: active ? 1 : 0.7 })) {
+      ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,.6)';
+      ctx.lineWidth = Math.max(1, sc);
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, 8 * sc, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (active) drawSprite(ctx, 'map_dot', q.x, q.y, sc * 0.7);
+  }
 }
 
 /** Match a canvas's backing store to the box it is displayed in.
@@ -4279,115 +4514,95 @@ function fitCanvas(canvas) {
 
 /** One map surface. `span` is the fraction of the art shown, `u0`/`v0` its
  *  top-left corner — the fullscreen map passes the whole image, the HUD a
- *  window centred on the camera. */
+ *  window centred on the camera. Vehicles under flags under spawn rings
+ *  under the player, and nothing else: the game prints no names, no capture
+ *  radii and no combat-area box on any of its map surfaces. */
 function paintMap(canvas, u0, v0, span, opts) {
   const ctx = canvas.getContext('2d');
   const ratio = fitCanvas(canvas);
   const size = canvas.width;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  drawArt(ctx, size, u0, v0, span);
-  if (!extras.minimap?.worldToImage) return;
+  drawArt(ctx, size, u0, v0, span, opts);
+  if (!extras.minimap?.worldToImage) return ratio;
 
   const toPx = p => ({
     x: ((p.u - u0) / span) * size,
     y: ((p.v - v0) / span) * size,
   });
-  const scale = MARKER_SCALE * ratio * (opts.scale || 1);
+  const sc = MARKER_SCALE * ratio * (opts.scale || 1);
+  ctx.imageSmoothingEnabled = false;
 
-  if (opts.combatArea && extras.combatArea) {
-    // Only worth drawing when it is not the whole frame, which it is whenever
-    // the level declares one — so this shows up only on the levels that do not.
-    const a = projectToArt(extras.combatArea.min[0], extras.combatArea.min[2]);
-    const b = projectToArt(extras.combatArea.max[0], extras.combatArea.max[2]);
-    if (a && b) {
-      const p = toPx(a), q = toPx(b);
-      ctx.strokeStyle = 'rgba(245,215,110,.35)';
-      ctx.setLineDash([6, 5]);
-      ctx.lineWidth = 1;
-      ctx.strokeRect(Math.min(p.x, q.x), Math.min(p.y, q.y),
-                     Math.abs(q.x - p.x), Math.abs(q.y - p.y));
-      ctx.setLineDash([]);
-    }
-  }
-
-  if (opts.spawns) {
-    for (const sp of extras.soldierSpawns || []) {
-      const p = projectToArt(sp.position[0], sp.position[2]);
-      if (!p) continue;
-      const q = toPx(p);
-      ctx.fillStyle = sp.team ? (TEAM_FILL[sp.team] || TEAM_FILL[0]) : TEAM_FILL[0];
-      ctx.globalAlpha = 0.75;
-      ctx.beginPath();
-      ctx.arc(q.x, q.y, Math.max(1.2, 2 * scale), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  const labels = [];
+  drawVehicles(ctx, toPx, sc);
   for (const cp of extras.controlPoints || []) {
     const p = projectToArt(cp.position[0], cp.position[2]);
     if (!p) continue;
     const q = toPx(p);
-    if (opts.radius && cp.radius > 0) {
-      // The capture radius is a world distance, so it scales with the art.
-      const m = extras.minimap.worldToImage;
-      const rUv = cp.radius * Math.abs(m[0]);
-      ctx.strokeStyle = TEAM_EDGE[cp.team] || TEAM_EDGE[0];
-      ctx.globalAlpha = 0.28;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(q.x, q.y, (rUv / span) * size, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+    drawControlPoint(ctx, cp, q.x, q.y, sc);
+  }
+  if (opts.spawnRings) drawSpawnRings(ctx, toPx, sc);
+
+  if (opts.player !== false) {
+    const here = projectToArt(camera.position.x, camera.position.z);
+    if (here) {
+      const q = toPx(here);
+      drawPlayer(ctx, q.x, q.y, sc);
     }
-    drawControlPoint(ctx, cp, q.x, q.y, scale);
-    if (opts.labels) labels.push({ cp, q });
+  }
+  ctx.imageSmoothingEnabled = true;
+  return ratio;
+}
+
+/** The HUD widget's chrome, all of it in the canvas: the `icon_mapbar_small`
+ *  bezel as the nine-patch it is (a four-pixel frame round a transparent
+ *  middle), the grid readout in the lower-left corner, and the flag-status
+ *  strip along the bottom edge — one `cpbar` segment per control point in
+ *  its holder's colour. */
+function drawMinimapChrome(ctx, size, ratio) {
+  const bezel = sprite('icon_mapbar_small');
+  const edge = 4;
+  const d = Math.round(edge * ratio * 1.5);
+  if (bezel) {
+    const w = bezel.width, h = bezel.height;
+    const cut = (sx, sy, sw, sh, dx, dy, dw, dh) =>
+      ctx.drawImage(bezel, sx, sy, sw, sh, dx, dy, dw, dh);
+    cut(0, 0, edge, edge, 0, 0, d, d);
+    cut(w - edge, 0, edge, edge, size - d, 0, d, d);
+    cut(0, h - edge, edge, edge, 0, size - d, d, d);
+    cut(w - edge, h - edge, edge, edge, size - d, size - d, d, d);
+    cut(edge, 0, w - 2 * edge, edge, d, 0, size - 2 * d, d);
+    cut(edge, h - edge, w - 2 * edge, edge, d, size - d, size - 2 * d, d);
+    cut(0, edge, edge, h - 2 * edge, 0, d, d, size - 2 * d);
+    cut(w - edge, edge, edge, h - 2 * edge, size - d, d, d, size - 2 * d);
   }
 
-  // Labels last, and placed against what is already down. Control points
-  // cluster — Wake puts Village and North Base within a flag's width of each
-  // other — and drawn blindly the two names overprint into one unreadable
-  // run of letters.
-  if (opts.labels && labels.length) {
-    ctx.font = `${Math.round(9 * scale)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const placed = [];
-    const gap = 17 * scale;
-    for (const { cp, q } of labels) {
-      const text = cp.displayName.replace(/_/g, ' ');
-      const w = ctx.measureText(text).width + 6 * scale;
-      const h = 11 * scale;
-      // Below first — it is clear of the flag, which flies up and to the
-      // right of the staff — then above, then out to either side.
-      const spots = [
-        [q.x, q.y + gap], [q.x, q.y - gap * 1.25],
-        [q.x + w / 2 + 6 * scale, q.y], [q.x - w / 2 - 6 * scale, q.y],
-        [q.x, q.y + gap * 1.9], [q.x, q.y - gap * 2],
-      ];
-      let spot = null;
-      for (const [cx, cy] of spots) {
-        const box = { x0: cx - w / 2, x1: cx + w / 2, y0: cy - h / 2, y1: cy + h / 2 };
-        if (box.x0 < 0 || box.x1 > size) continue;
-        if (placed.some(p => box.x0 < p.x1 && box.x1 > p.x0
-                          && box.y0 < p.y1 && box.y1 > p.y0)) continue;
-        spot = [cx, cy]; placed.push(box); break;
-      }
-      if (!spot) continue;      // nowhere clear: the flag alone has to say it
-      ctx.fillStyle = 'rgba(0,0,0,.82)';
-      ctx.fillText(text, spot[0] + 1, spot[1] + 1);
-      ctx.fillStyle = '#e8e8e8';
-      ctx.fillText(text, spot[0], spot[1]);
+  const cps = extras.controlPoints || [];
+  const segW = Math.round(12 * ratio), segH = Math.round(6 * ratio);
+  const gap = Math.round(2 * ratio);
+  let x = d + gap;
+  const y = size - d - segH - gap;
+  for (const cp of cps) {
+    if (x + segW > size - d) break;
+    const name = cp.team === 1 ? 'cpbar_red_cp_16x8'
+      : cp.team === 2 ? 'cpbar_blue_cp_16x8' : 'cpbar_gray_cp_16x8';
+    const seg = sprite(name);
+    if (seg) ctx.drawImage(seg, x, y, segW, segH);
+    else {
+      ctx.fillStyle = TEAM_FILL[cp.team] || TEAM_FILL[0];
+      ctx.fillRect(x, y, segW, segH);
     }
-    ctx.textBaseline = 'alphabetic';
+    x += segW + gap;
   }
 
-  const here = projectToArt(camera.position.x, camera.position.z);
-  if (here) {
-    const q = toPx(here);
-    drawPlayer(ctx, q.x, q.y, scale);
-  }
+  const text = gridRef(camera.position.x, camera.position.z);
+  ctx.font = `bold ${Math.round(13 * ratio)}px 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  const tx = d + Math.round(6 * ratio);
+  const ty = y - Math.round(5 * ratio);
+  ctx.fillStyle = 'rgba(0,0,0,.85)';
+  ctx.fillText(text, tx + ratio, ty + ratio);
+  ctx.fillStyle = '#f4f4f0';
+  ctx.fillText(text, tx, ty);
 }
 
 function drawMinimap() {
@@ -4400,18 +4615,27 @@ function drawMinimap() {
   const half = MINIMAP_SPAN / 2;
   const u0 = Math.min(Math.max(here.u - half, 0), 1 - MINIMAP_SPAN);
   const v0 = Math.min(Math.max(here.v - half, 0), 1 - MINIMAP_SPAN);
-  paintMap(minimapCanvas, u0, v0, MINIMAP_SPAN,
-           { spawns: false, radius: false, labels: false });
-  minimapGrid.textContent = gridRef(camera.position.x, camera.position.z);
+  const ratio = paintMap(minimapCanvas, u0, v0, MINIMAP_SPAN, { translucent: true });
+  drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
 }
 
 function drawFullMap() {
   if (fullmapBox.hidden) return;
-  // Bigger markers than the HUD widget: this surface is three times the size
-  // and carries labels, spawn dots and capture rings on top of the flags.
-  paintMap(fullmapCanvas, 0, 0, 1,
-           { scale: 1.5, spawns: true, radius: true, labels: true, combatArea: true });
-  if (deployActive()) drawDeployMarkers();
+  // Bigger sprites than the HUD widget: this surface is several times the
+  // size. In the deploy state the art dims to the spawn screen's silhouette
+  // and the rings come out; a dead man has no marker, so the player shows
+  // only when a life waits behind the screen.
+  const deploy = deployActive();
+  // Sprites grow with the surface, not with the window: the game's spawn map
+  // shows a 16 px flag at about a fifth of a grid square, and so does this
+  // one whatever the canvas's CSS size came out as.
+  const css = fullmapCanvas.getBoundingClientRect().width || 610;
+  paintMap(fullmapCanvas, 0, 0, 1, {
+    scale: Math.min(2, Math.max(0.8, css / 610)),
+    dim: deploy,
+    spawnRings: deploy,
+    player: !deploy || deployRejoin,
+  });
 }
 
 function toggleFullMap(on) {
@@ -4427,7 +4651,7 @@ function toggleFullMap(on) {
 }
 fullmapBox.addEventListener('click', () => {
   // The plain map closes on any click; the deploy state does not — its
-  // backdrop is not a button, and the exits are Spawn, Escape and M.
+  // backdrop is not a button, and the exits are the footer, Escape and M.
   if (deployActive()) return;
   toggleFullMap(false);
 });
@@ -4435,13 +4659,19 @@ fullmapBox.addEventListener('click', () => {
 // --- the deploy screen ------------------------------------------------------
 //
 // The game never drops a joining player straight into the world: the round
-// opens on the map, the flags are the choices, and the spawn button is the
-// commitment. This is that screen — the fullscreen map wearing a header and
-// a commit bar, same canvas, same projection. `.deploy` on #fullmap is the
-// whole of the state; `toggleFullMap(false)` strips it on any close.
-const deployLevel = document.getElementById('deploy-level');
-const deployTeam = document.getElementById('deploy-team');
-const deploySpawnBtn = document.getElementById('deploy-spawn');
+// opens on its spawn screen, and this is that screen — the kit column on the
+// left, the dimmed map with its spawn rings on the right, SUICIDE / SCORE
+// BOARD / RESUME underneath. Same canvas, same projection as the M map;
+// `.deploy` on #fullmap is the whole of the state, and `toggleFullMap(false)`
+// strips it on any close. The kit is cosmetic — the weapon in hand follows
+// the flag, as it always has — but the column is the game's, row for row.
+const deployFlagImg = document.getElementById('deploy-flag');
+const deployTeamName = document.getElementById('deploy-teamname');
+const kitList = document.getElementById('kit-list');
+const deployTabs = [...fullmapBox.querySelectorAll('.fm-tab')];
+const deploySuicideBtn = document.getElementById('deploy-suicide');
+const deployScoreBtn = document.getElementById('deploy-score');
+const deployResumeBtn = document.getElementById('deploy-resume');
 // Whether a live soldier waits behind the screen (M or Shift+R over a life
 // in progress). Cancelling a redeploy keeps him where he stood; cancelling a
 // join has nobody to keep and falls back to fly.
@@ -4449,9 +4679,49 @@ let deployRejoin = false;
 // The selection as it stood when the screen opened, so a cancelled redeploy
 // does not leave the panel's select pointing somewhere nobody went.
 let deployKept = '';
+// The tab: 1 Axis, 2 Allied. Follows the chosen flag and filters the rings.
+let deployTeamId = 2;
+let deployKit = 'assault';
+
+// The five rows, in the game's order, each with the glyph its header square
+// shows: crosshair, machine gun, shell, cross, wrench.
+const KITS = [
+  { id: 'scout', name: 'Scout', plural: 'scouts',
+    glyph: '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="5.5" cy="5.5" r="3"/><path d="M5.5 0v3M5.5 8v3M0 5.5h3M8 5.5h3"/></svg>' },
+  { id: 'assault', name: 'Assault', plural: 'assaults',
+    glyph: '<svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M0 4h7l1-1.5h2.5V5H9L8 7H5v2H3V7H0z"/></svg>' },
+  { id: 'antitank', name: 'Anti-tank', plural: 'anti-tanks',
+    glyph: '<svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M0 3.5h6.5L11 5.5 6.5 7.5H0z"/></svg>' },
+  { id: 'medic', name: 'Medic', plural: 'medics',
+    glyph: '<svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M4 0h3v4h4v3H7v4H4V7H0V4h4z"/></svg>' },
+  { id: 'engineer', name: 'Engineer', plural: 'engineers',
+    glyph: '<svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M1 8.5 6 3.5a3 3 0 0 1 3.5-3.7L8 1.5 9.5 3 11 1.5a3 3 0 0 1-3.7 3.5l-5 5z"/></svg>' },
+];
+
+/** Which photograph a kit row shows. The theatre variants exist only where
+ *  the game drew them: Japanese assault and engineer, Soviet and Canadian
+ *  assault; everything else is the plain allies/axis picture. */
+function kitPhoto(role, nation, team) {
+  const variants = {
+    jp: { assault: 'jap', engineer: 'jap' },
+    rus: { assault: 'russian' },
+    can: { assault: 'canadian' },
+  };
+  const side = variants[nation]?.[role] || (team === 1 ? 'axis' : 'allies');
+  return `icon_${role}_${side}_selected`;
+}
 
 function deployActive() {
   return !fullmapBox.hidden && fullmapBox.classList.contains('deploy');
+}
+
+/** The flags the current tab may spawn at, as indices into `flags`. A side
+ *  with no flag of its own on this level — a one-sided extract — gets them
+ *  all rather than an empty map. */
+function deployFlagIndices() {
+  const own = [];
+  flags.forEach((flag, index) => { if (flag.team === deployTeamId) own.push(index); });
+  return own.length ? own : flags.map((_, index) => index);
 }
 
 /** The checkbox's on-edge. Joining became a choice rather than a teleport:
@@ -4474,8 +4744,8 @@ function openDeploy() {
   if (!flags.length && !buildSpawnFlags()) return false;
   deployRejoin = !!soldier;
   deployKept = spawnFlagSelect.value;
-  deployLevel.textContent = fullmapName.textContent;
-  updateDeployTeam();
+  const chosen = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
+  setDeployTeam(chosen?.team === 1 ? 1 : 2, false);
   fullmapBox.classList.add('deploy');
   toggleFullMap(true);
   return true;
@@ -4502,18 +4772,74 @@ function selectDeployFlag(index) {
   // A fresh choice starts at the flag's first spawn, as the select's own
   // change handler would have it.
   spawnIndex = 0;
-  updateDeployTeam();
+  // The tab follows the flag: a number key or a harness call naming the
+  // other side's flag switches the column with it.
+  const team = flags[index].team;
+  if ((team === 1 || team === 2) && team !== deployTeamId) setDeployTeam(team, false);
   return true;
 }
 
-function updateDeployTeam() {
-  const flag = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
-  const side = flag?.team === 1 ? 'axis' : flag?.team === 2 ? 'allied' : 'neutral';
-  deployTeam.textContent = side;
-  deployTeam.className = `fm-team ${side}`;
+/** The AXIS / ALLIED tab. `reselect` moves the chosen flag onto the new
+ *  side when it is not already there — a tab click — and leaves it alone
+ *  when the flag chose the tab. */
+function setDeployTeam(team, reselect = true) {
+  deployTeamId = team;
+  for (const tab of deployTabs) {
+    tab.classList.toggle('active', Number(tab.dataset.team) === team);
+  }
+  if (reselect) {
+    const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
+    if (flags[chosen]?.team !== team) {
+      const first = deployFlagIndices()[0];
+      if (first != null) {
+        spawnFlagSelect.value = String(first);
+        spawnIndex = 0;
+      }
+    }
+  }
+  buildKitColumn();
 }
 
-/** The button. A join builds the soldier through today's `setOnFoot`, whose
+function buildKitColumn() {
+  const nation = teamNation(deployTeamId);
+  deployFlagImg.src = `${HUD_BASE}/icon_flag_${nation}.png`;
+  deployTeamName.textContent = deployTeamId === 1 ? 'Axis' : 'Allied';
+  kitList.innerHTML = '';
+  for (const kit of KITS) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `fm-kit${kit.id === deployKit ? ' active' : ''}`;
+    row.dataset.kit = kit.id;
+    row.innerHTML = `
+      <div class="fm-kit-head">
+        <span class="fm-kit-glyph">${kit.glyph}</span>
+        <span>${kit.name}</span><span>Active ${kit.plural}</span>
+      </div>
+      <div class="fm-kit-body">
+        <img alt="" width="64" height="64" src="${HUD_BASE}/${kitPhoto(kit.id, nation, deployTeamId)}.png">
+        <span class="fm-kit-count">0</span>
+      </div>`;
+    row.addEventListener('click', e => {
+      e.stopPropagation();
+      deployKit = kit.id;
+      for (const other of kitList.children) {
+        other.classList.toggle('active', other === row);
+      }
+      row.blur();
+    });
+    kitList.appendChild(row);
+  }
+}
+
+for (const tab of deployTabs) {
+  tab.addEventListener('click', e => {
+    e.stopPropagation();
+    setDeployTeam(Number(tab.dataset.team));
+    tab.blur();
+  });
+}
+
+/** The commit. A join builds the soldier through today's `setOnFoot`, whose
  *  rebuilt select keeps the chosen flag; a redeploy moves the one that
  *  exists. Either way the screen goes first, and pointer capture stays with
  *  the gate, exactly as it does today. */
@@ -4522,16 +4848,18 @@ function deploySpawn() {
   const rejoin = deployRejoin;
   toggleFullMap(false);
   const spawned = (rejoin && soldier) ? spawnAtFlag() : (setOnFoot(true), !!soldier);
-  // The SPAWN click is a user gesture, which is the only currency pointer
-  // lock accepts — capture here and the very first click in the world is a
-  // trigger pull, not a mysterious dead click that only grabs the mouse.
+  // The click that commits is a user gesture, which is the only currency
+  // pointer lock accepts — capture here and the very first click in the
+  // world is a trigger pull, not a mysterious dead click that only grabs
+  // the mouse.
   if (spawned) capture();
   return spawned;
 }
 
-// Clicking the art is clicking a flag: the nearest deployable one within a
-// finger's width, measured in CSS pixels so the target does not shrink on a
-// hidpi display. Touch arrives here as the same click event.
+// Clicking the art is clicking a ring: the nearest one of the chosen side's
+// within a finger's width, measured in CSS pixels so the target does not
+// shrink on a hidpi display. Clicking the ring already chosen is the commit.
+// Touch arrives here as the same click event.
 fullmapCanvas.addEventListener('click', e => {
   if (!deployActive()) return;       // the plain map still closes, above
   e.stopPropagation();
@@ -4541,73 +4869,42 @@ fullmapCanvas.addEventListener('click', e => {
   const v = (e.clientY - rect.top) / rect.height;
   let best = -1;
   let bestDist = 26;
-  flags.forEach((flag, index) => {
-    if (!flag.position) return;
+  for (const index of deployFlagIndices()) {
+    const flag = flags[index];
+    if (!flag.position) continue;
     const p = projectToArt(flag.position[0], flag.position[2]);
-    if (!p) return;
+    if (!p) continue;
     const d = Math.hypot((p.u - u) * rect.width, (p.v - v) * rect.height);
     if (d < bestDist) {
       bestDist = d;
       best = index;
     }
-  });
-  if (best >= 0) selectDeployFlag(best);
+  }
+  if (best < 0) return;
+  const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
+  if (best === chosen) deploySpawn();
+  else selectDeployFlag(best);
 });
 
-deploySpawnBtn.addEventListener('click', e => {
+// The footer. SUICIDE is the game's own way of getting back to a spawn
+// point, so here it is the commit; RESUME is the cancel; SCORE BOARD has no
+// board to show and stays a button in name only. Focus must not stay on any
+// of them: Space is the jump the instant the screen closes, and a focused
+// button turns it back into a click.
+deploySuicideBtn.addEventListener('click', e => {
   e.stopPropagation();
-  // Focus must not stay on the button: Space is the jump the instant the
-  // screen closes, and a focused button turns it back into a click.
-  deploySpawnBtn.blur();
+  deploySuicideBtn.blur();
   deploySpawn();
 });
-
-/** Rings over the flags that can take a soldier, on top of what `paintMap`
- *  already drew. The chosen one breathes on the wall clock — `drawFullMap`
- *  runs every frame while the screen is up — and canvas rather than CSS
- *  because the markers live in the art's pixel space, not the DOM's. */
-function drawDeployMarkers() {
-  const ctx = fullmapCanvas.getContext('2d');
-  const size = fullmapCanvas.width;
-  const ratio = fullmapCanvas.__ratio || 1;
-  const scale = MARKER_SCALE * ratio * 1.5;
-  const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
-  ctx.font = `${Math.round(8 * scale)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  flags.forEach((flag, index) => {
-    if (!flag.position) return;
-    const p = projectToArt(flag.position[0], flag.position[2]);
-    if (!p) return;
-    const x = p.u * size;
-    const y = p.v * size;
-    if (index === chosen) {
-      const pulse = 1 + 0.12 * Math.sin(performance.now() / 200);
-      ctx.strokeStyle = '#f5d76e';
-      ctx.lineWidth = Math.max(1, 1.8 * scale);
-      ctx.beginPath();
-      ctx.arc(x, y, 11 * scale * pulse, 0, Math.PI * 2);
-      ctx.stroke();
-    } else {
-      ctx.strokeStyle = 'rgba(245,215,110,.4)';
-      ctx.lineWidth = Math.max(1, scale);
-      ctx.beginPath();
-      ctx.arc(x, y, 9 * scale, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    // The number the keyboard answers to, off the ring's shoulder where the
-    // label placer does not put names.
-    if (index < 9) {
-      const lx = x + 12 * scale;
-      const ly = y + 12 * scale;
-      ctx.fillStyle = 'rgba(0,0,0,.82)';
-      ctx.fillText(String(index + 1), lx + 1, ly + 1);
-      ctx.fillStyle = '#f5d76e';
-      ctx.fillText(String(index + 1), lx, ly);
-    }
-  });
-  ctx.textBaseline = 'alphabetic';
-}
+deployResumeBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  deployResumeBtn.blur();
+  cancelDeploy();
+});
+deployScoreBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  deployScoreBtn.blur();
+});
 
 async function show(entry) {
   const load = overlay.begin(entry.name);
@@ -4985,12 +5282,19 @@ if (params.has('shots')) {
         selected: index === chosen,
       }));
     },
+    get team() { return deployTeamId; },
     select(name) {
       const index = typeof name === 'number' ? name
         : flags.findIndex(flag => flag.name === name);
       return selectDeployFlag(index);
     },
+    setTeam(team) {
+      if (!deployActive() || (team !== 1 && team !== 2)) return false;
+      setDeployTeam(team);
+      return true;
+    },
     spawn() { return deploySpawn(); },
+    cancel() { if (!deployActive()) return false; cancelDeploy(); return true; },
   };
   // The man on the ground, for the same reason: his pose has to be readable
   // from outside to assert that a wall stopped him where the capsule says.
