@@ -4358,9 +4358,12 @@ function deploySpawn() {
   if (!deployActive()) return false;
   const rejoin = deployRejoin;
   toggleFullMap(false);
-  if (rejoin && soldier) return spawnAtFlag();
-  setOnFoot(true);
-  return !!soldier;
+  const spawned = (rejoin && soldier) ? spawnAtFlag() : (setOnFoot(true), !!soldier);
+  // The SPAWN click is a user gesture, which is the only currency pointer
+  // lock accepts — capture here and the very first click in the world is a
+  // trigger pull, not a mysterious dead click that only grabs the mouse.
+  if (spawned) capture();
+  return spawned;
 }
 
 // Clicking the art is clicking a flag: the nearest deployable one within a
