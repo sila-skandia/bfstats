@@ -61,6 +61,23 @@ class NationTests(unittest.TestCase):
         self.assertEqual("Allied", side_of("Soviet"))
         self.assertEqual("Allied", side_of("US Marines"))
 
+    def test_an_elite_formation_keeps_its_countrys_side(self) -> None:
+        # Secret Weapons' elite kits resolve to "German Elite", a label that
+        # shares no string with "German". `side_of` defaults everything it does
+        # not recognise to Allied, so the whole XPack2 elite line — Gewehr42,
+        # Gewehr43_zf4, K98RifleGrenade, EliteKnife, GermanEliteSoldier — used
+        # to come out fighting for the Allies.
+        self.assertEqual("Axis", side_of("German Elite"))
+        self.assertEqual("Allied", side_of("British Commandos"))
+
+    def test_a_formation_resolves_from_its_kit_and_its_soldier(self) -> None:
+        # `GerEliteKit` names the kit folder, `GermanEliteSoldier` the skin a
+        # level puts on a team; both have to land on the same army.
+        self.assertEqual("German Elite", nation_label("GerElite"))
+        self.assertEqual("German Elite", nation_label("GermanElite"))
+        self.assertEqual("British Commandos", nation_label("Commando"))
+        self.assertEqual("British Commandos", nation_label("BritishCommando"))
+
 
 class TheatreTests(unittest.TestCase):
     def test_desert_kit_wins_over_the_nations_wearing_it(self) -> None:
