@@ -161,6 +161,44 @@
     font-size: 11px;
     background: var(--panel);
   }
+  /* A lost WebGL context leaves the canvas exactly as it last drew -- there
+     is no repaint to hint anything went wrong, so this has to be loud enough
+     to read over a frozen frame rather than blend in like #gate does. */
+  #gl-lost {
+    z-index: 8;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(10, 8, 6, .72);
+  }
+  #gl-lost[hidden] { display: none; }
+  #gl-lost .gl-lost-card {
+    pointer-events: auto;
+    max-width: min(420px, calc(100% - 32px));
+    border: 1px solid var(--warn);
+    padding: 14px 18px;
+    background: var(--panel);
+    text-align: center;
+  }
+  #gl-lost .gl-lost-title {
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--warn);
+    margin-bottom: 8px;
+  }
+  #gl-lost .gl-lost-body { color: var(--text); font-size: 12px; line-height: 1.5; }
+  #gl-lost button {
+    margin-top: 12px;
+    cursor: pointer;
+    border: 1px solid var(--accent);
+    padding: 8px 14px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-size: 11px;
+    background: transparent;
+    color: var(--text);
+  }
   /* The map art, top right. That corner is free: #side is top left, #hud is
      bottom centre. Sized in one place so the canvas backing store and the
      frame agree. No CSS chrome: the game's own `icon_mapbar_small` bezel is
@@ -531,6 +569,13 @@
   <div id="crosshair" hidden><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
   <div id="ammo" hidden></div>
   <div id="gate"><span>Tap or click to fly</span></div>
+  <div id="gl-lost" hidden>
+    <div class="gl-lost-card">
+      <div class="gl-lost-title">Graphics context lost</div>
+      <div class="gl-lost-body" id="gl-lost-body"></div>
+      <button type="button" id="gl-lost-reload">Reload</button>
+    </div>
+  </div>
   <div id="fullmap" hidden>
     <div class="fm-frame">
       <div class="fm-map-frame">
@@ -615,6 +660,30 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const stage = document.getElementById('stage');
 stage.appendChild(renderer.domElement);
+
+// A lost context leaves the canvas showing whatever it last drew -- there is
+// no repaint to hint that anything is wrong, so without this the page just
+// goes quietly stale. Measured cause on this machine: a GPU-side stall
+// during a firing burst at DPR 2 (features/mesh-viewer-performance/README.md,
+// the Iris Xe log) took 8-9.5 s on one frame and the browser gave up on the
+// context rather than waiting it out. `preventDefault()` is what tells
+// Chromium a restore is worth attempting at all; without it `restored` never
+// fires. Nothing here tries to rebuild the scene on restore -- every texture
+// and compiled program the renderer held is gone, and re-uploading all of it
+// is out of scope for "no silent black canvas" -- so restore just offers a
+// reload instead of pretending play can continue.
+const glLostEl = document.getElementById('gl-lost');
+const glLostBody = document.getElementById('gl-lost-body');
+document.getElementById('gl-lost-reload')?.addEventListener('click', () => location.reload());
+renderer.domElement.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  release();
+  glLostBody.textContent = 'The GPU dropped the WebGL context mid-frame. Waiting to see whether the browser restores it...';
+  glLostEl.hidden = false;
+}, false);
+renderer.domElement.addEventListener('webglcontextrestored', () => {
+  glLostBody.textContent = 'The context came back, but nothing it was holding did -- reload to keep playing.';
+}, false);
 
 const scene = new THREE.Scene();
 // The scene never moves, and in three r169 an auto-updating root is what
