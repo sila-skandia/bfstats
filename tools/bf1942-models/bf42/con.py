@@ -683,6 +683,12 @@ class ObjectTemplate:
     soldier_camera_position: tuple[float, float, float] | None = None
     soldier_zoom_position: tuple[float, float, float] | None = None
     alt_fire_once: bool | None = None
+    # Soldier-side first-person constants (`CommonSoldierData.inc`): where the
+    # 1P arms rig sits relative to the camera (`center1pHands`, constant
+    # -0.12/-1.56/0.1 in vanilla — FH nudges the x only) and the first-person
+    # field of view (`set1pFov 0.47`, identical across all 18 installed mods).
+    center_1p_hands: tuple[float, float, float] | None = None
+    fov_1p: float | None = None
     # `loadSoundScript Sounds/<Name>.ssc` — the weapon's own sound script,
     # relative to the folder holding the `.con` that declared it. 27 of the
     # 28 vanilla hand weapons carry one (the binoculars are mute), and it is
@@ -1243,7 +1249,7 @@ class ObjectLibrary:
                         continue
                 elif cmd in ("setpositionoffset", "inertiamodifier",
                              "setpivotposition", "soldiercameraposition",
-                             "soldierzoomposition"):
+                             "soldierzoomposition", "center1phands"):
                     try:
                         value = vec3_lenient(args.split()[0])
                     except (ValueError, IndexError):
@@ -1254,6 +1260,7 @@ class ObjectLibrary:
                         "setpivotposition": "pivot_position",
                         "soldiercameraposition": "soldier_camera_position",
                         "soldierzoomposition": "soldier_zoom_position",
+                        "center1phands": "center_1p_hands",
                     }[cmd], value)
                 elif cmd in ("rememberexcessinput", "hasrestrictedexit",
                              "damagefromwater"):
@@ -1368,7 +1375,7 @@ class ObjectLibrary:
                 # the correct rule rather than a bug waiting to be found.
                 elif cmd in ("reloadtime", "zoomfov", "soldierzoomfov",
                              "unzoombetweenfiretime", "setmindev",
-                             "mindeviation", "maxdeviation"):
+                             "mindeviation", "maxdeviation", "set1pfov"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
@@ -1381,6 +1388,7 @@ class ObjectLibrary:
                         "setmindev": "min_dev",
                         "mindeviation": "min_deviation",
                         "maxdeviation": "max_deviation",
+                        "set1pfov": "fov_1p",
                     }[cmd], value)
                 elif cmd in ("fireonce", "autoreload", "usescope",
                              "setsnipersight", "sethasrecoilforce",

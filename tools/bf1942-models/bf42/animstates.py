@@ -62,10 +62,20 @@ class ClipRef:
 class State:
     name: str
     clips: list[ClipRef] = field(default_factory=list)
+    # `setOtherState c_AsmWeaponState WeaponReloadThompson` — the state the
+    # *weapon's own* skeleton plays alongside this body state (the moving
+    # magazine during a reload). Other kinds (`c_AsmFaceState`) are not kept.
+    weapon_state: str | None = None
 
     def clip_3p(self) -> ClipRef | None:
         for clip in self.clips:
             if not clip.is_first_person:
+                return clip
+        return None
+
+    def clip_1p(self) -> ClipRef | None:
+        for clip in self.clips:
+            if clip.is_first_person:
                 return clip
         return None
 
@@ -86,6 +96,17 @@ class StateMachine:
         """The third-person clip for e.g. ('Ub_StandAim', 'K98')."""
         state = self.state(f"{state_prefix}{weapon}")
         return state.clip_3p() if state else None
+
+    def clip_1p(self, state_prefix: str, weapon: str) -> ClipRef | None:
+        """The first-person clip for e.g. ('Ub_StandAim', 'Thompson').
+
+        The donor sharing resolves identically to the 3P side — `copyState`'s
+        sixth argument (`donor_1p`) is already honoured by `_copy_latest`, so
+        the K98 answers with the No4's `1P` clip the same way it borrows the
+        3P one.
+        """
+        state = self.state(f"{state_prefix}{weapon}")
+        return state.clip_1p() if state else None
 
     def weapons(self, state_prefix: str = "Ub_StandAim") -> list[str]:
         """Every weapon suffix with a 3P clip on the given state family."""
@@ -112,6 +133,13 @@ class StateMachine:
                 return None
         new_name = _substitute(latest.name, src_weapon, new_weapon)
         clone = State(new_name)
+        if latest.weapon_state:
+            # The paired weapon-channel state follows the body state's name:
+            # `WeaponReloadThompson` -> `WeaponReloadColt`. Donors do not
+            # apply — they rewrite clip *paths*, and the weapon state's own
+            # clips resolve through its own clone.
+            clone.weapon_state = _substitute(
+                latest.weapon_state, src_weapon, new_weapon)
         for clip in latest.clips:
             donor = donor_1p if clip.is_first_person else donor_3p
             replacement = donor if donor is not None else new_weapon
@@ -195,6 +223,9 @@ def parse(read: Callable[[str], str | None],
                 latest.clips.append(ClipRef(
                     args[0].replace("\\", "/"), speed,
                     args[2] if len(args) > 2 else ""))
+            elif command == "setotherstate" and latest is not None and len(args) >= 2:
+                if args[0].lower() == "c_asmweaponstate":
+                    latest.weapon_state = args[1]
             elif command == "copystate2" and len(args) >= 2:
                 machine._copy_latest(latest, args[0], args[1])
             elif command == "copystate" and len(args) >= 2:

@@ -737,8 +737,8 @@ Verified against this working tree, not taken from the audit.
 | spawn points with team and group | **DONE.** `scene.json.soldierSpawns`, 32 on Bocage, team resolved through `spawnGroupId`. |
 | firing runtime | **DONE for vehicles.** `viewer/gunfire.js` — tracers, flash curves, recoil ease, gravity, rocket motors, collider-aware impacts. |
 | first-person camera + input shape | **DONE for vehicles.** `flight.js` `VehicleCamera`, four modes, clamps read from the `.con`, C to cycle. Reuse the shape. |
-| 1P animation clip resolution | **ALMOST.** `animstates.py` already parses and discriminates 1P clips and honours `donor_1p`; it lacks a `clip_1p()` accessor. |
-| **1P soldier geometry export** | **BLOCKED, and not where the audit says.** See §4. |
+| 1P animation clip resolution | ~~ALMOST~~ **DONE.** `animstates.py` now carries `clip_1p()` beside `clip_3p()`, and parses `setOtherState c_AsmWeaponState` into `State.weapon_state`. §11. |
+| **1P soldier geometry export** | ~~BLOCKED~~ **SHIPPED.** `extract_viewmodel.py` walks the children directly, which is the §4.1 alternative. §11. |
 | `fireArms` on hand weapons | **BLOCKED on one string.** §2.7. |
 
 ---
@@ -1765,8 +1765,12 @@ calibrate it), and the AT family's `minDeviation`/`maxDeviation` vocabulary
 
 ### What remains
 
-- Real 1P hands and arms, and the fire/reload animations — still blocked in
-  the exporter (§4); the viewmodel is the 3P weapon mesh with no hands.
+- ~~Real 1P hands and arms, and the fire/reload animations — still blocked in
+  the exporter (§4); the viewmodel is the 3P weapon mesh with no hands.~~
+  **Extracted.** `extract_viewmodel.py` ships the 1P sleeves, hands and the
+  welded weapon with idle/walk/run/fire/reload/deploy baked in — §11. The
+  *viewer* still mounts the bare weapon glb; swapping it for the `.fp.glb`
+  is the remaining half.
 - Scope overlay art (`sniper.tga` is named in the data), and CHTIcon's
   authored crosshair icons.
 - Hand-weapon fire *sound* — the vehicle weapon-audio path keys off a
@@ -1802,3 +1806,193 @@ Under `?shots` the flow is drivable headlessly: `__setOnFoot(true)` parks the
 join on the screen, and `window.__deploy` is `{ open, flags, select(name),
 spawn() }` — `open` and `flags` (name/team/spawns/selected) are state,
 `select` is the click on a marker (name or index), `spawn` is the button.
+
+## 11. The viewmodel, extracted
+
+Stage 2 and the clip half of stage 3, shipped: `tools/bf1942-models/
+extract_viewmodel.py`, `viewer/models/viewmodels/USSoldier__Thompson.fp.glb`
+and `GermanSoldier__MP40.fp.glb` (~1.5 MB each), `tests/test_viewmodel.py`
+(19 assertions, suite 621). The viewer is deliberately untouched — mounting
+instructions are at the end of this section.
+
+### What the 1P rig actually is, sharpened
+
+§2.2 said "a 1P torso and a 1P pair of hands". Half right. Reading the skins
+themselves:
+
+- **`1PUSbody.skn` is not a torso — it is the two camo forearm sleeves.**
+  230 vertices, skinned to exactly eight bones: `Bip01 L/R Forearm` and the
+  forearm helper chains `Bone01..03` / `Bone07..09` (the same names the face
+  skins reuse for face bones — here they really are the skeleton's forearm
+  helpers, and `pose.remap_influences`' chain-distance check passes them).
+  There is no spine, no shoulder, no chest in the skin at all. The "body" in
+  the filename is DICE's, not a description.
+- **The hands are the full-detail hands**: 312 vertices each, 17 bones — the
+  hand, all fifteen finger joints, and a `Wrist bone` helper — against the
+  3P hands' coarser weighting. This is why fingers curl correctly around the
+  grip in first person.
+- All three are `AnimatedMesh` with `.skn` against the ordinary soldier
+  skeleton, exactly as §2.2 measured. Same skeleton, same `Bip01 R Hand`
+  weld, same weapon glb. Posed with `Lb_Stand` + `1PStandAimThompson`
+  frame 0, the palms land on the welded Thompson at **R 0.038 m / L
+  0.046 m** — the same weld quality as the 3P poses.
+
+So the reference footage's "camo sleeves from screen bottom-center" is
+literally the asset: sleeves and hands are all the geometry there is, and
+the game hides everything else by never drawing it (`setIsFirstPersonPart 1`
+parts are the only ones rendered in first person; there is no 1P torso to
+clip through the camera).
+
+### The clip inventory
+
+For the Thompson, 41 `Ub_*` states carry a 1P clip (of the 379 1P clips in
+the 1,154-clip archive). The exporter bakes the six families a viewmodel
+needs; every clip is 52 bones — spine chain, neck, head, both arms, every
+finger, no pelvis, no legs:
+
+| baked as | state | clip | frames | declared speed | baked span |
+|---|---|---|---|---|---|
+| `idle` | `Ub_StandAimThompson` | `1PStandAimThompson.baf` | 13 | 0.1, looping | 4.8 s |
+| `walk` | `Ub_WalkForwardThompson` | `1pRunThompson.baf` | 17 | 0.5, looping | 1.28 s |
+| `run` | `Ub_RunForwardThompson` | `1pRunThompson.baf` | 17 | 0.7, looping | 0.91 s |
+| `fire` | `Ub_FireThompson` | `1PFireThompson.baf` | 8 | 10.0, looping | 0.028 s |
+| `reload` | `Ub_StandReloadThompson` | `1PReloadThompson.baf` | 181 | 0.4, once | 18.0 s |
+| `deploy` | `Ub_StandRaiseWeaponThompson` | `1PDeployThompson.baf` | 29 | 1.0, once | 1.12 s |
+
+Also in the data and not yet baked: crouch/lie aim variants
+(`Ub_CrouchThompson` plays the stand-aim clip at 0.5, `Ub_LieThompson` a
+dedicated `1pLieAimThompson` at 0.2), crawl, eject-clip, fire-end, and the
+three idle one-shots `1pIdle1..3Thompson`. All resolve through the same
+`clip_1p()` path when wanted.
+
+**The walk/run distinction is a rate, not a clip** — both play `1pRun` and
+only the state speed differs, which is why the export carries both names.
+
+**The baked spans are the one non-data number.** The `.baf` authoring rate
+is nowhere declared (§7); the exporter uses 25 fps and writes every clip's
+frames, declared speed and resulting span into the glb extras so the viewer
+can rescale. The tell that a rescale is needed: the reload bakes to 18.0 s
+under the 25 fps reading while the Thompson declares `reloadtime 4.8` — the
+gameplay number. **Play `reload` with `timeScale = bakedSpan / reloadTime`**
+(3.75 for the Thompson) and the animation lands exactly on the magazine
+swap; the other spans are close enough at 1.0 that nothing visibly drags
+(fire loops at 0.028 s against the 0.1 s shot cycle and holds between
+shots).
+
+### The weapon channel is declared, not conventional
+
+§2.6 showed `Ub_StandReloadThompson` naming `WeaponReloadThompson` through
+`setOtherState c_AsmWeaponState`. The parser now reads that command
+(`animstates.State.weapon_state`), and the clone machinery substitutes the
+weapon name through `copyState`/`copyState2` — so `Ub_StandReloadK98`
+answers `WeaponReloadK98`, whose clip resolved through the No4 donor is
+`Animations/Weapons/No4/No4Reload.baf`, all from data.
+
+Two findings from parsing it everywhere rather than assuming the pattern:
+
+- **Automatic weapons declare no weapon state on fire.** `Ub_FireThompson`
+  pairs nothing; `Ub_FireColt` pairs `WeaponFireColt`. Only single-shot
+  weapons (and the bazooka's rocket-in-tube) animate the weapon on the fire
+  channel. `WeaponFireThompson` exists as a state but no body state names
+  it. The export follows the data: the Thompson's `fire` animation moves
+  arms only, its `reload` moves the magazine.
+- **The weapon-channel math has an exact identity check.** A weapon clip
+  poses the weapon's own skeleton in the raw file convention; the exported
+  bound parts (`boundBone` extras — `magasin`, `flerp`) sit relative to the
+  main bone in the parsed convention. Conjugating each clip local by
+  diag(1,1,−1), chaining worlds, and re-expressing against the main bone
+  reproduces the static rest at frame 0 to **0.1 mm** on the real
+  `ThompsonReload.baf` — and frame 60 puts the magazine 0.27 m right and
+  0.41 m down, which is the hand pulling it out. The baked tracks land on
+  the same nodes the static export placed.
+
+### Where the exporter was blocked, and how it was unblocked
+
+§4.1 named two gates and offered two routes. The shipped route is the
+second: `extract_viewmodel.first_person_parts` walks `template.children`
+directly and keeps exactly the refs with `setIsFirstPersonPart 1` and a
+skinned geometry — `con.instance_template_name` (which erases them, con.py:370)
+is never consulted. Nothing about the 3P paths changed, so every existing
+export is byte-identical.
+
+Small additions elsewhere, each doing one thing:
+
+- `bf42/animstates.py` — `State.clip_1p()` / `StateMachine.clip_1p()` (the
+  two lines §2.6 predicted), plus `weapon_state` parsing and cloning above.
+- `bf42/con.py` — parses `center1pHands` and `set1pFov` onto
+  `ObjectTemplate`. Both live in `CommonSoldierData.inc`, which the object
+  library never reads (it indexes `.con` only, and does not replay
+  `include`) — so the exporter's `soldier_view_constants` replays the
+  soldier's own include chain textually, the engine's way, and hands the
+  joined text to the ordinary parser. Vanilla answers −0.12/−1.56/0.1 and
+  0.47, which are §2.1's numbers read from data instead of quoted at it.
+
+### What is in the file
+
+`<Soldier>__<Weapon>.fp.glb`: the full soldier skeleton posed at
+`Lb_Stand` + idle frame 0 (so a viewer that ignores animations shows the
+ready pose), three skinned meshes, the weapon template tree under a
+`<Weapon> grip` wrapper on `Bip01 R Hand` (same `weldBone` extras as the
+pose glbs), and one glTF animation per family. Every animation carries every
+bone any family animates — a bone this clip leaves alone holds the base pose
+as a two-key constant — so crossfading any two clips never mixes an animated
+bone against an unanimated one; the weapon's bound parts get the same
+treatment. Textures resolve through the normal `.rs` path; none missing on
+either shipped file.
+
+Doc extras (`extras` on the glb root document, mirrored in the
+`.fp.report.json`):
+
+- `view`: `center1pHands`, `fov1p`, `soldierCameraPosition`,
+  `soldierZoomPosition`, `soldierZoomFov`, `zoomFov` — everything the mount
+  needs, per weapon.
+- `clips`: per family — source clip path, frames, declared speed, loop flag,
+  baked span, and the weapon-channel clip where one is declared.
+- `weaponStats`: the armoury block (`magazine.reloadTime` is the reload
+  rescale target), `bafFps: 25`.
+
+### How the viewer should mount it (not done here — map.html is owned)
+
+The engine's own chain is decompiled in
+[`../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md`](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md)
+§3: the offsets displace the **rig**, in the soldier's view frame — the
+camera never moves.
+
+1. **Parent the rig to the camera.** The glb is feet-at-origin, +Y up, arms
+   extending along **+Z** (same root pitch as the pose glbs). A three.js
+   camera looks down −Z, so the mount is a child group with a 180° Y turn.
+2. **Place it at `center1pHands`**, read from the extras, not retyped:
+   x lateral, y vertical, z along view (the corpus doc's axis reading). With
+   vanilla's −0.12/−1.56/0.1 the rig's feet sit 1.56 m below the eye —
+   which puts the sleeves at the bottom of the frame, weapon raked
+   up-forward, exactly the reference footage.
+3. **Add the weapon's own nudge**: `soldierCameraPosition` at the hip,
+   `soldierZoomPosition` zoomed, **eased at 25% of the remaining distance
+   per frame** (the engine's constant, dt-free); while zoomed multiply the
+   view FOV by `soldierZoomFov` (0.7/0.3 ease) and scale mouse deltas by the
+   same factor. All four values are in the extras.
+4. **Drive the mixer off the soldier state**: `idle` looping always (it is
+   the breathing sway — at its declared 0.1x it is slow enough to read as
+   idle sway, not animation); crossfade to `walk`/`run` by gait; `fire` while
+   the trigger is down (it loops); `reload` one-shot at
+   `timeScale = bakedSpan / weaponStats.magazine.reloadTime`; `deploy`
+   one-shot on weapon raise. The stance-transition timings §6a measured
+   apply to crossfade durations.
+5. **Keep firing from the camera.** `fireInCameraDof 1` (§2.7) — the rig is
+   presentation; the shot ray, deviation and recoil paths do not change.
+   The in-file muzzle nodes are where the *flash* draws, and the weapon tree
+   carries first-person-specific emitters (`em_1P_MuzzThomp`,
+   `effect.view: "first"`) that the 3P glb also has but a 1P mount should
+   prefer.
+6. **Render on a near layer** (separate pass or depth-clear) so the rig
+   never intersects walls; the game equivalent is drawing 1P parts in their
+   own pass. Whether retail gives the rig its own projection is still OPEN
+   in the corpus doc; until read, the world FOV (53.86°) is the answer that
+   matches every measurement here.
+
+What §11 leaves undone, so nobody hunts for it: the crouch/lie/crawl and
+idle-fidget families (resolve today, one tuple each in `FAMILIES`), the
+other six nations' arms (one CLI pair each — the meshes total 885 KB for
+all eight), knives (their fire states are `Ub_FireKnife*A..E` variants and
+need a family alias), and the `.baf` base rate, still 25 fps UNVERIFIED
+with the reload rescale as the shipped workaround.
