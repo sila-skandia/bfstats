@@ -212,6 +212,53 @@ export class EffectPlayer {
     this.runs.length = 0;
   }
 
+  /**
+   * Drop every pooled mesh, materials and all. For a level change: the map
+   * page rebuilds a mesh particle's materials under each level's lighting
+   * (`onMesh`), so a pool warmed for one level would light the next level's
+   * decals with the wrong sun. Geometries and textures are the library's
+   * and stay.
+   */
+  flush() {
+    this.clear();
+    for (const pool of [...this.spritePool.values(), ...this.meshPool.values()]) {
+      for (const mesh of pool) {
+        this.root.remove(mesh);
+        for (const m of mesh.userData.materials ?? [mesh.material]) m.dispose();
+      }
+    }
+    this.spritePool.clear();
+    this.meshPool.clear();
+  }
+
+  /**
+   * One pooled mesh for every emitter of every bundle in the library, built
+   * and parked, so every material a burst can need exists before the first
+   * shot. The page then compiles and uploads them while the level is still
+   * loading (`renderer.compileAsync`, `renderer.initTexture`): a program
+   * linked in the middle of a burst is a stall of unknown length — three's
+   * first-use shader check blocks the frame on the link, and on an Iris Xe
+   * under system GL the perf harness watched one block for 8 s and take the
+   * WebGL context with it (features/mesh-viewer-performance, rule 6).
+   * Returns the materials, for the page to upload their maps.
+   */
+  warm() {
+    const materials = new Set();
+    if (!this.library) return materials;
+    for (const bundle of this.library.bundles.values()) {
+      for (const template of bundle.emitters) {
+        const spec = template.spec;
+        const mesh = this.#acquire({ template, spec }, { kind: spec.kind, spec });
+        if (!mesh) continue;
+        mesh.visible = false;
+        const pool = spec.kind === 'sprite' ? this.spritePool : this.meshPool;
+        pool.get(mesh.userData.poolKey)?.push(mesh);
+        for (const m of mesh.userData.materials ?? [mesh.material]) materials.add(m);
+      }
+    }
+    return materials;
+  }
+
   stats() {
     return {
       runs: this.runs.length,
