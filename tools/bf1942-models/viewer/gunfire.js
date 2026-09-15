@@ -172,6 +172,9 @@ export function sampleCurve(points, phase) {
 
 const _origin = new THREE.Vector3();
 const _aim = new THREE.Quaternion();
+const _minusZ = new THREE.Vector3(0, 0, -1);
+const _spreadU = new THREE.Vector3();
+const _spreadV = new THREE.Vector3();
 const _billboard = new THREE.Quaternion();
 const _spinAxis = new THREE.Vector3(0, 0, 1);
 const _drift = new THREE.Vector3();
@@ -284,6 +287,8 @@ export class GunFire {
       roundLifetime = 'fixed',
       tracerLength = 'fixed',
       platformVelocity = null,
+      aimRay = null,
+      spreadDeg = null,
     } = options;
     if (replace) {
       this.clear();
@@ -418,6 +423,14 @@ export class GunFire {
         roundLifetime,
         tracerLength,
         platformVelocity,
+        // Both null on every vehicle. `aimRay` is the hand-weapon contract:
+        // 25 of 28 hand weapons declare `fireInCameraDof 1` with
+        // `projectilePosition 0/0/0`, meaning the round is spawned on the
+        // camera's line of fire and the muzzle node only places the flash
+        // (`first-person-soldier.md` §2.7). `spreadDeg` is the deviation
+        // cone's half-angle, asked per shot so a blooming burst walks.
+        aimRay,
+        spreadDeg,
         // 1 = barrel home; a shot resets to 0 and it eases forward again.
         recoil: stats.recoil ? 1 : null,
       };
@@ -483,8 +496,13 @@ export class GunFire {
     } else if (spec && spec.kind === 'bullet') {
       // The game draws nothing between tracer rounds — a Spitfire's
       // projectile has no geometry at all, and only every traceInterval-th
-      // round carries the TLight streak.
+      // round carries the TLight streak. But a round that is never spawned
+      // never sweeps and never hits, and a hand weapon declares no tracer at
+      // all — so the eye-line path flies the dim stand-in instead, which is
+      // the round existing with a whisper of a streak on it. Vehicle guns
+      // (no `aimRay`) keep the old contract untouched.
       if (tracerRound) this.#spawnTracer(muzzle, group, true);
+      else if (group.aimRay) this.#spawnTracer(muzzle, group, false);
     } else if (group.stats.velocity > 0) {
       // Stale GLB (`projectile` is a bare template name, or the drawn body
       // failed to bake): the old streak per round.
@@ -506,15 +524,61 @@ export class GunFire {
    * because the world around it still runs at real time — but the two do not
    * really mix, and a caller supplying a platform velocity should be firing at
    * the real muzzle velocity too.
+   *
+   * A group with `aimRay` skips the muzzle transform entirely: the round
+   * leaves the caller's origin along the caller's direction, which for a hand
+   * weapon is the eye down the camera axis — `fireInCameraDof 1`, the reason
+   * a BF1942 rifle hits what the crosshair covers regardless of where the
+   * viewmodel's barrel points. `spreadDeg` then wanders the direction inside
+   * the deviation cone, on either path.
    */
   #muzzleVelocity(muzzle, group, speed, out) {
-    muzzle.updateWorldMatrix(true, false);
-    muzzle.getWorldPosition(_origin);
-    muzzle.getWorldQuaternion(_aim);
-    out.set(0, 0, -1).applyQuaternion(_aim).multiplyScalar(speed);
+    const ray = group.aimRay?.();
+    if (ray) {
+      _origin.set(ray.origin.x, ray.origin.y, ray.origin.z);
+      out.set(ray.dir.x, ray.dir.y, ray.dir.z).normalize();
+    } else {
+      muzzle.updateWorldMatrix(true, false);
+      muzzle.getWorldPosition(_origin);
+      muzzle.getWorldQuaternion(_aim);
+      out.set(0, 0, -1).applyQuaternion(_aim);
+    }
+    const spread = group.spreadDeg?.() || 0;
+    if (spread > 0) this.#wander(out, spread);
+    // On the ray path `_aim` still has to say which way the round points — a
+    // bazooka's drawn rocket takes its first-frame orientation from it — and
+    // it is taken after the wander so the rocket points where it is going.
+    if (ray) _aim.setFromUnitVectors(_minusZ, out);
+    out.multiplyScalar(speed);
     const platform = group.platformVelocity?.();
     if (platform) out.add(platform);
     return out;
+  }
+
+  /**
+   * Rotate `dir` to a random direction inside a cone of `degrees` half-angle.
+   *
+   * The polar angle is `spread x sqrt(u)` — uniform over the cone's cross
+   * section rather than over its rim or its axis, so a burst paints a disc the
+   * way a target card looks, not a ring and not a hot centre. The azimuth is
+   * free. Both draws are unseeded `Math.random()`, the same authority the
+   * flash roll already answers to.
+   */
+  #wander(dir, degrees) {
+    const theta = degrees * (Math.PI / 180) * Math.sqrt(Math.random());
+    const phi = Math.random() * Math.PI * 2;
+    // An orthonormal frame around the direction of fire. The up reference
+    // flips to +X when the shot is near-vertical, where up and dir would be
+    // parallel and the cross product degenerate.
+    _spreadU.set(0, 1, 0);
+    if (Math.abs(dir.y) > 0.99) _spreadU.set(1, 0, 0);
+    _spreadU.cross(dir).normalize();
+    _spreadV.crossVectors(dir, _spreadU);
+    const sin = Math.sin(theta);
+    dir.multiplyScalar(Math.cos(theta))
+      .addScaledVector(_spreadU, sin * Math.cos(phi))
+      .addScaledVector(_spreadV, sin * Math.sin(phi));
+    return dir;
   }
 
   #displaySpeed(group, velocity) {
