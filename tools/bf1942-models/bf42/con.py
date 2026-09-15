@@ -35,6 +35,8 @@ _REM_BLOCK = re.compile(r"^\s*beginrem\b.*?^\s*endrem\b", re.IGNORECASE | re.MUL
 # whitespace run after the command name will happily cross a newline and swallow the
 # following line as this command's arguments, which silently drops every declaration
 # that follows an argument-less command such as `renderer.endGlobalCluster`.
+_EFFECT_KINDS = frozenset({"effectbundle", "emitter", "particle", "spriteparticle",
+                           "spriteparticlenew"})
 _COMMAND = re.compile(r"^(\w+)\.(\w+)(?:[ \t]+(.*?))?[ \t]*$")
 
 
@@ -165,6 +167,33 @@ def crd_range(token: str) -> tuple[float, float] | None:
         return (float(parts[0]), float(parts[1]))
     except (ValueError, IndexError):
         return None
+
+
+_CRD_CODES = {"none": "n", "uniform": "u", "exponential": "e", "normal": "g"}
+
+
+def crd4(token: str) -> list | None:
+    """The whole CRD random variable — `CRD_UNIFORM/1/180/1` -> `["u", 1.0, 180.0, 1]`.
+
+    The engine samples these (`Random::getContinuousRandom`, lnxded 0x081e28b0;
+    the emitter's inline copy 0x081e2f10) as: NONE -> a; UNIFORM -> a + r(b - a)
+    with r in (0, 1]; EXPONENTIAL -> -a ln r; NORMAL -> a + b N(0,1). The fourth
+    field is a mirror flag: when set, the sample's sign is flipped with
+    probability one half, which is how `positionalSpeedInRight CRD_UNIFORM/0/3/1`
+    spreads a burst both ways. A bare number is a NONE. Codes: n/u/e/g.
+    """
+    parts = token.split("/")
+    dist = "n"
+    if parts and parts[0].upper().startswith("CRD"):
+        dist = _CRD_CODES.get(parts[0][4:].lower(), "n")
+        parts = parts[1:]
+    try:
+        a = float(parts[0]) if parts and parts[0].strip() else 0.0
+        b = float(parts[1]) if len(parts) > 1 and parts[1].strip() else 0.0
+        mirror = int(float(parts[2])) if len(parts) > 2 and parts[2].strip() else 0
+    except ValueError:
+        return None
+    return [dist, a, b, 1 if mirror else 0]
 
 
 def floats(text: str) -> tuple[float, ...] | None:
@@ -484,6 +513,18 @@ class ObjectTemplate:
     # `gravityModifier 0` on bullets, negative on rising smoke; scales the
     # engine's gravity on whatever this template spawns as.
     gravity_modifier: float | None = None
+    # Damage falloff and detonation, all on the Projectile template. The
+    # falloff is `Projectile::getDamage` (client 0x00542e80, lnxded
+    # 0x0831f3c0): full damage out to `distToStartLoseDamage`, a straight line
+    # down to `minDamage` (a fraction) at `distToMinDamage`, flat after that.
+    # `radius` is the splash radius of `damageType 1` projectiles and
+    # `material2` the material their splash attacks with.
+    min_damage: float | None = None
+    dist_to_start_lose_damage: float | None = None
+    dist_to_min_damage: float | None = None
+    explosion_radius: float | None = None
+    material2: int | None = None
+    end_effect_template: str | None = None
     # `setEngineType c_ETRocket` marks an Engine that accelerates its parent
     # after launch (the Katyusha rocket's motor), vs. propellers and wheels.
     engine_type: str | None = None
@@ -711,6 +752,12 @@ class ObjectTemplate:
     # (`positionalSpeedInDof`, negative = receding behind the muzzle).
     relative_position_in_dof: float | None = None
     positional_speed_in_dof: float | None = None
+    # Every property an EffectBundle, Emitter or particle template declares,
+    # raw, keyed by lower-case command. The effect vocabulary is forty-odd
+    # CRD-valued properties and the viewer's effect player wants all of them;
+    # typing each one here would triple this class for one consumer. Read by
+    # `bf42.effects`, which owns the vocabulary and the CRD semantics.
+    effect_props: dict[str, str] = field(default_factory=dict)
 
     # `ObjectTemplate.lodSelector <name>` — which `LodSelectorTemplate` block
     # decides between this LodObject's alternatives.
@@ -1048,6 +1095,11 @@ class ObjectLibrary:
             ns, cmd, args = match.group(1).lower(), match.group(2).lower(), match.group(3) or ""
 
             if ns == "objecttemplate":
+                if (cmd != "create" and obj is not None and child is None
+                        and obj.kind.lower() in _EFFECT_KINDS):
+                    # Raw, last wins, template scope only: a `timeToLive`
+                    # after an `addTemplate` belongs to that child instance.
+                    obj.effect_props[cmd] = args.strip()
                 if cmd == "create":
                     parts = args.split()
                     if len(parts) < 2:
@@ -1342,6 +1394,23 @@ class ObjectLibrary:
                             "positionalspeedindof": "positional_speed_in_dof",
                             "relativepositionindof": "relative_position_in_dof",
                         }[cmd], value)
+                elif cmd in ("mindamage", "disttostartlosedamage", "disttomindamage",
+                             "radius", "material2"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    if cmd == "material2":
+                        obj.material2 = int(value)
+                    else:
+                        setattr(obj, {
+                            "mindamage": "min_damage",
+                            "disttostartlosedamage": "dist_to_start_lose_damage",
+                            "disttomindamage": "dist_to_min_damage",
+                            "radius": "explosion_radius",
+                        }[cmd], value)
+                elif cmd == "endeffecttemplate":
+                    obj.end_effect_template = args.split()[0] if args else None
                 elif cmd == "settracertemplate":
                     tokens = args.split()
                     if tokens:

@@ -252,6 +252,11 @@ itself is verified on Wake only, the collider on all three.
 
 Named honestly, because each one is a separate piece of work.
 
+> **Update 2026-09-15:** the first three items below are closed by
+> [`impact-effects.md`](impact-effects.md) — the authored bundles now play out
+> of `_shared/effects.glb`, the ricochet decals with them, and the bazooka's
+> trail is the real `e_rocketFume`. Sound is still missing.
+
 - **The authored effects are selected but not played.** The hit resolves to
   `GroundExplDry` / `e_waterimpact` / `Exp2CascadesStone` and the name is on the
   hit record, but drawing it needs the 73 `EffectBundle`s baked into the level

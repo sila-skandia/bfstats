@@ -303,6 +303,30 @@ is byte-identical in its metrics to `Font-Original.zip`.
 
 ---
 
+## Projectiles and impact effects (settled 2026-09-15)
+
+What a round does on arrival, settled for the mesh viewer's Thompson and
+Bazooka: the effect frame, the bullet-hole decal, the damage falloff, and the
+emitter/particle vocabulary. Full write-up with every address in
+[subsystems/projectiles-and-impacts.md](subsystems/projectiles-and-impacts.md);
+viewer code in `viewer/effects-core.js`, `viewer/effects.js`, `bf42/effects.py`.
+
+| # | Finding | Status | Evidence |
+|---|---|---|---|
+| IMP-1 | An impact effect is stood up with **Up = the surface normal**; Right = Up x DOF, DOF = Right x Up, Right = Up x DOF, with DOF the fresh object's world +Z. The bullet hole therefore lies flat in the wall | **verified** | `Game::playCollisionEffect` client 0x0040e590 / lnxded 0x0805de20 writes the normal into transform row 1 then calls `makeOrthonormalBasis` client 0x0040e360 / lnxded 0x08061bd0 (both decompiled, identical) |
+| IMP-2 | The effect for a hit is `MaterialManager.setEffectTemplate(attacker = ProjectileTemplate.material, defender = struck material)`; the projectile's `material` replaces the collision material before the lookup | **verified** | `Projectile::handleCollision` lnxded 0x0831ee80 (+0x88 override), `GameServer::handleCollisionForProjectile` 0x08153ba0 -> `MaterialManager::getEffectTemplate(att, def, \|v.n\|)` 0x081750d0. Per-cell `map<float,…>` keyed by the clamped cosine (`MMCell::getEffectTemplate` 0x081746a0) — one entry per cell in vanilla, so inert |
+| IMP-3 | The bullet hole is a mesh *particle* — `Fx_Richo*Decal`, geometry `Decal_*_m1` (0.2 m quad in the XZ plane), lifted `relativePositionInUp 0.001`, `timeToLive` uniform 1..15 s, `alphaOverTime 0/1\|70/1\|100/0` — not a `DecalManager` decal | **verified** | data (`Objects/Effects/e_Decal_*/effects.con`, `Common/effects.con` composites `RichoStoneDecal` etc.); mesh particle scale/alpha path `Particle::handleUpdate` lnxded 0x0820ad20; `DecalManager` 0x081e05f0 has no impact caller |
+| IMP-4 | Mesh-particle alpha goes to `IStandardMesh::setAlpha` as a byte, so with the decal's `.rs` `alphaTestRef 0.5` the hole vanishes at 50% opacity rather than fading to nothing | **verified** (server) | `Particle::handleUpdate` 0x0820ad20: `255 * alphaOverTime(phase)` -> QI IID_IStandardMesh -> vtable+0x34. Client `Particle::handleUpdate` not isolated |
+| IMP-5 | `sizeModifier` is the mesh-particle scale switch: (0,0,0) = draw authored size; else scale = `size x sizeOverTime x sizeModifier` | **verified** | same function; default (0,0,0) in `ParticleTemplate` ctor lnxded 0x0820b000 and client `makeScript` 0x005384d0 (+0x7c..+0x84 written only when non-zero) |
+| IMP-6 | Damage falloff: full to `distToStartLoseDamage`, linear to `minDamage x full` at `distToMinDamage`, flat after; skipped when `minDamage >= 1` or start `<= 0`. Base = `materialDamage` of the projectile's material | **verified** | `Projectile::getDamage` client 0x00542e80 / lnxded 0x0831f3c0, both decompiled. Client offsets +0x278/+0x27c/+0x280 from the console accessors 0x004da7f0/0x004da9a0/0x004dab50 |
+| IMP-7 | `gravityModifier` defaults to 1.0 and scales -14.73 m/s^2; the projectile's own update integrates nothing (physics body does), it only runs the `explodeNearEnemyDistance` fuse | **verified** | `ProjectileTemplate` ctor lnxded 0x0831f8d0 (+0x164 = 1.0), client `makeScript` 0x00541a60 (+0x214 written when != 1.0); `Projectile::handleUpdate` 0x0831e940 |
+| CRD-1 | `CRD_UNIFORM/a/b` samples `a + r(b-a)`, r in (0,1] — the two numbers are the ends in the order written (`15/1` = 1..15); `CRD_EXPONENTIAL/a` = `-a ln r`; `CRD_NORMAL/a/b` = `a + b N(0,1)`; the 4th field mirrors the sign with p = 1/2 | **verified** | `Random::getContinuousRandom` lnxded 0x081e28b0; emitter inline copy `Emitter::calcInvItensity` 0x081e2f10 (mirror at 0x081e3037) |
+| EMT-1 | Emitter spawns are spaced `\|1/intensity\|` apart, intensity resampled per spawn and scaled by `speed / IntensityAtSpeed` when set; zero intensity = one per 100 s; `looping` restarts on expiry | **verified** | `Emitter::calcInvItensity` 0x081e2f10, `Emitter::handleUpdate` 0x081e3200 (+0x110 age, +0x114 next) |
+| EMT-2 | The first spawn is at t = 0 | **inferred (data)** | decal emitters are `intensity 2` over `timeToLive 0.1` and every hit in the reference recording leaves a hole; ctor sets next = 0 (0x081e2bb0). Which branch at 0x081e3571 spawns for a template-bearing emitter is unresolved |
+| EMT-3 | `startRotation` rolls the emitter frame about its DOF per spawn; units degrees | **verified axis / inferred units** | `dice::ref2::roll` 0x08061df0 = `rotateAboutLine(m, m+0x20 (row 2), angle)` at spawn site 0x081e522e; data writes 180/360 |
+| EMT-4 | Spawn offset/velocity are `relativePositionIn*` / `positionalSpeedIn*` along the (rolled) frame; `addEmitterSpeed` adds the emitter's velocity x `emitterSpeedScale` | **verified** | spawn block 0x081e40a3-0x081e4e9d (`SpriteParticleNew::addParticle` call 0x081e4d8f), template offsets from `EmitterTemplate::makeScript` 0x081e61c0 / client 0x005097a0 |
+| EMT-5 | The drag law is `v *= e^(-drag dt)` | **open** | the physics body's integrator was not read; `drag 20` on the bazooka smoke is what makes the puffs stop |
+
 ## Other formats
 
 Add a section per format as it comes under investigation. Keep the same shape:
