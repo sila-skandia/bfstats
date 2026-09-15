@@ -95,6 +95,45 @@
     text-align: center;
     text-shadow: 0 1px 4px #000;
   }
+  /* On-foot fire control. The crosshair is DOM over the canvas rather than
+     painted into it: four bars and a dot around a zero-size anchor at screen
+     centre, the bar gap driven per frame through --ch-gap by the deviation
+     cone mapped through the camera projection (updateCrosshair()). The
+     weapon's own crossHairType decides the shape: CHTCrossHair is the full
+     cross, CHTIcon keeps only the dot (its authored icon art is not
+     extracted yet), CHTNone and a scoped aim draw nothing. */
+  #crosshair {
+    position: absolute;
+    z-index: 2;
+    left: 50%; top: 50%;
+    width: 0; height: 0;
+    pointer-events: none;
+    --ch-gap: 6px;
+  }
+  #crosshair[hidden] { display: none; }
+  #crosshair span {
+    position: absolute;
+    background: var(--text);
+    box-shadow: 0 0 3px rgba(0, 0, 0, .9);
+  }
+  #crosshair .ch-dot { width: 2px; height: 2px; left: -1px; top: -1px; }
+  #crosshair .ch-n { width: 2px; height: 8px; left: -1px; bottom: var(--ch-gap); }
+  #crosshair .ch-s { width: 2px; height: 8px; left: -1px; top: var(--ch-gap); }
+  #crosshair .ch-w { height: 2px; width: 8px; top: -1px; right: var(--ch-gap); }
+  #crosshair .ch-e { height: 2px; width: 8px; top: -1px; left: var(--ch-gap); }
+  #crosshair.ch-icon .ch-n, #crosshair.ch-icon .ch-s,
+  #crosshair.ch-icon .ch-w, #crosshair.ch-icon .ch-e { display: none; }
+  /* The magazine, in the same voice as #hud but bottom right, so a reload
+     countdown never pushes the control hints around. */
+  #ammo {
+    position: absolute;
+    z-index: 2;
+    right: 16px; bottom: 18px;
+    color: var(--text);
+    text-shadow: 0 1px 4px #000;
+    pointer-events: none;
+  }
+  #ammo[hidden] { display: none; }
   #gate {
     z-index: 1;
     inset: 0;
@@ -447,6 +486,8 @@
     </button>
   </div>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; M map &middot; Esc</div>
+  <div id="crosshair" hidden><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
+  <div id="ammo" hidden></div>
   <div id="gate"><span>Tap or click to fly</span></div>
   <div id="fullmap" hidden>
     <div class="fm-frame">
@@ -478,13 +519,19 @@ import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
-import { Soldier, spawnFlags, pickSpawn, spawnYaw, FOV_DEG as FOOT_FOV } from './soldier.js';
+import { Soldier, spawnFlags, pickSpawn, spawnYaw, GAIT_SPEED,
+         FOV_DEG as FOOT_FOV } from './soldier.js';
+import { DeviationModel } from './deviation.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
 // fetched, and it draws the nav's mod picker as a side effect.
 const activeMod = await selectMod('maps');
 const MAPS_BASE = activeMod.paths.maps;
+// And the models tree beside it, for the weapon a spawned soldier holds —
+// the same base `flight.js` resolves for a cockpit glb, taken from the mod
+// record here because this page has already resolved one.
+const MODELS_BASE = activeMod.paths.models || 'models';
 
 const DEFAULT_DRAW = 700;
 const FLY_SPEED = 140;
@@ -517,6 +564,10 @@ stage.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 8000);
 camera.position.set(0, 80, 0);
+// In the scene graph, not just pointed at it, so things may hang off it: the
+// on-foot viewmodel is a child of the camera, and a parentless camera's
+// children are never rendered at all.
+scene.add(camera);
 
 const hemi = new THREE.HemisphereLight(0xe8dcc0, 0x5a4a32, 1.35);
 scene.add(hemi);
@@ -839,6 +890,10 @@ function lookDelta(dx, dy) {
     // pitch, and the body yaws bodily because `SoldierCamera` declares no
     // rotation of its own.
     soldier.look(-dx * LOOK_SENS, -dy * LOOK_SENS);
+    // The deviation model wants the slew rate. Accumulated here, where the
+    // player's own turning arrives, and drained per frame in footFire() —
+    // recoil writes `soldier.look` directly and so never counts against him.
+    footTurnAccum += Math.abs(dx * LOOK_SENS) + Math.abs(dy * LOOK_SENS);
     return;
   }
   look.yaw -= dx * LOOK_SENS;
@@ -862,7 +917,12 @@ addEventListener('keydown', e => {
   keys.add(e.code);
   if (e.code === 'KeyR') {
     if (optOnFoot.checked && soldier) {
-      spawnAtFlag(true);
+      // R is the reload once there is a magazine to reload — the game's own
+      // binding — and stays the respawn only for a soldier holding nothing
+      // (a weapon glb that failed to load). Respawning moved to the flag
+      // picker, where changing the selection already respawns.
+      if (handWeapon?.data?.magazine) startReload();
+      else spawnAtFlag(true);
     } else if (optPilot.checked && aircraft) {
       aircraft.reset();
       stick.roll = 0;
@@ -912,6 +972,11 @@ function setFly(on) {
   if (!on) {
     dragging = false;
     lockHeld = false;
+    // A trigger held across an Escape must not still be firing when the
+    // pointer comes back.
+    triggerHeld = false;
+    clickQueued = false;
+    aimHeld = false;
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
     }
@@ -979,7 +1044,20 @@ renderer.domElement.addEventListener('pointerdown', e => {
     return;
   }
 
-  // Desktop mouse
+  // Desktop mouse. On foot with the pointer already locked, the buttons stop
+  // being a drag and become the game's own bindings — `c_PIFire` on the left,
+  // `c_PIAltFire` (aim) on the right, `Infantry.con` — so the very first
+  // click still captures and only the clicks after it pull the trigger.
+  if (captured && optOnFoot.checked && soldier
+      && document.pointerLockElement === renderer.domElement) {
+    if (e.button === 0) {
+      triggerHeld = true;
+      clickQueued = true;
+    } else if (e.button === 2) {
+      aimHeld = true;
+    }
+    return;
+  }
   if (e.button === 0) {
     dragging = true;
     isPanning = false;
@@ -1035,6 +1113,9 @@ renderer.domElement.addEventListener('pointerup', e => {
 
   dragging = false;
   isPanning = false;
+  // Unconditional: whatever mode the press started in, the release ends it.
+  if (e.button === 0) triggerHeld = false;
+  if (e.button === 2) aimHeld = false;
   try {
     if (renderer.domElement.hasPointerCapture(e.pointerId)) {
       renderer.domElement.releasePointerCapture(e.pointerId);
@@ -2727,6 +2808,9 @@ function spawnAtFlag(advance = false) {
   soldier.spawn(spawn.position[0], spawn.position[1], spawn.position[2],
                 spawnYaw(spawn));
   prone = false;
+  // The weapon follows the flag: switching to the other side's spawn swaps
+  // the SMG. A no-op when the right one is already in hand.
+  ensureHandWeapon(flag);
   hud.textContent = `${flag.name} · ${spawn.name}`;
   clearTimeout(hudViewTimer);
   hudViewTimer = setTimeout(() => {
@@ -2740,6 +2824,10 @@ function setOnFoot(on) {
     optPilot.checked = false;
     setPilot(false);
   }
+  // Either edge tears the old weapon down: entering rebuilds it against the
+  // current level's gun index (a map switch has just cleared `guns.groups`),
+  // leaving must not park a rifle on the free-fly camera.
+  disposeHandWeapon();
   if (on) {
     soldier = new Soldier({ collider, worldSize: extras?.worldSize || 0 });
     if (!buildSpawnFlags() || !spawnAtFlag()) {
@@ -2770,8 +2858,8 @@ function setOnFoot(on) {
   }
 }
 
-const HUD_FOOT ='WASD move · mouse look · Shift walk · Ctrl crouch · Z prone · '
-  + 'Space jump · R respawn · Esc';
+const HUD_FOOT ='WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
+  + 'LMB fire · RMB aim · R reload · Esc';
 
 /** Read the keyboard into the soldier and put the camera behind his eyes. */
 function onFoot(dt) {
@@ -2796,10 +2884,334 @@ function onFoot(dt) {
   look.yaw = soldier.viewYaw;
   look.pitch = soldier.pitch;
   applyLook();
+  // After the camera pose is final: the weapon fires down this frame's view
+  // axis, and the crosshair is drawn against this frame's FOV.
+  footFire(dt);
 }
 
 const EMPTY_KEYS = new Set();
 const footEye = { x: 0, y: 0, z: 0 };
+
+// --- the weapon in hand ------------------------------------------------------
+//
+// A spawned soldier holds one hand-weapon glb, loaded from the models tree the
+// way `flight.js` fetches a cockpit, parented to the camera as a classic FPS
+// viewmodel and indexed by the same `GunFire` that fires the vehicles. The glb
+// carries everything this needs: document-level `weapon` extras (rate, spread,
+// magazine, zoom, recoil — see `first-person-soldier.md` §2.7) and a node
+// stamped `fireArms` with a `muzzle` child, so nothing about any weapon is
+// declared below.
+//
+// Three deliberate v1 shortcuts, all visible and all documented:
+//   - The viewmodel is drawn in the world pass, no depth trickery. Pressed
+//     nose-first into a wall the stock can clip; a second render pass (or
+//     depthTest off, which mis-sorts the gun against its own flash) buys
+//     little for what this page is, so the clip is accepted.
+//   - The gun draws the weapon's 3P mesh. The 1P arms-and-hands geometry is
+//     still blocked in the exporter (feature doc §4), so there are no hands.
+//   - Scoped weapons get the data's FOV change and no scope art.
+
+// Which weapon a flag's team hands out when `?weapon=` does not say. The
+// game's kits decide this per level; hardcoding the two definitive SMGs is a
+// stand-in until kits are wired into spawning.
+const TEAM_WEAPON = { 1: 'Mp40', 2: 'Thompson' };
+// Viewmodel placement in camera space, metres. Eyeballed against period FPS
+// convention — down-right of centre, stock toward the shoulder — and against
+// the Thompson's own 0.7 m length; the aim pose slides toward the axis.
+// All [free], gated here so taste lives in one place.
+const VIEWMODEL = {
+  x: 0.16, y: -0.14, z: -0.35,     // hip
+  aimX: 0.04, aimY: -0.115,        // aimed
+};
+const AIM_TIME = 0.12;             // seconds hip <-> aimed [free]
+const CROSSHAIR_MIN_PX = 4;        // bar gap floor, so the cross never closes
+const DEG_TO_RAD = Math.PI / 180;
+
+let handWeapon = null;    // { name, data, rig, group, model, rounds, mags, ... }
+let weaponToken = 0;      // guards a slow load landing after a mode/map switch
+let triggerHeld = false;  // left button, while pointer-locked on foot
+let clickQueued = false;  // one queued semi-auto shot per press
+let aimHeld = false;      // right button
+let aimBlend = 0;         // 0 hip .. 1 aimed
+let footTurnAccum = 0;    // radians of view slew since the last frame
+const crosshairEl = document.getElementById('crosshair');
+const ammoEl = document.getElementById('ammo');
+const aimOrigin = new THREE.Vector3();
+const aimDirection = new THREE.Vector3();
+
+function weaponTemplateFor(flag) {
+  return params.get('weapon') || TEAM_WEAPON[flag?.team] || 'Thompson';
+}
+
+/** Tear down the viewmodel, its gun group and the HUD it owns. */
+function disposeHandWeapon() {
+  const hw = handWeapon;
+  weaponToken++;
+  handWeapon = null;
+  clickQueued = false;
+  aimBlend = 0;
+  crosshairEl.hidden = true;
+  ammoEl.hidden = true;
+  if (!hw) return;
+  if (hw.group) {
+    guns.setFiring(hw.group, false);
+    // Surgical, not `collect(replace: true)`: that would evict a flown
+    // aircraft's guns too. Rounds already in the air keep their reference to
+    // the group and finish their flight.
+    const index = guns.groups.indexOf(hw.group);
+    if (index >= 0) guns.groups.splice(index, 1);
+  }
+  camera.remove(hw.rig);
+  hw.rig.traverse(obj => {
+    obj.geometry?.dispose();
+    for (const m of [obj.material].flat().filter(Boolean)) {
+      m.map?.dispose();
+      m.dispose();
+    }
+  });
+  // An aim in progress was narrowing the FOV; hand the soldier his own back.
+  if (optOnFoot.checked && soldier) {
+    camera.fov = FOOT_FOV;
+    camera.updateProjectionMatrix();
+  }
+}
+
+/** Load `name`.glb, hang it off the camera and index its gun. */
+async function loadHandWeapon(name) {
+  disposeHandWeapon();
+  const token = weaponToken;
+  let gltf;
+  try {
+    gltf = await loader.loadAsync(`${MODELS_BASE}/${name}.glb${bust()}`);
+  } catch {
+    // A `?weapon=` naming nothing extracted, or a mod tree without the glb:
+    // on foot bare-handed, which already worked.
+    return null;
+  }
+  if (token !== weaponToken || !optOnFoot.checked || !soldier) return null;
+  // Document-level extras land on `gltf.userData` (GLTFLoader's
+  // `assignExtrasToUserData(result, json)`); the fallbacks cover a vendored
+  // loader that files them elsewhere.
+  const data = gltf.userData?.weapon ?? gltf.scene?.userData?.weapon
+    ?? gltf.parser?.json?.extras?.weapon ?? null;
+  const rig = new THREE.Group();
+  rig.name = `${name} viewmodel`;
+  rig.position.set(VIEWMODEL.x, VIEWMODEL.y, VIEWMODEL.z);
+  rig.add(gltf.scene);
+  // The additive mark the exporter leaves on flash and glow materials. The
+  // model browser applies it model-wide at load and `GunFire.collect` applies
+  // it to the emitter clones it makes; this covers whatever additive surface
+  // is neither (a sight glow on the gun body itself).
+  gltf.scene.traverse(obj => {
+    if (!obj.isMesh) return;
+    for (const m of [obj.material].flat().filter(Boolean)) {
+      if (!m.userData?.additive) continue;
+      m.blending = THREE.AdditiveBlending;
+      m.transparent = true;
+      m.depthWrite = false;
+      m.needsUpdate = true;
+    }
+  });
+  camera.add(rig);
+  const magazine = data?.magazine || null;
+  const hw = {
+    name, data, rig,
+    group: null,
+    // The loaded magazine plus the spares. `magazines 5` is read as the
+    // total carried, which is how the game's HUD counts them.
+    rounds: magazine?.size ?? Infinity,
+    mags: magazine ? Math.max((magazine.magazines ?? 1) - 1, 0) : 0,
+    reload: 0,       // seconds left of a reload in progress
+    cool: 0,         // seconds until a semi-auto weapon has cycled
+    pulse: false,    // a one-frame trigger pulse is in flight
+    model: new DeviationModel({
+      deviation: data?.deviation, zoom: data?.zoom, runSpeed: GAIT_SPEED.run,
+    }),
+  };
+  if (data) {
+    const found = guns.collect(rig, {
+      replace: false,          // the flown aircraft's guns must survive this
+      speedScale: 1,           // real muzzle velocity, like the pilot path
+      maxRange: 1200,
+      roundLifetime: 'data',
+      platformVelocity: () => (soldier ? soldier.body.velocity : null),
+      // `fireInCameraDof 1`: the round leaves the eye down the view axis and
+      // the muzzle node only places the flash. All 25 armed hand weapons
+      // declare it; a mod one that does not falls back to its muzzle.
+      aimRay: data.fireInCameraDof ? () => {
+        camera.getWorldPosition(aimOrigin);
+        camera.getWorldDirection(aimDirection);
+        return { origin: aimOrigin, dir: aimDirection };
+      } : null,
+      spreadDeg: () => (handWeapon ? handWeapon.model.current() : 0),
+    });
+    hw.group = found[0] || null;
+  }
+  handWeapon = hw;
+  updateAmmoHud();
+  return hw;
+}
+
+/** The right weapon for `flag`, loaded only if it is not already in hand. */
+function ensureHandWeapon(flag) {
+  const name = weaponTemplateFor(flag);
+  if (handWeapon?.name === name
+      && (!handWeapon.group || guns.groups.includes(handWeapon.group))) return;
+  loadHandWeapon(name);
+}
+
+/** Begin a magazine change. True if one actually started. */
+function startReload() {
+  const hw = handWeapon;
+  const magazine = hw?.data?.magazine;
+  if (!hw || !magazine || hw.reload > 0 || hw.mags <= 0) return false;
+  if (hw.rounds >= magazine.size) return false;
+  hw.reload = magazine.reloadTime ?? 2;
+  if (hw.group) guns.setFiring(hw.group, false);
+  return true;
+}
+
+// Every round the soldier's own gun fires: the magazine empties, the cone
+// blooms, and the view kicks. `onShot` fires for vehicle guns too, so the
+// group is checked first.
+guns.onShot = group => {
+  const hw = handWeapon;
+  if (!hw || group !== hw.group) return;
+  if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
+  hw.model.onShot();
+  hw.cool = 1 / (hw.data?.roundOfFire || 1);
+  // `setRecoil*`: degrees per shot, sampled uniformly inside the declared
+  // range (Thompson up 0.21..0.25, leftRight -0.1..0.1) and written into the
+  // soldier's own look state, unscaled — the pitch clamp catches a long
+  // burst the same way it catches the mouse.
+  const recoil = hw.data?.recoil;
+  if (recoil && soldier) {
+    const draw = range => {
+      if (!range) return 0;
+      const lo = Math.min(range[0], range[1]);
+      return lo + Math.random() * (Math.max(range[0], range[1]) - lo);
+    };
+    soldier.look(draw(recoil.leftRight) * DEG_TO_RAD,
+                 draw(recoil.up) * DEG_TO_RAD);
+  }
+};
+
+/**
+ * One frame of the weapon: aim blend and FOV, deviation state, the reload
+ * clock, the trigger, and the HUD. Runs from `onFoot` after the camera pose
+ * is final, and before `guns.advance` fires this frame's rounds.
+ */
+function footFire(dt) {
+  const hw = handWeapon;
+  // Drained even bare-handed, or the first frame holding a weapon would see
+  // every radian turned since it was picked up.
+  const turning = dt > 0 ? footTurnAccum / dt : 0;
+  footTurnAccum = 0;
+  if (!hw) return;
+  guns.firstPerson = true;   // the 0.4 m `em_1P_*` sprite, not the 1.76 m mesh
+
+  // Right mouse eases the FOV toward `set1pFov x zoomSoldierFov` — data, not
+  // taste: the Mp40's 0.9 barely leans in, the Thompson's 0.6 commits — and
+  // slides the viewmodel toward the axis.
+  const aiming = aimHeld && captured;
+  const target = aiming ? 1 : 0;
+  const gap = target - aimBlend;
+  aimBlend += Math.sign(gap) * Math.min(dt / AIM_TIME, Math.abs(gap));
+  const zoomFactor = hw.data?.zoom?.soldierFov ?? 1;
+  camera.fov = FOOT_FOV * (1 - aimBlend * (1 - zoomFactor));
+  camera.updateProjectionMatrix();
+  hw.rig.position.set(
+    VIEWMODEL.x + (VIEWMODEL.aimX - VIEWMODEL.x) * aimBlend,
+    VIEWMODEL.y + (VIEWMODEL.aimY - VIEWMODEL.y) * aimBlend,
+    VIEWMODEL.z,
+  );
+  // A scoped weapon aims through glass this page does not draw yet; hiding
+  // the rifle is the half of the scope view the data can already pay for.
+  hw.rig.visible = !(hw.data?.zoom?.scope && aimBlend > 0.5);
+
+  hw.model.update(dt, {
+    stance: soldier.stance,
+    speed: soldier.speed,
+    turning,
+    aiming,
+    airborne: !soldier.grounded,
+  });
+
+  const magazine = hw.data?.magazine;
+  if (hw.reload > 0) {
+    hw.reload -= dt;
+    if (hw.reload <= 0) {
+      hw.reload = 0;
+      hw.mags -= 1;
+      hw.rounds = magazine.size;
+    }
+  } else if (magazine && hw.rounds <= 0 && hw.mags > 0) {
+    // Dry means a magazine change, asked for or not — `autoReload` in the
+    // data or no. R merely asks early.
+    hw.reload = magazine.reloadTime ?? 2;
+  }
+
+  if (hw.group) {
+    hw.cool = Math.max(0, hw.cool - dt);
+    const canFire = captured && hw.reload <= 0 && hw.rounds > 0;
+    if (hw.data?.fireOnce) {
+      // Semi-auto: one queued click becomes exactly one frame of trigger,
+      // which `advance` turns into exactly one round; `cool` holds the
+      // declared cycle (a No4 works its bolt for 2.7 s) across clicks.
+      if (hw.pulse) {
+        guns.setFiring(hw.group, false);
+        hw.pulse = false;
+      }
+      if (clickQueued && canFire && hw.cool <= 0) {
+        clickQueued = false;
+        guns.setFiring(hw.group, true);
+        hw.pulse = true;
+      }
+    } else {
+      guns.setFiring(hw.group, triggerHeld && canFire);
+    }
+  }
+
+  updateCrosshair();
+  updateAmmoHud();
+}
+
+/**
+ * The crosshair's gap, in CSS pixels: the deviation half-angle projected
+ * through the camera — `0.5 x height x tan(dev) / tan(vfov / 2)` — so the
+ * bars enclose exactly the cone the rounds are sampled inside, at whatever
+ * FOV the aim blend has settled on this frame.
+ */
+function updateCrosshair() {
+  const hw = handWeapon;
+  const style = hw?.data?.crossHair;
+  const scoped = !!hw?.data?.zoom?.scope;
+  const show = optOnFoot.checked && !!soldier && !!hw
+    && (style === 'CHTCrossHair' || style === 'CHTIcon')
+    && !(scoped && aimBlend > 0.5);
+  crosshairEl.hidden = !show;
+  if (!show) return;
+  // CHTIcon weapons draw an authored icon in the game; until that art is
+  // extracted they keep the centre dot alone.
+  crosshairEl.classList.toggle('ch-icon', style === 'CHTIcon');
+  const height = stage.clientHeight || 800;
+  const dev = hw.model.current() * DEG_TO_RAD;
+  const px = 0.5 * height * Math.tan(dev) / Math.tan(camera.fov * DEG_TO_RAD / 2);
+  crosshairEl.style.setProperty('--ch-gap', `${(CROSSHAIR_MIN_PX + px).toFixed(1)}px`);
+}
+
+function updateAmmoHud() {
+  const hw = handWeapon;
+  const magazine = hw?.data?.magazine;
+  if (!hw || !magazine || !optOnFoot.checked) {
+    ammoEl.hidden = true;
+    return;
+  }
+  ammoEl.hidden = false;
+  ammoEl.textContent = hw.reload > 0
+    ? `${hw.name} · reloading ${hw.reload.toFixed(1)}s`
+    : `${hw.name} · ${hw.rounds} / ${magazine.size} · ${hw.mags} mags`;
+}
 
 /** Announce the view C just selected, then fall back to the control list. */
 const VIEW_BLURB = {
@@ -3609,6 +4021,30 @@ if (params.has('shots')) {
     dropped: soldier.clock.dropped,
   });
   window.__walkState = window.__soldier;
+  // The weapon in hand, for the same reason as the soldier: the magazine,
+  // the cone and the trigger have to be readable to assert a burst emptied
+  // what it should and bloomed what it should. `__setTrigger`/`__setAim`
+  // stand in for mouse buttons the way `__lookDelta` stands in for pointer
+  // lock, which headless Chromium does not reliably grant.
+  window.__handWeapon = () => handWeapon && ({
+    name: handWeapon.name,
+    hasGroup: !!handWeapon.group,
+    rounds: handWeapon.rounds,
+    mags: handWeapon.mags,
+    reloading: handWeapon.reload > 0,
+    deviationDeg: handWeapon.model.current(),
+    aimBlend,
+    firing: !!handWeapon.group?.firing,
+    shots: handWeapon.group?.shots ?? 0,
+    crosshairHidden: crosshairEl.hidden,
+    crosshairGap: crosshairEl.style.getPropertyValue('--ch-gap') || null,
+    fov: camera.fov,
+  });
+  window.__setTrigger = on => {
+    triggerHeld = !!on;
+    if (on) clickQueued = true;
+  };
+  window.__setAim = on => { aimHeld = !!on; };
   // The collider itself, for measuring rather than for asserting: `__collision()`
   // drains the accumulated cast cost, so calling it once a second gives the real
   // microseconds-per-query number the feature doc quotes.
