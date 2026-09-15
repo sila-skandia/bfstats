@@ -555,6 +555,78 @@
    "note": "bf42plus section: Resolution / Display Patches"
   },
   {
+   "address": "0x0045fd50",
+   "name": "RendPCDX8_setViewMatrix",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Caches at state+0x2c4, deferred id 0x14, SetTransform(D3DTS_VIEW=2, m)."
+  },
+  {
+   "address": "0x0045fdc0",
+   "name": "RendPCDX8_setProjectionMatrix",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Caches 16 dwords at state+0x304, queues deferred id 0x15, and calls IDirect3DDevice8::SetTransform(D3DTS_PROJECTION=3, m) (device slot 0x94 = vtable index 37)."
+  },
+  {
+   "address": "0x00460040",
+   "name": "RendPCDX8_setLighting",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "SetRenderState(D3DRS_LIGHTING 0x89, v)."
+  },
+  {
+   "address": "0x004600b0",
+   "name": "RendPCDX8_setSpecularEnable",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "SetRenderState(D3DRS_SPECULARENABLE 0x1d, v)."
+  },
+  {
+   "address": "0x00460120",
+   "name": "RendPCDX8_setAmbient",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "SetRenderState(D3DRS_AMBIENT 0x8b, v) with deferred-state bookkeeping."
+  },
+  {
+   "address": "0x004601a0",
+   "name": "RendPCDX8_setLight",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "(index, LightDesc*): converts and calls SetLight (device slot 0xb0)."
+  },
+  {
+   "address": "0x004606b0",
+   "name": "RendPCDX8_setMipMapLodBias",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "(stage, float): SetTextureStageState(stage, D3DTSS_MIPMAPLODBIAS 0x13, f). The drawFov block passes -10000 for stage 0: first-person parts always sample the finest mip."
+  },
+  {
+   "address": "0x004607d0",
+   "name": "RendPCDX8_setFillMode",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "SetRenderState(D3DRS_FILLMODE 8, v)."
+  },
+  {
    "address": "0x00460a92",
    "name": "patch__texture_handler_registration",
    "kind": "patch_site",
@@ -591,6 +663,15 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x00462f50",
+   "name": "Renderer_initDevice",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Window/device bring-up: pRenderView->setAspect(height/width) from the RendPCDX8 slot +0x30 viewport struct (unsigned ints), then g_standardMeshRenderer->init() (slot +0x14). This is where the world aspect stops being the 0.75 default."
+  },
+  {
    "address": "0x004634b2",
    "name": "patch__screenshot_counter_init_disable",
    "kind": "patch_site",
@@ -598,6 +679,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Renderer Patches"
+  },
+  {
+   "address": "0x004662c0",
+   "name": "Renderer_drawView",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Per-view draw called from Renderer_drawFrame. pRenderView = view+0x94; if !renderView->getPlayerDefinedFOVEnabled() (+0x78) renderView->setFieldOfView(camera slot +0x18); setViewMatrix(getViewMatrix), setProjectionMatrix(getProjectionMatrix); sky (0x005be3c0/0x005be5b0), world draw via Renderer+0xc4 object, g_standardMeshRenderer drawOpaque(+0x1c) and drawTransparent(+0x20), flush 0x00604750. Then if Renderer+0xda: unless g_pIGame slot +0x74 == 4, device Clear(D3DCLEAR_ZBUFFER=2, 0, z=1.0, 0) at 0x00466c08; state block 0x006038c0: AMBIENT=Renderer+0xa4, SetLight(0,&Renderer+0x44), LIGHTING=1, 0x00460230(0,1), SPECULARENABLE=1, MIPMAPLODBIAS(stage 0)=-10000; g_standardMeshRenderer->drawFov(Renderer+0xdc) at 0x00466c5a; 0x00603900."
+  },
+  {
+   "address": "0x00466d80",
+   "name": "Renderer_drawFrame",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Frame driver around Renderer_drawView (per view via 0x00466cd0/0x00466d40), screenshot path \"ScreenShots/ScreenShot%d.tga\". bf42plus patch__renderer_draw_hook 0x004670a5 lives inside it."
   },
   {
    "address": "0x004670a5",
@@ -1329,6 +1428,15 @@
    "note": "Decompiled; lnxded 0x0826b330. Walks the child list (+0x54 sibling), skips KitPartTemplate 0x94a3 / ActiveKitPartTemplate 0x94bc, sets +0x11c on EffectBundleTemplate 0x9474 subtrees, and for every part with a geometry component (+0x5c) queryInterface(IID_IViewModifier 0xf0e2bbfa) -> vfn+0xc(fov) = the mesh's own field of view; recurses. Called by BFSoldier::setFirstPerson with template set1pFov (lnxded +0x1a0 / client +0x250) and by applyFovModifier with set1pFov * eased SoldierZoomFov factor, -1.0 = off."
   },
   {
+   "address": "0x004f7290",
+   "name": "BFSoldier::applyFovModifier",
+   "kind": "function",
+   "subsystem": "world",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Client twin of lnxded 0x0826d490 by shape: v = factor * BFSoldierTemplate+0x250 (set1pFov) when in first person, else -1; then setFirstPersonFov 0x004f7120 over the children skipping KitPartTemplate 0x94a3 / ActiveKitPartTemplate 0x94bc."
+  },
+  {
    "address": "0x004f7910",
    "name": "LinkedList__getFirst",
    "kind": "function",
@@ -1588,6 +1696,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Decompiled in full; identical algorithm to lnxded 0x08293e80. The deviation combine rule: per tick, additive channels speed(+0x2f0)/turn(+0x2ec)/misc(+0x2f4)/fire(+0x1ac); each raises by devMod^2*terms, caps at arg_a*devMod, decays arg_decay/devMod; total(+0x1a8)=minDev+fire+speed+turn+misc+aiPending. No zoom/aim term. No dt. Full write-up: subsystems/handweapon-view-and-deviation.md"
+  },
+  {
+   "address": "0x00570630",
+   "name": "RendPCDX8_bindVertexShader",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "shader->queryInterface(0x10c926)->slot +0x18 = D3D handle; if it differs from DAT_009c0190: device SetVertexShader (slot 0x130 = index 76). With no hardware VS (RendPCDX8 slot 0x138) or < 96 constants (slot 0x13c) it enables software vertex processing through queryInterface(1100000)->slot 0x1f0(1) first. Null unbinds. Records the shader at state+0x914 and queues deferred id 0."
   },
   {
    "address": "0x00571290",
@@ -1914,6 +2031,33 @@
    "note": "bf42plus section: Console"
   },
   {
+   "address": "0x005acda0",
+   "name": "StandardMesh::draw",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "vtbl_StandardMesh slot +0xc by position (lnxded slot order). Not read. Function created in Ghidra this session."
+  },
+  {
+   "address": "0x005ad0b0",
+   "name": "BStandardMesh::getFieldOfView",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "IViewModifier slot +0x10: fld [this+0xd8] = mesh+0xf0."
+  },
+  {
+   "address": "0x005ad160",
+   "name": "BStandardMesh::setFieldOfView",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "IViewModifier slot +0xc; MSVC compiled it against the +0x18 subobject, so [this+0xd8]/[this+0xdc] are mesh +0xf0 (fov) and +0xf4 (64-byte matrix). Stores fov; if != -1.0 (const 0x008c41e8): saved = pRenderView->getFieldOfView() (+0x18), pRenderView->setFieldOfView(fov) (+0x14), rep movsd 16 dwords from getProjectionMatrix() (+0x64) into mesh+0xf4, tail-jmp setFieldOfView(saved). Byte-for-byte the lnxded 0x083b5560 algorithm. Function created in Ghidra this session."
+  },
+  {
    "address": "0x005ad800",
    "name": "BStandardMesh::queryInterface",
    "kind": "function",
@@ -1921,6 +2065,33 @@
    "confidence": "inferred",
    "source": "ghidra-session-2026-09-15-1p-mount",
    "note": "Interface table returning this+0x18 for IID_IViewModifier, matching the lnxded this-adjust-24 thunk on BStandardMesh::setFieldOfView; other IIDs at +4, +8, +0xc, +0x20, +0x144. Class identity inferred from the layout, not from a name."
+  },
+  {
+   "address": "0x005adfd0",
+   "name": "StandardMesh_selectLod",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Returns the LOD index for a draw. A mesh with its own field of view (mesh+0xf0 != -1) always returns 0: first-person parts never LOD by distance."
+  },
+  {
+   "address": "0x005aeec0",
+   "name": "StandardMesh_drawLod",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Fixed-function per-mesh draw. LOD via 0x005adfd0; RendPCDX8 slot 0x190(min(1, dist^2*4e-6)); if mesh+0xf0 != -1.0 (const 0x00905434): IDirect3DDevice8::SetTransform(D3DTS_PROJECTION=3, mesh+0xf4) at 0x005aefa4; then SetTransform(D3DTS_WORLD=0x100, mesh transform +0xb0 or [+0xa8]); block loop gated by g_meshPassId 0x009c9be4; after the loop restores SetTransform(3, renderView->getProjectionMatrix() slot +0x64); slot 0x190(-1.0). Debug branch: DAT_00959a44 >= 0 with a template+0x174 list -> 0x005ae370 instead."
+  },
+  {
+   "address": "0x005b06d0",
+   "name": "StandardMesh_drawSkinned",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "vtbl_StandardMesh slot +0x48, the path the renderer takes with Shaders/SkinningShader2Bones bound (needs mesh+0x18c skin and template+0x298). At 0x005b091c: cmp [mesh+0xf0], -1.0; if set, uses mesh+0xf4 (lea at 0x005b0928) instead of renderView->getProjectionMatrix() (slot +0x64 at 0x005b0935) for the matrix product (0x0056f270) that feeds the vertex-shader constants. The baked 1P projection is honoured on the shader path too. Function created in Ghidra this session; body 3555 bytes, only the projection choice read."
   },
   {
    "address": "0x005b42d0",
@@ -1977,6 +2148,69 @@
    "note": "Second destructor with the same member layout as 0x005d0140 (offsets 0x60-0x66, 0x34, 0x2f, 0x2b). Two instantiations of one template class."
   },
   {
+   "address": "0x005b7b40",
+   "name": "RenderView::setFieldOfView",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "firstTime byte 0x009595b8 -> m_startFov 0x009ab86c = fov. If fov != +0x24: +0x1c = tan(fov/2)/tan(startFov/2) via fsin/fcos with +/-1000 clamps (const 0x008c4fb4/0x008c4fb0), +0x20 = 1/that or 0; then +0x24 = fov and dirty +0x311/+0x312 = 1. lnxded 0x08444260 same. Function created in Ghidra this session."
+  },
+  {
+   "address": "0x005b7cd0",
+   "name": "RenderView::setNearPlane",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Stores +0x28 and sets dirty +0x311/+0x312. lnxded 0x08444480 same. Function created in Ghidra this session."
+  },
+  {
+   "address": "0x005b7d10",
+   "name": "RenderView::setAspect",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Stores +0x30 (guarded against 0) and sets the dirty bytes. Function created in Ghidra this session."
+  },
+  {
+   "address": "0x005b7f80",
+   "name": "RenderView::getViewMatrix",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Rebuilds +0x7c from the transform +0x3c via 0x005b7ed0 when +0x310 is dirty; returns this+0x7c."
+  },
+  {
+   "address": "0x005b7fb0",
+   "name": "RenderView::updateProjectionMatrix",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "If dirty(+0x311): ortho (+0x18 == 1) via 0x008086c9(orthoW, orthoH, near, far+near); else with fov=+0x24, near=+0x28, far=+0x2c, aspect=+0x30 and q=(near+far)/far, row-vector D3D LH perspective: m00 = cot(fov/2)*aspect, m11 = cot(fov/2), m22 = q, m23 = 1, m32 = -q*near, m33 = 0 (cos 0x00440320, sin 0x00467760). fov is a whole VERTICAL angle in radians, aspect is height/width. Copies to +0xfc and transposes in place (0x005ad4f0). Identical to lnxded 0x08444870."
+  },
+  {
+   "address": "0x005b8100",
+   "name": "RenderView::getProjectionMatrix",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Calls RenderView::updateProjectionMatrix 0x005b7fb0 and returns this+0xbc: any setFieldOfView/setAspect/setNearPlane is realised synchronously by the next get."
+  },
+  {
+   "address": "0x005b8120",
+   "name": "RenderView_ctor",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Object 0x314 bytes. Defaults: projectionType +0x18 = 0, fov modifier +0x1c/+0x20 = 1.0, fov +0x24 = g_degToRad*60 (60 deg), near +0x28 = 0.1, far +0x2c = 1000, aspect +0x30 = 0.75 (h/w), ortho +0x34/+0x38 = 1, transform +0x3c identity, dirty +0x310/+0x311/+0x312 = 1, playerDefinedFOV +0x313 = 0. Matrices: view +0x7c, projection +0xbc, transposed projection +0xfc."
+  },
+  {
    "address": "0x005bf690",
    "name": "StandardMeshSubShader_applyRenderState",
    "kind": "function",
@@ -1993,6 +2227,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x005c1fc0",
+   "name": "RenderView_create",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Factory for \"dice.ref2.rend.RenderView.Standard\" (string 0x009065d8, registered at 0x005c20b0): new(0x314) -> ctor 0x005b8120 -> queryInterface."
+  },
+  {
+   "address": "0x005c2cc0",
+   "name": "StandardMeshRenderer_create",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Factory for \"StandardMeshRenderer.Standard\" (string 0x00908a60, registered at 0x005d06f1 next to GeometryTemplate.StandardMesh -> 0x005d0450): new(0xc0) -> ctor 0x0062c3c0 -> queryInterface(iid)."
   },
   {
    "address": "0x005cd260",
@@ -2040,6 +2292,24 @@
    "note": "bf42plus section: System"
   },
   {
+   "address": "0x006038c0",
+   "name": "RendPCDX8_pushStateBlock",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Opens a zeroed 0x930-byte block on the deferred-state stack (DAT_009c0174 depth, DAT_009c017c current). Setters record into the current block and hit the device directly."
+  },
+  {
+   "address": "0x00603900",
+   "name": "RendPCDX8_popStateBlock",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Marks every id the popped block set as pending (DAT_009c00f0[id] = 1, list at DAT_009bfef0) and drops the depth; the next flush (0x00604750) re-applies those ids from the nearest enclosing block that set them."
+  },
+  {
    "address": "0x00604750",
    "name": "RendPCDX8_flushDeferredState",
    "kind": "function",
@@ -2085,6 +2355,87 @@
    "note": "Builds the camera-shake Mat4 for one state-machine instance. Signature (lnxded: dice::anim::AnimationStateMachineInstance::getCameraShakeTransform(Mat4&, float dt, float factor)). Per channel it computes amp * sin(rate * t) * factor, where t is an instance-local seconds accumulator advanced t += dt (0x0832b825-0x0832b845 in lnxded). UpDown -> Mat4 +0x34 (translate Y), LeftRight -> +0x30 (X), InOut -> +0x38 (Z); Pitch/Yaw/Roll -> setRotateXDeg/YDeg/ZDeg, i.e. degrees. THE THIRD .con ARGUMENT IS AN ANGULAR RATE IN RADIANS PER SECOND, not Hz and not a duration: it is the multiplier on seconds inside sin(). Nothing scales by ground speed. Matched to lnxded 0x0832b6c0 by the five call sites from updateCameraShake and the -20.0f sentinel store."
   },
   {
+   "address": "0x0062b2f0",
+   "name": "AnimatedMesh_drawLod",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Twin of StandardMesh_drawLod 0x005aeec0 in the AnimatedMesh unit: same mesh+0xf0 test, SetTransform(3, mesh+0xf4) before WORLD, restore from renderView->getProjectionMatrix() after."
+  },
+  {
+   "address": "0x0062b8d0",
+   "name": "AnimatedMesh_drawByContext",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Second-list draw entry: renderContext null -> AnimatedMesh_drawLod 0x0062b2f0 (fov-aware); context type 0xebbb18fb -> 0x0062ac50, 0xdf868dfb -> 0x0062ad20 (both set only WORLD: shadow/lightmap contexts); else \" Context not implemented\"."
+  },
+  {
+   "address": "0x0062bef0",
+   "name": "StandardMeshRenderer::init",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Fetches the \"StandardMesh\" SubShaderBuilder (DAT_009a99dc slot +0x28) -> queryInterface(0xbb4075) -> +0xb0, whose slots +0x2c/+0x30 bracket every list draw. Function created in Ghidra this session."
+  },
+  {
+   "address": "0x0062c3c0",
+   "name": "StandardMeshRenderer_ctor",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Object 0xc0 bytes: vtable 0x00916800 at +0, 0x009167f0 at +4; fogRange +0x30/+0x34 = 8000/10000; swayLodDistance +0xa4 = 40; lodDistanceScale +0xa8 = 1; renderView +0x98, renderContext +0x9c, subshader builder +0xb0, skinning subshader +0xbc."
+  },
+  {
+   "address": "0x0062c620",
+   "name": "StandardMeshRenderer::drawAnimatedMesh",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "(mesh, renderView, renderContext): stores +0x98/+0x9c, then pushes the mesh onto the fov list when mesh+0xf0 != -1.0, else the normal list. This is how a first-person part reaches drawFov. Function created in Ghidra this session."
+  },
+  {
+   "address": "0x0062c690",
+   "name": "StandardMeshRenderer::drawMesh",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "(mesh, renderView, renderContext): stores +0x98/+0x9c; mesh+0xf0 != -1.0 -> fov list; template+0x9c == 2 -> transparent list; else opaque list. Function created in Ghidra this session."
+  },
+  {
+   "address": "0x0062cb00",
+   "name": "StandardMeshRenderer::drawFov(bool)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "The first-person pass. Sets g_meshPassId 0x009c9be4 = 2; lazily builds the \"Shaders/SkinningShader2Bones\" subshader (+0xbc) when RendPCDX8 slot 0x138 (hardware vertex shaders) is true; binds it (0x00570630), draws list +0x88 via each mesh slot +0x48 (StandardMesh_drawSkinned), unbinds, draws list +0x68 via 0x0062b8d0 (fixed function); pass id back to 0. Same body as drawOpaque with lists +0x78/+0x48 and pass id 0. Function created in Ghidra this session."
+  },
+  {
+   "address": "0x0062cc70",
+   "name": "StandardMeshRenderer::drawOpaque(bool)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Pass id 0, lists +0x78 (skinned, shader bound) and +0x48 (plain). Function created in Ghidra this session."
+  },
+  {
+   "address": "0x0062cdd0",
+   "name": "StandardMeshRenderer::drawTransparent(bool)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "inferred",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Slot +0x20 by lnxded order; writes g_meshPassId at 0x0062cde8. Not read. Function created in Ghidra this session."
+  },
+  {
    "address": "0x00632478",
    "name": "patch__ForegroundLockTimeout",
    "kind": "patch_site",
@@ -2092,6 +2443,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x0063db90",
+   "name": "RendPCDX8_getCurrentDisplayMode",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Returns this+0xa8 + this+0xb0*0x14: the selected mode record; Renderer_initDevice reads [+4]/[+0] = height/width for RenderView::setAspect."
   },
   {
    "address": "0x0063ed70",
@@ -2173,6 +2533,24 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "DX8 material flush for the SIMPLE texture path (param+0x90008 texture cache): stage0 MODULATE(1x, TEXTURE x DIFFUSE); no-texture SELECTARG DIFFUSE; +0x5e flag path ADD(TEXTURE,TFACTOR) then stage1 MODULATE(CURRENT,DIFFUSE). NOT the StandardMesh path - vehicles/statics go through StandardMeshSubShader_applyRenderState 0x005bf690 which uses MODULATE2X. Do not calibrate mesh lighting off this function."
+  },
+  {
+   "address": "0x00667680",
+   "name": "RendPCDX8_clear",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "(flags, color, z, stencil): maps the engine flags through slot +0x1f4, then IDirect3DDevice8::Clear(0, 0, flags, color, z, stencil) (device slot 0x90 = index 36). Renderer_drawView calls it with (2, 0, 1.0, 0) before drawFov; Renderer_drawFrame with the frame colour at the top of the frame."
+  },
+  {
+   "address": "0x00667d40",
+   "name": "RendPCDX8_drawPrimitives",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "vtbl_RendPCDX8 slot +0x8c. Flushes the deferred state (0x00604750), maps the vertex format to an FVF handle (0x00672a40 -> 0x00a5a518) and SetVertexShader(fvf) when no programmable shader is bound (DAT_009c94bc == 0), then draws through this+0x90 slot 0x120. Only pending (popped) deferred ids are re-applied, so a direct SetTransform issued by the mesh draw survives to its primitives."
   },
   {
    "address": "0x00672a40",
@@ -3129,6 +3507,24 @@
    "note": "engine type-name string; xref it to reach the code that registers this type"
   },
   {
+   "address": "0x0090567c",
+   "name": "vtbl_StandardMesh_IViewModifier",
+   "kind": "vtable",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Secondary vtable for the IViewModifier base at mesh+0x18: addRef/release/queryInterface adjustor thunks, +0xc setFieldOfView 0x005ad160, +0x10 getFieldOfView 0x005ad0b0. Same layout on lnxded (thunk 0x083b55f0 adjusts this by -0x18)."
+  },
+  {
+   "address": "0x00905708",
+   "name": "vtbl_StandardMesh",
+   "kind": "vtable",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Primary vtable, 19 slots (IStandardMesh only; MSVC does not replicate secondary-base overrides): +0x8 queryInterface 0x005ad800, +0xc draw 0x005acda0, +0x48 drawSkinned 0x005b06d0. Secondary tables precede it at 0x905640-0x905704 in reverse base order (+0x20 makeScript, +0x1c isActive/begin/end, +0x18 IViewModifier 0x0090567c, +0x14 portal intersection, +0x10 portals, +0xc collision, +8, +4 scale); slot counts match the lnxded StandardMesh vtable 0x08747500 set exactly."
+  },
+  {
    "address": "0x00905754",
    "name": "str_StandardMeshTemplate",
    "kind": "string",
@@ -3163,6 +3559,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "vtable installed by the destructor at 0x005b7660. Byte-identical in content to GeometryTemplate_vtable_B; both templates resolve every slot to the same implementations. Slots 0-3 are all 0x00804ae0 (stub). Implementation cluster is 0x005cdxxx + 0x005b5exx."
+  },
+  {
+   "address": "0x00905c98",
+   "name": "vtbl_RenderView",
+   "kind": "vtable",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "31 slots in the lnxded 0x0874c600 order: +0x14 setFieldOfView 0x005b7b40, +0x18 getFieldOfView 0x005b7cb0, +0x1c getStartFieldOfView, +0x20 getFieldOfViewModifier 0x00836030, +0x24 getInverseFieldOfViewModifier 0x005b7ca0, +0x28 setNearPlane 0x005b7cd0, +0x2c getNearPlane, +0x38 setAspect 0x005b7d10, +0x3c getAspect, +0x58 setTransformation 0x005b7e00, +0x5c getTransformation 0x005b7e30, +0x60 getViewMatrix 0x005b7f80, +0x64 getProjectionMatrix 0x005b8100, +0x68 getProjectionMatrixTranspose 0x005b8110, +0x6c getFrustum, +0x74 setPlayerDefinedFOVEnabled 0x005b7eb0, +0x78 getPlayerDefinedFOVEnabled 0x005b7ec0."
   },
   {
    "address": "0x009061a4",
@@ -3246,6 +3651,33 @@
    "note": "engine type-name string; xref it to reach the code that registers this type"
   },
   {
+   "address": "0x00916738",
+   "name": "vtbl_AnimatedMesh",
+   "kind": "vtable",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Primary vtable, 18 slots: +0x8 queryInterface 0x0062a7d0 (IViewModifier 0xf0e2bbfa -> +0x18 at 0x0062a866, same subobject layout as StandardMesh), +0x44 0x0062adf0. No +0x48: the renderer skinned list (slot +0x48) holds skinned StandardMeshes; AnimatedMeshes go through 0x0062b8d0."
+  },
+  {
+   "address": "0x00916800",
+   "name": "vtbl_StandardMeshRenderer",
+   "kind": "vtable",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "39 slots in the lnxded 0x08747920 order less one dtor: +0x14 init 0x0062bef0, +0x18 drawFov 0x0062cb00, +0x1c drawOpaque 0x0062cc70, +0x20 drawTransparent 0x0062cdd0, +0x24 drawSilhouettes 0x0062c750, +0x28 addMesh 0x0062c610, +0x30 drawMesh 0x0062c690, +0x34 drawAnimatedMesh 0x0062c620, +0x38 beginSeperateDraw 0x0062bf70, +0x3c endSeperateDraw 0x0062c9c0, +0x80 setFogRange 0x0062be70, +0x88 reloadLightmaps 0x0062be90 (calls +0x90 then +0x8c). IFileChangeListener secondary at 0x009167f0."
+  },
+  {
+   "address": "0x00917838",
+   "name": "vtbl_RendPCDX8",
+   "kind": "vtable",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "The D3D8 renderer singleton vtable (object at RendPCDX8_singleton 0x009a99d4), right after the \"Direct3D error:\" string; +0 addRef 0x005b8200 (shared IBase). Slots met on the first-person path: +0x24 0x00667660 (subshader lookup by name), +0x30 0x0063db90 getCurrentDisplayMode (this+0xa8 + this+0xb0*0x14; [0]=width, [4]=height), +0x54 0x00667680 clear(flags, color, z, stencil), +0x78 0x00667770 setVertexBlock, +0x7c 0x006677f0 setIndexBlock, +0x88 0x00667f20 draw (unread), +0x8c 0x00667d40 drawPrimitives (flushes deferred state first), +0x9c 0x00667880 -> 0x0062e1f0 (debug output), +0x138 hasHardwareVertexShaders, +0x13c maxVertexShaderConstants, +0x190 setMeshDistanceFactor(float) (StandardMesh_drawLod passes min(1, dist^2*4e-6), -1 after)."
+  },
+  {
    "address": "0x00917a00",
    "name": "vtbl_RendPCDX8_resources",
    "kind": "data",
@@ -3325,6 +3757,15 @@
    "confidence": "verified",
    "source": "reads at 0x0050146d, 0x00501502; write at 0x004f1302",
    "note": "0.33333 - walk-toggle multiplier on directional and strafe speed."
+  },
+  {
+   "address": "0x009595b8",
+   "name": "RenderView::setFieldOfView::firstTime",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Static guard byte for m_startFov (lnxded 0x0874c5f8)."
   },
   {
    "address": "0x0095f8d4",
@@ -3462,6 +3903,15 @@
    "note": "bf42plus section: Global Data Pointers"
   },
   {
+   "address": "0x009a9468",
+   "name": "g_standardMeshRenderer",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "IStandardMeshRenderer* singleton; created at 0x005a38a7 via createObject(CID 0x044c881c, IID 0x822b03ff) (lnxded dice::ref2::geom::standardMeshRenderer 0x08743600). Renderer_drawView 0x004662c0 calls slots +0x1c/+0x20/+0x18 on it."
+  },
+  {
    "address": "0x009a99d4",
    "name": "RendPCDX8_singleton",
    "kind": "data",
@@ -3498,6 +3948,33 @@
    "note": "IRenderView* singleton: slot +0x14 = RenderView::setFieldOfView(float), +0x18 = getFieldOfView() (lnxded RenderView vtable 0x0874c600, vptr+0x14/+0x18), used by FireArms__setZoom 0x005391b0 to save and write the zoom FOV."
   },
   {
+   "address": "0x009ab86c",
+   "name": "RenderView::m_startFov",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "First FOV ever set (lnxded 0x0874c5f4); the denominator of the FOV modifier."
+  },
+  {
+   "address": "0x009ab8b0",
+   "name": "g_degToRad",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "pi * (1/180) from constants 0x00905c90 and 0x008c40a4, written by static init 0x008572d0. RenderView_ctor multiplies it by 60 for the default FOV."
+  },
+  {
+   "address": "0x009c0184",
+   "name": "g_pD3DDevice8",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "IDirect3DDevice8*: slot 0x94 = SetTransform (index 37), 0xc8 SetRenderState (50), 0xfc SetTextureStageState (63), 0xb0 SetLight (44), 0x130 SetVertexShader (76), 0x54 Clear? is on RendPCDX8 not here. Every renderer state setter in 0x0046xxxx calls through it."
+  },
+  {
    "address": "0x009c9b14",
    "name": "g_lastMaterialVertexFormat",
    "kind": "data",
@@ -3523,6 +4000,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Global std::string constructed to \"StandardMesh/\" by the static initializer at 0x0085b8f0; its address is cached at 0x009c9c30. Only 3 xrefs, all within the init block - consumers reach it indirectly, not by address."
+  },
+  {
+   "address": "0x009c9be4",
+   "name": "g_meshPassId",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-drawfov",
+   "note": "Current StandardMeshRenderer pass: 0 opaque, 2 fov (drawFov 0x0062cb14 sets, 0x0062cc5a clears), also written by drawSilhouettes 0x0062c750. Read by the per-mesh draws 0x005aeec0/0x0062b2f0 to gate blocks."
   },
   {
    "address": "0x00a5c630",

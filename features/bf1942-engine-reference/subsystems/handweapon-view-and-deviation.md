@@ -2,7 +2,8 @@
 
 Settled 2026-09-15, first-person mount closed in a second pass the same day, the
 clock and the zoom unit closed in a third (§2 "Clock", §3 "Fields of view",
-§7). Two binaries were read side by side:
+§7) and the renderer's `drawFov` pass read in the same pass (§3 "The drawFov
+pass"). Two binaries were read side by side:
 
 - **Client** `BF1942.exe` (sha256 `60c9452d…`, the corpus binary) — addresses `0x00xxxxxx`.
 - **Server** `bf1942_lnxded.static` (54,895 symbols) — addresses `0x08xxxxxx`, cited
@@ -332,17 +333,13 @@ faster (0.7·cur + 0.3·target) and snaps within 0.001, each step calling
   0x9474), and for each part with a geometry component queries
   `IID_IViewModifier` (0xf0e2bbfa; client 0x0090350c, lnxded 0x086e6788) and
   calls its slot +0xc — `BStandardMesh::setFieldOfView(float)` (0x083b5560),
-  which stores the float at mesh `+0xf0` (−1.0 = none). `StandardMeshRenderer`
-  has a dedicated `drawFov(bool)` pass next to `drawOpaque`/`drawTransparent`
-  (0x083b7590, a stub on the server). **So yes: the 1P parts get their own
-  field of view, `set1pFov × SoldierZoomFov`, drawn in their own pass, and
-  they do not follow the camera's zoom.** How that pass turns 0.47 into a
-  projection, and whether it moves the near plane, is client-renderer code
-  (the pass reads the mesh field directly; the four `IID_IViewModifier` users
-  in the client are all setters) — **OPEN**. What the footage rules out: a
-  0.47 rad whole angle under the world's formula would draw the arms 2.3×
-  larger and off the bottom of the frame; at the hip they appear at the
-  world's FOV.
+  which stores the float at mesh `+0xf0` (−1.0 = none) **and bakes a
+  projection matrix for it** — see "The drawFov pass" below, read in both
+  binaries on 2026-09-15 (third pass). `StandardMeshRenderer` has a dedicated
+  `drawFov(bool)` pass next to `drawOpaque`/`drawTransparent` (lnxded
+  0x083b7590, a stub on the server; client 0x0062cb00, read). **So yes: the
+  1P parts get their own field of view, `set1pFov × SoldierZoomFov`, drawn in
+  their own pass, and they do not follow the camera's zoom.**
 - **`zoomFov` is an absolute FOV in the render view's unit — VERIFIED (third
   pass; was inferred).** Client `FireArms::setZoom` 0x005391b0 (twin of lnxded
   0x082881a0, read side by side in objdump) saves
@@ -367,6 +364,112 @@ faster (0.7·cur + 0.3·target) and snaps within 0.001, each step calling
   (§1 pointer caveat). Since `renderer.fieldOfView 1` makes the default FOV
   1.0 rad, multiplying by `zoomFov` is multiplying by the zoomed/default FOV
   ratio — which is also why the unit had to be radians.
+
+### The drawFov pass (VERIFIED, client read in full; lnxded for the shared halves)
+
+The projection the 1P parts are drawn with is not built by the pass. It is
+built **when the field of view is set**, by the mesh, from the render view:
+
+```
+BStandardMesh::setFieldOfView(fov)             client 0x005ad160, lnxded 0x083b5560
+  mesh+0xf0 = fov
+  if fov != -1.0:
+    saved = pRenderView->getFieldOfView()      RenderView slot +0x18
+    pRenderView->setFieldOfView(fov)           slot +0x14  (marks +0x311 dirty)
+    memcpy(mesh+0xf4, pRenderView->getProjectionMatrix(), 64)   slot +0x64
+    pRenderView->setFieldOfView(saved)
+```
+
+(`0x005ad160` was compiled against the `IViewModifier` subobject at mesh+0x18,
+so it reads as `[this+0xd8]`/`[this+0xdc]`; the fields are mesh+0xf0/+0xf4 in
+both binaries.) `getProjectionMatrix` calls `updateProjectionMatrix` first
+(client 0x005b7fb0, lnxded 0x08444870), so the copy is the render view's
+perspective for the mesh's own angle, with the render view's **current**
+aspect, near and far. That matrix, in the engine's row-vector convention, is
+
+```
+m00 = cot(fov/2) · aspect      m11 = cot(fov/2)
+m22 = (near+far)/far           m23 = 1
+m32 = −near · (near+far)/far   m33 = 0        (all other entries 0)
+```
+
+— a D3D left-handed perspective whose `fov` is a **whole vertical angle in
+radians** and whose `aspect` is **height/width** (the z terms are the
+first-order form of `far/(far−near)`; identical for near 0.1, far 1000).
+The client's `RenderView` (vtable 0x00905c98, constructor 0x005b8120)
+defaults to aspect 0.75, near 0.1, far 1000 and FOV `g_degToRad × 60` =
+60°; `Renderer_initDevice` 0x00462f50 then sets `aspect = height/width` of
+the current display mode (RendPCDX8 slot +0x30), so at 1280×720 the 1P
+matrix is built with 0.5625, and `renderer.fieldOfView 1` in
+`VideoDefault.con` puts the world at 1.0 rad. Nothing on the first-person
+path calls `RenderView::setNearPlane` (client 0x005b7cd0): **the 1P parts
+keep the world's near plane, 0.1 m.** The mesh field is also a LOD switch:
+`StandardMesh_selectLod` 0x005adfd0 returns LOD 0 whenever mesh+0xf0 is set.
+
+The pass itself is sequenced by `Renderer_drawView` 0x004662c0, once per
+view, on the client:
+
+1. `pRenderView = view+0x94`; unless `getPlayerDefinedFOVEnabled()` (slot
+   +0x78) the render view takes the camera's FOV; `RendPCDX8_setViewMatrix`
+   0x0045fd50 / `RendPCDX8_setProjectionMatrix` 0x0045fdc0 push the world's
+   matrices (`IDirect3DDevice8::SetTransform` slot 0x94 with D3DTS_VIEW = 2 /
+   D3DTS_PROJECTION = 3).
+2. `g_standardMeshRenderer` 0x009a9468 → `drawOpaque` (slot +0x1c) and
+   `drawTransparent` (+0x20); deferred state flushed (0x00604750).
+3. Gated on `Renderer+0xda` (the same flag that draws the meshes at all):
+   unless `g_pIGame` slot +0x74 returns 4, **`RendPCDX8_clear(2, 0, 1.0, 0)`
+   0x00667680 — the depth buffer cleared to 1.0** (device `Clear`, slot 0x90,
+   flag mapped through RendPCDX8 slot +0x1f4); then a state block
+   (0x006038c0): `D3DRS_AMBIENT = Renderer+0xa4`, `SetLight(0, &Renderer+0x44)`,
+   `D3DRS_LIGHTING = 1`, light 0 enabled, `D3DRS_SPECULARENABLE = 1`,
+   `SetTextureStageState(0, D3DTSS_MIPMAPLODBIAS, −10000)` — the parts always
+   sample the finest mip; **`drawFov(Renderer+0xdc)` (slot +0x18)**; block
+   popped (0x00603900).
+
+`drawFov` 0x0062cb00 is `drawOpaque` 0x0062cc70 with other lists: pass id
+`g_meshPassId` 0x009c9be4 = 2, the `Shaders/SkinningShader2Bones` vertex
+shader bound (0x00570630) for list +0x88 (skinned `StandardMesh`es, drawn
+through vtable slot +0x48 = `StandardMesh_drawSkinned` 0x005b06d0), then
+unbound for list +0x68 (everything else, through `AnimatedMesh_drawByContext`
+0x0062b8d0 → `AnimatedMesh_drawLod` 0x0062b2f0 / `StandardMesh_drawLod`
+0x005aeec0). Meshes reach those lists per frame through
+`StandardMeshRenderer::drawMesh` 0x0062c690 / `drawAnimatedMesh` 0x0062c620,
+which put any mesh with `+0xf0 != −1` on the fov lists. Every draw path
+honours the baked matrix:
+
+- fixed function (`StandardMesh_drawLod`, `AnimatedMesh_drawLod`): if
+  `mesh+0xf0 != −1`, `SetTransform(D3DTS_PROJECTION, mesh+0xf4)` immediately
+  before `SetTransform(D3DTS_WORLD, …)` (0x005aefa4), and after the blocks
+  `SetTransform(3, renderView->getProjectionMatrix())` restores the world's.
+  The deferred-state layer cannot undo this: `RendPCDX8_drawPrimitives`
+  0x00667d40 flushes only ids a popped block made pending (0x00603900), and
+  the projection is never popped inside the pass.
+- vertex shader (`StandardMesh_drawSkinned`): at 0x005b091c the matrix
+  product fed to the shader constants takes `mesh+0xf4` instead of
+  `renderView->getProjectionMatrix()` when the field is set.
+
+The 1P parts in the data are `SimpleObject` children of the soldier
+(`USSoldier1PBody`, `1pUSSoldierRightHand`, `1pUSSoldierLeftHand`, all
+`setIsFirstPersonPart 1`, geometry `AnimatedMesh` + `.skn`), reached by
+`setFirstPersonFov`'s child walk; the weapon is reached by `addItem` /
+`enableItem` (lnxded 0x08277bd0 / 0x08278460, `isFirstPerson ?
+template+0x1a0 : −1`). The client hands `template+0x250` (0.47) or −1 at every
+site (0x004f9610, 0x004f9867, 0x004f9c24, 0x004fa103, and `setFirstPerson`
+0x004fae80 itself); `applyFovModifier` 0x004f7290 runs from
+`handleVisualUpdate` 0x004fc2d0 **only while the zoom factor is easing**.
+
+**Where it stops matching: the retail capture.** With the placement chain of
+this section, the world's 57.3° puts the right-hand bone at (816, 614) — in
+the retail box (800–840, 590–640) — while the engine's own 0.47 rad puts it at
+(1042, 939), off the frame, the left hand at (768, 631) against retail
+(690, 545), and the muzzle at (762, 492) against the front sight (720, 485).
+Ten frames across both clips show the arms at natural size; none is zoomed.
+So the retail client draws the parts at the world's projection, which no
+static path above produces once `mesh+0xf0` holds 0.47. The data says 0.47
+(`CommonSoldierData.inc` read from the archive), bf42plus patches nothing on
+this path, and the parts' geometry exists when `setFirstPerson` walks them.
+What is left is runtime: something between spawn and the frame either never
+delivers 0.47 to these meshes or hands them back −1. See §7.
 
 ### Verified against the retail capture (1280×720, Thompson on Wake)
 
@@ -470,6 +573,24 @@ Current viewer approximations, judged:
 | 0x005391b0 | `FireArms::setZoom(bool)` (`zoomFov` → component 0x5000 → `RenderView::setFieldOfView`) | objdump; lnxded 0x082881a0 |
 | 0x0050ee00 | `FireArms::isZoomed` (HandFireArms vtable slot +0xf8) | vtable read; lnxded 0x08290160 |
 | 0x009ab868 / 0x0095f8d4 / 0x0097d764 | `g_renderView` / `g_game` / `objectManager` | slot use matched to lnxded 0x0874c600 / 0x0870d918 / 0x0871dc24 |
+| 0x005ad160 / 0x005ad0b0 | `BStandardMesh::setFieldOfView` / `getFieldOfView` (IViewModifier table 0x0090567c; bakes mesh+0xf4 from `pRenderView`) | raw-byte disassembly, then function created; matches lnxded 0x083b5560 |
+| 0x00905708 / 0x00916738 | `vtbl_StandardMesh` (19 slots; +0x48 skinned draw 0x005b06d0) / `vtbl_AnimatedMesh` | memory read; slot counts matched to lnxded 0x08747500 |
+| 0x005aeec0 / 0x0062b2f0 | `StandardMesh_drawLod` / `AnimatedMesh_drawLod` (SetTransform(3, mesh+0xf4) at 0x005aefa4, restore after) | decompiled |
+| 0x005b06d0 | `StandardMesh_drawSkinned` (mesh+0xf4 into the skinning-shader constants, 0x005b091c) | function created; projection choice read |
+| 0x005adfd0 | `StandardMesh_selectLod` (fov meshes → LOD 0) | decompiled |
+| 0x00916800 / 0x0062c3c0 / 0x005c2cc0 | `vtbl_StandardMeshRenderer` / ctor / factory (`StandardMeshRenderer.Standard`, registered 0x005d06f1) | memory read; ctor decompiled |
+| 0x0062cb00 / 0x0062cc70 / 0x0062c690 / 0x0062c620 | `drawFov` / `drawOpaque` / `drawMesh` / `drawAnimatedMesh` | functions created; decompiled / raw bytes |
+| 0x009a9468 / 0x009c9be4 | `g_standardMeshRenderer` (created 0x005a38a7) / `g_meshPassId` (2 = fov) | decompiled |
+| 0x004662c0 / 0x00466d80 | `Renderer_drawView` (pass order, Z clear 0x00466c08, drawFov 0x00466c5a) / `Renderer_drawFrame` | decompiled + raw bytes |
+| 0x00905c98 / 0x005b8120 / 0x005c1fc0 | `vtbl_RenderView` / ctor (defaults 60°, 0.1, 1000, 0.75) / factory | memory read; decompiled |
+| 0x005b7b40 / 0x005b7fb0 / 0x005b8100 / 0x005b7d10 / 0x005b7cd0 | `RenderView::setFieldOfView` / `updateProjectionMatrix` / `getProjectionMatrix` / `setAspect` / `setNearPlane` | decompiled / raw bytes; match lnxded 0x08444260 / 0x08444870 |
+| 0x009ab86c / 0x009595b8 / 0x009ab8b0 | `m_startFov` / `firstTime` / `g_degToRad` | decompiled |
+| 0x00462f50 | `Renderer_initDevice` (`setAspect(height/width)`) | decompiled |
+| 0x0045fdc0 / 0x0045fd50 / 0x009c0184 | `RendPCDX8_setProjectionMatrix` / `setViewMatrix` / `g_pD3DDevice8` (slot 0x94 = SetTransform) | decompiled |
+| 0x00917838 / 0x00667680 / 0x00667d40 / 0x0063db90 | `vtbl_RendPCDX8` / `clear` (+0x54) / `drawPrimitives` (+0x8c) / `getCurrentDisplayMode` (+0x30) | memory read; decompiled |
+| 0x006038c0 / 0x00603900 / 0x00604750 | deferred-state push / pop / flush | decompiled |
+| 0x00570630 | `RendPCDX8_bindVertexShader` (`Shaders/SkinningShader2Bones`) | decompiled |
+| 0x004f7290 / 0x004fae80 / 0x004fc2d0 | `BFSoldier::applyFovModifier` / `setFirstPerson` / `handleVisualUpdate` (client) | decompiled |
 
 Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
 `FireArms::updateDeviation` 0x0828d410, `FireArms::Fire` 0x0828a090,
@@ -503,12 +624,22 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
   or `AnimationState::update`'s idle/transition logic. Trace
   `AnimationStateMachineInstance::updateState` past 0x0832b388 and
   `BoneAnimation::applyOnSkeleton` (0x0832ed60) with the client twins.
-- **The projection of the `drawFov` pass.** The 1P parts get their own FOV
-  (`set1pFov × SoldierZoomFov`, verified above); how the client renderer turns
-  the mesh's field into a projection matrix, and whether it moves the near
-  plane, is untraced. Start from the client's `StandardMeshRenderer` vtable
-  (lnxded order: `draw`, `drawFov`, `drawOpaque`, `drawTransparent`,
-  `drawSilhouettes`, …) or from `RendPCDX8` reads of mesh `+0xf0`.
+- **Why retail draws the 1P parts at the world's FOV.** The projection, the
+  pass and every draw path are read (§3, "The drawFov pass") and all of them
+  apply the baked `set1pFov` matrix, yet the capture shows the arms at 57.3°
+  and the measured rig under 0.47 rad is off the frame. The static reading
+  leaves only runtime causes. Resume from: `BFSoldier::setFirstPerson` client
+  0x004fae80 (the walk at its `FUN_004f7120` call — confirm each child's
+  `+0x5c` geometry is the instance later drawn, and whether
+  `updateFlags(1,0)`/`(2,0)` (ICompositeObject slot +0x28) re-creates it);
+  the client callers of `setFirstPerson` (0x004fc910 twice, 0x004fea30,
+  0x004feab0, 0x004fe8f0, 0x00564c90, 0x004ae4a0) for the order against kit
+  and camera attach; `StandardMesh_drawLod` 0x005aeec0 at 0x005aef80 under a
+  debugger, watching `mesh+0xf0` for the hand meshes. The decisive live test
+  is a zoom: `applyFovModifier` only runs while the factor eases, so if the
+  meshes carry −1 at the hip they would jump to `0.47 × 0.6` on the first
+  right-click. Until then the viewer keeps the footage-matching world FOV in
+  its near pass and exposes the engine value behind `?fov1p=engine`.
 - **The reader of component 0x5000.** `FireArms::setZoom` publishes `zoomFov`
   as component 0x5000 and, on its own apply path, also writes it into
   `RenderView::setFieldOfView`; which object *queries* 0x5000 (the soldier
@@ -532,11 +663,15 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
 
 Closed in the third pass (2026-09-15), left here so nobody reopens them:
 
+- ~~The projection of the `drawFov` pass~~ — the mesh bakes the render view's
+  own perspective for `set1pFov` into `mesh+0xf4` when the field is set, and
+  every draw path applies it; near plane unchanged at 0.1 m (§3 "The drawFov
+  pass"; ledger VIEW-9). What stays open is the retail disagreement above.
 - ~~Exact client cadence of `handlePlayerInput`~~ — one call per fixed 1/30 s
   simulation tick, frame-rate independent; the ease is per rendered frame
   (§2 "Clock"; ledger DEV-5, VIEW-11, GL-1).
 - ~~`zoomFov`'s unit~~ — written verbatim into `RenderView::setFieldOfView` by
-  `FireArms::setZoom` 0x005391b0; radians, whole vertical angle (§3; VIEW-9).
+  `FireArms::setZoom` 0x005391b0; radians, whole vertical angle (§3; VIEW-12).
   The mouse-scale at 0x0050095f is by `zoomFov`, not `SoldierZoomFov` (VIEW-10).
 - ~~Which .con word writes `FireArmsTemplate+0x2ec`~~ — `fireingForce` (sic),
   `ConsoleClass334::executeObjectMethod` 0x082d5350; and it is not a spread at
