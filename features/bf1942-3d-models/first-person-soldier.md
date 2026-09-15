@@ -1679,7 +1679,7 @@ individual weapon appears in the viewer's source.
 - **`viewer/deviation.js`** — `DeviationModel`, the cone a shot is sampled
   inside, in degrees of half-angle. Import-free and DOM-free like `physics.js`,
   driven under node by `tests/test_deviation.py` via
-  `tests/deviation_harness.mjs` (14 tests, run with the soldier/collision/
+  `tests/deviation_harness.mjs` (21 tests, run with the soldier/collision/
   physics suites).
 - **`GunFire` extensions** (`viewer/gunfire.js`), both options, both `null` on
   every existing caller so `index.html` and the pilot path are untouched:
@@ -1707,39 +1707,61 @@ individual weapon appears in the viewer's source.
   `reloadTime`, R asks early; the count draws bottom-right in the HUD's voice.
 - **Crosshair** — DOM over the canvas, four bars and a dot off `tokens.css`
   ink, gap per frame `0.5 x viewportHeight x tan(dev) / tan(vfov/2)` at the
-  *current* (aim-blended) FOV. `CHTCrossHair` draws the cross, `CHTIcon` keeps
+  *current* (zoom-eased) FOV. `CHTCrossHair` draws the cross, `CHTIcon` keeps
   the dot alone (its authored icon art is not extracted), `CHTNone` and a
   scoped aim draw nothing.
-- **Aim** — right mouse eases `camera.fov` to `set1pFov x zoomSoldierFov` over
-  120 ms and slides the viewmodel toward the axis; scoped weapons also hide
-  the rifle past half-blend. Release restores.
+- **Zoom** — right mouse is a press-toggle (`altFireOnce` masks the held
+  alt-fire input, client 0x00500901; every vanilla hand weapon declares it —
+  a mod weapon without it falls back to hold-to-zoom). Zoom multiplies the
+  view FOV by `zoom.soldierFov`, eased `0.7·cur + 0.3·target` per visual
+  frame with a 0.001 snap, scales the mouse-look deltas by the same factor
+  while zoomed (client 0x0050095f), and displaces the viewmodel rig from
+  `weapon.view.cameraPosition` (hip) to `.zoomPosition` at 25% of the
+  remaining distance per frame — all engine-verified in the corpus doc
+  (`handweapon-view-and-deviation.md` §§3–4). Zoom drops on reload and on
+  holstering (entering a vehicle); `UnZoomBetweenFireTime > 0` (the
+  snipers' 3.0) un-zooms around each shot and re-zooms when the timer runs
+  out; movement never breaks it. Scoped weapons hide the rifle while
+  zoomed. The rig's *base* offset (`BFSoldierTemplate+0x15c`, added by
+  `updateAnimations` before the per-weapon vector) is not extracted yet —
+  `VIEWMODEL_BASE` in `map.html` is the marked stand-in for it.
 - **Recoil** — per shot, degrees sampled uniformly inside `recoil.up` /
   `recoil.leftRight`, written into `soldier.look()` unscaled, so the standing
   pitch clamp catches a mag dump the same way it catches the mouse.
 
-### The deviation approximation, and its free constants
+### The deviation rule, as decompiled
 
-PROVISIONAL, marked so in the module header the way `flight.js` marks its roll
-model. The shipped blocks are carried verbatim; the combining rule is ours:
+No longer provisional. The combining rule is `HandFireArms::updateDeviation`
+— client `BF1942.exe` @ 0x00551f50, lnxded 0x08293e80, read in full in both
+binaries and documented in
+`features/bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md`
+(committed 9276c9c). With `M = devMod[stance]` (1.0 when absent), per tick:
 
-    dev = min x mod[stance]                      (the floor; both factors data)
-        + speed[0] x clamp(v / runSpeed, 0, 1)   (runSpeed = 6, the engine's table)
-        + turn[0]  x clamp(|slew| / TURN_REF, 0, 1)
-        + fire                                    (accumulated bloom, below)
-        + misc[0] if airborne                     (else floor x AIRBORNE_MULT)
-    clamped to [floor, maxDeviation ?? DEV_CAP_DEG], halved while aiming.
+    speedAcc = M·speed.b·[|throttle| > 0.01] + M·speed.c·[|strafe| > 0.01]
+    turnAcc  = M·turn.b·|mouseLookY|         + M·turn.c·|mouseLookX|
+    miscAcc  = M·misc.b·[jumping]
 
-`setFireDev a b c` is read as `[cap, addPerShot, subPerFrame]` — the reading
-that makes the Thompson (2.0/0.35/0.06) and the Colt (2.5/1.5/0.07) plausible
-at once — with the frame rate of the decay clock assumed.
+    per channel (cap = a·M, decay = d/M):
+      acc == 0:     state = max(state − decay, 0)
+      state < cap:  state = clamp(state + M·acc − decay, 0, cap)
+      else:         state = max(state − decay, cap)
 
-Free constants (`deviation.js`, each annotated at its declaration):
-`FIRE_DECAY_HZ = 60`, `TURN_REF = PI rad/s`, `AIM_FACTOR = 0.5`,
-`AIRBORNE_MULT = 4`, `DEV_CAP_DEG = 10`. Data used but provisionally indexed:
-which element of the four-wide `turn`/`speed` tuples applies, `misc[0]` as the
-airborne penalty, `fire`'s indexing above. The AT family's per-stance floors
-and `addDev*`/`subDev` terms are not extracted yet, so a Bazooka's cone sits
-at its `minDeviation` floor.
+    fire += fire.b per shot, clamped to fire.a; fire −= fire.c/M per tick
+    total = minDev + fire + speed + turn + misc
+
+The load-bearing corrections against the old approximation: minDev is NOT
+scaled by devMod (the stance ladder lives in the channels — raises ·M², caps
+·M, decays ÷M, so prone also *recovers* faster); the speed gates are binary
+on the 0.01 deadzone, never scaled by achieved velocity; miscDev is the jump
+channel, nothing else; and **aiming/zoom has no effect on deviation at all**
+— the former ×0.5 was an invention and is gone.
+
+Still OPEN, marked at their declarations in `deviation.js`: the tick cadence
+(`TICK_HZ = 60`, the viewer's sim rate — the engine's rule is per
+`handlePlayerInput` call, dt-free, client call rate untraced), the units of
+MouseLookX/Y (rad/s here; vanilla ships `setTurnDev 0 0 0 0`, so nothing can
+calibrate it), and the AT family's `minDeviation`/`maxDeviation` vocabulary
+(different console block, corpus doc §7 — floor-and-lid is the stand-in).
 
 ### What remains
 
@@ -1749,10 +1771,11 @@ at its `minDeviation` floor.
   authored crosshair icons.
 - Hand-weapon fire *sound* — the vehicle weapon-audio path keys off a
   vehicle's own sound scripts and does not yet know about kits.
-- The exact engine deviation rule. It is readable: the Ghidra corpus under
-  `features/bf1942-engine-reference/` is the same route that settled gravity
-  and the speed tables, and everything downstream of `DeviationModel.current()`
-  survives the swap untouched.
+- The first-person rig's *base* placement vector
+  (`BFSoldierTemplate+0x15c`) and the renderer-side handling of the 1P rig
+  (own projection? near plane?) — both OPEN in the corpus doc; until they
+  are read, `VIEWMODEL_BASE` stands in and the rig renders under the world
+  pass at the (zoom-modified) view FOV.
 
 ## 10. The deploy screen
 
