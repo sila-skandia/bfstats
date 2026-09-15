@@ -3279,6 +3279,11 @@ function warmEffects() {
     renderer.compileAsync(stand, camera, scene),
   ]).catch(() => {});
 }
+// What the `?shots` hook `__warmup` waits on: the level's warm-up (show()) and
+// the weapon in hand's (loadHandWeapon), plus the clock readings a check needs
+// to say how long the level's took. Neither promise gates anything the page
+// itself does.
+const warmups = { level: Promise.resolve(null), rig: Promise.resolve(), timing: {} };
 // Stick position, -1..1. Held keys drive it toward full deflection and it
 // springs back to centre when they are released, which is what the surfaces'
 // own `setAutomaticReset 1` does in the engine.
@@ -4181,7 +4186,7 @@ async function loadHandWeapon(name, soldierName = null) {
   rig.traverse(obj => {
     for (const m of [obj.material].flat()) if (m?.map) renderer.initTexture(m.map);
   });
-  renderer.compileAsync(rig, vmCamera, vmScene).catch(() => {}).then(() => {
+  warmups.rig = renderer.compileAsync(rig, vmCamera, vmScene).catch(() => {}).then(() => {
     if (token !== weaponToken) return;
     rig.visible = armsShown && !(optPilot.checked && (aircraft || car));
   });
@@ -5863,6 +5868,9 @@ deployScoreBtn.addEventListener('click', e => {
 async function show(entry) {
   worldReady = false;
   syncDeployReady();
+  const timing = warmups.timing = { showStart: performance.now() };
+  let settleLevelWarmup;
+  warmups.level = new Promise(resolve => { settleLevelWarmup = resolve; });
   const load = overlay.begin(entry.name);
   load.step('report', { label: 'level report', weight: 1 });
   // Weighted by what the bytes actually are: one ~70 MB scene against a couple
@@ -5886,6 +5894,7 @@ async function show(entry) {
   } catch (error) {
     if (tex.load === load) tex.load = null;
     load.fail(`could not load ${entry.name}: ${error.message}`);
+    settleLevelWarmup(null);
     throw error;
   }
   extras = report;
@@ -6002,7 +6011,13 @@ async function show(entry) {
   wireframe(optWire.checked);
   applyVisibility();
   // The fog is up, so the programs this links are the ones the frame wants.
-  loadEffectLibrary()?.then(library => library && warmEffects());
+  timing.warmStart = performance.now();
+  Promise.resolve(loadEffectLibrary())
+    .then(library => library && warmEffects())
+    .finally(() => {
+      timing.warmResolved = performance.now();
+      settleLevelWarmup(timing);
+    });
   const t = extras.terrain || {};
   const o = extras.objects || {};
   document.getElementById('stats').innerHTML =
@@ -6030,6 +6045,7 @@ async function show(entry) {
   // Geometry, collider and bindings are all up; only loose textures may still
   // be streaming, and the game deploys over those too.
   worldReady = true;
+  timing.worldReady = performance.now();
   syncDeployReady();
 
   // Every texture this level needs has been queued by now, so a queue that is
@@ -6251,6 +6267,28 @@ if (params.has('shots')) {
   // question the moving-vehicle port exists to answer: a tracer's position must
   // diverge from the muzzle it left, not travel with it.
   window.__effects = () => effects.stats();
+  // Rule 6's resolve signal (features/mesh-viewer-performance): every warm-up
+  // the page has started for this level and for the weapon in hand, awaited,
+  // then show()'s clock readings. A check snapshots `renderer.info.programs`
+  // after this and can then assert that play links nothing new.
+  window.__warmup = async () => {
+    await Promise.all([warmups.level, warmups.rig]);
+    return { ...warmups.timing };
+  };
+  // Any bundle in the library, played at a point: a check has to reach every
+  // impact, trail and explosion a level could ask for, not only the surfaces
+  // one rifle can hit from one spawn. The looping ones (the trails) run until
+  // stopped, so the handles are kept for `__stopEffects`.
+  const playedEffects = [];
+  window.__effectNames = () => effects.library?.names ?? [];
+  window.__playEffect = (name, position, normal = [0, 1, 0]) => {
+    const handle = effects.play(name, { position, normal });
+    if (handle) playedEffects.push(handle);
+    return !!handle;
+  };
+  window.__stopEffects = () => {
+    for (const handle of playedEffects.splice(0)) handle.stop();
+  };
   window.__getFire = () => ({
     groups: vehicleGuns.map(group => ({
       name: group.node.name,
