@@ -35,7 +35,6 @@ from pathlib import Path
 
 from . import con as con_mod
 from . import roster as roster_mod
-from .rfa import ArchivePool
 
 # `Objects/Items/<Nation>Kit[<Theatre>]/[<Unit>/]<Class>/Objects.con`.
 #
@@ -351,17 +350,16 @@ def parse_level_kits(text: str) -> dict[int, TeamLoadout]:
 def level_loadouts(level_paths: list[tuple[str, Path]]) -> dict[str, dict[int, TeamLoadout]]:
     """Per level, what each team is handed — every level archive with an `Init.con`.
 
-    Patch layers (`Berlin_003.rfa`) and archives that will not open are
-    skipped, the way `roster.add_levels` skips them.
+    Reads a level through `roster.level_pool`, so a numbered patch archive's
+    own `Init.con` overrides the base's the way the engine actually loads
+    it — see that function for why (five vanilla Pacific maps rebind their
+    US side to Marine kits this way). A level whose base archive will not
+    open at all is skipped, the way `roster.add_levels` skips it.
     """
     loadouts: dict[str, dict[int, TeamLoadout]] = {}
     for level_name, path in level_paths:
-        if roster_mod.LEVEL_PATCH.search(path.stem):
-            continue
-        pool = ArchivePool()
-        try:
-            pool.add(path)
-        except Exception:
+        pool = roster_mod.level_pool(path)
+        if pool is None:
             continue
         init = next((name for name in pool.names()
                      if name.lower().endswith("/init.con")

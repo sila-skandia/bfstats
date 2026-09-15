@@ -104,6 +104,59 @@ SOLDIER_NATION = re.compile(r"^(\w+?)(?:desert)?soldier$")
 LEVEL_PATCH = re.compile(r"_\d{3}$")
 
 
+def level_pool(path: Path) -> ArchivePool | None:
+    """A level's base archive, overlaid by its own numbered patches.
+
+    Refractor overlays a level with `<Stem>_NNN.rfa` siblings in the same
+    directory — `Wake_003.rfa` over `Wake.rfa`, mixed case and all (vanilla
+    ships `Berlin.rfa`, `Berlin_000.rfa` *and* `berlin_003.rfa` side by
+    side). `discover_levels` already strips these siblings from the level
+    list because they are not levels of their own; this is the other half.
+    Reading a level's `Init.con` (or any other level `.con`) has to see the
+    patch's copy when one exists, because that is the file the game loads.
+    Five vanilla `_003` layers rewrite the Pacific maps' US side to
+    `USMarineSoldier` and `USMarine_*` kits — the base `USSoldier`/`US_*`
+    lines are dead the moment the patch archive exists, yet were the only
+    ones this pipeline used to read.
+
+    The suffix is matched the same permissive way `discover_levels` and
+    `level.find_level_archives` already do — any run of digits after the
+    last underscore, not just three — because real installs are not
+    consistent: WarFront patches every level with a four-digit `_0351`
+    build stamp, and XPack1's `Salerno` carries both `_001` and `_003`.
+
+    `ArchivePool.add` is first-registered-wins, so the highest-numbered
+    patch is added first, lower numbers after, and the base last — base
+    entries only fill in what no patch overrides, the same overlay order
+    the engine itself applies. A patch that will not open is skipped and
+    the remaining layers still apply; the level itself is skipped (`None`)
+    only if the base archive won't open either, matching every other level
+    reader in this pipeline.
+    """
+    stem_lower = path.stem.lower()
+    patches: list[tuple[int, str, Path]] = []
+    for sibling in path.parent.iterdir():
+        if sibling == path or not sibling.is_file() or sibling.suffix.lower() != ".rfa":
+            continue
+        base, sep, suffix = sibling.stem.rpartition("_")
+        if not sep or not suffix.isdigit() or base.lower() != stem_lower:
+            continue
+        patches.append((int(suffix), sibling.name.lower(), sibling))
+    patches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+
+    pool = ArchivePool()
+    for _, _, patch_path in patches:
+        try:
+            pool.add(patch_path)
+        except Exception:
+            continue
+    try:
+        pool.add(path)
+    except Exception:
+        return None
+    return pool
+
+
 def nation_label(token: str) -> str | None:
     return NATION_LABELS.get(token.strip().lower().replace("_", ""))
 
@@ -196,15 +249,16 @@ def add_kits(roster: Roster, library: con_mod.ObjectLibrary) -> int:
 
 
 def add_levels(roster: Roster, level_paths: list[tuple[str, Path]]) -> int:
-    """Vehicle factions, map presence and theatre, from every level archive."""
+    """Vehicle factions, map presence and theatre, from every level archive.
+
+    Reads a level through `level_pool`, so a numbered patch's rebind of
+    `game.setTeamSkin` (the five vanilla Pacific maps) is what gets
+    credited, not the dead base binding underneath it.
+    """
     read = 0
     for level_name, path in level_paths:
-        if LEVEL_PATCH.search(path.stem):
-            continue
-        pool = ArchivePool()
-        try:
-            pool.add(path)
-        except Exception:
+        pool = level_pool(path)
+        if pool is None:
             continue
 
         names = pool.names()
