@@ -568,6 +568,7 @@ import { GroundVehicle } from './ground.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
+import { EffectLibrary, EffectPlayer } from './effects.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV } from './soldier.js';
@@ -2858,10 +2859,26 @@ const guns = new GunFire({
   scene, camera,
   viewportHeight: () => renderer.getDrawingBufferSize(_bufferSize).y,
 });
-// The tinted impact discs are a debug marker, not the authored effect —
-// retail plays a MaterialManager EffectBundle this page has not baked yet,
-// so by default a hit is recorded and nothing is invented at the spot.
+// The tinted impact discs are a debug marker, not the authored effect; the
+// authored effect is the EffectBundle the material table names, played out of
+// `_shared/effects.glb` by `effects` below. `?impacts=debug` draws the marker
+// as well, `?effects=off` leaves the library unloaded.
 guns.impactMarkers = params.get('impacts') === 'debug';
+// The game's own impact, trail and explosion bundles. Loaded once per mod
+// beside `damage.json`; a level change keeps it. Until it lands (or when it
+// is absent) a hit is recorded and nothing is drawn at the spot.
+// Mesh particles (the decals, the stone chips) are `lighting true` meshes and
+// get the same engine-combine shading as every other dynamic mesh here.
+const effects = new EffectPlayer({ scene, camera, onMesh: mesh => bindDynamicShading(mesh) });
+guns.effects = effects;
+let effectsLoad = null;
+function loadEffectLibrary() {
+  if (effectsLoad || params.get('effects') === 'off') return effectsLoad;
+  effectsLoad = EffectLibrary.load(`${MAPS_BASE}/_shared/effects.glb${bust()}`, loader)
+    .then(library => { effects.library = library; return library; })
+    .catch(err => { console.warn('effects library unavailable', err); return null; });
+  return effectsLoad;
+}
 let vehicleGuns = [];
 
 function collectGuns() {
@@ -2975,6 +2992,9 @@ function buildCollider(root) {
   guns.collider = collider;
   guns.damageEffects = damageTables?.effects || null;
   guns.projectileMaterials = damageTables?.projectiles || null;
+  guns.materials = damageTables?.materials || null;
+  effects.clear();
+  loadEffectLibrary();
   return { heightfield, statics };
 }
 // Stick position, -1..1. Held keys drive it toward full deflection and it
@@ -5512,6 +5532,8 @@ function frame(dt) {
   // Unconditional: rounds already in the air have to finish their flight even
   // if the trigger, the pilot mode or the whole aircraft has gone away.
   guns.advance(dt);
+  effects.firstPerson = guns.firstPerson;
+  effects.advance(dt);
   applyVisibility();
   updateTextureFade();
   advanceSim(dt);
@@ -5592,6 +5614,7 @@ if (params.has('shots')) {
   // Gun state, for headless checks. Muzzle world positions are what settles the
   // question the moving-vehicle port exists to answer: a tracer's position must
   // diverge from the muzzle it left, not travel with it.
+  window.__effects = () => effects.stats();
   window.__getFire = () => ({
     groups: vehicleGuns.map(group => ({
       name: group.node.name,
@@ -5746,6 +5769,14 @@ if (params.has('shots')) {
     crosshairGap: crosshairEl.style.getPropertyValue('--ch-gap') || null,
     fov: camera.fov,
   });
+  // Stand the man somewhere exact — in front of a known wall — so a burst can
+  // be fired at a surface the assertion names rather than wherever a flag
+  // happened to put him.
+  window.__teleport = (x, y, z, yaw = 0) => {
+    if (!soldier) return false;
+    soldier.spawn(x, y, z, yaw);
+    return true;
+  };
   window.__setTrigger = on => {
     triggerHeld = !!on;
     if (on) clickQueued = true;

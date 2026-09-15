@@ -39,6 +39,7 @@ import { impactEffect, materialFamily } from './collision.js';
 // `physics.js` imports nothing, so taking the constant from there costs this
 // module no new dependency beyond the one line.
 import { GRAVITY } from './physics.js';
+import { damageFactor } from './effects-core.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -230,6 +231,16 @@ export class GunFire {
     // it just cannot name the effect the game would have played.
     this.damageEffects = null;
     this.projectileMaterials = null;
+    // `damage.json`'s materials table, for the base damage a round does
+    // (`MaterialManager.materialDamage` on the attacker's material) before
+    // the projectile's own distance falloff.
+    this.materials = null;
+    // An `EffectPlayer` (effects.js) holding the baked impact library. With
+    // one set, a hit plays the authored bundle the material table names —
+    // the ricochet burst, the dust, the bullet-hole decal — and a projectile
+    // that declares a trail bundle drags the real one. Null keeps the old
+    // behaviour: the hit is recorded and the debug disc, if enabled, marks it.
+    this.effects = null;
     // Draw the tinted impact stand-in discs. False everywhere by default:
     // hits are recorded and reported either way, but the disc is a debug
     // marker, not the authored effect, and until the EffectBundles are baked
@@ -270,6 +281,7 @@ export class GunFire {
     this.projectiles.length = 0;
     for (const puff of this.puffs) this.scene.remove(puff.mesh);
     this.puffs.length = 0;
+    for (const shot of this.projectiles) shot.run?.stop();
     for (const impact of this.impacts) {
       this.scene.remove(impact.mesh);
       impact.mesh.visible = false;
@@ -680,7 +692,7 @@ export class GunFire {
     // points down -Z — the muzzle's own forward.
     mesh.quaternion.copy(_aim);
     this.scene.add(mesh);
-    this.projectiles.push({
+    const shot = {
       mesh,
       group,
       velocity,
@@ -700,10 +712,24 @@ export class GunFire {
       gravityScale: (speed / authored) ** 2,
       ttl: Math.min(spec.timeToLive || 10, 20),
       trail: group.trailQuad ? spec.trail : null,
+      run: null,
       age: 0,
       travelled: 0,
       sincePuff: 0,
-    });
+    };
+    // The authored trail — `e_rocketFume` riding the bazooka round as an
+    // `addTemplate` child: a looping smoke emitter at 100/s whose puffs
+    // inherit the rocket's 50 m/s and `drag 20` to a stop, and a motor flame
+    // that burns out after a second. Attached, so the bundle's frame is the
+    // round's own each frame. The single-sprite stand-in stays for GLBs and
+    // pages without the library.
+    if (this.effects && spec.trailBundle && this.effects.has(spec.trailBundle)) {
+      shot.run = this.effects.play(spec.trailBundle, {
+        attach: { object: mesh, velocity: () => shot.velocity },
+      });
+      if (shot.run) shot.trail = null;
+    }
+    this.projectiles.push(shot);
   }
 
   #spawnPuff(shot) {
@@ -781,10 +807,14 @@ export class GunFire {
     return group.owner;
   }
 
-  /** Record a hit, name the effect the game would play, and mark the spot. */
-  #impact(group, spec, hit) {
+  /** Record a hit, name the effect the game would play, and play or mark it. */
+  #impact(group, spec, hit, velocity = null, travelled = 0) {
     const attacker = this.attackerMaterial(spec);
     const family = materialFamily(hit.material);
+    // `Projectile::getDamage`: the attacker material's `materialDamage`, then
+    // the falloff over the distance the round has flown since it left.
+    const base = this.materials?.[attacker]?.damage ?? null;
+    const factor = damageFactor(spec?.damage, travelled);
     const record = {
       kind: hit.kind,
       material: hit.material,
@@ -802,9 +832,21 @@ export class GunFire {
       // would look like "the guns stopped working" rather than like a bug.
       owner: hit.owner,
       firer: group.owner,
+      travelled,
+      damageFactor: factor,
+      damage: base === null ? null : base * factor,
+      played: false,
     };
     this.hits.unshift(record);
     if (this.hits.length > 16) this.hits.length = 16;
+    if (this.effects && record.effect) {
+      const handle = this.effects.play(record.effect, {
+        position: record.point,
+        normal: record.normal,
+        speed: velocity ? velocity.length() : 0,
+      });
+      record.played = !!handle;
+    }
     this.#spawnImpact(hit, family);
     this.onImpact?.(record, hit);
   }
@@ -932,7 +974,10 @@ export class GunFire {
         // frame drawn is the round stopping rather than the round past it.
         tracer.mesh.position.set(struck.x, struck.y, struck.z)
           .addScaledVector(_step, -tracer.lead);
-        this.#impact(tracer.group, tracer.group.stats.projectile, struck);
+        // Distance flown to the surface itself: the frame's step overshoots
+        // it, and a slow frame at 1000 m/s overshoots it by tens of metres.
+        this.#impact(tracer.group, tracer.group.stats.projectile, struck,
+                     tracer.velocity, tracer.travelled - step + struck.t);
         this.scene.remove(tracer.mesh);
         tracer.mesh.visible = false;
         tracer.pool.push(tracer.mesh);
@@ -982,7 +1027,9 @@ export class GunFire {
                                  shot.velocity, step, 0);
       if (struck) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
-        this.#impact(shot.group, shot.group.stats.projectile, struck);
+        this.#impact(shot.group, shot.group.stats.projectile, struck,
+                     shot.velocity, shot.travelled - step + struck.t);
+        shot.run?.stop();
         this.scene.remove(shot.mesh);
         shot.mesh.visible = false;
         shot.group.projectilePool.push(shot.mesh);
@@ -990,6 +1037,15 @@ export class GunFire {
         continue;
       }
       if (shot.age > shot.ttl || shot.travelled > shot.group.maxRange) {
+        shot.run?.stop();
+        // `Projectile::detonate` at the end of `timeToLive`: the
+        // `endEffectTemplate`, stood up on world up (`startEndEffect` passes
+        // (0, 1, 0)). Most rounds declare none and simply vanish.
+        const spec = shot.group.stats.projectile;
+        if (this.effects && spec?.endEffect) {
+          const at = shot.mesh.position;
+          this.effects.play(spec.endEffect, { position: [at.x, at.y, at.z], normal: [0, 1, 0] });
+        }
         this.scene.remove(shot.mesh);
         shot.mesh.visible = false;
         shot.group.projectilePool.push(shot.mesh);

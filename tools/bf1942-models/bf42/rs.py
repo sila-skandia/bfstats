@@ -63,6 +63,11 @@ class Shader:
     alpha_test: float | None = None
     blend_src: str | None = None
     blend_dest: str | None = None
+    # `materialDiffuse r g b;` — the fixed-function material colour the engine
+    # modulates the texture with (DL-1: MODULATE2X(TEXTURE, DIFFUSE)). White on
+    # 3202 of vanilla's 3523 declarations; the bullet-hole decals are the
+    # exception that matters, at 0.388 grey.
+    diffuse: tuple[float, float, float] | None = None
 
     @property
     def additive(self) -> bool:
@@ -97,6 +102,9 @@ def _brace_span(text: str, open_index: int) -> tuple[int, int]:
     return open_index + 1, len(text)
 
 
+_DIFFUSE = re.compile(r"materialDiffuse\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)", re.IGNORECASE)
+
+
 def parse(text: str) -> dict[str, Shader]:
     """Every shader block in a `.rs`, keyed by declared name and by bare suffix.
 
@@ -125,6 +133,11 @@ def parse(text: str) -> dict[str, Shader]:
         if cm := _CULLMODE.search(body):
             if cm.group(1).lower() == "none":
                 shader.twosided = True
+        if md := _DIFFUSE.search(body):
+            try:
+                shader.diffuse = (float(md.group(1)), float(md.group(2)), float(md.group(3)))
+            except ValueError:
+                pass
 
         shaders[name.lower()] = shader
         # `Sherman_TrackL_M1_Material4` is also addressable as `Material4`.

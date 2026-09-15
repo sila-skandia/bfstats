@@ -293,6 +293,11 @@ class Assembler:
         # one file.
         self.first_person = first_person
         self.lightmaps = lightmaps or {}
+        # Multiply a material's texture by its `.rs` `materialDiffuse`. Off for
+        # the model and map exports, whose lighting is calibrated on white
+        # (ledger DL-3); on for the effect library, where the decals' 0.388 grey
+        # is the difference between a bullet hole and a pale smudge.
+        self.apply_material_diffuse = False
         self._visible_springs = True
         self._shader_cache: dict[str, dict[str, rs.Shader]] = {}
         self._texture_cache: dict[str, int | None] = {}
@@ -448,9 +453,11 @@ class Assembler:
         # `lighting false`, which is how `TLight_m1` — the tracer streak — says
         # it is a light source rather than a lit surface.
         unlit = unlit or not shader.lighting
+        diffuse = (shader.diffuse if self.apply_material_diffuse and shader.diffuse
+                   else None)
         key = (texture_path, shader.twosided, shader.transparent,
                shader.alpha_test, unlit, emissive_floor, shader.additive,
-               shader.texture_fade)
+               shader.texture_fade, diffuse)
         if key in self._material_cache:
             return self._material_cache[key]
 
@@ -458,6 +465,7 @@ class Assembler:
         index = builder.add_material(
             name=shader.name,
             texture=texture,
+            base_color=(*diffuse, 1.0) if diffuse else (1.0, 1.0, 1.0, 1.0),
             double_sided=shader.twosided,
             # An additive shader's alphaTestRef is a fixed-function cutoff the
             # engine applies *on top of* the blend; keeping MASK would kill the
@@ -861,14 +869,18 @@ class Assembler:
     # -- effects (muzzle flashes) ------------------------------------------- #
 
     def _sprite_quad_mesh(self, builder: gltf.GlbBuilder, texture_name: str,
-                          report: Report) -> int | None:
-        """A unit quad carrying one SpriteParticle texture, additively blended.
+                          report: Report, *, additive: bool = True) -> int | None:
+        """A unit quad carrying one SpriteParticle texture.
 
         The engine billboards these toward the camera; the viewer does the
         same at run time, so the quad's authored plane (XY, facing +Z) only
-        has to be *a* plane.
+        has to be *a* plane. Additive is the flash and spark case (`destBlendMode
+        BMOne`); the impact library also bakes source-over quads for smoke and
+        dust, which the muzzle-flash path never needed.
         """
-        key = texture_name.lower()
+        # Keyed by bare texture name for the additive case the flash path
+        # has always used (and tests pre-seed), with a suffix for source-over.
+        key = texture_name.lower() + ("" if additive else "#alpha")
         if key in self._sprite_mesh_cache:
             return self._sprite_mesh_cache[key]
         texture = self._texture_index(builder, f"texture/{texture_name}", report)
@@ -876,11 +888,11 @@ class Assembler:
             self._sprite_mesh_cache[key] = None
             return None
         material = builder.add_material(
-            name=f"fx {texture_name}",
+            name=f"fx {texture_name}" + ("" if additive else " alpha"),
             texture=texture,
             double_sided=True,
             blend=True,
-            additive=True,
+            additive=additive,
             # Full-bright: a muzzle flash is light, and shading it against the
             # viewer's sun would dim exactly the thing being demonstrated.
             unlit=True,
@@ -974,6 +986,80 @@ class Assembler:
                 extras={"templateKind": payload.kind, "effect": effect},
             )))
         return nodes
+
+    def bake_effect_library(self, builder: gltf.GlbBuilder, names,
+                            report: Report) -> tuple[list[int], dict]:
+        """Every named EffectBundle as a hidden template subtree, all specs on.
+
+        One root node per bundle, named for it; under it the bundle's emitters
+        as nodes (mesh: the sprite quad or the Particle's own `.sm`) carrying
+        the full `effects.emitter_spec` in `extras.effectEmitter`, and nested
+        bundles as intermediate nodes keeping their authored placement. The
+        viewer clones a subtree per impact, puts the engine's frame on the
+        root, and the hierarchy places every emitter. Nothing here is drawn in
+        place: these are spawn templates, like the muzzle flashes.
+
+        Returns the root node indices and an index `{bundle: {emitters, ...}}`
+        for the manifest.
+        """
+        from . import effects as effects_mod
+        roots: list[int] = []
+        index: dict = {}
+        missing: list[str] = []
+
+        def build(node: effects_mod.BundleNode, depth: int) -> int | None:
+            children: list[int] = []
+            for ref, emitter, payload, spec in node.emitters:
+                particle = spec["particle"]
+                mesh_index: int | None
+                if particle["kind"] == "sprite":
+                    mesh_index = self._sprite_quad_mesh(
+                        builder, particle["texture"], report,
+                        additive=particle["blend"] == "add")
+                else:
+                    mesh_index, _ = self._mesh_index(builder, particle["geometry"], report)
+                if mesh_index is None:
+                    missing.append(f"{node.template.name}/{emitter.name}")
+                    continue
+                children.append(builder.add_node(gltf.Node(
+                    name=ref.template,
+                    translation=ref.position,
+                    rotation=gltf.quat_from_ypr(*ref.rotation),
+                    mesh=mesh_index,
+                    extras={"templateKind": payload.kind, "effectEmitter": spec},
+                )))
+            for nested in node.bundles:
+                child = build(nested, depth + 1)
+                if child is not None:
+                    children.append(child)
+            if not children:
+                return None
+            props = node.template.effect_props
+            extras: dict = {"templateKind": node.template.kind,
+                            "effectBundle": {"name": node.template.name}}
+            if (raw := props.get("timetolive")) and (ttl := con_mod.crd4(raw.split()[0])):
+                extras["effectBundle"]["timeToLive"] = ttl
+            return builder.add_node(gltf.Node(
+                name=node.template.name,
+                translation=node.position,
+                rotation=gltf.quat_from_ypr(*node.rotation),
+                children=children,
+                extras=extras,
+            ))
+
+        for name in sorted(set(names), key=str.lower):
+            tree = effects_mod.bundle_tree(self.library, name)
+            if tree is None:
+                missing.append(name)
+                continue
+            root = build(tree, 0)
+            if root is None:
+                missing.append(name)
+                continue
+            roots.append(root)
+            index[tree.template.name] = {"emitters": tree.count()}
+        report.part_tree.extend(f"effect {name}" for name in index)
+        return roots, {"bundles": index, "missing": missing}
 
     def _effect_bundle_node(self, builder: gltf.GlbBuilder,
                             template: con_mod.ObjectTemplate, report: Report, *,
@@ -1091,6 +1177,30 @@ class Assembler:
             spec["timeToLive"] = projectile.time_to_live
         if projectile.gravity_modifier is not None:
             spec["gravity"] = projectile.gravity_modifier
+        # What the round is worth on arrival. `material` keys the
+        # MaterialManager's effect and damage tables; the falloff triple is
+        # `Projectile::getDamage`'s; `radius`/`material2` are the splash.
+        if projectile.material is not None:
+            spec["material"] = projectile.material
+        damage = {
+            key: value for key, value in {
+                "minDamage": projectile.min_damage,
+                "distToStartLoseDamage": projectile.dist_to_start_lose_damage,
+                "distToMinDamage": projectile.dist_to_min_damage,
+                "radius": projectile.explosion_radius,
+                "material2": projectile.material2,
+            }.items() if value is not None
+        }
+        if damage:
+            spec["damage"] = damage
+        # The bundles the round plays for itself, by name; the effect library
+        # (`extract_effects.py`) bakes them and the viewer plays them when it
+        # has it, falling back to the single trail sprite below when not.
+        from . import effects as effects_mod
+        if trail_bundle := effects_mod.projectile_trail_bundle(self.library, projectile):
+            spec["trailBundle"] = trail_bundle
+        if projectile.end_effect_template:
+            spec["endEffect"] = projectile.end_effect_template
         if body is not None and body.geometry:
             spec["kind"] = ("rocket"
                             if self._projectile_has_rocket_engine(projectile)
