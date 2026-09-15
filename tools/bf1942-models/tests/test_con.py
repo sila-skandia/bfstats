@@ -496,6 +496,29 @@ ObjectTemplate.addFireArmsPosition -2.6/0.21/1.8 1.6/0/0
                           ((-2.6, 0.21, 1.8), (1.6, 0.0, 0.0))],
                          guns.fire_arms_positions)
 
+    def test_load_sound_script_rides_out_on_the_weapon_stats(self) -> None:
+        # `loadSoundScript` binds to whichever template is active, exactly as
+        # `parse_sound_scripts` reads it — K98/Objects.con declares two
+        # HandFireArms and each keeps its own script. The path is kept
+        # relative and forward-slashed; resolving it against the `.con`'s
+        # folder is the sound extraction's job, not the parser's.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/HandWeapons/K98/Objects.con",
+            """
+ObjectTemplate.create HandFireArms K98
+ObjectTemplate.loadSoundScript Sounds\\K98.ssc
+
+ObjectTemplate.create HandFireArms K98Sniper
+ObjectTemplate.loadSoundScript Sounds/K98.ssc
+""",
+        )
+        rifle = library.object("K98")
+        self.assertEqual("Sounds/K98.ssc", rifle.sound_script)
+        self.assertEqual("Sounds/K98.ssc",
+                         library.object("K98Sniper").sound_script)
+        self.assertEqual("Sounds/K98.ssc", rifle.weapon_stats()["soundScript"])
+
     def test_tank_recoil_and_crd_time_to_live_are_read(self) -> None:
         library = ObjectLibrary()
         library.add_con(

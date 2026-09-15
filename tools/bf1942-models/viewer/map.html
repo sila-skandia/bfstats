@@ -2138,6 +2138,26 @@ async function soundBuffer(dir, relPath) {
   }
 }
 
+/**
+ * Same cache, models tree: the hand-weapon fire samples live under
+ * `models/sounds/`, not in any map directory. The `models:` prefix keeps the
+ * key out of the `${dir}/${relPath}` namespace above — a map directory cannot
+ * contain a colon, so the two families can never collide in the cache.
+ */
+async function modelSoundBuffer(relPath) {
+  const key = `models:${relPath}`;
+  if (audioBufferCache.has(key)) return audioBufferCache.get(key);
+  ensureListener();
+  try {
+    const buf = await audioLoader.loadAsync(`${MODELS_BASE}/${relPath}${bust()}`);
+    audioBufferCache.set(key, buf);
+    return buf;
+  } catch (e) {
+    console.warn(`Could not load sound ${key}:`, e);
+    return null;
+  }
+}
+
 function disposeSounds() {
   soundsGeneration++;
   disposeEngineAudio();
@@ -2479,6 +2499,16 @@ function updateAudio(dt = 0) {
       quaternion: weaponWorldQuat,
       listenerPosition: camera.position,
     });
+  }
+  if (handFireBus) {
+    // The hand-shot bus tracks the master like the engine bus does, and is
+    // deliberately not ducked: the duck exists so a cockpit engine drowns the
+    // surf, and the weapon at your own shoulder is the one thing louder.
+    const target = master * WEAPON_HEADROOM;
+    if (Math.abs(handFireBus.gain.value - target) > 1e-4) {
+      handFireBus.gain.setTargetAtTime(
+        target, audioListener.context.currentTime, 0.05);
+    }
   }
   if (ambientAudio) {
     const base = extras.sounds?.ambient?.volume ?? 0.6;
@@ -3524,6 +3554,7 @@ async function loadHandWeapon(name) {
     reload: 0,       // seconds left of a reload in progress
     cool: 0,         // seconds until a semi-auto weapon has cycled
     pulse: false,    // a one-frame trigger pulse is in flight
+    fire: null,      // { spec, buffer } once loadHandFireSound resolves
     model: new DeviationModel({
       deviation: data?.deviation, zoom: data?.zoom, runSpeed: GAIT_SPEED.run,
     }),
@@ -3548,6 +3579,7 @@ async function loadHandWeapon(name) {
     hw.group = found[0] || null;
   }
   handWeapon = hw;
+  loadHandFireSound(hw);
   updateAmmoHud();
   return hw;
 }
@@ -3571,12 +3603,78 @@ function startReload() {
   return true;
 }
 
-// Every round the soldier's own gun fires: the magazine empties, the cone
-// blooms, and the view kicks. `onShot` fires for vehicle guns too, so the
-// group is checked first.
+// --- the shot it makes -------------------------------------------------------
+//
+// Per-round one-shots from `models/sounds/<Name>.mp3` — the fire sample
+// `extract_weapon_sounds.py` picked out of the weapon's own `.ssc`, with the
+// authored volume, pitch jitter and time gate riding alongside in
+// `weapons.json`. The vehicle guns hold a muted loop and gate it with gain
+// because their fire is authored as a loop patch on a vehicle that outlives
+// any burst; a hand weapon's round is an event, so each shot gets its own
+// BufferSource into one shared bus. Overlap comes free — a Thompson's 0.1 s
+// loop cycle at 700 rpm stacks instead of restarting, so rapid fire never
+// cuts its own tail off — and the bus follows the master volume from
+// updateAudio like every other voice on the page. Decodes go through the
+// shared cache, so the one-decode-per-wav rule holds here too.
+let weaponSoundsIndex = null;   // promise for models/sounds/weapons.json
+let handFireBus = null;         // every hand-shot voice sums here
+
+function weaponSoundsManifest() {
+  if (!weaponSoundsIndex) {
+    weaponSoundsIndex = fetch(`${MODELS_BASE}/sounds/weapons.json${bust()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .catch(() => null);
+  }
+  return weaponSoundsIndex;
+}
+
+/** Decode the weapon's fire sample; inert until a shot actually plays it. */
+async function loadHandFireSound(hw) {
+  const manifest = await weaponSoundsManifest();
+  const spec = manifest?.weapons?.[hw.name];
+  if (!spec) return;   // a quiet weapon (binoculars), or a mod without the tree
+  const buffer = await modelSoundBuffer(`sounds/${spec.file}`);
+  // Loading is inert, so a superseded weapon costs nothing; the guard only
+  // keeps a slow decode from handing a Thompson its predecessor's report.
+  if (buffer && handWeapon === hw) hw.fire = { spec, buffer };
+}
+
+function playHandFire(fire) {
+  if (!fire || !audioListener || masterVolume() <= 0) return;
+  const ctx = audioListener.context;
+  if (!handFireBus) {
+    handFireBus = ctx.createGain();
+    handFireBus.gain.value = masterVolume() * WEAPON_HEADROOM;
+    handFireBus.connect(audioListener.getInput());
+  }
+  const source = ctx.createBufferSource();
+  source.buffer = fire.buffer;
+  // The same per-play jitter DICE puts on the loops, applied per shot: a
+  // burst reads as many rounds rather than one report stuttering.
+  const [up = 0, down = 0] = fire.spec.randomStartPitch || [];
+  source.playbackRate.value = 1 + (Math.random() * (up + down) - down);
+  const gain = ctx.createGain();
+  // The M1's report is authored at volume 10 against the game mixer's own
+  // headroom; Web Audio has none to give, so the manifest keeps the authored
+  // number and the clamp lives here, next to the bus that motivates it.
+  gain.gain.value = Math.min(fire.spec.volume ?? 1, 1);
+  source.connect(gain);
+  gain.connect(handFireBus);
+  source.onended = () => {
+    try { source.disconnect(); gain.disconnect(); } catch (_) {}
+  };
+  // `delay` is the script's own `Volume <- Time` gate — the knife's swish
+  // lands 0.4 s into the swing, and starting it early would un-author that.
+  try { source.start(ctx.currentTime + (fire.spec.delay || 0)); } catch (_) {}
+}
+
+// Every round the soldier's own gun fires: the report plays, the magazine
+// empties, the cone blooms, and the view kicks. `onShot` fires for vehicle
+// guns too, so the group is checked first.
 guns.onShot = group => {
   const hw = handWeapon;
   if (!hw || group !== hw.group) return;
+  playHandFire(hw.fire);
   if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
   hw.model.onShot();
   hw.cool = 1 / (hw.data?.roundOfFire || 1);
