@@ -235,6 +235,29 @@ each — 0 lower body, 1 upper body, 2 camera-shake triggers. Slot 2 is proven b
 
 ---
 
+## Hand-weapon deviation & first-person view (settled 2026-09-15)
+
+The mesh-viewer's firing-feel and 1P-placement approximations, checked against
+`HandFireArms::updateDeviation` (client `0x00551f50`, decompiled in full; lnxded
+`0x08293e80`) and the `BFSoldier` view chain. Full write-up with the formula and
+every address: [subsystems/handweapon-view-and-deviation.md](subsystems/handweapon-view-and-deviation.md).
+
+| # | Assumption in the viewer | Status | Evidence |
+|---|---|---|---|
+| DEV-1 | Channels combine additively | **confirmed** | `0x00551f50` epilogue: total = minDev + fire + speed + turn + misc (+ AI one-shot) |
+| DEV-2 | `dev = min·devMod[stance] + …` | **refuted** | minDev is added unscaled; devMod scales the dynamic channels only — caps ·M, raises ·M² (double multiply read in both binaries), decays ÷M |
+| DEV-3 | Aiming/zoom halves deviation (×0.5) | **refuted** | no zoom/aim term anywhere between accumulators and total, either binary; zoom affects FOV + mouse scale only |
+| DEV-4 | Fire bloom adds per shot and decays linearly | **confirmed** | `FireArms::Fire` lnxded 0x0828a2aa: fire += fireDev.b, clamp fireDev.a; decay fireDev.c/M per tick (hand), fireDev.c (vehicle base 0x00539620) |
+| DEV-5 | Decay clock is 60 Hz | **refuted** | no dt in updateDeviation; one linear step per `BFSoldier::handlePlayerInput` call (lnxded call site 0x08274da2). Exact client cadence open |
+| DEV-6 | speed/turn terms scale with analog input | **confirmed for turn only** | turn: ·\|MouseLookX/Y\| (channels 4/5); speed: binary gates \|throttle\|>0.01, \|yaw\|>0.01 with constant increments |
+| DEV-7 | miscDev applies to airborne/swim/vehicle | **settled: jump only** | bool arg = input[9] (c_PIAction) ≠ 0 && soldier+0x3c8==0, lnxded 0x08274d7d; Fire=8 anchor verified client-side (`FUN_0053af70`) |
+| VIEW-1 | soldierCameraPosition displaces the camera | **refuted** | it displaces the 1P arms+weapon rig: setZoom (lnxded 0x082881a0) → soldier targetOffset +0x248 → eased +0x254 → `BFSoldier::updateAnimations` → `Skeleton::transform` (0x083420f0). Camera eye unchanged |
+| VIEW-2 | hip↔zoom snaps | **refuted** | `BFSoldier::handleVisualUpdate` 0x08270fd0: cur += (target−cur)·0.25 per visual update (const 0x086c08ac), no dt; FOV factor 0.7/0.3 blend, snap at Δ≤0.001, applied via applyFovModifier 0x0826d490 |
+| ZOOM-1 | Right-mouse zoom is a hold state | **refuted** | press-toggle: altFireOnce edge filter client 0x00500901 (AltFire bit 23 masked unless fresh press); camera mode 0↔2 switch 0x004fc8b6 |
+| ZOOM-2 | Firing breaks zoom | **confirmed conditionally** | only when `UnZoomBetweenFireTime` > 0 (tmpl +0x3d0 client / +0x268 lnxded): pending flag +0x20c, un/re-zoom in `FireArms::handleUpdate` 0x08288890. Reload and weapon switch always unzoom; movement never does (no path found) |
+
+---
+
 ## Other formats
 
 Add a section per format as it comes under investigation. Keep the same shape:
