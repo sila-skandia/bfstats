@@ -619,8 +619,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 8000);
 camera.position.set(0, 80, 0);
 // In the scene graph, not just pointed at it, so things may hang off it: the
-// on-foot viewmodel is a child of the camera, and a parentless camera's
-// children are never rendered at all.
+// audio listener is a child of the camera, and a parentless camera's
+// children are never rendered at all. (The on-foot arms are not — they hang
+// off `vmRoot`, a camera-following node in the near pass's own scene.)
 scene.add(camera);
 
 const hemi = new THREE.HemisphereLight(0xe8dcc0, 0x5a4a32, 1.35);
@@ -3556,11 +3557,42 @@ function viewmodelRigFor(weapon, soldier) {
 // The rig and everything in it render in their own pass over a cleared depth
 // buffer (frame(), below) so a wall pressed against the chest can never
 // truncate the barrel — the game's equivalent is drawing 1P parts in their
-// own pass (§11 step 6). A light only reaches a pass whose camera mask it
-// shares, so the two scene lights are enrolled in the layer here.
+// own pass (§11 step 6).
 const VIEWMODEL_LAYER = 1;
-hemi.layers.enable(VIEWMODEL_LAYER);
-sun.layers.enable(VIEWMODEL_LAYER);
+// The pass has a scene of its own, not a layer mask over the world.
+// `WebGLRenderer.render` walks every node of whatever scene it is handed —
+// `updateMatrixWorld` and `projectObject` across all ~5,100 level objects —
+// before the mask drops any of them, and that second walk to find one rig
+// was 9% of the frame (features/mesh-viewer-performance, rule 1). The arms
+// hang off `vmRoot`, whose world matrix IS the main camera's: both ways
+// three arrives at a matrix — the renderer's top-down `updateMatrixWorld`
+// and a muzzle's bottom-up `updateWorldMatrix(true)` when a shot asks where
+// the barrel is — read the camera's pose fresh, so the rig sits where the
+// camera is this frame, not last.
+const vmScene = new THREE.Scene();
+const vmRoot = new THREE.Group();
+vmRoot.name = 'viewmodel root';
+vmRoot.matrixAutoUpdate = false;
+vmRoot.updateMatrixWorld = function () {
+  camera.updateWorldMatrix(true, false);
+  this.matrixWorld.copy(camera.matrixWorld);
+  for (const child of this.children) child.updateMatrixWorld(true);
+};
+vmRoot.updateWorldMatrix = function (updateParents, updateChildren) {
+  camera.updateWorldMatrix(true, false);
+  this.matrixWorld.copy(camera.matrixWorld);
+  if (!updateChildren) return;
+  for (const child of this.children) child.updateWorldMatrix(false, true);
+};
+vmScene.add(vmRoot);
+// A light reaches only the scene it is in, so the pass carries proxies of
+// the two world lights; frame() copies colour, intensity and position across
+// before each pass, so applyLighting() and show() keep writing the originals.
+const vmHemi = new THREE.HemisphereLight();
+const vmSun = new THREE.DirectionalLight();
+vmHemi.layers.enable(VIEWMODEL_LAYER);
+vmSun.layers.enable(VIEWMODEL_LAYER);
+vmScene.add(vmHemi, vmSun);
 // The near pass's own camera: it sees only the rig's layer and copies the
 // main camera's matrices each frame (frame(), below). matrixAutoUpdate off —
 // the copied world matrix IS its pose; letting three recompose it from an
@@ -3728,7 +3760,7 @@ function disposeHandWeapon() {
     const index = guns.groups.indexOf(hw.group);
     if (index >= 0) guns.groups.splice(index, 1);
   }
-  camera.remove(hw.rig);
+  vmRoot.remove(hw.rig);
   // The mixer first, while its bindings still resolve, then the GPU half —
   // a skinned rig also owns bone textures its skeleton has to give back.
   if (hw.mixer) {
@@ -3752,7 +3784,7 @@ function disposeHandWeapon() {
 
 /** Load the weapon into hand — the arms rig where one is extracted for
  *  `soldierName` holding it, the bare `name`.glb where not — hang it off the
- *  camera and index its gun. The template name must not be called `soldier`:
+ *  camera-following `vmRoot` and index its gun. The template name must not be called `soldier`:
  *  that would shadow the live soldier the guard and `platformVelocity` read. */
 async function loadHandWeapon(name, soldierName = null) {
   disposeHandWeapon();
@@ -3850,7 +3882,7 @@ async function loadHandWeapon(name, soldierName = null) {
       m.needsUpdate = true;
     }
   });
-  camera.add(rig);
+  vmRoot.add(rig);
   // The load can resolve after its owner has already climbed into a seat —
   // spawn beside a jeep and press E inside the fetch — and a viewmodel must
   // not materialise over a windscreen. `exitVehicle` shows it again.
@@ -5717,8 +5749,8 @@ function frame(dt) {
   updateAudio(dt);
   updateSky();
   renderer.render(scene, camera);
-  // The near pass: everything on VIEWMODEL_LAYER — the arms rig and the
-  // muzzle emitters inside it — drawn again over a cleared depth buffer, so
+  // The near pass: everything in vmScene — the arms rig and the muzzle
+  // emitters inside it, all on VIEWMODEL_LAYER — drawn over a cleared depth buffer, so
   // the world can occlude none of it (§11 step 6). Retail does exactly this:
   // `Renderer_drawView` (0x004662c0) draws the world, clears depth to 1.0,
   // forces the finest mip and calls `StandardMeshRenderer::drawFov`
@@ -5737,14 +5769,23 @@ function frame(dt) {
     renderer.autoClear = false;
     renderer.clearDepth();
     // Two traps in an overlay pass, both learned the hard way. Three draws
-    // `scene.background` in EVERY render call, autoClear or not — left in
-    // place, this pass painted the fog-coloured backdrop over the entire
-    // world each frame, and every on-foot map read as one wall of colour.
-    // And the pass gets its own camera rather than flipping the main
-    // camera's layer mask, so nothing the pass does can leak into the
-    // world render's view of that camera.
-    const worldBackground = scene.background;
-    scene.background = null;
+    // `scene.background` in EVERY render call, autoClear or not — rendered
+    // over the world scene, this pass painted the fog-coloured backdrop over
+    // the entire frame, and every on-foot map read as one wall of colour.
+    // `vmScene` has no background to paint (and nothing to walk but the rig:
+    // the reason it exists, see its declaration). And the pass gets its own
+    // camera rather than flipping the main camera's layer mask, so nothing
+    // the pass does can leak into the world render's view of that camera.
+    // The fog is the world's own object, shared, so the rig's materials
+    // compile and shade against exactly the fog they always did.
+    vmScene.fog = scene.fog;
+    vmHemi.color.copy(hemi.color);
+    vmHemi.groundColor.copy(hemi.groundColor);
+    vmHemi.intensity = hemi.intensity;
+    vmHemi.position.copy(hemi.position);
+    vmSun.color.copy(sun.color);
+    vmSun.intensity = sun.intensity;
+    vmSun.position.copy(sun.position);
     vmCamera.matrixWorld.copy(camera.matrixWorld);
     vmCamera.matrixWorldInverse.copy(camera.matrixWorld).invert();
     const engineFov = params.get('fov1p') === 'engine' && handWeapon.fov1p
@@ -5754,8 +5795,7 @@ function frame(dt) {
     vmCamera.near = 0.1;   // the engine's render-view near, baked unchanged
     vmCamera.far = camera.far;
     vmCamera.updateProjectionMatrix();
-    renderer.render(scene, vmCamera);
-    scene.background = worldBackground;
+    renderer.render(vmScene, vmCamera);
     renderer.autoClear = true;
   }
   drawMinimap();
