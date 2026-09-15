@@ -258,6 +258,44 @@ every address: [subsystems/handweapon-view-and-deviation.md](subsystems/handweap
 
 ---
 
+## Menu node graphs — `MemeFile 2.0` (settled 2026-09-15)
+
+`menu/InGame` and the other extensionless entries in `menu.rfa` are the
+serialized `dice::meme::*` object graphs behind the HUD, spawn screen,
+scoreboard and front end. Reader in
+[meme.py](../../tools/bf1942-models/bf42/meme.py); the spawn-screen extract in
+[extract_spawn_layout.py](../../tools/bf1942-models/extract_spawn_layout.py).
+The file was measured first (nested sizes land on EOF to the byte), and the
+frame layout then read out of the engine's own reader and writer.
+
+| # | Assumption | Status | Evidence |
+|---|---|---|---|
+| MEME-1 | Header is u8-length strings until an empty one; `MemeFile 2.0` first, then a symbol table referenced by 1-based u16 index | **confirmed** | `FUN_007f7dc0` (read), `FUN_007f7bb0` / `FUN_007f7b10` (write, first-use numbering); `FUN_007f7ef0` reads a class name as `Ushort` |
+| MEME-2 | Object pointer frame = `u32 size, u16 name, u16 class, fields`; size counts from the size field; NULL = `8,0,0`; name with empty class = registered-object reference | **confirmed** | `FUN_007ed4f0` (tell, Ulong, "Object name", "Class name", vtable+0x34 read, seek start+size); `FUN_007ecea0` back-patches the size |
+| MEME-3 | Every `*Node` reads its "Next node" sibling *first*, inside its own frame, so a list is its first element and siblings nest | **confirmed** | `FUN_007ec100` = Node::read, called first by every node read; TransformNode `FUN_007e9510` reads X, Y, Width, Height then "Transformed node" |
+| MEME-4 | A `CullNode` / `EffectNode` applies to the siblings after it in the same list | **confirmed by data** | every gated branch in InGame is `SplitNode > [CullNode, leaf]`; the tab strip, selected-row fill and SUICIDE/CLOSE swap all decode correctly under it |
+| MEME-5 | Virtual resolution is 800x600, stretched to the screen | **confirmed** | root `TransformNode 0,0,800,600`; kit rows at `Y=127+83i` land on a 100 px pitch in a 1280x720 capture (720/600) |
+| MEME-6 | `PictureNode` with an empty picture is a solid quad in the current colour | **confirmed by data** | the olive kit-row strip is `ColorEffect(0.52,0.49,0.30)` over an empty picture; the selected row `(0.84,1,0.5,a=0.4)` |
+| MEME-7 | `BfButtonNode` draws its plate at texture size; Width/Height is the pointer region | **confirmed by measurement** | `FUN_007d9b50` reads two pictures then Width/Height; the `knapp*` art occupies (3,1)-(110,26) of a 128x128 sheet against W/H 109x25 |
+| MEME-8 | The spawn map's rectangle is in the data | **refuted** | the `ShowMap` cull holds an empty `ClipNode`; the map picture is hot-swapped at runtime. The viewer's rect is measured from a capture and marked so |
+| MEME-9 | The strings the InGame text nodes show come from `lexiconAll.dat` | **confirmed** | `u32 count, u32 columns, then key + 8 UTF-16LE NUL-terminated translations per record`; `RESPAWN_AT` = `ANTI-TANK` |
+
+Primitive encodings via the `ClassIStream` vtable `0x00947288`: `+0x24` ushort,
+`+0x34` float, `+0x38` bool (1 byte), `+0x3c` int, `+0x40` string (u32 length),
+`+0x44` wstring (u32 length, UTF-16LE), `+0x4c` picture / `+0x50` font / `+0x54`
+sound (u8 length), `+0x60..+0x88` object frames, `+0x98` tell, `+0xa0` class
+name. Per-class field lists for 77 classes are in `meme.py`'s `SCHEMAS`, each
+read out of the class's `vtable+0x30` method; the classes whose trailing fields
+are unknown (`ActionListAction`, the event nodes) are skipped to the frame end,
+which the size makes safe.
+
+Bitmap fonts (`Font/<face>.dif` + 8-bit TGA, [font.py](../../tools/bf1942-models/bf42/font.py)):
+row = `code left width right ascent x0 y0 x1 y1`; pen advance is
+`left+width+right`, glyph top is `baseline - ascent`. The installed `Font.rfa`
+is byte-identical in its metrics to `Font-Original.zip`.
+
+---
+
 ## Other formats
 
 Add a section per format as it comes under investigation. Keep the same shape:
