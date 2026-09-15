@@ -28,11 +28,16 @@ clips pose the bones, the `.ske` weld places the weapon, and the soldier's
 `soldierZoomPosition` ride out in the extras for the viewer to mount the rig
 with (see features/bf1942-3d-models/first-person-soldier.md §11 for how).
 
-The one number that is not data is `BAF_FPS = 25` — the `.baf` authoring rate
-is nowhere declared and the feature doc carries it as UNVERIFIED. Every baked
-animation's frame count, state speed and resulting duration are in the extras
-so a viewer can rescale (the reload should be rescaled to the weapon's own
-`reloadTime`, which is gameplay truth).
+Clip timing is the engine's, not an authoring rate: a full pass of any clip
+lasts `1/|speed|` seconds however many frames it holds (`clip_span`; read out
+of `AnimationStateMachineInstance::updateState` and
+`BoneAnimation::applyOnSkeleton`, corpus doc §3). The Thompson's fire clip at
+10.0 is the 0.1 s of its 600 rpm cycle; the aim sway at 0.1 is a 10 s breath;
+the reload at its tweaked 0.21 is a 4.76 s pass against the 4.8 s `reloadTime`
+(the `{1p,3p}AnimationsTweaking.con` scripts, which the parser now applies,
+are where the declared rates are overridden -- the run clip is declared 0.7
+and plays at 1.40). Each family's `duration`, its state's `morphFactor` (the
+per-second blend-in rate, `setMorphFactor`) and `returnTo` ride in the extras.
 
 Standard library plus the system liblzo2, same as the rest of the pipeline.
 """
@@ -63,7 +68,8 @@ from extract_pose import (
 # The `.baf` nominal frame rate. UNVERIFIED (first-person-soldier.md §7): 25
 # fps is the PAL authoring-rate best guess. Recorded in the extras so the
 # viewer can rescale a clip against a declared gameplay duration.
-BAF_FPS = 25.0
+# (There is no authoring rate to declare any more: clip_span() below is the
+# engine's own 1/|speed|, read out of updateState/applyOnSkeleton.)
 
 # key, upper-body state family (`Ub_<family><Weapon>`), loop flag. The weapon
 # channel is not listed here because it is data, not convention: a state that
@@ -177,7 +183,9 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
         if clip_ref is None:
             report[key] = {"error": f"no Ub_{family}{weapon} state with a 1P clip"}
             continue
-        entry: dict = {"ref": clip_ref, "loop": loop, "weaponRef": None}
+        entry: dict = {"ref": clip_ref, "loop": loop, "weaponRef": None,
+                       "morphFactor": state.morph_factor,
+                       "returnTo": state.return_to}
         if state.weapon_state:
             weapon_channel = machine.state(state.weapon_state)
             if weapon_channel and weapon_channel.clips:
@@ -188,6 +196,11 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
             "upperClip": clip_ref.path,
             "speed": clip_ref.speed,
             "loop": loop,
+            # The rate at which the engine blends *into* this state, per
+            # second (`setMorphFactor`; >= 1000 is a cut). A viewer's
+            # crossfade to this clip lasts 1/morphFactor.
+            "morphFactor": state.morph_factor,
+            "returnTo": state.return_to,
         }
         if entry["weaponRef"] is not None:
             report[key]["weaponClip"] = entry["weaponRef"].path
@@ -247,11 +260,45 @@ def collect_bound_nodes(builder: gltf.GlbBuilder, weapon_node: int,
     return found
 
 
-def clip_times(frames: int, speed: float) -> tuple[float, ...]:
-    rate = BAF_FPS * (abs(speed) or 1.0)
+def clip_span(speed: float) -> float:
+    """Seconds for one full pass of a clip at a declared state speed.
+
+    The engine has no frames-per-second anywhere. `updateState` advances a
+    normalized phase by `dt * speed` (lnxded 0x0832b4fa, client 0x00613c60),
+    and `BoneAnimation::applyOnSkeleton` (lnxded 0x0832ed60, client
+    0x0066b740) maps `frac(phase) * N` onto the frame list -- so a clip is
+    `1/|speed|` seconds long however many frames it holds. The Thompson's
+    fire clip at 10.0 is the 0.1 s of its 600 rpm cycle, its aim sway at 0.1
+    a 10 s breath, and its reload at the tweaked 0.21 a 4.76 s pass against
+    the 4.8 s `reloadTime` -- the rate was fitted to the timer in
+    `1pAnimationsTweaking.con`, which is why the old `bakedSpan / reloadTime`
+    stretch happened to land.
+    """
+    return 1.0 / (abs(speed) or 1.0)
+
+
+def clip_times(frames: int, speed: float, loop: bool) -> tuple[float, ...]:
+    """Key times for a baked clip.
+
+    A looping clip has `frames` intervals -- the engine's frame B is
+    `(frameA + 1) % frames`, so the wrap from the last frame back to the
+    first is interpolated like any other step -- and the bake carries one
+    extra key (frame 0 again) at the full span so a glTF `LoopRepeat` crosses
+    the wrap the same way. A one-shot has `frames - 1` intervals: phase 0 is
+    the first frame, phase 1 the last.
+    """
+    span = clip_span(speed)
     if frames <= 1:
-        return (0.0, 1.0 / rate)
-    return tuple(f / rate for f in range(frames))
+        return (0.0, span)
+    intervals = frames if loop else frames - 1
+    count = frames + 1 if loop else frames
+    return tuple(span * f / intervals for f in range(count))
+
+
+def clip_loops(ref: animstates.ClipRef) -> bool:
+    """`addAnimation ... <path> <speed> <loop>`: 1 / c_AsmLooping loop."""
+    flag = ref.looping.strip().lower()
+    return flag in ("1", "c_asmlooping", "true")
 
 
 def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
@@ -334,7 +381,10 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
         "soldierZoomFov": weapon_template.soldier_zoom_fov,
         "zoomFov": weapon_template.zoom_fov,
     }
-    result["bafFps"] = BAF_FPS
+    # Clip timing is the engine's: one pass of a clip lasts 1/|speed| s
+    # (clip_span), whatever its frame count. Every family's `duration`
+    # below is that number.
+    result["clipTiming"] = "1/speed"
     stats = weapon_template.weapon_stats()
     if stats:
         result["weaponStats"] = stats
@@ -424,10 +474,14 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     for key, entry in clips.items():
         upper: baf.Animation = entry["upper"]
         speed = entry["ref"].speed
-        times = clip_times(upper.frames, speed)
+        loop = bool(entry["loop"])
+        times = clip_times(upper.frames, speed, loop)
+        # A loop's key list ends on frame 0 again (see clip_times), so the
+        # sampled frame indices wrap once.
+        frame_index = list(range(upper.frames)) + ([0] if loop and upper.frames > 1 else [])
         frame_locals = [
             pose_mod.align_clip_roots(skeleton, upper.local_pose(f))
-            for f in range(upper.frames)]
+            for f in frame_index]
         tracks = []
         for name in animated:
             if name in frame_locals[0]:
@@ -442,10 +496,13 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
         if weapon_clip is not None and weapon_skeleton is not None \
                 and main_index is not None:
             weapon_speed = entry["weaponRef"].speed
-            weapon_times = clip_times(weapon_clip.frames, weapon_speed)
+            weapon_loop = clip_loops(entry["weaponRef"])
+            weapon_times = clip_times(weapon_clip.frames, weapon_speed, weapon_loop)
+            weapon_index = list(range(weapon_clip.frames)) + (
+                [0] if weapon_loop and weapon_clip.frames > 1 else [])
             per_frame = [weapon_part_locals(weapon_clip, weapon_skeleton,
                                             main_index, f)
-                         for f in range(weapon_clip.frames)]
+                         for f in weapon_index]
             clip_bones = {ske_mod.canonical(track.name)
                           for track in weapon_clip.bones}
             for bone_key, node_index in bound_nodes.items():
@@ -462,6 +519,8 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
                                    [weapon_rest[bone_key]] * 2))
         builder.add_animation(key, tracks)
         clip_report[key]["frames"] = upper.frames
+        # One full pass in seconds -- the engine's 1/|speed|, not a frame
+        # count over an authoring rate (clip_span).
         clip_report[key]["duration"] = round(times[-1], 4)
 
     result["soldierParts"] = part_report
