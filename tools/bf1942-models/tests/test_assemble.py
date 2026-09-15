@@ -1105,6 +1105,89 @@ GeometryTemplate.create StandardMesh Rocket_m1
         self.assertIn("ShellGun projectile", nodes)
 
 
+class HandFireArmsBakeTests(unittest.TestCase):
+    """A hand weapon is the FireArms contract held in a hand: same muzzle
+    node and firing extras, plus the handling block on the report."""
+
+    HANDGUN_CON = """
+ObjectTemplate.create HandFireArms TestSmg
+ObjectTemplate.geometry Smg_m1
+ObjectTemplate.projectileTemplate TestSmgProjectile
+ObjectTemplate.projectilePosition 0/0/0
+ObjectTemplate.magSize 30
+ObjectTemplate.numOfMag 5
+ObjectTemplate.roundOfFire 10
+ObjectTemplate.velocity 1000
+ObjectTemplate.fireInCameraDof 1
+ObjectTemplate.setCrossHairType CHTCrossHair
+ObjectTemplate.setMinDev 0.4
+ObjectTemplate.setFireDev 2 0.35 0.06
+ObjectTemplate.setDevMod 1.2 1.05 0.9
+ObjectTemplate.setSpeedDev 0.8 0.2 0.2 0.1
+
+ObjectTemplate.create Projectile TestSmgProjectile
+ObjectTemplate.geometry Bullet_m1
+ObjectTemplate.timeToLive CRD_NONE/1/0/0
+ObjectTemplate.gravityModifier 0
+ObjectTemplate.invisible 1
+
+GeometryTemplate.create StandardMesh Smg_m1
+GeometryTemplate.create StandardMesh Bullet_m1
+"""
+
+    def _export(self):
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/TestSmg/Objects.con",
+                        self.HANDGUN_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        # export() drives its own builder, and the mesh cache holds
+        # builder-specific indices — so seed lazily through a patched
+        # _mesh_index rather than pre-populating against the wrong builder.
+        def fake_mesh_index(builder, geometry, report):
+            key = geometry.lower()
+            if key not in assembler._geom_mesh:
+                index = builder.add_mesh(geometry, [triangle])
+                assembler._geom_mesh[key] = (index, 1)
+                assembler._geom_collisions[key] = []
+            return assembler._geom_mesh[key]
+
+        assembler._mesh_index = fake_mesh_index
+        data, report = assembler.export("TestSmg")
+        return glb_document(data), report
+
+    def test_hand_weapon_bakes_fire_extras_and_reports_handling(self) -> None:
+        document, report = self._export()
+        nodes = {node["name"]: node for node in document["nodes"]}
+
+        fire = nodes["TestSmg"]["extras"]["fireArms"]
+        self.assertEqual(10.0, fire["roundOfFire"])
+        self.assertEqual(1000.0, fire["velocity"])
+        self.assertEqual(1, fire["muzzles"])
+        self.assertIn("TestSmg muzzle 1", nodes)
+
+        # `invisible 1` on the bullet: geometry alone must not promote it to
+        # a drawn shell, and no body is baked to fly.
+        self.assertEqual("bullet", fire["projectile"]["kind"])
+        self.assertEqual(0.0, fire["projectile"]["gravity"])
+        self.assertNotIn("TestSmg projectile", nodes)
+
+        weapon = report.weapon
+        self.assertTrue(weapon["fireInCameraDof"])
+        self.assertEqual("CHTCrossHair", weapon["crossHair"])
+        self.assertEqual(0.4, weapon["deviation"]["min"])
+        self.assertEqual([2.0, 0.35, 0.06], weapon["deviation"]["fire"])
+        self.assertEqual([1.2, 1.05, 0.9], weapon["deviation"]["mod"])
+        self.assertEqual([0.8, 0.2, 0.2, 0.1], weapon["deviation"]["speed"])
+        self.assertEqual({"size": 30, "magazines": 5},
+                         {k: weapon["magazine"][k] for k in ("size", "magazines")})
+        # The handling block rides the glb too, on the document extras.
+        self.assertEqual(weapon, document["extras"]["weapon"])
+
+
 class TracerBakeTests(unittest.TestCase):
     """A bullet's tracer is the only part of it the game draws, so its mesh
     is baked like a projectile body rather than left to the viewer to invent."""

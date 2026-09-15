@@ -263,6 +263,7 @@ class Report:
             "collisionFromOtherLod": sorted(set(self.collision_makeup)),
             "armor": self.armor,
             "fireArms": self.fire_arms,
+            "weapon": self.weapon or None,
         }
 
 
@@ -1077,12 +1078,18 @@ class Assembler:
             return spec, nodes
         drawn = (self.library.object(template.visible_dummy_projectile_template)
                  if template.visible_dummy_projectile_template else None)
-        body = drawn if drawn is not None and drawn.geometry else projectile
+        # `invisible 1` is the engine's "never draw the body" — every
+        # hand-weapon bullet declares it while still naming `bullet_m1`
+        # geometry, so geometry alone must not promote it to a drawn shell.
+        # A `visibleDummyProjectileTemplate` still wins: that mesh exists
+        # precisely to be shown in flight.
+        body = (drawn if drawn is not None and drawn.geometry
+                else projectile if not projectile.invisible else None)
         if projectile.time_to_live is not None:
             spec["timeToLive"] = projectile.time_to_live
         if projectile.gravity_modifier is not None:
             spec["gravity"] = projectile.gravity_modifier
-        if body.geometry:
+        if body is not None and body.geometry:
             spec["kind"] = ("rocket"
                             if self._projectile_has_rocket_engine(projectile)
                             else "shell")
@@ -1722,8 +1729,12 @@ class Assembler:
 
         # A FireArms that launches something gets muzzle nodes (and, for plane
         # guns, its `visibleBarrelTemplate` flash baked under each one).
+        # HandFireArms is the same contract held in a hand: the K98 declares
+        # `projectileTemplate` and `roundOfFire` exactly like a wing gun, so
+        # it earns the same muzzle node and firing extras.
         fire_extras: dict | None = None
-        if template.kind.lower() == "firearms" and template.projectile_template:
+        if (template.kind.lower() in ("firearms", "handfirearms")
+                and template.projectile_template):
             muzzle_nodes, fire_extras = self._fire_arms(
                 builder, template, report, control, depth)
             child_indices += muzzle_nodes
@@ -2025,6 +2036,8 @@ class Assembler:
                 }.items()
                 if value is not None
             }
+            if template.kind.lower() == "handfirearms":
+                report.weapon = template.weapon_stats() or {}
         self._visible_springs = self._has_visible_spring(root_template)
         root = self.build_node(builder, root_template, report)
         if root is None:
