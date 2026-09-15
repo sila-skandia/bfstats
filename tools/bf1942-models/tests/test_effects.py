@@ -304,12 +304,29 @@ class CoreModuleTests(unittest.TestCase):
         self.assertTrue(clock["decalDone"])
         self.assertEqual(11, clock["dense"])
         self.assertEqual(0, clock["delayedFirstStep"])
-        self.assertGreaterEqual(clock["delayedSecondStep"], 1)
         self.assertFalse(clock["loopDone"])
         self.assertFalse(clock["foreverDone"])
         self.assertEqual(5, clock["foreverSpawned"])
         self.assertEqual(100, clock["idleInterval"])
         self.assertAlmostEqual(1 / (23 * 5), clock["atSpeedInterval"], places=6)
+
+    def test_emitter_clock_delay_edge(self) -> None:
+        # EMT-2: on the tick a delay (0.2 s) runs out, age grows by the
+        # delay's own pre-tick value (0.1, left after the first 0.1 s step),
+        # not by the leftover past zero a big second step (0.5 s) would leave
+        # (0.4). Two spawns are due by age 0.1 at a 0.1 s interval (t=0,
+        # t=0.1); a leftover-based age of 0.4 would owe five.
+        clock = self.results["clock"]
+        self.assertEqual(2, clock["delayedSecondStep"])
+        self.assertAlmostEqual(0.1, clock["delayedAgeAfterSecondStep"], places=9)
+
+    def test_emitter_clock_ttl_edge(self) -> None:
+        # EMT-2's other edge: the burst ends at age >= timeToLive. A single
+        # step landing exactly on timeToLive must not spawn on that tick and
+        # must already be done, not wait one tick longer.
+        clock = self.results["clock"]
+        self.assertEqual(0, clock["edgeSpawnsAtTtl"])
+        self.assertTrue(clock["edgeDoneAtTtl"])
 
     def test_decal_particle(self) -> None:
         decal = self.results["decal"]
