@@ -85,17 +85,23 @@ def main(path: str) -> None:
     for tmpl, n in templates.most_common(40):
         print(f"  {n:4} {tmpl}")
     if samples_per_object and t_max > 0:
+        # An object is written once when first seen and then only when its
+        # transform changes. One sample therefore means "never moved after we
+        # first saw it", and it has no meaningful rate -- dividing by its zero
+        # -width window is what produced the 1e6/s entries in the first run.
+        static = [i for i in objects if samples_per_object[i] <= 1]
         rates = sorted(
-            ((samples_per_object[i] / max(last_seen.get(i, t_max) - first_seen.get(i, 0.0), 1e-6), i)
-             for i in objects),
+            (((samples_per_object[i] - 1) / (last_seen[i] - first_seen[i]), i)
+             for i in objects
+             if samples_per_object[i] > 1 and last_seen[i] > first_seen[i]),
             reverse=True,
         )
-        print("\nmost-updated objects (changed samples per second):")
-        for rate, i in rates[:15]:
-            print(f"  {rate:6.2f}/s  id={i:5} {objects[i]['tmpl']}")
-        print("least-updated objects:")
-        for rate, i in rates[-10:]:
-            print(f"  {rate:6.2f}/s  id={i:5} {objects[i]['tmpl']}")
+        print(f"\nobjects that never moved after first sight: {len(static)}/{len(objects)}")
+        if rates:
+            print("objects that did move (changed samples per second, over their own window):")
+            for rate, i in rates[:20]:
+                window = last_seen[i] - first_seen[i]
+                print(f"  {rate:6.2f}/s  over {window:5.1f}s  id={i:5} {objects[i]['tmpl']}")
 
 
 if __name__ == "__main__":
