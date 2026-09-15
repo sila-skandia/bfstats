@@ -94,6 +94,15 @@ SPRITES: list[str] = [
     "Texture/Kits/icon_engineer_usmarines_selected",
     # Team-header flags for the kit column.
     *[f"Texture/icon_flag_{n}" for n in NATIONS],
+    # The rest of what `menu/InGame` draws on the spawn screen (see
+    # extract_spawn_layout.py): the footer button plates at rest and under
+    # the pointer, the class glyph in each kit row's header, and the ticket
+    # counter's bar and flags.
+    *[f"Texture/Menu/knapp{k}" for k in ("ext_n", "ext_mo", "3_n", "3_mo")],
+    *[f"Texture/Debriefing/classes/class_{k}_16x16"
+      for k in ("scout", "assault", "at", "medic", "engineer")],
+    "Texture/icon_ticketbar",
+    *[f"Texture/flag_ticket_{n}" for n in NATIONS],
 ]
 
 # `flag(us|ge|uk|Jp|so|can)_m1` in a control point's `flagMesh` names the flag

@@ -122,9 +122,8 @@ Icon assignment: `Objects.rfa` declares `ObjectTemplate.setMinimapIcon
 on 110 vehicle/soldier templates (paths say `.tga`, shipped files are `.dds` — probe
 both). Mods override in their own `Objects.rfa` along the `game.addModPath` chain.
 
-Layout is not in any asset: the screen geometry lives in the binary
-`menu/InGame` MemeFile, which we do not parse. We restyle with CSS against the
-reference frames instead.
+Layout lives in the binary `menu/InGame` MemeFile. Section 7 covers decoding it;
+`tools/bf1942-models/bf42/meme.py` parses it.
 
 ### Mod differences
 
@@ -274,3 +273,56 @@ Viewer decisions the game does not dictate:
 - The capture-progress `objective*` frames and the `_friend`/`_enemy`/`_local`
   dots are in the pack but unused: the viewer has no capture state and no other
   players.
+
+## 7. The spawn screen, drawn from the game's own layout
+
+The CSS approximation from section 6 is gone. `menu/InGame` in `menu.rfa` is a
+serialized `dice::meme::*` node graph (`MemeFile 2.0`), and the engine's reader
+was traced in BF1942.exe far enough to parse it: a symbol table, then object
+frames of `u32 size, u16 name, u16 class, fields`, each node's sibling chain
+serialized inside its own frame, `CullNode` / `EffectNode` gating and colouring
+the siblings after them. The record layout, the primitive encodings and the
+evidence are in `features/bf1942-engine-reference/ledger.md` (MEME-1..9) and
+`symbols.json`; the reader is `tools/bf1942-models/bf42/meme.py`.
+
+`extract_spawn_layout.py` flattens the `Kit/ShowKit` subtree (and the ticket
+counter) into `viewer/maps/_shared/hud/spawn-layout.json`: 88 leaves in 800x600
+virtual units, each with its texture or fill colour, font, alignment, locale key
+resolved through `lexiconAll.dat`, colour multiplier and the `when` conditions
+the game evaluates before drawing it. It also writes the four bitmap fonts those
+text nodes name (`fonts/standard6`, `trebuchet_ms8`, `trebuchet_ms14`,
+`trebuchet_ms14_latin`; `.dif` glyph tables via `bf42/font.py`, atlases as
+white-with-alpha PNGs). `extract_hud_pack.py` gained the `knapp*` plates, the
+`class_*_16x16` glyphs and the ticket-bar art.
+
+What the data says, and the viewer now does:
+
+- Root `800x600`, stretched to the screen (the reference capture's 100 px row
+  pitch is the data's 83 at 720/600). Below a 4:3 aspect the viewer scales
+  uniformly and letterboxes instead.
+- Kit column at `X=30`: tab strip `Y=30` (`tab` / `tab2` by team, labels in
+  `Trebuchet MS8` black), header plate `Y=57` with the 64 px flag at `(10,58)`
+  and the team name centred in `Trebuchet MS14`, five rows at `Y=127+83i`, each
+  a `kits_middle` plate (`kits_bottom` for the last), a black 196x17 strip under
+  an olive `(0.52,0.49,0.30)` 195x15 strip, `standard6` name left and
+  `ACTIVE ...` right in black, a 16 px class glyph at `(1,1)`, the 64 px kit
+  photograph at `(15,0)`, and the count centred in `Trebuchet MS14 - Latin`. The
+  selected row fills `(0.84,1,0.5)` at 0.4 alpha, the row under the pointer at
+  0.2.
+- Footer `(250,550)` on `ingame_respawn_long`, plates `knappExt` (SUICIDE, or
+  CLOSE when no life waits) and `knapp3` (SCORE BOARD; RESUME, or DONE), mouse-over
+  variants under the pointer, labels in `standard6` white.
+- Everything is painted into one canvas from the flattened list, in the file's
+  order, under the file's conditions; invisible buttons sit where the game's
+  pointer regions are, so the harness selectors are unchanged.
+
+Still approximated or absent:
+
+- The map pane's rectangle is not in the data (the engine hot-swaps the map
+  into an empty `ClipNode`); `(280,33) 512x512` is measured from the reference
+  and flagged `measured` in the JSON.
+- The ticket counter is decoded but not drawn: the level report carries no
+  ticket counts.
+- Text is drawn with nearest-neighbour glyphs; the game's are bilinear-filtered
+  and read slightly softer.
+- Kit counts show the game's idle value, 0.
