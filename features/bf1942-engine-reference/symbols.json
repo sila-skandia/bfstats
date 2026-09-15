@@ -1032,6 +1032,33 @@
    "note": "physics.gravity is a registered float console property (sibling: wind). Zero uses in vanilla .con data, so ctor default is the live value."
   },
   {
+   "address": "0x004cf9d0",
+   "name": "console:HandFireArmsTemplate.setDevMod",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "executeObjectMethod for ObjectTemplate.setDevMod (string 0x008e0fcc, registrar FUN_004cf760): stores 3 floats to active HandFireArmsTemplate +0x58c/+0x590/+0x594 = standing/crouch/prone. Function created this session (was in an undefined gap)."
+  },
+  {
+   "address": "0x004d2a30",
+   "name": "console:FireArmsTemplate.soldierZoomPosition",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "executeObjectMethod (registrar FUN_004d2930, string 0x008e1c14): Vec3 at FireArmsTemplate +0x3e4 adjusted = +0x3e0 base. The ZOOMED 1P weapon-rig offset; setZoom copies it to soldier targetOffset, eased 25%/visual-update toward it."
+  },
+  {
+   "address": "0x004d2c40",
+   "name": "console:FireArmsTemplate.soldierCameraPosition",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "executeObjectMethod (registrar FUN_004d2b40, string 0x008e1c8c): Vec3 at FireArmsTemplate +0x3f0 via the adjusted (+4) interface ptr from FUN_005091c0 = +0x3ec base-relative. This is the UNZOOMED 1P weapon-rig offset, applied via BFSoldier::updateAnimations -> Skeleton::transform (see subsystems doc)."
+  },
+  {
    "address": "0x004f54a0",
    "name": "Game__func_4F54A0",
    "kind": "function",
@@ -1077,6 +1104,24 @@
    "note": "Composes a soldier's three AnimationStateMachineInstances (array based at BFSoldier +0x294 in lnxded; 0 = lower body, 1 = upper body, 2 = camera-shake triggers, the last proven by triggerCameraShake). Passes dt straight through with NO speed term. The lower-body instance - which owns every Lb_Walk/Run/Crouch/Lie locomotion state and therefore the whole walking view bob - is multiplied by cameraShakeFactor (DAT_0099000c). The upper-body and trigger instances get a hardcoded 1.0f."
   },
   {
+   "address": "0x004fc8b6",
+   "name": "code:zoomCameraModeSwitch",
+   "kind": "address",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Gap code (raw-byte read): on zoom state change, switches the camera state machine between modes 0 and 2 - transitions (0,2)/(2,0) chosen off current zoom flag; reads tmpl SoldierZoomFov +0x3dc vs 0.0 as the has-soldier-zoom gate. Zoom is a press-toggle; each AltFire press flips it."
+  },
+  {
+   "address": "0x0050095f",
+   "name": "code:zoomedMouseLookScale",
+   "kind": "address",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Inside an unresolved-function gap (read via raw-byte disassembly): if activeWeapon->isZoomed() { yawDelta *= tmpl->SoldierZoomFov(+0x3dc); pitchDelta *= same; }. Also nearby 0x00500901-0x00500943: altFireOnce edge filter - masks held Fire (bit 8, value slot esp+0xb4) and AltFire (bit 23, mask 0x800000, value slot esp+0xf0) so only fresh presses pass; confirms c_PIFire=8, c_PIAltFire=23."
+  },
+  {
    "address": "0x005013f8",
    "name": "BFSoldier movement speed indexing",
    "kind": "function",
@@ -1102,6 +1147,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x00539620",
+   "name": "FireArms::updateDeviation",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Base class (vehicle guns): fire(+0x1ac) -= fireDev.c (no devMod), clamp 0; total(+0x1a8) = minDev(+0x4f8) + fire + aiPending(+0x1b0, zeroed). Matches lnxded 0x0828d410. Tail-called by HandFireArms::updateDeviation when holder is not a BFSoldier."
+  },
+  {
+   "address": "0x0053a110",
+   "name": "FireArmsTemplate::makeScript",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Serializes the template back to .con - the offset->property rosetta for the client FireArmsTemplate: UnZoomBetweenFireTime +0x3d0, useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc, soldierZoomPosition +0x3e0, soldierCameraPosition +0x3ec, fireDev.c +0x4f0, minDev +0x4f8. lnxded equivalent 0x0828e3b0."
   },
   {
    "address": "0x00541f50",
@@ -1156,6 +1219,24 @@
    "confidence": "verified",
    "source": "decompiled switch",
    "note": "c_PGFNoGrip=0, c_PGFContactGrip=1(default case), c_PGFRollGrip=2, c_PGFEngineGrip=4, c_PGFRollGripWhenOccupied=8, c_PGFDummyGrip=0x20, c_PGFEngineDummyGrip=0x24=Engine|Dummy, c_PGFStaticFriction=0x80. It is a bitfield. Force semantics of each bit live in the response solver (open)."
+  },
+  {
+   "address": "0x00551930",
+   "name": "HandFireArms::getDevMod",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Returns HandFireArmsTemplate devMod by pose: 0 stand +0x58c, 1 crouch +0x590, else prone +0x594; 1.0 if holder is not a soldier (CID cmp vs [0x008dcd10]=CID_BFSoldierTemplate). Matches lnxded 0x08294400."
+  },
+  {
+   "address": "0x00551f50",
+   "name": "HandFireArms::updateDeviation",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Decompiled in full; identical algorithm to lnxded 0x08293e80. The deviation combine rule: per tick, additive channels speed(+0x2f0)/turn(+0x2ec)/misc(+0x2f4)/fire(+0x1ac); each raises by devMod^2*terms, caps at arg_a*devMod, decays arg_decay/devMod; total(+0x1a8)=minDev+fire+speed+turn+misc+aiPending. No zoom/aim term. No dt. Full write-up: subsystems/handweapon-view-and-deviation.md"
   },
   {
    "address": "0x00571290",
@@ -2317,6 +2398,24 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-12",
    "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x008dcd10",
+   "name": "CID_BFSoldierTemplate",
+   "kind": "data",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Class-id global compared by queryImplementation-style calls; runtime value 0x9493 (seen in getDevMod / updateDeviation CID checks). lnxded equivalent: dice::ref2::world::CID_BFSoldierTemplate 0x086c2b88."
+  },
+  {
+   "address": "0x008f9750",
+   "name": "HandFireArms::vtable",
+   "kind": "data",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client HandFireArms vtable. Slots: +0x170 getDevMod (0x00551930), +0x174 updateDeviation (0x00551f50). Base located by walking back from the DATA xref at 0x008f98c4 to the first entry after the .rdata string block."
   },
   {
    "address": "0x008fdf50",
