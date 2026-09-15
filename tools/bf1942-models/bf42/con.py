@@ -683,6 +683,12 @@ class ObjectTemplate:
     soldier_camera_position: tuple[float, float, float] | None = None
     soldier_zoom_position: tuple[float, float, float] | None = None
     alt_fire_once: bool | None = None
+    # `loadSoundScript Sounds/<Name>.ssc` — the weapon's own sound script,
+    # relative to the folder holding the `.con` that declared it. 27 of the
+    # 28 vanilla hand weapons carry one (the binoculars are mute), and it is
+    # the reference the sound extraction resolves; the script itself stays in
+    # `Objects.rfa` and is never read here.
+    sound_script: str | None = None
 
     # Effect chain: EffectBundle -> Emitter (`ObjectTemplate.template` names
     # the payload) -> Particle (mesh) or SpriteParticle (textured quad).
@@ -987,6 +993,7 @@ class ObjectTemplate:
             "fireInCameraDof": self.fire_in_camera_dof,
             "crossHair": self.cross_hair_type,
             "hudAmmo": self.hud_ammo_type,
+            "soundScript": self.sound_script,
             "magazine": magazine or None,
             "zoom": zoom or None,
             "view": view or None,
@@ -1405,6 +1412,9 @@ class ObjectLibrary:
                         setattr(obj,
                                 "recoil_force_up" if cmd == "setrecoilforceup"
                                 else "recoil_force_left_right", span)
+                elif cmd == "loadsoundscript":
+                    if token := args.strip().strip('"'):
+                        obj.sound_script = token.replace("\\", "/")
                 elif cmd in ("setscopeicon", "setcrosshairtype", "sethudammotype"):
                     # `setScopeIcon "sniper.tga"` is quoted; the other two are
                     # bare enum names.

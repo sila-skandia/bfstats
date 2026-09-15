@@ -1146,17 +1146,28 @@ def resolve_ssc_path(source: str, relative: str) -> str:
 
 def _ssc_lines(text: str, source: str,
                include: Callable[[str], str | None] | None,
-               depth: int = 0):
+               depth: int = 0, level: str = "high"):
     """Flatten a script's lines, expanding `#include` where it appears.
 
-    `#include` is textual, so an included file's `#templateLevel` keeps
-    applying after the include returns and a file included between `newPatch`
-    and the next `newPatch` contributes layers to *that* patch — which is
-    exactly how the Corsair picks up `airplanedive.wav` from `Dive.ssc`. The
-    only per-file state is the directory relative includes resolve against.
+    `#include` is textual for *patch* state — a file included between
+    `newPatch` and the next `newPatch` contributes layers to that patch, which
+    is exactly how the Corsair picks up `airplanedive.wav` from `Dive.ssc`.
+    But `#templateLevel` is scoped to the file that declares it. The Thompson
+    proves the difference: its `High.ssc` includes `MGdist.ssc`, which is a
+    HIGH/MEDIUM/LOW dispatcher of its own and ends on LOW — read textually,
+    the Fire Loop patch that follows the include would be filed under LOW and
+    an SMG would have no fire sound at the quality the game actually plays.
+    So an include starts at the including file's current tier, may switch
+    tiers internally, and the includer's tier resumes when it returns —
+    emitted here as a synthetic `#templateLevel` line so the parser needs no
+    notion of file boundaries.
     """
     for raw in text.splitlines():
         line = raw.strip()
+        if line.lower().startswith("#templatelevel"):
+            parts = line.split()
+            if len(parts) > 1:
+                level = parts[1].lower()
         if line.lower().startswith("#include"):
             tokens = line.split(None, 1)
             if include is None or len(tokens) < 2 or depth >= _SSC_MAX_INCLUDE_DEPTH:
@@ -1165,7 +1176,8 @@ def _ssc_lines(text: str, source: str,
             nested = include(target)
             if nested is None:
                 continue
-            yield from _ssc_lines(nested, target, include, depth + 1)
+            yield from _ssc_lines(nested, target, include, depth + 1, level)
+            yield f"#templateLevel {level}"
             continue
         yield line
 
