@@ -421,6 +421,174 @@ load @ROOT/Sound/@RTD/right.wav
                          [s.file for s in parse_ssc(script)[0].samples])
 
 
+class BlockCommentTests(unittest.TestCase):
+    """`/* */` is `beginSkip` under another name.
+
+    One flag in the engine (`BF1942.exe` 0x007f9a80), tested before any
+    directive, so the rules are the engine's rather than C's: the unit is the
+    line, the close test runs first and unconditionally, and an opener needs no
+    terminator. 849 shipped scripts use the markers and 373 never close one.
+    """
+
+    def test_samples_inside_a_block_comment_are_not_patch_data(self) -> None:
+        # `M1Garand/Sounds/High.ssc` as it ships: the muzzle layer, then five
+        # samples commented out between the stereo report and the positional
+        # layers that follow.
+        script = """
+newPatch
+load @ROOT/Sound/@RTD/M1Garand_Fire_4.wav
+volume 10
+stereo
+/*
+load @ROOT/Sound/@RTD/snpreload.wav
+minDistance 1
+load @ROOT/Sound/@RTD/SoMewa1.wav
+priority 0
+*/
+load @ROOT/Sound/@RTD/M1Garand_Far.wav
+minDistance 200
+"""
+        samples = parse_ssc(script)[0].samples
+        self.assertEqual(["M1Garand_Fire_4.wav", "M1Garand_Far.wav"],
+                         [s.file.rsplit("/", 1)[-1] for s in samples])
+        self.assertEqual(200.0, samples[1].min_distance)
+
+    def test_a_commented_effect_does_not_modulate_its_sample(self) -> None:
+        # `Elco80_Engine_Water.ssc`: the bubble layer's Engine Pitch effect is
+        # commented out, so the loop must carry the distance ramp alone. Read
+        # as live it picked up a throttle-tracking pitch it was never given.
+        script = """
+newPatch
+load @ROOT/Sound/@RTD/PT_boat_bubbles.wav
+loop
+volume 0.4
+/*
+beginEffect
+	controlDestination Pitch
+	controlSource Default
+	envelope Linear
+	param 0.5
+	param 0.45
+endEffect
+*/
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 10
+	param 20
+endEffect
+"""
+        sample = parse_ssc(script)[0].samples[0]
+        self.assertEqual([("volume", "distance")],
+                         [(e.destination, e.source) for e in sample.effects])
+
+    def test_an_unclosed_block_comment_runs_to_the_end(self) -> None:
+        # `LynxHorn.ssc`: a horn, then `/*` and a whole copy-pasted jeep engine
+        # with no terminator anywhere. Honking must not start an engine.
+        script = """
+newPatch
+load @ROOT/Sound/@RTD/BlackMedal_Horn.wav
+minDistance 20
+/*
+load @ROOT/Sound/@RTD/Willyengine3.wav
+loop
+newPatch
+load @ROOT/Sound/@RTD/willyenginestp.wav
+"""
+        patches = parse_ssc(script)
+        self.assertEqual(1, len(patches))
+        self.assertEqual(["@ROOT/Sound/@RTD/BlackMedal_Horn.wav"],
+                         [s.file for s in patches[0].samples])
+
+    def test_a_close_with_no_opener_is_eaten_and_nothing_else(self) -> None:
+        # `KettenKradEngine.ssc` ships a bare `*/` mid-file — an edit left it
+        # behind. The engine clears an already-clear flag and drops the line;
+        # the layers on both sides are live.
+        script = """
+newPatch
+load @ROOT/Sound/@RTD/start.wav
+*/
+load @ROOT/Sound/@RTD/main.wav
+loop
+"""
+        self.assertEqual(["@ROOT/Sound/@RTD/start.wav",
+                          "@ROOT/Sound/@RTD/main.wav"],
+                         [s.file for s in parse_ssc(script)[0].samples])
+
+    def test_the_marked_line_goes_whole_and_a_one_liner_opens_nothing(self) -> None:
+        # The close test matching first means a self-contained `/* ... */`
+        # never sets the flag — but the line it sits on is still dropped
+        # entire, trailing marker or not.
+        script = """
+newPatch
+load @ROOT/Sound/@RTD/kept.wav
+load @ROOT/Sound/@RTD/lost.wav /* half a thought */
+volume .5
+"""
+        samples = parse_ssc(script)[0].samples
+        self.assertEqual(["@ROOT/Sound/@RTD/kept.wav"],
+                         [s.file for s in samples])
+        # `volume .5` is after the comment and still live: no skip was opened.
+        self.assertAlmostEqual(0.5, samples[0].volume)
+
+    def test_a_skip_swallows_include_and_template_level(self) -> None:
+        # The filter runs before every directive, so neither the `#include`
+        # nor the tier switch inside the block has any effect.
+        tree = {
+            "a.ssc": """
+newPatch
+load @ROOT/Sound/@RTD/real.wav
+/*
+#templateLevel LOW
+#include b.ssc
+*/
+load @ROOT/Sound/@RTD/tail.wav
+""",
+            "b.ssc": "load @ROOT/Sound/@RTD/included.wav\n",
+        }
+        patches = parse_ssc(tree["a.ssc"], level="high",
+                            include=tree.get, source="a.ssc")
+        self.assertEqual(1, len(patches))
+        self.assertEqual(["@ROOT/Sound/@RTD/real.wav",
+                          "@ROOT/Sound/@RTD/tail.wav"],
+                         [s.file for s in patches[0].samples])
+
+    def test_an_unclosed_skip_inside_an_include_keeps_skipping_after_it(self) -> None:
+        # The flag is one global reset only when the whole parse ends, not a
+        # per-file state, so it survives the return from an include.
+        tree = {
+            "a.ssc": """
+newPatch
+load @ROOT/Sound/@RTD/real.wav
+#include b.ssc
+load @ROOT/Sound/@RTD/after.wav
+""",
+            "b.ssc": """
+/*
+load @ROOT/Sound/@RTD/dead.wav
+""",
+        }
+        patches = parse_ssc(tree["a.ssc"], level="high",
+                            include=tree.get, source="a.ssc")
+        self.assertEqual(["@ROOT/Sound/@RTD/real.wav"],
+                         [s.file for s in patches[0].samples])
+
+    def test_the_two_spellings_share_one_flag(self) -> None:
+        # `beginSkip` and `/*` set the same flag and `endSkip` and `*/` clear
+        # it, so the markers pair across spellings.
+        script = """
+newPatch
+load @ROOT/Sound/@RTD/a.wav
+beginSkip
+load @ROOT/Sound/@RTD/dead.wav
+*/
+load @ROOT/Sound/@RTD/b.wav
+"""
+        self.assertEqual(["@ROOT/Sound/@RTD/a.wav", "@ROOT/Sound/@RTD/b.wav"],
+                         [s.file for s in parse_ssc(script)[0].samples])
+
+
 class IncludeLevelScopeTests(unittest.TestCase):
     """`#templateLevel` is scoped to the file that declares it.
 
