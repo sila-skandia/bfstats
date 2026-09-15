@@ -16,6 +16,19 @@
 // constant, but this module keeps its own copy so it stays import-free.
 export const GRAVITY = -14.73;
 
+// A mesh particle's `PointPhysicsNode` mass, hardcoded 1.0 in the node's own
+// constructor and never touched by `Particle::Particle` (EMT-5, verify-r8.md
+// R8-11: both overloads fully disassembled, zero `setMass` calls in either).
+// `physics.js`'s `PointBody` defaults `mass` too, for the same reason.
+const PARTICLE_MASS = 1.0;
+
+// Wind, a world property beside gravity that the same drag law is relative
+// to (`physics.js`'s `WIND` constant) — zero in every vanilla level (no
+// `.con` word sets a world wind), so this module keeps a bare zero rather
+// than threading a vector through `spawnParticle`/`integrateParticle` for a
+// case no authored effect exercises.
+const DRAG_WIND = 0;
+
 /**
  * Sample a CRD random variable `[dist, a, b, mirror]`.
  *
@@ -269,6 +282,16 @@ export function spawnParticle(spec, basis, origin, emitterVelocity, rand = Math.
     rotation: sampleCrd(p.initRotation, rand),
     spin: sampleCrd(p.rotationSpeed, rand),
     xy: p.xySizeRatio ? sampleCrd(p.xySizeRatio, rand) : 1,
+    // EMT-5: the bounding radius `integrateParticle`'s drag law needs,
+    // `pi * r^2` standing in for the body's frontal area. Only a `kind
+    // === 'mesh'` particle has a `PointPhysicsNode` at all (R8-16..18); its
+    // radius is the mesh's own local bounding box, `effects.js` computing
+    // `length(boundsMax)` once per template from the real exported geometry
+    // when the effect library loads (R8-13/14) — not a CRD, not resampled
+    // here. Left at 0 for a sprite (no physics body to report one, R8-16) or
+    // a mesh whose geometry did not resolve; `integrateParticle` treats 0 as
+    // "unknown" and falls back rather than silently dropping all drag.
+    radius: p.radius || 0,
     // Texture-atlas flipbooks (ledger SPR-6): a sprite with more than one
     // `numAnimationFrames` rolls its starting frame and its speed once per
     // particle, the same as `initRotation`/`rotationSpeed`
@@ -283,11 +306,34 @@ export function spawnParticle(spec, basis, origin, emitterVelocity, rand = Math.
 /**
  * Move a particle by `dt`: gravity (`gravityModifier`, ramped by
  * `gravityModifierOverTime` — `Particle::handleUpdate`, lnxded 0x0820ad20,
- * feeds the product to the body each tick) and drag as an exponential
- * velocity decay. The drag law is the one open item: the engine hands `drag`
- * to its physics body and that body's integrator was not read; `v *= e^(-k dt)`
- * is the usual meaning and reproduces the authored numbers' intent (`drag 20`
- * on the rocket smoke stops a 50 m/s puff within a tenth of a second).
+ * feeds the product to the body each tick) and drag.
+ *
+ * EMT-5 (verify-r8.md, both binaries): a mesh particle's body is a
+ * `PointPhysicsNode`, and `PointPhysicsNode::updatePositionalDragSimple`
+ * (client 0x00578990, lnxded 0x08255fc0, byte-identical) is
+ *
+ *     accel -= (scale*v - wind) * pi * r^2 * drag / mass
+ *
+ * — wind-relative and scaled by frontal area over mass, not the plain
+ * `-drag*v` this used to assume. `physics.js`'s `applyDrag` is the same law
+ * for the rest of the viewer; this module keeps its own copy (see
+ * `PARTICLE_MASS`/`DRAG_WIND` above) so it stays import-free. Two of the
+ * three unknowns that blocked this are now closed: mass is always 1.0
+ * (R8-11, `PARTICLE_MASS`) and `r` is the spawned particle's own `radius`
+ * (R8-13/14, set in `spawnParticle`). The third, `scale` — `1 +
+ * 24*min(underWater/r, 1)` — stays at its dry value of 1: what field the
+ * engine's `underWater` actually reads is still open (`physics.js`'s own
+ * `DRAG_SUBMERSION_SCALE` note; every caller in this viewer passes 0), and
+ * `DRAG_WIND` is 0 on every vanilla level, so this reduces to the drag-only
+ * ODE `dv/dt = -k v` with `k = pi * r^2 * drag` (mass dropped) — whose exact
+ * closed form over one tick is the multiplicative decay below, not an
+ * approximation of the law but its exact solution for the wind=0/scale=1
+ * case every real effect in the corpus is. A `kind !== 'mesh'` particle (a
+ * sprite) has no `PointPhysicsNode` at all (R8-16..18) and this law is not
+ * shown to apply to it — see `SPR-3`'s still-open consumption path — so it
+ * keeps the old bare-`drag` exponential, an explicit approximation, not the
+ * engine's proven behaviour. The same fallback covers a mesh particle whose
+ * `radius` did not resolve (0): better an approximate drag than none.
  */
 export function integrateParticle(p, dt, gravity = GRAVITY) {
   p.age += dt;
@@ -301,8 +347,13 @@ export function integrateParticle(p, dt, gravity = GRAVITY) {
   const v = p.velocity;
   if (g) v[1] += gravity * g * dt;
   if (drag > 0) {
-    const k = Math.exp(-drag * dt);
-    v[0] *= k; v[1] *= k; v[2] *= k;
+    const k = p.kind === 'mesh' && p.radius > 0
+      ? Math.PI * p.radius * p.radius * drag / PARTICLE_MASS
+      : drag;
+    const decay = Math.exp(-k * dt);
+    v[0] = DRAG_WIND + (v[0] - DRAG_WIND) * decay;
+    v[1] = DRAG_WIND + (v[1] - DRAG_WIND) * decay;
+    v[2] = DRAG_WIND + (v[2] - DRAG_WIND) * decay;
   }
   p.position[0] += v[0] * dt;
   p.position[1] += v[1] * dt;
