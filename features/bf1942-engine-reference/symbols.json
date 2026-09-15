@@ -132,6 +132,15 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
+   "address": "0x0040c170",
+   "name": "Game__update",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "inferred",
+   "source": "ghidra",
+   "note": "Game vtable (DATA xref 0x008c53fc is the addPlayerInput slot) entry vptr+0x28 = update(int nTicks, float tickDt) by slot position; body not read (undefined in Ghidra). Twin of lnxded Game::update 0x0805f230."
+  },
+  {
    "address": "0x0040c3b0",
    "name": "Game::handleCollisionForProjectile (base stub, \"old handleCollision\")",
    "kind": "address",
@@ -181,9 +190,9 @@
    "name": "Game__addPlayerInput",
    "kind": "function",
    "subsystem": "game",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Game Functions"
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Defined as a function in Ghidra 2026-09-15 (was undefined bytes; body 0x35 to the 'ret 8' at 0x0040ece2). Game::addPlayerInput(int playerId, PlayerInput&): map<int,list<PlayerInput>*>::find on Game+0x2c (FUN_0063c8a0), then list::push_back (0x0040e270) of the 236-byte input. Pure enqueue, no dt. Twin of lnxded 0x0805d900 (same shape). Game vtable slot vptr+0x2c; the slot before it (vptr+0x28) is update(int nTicks, float tickDt): 0x0040c170 Game, 0x0048fca0 GameClient, 0x00495d00 GameClientServer, read out of the three DATA xrefs 0x008c53fc/0x008d8dd4/0x008d94cc."
   },
   {
    "address": "0x0040f660",
@@ -330,6 +339,15 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x00444e70",
+   "name": "Setup__initInputDevices",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::bf::Setup::initInputDevices() twin of lnxded 0x080be490. Setup+0x220 = FUN_0049d610(g_simulationFps, 0x400) (input manager, 1024-sample ring); Setup+0x184 = 1.0f / inputManager+0x1c = 1/30 s, the tick dt mainLoop passes to Game::update."
+  },
+  {
    "address": "0x004452c0",
    "name": "Game__func_4452C0",
    "kind": "function",
@@ -357,13 +375,31 @@
    "note": "bf42plus section: Other Functions"
   },
   {
-   "address": "0x0044abc0",
-   "name": "Console__patchTarget",
+   "address": "0x00448520",
+   "name": "Setup__dispatchPlayerInput",
    "kind": "function",
-   "subsystem": "console",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Console"
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Per-player hand-off from Setup::updateInputs: handles chat/console swallowing (Setup+0x154 countdown zeroes the 55-channel input) then ends in g_game->vtable+0x2c = Game::addPlayerInput (0x0040ecb0). Name is descriptive, not recovered."
+  },
+  {
+   "address": "0x00449470",
+   "name": "Setup__updateInputs",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::bf::Setup::updateInputs() twin of lnxded 0x080bc540. Setup+0x31c = FUN_0049d1c0() (input manager produced-consumed ticks); then per tick: FUN_0049cd40 pops one gameInput sample ('Failed to get gameInput'), FUN_004466d0 handles it, and for each local player id in Setup+0x228..0x22c FUN_0049d5b0 maps it to a PlayerInput ('Failed to get playerInput') and FUN_00448520 hands it to g_game->addPlayerInput (slot +0x2c, direct in the other branch at 0x0049 path). FUN_0049cd80 = consumed++. One PlayerInput per local player per 1/30 s tick."
+  },
+  {
+   "address": "0x0044abc0",
+   "name": "Setup__mainLoop",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::bf::Setup::mainLoop() twin of lnxded 0x080bc090 (same 5 getExactTime / 5 g_game reads). Busy-waits until now >= oldTime + 1/Setup+0x17c (frame cap), stores frame dt at Setup+0x180, loops FUN_00449470 (updateInputs) until Setup+0x31c (nTicks) != 0 unless [Setup+0x2d8]+0xd9, then g_game->vtable+0x28 (update)(nTicks, Setup+0x184 = 1/g_simulationFps); DAT_00971ea4 = g_phyUpdateTime. The frame dt (+0x180) goes only to rendering, ResponsePhysicsManager slot +0x18, and FUN_00458ea0 -- never to simulateFrame."
   },
   {
    "address": "0x0044c2b0",
@@ -681,6 +717,24 @@
    "note": "bf42plus section: Game Functions"
   },
   {
+   "address": "0x00483e70",
+   "name": "PlayerAction__set",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::bf::PlayerAction::set(PlayerInput const&) twin of lnxded 0x081128a0; called per queued input in GameClient__processLocalPlayersInputs 0x00488840 with the same shape as the server (zero-fill, set, tag with tick counter, pushBack)."
+  },
+  {
+   "address": "0x00484890",
+   "name": "ActionBuffer__pushBack",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::bf::ActionBuffer::pushBack(PlayerAction&) twin of lnxded 0x08112750, by call position in GameClient__processLocalPlayersInputs 0x00488840."
+  },
+  {
    "address": "0x004869d0",
    "name": "GameEvent__deallocate",
    "kind": "function",
@@ -690,6 +744,15 @@
    "note": "bf42plus section: GameEvent System"
   },
   {
+   "address": "0x00488840",
+   "name": "GameClient__processLocalPlayersInputs",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Twin of lnxded GameServer::processLocalPlayersInputs 0x081379b0. For each local player in the Game+0x30 queue map, nTicks times: pop one queued PlayerInput (zero-filled when the queue is dry), FUN_00483e70 = PlayerAction::set, tag with Game+0x21c (tick counter), FUN_00484890 = ActionBuffer::pushBack. One buffered action per simulation tick."
+  },
+  {
    "address": "0x0048a710",
    "name": "Player__func_48A710",
    "kind": "function",
@@ -697,6 +760,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x0048fca0",
+   "name": "GameClient__update",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Defined as a function in Ghidra 2026-09-15 (body 404 bytes). GameClient::update(int nTicks, float tickDt) -- Game vtable slot vptr+0x28 (GameClient vtable, DATA xref 0x008d8dd4 is the addPlayerInput slot after it). Decompiled: nTicks>9 -> 1; FUN_00488840(nTicks) = processLocalPlayersInputs; FUN_0048f370 = processReceivedPackets; then nTicks x (*vtable+0x13c)(tickDt) = simulateFrame; then FUN_004b6400/FUN_004b6e10/FUN_004b5660(tickDt), getExactTime (FUN_00581960) minus static oldTime (_DAT_0097a728) for the wall-clock part, and list<PlayerInput>::clear (FUN_0078ffe0) over the Game+0x30 queue map. Byte-for-byte the shape of lnxded GameServer::update 0x08132940 (server simulateFrame slot is +0x140)."
   },
   {
    "address": "0x0048ffb6",
@@ -751,6 +823,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004913a0",
+   "name": "PlayerAction__get",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::bf::PlayerAction::get(PlayerInput&) twin of lnxded 0x0815c5a0, by call position in GameClient__simulatePlayerUpdate 0x004b6a30 (reads the ActionBuffer at player+0x180)."
   },
   {
    "address": "0x00491980",
@@ -888,6 +969,15 @@
    "note": "bf42plus section: Hit Indicator Patches"
   },
   {
+   "address": "0x00495d00",
+   "name": "GameClientServer__update",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "inferred",
+   "source": "ghidra",
+   "note": "Third Game-family vtable (DATA xref 0x008d94cc is the addPlayerInput slot) entry vptr+0x28 = update(int, float) by slot position; body not read (undefined in Ghidra; it calls getExactTime at 0x00495d09 like the other two)."
+  },
+  {
    "address": "0x00495fd2",
    "name": "patch__force_disconnect_msg",
    "kind": "patch_site",
@@ -924,6 +1014,33 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
+   "address": "0x0049ce70",
+   "name": "InputManager__update",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "The client tick accumulator. tickDt = 1/this+0x1c; n = floor((getExactTime() - lastTick[0x0097b5f8]) / tickDt) counted by repeated subtraction; lastTick += n*tickDt; if n > 10: n = 1 and lastTick/prev/next reset to now (backlog dropped). Then device (DAT_009a2388 slot +0x20) polled once with n*tickDt, control map (DAT_009a238c slot +0xc) updated, and for each of the n ticks every registered input map (this+0x38 list) is sampled (FUN_00610f80/FUN_006110a0), the extra ticks with 0 elapsed; this+0xc = produced. Twin of lnxded Setup::updateInputs 0x080bc540 (same floor-by-subtraction loop, statics oldTime/thisSecond/ticksThisSecond 0x08716b80/88/90)."
+  },
+  {
+   "address": "0x0049d1c0",
+   "name": "InputManager__getPendingTicks",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Calls InputManager__update 0x0049ce70 then returns this+0xc - this+0x10 (produced - consumed). Its result is Setup+0x31c, the nTicks Setup::mainLoop hands to Game::update."
+  },
+  {
+   "address": "0x0049d610",
+   "name": "InputManager__ctor",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Input-manager constructor (this, float fps, int ringSize): +0xc produced, +0x10 consumed, +0x14 ringSize (0x400), +0x18 timeGetTime-ish base (FUN_00804af0), +0x1c fps (= g_simulationFps 30), +0x20 ring of ringSize x 0xd0-byte samples. Class name not recoverable from the client; the lnxded twin keeps the fps in Setup+0xcc as 1/fps instead."
+  },
+  {
    "address": "0x004a55e0",
    "name": "Level__func_4A55E0",
    "kind": "function",
@@ -958,6 +1075,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: GameEvent System"
+  },
+  {
+   "address": "0x004aaee0",
+   "name": "GameClient__checkPlayerTriggers",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "twin of lnxded GameServer::checkPlayerTriggers 0x0814f2c0, by call position in GameClient__simulatePlayerUpdate 0x004b6a30 (immediately before handleInput on the playing path)."
   },
   {
    "address": "0x004b34b0",
@@ -1014,13 +1140,31 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
-   "address": "0x004b6cb0",
-   "name": "World::update physics dispatch",
+   "address": "0x004b6a30",
+   "name": "GameClient__simulatePlayerUpdate",
    "kind": "function",
-   "subsystem": "physics",
-   "confidence": "working",
-   "source": "decompiled",
-   "note": "Passes frame dt UNMODIFIED to ResponsePhysicsManager(DAT_0097d764 slot +0x14, args (dt,0,3)) and PhysicsNodeManager(DAT_0097d758 slot +0x14, args (dt,0,0)). No accumulator or clamp at this level or below. Outer frame-loop quantization not traced (open); lockFps + updateFrequency exist as float console properties."
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Twin of lnxded GameServer::simulatePlayerUpdate 0x0815bd00. Pops one ActionBuffer entry (FUN_004913a0 = PlayerAction::get, player+0x180 buffer), then if getGameStatus()==1 (or 3 with player slot +0x58): FUN_004aaee0 checkPlayerTriggers, player->vtable+0x30 = BFPlayer::handleInput(input, dt) at 0x004b6b90, FUN_004b7680 performHandleUpdate(dt, ...); else controlObject(player+0xa4)->vtable+0x94 = IObject::handlePlayerInput(player, input, dt) at 0x004b6b56 (GCC slot +0x98; MSVC one slot earlier). dt is the 1/30 tick. THIS is the deviation/easing clock: one handlePlayerInput per 1/30 s tick."
+  },
+  {
+   "address": "0x004b6c20",
+   "name": "GameClient__simulatePlayersUpdate",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Twin of lnxded GameServer::simulatePlayersUpdate 0x0815bfa0: for each player (PlayerManager DAT_0097d76c slot +0x2c list) that is local or whose client (FUN_004891e0 getClient) is ready (+9), FUN_004b6a30 simulatePlayerUpdate(player, dt); on failure player+0x1bc++."
+  },
+  {
+   "address": "0x004b6cb0",
+   "name": "GameClient__simulateFrame",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "RELABELS bf42plus 'World::update physics dispatch'. It is GameClient::simulateFrame(float tickDt), GameClient vtable slot vptr+0x13c (read at 0x008d8ee4), twin of lnxded GameServer::simulateFrame 0x0815c2a0 (slot +0x140): g_game(DAT_0095f8d4)->getGameStatus (slot +0x74); FUN_004b6c20 simulatePlayersUpdate(dt); objectManager DAT_0097d764 slot +0x1c updateTweakingObjects then slot +0x14 updateObjects(dt,0,3); FUN_004b6850 simulatePlayersPhysics; physicsNodeManager DAT_0097d758 slot +0x14 (dt,0,0); responsePhysicsManager DAT_0097d75c slot +0x1c; FUN_0040bdc0 Game::updateWorldCollision; FUN_004b68c0 simulatePlayersCollisions; per-player loop; FUN_004b3260 updateGameLogic; FUN_0040be00 Game::updatePortals; this+0x21c++. Its dt is the FIXED 1/30 tick from GameClient::update 0x0048fca0, called nTicks times per frame -- not the frame dt. Physics is fixed-step 30 Hz, not frame-rate coupled."
   },
   {
    "address": "0x004b6f30",
@@ -1057,6 +1201,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004b7680",
+   "name": "performHandleUpdate",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::bf::performHandleUpdate(float dt, IPlayerObject*, unsigned, bool) twin of lnxded 0x08147300, by call position/args in GameClient__simulatePlayerUpdate 0x004b6a30 (called with the tick dt after handleInput)."
   },
   {
    "address": "0x004b77c7",
@@ -1212,6 +1365,15 @@
    "note": "Decompiled in full; lnxded twin 0x0826e630 (same flag ladder on soldier+0x416, -0.8f/+0.8f/-0.4f/+0.5f lean targets into +0x3f0, 0x10004 mask). First-person branch (local_15c==-1 path): B = mult(S=soldier+0x54c, M=camera.getRelativeTransformation() via ICompositeObject 0xc378 vfn+0x70); B.translation += (eased +0x27c/0x280/0x284 + template +0x20c/0x210/0x214) . B_rot; A = mult(rotate90aroundX=DAT_00990170, B); Skeleton::transform(&A, -1). No yaw or pitch term exists in the chain."
   },
   {
+   "address": "0x004fc849",
+   "name": "zoomCameraModeSwitch",
+   "kind": "address",
+   "subsystem": "handweapon",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Decoded from the PE bytes (objdump), 0x004fc849-0x004fc8ea: esi = soldier (+0x290 bool), ebp = hand weapon, edi = [ebp+0x4c] template. If weapon isZoomed() and byte [tmpl+0x3d8] (useScope) and soldier+0x290: soldier slot +0x28 (0, 2) then weapon slot +0x28 (0, 2); else if float [tmpl+0x3dc] (zoomFov) above 0.0 (const 0x008c41ac) and soldier+0x290: soldier slot +0x28 (2, 0) then weapon slot +0x28 (2, 0). Camera-mode 0/2 transition only; the FOV value itself travels via component 0x5000 and RenderView::setFieldOfView in FireArms__setZoom."
+  },
+  {
    "address": "0x004fc8b6",
    "name": "code:zoomCameraModeSwitch",
    "kind": "address",
@@ -1240,12 +1402,12 @@
   },
   {
    "address": "0x0050095f",
-   "name": "code:zoomedMouseLookScale",
+   "name": "zoomedMouseScale",
    "kind": "address",
-   "subsystem": "weapons",
+   "subsystem": "handweapon",
    "confidence": "verified",
-   "source": "ghidra-session",
-   "note": "Inside an unresolved-function gap (read via raw-byte disassembly): if activeWeapon->isZoomed() { yawDelta *= tmpl->SoldierZoomFov(+0x3dc); pitchDelta *= same; }. Also nearby 0x00500901-0x00500943: altFireOnce edge filter - masks held Fire (bit 8, value slot esp+0xb4) and AltFire (bit 23, mask 0x800000, value slot esp+0xf0) so only fresh presses pass; confirms c_PIFire=8, c_PIAltFire=23."
+   "source": "ghidra",
+   "note": "CORRECTION: in the client BFSoldier::handlePlayerInput gap, after FireArms__isZoomed (slot +0xf8) the two look locals are multiplied by [[weapon+0x4c]+0x3dc], which off the object pointer is zoomFov (FireArms__setZoom 0x005391b0 reads the same offset as the zoom FOV), NOT SoldierZoomFov (+0x3e0 off this pointer). Zoomed mouse deltas scale by zoomFov, i.e. by the zoomed FOV as a ratio of the 1.0 rad default renderer.fieldOfView."
   },
   {
    "address": "0x005013f8",
@@ -1275,6 +1437,15 @@
    "note": "Created at prologue (2308 bytes). Client EmitterTemplate: template +0x3dc, looping +0x1e0, addEmitterSpeed +0x1e1, emitterSpeedScale +0x1e4 (1.0), startAtCreation +0x1e8, startProbability +0x1ec (1.0), IntensityAtSpeed +0x1f0, delay CRD +0x1fc, timeToLive +0x210, intensity +0x224, useCameraOrientation +0x3f8, relativePositionInDof/Up/Right +0x414/+0x428/+0x43c, positionalSpeedInDof/Up/Right +0x450/+0x464/+0x478, rotationalSpeedInDof/Up/Right +0x48c/+0x4a0/+0x4b4, startRotation +0x4c8, hasOverDamage +0x4d8, noPhysics +0x4d9, addChild +0x4da, showInFirstPerson +0x4db, showInThirdPerson +0x4dc, moveToWaterSurface +0x4dd, IsSpawnEffect +0x4de. Twin of lnxded 0x081e61c0."
   },
   {
+   "address": "0x0050ee00",
+   "name": "FireArms__isZoomed",
+   "kind": "function",
+   "subsystem": "handweapon",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "HandFireArms vtable 0x008f9750 slot +0xf8 (read at 0x008f9848); twin of lnxded FireArms::isZoomed() 0x08290160. Called as the gate at the zoom camera-mode switch 0x004fc887 and the zoomed mouse-scale site 0x0050094e."
+  },
+  {
    "address": "0x005384d0",
    "name": "ParticleTemplate::makeScript",
    "kind": "function",
@@ -1293,6 +1464,15 @@
    "note": "bf42plus section: Patched Locations (for reference)"
   },
   {
+   "address": "0x005391b0",
+   "name": "FireArms__setZoom",
+   "kind": "function",
+   "subsystem": "handweapon",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Ghidra already had it as FUN_005391b0 (no Ghidra edit made). FireArms::setZoom(bool), twin of lnxded 0x082881a0 read side by side in objdump: template = [this+0x4c]; zoomFov = [tmpl+0x3dc] tested > 0 first; byte [tmpl+0x3d8] = useScope; RenderView (g_renderView 0x009ab868) slot +0x18 getFieldOfView saved to this+0x1f4, zoomFov copied to this+0x1f8 and published as component 0x5000 via this->vtable+0x28 setComponent (lnxded slot +0x2c) at 0x00539281/0x00539348; SoldierZoomFov = [tmpl+0x3e0] > 0 and soldierZoomPosition = tmpl+0x3e4 handed to the soldier (CID_BFSoldierTemplate 0x008dcd10 check) via 0x00539140; the apply/restore path writes the +0x1f8 value straight into RenderView slot +0x14 = setFieldOfView(float) at 0x005393f6 -- so zoomFov is a whole vertical FOV in radians, the unit of renderer.fieldOfView. NOTE these offsets are off the object pointer FireArms+0x4c; FireArmsTemplate::makeScript 0x0053a110 and the section-1 table of handweapon-view-and-deviation.md use this+4 of that (useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc)."
+  },
+  {
    "address": "0x00539620",
    "name": "FireArms::updateDeviation",
    "kind": "function",
@@ -1309,6 +1489,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Serializes the template back to .con - the offset->property rosetta for the client FireArmsTemplate: UnZoomBetweenFireTime +0x3d0, useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc, soldierZoomPosition +0x3e0, soldierCameraPosition +0x3ec, fireDev.c +0x4f0, minDev +0x4f8. lnxded equivalent 0x0828e3b0."
+  },
+  {
+   "address": "0x0053eaad",
+   "name": "FireArms__handleUpdate_zoomPublish",
+   "kind": "address",
+   "subsystem": "handweapon",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "Inside the client FireArms::handleUpdate twin (undefined in Ghidra): when the un-zoom timer this+0x23c minus dt drops below 0 it publishes component 0x5000 via vtable slot +0x28 (setComponent), the UnZoomBetweenFireTime re-zoom path; lnxded FireArms::handleUpdate 0x08288890 has the single matching push of 0x5000."
   },
   {
    "address": "0x00541a60",
@@ -1588,6 +1777,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Game Functions"
+  },
+  {
+   "address": "0x00581960",
+   "name": "System__getExactTime",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::ref2::io::System::getExactTime(): returns a double wall-clock; identified in GameClient__update 0x0048fca0 where its result minus the static double _DAT_0097a728 is the frame delta, the same arithmetic as lnxded GameServer::update 0x08132940 around System::getExactTime 0x08418160 and its oldTime 0x0871b0c0."
   },
   {
    "address": "0x00581d90",
@@ -2976,6 +3174,15 @@
    "note": "+0x24 ushort +0x34 float +0x38 bool +0x3c int +0x40 string(u32 len) +0x44 wstring +0x4c picture/+0x50 font/+0x54 sound (u8 len) +0x60..+0x88 object frame +0x98 tell +0xa0 class name"
   },
   {
+   "address": "0x00957640",
+   "name": "g_simulationFps",
+   "kind": "data",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "float = 30.0 (0x41f00000), the simulation tick rate. 50 READ xrefs, none write it. Twin of lnxded g_simulationFps 0x08716b5c (also 30.0). Read by Setup::initInputDevices 0x00444e70 (input manager ctor arg -> +0x1c; Setup+0x184 = 1/fps = the tick dt), by GhostManager::update twin 0x004997d0 (tick/fps -> seconds), and by FireArmsTemplate::makeScript 0x0053a110 at 0x0053a9ba (x FireArmsTemplate+0x4fc: per-tick stored values printed back as per-second)."
+  },
+  {
    "address": "0x00957c30",
    "name": "g_masterServerAddr1",
    "kind": "data",
@@ -3022,21 +3229,30 @@
   },
   {
    "address": "0x0095f8d4",
-   "name": "g_pIGame",
+   "name": "g_game",
    "kind": "data",
-   "subsystem": "globals",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Global Data Pointers"
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "IGame* singleton, twin of lnxded 0x0870d918: slot +0x74 = getGameStatus (compared with 1/3/4/6 in simulateFrame/mainLoop as on the server), slot +0x28 = update(int,float), slot +0x2c = addPlayerInput, slot +0x8 = queryInterface."
+  },
+  {
+   "address": "0x00971ea4",
+   "name": "g_phyUpdateTime",
+   "kind": "data",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "float, written in Setup__mainLoop 0x0044abc0 as getExactTime() - t0 around the game->update call, exactly as lnxded g_phyUpdateTime 0x08716b50 is written at 0x080bc37b."
   },
   {
    "address": "0x00971eac",
-   "name": "g_pSetup",
+   "name": "setup",
    "kind": "data",
-   "subsystem": "globals",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Global Data Pointers"
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::bf::Setup* singleton, twin of lnxded dice::bf::setup 0x08716b64 (Setup+0x2d8 -> settings object, +0x2dc flags read in mainLoop)."
   },
   {
    "address": "0x00973ab8",
@@ -3048,13 +3264,31 @@
    "note": "bf42plus section: Global Data Pointers"
   },
   {
-   "address": "0x0097d764",
-   "name": "pObjectManager",
+   "address": "0x0097d758",
+   "name": "g_physicsNodeManager",
    "kind": "data",
-   "subsystem": "globals",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Global Data Pointers"
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "singleton twin of lnxded 0x0871dc18 (PhysicsNodeManager): slot +0x14 (dt,0,0) in simulateFrame, called with the FIXED 1/30 tick."
+  },
+  {
+   "address": "0x0097d75c",
+   "name": "responsePhysicsManager",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::ref2::world::responsePhysicsManager singleton, twin of lnxded 0x0871dc1c: slot +0x1c called twice per tick in GameClient__simulateFrame 0x004b6cb0 exactly where the server calls 0x0871dc1c slot +0x1c (0x0815c335, 0x0815c351)."
+  },
+  {
+   "address": "0x0097d764",
+   "name": "objectManager",
+   "kind": "data",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::ref2::world::objectManager singleton, twin of lnxded 0x0871dc24 (named in nm; ObjectManager vtable 0x08720400): slot +0x14 = updateObjects(float dt, UpdateFreqencyType, unsigned) called (tickDt,0,3) in GameClient__simulateFrame 0x004b6cb0; slot +0x18 = handleFrameUpdates(float frameDt) called with Setup+0x180 in Setup__mainLoop 0x0044abc0 -- the per-rendered-frame path (drives IObject slot +0x50 handleFrameUpdate, i.e. the animation state machines); slot +0x1c = updateTweakingObjects(). Corrects an earlier note that called this the ResponsePhysicsManager."
   },
   {
    "address": "0x0097d768",
@@ -3067,12 +3301,12 @@
   },
   {
    "address": "0x0097d76c",
-   "name": "pPlayerManager",
+   "name": "playerManager",
    "kind": "data",
-   "subsystem": "globals",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Global Data Pointers"
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "dice::ref2::world::playerManager singleton, twin of lnxded 0x0871dc2c: slot +0x2c returns the player list walked by GameClient__simulatePlayersUpdate 0x004b6c20 and GameClient__simulateFrame 0x004b6cb0 (server 0x0815bfb8, 0x0815c36d); slot +0x18 = getPlayer(id) in GameClient__processLocalPlayersInputs."
   },
   {
    "address": "0x0099000c",
@@ -3157,12 +3391,12 @@
   },
   {
    "address": "0x009ab868",
-   "name": "pRenderView",
+   "name": "g_renderView",
    "kind": "data",
-   "subsystem": "globals",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Global Data Pointers"
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra",
+   "note": "IRenderView* singleton: slot +0x14 = RenderView::setFieldOfView(float), +0x18 = getFieldOfView() (lnxded RenderView vtable 0x0874c600, vptr+0x14/+0x18), used by FireArms__setZoom 0x005391b0 to save and write the zoom FOV."
   },
   {
    "address": "0x009c9bc0",
