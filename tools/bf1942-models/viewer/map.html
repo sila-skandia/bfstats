@@ -96,31 +96,39 @@
     text-shadow: 0 1px 4px #000;
   }
   /* On-foot fire control. The crosshair is DOM over the canvas rather than
-     painted into it: four bars and a dot around a zero-size anchor at screen
-     centre, the bar gap driven per frame through --ch-gap by the deviation
-     cone mapped through the camera projection (updateCrosshair()). The
-     weapon's own crossHairType decides the shape: CHTCrossHair is the full
-     cross, CHTIcon keeps only the dot (its authored icon art is not
-     extracted yet), CHTNone and a scoped aim draw nothing. */
+     painted into it: four bars around a zero-size anchor at screen centre,
+     the bar gap driven per frame through --ch-gap by the deviation cone
+     mapped through the camera projection (updateCrosshair()). The weapon's
+     own crossHairType decides the shape: CHTCrossHair is the full cross,
+     CHTIcon keeps only the dot (its authored icon art is not extracted
+     yet), CHTNone and a scoped aim draw nothing.
+
+     The look is measured off retail footage, not styled: no crosshair
+     texture exists in any archive (the engine draws it), so a 960-wide
+     capture of the Thompson on Wake is the reference — bars 2px thick and
+     13px long at that width, colour rgb(176,32,16), no centre dot, and the
+     arms MEET at centre when the shooter stands still. Sizes are locked in
+     px of the reference capture; a hidpi pass can scale them later. */
   #crosshair {
     position: absolute;
     z-index: 2;
     left: 50%; top: 50%;
     width: 0; height: 0;
     pointer-events: none;
-    --ch-gap: 6px;
+    --ch-gap: 0px;
+    --ch-ink: rgb(176, 32, 16);
   }
   #crosshair[hidden] { display: none; }
   #crosshair span {
     position: absolute;
-    background: var(--text);
-    box-shadow: 0 0 3px rgba(0, 0, 0, .9);
+    background: var(--ch-ink);
   }
-  #crosshair .ch-dot { width: 2px; height: 2px; left: -1px; top: -1px; }
-  #crosshair .ch-n { width: 2px; height: 8px; left: -1px; bottom: var(--ch-gap); }
-  #crosshair .ch-s { width: 2px; height: 8px; left: -1px; top: var(--ch-gap); }
-  #crosshair .ch-w { height: 2px; width: 8px; top: -1px; right: var(--ch-gap); }
-  #crosshair .ch-e { height: 2px; width: 8px; top: -1px; left: var(--ch-gap); }
+  #crosshair .ch-dot { display: none; width: 2px; height: 2px; left: -1px; top: -1px; }
+  #crosshair.ch-icon .ch-dot { display: block; }
+  #crosshair .ch-n { width: 2px; height: 13px; left: -1px; bottom: var(--ch-gap); }
+  #crosshair .ch-s { width: 2px; height: 13px; left: -1px; top: var(--ch-gap); }
+  #crosshair .ch-w { height: 2px; width: 13px; top: -1px; right: var(--ch-gap); }
+  #crosshair .ch-e { height: 2px; width: 13px; top: -1px; left: var(--ch-gap); }
   #crosshair.ch-icon .ch-n, #crosshair.ch-icon .ch-s,
   #crosshair.ch-icon .ch-w, #crosshair.ch-icon .ch-e { display: none; }
   /* The magazine, in the same voice as #hud but bottom right, so a reload
@@ -3530,6 +3538,7 @@ function weaponTemplateFor(flag) {
 
 /** Tear down the viewmodel, its gun group and the HUD it owns. */
 function disposeHandWeapon() {
+  releaseHandFireLoop();
   const hw = handWeapon;
   weaponToken++;
   handWeapon = null;
@@ -3715,13 +3724,55 @@ async function loadHandFireSound(hw) {
   if (buffer && handWeapon === hw) hw.fire = { spec, buffer };
 }
 
-function playHandFire(fire) {
-  if (!fire || !audioListener || masterVolume() <= 0) return;
-  const ctx = audioListener.context;
+function ensureHandFireBus(ctx) {
   if (!handFireBus) {
     handFireBus = ctx.createGain();
     handFireBus.gain.value = masterVolume() * WEAPON_HEADROOM;
     handFireBus.connect(audioListener.getInput());
+  }
+  return handFireBus;
+}
+
+// The active Fire Loop voice, for weapons whose .ssc marks the fire patch
+// `loop` + `stop FinishSample`: the engine starts the loop when the trigger
+// closes and, on release, lets the playing cycle run out rather than cutting
+// it. Web Audio spells FinishSample as `source.loop = false` mid-play — the
+// buffer is one authored cycle, so it ends exactly at the boundary.
+let handFireLoop = null;
+
+function startHandFireLoop(fire) {
+  if (handFireLoop || !fire || !audioListener || masterVolume() <= 0) return;
+  const ctx = audioListener.context;
+  const source = ctx.createBufferSource();
+  source.buffer = fire.buffer;
+  source.loop = true;
+  // The script's own per-play jitter (`randomStartPitch 0.02/0.01` on the
+  // distance layer); the close stereo layer plays straight.
+  const gain = ctx.createGain();
+  gain.gain.value = Math.min(fire.spec.volume ?? 1, 1);
+  source.connect(gain);
+  gain.connect(ensureHandFireBus(ctx));
+  source.onended = () => {
+    try { source.disconnect(); gain.disconnect(); } catch (_) {}
+    if (handFireLoop && handFireLoop.source === source) handFireLoop = null;
+  };
+  try { source.start(); handFireLoop = { source, gain }; } catch (_) {}
+}
+
+function releaseHandFireLoop() {
+  // FinishSample: the cycle in flight completes, nothing is cut.
+  if (handFireLoop) handFireLoop.source.loop = false;
+  handFireLoop = null;
+}
+
+function playHandFire(fire) {
+  if (!fire || !audioListener || masterVolume() <= 0) return;
+  const ctx = audioListener.context;
+  // A looped fire patch is trigger-held, not per-round: `onShot` only has to
+  // make sure the loop is running.
+  if (fire.spec.loop) {
+    startHandFireLoop(fire);
+    return;
   }
   const source = ctx.createBufferSource();
   source.buffer = fire.buffer;
@@ -3735,7 +3786,7 @@ function playHandFire(fire) {
   // number and the clamp lives here, next to the bus that motivates it.
   gain.gain.value = Math.min(fire.spec.volume ?? 1, 1);
   source.connect(gain);
-  gain.connect(handFireBus);
+  gain.connect(ensureHandFireBus(ctx));
   source.onended = () => {
     try { source.disconnect(); gain.disconnect(); } catch (_) {}
   };
@@ -3870,7 +3921,12 @@ function footFire(dt, input = null) {
         hw.pulse = true;
       }
     } else {
-      guns.setFiring(hw.group, triggerHeld && canFire);
+      const firing = triggerHeld && canFire;
+      guns.setFiring(hw.group, firing);
+      // The Fire Loop follows the trigger, not the rounds: the .ssc's
+      // `stop FinishSample` lets the cycle in flight complete on release,
+      // on running dry, and on a magazine change alike.
+      if (!firing) releaseHandFireLoop();
     }
   }
 
@@ -3879,10 +3935,16 @@ function footFire(dt, input = null) {
 }
 
 /**
- * The crosshair's gap, in CSS pixels: the deviation half-angle projected
- * through the camera — `0.5 x height x tan(dev) / tan(vfov / 2)` — so the
- * bars enclose exactly the cone the rounds are sampled inside, at whatever
- * FOV the aim blend has settled on this frame.
+ * The crosshair's gap, in CSS pixels: the deviation ABOVE the stationary
+ * floor, projected through the camera — `0.5 x height x tan(dev - floor) /
+ * tan(vfov / 2)`.
+ *
+ * Subtracting the floor is measured, not derived: in retail footage a still
+ * Thompson (minDev 0.4 deg, never zero) draws its arms MEETING at centre,
+ * and they part when the shooter moves, turns or fires. So the gap tracks
+ * the acquired spread, not the whole cone. OPEN: whether the engine's own
+ * mapping is this projection or a linear scale — a corpus question
+ * (crosshair draw path, client side); the footage pins only the endpoints.
  */
 function updateCrosshair() {
   const hw = handWeapon;
@@ -3897,9 +3959,10 @@ function updateCrosshair() {
   // extracted they keep the centre dot alone.
   crosshairEl.classList.toggle('ch-icon', style === 'CHTIcon');
   const height = stage.clientHeight || 800;
-  const dev = hw.model.current() * DEG_TO_RAD;
+  const floor = (hw.model.floor?.() ?? 0) * DEG_TO_RAD;
+  const dev = Math.max(0, hw.model.current() * DEG_TO_RAD - floor);
   const px = 0.5 * height * Math.tan(dev) / Math.tan(camera.fov * DEG_TO_RAD / 2);
-  crosshairEl.style.setProperty('--ch-gap', `${(CROSSHAIR_MIN_PX + px).toFixed(1)}px`);
+  crosshairEl.style.setProperty('--ch-gap', `${px.toFixed(1)}px`);
 }
 
 function updateAmmoHud() {
