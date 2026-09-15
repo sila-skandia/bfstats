@@ -878,7 +878,15 @@ export class SoldierBody {
     // downward velocity grows without bound behind the obstruction and fires
     // the body through the floor the instant it comes free, and the capsule
     // never lifts back to its step height, so a body that wedges stays wedged.
-    if (!this.grounded && v.y < 0 && p.y >= this.body.previous.y - 1e-4) {
+    // Only a real fall counts as wedged: at a jump's apex v.y is barely
+    // negative and one tick moves the body less than the epsilon, and this
+    // guard used to call that "supported" — one grounded tick a metre off
+    // the floor, which re-armed a held jump into a mid-air double jump. A
+    // genuinely blocked body gains two ticks of gravity within two ticks;
+    // demanding that much fall costs it nothing.
+    const wedgeMinFall = 2 * Math.abs(GRAVITY) / TICK_RATE;
+    if (!this.grounded && v.y < -wedgeMinFall
+        && p.y >= this.body.previous.y - 1e-4) {
       v.y = 0;
       this.grounded = true;
     }
