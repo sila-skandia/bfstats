@@ -1989,16 +1989,15 @@ under it:
 - The world camera is `renderer.fieldOfView 1` = 57.30° vertical, not
   `set1pFov`; `set1pFov 0.47` is what `setFirstPersonFov` hands each
   first-person part, multiplied by `SoldierZoomFov` when zoomed, drawn in
-  the renderer's own `drawFov` pass. The viewer's near pass now takes
-  `FOOT_FOV × the factor` and the world camera takes `zoomFov` on zoom.
-  Third pass (2026-09-15): the pass and its projection are read on the
-  client — see step 6 — and the engine's 0.47 rad does not reproduce the
-  capture, so the world FOV stays the viewer's default with the engine
-  value behind a query flag.
+  the renderer's own `drawFov` pass. The world camera keeps `FOOT_FOV` and
+  takes `zoomFov` on zoom, confirmed independent of the arms rig; what the
+  near pass draws the arms with is step 6 below and the 2026-09-16 note
+  after it.
 
-Against the retail capture the right hand and the gun's direction now land
-without calibration; the front sight and left hand sit ~60–70 px (≈5°)
-higher than retail, a residual the corpus doc §7 keeps open.
+Against the retail capture (the small state — see the 2026-09-16 note) the
+right hand and the gun's direction now land without calibration; the front
+sight and left hand sit ~60–70 px (≈5°) higher than retail, a residual the
+corpus doc §7 keeps open.
 
 **Third pass (2026-09-15, corpus doc §3 "in time").** The animation runtime
 under the arms was read in both binaries to ask whether that residual is a
@@ -2099,11 +2098,34 @@ camera never moves.
    the render view's own perspective for `set1pFov × SoldierZoomFov` as a
    whole vertical angle, `height/width` aspect, and the **world's near
    plane, 0.1 m** — nothing moves it. That is what the code applies per
-   mesh (corpus doc §3, "The drawFov pass"). The retail capture, measured,
-   does not show it: under 0.47 rad the right hand lands at (1042, 939) and
-   retail has it at (816, 614), which is the world's 57.3°. So the viewer's
-   near pass keeps `FOOT_FOV × factor` at near 0.1, and `?fov1p=engine`
-   renders the engine's value for the day the difference is understood.
+   mesh (corpus doc §3, "The drawFov pass"). Retail has now been measured
+   in both states it draws (2026-09-16 note, below): the small state —
+   Thompson at the hip, OBS capture — puts the right hand at (816, 614)
+   against this rig's 0.47 rad render at (1042, 939), off frame, so that
+   capture is the world's 57.3° and not `set1pFov`; the large state —
+   Engineer rifles, screenshots — reproduces the 0.47 rad framing directly.
+   So the near pass now draws at `set1pFov × factor` by default whenever
+   the rig carries a `fov1p`, `?fov1p=world` forces the old 57.3° reading,
+   and a bare 3P fallback (no `fov1p`) stays at 57.3° because its
+   `VIEWMODEL_BASE` was eyeballed under that projection.
+
+**2026-09-16 note (two retail states).** Retail draws the 1P rig at two
+different sizes, not one, on the same corpus-pinned binary with nothing
+changed between sessions: OBS clips of a Thompson at the hip (1280×720, US
+Medic, Wake) put it at the world's 57.3°; screenshots of an Engineer's
+Garand and Type 5 (2560×1440) put it at 1.7–2.1×, close to what
+`set1pFov` 0.47 rad predicts (2.28×), and rendered at 0.47 rad the Garand
+reproduces the in-game framing (forearm only, hand off the corner). This is
+retail switching states, not a bad capture either way. What leaves the
+parts at the world projection in the small state is still open (corpus doc
+§7) — the leading read is that a part sits at −1 until a zoom's
+`applyFovModifier` stamps `0.47 × factor`, testable with a spawn / zoom /
+respawn capture. Until then the near pass defaults to `set1pFov × factor`
+(step 6, above), `?fov1p=world` reproduces the small state, and the bare 3P
+fallback keeps 57.3° because its calibration predates the arms rigs. Full
+evidence and resume points:
+[`handweapon-view-and-deviation.md`](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md)
+§3 and §7.
 
 What §11 leaves undone, so nobody hunts for it: the crouch/lie/crawl and
 idle-fidget families (resolve today, one tuple each in `FAMILIES`), the
