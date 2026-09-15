@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -16,9 +18,19 @@ from bf42.kit import (  # noqa: E402
     classify,
     collect,
     kit_parts,
+    level_loadouts,
     parse_level_kits,
     primary_weapon,
 )
+
+# The real vanilla install, if this machine has one. `RealPatchTests` below
+# is the end-to-end regression for the bug this module was fixed for: Wake's
+# `_003` patch rebinds the US side to Marine kits, and only reading the base
+# archive (the old behaviour) reports the dead `USSoldier`/`US_*` binding it
+# replaced.
+BF1942_LEVELS = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
+                 "/bf1942/Archives/bf1942/levels")
+WAKE_RFA = BF1942_LEVELS / "Wake.rfa"
 
 
 class BoneNameTests(unittest.TestCase):
@@ -403,6 +415,112 @@ rem game.setKit 1 0 Commented_Out
 """)
         self.assertEqual({1: "GermanSoldier"}, {t: v.soldier for t, v in teams.items()})
         self.assertEqual({}, teams[1].slots)
+
+
+def _fake_archives(content: dict[str, dict[str, bytes]], broken: frozenset[str] = frozenset()):
+    """A stand-in for `RfaArchive`, keyed by filename rather than real bytes.
+
+    See `tests/test_roster.py`'s copy of this helper for the full rationale;
+    duplicated here rather than imported so each test module stays
+    self-contained, matching this suite's existing convention.
+    """
+    class _FakeArchive:
+        def __init__(self, path: Path) -> None:
+            if path.name in broken:
+                raise ValueError(f"synthetic corruption: {path.name}")
+            self._payloads = content.get(path.name, {})
+            self.entries = list(self._payloads)
+
+        def read(self, name: str) -> bytes:
+            return self._payloads[name]
+
+    return _FakeArchive
+
+
+class LevelLoadoutsPatchTests(unittest.TestCase):
+    """`level_loadouts` reads a level's numbered patch over its base.
+
+    The five vanilla Pacific `_003` layers rebind the US side from
+    `USSoldier`/`US_*` to `USMarineSoldier`/`USMarine_*`; the base archive
+    alone (the old behaviour) reports kits the game never actually deals.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.levels_dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_a_patched_level_reports_the_patched_kits(self) -> None:
+        (self.levels_dir / "Wake.rfa").touch()
+        (self.levels_dir / "Wake_003.rfa").touch()
+        content = {
+            "Wake.rfa": {"bf1942/levels/Wake/Init.con": b"""
+game.setTeamSkin 2 USSoldier
+game.setKit 2 4 US_Engineer
+"""},
+            "Wake_003.rfa": {"bf1942/levels/Wake/Init.con": b"""
+game.setTeamSkin 2 USMarineSoldier
+game.setKit 2 4 USMarine_Engineer
+"""},
+        }
+        with mock.patch("bf42.rfa.RfaArchive", _fake_archives(content)):
+            loadouts = level_loadouts([("Wake", self.levels_dir / "Wake.rfa")])
+
+        team2 = loadouts["Wake"][2]
+        self.assertEqual("USMarineSoldier", team2.soldier)
+        self.assertEqual("USMarine_Engineer", team2.slots[4])
+
+    def test_a_level_with_no_patch_is_unaffected(self) -> None:
+        (self.levels_dir / "El_Alamein.rfa").touch()
+        content = {
+            "El_Alamein.rfa": {"bf1942/levels/El_Alamein/Init.con": b"""
+game.setTeamSkin 1 GermanDesertSoldier
+game.setKit 1 4 GerKitdesert_Engineer
+"""},
+        }
+        with mock.patch("bf42.rfa.RfaArchive", _fake_archives(content)):
+            loadouts = level_loadouts([("El_Alamein", self.levels_dir / "El_Alamein.rfa")])
+
+        self.assertEqual("GermanDesertSoldier", loadouts["El_Alamein"][1].soldier)
+
+    def test_a_level_whose_base_wont_open_is_dropped_not_crashed(self) -> None:
+        (self.levels_dir / "Tobruk.rfa").touch()
+        with mock.patch("bf42.rfa.RfaArchive",
+                        _fake_archives({}, broken=frozenset({"Tobruk.rfa"}))):
+            loadouts = level_loadouts([("Tobruk", self.levels_dir / "Tobruk.rfa")])
+        self.assertEqual({}, loadouts)
+
+
+@unittest.skipUnless(WAKE_RFA.exists(), "needs the BF1942 install")
+class RealWakePatchTests(unittest.TestCase):
+    """End-to-end against the real archives: the bug this fix was for.
+
+    `Wake_003.rfa` sits next to `Wake.rfa` in the real install and rewrites
+    `game.setTeamSkin 2` from `USSoldier` to `USMarineSoldier`. A screenshot
+    of Wake's US Engineer in-game shows Marine camo sleeves and an M1 Garand,
+    not the Army `USSoldier` skin the base archive alone would report.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.loadouts = level_loadouts([("Wake", WAKE_RFA)])
+
+    def test_team_2_is_rebound_to_the_marine_soldier(self) -> None:
+        self.assertEqual("USMarineSoldier", self.loadouts["Wake"][2].soldier)
+
+    def test_team_2_kits_are_the_marine_variants(self) -> None:
+        slots = self.loadouts["Wake"][2].slots
+        # US_Scout, Us_Assault, US_AT, US_Medic, US_Engineer -> their
+        # USMarine_* counterparts, slots 0..4 per the task's own mapping.
+        for slot in range(5):
+            self.assertTrue(slots[slot].lower().startswith("usmarine"),
+                            f"slot {slot} still reads {slots[slot]!r}")
+
+    def test_team_1_is_unaffected(self) -> None:
+        # Only the US side's binding was patched.
+        self.assertEqual("JapaneseSoldier", self.loadouts["Wake"][1].soldier)
 
 
 if __name__ == "__main__":
