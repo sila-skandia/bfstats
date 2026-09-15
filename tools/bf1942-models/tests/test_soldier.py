@@ -262,6 +262,14 @@ class SoldierModuleTests(unittest.TestCase):
                                delta=2)
         self.assertLess(ledge["airborneFrames"], 50)
 
+    def test_a_held_space_jumps_exactly_once(self) -> None:
+        # The game jumps on the press edge only — landing with Space still
+        # down never rebounds. An earlier build re-latched every frame and
+        # the soldier bounced whenever the key was held.
+        held = self.results["heldJump"]
+        self.assertEqual(1, held["heldLiftoffs"])
+        self.assertTrue(held["rearmed"])
+
     def test_the_jump_arc_is_the_engines_gravity(self) -> None:
         jump = self.results["jump"]
         # The take-off speed is a tunable and `physics.js` labels it as one.
