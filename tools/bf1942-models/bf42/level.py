@@ -1146,7 +1146,8 @@ def resolve_ssc_path(source: str, relative: str) -> str:
 
 def _ssc_lines(text: str, source: str,
                include: Callable[[str], str | None] | None,
-               depth: int = 0, level: str = "high"):
+               depth: int = 0, level: str = "high",
+               skipping: list[bool] | None = None):
     """Flatten a script's lines, expanding `#include` where it appears.
 
     `#include` is textual for *patch* state — a file included between
@@ -1161,14 +1162,46 @@ def _ssc_lines(text: str, source: str,
     tiers internally, and the includer's tier resumes when it returns —
     emitted here as a synthetic `#templateLevel` line so the parser needs no
     notion of file boundaries.
+
+    Skipped regions are dropped here too, because the engine drops them before
+    it looks at any directive: `/*` and `beginSkip` are *one* mechanism, a
+    single flag (`BF1942.exe` 0x007f9a80, flag `0x00a8fb30`, called first in
+    the per-line pipeline at 0x007fb0e0). Read off that function, the rules
+    are not C's:
+
+    * A line **containing** `*/`, or equal to `endSkip`, clears the flag and is
+      itself dropped — the close test runs first and unconditionally, so a
+      `*/` with no opener is simply eaten (`KettenKradEngine.ssc` ships one).
+    * A line containing `/*`, or equal to `beginSkip`, sets it and is dropped.
+    * So the unit is the *line*, not the character span: `load x.wav /* note */`
+      loses the `load` too, and a self-contained `/* one liner */` never opens
+      a skip at all because the close test matched first.
+    * There is no terminator requirement. 373 of the 849 scripts that use the
+      markers never close them — `LynxHorn.ssc` is a horn followed by `/*` and
+      a whole copy-pasted jeep engine — and the flag simply stays set. It is
+      reset only when the top-level parse finishes (0x007fb040), which is why
+      it is threaded through the include recursion rather than scoped per file.
+    * Being first in the pipeline, it swallows `#include` and `#templateLevel`
+      inside a skipped region as well.
     """
+    if skipping is None:
+        skipping = [False]
     for raw in text.splitlines():
         line = raw.strip()
-        if line.lower().startswith("#templatelevel"):
+        lowered = line.lower()
+        if "*/" in line or lowered.startswith("endskip"):
+            skipping[0] = False
+            continue
+        if skipping[0]:
+            continue
+        if "/*" in line or lowered.startswith("beginskip"):
+            skipping[0] = True
+            continue
+        if lowered.startswith("#templatelevel"):
             parts = line.split()
             if len(parts) > 1:
                 level = parts[1].lower()
-        if line.lower().startswith("#include"):
+        if lowered.startswith("#include"):
             tokens = line.split(None, 1)
             if include is None or len(tokens) < 2 or depth >= _SSC_MAX_INCLUDE_DEPTH:
                 continue
@@ -1176,8 +1209,12 @@ def _ssc_lines(text: str, source: str,
             nested = include(target)
             if nested is None:
                 continue
-            yield from _ssc_lines(nested, target, include, depth + 1, level)
-            yield f"#templateLevel {level}"
+            yield from _ssc_lines(nested, target, include, depth + 1, level,
+                                  skipping)
+            # An include that ran off the end still skipping leaves the flag
+            # set, and the engine's tier is global, so nothing is restored.
+            if not skipping[0]:
+                yield f"#templateLevel {level}"
             continue
         yield line
 
@@ -1257,10 +1294,6 @@ def parse_ssc(text: str, *, level: str | None = None,
             if len(parts) > 1:
                 current_level = parts[1].lower()
             continue
-        if lower.startswith("beginskip"):
-            # One occurrence in vanilla, with no terminator anywhere in the
-            # shipped data: it comments out the tail of the file it opens.
-            break
         if lower.startswith("#"):
             continue
         if want is not None and current_level != want:

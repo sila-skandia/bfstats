@@ -5206,6 +5206,96 @@
    "confidence": "verified",
    "source": "research-2026-09-16-jump-velocity",
    "note": "lnxded (0x0826bf00 is the second copy gcc emits). Builds the soldier's four AnimationStateMachineInstances, 68 bytes each: a two-pass loop from +0x294 (esi = 1 at 0x0826b4df, calls at 0x0826b5f9), then +0x31c and +0x360. 0 is the lower body, 1 the upper body, 2 the camera-shake triggers (ledger, camera-shake section); updateCameraShake 0x0827dea0 uses only those three. Client ctor 0x004ff440 does the same from +0x2c0."
+  },
+  {
+   "address": "0x007f9a80",
+   "name": "SoundScript__skipFilter",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "First stage of the `.ssc` per-line pipeline and the whole of the engine's comment handling. `/*` and `beginSkip` are one mechanism, not two: `if (line == \"endSkip\" || line.find(\"*/\") != npos) { g_sscSkipping = 0; return 1; }` then `if (g_sscSkipping) return 1;` then `if (line == \"beginSkip\" || line.find(\"/*\") != npos) { g_sscSkipping = 1; return 1; }` else return 0. Consequences, all relied on by shipped data: the unit is the LINE, not the character span (`/*load @ROOT/...` in XPack2 `Gewehr43_zf4/Sounds/High.ssc` loses the `load` with it); the close test runs first and unconditionally, so a `*/` with no opener is silently eaten (vanilla `KettenKradEngine.ssc`) and a self-contained `/* ... */` on one line never opens a skip; and an opener needs no terminator \u2014 it skips to the end of the parse (vanilla `LynxHorn.ssc`, and 373 of the 849 scripts that use the markers). Returning 1 means the line is consumed, so being first it also swallows `#include` and `#templateLevel` inside a skipped region."
+  },
+  {
+   "address": "0x007f9ed0",
+   "name": "SoundScript__readLine",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "Reads one `.ssc` line from the current include stream: clears the string, then appends bytes until `\\n`, discarding `\\r`. No trimming \u2014 the line handed to the filters carries its own leading whitespace, so `beginSkip`/`endSkip` match only unindented (their test is `operator==`), while `/*` and `*/` are substring searches and match anywhere on the line."
+  },
+  {
+   "address": "0x007fa010",
+   "name": "SoundScript__handleTemplateLevel",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "`#templateLevel` for `.ssc` \u2014 the Options -> Sound detail tier. Second in the per-line pipeline, after the skip filter."
+  },
+  {
+   "address": "0x007fa3f0",
+   "name": "SoundScript__handleInclude",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "`#include` for `.ssc`. Fourth in the per-line pipeline 0x007fb0e0, so it runs only on lines the skip filter let through."
+  },
+  {
+   "address": "0x007fad10",
+   "name": "SoundScript__handleBeginMap",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "`#beginMap` / `#endMap` for `.ssc`: declares the extern channels the owning object feeds (`Engine::Rpm` and friends). Third in the per-line pipeline."
+  },
+  {
+   "address": "0x007fb040",
+   "name": "SoundScript__resetParseState",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "Clears all `.ssc` parser globals after a top-level parse: the skip flag 0x00a8fb30, the current patch/sample pointers 0x00a8fb28 / 0x00a8fb2c, the `#beginMap` channel 0x0095ac7c / 0x00a8fb34, and the patch list at 0x00a8fcc0. Called once from SoundScript__parse 0x007fb1c0, never per included file \u2014 which is what makes the skip flag outlive an include."
+  },
+  {
+   "address": "0x007fb0e0",
+   "name": "SoundScript__handleLine",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "The `.ssc` per-line pipeline, in order: skipFilter 0x007f9a80, then `#templateLevel` 0x007fa010, then `#beginMap`/`#endMap` 0x007fad10, then `#map` 0x007f9be0, then `#include` 0x007fa3f0, then `newPatch` 0x007f9a00; anything left falls through to the 23-entry command table built by 0x007fde70. The skip filter being first is what makes a comment outrank every directive."
+  },
+  {
+   "address": "0x007fb1c0",
+   "name": "SoundScript__parse",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "Top-level `.ssc` parse: open, then `while (!atEof()) { readLine 0x007f9ed0; handleLine 0x007fb150 -> 0x007fb0e0; }`, then finalize 0x007f9db0 and resetParseState 0x007fb040. The EOF test walks the include stack (the stream array at 0x00a8fc5c), so every `#include` is read through this same loop and the same globals."
+  },
+  {
+   "address": "0x007fde70",
+   "name": "SoundScript__registerCommands",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order \u2014 load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it \u2014 they are handled by the pipeline filters ahead of it."
+  },
+  {
+   "address": "0x00a8fb30",
+   "name": "g_sscSkipping",
+   "kind": "data",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ghidra 2026-09-16",
+   "note": "The `.ssc` skip flag, one byte. Set by `/*` or `beginSkip` and cleared by `*/` or `endSkip` in SoundScript__skipFilter 0x007f9a80; otherwise cleared only by SoundScript__resetParseState 0x007fb040 at the end of a whole top-level parse. It is therefore global across the `#include` stack, not per file: an unterminated `/*` inside an included script keeps skipping in the includer after the include returns."
   }
  ]
 }
