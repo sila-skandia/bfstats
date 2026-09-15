@@ -1065,6 +1065,18 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => keys.delete(e.code));
 
+// Crouch is left Ctrl, for game parity with `c_PICrouch` -- but the browser
+// owns Ctrl+W outright and a page cannot intercept it even in fullscreen, so
+// firing while crouching still closes the tab. There is no key remap that
+// fixes that; the only lever left is asking before the tab actually goes,
+// the way any unsaved-work page does. Scoped to mid-play (captured, on
+// foot, a live soldier) so it never fires over the gate screen or a fly-by.
+addEventListener('beforeunload', e => {
+  if (!(captured && optOnFoot.checked && soldier)) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
 const sideEl = document.getElementById('side');
 const sideCollapseBtn = document.getElementById('side-collapse-btn');
 const mapFabBtn = document.getElementById('map-controls-fab');
