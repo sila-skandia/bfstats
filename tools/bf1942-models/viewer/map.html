@@ -165,6 +165,7 @@
      is no repaint to hint anything went wrong, so this has to be loud enough
      to read over a frozen frame rather than blend in like #gate does. */
   #gl-lost {
+    position: absolute;
     z-index: 8;
     inset: 0;
     display: grid;
@@ -666,12 +667,17 @@ stage.appendChild(renderer.domElement);
 // goes quietly stale. Measured cause on this machine: a GPU-side stall
 // during a firing burst at DPR 2 (features/mesh-viewer-performance/README.md,
 // the Iris Xe log) took 8-9.5 s on one frame and the browser gave up on the
-// context rather than waiting it out. `preventDefault()` is what tells
-// Chromium a restore is worth attempting at all; without it `restored` never
-// fires. Nothing here tries to rebuild the scene on restore -- every texture
-// and compiled program the renderer held is gone, and re-uploading all of it
-// is out of scope for "no silent black canvas" -- so restore just offers a
-// reload instead of pretending play can continue.
+// context rather than waiting it out. `renderer`'s own `onContextLost`
+// (`vendor/three.module.js`) already calls `preventDefault()` -- that is
+// what tells Chromium a restore is worth attempting, and `restored` would
+// fire without this listener too -- the call here is redundant, not load-
+// bearing, kept only because a second listener calling it is harmless and
+// this one should not depend on three's internals staying that way. What
+// this listener actually adds is the visible message: nothing here tries
+// to rebuild the scene on restore -- every texture and compiled program the
+// renderer held is gone, and re-uploading all of it is out of scope for "no
+// silent black canvas" -- so restore just offers a reload instead of
+// pretending play can continue.
 const glLostEl = document.getElementById('gl-lost');
 const glLostBody = document.getElementById('gl-lost-body');
 document.getElementById('gl-lost-reload')?.addEventListener('click', () => location.reload());
