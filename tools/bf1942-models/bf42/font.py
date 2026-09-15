@@ -106,6 +106,100 @@ def parse_dif(text: str) -> BitmapFont:
     return font
 
 
+@dataclass(frozen=True)
+class HudGlyph:
+    """One row of `Font/BF1942.font`: a raw character byte and the glyph's
+    atlas rectangle, `(x0, y) - (x1, y + Height)` (`Height` is the font's,
+    not stored per glyph)."""
+    code: int
+    x0: float
+    y: float
+    x1: float
+
+    @property
+    def width(self) -> float:
+        """`x1 - x0 + 1`: `Font::loadFontFile` client 0x0065d1a0."""
+        return self.x1 - self.x0 + 1
+
+
+@dataclass
+class HudFont:
+    """`Font/BF1942.font`, the in-game HUD font (kill messages, chat, radio,
+    server messages - everything outside the menu system, which uses `.dif`
+    instead). `Font::loadFontFile` (client 0x0065d1a0, `Font` vtable
+    0x00919098 +0x20) reads eight `key = value` header lines by position,
+    never checking the key text, discards one line (a `-------` divider in
+    both files this has been read against), then reads `%c %f %f %f` rows
+    into a 256-entry table indexed by the raw character byte - so the text
+    must stay undecoded (latin-1, one byte per glyph) for the codes to mean
+    anything past ASCII.
+
+    Only vanilla ships the file. The live copy (`Font.rfa`) is 256x256,
+    `Height` 20, `BetweenWidth` 0, `SpaceWidth` 5; the original 2004 copy
+    (`Font-Original.zip`'s own `Font.rfa`) is 128x128, 11, 1, 1 - a smaller
+    face repacked into a smaller atlas, not just a resize.
+    """
+    texture: str
+    texture_width: int
+    texture_height: int
+    between_width: int
+    space_width: int
+    height: int
+    alpha_test: int
+    alpha_blend: int
+    glyphs: dict[int, HudGlyph] = field(default_factory=dict)
+
+    def uv(self, code: int) -> tuple[float, float, float, float]:
+        """`(u0, v0, u1, v1)`, normalised 0..1. `Font::buildQuads`
+        (0x0065ce10) starts half a texel in so the sampler never bleeds into
+        a neighbouring glyph, and spans the font's shared `Height`, not a
+        per-glyph one."""
+        g = self.glyphs[code]
+        w, h = self.texture_width, self.texture_height
+        u0, v0 = (g.x0 + 0.5) / w, (g.y + 0.5) / h
+        return u0, v0, u0 + g.width / w, v0 + self.height / h
+
+    def advance(self, code: int, scale: float = 1.0) -> float:
+        """`Font::buildQuads`: `(width + BetweenWidth) * scale`, except a
+        space draws nothing and advances `SpaceWidth * scale` instead - its
+        atlas rectangle (typically `(0, 0)-(0, 0)`, a dummy) is never used."""
+        if code == 0x20:
+            return self.space_width * scale
+        return (self.glyphs[code].width + self.between_width) * scale
+
+    def measure(self, text: str, scale: float = 1.0) -> float:
+        return sum(self.advance(ord(c), scale) for c in text if ord(c) in self.glyphs or c == " ")
+
+
+def parse_hud_font(text: str) -> HudFont:
+    lines = text.splitlines()
+    if len(lines) < 9:
+        raise ValueError("not a BF1942.font: fewer than 8 header lines plus the divider")
+
+    def value(line: str) -> str:
+        # "without checking their keys": the key half of `key = value` is
+        # never inspected, only its position in the first eight lines.
+        return line.partition("=")[2].strip()
+
+    texture = value(lines[0])
+    texture_width, texture_height, between_width, space_width, height, alpha_test, alpha_blend = (
+        int(float(value(lines[i]))) for i in range(1, 8))
+    # lines[8] is discarded unconditionally - a "-------" divider in both
+    # files this has been read against, but nothing reads its content.
+    font = HudFont(texture, texture_width, texture_height, between_width,
+                   space_width, height, alpha_test, alpha_blend)
+    for line in lines[9:]:
+        if not line:
+            continue
+        code = ord(line[0])
+        parts = line[1:].split()
+        if len(parts) != 3:
+            raise ValueError(f"bad glyph row: {line!r}")
+        x0, y, x1 = (float(v) for v in parts)
+        font.glyphs[code] = HudGlyph(code, x0, y, x1)
+    return font
+
+
 def decode_alpha_tga(data: bytes) -> tuple[int, int, bytes]:
     """An 8-bit greyscale TGA (type 3, or type 11 RLE) to white RGBA with the
     texel as alpha. Returns (width, height, rgba) top-down."""
