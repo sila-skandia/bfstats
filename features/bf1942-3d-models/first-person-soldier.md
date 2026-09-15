@@ -1991,6 +1991,18 @@ Against the retail capture the right hand and the gun's direction now land
 without calibration; the front sight and left hand sit ~60–70 px (≈5°)
 higher than retail, a pose-level residual the corpus doc §7 keeps open.
 
+**Third pass (2026-09-15, corpus doc §2 "Clock").** The two clocks the rig
+lives on are now read, not assumed. The client is a fixed-step simulation at
+`g_simulationFps` = 30 Hz: `Setup::mainLoop` hands `GameClient::update` a
+tick count and `1/30`, and every tick pops one buffered `PlayerInput` into
+`handlePlayerInput(…, 1/30)` — so the deviation cone's per-call decay and
+bloom are per-1/30-s amounts, and `deviation.js` ticks at 30, not the 60 of
+the viewer's own body sim. The hip↔zoom ease and the FOV-factor ease
+(`handleVisualUpdate`) are called from the drawer, once per rendered frame,
+which is what this page already did. `zoomFov` is confirmed as the render
+view's own unit (written verbatim into `RenderView::setFieldOfView`), and it
+is `zoomFov`, not `soldierZoomFov`, that scales the zoomed mouse deltas.
+
 The engine's own chain is decompiled in
 [`../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md`](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md)
 §3: the offsets displace the **rig**, in the soldier's view frame — the
@@ -2008,8 +2020,10 @@ camera never moves.
 3. **Add the weapon's own nudge**: `soldierCameraPosition` at the hip,
    `soldierZoomPosition` zoomed, **eased at 25% of the remaining distance
    per frame** (the engine's constant, dt-free); while zoomed multiply the
-   view FOV by `soldierZoomFov` (0.7/0.3 ease) and scale mouse deltas by the
-   same factor. All four values are in the extras.
+   arms' FOV by `soldierZoomFov` (0.7/0.3 ease) and scale mouse deltas by
+   `zoomFov` — the zoomed camera FOV itself, in radians, i.e. its ratio to
+   the 1.0 rad default (corpus doc §3, third pass; an earlier reading said
+   `soldierZoomFov`). All four values are in the extras.
 4. **Drive the mixer off the soldier state**: `idle` looping always (it is
    the breathing sway — at its declared 0.1x it is slow enough to read as
    idle sway, not animation); crossfade to `walk`/`run` by gait; `fire` while
