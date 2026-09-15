@@ -39,6 +39,25 @@ from extract_models import (DEFAULT_GAME_DIR, build_library, build_pools,
                             discover_levels, mod_chain)
 
 
+def _soldier_hit_points(library: con_mod.ObjectLibrary,
+                        soldier: str | None) -> tuple[float | None, float | None]:
+    """A bound soldier template's `hitpoints`/`maxHitpoints`, or (None, None).
+
+    A Kit carries no hit points of its own -- they are a `BFSoldier` stat
+    (`CommonSoldierData.inc`'s `HitPoints`/`MaxHitPoints`, reached through the
+    bare `include` directive every nation's `Objects.con` uses; see
+    `extract_models._inline_includes`) -- so this reads them off the soldier
+    the level's own `game.setTeamSkin` paired with the kit's team, at the
+    point a kit first enters `rows` below. Vanilla's 30/30 is identical
+    across every nation; read per kit rather than hoisted to a constant in
+    case a mod's soldier differs.
+    """
+    template = library.object(soldier) if soldier else None
+    if template is None:
+        return None, None
+    return template.hitpoints, template.max_hitpoints
+
+
 def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                    loadouts: dict[str, dict[int, kit_mod.TeamLoadout]],
                    mod: str) -> dict:
@@ -65,12 +84,34 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                     items = [
                         (library.object(item).name if library.object(item) else item)
                         for item in kit.carried]
+                    kit_template = library.object(kit.template)
+                    hitpoints, max_hitpoints = _soldier_hit_points(
+                        library, team.soldier)
                     rows[kit.template] = {
                         "nation": kit.nation,
                         "class": kit.kit_class,
                         "team": kit.team,
                         "primary": kit.primary,
                         "items": items,
+                        # The HUD health bar a soldier wearing this kit draws,
+                        # and the row of icons the spawn screen shows under
+                        # the kit portrait -- `setHealthBarIcon`/
+                        # `setHealthBarFullIcon`/`setKitIcon`/`addWeaponIcon`
+                        # on the Kit template itself.
+                        "healthBarIcon": (
+                            kit_template.kit_health_bar_icon if kit_template else None),
+                        "healthBarFullIcon": (
+                            kit_template.kit_health_bar_full_icon
+                            if kit_template else None),
+                        "kitIcon": (
+                            {"index": kit_template.kit_icon[0],
+                             "icon": kit_template.kit_icon[1]}
+                            if kit_template and kit_template.kit_icon else None),
+                        "weaponIcons": (
+                            list(kit_template.kit_weapon_icons)
+                            if kit_template else []),
+                        "hitpoints": hitpoints,
+                        "maxHitpoints": max_hitpoints,
                     }
             level_entry[str(team_id)] = {"soldier": team.soldier, "slots": slots}
         levels[level_name.lower()] = level_entry
