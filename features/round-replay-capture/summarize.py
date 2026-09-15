@@ -47,7 +47,8 @@ def main(path: str) -> None:
                 if e == "createPlayer":
                     players[rec["pid"]] = rec
                 elif e == "raw" and len(raw_types[rec["type"]]) < 3:
-                    raw_types[rec["type"]].append(rec["raw"])
+                    # Format v2 records the event's size; v1 did not.
+                    raw_types[rec["type"]].append((rec.get("size"), rec["raw"]))
             elif k == "o":
                 objects[rec["id"]] = rec
                 first_seen[rec["id"]] = t
@@ -69,11 +70,12 @@ def main(path: str) -> None:
     for e, n in events.most_common():
         print(f"  {e:14} {n}")
     if raw_types:
-        print("\nunmapped event payloads (type: first bytes as hex):")
+        print("\nunmapped event payloads (type, sizeof, payload as hex):")
+        print("  size ? = no size recorded; the dump is a fixed prefix and may run past the event")
         for typ, dumps in sorted(raw_types.items()):
-            for d in dumps:
+            for size, d in dumps:
                 ascii_ = "".join(chr(b) if 32 <= b < 127 else "." for b in bytes.fromhex(d))
-                print(f"  0x{typ:02x}: {d}\n        {ascii_}")
+                print(f"  0x{typ:02x} size {size if size is not None else '?'}: {d}\n        {ascii_}")
     print(f"\nplayers ({len(players)}):")
     for pid, p in sorted(players.items()):
         print(f"  {pid:3} team={p['team']} ai={p['ai']} veh={p['vehNetId']} {p['name']!r}")
