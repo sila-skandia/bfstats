@@ -1753,3 +1753,29 @@ at its `minDeviation` floor.
   `features/bf1942-engine-reference/` is the same route that settled gravity
   and the speed tables, and everything downstream of `DeviationModel.current()`
   survives the swap untouched.
+
+## 10. The deploy screen
+
+Joining on foot is a choice now, not a teleport. Ticking `spawn on foot` opens
+the fullscreen map in a deploy state — the same canvas and projection the M
+key shows, wearing a header (level name, "select spawn point") and a commit
+bar (team badge, Spawn button, key hints). Every flag that owns soldier
+spawns gets a ring; clicking one — or pressing 1-9 — selects it, and the
+chosen ring pulses. Spawn (or Enter) closes the screen and runs today's
+`setOnFoot` at that flag; Escape cancels back to fly. A level with no
+spawn-owning flags skips the screen and keeps the old instant path and its
+refusal message.
+
+The selection is the panel's flag `<select>` — the screen reads and writes
+it, `buildSpawnFlags` now preserves the value across its rebuild, and a level
+switch clears it in `show()` so the memory never crosses maps.
+
+Once alive, R stays reload (or quick-respawn with an empty hand), and the
+road back to the screen is M or Shift+R: a redeploy. Cancelling a redeploy
+keeps the life in progress and restores the select to the flag he actually
+stands at.
+
+Under `?shots` the flow is drivable headlessly: `__setOnFoot(true)` parks the
+join on the screen, and `window.__deploy` is `{ open, flags, select(name),
+spawn() }` — `open` and `flags` (name/team/spawns/selected) are state,
+`select` is the click on a marker (name or index), `spawn` is the button.
