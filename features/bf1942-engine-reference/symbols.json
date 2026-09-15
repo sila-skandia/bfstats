@@ -663,6 +663,15 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x00462ca0",
+   "name": "BaseQuaternion<float>::slerp(Quat const&, Quat const&, float)",
+   "kind": "function",
+   "subsystem": "math",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-pose",
+   "note": "lnxded 0x08226460; the frame interpolation in applyOnSkeleton and the crossfade in setRelativeBoneTransform both go through it."
+  },
+  {
    "address": "0x00462f50",
    "name": "Renderer_initDevice",
    "kind": "function",
@@ -1680,6 +1689,15 @@
    "note": "c_PGFNoGrip=0, c_PGFContactGrip=1(default case), c_PGFRollGrip=2, c_PGFEngineGrip=4, c_PGFRollGripWhenOccupied=8, c_PGFDummyGrip=0x20, c_PGFEngineDummyGrip=0x24=Engine|Dummy, c_PGFStaticFriction=0x80. It is a bitfield. Force semantics of each bit live in the response solver (open)."
   },
   {
+   "address": "0x0054edd0",
+   "name": "AnimationState clips.size() (AnimationInfo count, stride 12)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-pose",
+   "note": "Called from the updateState/updateAnimations twins as the clip-slot bound; AnimationInfo = {Animation* (+0x1c -> BoneAnimation on the client), float speed, bool loop}. lnxded reads the vector at state+0xf4 inline; client vector at state+0x150."
+  },
+  {
    "address": "0x00551930",
    "name": "HandFireArms::getDevMod",
    "kind": "function",
@@ -2337,6 +2355,24 @@
    "note": "lnxded 0x0832aed0. Second arg is the clip slot (0 = 3P clip, 1 = 1P clip); returns without touching the skeleton when clipIndex >= the state's clip count (lnxded 0x0832af36). BFSoldier::updateAnimations passes isFirstPerson&&(soldier+0x50==0) here, so in first person every Lb_* state (none declares a 1P clip) applies nothing and root/pelvis/legs stay at the .ske rest."
   },
   {
+   "address": "0x00613480",
+   "name": "AnimationStateMachineInstance::setCurrentState(int)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-pose",
+   "note": "lnxded 0x0832b150. Stores the new state index (+0x20), parks the idle timer at 1000 s (+0x28), remembers the old clip/phase in +0x38/+0x3c only if none is parked, clears the current clip pointer. updateState then re-arms the idle timer to (rand&3)+4 s and clears +0x38 whenever the new state has a clip at the slot (client decompile: if (prev && cur) prev = 0)."
+  },
+  {
+   "address": "0x00613a80",
+   "name": "AnimationState::update(float phase, string const& weaponName) -> next state",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-pose",
+   "note": "lnxded 0x08329f00. Given the instance's phase, returns returnToState/addTransitionWhenDone (state+0xc0, resolved lazily from the +0xc4 string; '_POSE_' -> 0xffff = the instance's base state +0x1c) when phase > 1 or < 0, else -1. Only when no return state: addRandomTransition pick, or the weapon-templated next state (state+0xf0 prefix + weaponName)."
+  },
+  {
    "address": "0x00613c60",
    "name": "AnimationStateMachineInstance::updateState(float, int clipIndex, string const&)",
    "kind": "function",
@@ -2553,6 +2589,24 @@
    "note": "vtbl_RendPCDX8 slot +0x8c. Flushes the deferred state (0x00604750), maps the vertex format to an FVF handle (0x00672a40 -> 0x00a5a518) and SetVertexShader(fvf) when no programmable shader is bound (DAT_009c94bc == 0), then draws through this+0x90 slot 0x120. Only pending (popped) deferred ids are re-applied, so a direct SetTransform issued by the mesh draw survives to its primitives."
   },
   {
+   "address": "0x0066b5c0",
+   "name": "Skeleton::setRelativeBoneTransform(int, Quat const&, Vec3 const*, float weight)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-pose",
+   "note": "lnxded 0x0832f6e0 read in full. weight >= 1: bone local = quat.toMat, translation = *trans. weight < 1: local rot = slerp(fromMat(current local), quat, weight), translation = cur + (trans-cur)*weight. The crossfade blends against whatever the skeleton currently holds; there is no second clip in the blend once updateState has cleared +0x38."
+  },
+  {
+   "address": "0x0066b740",
+   "name": "BoneAnimation::applyOnSkeleton(Skeleton&, float phase, float weight, int mask)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-pose",
+   "note": "lnxded 0x0832ed60, decompiled in both. 'phase' is a normalized clip position: modf(phase) (negative frac +1) x N -> frameA (N = frames for a looping clip, frames-1 for a one-shot), frameB = (frameA+1) % frames, slerp/lerp by the remainder; one-shots clamp to the first frame below 0 and the last frame above 1. Mask: bit 0x10000 = write frame A's quat/trans straight into the bone local (no blend), remaining bits = max bone level (bone+0xcc), -1 = every bone. Calls setRelativeBoneTransform 0x0066b5c0 with 'weight'. Static oldTime/oldModuleTime cache at DAT_00959c98/DAT_00a5a52c."
+  },
+  {
    "address": "0x00672a40",
    "name": "rend_vertexFormatToD3DFVF",
    "kind": "function",
@@ -2587,6 +2641,24 @@
    "confidence": "inferred",
    "source": "ghidra-session",
    "note": "Sibling of 0x006773d0 chosen when blockFormat & 0x20 (vtable 0x0091b6d0); same 0x00672a40 call and field layout for stride/bytes/FVF."
+  },
+  {
+   "address": "0x006937d0",
+   "name": "CompressedAnim::GetQuat(int bone, int frame, Quat&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-pose",
+   "note": "lnxded 0x0832fc90; call shape and use in applyOnSkeleton (quat channels 0-3 of the bone's seven)."
+  },
+  {
+   "address": "0x00693820",
+   "name": "CompressedAnim::GetTrans(int bone, int frame, Vec3&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15-1p-pose",
+   "note": "lnxded 0x0832fcf0: three GetValue(bone, frame, channel 4..6) calls, so every bone of a .baf always carries a translation track; nothing falls back to the rest translation."
   },
   {
    "address": "0x0069f4ae",
