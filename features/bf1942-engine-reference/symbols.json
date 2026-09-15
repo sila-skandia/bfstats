@@ -514,9 +514,9 @@
    "name": "minimap_resolveMapPath",
    "kind": "function",
    "subsystem": "ui",
-   "confidence": "working",
-   "source": "minimap-and-fullmap.md",
-   "note": "Resolves the MapPath placeholder in menu/InGame at runtime and hot-swaps the level's map picture node into it (the spawn-screen map, HUD minimap and fullscreen map share it). Likely home of the spawn-screen map pane rect and dimming, which are not in the layout data (ledger MEME-8, MEME-10)"
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "Despite the name, BfMenu's top-level screen-path switch ('Battlefield' / 'InGame' / 'LoadMenu', with BFMenu::paint() path-not-found logging, cursor-texture swaps and chat/scoreboard toggles). Its only map work is installing the level's map picture into the MapPath placeholder: getMap() vtable +0x4c(0, picture). No colour, blend, texture-stage or rectangle code anywhere in it, so the spawn-screen dimming (ledger MEME-10) is not set here. Name kept from minimap-and-fullmap.md."
   },
   {
    "address": "0x0045dd69",
@@ -704,8 +704,8 @@
    "kind": "function",
    "subsystem": "rend",
    "confidence": "verified",
-   "source": "ghidra-session-2026-09-15-drawfov",
-   "note": "Frame driver around Renderer_drawView (per view via 0x00466cd0/0x00466d40), screenshot path \"ScreenShots/ScreenShot%d.tga\". bf42plus patch__renderer_draw_hook 0x004670a5 lives inside it."
+   "source": "ghidra-session-2026-09-15-drawfov; research-2026-09-15-weapons",
+   "note": "Frame driver around Renderer_drawView (per view via 0x00466cd0/0x00466d40), screenshot path 'ScreenShots/ScreenShot%d.tga'. bf42plus patch__renderer_draw_hook 0x004670a5 lives inside it. Called twice from Setup__mainLoop (0x0044ac57, 0x0044ae63). Also rewrites the frame cap: gated on Renderer+0x38 (writer unknown), it polls RendPCDX8 vtable +0x174 (0x0063eec0) once per frame and, when that changes, sets the Setup singleton's (0x00971eac) +0x17c to 100.0f (0x00466e31) or 60.0f (0x00466e43) (ledger GL-2)."
   },
   {
    "address": "0x004670a5",
@@ -748,9 +748,9 @@
    "name": "minimap_screenTransform",
    "kind": "function",
    "subsystem": "ui",
-   "confidence": "working",
-   "source": "minimap-and-fullmap.md",
-   "note": "Minimap-class vtable override: full 2x2 rotation from cos/sin of member +0x64 (inferred player yaw, zeroed by setStaticMinimap -- OPEN, write site not found), divided by a zoom scale pow(..) of 1 - member +0x40 (zoom step values OPEN, write site not found). Ledger MMAP-1, MMAP-2"
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "BfMap vtable slot +0x74 (overrides TransformNode's). Texture crop scale pow(2.3, (1 - [+0x40]) * [+0x44]) with 2.3 read as a double from 0x008d62a0, a 2x2 rotation from cos/sin of -[+0x64], and the mouse-pick hit test through TransformNode__getSize. +0x40 (zoom) and +0x64 (rotation) are written by BfMap__animate 0x00468fb0 (ledger MMAP-1, MMAP-2); the writers of +0x3c (the zoom toggle), +0x48 and +0x68 are unread."
   },
   {
    "address": "0x0046a2a0",
@@ -766,9 +766,9 @@
    "name": "range_minimap_undefined",
    "kind": "range",
    "subsystem": "ui",
-   "confidence": "open",
-   "source": "minimap-and-fullmap.md",
-   "note": "~15 KB of undefined .text 0x0046a5c0-0x0046e230; likely minimap update/draw code and the +0x40 zoom / +0x64 rotation write sites. Recover functions by vtable, do not global-reanalyse"
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "Closed. The ~15 KB of once-undefined .text 0x0046a5c0-0x0046e230 is two functions: 0x0046a5c0-0x0046a676, an MSVC std::_Rb_tree erase/rebalance helper (colour byte +0x2d) unrelated to the minimap, and 0x0046a680-0x0046e22f, BfMap__update. The zoom and rotation write sites were elsewhere, in BfMap__animate 0x00468fb0."
   },
   {
    "address": "0x0046b130",
@@ -1469,8 +1469,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "ghidra-session-2026-09-15",
-   "note": "Composes a soldier's three AnimationStateMachineInstances (array based at BFSoldier +0x294 in lnxded; 0 = lower body, 1 = upper body, 2 = camera-shake triggers, the last proven by triggerCameraShake). Passes dt straight through with NO speed term. The lower-body instance - which owns every Lb_Walk/Run/Crouch/Lie locomotion state and therefore the whole walking view bob - is multiplied by cameraShakeFactor (DAT_0099000c). The upper-body and trigger instances get a hardcoded 1.0f."
+   "source": "ghidra-session-2026-09-15; research-2026-09-16-jump-velocity",
+   "note": "Composes the first three of a soldier's four AnimationStateMachineInstances (68 bytes each from BFSoldier +0x294 in lnxded, +0x2c0 in the client; 0 = lower body, 1 = upper body, 2 = camera-shake triggers, the last proven by triggerCameraShake). Passes dt straight through with NO speed term. The lower-body instance - which owns every Lb_Walk/Run/Crouch/Lie locomotion state and therefore the whole walking view bob - is multiplied by cameraShakeFactor (DAT_0099000c). The upper-body and trigger instances get a hardcoded 1.0f."
   },
   {
    "address": "0x004fb150",
@@ -1487,8 +1487,8 @@
    "kind": "address",
    "subsystem": "handweapon",
    "confidence": "verified",
-   "source": "ghidra",
-   "note": "Decoded from the PE bytes (objdump), 0x004fc849-0x004fc8ea: esi = soldier (+0x290 bool), ebp = hand weapon, edi = [ebp+0x4c] template. If weapon isZoomed() and byte [tmpl+0x3d8] (useScope) and soldier+0x290: soldier slot +0x28 (0, 2) then weapon slot +0x28 (0, 2); else if float [tmpl+0x3dc] (zoomFov) above 0.0 (const 0x008c41ac) and soldier+0x290: soldier slot +0x28 (2, 0) then weapon slot +0x28 (2, 0). Camera-mode 0/2 transition only; the FOV value itself travels via component 0x5000 and RenderView::setFieldOfView in FireArms__setZoom."
+   "source": "ghidra; corrected research-2026-09-15-weapons",
+   "note": "Decoded from the PE bytes (objdump), 0x004fc849-0x004fc8ea: esi = soldier (+0x290 bool), ebp = hand weapon, edi = [ebp+0x4c] template. If weapon isZoomed() and byte [tmpl+0x3d8] (useScope) and soldier+0x290: soldier slot +0x28 (0, 2) then weapon slot +0x28 (0, 2); else if float [tmpl+0x3dc] (zoomFov) above 0.0 (const 0x008c41ac) and soldier+0x290: soldier slot +0x28 (2, 0) then weapon slot +0x28 (2, 0). Read as a camera-mode 0/2 transition; caution since 2026-09-16: on FireArms slot +0x28 is updateFlags, so the pairs may be set/clear masks for flag bit 2 - not re-checked. The FOV itself reaches the renderer through RenderView::setFieldOfView in FireArms__setZoom, not through any component."
   },
   {
    "address": "0x004fc8b6",
@@ -1586,8 +1586,8 @@
    "kind": "function",
    "subsystem": "handweapon",
    "confidence": "verified",
-   "source": "ghidra",
-   "note": "Ghidra already had it as FUN_005391b0 (no Ghidra edit made). FireArms::setZoom(bool), twin of lnxded 0x082881a0 read side by side in objdump: template = [this+0x4c]; zoomFov = [tmpl+0x3dc] tested > 0 first; byte [tmpl+0x3d8] = useScope; RenderView (g_renderView 0x009ab868) slot +0x18 getFieldOfView saved to this+0x1f4, zoomFov copied to this+0x1f8 and published as component 0x5000 via this->vtable+0x28 setComponent (lnxded slot +0x2c) at 0x00539281/0x00539348; SoldierZoomFov = [tmpl+0x3e0] > 0 and soldierZoomPosition = tmpl+0x3e4 handed to the soldier (CID_BFSoldierTemplate 0x008dcd10 check) via 0x00539140; the apply/restore path writes the +0x1f8 value straight into RenderView slot +0x14 = setFieldOfView(float) at 0x005393f6 -- so zoomFov is a whole vertical FOV in radians, the unit of renderer.fieldOfView. NOTE these offsets are off the object pointer FireArms+0x4c; FireArmsTemplate::makeScript 0x0053a110 and the section-1 table of handweapon-view-and-deviation.md use this+4 of that (useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc)."
+   "source": "ghidra; corrected research-2026-09-15-weapons",
+   "note": "Ghidra already had it as FUN_005391b0. FireArms::setZoom(bool), twin of lnxded 0x082881a0 read side by side in objdump: template = [this+0x4c]; zoomFov = [tmpl+0x3dc] tested > 0 first; byte [tmpl+0x3d8] = useScope; RenderView (g_renderView 0x009ab868) slot +0x18 getFieldOfView saved to this+0x1f4, zoomFov copied to this+0x1f8. At 0x00539281 and 0x00539348 it calls this->vtable+0x28 with (0x5000, 0): BCompositeObject<IPlayerObject>::updateFlags (lnxded 0x08164570), setting flag bits 0x1000 and 0x4000 - not setComponent, and there is no component 0x5000, as this row said until 2026-09-16 (the gcc vtable had been counted from its symbol, two slots early). SoldierZoomFov = [tmpl+0x3e0] > 0 and soldierZoomPosition = tmpl+0x3e4 are handed to the soldier (CID_BFSoldierTemplate 0x008dcd10 check) via 0x00539140; the apply/restore path writes the +0x1f8 value straight into RenderView slot +0x14 = setFieldOfView(float) at 0x005393f6 - so zoomFov is a whole vertical FOV in radians, the unit of renderer.fieldOfView. These offsets are off the object pointer FireArms+0x4c; FireArmsTemplate::makeScript 0x0053a110 and section 1 of handweapon-view-and-deviation.md use this+4 of that (useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc)."
   },
   {
    "address": "0x00539620",
@@ -1609,12 +1609,12 @@
   },
   {
    "address": "0x0053eaad",
-   "name": "FireArms__handleUpdate_zoomPublish",
+   "name": "FireArms__handleUpdate_clearZoomFlags",
    "kind": "address",
    "subsystem": "handweapon",
    "confidence": "verified",
-   "source": "ghidra",
-   "note": "Inside the client FireArms::handleUpdate twin (undefined in Ghidra): when the un-zoom timer this+0x23c minus dt drops below 0 it publishes component 0x5000 via vtable slot +0x28 (setComponent), the UnZoomBetweenFireTime re-zoom path; lnxded FireArms::handleUpdate 0x08288890 has the single matching push of 0x5000."
+   "source": "ghidra; corrected research-2026-09-15-weapons",
+   "note": "Inside the client FireArms::handleUpdate twin (undefined in Ghidra): when the un-zoom timer this+0x23c minus dt drops below 0 - the UnZoomBetweenFireTime re-zoom - it calls vtable slot +0x28, BCompositeObject<IPlayerObject>::updateFlags, with the masks pushed the other way round from setZoom's: (0, 0x5000), clearing flag bits 0x1000 and 0x4000. lnxded FireArms::handleUpdate 0x08288890 has the matching site at 0x08288d99. Renamed 2026-09-16 from FireArms__handleUpdate_zoomPublish: nothing is published here."
   },
   {
    "address": "0x00541a60",
@@ -1756,9 +1756,9 @@
    "name": "PointPhysicsNode::updatePositionalDragSimple",
    "kind": "function",
    "subsystem": "physics",
-   "confidence": "working",
-   "source": "disassembled fully; pi constant at 0x008fdaf0",
-   "note": "dragAccel -= (scale*v - wind) * pi * arg1^2 * dragField(+0x38) * (1/mass(+0x3c)) into accel accumulator. Drag is wind-relative and area/mass-scaled, NOT plain -drag*v. arg1 from virtual +0x1c (getBoundingRadius per lnxded vtable order, working); arg2 scale = 1 + 24*clamp(field(+0x44)/arg1, 0, 1) - the 25x factor and field +0x44 meaning are open (water submersion suspected)."
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag",
+   "note": "thiscall(float r, float scale). Per axis: accel(+0x1c..+0x24) -= (scale*v(+0x10..+0x18) - wind) * pi * r^2 * drag(+0x38) / mass(+0x3c). Wind-relative and area/mass-scaled - not plain -drag*v, and not an exponential decay. scale multiplies velocity once, before wind is subtracted; r enters as two separate fmuls (r^2). Wind from basicPhysicsSystem (0x0097d770) vtable +0x1c; pi 3.1415927 at 0x008fdaf0; 1/mass from 1.0 at 0x008c53c8. The caller 0x00578ca0 passes r = getBoundingRadius() and scale = 1 + 24*min(underWater/r, 1). lnxded twin 0x08255fc0, instruction for instruction. Read from raw disassembly and independently re-derived 2026-09-16."
   },
   {
    "address": "0x00578aa0",
@@ -1771,12 +1771,12 @@
   },
   {
    "address": "0x00578ca0",
-   "name": "PointPhysicsNode::updatePhysics (drag+integrate+gravity seed)",
+   "name": "PointPhysicsNode::updatePhysics",
    "kind": "function",
    "subsystem": "physics",
-   "confidence": "working",
-   "source": "decompiled; assert string 'Mass 0 when calculating drag.'",
-   "note": "Order per call: (1) if drag>0 apply dragSimple, (2) run 4-substep integrator with dt, (3) re-seed accel.y += getGravity()*gravityModifier(+0x40) for next update. Name from role match with lnxded PointPhysicsNode::updatePhysics(float); not signature-proven."
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag",
+   "note": "thiscall(float dt); only reference is the vtable slot at 0x008fdb88 (function created in Ghidra 2026-09-15). If drag(+0x38) > 0: assert 'Mass 0 when calculating drag.' when mass(+0x3c) < 1e-5 (0x008f7360); r = this->getBoundingRadius() (own vtable +0x1c, which forwards to the composite object's bounding sphere); scale = 1 + 24*min(underWater(+0x44)/r, 1.0) - a ceiling-only clamp, 25.0 at 0x008f7210; call 0x00578990(r, scale). Then, unconditionally, the 4-substep integrator 0x00578aa0(dt), and accel.y += basicPhysicsSystem->getGravity() (vtable +0x14) * gravityModifier(+0x40) to seed the next tick. lnxded twin 0x082562c0; +0x44 is named by lnxded PointPhysicsNode::setUnderWater / getUnderWater (0x08256ad0 / 0x08256ae0). Every particle's body is one of these (see lnxded Particle::handleUpdate 0x0820ad20), so this is also the particle drag law (ledger EMT-5)."
   },
   {
    "address": "0x00578f00",
@@ -2050,12 +2050,12 @@
   },
   {
    "address": "0x005acda0",
-   "name": "StandardMesh::draw",
+   "name": "StandardMesh::drawByContext",
    "kind": "function",
    "subsystem": "geom",
-   "confidence": "inferred",
-   "source": "ghidra-session-2026-09-15-drawfov",
-   "note": "vtbl_StandardMesh slot +0xc by position (lnxded slot order). Not read. Function created in Ghidra this session."
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "vtbl_StandardMesh (0x00905708) slot +0xc; renamed 2026-09-16 from 'StandardMesh::draw', since it dispatches rather than draws (function created in Ghidra 2026-09-15). Null context -> g_standardMeshRenderer vtable +0x34, StandardMeshRenderer::drawAnimatedMesh 0x0062c620; a context whose vtable +0xc returns 0xdf868dfb (the id already noted on AnimatedMesh_drawByContext 0x0062b8d0) -> nothing; otherwise the mesh's own vtable +0x48, StandardMesh_drawSkinned 0x005b06d0."
   },
   {
    "address": "0x005ad0b0",
@@ -2080,9 +2080,9 @@
    "name": "BStandardMesh::queryInterface",
    "kind": "function",
    "subsystem": "geom",
-   "confidence": "inferred",
-   "source": "ghidra-session-2026-09-15-1p-mount",
-   "note": "Interface table returning this+0x18 for IID_IViewModifier, matching the lnxded this-adjust-24 thunk on BStandardMesh::setFieldOfView; other IIDs at +4, +8, +0xc, +0x20, +0x144. Class identity inferred from the layout, not from a name."
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "vtbl_StandardMesh (0x00905708) slot +0x8. Straight-line IID dispatch: IIDs 1, 0xadcbf4fc, 0x492fe0fe and 0x282b76ff return this; six others return this + 0x4, 0x8, 0xc, 0x18 (IID_IViewModifier 0xf0e2bbfa, matching the lnxded this-adjust-24 thunk on BStandardMesh::setFieldOfView), 0x20 or 0x144; anything else returns NULL. The class name 'BStandardMesh' comes from vtable membership, not from a recovered string."
   },
   {
    "address": "0x005adfd0",
@@ -2135,8 +2135,8 @@
    "kind": "function",
    "subsystem": "geom",
    "confidence": "verified",
-   "source": "ghidra-session",
-   "note": "vtable +0x88. Parse orchestrator: calls +0x90 header, +0x94, +0x98 LOD loop, then version-gated +0xa0/+0xa8 when version>8. Finally, if +0x40 is set, loads \"Texture/ObjectLightmaps/\"+name into member [99]."
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "vtable +0x88 (function recreated in Ghidra 2026-09-15). Parse orchestrator: calls +0x90 header, +0x94, +0x98 LOD loop, then version-gated +0xa0/+0xa8 when version > 8. Finally, if the byte at +0x100 is set, builds 'Texture/ObjectLightmaps/' + the mesh name at +0x48, resolves it (0x009a2380 +0x10) and loads it into +0x18c, releasing any previous texture (ledger LM-1). The earlier note's '+0x40' and 'member [99]' were Ghidra's int-array indices for these offsets. Unread: where +0x100 is set, and how +0x18c reaches the draw context's +0xac that applyRenderState binds."
   },
   {
    "address": "0x005b6080",
@@ -2234,8 +2234,8 @@
    "kind": "function",
    "subsystem": "rend",
    "confidence": "verified",
-   "source": "ghidra-session",
-   "note": "vtable 0x009061a4 slot +0x10; .rdata after the vtable holds the .rs attribute strings (envmap, materialSpecularPower, materialSpecular, materialDiffuse, blendDest, blendSrc...). Fields: +0x2d lighting -> D3DRS_LIGHTING, +0x2e lightingSpecular -> SPECULARENABLE, +0x2f twosided -> CULLMODE, +0x30 envmap (stage1/2 setup), +0x31 transparent, +0x34/+0x38 blendSrc/Dest, +0x3c alphaTestRef, +0x44 material index -> SetMaterial(base + i*0x44). THE combine for lit StandardMesh (vehicles/statics): stage0 COLOROP=MODULATE2X, ARG1=TEXTURE, ARG2=DIFFUSE - i.e. pixel = clamp01(2 * tex * clamp01(vertex fixed-function diffuse)). Unlit path (lighting false) sets D3DRS_LIGHTING=0 and stage0 SELECTARG1(TEXTURE). NOTE: FUN_00664560's MODULATE 1x is a different, simpler renderer path, NOT the StandardMesh one."
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "vtable 0x009061a4 slot +0x10 (function recreated in Ghidra 2026-09-15); the next slot, +0x14, is the reset 0x005bee20. .rdata after the vtable holds the .rs attribute strings. Fields, names read from the attribute parser 0x005c0500 on 2026-09-16: +0x2c transparent, +0x2d lighting -> D3DRS_LIGHTING, +0x2e lightingSpecular -> SPECULARENABLE, +0x2f twosided -> CULLMODE, +0x30 envmap (stage 1/2 setup), +0x31 textureFade (this row previously called it transparent), +0x32 depthWrite, +0x34/+0x38 blendSrc/Dest (defaults 5/6), +0x3c alphaTestRef, +0x44 material index -> SetMaterial(base + i*0x44). Binds stage 0 to the material's texture (+0x8) first, and returns right after when the context's (+0xc) byte +0x64 is set. Lit combine: stage0 MODULATE2X(TEXTURE, DIFFUSE) = clamp01(2 * tex * clamp01(vertex fixed-function diffuse)). lightmapped = ctx+0xac != NULL && !transparent && (ctx+0xb0 & 1) (0x005bf951-0x005bf976). When lighting is false OR lightmapped: D3DRS_LIGHTING=0 and stage0 SELECTARG1(TEXTURE); then if lightmapped && !textureFade, stage 1 = ctx+0xac with MODULATE2X(CURRENT, TEXTURE) and return - pixel = clamp(2 * base * lightmap), overriding the material's own lighting attribute (ledger LM-2, LM-4). The envmap branch writes stage 1 TEXCOORDINDEX = 0x30000 (camera-space reflection vector) at 0x005bfaf4. FUN_00664560's MODULATE 1x is a different, simpler renderer path."
   },
   {
    "address": "0x005c1280",
@@ -2464,12 +2464,12 @@
   },
   {
    "address": "0x0062cdd0",
-   "name": "StandardMeshRenderer::drawTransparent(bool)",
+   "name": "StandardMeshRenderer::drawTransparent",
    "kind": "function",
    "subsystem": "rend",
-   "confidence": "inferred",
-   "source": "ghidra-session-2026-09-15-drawfov",
-   "note": "Slot +0x20 by lnxded order; writes g_meshPassId at 0x0062cde8. Not read. Function created in Ghidra this session."
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "vtbl_StandardMeshRenderer slot +0x20 (function created in Ghidra 2026-09-15). Sets g_meshPassId (0x009c9be4) = 1 and walks the transparent list (this+0x58) with StandardMeshRenderer_drawMeshList 0x0062c930 - the mirror of drawOpaque (pass 0, list +0x48). Its argument is a context/list pointer dereferenced as a vector, not the bool the lnxded slot order suggested."
   },
   {
    "address": "0x00632478",
@@ -2585,8 +2585,8 @@
    "kind": "function",
    "subsystem": "rend",
    "confidence": "verified",
-   "source": "ghidra-session-2026-09-15-drawfov",
-   "note": "vtbl_RendPCDX8 slot +0x8c. Flushes the deferred state (0x00604750), maps the vertex format to an FVF handle (0x00672a40 -> 0x00a5a518) and SetVertexShader(fvf) when no programmable shader is bound (DAT_009c94bc == 0), then draws through this+0x90 slot 0x120. Only pending (popped) deferred ids are re-applied, so a direct SetTransform issued by the mesh draw survives to its primitives."
+   "source": "ghidra-session-2026-09-15-drawfov; research-2026-09-15-mesh-formats",
+   "note": "vtbl_RendPCDX8 (0x00917838) slot +0x8c. Flushes the deferred state (0x00604750), maps the vertex format to an FVF handle (0x00672a40 -> 0x00a5a518) and SetVertexShader(fvf) when no programmable shader is bound (DAT_009c94bc == 0), then draws through this+0x90 - the IDirect3DDevice8, as in RendPCDX8_clear - slot +0x120, DrawPrimitiveUP: four arguments, the first the primitive type mapped through the identity table 0x00959c6c (1-6 unchanged, anything else 4 = triangle list). Only pending (popped) deferred ids are re-applied, so a direct SetTransform issued by the mesh draw survives to its primitives."
   },
   {
    "address": "0x0066b5c0",
@@ -2638,9 +2638,9 @@
    "name": "VertexBlockDX8_ctor_variant",
    "kind": "function",
    "subsystem": "rend",
-   "confidence": "inferred",
-   "source": "ghidra-session",
-   "note": "Sibling of 0x006773d0 chosen when blockFormat & 0x20 (vtable 0x0091b6d0); same 0x00672a40 call and field layout for stride/bytes/FVF."
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "Sibling of 0x006773d0: RendPCDX8_createVertexBlock 0x0063ed70 picks it when blockFormat & 0x20 and allocates 0x48 bytes for it, against 0x50 for the base ctor. vtable 0x0091b6d0; same 0x00672a40 call and field layout for stride/bytes/FVF."
   },
   {
    "address": "0x006937d0",
@@ -3773,8 +3773,8 @@
    "kind": "vtable",
    "subsystem": "ui",
    "confidence": "verified",
-   "source": "ghidra-session-2026-09-15",
-   "note": "+0x24 ushort +0x34 float +0x38 bool +0x3c int +0x40 string(u32 len) +0x44 wstring +0x4c picture/+0x50 font/+0x54 sound (u8 len) +0x60..+0x88 object frame +0x98 tell +0xa0 class name"
+   "source": "ghidra-session-2026-09-15; research-2026-09-15-menu-actions",
+   "note": "+0x1c int (same bytes as +0x3c) +0x24 ushort +0x34 float +0x38 bool (1 byte) +0x3c int +0x40 string (u32 len) +0x44 wstring +0x4c picture / +0x50 font / +0x54 sound (u8 len) +0x58 object frames repeated to the end of the enclosing frame, no count (ActionListAction) +0x5c enum whose width the call chooses: 1 byte for 'Event type', 4 for 'Button type' +0x60..+0x88 object frame (+0x64 event family, +0x68 action, +0x6c variable/data, +0x78 with a default-value callback, same bytes) +0x98 tell +0xa0 class name. The +0x58 and +0x5c implementations (0x007f7050, 0x007f7060) forward through [this+8], so how +0x5c picks its width was not traced."
   },
   {
    "address": "0x00957640",
@@ -3927,7 +3927,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15",
-   "note": "float. Scales the soldier's LOCOMOTION camera shake only (see BFSoldier::updateCameraShake). Lives in initialized .data (0x00952000-0x00a9298b) and the shipped bytes are 0x00000000, i.e. 0.0f. Its only writers are the console accessor for the PlayerControlObjectTemplate property 'cameraShakeFactor' (registrar FUN_004f1310, string 0x008e9604), which clamps to [lo, 1.0]; no static initialiser touches it. No vanilla .con, .inc or .tweak in Objects.rfa, animations.rfa, Game.rfa or menu.rfa sets it, and neither does any Settings file. CONSEQUENCE: retail BF1942 multiplies the declared Lb_* setCameraShake* walk/run bob by zero - the authored walking view bob is inert unless a console command enables it. Weapon-fire (Ub_*) and explosion/hit shakes are unaffected, they run at 1.0."
+   "note": "float. Scales the soldier's LOCOMOTION camera shake only (see BFSoldier::updateCameraShake). Lives in .data (0x00952000-0x00a9298b) but past the section's raw bytes, which end at 0x00960000, so the loader zero-fills it: 0.0f at start-up. Its only writers are the console accessor for the PlayerControlObjectTemplate property 'cameraShakeFactor' (registrar FUN_004f1310, string 0x008e9604), which clamps to [lo, 1.0]; no static initialiser touches it. No vanilla .con, .inc or .tweak in Objects.rfa, animations.rfa, Game.rfa or menu.rfa sets it, and neither does any Settings file. CONSEQUENCE: retail BF1942 multiplies the declared Lb_* setCameraShake* walk/run bob by zero - the authored walking view bob is inert unless a console command enables it. Weapon-fire (Ub_*) and explosion/hit shakes are unaffected, they run at 1.0."
   },
   {
    "address": "0x00990170",
@@ -4126,6 +4126,1086 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "lnxded address, not client. Subtracts setPitchOffset from the posed angle every update for every Wing - so setPitchOffset DOES bias the surface rest orientation, it is not only the regulator's reference incidence. The same instruction shows how setWingLift and setFlapLift are told apart despite being summed into one coefficient: angle = deflection * flapLift/(wingLift+flapLift) - pitchOffset. setFlapLift is the MOVING SHARE of one surface's area, which is why a rudder (0/2) and a fin (2/0) run identical arithmetic but are not interchangeable."
+  },
+  {
+   "address": "0x0097d770",
+   "name": "basicPhysicsSystem",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag",
+   "note": "dice::ref2::world::basicPhysicsSystem singleton pointer, twin of lnxded 0x0871dc30, which the server's symbol table names. Sits 4 bytes after playerManager (0x0097d76c), exactly as on the server (0x0871dc2c / 0x0871dc30). vtable +0x14 getGravity, +0x1c getWind (read by 0x00578ca0 and 0x00578990); lnxded vtable for BasicPhysicsSystem 0x0872de40 has +0x00 addRef, +0x04 release, +0x08 queryInterface, +0x0c update, +0x10 setGravity, +0x14 getGravity, +0x18 setWind, +0x1c getWind past its 8-byte header."
+  },
+  {
+   "address": "0x0871dc30",
+   "name": "dice::ref2::world::basicPhysicsSystem",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag",
+   "note": "lnxded. The global singleton pointer; client twin 0x0097d770. Read for getWind (vtable +0x1c) in PointPhysicsNode::updatePositionalDragSimple 0x08255fc0 and PhysicsNode::updatePositionalDragSimple 0x08252de0, and for getGravity (+0x14) in PointPhysicsNode::updatePhysics 0x082562c0."
+  },
+  {
+   "address": "0x082543d0",
+   "name": "dice::ref2::world::PhysicsNode::updatePhysics(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag; research-2026-09-16-drag-advanced",
+   "note": "lnxded; client twin 0x00540920. Starts by delegating to the root: when this is not getRootNode() (0x082548d0) and a virtual predicate (vtable +0xcc) holds, it hands its force and torque to the root (vtable +0xdc, +0xd8), zeroes its own accumulators (+0x10, +0x1c, +0x28, +0x34, +0x40, +0x4c, +0x64) and returns - no drag and no gravity for that node on that tick. Otherwise, if drag(+0x68) > 0 (asserting when mass +0x6c < 1e-5): bit 0x4 of byte +0x7 of compositeObject(+0xc) set -> updatePositionalDragSimple(this, r = 0.1, scale = 1.0) from literal pushes; clear -> updatePositionalDragAdvanced 0x08252f50 then updateRotationalDragAdvanced 0x08253280 with the object's bounding box (physics.md section 3). Nothing found writes that bit: no .con word, no or of it in either binary, and not SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd490, which only picks the node class from template +0x70. The same bit is read in updateRotationalPhysics 0x08253c3c, Emitter::handleUpdate 0x081e43f9 and Particle::handleUpdate 0x0820adec."
+  },
+  {
+   "address": "0x08252de0",
+   "name": "dice::ref2::world::PhysicsNode::updatePositionalDragSimple(float, float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag",
+   "note": "lnxded. The same instruction sequence as PointPhysicsNode's 0x08255fc0, with drag +0x68, mass +0x6c and accel +0x28..+0x30 (velocity still +0x10). Its pi is a separate and less precise constant: 3.14f at 0x086d1384, where the point-node copy uses 3.1415927."
+  },
+  {
+   "address": "0x08255e80",
+   "name": "dice::ref2::world::PointPhysicsNode::PointPhysicsNode()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag",
+   "note": "lnxded. Writes vptr 0x0872e088 = vtable symbol 0x0872e080 + 8 (so a server vtable slot N is at symbol + 8 + N), compositeObject +0xc = NULL, drag +0x38 = 0, mass +0x3c = 1.0, gravityModifier +0x40 = 1.0, underWater +0x44 = 0. No bounding-radius field: getBoundingRadius (0x08256510) forwards to the composite object's vtable +0x48."
+  },
+  {
+   "address": "0x0825e4a0",
+   "name": "dice::ref2::world::StaticPhysicsNode::updatePositionalDragSimple(float, float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag",
+   "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret), like every StaticPhysicsNode drag/physics method: static geometry computes no drag at all."
+  },
+  {
+   "address": "0x0820ad20",
+   "name": "dice::ref2::world::Particle::handleUpdate",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-drag",
+   "note": "lnxded. Each tick, on the particle's physics node (Particle+0x60, null-checked): setGravityModifier(gravityModifier x gravityModifierOverTime(phase)) via vtable +0xb4 and setDrag(drag x dragOverTime(phase)) via +0x94 - the same slots on PointPhysicsNode and PhysicsNode - so particle motion is PointPhysicsNode::updatePhysics (client 0x00578ca0). Also scales mesh particles by size x sizeOverTime x sizeModifier and sends 255 x alphaOverTime to IStandardMesh::setAlpha (ledger IMP-4, IMP-5)."
+  },
+  {
+   "address": "0x0841dda0",
+   "name": "dice::ref2::io::FileManager::open(std::string const&, FileMode, FileAccess, unsigned int)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded. Gets the name's candidate archives (findArchives 0x0841fe20), then walks that vector from begin() calling each archive's open() (vtable +0xc: FlatArchive::open 0x08421a00, ZipArchive::open 0x08428e60) and returns the first non-null result. Nothing sorts or reverses the vector, so the first-registered archive wins a name collision (ledger RFA-1)."
+  },
+  {
+   "address": "0x0841f110",
+   "name": "dice::ref2::io::FileManager::addArchive(std::string const&, std::string const&)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded. Looks the extension up in a NoCaseStringCompare map; for an existing extension it appends the archive at the back of that extension's vector (inline push_back with spare capacity, _M_insert_aux(end(), x) when full). Reached only through the IFileManager vtable, so no named caller exists."
+  },
+  {
+   "address": "0x080c8960",
+   "name": "dice::bf::Setup::addModPath(std::string)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded. The handler for game.addModPath: its only caller is ConsoleClass486::executeObjectMethod 0x0807c300, a console adapter whose static instance (vtable 0x08714ee0) is named by the string 'addModPath' at 0x086b2c4c. Appends the path to Setup+0x368 / +0x398 in order and loads that path's lexicon (Locale::loadLexicon). Does not mount archives itself."
+  },
+  {
+   "address": "0x080bd8b0",
+   "name": "dice::bf::Setup::initFileSystem()",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "inferred",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded. Builds path strings and makes one 9-argument virtual call (vtable +0x24 at 0x080bde58, object from the global 0x087b8adc) that presumably mounts each mod path's archives through FileManager::addArchive; the callee was not read, so the step from the addModPath list to archive order is inferred."
+  },
+  {
+   "address": "0x08425af0",
+   "name": "std::_Rb_tree<std::string, std::pair<std::string const, dice::ref2::io::FlatArchive::File>, ..., dice::ref2::NoCaseStringCompare>::find",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded. The .rfa file table's lookup: the comparator is strcasecmp (calls at 0x08425b38 and 0x08425b87, sign bit taken as less-than), so archive entry names match regardless of case."
+  },
+  {
+   "address": "0x08429ca0",
+   "name": "dice::ref2::io::ZipArchive::findEntry(std::string const&)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded. Linear scan comparing names with dice::ref2::equalsIgnoreCase (0x08374120, call at 0x08429d0d): the zip archive class matches case-insensitively too. BF1942 content ships as .rfa, not zip."
+  },
+  {
+   "address": "0x083bd380",
+   "name": "dice::ref2::geom::TreeMeshTemplate::load()",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded, the .tm loader. version, unused, angleCount (u32 each); mesh and leaf-sprite LocalBoundingBoxes; four vector<Block> (Block = {u32, u32, string}, io::read 0x083bbed0 / io::write 0x083bbe90). Then two collider vectors are resized to exactly one element and one u32 is read per element (0x083bd651): non-zero is passed as the class id to SmartItf<IVectorCollider>::create (0x083bd85d), zero means no collider. Then readBytes<VertexDifNormal2SetTex2D> (0x083bd68d) and readBytes<unsigned short> (0x083bd69f), each reading its own u32 count first. Nothing seeks back (ledger TM-1)."
+  },
+  {
+   "address": "0x083840d0",
+   "name": "dice::ref2::SmartItf<dice::ref2::geom::IVectorCollider, &IID_IVectorCollider>::create(unsigned int)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded. The class-id factory the tree-mesh loader (0x083bd85d) and the .sm collision loader hand their collision word to; every real file names CID_SimpleCollisionMesh (0x086e9e08)."
+  },
+  {
+   "address": "0x086e9e08",
+   "name": "dice::ref2::geom::CID_SimpleCollisionMesh",
+   "kind": "data",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded, 0xEB97C2FA (bytes fa c2 97 eb) - the value our readers call the collision magic (treemesh.py COL_MAGIC). It is a class id: siblings CID_GridCollisionMesh 0x086e67e4 = 0x62FCC2FE and CID_SkeletonCollisionMeshTemplate 0x086e67e8 = 0x9EA71D5E. 275 of 401 tree meshes carry it; the other 126 carry 0."
+  },
+  {
+   "address": "0x0832d930",
+   "name": "dice::anim::BoneAnimation::BoneAnimation(std::string const&, bool*, dice::ref2::io::IStream*)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded, the .baf loader. Reads version u32, bone count u16, per-bone u16 length + name, frame count u32, precision u8 - matching bf42/baf.py's header. Precision defaults to 15 at this+0x23 (0x0832d9a6) before any file byte, then takes the file's value (0x0832dfb5). The compressed channels live at this+0x20, so CompressedAnim::GetValue's precision (its this+3) is this byte."
+  },
+  {
+   "address": "0x0832fc90",
+   "name": "dice::anim::CompressedAnim::GetQuat(int, int, Quat&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim",
+   "note": "lnxded, 82 bytes. Channels 0, 1, 2, 3 via GetValue into Quat x, y, z, w, with no negation anywhere. GetTrans 0x0832fcf0 does channels 4, 5, 6 into Vec3 x, y, z. applyOnSkeleton (0x0832ed60) calls both on BoneAnimation+0x20 at all five of its call sites."
+  },
+  {
+   "address": "0x0832fd30",
+   "name": "dice::anim::CompressedAnim::GetValue(int, int, int)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-15-archives-anim; research-2026-09-16-baf-tomat",
+   "note": "lnxded, 194 bytes. Decodes one RLE sample and scales it by 1.0 / ((1 << precision) - 1), precision from this+3, on one path shared by every channel - quaternion and translation alike. Across 20,845 clips the quaternion words only normalise under a fixed /32768, so precision 10-14 clips produce quaternions 2x-32x too long; harmless, because toMat (0x08226180) divides by their squared length. For translations nothing normalises, and bf42/baf.py's divisor 2^precision is off by one (ledger BAF-1)."
+  },
+  {
+   "address": "0x00468fb0",
+   "name": "BfMap__animate",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "Per-frame minimap layout tick, thiscall(float dt); only caller FUN_006ad0a0 (call at 0x006adab5). Name descriptive (stripped client, no server twin). Zoom +0x40 += (target - zoom) * (1 - exp(-9 dt)), target = byte +0x3c != 0 (write 0x00469004; -9.0 at 0x008d6294). +0x44 eases toward +0x48 at rate 6 (-6.0 at 0x008d628c) and alpha +0x4c toward +0x50 by the zoom's own factor, each snapping within 0.01 (0x008c409c). Rotation +0x64 (write 0x004691c8) is not eased: with byte +0x58 clear it moves to (1 - zoom) * wrap(+0x68) by the shorter of the two 2pi windings; with +0x58 set it only re-wraps itself; and it holds still for the frame when zoom < 0.8 (0x008d6290) and byte +0xa9 of the object playerManager (0x0097d76c) vtable +0x18 returns is clear. Finally writes the inherited TransformNode position (+0xc) = (400 + 220(1 - zoom) - 120 zoom, 30) and size (+0x14) = 175 + 337 zoom on both axes (constants 0x008d6270-0x008d6288): a top-right square, 175 closed and 512 open, in 800x600 units."
+  },
+  {
+   "address": "0x0046a680",
+   "name": "BfMap__update",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "BfMap vtable slot +0x68; its only reference is that slot (0x008d6768). One function, 0x0046a680-0x0046e22f (15,280 bytes, a single ret 0x14), created in Ghidra during the 2026-09-15 research round. Named from bf42plus src/bf/ui.cpp, whose hook comments put four 'call from BfMap::update' return addresses (0x0046b130, 0x0046b165, 0x0046b802, 0x0046b852) inside it. Builds the icon rotation/scale matrix from +0x40 and +0x64 (reading +0x64 clamped to +-1000), walks players (BfMap__isPlayerIDInBuddyList 0x00468680) and draws icons through FUN_00468870 with +0x4c as the colour's alpha."
+  },
+  {
+   "address": "0x0046e230",
+   "name": "BfMap__BfMap",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "Calls TransformNode's ctor 0x007e95b0 first, then installs vtable 0x008d6700 and loads the HUD icon textures (minimap-and-fullmap.md section 2). Zeroes +0x40 (zoom), +0x44, +0x48, +0x5c, +0x60, +0x64 (rotation), +0x68 (target angle); sets +0x4c and +0x50 (alpha, alpha target) to 1.0, +0x38 to -1, bytes +0x3c and +0x3d to 0."
+  },
+  {
+   "address": "0x008d6700",
+   "name": "BfMap__vftable",
+   "kind": "vtable",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "50 slots, 0x008d6700-0x008d67c4, installed by BfMap__BfMap. Diffed against TransformNode's table (0x00943208, also 50 slots), exactly three slots differ: +0x00 the destructor (0x0046e7c0, unread), +0x68 BfMap__update (0x0046a680), +0x74 minimap_screenTransform (0x00469360)."
+  },
+  {
+   "address": "0x007e95b0",
+   "name": "TransformNode__TransformNode",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "dice::meme::TransformNode base ctor: vtable 0x00943208, transformed node (+0x8) and position (+0xc, +0x10) zero, size (+0x14, +0x18) 20 x 20, and a trailing pair (+0x1c, +0x20) of 1.0 whose meaning is unread."
+  },
+  {
+   "address": "0x007e9230",
+   "name": "TransformNode__getSize",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "return this+0x14 (the size Vec2). BfMap__animate writes the minimap's size through it."
+  },
+  {
+   "address": "0x007fff80",
+   "name": "TransformNode__getPosition",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-minimap",
+   "note": "return this+0xc (the position Vec2). BfMap__animate writes the minimap's position through it."
+  },
+  {
+   "address": "0x005bee20",
+   "name": "StandardMeshSubShader_resetRenderState",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "vtable 0x009061a4 slot +0x14, the sibling after applyRenderState (+0x10); its only reference is that slot (0x009061b8). Name descriptive. thiscall on the sub-shader, ret 0x4; undefined in Ghidra, read with objdump. Undoes applyRenderState's tail through the same shadow-cache globals (0x009c94c8, 0x009c92fc/0c/1c, 0x009c93a0, 0x009c93b0): re-reads twosided (+0x2f), textureFade (+0x31) and envmap (+0x30), and when envmap is set restores stage 1 TEXTURETRANSFORMFLAGS = 0 and TEXCOORDINDEX = 1 (0x005bef0e-0x005bef20). That the renderer always calls +0x14 after +0x10 is inferred from the slot pairing, not from a read call site (ledger LM-3)."
+  },
+  {
+   "address": "0x005c0500",
+   "name": "StandardMeshSubShader_ctor",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "Name descriptive. Installs vtable 0x009061a4 (0x005c051e) and reads the material's .rs attributes. Defaults: +0x2c transparent false, +0x2d lighting true, +0x2e lightingSpecular false, +0x2f twosided false, +0x30 envmap false, +0x31 textureFade false, +0x32 depthWrite true, +0x34 blendSrc 5 (D3DBLEND_SRCALPHA), +0x38 blendDest 6 (D3DBLEND_INVSRCALPHA), +0x3c alphaTestRef 0.0. Boolean attributes go through 0x005c0060 into those fields: 'transparent' (string 0x00906260) into +0x2c at 0x005c06d2, 'textureFade' (0x00906228) into +0x31 at 0x005c07a3; the 'lighting' -> +0x2d call at 0x005c06f4 is the known-good check of the push order."
+  },
+  {
+   "address": "0x005c0060",
+   "name": "StandardMeshSubShader_readBoolAttribute",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "Name descriptive. thiscall(this, std::string* attributeName, bool* dest): resolves a boolean .rs attribute and writes it to *dest. The sub-shader constructor 0x005c0500 reads transparent, lighting, envmap, textureFade, depthWrite and the rest through it."
+  },
+  {
+   "address": "0x0062c930",
+   "name": "StandardMeshRenderer_drawMeshList",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "Name descriptive. Walks a mesh vector [list+4, list+8) for drawOpaque and drawTransparent. Per entry it sets the z-write mask DAT_009595e5 = (entry+0x5c == -1), which applyRenderState ANDs into depthWrite, and calls AnimatedMesh_drawByContext 0x0062b8d0 with the entry as this (ecx) and the renderer's +0x98 / +0x9c as arguments (Ghidra's decompile of the call site drops the this). Brackets the loop with calls through (this+0xb0) vtable +0x2c / +0x30."
+  },
+  {
+   "address": "0x006039c0",
+   "name": "RendPCDX8_setTexture",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "fastcall(stage in ecx, texture wrapper in edx): binds a texture to a stage. applyRenderState 0x005bf690 calls it for stage 0 (the material's texture, first thing) and stage 1 (the lightmap, from ctx+0xac)."
+  },
+  {
+   "address": "0x005b85e0",
+   "name": "RendPCDX8_setTextureCoordIndex",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "inferred",
+   "source": "research-2026-09-15-lightmap-stage",
+   "note": "fastcall(stage, value), 0x005b85e0-0x005b865e, holding the TEXCOORDINDEX write at 0x005b85fe. Per the 2026-09-15 research decompile (not re-verified): SetTextureStageState(stage, TEXCOORDINDEX, value) through a shadow cache, also recorded at [0x009c017c + 0x804 + stage*4] for RendPCDX8_flushDeferredState 0x00604750 to restore. Its callers (FUN_005b8700 and others) set up envmap reflection matrices, not lightmaps."
+  },
+  {
+   "address": "0x00667e10",
+   "name": "RendPCDX8_drawPrimitivesCounted",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "vtbl_RendPCDX8 (0x00917838) slot +0x84, sibling of RendPCDX8_drawPrimitives. Undefined in Ghidra; read with objdump. Name descriptive. Range-checks its primitive type against 1-6, then a jump table (0x00667efc) turns the vertex count into a primitive count per type - point list as-is, line list /2, line strip -1, triangle list /3, strip and fan -2 - before calling the device (this+0x90) slot +0x118, DrawPrimitive (ledger SM-3)."
+  },
+  {
+   "address": "0x00959c6c",
+   "name": "RendPCDX8_primitiveTypeTable",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "Eight u32: 4, 1, 2, 3, 4, 5, 6, 4. RendPCDX8_drawPrimitives (0x00667dee) indexes it by primitive type with no range check: 1-6 map to themselves (the D3DPRIMITIVETYPE values), 0 and 7 fall back to 4, the triangle list."
+  },
+  {
+   "address": "0x083a6f00",
+   "name": "dice::ref2::geom::BStandardMeshTemplate<IStandardMeshTemplate, StandardMesh, StandardMeshBlock>::loadLod",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "lnxded; twin of client StandardMeshTemplate_readMaterials 0x005b42d0. Two sequential loops over the LOD's materials (ledger SM-4). Loop 1 (0x083a6f92-0x083a70af) reads each descriptor - name, one 12-byte raw read, primitive as int&, then flags, stride, vertex count and index count into a 16-byte block record, and a discarded trailing u32 - touching no payload. Loop 2 (0x083a7101-0x083a7138) walks the records again and skips stride*vertexCount then indexCount*2 bytes per material (IStream vtable +0x14): the server has no renderer."
+  },
+  {
+   "address": "0x083a6200",
+   "name": "dice::ref2::geom::BStandardMeshTemplate<IStandardMeshTemplate, StandardMesh, StandardMeshBlock>::loadHeader",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "lnxded twin of client StandardMeshTemplate_readHeader 0x005b61f0. Accepts version 8, 9 or 10 (sub eax,8; cmp eax,2; jbe), reads the bounding box, and reads one more bool only when version > 9 (ledger SM-8)."
+  },
+  {
+   "address": "0x083a6290",
+   "name": "dice::ref2::geom::BStandardMeshTemplate<IStandardMeshTemplate, StandardMesh, StandardMeshBlock>::loadCollision",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "lnxded. Reads the collision layer count, then per layer a u32 size: 0 means an empty slot with nothing more to read. Otherwise a u32 class id goes to SmartItf<IVectorCollider>::create (0x083840d0) - 0xEB97C2FA, CID_SimpleCollisionMesh, in all 24,532 surveyed layers - and the new collider's vtable +0x10 loads it, which is SimpleCollisionMesh::load 0x083c9e00 through a thunk at 0x083cb0a5 (ledger SM-9)."
+  },
+  {
+   "address": "0x083c9e00",
+   "name": "dice::ref2::geom::SimpleCollisionMesh::load(dice::ref2::io::IStream*)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "lnxded. Reads a u32 that must be 5 (else returns false), then 16-byte vertices (this+0x34) and 8-byte faces (this+0x40), builds the bounding box from each vertex's first 12 bytes only, then Bsp::load for the acceleration data. Never calls giveVerticesMaterial or buildBsp (ledger SM-6, SM-9)."
+  },
+  {
+   "address": "0x083c9d60",
+   "name": "dice::ref2::geom::SimpleCollisionMesh::giveVerticesMaterial()",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "lnxded. For every face (8 bytes at this+0x40) writes its WORD at +0x6 - material | flags<<8 - into the WORD at +0xc of each of its three vertices (16 bytes at this+0x34), the last face winning for a shared vertex. Only caller: endCreation 0x083ca950. The file loader never runs it, yet real vertices carry this value in the low 16 bits of their 4th float, so exporters bake it (ledger SM-6)."
+  },
+  {
+   "address": "0x083ca950",
+   "name": "dice::ref2::geom::SimpleCollisionMesh::endCreation()",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "lnxded. giveVerticesMaterial() then a tail jump into buildBsp (0x083ca980): the last step of the procedural beginCreation / addVertex / addFace / endCreation authoring API, not of file loading."
+  },
+  {
+   "address": "0x0871d43c",
+   "name": "dice::ref2::world::materialManager",
+   "kind": "data",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "lnxded, named in the symbol table: the global MaterialManager pointer. GameServer::handleCollisionForProjectile pushes the struck face's material and flag with 1.0 into its vtable +0x50 at 0x08154572, which is MaterialManager::getEffectTemplate(unsigned int, unsigned int, float) 0x081750d0 (vtable for MaterialManager 0x0871d3a0 + 8 + 0x50) (ledger SM-7)."
+  },
+  {
+   "address": "0x08417ae0",
+   "name": "dice::ref2::io::read(dice::ref2::io::IStream*, unsigned int&)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-15-mesh-formats",
+   "note": "lnxded, 15 instructions: calls IStream vtable +0xc and returns without looking at the result. Loaders built on it cannot notice a truncated file, so the eight truncated meshes stdmesh.py rejects would load as whatever the stream leaves behind."
+  },
+  {
+   "address": "0x004568b0",
+   "name": "Setup__Setup",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "dice::bf::Setup::Setup(), twin of lnxded 0x080b7bb0. Writes Setup+0x178 = 1.0f and Setup+0x17c = 100.0f (0x42c80000, at 0x004569cb) - the client's default frame cap, 100 fps, the same as the server's ctor writes to its twin field +0xc4 (0x080b7cf1) - and publishes this into the Setup singleton 0x00971eac (0x00456fee) (ledger GL-2)."
+  },
+  {
+   "address": "0x0063eec0",
+   "name": "RendPCDX8_isFieldEcSet",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "vtbl_RendPCDX8 (0x00917838) slot +0x174; function created in Ghidra 2026-09-16. Name descriptive. Body: cmp [ecx+0xec], 0x80000000; setne al; ret. The field is reset to that sentinel at 0x0063de42 inside the display-mode builder 0x0063dcb0, which picks the D3DFORMAT for the bit depth just before. Renderer_drawFrame polls it to switch the frame cap between 100 and 60; what +0xec holds is unread."
+  },
+  {
+   "address": "0x08164570",
+   "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::updateFlags(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "lnxded. updateFlags(setMask, clearMask): ORs setMask into this+0x4 and clears clearMask, with change notifications in the base 0x08164c80. It is the slot FireArms and HandFireArms reach at vptr +0x2c (vtable symbol + 8 + 0x2c), which the corpus had read as setComponent (0x08165360, really vptr +0x24). FireArms::setZoom calls it with (0x5000, 0) twice (0x08288283, 0x0828840d), setting bits 0x1000 and 0x4000; FireArms::handleUpdate's UnZoomBetweenFireTime path calls it with (0, 0x5000) (0x08288da1), clearing them. The client makes the same three calls with the same asymmetry."
+  },
+  {
+   "address": "0x08164c80",
+   "name": "dice::ref2::world::BObject<dice::ref2::world::IPlayerObject>::updateFlags(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "lnxded, the base half: flags = (flags | setMask) & ~clearMask into this+0x4. For bit 0x1000 it notifies the object manager (mObjectManagerImpl 0x087202d4) on both edges - vtable +0xec when set, +0xf0 when cleared (test at 0x08164d1a) - like several other bookkeeping bits (0x8, 0x800, 0x200, 0x10000, the sign bit). Nothing tests 0x4000, here or anywhere in FireArms/HandFireArms (0x08287000-0x08296500)."
+  },
+  {
+   "address": "0x08165360",
+   "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::setComponent",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "lnxded. Special-cases one component id, 0xc422 (0x086c2a88), stored at this+0x60; everything else goes to BObject<IPlayerObject>::setComponent 0x08166330's std::map. 0x5000 is never passed to it in either binary. The getter queryComponent 0x08165430 special-cases the same id and falls back to a map lookup at this+0xb8 with four more special ids, none of them 0x5000."
+  },
+  {
+   "address": "0x087202d4",
+   "name": "dice::ref2::world::BObject<dice::ref2::world::IPlayerObject>::mObjectManagerImpl",
+   "kind": "data",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "lnxded static pointer, named in the symbol table: the object manager updateFlags notifies on bookkeeping-bit changes. Presumably the server twin of the client's objectManager 0x0097d764; not cross-checked."
+  },
+  {
+   "address": "0x084a2050",
+   "name": "dice::bf::ai static initializer",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "lnxded, 0x1764a bytes (95 KB): one translation unit's global constructors inlined, registering dozens of bot-AI console words back to back (dice::bf::ai::(anonymous namespace)::consoleObjectNNN). Do not read it linearly - grep lnxded_text.s for a word's string address instead. Registers weaponTemplate.deviationCorrectionTime at 0x084a6e33 and weaponTemplate.deviation at 0x084a6f01."
+  },
+  {
+   "address": "0x086f5487",
+   "name": "str_weaponTemplate_deviation",
+   "kind": "string",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "lnxded 'deviation'. Registered at 0x084a6f01 as consoleObject618 (0x087cf480): weaponTemplate.deviation, a property of the bot-AI dice::bf::ai::WeaponTemplate, set on 680 templates across every weapon family. Not a FireArmsTemplate word and unrelated to the player's spread (ledger DEV-8)."
+  },
+  {
+   "address": "0x086f546f",
+   "name": "str_weaponTemplate_deviationCorrectionTime",
+   "kind": "string",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-15-weapons",
+   "note": "lnxded 'deviationCorrectionTime'. Registered at 0x084a6e33 as consoleObject619 (0x087cf540): weaponTemplate.deviationCorrectionTime on the bot-AI WeaponTemplate, set on 580 templates (ledger DEV-8)."
+  },
+  {
+   "address": "0x081e3200",
+   "name": "dice::ref2::world::Emitter::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-emitters",
+   "note": "lnxded, 0x296b bytes. Delay: while delay (+0x108) is positive it counts down and returns; on the tick it runs out, age is advanced by the delay's pre-tick value rather than by the tick's leftover (0x081e32ae-0x081e32ce, [ebp+0xc] added at 0x081e5b4a). The burst expires when age (+0x110) >= timeToLive (+0x10c) (0x081e3305). The +0x104 gate (0x081e354d) always jumps to 0x081e58c6, which re-enters at 0x081e356d: if template showInFirstPerson (+0x417) or this+0x124 is non-zero the update takes a separate path to its return (0x081e3579-0x081e3680, not read); only when both are zero does it reach the spawn test, due when age >= next (+0x114) (0x081e37bb-0x081e37d0, fxch at 0x081e37c7). next is resampled by calcInvItensity 0x081e2f10 (ledger EMT-1, EMT-2)."
+  },
+  {
+   "address": "0x081e2bb0",
+   "name": "dice::ref2::world::Emitter::Emitter",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-emitters",
+   "note": "lnxded; the second overload 0x081e2c40 is identical. Sets +0x104 = -1.0f (its only writer, so handleUpdate's +0x104 gate always takes the same jump), age +0x110 = 0, next +0x114 = 0 and +0x124 = 0 - so the first spawn test is due at once (ledger EMT-2)."
+  },
+  {
+   "address": "0x081e61c0",
+   "name": "dice::ref2::world::EmitterTemplate::makeScript",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-emitters",
+   "note": "lnxded twin of client 0x005097a0. Its dump code names fields by the console words it streams: startRotation is the CRD at +0x400 (0x081e6a6c), rotationalSpeedInRight the one at +0x3ec, and the bools are +0x414 hasOverDamage, +0x415 noPhysics, +0x416 addChild, +0x417 showInFirstPerson, +0x418 showInThirdPerson, +0x419 moveToWaterSurface, +0x41a IsSpawnEffect (strings 0x086c95d6-0x086c99a0) - the client's +0x4d8..+0x4de in the same order."
+  },
+  {
+   "address": "0x08061df0",
+   "name": "dice::ref2::roll<float>",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-emitters",
+   "note": "lnxded, 27 bytes: rotateAboutLine(m, m+0x20 (row 2), angle), angle untouched. An emitter's startRotation reaches it at 0x081e522e and passes unconverted through rotateAboutLine 0x08061e10, setRotateAboutLine 0x080621b0 and rotateZDeg 0x080625f0 into setRotateZDeg 0x08062740, the only conversion (ledger EMT-3)."
+  },
+  {
+   "address": "0x08062740",
+   "name": "dice::ref2::setRotateZDeg<float>",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-emitters",
+   "note": "lnxded. Multiplies the angle by pi/180 (0.01745329238, f32 at 0x086b1ca4) before fsincos: the angles it receives are degrees. Emitter startRotation reaches it through roll<float> (ledger EMT-3)."
+  },
+  {
+   "address": "0x0820c650",
+   "name": "dice::ref2::world::SpriteParticleNew::handleUpdate",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-emitters",
+   "note": "lnxded. Calls its ParticleSystem (this+0xd8) directly - update(float) at 0x083a9350, empty on the server - then bookkeeping. SpriteParticleNew::addParticle 0x0820c730 is a direct jump to ParticleSystem::addParticle 0x083a9340, also empty: the server never simulates sprite particles (ledger SPR-1)."
+  },
+  {
+   "address": "0x083a9300",
+   "name": "dice::ref2::geom::ParticleSystem stubs",
+   "kind": "range",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-emitters",
+   "note": "lnxded 0x083a9300-0x083a9354: setTransformation, draw, isSupported (returns 0), addParticle and update are each push ebp; mov ebp,esp; pop ebp; ret, and ParticleSystem's only vtable (0x08746ea0) points its draw/isSupported/setTransformation slots at them. getNumParticlesInParticleSystem 0x083a92a0 is real but its list is never filled."
+  },
+  {
+   "address": "0x00538e00",
+   "name": "SpriteParticleNewTemplate::release",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-15-emitters",
+   "note": "Client, slot 1 of the SpriteParticleNewTemplate vtable 0x008fbf90 (function created in Ghidra 2026-09-15). COM Release: decrements the count at this+0x58 and calls vtable +0x44 when it reaches zero."
+  },
+  {
+   "address": "0x00500190",
+   "name": "BFSoldier__handlePlayerInput",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-soldier-physics",
+   "note": "Client twin of lnxded BFSoldier::handlePlayerInput 0x08273c70: BFSoldier vtable 0x008eb128 slot +0x94 (the ctor 0x004ff440 installs the vtable at 0x004ff46a). Function created in Ghidra 2026-09-15, body 0x00500190-0x00501c3d. Builds the tick's animation-state flags (on the server seeded from AnimationStateMachineInstance::getCurrentStateFlags); sets the jump flag 0x80 at 0x0050067a, and later passes the flags through vtable +0xdc for each entry of a soldier-attached list (0x00501613). viewer/physics.js cites 0x005013f8, inside this body."
+  },
+  {
+   "address": "0x0050067a",
+   "name": "BFSoldier_jumpFlagSet",
+   "kind": "address",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-soldier-physics; research-2026-09-16-jump-velocity",
+   "note": "or eax,0x80: the jump bit of the soldier's animation-state flags. Set only when, at 0x00500628-0x0050067a, neither crouch nor prone (0x60) is set; the word at [esp+0x2c] is non-zero; BFSoldier::getSoundTrigger 0x004f5c60 does not return c_SstJump (4), so never while already in a jump state; the Action input (channel 9, bit 0x200) is not exactly 0.0 (0x008c41ac); and the soldier's +0x140 pointer is non-null. c_SstJump names that sound trigger, not this bit. The server's look-alike (lnxded 0x082741d1-0x082741dc, then 0x08275f70, which ors 0x80 into the flags at 0x08275f76) is dead code: the sequence at 0x082741b3 compares a freshly stored 0.0 with 0.0 and always jumps to the bit-clear path. Where the bit becomes a jump velocity is unread (ledger PHY-1)."
+  },
+  {
+   "address": "0x08263db0",
+   "name": "dice::ref2::world::hasRoomForJump(dice::ref2::Vec3 const&, dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-soldier-physics",
+   "note": "lnxded. Its only caller is ActiveKitPart::update 0x082628e0 (call at 0x08262d19): the overhead-clearance check for .con-authored kit accelerators - mod jetpacks, high jumps, rocket packs (XPack2's GermanElite_RocketPack is the only vanilla-family user) - not the base infantry jump. Filters with ObjectFlagPredicator(0x2000200), ignoring the object's root parent, then queries the world volume (vtable +0x48) and returns no-collision."
+  },
+  {
+   "address": "0x0825b6e0",
+   "name": "dice::ref2::world::ResponsePhysics::addFriction",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-soldier-physics",
+   "note": "lnxded, 4201 bytes; PointResponsePhysics and StaticResponsePhysics have empty versions. Live grip byte this+0xb4: EngineGrip (0x4, tested first at 0x0825baf9) spins the wheel from PhysicsEngine::getCurrentRatio 0x0824ca70 x getCurrentDifferentialRPM 0x0824c990 through SpinWheel 0x0825b440; RollGrip (0x2, 0x0825bb06) removes the contact velocity along the wheel's axis, taken from node->getAbsoluteTransformation() (PhysicsNode vtable +0x20); with neither, a Coulomb friction direction is used when StaticFriction (0x80, sign test at 0x0825bb78) is set, and the solver sets StaticFriction itself once sliding slows below a threshold (0x0825bf47). DummyGrip (0x20) is tested at entry as this->getPermanentGrip() & 0x20 (vtable +0x6c = 0x0825ce40, the authored byte +0xb5), taking the path past the friction solve (EngineGrip still drives the spin); a second, unmasked getPermanentGrip call returns early for NoGrip. RollGripWhenOccupied (0x8) is not tested: PhysicsSpring::updatePhysics 0x0057f0d0 rewrites it first (ledger PHY-2)."
+  },
+  {
+   "address": "0x0825ce40",
+   "name": "dice::ref2::world::ResponsePhysics::getPermanentGrip() const",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-soldier-physics",
+   "note": "lnxded. Returns the byte at this+0xb5, which setPermanentGrip 0x0825ce60 writes: the authored grip, as opposed to the live +0xb4 byte addFriction reads and updates. ResponsePhysics vtable (0x0872e240) slot +0x6c past the 8-byte header - the slot an earlier reading took for getClassID (0x0825ce00, really +0x64)."
+  },
+  {
+   "address": "0x083199a0",
+   "name": "dice::ref2::world::PlayerControlObjectTemplate::submarineData",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-15-soldier-physics",
+   "note": "lnxded. Console word ObjectTemplate.submarineData (string 0x086e178c). Stores its seven floats at template +0x218, +0x21c, +0x220, +0x224, +0x228, +0x22c, +0x230. Read by getSubmarineMaxDepth 0x0831a680 (6th), getSubmarinePeriscopeDepth 0x0831a6a0 (4th, 5th) and PlayerControlObject::handleFrameUpdate 0x08318d20, which every 0.5 s of accumulated time (+0x19c), and only while this+0x17c is -1.0: applies crush damage when the current depth is greater than the 6th; drains oxygen (+0x178) by the 1st x elapsed when deeper than the 5th; otherwise refills it by the 2nd x elapsed, capped at a hard-coded 1.0. That the 3rd and 7th scale suffocation and crush damage, and that a 6th of 0 turns the system off, is from the research report, not re-verified. Vanilla: Gato 0.009 0.03 1 10 19.5 40 5, Sub7C 0.009 0.03 1.0 10 12.5 40 5 (ledger PHY-3)."
+  },
+  {
+   "address": "0x007ed120",
+   "name": "meme_readThunk",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Sits at both +0x2c and +0x34 of every meme class vtable checked (nine unrelated classes): return this->vtable[+0x30](stream, ...) != 0. meme_readObjectFrame 0x007ed4f0 reads a new object through +0x34, i.e. through this thunk; +0x30 is each class's own read."
+  },
+  {
+   "address": "0x007f8570",
+   "name": "meme_trivialRead",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "return 1. The read of Action, Function, Data and RemoveEventAction, which carry no fields of their own. Function's real vtable 0x00946508 +0x30 points here, so a CallFunctionAction is identified only by the name of the Function object it references (ledger MEME-11)."
+  },
+  {
+   "address": "0x007f0ab0",
+   "name": "meme_ActionListAction__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Real vtable 0x00945780 +0x30; createInstance 0x007f0c10. The trivial Action read, then 'Action list' through ClassIStream +0x58: Action frames repeated until the enclosing frame ends, with no count. 3,547 in the shipped menus (ledger MEME-11)."
+  },
+  {
+   "address": "0x007e3a80",
+   "name": "meme_CullEventActionNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Real vtable 0x00940dd0 +0x30; createInstance 0x007e4070 (0x10 bytes). Node::read (Next node), then Action (+0x68) and Event (+0x64) object frames - the Event field meme.py's schema lacks."
+  },
+  {
+   "address": "0x007e3b30",
+   "name": "meme_CullVariableActionNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Real vtable 0x00940e98 +0x30; createInstance 0x007e40b0 (0x10 bytes). Next node, Action (+0x68), Variable (+0x6c): meme.py's schema was already right."
+  },
+  {
+   "address": "0x007e3bf0",
+   "name": "meme_CullVariableAndEventActionNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Real vtable 0x00940f60 +0x30; createInstance 0x007e40f0 (0x14 bytes). Next node, Action (+0x68), Variable (+0x6c), Event (+0x64) - the Event field meme.py's schema lacks."
+  },
+  {
+   "address": "0x007e6e50",
+   "name": "meme_SetPathAction__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Real vtable 0x00941ef8 +0x30; createInstance 0x007e7400 (0x20 bytes, In/Out time default 1.0). Path node and Destination node (object frames through +0x78, each with a computed default), In time, Out time, In wait time, Out wait time (floats), Paint outnode over innode (bool). The menu page transition: 543 in the shipped menus, e.g. MenuLayer -> MainMenu (ledger MEME-11)."
+  },
+  {
+   "address": "0x007d9db0",
+   "name": "meme_BfNavigationButtonNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Real vtable 0x0093e078 +0x30; base ctor 0x007d9d50, createInstance 0x007da550 (0x5c bytes). Next node; Picture, Mouse over picture, Clicked picture; Action; MouseOver button (bool); Index (int); Current mouseover index, Current clicked index, MouseOver active (object frames); Width and Height (floats, read last). A three-state tab or row selector, not a BfButtonNode."
+  },
+  {
+   "address": "0x007ef4b0",
+   "name": "meme_IndexDataData__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Real vtable 0x00945118 +0x30; createInstance 0x007ef680 (0x10 bytes). Data and Index object frames: the element of Data chosen by an index variable, such as a navigation button's Current mouseover index."
+  },
+  {
+   "address": "0x007f5f50",
+   "name": "meme_Event__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Base read of the event family: the trivial read, then 'Input index (0 == all indexes)' as an int through ClassIStream +0x1c. TypeEvent, ButtonEvent and AnyKeyEvent each call it first."
+  },
+  {
+   "address": "0x007e1a30",
+   "name": "meme_TypeEvent__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Real vtable 0x00940290 +0x30. Event::read, then 'Event type' through ClassIStream +0x5c - one byte on the wire in all 2,025 shipped frames. bf42/meme.py reads it as 4 bytes (ledger MEME-11)."
+  },
+  {
+   "address": "0x007e16a0",
+   "name": "meme_ButtonEvent__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Event::read, then 'Event type' (+0x5c, 1 byte) and 'Button type' (+0x5c, 4 bytes); the two calls pass different enum callbacks (0x007e15a0 with 0x007f5fb0, 0x007e15c0 with 0x007f61b0). A sibling of TypeEvent, not a subclass. ExtendedButtonEvent::read 0x007e1700 adds Repeat count (int); AnyKeyEvent::read 0x007e18f0 is Input index and a 1-byte Event type."
+  },
+  {
+   "address": "0x0065d1a0",
+   "name": "Font__loadFontFile",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Font vtable 0x00919098 +0x20 (function created in Ghidra 2026-09-16). Reads eight header lines by position with readline + sscanf and no key check - Texture (%s), TextureWidth, TextureHeight, BetweenWidth, SpaceWidth, Height, AlphaTest, AlphaBlend - discards one line, then reads sscanf('%c %f %f %f') rows into a 256-entry, 12-byte glyph table at +0x18 indexed by the raw character byte: U0 = x0/W + 0.5/W, V0 = y0/H + 0.5/H, width = x1 - x0 + 1 (1.0 at 0x008c53c8, 0.5 at 0x008c4220). Header fields: +0xc18 Height, +0xc1c BetweenWidth, +0xc20 SpaceWidth, +0xc24 / +0xc25 AlphaTest / AlphaBlend, +0xc28 / +0xc2c TextureWidth / TextureHeight (ledger FONT-1)."
+  },
+  {
+   "address": "0x0065ce10",
+   "name": "Font__buildQuads",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Font vtable 0x00919098 +0x24 (function created in Ghidra 2026-09-16). Allocates 0xa8 bytes per character. A space (0x20) emits no quad and advances SpaceWidth x scale; any other character gets a quad whose UVs span width/TextureWidth by Height/TextureHeight, and advances (width + BetweenWidth) x scale, scale being the object's +0x8. No per-glyph baseline."
+  },
+  {
+   "address": "0x00919098",
+   "name": "Font__vftable",
+   "kind": "vtable",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Sixteen code pointers at +0x00..+0x3c: +0x00 an unrelated array-count helper (0x0065b120, (end - start) >> 4 over +0x80 / +0x84), +0x20 Font__loadFontFile 0x0065d1a0, +0x24 Font__buildQuads 0x0065ce10. Whether +0x40 (0x00412370, a one-line getter referenced from 2,251 places) is a seventeenth slot is unresolved; the row format string '%c %f %f %f' starts at 0x009190dc."
+  },
+  {
+   "address": "0x00460e40",
+   "name": "Font_bootLoad",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-15-menu-actions",
+   "note": "Boot code that creates two font objects (this+8 and this+4) and loads font/BF1942.font (string 0x008d59c8) into each through vtable +0xc. A failure only writes the message at 0x008d5994 ('Failed to load font ... aborting.') to a log stream; the function carries on and returns 1."
+  },
+  {
+   "address": "0x00461690",
+   "name": "BaseQuaternion<float>::toMat",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-16-baf-tomat",
+   "note": "thiscall(this = quaternion, out Mat4). The unconjugated rotation with s = 2 / (x^2 + y^2 + z^2 + w^2): row 0 = [1 - s(yy + zz), s(xy - zw), s(xz + yw)], row 1 = [s(xy + zw), 1 - s(xx + zz), s(yz - xw)], row 2 = [s(xz - yw), s(yz + xw), 1 - s(xx + yy)], written row-major to indices 0-2, 4-6, 8-10; indices 3, 7 and 11-14 zero, 15 one. Fields x, y, z, w at +0..+0xc; 2.0 at 0x008d5a38. Because of s the result is unchanged by any uniform scale or sign of the quaternion. Called with the quaternion unmodified by Skeleton::setRelativeBoneTransform 0x0066b5c0 (both branches) and by applyOnSkeleton's direct path (0x0066b9dd). lnxded twin 0x08226180 (ledger BAF-1)."
+  },
+  {
+   "address": "0x08226180",
+   "name": "dice::ref2::BaseQuaternion<float>::toMat(dice::ref2::BaseMatrix4<float>&) const",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-16-baf-tomat",
+   "note": "lnxded twin of client 0x00461690, the same formula term for term, hand-traced through the x87 stack: fdivr against 2.0 at 0x086c08c4, the same six zeroed indices, and index 15 a fld1 that survives to its fst, i.e. 1.0."
+  },
+  {
+   "address": "0x00461580",
+   "name": "BaseQuaternion<float>::fromMat",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-16-baf-tomat",
+   "note": "Shoemake's trace-based matrix-to-quaternion over the same layout: with a positive trace, w = 0.5 sqrt(trace + 1), x = (M[9] - M[6]) / 4w, y = (M[2] - M[8]) / 4w, z = (M[4] - M[1]) / 4w - the exact inverse of toMat 0x00461690, with no conjugation. Skeleton::setRelativeBoneTransform's weight < 1 branch uses it on the current local before slerping. lnxded twin 0x08226280."
+  },
+  {
+   "address": "0x00568670",
+   "name": "SpriteParticleNewTemplate::SpriteParticleNewTemplate",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client; built by the class factory 0x0051c7d0 (registered against 'dice.ref2.world.ObjectTemplate.SpriteParticleNew', 0x008f35b4). Installs vtable 0x008fbf90 (and a second table 0x008fbf7c at +0x4), sets useMipMaps (+0x5c) true, allocates 0x1408 bytes and stores the geom::ParticleSystemTemplate built by 0x00618350 at +0x60 (ledger SPR-2). lnxded twin 0x0820c760."
+  },
+  {
+   "address": "0x008fbf90",
+   "name": "SpriteParticleNewTemplate__vftable",
+   "kind": "vtable",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, 20 slots: +0x04 release (0x00538e00), +0x2c createObject (0x00568720)."
+  },
+  {
+   "address": "0x00568720",
+   "name": "SpriteParticleNewTemplate::createObject",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, vtable 0x008fbf90 slot +0x2c. Allocates 0xfc bytes (allocator 0x009a1ca8) and runs SpriteParticleNew's ctor 0x005685c0. lnxded twin 0x0820e010."
+  },
+  {
+   "address": "0x005685c0",
+   "name": "SpriteParticleNew::SpriteParticleNew",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client ctor(SpriteParticleNewTemplate const*). Installs vtables 0x008fbec8 (+0) and 0x008fbeb4 (+0x6c, role unknown), sets +0xf4 = 1.0 and byte +0xf8 = 0, and stores at +0xf0 the geom::ParticleSystem that the template's +0x60 object builds through vtable +0x18 (createGeometry 0x006189a0). lnxded twin 0x0820c550."
+  },
+  {
+   "address": "0x00618350",
+   "name": "geom::ParticleSystemTemplate::ParticleSystemTemplate",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client. Installs vtable 0x0091516c and bakes each ...OverTime property into its own 101-sample array, seeded with a default: XYSizeRatioOverTime (+0x694, samples +0x698), rotationSpeedOverTime (+0x83c / +0x840), animationSpeedOverTime (+0x9e4 / +0x9e8), alphaTestRefOverTime (+0x1240 / +0x1244), all 1.0; colorRGBAOverTime as four channels from +0xb8c, 0x1a8 apart, each 255.0 through the seeder 0x00509470. Two more 101-sample blocks (+0x98, +0x240) match no sprite property (ledger SPR-4)."
+  },
+  {
+   "address": "0x00509470",
+   "name": "ParticleCurve_seed",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client. Fills one curve block with a value: a header, 101 samples, then four zeroed dwords (+0x198..+0x1a4). The ParticleSystemTemplate ctor seeds the four colorRGBAOverTime channels with 255.0 through it. Name descriptive."
+  },
+  {
+   "address": "0x0091516c",
+   "name": "geom::ParticleSystemTemplate__vftable",
+   "kind": "vtable",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, 8 slots (the next word is FLT_EPSILON). +0x18 = createGeometry 0x006189a0, the same dispatch index at which the server's vtable for ParticleSystemTemplate (0x08746f00 + 8) holds createGeometry()."
+  },
+  {
+   "address": "0x006189a0",
+   "name": "geom::ParticleSystemTemplate::createGeometry",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, vtable 0x0091516c +0x18 (function created in Ghidra 2026-09-16). If not yet built (+0x38) builds via 0x00618020 (which loads the sprite texture named at +0x58c); then allocates 0xc8 bytes (allocator 0x009c9600) and constructs geom::ParticleSystem 0x0060afe0. FUN_00748870 runs on both the success and failure paths with a stack temporary, so it is a cleanup, not a registration. lnxded twin 0x083aa650."
+  },
+  {
+   "address": "0x0060afe0",
+   "name": "geom::ParticleSystem::ParticleSystem",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client ctor(ParticleSystemTemplate&). Installs vtable 0x00914c14, keeps the template at +0x8, links itself into a global particle-system list (0x009c961c) and, when the template's byte +0x618 is set, a second one (0x009c9610). lnxded twin 0x083a8e60."
+  },
+  {
+   "address": "0x00914c14",
+   "name": "geom::ParticleSystem__vftable",
+   "kind": "vtable",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, 13 slots, no header. Matched slot by slot to the server's vtable for ParticleSystem (0x08746ea0 + 8), 12 of 13 by name: addRef, release, queryInterface, draw (0x0060a0e0), getSortMode, isSupported, getTemplate, getBoundingBox, getRadius, setTransformation (0x004067c0, a shared empty stub), overideTransformation, setIntensity, then one destructor where gcc has two. addParticle is not in it."
+  },
+  {
+   "address": "0x0060a680",
+   "name": "geom::ParticleSystem::addParticle",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, (Vec3 const& position, Vec3 const& velocity, float), ret 0xc; not a vtable slot - its only caller is the forwarder 0x00567c00. Rolls ten CRDs once, at spawn, through 0x004f5930: template +0x630 initRotation, +0x644 initAnimationFrame, +0x658 animationSpeed, +0x66c XYSizeRatio, +0x680 rotationSpeed, plus +0x44, +0x58, +0x6c, +0x80 and +0x13e8, which no sprite property names; then allocates a 0xa8-byte particle (allocator 0x009c95fc) and fills it via 0x00609ea0 (ledger SPR-3)."
+  },
+  {
+   "address": "0x00567c00",
+   "name": "SpriteParticleNew::addParticle",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, 15 bytes: if this+0xf0 (the owned geom::ParticleSystem) is non-null, tail-jumps to ParticleSystem::addParticle 0x0060a680 with the same arguments, else returns (ret 0xc). The client twin of lnxded SpriteParticleNew::addParticle 0x0820c730, whose target on the server is empty."
+  },
+  {
+   "address": "0x0060a0e0",
+   "name": "geom::ParticleSystem::draw",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, vtable 0x00914c14 slot 3, (IRenderView*, IRenderContext*), 1,427 bytes. No reference to the device global 0x009c0184 and no SetRenderState call. Per particle it splits a phase into index and fraction and calls 0x00609e10 with the colorRGBAOverTime curve (template +0xb8c), reading four floats back, and indexes rotationSpeedOverTime's samples (+0x840) inline - so the per-frame curve evaluation happens here, not traced to completion. Calls 0x0060a030 once afterwards (ledger SPR-3)."
+  },
+  {
+   "address": "0x00609e10",
+   "name": "ParticleSystem_sampleCurve",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "inferred",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client. Name from its call shape only: draw 0x0060a0e0 calls it twice as (curve block, int index, float fraction, out buffer) and reads four consecutive floats back after the colorRGBAOverTime call. Body not traced."
+  },
+  {
+   "address": "0x004f5930",
+   "name": "CRD_evaluate",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client, engine-wide. Reads a {dist, a, b, mirror} block from ecx; with mirror set it draws random bits (0x004f56f0) and negates when ((bits | 0x80) >> 7 + 1) * 2^-24 <= 0.5; the value comes from 0x004f58d0. The client twin of CRD-1's Random::getContinuousRandom."
+  },
+  {
+   "address": "0x004f58d0",
+   "name": "CRD_sampleDistribution",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client. Switch on dist (unsigned, anything above 3 returns 0.0 from 0x008c41ac): 0 returns a (CRD_NONE), 1 calls 0x004f57a0(a, b) (CRD_UNIFORM), 2 calls 0x004f57d0(a) (CRD_EXPONENTIAL), 3 returns a + b * 0x004f5800() (CRD_NORMAL) - ledger CRD-1."
+  },
+  {
+   "address": "0x006182b0",
+   "name": "geom::ParticleSystemTemplate::setSrcBlendMode",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "Client: builds the template first if needed, then stores the blend mode at +0x5c4. setDestBlendMode 0x006182e0 stores +0x5c8. lnxded twins 0x083aa890 / 0x083aa8c0 (fields +0x590 / +0x594). SpriteParticleNewTemplate::makeScript skips parsing destBlendMode when the src field (+0x5c4) holds 6 (ledger SPR-5)."
+  },
+  {
+   "address": "0x008fbc7c",
+   "name": "str_ObjectTemplate_numAnimationFrames",
+   "kind": "string",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-16-sprite-client",
+   "note": "'ObjectTemplate.numAnimationFrames ', read by SpriteParticleNewTemplate::makeScript (xref 0x005683f5), whose body ends at 0x005685b5; its siblings initAnimationFrame (0x008fbc58, CRD +0x644), animationSpeed (0x008fbc38, CRD +0x658) and animationSpeedOverTime (0x008fbc10, curve +0x9e4) make a sprite a flipbook. 791 of 7,159 sprite templates across 18 mods set numAnimationFrames above 1 (705 at 16, 80 at 4), including fx_expl_core, fx_blood02 and the aircraft engine fires; bf42/effects.py and the viewer read none of these words (ledger SPR-6)."
+  },
+  {
+   "address": "0x00540920",
+   "name": "PhysicsNode::updatePhysics",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-drag-advanced",
+   "note": "Client twin of lnxded 0x082543d0; undefined in Ghidra, read with objdump. Tests [compositeObject+0x4] & 0x4000000 at 0x00540b17 (the server's byte +0x7 bit 0x4): set -> updatePositionalDragSimple 0x0053f4e0 with 0.1 and 1.0 pushed; clear -> the box law. For that it asks the object's geometry (vtable +0x10, then +0x24 with IID 0x492fe0fe from 0x00903490 pushed twice) for two bounding-box corners, takes extents DX, DY (vertical), DZ, and passes updatePositionalDragAdvanced 0x0053f5f0 and updateRotationalDragAdvanced 0x0053f7c0 the arguments a1 = 0.785*DX*DY, a2 = 0.785*DX*DZ, a3 = 0.785*DY*DZ (0.785 at 0x008f733c) and a4 = 1 + 24*min([this+0x8c]/DY, 1) (1.0 at 0x008c53c8, 25.0 at 0x008f7210)."
+  },
+  {
+   "address": "0x0053f4e0",
+   "name": "PhysicsNode::updatePositionalDragSimple",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-drag-advanced",
+   "note": "Client twin of lnxded 0x08252de0: accel -= (scale*v - wind) * pi * r^2 * drag / mass, with the less precise 3.14. Only caller: PhysicsNode::updatePhysics 0x00540920 at 0x00540b2c, with r = 0.1 and scale = 1.0."
+  },
+  {
+   "address": "0x0053f5f0",
+   "name": "PhysicsNode::updatePositionalDragAdvanced",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-drag-advanced",
+   "note": "Client twin of lnxded 0x08252f50. relV = a4*velocity(+0x10) - wind; k = -drag(+0x68) * |relV| / mass(+0x6c) - quadratic in speed; for each row of getAbsoluteTransformation (vtable +0x20) projects relV onto it (0x004a9e60); accel(+0x28..+0x30) += k * (a3*proj_row0 + a2*proj_row1 + a1*proj_row2). Arguments from updatePhysics 0x00540920 at 0x00540c43."
+  },
+  {
+   "address": "0x0053f7c0",
+   "name": "PhysicsNode::updateRotationalDragAdvanced",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-drag-advanced",
+   "note": "Client twin of lnxded 0x08253280. k = -drag(+0x68) * |omega| / mass(+0x6c) with omega at +0x1c..+0x24; rotational accel(+0x34..+0x3c) += k * ((a1 + a2)*proj_row0(omega) + (a1 + a3)*proj_row1(omega) + (a2 + a3)*proj_row2(omega)) - each axis weighted by the other two faces' areas. Called at 0x00540c52."
+  },
+  {
+   "address": "0x004a9e60",
+   "name": "Vec3_projectOntoInPlace",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-drag-advanced",
+   "note": "Client. Name descriptive. *v := axis * (dot(v, axis) / |axis|^2), or (0, 0, 0) when |axis|^2 is zero. updatePositionalDragAdvanced 0x0053f5f0 calls it once per row of the object's transform."
+  },
+  {
+   "address": "0x08252f50",
+   "name": "dice::ref2::world::PhysicsNode::updatePositionalDragAdvanced",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-drag-advanced",
+   "note": "lnxded twin of client 0x0053f5f0, hand-traced from the raw bytes: -1.0 (0x086b05ec) x drag x fsqrt(|relV|^2) / mass; the division is dot/lenSq (fdivrp st(4) decoded from its bytes); a3, a2, a1 multiply rows 0, 1, 2; never reads dragOffset (+0x58..+0x60)."
+  },
+  {
+   "address": "0x08253280",
+   "name": "dice::ref2::world::PhysicsNode::updateRotationalDragAdvanced",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-drag-advanced",
+   "note": "lnxded twin of client 0x0053f7c0: row 0 uses a1 + a2, row 1 a1 + a3, row 2 a2 + a3, all accumulated into this+0x34..+0x3c; never reads dragOffset."
+  },
+  {
+   "address": "0x0824d3a0",
+   "name": "dice::ref2::world::PhysicsNode::setDragOffset",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-drag-advanced",
+   "note": "lnxded. Stores a Vec3 at this+0x58..+0x60, and nothing in the binary calls it or its getter 0x0824d3c0; neither drag law reads the field. So ObjectTemplate.dragOffset is inert for physics nodes, although mods set it non-zero on boats, GCMOD's landspeeders and bfheroes' helicopters."
+  },
+  {
+   "address": "0x004f5c60",
+   "name": "BFSoldier::getSoundTrigger",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "Client twin of lnxded BFSoldier::getSoundTrigger() 0x08276f40, branch for branch. If this+0x50 is non-zero it returns the upper body's current sound trigger (machine +0x304; lnxded +0x2d8); otherwise the upper body's, or the lower body's (+0x2c0; lnxded +0x294) when that is 0. The callee 0x00613230 is AnimationStateMachineInstance::getSoundTrigger. handlePlayerInput refuses the jump when the result is 4, c_SstJump (0x0050063e): no jumping again from a jump state."
+  },
+  {
+   "address": "0x006127f0",
+   "name": "AnimationStateMachineInstance::AnimationStateMachineInstance",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "Client twin of lnxded 0x0832ae00, constant for constant: +0x0 1.0f, +0xc -20.0f, +0x20 -2 (the current-state index getCurrentState returns), +0x24 -1, +0x28 10.0f, and zeros at +0x4 (byte), +0x8, +0x15 (byte), +0x18, +0x1c, +0x2c, +0x30, +0x38, +0x40. BFSoldier's ctor 0x004ff440 builds four, 0x44 apart from +0x2c0 (a two-pass loop, then +0x348 and +0x38c), as lnxded 0x0826b400 does from +0x294; updateAnimations 0x004fb150 indexes them with imul 0x44 from +0x2c0."
+  },
+  {
+   "address": "0x00613230",
+   "name": "AnimationStateMachineInstance::getSoundTrigger",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "Client twin of lnxded 0x0832ae90, instruction for instruction: zeroes this+0x18, reads the current-state index at +0x20, looks the state up in the global machine (pointer at 0x009c9664; getState inlined as a bounds check against its +0x18/+0x1c begin and end), and returns the state's first int, cached in +0x18, when it is non-negative, else 0. The values are the c_Sst* constants (addConstantHelper, lnxded 0x08298280); c_SstJump is 4."
+  },
+  {
+   "address": "0x0831cd10",
+   "name": "dice::ref2::world::disablePhysicsOnSoldier(dice::ref2::world::IPlayerObject*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "lnxded. Calls the physics node at object+0x60 through its vtable +0xb8 with 1, then recurses over the attachment tree through +0x54; reenablePhysicsOnSoldier 0x0831cdc0 passes 0. So an object's physics node lives at +0x60, the pointer BFSoldier::handlePlayerInput caches at 0x08273c95 and returns early without (ledger PHY-1)."
+  },
+  {
+   "address": "0x082628e0",
+   "name": "dice::ref2::world::ActiveKitPart::update(dice::ref2::io::PlayerInput const&, int, dice::ref2::world::IPlayer*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "lnxded. vtable for ActiveKitPart 0x0872e7c0 + 8 + 0xe4 (simpleUpdate 0x08262ed0 is the next slot). BFSoldier::handlePlayerInput calls it at 0x082751bf for each kit part on the list at soldier+0x11c, when ghostActiveKitPart 0x0827ec50 allows; the client's counterpart walks +0x13c and calls slot +0xdc at 0x00501613. The .con-authored kit accelerators (setActiveAcceleration, setTrigger, hasRoomForJump) used for mod jetpacks and high jumps - not the base infantry jump."
+  },
+  {
+   "address": "0x08276f40",
+   "name": "dice::ref2::world::BFSoldier::getSoundTrigger()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "lnxded. If this+0x50 is non-zero, tail-calls AnimationStateMachineInstance::getSoundTrigger 0x0832ae90 on the upper-body machine (+0x2d8); otherwise asks it and falls back to the lower body (+0x294) when it returns 0. Client twin 0x004f5c60, whose result 4 (c_SstJump) blocks the jump."
+  },
+  {
+   "address": "0x0832ae90",
+   "name": "dice::anim::AnimationStateMachineInstance::getSoundTrigger()",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "lnxded. Zeroes this+0x18; if the current-state index at +0x20 is non-negative, looks the state up with AnimationStateMachine::getState(ds:0x0873fc9c, index) and returns its first int, cached in +0x18, when that is non-negative; else 0. The value is a c_Sst* constant (0x08298280). Client twin 0x00613230."
+  },
+  {
+   "address": "0x08298280",
+   "name": "dice::ref2::world::addConstantHelper(std::string const&, unsigned int)",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "lnxded. Registers a console constant. ObjTemplBFModule::init uses it for the animation sound triggers, and the client registers the same 21 with the same values through 0x00583bf0: c_SstStand 1, c_SstWalk 2, c_SstRun 3, c_SstJump 4, c_SstToCrouch 6, c_SstFromCrouch 7, c_SstCrouchMove 8, c_SstToCrawl 9, c_SstStandUp 10, c_SstCrawlMove 11, c_SstToSwim 12, c_SstSwim 13, c_SstSwimStand 14, c_SstFromSwim 15, c_SstOpenParachute 16, c_SstFallingHigh 17, c_SstParachuteLand 18, c_SstHitDamage 19, c_SstKilled 21, c_SstHealedByMedic 22, c_SstClimbLadder 23 (none of the 21 is 5 or 20). Script sets them with AnimationStateMachine.setSoundTrigger; AnimationStateMachineInstance::getSoundTrigger reads them back."
+  },
+  {
+   "address": "0x00583bf0",
+   "name": "addConstantHelper",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "Client twin of lnxded addConstantHelper 0x08298280, by its calls: the constant's name as a std::string in ecx, its value in edx. Registers the same 21 c_Sst* sound triggers with the same values in the same order, from 0x004c466e."
+  },
+  {
+   "address": "0x0826b400",
+   "name": "dice::ref2::world::BFSoldier::BFSoldier(dice::ref2::world::BFSoldierTemplate const*)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-16-jump-velocity",
+   "note": "lnxded (0x0826bf00 is the second copy gcc emits). Builds the soldier's four AnimationStateMachineInstances, 68 bytes each: a two-pass loop from +0x294 (esi = 1 at 0x0826b4df, calls at 0x0826b5f9), then +0x31c and +0x360. 0 is the lower body, 1 the upper body, 2 the camera-shake triggers (ledger, camera-shake section); updateCameraShake 0x0827dea0 uses only those three. Client ctor 0x004ff440 does the same from +0x2c0."
   }
  ]
 }

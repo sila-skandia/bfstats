@@ -120,23 +120,29 @@ sample's sign is flipped with probability ½ (0x081e3037).
 during which spawns are spaced `|1 / intensity|` apart, the intensity resampled
 per spawn and multiplied by `speed / IntensityAtSpeed` when that is set (the
 Panzer trail's `IntensityAtSpeed 20`); a zero intensity means one per 100 s.
-`looping` restarts on expiry. **The first spawn is at t = 0** — INFERRED from
-data: the decal emitters are `intensity 2` over `timeToLive 0.1` (0.2 of a
-spawn by the arithmetic) and every hit in the reference recording leaves a
-hole. Which of the two branches at 0x081e3571 spawns for a template-bearing
-emitter was not resolved; the clock's initial `next = 0` (ctor 0x081e2bb0) is
-what makes t = 0 consistent.
+`looping` restarts on expiry, which comes once `age >= timeToLive`.
+**The first spawn is at t = 0** — VERIFIED (ledger EMT-2): the constructor
+zeroes both `age` and `next` (0x081e2bb0), and a spawn is due when
+`age >= next` (0x081e37bb). That is why a decal emitter (`intensity 2` over
+`timeToLive 0.1`, 0.2 of a spawn by the arithmetic) still leaves a hole. The
+test is skipped for the tick when the template's `showInFirstPerson` or the
+instance's `+0x124` is set. When a `delay` runs out mid-tick, `age` advances by
+the delay's pre-tick value rather than by the leftover.
 
 **Spawn placement** — position = emitter origin + `relativePositionInDof/Up/Right`
 along the frame; velocity = `positionalSpeedIn…` along the frame, plus the
 emitter's own velocity × `emitterSpeedScale` when `addEmitterSpeed`.
 `startRotation` rolls the frame about its **DOF** per spawn (`dice::ref2::roll`
-0x08061df0 = `rotateAboutLine(m, m.row2, angle)`); the data writes it in
-degrees (`CRD_UNIFORM/1/360/0`), the conversion was not located — INFERRED.
+0x08061df0 = `rotateAboutLine(m, m.row2, angle)`), in degrees — VERIFIED: the
+angle passes unchanged down to `setRotateZDeg` 0x08062740, which multiplies by
+π/180 before `fsincos` (ledger EMT-3).
 
 **Mesh particles** — `Particle::handleUpdate` (0x0820ad20), VERIFIED: each tick
 the body gets gravity `gravityModifier × gravityModifierOverTime(phase)` and
-`drag × dragOverTime(phase)`; if `sizeModifier` ≠ (0,0,0) the scale is
+`drag × dragOverTime(phase)` through `setGravityModifier` / `setDrag`. That body
+is a `PointPhysicsNode`, so drag is an acceleration,
+`accel −= (scale·v − wind)·π·r²·drag/mass`, integrated in four sub-steps
+([physics.md](physics.md) §3, ledger EMT-5). If `sizeModifier` ≠ (0,0,0) the scale is
 `size × sizeOverTime(phase) × sizeModifier` via `IScaleable::setScale`,
 otherwise the mesh draws at its authored size; if `alphaOverTime` is declared
 the byte `255 × alpha(phase)` goes to `IStandardMesh::setAlpha` (+0x34).
@@ -146,8 +152,15 @@ share the 255/100 constants; none matched) — the server reading stands.
 
 **Sprites** — `SpriteParticle` quads face the camera; `size`, `sizeOverTime`,
 `colorRGBAOverTime` (0..255), `initRotation`/`rotationSpeed` (degrees),
-`destBlendMode BMOne` additive else source-over. Update code not read; the
-properties are the serialiser's.
+`destBlendMode BMOne` additive else source-over. The update code is client-only
+— on the server `ParticleSystem::update`, `addParticle` and `draw` are empty
+(ledger SPR-1). On the client (SPR-2…SPR-6) a sprite template owns a
+`geom::ParticleSystemTemplate` that bakes every `…OverTime` curve to 101
+samples; each particle rolls its CRDs once in `ParticleSystem::addParticle`
+(0x0060a680), and `draw` (0x0060a0e0) evaluates the curves per frame. Four words
+our pipeline ignores — `numAnimationFrames`, `initAnimationFrame`,
+`animationSpeed`, `animationSpeedOverTime` — make 791 of 7,159 sprite templates
+flipbooks, among them explosion cores, aircraft fires and blood.
 
 ### The bullet hole
 
@@ -190,11 +203,16 @@ first second. Against a wall the table names `BazookaCascadesStone` =
 
 ## 4. Open
 
-- Which `Emitter::handleUpdate` branch spawns for a normal emitter (the
-  `this+0x124` gate at 0x081e353e reads as "no spawn when set", which cannot
-  be right for every template-bearing emitter); the t = 0 rule is data.
-- Degrees vs radians for `startRotation` / `initRotation` (data says degrees).
-- The drag law inside the physics body (`v·e^(−k dt)` assumed).
+- ~~Which `Emitter::handleUpdate` branch spawns~~ — closed 2026-09-16 (ledger
+  EMT-2). The spawn test (`age >= next`, due at t = 0) is reached only when the
+  template's `showInFirstPerson` and the instance's `+0x124` are both zero;
+  either set sends the update down a separate path to its return, which was
+  not read. Nothing found sets `+0x124`.
+- ~~Degrees vs radians for `startRotation`~~ — degrees, closed 2026-09-16
+  (EMT-3). `initRotation` / `rotationSpeed` are still read from data only.
+- ~~The drag law inside the physics body~~ — closed 2026-09-16: an
+  acceleration, not an exponential (ledger EMT-5). Still unread: the mass and
+  bounding radius a spawned particle's body reports.
 - The client `GameClient::handleCollisionForProjectile` and
   `Particle::handleUpdate` (undefined code; not needed — the server copies are
   named and the client's `playCollisionEffect`/`getDamage` twins matched).

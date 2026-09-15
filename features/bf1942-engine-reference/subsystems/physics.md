@@ -98,11 +98,44 @@ was true of the dispatch itself but wrong about what it was handed.
 > number to correct: the engine ticks at 30 Hz, not 60. The four sub-steps
 > *inside* each tick stand.
 
-Drag (`0x00578990`, `working`) is wind-relative and area/mass-scaled, **not**
-the plain `−drag·v` the viewer once assumed:
-`accel -= (scale*v − wind) * π * r² * drag / mass`. The role of `r`
-(bounding radius by lnxded vtable order) and the `scale` multiplier are
-`working`/`open` — implemented in shape, flagged in the source.
+Drag (`0x00578990`, `verified`) is wind-relative and area/mass-scaled, **not**
+the plain `−drag·v` the viewer once assumed, and not an exponential decay:
+`accel -= (scale*v − wind) * π * r² * drag / mass`, added to the accumulator
+once per tick, before the four sub-steps. In `PointPhysicsNode::updatePhysics`
+(`0x00578ca0`), `r` is the body's own `getBoundingRadius()` — vtable +0x1c, which
+forwards to the composite object's bounding sphere, so no `.con` word sets it —
+and `scale = 1 + 24·min(underWater/r, 1)`, clamped above only, with `underWater`
+at +0x44 (named by lnxded `setUnderWater`/`getUnderWater`): a fully submerged
+body feels 25× its dry drag. Particles are `PointPhysicsNode` bodies too
+(`Particle::handleUpdate` lnxded `0x0820ad20` sets their drag every tick), so
+this is also the particle drag law (ledger EMT-5). The viewer's `physics.js`
+implements it; its comments still call `r` and `scale` unproven.
+
+`PhysicsNode` — vehicles and their engines, wings and springs — is less simple
+(lnxded `0x082543d0`). A non-root node for which a virtual predicate (vtable
++0xcc) holds hands its force and torque to the root and skips drag and gravity
+for that tick. Otherwise bit 0x4 of the composite object's byte +0x7 chooses:
+set, the same formula with fixed `r = 0.1`, `scale = 1`; clear, an "Advanced"
+pair that treats the object as a box (client `0x0053f5f0` / `0x0053f7c0`,
+lnxded `0x08252f50` / `0x08253280`, read 2026-09-16):
+
+```
+relV    = scale·v − wind
+k       = −drag · |relV| / mass                  // quadratic in speed
+accel  += k · (Ax·proj0(relV) + Ay·proj1(relV) + Az·proj2(relV))
+k'      = −drag · |ω| / mass
+angAcc += k' · ((Ay+Az)·proj0(ω) + (Ax+Az)·proj1(ω) + (Ax+Ay)·proj2(ω))
+
+Ax = (π/4)·DY·DZ   Ay = (π/4)·DX·DZ   Az = (π/4)·DX·DY   // ellipses in the box's faces
+scale = 1 + 24·min(depth / DY, 1)                // depth at client +0x8c; DY vertical
+```
+
+`projN` projects onto row N of the object's absolute transform (reading the rows
+as X, Y, Z is inferred from how the areas pair with them). The box comes from the
+object's geometry, queried with IID 0x492fe0fe — one of the interfaces
+`BStandardMesh::queryInterface` answers with itself. `dragOffset` is read by
+neither law, and nothing calls its setter. What sets the selector bit is not
+known (Still open).
 
 ---
 
@@ -236,9 +269,25 @@ DummyGrip=0x20  EngineDummyGrip=0x24  StaticFriction=0x80
 ```
 
 `EngineDummyGrip = EngineGrip | DummyGrip` proves the bitfield reading. What each
-bit does to lateral vs longitudinal velocity at the contact — the thing that
-produces the BF1942 power slide — lives in the response solver behind
-`ResponsePhysicsManager` and is still **open**.
+bit does is read out of `ResponsePhysics::addFriction` (lnxded `0x0825b6e0`,
+2026-09-16; ledger PHY-2), which tests the live byte at +0xb4:
+
+- **EngineGrip** (4) spins the wheel from the engine: `getCurrentRatio` ×
+  `getCurrentDifferentialRPM` into `SpinWheel`.
+- **RollGrip** (2) removes the contact velocity along the wheel's own axis, so
+  the wheel rolls freely and resists sideways.
+- **Neither** — plain contact — takes a Coulomb friction direction, and the
+  solver sets **StaticFriction** (0x80) itself once sliding slows below a
+  threshold: kinetic friction latching to static.
+- **DummyGrip** (0x20) is read from the authored byte +0xb5
+  (`getPermanentGrip`), not the live one, and bypasses the friction solve; with
+  EngineGrip also set, only the wheel spin is driven.
+- **RollGripWhenOccupied** (8) never reaches the solver: `PhysicsSpring`
+  rewrites it first (above).
+
+There is no slip-angle curve. The force magnitudes — what actually produces
+the BF1942 power slide — were not read, and `ground.js`'s single-`mu` tyre
+model is not what the engine does.
 
 ---
 
@@ -280,8 +329,20 @@ xref (`0x004f1302`), so it is mutable at runtime.
 `aiTemplatePlugIn.maxSpeed 5.0` is the **AI plugin's** number and is not the
 player's. A walk mode built to that line is visibly wrong.
 
-**Jump velocity is still `open`** — the state exists (`c_SstJump`, flag 0x80) but
-the impulse constant was not located. Measure it in wine.
+**Jump velocity is still `open`**, but the trigger is read and three hiding
+places are ruled out (2026-09-16, ledger PHY-1). In the client's
+`handlePlayerInput` (`0x00500190`) the jump bit 0x80 is set only when the
+soldier is standing (0x60 clear), Action is held, the soldier has a +0x140
+pointer and a non-zero word at `[esp+0x2c]`, and `BFSoldier::getSoundTrigger`
+(`0x004f5c60`) is not `c_SstJump`: the upper body's current sound trigger, or
+the lower body's when the upper has none, so a soldier already in a jump state
+cannot jump again. Sound triggers are console constants, identical in both
+binaries — `c_SstStand` 1, `c_SstWalk` 2, `c_SstRun` 3, `c_SstJump` 4, then
+`c_SstToCrouch` 6 through `c_SstClimbLadder` 23 (table in symbols `0x08298280`).
+The server's copy of the gate is dead code. No `.con` word in any mod sets a jump strength,
+`AnimationState` has no velocity primitive, and neither `handlePlayerInput` nor
+the server's `handleFrameUpdate` writes the velocity of the soldier's physics
+node (`IObject+0x60`).
 
 There is no ragdoll because the bones were never dynamics:
 `setSkeletonCollisionBone` capsules are hit regions for damage only.
@@ -303,7 +364,8 @@ See ledger rows **CS-1..CS-6** for the full evidence. In short:
 - `BFSoldier::updateCameraShake` (`0x004facd0`) passes `cameraShakeFactor`
   (`0x0099000c`) to the **lower-body** state machine — which owns every
   `Lb_Walk/Run/Crouch/Lie` state — and a hardcoded `1.0f` to the upper-body and
-  trigger machines. That global is `00 00 00 00` in initialized `.data` and no
+  trigger machines. That global is `0.0f` at start-up — it lies past `.data`'s
+  raw bytes (which end at `0x00960000`), so the loader zero-fills it — and no
   vanilla file assigns it.
 
 **Retail BF1942 has no first-person walking view bob.** DICE authored the
@@ -316,9 +378,11 @@ shakes are unaffected.
 
 | | |
 |---|---|
-| Jump impulse velocity | not located; measure in wine |
-| Per-bit grip force semantics | in the response solver, behind `ResponsePhysicsManager` |
+| Jump impulse velocity | the client's gate is read and three places are ruled out (§8, ledger PHY-1): no `.con` word, no `AnimationState` primitive, no velocity write in `handlePlayerInput` or the server's `handleFrameUpdate`; the per-list call (lnxded `0x082751bf`, client `0x00501613` by shape) is `ActiveKitPart::update`. Next: `BFSoldier::updateAnimations` (`0x004fb150`), the class of the physics node at `IObject+0x60`, and the client's own `handleFrameUpdate` |
+| ~~Per-bit grip force semantics~~ | **closed 2026-09-16** for what each bit selects (§6, ledger PHY-2); the force magnitudes behind the power slide remain unread |
 | ~~Whether the frame timer clamps `dt` before `World::update`~~ | **closed 2026-09-15** — there is no frame `dt` to clamp: the dispatch is `GameClient::simulateFrame(1/30)` run `nTicks` times per frame (§3); the tick *count* is clamped (>10 → 1 in `InputManager::update`, >9 → 1 in `GameClient::update`) |
-| `submarineData`'s 7 parameters | unnamed, passed through verbatim |
-| Drag's `r` and `scale` factors | `working` / `open`; shape implemented, factors flagged |
+| ~~`submarineData`'s 7 parameters~~ | **closed 2026-09-16** for five of them (ledger PHY-3): the 6th is the crush depth, the 5th the depth below which oxygen drains (with the 4th, the periscope pair), the 1st the drain rate and the 2nd the refill rate, capped at 1.0. The 3rd and 7th (suffocation and crush damage) are not re-verified |
+| ~~Drag's `r` and `scale` factors~~ | **closed 2026-09-16** — `r` = `getBoundingRadius()`, delegated to the composite object; `scale = 1 + 24·min(underWater/r, 1)`, clamped above only, `underWater` = +0x44 (§3) |
+| What selects `PhysicsNode`'s Advanced drag | the two laws are read (§3, 2026-09-16), but not what sets the composite object's byte +0x7 bit 0x4: no `.con` word, no `or` of that bit anywhere in either binary, and not `SimpleObjectTemplate::setPhysicsNodeComponent`, which only picks the node class. It decides which drag an aircraft really gets (see features/flyable-vehicles/flight-model.md) |
+| A spawned particle's mass and bounding radius | the body defaults to mass 1.0; the radius a sprite or mesh particle reports is unread — the blocker for replacing `effects-core.js`'s exponential drag |
 | B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
