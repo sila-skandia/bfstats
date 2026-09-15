@@ -22,6 +22,8 @@ def main(path: str) -> None:
     first_seen = {}
     last_seen = {}
     control_points = {}
+    armor = defaultdict(list)   # net id -> [(t, hitPoints, lastHitPlayer)], format v3
+    chats = []                  # format v3
     t_max = 0.0
     header = None
 
@@ -58,6 +60,11 @@ def main(path: str) -> None:
                     last_seen[o[0]] = t
             elif k == "cp":
                 control_points.setdefault(rec["id"], rec)
+            elif k == "a":
+                for oid, hp, last_hit in rec["a"]:
+                    armor[oid].append((t, hp, last_hit))
+            elif k == "chat":
+                chats.append(rec)
 
     print(f"file: {path}")
     if header:
@@ -82,6 +89,26 @@ def main(path: str) -> None:
     print(f"\ncontrol points ({len(control_points)}):")
     for cid, cp in sorted(control_points.items()):
         print(f"  {cid} {cp.get('name')!r} team={cp.get('team')} pos={cp.get('pos')}")
+    # An object is written again, with unchanged hit points, every time it comes
+    # back into relevance range; only a change in value is damage.
+    changes = {}
+    for oid, track in armor.items():
+        steps = [track[0]] + [cur for prev, cur in zip(track, track[1:]) if cur[1] != prev[1]]
+        if len(steps) > 1:
+            changes[oid] = steps
+    if armor:
+        print(f"\nobjects with armor: {len(armor)}; hit points changed during the recording: {len(changes)}")
+        for oid, steps in sorted(changes.items()):
+            o = objects.get(oid, {})
+            shown = " ".join(f"{t:.1f}s:{hp:g}" for t, hp, _ in steps[:12])
+            more = f" ... ({len(steps) - 1} changes)" if len(steps) > 12 else ""
+            # lastHitPlayer reads -1 on the client in every recording so far:
+            # the server does not replicate it.
+            print(f"  id={oid} {o.get('tmpl', '?')} maxhp={o.get('maxhp')} crit={o.get('crit')}: {shown}{more}")
+    if chats:
+        print(f"\nchat ({len(chats)}):")
+        for c in chats:
+            print(f"  {c['t']:7.1f}s pid={c['pid']} team={c['team']}: {c['text']}")
     templates = Counter(o["tmpl"] for o in objects.values())
     print(f"\nnetworked objects seen: {len(objects)} across {len(templates)} templates")
     for tmpl, n in templates.most_common(40):

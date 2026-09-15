@@ -216,7 +216,10 @@ What this tells us (`inferred` unless noted):
   objects, and the split was purely by distance. **One recording client does not
   see the whole round**, which is the single most consequential fact in this
   document — it invalidates the single-client version of strategy A as a route
-  to a complete replay.
+  to a complete replay. §11 narrows this: the cut-off is ~520 m around the
+  client's *current* viewpoint, and the reliable event stream still announces
+  every object with its spawn transform (event 0x07). One client lacks the
+  motion of distant objects, not their existence.
 
 ### 2.4 Client → server
 
@@ -317,10 +320,10 @@ the recording and can drive a low-fidelity "dots on a map" replay immediately.
 
 | # | question | status | how |
 |---|---|---|---|
-| T1 | Does the client hold a ghost for *every* networked object on the map, or only nearby ones? | **answered — only nearby ones**, §10 | `coverage.py` diffs a recording against the level's `ObjectSpawns.con`. |
+| T1 | Does the client hold a ghost for *every* networked object on the map, or only nearby ones? | **answered — only within ~520 m of the current viewpoint**, §10, §11.1 | `coverage.py` diffs a recording against the level's `ObjectSpawns.con`. |
 | T2 | Update rate versus distance | open | Log the wall-clock interval between transform changes for one vehicle at 50 m, 500 m, 1500 m. Needs a second player; the first recording had one. |
 | T3 | Does a dead player's soldier object linger, and does respawn reuse the network ID? | open | Log CreatePlayer `vehicleNetworkID` and the soldier's `networkID` across a death/spawn. |
-| T4 | Do a spectator (free camera, never spawned) and a playing client receive the same object set? | blocked | The sampler does not run before spawn; see §10. Fix the frame hook first. |
+| T4 | Do a spectator (free camera, never spawned) and a playing client receive the same object set? | open | Not blocked after all (§11.1): the sampler runs on the spawn screen, where relevance follows the free camera. |
 | T5 | Is the object set complete right after `DataBaseComplete`, or do ghosts trickle in afterwards? | open | Needs a recording started *before* connecting; see §10. |
 
 T1 and T4 decide the architecture; the rest tune the sampler. T1 is now
@@ -399,19 +402,23 @@ Implemented in bf42plus on branch `claude/wizardly-cray-kdmhan` as
 `src/replay.cpp`. Enable with `recordReplays=on` in `bf42plus.ini` or
 `plus.recordReplays 1` in the console. Output is
 `replays/replay_<yyyymmdd-hhmmss>.ndjson` in the game directory, one JSON
-object per line, `t` in seconds since the file was opened. Closed on
-`GameStatus(ENDMAP)` or when the setting is turned off; flushed every 2 s so a
-crash loses at most that.
+object per line, `t` in seconds since the file was opened. From format v3 a
+file closes when a new join sequence begins (event 0x1A), when the game exits,
+or when the setting is turned off. v1 and v2 closed at `GameStatus(ENDMAP)`,
+which cut off the teardown the server sends after it and split one map into two
+files. Flushed every 2 s, so a crash loses at most that.
 
 | `k` | meaning | fields |
 |---|---|---|
 | `h` | header | `v` format version, `plus` DLL version, `start` local time, `hz` sample rate |
-| `e` | game event | `e` name and per-event fields (see `replay_onEvent`). `e:"raw"` is an event whose struct is unmapped: `type`, `size` (sizeof the event class read from the engine's maker, header included) and exactly `size - 12` payload bytes as hex. `size:null` means the maker could not be read and `raw` is a fixed 48-byte prefix that may run past the end of the event. Format v1 had no `size` and always dumped 48 bytes. |
-| `o` | networked object first seen | `id` network ID, `gid` object-manager ID, `tmpl` template name, `tid` template ID, `team` |
+| `e` | game event | `e` name and per-event fields (see `replay_onEvent`). `e:"raw"` is an event whose struct is unmapped: `type`, `size` (sizeof the event class read from the engine's maker, header included) and exactly `size - 12` payload bytes as hex. `size:null` means the maker could not be read and `raw` is a fixed 48-byte prefix that may run past the end of the event. Format v1 had no `size` and always dumped 48 bytes. v3 adds `tmpl`, the template name, to object-creation events (type 7). |
+| `o` | networked object first seen | `id` network ID, `gid` object-manager ID, `tmpl` template name, `tid` template ID, `team`; v3 adds `maxhp` and `crit` (the critical-damage threshold) for objects with armor |
 | `s` | sample | `o` is a list of `[id, x, y, z, qx, qy, qz, qw]`, only objects whose transform moved since their last write |
 | `d` | object gone | `id` |
 | `p` | player state changed | `p` is a list of `[pid, team, vehicleNetId]` |
 | `cp` | control point | `id`, `team`; on first sight also `name`, `tmpl`, `pos` |
+| `a` | hit points (v3) | `a` is a list of `[id, hitPoints, lastHitPlayer]` for objects with armor, written whenever an object is first seen or comes back into relevance range, and whenever either value changes. Only a change in value is damage. `lastHitPlayer` is always -1 on the client: the server does not replicate it (§11.8) |
+| `chat` | a line shown in the chat box (v3) | `pid`, `team`, `text`; includes the recording player's own chat, which never arrives as a ChatFragment event. `text` is the line as displayed, with the `name: ` prefix, and `t` is when it was displayed |
 | `end` | file closed cleanly | |
 
 Run `summarize.py` on a recording for the record counts, roster, event kinds and
@@ -509,13 +516,13 @@ So: set `recordReplays=1` in `bf42plus.ini` before launching, or enable it and
 reconnect. T5 cannot be tested any other way either, since it is defined
 relative to `DataBaseComplete`.
 
-### 10.4 T4 is blocked by where the frame hook sits
+### 10.4 T4 is not blocked (corrected in §11.1)
 
-`replay_onFrame` is called from `hook_Renderer_draw_1`, which dereferences
-`BFPlayer::getLocal()->getVehicle()` a few lines above the call site. A client
-that has never spawned has no vehicle, so the sampler never runs. A spectator
-recorder — the obvious response to §10.1 — cannot be tested until the sampler
-is called from somewhere that does not require a spawned local player.
+This section first said the sampler could not run before spawn, because
+`hook_Renderer_draw_1` dereferences `BFPlayer::getLocal()->getVehicle()` above
+the call site. That was wrong: before spawning, the player's vehicle is the
+free camera, so the dereference is valid and the sampler runs on the spawn
+screen. Both later recordings sampled there.
 
 ### 10.5 Confirmed incidentally
 
@@ -533,3 +540,231 @@ is called from somewhere that does not require a spawned local player.
 - The `cp` name is the raw localisation key from the template
   (`Landing_Beach`), not the localised string `renderer.cpp` displays. Better
   for a replay file; the viewer should localise at display time.
+
+---
+
+## 11. The second and third recordings, checked against the server's own log
+
+`replay_20260915-204355` (format v2: the last 40 s of a round, then the map
+change) and `replay_20260915-210619` (163 s: a Sherman killed with four rockets,
+a jeep driven, parked and destroyed, an SBD destroyed, two respawns). Both are
+aligned with the LAN server's event log (`game.serverEventLogging 1`, written to
+`mods/bf1942/logs/ev_<port>-<date>_<time>.xml`), which is ground truth. Spawn,
+`setTeam`, `enterVehicle`, `exitVehicle` and the round clock agree between the
+two within 30 ms, so the timings below are measured.
+
+### 11.1 Corrections to §10
+
+- **T4 was never blocked.** Before spawning, the player's vehicle is the free
+  camera: `p` records show vehicle net id 2, and the server logs `exitVehicle
+  MultiPlayerFreeCamera` when a never-spawned player leaves.
+- **The relevance cut-off is ~520 m around the current viewpoint.** Objects were
+  added at 518.5, 518.5 and 520.0 m and dropped at 519.9 m, from the spawn-screen
+  camera and from the soldier alike. At spawn the replicated set swapped in one
+  sample, so it is not "stays replicated once you have been near". Control
+  points are exempt: they stayed replicated at 687 m. Wake sets
+  `Game.setViewDistance 500`, the likely driver; the extra ~20 m is unexplained.
+  A map with a different view distance would confirm it.
+- **The round did not end on a time limit.** The server runs
+  `serverGameTime 0`. On the empty server every round lasted exactly 1200 s
+  from `roundInit` because team 1's 200 tickets drained at one per 6 s
+  (`victorytype 4`).
+- **The client relaunches between maps; the server does not.** The dedicated
+  server process has run since it was started. The client exits and restarts on
+  every map change, which is why v2 produced a separate file after the change.
+
+### 11.2 One client is told about every object
+
+Event 0x07 announces all 44 objects at join, including the nine that were never
+replicated to the client: the carrier, the destroyer, deck aircraft, landing
+craft beside the ships and a Defgun at 592 m. Each carries its template id and
+exact spawn transform. So a single recording has the complete roster and every
+spawn position. What it lacks beyond ~520 m is motion.
+
+### 11.3 Event layouts decoded (`working` unless marked)
+
+Offsets are into the payload, after the 12-byte header.
+
+| id | layout | evidence |
+|---|---|---|
+| 0x04 | `u8`, `f32` seconds since `roundInit` | 38.40 vs 38.59 s and 1167.60 vs 1167.73 s against the server log |
+| 0x05 | `u32 1288`, `u16` netId, `u8 3` at spawn | `inferred`: a child of the soldier (netId one past it), probably its weapon |
+| 0x06 | `u16` netId: object destroyed | every object at round end; each wreck 10.06 s after its kill |
+| 0x07 | `u32` templateId, `u16` netId, `u8 1`, `vec3` position, `vec3` rotation in degrees | 46 of 46 decode; positions equal `ObjectSpawns.con`, rotation equals its `Object.rotation` |
+| 0x09 | `u8` playerId, `u16` netId: player now controls object | soldier at spawn, camera at round end |
+| 0x0A | `u8` playerId, `u16` netId: enter vehicle | server `enterVehicle` 4 ms apart |
+| 0x0B | `u8` playerId, `u8` flag: exit vehicle; flag 1 during round-end teardown | server `exitVehicle` 30 ms apart |
+| 0x13 | `u8 1`, `u8` map length, `u8` mod length, `u8 2`, `char[64]` map, `char[32]` mod | `wake`, `bf1942` |
+| 0x14 | `char[10]` random token, `char[16]` mod, `u8` length, `i32 -1` | the token changes on every connection |
+| 0x16 | join snapshot: `u8`, `u8`, `f32 1.0`, `f32 1.0`, `u32`, `u32` round seconds, `u8` | the seconds equal elapsed round time at the moment of connecting |
+| 0x1A | 3 × `{char[16], u8 length}` mod names | first event of every join |
+| 0x1B | `char[32]` server name, `u8` length | "BF1942 server1" |
+| 0x23 | `u8` playerId, `u16` netId: kit | server `pickupKit` in the same tick |
+| 0x29 | `u32 0`, `u32` round seconds floored to 10, sent every 10 s | resets to 0 each round |
+| 0x30, 0x31 | 74 bytes at map change; 0x30 carries 2916, the server's `+reconnectPassword` | `inferred`: reconnect instructions. 0x31's 1230 is unexplained; other fields look like uninitialised 32-bit Linux heap pointers |
+| 0x36 SetLevel | `char[64]` level path, `char[64]` game-mode file, settings from offset 128 | `bf1942/levels/wake/`, `conquest.con`; 300 = `serverNameTagDistanceScope`, 10 = `serverGameRoundStartDelay`. Bytes after each string's terminator are stale buffer contents |
+| 0x37 | `char[16]` `_ClientID_0`, then mod names | |
+
+`ScoreMsg` SPAWNED leaves `weapon` and `bodypart` uninitialised (garbage in one
+recording, zero in the next). The DEATH at round end is teardown, not a kill.
+
+A number can match by coincidence: 2916 is also the Sherman's template id, and
+0x30 was briefly misread as a tank event because of it. Cross-check a field
+against a second source before naming it.
+
+### 11.4 How a vehicle dies, as the client sees it
+
+Measured three times (Sherman, Willy, SBD) against the server's `destroyVehicle`:
+
+1. **Hits: no event, no movement.** Four rockets over 30 s left the Sherman's
+   transform untouched while the player watched it smoke. Damage exists only in
+   the Armor component's replicated hit points (§11.5).
+2. **Destruction: still no event.** The vehicle jumps 1.5–3.3 m and tilts,
+   visible in the first sample after the kill (0.07–0.18 s later).
+3. **Wreck:** the same object, still replicated, for 10 s. Kill to destroy
+   event measured 10.06 s all three times, so an explosion can be dated from
+   its destroy event.
+4. **0x06** removes the wreck.
+5. **Respawn:** the spawner creates a replacement with a *new* network id via
+   0x07 at the spawn point, within its `MinSpawnDelay`/`MaxSpawnDelay` (Sherman
+   after 100 s, range 70–110; Willy after 20 s, range 10–30).
+
+For the viewer: wreck models are already extracted (223 `models/*.wreck.glb`,
+including `Sherman.wreck.glb` and `SBD.wreck.glb`), and each vehicle's
+template sets its damage stages with `addArmorEffect`. The Sherman smokes at 50
+of 100 hit points, burns at its `criticalDamage` of 12 and explodes at 0.
+
+### 11.5 Hit points — `working` in BF1942.exe, recorded from format v3
+
+- `IObject::queryComponent(0xc4a4, 0xc4a4)` returns the Armor component. The
+  client makes that call itself at 84 sites (`call [edx+24h]`, vtable slot 9,
+  where bf42plus's header declares it).
+- The client has no RTTI for Armor. Its vtable (0x008DC7A8) was found by
+  signature: a `queryInterface` comparing against 0xc4a4 plus float getters in
+  slots 5, 7 and 11. It matches the Linux server's symbolised vtable slot for
+  slot, and the offsets agree: hit points `+0x38`, max hit points `+0x3c`,
+  critical damage `+0xf0`, last hit player `+0x14`.
+- The recorder checks those getters' machine code once per vtable before
+  reading the fields, and skips armor it cannot verify.
+- Values to check a recording against: Sherman 100/12, Willy 50/6, SBD 130/20
+  (max hit points / critical damage).
+
+### 11.6 The recording player's own chat never arrives
+
+The server logged 14 chat lines from the recording player; the client received
+no ChatFragment event for any of them. From v3 the recorder takes chat from the
+chat box instead (`chat` records).
+
+### 11.7 The server event log as a companion
+
+It holds exactly what the client stream lacks — kills and vehicle destruction
+with positions, chat, ticket results — and aligns to a recording through the
+events both share. For a server you run it is worth merging with the recording;
+for a public server the client recording stands alone.
+
+### 11.8 Format v3 verified
+
+`replay_20260915-213110.ndjson`: 115 s, the Sherman destroyed with three
+rockets and a jeep with one, chat markers typed throughout, the game quit at
+the end. Checked against the server log, offset set by the spawn:
+
+- **One file, closed cleanly.** It ends with an `end` record written as the
+  game exited.
+- **Every object creation is named** (46 of 46), including the objects the
+  client never gets updates for: `Shokaku`, `Hatsuzuki`, four `Daihatsu`,
+  `Zero`, `AichiVal`.
+- **Hit points read correctly.** Max hit points and critical damage match the
+  template files for every armored template seen: Sherman 100/12, Willy 50/6,
+  SBD and SBD-T 130/20, Corsair 100/20, AA_Allies 100/12, M3A1 100/16, Defgun
+  50/12, Stationary_Browning 45/0, USMarineSoldier 30/0.
+- **Damage is visible hit by hit.** The Sherman went 100 → 67 → 33 → 0, each
+  step matching the player's markers ("hit, not smoking" at 67, above the smoke
+  threshold of 50; "smoking" at 33).
+- **Zero hit points is the kill.** Hit points reached 0 in the first sample
+  after the server's `destroyVehicle` (+0.04 s Sherman, +0.12 s jeep), with the
+  jump in the same or next sample and the destroy event 10.03 s after the kill.
+- **Repeated values are re-sightings, not damage.** All 37 `a` entries that
+  repeat a value fall in the same sample as an `o` record for that object
+  (relevance churn while the spawn-screen camera flew to the spawn point); the
+  only real changes were the four damage steps.
+- **The player's own chat is captured.** All 9 lines, displayed locally 0.07–0.60 s
+  before the server logged them.
+
+Not established:
+
+- **`lastHitPlayer` is not replicated.** It read -1 on every object, including
+  both vehicles the player destroyed. Attackers are not available from Armor on
+  the client; the server event log has them.
+- **Burn-down below critical damage was not exercised.** Both kills took hit
+  points straight to 0.
+
+---
+
+## 12. Playback in the map viewer
+
+Phase 2 has a first cut: `tools/bf1942-models/viewer/replay.js` on branch
+`replay-viewer`, built on `main`'s viewer (this branch's copy is 42 commits
+behind it). It plays a recording over the level `map.html` loads:
+
+```
+map.html?replay=replays/<recording>.ndjson
+map.html?replay=replays/<recording>.ndjson&serverlog=replays/<ev_log>.xml
+```
+
+or a recording (and optionally its server log) dropped onto the view. The
+recording's SetLevel picks the map unless `?map=` says otherwise. `replays/` is
+gitignored; recordings are data.
+
+### What the client recording alone gives
+
+- **Every object's life.** Created (0x07), moving (samples), damaged (`a`),
+  wrecked at 0 hit points (the extracted `models/<Template>.wreck.glb`),
+  removed (0x06), respawned as a new network id. Everything drawn is a function
+  of the recording clock, so seeking is only setting it.
+- **Out-of-range objects** as translucent ghosts at their last replicated or
+  announced pose, so the ~520 m relevance radius is visible rather than
+  silently missing.
+- **Name tags with hit-point bars** (half health and the recorded critical
+  damage colour them), a follow camera on any player, including in vehicles
+  and on the spawn screen, and an event feed of joins, spawns, vehicle entries
+  and exits, hits, kills, removals and chat.
+
+### How the server log overlays it
+
+`alignServerLog` proposes a clock offset from every event the two share —
+spawns, vehicle entries and exits, team changes, kit pickups, and chat by its
+text — and keeps the offset that lines up the most. One log holds every
+connection since its map loaded; this also picks out the recording's session.
+Both recordings in §11 aligned without help: v3 on 12 of 12 shared events
+(mean error 0.15 s), v2 on 4 of 4 (0.01 s) from the same log file.
+
+Aligned server events join the feed marked `server` beside the client's, and
+each with a position (`vehicle_pos`, `player_location`) gets a fading ring on
+the level, with a beam for vehicle kills. They add what the client cannot
+know: who destroyed what, round results with tickets, and exact kill positions.
+The log is read with regular expressions, not an XML parser, because it is
+unterminated while its round runs.
+
+### Measured conventions it relies on
+
+- Position: viewer = BF1942 with z negated.
+- Rotation: a recorded quaternion `(x, y, z, w)` is `(-x, -y, z, w)` in the
+  viewer, fitted against the vehicles baked into `maps/wake/scene.glb` at eight
+  headings (|dot| ≥ 0.998; a pitched SBD rules out the alternatives). The
+  replayed Sherman sits exactly on the level's parked one.
+- An object-creation event's Euler angles make the same quaternion as yaw
+  about +Y then pitch about X (checked on a Defgun and a parked SBD). Roll last
+  is assumed.
+- Samples are written only on change, so a gap between two samples is a hold,
+  then the last 0.1 s is interpolated, not a slow drift across the gap.
+- Replay models get the page's own vehicle lighting (`bindDynamicShading`),
+  and the level's baked spawner vehicles are hidden so nothing is drawn twice.
+
+### Not done
+
+- Soldiers are a static pose: position and heading only, no animation.
+- v2 recordings show no damage or wrecks from the client; kills could be
+  inferred from the 10.06 s destroy delay and the jump (§11.4), but are not.
+- Six expected 404s per load for templates with no wreck model.
+- No minimap markers, no control-point flag colours, no upload endpoint
+  (phase 4).
