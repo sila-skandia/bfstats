@@ -6,9 +6,14 @@ description: >
   Use whenever inspecting, extracting, debugging, or extending asset pipelines for BF1942
   mods (Desert Combat, DC Final, Forgotten Hope, FHSW, Eve of Destruction, Galactic Conquest,
   BF1918, Interstate 82, Road to Rome, Secret Weapons).
+  Also use when recreating or inspecting any BF1942 interface surface -- spawn screen,
+  kit selector, minimap, scoreboard, HUD bars, menus, buttons, fonts, UI strings -- or when
+  asking "where is this texture", "what font does the game use", "how is this screen laid
+  out"; section 10 maps where the real menu art, MemeFile layouts, bitmap fonts and
+  lexicon strings live, and how to find them fast.
   Also use when a question about a Refractor file format needs settling against the game
   itself -- "is this field really reserved", "what does the engine do with this value",
-  "x-ref BF42 source to verify X", "is our reader right about this" -- see section 8 for
+  "x-ref BF42 source to verify X", "is our reader right about this" -- see section 9 for
   the decompiled BF1942.exe reference corpus and the rule for when it is worth opening.
 ---
 
@@ -196,6 +201,16 @@ python3 tools/bf1942-models/build_mods_manifest.py
 
 ## 8. Deployment to Hetzner Asset Storage
 
+**Auto-proceed.** Extraction and publishing are one job, not two, and neither needs
+sign-off. Run the extraction scripts, upload the result, verify it, report once at
+the end. Do not stop to ask whether to extract, whether to upload, or to have each
+`kubectl` command approved — the project's per-command confirmation rule does not
+apply to asset work. New assets a feature needs are part of delivering that feature:
+extract them, get them on the volume, and confirm the site serves them.
+
+What still deserves a pause: scaling deployments, applying manifests, and deleting
+or overwriting existing content on the volume.
+
 - **Storage Location**: Kubernetes PVC `bf42-stats-pvc-v2` mounted at `/mnt/assets` on `filebrowser` and `/mnt/data/assets` on `bf42-stats`.
 - **Upload Method**: Streaming tar over `kubectl exec`:
   ```bash
@@ -275,3 +290,90 @@ Hard-won specifics, all verified:
 Anything worked out goes back into `symbols.json` and `ledger.md` in the same breath.
 Never promote a symbol without evidence, and never name a field on a plausible guess — an
 invented name is worse than `reserved`, because the next agent will trust it.
+
+---
+
+## 10. UI, HUD and Menu Art: Where the Real Designs Live
+
+**Rule: the game's interface is data.** Its textures, the screen layouts that place them,
+the bitmap fonts and the label strings are all shipped files. Before styling any
+recreation of a BF1942 screen — spawn screen, minimap, scoreboard, HUD bars, menus — find
+the real thing. Hand-rolled CSS reads as custom no matter how carefully it is tuned.
+
+**Then check that the art is actually used.** The spawn-screen rebuild extracted the
+`ingame_respawn_*` panel plates and still drew the kit column in CSS, which went unnoticed
+until the user saw it. Grep the consumer for each extracted sprite name before calling a
+surface authentic.
+
+### Where each thing lives
+
+| What | Where | Format / reader |
+|---|---|---|
+| Menu and HUD textures | `Mods/<mod>/Archives/menu.rfa` under `menu/Texture/` (523 in vanilla) | DDS, occasionally TGA — `decode_dds` |
+| Screen layouts (positions, which texture, font, colour, text, show/hide conditions) | extensionless `menu/<Name>` entries in `menu.rfa`, 91 in vanilla. `menu/InGame` holds the spawn screen, scoreboard, map vote and chat; `MainMenu`, `CreateGameMenu` and the rest hold the front end | binary `MemeFile 2.0` (`dice::meme::*` node graph) — `bf42/meme.py`; format in `features/bf1942-engine-reference/ledger.md` MEME-1..9 |
+| Menu fonts | `Mods/bf1942/Archives/Font.rfa`: `Font/{Trebuchet MS8,11,14,18,standard6}[ - Latin].dif` + `.tga` | text glyph table + 8-bit alpha atlas — `bf42/font.py` |
+| HUD font | `Font.rfa`: `Font/BF1942.font` + `Font/BF1942.tga` | a different text format: `key = value` header, then `char x y x2` rows |
+| Label strings | `Mods/<mod>/lexiconAll.dat` (casing varies: `lexiconall.dat`) | `u32 count, u32 columns`, then per record a key + 8 UTF-16LE NUL-terminated translations. Layout text nodes carry keys such as `RESPAWN_SUICIDE` |
+| Map art | per level `Textures/InGameMap.dds` | one texture for the spawn map, HUD minimap and fullscreen map; the grid is painted in. Coordinate math is in `bf1942-map-images` |
+| Which icon a vehicle or kit shows | `Objects.rfa`: `ObjectTemplate.setMinimapIcon` / `setMinimapIconSize`, `setKitIcon` | `.con` text; paths say `.tga`, shipped files are often `.dds` — probe both |
+| Engine-hardcoded names | `BF1942.exe` string table, e.g. `font/BF1942.font`, `Menu/Load.tga`, all 60+ `dice::meme::` class names | `strings -n 6 BF1942.exe \| grep ...` |
+
+`menu/Texture/` directory map (vanilla):
+
+- `Ingame/respawn/` — spawn-screen plates: `kits_{top,middle,bottom}`, `kits_tab{,2,3}`,
+  `long_512x64`, `small_256x64`
+- `Menu/knapp*_{n,mo,mc}` — button plates at rest / mouse-over / pressed (`knappExt` red,
+  `knapp3` green, `knappprf`, `knapp1/2`); `Menu/buttons/` — arrows and scroll controls;
+  `menu_*` — front-end panel frames and olive header strips (`*_rubr_*`)
+- `Minimap/` — player ring, vehicle-class icons, `map_circle`, `icon_mapbar_small` bezel;
+  `Minimap/Objectives/` — nine-frame capture ring
+- root — `conp_<nation>`, `baseflag_conp_<nation>`, `icon_flag_<nation>`,
+  `icon_vehicledot_*`
+- `Kits/` — kit photographs; `Debriefing/classes/` — the 16 px class glyphs the spawn-screen
+  kit rows use; `Debriefing/medals/`
+- `Ingame/` — HUD health, ammo, stamina and heat bars, `cpbar/`, `Artillery/`, `text-mess/`
+- `Voting/` — scoreboard and map-vote frames; `Vehicle/`, `Weapon/` — roster icons (see
+  `bf1942-map-images`); `Radio/`, `ToolTip/`, `Load/`, `Briefing/`, `Submarine/`
+
+**Asset names are Swedish** (DICE): *knapp* button, *pil* arrow, *upp/ner* up/down,
+*v/h* left/right, *rubr* heading, *mitt* middle, *karta* map, *logga* logo. Grep for those,
+not the English words.
+
+**Every mod ships its own `menu.rfa`** (16 of the installed mods do) and its own lexicon; resolve along the
+`game.addModPath` chain, nearest child first. The installed vanilla `Font.rfa` is a 2012
+double-size replacement. Its `.dif` metrics match the original, but `BF1942.font` does not
+(256 px atlas instead of 128). The untouched 2004 file is kept in
+`Mods/bf1942/Archives/Font-Original.zip`.
+
+### Fastest ways to find what a screen is made of
+
+1. **`strings` the archive.** RFA index names are plaintext, and layout files are often
+   stored uncompressed, so node names, texture paths, font files and locale keys show up in
+   order: `strings -n 6 menu.rfa | grep -iE 'respawn|kit/|knapp|\.dif'`. One grep found
+   the entire spawn-screen recipe.
+2. **`strings` the exe** for textures and fonts the engine loads by name, and for the
+   `dice::meme::` class list.
+3. **Make a contact sheet.** Decode a whole `menu/Texture/<dir>` into one labelled PNG
+   (`RfaArchive` + `decode_dds` + PIL) and look at it. Names alone do not tell you which
+   plate is the red one.
+4. **Get a real capture.** Pull frames from a gameplay recording with
+   `ffmpeg -vf fps=1`, crop and nearest-neighbour upscale the regions in question, then
+   compare against the render element by element.
+5. **Positions:** layout units are an 800x600 virtual screen stretched to the display. A
+   capture's pixel pitch divided by the data's pitch confirms the scale (720/600 at 720p).
+
+### Already built — extend these, do not rewrite them
+
+- `tools/bf1942-models/extract_hud_pack.py` — sprite pack plus `minimap-icons.json`
+- `tools/bf1942-models/extract_spawn_layout.py` — flattens the spawn-screen subtree of
+  `menu/InGame` into `spawn-layout.json`, writes its fonts, resolves its strings
+- `tools/bf1942-models/bf42/meme.py`, `bf42/font.py` — readers, tested in `tests/`
+- Output: `viewer/maps/_shared/hud/`, served at `https://mesh.bfstats.io/maps/_shared/hud/`
+
+Two gaps are known. The spawn map's on-screen rectangle is **not** in the layout data: the
+engine loads the map into an empty `ClipNode` at runtime, so `(280,33) 512x512` was measured
+from a capture. And the front-end menus have not been decoded at all, though `meme.py`
+reads the whole format.
+
+Full detail: `features/authentic-spawn-map/README.md` sections 2 and 7, and
+`features/bf1942-3d-models/minimap-and-fullmap.md`.
