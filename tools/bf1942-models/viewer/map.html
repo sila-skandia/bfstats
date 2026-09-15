@@ -242,6 +242,69 @@
   }
   #fullmap .fm-swatch.axis { background: #d2564b; color: #e88379; }
   #fullmap .fm-swatch.allied { background: #4f8fd0; color: #86b6e6; }
+  /* The deploy state. The same map, wearing the join screen's chrome: a
+     header above the art and a commit bar below it, both present in the
+     markup at all times and shown only while #fullmap carries .deploy, so
+     the plain M map keeps its old silhouette. */
+  #fullmap .fm-deploy-head, #fullmap .fm-deploy-foot { display: none; }
+  #fullmap.deploy .fm-deploy-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #fullmap.deploy .fm-deploy-head b {
+    color: var(--accent);
+    letter-spacing: .14em;
+    font-weight: 500;
+  }
+  #fullmap.deploy .fm-deploy-foot {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--line);
+  }
+  /* In deploy the flags are targets, and the cursor should say so. */
+  #fullmap.deploy canvas { cursor: crosshair; }
+  #fullmap .fm-team {
+    justify-self: start;
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border: 1px solid currentColor;
+  }
+  #fullmap .fm-team.axis { color: #e88379; }
+  #fullmap .fm-team.allied { color: #86b6e6; }
+  #fullmap .fm-team.neutral { color: var(--muted); }
+  #fullmap .fm-spawn-btn {
+    justify-self: center;
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    padding: 9px 36px;
+    cursor: pointer;
+    background: var(--mm-accent);
+    color: var(--mm-highlight-ink);
+    border: 1px solid var(--mm-accent-soft);
+  }
+  #fullmap .fm-spawn-btn:hover { background: var(--mm-accent-soft); }
+  #fullmap .fm-hint {
+    justify-self: end;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
   a { color: var(--accent); }
 
   .side-header {
@@ -491,6 +554,10 @@
   <div id="gate"><span>Tap or click to fly</span></div>
   <div id="fullmap" hidden>
     <div class="fm-frame">
+      <div class="fm-deploy-head">
+        <b id="deploy-level">map</b>
+        <span>select spawn point</span>
+      </div>
       <canvas id="fullmap-canvas" width="1024" height="1024"></canvas>
       <div class="fm-cap">
         <b id="fullmap-name">map</b>
@@ -501,6 +568,11 @@
           <span class="fm-key"><i class="fm-swatch zone"></i>zone</span>
         </span>
         <span id="fullmap-meta"></span>
+      </div>
+      <div class="fm-deploy-foot">
+        <span id="deploy-team" class="fm-team neutral">neutral</span>
+        <button type="button" id="deploy-spawn" class="fm-spawn-btn">Spawn</button>
+        <span class="fm-hint">1-9 select &middot; Enter spawn &middot; Esc</span>
       </div>
     </div>
   </div>
@@ -904,17 +976,41 @@ function lookDelta(dx, dy) {
 
 addEventListener('keydown', e => {
   if (e.code === 'Escape') {
-    // The map is the topmost thing Escape can dismiss.
-    if (!fullmapBox.hidden) toggleFullMap(false);
+    // The map is the topmost thing Escape can dismiss. In its deploy state
+    // it is dismissed with intent: a redeploy resumes the life in progress,
+    // an abandoned join falls back to fly.
+    if (deployActive()) cancelDeploy();
+    else if (!fullmapBox.hidden) toggleFullMap(false);
     else release();
     return;
   }
   if (uiFocused()) return;
   // M is the map, which is `c_PIMap` bound to IDKey_M in every one of the
   // game's own control maps. N (`c_PIZoomMap`) is left free for a zoom cycle.
+  // On foot the map opens in its deploy state — the game's own map is also
+  // its spawn screen — and Escape or M again puts it away without moving you.
   if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    toggleFullMap();
+    if (deployActive()) cancelDeploy();
+    else if (fullmapBox.hidden && optOnFoot.checked && soldier
+             && !optPilot.checked) {
+      // On foot, but not merely suspended in a seat: a driver's M is the
+      // plain map, because his soldier is still ticked and still alive.
+      openDeploy();
+    } else toggleFullMap();
     return;
+  }
+  // While the deploy screen is up it owns the number row and the commit key:
+  // 1-9 are the flags in list order, Enter is the button.
+  if (deployActive()) {
+    if (e.code === 'Enter' && !e.repeat) {
+      deploySpawn();
+      return;
+    }
+    const digit = /^Digit([1-9])$/.exec(e.code);
+    if (digit) {
+      selectDeployFlag(Number(digit[1]) - 1);
+      return;
+    }
   }
   keys.add(e.code);
   if (e.code === 'KeyR') {
@@ -928,9 +1024,11 @@ addEventListener('keydown', e => {
     } else if (optOnFoot.checked && soldier) {
       // R is the reload once there is a magazine to reload — the game's own
       // binding — and stays the respawn only for a soldier holding nothing
-      // (a weapon glb that failed to load). Respawning moved to the flag
-      // picker, where changing the selection already respawns.
-      if (handWeapon?.data?.magazine) startReload();
+      // (a weapon glb that failed to load). Shift+R is the deliberate road
+      // back: it reopens the deploy screen rather than guessing a flag.
+      if (e.shiftKey) {
+        if (!deployActive()) openDeploy();
+      } else if (handWeapon?.data?.magazine) startReload();
       else spawnAtFlag(true);
     } else if (!optPilot.checked) {
       resetCamera();
@@ -3166,8 +3264,14 @@ let prone = false;           // `c_PILie` is a toggle, not a hold
 const FLY_FOV = camera.fov;
 const FLY_NEAR = camera.near;
 
-/** Fill the flag picker from the level's own control points. */
+/** Fill the flag picker from the level's own control points.
+ *
+ *  Rebuilt whole, but not forgetful: the deploy screen writes its choice into
+ *  this select and `setOnFoot` rebuilds the options before reading it back,
+ *  and an innerHTML wipe resets a select to its first option. A level switch
+ *  clears the value in `show()` first, so the memory never crosses maps. */
 function buildSpawnFlags() {
+  const kept = spawnFlagSelect.value;
   flags = spawnFlags(extras);
   spawnFlagSelect.innerHTML = '';
   for (const [index, flag] of flags.entries()) {
@@ -3177,6 +3281,7 @@ function buildSpawnFlags() {
     option.textContent = `${flag.name} (${side}, ${flag.spawns.length})`;
     spawnFlagSelect.appendChild(option);
   }
+  if (kept !== '' && Number(kept) < flags.length) spawnFlagSelect.value = kept;
   spawnFlagSelect.hidden = !flags.length || !optOnFoot.checked;
   return flags.length;
 }
@@ -3232,6 +3337,10 @@ function setOnFoot(on) {
     spawnFlagSelect.hidden = false;
     hud.textContent = HUD_FOOT;
   } else {
+    // The deploy screen cannot outlive the mode it selects for: the pilot
+    // checkbox's exclusivity and the on-foot box both land here with the
+    // overlay possibly still up.
+    if (deployActive()) toggleFullMap(false);
     soldier = null;
     spawnFlagSelect.hidden = true;
     camera.fov = FLY_FOV;
@@ -3244,7 +3353,7 @@ function setOnFoot(on) {
 }
 
 const HUD_FOOT ='WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
-  + 'LMB fire · RMB aim · R reload · Esc';
+  + 'LMB fire · RMB aim · R reload · M redeploy · Esc';
 
 /** Read the keyboard into the soldier and put the camera behind his eyes. */
 function onFoot(dt) {
@@ -4041,17 +4150,200 @@ function drawFullMap() {
   // and carries labels, spawn dots and capture rings on top of the flags.
   paintMap(fullmapCanvas, 0, 0, 1,
            { scale: 1.5, spawns: true, radius: true, labels: true, combatArea: true });
+  if (deployActive()) drawDeployMarkers();
 }
 
 function toggleFullMap(on) {
   const want = on ?? fullmapBox.hidden;
   fullmapBox.hidden = !want;
+  // Closing strips the deploy chrome with it, so a level switch or a plain
+  // Escape can never leave the screen armed behind a hidden overlay.
+  if (!want) fullmapBox.classList.remove('deploy');
   // Holding the map is not flying. Releasing the pointer lock also stops the
   // movement keys running under the overlay.
   if (want && captured) release();
   if (want) drawFullMap();
 }
-fullmapBox.addEventListener('click', () => toggleFullMap(false));
+fullmapBox.addEventListener('click', () => {
+  // The plain map closes on any click; the deploy state does not — its
+  // backdrop is not a button, and the exits are Spawn, Escape and M.
+  if (deployActive()) return;
+  toggleFullMap(false);
+});
+
+// --- the deploy screen ------------------------------------------------------
+//
+// The game never drops a joining player straight into the world: the round
+// opens on the map, the flags are the choices, and the spawn button is the
+// commitment. This is that screen — the fullscreen map wearing a header and
+// a commit bar, same canvas, same projection. `.deploy` on #fullmap is the
+// whole of the state; `toggleFullMap(false)` strips it on any close.
+const deployLevel = document.getElementById('deploy-level');
+const deployTeam = document.getElementById('deploy-team');
+const deploySpawnBtn = document.getElementById('deploy-spawn');
+// Whether a live soldier waits behind the screen (M or Shift+R over a life
+// in progress). Cancelling a redeploy keeps him where he stood; cancelling a
+// join has nobody to keep and falls back to fly.
+let deployRejoin = false;
+// The selection as it stood when the screen opened, so a cancelled redeploy
+// does not leave the panel's select pointing somewhere nobody went.
+let deployKept = '';
+
+function deployActive() {
+  return !fullmapBox.hidden && fullmapBox.classList.contains('deploy');
+}
+
+/** The checkbox's on-edge. Joining became a choice rather than a teleport:
+ *  the deploy screen opens when the level has flags to choose between, and
+ *  the instant path — with its refusal message for a level that declares no
+ *  soldier spawns — stays for the levels that do not. */
+function requestOnFoot() {
+  if (optPilot.checked) {            // the two modes are exclusive
+    optPilot.checked = false;
+    setPilot(false);
+  }
+  if (!buildSpawnFlags()) {
+    setOnFoot(true);
+    return;
+  }
+  openDeploy();
+}
+
+function openDeploy() {
+  if (!flags.length && !buildSpawnFlags()) return false;
+  deployRejoin = !!soldier;
+  deployKept = spawnFlagSelect.value;
+  deployLevel.textContent = fullmapName.textContent;
+  updateDeployTeam();
+  fullmapBox.classList.add('deploy');
+  toggleFullMap(true);
+  return true;
+}
+
+function cancelDeploy() {
+  const rejoin = deployRejoin;
+  const kept = deployKept;
+  toggleFullMap(false);
+  if (rejoin) {
+    // The life in progress resumes untouched; the flag he never committed
+    // to goes back to the one he is actually standing at.
+    if (kept !== '') spawnFlagSelect.value = kept;
+    return;
+  }
+  optOnFoot.checked = false;
+  setOnFoot(false);
+  placeCamera();
+}
+
+function selectDeployFlag(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= flags.length) return false;
+  spawnFlagSelect.value = String(index);
+  // A fresh choice starts at the flag's first spawn, as the select's own
+  // change handler would have it.
+  spawnIndex = 0;
+  updateDeployTeam();
+  return true;
+}
+
+function updateDeployTeam() {
+  const flag = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
+  const side = flag?.team === 1 ? 'axis' : flag?.team === 2 ? 'allied' : 'neutral';
+  deployTeam.textContent = side;
+  deployTeam.className = `fm-team ${side}`;
+}
+
+/** The button. A join builds the soldier through today's `setOnFoot`, whose
+ *  rebuilt select keeps the chosen flag; a redeploy moves the one that
+ *  exists. Either way the screen goes first, and pointer capture stays with
+ *  the gate, exactly as it does today. */
+function deploySpawn() {
+  if (!deployActive()) return false;
+  const rejoin = deployRejoin;
+  toggleFullMap(false);
+  if (rejoin && soldier) return spawnAtFlag();
+  setOnFoot(true);
+  return !!soldier;
+}
+
+// Clicking the art is clicking a flag: the nearest deployable one within a
+// finger's width, measured in CSS pixels so the target does not shrink on a
+// hidpi display. Touch arrives here as the same click event.
+fullmapCanvas.addEventListener('click', e => {
+  if (!deployActive()) return;       // the plain map still closes, above
+  e.stopPropagation();
+  const rect = fullmapCanvas.getBoundingClientRect();
+  if (!rect.width) return;
+  const u = (e.clientX - rect.left) / rect.width;
+  const v = (e.clientY - rect.top) / rect.height;
+  let best = -1;
+  let bestDist = 26;
+  flags.forEach((flag, index) => {
+    if (!flag.position) return;
+    const p = projectToArt(flag.position[0], flag.position[2]);
+    if (!p) return;
+    const d = Math.hypot((p.u - u) * rect.width, (p.v - v) * rect.height);
+    if (d < bestDist) {
+      bestDist = d;
+      best = index;
+    }
+  });
+  if (best >= 0) selectDeployFlag(best);
+});
+
+deploySpawnBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  // Focus must not stay on the button: Space is the jump the instant the
+  // screen closes, and a focused button turns it back into a click.
+  deploySpawnBtn.blur();
+  deploySpawn();
+});
+
+/** Rings over the flags that can take a soldier, on top of what `paintMap`
+ *  already drew. The chosen one breathes on the wall clock — `drawFullMap`
+ *  runs every frame while the screen is up — and canvas rather than CSS
+ *  because the markers live in the art's pixel space, not the DOM's. */
+function drawDeployMarkers() {
+  const ctx = fullmapCanvas.getContext('2d');
+  const size = fullmapCanvas.width;
+  const ratio = fullmapCanvas.__ratio || 1;
+  const scale = MARKER_SCALE * ratio * 1.5;
+  const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
+  ctx.font = `${Math.round(8 * scale)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  flags.forEach((flag, index) => {
+    if (!flag.position) return;
+    const p = projectToArt(flag.position[0], flag.position[2]);
+    if (!p) return;
+    const x = p.u * size;
+    const y = p.v * size;
+    if (index === chosen) {
+      const pulse = 1 + 0.12 * Math.sin(performance.now() / 200);
+      ctx.strokeStyle = '#f5d76e';
+      ctx.lineWidth = Math.max(1, 1.8 * scale);
+      ctx.beginPath();
+      ctx.arc(x, y, 11 * scale * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(245,215,110,.4)';
+      ctx.lineWidth = Math.max(1, scale);
+      ctx.beginPath();
+      ctx.arc(x, y, 9 * scale, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // The number the keyboard answers to, off the ring's shoulder where the
+    // label placer does not put names.
+    if (index < 9) {
+      const lx = x + 12 * scale;
+      const ly = y + 12 * scale;
+      ctx.fillStyle = 'rgba(0,0,0,.82)';
+      ctx.fillText(String(index + 1), lx + 1, ly + 1);
+      ctx.fillStyle = '#f5d76e';
+      ctx.fillText(String(index + 1), lx, ly);
+    }
+  });
+  ctx.textBaseline = 'alphabetic';
+}
 
 async function show(entry) {
   const load = overlay.begin(entry.name);
@@ -4166,6 +4458,9 @@ async function show(entry) {
   car = null;
   view = null;
   soldier = null;
+  // A new level starts the flag choice over; without this the rebuilt select
+  // would keep the old map's index through `buildSpawnFlags`.
+  spawnFlagSelect.selectedIndex = -1;
   entryPoints = null;
   nearEntry = null;
   if (optPilot.checked) setPilot(true);
@@ -4259,8 +4554,12 @@ optPilot.addEventListener('change', () => {
   if (!optPilot.checked) placeCamera();
 });
 optOnFoot.addEventListener('change', () => {
-  setOnFoot(optOnFoot.checked);
-  if (!optOnFoot.checked) placeCamera();
+  if (optOnFoot.checked) {
+    requestOnFoot();
+    return;
+  }
+  setOnFoot(false);
+  placeCamera();
 });
 spawnFlagSelect.addEventListener('change', () => {
   spawnIndex = 0;
@@ -4396,12 +4695,39 @@ if (params.has('shots')) {
   // `__setOnFoot` drives the real checkbox so the pilot/on-foot exclusion, the
   // flag list and the FOV swap all run exactly as a click would run them.
   // `__setWalk` is the same thing under the name the walk checks use.
+  //
+  // Since the deploy screen, the checkbox's on-edge parks the join on that
+  // screen rather than in the world — `__deploy.spawn()` below is the button
+  // press that completes it — so `Boolean(soldier)` here reports false until
+  // it is pressed, exactly as the page reports it.
   window.__setOnFoot = on => {
     optOnFoot.checked = Boolean(on);
     optOnFoot.dispatchEvent(new Event('change'));
     return Boolean(soldier);
   };
   window.__setWalk = window.__setOnFoot;
+  // The deploy screen, drivable without a pointer: state to read, verbs to
+  // press. `select` is the click on a flag marker (by name or by index),
+  // `spawn` is the button, and both refuse politely — false — when the
+  // screen is not up or the name is not a flag.
+  window.__deploy = {
+    get open() { return deployActive(); },
+    get flags() {
+      const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
+      return flags.map((flag, index) => ({
+        name: flag.name,
+        team: flag.team,
+        spawns: flag.spawns.length,
+        selected: index === chosen,
+      }));
+    },
+    select(name) {
+      const index = typeof name === 'number' ? name
+        : flags.findIndex(flag => flag.name === name);
+      return selectDeployFlag(index);
+    },
+    spawn() { return deploySpawn(); },
+  };
   // The man on the ground, for the same reason: his pose has to be readable
   // from outside to assert that a wall stopped him where the capsule says.
   //
