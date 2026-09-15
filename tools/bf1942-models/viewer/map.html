@@ -592,7 +592,7 @@ import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
-import { Soldier, spawnFlags, pickSpawn, spawnYaw, GAIT_SPEED,
+import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 
@@ -960,14 +960,25 @@ function lookDelta(dx, dy) {
     return;
   }
   if (optOnFoot.checked && soldier) {
+    // While zoomed the engine scales the mouse-look deltas by the same
+    // `SoldierZoomFov` factor that narrows the view — client 0x0050095f:
+    // `if (weapon->isZoomed()) { yawDelta *= SoldierZoomFov; pitchDelta *=
+    // SoldierZoomFov; }` — so a 0.6x view is a 0.6x hand.
+    if (isZoomed()) {
+      const factor = handWeapon?.data?.zoom?.soldierFov ?? 1;
+      dx *= factor;
+      dy *= factor;
+    }
     // The soldier owns the look: `setPointUpDownAngle 38.0 38.0` clamps the
     // pitch, and the body yaws bodily because `SoldierCamera` declares no
     // rotation of its own.
     soldier.look(-dx * LOOK_SENS, -dy * LOOK_SENS);
-    // The deviation model wants the slew rate. Accumulated here, where the
-    // player's own turning arrives, and drained per frame in footFire() —
-    // recoil writes `soldier.look` directly and so never counts against him.
-    footTurnAccum += Math.abs(dx * LOOK_SENS) + Math.abs(dy * LOOK_SENS);
+    // The deviation model wants MouseLookX/Y, the engine's per-axis look
+    // inputs. Accumulated here, where the player's own turning arrives, and
+    // drained per frame in footFire() — recoil writes `soldier.look`
+    // directly and so never counts against him.
+    footLookX += Math.abs(dx * LOOK_SENS);
+    footLookY += Math.abs(dy * LOOK_SENS);
     return;
   }
   look.yaw -= dx * LOOK_SENS;
@@ -1166,7 +1177,17 @@ renderer.domElement.addEventListener('pointerdown', e => {
       triggerHeld = true;
       clickQueued = true;
     } else if (e.button === 2) {
-      aimHeld = true;
+      // `altFireOnce` (`zoom.toggle`) masks the *held* alt-fire input on the
+      // client (0x00500901, mask 0x800000) so only fresh presses reach the
+      // weapon: each press flips zoom, and every vanilla hand weapon
+      // declares it. A mod weapon without it keeps hold-to-zoom.
+      const hw = handWeapon;
+      if (hw?.data?.zoom?.toggle) {
+        hw.zoomed = !hw.zoomed;
+        hw.rezoom = 0;
+      } else {
+        aimHeld = true;
+      }
     }
     return;
   }
@@ -2850,6 +2871,10 @@ const guns = new GunFire({
   scene, camera,
   viewportHeight: () => renderer.getDrawingBufferSize(_bufferSize).y,
 });
+// The tinted impact discs are a debug marker, not the authored effect —
+// retail plays a MaterialManager EffectBundle this page has not baked yet,
+// so by default a hit is recorded and nothing is invented at the spot.
+guns.impactMarkers = params.get('impacts') === 'debug';
 let vehicleGuns = [];
 
 function collectGuns() {
@@ -3175,11 +3200,15 @@ function enterVehicle(node) {
   if (handWeapon) {
     if (handWeapon.group) guns.setFiring(handWeapon.group, false);
     handWeapon.rig.visible = false;
+    // Holstering drops zoom — `HandFireArms::disable` (lnxded 0x08293da0)
+    // calls setZoom(false) — and the eased FOV factor goes home with it.
+    handWeapon.zoomed = false;
+    handWeapon.rezoom = 0;
+    handWeapon.fovCur = 1;
   }
   triggerHeld = false;
   clickQueued = false;
   aimHeld = false;
-  aimBlend = 0;
   crosshairEl.hidden = true;
   ammoEl.hidden = true;
   camera.fov = FLY_FOV;
@@ -3390,14 +3419,18 @@ function onFoot(dt) {
   if (!soldier) return;
   soldier.collider = collider;
   const held = captured ? keys : EMPTY_KEYS;
-  soldier.step(dt, {
+  // Hoisted so footFire can hand the deviation model the same c_PIThrottle /
+  // c_PIYaw values the body integrates — the engine's speed gates read the
+  // *input*, not the achieved velocity.
+  const input = {
     forward: (held.has('KeyW') || touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
     strafe: (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
     walk: held.has('ShiftLeft') || held.has('ShiftRight'),
     crouch: held.has('ControlLeft') || held.has('ControlRight'),
     prone,
     jump: held.has('Space'),
-  });
+  };
+  soldier.step(dt, input);
   // `soldier.eye()` is the eye pose with the bob already on it, interpolated
   // between the last two 60 Hz ticks — the sim runs on a fixed step inside
   // `step()` above, so drawing at the last tick would stutter on any monitor
@@ -3410,7 +3443,7 @@ function onFoot(dt) {
   applyLook();
   // After the camera pose is final: the weapon fires down this frame's view
   // axis, and the crosshair is drawn against this frame's FOV.
-  footFire(dt);
+  footFire(dt, input);
   // And after everything the frame owed: is there a door within reach.
   scanForEntry(dt);
 }
@@ -3441,15 +3474,27 @@ const footEye = { x: 0, y: 0, z: 0 };
 // game's kits decide this per level; hardcoding the two definitive SMGs is a
 // stand-in until kits are wired into spawning.
 const TEAM_WEAPON = { 1: 'Mp40', 2: 'Thompson' };
-// Viewmodel placement in camera space, metres. Eyeballed against period FPS
-// convention — down-right of centre, stock toward the shoulder — and against
-// the Thompson's own 0.7 m length; the aim pose slides toward the axis.
-// All [free], gated here so taste lives in one place.
-const VIEWMODEL = {
-  x: 0.16, y: -0.14, z: -0.35,     // hip
-  aimX: 0.04, aimY: -0.115,        // aimed
-};
-const AIM_TIME = 0.12;             // seconds hip <-> aimed [free]
+// Viewmodel placement in camera space, metres. The per-weapon half is data:
+// `soldierCameraPosition` (hip) / `soldierZoomPosition` (zoomed) displace the
+// first-person weapon rig in the soldier's view frame — `FireArms::setZoom`
+// snaps the target, `BFSoldier::handleVisualUpdate` eases toward it (corpus
+// doc `handweapon-view-and-deviation.md` §3) — and both ride in each glb's
+// `weapon.view` extras, Refractor axes (x lateral, y vertical, z forward; the
+// x sign convention is OPEN in the corpus and taken as-is here).
+//
+// The base half is an OPEN STAND-IN: `BFSoldier::updateAnimations` adds a
+// template base vector (`BFSoldierTemplate+0x15c`, name and value not yet
+// extracted) before transforming the rig, and without it the data offsets
+// alone put the gun 9 cm from the eye. This constant stands in for that
+// vector, chosen so the Thompson's hip pose lands where the eyeballed
+// viewmodel used to sit; the hip<->zoom *shift* is entirely the data's.
+const VIEWMODEL_BASE = { x: 0.17, y: -0.10, z: -0.26 };   // OPEN [stand-in]
+// The eases are the engine's, both frame-rate dependent by design (no dt in
+// either): the rig moves 25% of the remaining distance per visual update
+// (constant 0.25f, lnxded .rodata 0x086c08ac), the FOV factor converges
+// 0.7·cur + 0.3·target and snaps within 0.001.
+const VIEW_EASE = 0.25;
+const FOV_SNAP = 0.001;
 const CROSSHAIR_MIN_PX = 4;        // bar gap floor, so the cross never closes
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -3457,9 +3502,23 @@ let handWeapon = null;    // { name, data, rig, group, model, rounds, mags, ... 
 let weaponToken = 0;      // guards a slow load landing after a mode/map switch
 let triggerHeld = false;  // left button, while pointer-locked on foot
 let clickQueued = false;  // one queued semi-auto shot per press
-let aimHeld = false;      // right button
-let aimBlend = 0;         // 0 hip .. 1 aimed
-let footTurnAccum = 0;    // radians of view slew since the last frame
+let aimHeld = false;      // right button held — zooms only mod weapons without `altFireOnce`
+let footLookX = 0;        // |MouseLookX| radians accumulated since last frame
+let footLookY = 0;        // |MouseLookY| likewise
+
+/**
+ * Is the weapon in hand zoomed right now. Toggle weapons (`altFireOnce`,
+ * all of vanilla) latch `hw.zoomed` per press; `hw.rezoom` is the sniper
+ * bolt-cycle un-zoom window (`UnZoomBetweenFireTime`), during which the
+ * latch holds but the view sits at the hip. Hold-to-zoom is the fallback
+ * for mod weapons that do not declare the toggle.
+ */
+function isZoomed() {
+  const hw = handWeapon;
+  if (!hw || !hw.data?.zoom) return false;
+  if (hw.data.zoom.toggle) return hw.zoomed && !(hw.rezoom > 0);
+  return aimHeld && captured;
+}
 const crosshairEl = document.getElementById('crosshair');
 const ammoEl = document.getElementById('ammo');
 const aimOrigin = new THREE.Vector3();
@@ -3475,7 +3534,6 @@ function disposeHandWeapon() {
   weaponToken++;
   handWeapon = null;
   clickQueued = false;
-  aimBlend = 0;
   crosshairEl.hidden = true;
   ammoEl.hidden = true;
   if (!hw) return;
@@ -3520,9 +3578,21 @@ async function loadHandWeapon(name) {
   // loader that files them elsewhere.
   const data = gltf.userData?.weapon ?? gltf.scene?.userData?.weapon
     ?? gltf.parser?.json?.extras?.weapon ?? null;
+  // The rig's two authored poses, camera space. Refractor's z is forward,
+  // three's camera looks down -z, so z is negated; a weapon that declares no
+  // `soldierCameraPosition` (the Bazooka) sits at the base alone, and one
+  // with no `soldierZoomPosition` zooms to its hip pose.
+  const toCamera = v => ({
+    x: VIEWMODEL_BASE.x + (v?.[0] ?? 0),
+    y: VIEWMODEL_BASE.y + (v?.[1] ?? 0),
+    z: VIEWMODEL_BASE.z - (v?.[2] ?? 0),
+  });
+  const viewHip = toCamera(data?.view?.cameraPosition);
+  const viewZoom = data?.view?.zoomPosition
+    ? toCamera(data.view.zoomPosition) : viewHip;
   const rig = new THREE.Group();
   rig.name = `${name} viewmodel`;
-  rig.position.set(VIEWMODEL.x, VIEWMODEL.y, VIEWMODEL.z);
+  rig.position.set(viewHip.x, viewHip.y, viewHip.z);
   rig.add(gltf.scene);
   // The additive mark the exporter leaves on flash and glow materials. The
   // model browser applies it model-wide at load and `GunFire.collect` applies
@@ -3555,9 +3625,12 @@ async function loadHandWeapon(name) {
     cool: 0,         // seconds until a semi-auto weapon has cycled
     pulse: false,    // a one-frame trigger pulse is in flight
     fire: null,      // { spec, buffer } once loadHandFireSound resolves
-    model: new DeviationModel({
-      deviation: data?.deviation, zoom: data?.zoom, runSpeed: GAIT_SPEED.run,
-    }),
+    zoomed: false,   // the press-toggle latch (`altFireOnce`)
+    rezoom: 0,       // seconds of `UnZoomBetweenFireTime` un-zoom left
+    fovCur: 1,       // the eased FOV factor, 1 hip .. `zoom.soldierFov` zoomed
+    viewHip, viewZoom,
+    pos: { ...viewHip },   // the eased rig offset, chasing hip or zoom
+    model: new DeviationModel({ deviation: data?.deviation }),
   };
   if (data) {
     const found = guns.collect(rig, {
@@ -3599,6 +3672,9 @@ function startReload() {
   if (!hw || !magazine || hw.reload > 0 || hw.mags <= 0) return false;
   if (hw.rounds >= magazine.size) return false;
   hw.reload = magazine.reloadTime ?? 2;
+  // `FireArms::Reload` calls setZoom(false): a magazine change drops zoom.
+  hw.zoomed = false;
+  hw.rezoom = 0;
   if (hw.group) guns.setFiring(hw.group, false);
   return true;
 }
@@ -3678,6 +3754,11 @@ guns.onShot = group => {
   if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
   hw.model.onShot();
   hw.cool = 1 / (hw.data?.roundOfFire || 1);
+  // `UnZoomBetweenFireTime > 0` (the snipers' 3.0): the fire path flags it
+  // and `FireArms::handleUpdate` un-zooms, then re-zooms when the timer
+  // runs out — the bolt-cycle un-zoom. The toggle latch itself holds.
+  const unzoom = hw.data?.zoom?.unZoomBetweenFire;
+  if (unzoom > 0 && hw.zoomed) hw.rezoom = unzoom;
   // `setRecoil*`: degrees per shot, sampled uniformly inside the declared
   // range (Thompson up 0.21..0.25, leftRight -0.1..0.1) and written into the
   // soldier's own look state, unscaled — the pitch clamp catches a long
@@ -3699,40 +3780,56 @@ guns.onShot = group => {
  * clock, the trigger, and the HUD. Runs from `onFoot` after the camera pose
  * is final, and before `guns.advance` fires this frame's rounds.
  */
-function footFire(dt) {
+function footFire(dt, input = null) {
   const hw = handWeapon;
   // Drained even bare-handed, or the first frame holding a weapon would see
   // every radian turned since it was picked up.
-  const turning = dt > 0 ? footTurnAccum / dt : 0;
-  footTurnAccum = 0;
+  const lookX = dt > 0 ? footLookX / dt : 0;
+  const lookY = dt > 0 ? footLookY / dt : 0;
+  footLookX = 0;
+  footLookY = 0;
   if (!hw) return;
   guns.firstPerson = true;   // the 0.4 m `em_1P_*` sprite, not the 1.76 m mesh
 
-  // Right mouse eases the FOV toward `set1pFov x zoomSoldierFov` — data, not
-  // taste: the Mp40's 0.9 barely leans in, the Thompson's 0.6 commits — and
-  // slides the viewmodel toward the axis.
-  const aiming = aimHeld && captured;
-  const target = aiming ? 1 : 0;
-  const gap = target - aimBlend;
-  aimBlend += Math.sign(gap) * Math.min(dt / AIM_TIME, Math.abs(gap));
-  const zoomFactor = hw.data?.zoom?.soldierFov ?? 1;
-  camera.fov = FOOT_FOV * (1 - aimBlend * (1 - zoomFactor));
+  // The sniper bolt-cycle un-zoom window counts down here; when it empties,
+  // the still-set toggle latch zooms the view back in on its own.
+  if (hw.rezoom > 0) hw.rezoom = Math.max(0, hw.rezoom - dt);
+  const zoomed = isZoomed();
+
+  // Zoom multiplies the soldier's view FOV by `zoom.soldierFov`
+  // (`SoldierZoomFov`, a factor: the Mp40's 0.9 barely leans in, the
+  // Thompson's 0.6 commits). The factor eases `0.7·cur + 0.3·target` per
+  // visual frame and snaps within 0.001 — `BFSoldier::handleVisualUpdate`,
+  // no dt, frame-rate dependent by the engine's own design.
+  const fovTarget = zoomed ? (hw.data?.zoom?.soldierFov ?? 1) : 1;
+  hw.fovCur = Math.abs(fovTarget - hw.fovCur) <= FOV_SNAP
+    ? fovTarget
+    : 0.7 * hw.fovCur + 0.3 * fovTarget;
+  camera.fov = FOOT_FOV * hw.fovCur;
   camera.updateProjectionMatrix();
-  hw.rig.position.set(
-    VIEWMODEL.x + (VIEWMODEL.aimX - VIEWMODEL.x) * aimBlend,
-    VIEWMODEL.y + (VIEWMODEL.aimY - VIEWMODEL.y) * aimBlend,
-    VIEWMODEL.z,
-  );
+  // And displaces the rig from its hip pose to its zoom pose, eased 25% of
+  // the remaining distance per visual frame (0.25f, same function, no dt).
+  const at = zoomed ? hw.viewZoom : hw.viewHip;
+  hw.pos.x += (at.x - hw.pos.x) * VIEW_EASE;
+  hw.pos.y += (at.y - hw.pos.y) * VIEW_EASE;
+  hw.pos.z += (at.z - hw.pos.z) * VIEW_EASE;
+  hw.rig.position.set(hw.pos.x, hw.pos.y, hw.pos.z);
   // A scoped weapon aims through glass this page does not draw yet; hiding
   // the rifle is the half of the scope view the data can already pay for.
-  hw.rig.visible = !(hw.data?.zoom?.scope && aimBlend > 0.5);
+  hw.rig.visible = !(hw.data?.zoom?.scope && zoomed);
 
+  // The deviation inputs, named for the engine's PlayerInput channels. Note
+  // what is NOT fed: zoom — aiming has no effect on deviation, in either
+  // binary. `jumping` gates miscDev; the engine's gate is the c_PIAction
+  // input masked by a soldier state bit, and airborne is this page's
+  // stand-in for that mask.
   hw.model.update(dt, {
     stance: soldier.stance,
-    speed: soldier.speed,
-    turning,
-    aiming,
-    airborne: !soldier.grounded,
+    throttle: input?.forward ?? 0,
+    strafe: input?.strafe ?? 0,
+    lookX,
+    lookY,
+    jumping: !soldier.grounded,
   });
 
   const magazine = hw.data?.magazine;
@@ -3745,8 +3842,11 @@ function footFire(dt) {
     }
   } else if (magazine && hw.rounds <= 0 && hw.mags > 0) {
     // Dry means a magazine change, asked for or not — `autoReload` in the
-    // data or no. R merely asks early.
+    // data or no. R merely asks early. Like an asked-for reload, it drops
+    // zoom (`FireArms::Reload` -> setZoom(false)).
     hw.reload = magazine.reloadTime ?? 2;
+    hw.zoomed = false;
+    hw.rezoom = 0;
   }
 
   if (hw.group) {
@@ -3790,7 +3890,7 @@ function updateCrosshair() {
   const scoped = !!hw?.data?.zoom?.scope;
   const show = optOnFoot.checked && !!soldier && !!hw
     && (style === 'CHTCrossHair' || style === 'CHTIcon')
-    && !(scoped && aimBlend > 0.5);
+    && !(scoped && isZoomed());
   crosshairEl.hidden = !show;
   if (!show) return;
   // CHTIcon weapons draw an authored icon in the game; until that art is
@@ -4869,7 +4969,9 @@ if (params.has('shots')) {
     mags: handWeapon.mags,
     reloading: handWeapon.reload > 0,
     deviationDeg: handWeapon.model.current(),
-    aimBlend,
+    zoomed: isZoomed(),
+    fovFactor: handWeapon.fovCur,
+    rezoom: handWeapon.rezoom,
     firing: !!handWeapon.group?.firing,
     shots: handWeapon.group?.shots ?? 0,
     crosshairHidden: crosshairEl.hidden,
@@ -4880,7 +4982,17 @@ if (params.has('shots')) {
     triggerHeld = !!on;
     if (on) clickQueued = true;
   };
-  window.__setAim = on => { aimHeld = !!on; };
+  // Zoom is a press-toggle on every vanilla weapon (`altFireOnce`), so the
+  // harness verb sets the latch directly rather than faking a held button.
+  window.__setAim = on => {
+    const hw = handWeapon;
+    if (hw?.data?.zoom?.toggle) {
+      hw.zoomed = !!on;
+      hw.rezoom = 0;
+    } else {
+      aimHeld = !!on;
+    }
+  };
   // The collider itself, for measuring rather than for asserting: `__collision()`
   // drains the accumulated cast cost, so calling it once a second gives the real
   // microseconds-per-query number the feature doc quotes.

@@ -109,7 +109,7 @@ const shellMaterial = new THREE.MeshBasicMaterial({
   blending: THREE.AdditiveBlending, depthWrite: false,
 });
 
-// The impact stand-in.
+// The impact stand-in — a debug affordance, off by default.
 //
 // Refractor answers "what does this hit look like" out of the MaterialManager:
 // `setEffectTemplate` names one of 73 authored EffectBundles per (attacker,
@@ -121,9 +121,12 @@ const shellMaterial = new THREE.MeshBasicMaterial({
 //
 // So: one soft additive puff, expanding and fading, stood up on the surface
 // normal, tinted by the material family the hit resolved to. It is a marker
-// that the round stopped and where, not a reconstruction of the effect. The
-// resolved bundle name rides along on the impact record so a check can assert
-// the *selection* is right even though the drawing is a placeholder.
+// that the round stopped and where, not a reconstruction of the effect — and
+// against the game's authored bursts it reads as an invented puff, so it is
+// drawn only when `impactMarkers` is set (`?impacts=debug` on the map page).
+// The hit itself is always recorded, and the resolved bundle name rides along
+// on the impact record so a check can assert the *selection* is right even
+// when nothing is drawn.
 const IMPACT_TINTS = {
   ground: 0xc8ab7a,   // dust off dirt and sand
   water:  0xdff0ff,   // spray
@@ -227,6 +230,12 @@ export class GunFire {
     // it just cannot name the effect the game would have played.
     this.damageEffects = null;
     this.projectileMaterials = null;
+    // Draw the tinted impact stand-in discs. False everywhere by default:
+    // hits are recorded and reported either way, but the disc is a debug
+    // marker, not the authored effect, and until the EffectBundles are baked
+    // an un-asked-for puff is an invention. The map page flips this on under
+    // `?impacts=debug`.
+    this.impactMarkers = false;
     this.onImpact = null;
     this.impacts = [];
     this.impactPool = [];
@@ -801,6 +810,7 @@ export class GunFire {
   }
 
   #spawnImpact(hit, family) {
+    if (!this.impactMarkers) return;
     if (this.impacts.length >= MAX_IMPACTS) return;
     let mesh = this.impactPool.pop();
     if (!mesh) {
