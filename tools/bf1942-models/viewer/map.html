@@ -3484,23 +3484,24 @@ const vmCamera = new THREE.PerspectiveCamera();
 vmCamera.matrixAutoUpdate = false;
 vmCamera.layers.set(VIEWMODEL_LAYER);
 // Calibration against retail footage, applied on top of `center1pHands`
-// (Thompson on Wake, 960x540 capture): the sleeve meshes are open-ended
-// forearms and the game keeps their cut ends below the frame edge; at the
-// raw mount the LEFT sleeve's end floated mid-frame with ground visible
-// through the gap, and a reload read as a magazine hanging in air. 1.5 cm
-// down and 6 cm toward the eye sinks both sleeve ends below the frame
-// while keeping the rear sight at the footage's ~73% frame height; the
-// left hand re-enters the frame when the reload clip raises it, hand on
-// the magazine. OPEN [footage]: the engine adds an unextracted template
-// base vector on top of the eased weapon offset — these numbers stand in
-// for it until it is read from the binary.
+// (Thompson on Wake, 960x540 capture). Three findings drove the numbers:
+// the sleeve meshes are open-ended forearms whose cut ends the game keeps
+// below the frame edge (1.5 cm down + 6 cm toward the eye sinks them);
+// and retail holds the weapon nearly ALIGNED WITH THE VIEW AXIS — seen
+// from behind, foreshortened to a narrow column — where the raw mount
+// yawed it left and showed the whole side profile, which is what read as
+// "the left arm is too long". 0.35 rad of yaw turns the muzzle into the
+// screen and the left hand lands on the magazine. OPEN [footage]: the
+// engine adds an unextracted template base vector plus the aim frame on
+// top of the eased weapon offset — these numbers stand in until they are
+// read from the binary. ?cal=x,y,z,pitch,yaw overrides for calibration.
 const VIEWMODEL_CAL = (() => {
-  // ?cal=x,y,z,pitch overrides for calibration sessions.
+  // ?cal=x,y,z,pitch,yaw overrides for calibration sessions.
   const t = (params.get('cal') || '').split(',').map(Number);
-  if (t.length === 4 && t.every(Number.isFinite)) {
-    return { x: t[0], y: t[1], z: t[2], pitch: t[3] };
+  if (t.length >= 4 && t.every(Number.isFinite)) {
+    return { x: t[0], y: t[1], z: t[2], pitch: t[3], yaw: t[4] || 0 };
   }
-  return { x: 0, y: -0.015, z: 0.06, pitch: 0 };
+  return { x: 0.02, y: -0.015, z: 0.06, pitch: 0, yaw: 0.35 };
 })();
 // Viewmodel placement in camera space, metres. The per-weapon half is data:
 // `soldierCameraPosition` (hip) / `soldierZoomPosition` (zoomed) displace the
@@ -3670,7 +3671,7 @@ async function loadHandWeapon(name) {
   // camera looks down −Z: half a revolution about Y turns the arms into the
   // view (§11 step 1). The bare weapon glbs are authored view-ready.
   if (fp) gltf.scene.rotation.y = Math.PI;
-  if (fp) rig.rotation.x = VIEWMODEL_CAL.pitch;
+  if (fp) rig.rotation.set(VIEWMODEL_CAL.pitch, VIEWMODEL_CAL.yaw, 0);
   rig.add(gltf.scene);
   // The whole rig lives on the near layer, drawn by frame()'s second pass
   // over cleared depth. Culling goes with it: skinned bounds computed at
