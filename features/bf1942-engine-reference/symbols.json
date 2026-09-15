@@ -2301,6 +2301,168 @@
    "note": "bf42plus section: Server List"
   },
   {
+   "address": "0x007d9b50",
+   "name": "meme_BfButtonNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Node::read, 'Picture', 'Mouse over picture' (u8 strings), 'Action', Width, Height floats; the plate draws at texture size, W/H is the pointer region"
+  },
+  {
+   "address": "0x007e5210",
+   "name": "meme_ColorEffect__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Red, Green, Blue, Alpha floats (FUN_007ed920)"
+  },
+  {
+   "address": "0x007e7590",
+   "name": "meme_EffectNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Node::read then 'Effect' (+0x70); colours the siblings after it"
+  },
+  {
+   "address": "0x007e9510",
+   "name": "meme_TransformNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Node::read, X, Y, Width, Height floats, 'Transformed node' child list (+0x84, a list is its first node)"
+  },
+  {
+   "address": "0x007ea3f0",
+   "name": "meme_TextNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Node::read, 'String' data (+0x6c), 'Style' (+0x7c)"
+  },
+  {
+   "address": "0x007eaea0",
+   "name": "meme_SplitNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Node::read then 'Split node' child list"
+  },
+  {
+   "address": "0x007eaf90",
+   "name": "meme_PictureNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Node::read then 'Picture' handle (+0x4c, u8-length string). An empty picture draws a solid quad in the current colour"
+  },
+  {
+   "address": "0x007ec100",
+   "name": "meme_Node__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Every *Node's base read: Object (nothing) then 'Next node' object pointer (+0x88) - the sibling chain is serialized inside the frame"
+  },
+  {
+   "address": "0x007ecea0",
+   "name": "meme_writeObjectFrame",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "The writer: Ulong placeholder, name, class, fields, then the size patched back as bytes from the size field. NULL is size 8 / name 0 / class 0"
+  },
+  {
+   "address": "0x007ed220",
+   "name": "meme_loadRoot",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Root of a menu file: class name then obj->read(vtable+0x34); registers the object under the file name"
+  },
+  {
+   "address": "0x007ed3a0",
+   "name": "meme_loadMenuFile",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Opens menu/<name> as an istream, tries the MemeFile 2.0 header, falls back to the old text format"
+  },
+  {
+   "address": "0x007ed4f0",
+   "name": "meme_readObjectFrame",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "The object-pointer reader: tell, Ulong size, name string, class string, create+read (vtable+0x34), seek start+size. Empty class with a name = reference to a registered object or another menu/<name> file"
+  },
+  {
+   "address": "0x007f00d0",
+   "name": "meme_CullNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Node::read, 'Variable' data, 'In time', 'Out time' floats; gates the siblings after it in the list"
+  },
+  {
+   "address": "0x007f1c50",
+   "name": "meme_Style__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "'Font handle' (+0x50, u8-length string naming a Font/<face>.dif); shared by every *Style class"
+  },
+  {
+   "address": "0x007f7b10",
+   "name": "meme_ClassOStream__writeClassName",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Registers a name on first use and writes its 1-based Ushort index; the table is dumped by FUN_007f7bb0 after the object"
+  },
+  {
+   "address": "0x007f7bb0",
+   "name": "meme_ClassOStream__writeHeader",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Writes 'MemeFile 2.0', every registered string, then an empty string"
+  },
+  {
+   "address": "0x007f7dc0",
+   "name": "meme_ClassIStream__readHeader",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Reads 'MemeFile 2.0' then u8-length strings until an empty one; the strings are the symbol table for u16 class/name indices (1-based)"
+  },
+  {
+   "address": "0x007f7ef0",
+   "name": "meme_ClassIStream__readClassName",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "Ushort symbol index; 0 is the empty string, else table[index] copied out (FUN_007ecc00)"
+  },
+  {
    "address": "0x00804da6",
    "name": "WinMain_call_in_DllMain",
    "kind": "function",
@@ -2578,6 +2740,15 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-12",
    "note": "engine type-name string; xref it to reach the code that registers this type"
+  },
+  {
+   "address": "0x00947288",
+   "name": "meme_ClassIStream__vftable",
+   "kind": "vtable",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session-2026-09-15",
+   "note": "+0x24 ushort +0x34 float +0x38 bool +0x3c int +0x40 string(u32 len) +0x44 wstring +0x4c picture/+0x50 font/+0x54 sound (u8 len) +0x60..+0x88 object frame +0x98 tell +0xa0 class name"
   },
   {
    "address": "0x00957c30",
