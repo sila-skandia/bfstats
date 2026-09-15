@@ -13,6 +13,7 @@
 // each mapping here was measured.
 
 import * as THREE from 'three';
+import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 
 // --- conventions --------------------------------------------------------------
 
@@ -72,6 +73,11 @@ function toViewPosition(p, out) {
 function toViewQuaternion(q, out) {
   return out.set(-q[0], -q[1], q[2], q[3]);
 }
+
+// The soldier model's root, unlike every vehicle's, is authored facing the
+// opposite way (see place()). Same constant kits.html uses to flip a
+// head-slot attachment 180 degrees.
+const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
 
 function qmul(a, b) {
   const [ax, ay, az, aw] = a;
@@ -626,14 +632,21 @@ class ReplayPlayer {
       if (!model?.normal) continue;
       // A wrapper group carries the recorded transform, so a model keeps any
       // rotation of its own on its root (the soldier's does).
+      //
+      // Plain Object3D.clone() shares one Skeleton (and its bones) across
+      // every clone (three.js SkinnedMesh.copy() copies the reference, not
+      // the bones), so every soldier but the first read bone transforms off
+      // an unparented template that never gets updateMatrixWorld() -- the
+      // hand (the bone farthest from the root) is the most visibly wrong.
+      // SkeletonUtils.clone() rebuilds a parallel bone hierarchy per clone.
       const group = new THREE.Group();
       group.name = `replay ${life.tmpl} ${life.nid}`;
       group.visible = false;
-      const normal = model.normal.clone(true);
+      const normal = skeletonClone(model.normal);
       group.add(normal);
       let wreck = null;
       if (model.wreck) {
-        wreck = model.wreck.clone(true);
+        wreck = skeletonClone(model.wreck);
         wreck.visible = false;
         group.add(wreck);
       }
@@ -745,6 +758,12 @@ class ReplayPlayer {
       group.position.lerp(toViewPosition(s.b.p, this.v1), s.k);
       group.quaternion.slerp(toViewQuaternion(s.b.q, this.q1), s.k);
     }
+    // The soldier glb's own root carries a baked 180-degree turn that a
+    // vehicle's root doesn't (README §12): toViewQuaternion alone was only
+    // ever fitted against vehicles baked into the level scene. Measured
+    // exactly 180.00 degrees off at the spawn instant of both soldier lives
+    // in replay_20260915-213110.ndjson, against spawnYaw()'s convention.
+    if (life.soldier) group.quaternion.multiply(SOLDIER_YAW_FLIP);
     setGhost(entity, !replicated);
     const hp = hpAt(life, t);
     entity.hp = hp;

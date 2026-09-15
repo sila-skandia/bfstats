@@ -244,7 +244,7 @@ corrected by the server anyway.
 | who is in which vehicle / seat | `IPlayerControlObject::getOccupingPlayer()` on each PCO, or `BFPlayer::getVehicle()` | sampler |
 | control point owner and capture progress | control point objects (`ObjectManager_getControlPointVector`) | sampler; field offsets `open` |
 | health, ammo, vehicle damage | ghost fields; not exposed by current bf42plus headers | decoder, or find the offsets (`open`) |
-| projectiles (tank shells, bombs) | ghosted with high priority; `ObjectManager_getProjectileMap` exists | sampler, optional |
+| projectiles (tank shells, bombs) | **not achievable from a single client** — see §13 | n/a, architectural ceiling |
 | tickets | not yet located on the client (`open`); scoreboard reads them from somewhere | find offset |
 
 ---
@@ -334,8 +334,12 @@ answered, and it rules out the single-client recorder.
 ## 6. Reverse-engineering the ghost manager (host Ghidra work)
 
 Needed for strategy C and for the `open` offsets (health, tickets, control point
-state). All of it happens on the host with `xref.py` and the Linux server
-symbols; none of it can run in this sandbox.
+state). It needs `xref.py` and the Linux server symbols, and was believed to be
+host-only — **wrong as of 2026-09-15**: the Ghidra bridge was live and connected
+to `BF1942.exe` in-session (`xref.py check` reported a sha256 match), and was
+used to decompile real client functions for §13. Whether it is available is
+apparently session-dependent; check with `xref.py check` rather than assuming
+either way.
 
 1. Name the classes from the server binary:
    ```bash
@@ -758,6 +762,42 @@ unterminated while its round runs.
 - Replay models get the page's own vehicle lighting (`bindDynamicShading`),
   and the level's baked spawner vehicles are hidden so nothing is drawn twice.
 
+### Bugs found and fixed (2026-09-15)
+
+- **Soldier's hand detached from the body, floating near the head.**
+  `load()` cloned each cached soldier template with plain `Object3D.clone(true)`
+  (`replay.js:632,636` at the time). Three.js's `SkinnedMesh.copy()` copies the
+  `.skeleton` reference, not the bones, so every cloned soldier's mesh stayed
+  bound to the *original* cached template's skeleton — an object never added to
+  the scene and so never `updateMatrixWorld()`d, leaving its bones frozen at
+  identity. Skinning error scales with a bone's distance from the bind origin,
+  worst for the hand. `git blame` traced the buggy clone to `44dbd77`, unfixed
+  since. Fixed by vendoring three.js r169's `examples/jsm/utils/SkeletonUtils.js`
+  (`vendor/utils/SkeletonUtils.js`, same pattern as the existing
+  `vendor/utils/BufferGeometryUtils.js`) and calling its `clone()` instead, which
+  rebuilds a parallel bone hierarchy per instance and rebinds each SkinnedMesh to
+  it.
+- **Soldiers facing the wrong way.** `toViewQuaternion`'s `(x,y,z,w) ->
+  (-x,-y,z,w)` conversion (§12 "Measured conventions") was fitted only against
+  *vehicles* baked into `maps/wake/scene.glb`; the fit absorbs each vehicle
+  model's own root-orientation convention for free. The standalone soldier glb
+  was never baked into a level, so nothing calibrated it, and its root carries a
+  baked 180-degree turn vehicles don't have. Measured directly from
+  `replay_20260915-213110.ndjson`: at the exact spawn instant of both soldier
+  lives in that recording (nid 608 and 612, t=26.89s, before any player-turned
+  view could confound it), the recorded quaternion is a pure yaw of 179.7-179.8
+  degrees; comparing the angle `toViewQuaternion` alone produces against
+  `spawnYaw()`'s already-trusted convention (used elsewhere for the free-camera
+  spawn preview) gives a delta of exactly 180.00 degrees, both times. Fixed with
+  a `life.soldier`-gated `group.quaternion.multiply(SOLDIER_YAW_FLIP)` in
+  `place()`, `SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0)` — the same
+  180-degree-yaw constant `kits.html`'s `SLOT_ROTATION.head` already uses for an
+  unrelated head-slot attachment. Vehicles are untouched (not gated on
+  `life.soldier`).
+- **Tank shells and rockets never appear, even when they visibly hit and kill.**
+  Not a bug in the recorder — see §13. It is not fixable by extending the
+  sampler.
+
 ### Not done
 
 - Soldiers are a static pose: position and heading only, no animation.
@@ -766,3 +806,101 @@ unterminated while its round runs.
 - Six expected 404s per load for templates with no wreck model.
 - No minimap markers, no control-point flag colours, no upload endpoint
   (phase 4).
+
+---
+
+## 13. Why tank shells and rockets are invisible to a single client (2026-09-15)
+
+Two real recordings have the recording player destroy a Sherman at point-blank
+range with rockets — `replay_20260915-210619.ndjson` and
+`replay_20260915-213110.ndjson`, the second cross-checked against the LAN
+server's own `destroyVehicle` log entry (`player_location` ~15 m from
+`vehicle_pos`, matching a point-blank shot). **Neither recording contains a
+single projectile object**: not in the `o` roster (39-46 objects, all
+vehicles/soldiers/statics/control points), not hiding in an unclassified raw
+event dump (every raw type seen is already accounted for by §11.3's table).
+The target's hit points fall and it explodes right on cue (§11.4-§11.5,
+`working`) — the damage is captured perfectly — but nothing ever describes the
+shell in flight. This replaces §3's old "ghosted with high priority... sampler,
+optional" characterisation, which was wrong on both counts, as the next four
+subsections show (`working` unless marked, from decompiling the live
+`BF1942.exe` via the Ghidra bridge — see the §6 correction above — and from
+`nm`/`objdump` on the fully-symbolised Linux server binary,
+`bf1942_lnxded.static`).
+
+### 13.1 `ObjectManager::getProjectileMap` is a real, general registry, not mine-only
+
+`bf42plus/src/bf/object.cpp:7-15` is a working, bound function (vtable slot
+`+0x98`, declared `object.h:285`); its only call site today is the 3D
+mine-warning HUD (`renderer.cpp:314-324`), which is why its header comment
+reads "a map containing all projectiles which need a mine warning icon" — a
+description of that one use, not a structural restriction. The server binary
+names the real picture: `dice::ref2::world::ObjectManager::addProjectile`/
+`::removeProjectile` sit alongside `addPco`, `addControlPoint`,
+`addSupplyDepot`, `addFlag`, `addObjectSpawner` — one general per-category
+registry family, unfiltered.
+
+### 13.2 The engine supports networked projectiles as a first-class type
+
+`dice::ref2::world::ProjectileNetworkable` is a complete, standalone class in
+the server binary implementing `init`/`getNetUpdate`/`setNetUpdate`/`predict`/
+`updateStateMask` — exactly `NetworkableBase`'s shape (`object.h:166-181`). The
+ghost-replication mechanism for projectiles is real and fully supported by the
+engine in general. `IObject::getTeam()` (`object.cpp:83-93`) already
+special-cases `CID_ProjectileTemplate` (`0x9495`) reading team from `+0x144`,
+the same per-instance-field pattern used elsewhere — nothing about a
+projectile's shape looks structurally different from any other `IObject` on
+the wire.
+
+### 13.3 The client gates visible-projectile creation behind an interface only the server holds
+
+This is the actual reason. The client's `FireArms::createProjectile`
+(`0x00539d40`, decompiled this session — `__thiscall`, pool bookkeeping at
+`this+0x210/0x214/0x218`, calls the already-known `Projectile::resetProjectile`
+`0x00541f50`) branches on whether the projectile template's geometry name is
+empty:
+
+- **Empty geometry** (invisible/"dummy" projectile): calls
+  `template->createObject()` unconditionally — no server check.
+- **Non-empty geometry** (a real rendered body — tank shells, bazooka rockets,
+  anything with a mesh): first calls `Game::queryInterface(0x1d4c1)` and only
+  proceeds if it returns non-null.
+
+`0x1d4c1` = 120001 = `IID_IGameServer`, confirmed by reading the raw bytes at
+the server binary's own symbols `dice::bf::IID_IGameServer` (`0x086b1cf8` =
+120001) and `dice::bf::IID_IGameClient` (`0x086b1cfc` = 120002 — already
+bf42plus's own shipped constant, `bfhook.cpp:421`, same `Game` vtable slot `+8`
+pattern). A normal client connected to a remote dedicated server never holds
+`IGameServer`. So for any weapon with a visible projectile body, this branch
+returns null and **no `Projectile` `IObject` is ever created client-side** —
+there is nothing for the sampler, the event stream, or a bitstream decoder to
+ever see, because nothing was ever instantiated. This is architectural, not a
+relevance/priority/timing artifact, and it fully explains both recordings'
+zero-projectile result, including the self-fired, point-blank Sherman kill.
+
+### 13.4 What this means for the recorder, and what's still open
+
+Capturing true shell/rocket flight from a single client's ghost data is **not
+achievable** for any weapon with visible projectile geometry — not a sampler
+gap to close, an engine design choice to work around. Extending the sampler to
+walk `ObjectManager_getProjectileMap()` (mirroring `renderer.cpp:314-324`,
+~15 lines) is still cheap and correct for whatever *does* get networked
+locally — mines, and possibly empty-geometry "dummy" projectile types — but it
+would not have produced a shell for the Sherman scenario, and is low priority
+until something that actually reaches this map is identified.
+
+Genuinely `open`: the tracer/shell the shooter visually sees still has to come
+from somewhere. `FireArms::createProjectile` being gated proves only that the
+*pooled, ObjectManager-registered* path is closed; it does not show what
+actually draws the visible effect. That is almost certainly a local
+`EffectBundle`/particle trigger fired directly off the weapon-fire animation,
+entirely decoupled from `ObjectManager` (consistent with
+`bf1942-engine-reference/subsystems/projectiles-and-impacts.md`, which covers
+post-impact effects but not fire-time triggering). It has not been located or
+decompiled. If it is found, it could at least mark "weapon fired" at the
+shooter's position and time for the *recording player's own shots* — not
+other players' — as a local, non-networked signal. Also open: whether the
+*server's* own authoritative projectile (created where `IGameServer` succeeds)
+is ever ghost-replicated to any client under any circumstance — not observed
+in either recording, not proven impossible in general (e.g. slower/longer-lived
+ordnance, or a third-party observer rather than the shooter).
