@@ -113,6 +113,35 @@ out.puff.speedAfter100ms = Math.hypot(...puff.velocity);
 out.puff.travelled = -puff.position[2];
 out.puff.look = evalParticle(puff);
 
+// EMT-5: the same drag=20 as the smoke puff above, but on a *mesh* particle
+// carrying a bounding radius (0.1413 m, Fx_RichoStoneDecal's own geometry,
+// R8-14) — the engine's law is `pi*r^2*drag` (mass=1, R8-11), not the bare
+// `drag` sprites still use, so this barely slows over the same 0.1 s where
+// the sprite above lost seven eighths of its speed.
+const meshDragSpec = {
+  addEmitterSpeed: true, emitterSpeedScale: 1,
+  particle: { kind: 'mesh', timeToLive: ['n', 5, 0, 0], drag: ['n', 20, 0, 0],
+              gravityModifier: ['n', 0, 0, 0], radius: 0.1413 },
+};
+const meshDrag = spawnParticle(meshDragSpec, basisFromAxes([0, 0, -1], [0, 1, 0]), [0, 0, 0], [0, 0, -50], lcg(51));
+out.meshDrag = { speed0: Math.hypot(...meshDrag.velocity), radius: meshDrag.radius };
+for (let i = 0; i < 6; i++) integrateParticle(meshDrag, 1 / 60);
+out.meshDrag.speedAfter100ms = Math.hypot(...meshDrag.velocity);
+
+// A mesh particle whose geometry never resolved a radius (0, the
+// `spawnParticle` default) falls back to the old bare-drag exponential
+// rather than silently losing all drag — k=0 would mean no deceleration at
+// all, a worse regression than an approximate one.
+const noRadiusSpec = {
+  addEmitterSpeed: true, emitterSpeedScale: 1,
+  particle: { kind: 'mesh', timeToLive: ['n', 5, 0, 0], drag: ['n', 20, 0, 0],
+              gravityModifier: ['n', 0, 0, 0] },
+};
+const noRadius = spawnParticle(noRadiusSpec, basisFromAxes([0, 0, -1], [0, 1, 0]), [0, 0, 0], [0, 0, -50], lcg(53));
+out.noRadius = { speed0: Math.hypot(...noRadius.velocity), radius: noRadius.radius };
+for (let i = 0; i < 6; i++) integrateParticle(noRadius, 1 / 60);
+out.noRadius.speedAfter100ms = Math.hypot(...noRadius.velocity);
+
 // Texture-atlas flipbooks (SPR-6). fx_expl_core's own numbers: 16 frames,
 // initAnimationFrame 8, animationSpeed 70 (frames/second, no ramp) — over its
 // full 1 s life that is 8 + 70*1/16 = 12.375, floor 12, still inside the
