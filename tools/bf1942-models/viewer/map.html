@@ -3212,6 +3212,7 @@ function enterVehicle(node) {
     handWeapon.zoomed = false;
     handWeapon.rezoom = 0;
     handWeapon.fovCur = 1;
+    handWeapon.worldFov = FOOT_FOV;
   }
   triggerHeld = false;
   clickQueued = false;
@@ -3503,44 +3504,40 @@ sun.layers.enable(VIEWMODEL_LAYER);
 const vmCamera = new THREE.PerspectiveCamera();
 vmCamera.matrixAutoUpdate = false;
 vmCamera.layers.set(VIEWMODEL_LAYER);
-// Calibration against retail footage, applied on top of `center1pHands`
-// (Thompson on Wake, 960x540 capture). Three findings drove the numbers:
-// the sleeve meshes are open-ended forearms whose cut ends the game keeps
-// below the frame edge (1.5 cm down + 6 cm toward the eye sinks them);
-// and retail holds the weapon nearly ALIGNED WITH THE VIEW AXIS — seen
-// from behind, foreshortened to a narrow column — where the raw mount
-// yawed it left and showed the whole side profile, which is what read as
-// "the left arm is too long". 0.35 rad of yaw turns the muzzle into the
-// screen and the left hand lands on the magazine. OPEN [footage]: the
-// engine's template base vector at BFSoldierTemplate+0x15c turned out to
-// ship as (0,0,0) — the ctor zero-initialises it and nothing assigns it
-// (corpus doc §3, constructor follow-up) — so what these numbers really
-// stand in for is the aim/view rotation and rotate90aroundX composition
-// the offset passes through in BFSoldier::updateAnimations, which is
-// still unreplicated. ?cal=x,y,z,pitch,yaw overrides for calibration.
-const VIEWMODEL_CAL = (() => {
-  // ?cal=x,y,z,pitch,yaw overrides for calibration sessions.
-  const t = (params.get('cal') || '').split(',').map(Number);
-  if (t.length >= 4 && t.every(Number.isFinite)) {
-    return { x: t[0], y: t[1], z: t[2], pitch: t[3], yaw: t[4] || 0 };
-  }
-  return { x: 0.02, y: -0.015, z: 0.06, pitch: 0, yaw: 0.35 };
-})();
-// Viewmodel placement in camera space, metres. The per-weapon half is data:
-// `soldierCameraPosition` (hip) / `soldierZoomPosition` (zoomed) displace the
-// first-person weapon rig in the soldier's view frame — `FireArms::setZoom`
-// snaps the target, `BFSoldier::handleVisualUpdate` eases toward it (corpus
-// doc `handweapon-view-and-deviation.md` §3) — and both ride in each glb's
-// `weapon.view` extras, Refractor axes (x lateral, y vertical, z forward; the
-// x sign convention is OPEN in the corpus and taken as-is here).
+// Where the rig hangs is the engine's own arithmetic, not a calibration.
+// `BFSoldier::updateAnimations` (client 0x004fb150, lnxded 0x0826e630)
+// places the first-person skeleton at
 //
-// The base half depends on the file. The fp arms rig is feet-at-origin and
-// mounts at the data's `center1pHands` (§11 step 2) — nothing invented left.
-// The bare 3P fallback still needs this OPEN STAND-IN for the engine's
-// template base vector (`BFSoldierTemplate+0x15c`, name and value not yet
-// extracted): without it the data offsets alone put the gun 9 cm from the
-// eye. Chosen so the Thompson's hip pose lands where the eyeballed viewmodel
-// used to sit; the hip<->zoom *shift* is entirely the data's.
+//     rotate90aroundX · T(center1pHands + easedOffset) · S · M
+//
+// (row-vector products, left applied first) and hands it to
+// `Skeleton::transform`. M is the SoldierCamera's transform relative to
+// the soldier, so the chain reads in camera space; S is the camera-shake
+// matrix the camera itself rides, which cancels in view; the eased offset
+// chases `soldierCameraPosition` / `soldierZoomPosition`; rotate90aroundX
+// is a fixed axis swap, (x,y,z) -> (x,-z,y), from the raw skeleton into the
+// camera's frame. No yaw, pitch or extra offset exists anywhere in it. In
+// three.js terms that is exactly: parent the rig to the camera, turn it
+// half a revolution about Y, translate by center1pHands + offset with z
+// negated for the handedness flip (corpus doc
+// `handweapon-view-and-deviation.md` §3). The calibrated x/y/z/yaw that
+// used to sit on top stood in for a pose error, not a mount error: the
+// engine applies no lower-body clip in first person, so the exporter now
+// bakes the rest pose under the arms (§11 of first-person-soldier.md).
+//
+// Retail's view frame is D3D's — +x right, +y up, +z forward
+// (`convertWorldPosToScreenPos` 0x00440790 divides by view z and maps +x
+// straight to screen right) — so a positive `soldierCameraPosition` x moves
+// the gun to the viewer's right, and vanilla's `center1pHands` −0.12
+// carries the whole rig 12 cm left of the eye.
+//
+// The bare 3P fallback (a weapon with no extracted arms rig) has no
+// skeleton to mount, so it keeps an eyeballed camera-space base. The
+// engine's base is `center1pHands` (BFSoldierTemplate +0x15c, the console
+// word of that name), which the fp rigs read from their extras; the bare
+// glb is authored view-ready and only this stand-in remains. Chosen so the
+// Thompson's hip pose lands where the eyeballed viewmodel used to sit; the
+// hip<->zoom *shift* is entirely the data's.
 const VIEWMODEL_BASE = { x: 0.17, y: -0.10, z: -0.26 };   // OPEN [bare fallback]
 // The eases are the engine's, both frame-rate dependent by design (no dt in
 // either): the rig moves 25% of the remaining distance per visual update
@@ -3665,15 +3662,16 @@ async function loadHandWeapon(name) {
   const data = fp
     ? doc.weaponStats ?? null
     : doc.weapon ?? gltf.scene?.userData?.weapon ?? null;
-  // Where the rig hangs in camera space. The fp rig is feet-at-origin: §11
-  // mounts it at `center1pHands`, read from the extras and not retyped, whose
-  // −1.56 puts the feet 1.56 m below the eye — sleeves at the bottom of the
-  // frame, weapon raked up-forward, the reference footage exactly. The bare
-  // fallback keeps the eyeballed VIEWMODEL_BASE; only it still needs one.
+  // Where the rig hangs in camera space: `center1pHands`, read from the
+  // extras and not retyped — the engine's base vector, added to the eased
+  // weapon offset ahead of the camera transform (the chain above). Its
+  // −1.56 puts the skeleton root 1.56 m below the eye and, with the rest
+  // pose the exporter bakes under the arms, the head bone 2 cm under the
+  // eye: sleeves at the bottom of the frame, weapon raked up-forward. The
+  // bare fallback keeps the eyeballed VIEWMODEL_BASE; only it needs one.
   const hands = fp ? doc.view?.center1pHands : null;
   const base = hands
-    ? { x: hands[0] + VIEWMODEL_CAL.x, y: hands[1] + VIEWMODEL_CAL.y,
-        z: -hands[2] + VIEWMODEL_CAL.z }
+    ? { x: hands[0], y: hands[1], z: -hands[2] }
     : VIEWMODEL_BASE;
   // The rig's two authored poses, camera space. Refractor's z is forward,
   // three's camera looks down -z, so z is negated; a weapon that declares no
@@ -3692,9 +3690,11 @@ async function loadHandWeapon(name) {
   rig.position.set(viewHip.x, viewHip.y, viewHip.z);
   // The fp rig stands +Y up with its arms extending along +Z, and a three.js
   // camera looks down −Z: half a revolution about Y turns the arms into the
-  // view (§11 step 1). The bare weapon glbs are authored view-ready.
+  // view (§11 step 1) — the whole of the engine's rotate90aroundX once the
+  // exporter's Z-up-to-Y-up pitch and the glTF handedness flip are taken
+  // out. Nothing else rotates it. The bare weapon glbs are authored
+  // view-ready.
   if (fp) gltf.scene.rotation.y = Math.PI;
-  if (fp) rig.rotation.set(VIEWMODEL_CAL.pitch, VIEWMODEL_CAL.yaw, 0);
   rig.add(gltf.scene);
   // The whole rig lives on the near layer, drawn by frame()'s second pass
   // over cleared depth. Culling goes with it: skinned bounds computed at
@@ -3759,7 +3759,8 @@ async function loadHandWeapon(name) {
     fire: null,      // { spec, buffer } once loadHandFireSound resolves
     zoomed: false,   // the press-toggle latch (`altFireOnce`)
     rezoom: 0,       // seconds of `UnZoomBetweenFireTime` un-zoom left
-    fovCur: 1,       // the eased FOV factor, 1 hip .. `zoom.soldierFov` zoomed
+    fovCur: 1,       // the eased ARMS FOV factor, 1 hip .. `zoom.soldierFov` zoomed
+    worldFov: FOOT_FOV,   // the eased world FOV, degrees, FOOT_FOV .. `zoom.fov` zoomed
     viewHip, viewZoom,
     pos: { ...viewHip },   // the eased rig offset, chasing hip or zoom
     model: new DeviationModel({ deviation: data?.deviation }),
@@ -4049,16 +4050,32 @@ function footFire(dt, input = null) {
   if (hw.rezoom > 0) hw.rezoom = Math.max(0, hw.rezoom - dt);
   const zoomed = isZoomed();
 
-  // Zoom multiplies the soldier's view FOV by `zoom.soldierFov`
+  // Two fields of view, as the engine keeps them. `zoom.soldierFov`
   // (`SoldierZoomFov`, a factor: the Mp40's 0.9 barely leans in, the
-  // Thompson's 0.6 commits). The factor eases `0.7·cur + 0.3·target` per
-  // visual frame and snaps within 0.001 — `BFSoldier::handleVisualUpdate`,
-  // no dt, frame-rate dependent by the engine's own design.
+  // Thompson's 0.6 commits) belongs to the ARMS: `BFSoldier::applyFovModifier`
+  // multiplies it into `set1pFov` and hands the product to every
+  // first-person part through `setFirstPersonFov` (0x004f7120). It eases
+  // `0.7·cur + 0.3·target` per visual frame and snaps within 0.001 —
+  // `BFSoldier::handleVisualUpdate`, no dt, frame-rate dependent by design.
+  // The near pass in frame() draws the rig with it.
   const fovTarget = zoomed ? (hw.data?.zoom?.soldierFov ?? 1) : 1;
   hw.fovCur = Math.abs(fovTarget - hw.fovCur) <= FOV_SNAP
     ? fovTarget
     : 0.7 * hw.fovCur + 0.3 * fovTarget;
-  camera.fov = FOOT_FOV * hw.fovCur;
+  // The world camera is the other: zoom switches it to the weapon's
+  // `zoomFov`, a whole field of view in the unit `renderer.fieldOfView 1`
+  // uses (radians; the Thompson's 0.5 = 28.6°, a sniper's 0.1 = 5.7°), and
+  // back to FOOT_FOV. INFERRED [zoomFov unit]: read off the vehicleFov path
+  // (`Camera::setVehicleFOV` replaces the render view's FOV wholesale), not
+  // off the camera-mode switch itself, which is a raw-byte read
+  // (0x004fc8b6). Whether that side eases or snaps is unread, so it borrows
+  // the arms' 0.7/0.3 ease. OPEN [stand-in].
+  const worldTarget = zoomed && hw.data?.zoom?.fov
+    ? hw.data.zoom.fov / DEG_TO_RAD : FOOT_FOV;
+  hw.worldFov = Math.abs(worldTarget - hw.worldFov) <= FOV_SNAP
+    ? worldTarget
+    : 0.7 * hw.worldFov + 0.3 * worldTarget;
+  camera.fov = hw.worldFov;
   camera.updateProjectionMatrix();
   // And displaces the rig from its hip pose to its zoom pose, eased 25% of
   // the remaining distance per visual frame (0.25f, same function, no dt).
@@ -5542,9 +5559,15 @@ function frame(dt) {
   renderer.render(scene, camera);
   // The near pass: everything on VIEWMODEL_LAYER — the arms rig and the
   // muzzle emitters inside it — drawn again over a cleared depth buffer, so
-  // the world can occlude none of it (§11 step 6, the game's own 1P pass).
-  // Same camera, same FOV: whether retail gives the rig its own projection
-  // is OPEN in the corpus, and the world FOV matches every measurement.
+  // the world can occlude none of it (§11 step 6). Retail does the same and
+  // more: each first-person part carries its own field of view (`set1pFov`
+  // × the eased `SoldierZoomFov` factor, through `IViewModifier::
+  // setFieldOfView`) and `StandardMeshRenderer` draws them in a dedicated
+  // `drawFov` pass, so the arms never follow the world's zoom. Same pose,
+  // own projection: FOOT_FOV × the factor. How that pass turns the value
+  // into a projection, and whether it moves the near plane, is renderer
+  // code still unread — OPEN — and at the hip the footage puts the arms at
+  // the world's FOV, which is what a factor of 1 gives.
   if (handWeapon?.rig.visible) {
     renderer.autoClear = false;
     renderer.clearDepth();
@@ -5559,8 +5582,11 @@ function frame(dt) {
     scene.background = null;
     vmCamera.matrixWorld.copy(camera.matrixWorld);
     vmCamera.matrixWorldInverse.copy(camera.matrixWorld).invert();
-    vmCamera.projectionMatrix.copy(camera.projectionMatrix);
-    vmCamera.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+    vmCamera.fov = FOOT_FOV * handWeapon.fovCur;
+    vmCamera.aspect = camera.aspect;
+    vmCamera.near = camera.near;
+    vmCamera.far = camera.far;
+    vmCamera.updateProjectionMatrix();
     renderer.render(scene, vmCamera);
     scene.background = worldBackground;
     renderer.autoClear = true;
@@ -5762,6 +5788,7 @@ if (params.has('shots')) {
     deviationDeg: handWeapon.model.current(),
     zoomed: isZoomed(),
     fovFactor: handWeapon.fovCur,
+    worldFov: handWeapon.worldFov,
     rezoom: handWeapon.rezoom,
     firing: !!handWeapon.group?.firing,
     shots: handWeapon.group?.shots ?? 0,

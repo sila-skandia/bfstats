@@ -159,7 +159,7 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
-233 symbols from bf42plus and 51 read since, across 16 subsystems.
+233 symbols from bf42plus and 122 read since, across 18 subsystems.
 
 **The `physics` subsystem is the worked example of what this corpus is for.**
 34 symbols, almost all `verified`, written up as a narrative in
