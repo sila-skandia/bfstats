@@ -174,14 +174,15 @@ What this tells us (`inferred` unless noted):
   declared but not yet bound.
 - **Network ID space is 16-bit** (`working`): `CreatePlayerEvent` carries
   `vehicleNetworkID`, `cameraNetworkID`, `kitNetworkID` as `uint16_t`.
-- **Relevance / culling: `open`.** It is not established whether the server
-  ghosts every object to every client (at reduced rate when far) or withholds
-  distant ones. The DLL author's README says the server "sends back the result,
-  which includes every detail about every object that is being synced", and the
-  client renders distant planes and shows all friendly vehicles on the minimap,
-  which points to "everything, at varying rate". This is the single most
-  important thing to measure first (§5, test T1), because it decides whether one
-  recording client sees the whole round.
+- **Relevance / culling: the server withholds distant objects** (`working`, see
+  §10). The hypothesis here used to be "everything, at varying rate", on the
+  strength of the DLL author's note that the server "sends back the result,
+  which includes every detail about every object that is being synced". The
+  first recording refutes it: the client held 22 of Wake Island's 32 spawned
+  objects, and the split was purely by distance. **One recording client does not
+  see the whole round**, which is the single most consequential fact in this
+  document — it invalidates the single-client version of strategy A as a route
+  to a complete replay.
 
 ### 2.4 Client → server
 
@@ -280,15 +281,16 @@ the recording and can drive a low-fidelity "dots on a map" replay immediately.
 
 ## 5. Tests to run on the LAN server before building
 
-| # | question | how |
-|---|---|---|
-| T1 | Does the client hold a ghost for *every* networked object on the map, or only nearby ones? | Debug-log the count of objects with `getNetworkable() != nullptr` from the frame hook while a second client drives to the far corner; compare against the server's object count (`console`: `game.listObjects` or the event log). |
-| T2 | Update rate versus distance | Log the wall-clock interval between transform changes for one vehicle at 50 m, 500 m, 1500 m. |
-| T3 | Does a dead player's soldier object linger, and does respawn reuse the network ID? | Log CreatePlayer `vehicleNetworkID` and the soldier's `networkID` across a death/spawn. |
-| T4 | Do a spectator (free camera, never spawned) and a playing client receive the same object set? | Run the sampler on both and diff. If yes, the recorder should be a dedicated spectator client, which also removes the client-prediction caveat. |
-| T5 | Is the object set complete right after `DataBaseComplete`, or do ghosts trickle in afterwards? | Timestamp first-seen per network ID relative to the event. |
+| # | question | status | how |
+|---|---|---|---|
+| T1 | Does the client hold a ghost for *every* networked object on the map, or only nearby ones? | **answered — only nearby ones**, §10 | `coverage.py` diffs a recording against the level's `ObjectSpawns.con`. |
+| T2 | Update rate versus distance | open | Log the wall-clock interval between transform changes for one vehicle at 50 m, 500 m, 1500 m. Needs a second player; the first recording had one. |
+| T3 | Does a dead player's soldier object linger, and does respawn reuse the network ID? | open | Log CreatePlayer `vehicleNetworkID` and the soldier's `networkID` across a death/spawn. |
+| T4 | Do a spectator (free camera, never spawned) and a playing client receive the same object set? | blocked | The sampler does not run before spawn; see §10. Fix the frame hook first. |
+| T5 | Is the object set complete right after `DataBaseComplete`, or do ghosts trickle in afterwards? | open | Needs a recording started *before* connecting; see §10. |
 
-T1 and T4 decide the architecture; the rest tune the sampler.
+T1 and T4 decide the architecture; the rest tune the sampler. T1 is now
+answered, and it rules out the single-client recorder.
 
 ---
 
@@ -378,10 +380,120 @@ crash loses at most that.
 | `cp` | control point | `id`, `team`; on first sight also `name`, `tmpl`, `pos` |
 | `end` | file closed cleanly | |
 
-Run `summarize.py` on a recording to answer T1 (object count and template
-list), T2 (per-object update rates), T5 (first-seen times), and to read the
-`SetLevel` (0x36) raw dump so its layout can be added to `gameevent.h`.
+Run `summarize.py` on a recording for the record counts, roster, event kinds and
+raw dumps of unmapped events. Run `coverage.py` to answer T1 against a specific
+level.
 
 Known gaps in this cut, on purpose: no map name (it is in the 0x36 raw dump
 until the struct is mapped), no health or ammo, no turret or child transforms,
 and the local player's soldier is client-predicted.
+
+---
+
+## 10. What the first recording showed
+
+`replay_20260915-143655.ndjson`, Wake Island, 30.1 s, one player, recorded from
+a normal playing client on the LAN server. 274 lines, 24 KB. Built with
+`bf42plus/tools/build-linux.sh` (MSVC under Wine; the recorder itself is
+unchanged from §9).
+
+### 10.1 T1: the server withholds distant objects — `working`
+
+`coverage.py` matched the recording against `Wake/Conquest/ObjectSpawns.con`
+(read from `Wake_003.rfa`, the patch archive the engine actually loads):
+
+```
+spawn points defined by Wake/Conquest : 32
+networked objects in the recording    : 30
+spawn points covered                  : 22
+spawn points MISSING                  : 10
+
+farthest covered spawn point : 555m
+nearest missing spawn point  : 547m
+```
+
+The client sat at `(1396, 120, 628)` and moved at most 75 m. Every covered
+spawn point is within 555 m of it; every missing one is 547 m or further, out to
+the Japanese carrier and destroyer at 1115–1161 m. The boundary is that sharp.
+
+The two farthest missing objects are team 1 and the client was team 2, so team
+is a confound for *those two* — but the other eight misses are all team 2, the
+client's own team, and they are missing purely on distance. Distance is the
+explanation.
+
+Consequences, in order of how much they hurt:
+
+1. **A single playing client cannot record a complete round.** Strategy A as
+   written produces a replay of what one player was near. §2.3's "everything, at
+   varying rate" is wrong.
+2. The viewer will show objects appearing and disappearing as the recording
+   client moves, unless the format distinguishes "gone" from "no longer
+   replicated to us". The `d` record currently cannot tell those apart.
+3. The remaining routes to a complete round are: a spectator client that orbits
+   the map (still lossy, and blocked — §10.4), several clients merged by network
+   ID, or capture on the server side. This is now the open design question, and
+   it should be settled before any more work goes into the viewer.
+
+What is *not* yet established: whether the ~550 m boundary is a fixed radius, a
+bandwidth-driven priority cut-off that varies with server load and player count,
+or simply "the client is never told about objects it has not been near". The
+recording cannot distinguish these — it is one client, stationary, 30 s. T2 with
+a second player driving outward is the test that separates them.
+
+### 10.2 Event 0x29 is a 10-second periodic counter — `inferred`
+
+The only events in the whole recording were three of type `0x29`, at
+t = 7.228, 17.228, 27.228 — exactly 10 s apart. Payloads:
+
+```
+0x29: 00000000 ea010000 0000...   -> u32[0]=0, u32[1]=490
+0x29: 00000000 f4010000 0000...   -> u32[0]=0, u32[1]=500
+0x29: 00000000 fe010000 0000...   -> u32[0]=0, u32[1]=510
+```
+
+`u32[1]` rises by exactly 10 per 10 s, i.e. one per second, which reads as
+elapsed round time in seconds rather than a ticket count (tickets do not move
+at a fixed 1/s, and would fall, not rise). The round would have started ~490 s
+before recording began, which fits a session already in progress. `u32[0]` is 0
+throughout and may be a team or type selector that a two-team round would
+disambiguate. Everything past the first 8 bytes is zero, so the struct is
+probably 8–12 bytes and the rest of the 48-byte dump is over-read.
+
+`0x29` was unnamed in §2.2's table. This does not yet locate tickets, which
+§3 still lists as `open`.
+
+### 10.3 Recording must start before connecting
+
+The file contains no `createPlayer`, `setLevel` or `dbComplete`, because
+`plus.recordReplays 1` was typed after joining and the join-time database dump
+had already been replayed. Consequences: no player *names* (the `p` sample
+carries `[pid, team, vehicleNetId]` only), and no map name.
+
+So: set `recordReplays=1` in `bf42plus.ini` before launching, or enable it and
+reconnect. T5 cannot be tested any other way either, since it is defined
+relative to `DataBaseComplete`.
+
+### 10.4 T4 is blocked by where the frame hook sits
+
+`replay_onFrame` is called from `hook_Renderer_draw_1`, which dereferences
+`BFPlayer::getLocal()->getVehicle()` a few lines above the call site. A client
+that has never spawned has no vehicle, so the sampler never runs. A spectator
+recorder — the obvious response to §10.1 — cannot be tested until the sampler
+is called from somewhere that does not require a spawned local player.
+
+### 10.5 Confirmed incidentally
+
+- Control point ownership at `+0x190` and the template name at `+0x2D0` read
+  correctly: all five Wake flags reported team 2 with the right names
+  (`Landing_Beach`, `The_Airfield`, `South_Base`, `North_Base`, `Village`) and
+  positions matching the level. Team 2 is Allies.
+- `IObject::getTeam()` returns -1 for control point objects; only the `+0x190`
+  read gives the owner. The `o` record's `team` field is therefore not usable
+  for flags.
+- Volume is not a problem. 28 of 30 objects never moved after first sight, so
+  the change-detection filter did its job: 24 KB for 30 s, and almost all of
+  that is the one moving soldier. A busy 64-player round will be far larger,
+  but nothing here suggests the format needs compressing yet.
+- The `cp` name is the raw localisation key from the template
+  (`Landing_Beach`), not the localised string `renderer.cpp` displays. Better
+  for a replay file; the viewer should localise at display time.
