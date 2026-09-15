@@ -603,9 +603,12 @@ const FOOT_KEYS = new Set([
 
 // ?shots keeps the drawing buffer so canvas.toDataURL() works for external
 // screenshot tooling; off by default because it costs a buffer copy per frame.
+// `&nopreserve` gives the perf harness the hooks without the copy, so it can
+// measure the page a player gets.
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
-  preserveDrawingBuffer: new URLSearchParams(location.search).has('shots'),
+  preserveDrawingBuffer: new URLSearchParams(location.search).has('shots')
+    && !new URLSearchParams(location.search).has('nopreserve'),
 });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -4174,7 +4177,8 @@ guns.onShot = group => {
     const draw = range => {
       if (!range) return 0;
       const lo = Math.min(range[0], range[1]);
-      return lo + Math.random() * (Math.max(range[0], range[1]) - lo);
+      // The gun's dice, so a seeded check kicks the same way every run.
+      return lo + guns.rand() * (Math.max(range[0], range[1]) - lo);
     };
     soldier.look(draw(recoil.leftRight) * DEG_TO_RAD,
                  draw(recoil.up) * DEG_TO_RAD);
@@ -6001,6 +6005,31 @@ if (params.has('shots')) {
   window.__setTrigger = on => {
     triggerHeld = !!on;
     if (on) clickQueued = true;
+  };
+  // A full pouch again, for the perf harness: a Thompson carries 150 rounds
+  // and a several-minute burst phase would otherwise fall silent at 15 s.
+  window.__refill = () => {
+    const hw = handWeapon;
+    const magazine = hw?.data?.magazine;
+    if (!magazine) return false;
+    hw.rounds = magazine.size;
+    hw.mags = magazine.magazines ?? hw.mags;
+    hw.reload = 0;
+    return true;
+  };
+  // Seed every random draw the shot path makes — the spread cone, the
+  // flash roll, the recoil, the emitters' distributions — so two captures
+  // of the same stepped frames are the same picture and a pixel diff
+  // between builds measures the build, not the dice. The guns and the
+  // effects each hold their own `rand` for exactly this; `Math.random`
+  // itself is left alone, because three draws it for every uuid and a build
+  // that allocates one object more would otherwise fire a different burst.
+  window.__seedRandom = (seed = 1) => {
+    let s = seed >>> 0;
+    const lcg = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    guns.rand = lcg;
+    effects.rand = lcg;
+    return true;
   };
   // Zoom is a press-toggle on every vanilla weapon (`altFireOnce`), so the
   // harness verb sets the latch directly rather than faking a held button.

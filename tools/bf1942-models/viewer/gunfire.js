@@ -252,6 +252,12 @@ export class GunFire {
     this.impactPool = [];
     /** The last few hits, newest first, for the debug readout and headless checks. */
     this.hits = [];
+    // The dice for the spread cone and the flash roll, the module's own the
+    // way `EffectPlayer.rand` is: a headless check seeds these two and
+    // nothing else. Seeding `Math.random` itself would also seed three's
+    // UUIDs, so a build that clones one material more or less per pool miss
+    // would fire a different burst and fail a pixel diff for no reason.
+    this.rand = Math.random;
   }
 
   /** Attacker material for a projectile template, or null. */
@@ -496,7 +502,7 @@ export class GunFire {
       emitter.node.visible = true;
       // The engine rolls each flash particle (`startRotation CRD_UNIFORM
       // 0/180`), which is what keeps a held burst from looking like one frame.
-      emitter.spin = Math.random() * Math.PI * 2;
+      emitter.spin = this.rand() * Math.PI * 2;
       // Bundle wrappers between the FireArms node and the emitter are hidden
       // too; walk them visible up to the gun.
       for (let node = emitter.node.parent;
@@ -582,12 +588,12 @@ export class GunFire {
    * The polar angle is `spread x sqrt(u)` — uniform over the cone's cross
    * section rather than over its rim or its axis, so a burst paints a disc the
    * way a target card looks, not a ring and not a hot centre. The azimuth is
-   * free. Both draws are unseeded `Math.random()`, the same authority the
-   * flash roll already answers to.
+   * free. Both draws come from `this.rand`, the same authority the flash
+   * roll already answers to — `Math.random` unless a check has seeded it.
    */
   #wander(dir, degrees) {
-    const theta = degrees * (Math.PI / 180) * Math.sqrt(Math.random());
-    const phi = Math.random() * Math.PI * 2;
+    const theta = degrees * (Math.PI / 180) * Math.sqrt(this.rand());
+    const phi = this.rand() * Math.PI * 2;
     // An orthonormal frame around the direction of fire. The up reference
     // flips to +X when the shot is near-vertical, where up and dir would be
     // parallel and the cross product degenerate.
