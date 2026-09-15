@@ -778,6 +778,12 @@ let dragging = false;
 let lastPointerX = 0;
 let lastPointerY = 0;
 let currentRoot = null;
+// The game never lets you deploy into a level that has not finished loading;
+// the browser must not either. False from the moment show() starts streaming
+// a scene until its collider and bindings are up — deploySpawn refuses while
+// it is false, or a fast SPAWN drops the soldier into an empty fog-coloured
+// void that reads as "the map is broken".
+let worldReady = false;
 let extras = {};
 let skybox = null;
 let skyRoot = null;       // the level's SkyBox mesh, reparented to the scene
@@ -3591,6 +3597,13 @@ const VIEWMODEL_RIGS = {
 const VIEWMODEL_LAYER = 1;
 hemi.layers.enable(VIEWMODEL_LAYER);
 sun.layers.enable(VIEWMODEL_LAYER);
+// The near pass's own camera: it sees only the rig's layer and copies the
+// main camera's matrices each frame (frame(), below). matrixAutoUpdate off —
+// the copied world matrix IS its pose; letting three recompose it from an
+// unset position would drag the pass to the origin.
+const vmCamera = new THREE.PerspectiveCamera();
+vmCamera.matrixAutoUpdate = false;
+vmCamera.layers.set(VIEWMODEL_LAYER);
 // Viewmodel placement in camera space, metres. The per-weapon half is data:
 // `soldierCameraPosition` (hip) / `soldierZoomPosition` (zoomed) displace the
 // first-person weapon rig in the soldier's view frame — `FireArms::setZoom`
@@ -4926,6 +4939,7 @@ function openDeploy() {
   const chosen = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
   setDeployTeam(chosen?.team === 1 ? 1 : 2, false);
   fullmapBox.classList.add('deploy');
+  syncDeployReady();
   toggleFullMap(true);
   return true;
 }
@@ -5022,8 +5036,14 @@ for (const tab of deployTabs) {
  *  rebuilt select keeps the chosen flag; a redeploy moves the one that
  *  exists. Either way the screen goes first, and pointer capture stays with
  *  the gate, exactly as it does today. */
+// The commit button reads LOADING and refuses while the scene streams.
+function syncDeployReady() {
+  deploySuicideBtn.disabled = !worldReady;
+  deploySuicideBtn.textContent = worldReady ? 'Suicide' : 'Loading…';
+}
+
 function deploySpawn() {
-  if (!deployActive()) return false;
+  if (!deployActive() || !worldReady) return false;
   const rejoin = deployRejoin;
   toggleFullMap(false);
   const spawned = (rejoin && soldier) ? spawnAtFlag() : (setOnFoot(true), !!soldier);
@@ -5086,6 +5106,8 @@ deployScoreBtn.addEventListener('click', e => {
 });
 
 async function show(entry) {
+  worldReady = false;
+  syncDeployReady();
   const load = overlay.begin(entry.name);
   load.step('report', { label: 'level report', weight: 1 });
   // Weighted by what the bytes actually are: one ~70 MB scene against a couple
@@ -5235,6 +5257,11 @@ async function show(entry) {
       : ' / no heightfield') +
     (t.materials ? ` / ${Object.keys(t.materials.labels || {}).length} surfaces` : '');
 
+  // Geometry, collider and bindings are all up; only loose textures may still
+  // be streaming, and the game deploys over those too.
+  worldReady = true;
+  syncDeployReady();
+
   // Every texture this level needs has been queued by now, so a queue that is
   // already drained (or was never filled) means the load is done — texReport
   // alone would sit waiting for a callback that is not coming.
@@ -5335,9 +5362,21 @@ function frame(dt) {
   if (handWeapon?.rig.visible) {
     renderer.autoClear = false;
     renderer.clearDepth();
-    camera.layers.set(VIEWMODEL_LAYER);
-    renderer.render(scene, camera);
-    camera.layers.set(0);
+    // Two traps in an overlay pass, both learned the hard way. Three draws
+    // `scene.background` in EVERY render call, autoClear or not — left in
+    // place, this pass painted the fog-coloured backdrop over the entire
+    // world each frame, and every on-foot map read as one wall of colour.
+    // And the pass gets its own camera rather than flipping the main
+    // camera's layer mask, so nothing the pass does can leak into the
+    // world render's view of that camera.
+    const worldBackground = scene.background;
+    scene.background = null;
+    vmCamera.matrixWorld.copy(camera.matrixWorld);
+    vmCamera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    vmCamera.projectionMatrix.copy(camera.projectionMatrix);
+    vmCamera.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+    renderer.render(scene, vmCamera);
+    scene.background = worldBackground;
     renderer.autoClear = true;
   }
   drawMinimap();
@@ -5521,6 +5560,8 @@ if (params.has('shots')) {
   // what it should and bloomed what it should. `__setTrigger`/`__setAim`
   // stand in for mouse buttons the way `__lookDelta` stands in for pointer
   // lock, which headless Chromium does not reliably grant.
+  // The live rig object, for bisecting a rendering fault from the console.
+  window.__rig = () => handWeapon?.rig;
   window.__handWeapon = () => handWeapon && ({
     name: handWeapon.name,
     hasGroup: !!handWeapon.group,
