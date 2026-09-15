@@ -4073,6 +4073,19 @@ function disposeHandWeapon() {
 async function loadHandWeapon(name, soldierName = null) {
   disposeHandWeapon();
   const token = weaponToken;
+  // Kicked off now, in parallel with the (usually much bigger) visual load
+  // below, rather than after `hw` exists: a JSON manifest plus one small mp3
+  // almost always resolves before a rigged, textured glb does, so by the
+  // time a soldier can even pull the trigger — which needs `hw` published,
+  // which needs the glb below to finish first — the report is normally
+  // already decoded. Sequencing it after `hw` (the previous shape of this
+  // function) meant the fetch for a weapon's very first equip in the session
+  // hadn't even started yet when firing became possible; a shot taken in
+  // that window played the round but not its sound, on every hand weapon —
+  // reproduced headless on the Garand, No4, Type5 and Thompson alike, worse
+  // on Wake's Marine Garand once it gained its own first-person rig (a much
+  // bigger fetch to queue behind) via the kit-loadout fix.
+  const firePromise = fetchHandFireSound(name);
   let gltf = null;
   let fp = false;
   // The arms first: §11's `<Soldier>__<Weapon>.fp.glb`, sleeves and hands
@@ -4224,7 +4237,7 @@ async function loadHandWeapon(name, soldierName = null) {
     reloadPlayed: false,  // the arms' reload clip has been started for this magazine
     cool: 0,         // seconds until a semi-auto weapon has cycled
     pulse: false,    // a one-frame trigger pulse is in flight
-    fire: null,      // { spec, buffer } once loadHandFireSound resolves
+    fire: null,      // { spec, buffer } once firePromise (above) resolves
     zoomed: false,   // the press-toggle latch (`altFireOnce`)
     rezoom: 0,       // seconds of `UnZoomBetweenFireTime` un-zoom left
     fovCur: 1,       // the eased ARMS FOV factor, 1 hip .. `zoom.soldierFov` zoomed
@@ -4261,7 +4274,11 @@ async function loadHandWeapon(name, soldierName = null) {
     hw.active = 'idle';
     playViewmodelClip(hw, 'deploy', { restart: true });
   }
-  loadHandFireSound(hw);
+  // The fetch has been in flight since the top of this function; attach it
+  // to `hw` whenever it lands. Same guard as before: a slow decode landing
+  // after the soldier has already switched weapons again must not hand a
+  // Thompson its predecessor's report.
+  firePromise.then(fire => { if (fire && handWeapon === hw) hw.fire = fire; });
   updateAmmoHud();
   return hw;
 }
@@ -4399,15 +4416,16 @@ function weaponSoundsManifest() {
   return weaponSoundsIndex;
 }
 
-/** Decode the weapon's fire sample; inert until a shot actually plays it. */
-async function loadHandFireSound(hw) {
+/** Resolve + decode `name`'s fire sample; inert until a shot actually plays
+ *  it. Takes the bare template name rather than `hw` so `loadHandWeapon` can
+ *  fire this off *before* `hw` exists — see the call site's comment on why
+ *  that ordering is the whole fix for a shot going silent right after spawn. */
+async function fetchHandFireSound(name) {
   const manifest = await weaponSoundsManifest();
-  const spec = manifest?.weapons?.[hw.name];
-  if (!spec) return;   // a quiet weapon (binoculars), or a mod without the tree
+  const spec = manifest?.weapons?.[name];
+  if (!spec) return null;   // a quiet weapon (binoculars), or a mod without the tree
   const buffer = await modelSoundBuffer(`sounds/${spec.file}`);
-  // Loading is inert, so a superseded weapon costs nothing; the guard only
-  // keeps a slow decode from handing a Thompson its predecessor's report.
-  if (buffer && handWeapon === hw) hw.fire = { spec, buffer };
+  return buffer ? { spec, buffer } : null;
 }
 
 function ensureHandFireBus(ctx) {
