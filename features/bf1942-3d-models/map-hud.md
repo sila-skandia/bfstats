@@ -173,7 +173,12 @@ shorelines do it.
 | | |
 |---|---|
 | HUD minimap | top right; north-up with a rotating heading arrow, which is the game's own shipped default (`game.setStaticMinimap 1` in every stock profile). Shows a quarter of the art centred on the camera, plus a live grid reference. |
-| Fullscreen map | `M` — the game's own `c_PIMap` binding in all five vanilla control maps. `N` (`c_PIZoomMap`) is left free for a zoom cycle. Whole art with flags, capture radii, spawn dots, labels and the combat-area outline. `Esc` closes it before it releases the pointer. |
+| Fullscreen map | `M` — the game's own `c_PIMap` binding in all five vanilla control maps. `N` (`c_PIZoomMap`) is left free for a zoom cycle. `Esc` closes it before it releases the pointer. |
+
+**Superseded (2026-09-15):** the capture radii, spawn dots, flag labels and
+combat-area outline described here are gone. Every map surface now draws only the
+game's own sprites, and the spawn screen is built from `menu/InGame`. See
+[`../authentic-spawn-map/README.md`](../authentic-spawn-map/README.md) sections 6-8.
 
 Both surfaces are 2D canvases over the existing stage. Marker sizes are
 specified in CSS pixels and multiplied by the canvas backing ratio, so a flag
@@ -206,5 +211,9 @@ Pre-existing and unrelated to any of this.
   but no engine code was read. See `spawn-points.md` §9.
 - 55 mod control points carry `setTeamGeometry` with no `addTemplate`. They get
   a pole and no cloth here.
-- Vehicle spawner icons (`setMinimapIcon`) are parsed by nothing yet; the full
-  map does not draw vehicle markers.
+- ~~Vehicle spawner icons (`setMinimapIcon`) are parsed by nothing yet; the full
+  map does not draw vehicle markers.~~ Closed 2026-09-15: `extract_hud_pack.py`
+  writes `minimap-icons.json`, and every map surface draws the vehicle-class icon
+  at each spawner.
+- Remaining map and HUD work is tracked in
+  [`../authentic-spawn-map/README.md`](../authentic-spawn-map/README.md) §8.

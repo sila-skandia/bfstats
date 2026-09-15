@@ -427,16 +427,26 @@ still legible.
 
 ## Open questions
 
-- **Zoom steps.** The transform in `FUN_00469360` reads a zoom parameter at minimap member
-  offset `+0x40` and scales by `pow(…)` of `1 - that`. I did not find where it is written, so
-  the number of discrete steps `N` cycles through and their values are unknown. About 15 KB of
-  `.text` between `0x0046a5c0` and `0x0046e230` is still undefined in Ghidra and is the likely
-  home of the minimap update/draw code.
-- **Rotation source.** Same function, member `+0x64` is the map rotation angle. That it is the
-  player's yaw, and that `StaticMinimap` zeroes it, is inference from the option's name and
-  default, not from a decompiled write site.
-- **Minimap on-screen geometry.** Position, size and the small/large toggle live inside the
-  binary `menu/InGame` meme tree. Decoding `MemeFile 2.0` structurally was out of scope.
+**Status 2026-09-15.** `MemeFile 2.0` is now decoded (`tools/bf1942-models/bf42/meme.py`;
+ledger MEME-1 to MEME-13), so the "not decoded structurally" note in §3 *Layout* is
+superseded. The §5 *vehicle icons* row is also built: `extract_hud_pack.py` writes
+`minimap-icons.json`. Viewer next steps live in
+[`../authentic-spawn-map/README.md`](../authentic-spawn-map/README.md) §8, and engine
+questions in the ledger. The addresses below are recorded in `symbols.json` under `ui`.
+
+- **Zoom steps** (ledger MMAP-1). The transform in `FUN_00469360` reads a zoom parameter at
+  minimap member offset `+0x40` and scales by `pow(…)` of `1 - that`. I did not find where it
+  is written, so the number of discrete steps `N` cycles through and their values are unknown.
+  About 15 KB of `.text` between `0x0046a5c0` and `0x0046e230` is still undefined in Ghidra
+  and is the likely home of the minimap update/draw code.
+- **Rotation source** (ledger MMAP-2). Same function, member `+0x64` is the map rotation
+  angle. That it is the player's yaw, and that `StaticMinimap` zeroes it, is inference from
+  the option's name and default, not from a decompiled write site.
+- **Minimap on-screen geometry** (ledger MEME-12, MEME-13). Decoded: the minimap has no rect
+  of its own. `ShowMap` is a `CullNode` over an empty `ClipNode` that the engine fills at
+  runtime. Its neighbours in `menu/InGame` bound it: ticket bar `(620,4) 256x32`, grid readout
+  `(627,185) 50x20`, control-point strip `(620,207) 256x16`, in 800x600 units. Where its size
+  and the small/large toggle come from is still open.
 - **The 43 non-512 mod maps.** 30 levels ship a 1024x1024 map, 12 ship 2048x2048 and one
   ships 584x584. The projection is resolution-independent so this should not matter, but none
   of the 43 was individually verified against its combat area.
