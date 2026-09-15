@@ -3748,9 +3748,10 @@ function disposeHandWeapon() {
 }
 
 /** Load the weapon into hand — the arms rig where one is extracted for
- *  `soldier` holding it, the bare `name`.glb where not — hang it off the
- *  camera and index its gun. */
-async function loadHandWeapon(name, soldier = null) {
+ *  `soldierName` holding it, the bare `name`.glb where not — hang it off the
+ *  camera and index its gun. The template name must not be called `soldier`:
+ *  that would shadow the live soldier the guard and `platformVelocity` read. */
+async function loadHandWeapon(name, soldierName = null) {
   disposeHandWeapon();
   const token = weaponToken;
   let gltf = null;
@@ -3758,7 +3759,7 @@ async function loadHandWeapon(name, soldier = null) {
   // The arms first: §11's `<Soldier>__<Weapon>.fp.glb`, sleeves and hands
   // welded around the weapon with the six clip families baked in. A pairing
   // without one falls through to the bare weapon, which works as it did.
-  const rigFile = viewmodelRigFor(name, soldier);
+  const rigFile = viewmodelRigFor(name, soldierName);
   if (rigFile) {
     try {
       gltf = await loader.loadAsync(
@@ -3873,7 +3874,7 @@ async function loadHandWeapon(name, soldier = null) {
   const magazine = data?.magazine || null;
   const hw = {
     name, data, rig,
-    soldier,               // whose sleeves were asked for
+    soldier: soldierName,  // whose sleeves were asked for
     rigFile: fp ? rigFile : null,   // the arms rig that answered, if one did
     fov1p,                 // `set1pFov` in radians, or null for a bare weapon
     mixer, actions,        // the arms rig's state machine; both empty when bare
