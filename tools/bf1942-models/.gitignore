@@ -3,3 +3,4 @@ viewer/models
 viewer/maps
 out*/
 __pycache__/
+viewer/replays
