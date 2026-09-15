@@ -12,6 +12,7 @@ engine (see `features/bf1942-engine-reference/subsystems/projectiles-and-impacts
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -192,6 +193,44 @@ class SpecTests(unittest.TestCase):
         self.assertEqual("add", burst["blend"])
         self.assertEqual("alpha", smoke["blend"])
         self.assertEqual(["u", 1.0, 180.0, 0], burst["initRotation"])
+        # SPR-5 (corrected): the underlying D3DBLEND ordinals, not just the
+        # two-case label. Both templates leave srcBlendMode unset, so both
+        # fall back to the constructor's own default (R8-8): BMSourceAlpha=5.
+        self.assertEqual((5, 2), (burst["srcBlendMode"], burst["destBlendMode"]))
+        self.assertEqual((5, 6), (smoke["srcBlendMode"], smoke["destBlendMode"]))
+
+    def test_sprite_blend_defaults_when_neither_word_is_set(self) -> None:
+        # geom::ParticleSystemTemplate's own constructor (FUN_00618350, R8-8)
+        # hardcodes srcBlendMode=5/destBlendMode=6 before any `.con` word
+        # runs a setter at all.
+        lib = library()
+        lib.add_con("Objects/Effects/Common/effects.con", """
+ObjectTemplate.create SpriteParticle Fx_NoBlendWords
+ObjectTemplate.texture e_richogitt_I
+ObjectTemplate.timeToLive CRD_NONE/1/0/0
+""")
+        spec = effects.particle_spec(lib.object("Fx_NoBlendWords"))
+        self.assertEqual((5, 6), (spec["srcBlendMode"], spec["destBlendMode"]))
+        self.assertEqual("alpha", spec["blend"])
+
+    def test_sprite_blend_ordinals_distinguish_what_the_label_could_not(self) -> None:
+        # A template overriding srcBlendMode to BMOne alongside destBlendMode
+        # BMOne: the old two-case label calls this "add", identically to
+        # `burst` above (test_sprite_blend_follows_dest_blend_mode), but the
+        # real pair (2, 2) is a different blend from burst's actual (5, 2) —
+        # exactly what SPR-5's fuller mapping recovers and the label alone
+        # could never represent.
+        lib = library()
+        lib.add_con("Objects/Effects/Common/effects.con", """
+ObjectTemplate.create SpriteParticle Fx_FullAdditive
+ObjectTemplate.texture e_richogitt_I
+ObjectTemplate.timeToLive CRD_NONE/1/0/0
+ObjectTemplate.srcBlendMode BMOne
+ObjectTemplate.destBlendMode BMOne
+""")
+        spec = effects.particle_spec(lib.object("Fx_FullAdditive"))
+        self.assertEqual((2, 2), (spec["srcBlendMode"], spec["destBlendMode"]))
+        self.assertEqual("add", spec["blend"], "the coarse label only ever looked at destBlendMode")
 
     def test_projectile_trail_and_names(self) -> None:
         lib = library()
@@ -390,6 +429,36 @@ class CoreModuleTests(unittest.TestCase):
         self.assertTrue(1.5 < puff["travelled"] < 3.0)
         # 0.1 s into a 2.5 s life the size ramp (0.4 -> 0.75) has moved 4%.
         self.assertAlmostEqual(1.2 * (0.4 + 0.35 * 0.04), puff["look"]["scale"][0], places=2)
+
+    def test_mesh_particle_drag_uses_the_engine_law_not_bare_drag(self) -> None:
+        # EMT-5 (verify-r8.md, corrected): a mesh particle's drag is
+        # `pi * r^2 * drag` (mass=1.0 always, R8-11), applied as the exact
+        # per-tick decay `v *= e^(-k dt)` for the wind=0/scale=1 case every
+        # real effect is (see effects-core.js's integrateParticle docstring).
+        # Same drag=20 as the sprite puff above, but this mesh particle's own
+        # radius (0.1413 m, Fx_RichoStoneDecal's real geometry, R8-14) makes
+        # `k` about 1.25 rather than the sprite's bare 20 — it barely slows
+        # at all over the same 0.1 s where the sprite lost seven eighths of
+        # its speed.
+        mesh_drag = self.results["meshDrag"]
+        self.assertAlmostEqual(0.1413, mesh_drag["radius"], places=4)
+        self.assertAlmostEqual(50.0, mesh_drag["speed0"], places=6)
+        k = math.pi * 0.1413 ** 2 * 20.0
+        expected = 50.0 * math.exp(-k * 0.1)
+        self.assertAlmostEqual(expected, mesh_drag["speedAfter100ms"], places=4)
+        # A visible, not just numeric, difference from the sprite's law: the
+        # mesh particle above 40 m/s where the sprite fell under 8.
+        self.assertGreater(mesh_drag["speedAfter100ms"], 40.0)
+
+    def test_mesh_particle_without_a_radius_falls_back_to_bare_drag(self) -> None:
+        # A mesh particle whose geometry never resolved a radius (0) must
+        # not silently lose all drag (k=0, decay=1) -- it falls back to the
+        # same bare-drag exponential a sprite uses, an explicit
+        # approximation rather than a worse regression.
+        no_radius = self.results["noRadius"]
+        self.assertEqual(0, no_radius["radius"])
+        expected = 50.0 * math.exp(-20.0 * 0.1)
+        self.assertAlmostEqual(expected, no_radius["speedAfter100ms"], places=6)
 
     def test_gravity_modifier_scales_the_fall(self) -> None:
         self.assertAlmostEqual(-14.73 * 0.6 * 0.5, self.results["chip"]["vy"], places=4)
