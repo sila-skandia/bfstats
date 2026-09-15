@@ -2022,6 +2022,16 @@ and three numbers in this section changed under it:
   from whatever pose the skeleton holds: aim 0.7 (a 1.4 s settle back onto
   the sights after a burst), fire 4.0, deploy and reload 10000 (a cut). The
   0.15 s / 0.02 s stand-ins are gone; the factor rides in the extras.
+- **Every rig has to be re-exported when the timing changes, not the two
+  that were measured.** This pass re-exported only the Thompson and MP40
+  rigs and dropped the viewer's `bakedSpan / reloadTime` stretch in the
+  same change, so the other 34 kept their `bafFps: 25` bake with nothing
+  rescaling them: reloads ran 3.75–6.1× their `reloadTime` (a No4's 9.8 s
+  against 1.6 s, the Garand's 23 s against 4 s). All 36 are re-exported; a
+  rig's report carries `"clipTiming": "1/speed"` once it is on the engine's
+  clock, and `bafFps` means it is stale. In the same fix, an empty magazine
+  now goes through `startReload` like R does — the dry path had never
+  re-armed the arms' clip, so only the first reload of a life animated.
 
 On the pose itself: all 13 frames of `1PStandAimThompson` project within
 4 px of one another, the deploy clip ends on the aim clip's frame 0, and
