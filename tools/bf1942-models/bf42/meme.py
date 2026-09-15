@@ -32,14 +32,23 @@ Object pointer frame (`FUN_007ed4f0` reads, `FUN_007ecea0` writes)
     later siblings and that field must be read before skipping.
 
 Primitives (ClassIStream vtable slots, 0x00947288)
-    +0x24 ushort   2 bytes             +0x38 bool     1 byte
-    +0x34 float    4 bytes IEEE        +0x3c int      4 bytes
-    +0x40 string   u32 length + bytes  +0x44 wstring  u32 length + UTF-16LE
+    +0x1c int (same bytes as +0x3c)    +0x24 ushort   2 bytes
+    +0x34 float    4 bytes IEEE        +0x38 bool     1 byte
+    +0x3c int      4 bytes             +0x40 string   u32 length + bytes
+    +0x44 wstring  u32 length + UTF-16LE
     +0x4c picture  u8 length + bytes   +0x50 font     u8 length + bytes
-    +0x54 sound    u8 length + bytes   +0x5c event    4 bytes
+    +0x54 sound    u8 length + bytes
+    +0x58 object frames, repeated with no count until the *enclosing* frame
+          ends (`ActionListAction`'s "Action list")
+    +0x5c enum whose width the call chooses: 1 byte for every class's own
+          "Event type", 4 for `ButtonEvent`'s "Button type" — the two known
+          call sites of a single shared slot (0x007f7060 forwards through
+          `this+8` without picking the width itself, so this is recorded
+          per field below, not derived)
     +0x60..+0x88   object pointer frame (node, data, effect, style, action,
                    function, node list — a list is its first node, the
-                   rest hang off "Next node")
+                   rest hang off "Next node"; +0x78 additionally takes a
+                   computed-default callback, same bytes on the wire)
 """
 
 from __future__ import annotations
@@ -55,6 +64,14 @@ MAGIC = "MemeFile 2.0"
 # class, and nothing for data / effect / style / action objects).
 F32, BOOL, INT, STR, WSTR, PSTR, EVENT = "f32", "bool", "int", "str", "wstr", "pstr", "event"
 OBJ = "obj"  # any object pointer frame (node, data, effect, style, action)
+# MEME-11: ClassIStream +0x5c is one shared "enum" primitive whose width the
+# *call site* picks, not the slot — 1 byte for every class's own "Event type"
+# (TypeEvent, ButtonEvent, AnyKeyEvent all verified against the client), 4 for
+# ButtonEvent/ExtendedButtonEvent's "Button type" (`EVENT` above, unchanged).
+EVENT8 = "event8"
+# ActionListAction's "Action list": +0x58 reads OBJ frames back to back, no
+# count, until the *enclosing* object's own frame ends.
+OBJ_LIST = "obj_list"
 
 # class name (without the dice::meme:: prefix) -> [(label, kind), ...]
 # Labels are the strings the engine passes to the stream; `pstr` covers
@@ -95,9 +112,13 @@ SCHEMAS: dict[str, list[tuple[str, str]]] = {
                      ("Action", OBJ), ("Width", F32), ("Height", F32)],
     "ActionNode": [("Next node", OBJ), ("Action", OBJ)],
     "TimeoutActionNode": [("Next node", OBJ), ("Action", OBJ), ("Timeout time", F32)],
-    "CullEventActionNode": [("Next node", OBJ), ("Action", OBJ)],
+    # MEME-11: both end with an "Event" object frame the old schema lacked
+    # (verified: meme_CullEventActionNode__read 0x007e3a80,
+    # meme_CullVariableAndEventActionNode__read 0x007e3bf0).
+    "CullEventActionNode": [("Next node", OBJ), ("Action", OBJ), ("Event", OBJ)],
     "CullVariableActionNode": [("Next node", OBJ), ("Action", OBJ), ("Variable", OBJ)],
-    "CullVariableAndEventActionNode": [("Next node", OBJ), ("Action", OBJ), ("Variable", OBJ)],
+    "CullVariableAndEventActionNode": [("Next node", OBJ), ("Action", OBJ),
+                                       ("Variable", OBJ), ("Event", OBJ)],
     "BfVariableTimeoutActionNode": [("Next node", OBJ), ("Action", OBJ), ("Timeout time", OBJ)],
     "BfVariableTimeoutActionNode2": [("Next node", OBJ), ("Action", OBJ),
                                      ("Current time", OBJ), ("Timeout time", OBJ)],
@@ -160,11 +181,55 @@ SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "SetVariableAction": [("Variable", OBJ), ("Value", OBJ)],
     "SetStringAction": [("Variable", OBJ), ("Value", OBJ)],
     "SplitAction": [("Action 1", OBJ), ("Action 2", OBJ)],
-    "CallFunctionAction": [("Function", OBJ)],
+    # MEME-11: CallFunctionAction has a second field, "Result data", that the
+    # old schema lacked (verified: its own read, client 0x007e4450 — the
+    # trivial Action read, then "Function" at +0x74, then "Result data" at
+    # +0x6c). `Function` itself has none: its read is the shared no-op stub
+    # 0x007f8570, so a call is identified only by the name of the Function
+    # object it references.
+    "CallFunctionAction": [("Function", OBJ), ("Result data", OBJ)],
     "ActionFunction": [("Action", OBJ)],
     "Function": [],
-    "TypeEvent": [("Input index", INT), ("Event type", EVENT)],
-    "ButtonEvent": [("Input index", INT), ("Event type", EVENT), ("Button type", EVENT)],
+    # ActionListAction (verified: 0x007f0ab0) is the trivial Action read, then
+    # a run of Action frames with no count, through +0x58, until this
+    # object's own frame ends — the menu's most common wrapper (3,547 uses).
+    "ActionListAction": [("Actions", OBJ_LIST)],
+    # SetPathAction (verified: 0x007e6e50) is the page transition every mod
+    # uses (543 uses): a source and destination node (each with an engine
+    # computed default when absent from the stream), four timing floats and
+    # a bool for which node paints over the other.
+    "SetPathAction": [("Path node", OBJ), ("Destination node", OBJ),
+                      ("In time", F32), ("Out time", F32),
+                      ("In wait time", F32), ("Out wait time", F32),
+                      ("Paint outnode over innode", BOOL)],
+    # RemoveEventAction (verified: shares the trivial no-op stub 0x007f8570
+    # with Action/Function/Data) carries no fields of its own.
+    "RemoveEventAction": [],
+    # MEME-11 bug: the "Event type" of every *Event class is 1 byte on the
+    # wire (EVENT8); ButtonEvent's/ExtendedButtonEvent's "Button type" alone
+    # is the 4-byte EVENT. Both share one ClassIStream slot (+0x5c) whose
+    # width the call site chooses — meme.py used to read all of it as 4.
+    "TypeEvent": [("Input index", INT), ("Event type", EVENT8)],
+    "ButtonEvent": [("Input index", INT), ("Event type", EVENT8), ("Button type", EVENT)],
+    # AnyKeyEvent and ExtendedButtonEvent (verified: 0x007e18f0, 0x007e1700 —
+    # both read out with ButtonEvent while tracing MEME-11's Event-type bug).
+    "AnyKeyEvent": [("Input index", INT), ("Event type", EVENT8)],
+    "ExtendedButtonEvent": [("Input index", INT), ("Event type", EVENT8),
+                            ("Button type", EVENT), ("Repeat count", INT)],
+    # BfNavigationButtonNode (verified: 0x007d9db0) is a three-state tab or
+    # row selector, not a BfButtonNode: three picture handles, an action, a
+    # mouse-over flag, an index, three more object fields tracking the live
+    # mouse-over/click state, then width and height read last (the client
+    # reads them after the state fields even though they sit earlier in the
+    # object's own memory layout — the wire order below is the call order).
+    "BfNavigationButtonNode": [("Next node", OBJ), ("Picture", PSTR),
+                               ("Mouse over picture", PSTR), ("Clicked picture", PSTR),
+                               ("Action", OBJ), ("MouseOver button", BOOL), ("Index", INT),
+                               ("Current mouseover index", OBJ), ("Current clicked index", OBJ),
+                               ("MouseOver active", OBJ), ("Width", F32), ("Height", F32)],
+    # IndexDataData (verified: 0x007ef4b0) is the element of "Data" a
+    # navigation button's "Current mouseover index" (or similar) selects.
+    "IndexDataData": [("Data", OBJ), ("Index", OBJ)],
 }
 
 
@@ -321,16 +386,29 @@ class MemeReader:
             schema = SCHEMAS["Node"] if obj.is_node else []
             self.warnings.append(f"no schema for {obj.cls} at {start}")
         for label, kind in schema:
-            if self.pos >= end:
+            # OBJ_LIST reads however many frames remain - zero is a valid,
+            # common answer (an ActionListAction with nothing in it yet) -
+            # so it runs even when a truncated/older-format frame has
+            # already left no room for anything else in the schema.
+            if self.pos >= end and kind != OBJ_LIST:
                 break
             if kind == OBJ:
                 obj.fields[label] = self.read_obj()
+            elif kind == OBJ_LIST:
+                # +0x58: object frames back to back, no count, until this
+                # object's own frame ends (ActionListAction's "Action list").
+                items = []
+                while self.pos < end:
+                    items.append(self.read_obj())
+                obj.fields[label] = items
             elif kind == F32:
                 obj.fields[label] = self.f32()
             elif kind == BOOL:
                 obj.fields[label] = bool(self.u8())
             elif kind in (INT, EVENT):
                 obj.fields[label] = self.u32()
+            elif kind == EVENT8:
+                obj.fields[label] = self.u8()
             elif kind == STR:
                 obj.fields[label] = self.lstr()
             elif kind == WSTR:

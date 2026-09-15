@@ -34,6 +34,12 @@ land at unit norm only under /2^15 (at /2^precision they come out at exactly
 2, 8 and 16). Position channels reproduce the skeleton's bone lengths
 exactly, which is what pins the channel order and both scales.
 
+**BAF-1:** the position divisor is `2^precision - 1`, not `2^precision` —
+`CompressedAnim::GetValue` divides every raw channel value that way, position
+included. It never showed up on the quaternion channels above because
+`toMat`'s `s = 2/(x^2+y^2+z^2+w^2)` cancels whatever constant scale fed it, so
+this file keeps `quat_scale` fixed at `1/2^15` regardless of the header.
+
 **A `.baf` transform replaces the bone's `.ske` local transform outright** —
 rotation as a quaternion, translation absolute in parent space, not an offset
 from rest. Unlike the `.ske`, the stored values are not Z-mirrored: the
@@ -191,7 +197,18 @@ def parse(data: bytes, name: str = "") -> Animation:
         # Quaternions are always 1.15 fixed point; only positions use the
         # declared precision. See the module docstring for the measurement.
         quat_scale = 1.0 / 32768.0
-        pos_scale = 1.0 / (1 << precision)
+        # BAF-1: CompressedAnim::GetValue (client, and lnxded 0x0832fc90's
+        # GetQuat feeds it x, y, z, w unscaled for the same reason) divides
+        # every channel's raw fixed-point value by 2^precision - 1, not
+        # 2^precision. It is invisible on the quaternion channels because
+        # BaseQuaternion::toMat's s = 2/(x^2+y^2+z^2+w^2) normalizes out
+        # whatever scale fed it - see the module docstring - so quat_scale
+        # above is deliberately a constant, not this. Positions have no such
+        # normalization: the old 2^precision divisor put every position a
+        # factor of (2^precision)/(2^precision - 1) short, 0.003% at
+        # precision 15 (1,121 of 1,154 clips) and ~0.1% at the lowest
+        # precision (11) any mod uses.
+        pos_scale = 1.0 / ((1 << precision) - 1)
 
         bones: list[BoneTrack] = []
         for bone_name in bone_names:

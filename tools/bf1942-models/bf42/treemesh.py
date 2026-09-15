@@ -164,24 +164,31 @@ def _consume_start(groups: list[list[tuple[int, int, str]]], kind: int,
 
 
 def _skip_collision(c: _Cursor, name: str) -> None:
+    """TM-1: this word is a collider class id for `SmartItf<IVectorCollider>
+    ::create` (lnxded `TreeMeshTemplate::load` 0x083bd380, the id read at
+    0x083bd651 and consumed at 0x083bd85d), not a magic-or-vertex-count
+    switch. 0 means no collider - bushes store four zero bytes here instead
+    of a collision mesh. `COL_MAGIC` (0xEB97C2FA) is `CID_SimpleCollisionMesh`
+    (lnxded 0x086e9e08); every non-zero id across 401 installed tree meshes
+    is that one, so any other id is unsupported rather than a vertex count to
+    rewind onto - the engine never rewinds here, and nothing reads a fourth
+    class of collider today.
+    """
     if c.pos + 4 > len(c.data):
         return
     magic = c.u32()
-    if magic == COL_MAGIC:
-        version = c.u32()
-        if version != 5:
-            raise MeshError(f"{name}: unexpected collision version {version}")
-        vert_count = c.u32()
-        c.pos += vert_count * 16  # 3f + 2 bytes + 2 pad
-        face_count = c.u32()
-        c.pos += face_count * 8  # 3u16 indices + u16 material
-        _skip_bsp(c)
+    if magic == 0:
         return
-    # Bushes store four zero bytes here instead of a collision mesh.
-    # A non-zero value that is not the collision magic is the visible vertex
-    # count and has to be rewound.
-    if magic != 0:
-        c.pos -= 4
+    if magic != COL_MAGIC:
+        raise MeshError(f"{name}: unsupported collider class id 0x{magic:08X} at {c.pos - 4}")
+    version = c.u32()
+    if version != 5:
+        raise MeshError(f"{name}: unexpected collision version {version}")
+    vert_count = c.u32()
+    c.pos += vert_count * 16  # 3f + 2 bytes + 2 pad
+    face_count = c.u32()
+    c.pos += face_count * 8  # 3u16 indices + u16 material
+    _skip_bsp(c)
 
 
 def _skip_bsp(c: _Cursor) -> None:
