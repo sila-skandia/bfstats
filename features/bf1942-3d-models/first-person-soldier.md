@@ -1812,8 +1812,8 @@ spawn() }` — `open` and `flags` (name/team/spawns/selected) are state,
 Stage 2 and the clip half of stage 3, shipped: `tools/bf1942-models/
 extract_viewmodel.py`, `viewer/models/viewmodels/USSoldier__Thompson.fp.glb`
 and `GermanSoldier__MP40.fp.glb` (~1.5 MB each), `tests/test_viewmodel.py`
-(19 assertions, suite 621). The viewer is deliberately untouched — mounting
-instructions are at the end of this section.
+(19 assertions, suite 621). The viewer mounts both rigs per the instructions
+at the end of this section, which are kept as the record of why.
 
 ### What the 1P rig actually is, sharpened
 
@@ -1951,7 +1951,18 @@ Doc extras (`extras` on the glb root document, mirrored in the
 - `weaponStats`: the armoury block (`magazine.reloadTime` is the reload
   rescale target), `bafFps: 25`.
 
-### How the viewer should mount it (not done here — map.html is owned)
+### How the viewer should mount it (wired — map.html follows this recipe)
+
+**Wired.** `loadHandWeapon` mounts the two shipped rigs exactly as the six
+steps below say: camera-parented at `center1pHands` (the `VIEWMODEL_BASE`
+stand-in now serves only the bare-weapon fallback), 180° about Y, the eased
+hip/zoom offsets unchanged, an AnimationMixer running idle/walk/run off
+`soldier.gait` (crouch and prone play the aim until their families are
+baked), fire as a clamped one-shot per `guns.onShot`, reload rescaled by
+`bakedSpan / reloadTime`, deploy on every spawn, and the whole rig on a
+`VIEWMODEL_LAYER` near pass over cleared depth. Only the `view: "first"`
+muzzle emitters strobe on foot. Crossfade durations remain OPEN stand-ins
+(0.15 s, fire near-snap) until the ASM transition rates are extracted.
 
 The engine's own chain is decompiled in
 [`../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md`](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md)
