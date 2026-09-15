@@ -208,6 +208,9 @@ class Report:
     # Cockpit exports only: which LodObject node each 1P alternative grafts
     # onto, and what it hides there.
     cockpit_swaps: list[str] = field(default_factory=list)
+    # Third-person exports only: which LodObject kept both propeller meshes
+    # instead of picking one, and the throttle threshold a viewer swaps at.
+    propeller_blurs: list[str] = field(default_factory=list)
     mesh_lods: dict[str, dict[str, int]] = field(default_factory=dict)
     part_tree: list[str] = field(default_factory=list)
     rigged_parts: list[str] = field(default_factory=list)
@@ -247,6 +250,7 @@ class Report:
             "lodAlternativesSkipped": sorted(set(self.skipped_lod_alternatives)),
             "lodAlternativesSelected": self.selected_lod_alternatives,
             "cockpitSwaps": self.cockpit_swaps,
+            "propellerBlurs": self.propeller_blurs,
             "meshLods": dict(sorted(self.mesh_lods.items())),
             "partTree": self.part_tree,
             "riggedParts": self.rigged_parts,
@@ -1491,6 +1495,15 @@ class Assembler:
     def _select_lod_children(self, children_refs: list[con_mod.ChildRef],
                              report: Report, template: con_mod.ObjectTemplate,
                              ) -> list[con_mod.ChildRef]:
+        # The propeller's blade/blur pair is not a pick-one alternative like
+        # every other LodObject here — the engine keeps both meshes and swaps
+        # which is visible as the throttle opens, so a third-person export
+        # keeps both too. See `con.is_propeller_blur_pair` and `_propeller_blur`.
+        if not self.first_person and con_mod.is_propeller_blur_pair(children_refs):
+            report.selected_lod_alternatives.append(
+                f"{template.name} -> "
+                + " + ".join(child.template for child in children_refs))
+            return list(children_refs)
         selected = self._lod_alternative(template, children_refs)
         if self.first_person:
             # The cockpit export wants exactly the alternative every other
@@ -1549,6 +1562,27 @@ class Assembler:
         if selector := self.library.selector(template.lod_selector):
             swap.update(selector.as_dict())
         return swap
+
+    def _propeller_blur(self, template: con_mod.ObjectTemplate,
+                        selected_refs: list[con_mod.ChildRef]) -> dict:
+        """How a viewer swaps the blade mesh for the blurred disc as throttle opens.
+
+        Stamped on the LodObject wrapper rather than on either mesh: both
+        children keep the wrapper's name-lookup convention already used for
+        `spinsChildren`/`cameraView`/etc, so the viewer finds them by name
+        instead of guessing which of two sibling nodes is which. The
+        comparison rides along for the same reason `_lod_swap` carries one —
+        it is the engine's own number (`addLodComparison 0.07` on every
+        vanilla propeller), not a constant a viewer should have to hardcode.
+        """
+        static = next(child for child in selected_refs
+                     if child.template.lower().endswith("static"))
+        blurred = next(child for child in selected_refs
+                       if child.template.lower().endswith("blurred"))
+        blur = {"static": static.template, "blurred": blurred.template}
+        if selector := self.library.selector(template.lod_selector):
+            blur.update(selector.as_dict())
+        return blur
 
     def _lightmap_rel(self, template: con_mod.ObjectTemplate,
                       world_origin: tuple[float, float, float]) -> str | None:
@@ -1700,6 +1734,7 @@ class Assembler:
 
         children_refs = template.children
         lod_swap: dict | None = None
+        propeller_blur: dict | None = None
         # An alternative this export does not draw, whose hull it still owes
         # the world. See `_collision_for_geometry`.
         collision_makeup: con_mod.ChildRef | None = None
@@ -1708,6 +1743,8 @@ class Assembler:
                 children_refs, report, template)
             if self.first_person:
                 lod_swap = self._lod_swap(template, children_refs, selected_refs[0])
+            elif len(selected_refs) == 2 and con_mod.is_propeller_blur_pair(selected_refs):
+                propeller_blur = self._propeller_blur(template, selected_refs)
             if self.include_collision and not self.first_person:
                 donor = self._collision_alternative(children_refs)
                 drawn = self._collision_triangles(
@@ -1901,6 +1938,11 @@ class Assembler:
             report.cockpit_swaps.append(
                 f"{template.name}: {lod_swap['selected']} replaces "
                 + ", ".join(lod_swap["replaces"]))
+        if propeller_blur is not None:
+            extras["propellerBlur"] = propeller_blur
+            report.propeller_blurs.append(
+                f"{template.name}: {propeller_blur['static']} / "
+                f"{propeller_blur['blurred']} at {propeller_blur.get('comparisons')}")
         if is_camera:
             extras["cameraView"] = {"control": control or "vehicle"}
             report.cameras.append(f"[{control or 'vehicle'}] {template.name}")
