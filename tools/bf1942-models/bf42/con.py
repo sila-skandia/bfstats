@@ -468,6 +468,10 @@ class ObjectTemplate:
     # better source for a kit's class.
     kit_type: str | None = None
     kit_team: int | None = None
+    # `itemIndex` on a HandFireArms: the inventory slot the weapon occupies in
+    # the soldier's hands — the number key that selects it. A kit's primary is
+    # the one at 3; `kit.PRIMARY_ITEM_INDEX` has the census behind that.
+    item_index: int | None = None
     invisible: bool = False
     animated_texture_speed: tuple[float, float] | None = None
     # Parts flagged `hasMobilePhysics 1` are separate physics bodies: an
@@ -1127,6 +1131,11 @@ class ObjectLibrary:
                 elif cmd == "setkitteam":
                     try:
                         obj.kit_team = int(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "itemindex":
+                    try:
+                        obj.item_index = int(args.split()[0])
                     except (ValueError, IndexError):
                         pass
                 elif cmd == "setbonename":

@@ -3478,17 +3478,78 @@ const footEye = { x: 0, y: 0, z: 0 };
 //   - Crouch and prone play the standing aim: their 1P clip families exist
 //     in the data but are not yet baked into the fp.glb (§11 keeps the list).
 
-// Which weapon a flag's team hands out when `?weapon=` does not say. The
-// game's kits decide this per level; hardcoding the two definitive SMGs is a
-// stand-in until kits are wired into spawning.
-const TEAM_WEAPON = { 1: 'Mp40', 2: 'Thompson' };
-// The extracted first-person arms rigs, by the weapon welded inside them:
-// `<Soldier>__<Weapon>.fp.glb` under models/viewmodels (§11). A weapon
-// absent here — or a mod tree without the folder — draws its bare 3P glb.
-const VIEWMODEL_RIGS = {
-  Thompson: 'USSoldier__Thompson',
-  Mp40: 'GermanSoldier__MP40',
+// Which weapon the deploy screen's kit puts in hand is the game's own data,
+// read from two places neither of which is the level's scene: the level's
+// `Init.con` (`game.setTeamSkin` / `game.setKit <team> <slot> <kit>`) and the
+// kit's `Objects.con` (the `HandFireArms` it carries at `itemIndex 3`, the
+// slot the engine selects on spawn). `extract_loadouts.py` reads both through
+// the kit readers and writes them as `_shared/loadouts.json` beside the
+// levels; `kitPrimary` below looks the answer up by level, team and row.
+let loadouts = null;
+const loadoutsLoad = fetch(`${MAPS_BASE}/_shared/loadouts.json${bust()}`)
+  .then(r => (r.ok ? r.json() : null))
+  .then(data => { loadouts = data; return data; })
+  .catch(err => { console.warn('loadouts unavailable', err); return null; });
+// The stand-in for a maps tree published before `_shared/loadouts.json`
+// existed, or a mod not yet run through the extractor: vanilla's kit
+// primaries by the nation a side flies (`teamNation`), in the spawn screen's
+// row order. Read from the same `Objects/Items/<Nation>Kit/*/Objects.con`
+// files the extractor reads — not a guess, but frozen here, so the file wins
+// whenever it is present.
+const FALLBACK_PRIMARIES = {
+  us:   ['No4Sniper', 'Bar1918', 'Bazooka', 'Thompson', 'No4'],
+  brit: ['No4Sniper', 'Bar1918', 'Bazooka', 'Thompson', 'No4'],
+  rus:  ['No4Sniper', 'DP', 'Bazooka', 'Mp18', 'No4'],
+  ger:  ['K98Sniper', 'Sg44', 'Panzershreck', 'Mp40', 'K98'],
+  jp:   ['K98Sniper', 'Type99', 'Panzershreck', 'Mp18', 'Type5'],
 };
+// And the soldier those nations dress, for the arms rig, when the file is
+// not there to say which template the level actually names.
+const FALLBACK_SOLDIERS = {
+  us: 'USSoldier', brit: 'BritishSoldier', rus: 'RussianSoldier',
+  ger: 'GermanSoldier', jp: 'JapaneseSoldier',
+};
+// The extracted first-person arms rigs — `<Soldier>__<Weapon>.fp.glb` under
+// models/viewmodels (§11) — one per soldier and weapon the vanilla levels
+// pair, because the sleeves are the nation's camo and the hands are welded
+// to that weapon. Looked up by `viewmodelRigFor`; a pairing absent here, or
+// a mod tree without the folder, draws the bare 3P glb.
+const VIEWMODEL_RIGS = [
+  'USSoldier__Thompson', 'USSoldier__No4Sniper', 'USSoldier__Bar1918',
+  'USSoldier__Bazooka', 'USSoldier__No4', 'USSoldier__M1Garand',
+  'USMarineSoldier__No4Sniper', 'USMarineSoldier__Bar1918',
+  'USMarineSoldier__Bazooka', 'USMarineSoldier__Thompson',
+  'USMarineSoldier__M1Garand',
+  'BritishSoldier__No4Sniper', 'BritishSoldier__Bar1918',
+  'BritishSoldier__Bazooka', 'BritishSoldier__Thompson', 'BritishSoldier__No4',
+  'RussianSoldier__No4Sniper', 'RussianSoldier__DP', 'RussianSoldier__Bazooka',
+  'RussianSoldier__Mp18', 'RussianSoldier__No4',
+  'GermanSoldier__K98Sniper', 'GermanSoldier__Sg44',
+  'GermanSoldier__Panzershreck', 'GermanSoldier__MP40', 'GermanSoldier__K98',
+  'GermanDesertSoldier__K98Sniper', 'GermanDesertSoldier__Sg44',
+  'GermanDesertSoldier__Panzershreck', 'GermanDesertSoldier__Mp40',
+  'GermanDesertSoldier__K98',
+  'JapaneseSoldier__K98Sniper', 'JapaneseSoldier__Type99',
+  'JapaneseSoldier__Panzershreck', 'JapaneseSoldier__Mp18',
+  'JapaneseSoldier__Type5',
+];
+const viewmodelRigIndex = new Map(VIEWMODEL_RIGS.map(stem => [stem.toLowerCase(), stem]));
+
+/** The arms rig for `weapon` in `soldier`'s hands, or null for the bare glb.
+ *  Case-insensitive on both halves: the kit files spell `MP40` and `k98Sniper`
+ *  where the weapons' own `create` lines spell `Mp40` and `K98Sniper`, and
+ *  the rig files were named as the exporter was invoked. A weapon with rigs
+ *  only in other nations' sleeves borrows one — `?weapon=Thompson` on the
+ *  Axis side has always drawn the US rig, and sleeves of the wrong camo
+ *  beat no arms at all. */
+function viewmodelRigFor(weapon, soldier) {
+  if (!weapon) return null;
+  const exact = viewmodelRigIndex.get(`${soldier || ''}__${weapon}`.toLowerCase());
+  if (exact) return exact;
+  const suffix = `__${weapon}`.toLowerCase();
+  for (const [key, stem] of viewmodelRigIndex) if (key.endsWith(suffix)) return stem;
+  return null;
+}
 // The rig and everything in it render in their own pass over a cleared depth
 // buffer (frame(), below) so a wall pressed against the chest can never
 // truncate the barrel — the game's equivalent is drawing 1P parts in their
@@ -3580,8 +3641,58 @@ const ammoEl = document.getElementById('ammo');
 const aimOrigin = new THREE.Vector3();
 const aimDirection = new THREE.Vector3();
 
-function weaponTemplateFor(flag) {
-  return params.get('weapon') || TEAM_WEAPON[flag?.team] || 'Thompson';
+// The kit row's class, for finding a level's kit by class when its slot
+// numbering is not the vanilla one. `extract_kits.py` writes these labels
+// from the kit's `setType`; the row names are the page's.
+const KIT_CLASS = {
+  scout: 'Scout', assault: 'Assault', antitank: 'Anti-tank',
+  medic: 'Medic', engineer: 'Engineer',
+};
+
+/** What the chosen kit hands a soldier of `team` on this level: the kit the
+ *  level binds to that row (`game.setKit <team> <row> <kit>`), the weapon at
+ *  its `itemIndex 3`, and the soldier template the team wears. Every field
+ *  null where `_shared/loadouts.json` is absent or does not name the level;
+ *  `weaponTemplateFor` then falls back to the vanilla table by nation. */
+function kitLoadout(team, kitName = deployKit) {
+  const side = loadouts?.levels?.[currentDir]?.[team];
+  if (!side) return { kit: null, primary: null, soldier: null };
+  const slot = KITS.indexOf(kitName);
+  let kit = side.slots?.[String(slot)] || null;
+  if (!kit || !loadouts.kits?.[kit]) {
+    // A mod may file its classes in other rows; the class label is the
+    // engine's own `setType`, so match on that before giving up.
+    const wanted = KIT_CLASS[kitName];
+    kit = Object.values(side.slots || {})
+      .find(name => loadouts.kits?.[name]?.class === wanted) || kit;
+  }
+  return {
+    kit,
+    primary: loadouts.kits?.[kit]?.primary || null,
+    soldier: side.soldier || null,
+  };
+}
+
+/** The template a soldier of `flag`'s team spawns holding, with the kit the
+ *  deploy screen chose. `?weapon=` overrides everything, as it always has. */
+function weaponTemplateFor(flag, kitName = deployKit) {
+  const forced = params.get('weapon');
+  if (forced) return forced;
+  const team = flag?.team;
+  const loadout = kitLoadout(team, kitName);
+  if (loadout.primary) return loadout.primary;
+  const slot = Math.max(0, KITS.indexOf(kitName));
+  return FALLBACK_PRIMARIES[teamNation(team)]?.[slot]
+    || FALLBACK_PRIMARIES[team === 1 ? 'ger' : 'us'][slot];
+}
+
+/** The soldier template whose sleeves the arms rig should wear: the level's
+ *  `game.setTeamSkin`, or the nation's soldier when the file is absent. */
+function soldierTemplateFor(flag) {
+  const team = flag?.team;
+  return kitLoadout(team).soldier
+    || FALLBACK_SOLDIERS[teamNation(team)]
+    || (team === 1 ? 'GermanSoldier' : 'USSoldier');
 }
 
 /** Tear down the viewmodel, its gun group and the HUD it owns. */
@@ -3624,9 +3735,10 @@ function disposeHandWeapon() {
   }
 }
 
-/** Load the weapon into hand — the arms rig where one is extracted, the
- *  bare `name`.glb where not — hang it off the camera and index its gun. */
-async function loadHandWeapon(name) {
+/** Load the weapon into hand — the arms rig where one is extracted for
+ *  `soldier` holding it, the bare `name`.glb where not — hang it off the
+ *  camera and index its gun. */
+async function loadHandWeapon(name, soldier = null) {
   disposeHandWeapon();
   const token = weaponToken;
   let gltf = null;
@@ -3634,7 +3746,7 @@ async function loadHandWeapon(name) {
   // The arms first: §11's `<Soldier>__<Weapon>.fp.glb`, sleeves and hands
   // welded around the weapon with the six clip families baked in. A pairing
   // without one falls through to the bare weapon, which works as it did.
-  const rigFile = VIEWMODEL_RIGS[name];
+  const rigFile = viewmodelRigFor(name, soldier);
   if (rigFile) {
     try {
       gltf = await loader.loadAsync(
@@ -3745,6 +3857,8 @@ async function loadHandWeapon(name) {
   const magazine = data?.magazine || null;
   const hw = {
     name, data, rig,
+    soldier,               // whose sleeves were asked for
+    rigFile: fp ? rigFile : null,   // the arms rig that answered, if one did
     mixer, actions,        // the arms rig's state machine; both empty when bare
     clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras
     active: null,          // the clip currently owning the arms
@@ -3798,16 +3912,20 @@ async function loadHandWeapon(name) {
   return hw;
 }
 
-/** The right weapon for `flag`, loaded only if it is not already in hand. */
+/** The right weapon for `flag` and the chosen kit, loaded only if it is not
+ *  already in hand — in the right sleeves: a redeploy across the team line
+ *  with the same weapon still changes soldier, so the rig is compared too. */
 function ensureHandWeapon(flag) {
   const name = weaponTemplateFor(flag);
+  const who = soldierTemplateFor(flag);
   if (handWeapon?.name === name
+      && (handWeapon.rigFile || null) === (viewmodelRigFor(name, who) || null)
       && (!handWeapon.group || guns.groups.includes(handWeapon.group))) {
     // Same weapon, new life: the raise plays again on every spawn.
     playViewmodelClip(handWeapon, 'deploy', { restart: true });
     return;
   }
-  loadHandWeapon(name);
+  loadHandWeapon(name, who);
 }
 
 // How a gait names a locomotion clip. Walk and run are one baked clip at two
@@ -4800,8 +4918,10 @@ fullmapBox.addEventListener('click', () => {
 // left, the dimmed map with its spawn rings on the right, SUICIDE / SCORE
 // BOARD / RESUME underneath. Same canvas, same projection as the M map;
 // `.deploy` on #fullmap is the whole of the state, and `toggleFullMap(false)`
-// strips it on any close. The kit is cosmetic — the weapon in hand follows
-// the flag, as it always has — but the column is the game's, row for row.
+// strips it on any close. The column is the game's, row for row, and so is
+// what a row means: `deployKit` is read at spawn by `weaponTemplateFor`,
+// which resolves the row through the level's `game.setKit` binding to the
+// kit's primary weapon (`kitLoadout`, above).
 const deployChrome = document.getElementById('deploy-chrome');
 const fullmapFrame = fullmapBox.querySelector('.fm-map-frame');
 const deployTabs = [...fullmapBox.querySelectorAll('.fm-tab')];
@@ -5727,6 +5847,23 @@ if (params.has('shots')) {
       }));
     },
     get team() { return deployTeamId; },
+    // The kit row, and what pressing SPAWN with it would put in hand: the
+    // level's kit for that row, its primary, the soldier whose sleeves it
+    // gets — readable without spawning, so a check can assert the table
+    // before it waits on a glb.
+    get kit() { return deployKit; },
+    get loadout() {
+      const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
+      const flag = flags[chosen] || { team: deployTeamId };
+      return {
+        kit: deployKit,
+        team: flag.team,
+        ...kitLoadout(flag.team),
+        weapon: weaponTemplateFor(flag),
+        rig: viewmodelRigFor(weaponTemplateFor(flag), soldierTemplateFor(flag)),
+        fromFile: !!loadouts?.levels?.[currentDir],
+      };
+    },
     select(name) {
       const index = typeof name === 'number' ? name
         : flags.findIndex(flag => flag.name === name);
@@ -5735,6 +5872,13 @@ if (params.has('shots')) {
     setTeam(team) {
       if (!deployActive() || (team !== 1 && team !== 2)) return false;
       setDeployTeam(team);
+      return true;
+    },
+    // The click on a kit row, by the row's name (`scout` .. `engineer`).
+    setKit(name) {
+      if (!deployActive() || !KITS.includes(name)) return false;
+      deployKit = name;
+      paintDeployChrome();
       return true;
     },
     spawn() { return deploySpawn(); },
@@ -5775,8 +5919,13 @@ if (params.has('shots')) {
   // lock, which headless Chromium does not reliably grant.
   // The live rig object, for bisecting a rendering fault from the console.
   window.__rig = () => handWeapon?.rig;
+  // The kit table, once fetched, so a check can await it before it reads
+  // `__deploy.loadout` and know the answer came from the file.
+  window.__loadouts = () => loadoutsLoad;
   window.__handWeapon = () => handWeapon && ({
     name: handWeapon.name,
+    soldier: handWeapon.soldier,
+    rig: handWeapon.rigFile,
     hasGroup: !!handWeapon.group,
     // The arms rig, when the weapon has one: which clip owns the arms, so a
     // headless check can walk, fire and reload and read the machine back.
