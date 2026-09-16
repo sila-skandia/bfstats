@@ -25,6 +25,18 @@ Two artifacts, both one-time and shared by every level:
 
 The sprite list itself comes from `features/authentic-spawn-map/README.md`
 section 2, which was verified against the archives on this machine.
+
+The soldier and vehicle in-game HUD pack (health, ammo, heat, reload, medic,
+stamina and rocket-pack bars, the ammo panels, the turret-orientation icon,
+the weapon bar and hit indicator, the Soldier/Ammo/Weapon/Vehicle icon sets,
+and the supply-proximity icon area) is read the same way and lands in the
+same `hud.json`, for `extract_hud_layout.py` (`hud-layout.json`) to draw with.
+Every manifest entry also carries `ref`: the name the data and the engine
+actually spell for it (Title Case, `.tga`) — confirmed against the live
+`menu/InGame` graph for the bars and panels below, reconstructed by the same
+convention for the bulk Soldier/Ammo/Weapon/Vehicle icon sets. The archive
+file is still `.dds` (or, for two Vehicle/ entries, already `.tga`); `source`
+keeps the real entry either way.
 """
 
 from __future__ import annotations
@@ -103,7 +115,85 @@ SPRITES: list[str] = [
       for k in ("scout", "assault", "at", "medic", "engineer")],
     "Texture/icon_ticketbar",
     *[f"Texture/flag_ticket_{n}" for n in NATIONS],
+    # --- in-game HUD: soldier and vehicle health, ammo, heat, reload, medic,
+    # stamina and rocket-pack bars; the two ammo-panel backdrops; the turret
+    # orientation icon; the weapon bar (see extract_hud_layout.py). Casing
+    # matches what `menu/InGame` itself spells (e.g.
+    # `Ingame/Healthbar_empty_scout_64x64.tga`); the archive's own listing is
+    # lower-case throughout, and lookup below is case-insensitive either way.
+    *[f"Texture/Ingame/Healthbar_empty_{k}_64x64" for k in ("assault", "at", "engineer", "medic", "scout")],
+    *[f"Texture/Ingame/Healthbar_full_{k}_64x64" for k in ("assault", "at", "engineer", "medic", "scout")],
+    "Texture/Ingame/Healthbar_empty_32x64",
+    "Texture/Ingame/Vehicle_healthbar_empty_32x64",
+    "Texture/Ingame/Vehicle_healthbar_full_32x64",
+    "Texture/Ingame/Ammobar_empty_32x64",
+    "Texture/Ingame/Ammobar_full_32x64",
+    "Texture/Ingame/Ammobar_soldier_panel_64x64",
+    "Texture/Ingame/Ammobar_vehicle_panel_64x64",
+    *[f"Texture/Ingame/Magbar_{k}_empty_32x64" for k in ("Bar", "Pistol", "Rifle", "SG44", "SMG")],
+    *[f"Texture/Ingame/Magbar_{k}_full_32x64" for k in ("Bar", "Pistol", "Rifle", "SG44", "SMG")],
+    "Texture/Ingame/Heatbar_empty_32x64",
+    "Texture/Ingame/Heatbar_full_32x64",
+    "Texture/Ingame/ReloadTimebar_empty_32x64",
+    "Texture/Ingame/ReloadTimebar_full_32x64",
+    "Texture/Ingame/Medicbar_empty_32x64",
+    "Texture/Ingame/Medicbar_full_32x64",
+    "Texture/Ingame/Staminabar_empty_64x32",
+    "Texture/Ingame/Staminabar_full_64x32",
+    "Texture/Ingame/Rocketpackbar_full_32x64",
+    "Texture/Ingame/Icon_tank_turn_back_64x64",
+    "Texture/Ingame/Icon_tank_turn_body_32x32",
+    "Texture/Ingame/Icon_tank_turn_pipe_16x32",
+    "Texture/Ingame/Icon_server_msg_16x16",
+    # The root copies — `menu/InGame` names both with no directory at all
+    # (`Picture='ingame_weaponbar_512x64.tga'`), which resolves to
+    # `menu/Texture/`, not the near-identical `menu/Texture/Ingame/` copy of
+    # the weapon bar (a genuine duplicate file; kept out to avoid a
+    # basename collision with this one).
+    "Texture/ingame_weaponbar_512x64",
+    "Texture/ingame_hit_indicator_64x128",
+    # The supply/proximity icon area of `menu/InGame` (`ShowFlagIcon`,
+    # `ShowNonTakeableFlagIcon`, `ShowHealIcon`, `ShowRepairIcon`,
+    # `ShowReloadIcon`, `ShowMineIcon`, `ShowParachute`, and the CTF
+    # team-flag icon) — all live directly under `menu/Texture/`, no
+    # subfolder. `icon_flag_us`/`icon_flag_ger` (the CTF flag defaults) are
+    # the same files the team-header flags above already pull in.
+    "Texture/Icon_flag",
+    "Texture/Icon_non_takeable_flag",
+    "Texture/Icon_heal",
+    "Texture/Icon_repair",
+    "Texture/Icon_reload",
+    "Texture/Icon_mine",
+    "Texture/parachute",
+    "Texture/Icon_CTF",
+    # The crosshair (`CrossHair/*`): hud-layout.json's crosshair group names
+    # these defaults, so the pack needs them too or the references dangle.
+    "Texture/hk",
+    "Texture/sniper",
+    "Texture/scout_ring_128x128",
+    # The vehicle-seats panel's backdrop (`Vehicle/VehiclePlayers/*`).
+    "Texture/ToolTip/vehicle_position_256x128",
 ]
+
+# Whole directories the soldier and vehicle HUD draw from, taken
+# unconditionally rather than as a hand-picked subset that could drift from
+# the archive: every stance icon and every ammo/weapon/vehicle HUD icon the
+# base game ships (15/30/48/21 entries respectively, checked on this
+# machine).
+SPRITE_DIR_GLOBS: list[str] = ["Texture/Soldier", "Texture/Ammo", "Texture/Weapon", "Texture/Vehicle"]
+
+# `Ammo/Icon_demokit.dds` (the HUD ammo-panel icon a weapon's `setAmmoIcon`
+# can point at) and `Weapon/Icon_demokit.dds` (the weapon-select bar icon a
+# kit's `addWeaponIcon` can point at) are two different images (2176 vs 4224
+# bytes, different sha1) that happen to share a basename — the one collision
+# among the ~260 sprites this script extracts, found by hashing every file
+# under the four directories above. Every other entry is keyed by lowercased
+# basename alone, matching the sprites above; these two are the sole
+# exception, qualified by their source directory so neither is lost.
+SPRITE_DIR_RENAME: dict[str, str] = {
+    "menu/texture/ammo/icon_demokit.dds": "ammo_icon_demokit",
+    "menu/texture/weapon/icon_demokit.dds": "weapon_icon_demokit",
+}
 
 # `flag(us|ge|uk|Jp|so|can)_m1` in a control point's `flagMesh` names the flag
 # cloth the level hoists there; the map sprite set uses different codes.
@@ -111,6 +201,23 @@ SPRITES: list[str] = [
 FLAG_MESH_NATION = {
     "us": "us", "ge": "ger", "uk": "brit", "jp": "jp", "so": "rus", "can": "can",
 }
+
+
+def sprite_ref(stem: str) -> str:
+    """The name `menu/InGame` and the `.con` data actually spell for a sprite
+    named by stem in `SPRITES` — `Texture/` dropped (both name textures
+    relative to `menu/Texture/`) and `.tga` restored."""
+    return stem.removeprefix("Texture/") + ".tga"
+
+
+def sprite_ref_from_entry(entry: str) -> str:
+    """The same, for a sprite pulled in wholesale from one of
+    `SPRITE_DIR_GLOBS` — real archive casing kept, since these were not
+    individually cross-checked against the graph or the `.con` data the way
+    the sprites named in `SPRITES` were."""
+    prefix = "menu/texture/"
+    rel = entry[len(prefix):] if entry.lower().startswith(prefix) else entry
+    return rel.rsplit(".", 1)[0] + ".tga"
 
 
 def extract_sprites(menu_rfa: Path, out_dir: Path, force: bool) -> dict:
@@ -121,17 +228,18 @@ def extract_sprites(menu_rfa: Path, out_dir: Path, force: bool) -> dict:
         # Casing varies and the declared extension cannot be trusted, so
         # resolve both against the real entry table.
         index = {e.lower(): e for e in arch.entries}
-        missing: list[str] = []
-        for stem in SPRITES:
-            entry = None
-            for ext in (".dds", ".tga"):
-                entry = index.get(f"menu/{stem}{ext}".lower())
-                if entry:
-                    break
-            if not entry:
-                missing.append(stem)
-                continue
-            name = Path(stem).name.lower()
+
+        def decode_and_write(name: str, entry: str, ref: str) -> None:
+            existing = manifest.get(name)
+            if existing is not None and existing["source"] != entry:
+                # A silent basename collision would clobber one sprite with
+                # another under the same key; SPRITE_DIR_RENAME is the only
+                # place that is expected to happen, and it never reuses a
+                # name — so reaching this for any name means a new,
+                # unhandled collision has shown up (a mod, or a future
+                # archive update) and needs a rename of its own.
+                sys.exit(f"sprite name collision: {name!r} is both "
+                         f"{existing['source']!r} and {entry!r}")
             dest = out_dir / f"{name}.png"
             raw = arch.read(entry)
             if entry.lower().endswith(".dds"):
@@ -146,7 +254,29 @@ def extract_sprites(menu_rfa: Path, out_dir: Path, force: bool) -> dict:
                 "file": f"{name}.png",
                 "size": [width, height],
                 "source": entry,
+                "ref": ref,
             }
+
+        missing: list[str] = []
+        for stem in SPRITES:
+            entry = None
+            for ext in (".dds", ".tga"):
+                entry = index.get(f"menu/{stem}{ext}".lower())
+                if entry:
+                    break
+            if not entry:
+                missing.append(stem)
+                continue
+            decode_and_write(Path(stem).name.lower(), entry, sprite_ref(stem))
+
+        for prefix in SPRITE_DIR_GLOBS:
+            low_prefix = f"menu/{prefix}/".lower()
+            for entry in arch.entries:
+                if not entry.lower().startswith(low_prefix):
+                    continue
+                name = SPRITE_DIR_RENAME.get(entry.lower(), Path(entry).stem.lower())
+                decode_and_write(name, entry, sprite_ref_from_entry(entry))
+
         if missing:
             print(f"warning: {len(missing)} sprites not in {menu_rfa.name}: "
                   f"{', '.join(missing)}", file=sys.stderr)
