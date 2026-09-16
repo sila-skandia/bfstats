@@ -7261,6 +7261,15 @@ function frame(dt) {
   // itself no longer calls this (see its own comment) — every occupied seat,
   // driven or manned, gets one authoritative feed here regardless of which
   // branch above ran this frame.
+  //
+  // Cost (rule 5, features/mesh-viewer-performance/README.md): this also now
+  // runs every frame while piloting/driving, where before only a seat switch
+  // or entry fed the vehicle group at all. `feedVehicleHud()` is a fixed
+  // handful of property reads and `hud.vars` writes -- no scene traversal,
+  // and no allocation beyond one throwaway `[]` on the non-manned branch --
+  // so the added calls just rewrite the same `Vehicle/*` values every tick
+  // until a future track wires live vehicle damage; the painter's own rule 7
+  // still gates the actual repaint on whether any of it changed.
   if (occupancy) feedVehicleHud();
   effects.firstPerson = guns.firstPerson;
   effects.advance(dt);
