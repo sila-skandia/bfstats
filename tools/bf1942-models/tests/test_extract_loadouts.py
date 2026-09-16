@@ -122,6 +122,76 @@ game.setKit 2 2 Us_AT
         self.assertEqual({"soldier": "GermanSoldier", "slots": {}},
                          manifest["levels"]["berlin"]["1"])
 
+    def test_kit_carries_healthbar_icons_weapon_icons_and_soldier_hitpoints(self) -> None:
+        # Objects/Items/JapKit/AntiTank/Objects.con and
+        # Objects/Soldiers/JapaneseSoldier/Objects.con, trimmed to the words
+        # this round adds.
+        library = ObjectLibrary()
+        library.add_con("Objects/Items/JapKit/AntiTank/Objects.con", """
+ObjectTemplate.create Kit Jap_AT
+ObjectTemplate.setType AT
+ObjectTemplate.setKitTeam 1
+ObjectTemplate.setHealthBarIcon "Ingame/Healthbar_empty_at_64x64.tga"
+ObjectTemplate.setHealthBarFullIcon "Ingame/Healthbar_full_at_64x64.tga"
+ObjectTemplate.setKitIcon 1 "kits/Icon_antitank_jap_selected.tga"
+ObjectTemplate.addTemplate Panzershreck
+ObjectTemplate.addTemplate WalterP38
+ObjectTemplate.addTemplate KnifeAxis
+ObjectTemplate.addWeaponIcon "Weapon/Icon_panzershreck.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_walterp38.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_knifeaxis.tga"
+""")
+        library.add_con("Objects/HandWeapons/Panzershreck/Objects.con", """
+ObjectTemplate.create HandFireArms Panzershreck
+ObjectTemplate.itemIndex 3
+""")
+        library.add_con("Objects/HandWeapons/WalterP38/Objects.con", """
+ObjectTemplate.create HandFireArms WalterP38
+ObjectTemplate.itemIndex 2
+""")
+        library.add_con("Objects/HandWeapons/KnifeAxis/Objects.con", """
+ObjectTemplate.create HandFireArms KnifeAxis
+ObjectTemplate.itemIndex 1
+""")
+        library.add_con("Objects/Soldiers/JapaneseSoldier/Objects.con", """
+ObjectTemplate.create BFSoldier JapaneseSoldier
+ObjectTemplate.hitpoints 30
+ObjectTemplate.maxhitpoints 30
+""")
+        kits = collect(library)
+        manifest = build_manifest(library, kits, {
+            "Wake": parse_level_kits(
+                "game.setTeamSkin 1 JapaneseSoldier\n"
+                "game.setKit 1 2 Jap_AT\n")},
+            "bf1942")
+
+        row = manifest["kits"]["Jap_AT"]
+        self.assertEqual("Ingame/Healthbar_empty_at_64x64.tga", row["healthBarIcon"])
+        self.assertEqual("Ingame/Healthbar_full_at_64x64.tga", row["healthBarFullIcon"])
+        self.assertEqual({"index": 1, "icon": "kits/Icon_antitank_jap_selected.tga"},
+                         row["kitIcon"])
+        self.assertEqual(
+            ["Weapon/Icon_panzershreck.tga", "Weapon/Icon_walterp38.tga",
+             "Weapon/Icon_knifeaxis.tga"],
+            row["weaponIcons"])
+        self.assertEqual(30.0, row["hitpoints"])
+        self.assertEqual(30.0, row["maxHitpoints"])
+        # Untouched by this round.
+        self.assertEqual("Japanese", row["nation"])
+        self.assertEqual("Panzershreck", row["primary"])
+
+    def test_a_kit_with_none_of_the_new_hud_words_reports_them_as_absent(self) -> None:
+        # US_Medic in the shared fixture declares none of setHealthBarIcon /
+        # setKitIcon / addWeaponIcon, and no level binds it to a soldier here.
+        manifest = self.manifest("game.setKit 2 3 US_Medic\n")
+        row = manifest["kits"]["US_Medic"]
+
+        self.assertIsNone(row["healthBarIcon"])
+        self.assertIsNone(row["kitIcon"])
+        self.assertEqual([], row["weaponIcons"])
+        self.assertIsNone(row["hitpoints"])
+        self.assertIsNone(row["maxHitpoints"])
+
 
 if __name__ == "__main__":
     unittest.main()
