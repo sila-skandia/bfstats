@@ -3858,10 +3858,11 @@ function switchSeat(position) {
 const HUD_VEHICLE_VARS = [
   'Vehicle/ShowVehicleIcon', 'Vehicle/VehicleIcon',
   'Vehicle/VehicleHitPoints', 'Vehicle/VehicleMaxHitPoints',
+  'Ammo/NumberOfWeaponIcons',
   'Ammo/PrimaryAmmoIcon', 'Ammo/PrimaryAmmoBar',
-  'Ammo/PrimaryAmmo', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
+  'Ammo/PrimaryAmmo', 'Ammo/PrimaryAmmoText', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
   'Ammo/SecondaryAmmoIcon', 'Ammo/SecondaryAmmoBar',
-  'Ammo/SecondaryAmmo', 'Ammo/MaxSecondaryAmmo',
+  'Ammo/SecondaryAmmo', 'Ammo/SecondaryAmmoText', 'Ammo/MaxSecondaryAmmo',
   'Ammo/ReloadTime', 'Ammo/ReloadTimeSecondary', 'Overheat/OverHeat',
 ];
 
@@ -3933,11 +3934,24 @@ function feedVehicleHud() {
   const nodes = mannedActive() ? occupancy.activeFireArmsNodes() : [];
   const primary = nodes[0] ? fireStateFor(nodes[0]) : null;
   const secondary = nodes[1] ? fireStateFor(nodes[1]) : null;
+  // `hud-layout.json`'s vehicle-skin ammo panel prints `Ammo/{Primary,Secondary}
+  // AmmoText` (registered by a DIFFERENT client function, R2-12, than the
+  // `PrimaryAmmo`/`MaxPrimaryAmmo`/`PrimaryMag` trio) -- the soldier-skin
+  // panel's own text binds `Ammo/PrimaryAmmo` directly instead (R1-20), so this
+  // second name is unique to the vehicle layout and was missing entirely: a
+  // seated ammo panel (Defgun, Sherman) drew its icon and bar but never its
+  // number. Neither verify-r2.md nor hud-layout.json's own notes say whether
+  // the real engine ever lets `*AmmoText` diverge from the live count; mirrored
+  // here rather than left unfed, since an unfed one is a confirmed-wrong "no
+  // number ever" and a mirrored one is at worst a guess about a case nothing
+  // surveyed exercises.
   setHudVar('Ammo/PrimaryAmmo', primary && !primary.unlimited ? primary.ammo : null);
+  setHudVar('Ammo/PrimaryAmmoText', primary && !primary.unlimited ? primary.ammo : null);
   setHudVar('Ammo/MaxPrimaryAmmo', primary ? primary.stats.magSize : null);
   setHudVar('Ammo/PrimaryMag',
     primary ? (primary.magsLeft === Infinity ? -1 : primary.magsLeft) : null);
   setHudVar('Ammo/SecondaryAmmo', secondary && !secondary.unlimited ? secondary.ammo : null);
+  setHudVar('Ammo/SecondaryAmmoText', secondary && !secondary.unlimited ? secondary.ammo : null);
   setHudVar('Ammo/MaxSecondaryAmmo', secondary ? secondary.stats.magSize : null);
   // `hud-layout.json` binds exactly one `Overheat/OverHeat` (no "...Secondary"
   // variant) shared by both panels' heat-bar copy — R2-30's own Sherman is the
@@ -7324,13 +7338,33 @@ function frame(dt) {
   // Last, over everything: feed this frame's soldier-side variables, then
   // repaint only if paint() finds one of them (or the stage size) actually
   // changed since the call before (features/mesh-viewer-performance, rule 7).
-  // `stageWidth`/`stageHeight` are 0 under `__renderOnce` (the hidden
-  // `?shots` tab reports a 0x0 window, same reason `updateCrosshair` falls
-  // back to a literal 800) — recovered here from the renderer's own backing
-  // store instead of a fixed guess, so the HUD scales to match whatever size
-  // a headless check actually asked for.
-  const hudW = stageWidth || renderer.domElement.width / renderer.getPixelRatio();
-  const hudH = stageHeight || renderer.domElement.height / renderer.getPixelRatio();
+  // FIXED (round-3 HUD-parity audit): this used to read `stageWidth ||
+  // renderer.domElement...`, on the theory that `stageWidth`/`stageHeight`
+  // are 0 under `__renderOnce`. Measured live under a real `?shots` Playwright
+  // page (`viewport 1280x800`) and they are NOT 0 — `resize()` runs once,
+  // synchronously, at load (`resize();` right after `addEventListener` wires
+  // it up, `map.html` ~1689), before any frame ever ticks, and stamps
+  // `stageWidth`/`stageHeight` with the page's own `stage.clientWidth/Height`
+  // at that moment (1280x724 in that measurement — the nav bar's own row
+  // costs the stage 76px of height) and never again once `__renderOnce`
+  // starts forcing a *different* renderer size for the screenshot itself.
+  // The `||` therefore always took the STALE pre-`__renderOnce` figure, so
+  // the HUD painted for a stage 76px shorter than the 3D frame actually
+  // rendered at — invisible in a live browser (`resize()` keeps the two in
+  // lockstep there) but a real mismatch in every headless capture this
+  // project's own recipe (BRIEFING2.md, `__renderOnce(1600,1000)` or any
+  // other explicit size) produces, this track's own `Vehicle/VehicleIcon`
+  // capture included: the sprite loaded and painted (confirmed directly —
+  // `hud-canvas` alone reads alpha 255 over its own rect), just 76 CSS px
+  // higher up the merged frame than a checker compositing the two canvases
+  // 1:1 would look. `resize()` itself always keeps the renderer's own
+  // backing store equal to `stageWidth/Height` (it is the one call site that
+  // sets both, together, from the same `stage.client*` read) — so reading
+  // the renderer directly, unconditionally, is exactly the on-screen figure
+  // in ordinary play and, unlike the old fallback, also the correct one
+  // under `__renderOnce`, which touches only the renderer's own size.
+  const hudW = renderer.domElement.width / renderer.getPixelRatio();
+  const hudH = renderer.domElement.height / renderer.getPixelRatio();
   updateSoldierHud();
   gameHud.paint(hudW, hudH);
 }
