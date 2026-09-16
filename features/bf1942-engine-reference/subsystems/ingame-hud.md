@@ -162,11 +162,14 @@ territory, not this doc's.
 `0x004c4ef0`: `None, AmmoBarOnly, AmmoBarHeatBar, AmmoBarReloadBar,
 HeatBarOnly, ReloadBarOnly, IconOnly, <anything else>`. The bare `.con`
 spelling `ABAmmoBar` (no suffix — 520 uses across installed mods) silently
-falls through to the same default as a typo: 7, icon-only. The count bar's
+falls through to the same numeric default as a typo: **7** — distinct from
+the *named* `IconOnly` (6), one slot earlier in the enum. The count bar's
 own visibility test is not symmetric between the panel's two layouts: the
 two-icon copy hides it for values `{0,4,5}`, the single-icon copy (and the
 secondary weapon's own copy) hides it for `{0,4,5,6}` — read directly out of
 both sites in the raw `menu/InGame` dump, not inferred from behaviour.
+Neither exclusion set contains 7, so this fallback value does **not** read
+as "icon-only" in either layout — do not conflate it with `IconOnly`.
 
 **Crosshair enum and the periscope gate (VHUD-5).**
 `CrossHair/CrossHairType` (`operator>>` `0x004c5110`): `None=0, Icon=1,
@@ -223,7 +226,7 @@ switching seats within one vehicle never changes the displayed HP (see also
   `0x00a5f1a8` singleton owns `AmmoHud`.
 - **VHUD-2**: `BfOccupiedVehicleData`'s live per-seat state selector — the
   table is read, the code that indexes into it per seat is not.
-- **VHUD-3/VHUD-5** (from the R2 verifier, not yet its own ledger row):
+- **From the R2 verifier, not yet promoted to their own ledger rows**:
   `IconLookRotation`'s writer and unit (pushed value confirmed real, the
   writer is not); `Overheat/OverHeat`'s own registration function;
   `UnlimitedPrimaryAmmo`/`UnlimitedSecondaryAmmo`'s source (no match under

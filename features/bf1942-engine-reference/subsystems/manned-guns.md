@@ -105,8 +105,8 @@ Vanilla's magazine/reload/heat vocabulary on vehicle `FireArms`: `magSize
 `MG42_unlimited` — inherited by every `Stationary_Browning`/`MG42` via
 `addTemplate` (`Mg42_Air` ships the same words, commented out). Client
 storage: `heatAddWhenFire → +0x4fc` (a plain float), `coolDownPerSec →
-+0x500` (stored **per-tick** — multiplied by `g_simulationFps` = 30 on
-write, divided by 30 on read), `timeDelayOnOverHeat → +0x530` (plain float,
++0x500` (stored **per-tick** — divided by `g_simulationFps` = 30 on
+write, multiplied back by 30 on read), `timeDelayOnOverHeat → +0x530` (plain float,
 seconds).
 
 **Fire is refused by a longer, and differently-ordered, gate than "reload
@@ -156,6 +156,6 @@ is what closes that gap.
   `handlePlayerInput`/`calculateAndClipAngle`/`setState`, or for
   `CameraTemplate`'s constructor — everything in §2–§4 is lnxded-only so
   far.
-- [ingame-hud.md](ingame-hud.md) VHUD-3/VHUD-5: `IconLookRotation`'s writer
+- [ingame-hud.md](ingame-hud.md)'s open items: `IconLookRotation`'s writer
   and unit for the turret-dial HUD icon feed off this subsystem's rotation
   state but were not traced from this side either.
