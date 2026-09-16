@@ -586,3 +586,755 @@ export class GroundVehicle extends Vehicle {
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }
 }
+
+// --- tank and half-track differential steering ------------------------------
+//
+// `verify-r7.md` (TANK-1..17, all confirmed or corrected by a second reader
+// against the disassembly): a `c_ETTank` Engine has no vehicle-type-specific
+// code path anywhere. Differential steering is a side-effect of ordinary,
+// type-agnostic wheel code — any `c_PGFEngineGrip` wheel's commanded spin is
+//
+//   getCurrentRatio() * engine.getCurrentDifferentialRPM(side)
+//
+// reading the same `roll` (throttle) / `yaw` (steer) axes any Engine exposes.
+// A car's Engine simply never binds `setInputToYaw`, so every one of its
+// wheels passes `side == 0` and the formula degenerates to plain uniform
+// throttle — which is why `GroundVehicle` above never needed any of this.
+//
+// `TrackedVehicle` cannot simply `extends GroundVehicle`: that class's
+// per-tick work lives in true (`#`-private) methods, and JavaScript does not
+// let a subclass reach or override a private method of its parent — so this
+// stands beside `GroundVehicle` as its own `Vehicle` subclass, matching its
+// constructor and public interface exactly (a page can `new TrackedVehicle(
+// node, parent, options)` in `GroundVehicle`'s place) while sharing the
+// module's constants and the `Wheel` bookkeeping class.
+//
+// THE CORRECTION THIS TRACK EXISTS TO CARRY: `getCurrentRatio()` samples a
+// full 101-entry array (`GEAR_RATIO_CURVE` below), not five control points on
+// a spline. verify-r7.md's researcher read it as the latter and got the
+// M3A1 wrong; the verifier decompiled `EngineTemplate`'s constructor directly
+// and found every slot but five defaults to 1.0. `idx = trunc(gear /
+// numberOfGears * 100)` with `gear` permanently 1 (seeded once, never written
+// again by any code path found in either binary — TANK-7), so only
+// `numberOfGears` of 1 or 5 ever land on an authored index; every other
+// integer count reduces the whole curve lookup to exactly `3.5 *
+// differential`. Sherman and Willy (5 gears) land on index 20 — an authored
+// point — and get 4.0 and 7.0; the M3A1 (4 gears) lands on index 25, nowhere
+// near one, and gets 17.5, not the ~5.5 a smooth interpolation between the
+// *named* points would suggest.
+//
+// WHAT IS PROVISIONAL HERE, same disclaimer `GroundVehicle` carries for its
+// own tyre model and worth repeating because this one goes further: the
+// suspension (spring/damper per wheel, vertical rays, semi-implicit Euler)
+// is `GroundVehicle`'s own reconstruction, copied rather than shared for the
+// private-method reason above. What is genuinely new is how a driven wheel's
+// *longitudinal* force is found — no retail disassembly reads a tracked
+// vehicle's Coulomb friction model, and `verify-r7.md`'s own viewer recipe
+// says as much ("exactly as speculative as Willy's own tyre model — the real
+// per-wheel force law is still open", citing PHY-2/PHY-4). What is BYTE-EXACT
+// and must not be diluted by that provisionality is `differentialRPM` (TANK-10)
+// and `engineRatio` (TANK-3/6/7/8) themselves — every approximation below is
+// built out from those two, never around them.
+
+/** `c_PGFEngineDummyGrip`: an idler or return-roller road wheel — present for
+ * the tread to ride on, not for the drivetrain. TANK-6/14 read it as
+ * spin-only; the Wake Sherman and M3A1 extras confirm it byte for byte
+ * rather than merely inferring it from the grip name — every dummy-grip
+ * `Spring` node in both ships `setStrength 0`/`setDamping 0`, so it already
+ * costs the suspension solve nothing on its own, without this file having to
+ * special-case it there. */
+const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
+
+/** `PhysicsEngine::getCurrentRatio`, `0x0057bd90`: `ratio = 3.5 *
+ * setDifferential / curve[idx]`. Declared again here (rather than imported)
+ * because `flight.js` keeps its own copy private, the same way that file's
+ * own gravity constant is "kept local... until physics.js... grows a shared
+ * constants module". */
+const ENGINE_RATIO_SCALE = 3.5;
+
+/** `PhysicsEngine`'s own default when a `.con` file never calls
+ * `setNoPropellerEffectAtSpeed` — TANK-5, confirmed at `EngineTemplate::
+ * makeScript`'s `+0x5cc`. Sherman and M3A1 both leave it at this default
+ * (TANK-4); a mod's tank that overrides it is read off the node instead, see
+ * `collectChassis` below. */
+const FADE_SPEED_DEFAULT = 100.0;
+
+/**
+ * The gear-ratio curve `EngineTemplate`'s constructor (`0x005715d0`) actually
+ * lays down: 101 slots, all 1.0 except the five `EngineTemplate` writes by
+ * hand (TANK-3/6, byte-verified immediates). `flight.js`'s own `GEAR_RATIO =
+ * 0.94` is the special case of this same table at `numberOfGears = 1` (no
+ * aircraft ever declares a gearbox, so its index is always exactly 100); a
+ * vehicle with a real gearbox needs the whole table, because the "smooth
+ * five-point spline" a curve drawn through just the named points suggests is
+ * wrong for any `numberOfGears` that is not exactly 1 or 5 (the M3A1 worked
+ * example in `engineRatio` below).
+ */
+const GEAR_RATIO_CURVE = new Array(101).fill(1.0);
+GEAR_RATIO_CURVE[20] = 3.5;
+GEAR_RATIO_CURVE[40] = 2.2;
+GEAR_RATIO_CURVE[60] = 1.5;
+GEAR_RATIO_CURVE[80] = 1.1;
+GEAR_RATIO_CURVE[100] = 0.94;
+
+/**
+ * `PhysicsEngine::getCurrentRatio()`, exactly (TANK-3/6/7, corrected).
+ *
+ * `gear` is folded in as the literal 1 it is seeded to and never written
+ * again anywhere in either binary (TANK-7) — no vehicle this corpus has read
+ * ever shifts it, tank or otherwise, so it is not threaded through as a
+ * parameter. The division is done in floating point and truncated exactly
+ * the way the client's own `_ftol` helper does (`0x00804af0`, TANK-7's
+ * correction from an earlier "round" reading), then linearly interpolated
+ * against the next slot up — which only ever matters, for an integer
+ * `numberOfGears`, when the division lands exactly on a multiple of 20 (no
+ * interpolation needed, the fractional part is zero) or somewhere the curve
+ * is flat at 1.0 on both sides anyway. Both cases the byte-exact worked
+ * examples below hit.
+ *
+ * Worked examples verify-r7.md hand-checked against the corrected array
+ * (TANK-8): Sherman (`differential 4`, `numberOfGears 5`) and Willy
+ * (`differential 7`, `numberOfGears 5`) both land on index 20 — an authored
+ * control point — giving 3.5*4/3.5 = **4.0** and 3.5*7/3.5 = **7.0**. The
+ * M3A1 (`differential 5`, `numberOfGears 4`) lands on index 25 — not a
+ * control point, not adjacent to one — giving 3.5*5/1.0 = **17.5**, not the
+ * ~5.5 a spline through the five named points would give. The only gear
+ * counts that ever touch the curve's authored shape at all are 1 and 5;
+ * every other integer count reduces to exactly `3.5 * differential`.
+ *
+ * @param {number} differential `setDifferential`
+ * @param {number} numberOfGears `setNumberOfGears`, default 1
+ * @returns {number} the fixed drivetrain ratio — compute once, the gearbox
+ *   never shifts
+ */
+export function engineRatio(differential, numberOfGears) {
+  const gears = numberOfGears > 0 ? numberOfGears : 1;
+  const t = Math.max(0, Math.min(100, (1 / gears) * 100));
+  const idx = Math.min(100, Math.trunc(t));
+  const frac = t - idx;
+  const lo = GEAR_RATIO_CURVE[idx];
+  const hi = GEAR_RATIO_CURVE[Math.min(100, idx + 1)];
+  const curve = lo + (hi - lo) * frac;
+  return (ENGINE_RATIO_SCALE * differential) / curve;
+}
+
+/**
+ * `PhysicsEngine::getCurrentDifferentialRPM(float side) const`, byte-exact
+ * (TANK-10, independently re-hand-traced flag by flag against the raw
+ * disassembly — the exact class of x87 trap that has bitten this corpus 11
+ * of its last 13 rounds, and it held with no sign errors found). `side` is a
+ * pure sign discriminator, not a magnitude: 0 for a wheel with no lateral
+ * offset (a car's, or one authored dead on the centreline), positive for the
+ * wheel on the vehicle's own +X (starboard) side, negative for -X.
+ *
+ * At `throttle == 0` both non-zero branches are exactly zero regardless of
+ * `yaw` (TANK-17: a tank cannot pivot from a dead stop on the stick alone) —
+ * a direct algebraic consequence of every branch multiplying by `throttle`,
+ * not a separate case here.
+ *
+ * @param {number} throttle `c_PIThrottle`, -1..1, signed (reverse is
+ *   negative throttle, not a separate gear)
+ * @param {number} yaw `c_PIYaw`, -1..1
+ * @param {number} side sign of the wheel's local X in the vehicle frame
+ */
+export function differentialRPM(throttle, yaw, side) {
+  if (side === 0) return throttle;
+  const factor = side > 0 ? 1 - 1.5 * yaw : 1 + 1.5 * yaw;
+  return Math.max(-1, Math.min(1, throttle * factor));
+}
+
+/**
+ * The one piece of this file with no disassembly behind it at all: how much
+ * forward force a side's `differentialRPM` demands.
+ *
+ * `Aircraft.step` in this repo already carries the confirmed shape verbatim
+ * (`PhysicsEngine::updatePhysics`, `0x0057bfb0` — see its own comment for the
+ * citation): `e = throttle - rho*(vel.fwd)/fadeSpeed`, `K = 0.1*|throttle| +
+ * e*|e|`, `F = fwd * K * ratio`. That function is shared code — every
+ * Engine-derived vehicle runs it, not only aircraft — but it was only ever
+ * read for the single whole-body throttle a plane or a car presents, because
+ * neither ever binds `setInputToYaw`. TANK-10 is what parametrises throttle
+ * *by side*; evaluating the identical confirmed shape once per side, with
+ * that side's own `differentialRPM` standing in for the whole-vehicle
+ * throttle the confirmed function reads, is this file's own bridge between
+ * the two confirmed formulas — not itself a byte reading. It degenerates to
+ * exactly the confirmed whole-body case when `yaw == 0`, where every side's
+ * `differentialRPM` is the same `throttle`. [free]
+ *
+ * The result is an acceleration (mass already inside, this codebase's
+ * standing convention for anything descended from `setTorque`), meant to be
+ * applied at that side's driven wheels and clamped by their own friction
+ * circle — not, as `Aircraft.step` applies its twin, as an unconstrained
+ * body force. A tank's tractive effort is bounded by what its tracks can
+ * grip, the same as a Willys' rear axle; an aircraft's thrust is not bounded
+ * by anything the wheels touch.
+ *
+ * At `throttle == 0` while still moving, `e` is `-v/fadeSpeed` (nonzero), so
+ * this returns a small deceleration for free — no separate "engine braking"
+ * constant needed, unlike `GroundVehicle`'s.
+ *
+ * @returns {number} m/s^2, mass already inside
+ */
+export function driveAccel(throttle, yaw, side, forwardSpeed, ratio,
+    fadeSpeed = FADE_SPEED_DEFAULT) {
+  const d = differentialRPM(throttle, yaw, side);
+  const e = d - forwardSpeed / fadeSpeed;
+  return (0.1 * Math.abs(d) + e * Math.abs(e)) * ratio;
+}
+
+/**
+ * A wheel's rolling radius, measured off its own mesh — generalising the
+ * hand measurement TANK-14/15 took off the Sherman and M3A1 collision
+ * meshes (Y/Z extent averaged: `(0.258+0.256)/2 ~= 0.257`, `(0.174+0.166)/2
+ * ~= 0.17`, both confirmed against this exact function's arithmetic on the
+ * live Wake scene) so a tank from any mod answers for its own wheel size
+ * rather than needing a per-vehicle number — the same thing `WillyRadius`
+ * already established no `.con` file ever declares.
+ *
+ * @returns {number|null} metres, or null if the node (and nothing under it)
+ *   carries geometry to measure
+ */
+function measureWheelRadius(node) {
+  let target = node.geometry ? node : null;
+  if (!target) {
+    node.traverse(child => { if (!target && child.geometry) target = child; });
+  }
+  if (!target) return null;
+  const geometry = target.geometry;
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  if (!box) return null;
+  return ((box.max.y - box.min.y) + (box.max.z - box.min.z)) / 4;
+}
+
+/**
+ * Sherman numbers [data, `Objects.con`/`Physics.con`, TANK-4 byte-confirmed]
+ * — used only when the node tree gives `collectChassis` nothing to read (an
+ * extract from before `extras.physics` carried these, or a test double), and
+ * for the geometry-derived fields, only when a wheel walk finds no wheels at
+ * all to measure a footprint from.
+ */
+export const TANK = {
+  mass: 25000,
+  drag: 2,
+  differential: 4,
+  numberOfGears: 5,
+
+  // Half-extents of the wheel footprint, and the one dimension no wheel walk
+  // can ever supply (hull height) — fallbacks only; `collectChassis` measures
+  // the first two off the actual wheel layout whenever there is one. [free]
+  halfWidth: 1.0,
+  halfLength: 2.5,
+  hullHalfHeight: 1.1,
+  boundingRadius: 3.0,
+  wheelRadius: 0.33,
+
+  // Suspension: `GroundVehicle`'s own shape: no tank-specific reading of the
+  // spring solver exists any more than a car's does. The travel needs to be
+  // generous precisely *because* the dummy wheels are legitimately worth
+  // nothing (TANK-14): a Sherman's whole 25-tonne hull rests on only 4 real
+  // springs (2 per side, `strength 18`), so standing still alone already
+  // asks for ~0.20 m of compression (14.73 / (4*18)) — this is sized with
+  // headroom above that static point, not tuned to a drive test. [free]
+  suspensionTravel: 0.35,
+  bumpStiffness: 5,
+
+  // Tracks resist sliding sideways far harder than a tyre; stiffened well
+  // past Willy's own 7 on that basis, not a measurement. mu close to Willy's
+  // for lack of any tank-specific reading. [free]
+  mu: 1.1,
+  corneringStiffness: 30,
+  // The half-track's own front axle only: an ordinary tyre, not a track —
+  // Willy's own value (`WILLYS.corneringStiffness`), transcribed rather than
+  // imported so this file's two vehicle specs stay independently readable.
+  frontAxleCorneringStiffness: 7,
+  slipFloor: 1.0,
+  // The half-track's free-rolling front axle only (TANK-15) — never an
+  // engine-connected wheel, so no separate "engine braking" belongs with it.
+  rollingResistance: 0.5,
+  // A driven wheel's own resistance, N per (m/s) per unit load — see
+  // `#step`'s own comment on why this, not the confirmed thrust law's
+  // governor term, is what actually closes the top-speed equation at a
+  // tank-appropriate speed. Fitted so the two vanilla tanks land in a
+  // plausible band (Sherman ~9 m/s / 33 km/h, M3A1 ~27 m/s / 97 km/h) while
+  // still showing the corrected ratio's real effect — M3A1 markedly
+  // livelier than Sherman, matching both vehicles' real top speeds being in
+  // that order. Not a measurement; there is no recorded reference drive for
+  // either tank the way `ground-vehicles.md`'s own open gaps ask for one.
+  // [free]
+  trackResistance: 0.8,
+
+  // s^-1, on the body rates. Willy needs only 0.8 for the same job (mopping
+  // up yaw and the airborne case); a tank's wheels sit much farther from the
+  // root than a jeep's (the M3A1's own front axle 3 m ahead of it), so the
+  // same yaw rate puts a far larger torque through the identical suspension
+  // formula. Found by driving one through a sustained turn and watching it
+  // roll itself onto its roof — twice: held from a stand-still it tipped
+  // somewhere between yaw input 0.2 and 0.3 (fixed at 5.0), and a second,
+  // harder case survived that fix and still rolled the M3A1 at yaw 0.6
+  // entered from its own straight-line top speed (~31 m/s) rather than
+  // accelerating into the turn — the extra speed alone very nearly doubles
+  // the centripetal load a held turn puts through the suspension. 12.0 was
+  // the lowest value that survived both; this carries margin above it.
+  // corneringStiffness made no difference to either case at any value
+  // tried. [free]
+  angularDamping: 15.0,
+
+  // A steered front axle's lock, used only if its own bundle somehow
+  // declares no min/max at all to measure. M3A1's own is +-40 (TANK-15),
+  // read off the node before this ever applies.
+  maxSteer: 40,
+};
+
+/** A tank or half-track: `c_PGFEngineGrip` wheels driven in a differential
+ * pair per verify-r7.md, instead of Willy's steered wheel pair. Same
+ * constructor and public interface as `GroundVehicle` (see the file header
+ * for why it cannot simply extend it). */
+export class TrackedVehicle extends Vehicle {
+  /**
+   * @param {THREE.Object3D} node   the assembled vehicle root from the map glb
+   * @param {THREE.Object3D} parent where to reparent it to (usually the scene)
+   * @param {{spec?: object, modelsBase?: string, cockpit?: boolean,
+   *          groundHeight?: (x: number, z: number) => number}} [options]
+   */
+  constructor(node, parent, options = {}) {
+    super(node, parent, options);
+    this.spec = options.spec || TANK;
+    this.groundHeight = options.groundHeight || (() => -Infinity);
+
+    // Root PCO physics (`Sherman`/`M3A1`'s own `setMass`/`setObjectDrag`) —
+    // unlike `GroundVehicle`, read off the node rather than a single fitted
+    // table, because this class has to answer for a 25-tonne Sherman and a
+    // 15-tonne M3A1 at once, not one Willys.
+    const rootPhysics = node.userData?.physics || {};
+    this.mass = typeof rootPhysics.mass === 'number' ? rootPhysics.mass : this.spec.mass;
+    this.drag = typeof rootPhysics.drag === 'number' ? rootPhysics.drag : this.spec.drag;
+
+    this.wheels = [];
+    /** Engine declarations off the `Engine` node; `torque` is kept for
+     * report/API parity with `GroundVehicle` and for anything downstream
+     * that wants it (engine audio, say) but this class never spends it —
+     * TANK-9 reads it as feeding only engine *sound*, a separate 101-slot
+     * curve this file has no reason to carry. There is deliberately no
+     * `gearUp`/`gearDown` here: a tank's `gear` never leaves 1 (TANK-7), so
+     * there is nothing to shift toward. */
+    this.engine = {
+      differential: this.spec.differential,
+      numberOfGears: this.spec.numberOfGears,
+      torque: null,
+      fadeSpeed: FADE_SPEED_DEFAULT,
+    };
+    this._extent = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+    this.collectChassis();
+
+    // getCurrentRatio(), TANK-3/6/7/8: fixed for the vehicle's life, exactly
+    // mirroring the retail engine never writing `gear` past its seed of 1.
+    this.ratio = engineRatio(this.engine.differential, this.engine.numberOfGears);
+
+    /** Driven wheels sharing each side, so the per-side drive force below
+     * splits evenly the same way `GroundVehicle` already splits its own. */
+    this.drivenBySide = { '-1': 0, '0': 0, '1': 0 };
+    for (const wheel of this.wheels) {
+      if (wheel.driven) this.drivenBySide[wheel.side] += 1;
+    }
+
+    // A box estimate for aero drag and roll/pitch/yaw inertia, same
+    // reconstruction `WILLYS` uses a guessed box for — except the footprint
+    // is measured off the actual wheel layout rather than guessed, since
+    // `collectChassis` already has it. Only the hull height is still a
+    // free-standing guess; no wheel tells us how tall the vehicle is.
+    const spanX = this._extent.maxX - this._extent.minX;
+    const spanZ = this._extent.maxZ - this._extent.minZ;
+    const halfWidth = Number.isFinite(spanX) && spanX > 0 ? spanX / 2 : this.spec.halfWidth;
+    const halfLength = Number.isFinite(spanZ) && spanZ > 0 ? spanZ / 2 : this.spec.halfLength;
+    const halfHeight = this.spec.hullHalfHeight;
+    this._boundingRadius = Math.hypot(halfWidth, halfLength) || this.spec.boundingRadius;
+    const w2 = (2 * halfWidth) ** 2, l2 = (2 * halfLength) ** 2, h2 = (2 * halfHeight) ** 2;
+    // x=pitch (about the right axis), y=yaw (about up), z=roll (about
+    // forward) — the same axis/field mapping `GroundVehicle._inertia` uses,
+    // read against `w.x/y/z`'s own meaning in `#step` below.
+    this._inertia = new THREE.Vector3((l2 + h2) / 12, (w2 + l2) / 12, (w2 + h2) / 12);
+
+    // Scratch, so a tick allocates nothing — the same set `GroundVehicle`
+    // keeps, for the same reason.
+    this._q = new THREE.Quaternion();
+    this._qInv = new THREE.Quaternion();
+    this._vBody = new THREE.Vector3();
+    this._wWorld = new THREE.Vector3();
+    this._rWorld = new THREE.Vector3();
+    this._attach = new THREE.Vector3();
+    this._dir = new THREE.Vector3();
+    this._lat = new THREE.Vector3();
+    this._u = new THREE.Vector3();
+    this._force = new THREE.Vector3();
+    this._torque = new THREE.Vector3();
+    this._accel = new THREE.Vector3();
+    this._susp = new THREE.Vector3();
+    this._fTyre = new THREE.Vector3();
+    this._arm = new THREE.Vector3();
+    this._euler = new THREE.Euler();
+    this._spin = new THREE.Quaternion();
+    this._wheelEuler = new THREE.Euler();
+    this._wheelSpin = new THREE.Quaternion();
+  }
+
+  /**
+   * The chassis, read off the node tree — same philosophy as
+   * `GroundVehicle.collectChassis`, extended for the grip classes a tracked
+   * vehicle's wheels use that a Willys never needs (TANK-6/14/15):
+   *
+   *   c_PGFEngineGrip       driven — `differentialRPM` reaches it.
+   *   c_PGFEngineDummyGrip  idler/return-roller road wheels. The shipped
+   *                         data gives every one on both the Sherman and the
+   *                         M3A1 `setStrength 0`/`setDamping 0` (checked
+   *                         against the live Wake scene, not assumed from
+   *                         the grip name alone), so the existing spring
+   *                         formula already prices them at zero without this
+   *                         file special-casing them for it.
+   *   c_PGFRollGrip         a half-track's ordinary steered front axle
+   *                         (M3A1Wheel1): found the identical way Willy's
+   *                         front wheels are, an ancestor `RotationalBundle`
+   *                         bound to `c_PIYaw` — reused verbatim, recipe
+   *                         step 11 — and its own declared lock angle is
+   *                         kept per-wheel (`steerMax`) rather than a shared
+   *                         constant, since a half-track's is not Willy's.
+   *
+   * `side = sign(localX)`, +X = right (TANK-10/12), is computed once here
+   * rather than every tick; a wheel dead on the centreline (`side === 0`,
+   * never seen in vanilla data but not asserted against) falls back to
+   * `differentialRPM`'s own `side === 0` branch, plain throttle.
+   */
+  collectChassis() {
+    this.node.updateWorldMatrix(true, true);
+    const rootInverse = this.node.matrixWorld.clone().invert();
+    const local = new THREE.Matrix4();
+    this.node.traverse(obj => {
+      const data = obj.userData || {};
+      if (data.templateKind === 'Engine' && data.physics) {
+        const p = data.physics;
+        if (typeof p.differential === 'number') this.engine.differential = p.differential;
+        if (typeof p.numberOfGears === 'number') this.engine.numberOfGears = p.numberOfGears;
+        if (typeof p.torque === 'number') this.engine.torque = p.torque;
+        if (typeof p.noPropellerEffectAtSpeed === 'number') {
+          this.engine.fadeSpeed = p.noPropellerEffectAtSpeed;
+        }
+        return;
+      }
+      if (data.templateKind !== 'Spring' || !data.physics) return;
+      local.multiplyMatrices(rootInverse, obj.matrixWorld);
+      const rest = new THREE.Vector3().setFromMatrixPosition(local);
+      let steered = false;
+      let steerMax = this.spec.maxSteer;
+      for (let p = obj.parent; p && p !== this.node; p = p.parent) {
+        // A `RotationalBundle` ancestor only — unlike `GroundVehicle`'s own
+        // walk (safe there only because a car's Engine never binds yaw at
+        // all), a `c_ETTank` Engine now *does* have a yaw axis of its own
+        // (the +-1 degree body lean), and it sits between every wheel and
+        // the root, so checking every ancestor regardless of kind would mark
+        // every wheel on the vehicle "steered" off that unrelated axis.
+        if (p.userData?.templateKind !== 'RotationalBundle') continue;
+        const yaw = p.userData?.rig?.axes?.yaw;
+        if (yaw && yaw.input === 'c_PIYaw') {
+          steered = true;
+          const span = Math.max(Math.abs(yaw.min ?? 0), Math.abs(yaw.max ?? 0));
+          if (span > 0) steerMax = span;
+          break;
+        }
+      }
+      const wheel = new Wheel(obj, rest, data.physics, steered);
+      wheel.side = Math.sign(rest.x);
+      wheel.dummy = data.physics.grip === GRIP_DUMMY;
+      wheel.steerMax = steerMax;
+      wheel.radius = measureWheelRadius(obj) ?? this.spec.wheelRadius;
+      this.wheels.push(wheel);
+      this._extent.minX = Math.min(this._extent.minX, rest.x);
+      this._extent.maxX = Math.max(this._extent.maxX, rest.x);
+      this._extent.minZ = Math.min(this._extent.minZ, rest.z);
+      this._extent.maxZ = Math.max(this._extent.maxZ, rest.z);
+    });
+  }
+
+  /**
+   * No `RotationalBundle` spin belongs on a tank hull's Engine node either —
+   * see `GroundVehicle.advancePropeller` for the full reasoning, which
+   * applies unchanged. It would be a no-op even without this override: a
+   * `c_ETTank` Engine's own roll/yaw axes are `driver: "position"` (the
+   * +-1 degree body-lean `bf42/assemble.py`'s `engine_spin_axes` explicitly
+   * carves out, "neither rate nor free"), never the wide accumulator range
+   * that predicate exists to spin. Kept explicit for the same reason
+   * `GroundVehicle` keeps its own: so nobody has to re-derive that from the
+   * base class to be sure.
+   */
+  advancePropeller() {}
+
+  /** One step. Same public contract as `GroundVehicle.integrate`: clamps its
+   * own rate into engine-sized sub-steps regardless of what `THREE.Clock`
+   * hands it. */
+  integrate(dt) {
+    if (!(dt > 0)) return;
+    if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
+    const steps = Math.max(1, Math.ceil(dt * 60));
+    const h = dt / steps;
+    for (let i = 0; i < steps; i++) this.#step(h);
+    this.applyTransform();
+    this.applyRig();
+    this.#applyWheels();
+  }
+
+  #step(h) {
+    const s = this.state;
+    const k = this.spec;
+    this.advanceSurfaces(h);
+
+    const q = this._q.copy(s.orientation);
+    const qInv = this._qInv.copy(q).invert();
+    const vBody = this._vBody.copy(s.velocity).applyQuaternion(qInv);
+    const w = s.angularVelocity;
+    const wWorld = this._wWorld.copy(w).applyQuaternion(q);
+    const vf = -vBody.z;
+
+    // --- engine state -----------------------------------------------------
+    //
+    // A `c_ETTank` Engine's roll/yaw axes are ordinary position axes here
+    // (+-1 degree of body lean — TANK-4's `Physics.con` read, `bf42/con.py`'s
+    // own note) rather than the wide accumulator range a car's throttle axis
+    // gets, so `advanceSurfaces` above has *already* put both through the
+    // same declared-`setMaxSpeed` servo every other rig part answers to, and
+    // `s.surfaces` already holds them, normalised back to -1..1 — unlike
+    // `GroundVehicle`, which reads `c_PIThrottle` raw because a car's own
+    // throttle axis is exactly this wide-accumulator kind and never lands in
+    // `s.surfaces` at all. Reading these from there is this file's reading
+    // of the recipe's "axisToward('roll')/('yaw')": verify-r7.md pins the
+    // FORMULA these feed (TANK-10) but not the rate a keypress becomes the
+    // `PhysicsEngine`-internal value it reads — this is the one rate the
+    // vehicle's own data happens to declare for these exact axes, a
+    // reasonable stand-in, but open.
+    //
+    // OPEN QUESTION, worth naming precisely: a half-track's front-axle
+    // steering bundle (`M3A1Wheel1`) binds the identical (control, c_PIYaw,
+    // yaw) key the Engine's own body-lean axis does, and
+    // `Vehicle.servoAxes()` dedupes strictly by that triple — correct for a
+    // mirrored aileron pair, its designed case, but a collision here between
+    // two unrelated mechanisms. Whichever axis's declared `setMaxSpeed`
+    // happens to win the race governs the *rate* `s.surfaces` converges at
+    // (Engine 4 deg/s over a 1 degree span, `M3A1Wheel1` 2 deg/s over 40 —
+    // both fast enough to settle inside half a second), never which value it
+    // converges *to* (`this.input('c_PIYaw')`, read once, shared). Fixing it
+    // for real means `Vehicle`'s shared key scheme in `flight.js`, outside
+    // this file's ownership this round.
+    const throttle = s.surfaces.get(`${this.control}/c_PIThrottle/roll`) ?? 0;
+    const yaw = s.surfaces.get(`${this.control}/c_PIYaw/yaw`) ?? 0;
+    s.throttle = Math.min(1, Math.abs(throttle));
+
+    const fadeSpeed = this.engine.fadeSpeed;
+    const accelPos = driveAccel(throttle, yaw, 1, vf, this.ratio, fadeSpeed);
+    const accelNeg = driveAccel(throttle, yaw, -1, vf, this.ratio, fadeSpeed);
+    const accelZero = driveAccel(throttle, yaw, 0, vf, this.ratio, fadeSpeed);
+
+    // --- wheels -------------------------------------------------------------
+    const force = this._force.set(0, 0, 0);
+    const torque = this._torque.set(0, 0, 0);
+    let loaded = 0;
+    const speed = s.velocity.length();
+    const authority = Math.min(1, speed / 2);
+
+    for (const wheel of this.wheels) {
+      const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
+      const floor = this.groundHeight(attach.x, attach.z);
+      const rWorld = this._rWorld.copy(wheel.rest).applyQuaternion(q);
+      const compression = Number.isFinite(floor)
+        ? (floor + wheel.radius) - attach.y
+        : -Infinity;
+      if (compression <= 0) {
+        wheel.compression = 0;
+        wheel.load = 0;
+        // Airborne and driven: the track keeps moving at its commanded rate
+        // against nothing, same convention `GroundVehicle` uses.
+        if (wheel.driven) {
+          wheel.angle += this.ratio * differentialRPM(throttle, yaw, wheel.side) * h;
+        }
+        continue;
+      }
+
+      // Suspension: `GroundVehicle`'s own spring/damper/bump-stop shape,
+      // unchanged — see its comment for the PROVISIONAL vertical-ray
+      // disclaimer, which applies here exactly as it does there.
+      const travel = Math.min(compression, k.suspensionTravel);
+      const overrun = compression - travel;
+      const attachRate = s.velocity.y + (wWorld.z * rWorld.x - wWorld.x * rWorld.z);
+      let load = wheel.strength * (travel + overrun * k.bumpStiffness)
+        - wheel.damping * attachRate;
+      if (load < 0) load = 0;
+      wheel.compression = compression;
+      wheel.load = load;
+      loaded += 1;
+
+      // No steer angle for a track wheel — `dir` stays nose-forward, exactly
+      // `GroundVehicle`'s own `!wheel.steered` branch. The one wheel this
+      // matters for is a half-track's own front axle (recipe step 11,
+      // "Willy's existing steerable-front-wheel code unchanged"), using its
+      // own bundle's declared lock (`wheel.steerMax`) rather than a shared
+      // vehicle-wide constant, since a half-track's is not a jeep's.
+      const dir = this._dir.set(0, 0, -1);
+      if (wheel.steered) {
+        const steer = -yaw * wheel.steerMax * DEG;
+        dir.set(-Math.sin(steer), 0, -Math.cos(steer));
+      }
+      const lat = this._lat.crossVectors(dir, UP);
+
+      const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
+      const uLong = u.dot(dir);
+      const uLat = u.dot(lat);
+
+      // Lateral: same shape as `GroundVehicle`'s cornering-stiffness model
+      // for every wheel that touches the ground, dummy rollers included —
+      // their own near-zero load already prices them out on its own. A
+      // track's much stronger resistance to sliding sideways than a tyre's
+      // is `k.corneringStiffness` alone for a track wheel; the half-track's
+      // own front axle is an ordinary tyre (TANK-15: "an ordinary steerable
+      // front axle"), recipe step 11's "Willy's existing... code unchanged"
+      // — reusing the *track* figure there as well nearly rolled the M3A1
+      // in a held turn (found by driving one out ten seconds at speed and
+      // watching it go onto its roof), because that wheel, unlike a track
+      // wheel, is actively deflected by the steer angle and so puts real
+      // slip into a coefficient four times Willy's own.
+      const slip = Math.atan2(uLat, Math.max(Math.abs(uLong), k.slipFloor));
+      const stiffness = wheel.steered ? k.frontAxleCorneringStiffness : k.corneringStiffness;
+      let fLat = -stiffness * slip * load * authority;
+
+      // Longitudinal: the one place a tracked vehicle's wheels genuinely
+      // differ from a jeep's.
+      let fLong = 0;
+      if (wheel.steered) {
+        // The half-track's front axle only: a free-rolling tyre, never
+        // engine-connected (TANK-15), so nothing here but passive rolling
+        // resistance — Willy's own shape, no braking or reverse state
+        // machine, because this wheel never drives.
+        const gShare = load / -GRAVITY;
+        const moving = Math.tanh(uLong / 0.3);
+        fLong -= moving * k.rollingResistance * gShare;
+      } else if (wheel.driven) {
+        // TANK-10's own per-side split, `driveAccel`'s confirmed-formula
+        // extension (see its own comment): every driven wheel on a side
+        // shares that side's demanded force evenly, then the friction
+        // circle below still has the final word — a demand the tracks
+        // cannot grip is clamped exactly the way an overpowered rear axle
+        // already is on a jeep.
+        const count = this.drivenBySide[wheel.side] || 1;
+        const accel = wheel.side > 0 ? accelPos : wheel.side < 0 ? accelNeg : accelZero;
+        fLong = accel / count;
+        // Rolling resistance, always on once moving — `GroundVehicle`'s own
+        // shape, and load-bearing here in a way it is not there. The
+        // confirmed force law's own governor term (`driveAccel`'s `e`) only
+        // meaningfully opposes `throttle` once speed is a sizeable fraction
+        // of `fadeSpeed` (100 m/s, TANK-5's confirmed default): read alone
+        // it would let a tank accelerate toward aircraft-scale speeds before
+        // ever feeling it. Nothing in verify-r7.md gives a ground vehicle's
+        // top speed the way a car's `revLimit` does for `GroundVehicle`, so
+        // this term — not the confirmed formula — is what actually closes
+        // the equation at a tank-scale speed; the corrected `ratio` still
+        // drives the *comparison* between vehicles (a higher ratio settles
+        // faster and higher against the same resistance), which is the
+        // property this whole track exists to get right. [free]
+        const gShare = load / -GRAVITY;
+        fLong -= uLong * k.trackResistance * gShare;
+      }
+      // A dummy (spin-only) wheel gets no longitudinal force at all —
+      // TANK-14's reading, and its own zero strength/damping already leaves
+      // it nothing to spend one on regardless.
+
+      const cap = k.mu * load;
+      const demand = Math.hypot(fLong, fLat);
+      if (demand > cap && demand > 1e-9) {
+        fLong *= cap / demand;
+        fLat *= cap / demand;
+      }
+
+      const suspension = this._susp.set(0, load, 0).applyQuaternion(qInv);
+      force.add(suspension);
+      force.addScaledVector(dir, fLong);
+      force.addScaledVector(lat, fLat);
+      torque.add(this._arm.crossVectors(wheel.rest, suspension));
+      const fTyre = this._fTyre.set(0, 0, 0)
+        .addScaledVector(dir, fLong).addScaledVector(lat, fLat);
+      this._arm.set(wheel.rest.x, wheel.rest.y - wheel.radius, wheel.rest.z);
+      torque.add(this._arm.cross(fTyre));
+
+      // Visual roll: a driven wheel spins at its own side's commanded rate
+      // (TANK-10 again — the two tracks visibly move at different speeds
+      // mid-turn, which is the entire point of this steering law), so it can
+      // read slightly ahead of or behind the hull's own integrated motion
+      // exactly where the two mechanisms disagree — see `driveAccel`'s own
+      // comment. Everything else, dummy rollers included, rolls off its own
+      // actual contact speed the way `GroundVehicle`'s wheels all do, which
+      // costs nothing extra since `uLong` above is geometry, not load.
+      wheel.angle += (wheel.driven
+        ? this.ratio * differentialRPM(throttle, yaw, wheel.side)
+        : uLong / wheel.radius) * h;
+    }
+
+    s.grounded = loaded > 0;
+    s.airspeed = speed;
+
+    // --- integrate ------------------------------------------------------------
+    // Semi-implicit Euler, `GroundVehicle`'s own shape, unchanged.
+    const accel = this._accel.copy(force).applyQuaternion(q);
+    accel.y += GRAVITY;
+    const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
+    accel.addScaledVector(s.velocity, -kDrag);
+    s.velocity.addScaledVector(accel, h);
+    s.position.addScaledVector(s.velocity, h);
+
+    w.x += (torque.x / this._inertia.x - k.angularDamping * w.x) * h;
+    w.y += (torque.y / this._inertia.y - k.angularDamping * w.y) * h;
+    w.z += (torque.z / this._inertia.z - k.angularDamping * w.z) * h;
+    if (w.lengthSq() > 0) {
+      this._spin.setFromEuler(this._euler.set(w.x * h, w.y * h, w.z * h, 'XYZ'));
+      s.orientation.multiply(this._spin).normalize();
+    }
+
+    // Failsafe, not suspension — see `GroundVehicle`'s own comment.
+    const under = this.groundHeight(s.position.x, s.position.z);
+    if (Number.isFinite(under) && s.position.y < under + 0.05) {
+      s.position.y = under + 0.05;
+      if (s.velocity.y < 0) s.velocity.y = 0;
+      s.grounded = true;
+    }
+  }
+
+  /** Suspension lift + roll onto the scene graph — `GroundVehicle`'s own
+   * convention, unchanged; see its comment. The steer is not written here
+   * either, for the same reason: a half-track's front-axle yaw is the
+   * declared rig, and `applyRig` already poses it (subject to the shared-key
+   * caveat noted in `#step`). */
+  #applyWheels() {
+    for (const wheel of this.wheels) {
+      const lift = Math.min(wheel.compression, this.spec.suspensionTravel);
+      wheel.node.position.y = wheel.basePosition.y + lift;
+      this._wheelSpin.setFromEuler(this._wheelEuler.set(-wheel.angle, 0, 0));
+      wheel.node.quaternion.copy(wheel.baseQuaternion).multiply(this._wheelSpin);
+    }
+  }
+
+  /** Park it back on its spawn, engine off, wheels straight — same contract
+   * as `GroundVehicle.reset`. No `gear` to reset: this class never has one. */
+  reset() {
+    if (this.autoFirstPerson) this.setFirstPerson(false);
+    const s = this.state;
+    s.velocity.set(0, 0, 0);
+    s.angularVelocity.set(0, 0, 0);
+    s.throttle = 0;
+    s.airspeed = 0;
+    s.surfaces.clear();
+    s.inputs.clear();
+    for (const wheel of this.wheels) {
+      wheel.angle = 0;
+      wheel.compression = 0;
+      wheel.load = 0;
+      wheel.node.position.copy(wheel.basePosition);
+      wheel.node.quaternion.copy(wheel.baseQuaternion);
+    }
+    s.position.copy(this.node.userData.spawnPosition || s.position);
+    s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
+  }
+}
