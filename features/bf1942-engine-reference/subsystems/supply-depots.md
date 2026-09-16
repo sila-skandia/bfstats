@@ -25,7 +25,7 @@ clamp**, confirmed for both `ammoType` (`+0x15c`) and `vehicleType`
 
 **The ammo id is not the client's `AmmoType` enum (SUP-2).** `addAmmoType`'s
 int argument (`0x08325380`) is not `setHudAmmoType`'s enum
-([ingame-hud.md](ingame-hud.md) HUD-10, VHUD-3) — it matches an unnamed tag
+([ingame-hud.md](ingame-hud.md) HUD-10) — it matches an unnamed tag
 read back by `FireArms::getAmmoType()` (`0x0828d4c0`), and no registered
 setter for that tag was found. So a depot's `ammoType` id is an opaque
 per-weapon-family key, not a HUD enum value; do not try to render a depot's

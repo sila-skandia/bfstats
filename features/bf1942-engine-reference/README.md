@@ -179,7 +179,7 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
-769 symbols across 25 subsystems: 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects) and 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below.
+779 symbols across 25 subsystems: 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, and a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day.
 
 **The game loop is settled (2026-09-15).** The client is a fixed-step
 simulation at `g_simulationFps` = 30 Hz (`0x00957640`; the same 30.0 in the
@@ -306,9 +306,11 @@ hiding `CommonSoldierData.inc`'s hit points from every soldier template
 until fixed) and **MEME-14** (the in-game HUD's eleven-group top-level
 shape, flattened by the new `extract_hud_layout.py`).
 
-**769 symbols across 25 subsystems** (up from 576/22): 198 addresses
-recorded this pass, three new subsystems (`hitpoints`, `seat`,
-`supplydepot`), and three prior `ghidra-session`-sourced `EngineTemplate`
-entries plus `SpawnScreen_singleton` upgraded from bf42plus's unread
-`working` label to this round's `verified`, now that independent work
-reached the same code from the HUD side.
+**779 symbols across 25 subsystems** (up from 576/22): this round recorded
+198 addresses (193 net new, five corrections to existing rows) for **769**;
+merging in a further 10 from an unrelated same-day SoundScript fix
+(SSC-1/SSC-2/SSC-5) brings the corpus to **779**. Three new subsystems
+(`hitpoints`, `seat`, `supplydepot`), and three prior
+`ghidra-session`-sourced `EngineTemplate` entries plus `SpawnScreen_singleton`
+upgraded from bf42plus's unread `working` label to this round's `verified`,
+now that independent work reached the same code from the HUD side.
