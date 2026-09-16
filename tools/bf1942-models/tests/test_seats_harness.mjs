@@ -124,6 +124,44 @@ function sherman() {
   results.seatOrder = order;
 }
 
+// --- a nested PCO's own node name can diverge from its `control` tag -------
+//
+// Confirmed against the real, live Wake scene headless this round, not
+// invented: when a level places more than one instance of a vehicle, the
+// export gives every node under the second-and-later instances a scene-wide
+// disambiguating suffix -- so `shermanBrowning_PCO1`'s own node ends up named
+// `shermanBrowning_PCO1_1` on (at least) one of Wake's two Shermans, while
+// every one of ITS OWN descendants still reports the bare `shermanBrowning_
+// PCO1` as their `control`/`seat.control`. `surveyVehicle` must key a nested
+// PCO's bucket by that shared `control` string, the same way its descendants
+// already do -- keying by the node's own (possibly suffixed) name instead
+// split one real seat into two: an empty one holding only `.node` (nothing
+// ever resolves `owner` to the suffixed name) and a fully-populated one
+// holding everything else (entryPoints/axes/fireArms/camera) but no `.node`,
+// which both breaks `classifySeat` (no axes/fireArms on the `.node`-holding
+// half -- 'seat', not 'gun') and shifts the real gunner from seat position 1
+// to 2 in `order`, exactly where SEAT-23/24 says key "2" should reach it.
+function shermanWithRenamedGunnerNode() {
+  const tank = sherman();
+  const gunner = tank.children.find(c => c.name === 'shermanBrowning_PCO1');
+  gunner.name = 'shermanBrowning_PCO1_1';   // the node name a real export gives it
+  return tank;                              // userData.control stays 'shermanBrowning_PCO1'
+}
+
+{
+  const tank = shermanWithRenamedGunnerNode();
+  const survey = surveyVehicle(tank);
+  const gunnerSeat = survey.seats.get('shermanBrowning_PCO1');
+  results.renamedGunnerNode = {
+    order: survey.order,
+    gunnerSeatExists: !!gunnerSeat,
+    gunnerSeatHasNode: !!gunnerSeat?.node,
+    gunnerSeatFireArms: gunnerSeat?.fireArms.map(n => n.name) ?? [],
+    gunnerSeatAxisCount: Object.keys(gunnerSeat?.axes ?? {}).length,
+    gunnerKind: gunnerSeat ? classifySeat(gunnerSeat, false) : null,
+  };
+}
+
 // --- findAllVehicleRoots / listEntryPoints: every seat's own door -----------
 
 {

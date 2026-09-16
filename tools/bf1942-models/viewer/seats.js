@@ -71,8 +71,26 @@ export function surveyVehicle(root) {
     if (!data) return;
     const kind = data.templateKind;
     if (kind === 'PlayerControlObject') {
-      if (obj !== root) seatFor(obj.name, obj);
-      if (data.hud) seatFor(obj === root ? rootId : obj.name, obj).hud = data.hud;
+      // Bucket by `data.control`, not `obj.name`: a nested PCO's *node* name
+      // gets a scene-wide disambiguating suffix whenever more than one
+      // instance of its vehicle is placed on the level (Wake's own two
+      // Shermans -- confirmed against the live scene, headless, this round:
+      // `shermanBrowning_PCO1`'s own node is named `shermanBrowning_PCO1_1`
+      // on the first Sherman), but its `control` tag -- the same string
+      // every one of ITS OWN descendants report as their `owner` two lines
+      // below -- is not. Keying this bucket by the node name instead split
+      // one seat into two: an empty one under the suffixed name (this PCO's
+      // `.node`, no entryPoints/axes/fireArms/camera -- none of its children
+      // ever resolve `owner` to that string) and a fully-populated one under
+      // the bare name (every child, but `.node` never set) -- shifting the
+      // Sherman's own gunner from seat position 1 to 2 and leaving position 1
+      // an unfireable dead seat, breaking exactly the `switchSeat` path
+      // SEAT-23/24 describes. `data.control` is what a PCO's own descendants
+      // already use to name it, so using it here too is the one dependable
+      // key, not an approximation.
+      const id = data.control || obj.name;
+      if (obj !== root) seatFor(id, obj);
+      if (data.hud) seatFor(obj === root ? rootId : id, obj).hud = data.hud;
       return;
     }
     const owner = data.control || rootId;
@@ -425,8 +443,16 @@ export class FireState {
   get canFire() {
     if (this.reloadRemaining > 0) return false;
     if (this.overheatRemaining > 0) return false;
-    // Strict greater-than in the corrected report (GUN-12); >=1 on our own
-    // [0,1] heat scale is that same comparison at the scale's own ceiling.
+    // NOT the same comparison GUN-12 corrected to strict-greater-than: that
+    // fix was to `getHasHeat()`, a template-level "does this weapon have a
+    // heat mechanic at all" predicate on two still-unidentified fields,
+    // distinct from `isReadyToUseFire`'s own overheat gate (a countdown
+    // timer, `timeToOverHeatFinished()>0`) and from what actually starts
+    // that timer, which the report never pins down. `heat>=1` here is this
+    // viewer's own approximation of the trigger, following the corrected
+    // report's Viewer Recipe ("clamp [0,1] ... block fire ... on reaching
+    // 1.0") rather than a confirmed engine comparison — `>` would never fire
+    // on this clamped scale, since `heat` never exceeds 1.
     if (this.hasHeat && this.heat >= 1) return false;
     if (!this.unlimited && this.ammo <= 0) return false;
     return true;
