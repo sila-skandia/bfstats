@@ -138,10 +138,11 @@ over 15 s.
 - **No hull collision.** Wheels see the ground function; the body sees only a
   belly failsafe. Driving into a wall, another vehicle, or Wake's pier is not
   resolved. `WorldCollider.sweepSphere` is sitting there for it.
-- **Tanks and half-tracks.** `c_ETTank` steers by differential (`WillyEngine`
-  has no `setInputToYaw`; `ShermanEngine` does — yaw and roll both ±1°, the
-  body-lean documented in `bf42/con.py`). The gearbox and springs transfer
-  as-is; the steering model does not.
+- **Tanks and half-tracks.** Addressed below (`TrackedVehicle`) rather than
+  open any more: `c_ETTank` steers by differential, not a steered wheel pair,
+  and `ShermanEngine`/`M3A1Engine` do bind `setInputToYaw` (yaw and roll both
+  ±1°, a cosmetic body-lean rather than a steering angle — see
+  `TrackedVehicle`'s own `#step` comment for why that field name is a trap).
 - **Passenger seat.** `WillyPassengerPCO` is discovered as its own
   PlayerControlObject; seat switching is the same future problem the B17's
   gunners are.
@@ -203,3 +204,229 @@ Constants added by the wiring, all [free]: the 4 m fallback entry radius, the
 0.25 s entry-scan period, the 3 m/s airborne-exit threshold, and the 2 m
 left-side exit fallback. Headless surface: `?shots` now exposes `__car`
 beside `__aircraft`.
+
+## Tanks and half-tracks: `TrackedVehicle`
+
+`viewer/ground.js` now exports a second drive model, `TrackedVehicle extends
+Vehicle` — same constructor and public interface as `GroundVehicle` (a page
+can `new TrackedVehicle(node, parent, options)` in its place), covering any
+`c_ETTank` hull: a Sherman's tracks, or a half-track's tracks plus an
+ordinary steered front axle. It stands beside `GroundVehicle` rather than
+under it — `GroundVehicle`'s per-tick work lives in true (`#`-private)
+methods, which JavaScript does not let a subclass reach — sharing the
+module's constants and the `Wheel` bookkeeping class instead.
+
+**Not wired into `viewer/map.html` by this change.** Wiring an entered
+`c_ETTank` PCO to this class instead of leaving it as furniture is a
+follow-on step against `classifyVehicle`/`enterVehicle`, outside this file.
+
+### What `verify-r7.md` confirmed, byte for byte
+
+The engine has no tank-specific code path anywhere. Any `c_PGFEngineGrip`
+wheel's commanded spin is `getCurrentRatio() * engine.getCurrentDifferentialRPM
+(side)`, reading the same `roll` (throttle) / `yaw` (steer) axes any Engine
+exposes; a car's Engine simply never binds `setInputToYaw`, so its wheels all
+pass `side == 0` and the formula degenerates to the plain uniform throttle
+`GroundVehicle` already models. `differentialRPM(throttle, yaw, side)`
+(exported for direct testing) is that formula, hand-traced flag by flag
+against the raw disassembly:
+
+    side == 0          -> throttle
+    side > 0  (right)  -> clamp(throttle * (1 - 1.5*yaw), -1, 1)
+    side < 0  (left)   -> clamp(throttle * (1 + 1.5*yaw), -1, 1)
+
+At `throttle == 0` both non-zero branches are exactly zero regardless of
+`yaw` — a tank cannot pivot on the stick alone from a dead stop, a direct
+algebraic consequence rather than a case this file has to implement
+separately.
+
+**The gear-ratio curve correction is the reason this round exists.**
+`getCurrentRatio()` samples a full 101-entry array (`GEAR_RATIO_CURVE`), not
+five control points on a spline: every slot is 1.0 except the five
+`EngineTemplate`'s constructor writes by hand (indices 20/40/60/80/100 =
+3.5/2.2/1.5/1.1/0.94). The sample index is `idx = trunc(gear / numberOfGears
+* 100)` with `gear` permanently 1 — no vehicle in either binary ever shifts
+it — so only `numberOfGears` of 1 or 5 ever land on an authored point; every
+other integer count reduces the whole lookup to exactly `3.5 * differential`.
+`engineRatio(differential, numberOfGears)` (exported) is computed once at
+construction, never resampled — the retail engine never resamples it either.
+
+| vehicle | differential | numberOfGears | idx | ratio |
+|---|---|---|---|---|
+| Sherman | 4 | 5 | 20 (authored) | **4.0** |
+| Willy | 7 | 5 | 20 (authored) | **7.0** |
+| M3A1 | 5 | 4 | 25 (not authored, not adjacent to one) | **17.5**, not the ~5.5 a smooth 5-point spline would give |
+
+### What the glb carries, extended for a tracked chassis
+
+`collectChassis()` reads the same shapes `GroundVehicle`'s does (an `Engine`
+node's `extras.physics`, a `Spring` node's own), extended for the two grip
+classes a tracked vehicle's wheels use that a Willys never needs — verified
+against the live Wake scene, not merely assumed from the grip name:
+
+- `c_PGFEngineGrip` — driven. Sherman and M3A1 both carry **two** per side
+  (TANK-14's "x2 per side"; a first pass at the test fixture built only one
+  and got the standing suspension load wrong), `strength 18`/`20`.
+- `c_PGFEngineDummyGrip` — idler/return-roller road wheels, spin-only
+  (TANK-14). Every one on both vehicles ships `setStrength 0`/`setDamping 0`,
+  so the existing spring formula already prices them at zero without this
+  file special-casing them for it.
+- `c_PGFRollGrip` under a yaw-bound `RotationalBundle` ancestor — a
+  half-track's ordinary steered front axle (`M3A1Wheel1`, ±40°). Found the
+  identical way Willy's own front wheels are, with one correction
+  `GroundVehicle`'s walk didn't need: the ancestor must be a
+  `RotationalBundle` specifically, not merely any ancestor with a `c_PIYaw`
+  axis — a `c_ETTank` Engine now has one of its own (the body-lean below),
+  and it sits between every wheel and the root, so the unfiltered walk marked
+  every wheel on the vehicle "steered" the first time this was run against
+  real data.
+
+A wheel's rolling radius is measured off its own mesh bounds
+(`measureWheelRadius`) — the same reading TANK-14/15 took by hand off the
+Sherman and M3A1 collision meshes, generalised so a tank from any mod answers
+for its own wheel size rather than needing a per-vehicle number; confirmed to
+reproduce TANK-14/15's own figures (≈0.255 m, ≈0.17 m) against the live scene.
+Root PCO mass/drag are read off the node too (`Sherman` 25 t, `M3A1` 15 t) —
+unlike `GroundVehicle`, which still gets both from `WILLYS`, because this
+class has to answer for two very different vehicles at once rather than one
+Willys.
+
+### Decisions
+
+**The Engine's own roll/yaw axes are read as the throttle/steer input,
+already rate-limited.** A `c_ETTank` Engine's roll (throttle) and yaw (steer)
+axes are ordinary `driver: "position"` axes here — a ±1 degree body-lean
+span, not the wide accumulator range a car's throttle axis gets — so
+`Vehicle.advanceSurfaces` has *already* put both through the same
+declared-`setMaxSpeed` servo every other rig part answers to, and
+`s.surfaces` holds them normalised back to -1..1. Reading them from there,
+rather than the raw stick the way `GroundVehicle` reads `c_PIThrottle`, is
+this file's reading of the round's recipe ("axisToward('roll')/('yaw')"):
+verify-r7.md pins the *formula* these feed (TANK-10) but not the rate a
+keypress becomes the `PhysicsEngine`-internal value it reads, so the rate is
+an approximation — the one the vehicle's own data happens to declare for
+these exact axes, not a byte reading of `PhysicsEngine`'s own smoothing.
+[free, shape only]
+
+**A half-track's front-axle steering key collides with its Engine's own
+body-lean axis.** Both are keyed `(control, c_PIYaw, yaw)` in
+`Vehicle.servoAxes()`'s shared map, which dedupes strictly by that triple —
+correct for a mirrored aileron pair, its designed case, wrong for two
+unrelated mechanisms that happen to share an input name. Whichever axis's
+`setMaxSpeed` wins the race governs the *rate* `s.surfaces` converges at
+(Engine 4°/s over a 1° span, `M3A1Wheel1` 2°/s over 40° — both settle inside
+half a second either way), never which value it converges *to*
+(`this.input('c_PIYaw')`, read once, shared) — bounded and harmless, but a
+real gap in `Vehicle`'s shared key scheme this file works around rather than
+fixes, since `flight.js` is outside this track's ownership.
+
+**Forward propulsion and the per-side drive split are this file's own bridge
+between two confirmed formulas, not a third one.** `Aircraft.step` already
+carries `PhysicsEngine::updatePhysics`'s confirmed shape verbatim (`e =
+throttle - rho*(vel.fwd)/fadeSpeed`, `K = 0.1*|throttle| + e*|e|`, `F = fwd *
+K * ratio`) — real, shared code every Engine-derived vehicle runs, but only
+ever read for the single whole-body throttle a plane or a car presents,
+because neither binds `setInputToYaw`. `driveAccel` (exported) evaluates the
+identical shape once per side, with that side's own `differentialRPM`
+standing in for the whole-vehicle throttle the confirmed function reads. It
+degenerates to exactly the confirmed case when `yaw == 0`. Applied at that
+side's driven wheels and clamped by their own friction circle — not, as
+`Aircraft.step` applies its own, as an unconstrained body force — because a
+tank's tractive effort is bounded by what its tracks can grip the same as a
+Willys' rear axle is, and an aircraft's thrust is not bounded by anything the
+wheels touch.
+
+**`TANK.trackResistance` closes the top-speed equation, not the confirmed
+formula's own governor term.** Applied unconstrained, `driveAccel`'s governor
+alone asymptotes toward the same ~131 m/s for *any* vehicle regardless of
+`ratio` (`fadeSpeed` = 100 m/s is tuned for aircraft cruising in that range);
+`ratio` only changes how fast a vehicle approaches that shared ceiling, not
+where it sits. Nothing in verify-r7.md gives a ground vehicle's own top
+speed the way a car's `revLimit` does for `GroundVehicle`, so a driven
+wheel's own resistance term (linear in its own contact speed) is what
+actually closes the equation at a tank-scale speed here, fitted so the two
+vanilla tanks land in a plausible band — Sherman ≈33 km/h, M3A1 ≈112 km/h —
+while still showing the corrected ratio's real effect: the M3A1 markedly
+livelier than the Sherman, in the same order as both vehicles' real top
+speeds. Not a measurement. [free]
+
+**A driven wheel's own visual roll follows the differential, not the body's
+integrated speed.** The entire visible point of this steering law: the wheel
+a player watches spin is driven by `ratio * differentialRPM(side)` directly,
+so the two tracks visibly move at different rates mid-turn, which can read
+slightly ahead of or behind the hull's own separately-integrated motion —
+see `driveAccel`'s own comment for why propulsion and the visual per-wheel
+rate are two different mechanisms here. Every other wheel, dummy rollers
+included, rolls off its own actual contact speed the way `GroundVehicle`'s
+wheels all do.
+
+**The half-track's front axle reuses Willy's tyre model unchanged, at
+Willy's own stiffness, not the tracks' stiffened one.** TANK-15: "an
+ordinary steerable front axle" — free-rolling, never engine-connected, so it
+gets only passive rolling resistance longitudinally and the same
+cornering-stiffness lateral model Willy's own front wheels use. Reusing the
+*track* stiffness there instead very nearly rolled the M3A1 in a held turn:
+that wheel, unlike a track wheel, is actively deflected by the steer angle,
+so real slip runs through a coefficient four times Willy's own. Kept as a
+separate constant, `TANK.frontAxleCorneringStiffness`, once this was found.
+
+### Constants: data vs fitted
+
+[data] — off the live Wake scene, confirmed against `verify-r7.md`'s own
+citations: Sherman mass 25000/drag 2, M3A1 mass 15000/drag 2, both engines'
+differential/numberOfGears/torque, every wheel's grip class and
+strength/damping, the front axle's ±40° lock, wheel radii (measured, not
+declared — same situation `WillyRadius` is in).
+
+[free] — fitted, each awaiting a reference measurement no more than Willy's
+own: `TANK.mu` (1.1), `corneringStiffness` (30, stiffened well past Willy's
+7 on the basis that a track resists sliding harder than a tyre, not a
+measurement), `frontAxleCorneringStiffness` (7, Willy's own, for the one
+wheel on a tank that actually is a tyre), `trackResistance` (0.8, the
+top-speed closure above), `rollingResistance` (0.5, the front axle's own,
+Willy's shape), `suspensionTravel` (0.35 — needs to be generous specifically
+*because* the dummy wheels are legitimately worth nothing: a Sherman's whole
+hull rests on only 4 real springs, so standing still alone already asks for
+~0.20 m of the 0.35), `angularDamping` (15.0 — see below), `halfWidth`/
+`halfLength`/`hullHalfHeight`/`boundingRadius`/`wheelRadius` (fallbacks only;
+`collectChassis` measures the first two, and per-wheel radius, off the
+actual node tree whenever there is one to measure).
+
+`angularDamping`'s value is the one constant this track spent the most
+tuning on, because it is the one that turned up two rollovers rather than a
+speed that merely looked wrong. Held from a stand-still, a sustained turn
+rolled the M3A1 onto its roof somewhere between yaw input 0.2 and 0.3 at
+Willy's own damping-equivalent order of magnitude; raising it to 5.0 fixed
+that case but not a harder one — the same turn entered from the vehicle's
+own straight-line top speed (~31 m/s) rather than accelerated into, where
+the extra entry speed alone very nearly doubles the centripetal load through
+the identical suspension formula. 12.0 was the lowest value that survived
+both in testing; 15.0 is what shipped, for margin.
+`corneringStiffness` made no difference to either case at any value tried —
+the wider track (M3A1's own wheels sit up to 3 m from the root, at the front
+axle) puts a given yaw rate through a far larger torque than Willy's tighter
+wheelbase does through the identical formula, which damping resists directly
+and stiffness does not.
+
+### Open gaps (`TrackedVehicle`)
+
+- **Not wired into `map.html`.** A page still classifies every `c_ETTank`
+  PCO as furniture; entering one and driving it is the next, separate step,
+  against `classifyVehicle`/`enterVehicle` — outside this file.
+- **The shared-key collision** between a half-track's front-axle steering
+  and its Engine's own body-lean axis (`Vehicle.servoAxes()`'s dedupe, see
+  Decisions above) is worked around here, not fixed. A real fix touches
+  `flight.js`.
+- **Reference measurements**, same ask `GroundVehicle`'s own open gaps make
+  for Willy: nothing in the `mu`/`corneringStiffness`/`trackResistance`/
+  `angularDamping` table above is a recorded drive against the real game.
+- **The exact retail force law a tracked wheel's own friction applies** is
+  still unread (verify-r7.md's own Open section, PHY-2/PHY-4) — `driveAccel`
+  is this file's bridge between two confirmed-but-separate formulas
+  (TANK-10's per-side split, `PhysicsEngine::updatePhysics`'s whole-body
+  thrust law), not a third confirmed one.
+- **Vertical-ray suspension and no hull collision**, inherited unchanged from
+  `GroundVehicle`'s own open gaps — everything said there about a tank's
+  much larger hull applies at least as much as it does to a jeep's.
+- **A wreck/destroyed state** is not modelled; `state.destroyed` exists on
+  `VehicleState` but nothing here ever sets it.
