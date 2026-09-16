@@ -126,6 +126,56 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("Sherman", by_node["ShermanEntry"])
         self.assertEqual("shermanBrowning_PCO1", by_node["ShermanEntry_2"])
 
+    # --- pickNearest: round 3's second disclosed gap ------------------------
+    # (SEAT-22's declaration-order convention applied to a tied door; see
+    # verify-r5.md and the harness's own comment for the real Sherman/M3A1
+    # numbers this is checked against.)
+
+    def test_pickNearest_returns_null_on_an_empty_or_fully_disqualified_list(self) -> None:
+        r = self.results["pickNearest"]
+        self.assertIsNone(r["emptyIsNull"])
+        self.assertIsNone(r["allDisqualifiedIsNull"])
+
+    def test_pickNearest_breaks_an_exact_tie_by_declaration_order(self) -> None:
+        r = self.results["pickNearest"]
+        self.assertEqual("first", r["exactTieKeepsFirstDeclared"])
+        # Order is `candidates`' own order, not always "the first id
+        # alphabetically" -- swapping the two swaps which one is "first".
+        self.assertEqual("second", r["exactTieKeepsFirstDeclaredReversed"])
+
+    def test_pickNearest_is_not_swayed_by_the_sherman_s_own_measured_float_noise(self) -> None:
+        # The actual bug this fixes: a plain `distance < best` compare lets a
+        # candidate a few ULPs closer win regardless of declared order --
+        # exactly the Sherman's driver/gunner door pair (~1.1e-13 m apart).
+        r = self.results["pickNearest"]
+        self.assertEqual("first", r["noiseAboveKeepsFirstDeclared"])
+        self.assertEqual("first", r["noiseBelowKeepsFirstDeclared"])
+
+    def test_pickNearest_breaks_a_four_way_tie_the_same_way(self) -> None:
+        # M3A1's own shape: four passenger EntryPoints compose to a bit-exact
+        # (zero-gap) tie at its one side door.
+        self.assertEqual("a", self.results["pickNearest"]["fourWayTieKeepsFirstDeclared"])
+
+    def test_pickNearest_still_prefers_a_genuinely_closer_candidate(self) -> None:
+        # The tie-break must never mask a real difference -- only noise within
+        # TIE_EPSILON is ignored, and TIE_EPSILON (1e-6 m) sits several orders
+        # of magnitude below any real gap between two distinct doors.
+        self.assertTrue(self.results["pickNearest"]["genuinelyCloserWinsRegardlessOfOrder"])
+
+    def test_pickNearest_never_returns_a_radius_disqualified_candidate(self) -> None:
+        self.assertEqual(
+            "genuinelyFarther",
+            self.results["pickNearest"]["disqualifiedNeverWinsOverAnyRealCandidate"],
+        )
+
+    def test_pickNearest_epsilon_is_far_above_measured_noise_and_far_below_a_real_gap(self) -> None:
+        # Measured this round (scratchpad/t2/dump.json): the Sherman's own
+        # tied doors differ by ~1.1457e-13 m; two genuinely different doors on
+        # any vanilla vehicle are metres apart, not micrometres.
+        epsilon = self.results["pickNearest"]["epsilon"]
+        self.assertGreater(epsilon, 1.1457e-13 * 1000)
+        self.assertLess(epsilon, 0.01)
+
     # --- VehicleOccupancy: drivetrain injection, seat switching -------------
 
     def test_ensureDrive_builds_lazily_through_the_injected_class(self) -> None:
