@@ -772,8 +772,200 @@ GeometryTemplate.create StandardMesh Willy_WheelR_M1
         self.assertEqual([], report.physics_parts)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class SupplyDepotBakeTests(unittest.TestCase):
+    """A SupplyDepot is meshless like an EntryPoint -- its placement is the
+    datum a soldier or vehicle has to stand inside `radius` of."""
+
+    # Objects/Buildings/Common/Ammobox/Objects.con, trimmed: a Bundle whose
+    # own two `addTemplate`s are the soldier- and vehicle-facing depots this
+    # one object provides, at their real (if inert) placed offsets.
+    AMMOBOX_CON = """
+ObjectTemplate.create Bundle Ammobox
+ObjectTemplate.geometry Ammobox_m1
+ObjectTemplate.addTemplate AmmoboxSupplyDepot
+ObjectTemplate.setPosition 0/0/0.5
+ObjectTemplate.addTemplate AmmoboxVehicleSupplyDepot
+ObjectTemplate.setPosition 0/0/-1.2
+
+ObjectTemplate.create SupplyDepot AmmoboxSupplyDepot
+ObjectTemplate.radius 3
+ObjectTemplate.team 0
+ObjectTemplate.setHealth 0 0 0
+ObjectTemplate.addAmmoType 1 -1 15 0
+ObjectTemplate.workOnVehicles 0
+ObjectTemplate.workOnSoldiers 1
+ObjectTemplate.loadSoundScript ../../../Common/Sounds/SupplyDepot.ssc
+
+ObjectTemplate.create SupplyDepot AmmoboxVehicleSupplyDepot
+ObjectTemplate.radius 15
+ObjectTemplate.team 0
+ObjectTemplate.addVehicleType sherman -1 4 0
+ObjectTemplate.workOnVehicles 1
+ObjectTemplate.workOnSoldiers 0
+
+GeometryTemplate.create StandardMesh Ammobox_m1
+"""
+
+    def _assemble(self, con_text: str, root: str, path: str, *, geometry: str):
+        library = ObjectLibrary()
+        library.add_con(path, con_text)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        mesh_index = builder.add_mesh(geometry, [gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])])
+        assembler._geom_mesh[geometry.lower()] = (mesh_index, 1)
+        assembler._geom_collisions[geometry.lower()] = []
+        report = Report(root=root, configuration="complex", lod=0)
+        node = assembler.build_node(builder, root, report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict())), report
+
+    def ammobox(self):
+        document, report = self._assemble(
+            self.AMMOBOX_CON, "Ammobox",
+            "Objects/Buildings/Common/Ammobox/Objects.con", geometry="Ammobox_m1")
+        return {node["name"]: node for node in document["nodes"]}, report
+
+    def test_meshless_depots_survive_at_their_placed_offset(self) -> None:
+        nodes, _ = self.ammobox()
+
+        self.assertIn("AmmoboxSupplyDepot", nodes)
+        self.assertIn("AmmoboxVehicleSupplyDepot", nodes)
+        # Refractor 0/0/0.5 and 0/0/-1.2 -> glTF Z negated, same convention
+        # `PhysicsExportTests` already relies on for Fletcher's bow/stern.
+        self.assertEqual([0.0, 0.0, -0.5],
+                         nodes["AmmoboxSupplyDepot"]["translation"])
+        self.assertEqual([0.0, 0.0, 1.2],
+                         nodes["AmmoboxVehicleSupplyDepot"]["translation"])
+
+    def test_supply_extras_carry_the_raw_words(self) -> None:
+        nodes, report = self.ammobox()
+
+        soldier_depot = nodes["AmmoboxSupplyDepot"]["extras"]["supply"]
+        self.assertEqual(3.0, soldier_depot["radius"])
+        self.assertEqual(0, soldier_depot["team"])
+        self.assertEqual([0.0, 0.0, 0.0], soldier_depot["health"])
+        self.assertEqual([[1.0, -1.0, 15.0, 0.0]], soldier_depot["ammoTypes"])
+        self.assertIs(True, soldier_depot["workOnSoldiers"])
+        # `workOnVehicles 0` is kept, not pruned -- `False` is declared data,
+        # same as `physics()`'s own `prune` keeping a Spring's `setStrength 0`.
+        self.assertIs(False, soldier_depot["workOnVehicles"])
+        self.assertEqual("../../../Common/Sounds/SupplyDepot.ssc",
+                         soldier_depot["soundScript"])
+
+        vehicle_depot = nodes["AmmoboxVehicleSupplyDepot"]["extras"]["supply"]
+        self.assertEqual([["sherman", -1.0, 4.0, 0.0]],
+                         vehicle_depot["vehicleTypes"])
+        self.assertIs(True, vehicle_depot["workOnVehicles"])
+        self.assertNotIn("ammoTypes", vehicle_depot)
+
+        self.assertEqual(2, len(report.supply_depots))
+        self.assertEqual(report.supply_depots, report.as_dict()["supplyDepots"])
+
+    def test_a_supply_depot_alone_does_not_need_a_mesh_to_survive(self) -> None:
+        # The depot itself carries no geometry anywhere in vanilla (a
+        # mediclocker's `mediclockerRepairpoint` is a bare SupplyDepot, not a
+        # Bundle); this proves the meshless-and-no-children path
+        # (`is_supply_depot`) keeps it without leaning on a sibling mesh.
+        library = ObjectLibrary()
+        library.add_con("Objects/Buildings/Common/mediclocker/Objects.con", """
+ObjectTemplate.create SupplyDepot mediclockerRepairpoint
+ObjectTemplate.radius 2
+ObjectTemplate.team 0
+ObjectTemplate.workOnVehicles 0
+ObjectTemplate.workOnSoldiers 1
+ObjectTemplate.setHealth -1 4.0 0
+""")
+        pool = ArchivePool()
+        builder = gltf.GlbBuilder()
+        assembler = Assembler(pool, pool, pool, library)
+        report = Report(root="mediclockerRepairpoint", configuration="complex", lod=0)
+
+        node = assembler.build_node(builder, "mediclockerRepairpoint", report)
+
+        self.assertIsNotNone(node)
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+        supply = document["nodes"][0]["extras"]["supply"]
+        self.assertEqual(2.0, supply["radius"])
+        self.assertEqual([-1.0, 4.0, 0.0], supply["health"])
+        self.assertIs(True, supply["workOnSoldiers"])
+
+
+class VehicleHudBakeTests(unittest.TestCase):
+    """`extras.hud`, on every `PlayerControlObject` node in the tree.
+
+    Objects/Vehicles/Land/Sherman/Objects.con, trimmed: the tank body is one
+    PlayerControlObject with its own HUD block, and its hull machine gun
+    (`shermanBrowning_PCO1`) is a second, nested one with a different
+    ammo bar (`ABAmmoBarHeatBar` against the turret's `ABAmmoBarReloadBar`)
+    and no secondary weapon of its own.
+    """
+
+    SHERMAN_CON = """
+ObjectTemplate.create PlayerControlObject Sherman
+ObjectTemplate.hitpoints 100
+ObjectTemplate.maxhitpoints 100
+ObjectTemplate.addTemplate ShermanTower
+ObjectTemplate.setVehicleIcon "Vehicle/Icon_sherman.tga"
+ObjectTemplate.setPrimaryAmmoIcon "Ammo/Icon_cannon.tga"
+ObjectTemplate.setPrimaryAmmoBar ABAmmoBarReloadBar
+ObjectTemplate.setSecondaryAmmoIcon "Ammo/Icon_bullet.tga"
+ObjectTemplate.setSecondaryAmmoBar ABAmmoBarHeatBar
+
+ObjectTemplate.create RotationalBundle ShermanTower
+ObjectTemplate.addTemplate shermanBrowning_PCO1
+
+ObjectTemplate.create PlayerControlObject shermanBrowning_PCO1
+ObjectTemplate.hitpoints 100
+ObjectTemplate.maxhitpoints 100
+ObjectTemplate.addTemplate shermanEntry
+ObjectTemplate.setVehicleIcon "Vehicle/Icon_sherman.tga"
+ObjectTemplate.setPrimaryAmmoIcon "Ammo/Icon_bullet.tga"
+ObjectTemplate.setPrimaryAmmoBar ABAmmoBarHeatBar
+
+ObjectTemplate.create EntryPoint shermanEntry
+ObjectTemplate.setEntryRadius 1.5
+"""
+
+    def sherman(self):
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Sherman/Objects.con",
+                        self.SHERMAN_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Sherman", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "Sherman", report)
+        assert node is not None
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+        return {n["name"]: n for n in document["nodes"]}, report
+
+    def test_every_playercontrolobject_gets_its_own_hud_block(self) -> None:
+        nodes, report = self.sherman()
+
+        turret_hud = nodes["Sherman"]["extras"]["hud"]
+        self.assertEqual(100.0, turret_hud["hitpoints"])
+        self.assertEqual(100.0, turret_hud["maxHitpoints"])
+        self.assertEqual("Vehicle/Icon_sherman.tga", turret_hud["vehicleIcon"])
+        self.assertEqual("Ammo/Icon_cannon.tga", turret_hud["primaryAmmoIcon"])
+        self.assertEqual("ABAmmoBarReloadBar", turret_hud["primaryAmmoBar"])
+        self.assertEqual("Ammo/Icon_bullet.tga", turret_hud["secondaryAmmoIcon"])
+        self.assertEqual("ABAmmoBarHeatBar", turret_hud["secondaryAmmoBar"])
+
+        gunner_hud = nodes["shermanBrowning_PCO1"]["extras"]["hud"]
+        self.assertEqual("Ammo/Icon_bullet.tga", gunner_hud["primaryAmmoIcon"])
+        self.assertEqual("ABAmmoBarHeatBar", gunner_hud["primaryAmmoBar"])
+        self.assertNotIn("secondaryAmmoBar", gunner_hud)
+
+        self.assertEqual(2, len(report.vehicle_hud))
+        self.assertEqual(report.vehicle_hud, report.as_dict()["vehicleHud"])
+
+    def test_a_rotationalbundle_carries_no_hud_block(self) -> None:
+        nodes, _ = self.sherman()
+
+        self.assertNotIn("hud", nodes["ShermanTower"]["extras"])
 
 
 class AlphaBleedTests(unittest.TestCase):
@@ -1075,6 +1267,44 @@ ObjectTemplate.gravityModifier 0
              "timeToLive": 3.0, "gravity": 0.0},
             fire["projectile"])
         self.assertNotIn("PlaneGuns projectile", nodes)
+
+    def test_magazine_and_heat_words_ride_on_the_firearms_extras(self) -> None:
+        # Vanilla's Coaxial_Browning shape: a magazine and a heat mechanic
+        # declared independently of each other on the same FireArms (a
+        # single-shot gun like Defgun's has the magazine words and no heat).
+        document, _ = self._assemble("""
+ObjectTemplate.create Bundle PlaneComplex
+ObjectTemplate.addTemplate PlaneBody
+ObjectTemplate.addTemplate PlaneGuns
+
+ObjectTemplate.create SimpleObject PlaneBody
+ObjectTemplate.geometry Plane_hull
+
+ObjectTemplate.create FireArms PlaneGuns
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.magSize 400
+ObjectTemplate.numOfMag 1
+ObjectTemplate.magType 0
+ObjectTemplate.reloadtime 0.1
+ObjectTemplate.roundOfFire 12
+ObjectTemplate.autoReload 1
+ObjectTemplate.heatAddWhenFire 0.05
+ObjectTemplate.coolDownPerSec 0.3
+ObjectTemplate.timeDelayOnOverHeat 2
+
+GeometryTemplate.create StandardMesh Plane_hull
+""")
+        fire = next(node for node in document["nodes"]
+                    if node["name"] == "PlaneGuns")["extras"]["fireArms"]
+
+        self.assertEqual(400, fire["magSize"])
+        self.assertEqual(1, fire["numOfMag"])
+        self.assertEqual(0, fire["magType"])
+        self.assertEqual(0.1, fire["reloadTime"])
+        self.assertTrue(fire["autoReload"])
+        self.assertEqual(0.05, fire["heatAddWhenFire"])
+        self.assertEqual(0.3, fire["coolDownPerSec"])
+        self.assertEqual(2.0, fire["timeDelayOnOverheat"])
 
     def test_unresolved_projectile_still_types_as_bullet(self) -> None:
         document, _ = self._assemble(self.GUNS_CON)

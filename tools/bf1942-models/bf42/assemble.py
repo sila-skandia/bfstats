@@ -217,6 +217,10 @@ class Report:
     animated_parts: list[str] = field(default_factory=list)
     cameras: list[str] = field(default_factory=list)
     seats: list[str] = field(default_factory=list)
+    # One line per SupplyDepot / PlayerControlObject-with-a-hud-block node,
+    # the same glance-able convention as `seats`/`physics_parts` above.
+    supply_depots: list[str] = field(default_factory=list)
+    vehicle_hud: list[str] = field(default_factory=list)
     # One line per part carrying an `extras.physics` block, so a glance at the
     # report says whether a vehicle came out simulatable or came out scenery.
     physics_parts: list[str] = field(default_factory=list)
@@ -257,6 +261,8 @@ class Report:
             "animatedParts": self.animated_parts,
             "cameras": self.cameras,
             "seats": self.seats,
+            "supplyDepots": self.supply_depots,
+            "vehicleHud": self.vehicle_hud,
             "physicsParts": self.physics_parts,
             "skinnedParts": self.skinned_parts,
             "boundParts": self.bound_parts,
@@ -1313,6 +1319,17 @@ class Assembler:
             "projectile": projectile_spec,
             "roundOfFire": template.round_of_fire,
             "magSize": template.mag_size,
+            # Magazine and reload, straight off the template -- present on a
+            # vehicle FireArms exactly like a HandFireArms (Defgun's cannon:
+            # 499/999/5s; a coax Browning: 400/1/0.1s, autoReload 1).
+            "numOfMag": template.num_of_mag,
+            "magType": template.mag_type,
+            "reloadTime": template.reload_time,
+            "autoReload": template.auto_reload,
+            # Sustained-fire heat (`ABHeatBarOnly` mounts: Browning, MG42).
+            "heatAddWhenFire": template.heat_add_when_fire,
+            "coolDownPerSec": template.cool_down_per_sec,
+            "timeDelayOnOverheat": template.time_delay_on_overheat,
             "velocity": template.velocity,
             "input": template.input_fire or "c_PIFire",
             "control": control or "vehicle",
@@ -1332,7 +1349,9 @@ class Assembler:
             + (f", projectile {projectile_spec['kind']}"
                if projectile_spec else "")
             + (f", flash {template.visible_barrel_template}"
-               if template.visible_barrel_template else ""))
+               if template.visible_barrel_template else "")
+            + (f", heat +{template.heat_add_when_fire:g}/shot"
+               if template.heat_add_when_fire else ""))
         return nodes, extras
 
     def _read_skin(self, path: str) -> skin.Skin | None:
@@ -1929,10 +1948,16 @@ class Assembler:
         kind = template.kind.lower()
         is_camera = kind == "camera"
         is_placement = kind in ("entrypoint", "seatobject")
+        # A SupplyDepot is meshless for the same reason: its placement is the
+        # datum a soldier or vehicle has to stand inside `supply_radius` of.
+        # Kept as its own flag rather than folded into `is_placement` because
+        # the two build unrelated extras blocks (`seat` vs `supply`) below.
+        is_supply_depot = kind == "supplydepot"
+        is_vehicle_root = kind == "playercontrolobject"
         is_physics_body = kind in con_mod.PHYSICS_TEMPLATE_KINDS
         physics = template.physics()
         if (mesh_index is None and not child_indices
-                and not (is_camera or is_placement or physics)):
+                and not (is_camera or is_placement or is_supply_depot or physics)):
             return None
 
         if mesh_index is not None:
@@ -1970,6 +1995,55 @@ class Assembler:
                 f"[{seat['control']}] {template.name} ({kind})"
                 + (f" r={template.entry_radius:g}m" if template.entry_radius else "")
                 + (" " + ",".join(template.seat_flags) if template.seat_flags else ""))
+        if is_supply_depot:
+            # Raw `.con` values, on the node whose placement is the datum --
+            # see the comment above `is_supply_depot`. `soundScript` reuses
+            # the generic field every template carries; every other key here
+            # is unique to a SupplyDepot.
+            supply = {key: value for key, value in {
+                "radius": template.supply_radius,
+                "team": template.supply_team,
+                "health": (list(template.supply_set_health)
+                           if template.supply_set_health else None),
+                "ammoTypes": ([list(t) for t in template.supply_ammo_types]
+                              or None),
+                "vehicleTypes": ([list(t) for t in template.supply_vehicle_types]
+                                 or None),
+                "workOnSoldiers": template.supply_work_on_soldiers,
+                "workOnVehicles": template.supply_work_on_vehicles,
+                "soundScript": template.sound_script,
+            }.items() if value is not None}
+            extras["supply"] = supply
+            report.supply_depots.append(
+                f"{template.name}: radius="
+                + (f"{template.supply_radius:g}m" if template.supply_radius else "?")
+                + f" team={template.supply_team}"
+                + (f" ammoTypes={len(template.supply_ammo_types)}"
+                   if template.supply_ammo_types else "")
+                + (f" vehicleTypes={len(template.supply_vehicle_types)}"
+                   if template.supply_vehicle_types else "")
+                + (" soldiers" if template.supply_work_on_soldiers else "")
+                + (" vehicles" if template.supply_work_on_vehicles else ""))
+        if is_vehicle_root:
+            # Declared on the vehicle's own root, not on its FireArms
+            # children -- see the field comments in `con.ObjectTemplate`
+            # ("Vehicle HUD"). A tank's hull gunner is a second, nested
+            # PlayerControlObject with its own HUD block (Sherman's
+            # `shermanBrowning_PCO1`), so this has to run for every node of
+            # this kind in the tree, not just the root.
+            hud = {key: value for key, value in {
+                "hitpoints": template.hitpoints,
+                "maxHitpoints": template.max_hitpoints,
+                "vehicleIcon": template.vehicle_icon,
+                "primaryAmmoIcon": template.vehicle_primary_ammo_icon,
+                "primaryAmmoBar": template.vehicle_primary_ammo_bar,
+                "secondaryAmmoIcon": template.vehicle_secondary_ammo_icon,
+                "secondaryAmmoBar": template.vehicle_secondary_ammo_bar,
+            }.items() if value is not None}
+            if hud:
+                extras["hud"] = hud
+                report.vehicle_hud.append(
+                    f"{template.name}: " + ", ".join(f"{k}={v}" for k, v in hud.items()))
         if physics:
             # Raw `.con` values in `.con` units, on the part that declared
             # them. Nothing is summed onto the body: a Sherman's drive
