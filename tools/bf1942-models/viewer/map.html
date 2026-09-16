@@ -131,17 +131,16 @@
   #crosshair .ch-e { height: 2px; width: 13px; top: -1px; left: var(--ch-gap); }
   #crosshair.ch-icon .ch-n, #crosshair.ch-icon .ch-s,
   #crosshair.ch-icon .ch-w, #crosshair.ch-icon .ch-e { display: none; }
-  /* The magazine, in the same voice as #hud but bottom right, so a reload
-     countdown never pushes the control hints around. */
-  #ammo {
-    position: absolute;
+  /* The in-game HUD proper -- health bar, stance figure, magazine picture,
+     vehicle panels -- painted by hud.js from the game's own hud-layout.json
+     rects and sprites, not styled here. Sits above the 3D canvas (z-index 0)
+     and below the DOM crosshair/hint line (both z-index 2, untouched this
+     round); the generic `canvas` rule above already gives it position/inset/
+     size, so only the stacking and click-through need overriding. */
+  #hud-canvas {
     z-index: 2;
-    right: 16px; bottom: 18px;
-    color: var(--text);
-    text-shadow: 0 1px 4px #000;
     pointer-events: none;
   }
-  #ammo[hidden] { display: none; }
   #gate {
     z-index: 1;
     inset: 0;
@@ -566,9 +565,9 @@
       <span>Reset</span>
     </button>
   </div>
+  <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; M map &middot; Esc</div>
   <div id="crosshair" hidden><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
-  <div id="ammo" hidden></div>
   <div id="gate"><span>Tap or click to fly</span></div>
   <div id="gl-lost" hidden>
     <div class="gl-lost-card">
@@ -620,6 +619,7 @@ import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { createReplayController, recordingLevel } from './replay.js';
+import { Hud } from './hud.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -3557,7 +3557,6 @@ function setPilot(on, node = null) {
     vehicle.applyTransform();
     vehicle.applyRig();
     freezeVehicle(vehicle.node);   // parked at its spawn: furniture again
-    ammoEl.hidden = true;      // the dashboard line rides the ammo element
   }
   stick.roll = 0;
   stick.pitch = 0;
@@ -3599,16 +3598,14 @@ function drive(dt) {
   const pose = view.update(dt);
   camera.position.copy(pose.position);
   camera.quaternion.copy(pose.quaternion);
-
-  // The dashboard, on the element the rifleman's ammo line uses: road speed
-  // and the automatic's gear, which `ground.js` keeps readable for exactly
-  // this. Reverse is a mode there rather than a slot, so it is read off the
-  // signed forward speed here.
-  const fwd = driveFwd.set(0, 0, -1).applyQuaternion(car.state.orientation);
-  const vf = car.state.velocity.dot(fwd);
-  ammoEl.hidden = false;
-  ammoEl.textContent = `${car.control} · ${Math.round(Math.abs(vf) * 3.6)} km/h`
-    + ` · gear ${vf < -0.25 ? 'R' : car.gear}`;
+  // The dashboard readout this used to write into `#ammo` (road speed, gear)
+  // is dropped rather than folded into `#hud`: that line is a timed
+  // announcement (`showView`, the spawn/flag text) that overwrites itself on
+  // a 2.2s timer, and a per-tick dashboard string competing with that timer
+  // would either starve the announcements or itself flicker unreadably.
+  // `car.control`/`.gear` stay live on `__car` for a headless check that
+  // wants them; the vehicle HUD panel due from a future seats.js track is the
+  // real replacement.
 }
 const driveFwd = new THREE.Vector3();
 
@@ -3709,7 +3706,6 @@ function enterVehicle(node) {
   clickQueued = false;
   aimHeld = false;
   crosshairEl.hidden = true;
-  ammoEl.hidden = true;
   camera.fov = FLY_FOV;
   camera.near = FLY_NEAR;
   camera.updateProjectionMatrix();
@@ -3753,7 +3749,6 @@ function leaveVehicle() {
   freezeVehicle(vehicle.node);   // parked where it stands: furniture again
   stick.roll = 0;
   stick.pitch = 0;
-  ammoEl.hidden = true;
 }
 
 /**
@@ -4180,7 +4175,6 @@ function isZoomed() {
   return aimHeld && captured;
 }
 const crosshairEl = document.getElementById('crosshair');
-const ammoEl = document.getElementById('ammo');
 const aimOrigin = new THREE.Vector3();
 const aimDirection = new THREE.Vector3();
 
@@ -4246,7 +4240,6 @@ function disposeHandWeapon() {
   handWeapon = null;
   clickQueued = false;
   crosshairEl.hidden = true;
-  ammoEl.hidden = true;
   if (!hw) return;
   if (hw.group) {
     guns.setFiring(hw.group, false);
@@ -4492,7 +4485,6 @@ async function loadHandWeapon(name, soldierName = null) {
   // keeps one from landing on a weapon the soldier has already swapped away
   // from.
   firePromise.then(fire => { if (fire && weaponToken === token) hw.fire = fire; });
-  updateAmmoHud();
   return hw;
 }
 
@@ -4902,7 +4894,6 @@ function footFire(dt, input = null) {
   updateViewmodelAnimation(hw, dt);
 
   updateCrosshair();
-  updateAmmoHud();
 }
 
 /**
@@ -4946,22 +4937,154 @@ function updateCrosshair() {
   }
 }
 
-function updateAmmoHud() {
-  const hw = handWeapon;
-  const magazine = hw?.data?.magazine;
-  // A seated soldier's optOnFoot box is still ticked — he is only suspended —
-  // but the element belongs to the vehicle's dashboard while he sits.
-  if (!hw || !magazine || !optOnFoot.checked || aircraft || car) {
-    if (!ammoEl.hidden) ammoEl.hidden = true;
-    return;
+// --- the in-game HUD: soldier-side variables --------------------------------
+//
+// hud.js owns the one painter for every group hud-layout.json declares; this
+// page's job is only to keep `gameHud.vars` current with the engine's own
+// named variables (features/bf1942-3d-models/in-game-hud.md). This section
+// feeds the SOLDIER side — health bar, stance figure, hand-weapon ammo panel —
+// plus the one shared boolean (`Vehicle/ShowVehicleIcon`) that switches the
+// ammo panel between its soldier and vehicle skins; a future seats.js owns
+// the vehicle-side groups themselves (vehicleIcon/vehicleHealth/vehicleSeats/
+// primaryAmmo/secondaryAmmo) and, once it lands, the finer-grained seated
+// state that boolean really needs — see the note on `inVehicle` below.
+
+// c_BfSoldierStanding/Crouching/Lying, the engine's own pose vocabulary
+// (CommonSoldierData.inc), against the sprite pack's own suffix — a direct
+// rename, not an inference.
+const STANCE_TEXTURE = { stand: 'standing', crouch: 'crouching', prone: 'lying' };
+
+// OPEN [R1-12]: the nation key BFSoldierHud's stance icon actually reads was
+// never traced (verify-r1.md leaves it open). Approximated with the same
+// per-side nation the deploy screen's own kit art already resolves
+// (`teamNation`), translated only where the icon set's own filenames spell a
+// nation differently from the flag-mesh table (`jap`, where `hud.json`'s
+// `flagMeshNation` says `jp`) — an asset-naming difference this file already
+// has to bridge elsewhere, not a new engine fact.
+const STANCE_NATION = { us: 'us', ger: 'ger', brit: 'brit', rus: 'rus', jp: 'jap' };
+
+// The kit's own health-bar art, memoised: `kitLoadout` allocates a small
+// object per call, so this only re-resolves it when the level/team/kit
+// actually changed instead of on every rendered frame
+// (features/mesh-viewer-performance, rule 5). Compared field by field, not
+// via a joined-string key: a template literal built fresh every call to
+// throw away immediately is itself the per-frame allocation rule 5 rules out.
+let kitArtDir = null;
+let kitArtTeam = null;
+let kitArtKitName = null;
+let kitArtCache = null;
+function kitHealthArt(team, kitName) {
+  if (team !== kitArtTeam || kitName !== kitArtKitName || currentDir !== kitArtDir) {
+    kitArtDir = currentDir;
+    kitArtTeam = team;
+    kitArtKitName = kitName;
+    const resolved = kitLoadout(team, kitName).kit;
+    kitArtCache = (resolved && loadouts?.kits?.[resolved]) || null;
   }
-  if (ammoEl.hidden) ammoEl.hidden = false;
-  // A fresh text node per frame is a style and layout pass per frame; the
-  // line changes per round and per tenth of a reload second, not per frame.
-  const text = hw.reload > 0
-    ? `${hw.name} · reloading ${hw.reload.toFixed(1)}s`
-    : `${hw.name} · ${hw.rounds} / ${magazine.size} · ${hw.mags} mags`;
-  if (ammoEl.textContent !== text) ammoEl.textContent = text;
+  return kitArtCache;
+}
+
+// The stance icon's own nation, memoised the same way and for a bigger
+// reason: `teamNation` allocates a `Map` and walks every control point on
+// the level (found while reviewing this track — it was being called
+// unmemoised, once per rendered frame, the exact per-frame-allocation-plus-
+// O(n)-scan shape rule 5 exists to catch). The team's nation cannot change
+// without a fresh spawn, so this only re-runs it when the team or level did.
+let nationArtDir = null;
+let nationArtTeam = null;
+let nationArtCache = null;
+function stanceNation(team) {
+  if (team !== nationArtTeam || currentDir !== nationArtDir) {
+    nationArtDir = currentDir;
+    nationArtTeam = team;
+    nationArtCache = STANCE_NATION[teamNation(team)] || (team === 1 ? 'ger' : 'us');
+  }
+  return nationArtCache;
+}
+
+/**
+ * Keep `gameHud.vars` current with the soldier's own state, once per
+ * rendered frame (HUD-3: the engine itself recomputes this HUD once per
+ * `Renderer_drawFrame`, not the 30Hz tick) — called from `frame()`, right
+ * before `gameHud.paint()`. Writes plain fields on an existing object only;
+ * the nation and kit-art lookups are memoised above (rule 5), so the only
+ * per-call allocation left is the display-string template literal itself.
+ */
+function updateSoldierHud() {
+  const vars = gameHud.vars;
+  // The only "seat" concept this page has before seats.js lands. A future
+  // manned-gun or tank seat that is neither an Aircraft nor a GroundVehicle
+  // will need its own state folded in here, or this whole boolean pair
+  // handed over to that track outright — see the report for this round.
+  const inVehicle = optPilot.checked && !!(aircraft || car);
+  // A seated soldier's optOnFoot box is still ticked — he is only suspended,
+  // per disposeHandWeapon's own comment on the old #ammo element — so the
+  // vehicle check has to be explicit here too.
+  const onFootActive = optOnFoot.checked && !!soldier && !inVehicle;
+  vars['Soldier/ShowSoldierIcon'] = onFootActive;
+  vars['Vehicle/ShowVehicleIcon'] = inVehicle;
+  vars['Weapon/ShowWeaponIcon'] = onFootActive && !!handWeapon;
+  if (!onFootActive) return;
+
+  const iconNation = stanceNation(deployTeamId);
+  const stanceWord = STANCE_TEXTURE[soldier.stance] || 'standing';
+  vars['Soldier/SoldierIcon'] = `Soldier/Icon_${iconNation}_soldier_${stanceWord}.tga`;
+
+  // The kit glyph is baked into these two textures already (opened
+  // healthbar_full_scout_64x64.png directly: the scout scope icon sits in the
+  // art itself), not a separate layout element — feeding these two is the
+  // whole of "the health bar and its kit art".
+  const art = kitHealthArt(deployTeamId, deployKit);
+  vars['Soldier/SoldierHealthBarIcon'] = art?.healthBarIcon;
+  vars['Soldier/SoldierHealthBarFullIcon'] = art?.healthBarFullIcon;
+
+  // TEMPORARY seed, not a feed: `Soldier/SoldierHitPoints` and
+  // `SoldierMaxHitPoints` are supply-and-health's (BRIEFING2), and nothing in
+  // this worktree tracks damage yet. Vanilla's own constant
+  // (CommonSoldierData.inc: HitPoints 30, MaxHitPoints 30) seeds the bar so
+  // its fill layer has something to paint before that track lands; the `??=`
+  // means a real tracked value, once written, is never stomped back to this.
+  vars['Soldier/SoldierMaxHitPoints'] ??= 30;
+  vars['Soldier/SoldierHitPoints'] ??= 30;
+
+  const hw = handWeapon;
+  if (!hw) return;
+  const magazine = hw.data?.magazine;
+  const hudAmmo = (hw.data?.hudAmmo || '').toLowerCase();
+  const ammoHud = hw.data?.hud;
+  if (hudAmmo === 'atammobar' && magazine) {
+    // R1-19/HUD-9, the magazine-bar branch. PrimaryAmmo is the loaded round
+    // count (top-right, "14" in the retail shot); PrimaryMag is a SEPARATE
+    // int, the spare-magazine count (bottom-right small box, "5") — the two
+    // numbers verify-r1.md's report was asked to settle, and they are not
+    // the same count.
+    vars['Ammo/AmmoType'] = 1;
+    vars['Ammo/PrimaryAmmo'] = hw.rounds;
+    vars['Ammo/MaxPrimaryAmmo'] = magazine.size;
+    vars['Ammo/PrimaryMag'] = hw.mags;
+    // OPEN: no `.con` word or client write-site for SoldierAmmoHasMag turned
+    // up in R1's survey; fed true unconditionally so the spare-count readout
+    // shows at all for a magazine weapon — an assumption this file is making,
+    // not a confirmed engine default.
+    vars['Ammo/SoldierAmmo/SoldierAmmoHasMag'] = true;
+    // The weapon's own bar art/size (weaponStats.hud), tolerant per HUD-1:
+    // absent leaves hud-layout.json's own literal (vanilla's rifle-style bar).
+    if (ammoHud?.ammoBar) vars['Ammo/SoldierAmmo/SoldierAmmoBar'] = ammoHud.ammoBar;
+    if (ammoHud?.ammoBarFill) vars['Ammo/SoldierAmmo/SoldierAmmoBarFill'] = ammoHud.ammoBarFill;
+    if (ammoHud?.ammoBarSize) vars['Ammo/SoldierAmmo/SoldierAmmoBarSize'] = ammoHud.ammoBarSize;
+  } else if (hudAmmo === 'aticon') {
+    // The icon-only fallback (AmmoType 6 or 7 in hud-layout.json — OPEN
+    // [R1-18]: which of the two the engine actually uses for ATIcon weapons
+    // was never read, so 6 is picked arbitrarily. Both branches cull the same
+    // unfed heat/reload fill below, so the choice paints identically: icon
+    // and panel only, no numbers — matching the Viewer Recipe's "icon-only
+    // fallback" exactly either way.
+    vars['Ammo/AmmoType'] = 6;
+    if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
+  }
+  // Any other value (or none) leaves `Ammo/AmmoType` unset: every soldierAmmo
+  // leaf requires it, so the whole panel culls rather than guessing a shape
+  // for a weapon this file cannot classify.
 }
 
 /** Announce the view C just selected, then fall back to the control list. */
@@ -5227,6 +5350,18 @@ async function loadHudPack() {
 loadHudPack();
 
 const sprite = name => hudPack.sprites.get(name) || null;
+
+// The in-game HUD painter (hud.js), sharing this same sprite pack rather than
+// fetching its own copy. `gameHud`, not `hud`: that name is already the
+// `#hud` hint-line DOM element throughout this file. Published unconditionally
+// on `window.__hud` — not only under `?shots` — because that is the whole of
+// the round-2 contract other tracks (seats.js, supply.js, armor.js) write
+// their own variables through: `window.__hud.vars['Vehicle/VehicleIcon'] =
+// ...`, once those tracks land.
+const hudCanvas = document.getElementById('hud-canvas');
+const gameHud = new Hud({ canvas: hudCanvas, sprite, base: HUD_BASE, bust });
+gameHud.load();
+window.__hud = gameHud;
 
 /** Draw a sprite centred on (x, y) at `sc` times its own pixels. Returns
  *  false when the pack has not delivered it yet, so callers can fall back. */
@@ -6507,6 +6642,18 @@ function frame(dt) {
   }
   drawMinimap();
   drawFullMap();
+  // Last, over everything: feed this frame's soldier-side variables, then
+  // repaint only if paint() finds one of them (or the stage size) actually
+  // changed since the call before (features/mesh-viewer-performance, rule 7).
+  // `stageWidth`/`stageHeight` are 0 under `__renderOnce` (the hidden
+  // `?shots` tab reports a 0x0 window, same reason `updateCrosshair` falls
+  // back to a literal 800) — recovered here from the renderer's own backing
+  // store instead of a fixed guess, so the HUD scales to match whatever size
+  // a headless check actually asked for.
+  const hudW = stageWidth || renderer.domElement.width / renderer.getPixelRatio();
+  const hudH = stageHeight || renderer.domElement.height / renderer.getPixelRatio();
+  updateSoldierHud();
+  gameHud.paint(hudW, hudH);
 }
 renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
 if (params.has('shots')) {
