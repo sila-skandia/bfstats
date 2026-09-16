@@ -2312,14 +2312,20 @@ async function soundBuffer(dir, relPath) {
   const key = `${dir}/${relPath}`;
   if (audioBufferCache.has(key)) return audioBufferCache.get(key);
   ensureListener();
-  try {
-    const buf = await audioLoader.loadAsync(`${MAPS_BASE}/${key}${bust()}`);
-    audioBufferCache.set(key, buf);
-    return buf;
-  } catch (e) {
-    console.warn(`Could not load sound ${key}:`, e);
-    return null;
-  }
+  // The pending decode is what goes in the cache, not just the finished
+  // buffer. Two setups that overlap — the pilot box ticked, unticked and
+  // ticked again while the first load is still awaiting — otherwise both miss
+  // and fetch the same wav twice, which is the one-decode-per-wav rule the
+  // hall-echo postmortem left behind (features/bf1942-3d-models/map-sounds.md).
+  // A failed load drops out of the cache again so a later attempt can retry.
+  const pending = audioLoader.loadAsync(`${MAPS_BASE}/${key}${bust()}`)
+    .catch(e => {
+      console.warn(`Could not load sound ${key}:`, e);
+      audioBufferCache.delete(key);
+      return null;
+    });
+  audioBufferCache.set(key, pending);
+  return pending;
 }
 
 /**
@@ -2333,14 +2339,15 @@ async function modelSoundBuffer(relPath) {
   const key = `models:${relPath}`;
   if (audioBufferCache.has(key)) return audioBufferCache.get(key);
   ensureListener();
-  try {
-    const buf = await audioLoader.loadAsync(`${MODELS_BASE}/${relPath}${bust()}`);
-    audioBufferCache.set(key, buf);
-    return buf;
-  } catch (e) {
-    console.warn(`Could not load sound ${key}:`, e);
-    return null;
-  }
+  // The pending decode, for the reason soundBuffer gives above.
+  const pending = audioLoader.loadAsync(`${MODELS_BASE}/${relPath}${bust()}`)
+    .catch(e => {
+      console.warn(`Could not load sound ${key}:`, e);
+      audioBufferCache.delete(key);
+      return null;
+    });
+  audioBufferCache.set(key, pending);
+  return pending;
 }
 
 function disposeSounds() {
