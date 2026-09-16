@@ -617,9 +617,11 @@ import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
-         FOV_DEG as FOOT_FOV } from './soldier.js';
+         FOV_DEG as FOOT_FOV, JUMP_SPEED } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { createReplayController, recordingLevel } from './replay.js';
+import { Armor } from './armor.js';
+import { SupplyDepot, SupplyField } from './supply.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -3617,6 +3619,63 @@ let prone = false;           // `c_PILie` is a toggle, not a hold
 const FLY_FOV = camera.fov;
 const FLY_NEAR = camera.near;
 
+// --- the soldier's hit points, and the supply depots that refill them ------
+//
+// `verify-r4.md` (hit points, damage, healing) and `verify-r3.md` (supply
+// depots), both `## Corrected report`. `armor.js` and `supply.js` are
+// framework-free — see their own headers — so all the state tying them to
+// *this* soldier lives here, in the on-foot/spawn code this track owns.
+
+/** The on-foot soldier's own hit points, or null while none exists. Reset to
+ *  full on every spawn/redeploy (`spawnAtFlag`, below — the one reset point,
+ *  since `setOnFoot(true)` calls it too). */
+let soldierArmor = null;
+
+/** `_shared/loadouts.json` ships `maxHitpoints: 30` for every vanilla-family
+ *  kit (`verify-r4.md` R4-25's own cross-mod survey). Only the fallback for
+ *  a maps tree extracted before that field existed — the same role
+ *  `FALLBACK_PRIMARIES` plays for weapons below. */
+const SOLDIER_MAX_HP_FALLBACK = 30;
+
+/** Wake's 52 `SupplyDepot` nodes, collected once per level (see
+ *  `collectSupplyDepots`) and cached against the `currentRoot` they came
+ *  from, so a map switch — a new root object — rebuilds the field exactly
+ *  once rather than every frame. Built lazily from `onFoot`, this track's
+ *  one hook into the per-frame loop. */
+let supplyField = null;
+let supplyDepotsRoot = null;
+
+/** Reused rather than reallocated every frame, the way `soldier.js`'s own
+ *  `_tickInput` is: `onFoot` updates these fields in place and hands the
+ *  same object to `supplyField.tick`/`canHeal`/`canRearm` every call.
+ *  `refillAmmo` is wired once, beside `handWeapon`'s own declaration below —
+ *  a closure over it, so it always acts on whatever is currently in hand. */
+const supplyTarget = { x: 0, y: 0, z: 0, team: 2, armor: null, refillAmmo: null };
+
+// Fall damage (`verify-r4.md` R4-18): no height/speed-to-damage formula
+// exists anywhere `Armor`'s own code, `handleCollision` or `handleDamage`
+// reach — two independent passes (research and verify) read all three in
+// full and found nothing. This is therefore a **viewer approximation**, not
+// the engine's law: ordinary traversal (a jump's own landing speed,
+// `JUMP_SPEED`, doubled, so stepping off a low ledge is always free) costs
+// nothing; a fall at or past `LETHAL_FALL_SPEED` is fatal; damage ramps
+// linearly between the two. Open question this approximation stands on:
+// R4-18 — replace this ramp if the real formula ever surfaces.
+const SAFE_FALL_SPEED = JUMP_SPEED * 2;     // ~10.8 m/s, ~4 m of drop
+const LETHAL_FALL_SPEED = 25;               // m/s, ~21 m of drop
+let fallPeakSpeed = 0;    // steepest downward speed seen during this air time
+let wasGrounded = true;
+
+/** The stand-in for P1's `hud.js` contract: `hud.vars['Engine/Var'] = x`,
+ *  read by the painter's own `hud-layout.json` bindings. This worktree was
+ *  cut before `hud.js` existed, so per the round-2 briefing this file
+ *  builds the same shape itself, named `hudBridge` because `hud` (the
+ *  on-screen hint line, above) already owns that identifier. When P1's real
+ *  painter lands, point it at (or merge it with) this object — the keys
+ *  below are the engine's own variable names either way, so nothing that
+ *  writes them needs to change. */
+const hudBridge = { vars: {} };
+
 /** Fill the flag picker from the level's own control points.
  *
  *  Rebuilt whole, but not forgetful: the deploy screen writes its choice into
@@ -3651,6 +3710,12 @@ function spawnAtFlag(advance = false) {
   soldier.spawn(spawn.position[0], spawn.position[1], spawn.position[2],
                 spawnYaw(spawn));
   prone = false;
+  // A fresh body is full health, from the kit's own template (`soldierMaxHp`,
+  // beside `kitLoadout` below) — every spawn and every redeploy passes
+  // through here, so this is the one reset point.
+  soldierArmor = new Armor(soldierMaxHp(flag));
+  fallPeakSpeed = 0;
+  wasGrounded = true;
   // The weapon follows the flag: switching to the other side's spawn swaps
   // the SMG. A no-op when the right one is already in hand.
   ensureHandWeapon(flag);
@@ -3697,6 +3762,14 @@ function setOnFoot(on) {
     // overlay possibly still up.
     if (deployActive()) toggleFullMap(false);
     soldier = null;
+    // The soldier's own HP is meaningless off-foot; drop it and the icons
+    // that read it rather than leave a stale number for the next spawn's
+    // first frame to flash.
+    soldierArmor = null;
+    delete hudBridge.vars['Soldier/SoldierHitPoints'];
+    delete hudBridge.vars['Soldier/SoldierMaxHitPoints'];
+    delete hudBridge.vars['ShowHealIcon'];
+    delete hudBridge.vars['ShowReloadIcon'];
     spawnFlagSelect.hidden = true;
     camera.fov = FLY_FOV;
     camera.near = FLY_NEAR;
@@ -3709,6 +3782,25 @@ function setOnFoot(on) {
 
 const HUD_FOOT ='WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
   + 'LMB fire · RMB aim · R reload · M redeploy · Esc';
+
+/** Wake's (or any level's) `SupplyDepot` nodes, world position resolved
+ *  through the scene graph — a depot is usually parented under a `Bundle`
+ *  (`extract_map.py`'s own placement) and does not carry its own world
+ *  translation, only the chain above it does. Run once per level load, from
+ *  `onFoot` (below), never per frame. */
+function collectSupplyDepots(root) {
+  const depots = [];
+  if (!root) return depots;
+  const pos = new THREE.Vector3();
+  root.traverse(obj => {
+    const data = obj.userData?.supply;
+    if (!data || obj.userData.templateKind !== 'SupplyDepot') return;
+    obj.updateWorldMatrix(true, false);
+    obj.getWorldPosition(pos);
+    depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name));
+  });
+  return depots;
+}
 
 /** Read the keyboard into the soldier and put the camera behind his eyes. */
 function onFoot(dt) {
@@ -3727,6 +3819,44 @@ function onFoot(dt) {
     jump: held.has('Space'),
   };
   soldier.step(dt, input);
+
+  // Fall damage — an approximation; see `SAFE_FALL_SPEED`'s own comment
+  // above (R4-18). Tracks the steepest downward speed seen while airborne
+  // and judges it the instant the body reports grounded again.
+  if (!soldier.grounded) {
+    fallPeakSpeed = Math.max(fallPeakSpeed, -soldier.velocityY);
+  } else {
+    if (!wasGrounded && soldierArmor && fallPeakSpeed > SAFE_FALL_SPEED) {
+      const ramp = (fallPeakSpeed - SAFE_FALL_SPEED) / (LETHAL_FALL_SPEED - SAFE_FALL_SPEED);
+      soldierArmor.applyDamage(Math.min(1, ramp) * soldierArmor.maxHitPoints);
+    }
+    fallPeakSpeed = 0;
+  }
+  wasGrounded = soldier.grounded;
+
+  // Wake's SupplyDepot instances: collected once per level (a map switch
+  // hands `currentRoot` a new object, caught here by reference), then ticked
+  // at this hook's own call rate — `SupplyDepot.tick`'s internal 0.5s
+  // self-throttle (verify-r3.md SUP-11) is what actually paces the give/heal,
+  // not this call rate. The `ShowHealIcon`/`ShowReloadIcon` HUD vars are
+  // un-throttled on purpose (SUP-33/34): they track proximity every frame,
+  // the way the engine's own icon predicates do, independent of the depot's
+  // own action cadence.
+  if (supplyDepotsRoot !== currentRoot) {
+    supplyDepotsRoot = currentRoot;
+    supplyField = new SupplyField(collectSupplyDepots(currentRoot));
+  }
+  supplyTarget.x = soldier.x; supplyTarget.y = soldier.y; supplyTarget.z = soldier.z;
+  supplyTarget.team = deployTeamId;
+  supplyTarget.armor = soldierArmor;
+  supplyField.tick(dt, supplyTarget);
+  hudBridge.vars['ShowHealIcon'] = supplyField.canHeal(supplyTarget);
+  hudBridge.vars['ShowReloadIcon'] = supplyField.canRearm(supplyTarget);
+  if (soldierArmor) {
+    hudBridge.vars['Soldier/SoldierHitPoints'] = soldierArmor.hitPoints;
+    hudBridge.vars['Soldier/SoldierMaxHitPoints'] = soldierArmor.maxHitPoints;
+  }
+
   // `soldier.eye()` is the eye pose with the bob already on it, interpolated
   // between the last two 60 Hz ticks — the sim runs on a fixed step inside
   // `step()` above, so drawing at the last tick would stutter on any monitor
@@ -3947,6 +4077,24 @@ const CROSSHAIR_MIN_PX = 4;        // bar gap floor, so the cross never closes
 const DEG_TO_RAD = Math.PI / 180;
 
 let handWeapon = null;    // { name, data, rig, group, model, rounds, mags, ... }
+// A supply depot's "give ammo" call (`supplyTarget`, above): a closure over
+// `handWeapon` so it always acts on whatever is currently in hand, wired
+// here rather than where `supplyTarget` is declared only because this is
+// where `handWeapon` itself first exists.
+supplyTarget.refillAmmo = () => {
+  const hw = handWeapon;
+  const magazine = hw?.data?.magazine;
+  if (!magazine) return;
+  // "Refill fully" is this viewer's own approximation of `reloadAmmo` — see
+  // `supply.js`'s `SupplyDepot.tick` for why (SUP-8, SUP-23). Restores the
+  // same full loadout `loadHandWeapon` equips fresh with (`magazines - 1`
+  // spares) — one magazine less than the pre-existing `__refill` perf-cheat
+  // below, which is deliberately generous for a stress test rather than
+  // standing in for a real mechanic.
+  hw.rounds = magazine.size;
+  hw.mags = Math.max((magazine.magazines ?? 1) - 1, 0);
+  hw.reload = 0;
+};
 let weaponToken = 0;      // guards a slow load landing after a mode/map switch
 let triggerHeld = false;  // left button, while pointer-locked on foot
 let clickQueued = false;  // one queued semi-auto shot per press
@@ -4002,6 +4150,16 @@ function kitLoadout(team, kitName = deployKit) {
     primary: loadouts.kits?.[kit]?.primary || null,
     soldier: side.soldier || null,
   };
+}
+
+/** The max HP a soldier of `flag`'s team, holding the deploy screen's chosen
+ *  kit, spawns with — `_shared/loadouts.json`'s own `maxHitpoints` for that
+ *  kit, or `SOLDIER_MAX_HP_FALLBACK` when the field or the file is not there
+ *  yet (the same fallback shape `weaponTemplateFor` uses for a primary). */
+function soldierMaxHp(flag) {
+  const { kit } = kitLoadout(flag?.team, deployKit);
+  const maxHp = loadouts?.kits?.[kit]?.maxHitpoints;
+  return Number.isFinite(maxHp) ? maxHp : SOLDIER_MAX_HP_FALLBACK;
 }
 
 /** The template a soldier of `flag`'s team spawns holding, with the kit the
@@ -6448,6 +6606,11 @@ if (params.has('shots')) {
     stance: soldier.stance, gait: soldier.gait, speed: soldier.speed,
     grounded: soldier.grounded, blocked: soldier.blocked, onWater: soldier.onWater,
     steps: soldier.steps, casts: soldier.casts,
+    // Hit points (verify-r4.md) and the current deploy team (verify-r3.md's
+    // depot team gate reads this) — null hp/maxHp is itself informative: it
+    // means `soldierArmor` was never created, not that HP is zero.
+    hp: soldierArmor?.hitPoints ?? null, maxHp: soldierArmor?.maxHitPoints ?? null,
+    destroyed: soldierArmor?.destroyed ?? null, team: deployTeamId,
     bobUp: soldier.bobUp, bobSide: soldier.bobSide,
     ground: groundHeight(soldier.x, soldier.z),
     fov: camera.fov, near: camera.near,
@@ -6520,6 +6683,68 @@ if (params.has('shots')) {
     hw.reload = 0;
     return true;
   };
+  // `SimpleObject::handleDamage`'s own sign dispatch (R4-19): positive
+  // damages, zero or negative heals — the hook the round-2 briefing asks
+  // for, so a test can take the soldier's HP down without waiting on fall
+  // damage's own approximate trigger.
+  window.__damage = n => {
+    if (!soldierArmor) return false;
+    soldierArmor.applyDamage(Number(n) || 0);
+    return true;
+  };
+  // Exercise the fall-damage integration itself (the `onFoot` hook above),
+  // not just `Armor.applyDamage` in isolation — `__teleport` cannot stand in
+  // for this because `Soldier.spawn` ends in `settle()`, which raycasts down
+  // and places the body back on the ground with `grounded=true` and zero
+  // velocity every time (`soldier.js`'s own `place()`/`settle()`). This
+  // hook instead lifts the *already-settled* body by `extraHeight` metres,
+  // zeroes vertical speed and marks it airborne, so the very next
+  // `soldier.step()` calls fall under real gravity (`physics.js`,
+  // `GRAVITY = -14.73`) into the same landing-edge detection a walked-off
+  // ledge would trigger. A headless check reads `window.__soldier().hp`
+  // before and after stepping frames until `grounded` is true again.
+  window.__dropFromHeight = extraHeight => {
+    if (!soldier) return false;
+    soldier.body.position.y += Number(extraHeight) || 0;
+    soldier.body.velocity.y = 0;
+    soldier.body.grounded = false;
+    return true;
+  };
+  // Drive a low-ammo state directly, the same way `__damage(n)` drives a
+  // low-HP one: a fresh `handWeapon` spawns full (`ensureHandWeapon`), and
+  // driving it dry by actually holding the trigger is `gunfire.js`'s own
+  // fire-rate/rate-of-fire-gate territory, not this track's — a headless
+  // check that wants to see `supplyTarget.refillAmmo` (this file, above)
+  // actually fire should set the "before" state directly instead.
+  window.__setAmmo = (rounds, mags) => {
+    if (!handWeapon) return false;
+    handWeapon.rounds = Number(rounds) || 0;
+    handWeapon.mags = Number(mags) || 0;
+    handWeapon.reload = 0;
+    return true;
+  };
+  // The depot field and this soldier's current standing against it, for a
+  // headless check to read without reaching into module-private state.
+  window.__supply = () => {
+    if (!supplyField || !soldierArmor) return null;
+    const nearest = supplyField.nearest(supplyTarget);
+    return {
+      depots: supplyField.depots.length,
+      hp: soldierArmor.hitPoints, maxHp: soldierArmor.maxHitPoints,
+      destroyed: soldierArmor.destroyed,
+      canHeal: supplyField.canHeal(supplyTarget),
+      canRearm: supplyField.canRearm(supplyTarget),
+      nearest: nearest && {
+        name: nearest.depot.name, distance: nearest.distance,
+        radius: nearest.depot.radius, team: nearest.depot.team,
+        ammoEnabled: nearest.depot.ammoEnabled, healEnabled: nearest.depot.healEnabled,
+      },
+    };
+  };
+  // P1's `hud.js` contract (`hud.vars['Engine/Var'] = x`) — see `hudBridge`'s
+  // own declaration, above, for why this worktree publishes it under a
+  // different name than the briefing's `hud`.
+  window.__hud = hudBridge;
   // Seed every random draw the shot path makes — the spread cone, the
   // flash roll, the recoil, the emitters' distributions — so two captures
   // of the same stepped frames are the same picture and a pixel diff
