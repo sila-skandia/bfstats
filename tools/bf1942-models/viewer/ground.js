@@ -856,7 +856,7 @@ export const TANK = {
   // `#step`'s own comment on why this, not the confirmed thrust law's
   // governor term, is what actually closes the top-speed equation at a
   // tank-appropriate speed. Fitted so the two vanilla tanks land in a
-  // plausible band (Sherman ~9 m/s / 33 km/h, M3A1 ~27 m/s / 97 km/h) while
+  // plausible band (Sherman ~9 m/s / 33 km/h, M3A1 ~31 m/s / 112 km/h) while
   // still showing the corrected ratio's real effect — M3A1 markedly
   // livelier than Sherman, matching both vehicles' real top speeds being in
   // that order. Not a measurement; there is no recorded reference drive for
@@ -901,6 +901,14 @@ export class TrackedVehicle extends Vehicle {
     super(node, parent, options);
     this.spec = options.spec || TANK;
     this.groundHeight = options.groundHeight || (() => -Infinity);
+
+    // `this.control` never changes after construction, so the two
+    // `s.surfaces` keys `#step` reads every sub-step are built once here
+    // rather than templated fresh each call — a per-tick string allocation
+    // `features/mesh-viewer-performance/README.md` rule 5 exists to rule out,
+    // the same reasoning behind every scratch vector below.
+    this._throttleKey = `${this.control}/c_PIThrottle/roll`;
+    this._yawKey = `${this.control}/c_PIYaw/yaw`;
 
     // Root PCO physics (`Sherman`/`M3A1`'s own `setMass`/`setObjectDrag`) —
     // unlike `GroundVehicle`, read off the node rather than a single fitted
@@ -1122,8 +1130,8 @@ export class TrackedVehicle extends Vehicle {
     // converges *to* (`this.input('c_PIYaw')`, read once, shared). Fixing it
     // for real means `Vehicle`'s shared key scheme in `flight.js`, outside
     // this file's ownership this round.
-    const throttle = s.surfaces.get(`${this.control}/c_PIThrottle/roll`) ?? 0;
-    const yaw = s.surfaces.get(`${this.control}/c_PIYaw/yaw`) ?? 0;
+    const throttle = s.surfaces.get(this._throttleKey) ?? 0;
+    const yaw = s.surfaces.get(this._yawKey) ?? 0;
     s.throttle = Math.min(1, Math.abs(throttle));
 
     const fadeSpeed = this.engine.fadeSpeed;
