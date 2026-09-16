@@ -7,7 +7,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42.con import ObjectLibrary  # noqa: E402
-from extract_models import catalogue, spawn_folder, variant_suffix  # noqa: E402
+from extract_models import (  # noqa: E402
+    _inline_includes,
+    catalogue,
+    spawn_folder,
+    variant_suffix,
+)
 
 
 def library_with(*sources: tuple[str, str]) -> ObjectLibrary:
@@ -125,6 +130,112 @@ ObjectTemplate.geometry USSoldier
 
         self.assertEqual(
             ["USSoldier"], [name for name, _c, _s in catalogue(None, library)])
+
+
+class FakeObjects:
+    """The `try_read` face of an ArchivePool over an in-memory dict."""
+
+    def __init__(self, files: dict[str, bytes]) -> None:
+        self._files = {key.lower(): value for key, value in files.items()}
+
+    def try_read(self, name: str) -> bytes | None:
+        return self._files.get(name.replace("\\", "/").lower())
+
+
+class InlineIncludesTests(unittest.TestCase):
+    """`include <relpath>` is the one `.con` directive outside `Namespace.cmd`.
+
+    Every nation's soldier uses it to pull in `CommonSoldierData.inc`
+    (`hitpoints`, `healDistance`, ...) -- 2147 uses across the 14 installed
+    mods, `build_library` never reads `.inc`/`.tweak` files as top-level
+    entries, and this is the only thing that lets their bare directives land
+    on the template the includer had open.
+    """
+
+    def test_a_relative_include_is_spliced_in_and_lands_on_the_open_template(self) -> None:
+        objects = FakeObjects({
+            "Objects/Soldiers/Common/CommonSoldierData.inc": b"""
+ObjectTemplate.HitPoints 30
+ObjectTemplate.MaxHitPoints 30
+""",
+        })
+        text = _inline_includes(objects, "Objects/Soldiers/USSoldier/Objects.con", """
+ObjectTemplate.create BFSoldier USSoldier
+include ../Common/CommonSoldierData.inc
+ObjectTemplate.healDistance 10.0
+""")
+        library = ObjectLibrary()
+        library.add_con("Objects/Soldiers/USSoldier/Objects.con", text)
+        soldier = library.object("USSoldier")
+
+        self.assertEqual(30.0, soldier.hitpoints)
+        self.assertEqual(30.0, soldier.max_hitpoints)
+        # The directive after the spliced include still lands on the same
+        # template -- the splice does not close it off.
+        self.assertEqual(10.0, soldier.heal_distance)
+
+    def test_a_backslash_path_and_double_space_still_resolve(self) -> None:
+        # Objects/Effects/e_SmokeIdleXpack/Effects.con, verbatim spelling,
+        # shipped in WarFront/XPack1/bf1918.
+        objects = FakeObjects({
+            "Objects/Effects/e_SmokeIdleXpack/Sounds/SmokeIdleXpack.con": b"""
+ObjectTemplate.loadSoundScript SmokeIdle.ssc
+""",
+        })
+        text = _inline_includes(
+            objects, "Objects/Effects/e_SmokeIdleXpack/Effects.con", """
+ObjectTemplate.create EffectBundle e_SmokeIdleXpack
+include  Sounds\\SmokeIdleXpack.con
+""")
+        library = ObjectLibrary()
+        library.add_con("Objects/Effects/e_SmokeIdleXpack/Effects.con", text)
+
+        self.assertEqual("SmokeIdle.ssc",
+                         library.object("e_SmokeIdleXpack").sound_script)
+
+    def test_an_unresolvable_include_fails_soft(self) -> None:
+        text = _inline_includes(FakeObjects({}), "Objects/Soldiers/Foo/Objects.con", """
+ObjectTemplate.create BFSoldier Foo
+include ../Common/Missing.inc
+ObjectTemplate.hitpoints 1
+""")
+        library = ObjectLibrary()
+        library.add_con("Objects/Soldiers/Foo/Objects.con", text)
+
+        self.assertEqual(1.0, library.object("Foo").hitpoints)
+
+    def test_a_commented_out_include_is_not_a_directive(self) -> None:
+        # A `rem`/`beginrem` line that happens to start with the word
+        # "include" must not be spliced -- this is why `_inline_includes`
+        # strips comments itself rather than trusting `add_con` to do it
+        # after the fact.
+        objects = FakeObjects({
+            "Objects/Common/X.inc": b"ObjectTemplate.hitpoints 999\n",
+        })
+        text = _inline_includes(objects, "Objects/Foo/Objects.con", """
+ObjectTemplate.create BFSoldier Foo
+rem include X.inc
+ObjectTemplate.hitpoints 1
+""")
+        library = ObjectLibrary()
+        library.add_con("Objects/Foo/Objects.con", text)
+
+        self.assertEqual(1.0, library.object("Foo").hitpoints)
+
+    def test_a_self_including_cycle_does_not_hang(self) -> None:
+        objects = FakeObjects({
+            "Objects/A.inc": b"include A.inc\nObjectTemplate.hitpoints 5\n",
+        })
+        text = _inline_includes(objects, "Objects/Root.con", """
+ObjectTemplate.create BFSoldier Root
+include A.inc
+""")
+        library = ObjectLibrary()
+        library.add_con("Objects/Root.con", text)
+
+        # The cycle is broken (no RecursionError); the directive that reached
+        # before the repeat was detected still lands.
+        self.assertEqual(5.0, library.object("Root").hitpoints)
 
 
 if __name__ == "__main__":
