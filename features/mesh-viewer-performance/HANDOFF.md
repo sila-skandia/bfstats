@@ -7,11 +7,10 @@ handling, the real-time pacing re-measurement, the pixel-parity re-capture,
 the repaint/deploy/warm-up functional checks, and the README itself (problem,
 before/after tables, hot-path rules 1-7, the Iris Xe context-loss log with
 today's re-measurement caveat, both input fixes, open items) are all done.
-What's left is real-hardware confirmation of the two input fixes (a real
-mouse, a real Ctrl+W) and finding which one material rule 6's warm-up still
-misses — see README's Open items. This file stays for the protocol detail
-(the teleport-back note, the pitfalls below) in case that warm-up follow-up
-needs it again.
+What's left is the real-hardware pass, and only that: `MANUAL-CHECK.md`
+beside this file. Rule 6's remaining program was found and fixed in the second
+pass — an opaque decal, not a missing material — see the README. This file
+stays for the protocol detail (the teleport-back note, the pitfalls below).
 
 ## Where things are
 
