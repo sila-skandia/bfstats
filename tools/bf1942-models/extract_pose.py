@@ -13,6 +13,22 @@ The file also carries one constant animation clip per stance — `stand`,
 `crouch` (`Lb_Crouch` + `Ub_Crouch<W>`) and `lie` (`Lb_Lie` + `Ub_Lie<W>`) —
 so a viewer can crossfade the shared skeleton between the three postures;
 the static hierarchy stays the standing pose for viewers that ignore clips.
+
+Alongside those come the **locomotion timelines** named by `GAITS`, two clips
+each (`run.lower` + `run.upper`, `walk.*`, `crouchwalk.*`, `crawl.*`): every
+frame of the game's own `.baf`, at the rate the engine plays it. These are
+motion, not poses — `3PRunLower` is 13 frames of a two-step stride over
+0.625 s. A viewer plays a gait's two halves together and holds the stance
+clips at weight 0.
+
+They do **not** live in the pose file. Neither half of a gait varies per
+pose — the lower body takes no weapon and every soldier shares one rig, and
+the upper body depends only on the weapon's grip — so `--gaits shared` (the
+default) writes them once into `gaits/lower.gait.glb` and
+`gaits/<Grip>.gait.glb`, and each pose names its two in `extras.gaitAssets`
+for a viewer to retarget by bone name. `--gaits embed` puts a private copy
+in every pose file instead, and `--gaits none` skips locomotion entirely.
+
 `--matrix` runs every vanilla soldier against every weapon the animation
 state machine knows, measures how far each palm is from the weapon surface,
 and writes `poses-matrix.json`.
@@ -59,6 +75,35 @@ STANCES: tuple[tuple[str, str, str], ...] = (
 )
 PRIMARY_STANCE = "stand"
 DEFAULT_STATE = "StandAim"
+
+# Gait -> (lower-body state, upper-body state family). Unlike the stances
+# above — which are sampled at one frame and written as constant clips — these
+# are baked as the clip's whole timeline, at the rate the engine plays it.
+#
+# **The lower and upper halves are two independent state machines with
+# independent phases**, so each gait exports as two clips (`run.lower`,
+# `run.upper`) rather than one resampled composite. The bone sets are disjoint
+# (11 lower: root, pelvis, legs, `Spine Root`; 44 upper: `Bip01 Spine` out to
+# the fingertips), which is why two `AnimationMixer` actions at full weight
+# compose rather than fight, and why a composite would have to be resampled
+# onto a common period it does not have — vanilla's 3P run happens to run both
+# halves at 1.60, but `Lb_StrafeLeft` (1.30) against `Ub_StrafeLeft<W>` does
+# not, and the 1P side of the same run state is 1.40 against 1.60.
+GAITS: tuple[tuple[str, str, str], ...] = (
+    ("run", "Lb_RunForward", "RunForward"),
+    ("walk", "Lb_WalkForward", "WalkForward"),
+    ("crouchwalk", "Lb_CrouchForward", "CrouchForward"),
+    ("crawl", "Lb_LieForward", "LieForward"),
+)
+
+# Where the shared gait clips live, relative to the pose directory. The clips
+# are not baked into the 224 pose files because neither half of a gait varies
+# per pose: the lower body is weapon- *and* soldier-independent (one set for
+# the whole game), and the upper body depends only on the weapon's grip. See
+# `export_gait_clips`.
+GAIT_ASSET_DIR = "gaits"
+GAIT_LOWER_ASSET = "lower"
+GAIT_MODES = ("shared", "embed", "none")
 
 
 # -- resolution ------------------------------------------------------------- #
@@ -216,6 +261,302 @@ def collect_stances(machine: animstates.StateMachine, meshes: ArchivePool,
     return stance_locals, report
 
 
+# -- locomotion timelines ---------------------------------------------------- #
+
+def clip_timeline(animation: baf.Animation, speed: float,
+                  skeleton: ske_mod.Skeleton,
+                  ) -> tuple[list[dict], float]:
+    """Every frame of a clip, aligned into mesh space, plus its period.
+
+    `AnimationStateMachineInstance::updateState` advances a *normalized*
+    phase by `dt * speed` and `applyOnSkeleton` reads frames
+    `int(phase * N) % N` and `+1` (ledger ANIM-1), so `speed` is cycles per
+    second and the clip's wall-clock period is `1 / |speed|` regardless of
+    how many frames it holds. 13-frame `3PRunLower` at 1.60 is a 0.625 s
+    stride; 24-frame `3PWalkLower` at 1.00 is a 1 s one — the frame count
+    sets resolution, not duration.
+
+    A negative speed runs the phase backwards (`Lb_RunBackward` is the
+    forward run clip at -1.60), which is the same frames in reverse with
+    frame 0 still the cycle's start.
+    """
+    frames = [pose_mod.align_clip_roots(skeleton, animation.local_pose(f))
+              for f in range(animation.frames)]
+    if speed < 0 and len(frames) > 1:
+        frames = [frames[0], *reversed(frames[1:])]
+    return frames, 1.0 / abs(speed)
+
+
+def timeline_tracks(frames: list[dict], period: float,
+                    joint_nodes: dict[str, int],
+                    ) -> list[tuple[int, tuple[float, ...], list]]:
+    """glTF tracks for a looping timeline: N frames over `period` seconds.
+
+    N+1 keyframes, the last repeating frame 0, so the final segment is the
+    wrap the engine's `% frames` performs and the clip's duration comes out
+    at exactly `period` — a three.js `LoopRepeat` action then seams.
+    """
+    count = len(frames)
+    step = period / count
+    times = tuple(k * step for k in range(count + 1))
+    tracks = []
+    for name in sorted(set(frames[0]) & set(joint_nodes)):
+        tracks.append((joint_nodes[name], times,
+                       [frames[k % count][name] for k in range(count + 1)]))
+    return tracks
+
+
+def resolve_gait(machine: animstates.StateMachine, meshes: ArchivePool,
+                 skeleton: ske_mod.Skeleton, weapon: str,
+                 lower_state: str, upper_family: str,
+                 load_frames: bool = True,
+                 ) -> dict:
+    """One gait's two half-body timelines, or `{"error": ...}`.
+
+    `load_frames=False` keeps the metadata — clip paths, rates, frame counts,
+    periods — and skips aligning every frame into mesh space. The shared-clip
+    export needs the metadata for all 224 pairs but the frames only once per
+    grip, and the alignment is the expensive half.
+    """
+    lower_st = machine.state(lower_state)
+    lower_ref = lower_st.clip_3p() if lower_st else None
+    if lower_ref is None:
+        return {"error": f"state machine has no {lower_state} clip"}
+    upper_ref = machine.clip_3p(f"{UPPER_PREFIX}{upper_family}", weapon)
+    if upper_ref is None:
+        return {"error": f"no {UPPER_PREFIX}{upper_family}{weapon} 3P clip"}
+    lower = read_clip(meshes, lower_ref.path)
+    upper = read_clip(meshes, upper_ref.path)
+    if lower is None:
+        return {"error": f"lower clip unreadable: {lower_ref.path}"}
+    if upper is None:
+        return {"error": f"upper clip unreadable: {upper_ref.path}"}
+    entry = {
+        "lowerClip": lower_ref.path,
+        "upperClip": upper_ref.path,
+        "lowerState": lower_st.name,
+        "upperState": f"{UPPER_PREFIX}{upper_family}{weapon}",
+        "lowerSpeed": lower_ref.speed,
+        "upperSpeed": upper_ref.speed,
+        "lowerFrames": lower.frames,
+        "upperFrames": upper.frames,
+        "lowerPeriod": round(1.0 / abs(lower_ref.speed), 4),
+        "upperPeriod": round(1.0 / abs(upper_ref.speed), 4),
+    }
+    if load_frames:
+        entry["lower"] = clip_timeline(lower, lower_ref.speed, skeleton)
+        entry["upper"] = clip_timeline(upper, upper_ref.speed, skeleton)
+    return entry
+
+
+def collect_gaits(machine: animstates.StateMachine, meshes: ArchivePool,
+                  skeleton: ske_mod.Skeleton, weapon: str,
+                  load_frames: bool = True) -> dict[str, dict]:
+    return {key: resolve_gait(machine, meshes, skeleton, weapon,
+                              lower_state, upper_family, load_frames)
+            for key, lower_state, upper_family in GAITS}
+
+
+def gait_grip(machine: animstates.StateMachine, weapon: str) -> str | None:
+    """The clip folder a weapon's third-person gait clips are filed under.
+
+    `copyState`'s donor argument makes `Ub_RunForwardK98` play the *No4's*
+    clip, so vanilla's 28 weapons resolve to 23 distinct grips — K98,
+    K98Sniper, No4 and No4Sniper share one, as do Bazooka/Panzershreck and
+    Colt/WalterP38. The folder is the natural name for the shared asset
+    because it is the one the game itself files those clips under, and it is
+    stable: every weapon resolves to the same folder on all four gaits, and
+    weapons that share a folder share the playback rate too (measured across
+    vanilla; both are asserted in `tests/test_gaits.py`).
+    """
+    for _key, _lower, family in GAITS:
+        ref = machine.clip_3p(f"{UPPER_PREFIX}{family}", weapon)
+        if ref is not None:
+            return ref.path.replace("\\", "/").rsplit("/", 2)[-2]
+    return None
+
+
+def gait_assets(machine: animstates.StateMachine, weapon: str) -> dict | None:
+    """Where a pair's two gait clip files live, relative to the pose folder."""
+    grip = gait_grip(machine, weapon)
+    if grip is None:
+        return None
+    return {
+        "grip": grip,
+        "lower": f"{GAIT_ASSET_DIR}/{GAIT_LOWER_ASSET}.gait.glb",
+        "upper": f"{GAIT_ASSET_DIR}/{grip}.gait.glb",
+    }
+
+
+def _joint_hierarchy(builder: gltf.GlbBuilder, skeleton: ske_mod.Skeleton,
+                     ) -> tuple[dict[str, int], list[int]]:
+    """The skeleton as glTF nodes at `.ske` rest; returns the map and roots.
+
+    A gait sidecar carries no geometry, but its channels still need nodes to
+    target, and the track names three.js derives from those nodes are what
+    retargets the clip onto a pose file's own skeleton. Building the real
+    parent chain (rather than a flat list) also leaves the sidecar a valid,
+    independently loadable glTF.
+    """
+    joint_nodes: dict[str, int] = {}
+    children_of: dict[int, list[int]] = {}
+    order: list[tuple[int, int]] = []
+    for index, bone in enumerate(skeleton.bones):
+        node = builder.add_node(gltf.Node(
+            name=bone.name,
+            translation=bone.translation,
+            rotation=gltf.quat_from_matrix(bone.rotation),
+            extras={"joint": True},
+        ))
+        joint_nodes[ske_mod.canonical(bone.name)] = node
+        order.append((index, node))
+        if 0 <= bone.parent < index:
+            children_of.setdefault(bone.parent, []).append(node)
+    for bone_index, node_index in order:
+        builder._nodes[node_index].children = children_of.get(bone_index, [])
+    roots = [node for (bone_index, node) in order
+             if skeleton.bones[bone_index].parent < 0]
+    return joint_nodes, roots
+
+
+def _write_clip_bundle(skeleton: ske_mod.Skeleton, clips: list[tuple[str, list, float]],
+                       target: Path, extras: dict) -> int:
+    """One clips-only `.glb`: the joint hierarchy plus `clips`, nothing else."""
+    builder = gltf.GlbBuilder()
+    joint_nodes, roots = _joint_hierarchy(builder, skeleton)
+    written = 0
+    for name, frames, period in clips:
+        tracks = timeline_tracks(frames, period, joint_nodes)
+        if tracks:
+            builder.add_animation(name, tracks)
+            written += 1
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(builder.build(roots, extras=extras))
+    return written
+
+
+def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
+                      skeleton: ske_mod.Skeleton, weapons: list[str],
+                      out: Path) -> dict:
+    """Write the shared gait clip sidecars once for a whole extraction run.
+
+    Neither half of a gait varies per pose, so baking them into every pose
+    file duplicates them 224-fold:
+
+    * the **lower** body is weapon- and soldier-independent — `Lb_RunForward`
+      takes no weapon and every vanilla soldier declares the same
+      `UsSoldier.ske` — so all four lower clips ship once, in
+      `gaits/lower.gait.glb`;
+    * the **upper** body is soldier-independent and depends only on the
+      weapon's grip, so `gaits/<Grip>.gait.glb` holds that grip's four upper
+      clips, 23 files for vanilla's 28 weapons.
+
+    A pose file then names its two sidecars in `extras.gaitAssets` and the
+    viewer retargets the clips onto its own skeleton by bone name.
+    """
+    manifest: dict = {"lower": None, "grips": {}, "weaponGrip": {}, "errors": {}}
+    root = out / GAIT_ASSET_DIR
+
+    # -- the weapon-independent lower half, once ---------------------------- #
+    lower_clips: list[tuple[str, list, float]] = []
+    lower_meta: dict[str, dict] = {}
+    for key, lower_state, _family in GAITS:
+        state = machine.state(lower_state)
+        ref = state.clip_3p() if state else None
+        if ref is None:
+            manifest["errors"][key] = f"state machine has no {lower_state} clip"
+            continue
+        animation = read_clip(meshes, ref.path)
+        if animation is None:
+            manifest["errors"][key] = f"lower clip unreadable: {ref.path}"
+            continue
+        frames, period = clip_timeline(animation, ref.speed, skeleton)
+        lower_clips.append((f"{key}.lower", frames, period))
+        lower_meta[key] = {"state": state.name, "clip": ref.path,
+                           "speed": ref.speed, "frames": animation.frames,
+                           "period": round(period, 4)}
+    if lower_clips:
+        _write_clip_bundle(
+            skeleton, lower_clips,
+            root / f"{GAIT_LOWER_ASSET}.gait.glb",
+            {"gaitHalf": "lower", "gaits": lower_meta,
+             "skeleton": skeleton.source})
+        manifest["lower"] = f"{GAIT_ASSET_DIR}/{GAIT_LOWER_ASSET}.gait.glb"
+
+    # -- one upper bundle per grip ------------------------------------------ #
+    by_grip: dict[str, list[str]] = {}
+    for weapon in weapons:
+        grip = gait_grip(machine, weapon)
+        if grip is None:
+            manifest["errors"][weapon] = "no 3P gait state"
+            continue
+        manifest["weaponGrip"][weapon] = grip
+        by_grip.setdefault(grip, []).append(weapon)
+
+    for grip, sharing in sorted(by_grip.items()):
+        representative = sharing[0]
+        clips: list[tuple[str, list, float]] = []
+        meta: dict[str, dict] = {}
+        for key, _lower_state, family in GAITS:
+            ref = machine.clip_3p(f"{UPPER_PREFIX}{family}", representative)
+            if ref is None:
+                continue
+            animation = read_clip(meshes, ref.path)
+            if animation is None:
+                manifest["errors"][f"{grip}/{key}"] = (
+                    f"upper clip unreadable: {ref.path}")
+                continue
+            frames, period = clip_timeline(animation, ref.speed, skeleton)
+            clips.append((f"{key}.upper", frames, period))
+            meta[key] = {"clip": ref.path, "speed": ref.speed,
+                         "frames": animation.frames, "period": round(period, 4)}
+        if not clips:
+            continue
+        _write_clip_bundle(
+            skeleton, clips, root / f"{grip}.gait.glb",
+            {"gaitHalf": "upper", "grip": grip, "weapons": sorted(sharing),
+             "gaits": meta, "skeleton": skeleton.source})
+        manifest["grips"][grip] = f"{GAIT_ASSET_DIR}/{grip}.gait.glb"
+
+    (root / "gaits.json").write_text(json.dumps(manifest, indent=2))
+    return manifest
+
+
+def write_shared_gaits(machine: animstates.StateMachine, meshes: ArchivePool,
+                       library: con_mod.ObjectLibrary, soldiers: list[str],
+                       weapons: list[str], out: Path) -> dict | None:
+    """Run `export_gait_clips` once, on the rig the soldiers actually share.
+
+    Every vanilla soldier declares `animations/UsSoldier.ske` (two spellings
+    of one file, since Refractor paths are case-insensitive) — 67 identical
+    bones — so one joint hierarchy retargets onto all of them. A mod that
+    ships two genuinely different rigs would need a bundle per rig; this
+    reports the mismatch rather than silently exporting the first one's
+    clips for all of them.
+    """
+    by_skeleton: dict[str, list[str]] = {}
+    for soldier in soldiers:
+        template = library.object(soldier)
+        if template is None or not template.skeleton:
+            continue
+        by_skeleton.setdefault(template.skeleton.replace("\\", "/").lower(),
+                               []).append(soldier)
+    if not by_skeleton:
+        return None
+    skeletons = {
+        key: read_skeleton(meshes, library.object(who[0]).skeleton)
+        for key, who in by_skeleton.items()}
+    signatures = {
+        key: tuple((bone.name.lower(), bone.parent) for bone in sk.bones)
+        for key, sk in skeletons.items() if sk is not None}
+    if len(set(signatures.values())) > 1:
+        print("warning: soldiers do not share one skeleton; shared gait clips "
+              f"use {next(iter(by_skeleton))}: {sorted(by_skeleton)}",
+              file=sys.stderr)
+    skeleton = next(sk for sk in skeletons.values() if sk is not None)
+    return export_gait_clips(machine, meshes, skeleton, weapons, out)
+
+
 # -- skinned part assembly -------------------------------------------------- #
 
 def _match_skn_vertices(mesh_positions, skn: skin_mod.Skin) -> list[int]:
@@ -325,7 +666,7 @@ def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
 
 def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
                 objects, library, state: str, frame: int, max_texture: int,
-                out: Path | None) -> dict:
+                out: Path | None, gait_mode: str = "shared") -> dict:
     result: dict = {"soldier": soldier, "weapon": weapon, "state": state}
 
     root_template = library.object(soldier)
@@ -336,6 +677,7 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     if skeleton is None:
         raise PoseError(f"skeleton unreadable: {root_template.skeleton}")
 
+    gaits: dict[str, dict] = {}
     if state == DEFAULT_STATE:
         stance_locals, stance_report = collect_stances(
             machine, meshes, skeleton, weapon, frame)
@@ -343,6 +685,22 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
             raise PoseError(stance_report[PRIMARY_STANCE]["error"])
         result["upperClip"] = stance_report[PRIMARY_STANCE]["upperClip"]
         result["stances"] = stance_report
+        if gait_mode != "none":
+            # In shared mode the frames live in the sidecars that
+            # `export_gait_clips` writes once per run, so a pair only needs
+            # the metadata — which is also the expensive half skipped.
+            gaits = collect_gaits(machine, meshes, skeleton, weapon,
+                                  load_frames=(gait_mode == "embed"))
+            # The frame payload stays out of the JSON; the rates and clip
+            # paths are what a reader (and the viewer's readout) wants.
+            result["gaits"] = {
+                key: {name: value for name, value in entry.items()
+                      if name not in ("lower", "upper")}
+                for key, entry in gaits.items()}
+            if gait_mode == "shared":
+                assets = gait_assets(machine, weapon)
+                if assets is not None:
+                    result["gaitAssets"] = assets
     else:
         # The escape hatch for other stills (`--state Fire`, say): one
         # stance, no clips in the glb — exactly the old single-pose export.
@@ -476,6 +834,31 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
                 tracks.append((joint_nodes[name], (0.0, 1.0), [value, value]))
             builder.add_animation(key, tracks)
 
+    # Locomotion, as real timelines. Each gait ships as `<gait>.lower` and
+    # `<gait>.upper` — the engine's two independent state machines — so a
+    # viewer plays both at full weight for a running soldier, or keeps the
+    # aim `Ub_` pose over running legs the way the game does when a player
+    # runs while pointing a weapon. Each clip covers only the bones its own
+    # half animates, so the halves never contend for a channel, and a bone
+    # neither touches keeps the node's static (standing) transform.
+    #
+    # In the default `shared` mode nothing is written here: the clips are in
+    # the sidecars and the viewer retargets them by bone name. `embed` puts
+    # them back in the pose file, which costs +22% per file across 224 files
+    # for data that has only 96 distinct values — see `export_gait_clips`.
+    gait_clips_written: list[str] = []
+    for key, _lower_state, _upper_family in GAITS:
+        entry = gaits.get(key)
+        if not entry or "error" in entry:
+            continue
+        if gait_mode == "embed":
+            for half in ("lower", "upper"):
+                frames, period = entry[half]
+                tracks = timeline_tracks(frames, period, joint_nodes)
+                if tracks:
+                    builder.add_animation(f"{key}.{half}", tracks)
+        gait_clips_written.append(key)
+
     result["soldierParts"] = part_report
     result["weaponParts"] = weapon_report.parts
     result["texturesMissing"] = sorted(
@@ -500,6 +883,9 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     if len(stance_locals) > 1:
         extras["stanceClips"] = [key for key, _lo, _up in STANCES
                                  if key in stance_locals]
+    if gait_clips_written:
+        extras["gaitClips"] = gait_clips_written
+        extras["gaitSource"] = gait_mode
     target.write_bytes(builder.build(roots, extras=extras))
     result["glb"] = target.name
     (out / f"{soldier}__{weapon}.pose.report.json").write_text(
@@ -600,9 +986,10 @@ def _init_pose_worker(chain_paths: list[str]) -> None:
 
 
 def _export_pose_task(task_args: tuple) -> dict:
-    soldier, weapon, out_str, state, frame, max_texture = task_args
+    soldier, weapon, out_str, state, frame, max_texture, gait_mode = task_args
     out = Path(out_str) if out_str else None
-    ctx = {**_pose_worker_context, "state": state, "frame": frame, "max_texture": max_texture}
+    ctx = {**_pose_worker_context, "state": state, "frame": frame,
+           "max_texture": max_texture, "gait_mode": gait_mode}
     try:
         row = export_pose(soldier, weapon, out=out, **ctx)
     except PoseError as exc:
@@ -633,6 +1020,11 @@ def main() -> int:
                          "also packs the crouch and lie stance clips; any "
                          "other family exports that single still)")
     ap.add_argument("--frame", type=int, default=0)
+    ap.add_argument("--gaits", choices=GAIT_MODES, default="shared",
+                    help="where the locomotion timelines go. shared (default): "
+                         "one set of clip sidecars under gaits/, retargeted by "
+                         "bone name; embed: a copy inside every pose .glb; "
+                         "none: stance stills only")
     ap.add_argument("--max-texture", type=int, default=1024)
     ap.add_argument("--matrix", action="store_true",
                     help="verify every soldier against every weapon")
@@ -659,7 +1051,8 @@ def main() -> int:
 
     context = dict(machine=machine, meshes=meshes, textures=textures,
                    objects=objects, library=library, state=args.state,
-                   frame=args.frame, max_texture=args.max_texture)
+                   frame=args.frame, max_texture=args.max_texture,
+                   gait_mode=args.gaits)
 
     if args.matrix:
         declared = machine.weapons(f"{UPPER_PREFIX}{args.state}")
@@ -698,7 +1091,8 @@ def main() -> int:
 
         rows = []
         if args.jobs > 1 and len(target_pairs) > 1:
-            tasks = [(s, w, str(args.out) if args.export else None, args.state, args.frame, args.max_texture)
+            tasks = [(s, w, str(args.out) if args.export else None, args.state,
+                      args.frame, args.max_texture, args.gaits)
                      for s, w in target_pairs]
             chain_strs = [str(p) for p in chain]
             with ProcessPoolExecutor(
@@ -732,6 +1126,13 @@ def main() -> int:
                       f"  {status if status != 'ok' else ''}".rstrip(),
                       file=sys.stderr)
         args.out.mkdir(parents=True, exist_ok=True)
+        if args.export and args.gaits == "shared":
+            shared = write_shared_gaits(
+                machine, meshes, library, soldiers, weapons, args.out)
+            if shared:
+                print(f"shared gait clips: 1 lower + {len(shared['grips'])} "
+                      f"grips for {len(shared['weaponGrip'])} weapons",
+                      file=sys.stderr)
         matrix_path = args.out / "poses-matrix.json"
 
         # Merge rather than overwrite. A mod extracted with `--own` wants two
@@ -771,7 +1172,15 @@ def main() -> int:
         return 1 if failures else 0
 
     failures = 0
-    for soldier, weapon in zip(args.pairs[::2], args.pairs[1::2]):
+    pairs = list(zip(args.pairs[::2], args.pairs[1::2]))
+    if args.gaits == "shared":
+        # A one-pair run still has to leave the sidecars next to the pose, or
+        # the viewer has a `gaitAssets` pointing at nothing.
+        args.out.mkdir(parents=True, exist_ok=True)
+        write_shared_gaits(machine, meshes, library,
+                           sorted({s for s, _w in pairs}),
+                           sorted({w for _s, w in pairs}), args.out)
+    for soldier, weapon in pairs:
         try:
             result = export_pose(soldier, weapon, out=args.out, **context)
         except PoseError as exc:
