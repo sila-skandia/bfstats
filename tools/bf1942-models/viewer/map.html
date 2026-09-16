@@ -816,6 +816,15 @@ const audioBufferCache = new Map();
 // own dispose and bails if a later dispose/setup has superseded it, so a
 // rapid map switch can never leak a loop that dispose can't reach.
 let soundsGeneration = 0;
+// `?shots&noaudio` takes Web Audio out at the source, for the perf harness's
+// audio-on/audio-off A/B: no AudioContext is ever created, so no listener
+// rides the camera, no loop is decoded, no engine or gun patch is built, and
+// updateAudio finds nothing to automate. Unticking the sound box is not the
+// same experiment — every loop keeps playing into a zero gain, and three's
+// listener and panners still schedule their ramps every frame. Gated on
+// `?shots` like `&nopreserve`, so no player can reach it.
+// (features/mesh-viewer-performance, audio automation cost.)
+const AUDIO_OFF = params.has('shots') && params.has('noaudio');
 
 function uiFocused() {
   const t = document.activeElement;
@@ -2364,6 +2373,7 @@ function advanceSim(dt) {
 }
 
 function ensureListener() {
+  if (AUDIO_OFF) return null;
   if (!audioListener) {
     audioListener = new THREE.AudioListener();
     camera.add(audioListener);
@@ -2373,7 +2383,7 @@ function ensureListener() {
 }
 
 function ensureAudioContext() {
-  ensureListener();
+  if (!ensureListener()) return;
   // Autoplay policy: a context created before any click starts suspended and
   // stays that way until a gesture resumes it. Every caller of this is a real
   // user gesture; the catch is for the ones that are not.
@@ -2392,17 +2402,24 @@ function ensureAudioContext() {
  * here so the one-decode-per-wav rule holds across all three.
  */
 async function soundBuffer(dir, relPath) {
+  if (AUDIO_OFF) return null;
   const key = `${dir}/${relPath}`;
   if (audioBufferCache.has(key)) return audioBufferCache.get(key);
   ensureListener();
-  try {
-    const buf = await audioLoader.loadAsync(`${MAPS_BASE}/${key}${bust()}`);
-    audioBufferCache.set(key, buf);
-    return buf;
-  } catch (e) {
-    console.warn(`Could not load sound ${key}:`, e);
-    return null;
-  }
+  // The pending decode is what goes in the cache, not just the finished
+  // buffer. Two setups that overlap — the pilot box ticked, unticked and
+  // ticked again while the first load is still awaiting — otherwise both miss
+  // and fetch the same wav twice, which is the one-decode-per-wav rule the
+  // hall-echo postmortem left behind (features/bf1942-3d-models/map-sounds.md).
+  // A failed load drops out of the cache again so a later attempt can retry.
+  const pending = audioLoader.loadAsync(`${MAPS_BASE}/${key}${bust()}`)
+    .catch(e => {
+      console.warn(`Could not load sound ${key}:`, e);
+      audioBufferCache.delete(key);
+      return null;
+    });
+  audioBufferCache.set(key, pending);
+  return pending;
 }
 
 /**
@@ -2412,17 +2429,19 @@ async function soundBuffer(dir, relPath) {
  * contain a colon, so the two families can never collide in the cache.
  */
 async function modelSoundBuffer(relPath) {
+  if (AUDIO_OFF) return null;
   const key = `models:${relPath}`;
   if (audioBufferCache.has(key)) return audioBufferCache.get(key);
   ensureListener();
-  try {
-    const buf = await audioLoader.loadAsync(`${MODELS_BASE}/${relPath}${bust()}`);
-    audioBufferCache.set(key, buf);
-    return buf;
-  } catch (e) {
-    console.warn(`Could not load sound ${key}:`, e);
-    return null;
-  }
+  // The pending decode, for the reason soundBuffer gives above.
+  const pending = audioLoader.loadAsync(`${MODELS_BASE}/${relPath}${bust()}`)
+    .catch(e => {
+      console.warn(`Could not load sound ${key}:`, e);
+      audioBufferCache.delete(key);
+      return null;
+    });
+  audioBufferCache.set(key, pending);
+  return pending;
 }
 
 function disposeSounds() {
@@ -2449,7 +2468,7 @@ async function setupSounds(report, dir) {
   disposeSounds();
   const gen = soundsGeneration;
   const cfg = report.sounds;
-  if (!cfg) return;
+  if (!cfg || AUDIO_OFF) return;
 
   ensureListener();
   const getBuffer = (relPath) => soundBuffer(dir, relPath);
@@ -2598,7 +2617,7 @@ async function setupEngineAudio() {
   disposeEngineAudio();
   const gen = engineGeneration;
   const vehicle = aircraft || car;
-  if (!vehicle) return;
+  if (!vehicle || AUDIO_OFF) return;
   const template = vehicle.node.userData?.control || vehicle.node.name;
   const spec = findEngineSpec(extras, template);
   if (!spec) {
@@ -4620,6 +4639,7 @@ function weaponSoundsManifest() {
  *  fire this off *before* `hw` exists — see the call site's comment on why
  *  that ordering is the whole fix for a shot going silent right after spawn. */
 async function fetchHandFireSound(name) {
+  if (AUDIO_OFF) return null;
   const manifest = await weaponSoundsManifest();
   const spec = manifest?.weapons?.[name];
   if (!spec) return null;   // a quiet weapon (binoculars), or a mod without the tree
