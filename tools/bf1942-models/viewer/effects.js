@@ -257,26 +257,37 @@ export class EffectPlayer {
   }
 
   /**
-   * One pooled mesh for every emitter of every bundle in the library, built
-   * and parked, so every material a burst can need exists before the first
-   * shot. The page then compiles and uploads them while the level is still
-   * loading (`renderer.compileAsync`, `renderer.initTexture`): a program
-   * linked in the middle of a burst is a stall of unknown length — three's
-   * first-use shader check blocks the frame on the link, and on an Iris Xe
-   * under system GL the perf harness watched one block for 8 s and take the
-   * WebGL context with it (features/mesh-viewer-performance, rule 6).
-   * Returns the materials, for the page to upload their maps.
+   * One pooled mesh for every pool the library's emitters draw from (a
+   * sprite's source material, a mesh particle's template), built and parked,
+   * so every material a burst can need exists before the first shot. The
+   * page then compiles and uploads them while the level is still loading: a
+   * program linked in the middle of a burst is a stall of unknown
+   * length — three's first-use shader check blocks the frame on the link,
+   * and on an Iris Xe under system GL the perf harness watched one block for
+   * 8 s and take the WebGL context with it (features/mesh-viewer-performance,
+   * rule 6). Returns the materials.
+   *
+   * Each mesh is built from what a spawn hands `#acquire`: the emitter's
+   * `particle` block (`spawnParticle`), which is where the kind, the blend
+   * and the fade live — the emitter spec around it carries none of the
+   * three. Warmed from the emitter spec, every sprite went down the mesh path
+   * into a pool no sprite spawn draws from, and every decal was built opaque:
+   * no fade, no polygon offset, and a decal alive while that mesh was out of
+   * the pool missed it, built the real transparent material and linked that
+   * program mid-burst.
    */
   warm() {
     const materials = new Set();
     if (!this.library) return materials;
     for (const bundle of this.library.bundles.values()) {
       for (const template of bundle.emitters) {
-        const spec = template.spec;
-        const mesh = this.#acquire({ template, spec }, { kind: spec.kind, spec });
+        const particle = template.spec.particle;
+        if (!particle) continue;
+        const mesh = this.#acquire({ template, spec: template.spec },
+                                   { kind: particle.kind, spec: particle });
         if (!mesh) continue;
         mesh.visible = false;
-        const pool = spec.kind === 'sprite' ? this.spritePool : this.meshPool;
+        const pool = particle.kind === 'sprite' ? this.spritePool : this.meshPool;
         pool.get(mesh.userData.poolKey)?.push(mesh);
         for (const m of mesh.userData.materials ?? [mesh.material]) materials.add(m);
       }
