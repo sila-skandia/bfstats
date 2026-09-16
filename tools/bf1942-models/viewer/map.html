@@ -617,7 +617,7 @@ import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
-         FOV_DEG as FOOT_FOV, JUMP_SPEED } from './soldier.js';
+         FOV_DEG as FOOT_FOV, JUMP_SPEED, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { Armor } from './armor.js';
@@ -3867,9 +3867,25 @@ const supplyTarget = { x: 0, y: 0, z: 0, team: 2, armor: null, refillAmmo: null 
 // nothing; a fall at or past `LETHAL_FALL_SPEED` is fatal; damage ramps
 // linearly between the two. Open question this approximation stands on:
 // R4-18 — replace this ramp if the real formula ever surfaces.
+//
+// Tracked as a height, not a sampled velocity: `SoldierBody#settle()` zeroes
+// `velocity.y` in the very same `step()` call that flips `grounded` true (it
+// has to, to plant the body on the floor), so a peak read from
+// `soldier.velocityY` *after* `step()` returns always misses the last
+// partial tick's own acceleration — verified against this file's own
+// `__dropFromHeight` hook, which under-reported a 12 m drop's damage by
+// about 5% versus the closed-form prediction. A soldier's drag is inert
+// enough over any survivable drop (`physics.js`'s own terminal-velocity
+// note, ~730 m/s) that `v^2 = 2|g|h` inverts cleanly, so the two speed
+// thresholds are converted once to the heights that produce them, and the
+// quantity actually tracked below is the drop itself — exact at any tick
+// rate, since a landed body's `y` is the ground height exactly, never a
+// clamped derivative of it.
 const SAFE_FALL_SPEED = JUMP_SPEED * 2;     // ~10.8 m/s, ~4 m of drop
 const LETHAL_FALL_SPEED = 25;               // m/s, ~21 m of drop
-let fallPeakSpeed = 0;    // steepest downward speed seen during this air time
+const SAFE_FALL_HEIGHT = SAFE_FALL_SPEED * SAFE_FALL_SPEED / (2 * Math.abs(GRAVITY));
+const LETHAL_FALL_HEIGHT = LETHAL_FALL_SPEED * LETHAL_FALL_SPEED / (2 * Math.abs(GRAVITY));
+let fallPeakY = null;   // highest y seen since last leaving the ground; null while grounded
 let wasGrounded = true;
 
 /** The stand-in for P1's `hud.js` contract: `hud.vars['Engine/Var'] = x`,
@@ -3920,7 +3936,7 @@ function spawnAtFlag(advance = false) {
   // beside `kitLoadout` below) — every spawn and every redeploy passes
   // through here, so this is the one reset point.
   soldierArmor = new Armor(soldierMaxHp(flag));
-  fallPeakSpeed = 0;
+  fallPeakY = null;
   wasGrounded = true;
   // The weapon follows the flag: switching to the other side's spawn swaps
   // the SMG. A no-op when the right one is already in hand.
@@ -4032,17 +4048,21 @@ function onFoot(dt) {
   };
   soldier.step(dt, input);
 
-  // Fall damage — an approximation; see `SAFE_FALL_SPEED`'s own comment
-  // above (R4-18). Tracks the steepest downward speed seen while airborne
-  // and judges it the instant the body reports grounded again.
+  // Fall damage — an approximation; see `SAFE_FALL_HEIGHT`'s own comment
+  // above (R4-18). Tracks the highest y seen while airborne (a jump's own
+  // apex, when it was a jump) and judges the drop from it the instant the
+  // body reports grounded again.
   if (!soldier.grounded) {
-    fallPeakSpeed = Math.max(fallPeakSpeed, -soldier.velocityY);
+    fallPeakY = fallPeakY === null ? soldier.y : Math.max(fallPeakY, soldier.y);
   } else {
-    if (!wasGrounded && soldierArmor && fallPeakSpeed > SAFE_FALL_SPEED) {
-      const ramp = (fallPeakSpeed - SAFE_FALL_SPEED) / (LETHAL_FALL_SPEED - SAFE_FALL_SPEED);
-      soldierArmor.applyDamage(Math.min(1, ramp) * soldierArmor.maxHitPoints);
+    if (!wasGrounded && soldierArmor && fallPeakY !== null) {
+      const dropped = fallPeakY - soldier.y;
+      if (dropped > SAFE_FALL_HEIGHT) {
+        const ramp = (dropped - SAFE_FALL_HEIGHT) / (LETHAL_FALL_HEIGHT - SAFE_FALL_HEIGHT);
+        soldierArmor.applyDamage(Math.min(1, ramp) * soldierArmor.maxHitPoints);
+      }
     }
-    fallPeakSpeed = 0;
+    fallPeakY = null;
   }
   wasGrounded = soldier.grounded;
 
