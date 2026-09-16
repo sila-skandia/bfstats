@@ -13,8 +13,8 @@
 import * as THREE from 'three';
 import {
   surveyVehicle, classifySeat, classifyRoot, findAllVehicleRoots,
-  listEntryPoints, VehicleOccupancy, TurretAxis, TurretRig, FireState,
-  chainOnShot, readWorldPose,
+  listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
+  TurretRig, FireState, chainOnShot, readWorldPose,
 } from './seats.js';
 
 const results = {};
@@ -170,6 +170,45 @@ function shermanWithRenamedGunnerNode() {
   const shermanRoot = findAllVehicleRoots(level).find(r => r.name === 'Sherman');
   const entries = listEntryPoints(shermanRoot, 4).map(e => ({ node: e.node.name, seatId: e.seatId, radius: e.radius }));
   results.entryPoints = { roots, shermanEntries: entries };
+}
+
+// --- pickNearest: round 3's second disclosed gap, a deterministic tie-break -
+//
+// Real numbers from the live Wake scene, not invented: the first Sherman's
+// two doors (scratchpad/t2/dump.json, this round) put the driver's own
+// EntryPoint and the hull gunner's at world positions ~1.1457e-13 m apart --
+// a fixed value transcribed here, not re-measured, since re-measuring it
+// needs the real glb this harness deliberately does not load (see the module
+// doc). M3A1's four passenger seats compose to a bit-exact tie (0 m apart).
+
+{
+  const first = { id: 'first', d: 2.0 };
+  const second = { id: 'second', d: 2.0 };            // exact tie
+  const noisyAbove = { id: 'noisyAbove', d: 2.0 + 1.1457e-13 };   // the Sherman's own gap
+  const noisyBelow = { id: 'noisyBelow', d: 2.0 - 1.1457e-13 };   // the direction that would actually swap it under a bare `<` compare
+  const genuinelyCloser = { id: 'genuinelyCloser', d: 1.0 };
+  const genuinelyFarther = { id: 'genuinelyFarther', d: 5.0 };
+  const disqualified = { id: 'disqualified', d: Infinity };      // out of radius, `nearestEntry`'s own convention
+  const fourWayTie = ['a', 'b', 'c', 'd'].map(id => ({ id, d: 3.5 }));   // M3A1's own shape
+
+  results.pickNearest = {
+    epsilon: TIE_EPSILON,
+    emptyIsNull: pickNearest([], c => c.d),
+    allDisqualifiedIsNull: pickNearest([disqualified, { id: 'alsoFar', d: Infinity }], c => c.d),
+    exactTieKeepsFirstDeclared: pickNearest([first, second], c => c.d)?.id,
+    exactTieKeepsFirstDeclaredReversed: pickNearest([second, first], c => c.d)?.id,
+    // The actual bug: a plain `distance < best` would let `noisyBelow` win
+    // here (1.999999999... < 2.0), even though nothing about the level says
+    // it is really closer -- both candidates share `first`'s declared order.
+    noiseAboveKeepsFirstDeclared: pickNearest([first, noisyAbove], c => c.d)?.id,
+    noiseBelowKeepsFirstDeclared: pickNearest([first, noisyBelow], c => c.d)?.id,
+    fourWayTieKeepsFirstDeclared: pickNearest(fourWayTie, c => c.d)?.id,
+    genuinelyCloserWinsRegardlessOfOrder:
+      pickNearest([first, genuinelyCloser], c => c.d)?.id === 'genuinelyCloser'
+      && pickNearest([genuinelyCloser, first], c => c.d)?.id === 'genuinelyCloser',
+    disqualifiedNeverWinsOverAnyRealCandidate:
+      pickNearest([disqualified, genuinelyFarther], c => c.d)?.id,
+  };
 }
 
 // --- VehicleOccupancy: seat switching, turret build/drop, HUD lookups -------
