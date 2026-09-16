@@ -6,8 +6,10 @@ hit registers as an effect and nothing else happens. This folder holds the
 **agent prompt** for finding out what the engine does, precisely enough to
 implement it.
 
-Nothing here has been dispatched. Dispatch is a separate, deliberate act — see
-[Dispatch](#dispatch). The model is deliberately unspecified.
+**Round 1 is done — see [Outcome](#outcome).** R1 researched, V1 verified, and
+the confirmed rows are merged into `features/bf1942-engine-reference/`
+(`3b46e88`). A follow-up track is running on the two questions R1 could not
+answer from the dedicated server.
 
 The shape is the one the two previous rounds used
 (`features/bf1942-engine-reference/README.md`,
@@ -21,14 +23,50 @@ optional.
 
 ## The behaviours to explain
 
-As reported, and to be treated as hypotheses rather than a spec:
+As reported, and treated as hypotheses rather than a spec. The last column is
+where round 1 left each one:
 
-| # | Reported | First read |
+| # | Reported | Verdict |
 |---|---|---|
-| 1 | A plane that hits the ground or a tree explodes, or takes enough damage to start burning | No crash-damage formula is known to exist anywhere — this is corpus open item **HP-6** |
-| 2 | Most vehicles burn below a hit-point threshold and cannot be driven, until they explode | The threshold is real and authored (`criticalDamage`); "cannot be driven" has no known mechanism |
-| 3 | A burning tank has limited turret movement | No known mechanism. May be a mod behaviour, or a misremembering |
-| 4 | A Sherman burns from about 8 HP | The authored number is **12** (`criticalDamage 12`, `hpLostWhileCriticalDamage 1.5` — 8.0 seconds of burn) |
+| 1 | A plane that hits the ground or a tree explodes, or takes enough damage to start burning | **Not in the engine.** A collision never costs hit points — ledger HP-6, closed in the negative. Only a projectile damages anything. What kills a crashed plane is the once-per-second upside-down tick after it comes to rest |
+| 2 | Most vehicles burn below a hit-point threshold and cannot be driven, until they explode | **Burning is real** (`criticalDamage` plus the 1 Hz tick — Sherman 12 HP at 1.5/s, 8.0 s). "Cannot be driven" still has no known mechanism — R2 is on it |
+| 3 | A burning tank has limited turret movement | **Still unanswered.** Nothing found so far reads `isCriticalDamaged` outside the effects and the tick — R2 is on it |
+| 4 | A Sherman burns from about 8 HP | **12**, not 8 — and 8.0 is the burn's duration in seconds. `criticalDamage 12`, `hpLostWhileCriticalDamage 1.5` |
+
+---
+
+## Outcome
+
+[R1](reports/R1-collision-damage-and-destruction.md) researched;
+[V1](reports/V1-verification-of-R1.md) re-derived it independently — 13 of 18
+claims confirmed, 4 corrected, none refuted. Merged into the corpus in
+`3b46e88`: ledger rows HP-6 (rewritten), HP-6b, HP-6c, HP-6d, ARM-1, ARM-2,
+ARM-3, COL-1; `subsystems/hitpoints-and-damage.md` §3 and §8; 11 new symbols
+and 3 rewritten notes, 790 total.
+
+What it settled:
+
+- **A collision never costs hit points.** The chain below `handleCollision`
+  computes a real impact-severity number and spends all of it on
+  `Game::playCollisionEffect`. Confirmed by enumerating every indirect
+  call-site offset in both handlers, not just the direct calls.
+- **`addArmorEffect` is the burning mechanic**, fully mapped — but on the
+  dedicated server the tier is evaluated **once per Armor lifetime**, behind a
+  latch at `Armor+0x128` that nothing resets. The viewer cannot copy that and
+  look right, which is R2's first question.
+- **The fire tier is authored at exactly `criticalDamage`**, 10 of 10 vanilla
+  land and air vehicles. Boats do not burn; they sink.
+- **FHSW ships 76 `BreakableTree` templates with armour.** Vanilla ships none —
+  relevant to the tree-collision track, which should not conclude "trees are
+  indestructible" without the mod caveat.
+
+### Open decision for a human
+
+R1 recommends **deleting** the invented fall-damage ramp at `map.html:4422`
+rather than correcting it, since retail has no such rule. That is a gameplay
+change, not a fidelity fix, and has not been made. The options are: delete it
+for engine fidelity, or keep it and relabel the comment as a deliberate house
+rule. Nobody has decided.
 
 ---
 
