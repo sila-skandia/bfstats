@@ -152,6 +152,15 @@
       ],
       "hasForce": true,
       "goBack": true
+    },
+    "hud": {
+      "ammoBar": "Ingame/Magbar_SMG_empty_32x64.tga",
+      "ammoBarFill": "Ingame/Magbar_SMG_full_32x64.tga",
+      "ammoBarSize": 46.0,
+      "posX": 4.0,
+      "posY": -11.0,
+      "textPosX": 8.0,
+      "textPosY": 4.0
     }
   },
   "soldierParts": {
