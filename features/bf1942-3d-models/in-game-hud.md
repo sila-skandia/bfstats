@@ -147,12 +147,15 @@ seat.
   (`JohnsonLMG`, `5/-11` against vanilla's `6/-17`) is known to diverge, and
   its bar would draw one pixel off vanilla's own rect if reached. Not fixed
   this round: the layout format has no live-position mechanism to feed.
-- **`inVehicle`/`Vehicle/ShowVehicleIcon` reflect only the pre-existing
-  aircraft/car modes** (`optPilot.checked && (aircraft || car)`), the only
-  "seat" concept that exists before a seats track lands. A future manned-gun
-  or tank seat that is neither will need its own state folded into this exact
-  check, or this pair of variables handed over to that track outright —
-  flagged again in this round's final report.
+- **`inVehicle`/`Vehicle/ShowVehicleIcon` (STALE, corrected in round 3's
+  parity audit).** This bullet used to read "reflect only the pre-existing
+  aircraft/car modes (`optPilot.checked && (aircraft || car)`)" and ask for a
+  seats track to fold its own state in. Seats landed (round 2, P2) and did
+  exactly that: `updateSoldierHud` now reads `optPilot.checked && !!occupancy`
+  — any seat at all, gun/seat root or nested, not only a drivable one. Left
+  the stale wording in place through round 2's own docs pass; corrected here
+  rather than deleted so the history is visible. See the round 3 section
+  below for what is still actually open on the vehicle-seat side.
 - **FillOrder on a horizontal bar (R1-31, settled as "no effect", but which
   edge is fixed was never decompiled).** Moot for every leaf this round
   actually feeds — none is horizontal — so `hud.js`'s own horizontal branch is
@@ -192,3 +195,143 @@ block; `GermanSoldier__MP40.fp.glb`, stale) and no bare per-weapon glbs at
 all — a fresh worktree has neither `viewer/maps` nor `viewer/models`, and only
 those two viewmodels were populated for this round's testing, so the
 kit-driven weapon a normal spawn would pick 404s.
+
+## Round 3: parity audit against the retail screenshot
+
+| element | retail | ours (before) | ours (after) | verdict | action |
+|---|---|---|---|---|---|
+| Soldier health bar (fill dir/extremes) | segmented, bottom-anchored, fills up | correct (1/30 sliver pixel-confirmed) | unchanged | MATCH | none |
+| Health-bar kit glyph | scope/cross/wrench/etc per kit | correct, confirmed on live respawn | unchanged | MATCH | none |
+| Stance figure (stand/crouch/prone) | 3 distinct sprites | correct, all 3 resolve | unchanged | MATCH | none |
+| Hand-weapon magazine bar (art + fillOrder) | per-weapon art, depletes top-down | correct (BAR1918 curved mag, fillOrder:false) | unchanged | MATCH | none |
+| Ammo digit formats (2/3-digit, -1 sentinel) | no clipping, box hides only the digit | correct | unchanged | MATCH | none |
+| Reload state | 0 rounds, empty bar, no overlay | correct, matches R1-24 | unchanged | MATCH | none |
+| Vehicle icon (Defgun/Sherman) | small photoreal render | painted correctly, hidden by a scale bug in the *checker* | unchanged (the checker was fixed) | MATCH (test bug, not product) | fixed frame()'s hudW/hudH |
+| Vehicle health bar | distinct olive art | correct | unchanged | MATCH | none |
+| Seated ammo panel number (Defgun, 1-weapon) | shows the loaded count | icon+bar only, no digit | "499" renders | BUG -> FIXED | fed `Ammo/PrimaryAmmoText` |
+| Seated ammo panel numbers (Sherman Browning seat, manned) | shows the loaded count | icon+bar only, no digit | "500" renders | BUG -> FIXED | fed `Ammo/{Primary,Secondary}AmmoText` |
+| Seated ammo panel numbers (Sherman root, 2-weapon drivetrain) | shows live count/heat/reload | icon+bar-type only (correct), no live numbers | unchanged | GAP, pre-existing | left open — needs `drive()` to fire through a gated `FireState`, outside this track's files |
+| Turret-turn dial (vehicleIcon group) | rotating top-down turret indicator | never drawn | unchanged | GAP, open | left open — R2-18's trigger condition and angle convention are both unsettled |
+| Headless HUD/3D-scene scale under `__renderOnce` | n/a (never seen live) | HUD painted ~76px short of the 3D frame | matches exactly | BUG -> FIXED | `frame()` now reads the renderer's own backing store |
+
+Crops: `scratchpad/t3/before_after_defgun_ammo_sidebyside.png` (the ammo-number
+fix, before/after in one image), `01-onfoot-standing_bl_zoom.png`/`_br_zoom.png`
+(baseline vs retail's own `retail_a1_bl_zoom.png`/`_br_zoom.png`),
+`06-health-near-empty_bl_zoom.png` (low-HP extreme), `12-kit-respawned-
+{scout,medic}_bl_zoom.png` (kit-glyph swap), `08-ammo-{100-12,7--1}_br_zoom.png`
+(digit-format extremes), `10-reloading_br_zoom.png` (reload state),
+`61-hudonly-defgun.png` (isolated HUD canvas proving the vehicle icon painted
+even before the scale fix).
+
+Track T3. The user's reference (BRIEFING.md's own record of it: a 2000x1125
+retail capture, Japanese soldier on a carrier deck) was never saved to a file
+in this repo — it was shown directly in an earlier session. In its place this
+pass used two things as ground truth: the numbers verify-r1.md/verify-r2.md
+already pulled out of the game's own `menu/InGame` (the authority for every
+rect), and a set of genuine BF1942 retail screenshots found in another
+session's scratch directory (`.../9049dd0c.../scratchpad/retail_*.png` —
+different soldier/location, same universal HUD chrome) for a visual sanity
+check the corpus numbers alone can't give: real segment colours, a real
+mid-reload magazine bar, a real 3-digit-adjacent ammo count. Own captures came
+from this worktree's `map.html` on Wake (which now carries a live Defgun and
+Sherman), headless via Playwright/SwiftShader, `window.__setAmmo`/`__damage`/
+`__deploy.setKit`/`__switchSeat` driving the extremes directly rather than
+waiting on real play to reach them.
+
+**Fixed, both in `feedVehicleHud()` (map.html):**
+
+- **The seated ammo panel never showed a number.** `hud-layout.json`'s vehicle-
+  skin ammo panel prints `Ammo/{Primary,Secondary}AmmoText` — a name the real
+  client registers from a *different* function (R2-12) than the
+  `PrimaryAmmo`/`MaxPrimaryAmmo`/`PrimaryMag` trio the soldier-skin panel's own
+  text binds directly (R1-20). `feedVehicleHud` fed the second trio and never
+  the first, so a seated Defgun or Sherman drew its icon and its reload/heat
+  bar correctly but never a digit. Confirmed two ways: the lead's own
+  pre-fix capture (`scratchpad/lead/int-4-defgun-fired.jpg`) shows an empty
+  box next to the shell icon; this track's own post-fix capture
+  (`scratchpad/t3/20-defgun-seated.jpg`, vars dump alongside it) shows "499".
+  Fixed by mirroring the same live `primary.ammo`/`secondary.ammo` value onto
+  the new name too — neither verify-r2.md nor the layout's own notes settle
+  whether the real engine ever lets `*AmmoText` diverge from the live count,
+  so this is a mirror, not a confirmed reproduction, but an unfed variable was
+  a confirmed-wrong "no number ever," strictly worse.
+- **The HUD scaled to the wrong stage size under every headless capture.**
+  `frame()`'s HUD-paint call read `stageWidth || renderer.domElement.width /
+  pixelRatio`, on the belief that `stageWidth`/`stageHeight` are 0 under
+  `?shots`/`__renderOnce`. Measured live (a real Playwright page, viewport
+  1280x800): they are not — `resize()` runs once, synchronously, at load,
+  and stamps them with `stage.clientWidth/Height` at that moment (1280x724;
+  the shared nav bar's own row costs 76px) and nothing ever resets them once
+  `__renderOnce` starts forcing the *renderer* to a different size for the
+  screenshot itself. The `||` therefore always kept the stale, pre-
+  `__renderOnce` figure, so the HUD painted 76 CSS px shorter than the 3D
+  frame it was merged with — invisible in a live browser (`resize()` keeps
+  the two in lockstep there) but a real, silent misalignment in every
+  headless capture this whole project's recipe (BRIEFING2.md's own
+  `__renderOnce(1600,1000)`, or any other explicit size) produces. This is
+  what made this track's own first Defgun capture look like the vehicle icon
+  was missing entirely — it was not: `window.__hud.sprite('icon_defgun')`
+  was loaded and the isolated `hud-canvas` read alpha 255 over its own rect
+  the whole time, 76px higher than a naive 1:1 merge went looking for it
+  (`scratchpad/t3/auditE-results.json`). Fixed by always deriving `hudW`/
+  `hudH` from the renderer's own current backing store — provably identical
+  to `stageWidth`/`Height` in ordinary play (the one call site that sets
+  both, `resize()`, always sets them together from the same read) and, unlike
+  the old fallback, also correct under `__renderOnce`, which only ever
+  touches the renderer's own size.
+
+**Left open, not fixed — the engine's own behaviour is unsettled or the fix
+lives outside this track's files:**
+
+- **`Vehicle/ShowTurretIcon`/`IconLookRotation` are still never fed.** The
+  turret-turn dial (back-plate, pipe, rotating body — `vehicleIcon` group)
+  never draws for any seat, Defgun or Sherman included, because nothing sets
+  the bool that gates the whole group. Left alone: R2's own Open section
+  marks *both* the trigger condition ("when does the real engine set this")
+  and the angle's own unit/sign/pivot as unsettled (R2-18) — feeding a guessed
+  `true` would draw a turret dial pointing somewhere this round has no
+  engine-confirmed basis for, which is a worse kind of wrong than a
+  consistently-absent group.
+- **A drivetrain root's own guns still show no live ammo/heat/reload —
+  confirmed for the Sherman specifically, not just aircraft/car.** The
+  existing `feedVehicleHud` comment already explained why: `drive()`/
+  `pilot()` fire `vehicleGuns` unconditionally, never through a gated
+  `FireState`, so building one just for the HUD would silently decrement
+  with nothing stepping it back. What this pass adds: `setPilot` now builds
+  a tank's drivetrain into the *same* `car` variable a wheeled vehicle uses
+  (`kind === 'ground' || kind === 'tank'` both do `car = vehicle` —
+  `map.html` ~3647), so `mannedActive()`'s existing `aircraft || car` check
+  already, correctly, treats the Sherman's own driver/gunner seat as a
+  drivetrain root, not a manned gun — confirmed live: switching to it
+  (`window.__switchSeat(0)`) feeds `Ammo/PrimaryAmmoIcon`/`PrimaryAmmoBar`/
+  `SecondaryAmmoIcon`/`SecondaryAmmoBar` correctly (cannon+ReloadBar,
+  coax+HeatBar, matching R2-30 exactly) but never `Ammo/PrimaryAmmoText`/
+  `Overheat/OverHeat`/`Ammo/ReloadTime` (`scratchpad/t3/auditF-results.json`,
+  `pos_0`) — the SAME gap the car-dashboard note already flagged, now
+  reproduced on a real gun-carrying vehicle rather than a Willys with nothing
+  to show. Retail clearly does show this (a Sherman driver watches their own
+  shell count), so this is a real parity gap, not a documentation nit — but
+  closing it means changing how `drive()` fires (a gated `FireState` per
+  `vehicleGuns` entry instead of the unconditional `setFiring` it uses today),
+  which is outside `feedVehicleHud`/`hud.js`'s files. Flagged here for
+  whoever owns `drive()` next; the nested Browning seat (a true manned seat)
+  already gets this correctly through the fix above.
+
+**Verified correct, no change** (each checked live, not just read off the
+layout): the health bar's fill direction and magnitude at both extremes —
+sampling the rendered pixels (not just eyeballing) confirmed a 1 HP / 30 max
+sliver actually draws, matching the bottom-anchored fill-up formula rather
+than snapping to empty; five kits' distinct health-bar glyphs swap correctly
+on a real respawn (scout's scope, medic's cross — `12-kit-respawned-
+{scout,medic}.jpg`); crouch/prone both resolve their own distinct sprite;
+a magazine weapon's own bar art overrides the layout default and its
+`fillOrder:false` depletes from the top down, matching the file's own data;
+2-digit, 3-digit and the `-1` spare-mag sentinel all format correctly (no
+clipping, box hides only the number, never its frame); a reload shows 0
+rounds and an empty bar with no separate overlay, matching R1-24; the
+vehicle health bar's own distinct olive-toned art (vs. the soldier's orange)
+renders correctly; and, once the stage-size bug above was fixed, so does the
+vehicle icon itself — `Vehicle/Icon_defgun.tga`/`Vehicle/Icon_sherman.tga`
+are small photorealistic-style renders of the vehicle, not abstract symbols,
+which is exactly why a misaligned first look mistook one for real scene
+geometry.
