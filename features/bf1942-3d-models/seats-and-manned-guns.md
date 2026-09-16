@@ -167,7 +167,20 @@ Firing goes through the existing `gunfire.js`, scoped per seat (`mannedGuns`,
 rebuilt on every seat switch) rather than the whole vehicle at once — sharing
 one array with `drive()`/`pilot()`'s own `vehicleGuns` would have the
 driver's Space bar also fire an unmanned hull MG nobody is sitting in, since
-neither loop gates on which seat is active. `FireState` (`seats.js`)
+neither loop gates on which seat is active. **Keeping the two arrays separate
+was necessary but, until a round-3 review pass, not sufficient**:
+`collectGuns()` built `vehicleGuns` from `guns.collect(vehicle.node, ...)` —
+the whole vehicle subtree, root plus every nested seat — so it independently
+picked up the hull `Browning` too, and `drive()`'s own firing loop matches by
+`stats.input` alone, which the hull MG shares with the cannon
+(`c_PIFire`). Reproduced headless: holding Space while driving the Sherman
+fired the hull gun for real (shots incrementing, ammo draining) with nobody
+in that seat. Fixed by dropping anything from the broad collect that is not
+the root seat's own FireArms (`occupancy.seatInfo(occupancy.rootId).fireArms`)
+before it becomes `vehicleGuns`, releasing it from `guns.groups` the same way
+`releaseGuns()` already does — a nested seat's own gun still gets its real,
+firing-capable group from `collectMannedGuns()` once someone actually sits in
+that seat. `FireState` (`seats.js`)
 reproduces GUN-12's confirmed gate order (eject → reload → overheat →
 **rate-of-fire**, ahead of the ammo check — the verifier's own addition to the
 prior pass) and `getHasHeat`'s corrected strict-**greater**-than test.
