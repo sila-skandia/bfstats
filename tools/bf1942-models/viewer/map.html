@@ -2935,12 +2935,26 @@ function spawnerVehicleOf(node) {
   for (let n = node; n; n = n.parent) if (n.parent === spawnersRoot) return n;
   return null;
 }
+// The subtree a ride thaws and a parking freezes. A seat being driven is not
+// under `spawners` any more: `Vehicle`'s constructor (flight.js; ground.js
+// extends it) reparents the node onto the level root before setPilot gets to
+// thaw it. Looked up through `spawners` alone, the driven vehicle was never
+// thawed and never re-frozen: it kept the frozen `updateMatrixWorld` from
+// freezeStatics, so everything `applyRig` poses after `applyTransform`'s
+// forced update (propeller spin, control surfaces) was drawn a frame late,
+// and the pose `reset()` + `applyRig()` leave on a vehicle setPilot(false)
+// parks was never committed at all -- `__matrixDrift` read 1.43 on the parked
+// Corsair's drawn propeller after one such exit (features/mesh-viewer-performance,
+// rule 2). Once reparented, the node is its own vehicle root.
+function vehicleRootOf(node) {
+  return spawnerVehicleOf(node) ?? node;
+}
 function thawVehicle(node) {
-  const vehicle = spawnerVehicleOf(node);
+  const vehicle = vehicleRootOf(node);
   if (vehicle) thaw(vehicle);
 }
 function freezeVehicle(node) {
-  const vehicle = spawnerVehicleOf(node);
+  const vehicle = vehicleRootOf(node);
   if (vehicle && !neverFrozen.has(vehicle)) freeze(vehicle);
 }
 /** Take every level subtree that nothing animates out of the per-frame
