@@ -16,6 +16,24 @@ PCO's own name. That is strictly more correct than the old runtime stack-walk
 nesting once, so a hull gunner's RotationalBundle is never attributed to the
 driver's seat and vice versa, with no walk to get wrong at render time.
 
+**A nested PCO buckets by that `control` tag, not by its own node name** — a
+review pass this round found `surveyVehicle` originally keyed a nested PCO's
+own seat by `obj.name` instead, and on Wake (two Shermans) that is not the
+same string: the export gives every node under the second-and-later instance
+of a vehicle a scene-wide disambiguating suffix, so one Sherman's own
+`shermanBrowning_PCO1` node is named `shermanBrowning_PCO1_1` while every one
+of *its own descendants* still reports the bare `shermanBrowning_PCO1` as
+`control` — confirmed headless against the live scene, not a hypothetical.
+Keying by the node name split that one seat into two: an empty bucket holding
+only `.node` (nothing else ever resolved to the suffixed name) and a fully
+populated one holding the entryPoints/axes/fireArms/camera but no `.node` —
+`classifySeat` read the empty half as a bare `seat`, not a `gun`, and `order`
+gained a phantom entry, shifting the real gunner from seat position 1 to 2 and
+leaving position 1 (key "2", SEAT-24's own driver-then-gunner reading) an
+unfireable dead seat. Fixed by bucketing a PCO the same way its own
+descendants already do; `test_a_nested_pco_buckets_by_control_tag_not_by_its_
+own_node_name` (`test_seats.py`) reproduces the exact shape and pins the fix.
+
 `classifySeat(seat, isRoot)` is GUN-10's own definition (verify-r6.md): an
 Engine wins at the root (`air`/`ground`/`tank`); short of that, a
 RotationalBundle with real motion (`maxSpeed>0`) *and* a FireArms is a manned
@@ -69,6 +87,17 @@ Sherman's hull-gunner door were all unreachable before this, confirmed via
   leaving from *any* seat empties the whole vehicle — `leaveManned()`
   delegates to `leaveVehicle()` when a drivetrain also exists, rather than
   leaving a driverless tank "occupied" by a gunner who just climbed out.
+  `exitVehicle()` no longer gates an aircraft's exit on `grounded`/airspeed —
+  a review pass found that predates this round and directly contradicts
+  SEAT-5/SEAT-8 (confirmed twice: `isAllowedToExit()` is pure geometry, no
+  speed/altitude check exists in vanilla); removed, `soldier.spawn()`'s own
+  fall-to-floor already lands an exit point left in mid-air.
+- **Cooldown**: E is `c_PIUse` (SEAT-2 — the report's own correction: no
+  distinctly-named "enter/exit" enum value exists), gated by SEAT-6's
+  hard-coded 1.0s per-player cooldown (`SEAT_TOGGLE_COOLDOWN_MS`), refreshed
+  only on an actual enter/switch/exit — a press that finds no door and no
+  seat to leave costs nothing, matching `toggleEntryPoint`'s own
+  success-path-only refresh.
 
 ## Aiming: GUN-3's two registers, and where this stops short of them
 
@@ -146,13 +175,26 @@ seat is entered, switched, or — every tick — while `manned()` is running:
     Vehicle/VehicleMaxHitPoints    root PCO's own `maxHitpoints`
     Ammo/PrimaryAmmoIcon/Bar       active seat's own values (`ammoBarCode` decodes R2-8's 8-way enum)
     Ammo/SecondaryAmmoIcon/Bar     ditto, when the seat declares one
-    Ammo/PrimaryAmmo/MaxPrimaryAmmo/PrimaryMag, Overheat/OverHeat
+    Ammo/PrimaryAmmo/MaxPrimaryAmmo/PrimaryMag, Ammo/SecondaryAmmo/MaxSecondaryAmmo,
+    Ammo/ReloadTime/ReloadTimeSecondary, Overheat/OverHeat
                                    only while `manned()` is stepping a `FireState` for this
                                    seat's own FireArms — an aircraft/car's FireArms have no
                                    `FireState` here (see "Firing", above): building one just
                                    for this read would decrement on every shot via the global
                                    `chainOnShot` hook without anything ever stepping it back,
-                                   an orphaned, silently-wrong counter rather than an absent one
+                                   an orphaned, silently-wrong counter rather than an absent one.
+                                   `nodes[0]`/`[1]` (the seat's own FireArms declaration order)
+                                   stand in for primary/secondary — the Sherman's root is the
+                                   real vanilla case with two (R2-30: cannon then coax), and its
+                                   heat weapon is the *secondary* one, which is why `Overheat/
+                                   OverHeat` (one shared variable, confirmed against
+                                   `hud-layout.json`, not per-slot) is fed from whichever of the
+                                   two actually has heat rather than always `nodes[0]`.
+                                   `Ammo/ReloadTime[Secondary]` is fed as `reloadRemaining /
+                                   reloadTime` against the layout's own `max: 1.0` — the fill
+                                   *direction* (counts down vs. counts up to full) is not in
+                                   verify-r2.md/verify-r6.md or the layout's metadata, so this
+                                   is an approximation, not a confirmed reading
 
 Cleared (`delete`d, not set false/0) on any full exit, so the painter's own
 "unknown stays absent, cull the group" rule sees an honest table.
