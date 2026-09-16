@@ -147,11 +147,28 @@ def _blend(props: dict[str, str]) -> dict:
     source-over regardless (`destBlendMode`, not `srcBlendMode`, is what
     made the old rule usually right).
 
-    The identity mapping is confirmed for the three functions R8-1 checked;
-    a genuine non-identity permutation feeds a third, separate
-    `SetRenderState(SRCBLEND/DESTBLEND)` site elsewhere in the client
-    (`FUN_00664560`/`FUN_006640e0`, R8-4c) — not proven reachable from
-    sprites (Open in verify-r8.md), so it is not applied here.
+    The identity mapping (R8-1) is confirmed only for the three stream/string
+    functions that read/write a template's own `+0x5c4`/`+0x5c8` fields
+    (R8-2) — it is not, by itself, proof of what a *sprite particle's draw*
+    sends to the D3D device. The verifier found the client pairs
+    `SetRenderState(SRCBLEND/DESTBLEND)` at three sites, not the one place
+    the original research report named (R8-4): (1) `StandardMeshSubShader_
+    applyRenderState` (0x005bf690), for `.rs` mesh materials, unrelated to
+    sprites; (2) `FUN_0062cf20`/`FUN_0062e870` (0x0062cf20/0x0062e870), a
+    per-particle vtable `geom::ParticleSystem::addParticle`'s own helper
+    (`FUN_00609ea0`, R8-6) installs on *every* spawned particle and reaches
+    through a deferred/transparent draw queue next to `StandardMeshRenderer::
+    drawTransparent` — this is the sprite-reachable site, but R8-6 could not
+    close the last link: the descriptor it reads its src/dest from
+    (`particle+0x78`, +0x14/+0x18) was traced back only as far as
+    `template+0x5b0` (`+0x14=+0x5c4`, `+0x18=+0x5c8` — an exact arithmetic
+    match to `srcBlendMode`/`destBlendMode`), not confirmed byte-identical.
+    So using `_BLEND_ORDINAL` for a sprite's own render state is the
+    best-evidenced choice, not a fully closed one — R8-6 is marked
+    **inferred**, not verified, in verify-r8.md; (3) `FUN_00664560`, whose own
+    resolver `FUN_006640e0` is a genuine *non-identity* permutation (R8-4c) —
+    not proven reachable from sprites (open in verify-r8.md), so it is not
+    applied here.
     """
     src = _blend_ordinal(props, "srcblendmode", _DEFAULT_SRC_BLEND)
     dest = _blend_ordinal(props, "destblendmode", _DEFAULT_DEST_BLEND)
