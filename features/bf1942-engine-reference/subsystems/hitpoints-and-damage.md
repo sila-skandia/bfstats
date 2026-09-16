@@ -1,7 +1,9 @@
 # Hit points and damage: Armor, and how it dies
 
 Settled 2026-09-16 for the map viewer's `armor.js` and the soldier's HUD
-health bar ([ingame-hud.md](ingame-hud.md) HUD-9). All addresses
+health bar ([ingame-hud.md](ingame-hud.md) HUD-9); extended 2026-09-17 with
+what a collision does (§3 — nothing, to hit points) and what makes a vehicle
+burn (§8). All addresses
 `bf1942_lnxded.static` unless marked client. Every Armor-bearing thing —
 soldier, vehicle, stationary gun — shares one component and one death rule:
 death is a threshold crossing evaluated inside the mutator that causes it,
@@ -65,17 +67,72 @@ itself (`hpLostWhileCriticalDamage`, `hpLostWhileUpSideDown`,
 amount per firing, **not scaled by `dt`** — a longer frame does not lose
 more HP per water tick, it just checks in less often.
 
-## 3. Collision recording is not fall damage
+## 3. A collision never costs hit points
 
-`SimpleObject::handleCollision` (`0x081dab40`, HP-6) walks the composite
-chain for the nearest Armor and calls its `collision()` (vtable `+0xe8`) and
-`setLastCollisionHeight` (vtable `+0xf8`) on physical contact — but a gate
-at `0x81dae30` (`call [otherObject_vtable+0x90]`) can bypass the whole block,
-and was not traced past that call. Critically: **no fall-damage formula
-exists anywhere `handleCollision`, Armor's own code, or `handleDamage`
-reach.** Whatever converts a hard landing into HP loss — if it exists at all
-as a general rule rather than per-vehicle scripting — is somewhere else
-entirely; do not assume this function is where it would be.
+Settled 2026-09-17 (HP-6, HP-6b, HP-6c, HP-6d), researched and then
+independently re-derived by a verifier. This section previously said the
+fall-damage formula "is somewhere else entirely". It is nowhere: **there is no
+such formula, for a soldier or for a vehicle.**
+
+`SimpleObject::handleCollision` (`0x081dab40`) walks the composite chain for
+the nearest Armor, calls its `collision()` (vtable `+0xe8`) and
+`setLastCollisionHeight` (vtable `+0xf8`), and then dispatches on the
+`dice::bf::game` global's own vtable — `+0x30`/`+0x34` on the stored vptr —
+choosing the projectile variant when `this`'s `+0x4c` class is
+`CID_ProjectileTemplate` (`0x86c2b90`). The singleton is a `GameServer`, whose
+vtable (`0x0871b0e0`) overrides both slots, so a physical contact lands in
+`GameServer::handleCollision` (`0x08156020`). That is a 101-byte tail-call
+dispatcher: `otherObject != NULL` goes to `handleCollisionObjectVsObject`
+(`0x081551c0`), and `NULL` — which is how **terrain and water** arrive, written
+in as `mov [ebp+0xc],0x0` — goes to `handleCollisionLandOrWater`
+(`0x08154960`). There is no separate physics-only terrain path.
+
+Both of those functions compute a real impact-severity number: the magnitude of
+a velocity-like vector, the absolute cosine between it and the surface normal,
+`MaterialManager` damage and effect lookups, `Armor::getSpeedMod()`, and — only
+for `CID_BFSoldierTemplate` — a fall-height term, `getLastCollisionHeight()`
+minus current Y, clamped against 1.0/2.0/20.0 and scaled by
+`BFSoldier::getDamageDampingFromActiveKitParts()` (`0x0827ec00`).
+
+**And then they spend all of it on `Game::playCollisionEffect`
+(`0x0805de20`)** — the dust and the thud. Both functions were read in full
+(673 and 1127 lines). Every direct call resolves by symbol to something that is
+not an HP mutator; every indirect call-site offset was enumerated. Armor's
+`damage`/`heal` slots (`+0x20`/`+0x24`) never appear at all. The three
+`+0x18`/`+0x1c` sites inside ObjectVsObject resolve by data flow to the
+`playerManager` singleton and to an `IPlayerControlObject` from the gate chain
+— offset collisions, not Armor. Neither function tail-calls out, and
+`SimpleObject::handleDamage` sits at vtable `+0xd8`, which never occurs in
+either. `playCollisionEffect` itself is a 352-byte leaf with no HP mutator in
+it.
+
+So the only path that damages anything is `handleCollisionForProjectile`
+(`0x08153ba0`) — a shot — through `Projectile::getDamage` and the
+`MaterialManager` tables. A plane that flies into a hill loses no hit points
+for the impact. What kills it afterwards is §2's once-per-second tick, once it
+comes to rest upside down or in water.
+
+**The gate at `0x81dae30` is self-collision suppression, not a type test
+(HP-6b).** It walks `getRootParent(this)` for `IID_ICompositeObject`
+(`0x86c2a58`) toward the nearest `IID_IPlayerControlObject` (`0x86d3c50`)
+ancestor — the `vtable+0x90` call is on *that* object, not on `otherObject` —
+then makes two chained comparisons: `ObjectSpawner::getHoldObjectId()`
+(`0x08314a50`) against **self's** own root (`edi+0x48`), and only if that
+matches, an `ICompositeObject`-identity compare against
+`getRootParent(otherObject)`. Both must pass before the Armor-recording block
+is bypassed. A shell does not record a collision against the gun that fired it.
+
+**`setLastCollisionHeight` stores a raw world Y (HP-6d)**, not a fall distance:
+written at `0x81dae83`–`0x81dae98` from `this->vtable[0x38]()`'s Pos3 `+0x4`,
+the only such call site in the binary, and read back once, at `0x08154d37`.
+
+Two smaller corrections from the same pass. `Spring::handleCollision`
+(`0x0824f9b0`) — springs are wheels and suspension — sets two fields and
+tail-forwards every argument to the base, so a wheel's contact reaches the same
+dead end as anything else. `Obstacle::handleCollision` (`0x08315e10`) never
+calls the base: when `otherObject`'s class **is** `CID_BFSoldierTemplate` it
+returns true immediately, and when it is not, it calls its own
+`vtable+0x9c(0,0)` and returns false. Neither touches an Armor.
 
 ## 4. `handleDamage`: find-nearest-Armor, then dispatch by sign
 
@@ -158,15 +215,77 @@ critical from a safe state. What a client HUD actually does on receipt of
 each id was not read — this is a server-side finding about *when* a signal
 fires, not what it looks like.
 
+## 8. `addArmorEffect`: the smoke and fire tiers, and the latch on them
+
+Settled 2026-09-17 (ARM-1, ARM-2). This is the mechanism behind a burning
+tank, and it is authored data the extraction pipeline does not yet parse.
+
+`ObjectTemplate.addArmorEffect <hp> <effectTemplate> <x/y/z>` — 430 uses in
+vanilla, 2,271 templates across all installed mods. A Sherman declares five:
+`e_PanzDamage` at 50, `e_PanzFire` at 12, `e_ExplGas` and two scrapmetal
+bundles at 0, and `WaterWaterExplosion` at -1.
+
+`SimpleObjectTemplate::addArmorEffect` (`0x081dded0`, 89 lines) appends to
+three parallel vectors on the template — `+0x98` `vector<string>` for the
+effect name, `+0xa4` `vector<Vec3>` for the attach offset, `+0xb0`
+`vector<int>` for the threshold — confirmed by the mangled `_M_insert_aux`
+callees. It is not one of §1's 23 copied setters, which is why HP-3 never saw
+it. At construction the three fold into an `std::map<int,DamageEffects*>` at
+`Armor+0x148`, and `Armor::getEffect(int)` (`0x08172820`) reads it as a
+nearest-threshold-below lookup (`_Rb_tree::find` plus `_M_decrement`).
+
+**The catch is how rarely that gets consulted.** `Armor::playEffect()`
+(`0x08172960`, 1385 bytes) is what compares the applicable tier against the
+last-shown field at `Armor+0x50` and rebuilds the live effect instances — and
+its only call site in the whole binary is inside `Armor::update()` at
+`0x08173100`, behind `cmp byte [edi+0x128],0`. `playEffect` sets that same byte
+to 1 on its first non-dead run. The only other writes to `+0x128` anywhere are
+the two Armor constructors initialising it to 0. **Nothing resets it**, so on
+the dedicated server the tier is evaluated at most once per Armor's lifetime,
+not once per second and not per tick.
+
+Whether the *client* re-evaluates continuously is unread, and it is the only
+thing that could explain a tank that visibly starts smoking partway through a
+fight. Until someone reads `BF1942.exe` for it, a viewer that polls HP against
+these thresholds is making a house rule, not mirroring the engine.
+
+`Armor+0x38` is current `hitPoints` — both `setHitPoints` and `getHitPoints`
+touch it — which is what `playEffect` tests against §1's 0.001 epsilon before
+doing anything.
+
+**The thresholds themselves (ARM-2).** A vehicle's fire tier is authored at
+exactly its own `criticalDamage`, on 10 of 10 sampled vanilla land and air
+vehicles: Sherman, PanzerIV and Tiger 12, Willy 6, Hanomag 16, Wespe 12,
+Spitfire, bf109 and Zero 20, B17 60. Boats do not burn at all — Elco80 and
+Type38 (500/500, `criticalDamage 350`) run a sink sequence instead:
+`em_LcvpDamage` at 200, `waterBoatSink` at 125, scrapmetal at 0, a `-1` water
+tier. The first word is therefore a plain HP threshold, not a critical-state
+flag; `criticalDamage` and the fire tier agree by authoring convention, not by
+the engine tying them together.
+
+**And vegetation (ARM-3).** No vanilla tree carries an Armor at all — 0 of 230
+tree, foliage and vegetation templates declare `hasArmor` — which with §3 makes
+a vanilla tree indestructible by any collision. FHSW is the exception: 76
+templates under its own `objects/Vegetation/BreakableTree/` do declare one, as
+do FH's `EU_pine6_M1_nosway` and DC_Final's `SniperBush_deploy`. Destructible
+vegetation is a mod feature built on exactly this component.
+
 ## Open
 
-- **HP-6**: the fall-damage formula itself — still unfound anywhere Armor,
-  `SimpleObject`, or `handleDamage` reach. Leads worth trying next:
-  `ResponsePhysics::addFriction` (`0825b6e0`) and `PhysicsNode::updatePhysics`
-  (`082543d0`) — see [physics.md](physics.md).
-- **HP-6**: `handleCollision`'s pre-gate at `0x81dae30` — whether it
-  routinely skips the collision-recording block, not traced past
-  `0x81daf32`.
+- **ARM-1**: whether the **client** re-evaluates the `addArmorEffect` tier
+  continuously. On the dedicated server it cannot — the latch at `Armor+0x128`
+  is set once and never cleared (§8). This is the one question standing between
+  the viewer and a correct burning vehicle, and only `BF1942.exe` can answer
+  it.
+- **Q5, never investigated**: whether anything reads `isCriticalDamaged` in the
+  drive or turret path — i.e. whether the engine itself disables a burning
+  vehicle, or whether it simply dies within seconds. `tank-driving.md` and
+  `manned-guns.md` do not have it either.
+- **The wreck**: what `status()` does past setting `isDestroyed` — whether the
+  wreck is a configuration swap on the same object, a separately spawned
+  template, or a flag-selected alternative; how long it lives; whether it stays
+  collidable (`noCollisionsAsDestroyed`). The extraction pipeline's own
+  `"wreck" in name` substring rule is a convention, not a traced mechanism.
 - **HP-8**: how a dying object avoids re-damaging its own wreck, given that
   its on-death explosion passes `sourceArmor = NULL` and so bypasses the
   pointer-identity self-exclusion that would otherwise apply. Candidate:

@@ -5280,6 +5280,15 @@
    "note": "lnxded. Called from status()'s death branch when the dying template isn't CID_BFSoldierTemplate."
   },
   {
+   "address": "0x0805de20",
+   "name": "dice::bf::Game::playCollisionEffect(Pos3,EffectTemplate*,Vec3,float,float)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded. The ONLY consumer of the collision-severity arithmetic computed by handleCollisionLandOrWater and handleCollisionObjectVsObject: an audio/visual effect spawn. 352-byte leaf; its own one direct call and indirect offsets {0x8,0xc,0x14,0x2c,0x3c,0x40,0x44,0x74,0x78,0x9c} include no Armor HP mutator. See ledger HP-6."
+  },
+  {
    "address": "0x08061df0",
    "name": "dice::ref2::roll<float>",
    "kind": "function",
@@ -5332,6 +5341,33 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded. Single dispatcher for Use(bit10), Fire, AltFire, Reload, Drop, MenuSelect1-9, ToggleCamera(Mode). See ledger SEAT-1."
+  },
+  {
+   "address": "0x08154960",
+   "name": "dice::bf::GameServer::handleCollisionLandOrWater(...)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded, 2135 bytes. Terrain and water contact. Computes |V|, |cos(V,N)|, MaterialManager damage/effect lookups, Armor::getSpeedMod, and for CID_BFSoldierTemplate a fall-height term (getLastCollisionHeight minus current Y, clamped against 1.0/2.0/20.0, times getDamageDampingFromActiveKitParts) -- and spends all of it on playCollisionEffect. No Armor HP mutator is reached. See ledger HP-6."
+  },
+  {
+   "address": "0x081551c0",
+   "name": "dice::bf::GameServer::handleCollisionObjectVsObject(...)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded, 3673 bytes. Same shape and same dead end as handleCollisionLandOrWater. Its three indirect calls at offsets +0x18/+0x1c (Armor's setHitPoints/getHitPoints slots) resolve by data flow to the playerManager singleton and an IPlayerControlObject from the self-collision gate chain -- coincidental offset collisions, not Armor. See ledger HP-6."
+  },
+  {
+   "address": "0x08156020",
+   "name": "dice::bf::GameServer::handleCollision(...)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded, 101 bytes. Tail-call dispatcher: otherObject != NULL -> handleCollisionObjectVsObject, NULL -> handleCollisionLandOrWater (writing mov [ebp+0xc],0 first). Terrain and water route through this same dispatch as object-vs-object; there is no separate physics-only terrain path. See ledger HP-6c."
   },
   {
    "address": "0x08156090",
@@ -5446,18 +5482,18 @@
    "name": "Armor::getEffect(int)",
    "kind": "function",
    "subsystem": "hitpoints",
-   "confidence": "inferred",
-   "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded, not re-read this round."
+   "confidence": "verified",
+   "source": "research-2026-09-16-hitpoints; read 2026-09-17-collision-damage",
+   "note": "lnxded, 121 lines, read in full 2026-09-17. Nearest-threshold-below lookup into the std::map<int,DamageEffects*> at Armor+0x148, via _Rb_tree::find plus _M_decrement. The map is built from SimpleObjectTemplate::addArmorEffect's three per-template vectors, so this is what picks a vehicle's smoke or fire tier from its current HP. See ledger ARM-1."
   },
   {
    "address": "0x08172960",
-   "name": "Armor::playEffect",
+   "name": "Armor::playEffect()",
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded, post-death effect ring buffer, see Armor::update."
+   "source": "research-2026-09-16-hitpoints; corrected research-2026-09-17-collision-damage",
+   "note": "lnxded, 1385 bytes, read in full 2026-09-17 -- NOT a post-death ring buffer, as the previous note said. Compares the applicable addArmorEffect tier (via getEffect) against the last-shown field at Armor+0x50 and tears down/rebuilds the active effect instances. Its ONLY call site in the binary is inside Armor::update() at 0x08173100, behind cmp byte [edi+0x128],0 -- and playEffect sets that same byte to 1 on its first non-dead run. The only other writes to +0x128 are the two Armor constructors initialising it to 0, so nothing ever resets it: on the dedicated server the tier evaluation fires at most ONCE per Armor lifetime, not per tick. Whether the client re-evaluates continuously is unread. See ledger ARM-1."
   },
   {
    "address": "0x08172ed0",
@@ -5475,7 +5511,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded. Water/deep-water recomputed every call; critical/upside-down loss gated behind a +=dt accumulator (+0xe8) firing only at >=1.0s, skipped entirely for soldiers. See ledger HP-5."
+   "note": "lnxded. Water/deep-water recomputed every call; critical/upside-down loss gated behind a +=dt accumulator (+0xe8) firing only at >=1.0s, skipped entirely for soldiers. See ledger HP-5. Also the sole caller of playEffect() (0x08173100), behind the one-shot latch at +0x128 -- see ARM-1."
   },
   {
    "address": "0x08173680",
@@ -5708,8 +5744,8 @@
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded, shared with the projectile-impact chain. Walks the composite-parent chain for the nearest Armor, calls collision()(vtbl+0xe8)/setLastCollisionHeight(vtbl+0xf8). A gate at 0x81dae30 (call [otherObject_vtable+0x90]) can bypass the block, not traced further. See ledger HP-6."
+   "source": "research-2026-09-16-hitpoints; corrected research-2026-09-17-collision-damage",
+   "note": "lnxded, shared with the projectile-impact chain. Walks the composite-parent chain for the nearest Armor, calls collision()(vtbl+0xe8)/setLastCollisionHeight(vtbl+0xf8), then dispatches to the dice::bf::game global's own vtable (+0x30/+0x34 on the stored vptr) by whether this's +0x4c class is CID_ProjectileTemplate. The gate at 0x81dae30 is self-collision suppression, NOT an otherObject type test (corrected 2026-09-17): it walks getRootParent(this) to the nearest IPlayerControlObject, then bypasses the Armor-recording block only when BOTH ObjectSpawner::getHoldObjectId() matches self's own root (edi+0x48) AND an ICompositeObject-identity compare against getRootParent(otherObject) matches. The setLastCollisionHeight write site is 0x81dae83-0x81dae98 and is the only one in the binary. See ledger HP-6, HP-6b, HP-6d."
   },
   {
    "address": "0x081db230",
@@ -5728,6 +5764,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
    "note": "lnxded. Copies 23 setter calls into a freshly pooled Armor, setMaxHitPoints strictly before setHitPoints. setMaterial is never called -- Armor's material is always the ctor's hardcoded 0. See ledger HP-3."
+  },
+  {
+   "address": "0x081dded0",
+   "name": "dice::bf::SimpleObjectTemplate::addArmorEffect(int,std::string,Vec3)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded, 89 lines. Appends to three parallel per-template vectors -- +0x98 vector<string> (effect name), +0xa4 vector<Vec3> (attach offset), +0xb0 vector<int> (HP threshold) -- confirmed by the mangled _M_insert_aux callees. Separate from setArmorComponent's 23 fixed setters (HP-3). See ledger ARM-1."
   },
   {
    "address": "0x081e2bb0",
@@ -5818,6 +5863,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-drag-advanced",
    "note": "lnxded. Stores a Vec3 at this+0x58..+0x60, and nothing in the binary calls it or its getter 0x0824d3c0; neither drag law reads the field. So ObjectTemplate.dragOffset is inert for physics nodes, although mods set it non-zero on boats, GCMOD's landspeeders and bfheroes' helicopters."
+  },
+  {
+   "address": "0x0824f9b0",
+   "name": "dice::bf::Spring::handleCollision(...)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded. Springs are wheels and suspension. Sets two fields, then tail-forwards every argument to SimpleObject::handleCollision -- so a wheel's contact reaches the same dead end as any other."
   },
   {
    "address": "0x08250950",
@@ -5946,6 +6000,15 @@
    "note": "lnxded. If this+0x50 is non-zero, tail-calls AnimationStateMachineInstance::getSoundTrigger 0x0832ae90 on the upper-body machine (+0x2d8); otherwise asks it and falls back to the lower body (+0x294) when it returns 0. Client twin 0x004f5c60, whose result 4 (c_SstJump) blocks the jump."
   },
   {
+   "address": "0x0827ec00",
+   "name": "dice::bf::BFSoldier::getDamageDampingFromActiveKitParts()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded. Scales the soldier fall-height term inside handleCollisionLandOrWater. Despite the name it feeds playCollisionEffect's intensity arguments, not any HP loss. See ledger HP-6."
+  },
+  {
    "address": "0x08280590",
    "name": "postInitCameras(IObject*)",
    "kind": "function",
@@ -6016,6 +6079,24 @@
    "confidence": "verified",
    "source": "research-2026-09-16-vehicle-hud",
    "note": "lnxded twin of client 0x004c4ef0."
+  },
+  {
+   "address": "0x08314a50",
+   "name": "dice::bf::ObjectSpawner::getHoldObjectId()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded. Read through the objectManager global (0x0871dc24) by SimpleObject::handleCollision's self-collision gate. See ledger HP-6b."
+  },
+  {
+   "address": "0x08315e10",
+   "name": "dice::bf::Obstacle::handleCollision(...)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded. Does NOT call the base. When otherObject's class IS CID_BFSoldierTemplate (0x086c2b88) it returns true immediately; when it is not (or otherObject / its +0x4c is null) it calls its own vtable+0x9c(0,0) and returns false. Touches no Armor either way."
   },
   {
    "address": "0x08316790",
@@ -6909,6 +6990,15 @@
    "note": "lnxded. +0x38 getCamera, +0x3c getVehicle, +0x40 setVehicle, +0x5c getIsAIPlayer -- one slot later than ghidra_types.java's ordering."
   },
   {
+   "address": "0x0870d760",
+   "name": "vtable for dice::bf::Game",
+   "kind": "data",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded. dump+0x38/+0x3c are handleCollisionForProjectile/handleCollision, here the base implementations 0x0805f640/0x0805f740. Itanium ABI: the vptr an object stores is this symbol + 8, so call [vptr+N] is dump-offset N+8. See ledger HP-6c."
+  },
+  {
    "address": "0x0870d918",
    "name": "dice::bf::game (global)",
    "kind": "data",
@@ -6916,6 +7006,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-supply-depots",
    "note": "lnxded. Queried for IID_IGameServer; gates SupplyDepotTemplate's ctor phase-randomization and (separately) HandFireArms::checkIfToTriggerRefillSound's sound broadcast. Always non-null on the dedicated server."
+  },
+  {
+   "address": "0x0871b0e0",
+   "name": "vtable for dice::bf::GameServer",
+   "kind": "data",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-collision-damage",
+   "note": "lnxded. Overrides dump+0x38/+0x3c with 0x08153ba0/0x08156020, which is why SimpleObject::handleCollision's virtual dispatch on the dice::bf::game global (0x0870d918) lands in GameServer. See ledger HP-6c."
   },
   {
    "address": "0x0871ba00",
