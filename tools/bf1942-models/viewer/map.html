@@ -5661,11 +5661,14 @@ function stanceNation(team) {
  */
 function updateSoldierHud() {
   const vars = gameHud.vars;
-  // The only "seat" concept this page has before seats.js lands. A future
-  // manned-gun or tank seat that is neither an Aircraft nor a GroundVehicle
-  // will need its own state folded in here, or this whole boolean pair
-  // handed over to that track outright — see the report for this round.
-  const inVehicle = optPilot.checked && !!(aircraft || car);
+  // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
+  // from the moment `setPilot` seats someone until `leaveVehicle` /
+  // `exitManned` clears it, whatever the seat is — a cockpit, a driver's
+  // bench, or a Defgun that has no drivetrain to be an `aircraft`/`car` at
+  // all. This runs after `frame()`'s dispatch has already called
+  // `feedVehicleHud`, so testing `aircraft || car` here would blank the
+  // vehicle groups that a manned gun had just filled in.
+  const inVehicle = optPilot.checked && !!occupancy;
   // A seated soldier's optOnFoot box is still ticked — he is only suspended,
   // per disposeHandWeapon's own comment on the old #ammo element — so the
   // vehicle check has to be explicit here too.
