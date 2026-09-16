@@ -325,12 +325,27 @@ export function spawnParticle(spec, basis, origin, emitterVelocity, rand = Math.
  * engine's `underWater` actually reads is still open (`physics.js`'s own
  * `DRAG_SUBMERSION_SCALE` note; every caller in this viewer passes 0), and
  * `DRAG_WIND` is 0 on every vanilla level, so this reduces to the drag-only
- * ODE `dv/dt = -k v` with `k = pi * r^2 * drag` (mass dropped) — whose exact
- * closed form over one tick is the multiplicative decay below, not an
- * approximation of the law but its exact solution for the wind=0/scale=1
- * case every real effect in the corpus is. A `kind !== 'mesh'` particle (a
- * sprite) has no `PointPhysicsNode` at all (R8-16..18) and this law is not
- * shown to apply to it — see `SPR-3`'s still-open consumption path — so it
+ * ODE `dv/dt = -k v` with `k = pi * r^2 * drag` (mass dropped).
+ *
+ * The multiplicative decay below (`v *= e^(-k dt)`) is that ODE's own exact
+ * closed form, but it is not literally what `PointBody`'s own `applyDrag` +
+ * `integrate` compute (`physics.js`, same `0x00578990`/`0x00578aa0` engine
+ * addresses): the engine evaluates the drag acceleration *once* per whole
+ * tick from the pre-tick velocity, then applies it over four `dt/4`
+ * semi-implicit sub-steps — algebraically a single forward-Euler step for
+ * velocity, `v' = v(1 - k dt)`, not `v e^{-k dt}`. The two agree to first
+ * order in `k dt` and diverge beyond it (a 2nd-order term); for every real
+ * mesh-particle `drag`/`radius` pair surveyed (`Fx_RichoStoneDecal`-scale
+ * props at a 60 Hz step, `k dt` ~ 0.02) the difference is under 0.03% per
+ * tick, so this is a deliberate choice, not an oversight: the exact-ODE form
+ * also stays bounded and non-oscillating for any `dt` (a dropped frame's
+ * large `dt` cannot flip `v`'s sign the way forward-Euler's `(1 - k dt)` can
+ * once `k dt > 2`), which matters more for a browser than exact parity with
+ * the engine's own discrete stepping. `PointBody` (`physics.js`) is the
+ * class to use where bit-exact engine parity actually matters (e.g. replay).
+ * A `kind !== 'mesh'` particle (a sprite) has no `PointPhysicsNode` at all
+ * (R8-16..18) and this law is not shown to apply to it — see `SPR-3`'s
+ * still-open consumption path — so it
  * keeps the old bare-`drag` exponential, an explicit approximation, not the
  * engine's proven behaviour. The same fallback covers a mesh particle whose
  * `radius` did not resolve (0): better an approximate drag than none.
