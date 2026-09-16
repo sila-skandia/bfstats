@@ -17,7 +17,7 @@
 // for the drop. No collider, no scene, no GL.
 
 import * as THREE from 'three';
-import { GroundVehicle, WILLYS } from './ground.js';
+import { GroundVehicle, WILLYS, TrackedVehicle, TANK, engineRatio, differentialRPM } from './ground.js';
 import { GRAVITY } from './physics.js';
 
 const DEG = 180 / Math.PI;
@@ -125,6 +125,170 @@ function jeep({ ground = () => 0, y = 0.6, speed = 0 } = {}) {
   const s = truck.state;
   s.position.set(0, y, 0);
   // Nose down -Z, the spawn heading; forward speed is -Z velocity.
+  s.velocity.set(0, 0, -speed);
+  return truck;
+}
+
+// --- tanks: the Sherman and the M3A1, transcribed off the live Wake scene ---
+//
+// Unlike the Willy above (built from `Objects.con`/`Physics.con` because the
+// extracted scene is not in the repository), these two are transcribed
+// straight off `viewer/maps/wake/scene.glb` node-for-node: every spring's own
+// local position and `extras.physics`, read out with a one-off script against
+// the actual extract rather than the `.con` source, so `collectChassis`'s
+// grip-class walk (`c_PGFEngineGrip` / `c_PGFEngineDummyGrip` /
+// `c_PGFRollGrip`) is exercised on the real per-side wheel count (two driven
+// bogies a side, not one — TANK-14 says "x2 per side" and the first pass at
+// this fixture missed it) rather than a simplified stand-in.
+
+function spring(name, parent, pos, grip, strength, damping) {
+  const node = new THREE.Object3D();
+  node.name = name;
+  node.position.set(...pos);
+  node.userData = { templateKind: 'Spring', physics: { grip, strength, damping } };
+  parent.add(node);
+  return node;
+}
+
+/**
+ * `Sherman` (`viewer/maps/wake/scene.glb`, node indices 1727-1756): two
+ * driven `ShermanWheelL3/R3` bogies a side (`strength 18`/`damping 4`), four
+ * dummy rollers a side (`strength 0`/`damping 0`), the Engine's own +-1
+ * degree body-lean axes, and the turret rig (`ShermanTower`/`ShermanGunBase`)
+ * a driver's own `TrackedVehicle` collects incidentally same as it would the
+ * real thing, and never drives.
+ */
+function shermanNode() {
+  const root = new THREE.Object3D();
+  root.name = 'Sherman';
+  root.userData = {
+    control: 'Sherman', templateKind: 'PlayerControlObject',
+    physics: { mass: 25000, drag: 2, vehicleCategory: 'VCLand' },
+  };
+  const lod = new THREE.Object3D(); lod.name = 'lodSherman'; root.add(lod);
+  const complex = new THREE.Object3D(); complex.name = 'ShermanComplex'; lod.add(complex);
+
+  const engine = new THREE.Object3D();
+  engine.name = 'ShermanEngine';
+  engine.userData = {
+    templateKind: 'Engine',
+    physics: {
+      engineType: 'c_ETTank', torque: 4, differential: 4, numberOfGears: 5,
+      gearUp: 0.95, gearDown: 0.45, gearChangeTime: 0.05,
+    },
+    rig: {
+      control: 'Sherman', automaticReset: true,
+      axes: {
+        yaw: { input: 'c_PIYaw', min: -1, max: 1, free: false, driver: 'position', maxSpeed: 4, direction: 1 },
+        roll: { input: 'c_PIThrottle', min: -1, max: 1, free: false, driver: 'position', maxSpeed: 10, direction: 1 },
+      },
+    },
+  };
+  complex.add(engine);
+
+  const trackL = new THREE.Object3D(); trackL.name = 'ShermanTrackL'; trackL.position.set(-0.009, -0.799, 0); engine.add(trackL);
+  const trackR = new THREE.Object3D(); trackR.name = 'ShermanTrackR'; trackR.position.set(0.01, -0.799, 0); engine.add(trackR);
+  spring('ShermanWheelL3Dummy', trackL, [-0.999, 0.12, -2.05], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('ShermanWheelL3', trackL, [-0.999, 0.12, -1.2], 'c_PGFEngineGrip', 18, 4);
+  spring('ShermanWheelL3DummyMiddle', trackL, [-0.999, 0.12, 0.449], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('ShermanWheelL3Dummy2', trackL, [-0.999, 0.12, -0.3], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('ShermanWheelL3b', trackL, [-0.999, 0.12, 1.249], 'c_PGFEngineGrip', 18, 4);
+  spring('ShermanWheelL3Dummy3', trackL, [-0.999, 0.12, 2.049], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('ShermanWheelR3Dummy', trackR, [1, 0.12, -2.05], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('ShermanWheelR3', trackR, [1, 0.12, -1.2], 'c_PGFEngineGrip', 18, 4);
+  spring('ShermanWheelR3DummyMiddle', trackR, [1, 0.12, 0.449], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('ShermanWheelR3Dummy2', trackR, [1, 0.12, -0.3], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('ShermanWheelR3b', trackR, [1, 0.12, 1.249], 'c_PGFEngineGrip', 18, 4);
+  spring('ShermanWheelR3Dummy3', trackR, [1, 0.12, 2.049], 'c_PGFEngineDummyGrip', 0, 0);
+
+  const tower = new THREE.Object3D();
+  tower.name = 'ShermanTower';
+  tower.position.set(0, -0.8, 0);
+  tower.userData = {
+    templateKind: 'RotationalBundle',
+    rig: {
+      control: 'Sherman', automaticReset: false,
+      axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, driver: 'position', maxSpeed: 35, direction: 1 } },
+    },
+  };
+  complex.add(tower);
+  return root;
+}
+
+/**
+ * `M3A1` (`viewer/maps/wake/scene.glb`, node indices 2245-2276): the same
+ * two-driven-bogie-a-side pattern as the Sherman (`strength 20`/`damping 5`)
+ * plus a second dummy wheel family (`M3A1Wheel2`/`3`), and — what a Sherman
+ * has no equivalent of — a genuinely steerable front axle, `M3A1Wheel1`, a
+ * `RotationalBundle` on `c_PIYaw` at +-40 degrees (`c_PGFRollGrip`,
+ * `strength 28`/`damping 7`), one either side of the hull (TANK-15).
+ */
+function m3a1Node() {
+  const root = new THREE.Object3D();
+  root.name = 'M3A1';
+  root.userData = {
+    control: 'M3A1', templateKind: 'PlayerControlObject',
+    physics: { mass: 15000, drag: 2, vehicleCategory: 'VCLand' },
+  };
+  const lod = new THREE.Object3D(); lod.name = 'lodM3A1'; root.add(lod);
+  const complex = new THREE.Object3D(); complex.name = 'M3A1Complex'; lod.add(complex);
+
+  const engine = new THREE.Object3D();
+  engine.name = 'M3A1Engine';
+  engine.userData = {
+    templateKind: 'Engine',
+    physics: {
+      engineType: 'c_ETTank', torque: 5, differential: 5, numberOfGears: 4,
+      gearUp: 0.95, gearDown: 0.45, gearChangeTime: 0.05,
+    },
+    rig: {
+      control: 'M3A1', automaticReset: true,
+      axes: {
+        yaw: { input: 'c_PIYaw', min: -1, max: 1, free: false, driver: 'position', maxSpeed: 4, direction: 1 },
+        roll: { input: 'c_PIThrottle', min: -1, max: 1, free: false, driver: 'position', maxSpeed: 10, direction: 1 },
+      },
+    },
+  };
+  complex.add(engine);
+
+  const trackL = new THREE.Object3D(); trackL.name = 'm3a1TrackL'; trackL.position.set(0, -0.749, 0.949); engine.add(trackL);
+  spring('M3A1Wheel4Left', trackL, [-0.974, -0.519, -0.6], 'c_PGFEngineGrip', 20, 5);
+  spring('M3A1Wheel4Right', trackL, [0.975, -0.519, -0.6], 'c_PGFEngineGrip', 20, 5);
+  spring('M3A1Wheel4LeftDummy', trackL, [-0.974, -0.519, -0.3], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel4RightDummy', trackL, [0.975, -0.519, -0.3], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel4LeftBack', trackL, [-0.974, -0.519, 0.499], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel4RightBack', trackL, [0.975, -0.519, 0.499], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel4Left2', trackL, [-0.974, -0.519, 0.799], 'c_PGFEngineGrip', 20, 5);
+  spring('M3A1Wheel4Right2', trackL, [0.975, -0.519, 0.799], 'c_PGFEngineGrip', 20, 5);
+  spring('M3A1Wheel2a', trackL, [-0.999, 0.18, -1.08], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel2b', trackL, [1, 0.18, -1.08], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel2c', trackL, [-0.999, 0.15, 1.189], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel2d', trackL, [1, 0.15, 1.189], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel3a', trackL, [-1.089, 0.4, 0.074], 'c_PGFEngineDummyGrip', 0, 0);
+  spring('M3A1Wheel3b', trackL, [1.09, 0.4, 0.074], 'c_PGFEngineDummyGrip', 0, 0);
+
+  const steerRig = {
+    control: 'M3A1', automaticReset: true,
+    axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, driver: 'position', maxSpeed: 80, direction: 1 } },
+  };
+  for (const side of [1, -1]) {
+    const bundle = new THREE.Object3D();
+    bundle.name = side > 0 ? 'M3A1Wheel1R' : 'M3A1Wheel1';
+    bundle.position.set(0.449 * side, 0.15, -3);
+    bundle.userData = { templateKind: 'RotationalBundle', rig: steerRig };
+    spring('M3A1Spring1', bundle, [0.299 * side, -0.999, 0], 'c_PGFRollGrip', 28, 7);
+    complex.add(bundle);
+  }
+  return root;
+}
+
+/** A tank standing on (or dropped just above) analytic ground. */
+function tank(nodeFn, { ground = () => 0, y = 0.6, speed = 0 } = {}) {
+  const truck = new TrackedVehicle(nodeFn(), null, {
+    cockpit: false, groundHeight: ground,
+  });
+  const s = truck.state;
+  s.position.set(0, y, 0);
   s.velocity.set(0, 0, -speed);
   return truck;
 }
@@ -445,6 +609,226 @@ results.constants = {
   results.camera = {
     hasNode: !!truck.cameraNode,
     y: round(pose.position.y, 2),
+  };
+}
+
+// === TrackedVehicle: tanks and half-tracks =================================
+
+// --- the corrected gear-ratio curve, in isolation ---------------------------
+//
+// The single most important regression guard in this file: verify-r7.md's
+// whole correction is that the M3A1 does *not* land on a smooth
+// interpolation between the curve's five named points (which would give
+// ~5.51) because its index (25) is nowhere near one.
+results.tankRatios = {
+  sherman: round(engineRatio(4, 5), 4),   // idx=20, an authored point: 4.0
+  willy: round(engineRatio(7, 5), 4),     // idx=20 too: 7.0
+  m3a1: round(engineRatio(5, 4), 4),      // idx=25, not one: 17.5, not ~5.51
+  // Every numberOfGears but 1 and 5 must reduce to exactly 3.5*differential —
+  // sampled across the counts a mod could plausibly declare.
+  offCurve: [2, 3, 6, 7, 8, 9, 10].map(n => round(engineRatio(3.5, n), 4)),
+};
+
+results.diffRPM = {
+  straightFull: round(differentialRPM(1, 0, 1), 4),        // side=0 case via yaw=0: 1
+  halfLockOuter: round(differentialRPM(1, 0.5, 1), 4),      // 1*(1-1.5*0.5) = 0.25
+  halfLockInner: round(differentialRPM(1, 0.5, -1), 4),     // 1*(1+1.5*0.5)=1.75, clamped to 1
+  centreline: round(differentialRPM(1, 0.5, 0), 4),         // side===0: plain throttle
+  // TANK-17: zero throttle is zero on both sides regardless of yaw.
+  noThrottleRight: round(differentialRPM(0, 0.9, 1), 4),
+  noThrottleLeft: round(differentialRPM(0, 0.9, -1), 4),
+};
+
+// --- the chassis reads off the tree, for two very different tanks ----------
+
+{
+  const t = tank(shermanNode);
+  results.shermanChassis = {
+    wheels: t.wheels.length,
+    driven: t.wheels.filter(w => w.driven).length,
+    dummy: t.wheels.filter(w => w.dummy).length,
+    steered: t.wheels.filter(w => w.steered).length,
+    engine: { differential: t.engine.differential, numberOfGears: t.engine.numberOfGears },
+    ratio: round(t.ratio, 4),
+    // Every driven wheel found a real side, none dead on the centreline.
+    drivenSides: t.wheels.filter(w => w.driven).map(w => w.side),
+  };
+}
+{
+  const t = tank(m3a1Node);
+  results.m3a1Chassis = {
+    wheels: t.wheels.length,
+    driven: t.wheels.filter(w => w.driven).length,
+    dummy: t.wheels.filter(w => w.dummy).length,
+    steered: t.wheels.filter(w => w.steered).length,
+    engine: { differential: t.engine.differential, numberOfGears: t.engine.numberOfGears },
+    ratio: round(t.ratio, 4),
+    steerMax: t.wheels.filter(w => w.steered).map(w => w.steerMax),
+  };
+}
+
+// --- settling: both tanks stand on only their driven wheels' springs -------
+//
+// Every dummy roller and the M3A1's own front axle carry real
+// strength/damping too (the front axle, `c_PGFRollGrip`, is a genuine tyre),
+// but a Sherman's whole 25-tonne hull is carried by just 4 of its 12 spring
+// wheels — see `TANK.suspensionTravel`'s own comment for why that changes
+// the fallback travel a Willys can get away with.
+for (const [key, builder] of [['shermanSettle', shermanNode], ['m3a1Settle', m3a1Node]]) {
+  const t = tank(builder, { y: 0.5 });
+  drive(t, 4);
+  const driven = t.wheels.filter(w => w.driven);
+  results[key] = {
+    ...snapshot(t),
+    drivenLoads: driven.map(w => round(w.load, 2)),
+    totalDrivenLoad: round(driven.reduce((sum, w) => sum + w.load, 0), 2),
+    dummyLoads: t.wheels.filter(w => w.dummy).map(w => round(w.load, 3)),
+  };
+}
+
+// --- straight-line driving ---------------------------------------------------
+
+for (const [key, builder] of [['shermanStraight', shermanNode], ['m3a1Straight', m3a1Node]]) {
+  const t = tank(builder, { y: 0.5 });
+  drive(t, 4);
+  const marks = {};
+  drive(t, 20, (tt, clock) => {
+    holding({ c_PIThrottle: 1 })(tt);
+    for (const at of [5, 10, 20]) {
+      if (Math.abs(clock - (4 + at)) < DT / 2) marks[at] = round(alongOf(tt));
+    }
+  });
+  results[key] = {
+    ...snapshot(t),
+    at5s: marks[5], at10s: marks[10], at20s: marks[20],
+    kmh: round(alongOf(t) * 3.6, 1),
+    heading: round(forwardOf(t).z, 3),
+    drift: round(Math.abs(t.state.position.x), 2),
+  };
+}
+
+// --- turning: both directions, both vehicles, held from a stand-still ------
+//
+// Held from rest rather than from top speed (unlike Willy's own steering
+// test) because that is what actually stressed the model during this track's
+// own work: a sustained turn built from a stand-still once rolled the M3A1
+// onto its roof (`TANK.angularDamping`'s own comment has the story), so this
+// is the regression that constant now has to keep passing.
+for (const [key, builder] of [['shermanTurn', shermanNode], ['m3a1Turn', m3a1Node]]) {
+  for (const [dir, yaw] of [['right', 0.5], ['left', -0.5]]) {
+    const t = tank(builder, { y: 0.5 });
+    drive(t, 4);
+    let worstUp = 1;
+    drive(t, 8, tt => {
+      holding({ c_PIThrottle: 1, c_PIYaw: yaw })(tt);
+      worstUp = Math.min(worstUp, upOf(tt).y);
+    });
+    results[`${key}${dir === 'right' ? 'Right' : 'Left'}`] = {
+      yawRateDeg: round(t.state.angularVelocity.y * DEG, 2),
+      worstUp: round(worstUp, 3),
+      grounded: t.state.grounded,
+      speed: round(t.state.velocity.length(), 2),
+    };
+  }
+}
+
+// A wider sweep, Sherman and M3A1 both, purely as the stability regression
+// guard: every one of these must come out with the vehicle still upright.
+results.tankStability = [];
+for (const [name, builder] of [['sherman', shermanNode], ['m3a1', m3a1Node]]) {
+  for (const yaw of [0.3, 0.5, 0.7, 1.0]) {
+    const t = tank(builder, { y: 0.5 });
+    drive(t, 3);
+    let worstUp = 1;
+    drive(t, 8, tt => {
+      holding({ c_PIThrottle: 1, c_PIYaw: yaw })(tt);
+      worstUp = Math.min(worstUp, upOf(tt).y);
+    });
+    results.tankStability.push({ name, yaw, worstUp: round(worstUp, 3) });
+  }
+}
+
+// A second, harder stability case, distinct from the sweep above: turning
+// held from the vehicle's own straight-line top speed rather than
+// accelerating into it. The M3A1's extra ~10 m/s of entry speed very nearly
+// doubles the centripetal load a held turn puts through the suspension, and
+// this is what actually found `TANK.angularDamping`'s final value — 5.0
+// (the fix for the stand-still case) survived the sweep above but still
+// rolled the M3A1 here, at 12.0.
+for (const [key, builder] of [['shermanHardTurn', shermanNode], ['m3a1HardTurn', m3a1Node]]) {
+  const t = tank(builder, { y: 0.5 });
+  drive(t, 4);
+  drive(t, 6, holding({ c_PIThrottle: 1 }));
+  const entrySpeed = t.state.velocity.length();
+  let worstUp = 1;
+  drive(t, 8, tt => {
+    holding({ c_PIThrottle: 1, c_PIYaw: 0.6 })(tt);
+    worstUp = Math.min(worstUp, upOf(tt).y);
+  });
+  results[key] = {
+    entrySpeed: round(entrySpeed, 2),
+    worstUp: round(worstUp, 3),
+    grounded: t.state.grounded,
+  };
+}
+
+// --- TANK-17: no pivoting on the spot from a stand-still --------------------
+
+{
+  const t = tank(shermanNode, { y: 0.5 });
+  drive(t, 4);
+  drive(t, 3, holding({ c_PIThrottle: 0, c_PIYaw: 1 }));
+  results.tankPivot = {
+    yawRate: round(t.state.angularVelocity.y, 5),
+    speed: round(t.state.velocity.length(), 5),
+  };
+}
+
+// --- reverse: the differential formula's own sign, no separate gear --------
+
+{
+  const t = tank(shermanNode, { y: 0.5 });
+  drive(t, 4);
+  drive(t, 8, holding({ c_PIThrottle: -1 }));
+  results.tankReverse = { along: round(alongOf(t), 3) };
+}
+
+// --- reset -------------------------------------------------------------------
+
+{
+  const t = tank(shermanNode, { y: 0.5 });
+  drive(t, 4, holding({ c_PIThrottle: 1, c_PIYaw: 0.5 }));
+  const beforeAngles = t.wheels.map(w => w.angle);
+  t.reset();
+  results.tankReset = {
+    velocity: t.state.velocity.toArray().map(v => round(v)),
+    angularVelocity: t.state.angularVelocity.toArray().map(v => round(v)),
+    everSpun: beforeAngles.some(a => Math.abs(a) > 0.1),
+    anglesAfter: t.wheels.map(w => w.angle),
+  };
+}
+
+// --- the two tracks visibly move at different rates mid-turn ---------------
+//
+// The entire visible point of differential steering: `TrackedVehicle` rolls
+// a driven wheel at its own side's commanded rate (`this.ratio *
+// differentialRPM(...)`), so a turn must show the two sides' wheels having
+// travelled different amounts, not just the body having yawed.
+{
+  const t = tank(shermanNode, { y: 0.5 });
+  drive(t, 4);
+  const before = t.wheels.map(w => w.angle);
+  drive(t, 4, holding({ c_PIThrottle: 1, c_PIYaw: 0.6 }));
+  const turned = t.wheels.map((w, i) => Math.abs(w.angle - before[i]));
+  const left = t.wheels.map((w, i) => [w, turned[i]]).filter(([w]) => w.driven && w.side < 0).map(([, a]) => a);
+  const right = t.wheels.map((w, i) => [w, turned[i]]).filter(([w]) => w.driven && w.side > 0).map(([, a]) => a);
+  results.tankWheelSpin = {
+    left: left.map(a => round(a, 2)),
+    right: right.map(a => round(a, 2)),
+    // Same side, same rate — a differential splits left from right, not the
+    // two bogies sharing one track.
+    leftConsistent: round(Math.max(...left) - Math.min(...left), 3),
+    rightConsistent: round(Math.max(...right) - Math.min(...right), 3),
   };
 }
 
