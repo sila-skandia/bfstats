@@ -179,7 +179,7 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
-576 symbols across 22 subsystems: 225 from bf42plus, the rest read from the binaries — 138 of them in the 2026-09-16 research round.
+769 symbols across 25 subsystems: 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects) and 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below.
 
 **The game loop is settled (2026-09-15).** The client is a fixed-step
 simulation at `g_simulationFps` = 30 Hz (`0x00957640`; the same 30.0 in the
@@ -242,3 +242,73 @@ stride is only a byte count for the stream read. The reader now lays vertices ou
 from `flags`; the one mesh in 234,144 descriptors where the two disagreed decodes
 to geometry whose bounds equal its header. Still open there: bit 29's meaning, the
 static DX8 block's `CreateVertexBuffer` site, and the vertex-shader declaration path.
+
+**HUD, supply depots, hit points, seats, manned guns and tank driving,
+2026-09-16.** A second research pass read the client and lnxded binaries for
+the mechanics the map viewer needs to take a soldier from admiring a Defgun
+to firing one from inside it — the same read-then-independently-re-derive
+process as the first pass, run by a second agent before anything below was
+recorded. Settled, each narrated in full under `subsystems/`:
+
+- **In-game HUD** ([subsystems/ingame-hud.md](subsystems/ingame-hud.md)) —
+  the whole soldier and vehicle HUD is one generic named-variable registry
+  behind four typed registrars; the soldier group's pose/icon refresh runs
+  once per rendered frame, not the 30 Hz sim tick; three fill-node classes
+  share one `draw()` and one fill-fraction formula; `TransformNode` is the
+  entire coordinate law; and a vehicle's hit points live on its root object
+  only — switching seats never changes the displayed HP (HUD-1…10,
+  VHUD-1…8).
+- **Supply depots** ([subsystems/supply-depots.md](subsystems/supply-depots.md))
+  — ammo boxes, medical lockers, repair pads and mobile depots are one
+  `SupplyDepot` class with a twelve-vector template, a self-throttled
+  real-time update that ignores its own `dt` argument, and an ammo
+  mechanism that is a genuine per-type leaky bucket, not a flat top-up. The
+  same class, given a negative rate, is Forgotten Hope's area-damage
+  kill-trap (SUP-1…17).
+- **Hit points and damage** ([subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md))
+  — Armor's clamp/death chain, `handleDamage`'s real
+  find-nearest-Armor-then-sign-dispatch shape (not a parent/root split), and
+  the soldier explosion-exposure sampling, where standing is deliberately
+  capped at half of prone/crouch's maximum exposure (HP-1…13).
+- **Seats and entry points** ([subsystems/seats-and-entry-points.md](subsystems/seats-and-entry-points.md))
+  — entry is `c_PIUse` behind two independent gates, `validateBFEntryPoint`
+  adds a second team/hostility check beyond the obvious one, and the
+  seat-switch map is built once, at spawn, for the root PCO only
+  (SEAT-1…12).
+- **Manned guns** ([subsystems/manned-guns.md](subsystems/manned-guns.md)) —
+  `RotationalBundle`'s angle update is two cooperating accumulators, not the
+  accel·dt/clamp formula a first read suggests (the exact closed form stays
+  open); input-axis binding is a Vec3 slot, not a fixed semantic axis
+  (Katyusha is yaw-only, correcting an earlier yaw+roll claim); and the
+  extended fire-gate order includes a rate-of-fire timer no earlier pass
+  reported (GUN-1…11).
+- **Tank driving** ([subsystems/tank-driving.md](subsystems/tank-driving.md))
+  — there is no tank-specific code path at all: differential steering is
+  ordinary per-wheel friction code reading whichever axes an Engine happens
+  to expose, and the gear-ratio curve is a 101-slot array authored at only
+  five control points, so only a `numberOfGears` of 1 or 5 ever touches its
+  shape — M3A1 is 17.5, not the ≈5.5 a smooth curve would predict
+  (TANK-1…6).
+
+The same pass closed out four items an extraction follow-up had flagged
+while wiring this data into the pipeline: **SM-8** and **TM-1** are fixed,
+not just diagnosed (`stdmesh.py` now accepts exactly file versions 8–10;
+`treemesh.py`'s collision word is read as the class id it is, not a vertex
+count); **FONT-1** has a real reader (`bf42/font.py`'s `parse_hud_font`);
+**MEME-11**'s clean-page count is corrected from a wrong "228 of 230" to
+the true **80 of 230** its own ten classes and the Event-type width fix
+actually reach, with the shortfall now attributed to named classes outside
+that row's scope; **EMT-2**'s viewer divergence (the burst-length edge, not
+the spawn-at-t=0 edge, which was already right) is closed; **SPR-6**
+flipbook sprites are implemented. Two new rows came out of the same work:
+**CON-1** (the extractor was silently dropping every bare `include` line,
+hiding `CommonSoldierData.inc`'s hit points from every soldier template
+until fixed) and **MEME-14** (the in-game HUD's eleven-group top-level
+shape, flattened by the new `extract_hud_layout.py`).
+
+**769 symbols across 25 subsystems** (up from 576/22): 198 addresses
+recorded this pass, three new subsystems (`hitpoints`, `seat`,
+`supplydepot`), and three prior `ghidra-session`-sourced `EngineTemplate`
+entries plus `SpawnScreen_singleton` upgraded from bf42plus's unread
+`working` label to this round's `verified`, now that independent work
+reached the same code from the HUD side.
