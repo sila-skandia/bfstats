@@ -1165,18 +1165,27 @@ addEventListener('keydown', e => {
       resetCamera();
     }
   }
-  // E is `c_PIEnterExitVehicle`, bound to IDKey_E in the game's own control
-  // maps: walk up and get in, or get out where you stopped. In free fly E is
-  // already the vertical thrust, so both branches ask for a mode first.
-  if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+  // E is `c_PIUse` (SEAT-2, verify-r5.md — the report's own correction: there
+  // is no distinctly-named "enter/exit" enum value, vehicle use shares the
+  // same trigger a real Use-key bind would), mapped to the physical E key.
+  // In free fly E is already the vertical thrust, so both branches ask for a
+  // mode first. The 1.0s per-player cooldown (SEAT-6) below gates the whole
+  // branch, same as the real `toggleEntryPoint`.
+  if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
+      && performance.now() - lastSeatToggle >= SEAT_TOGGLE_COOLDOWN_MS) {
     // Checked before the plain aircraft/car branch: a nested seat (the
     // Sherman's hull gunner) or a bare gun/seat root both count as
     // `aircraft || car` truthy *or* falsy depending on the vehicle, so
     // `mannedActive()` is the one check that is right either way.
-    if (optPilot.checked && mannedActive()) exitManned();
-    else if (optPilot.checked && (aircraft || car)) exitVehicle();
-    else if (optOnFoot.checked && soldier && captured && nearEntry) {
+    if (optPilot.checked && mannedActive()) {
+      exitManned();
+      lastSeatToggle = performance.now();
+    } else if (optPilot.checked && (aircraft || car)) {
+      exitVehicle();
+      lastSeatToggle = performance.now();
+    } else if (optOnFoot.checked && soldier && captured && nearEntry) {
       enterVehicle(nearEntry);
+      lastSeatToggle = performance.now();
     }
   }
   // C cycles the view, which is `c_PIToggleCameraMode` bound to IDKey_C in every
@@ -3852,7 +3861,9 @@ const HUD_VEHICLE_VARS = [
   'Vehicle/VehicleHitPoints', 'Vehicle/VehicleMaxHitPoints',
   'Ammo/PrimaryAmmoIcon', 'Ammo/PrimaryAmmoBar',
   'Ammo/PrimaryAmmo', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
-  'Ammo/SecondaryAmmoIcon', 'Ammo/SecondaryAmmoBar', 'Overheat/OverHeat',
+  'Ammo/SecondaryAmmoIcon', 'Ammo/SecondaryAmmoBar',
+  'Ammo/SecondaryAmmo', 'Ammo/MaxSecondaryAmmo',
+  'Ammo/ReloadTime', 'Ammo/ReloadTimeSecondary', 'Overheat/OverHeat',
 ];
 
 function setHudVar(name, value) {
@@ -3905,13 +3916,38 @@ function feedVehicleHud() {
   // gated on one, so building one just for the HUD read would decrement on
   // every shot (`chainOnShot` is global) without anything ever stepping it
   // back — an orphaned, silently-wrong counter, worse than an absent one.
+  //
+  // A seat's `fireArms` array can hold two nodes (R2-30: the Sherman's root
+  // declares `NumberOfWeaponIcons 2`, cannon then coax) — `nodes[0]`/`[1]` is
+  // this viewer's stand-in for "primary"/"secondary" weapon-icon slot, the
+  // same declaration-order assumption SEAT-22's own seat-position map already
+  // rests on; the extracted data has no independent primary/secondary tag to
+  // cross-check it against.
   const nodes = mannedActive() ? occupancy.activeFireArmsNodes() : [];
-  const state = nodes.length ? fireStateFor(nodes[0]) : null;
-  setHudVar('Ammo/PrimaryAmmo', state && !state.unlimited ? state.ammo : null);
-  setHudVar('Ammo/MaxPrimaryAmmo', state ? state.stats.magSize : null);
+  const primary = nodes[0] ? fireStateFor(nodes[0]) : null;
+  const secondary = nodes[1] ? fireStateFor(nodes[1]) : null;
+  setHudVar('Ammo/PrimaryAmmo', primary && !primary.unlimited ? primary.ammo : null);
+  setHudVar('Ammo/MaxPrimaryAmmo', primary ? primary.stats.magSize : null);
   setHudVar('Ammo/PrimaryMag',
-    state ? (state.magsLeft === Infinity ? -1 : state.magsLeft) : null);
-  setHudVar('Overheat/OverHeat', state?.hasHeat ? state.heat : null);
+    primary ? (primary.magsLeft === Infinity ? -1 : primary.magsLeft) : null);
+  setHudVar('Ammo/SecondaryAmmo', secondary && !secondary.unlimited ? secondary.ammo : null);
+  setHudVar('Ammo/MaxSecondaryAmmo', secondary ? secondary.stats.magSize : null);
+  // `hud-layout.json` binds exactly one `Overheat/OverHeat` (no "...Secondary"
+  // variant) shared by both panels' heat-bar copy — R2-30's own Sherman is the
+  // real case this matters for, since its heat weapon is the coax (secondary),
+  // not the cannon (primary): reading only `nodes[0]` would silently show no
+  // heat at all while the coax cooked.
+  const heated = [primary, secondary].find(s => s?.hasHeat);
+  setHudVar('Overheat/OverHeat', heated ? heated.heat : null);
+  // Both reload-bar copies are fed as a fraction of `reloadTime` remaining,
+  // scaled to the `max: 1.0` the layout declares — direction (counts down to
+  // empty vs. fills up as reload completes) is not settled by anything in
+  // verify-r2.md/verify-r6.md or `hud-layout.json`'s own metadata, so this is
+  // an approximation: counts down from full (just started) to empty (ready).
+  const reloadFraction = state => (state && state.stats.reloadTime > 0)
+    ? state.reloadRemaining / state.stats.reloadTime : null;
+  setHudVar('Ammo/ReloadTime', reloadFraction(primary));
+  setHudVar('Ammo/ReloadTimeSecondary', reloadFraction(secondary));
 }
 
 // --- walking up to a seat ----------------------------------------------------
@@ -3924,6 +3960,13 @@ function feedVehicleHud() {
 // point that declares none.
 const ENTRY_RADIUS_FALLBACK = 4;
 const ENTRY_SCAN_PERIOD = 0.25;   // seconds between proximity sweeps on foot
+// SEAT-6 (verify-r5.md, confirmed both passes): `toggleEntryPoint` opens with
+// a hard-coded 1.0s cooldown per player, refreshed on every actual toggle
+// (both `exitPlayer` and `toggleEntryPoint`'s own success path) — not a
+// per-vehicle or per-entry-point value. One shared timestamp is therefore
+// correct for this page's single soldier.
+const SEAT_TOGGLE_COOLDOWN_MS = 1000;
+let lastSeatToggle = -Infinity;
 let entryPoints = null;           // [{node, vehicle, control, radius}]
 let nearEntry = null;             // the seat the HUD is currently offering
 let entryScan = 0;
@@ -3953,7 +3996,14 @@ function collectEntryPoints() {
 
 const entryWorld = new THREE.Vector3();
 
-/** The closest entry point whose declared radius reaches the soldier. */
+/**
+ * The closest entry point whose declared radius reaches the soldier.
+ *
+ * Not reproduced: SEAT-13/13b's team/hostility gates (`BFfindEntryPoint`'s
+ * own team check, and `validateBFEntryPoint`'s separate component check) —
+ * this page has exactly one soldier and no second team's vehicles ever
+ * appear as hostile, so there is nothing here for either gate to reject.
+ */
 function nearestEntry() {
   if (!entryPoints) collectEntryPoints();
   let best = null;
@@ -4090,16 +4140,23 @@ function exitPose(vehicle) {
 }
 
 /**
- * E from a seat: back onto the ground beside it. An aircraft only opens its
- * canopy on the ground — grounded, or slow enough that the distinction has
- * stopped mattering.
+ * E from a seat: back onto the ground beside it.
+ *
+ * No speed/altitude gate on purpose: SEAT-5/SEAT-8 (verify-r5.md, confirmed
+ * in both the original and verifier passes) read `isAllowedToExit()` in full
+ * and found a pure geometry/collision check with no call to anything speed-
+ * or altitude-related — bailing out of a moving plane is genuine vanilla
+ * behaviour, not a bug to guard against. A prior pass here gated on
+ * `grounded || airspeed<3`, which the report contradicts directly; removed.
+ * The real gate (SEAT-6/SEAT-9: a room check at `soldierExitLocation`, run
+ * only when the template's `hasRestrictedExit` is set) is not implemented —
+ * `exitPose`'s placement is trusted as-is, same as it already was on the
+ * ground. `soldier.spawn()`'s own `SPAWN_DROP` fall-to-floor already handles
+ * landing an exit point that turns out to be in mid-air.
  */
 function exitVehicle() {
   const vehicle = aircraft || car;
   if (!vehicle) return;
-  if (aircraft && !(aircraft.state.grounded || aircraft.state.airspeed < 3)) {
-    return;
-  }
   const exit = exitPose(vehicle);
   leaveVehicle();
   optPilot.checked = false;
