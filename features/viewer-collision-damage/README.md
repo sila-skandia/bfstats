@@ -6,10 +6,10 @@ hit registers as an effect and nothing else happens. This folder holds the
 **agent prompt** for finding out what the engine does, precisely enough to
 implement it.
 
-**Round 1 is done — see [Outcome](#outcome).** R1 researched, V1 verified, and
-the confirmed rows are merged into `features/bf1942-engine-reference/`
-(`3b46e88`). A follow-up track is running on the two questions R1 could not
-answer from the dedicated server.
+**Both rounds are done — see [Outcome](#outcome).** R1 researched, V1 verified,
+R2 followed up on the client binary and corrected V1 on one load-bearing point,
+and the lead re-derived that correction from `objdump` before merging. All of it
+is in `features/bf1942-engine-reference/` (`3b46e88`, and the round-2 commit).
 
 The shape is the one the two previous rounds used
 (`features/bf1942-engine-reference/README.md`,
@@ -29,8 +29,8 @@ where round 1 left each one:
 | # | Reported | Verdict |
 |---|---|---|
 | 1 | A plane that hits the ground or a tree explodes, or takes enough damage to start burning | **Not in the engine.** A collision never costs hit points — ledger HP-6, closed in the negative. Only a projectile damages anything. What kills a crashed plane is the once-per-second upside-down tick after it comes to rest |
-| 2 | Most vehicles burn below a hit-point threshold and cannot be driven, until they explode | **Burning is real** (`criticalDamage` plus the 1 Hz tick — Sherman 12 HP at 1.5/s, 8.0 s). "Cannot be driven" still has no known mechanism — R2 is on it |
-| 3 | A burning tank has limited turret movement | **Still unanswered.** Nothing found so far reads `isCriticalDamaged` outside the effects and the tick — R2 is on it |
+| 2 | Most vehicles burn below a hit-point threshold and cannot be driven, until they explode | **Burning is real** (`criticalDamage` plus the 1 Hz tick — Sherman 12 HP at 1.5/s, 8.0 s). **"Cannot be driven" is not** — nothing in the drivetrain reads Armor at all (ledger ARM-6) |
+| 3 | A burning tank has limited turret movement | **Not in the engine.** The turret path never queries Armor either (ARM-6). The nearest real mechanic is `damageAllAttachedSoldiers`, which keeps hurting the crew of a vehicle under some per-frame condition — you bail, which feels like "it won't drive" |
 | 4 | A Sherman burns from about 8 HP | **12**, not 8 — and 8.0 is the burn's duration in seconds. `criticalDamage 12`, `hpLostWhileCriticalDamage 1.5` |
 
 ---
@@ -39,10 +39,20 @@ where round 1 left each one:
 
 [R1](reports/R1-collision-damage-and-destruction.md) researched;
 [V1](reports/V1-verification-of-R1.md) re-derived it independently — 13 of 18
-claims confirmed, 4 corrected, none refuted. Merged into the corpus in
-`3b46e88`: ledger rows HP-6 (rewritten), HP-6b, HP-6c, HP-6d, ARM-1, ARM-2,
-ARM-3, COL-1; `subsystems/hitpoints-and-damage.md` §3 and §8; 11 new symbols
-and 3 rewritten notes, 790 total.
+claims confirmed, 4 corrected, none refuted;
+[R2](reports/R2-client-effect-cadence-and-critical-state.md) then went at the
+client binary and corrected V1 on the effect cadence.
+
+Merged into the corpus: ledger rows HP-6 (rewritten), HP-6b, HP-6c, HP-6d,
+ARM-1 (written, then corrected), ARM-2, ARM-3, ARM-4, ARM-6, ARM-7, COL-1;
+`subsystems/hitpoints-and-damage.md` §3, §8 and §9; 25 new symbols and 5
+rewritten notes, 804 total. ARM-7 also closes an open item that had been
+sitting in `seats-and-entry-points.md`.
+
+**What the round shows about the process:** three passes over one function, and
+the second was the wrong one. A verifier caught R1's gaps, R2 caught the
+verifier's inverted branch, and only `objdump` settled it. The x87 trap the
+briefing warns about cost two rounds here.
 
 What it settled:
 
@@ -50,10 +60,19 @@ What it settled:
   computes a real impact-severity number and spends all of it on
   `Game::playCollisionEffect`. Confirmed by enumerating every indirect
   call-site offset in both handlers, not just the direct calls.
-- **`addArmorEffect` is the burning mechanic**, fully mapped — but on the
-  dedicated server the tier is evaluated **once per Armor lifetime**, behind a
-  latch at `Armor+0x128` that nothing resets. The viewer cannot copy that and
-  look right, which is R2's first question.
+- **`addArmorEffect` is the burning mechanic**, fully mapped, and the cadence is
+  simply **the 30 Hz tick** for as long as the vehicle is alive. The
+  `Armor+0x128` byte is a *death* latch, not a first-run latch — V1 read that
+  x87 branch backwards and R2 caught it; the lead re-derived it from `objdump`
+  a third time before merging. So the viewer polls HP against the thresholds
+  every frame and swaps the effect on a tier change. Confirmed behaviour, not a
+  house rule.
+- **Nothing gates driving or traverse on damage.** An exhaustive sweep of every
+  `getComponent(0xc4a4)` call site — 145 across 56 functions — finds no
+  drivetrain and no turret function. What *does* read Armor state:
+  `isDestroyed()` refuses an entry point (so you cannot enter a wreck), and
+  `PlayerControlObject::enter()` queries `isCriticalDamaged()` for a purpose
+  that is still untraced.
 - **The fire tier is authored at exactly `criticalDamage`**, 10 of 10 vanilla
   land and air vehicles. Boats do not burn; they sink.
 - **FHSW ships 76 `BreakableTree` templates with armour.** Vanilla ships none —
