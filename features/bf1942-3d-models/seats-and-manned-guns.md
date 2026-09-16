@@ -176,10 +176,16 @@ flagged here rather than made.
 
 ## HUD variables fed (BRIEFING2.md's contract)
 
-`feedVehicleHud()` writes into `window.__hud.vars` (P1's painter, a parallel
-track not yet merged into this worktree — every write is a plain assignment
-behind `window.__hud?.vars`, a documented no-op until it exists) whenever a
-seat is entered, switched, or — every tick — while `manned()` is running:
+`feedVehicleHud()` writes into `window.__hud.vars` (P1's painter, merged since
+this doc was first written — every write is still a plain assignment behind
+`window.__hud?.vars`, now a live one rather than a no-op) whenever a seat is
+entered or switched, and once every frame from `frame()` itself, **after**
+`guns.advance(dt)` rather than from inside `manned()` (round 3's own fix: a
+call from the tail of `manned()` ran *before* `advance()` had fired that
+frame's rounds, so a shot landing on frame N showed its old ammo/heat until
+frame N+1 — one frame late but real, and exactly the kind of thing "the HUD
+numbers following" a held trigger has to get right. `manned()`'s own body
+notes why it no longer calls this itself.):
 
     Vehicle/ShowVehicleIcon        true whenever any seat is occupied
     Vehicle/VehicleIcon            active seat's own `vehicleIcon` (R2-31: icon is per seat)
