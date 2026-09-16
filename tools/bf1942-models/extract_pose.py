@@ -391,7 +391,8 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
 
     builder = gltf.GlbBuilder()
     assembler = Assembler(meshes, textures, objects, library,
-                          max_texture=max_texture, include_collision=False)
+                          max_texture=max_texture, include_collision=False,
+                          include_effects=False)
     report = Report(root=f"{soldier}+{weapon}", configuration="pose", lod=0)
 
     # Joint hierarchy: local transforms are exactly the posed locals.
