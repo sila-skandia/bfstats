@@ -33,6 +33,48 @@ const _z = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _camPos = new THREE.Vector3();
 
+/**
+ * EMT-5's `r`: a mesh particle's own local bounding box, magnitude from the
+ * local origin — `length(boundsMax)` (verify-r8.md R8-13/14; equivalently
+ * `length(boundsMin)` for a mesh authored near its own centre, the ordinary
+ * pattern for these small effect props, but the recipe names `boundsMax`
+ * specifically and this follows it rather than averaging the two or taking
+ * whichever is larger). Read from the same vertex data `bf42/stdmesh.py`
+ * reads the `.sm` header's `boundsMin`/`boundsMax` from — this module has no
+ * access to that header at runtime, only the exported geometry it already
+ * loaded, but they are the same numbers. `node` is the emitter's own node,
+ * which for a `Particle` payload *is* the mesh (`bf42/assemble.py`'s
+ * `bake_effect_library` puts `mesh=` directly on the node carrying
+ * `effectEmitter`, the same node `#acquire` clones from) — the same
+ * single-mesh lookup `#acquire` already does for a sprite's quad.
+ *
+ * Called once per emitter when the effect library loads (`EffectLibrary`'s
+ * constructor already walks every node once), not per particle or per frame
+ * (features/mesh-viewer-performance, rule 5) — "once, not baked into the
+ * .glb" rather than "once, at Python bake time" only because
+ * `bf42/assemble.py` is outside this track's files this round; the number is
+ * identical either way, read from the same triangles.
+ */
+function meshBoundingRadius(node) {
+  const source = node.isMesh ? node : node.children.find(c => c.isMesh);
+  if (!source?.geometry) return 0;
+  source.geometry.computeBoundingBox();
+  const max = source.geometry.boundingBox.max;
+  return Math.hypot(max.x, max.y, max.z);
+}
+
+// D3DBLEND ordinals (verify-r8.md R8-1, three independent client functions
+// decompiled and cross-checked) onto WebGL's own blend factors: the two
+// enumerations agree slot for slot, D3DBLEND_ZERO/ZeroFactor through
+// D3DBLEND_SRCALPHASAT/SrcAlphaSaturateFactor in the same order, so this is
+// a re-labelling, not a guess. Index 0 unused — ordinals are 1-based.
+const D3D_BLEND_FACTOR = [
+  null, THREE.ZeroFactor, THREE.OneFactor, THREE.SrcColorFactor,
+  THREE.OneMinusSrcColorFactor, THREE.SrcAlphaFactor, THREE.OneMinusSrcAlphaFactor,
+  THREE.DstAlphaFactor, THREE.OneMinusDstAlphaFactor, THREE.DstColorFactor,
+  THREE.OneMinusDstColorFactor, THREE.SrcAlphaSaturateFactor,
+];
+
 /** Quaternion whose local X/Y/-Z are the frame's right/up/dof. */
 function frameQuaternion(basis, out) {
   _x.set(basis.right[0], basis.right[1], basis.right[2]);
@@ -99,6 +141,12 @@ export class EffectLibrary {
       bundle.traverse(node => {
         const spec = node.userData?.effectEmitter;
         if (!spec) return;
+        // EMT-5: a mesh particle's drag law needs its body's bounding
+        // radius; compute it once, here, from the real geometry this node
+        // already carries (see `meshBoundingRadius`) rather than per spawn.
+        if (spec.particle?.kind === 'mesh' && spec.particle.radius == null) {
+          spec.particle.radius = meshBoundingRadius(node);
+        }
         const local = inverse.clone().multiply(node.matrixWorld);
         const position = new THREE.Vector3();
         const quaternion = new THREE.Quaternion();
@@ -273,10 +321,27 @@ export class EffectPlayer {
     for (const bundle of this.library.bundles.values()) {
       for (const template of bundle.emitters) {
         const spec = template.spec;
-        const mesh = this.#acquire({ template, spec }, { kind: spec.kind, spec });
+        // The bundle-level `spec` is the *emitter's* own object; `kind`,
+        // `numAnimationFrames`, `alphaOverTime` and every other per-particle
+        // field live one level down, under `.particle`
+        // (`bf42/effects.py`'s `emitter_spec`/`particle_spec`). Building the
+        // probe from `spec` itself — `kind: spec.kind`, always `undefined` —
+        // used to make every template look like a mesh here regardless of
+        // what it really was: a sprite's material never took the sprite
+        // branch below, so it was never pooled or compiled as one
+        // (build-f4.md's finding — every sprite effect still paid a
+        // mid-burst compile, the exact stall rule 6 exists to prevent), and
+        // a *mesh* particle that fades (`p.spec.alphaOverTime`, a decal)
+        // built its one-time transparent/depthWrite/polygonOffset material
+        // setup from the same wrong, always-`undefined` field — so the
+        // pooled mesh every real decal then reused for its whole life was
+        // never fading, either. Both are the one bug: build the probe from
+        // the particle spec, exactly the shape `spawnParticle` returns.
+        const particle = spec.particle;
+        const mesh = this.#acquire({ template, spec }, { kind: particle.kind, spec: particle });
         if (!mesh) continue;
         mesh.visible = false;
-        const pool = spec.kind === 'sprite' ? this.spritePool : this.meshPool;
+        const pool = particle.kind === 'sprite' ? this.spritePool : this.meshPool;
         pool.get(mesh.userData.poolKey)?.push(mesh);
         for (const m of mesh.userData.materials ?? [mesh.material]) materials.add(m);
       }
@@ -390,7 +455,28 @@ export class EffectPlayer {
         material.transparent = true;
         material.depthWrite = false;
         material.side = THREE.DoubleSide;
-        if (p.spec.blend === 'add' || material.userData?.additive) {
+        // SPR-5 (verify-r8.md, corrected): srcBlendMode/destBlendMode are
+        // the engine's own D3DBLEND ordinals (R8-1/R8-2 — an unset word
+        // falls back to `geom::ParticleSystemTemplate`'s ctor default,
+        // R8-8, which `bf42/effects.py` already applies before this ever
+        // sees the spec), not just the `add`/`alpha` binary
+        // `bake_effect_library` (bf42/assemble.py, not this track's file)
+        // still keys its own baked material setup on. CustomBlending with
+        // the matching WebGL factors reproduces every pair the data
+        // actually uses — including a template that pairs a non-default
+        // srcBlendMode with `destBlendMode BMOne`, which the boolean this
+        // replaces could not tell apart from ordinary additive.
+        const src = D3D_BLEND_FACTOR[p.spec.srcBlendMode];
+        const dest = D3D_BLEND_FACTOR[p.spec.destBlendMode];
+        if (src && dest) {
+          material.blending = THREE.CustomBlending;
+          material.blendSrc = src;
+          material.blendDst = dest;
+          material.blendEquation = THREE.AddEquation;
+        } else if (p.spec.blend === 'add' || material.userData?.additive) {
+          // Fallback for a spec built without the ordinals (a hand-written
+          // test spec, or one baked before this change) — the coarse label
+          // is still exactly right for the common additive case.
           material.blending = THREE.AdditiveBlending;
         }
         this.onMaterial?.(material);
