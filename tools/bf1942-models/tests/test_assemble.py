@@ -1481,5 +1481,123 @@ ObjectTemplate.destBlendMode BMOne
         self.assertNotIn("view", self._bake()["em_TestBoth"])
 
 
+class EffectBakeToggleTests(unittest.TestCase):
+    """`include_effects=False` drops a weapon's baked flash, for exports —
+    the soldier pose glb — with no fire simulation to hide it for."""
+
+    GUN_CON = """
+ObjectTemplate.create HandFireArms TestSmg
+ObjectTemplate.geometry Smg_m1
+ObjectTemplate.projectileTemplate TestSmgProjectile
+ObjectTemplate.velocity 1000
+ObjectTemplate.roundOfFire 10
+ObjectTemplate.visibleBarrelTemplate e_TestMuzz
+
+ObjectTemplate.create Projectile TestSmgProjectile
+ObjectTemplate.invisible 1
+
+ObjectTemplate.create EffectBundle e_TestMuzz
+ObjectTemplate.addTemplate em_TestMuzz
+
+ObjectTemplate.create Emitter em_TestMuzz
+ObjectTemplate.template Fx_TestMuzz
+
+ObjectTemplate.create SpriteParticle Fx_TestMuzz
+ObjectTemplate.timeToLive CRD_NONE/0.07/0/0
+ObjectTemplate.texture e_muz1_I
+ObjectTemplate.destBlendMode BMOne
+
+GeometryTemplate.create StandardMesh Smg_m1
+"""
+
+    def _build(self, **kwargs) -> dict:
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/TestSmg/Objects.con", self.GUN_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, **kwargs)
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        assembler._geom_mesh["smg_m1"] = (
+            builder.add_mesh("Smg_m1", [triangle]), 1)
+        assembler._geom_collisions["smg_m1"] = []
+        assembler._sprite_mesh_cache["e_muz1_i"] = builder.add_mesh(
+            "fx quad", [triangle])
+        report = Report(root="TestSmg", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "TestSmg", report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict()))
+
+    def test_effects_are_baked_by_default(self) -> None:
+        names = [n["name"] for n in self._build()["nodes"]]
+        self.assertIn("e_TestMuzz", names)
+        self.assertIn("em_TestMuzz", names)
+
+    def test_include_effects_false_drops_the_flash_but_keeps_the_gun(self) -> None:
+        document = self._build(include_effects=False)
+        names = [n["name"] for n in document["nodes"]]
+        self.assertNotIn("e_TestMuzz", names)
+        self.assertNotIn("em_TestMuzz", names)
+        # The gun itself, its geometry and its firing stats are untouched —
+        # only the flash geometry the pose viewer has no use for is gone.
+        self.assertIn("TestSmg", names)
+        self.assertIn("TestSmg muzzle 1", names)
+        fire = {n["name"]: n for n in document["nodes"]}["TestSmg"]["extras"]["fireArms"]
+        self.assertEqual(1, fire["muzzles"])
+
+    def test_include_effects_false_drops_the_tracer_mesh_but_keeps_its_stats(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Test/Weapons.con",
+                        TracerBakeTests.GUN_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_effects=False)
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        assembler._geom_mesh["tlight_m1"] = (
+            builder.add_mesh("TLight_m1", [triangle]), 1)
+        assembler._geom_collisions["tlight_m1"] = []
+        report = Report(root="WingGuns", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "WingGuns", report)
+        assert node is not None
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+
+        names = [n["name"] for n in document["nodes"]]
+        self.assertNotIn("WingGuns tracer", names)
+        # The tracer's firing stats survive; only its mesh is gone.
+        tracer = {n["name"]: n for n in document["nodes"]}[
+            "WingGuns"]["extras"]["fireArms"]["tracer"]
+        self.assertEqual(50.0, tracer["scaler"])
+        self.assertNotIn("geometry", tracer)
+
+    def test_include_effects_false_drops_the_projectile_body_but_keeps_its_spec(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Weapons.con",
+                        ProjectileBakeTests.ROCKET_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_effects=False)
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        mesh_index = builder.add_mesh("Rocket_m1", [triangle])
+        assembler._geom_mesh["rocket_m1"] = (mesh_index, 1)
+        assembler._geom_collisions["rocket_m1"] = []
+        report = Report(root="RocketRamp", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "RocketRamp", report)
+        assert node is not None
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+
+        names = [n["name"] for n in document["nodes"]]
+        self.assertNotIn("RocketRamp projectile", names)
+        # The projectile is still typed and its damage numbers still ride the
+        # extras; only its drawn body is gone.
+        projectile = {n["name"]: n for n in document["nodes"]}[
+            "RocketRamp"]["extras"]["fireArms"]["projectile"]
+        self.assertEqual("rocket", projectile["kind"])
+
+
 if __name__ == "__main__":
     unittest.main()

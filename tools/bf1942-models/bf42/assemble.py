@@ -277,6 +277,7 @@ class Assembler:
                  lod: int = 0, max_texture: int = 1024,
                  configuration: str = "complex",
                  include_collision: bool = True,
+                 include_effects: bool = True,
                  first_person: bool = False,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None):
         if configuration not in con_mod.MODEL_CONFIGURATIONS:
@@ -289,6 +290,14 @@ class Assembler:
         self.max_texture = max_texture
         self.configuration = configuration
         self.include_collision = include_collision
+        # Muzzle flashes, shell ejects, tracer streaks and projectile bodies
+        # are baked hidden mesh nodes a viewer plays on demand (gunfire.js,
+        # flight.js) — off by default would be wrong for any export those
+        # simulations load. A pose export is never one of them: poses.html has
+        # no fire simulation to hide the nodes for, so it opts out and gets a
+        # clean weapon instead. Non-mesh firing stats (magazine size, damage,
+        # tracer interval, ...) still ride the extras either way.
+        self.include_effects = include_effects
         # A cockpit export: take the first-person branch at every LodObject that
         # has one, keep only the geometry authored for a camera inside the
         # vehicle, and prune everything else away. The result is meant to be
@@ -1209,26 +1218,28 @@ class Assembler:
             spec["kind"] = ("rocket"
                             if self._projectile_has_rocket_engine(projectile)
                             else "shell")
-            mesh_index, _ = self._mesh_index(builder, body.geometry, report)
-            if mesh_index is not None:
-                nodes.append(builder.add_node(gltf.Node(
-                    name=f"{template.name} projectile",
-                    mesh=mesh_index,
-                    extras={"templateKind": body.kind,
-                            "projectileMesh": {"template": body.name,
-                                               "geometry": body.geometry}},
-                )))
+            if self.include_effects:
+                mesh_index, _ = self._mesh_index(builder, body.geometry, report)
+                if mesh_index is not None:
+                    nodes.append(builder.add_node(gltf.Node(
+                        name=f"{template.name} projectile",
+                        mesh=mesh_index,
+                        extras={"templateKind": body.kind,
+                                "projectileMesh": {"template": body.name,
+                                                   "geometry": body.geometry}},
+                    )))
         trail, payload = self._projectile_trail_spec(projectile)
         if trail is not None:
             spec["trail"] = trail
-            quad = self._sprite_quad_mesh(builder, trail["texture"], report)
-            if quad is not None:
-                nodes.append(builder.add_node(gltf.Node(
-                    name=f"{template.name} trail",
-                    mesh=quad,
-                    extras={"templateKind": payload.kind,
-                            "projectileTrail": trail},
-                )))
+            if self.include_effects:
+                quad = self._sprite_quad_mesh(builder, trail["texture"], report)
+                if quad is not None:
+                    nodes.append(builder.add_node(gltf.Node(
+                        name=f"{template.name} trail",
+                        mesh=quad,
+                        extras={"templateKind": payload.kind,
+                                "projectileTrail": trail},
+                    )))
         return spec, nodes
 
     def _fire_arms(self, builder: gltf.GlbBuilder,
@@ -1282,7 +1293,7 @@ class Assembler:
                 # arrives with its own `.rs` — `TLight_m1` is additive
                 # (`blendDest one`) and unlit (`lighting false`), which is what
                 # makes it read as light instead of a grey tube.
-                if projectile.geometry:
+                if projectile.geometry and self.include_effects:
                     mesh_index, _ = self._mesh_index(
                         builder, projectile.geometry, report)
                     if mesh_index is not None:
@@ -1705,6 +1716,8 @@ class Assembler:
         # `addTemplate`, so every child looks meshless and the whole flash
         # vanishes. Bake the additive payloads instead.
         if template.kind.lower() == "effectbundle":
+            if not self.include_effects:
+                return None
             return self._effect_bundle_node(
                 builder, template, report,
                 position=position, rotation=rotation, depth=depth)
