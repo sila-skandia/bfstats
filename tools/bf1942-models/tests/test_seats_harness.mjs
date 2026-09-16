@@ -298,6 +298,41 @@ function shermanWithRenamedGunnerNode() {
   };
 }
 
+// --- held trigger + rate-of-fire: the Defgun's own numbers, ticked in real
+// time rather than one `registerShot()` per attempt (round 3's own bug
+// report: "held the trigger for 25 stepped frames, ammo stayed at 499 of
+// 499"). `gunfire.js`'s `advance()` is the rate-of-fire gate -- a cooldown
+// accumulator reset to 0 on the rising edge (`GunFire.setFiring`'s own "first
+// round leaves immediately") and re-armed at `1/roundOfFire` seconds per
+// round thereafter -- and `manned()` is what drives it from `state.canFire`.
+// Reproduced here without a browser: same two pieces, same order, ticked at
+// the page's own 1/60 s frame.
+
+{
+  const state = new FireState({ magSize: 499, numOfMag: 999, roundOfFire: 0.2 });
+  const DT = 1 / 60;
+  const period = 1 / 0.2;   // 5s between rounds once firing -- the Defgun's own cadence
+  let firing = false;
+  let cooldown = 0;
+  function tick(trigger) {
+    state.step(DT);
+    const wantsFire = trigger && state.canFire;
+    if (wantsFire && !firing) cooldown = 0;   // setFiring's rising-edge reset
+    firing = wantsFire;
+    if (firing) {
+      cooldown -= DT;
+      while (cooldown <= 0) { state.registerShot(); cooldown += period; }
+    }
+  }
+  for (let i = 0; i < 25; i++) tick(true);
+  const after25Frames = state.ammo;
+  for (let i = 0; i < 375; i++) tick(true);   // 400 frames total, ~6.7s -- past one 5s period
+  const after400Frames = state.ammo;
+  for (let i = 0; i < 60; i++) tick(false);   // trigger released
+  const afterRelease = state.ammo;
+  results.heldTriggerCadence = { after25Frames, after400Frames, afterRelease };
+}
+
 // --- chainOnShot: wraps without discarding whatever ran first ---------------
 
 {
