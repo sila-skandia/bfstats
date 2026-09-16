@@ -1428,6 +1428,51 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
+   "address": "0x004bbad0",
+   "name": "Armor::status(float) [client]",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "CLIENT twin of lnxded 0x081739e0. Both the 0x13 and 0x14 message branches end by clearing +0x110 and +0x128, so a recovering or revived object resumes per-tick tier evaluation. Three direct callers (setHitPoints 0x004bbf80, damage 0x004bbfe0, heal 0x004bc040), matching HP-2. See ledger ARM-1, ARM-4."
+  },
+  {
+   "address": "0x004bc240",
+   "name": "Armor::Armor() [client]",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "CLIENT. Writes vtable ptr 0x008dc7a8, +0x4=1, +0x1c/+0x20/+0x24=0, +0x148=0x0097d6c8 (empty-map sentinel). Factory 0x0049cc80 registers CID 0xc4a5 -- the client's own value, NOT lnxded's 0xc4a4 -- through allocator 0x0049b280 (operator new(464), matching lnxded's 464-byte pool). See ledger ARM-4."
+  },
+  {
+   "address": "0x004bc2f0",
+   "name": "Armor::getEffect(int) [client]",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "CLIENT twin of lnxded 0x08172820; one call site, inside playEffect. See ledger ARM-4."
+  },
+  {
+   "address": "0x004bc3d0",
+   "name": "Armor::playEffect() [client]",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "CLIENT twin of lnxded 0x08172960, same behaviour: the +0x128 write at 0x004bc419 is in the death branch only. So the client does not need a second per-frame call site and does not have one -- the 30 Hz Armor::update (0x004bc650) path was never single-shot for a living object. See ledger ARM-1, ARM-4."
+  },
+  {
+   "address": "0x004bc650",
+   "name": "Armor::update(float) [client]",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "CLIENT twin of lnxded 0x08172f40; runs on the client's own 30 Hz sim tick via GameClient::simulateFrame 0x004b6cb0 -> objectManager +0x14 updateObjects(tickDt,0,3), not per rendered frame. See ledger ARM-4."
+  },
+  {
    "address": "0x004c2370",
    "name": "ConsoleProperty gravity (Physics class) registration",
    "kind": "function",
@@ -4533,6 +4578,15 @@
    "note": "50 slots, 0x008d6700-0x008d67c4, installed by BfMap__BfMap. Diffed against TransformNode's table (0x00943208, also 50 slots), exactly three slots differ: +0x00 the destructor (0x0046e7c0, unread), +0x68 BfMap__update (0x0046a680), +0x74 minimap_screenTransform (0x00469360)."
   },
   {
+   "address": "0x008dc7a8",
+   "name": "vtable for Armor [client]",
+   "kind": "data",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "CLIENT, 82 slots ending at dump-offset +0x144. Unlike the gcc build there is no 8-byte RTTI header, so a client dump-offset equals an lnxded CALL-offset directly. See ledger ARM-4."
+  },
+  {
    "address": "0x008dcd10",
    "name": "CID_BFSoldierTemplate",
    "kind": "data",
@@ -5492,8 +5546,8 @@
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-16-hitpoints; corrected research-2026-09-17-collision-damage",
-   "note": "lnxded, 1385 bytes, read in full 2026-09-17 -- NOT a post-death ring buffer, as the previous note said. Compares the applicable addArmorEffect tier (via getEffect) against the last-shown field at Armor+0x50 and tears down/rebuilds the active effect instances. Its ONLY call site in the binary is inside Armor::update() at 0x08173100, behind cmp byte [edi+0x128],0 -- and playEffect sets that same byte to 1 on its first non-dead run. The only other writes to +0x128 are the two Armor constructors initialising it to 0, so nothing ever resets it: on the dedicated server the tier evaluation fires at most ONCE per Armor lifetime, not per tick. Whether the client re-evaluates continuously is unread. See ledger ARM-1."
+   "source": "research-2026-09-16-hitpoints; corrected research-2026-09-17-effect-cadence",
+   "note": "lnxded, 1385 bytes. Compares the applicable addArmorEffect tier (via getEffect) against the last-shown field at Armor+0x50 and rebuilds the active effect instances. Its only call site is inside Armor::update() at 0x08173100. The +0x128 byte is a DEATH latch, not a first-run latch (corrected 2026-09-17; an earlier note here had the x87 branch inverted): the test at 0x8172980-0x8172994 is fucom hitPoints vs 0.001 with test $0x45,%ah, so je 8172e6d is taken exactly when hp>0.001 -- the ALIVE path, 0x8172e6d-0x8172ec7, which does ceil (fnstcw/or $0x800/frndint/fistpl) and jumps into the same single getEffect call WITHOUT touching +0x128. The movb $0x1,0x128 at 0x81729a2 is on the death fallthrough, beside getEffect(-1)'s push. Consequence: a living object re-evaluates its tier every 30 Hz tick. See ledger ARM-1."
   },
   {
    "address": "0x08172ed0",
@@ -5511,7 +5565,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded. Water/deep-water recomputed every call; critical/upside-down loss gated behind a +=dt accumulator (+0xe8) firing only at >=1.0s, skipped entirely for soldiers. See ledger HP-5. Also the sole caller of playEffect() (0x08173100), behind the one-shot latch at +0x128 -- see ARM-1."
+   "note": "lnxded. Water/deep-water recomputed every call; critical/upside-down loss gated behind a +=dt accumulator (+0xe8) firing only at >=1.0s, skipped entirely for soldiers. See ledger HP-5. Also the sole caller of playEffect() (0x08173100). That call is gated on the +0x128 byte, which is a death latch only -- a living object's tier is therefore re-evaluated every tick. See ledger ARM-1."
   },
   {
    "address": "0x08173680",
@@ -5532,6 +5586,33 @@
    "note": "lnxded. Death-transition function: pendingValue<=0.001 sets isDestroyed+isCriticalDamaged, resolves lastHitPlayer, calls addVehicleDestroyed unless CID_BFSoldierTemplate, fires the object's own explosion. Non-death branches send message ids 0x13/0x14/0x15. See ledger HP-2, HP-13."
   },
   {
+   "address": "0x081741c0",
+   "name": "dice::ref2::world::Armor::isSendingMessage()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "lnxded, vtable call-offset +0x94. Why Engine/Wing/Spring/Bundle/FloatingBundle::handleMessage resolve an Armor at all -- message plumbing, not a damage gate. This is what makes ARM-6's negative hold: those five look like where 'a damaged vehicle drives worse' would live, and they are not it."
+  },
+  {
+   "address": "0x08174300",
+   "name": "dice::ref2::world::Armor::isDestroyed()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "lnxded, vtable call-offset +0xc8. Read by validateBFEntryPoint (0x0831d5f0, call at 0x831d68f) and BFfindEntryPoint (0x0831d770, call at 0x831d911), both rejecting the candidate entry point when true. See ledger ARM-7; closes the open item in subsystems/seats-and-entry-points.md."
+  },
+  {
+   "address": "0x08174320",
+   "name": "dice::ref2::world::Armor::isCriticalDamaged()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "lnxded, vtable call-offset +0xcc. Queried by PlayerControlObject::enter() at 0x8317095 on [this+0x60]. NOT read anywhere in the drivetrain or turret path -- see ledger ARM-6's exhaustive negative. See ARM-7."
+  },
+  {
    "address": "0x08174370",
    "name": "Armor::setHpLostWhileCriticalDamage(float)",
    "kind": "function",
@@ -5539,6 +5620,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
    "note": "lnxded. Guarded: no-op if isDestroyed()==1 -- unlike its upside-down/water/deepwater sibling setters."
+  },
+  {
+   "address": "0x08174390",
+   "name": "dice::ref2::world::Armor::getHpLostWhileCriticalDamage()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "lnxded, vtable call-offset +0xd4. Called by PlayerControlObject::enter() at 0x83172b9 when isCriticalDamaged returns true; what consumes the returned float before the paths rejoin at 0x83170a6 is untraced. See ARM-7."
   },
   {
    "address": "0x08175040",
@@ -5829,6 +5919,15 @@
    "note": "lnxded twin of client 0x00461690, the same formula term for term, hand-traced through the x87 stack: fdivr against 2.0 at 0x086c08c4, the same six zeroed indices, and index 15 a fld1 that survives to its fst, i.e. 1.0."
   },
   {
+   "address": "0x0823e730",
+   "name": "dice::ref2::world::Engine::handleMessage(TemplateMessage,IPlayer*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "lnxded. Resolves an Armor twice (0x823e7b3, 0x823e8c3) and calls vtable +0x94 = Armor::isSendingMessage() each time. Not a damage gate -- see ledger ARM-6."
+  },
+  {
    "address": "0x0823fce0",
    "name": "EngineTemplate::setEngineType(EngineType)",
    "kind": "function",
@@ -5881,6 +5980,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "lnxded address, not client. Subtracts setPitchOffset from the posed angle every update for every Wing - so setPitchOffset DOES bias the surface rest orientation, it is not only the regulator's reference incidence. The same instruction shows how setWingLift and setFlapLift are told apart despite being summed into one coefficient: angle = deflection * flapLift/(wingLift+flapLift) - pitchOffset. setFlapLift is the MOVING SHARE of one surface's area, which is why a rudder (0/2) and a fin (2/0) run identical arithmetic but are not interchangeable."
+  },
+  {
+   "address": "0x08250bf0",
+   "name": "dice::ref2::world::Wing::handleMessage(TemplateMessage,IPlayer*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "lnxded. Same shape as Engine::handleMessage: three Armor resolutions, each followed by Armor::isSendingMessage() (+0x94). Not a damage gate -- see ledger ARM-6."
   },
   {
    "address": "0x08252de0",
@@ -6113,8 +6221,8 @@
    "kind": "function",
    "subsystem": "seat",
    "confidence": "verified",
-   "source": "research-2026-09-16-seats",
-   "note": "lnxded. Refuses only when isOccupied(+0x110) AND force==false."
+   "source": "research-2026-09-16-seats; extended research-2026-09-17-effect-cadence",
+   "note": "lnxded. Refuses only when isOccupied(+0x110) AND force==false. Queries Armor::isCriticalDamaged() (+0xcc) at 0x8317095 on [this+0x60] and, on true, getHpLostWhileCriticalDamage() (+0xd4) at 0x83172b9 before rejoining the normal flow at 0x83170a6 (2026-09-17). The consequence is OPEN: the float's consumer is untraced. See ledger ARM-7."
   },
   {
    "address": "0x08317490",
@@ -6169,6 +6277,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded, reads current-camera index, walks list at +0x12c."
+  },
+  {
+   "address": "0x08318d20",
+   "name": "dice::ref2::world::PlayerControlObject::handleFrameUpdate(float)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "lnxded. Calls damageAllAttachedSoldiers(ICompositeObject*,float) at 0x8318eae, gated by per-frame accumulators +0x19c/+0x17c and a template threshold at +0x22c. Does NOT query Armor, so it is independent of critical state -- but it is the best remaining candidate for why a burning vehicle feels undriveable. See ledger PCO-1."
   },
   {
    "address": "0x083193a0",
@@ -6315,13 +6432,22 @@
    "note": "lnxded. Chooses caller-radius vs EntryPointTemplate's own entryRadius (template+0x138); ALSO gates on a separate team/hostility component check (queryComponent(0xc4a4)+vtable+0xc8), independent of BFfindEntryPoint's own team test. See ledger SEAT-4."
   },
   {
+   "address": "0x0831d5f0",
+   "name": "dice::ref2::world::validateBFEntryPoint(IObject*,Pos3 const&,float,bool)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-17-effect-cadence",
+   "note": "lnxded. Resolves the candidate's Armor via getComponent(0xc4a4,0xc4a4), walking the +0x50 ancestor chain, then tests isDestroyed() (call +0xc8) at 0x831d68f and rejects on true. See ledger ARM-7."
+  },
+  {
    "address": "0x0831d770",
    "name": "BFfindEntryPoint(Pos3 const&, float, int, bool, IPlayerControlObject**, bool)",
    "kind": "function",
    "subsystem": "seat",
    "confidence": "verified",
-   "source": "research-2026-09-16-seats",
-   "note": "lnxded."
+   "source": "research-2026-09-16-seats; extended research-2026-09-17-effect-cadence",
+   "note": "lnxded. Its post-getComponent call at 0x831d911 is Armor::isDestroyed() (+0xc8), rejecting the candidate entry point when true -- read 2026-09-17, closing this function's own open item. See ledger ARM-7."
   },
   {
    "address": "0x083207f0",
