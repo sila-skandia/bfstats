@@ -868,11 +868,17 @@ export const TANK = {
   // up yaw and the airborne case); a tank's wheels sit much farther from the
   // root than a jeep's (the M3A1's own front axle 3 m ahead of it), so the
   // same yaw rate puts a far larger torque through the identical suspension
-  // formula — found by driving one through a sustained turn and watching it
-  // roll itself onto its roof (worked at 1.0, tipped somewhere between yaw
-  // input 0.2 and 0.3 held from a stand-still, every corneringStiffness
-  // tried made no difference), and this is what actually arrests it. [free]
-  angularDamping: 5.0,
+  // formula. Found by driving one through a sustained turn and watching it
+  // roll itself onto its roof — twice: held from a stand-still it tipped
+  // somewhere between yaw input 0.2 and 0.3 (fixed at 5.0), and a second,
+  // harder case survived that fix and still rolled the M3A1 at yaw 0.6
+  // entered from its own straight-line top speed (~31 m/s) rather than
+  // accelerating into the turn — the extra speed alone very nearly doubles
+  // the centripetal load a held turn puts through the suspension. 12.0 was
+  // the lowest value that survived both; this carries margin above it.
+  // corneringStiffness made no difference to either case at any value
+  // tried. [free]
+  angularDamping: 15.0,
 
   // A steered front axle's lock, used only if its own bundle somehow
   // declares no min/max at all to measure. M3A1's own is +-40 (TANK-15),
