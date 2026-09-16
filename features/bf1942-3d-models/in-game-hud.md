@@ -210,7 +210,7 @@ kit-driven weapon a normal spawn would pick 404s.
 | Vehicle health bar | distinct olive art | correct | unchanged | MATCH | none |
 | Seated ammo panel number (Defgun, 1-weapon) | shows the loaded count | icon+bar only, no digit | "499" renders | BUG -> FIXED | fed `Ammo/PrimaryAmmoText` |
 | Seated ammo panel numbers (Sherman Browning seat, manned) | shows the loaded count | icon+bar only, no digit | "500" renders | BUG -> FIXED | fed `Ammo/{Primary,Secondary}AmmoText` |
-| Seated ammo panel numbers (Sherman root, 2-weapon drivetrain) | shows live count/heat/reload | icon+bar-type only (correct), no live numbers | unchanged | GAP, pre-existing | left open — needs `drive()` to fire through a gated `FireState`, outside this track's files |
+| Seated ammo panel numbers (Sherman root, 2-weapon drivetrain) | shows live count/heat/reload | icons only, both bars absent (not just un-numbered) | unchanged | GAP, pre-existing | left open — needs `drive()` to fire through a gated `FireState`, outside this track's files |
 | Turret-turn dial (vehicleIcon group) | rotating top-down turret indicator | never drawn | unchanged | GAP, open | left open — R2-18's trigger condition and angle convention are both unsettled |
 | Headless HUD/3D-scene scale under `__renderOnce` | n/a (never seen live) | HUD painted ~76px short of the 3D frame | matches exactly | BUG -> FIXED | `frame()` now reads the renderer's own backing store |
 
@@ -309,8 +309,17 @@ lives outside this track's files:**
   `Overheat/OverHeat`/`Ammo/ReloadTime` (`scratchpad/t3/auditF-results.json`,
   `pos_0`) — the SAME gap the car-dashboard note already flagged, now
   reproduced on a real gun-carrying vehicle rather than a Willys with nothing
-  to show. Retail clearly does show this (a Sherman driver watches their own
-  shell count), so this is a real parity gap, not a documentation nit — but
+  to show. On screen this is not merely an un-numbered bar: `hud.js`'s
+  `fill-picture` leaf lists its own `valueVar` as required
+  (`contentVarsOf`/`_requiredVars`), so with `Ammo/ReloadTime`/
+  `Overheat/OverHeat` both absent the whole leaf is culled — the reload and
+  heat bars (both layers, empty and full) never draw at all, leaving only
+  the two weapon icons. Re-verified this pass against the same
+  `auditF-results.json` `pos_0` object (confirmed by this round's own review,
+  not a new capture): every key the reload/heat leaves require is missing,
+  not merely their live value. Retail clearly does show this (a Sherman
+  driver watches their own shell count), so this is a real parity gap, not a
+  documentation nit — but
   closing it means changing how `drive()` fires (a gated `FireState` per
   `vehicleGuns` entry instead of the unconditional `setFiring` it uses today),
   which is outside `feedVehicleHud`/`hud.js`'s files. Flagged here for
