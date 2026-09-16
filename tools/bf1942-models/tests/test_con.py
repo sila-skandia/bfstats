@@ -1192,6 +1192,7 @@ ObjectTemplate.create PlayerControlObject Defgun
 ObjectTemplate.hitpoints 50
 ObjectTemplate.maxhitpoints 50
 ObjectTemplate.setVehicleIcon "Vehicle/Icon_defgun.tga"
+ObjectTemplate.setNumberOfWeaponIcons 1
 ObjectTemplate.setPrimaryAmmoIcon "Ammo/Icon_cannon.tga"
 ObjectTemplate.setPrimaryAmmoBar ABAmmoBarReloadBar
 
@@ -1199,6 +1200,7 @@ ObjectTemplate.create PlayerControlObject Sherman
 ObjectTemplate.hitpoints 100
 ObjectTemplate.maxhitpoints 100
 ObjectTemplate.setVehicleIcon "Vehicle/Icon_sherman.tga"
+ObjectTemplate.setNumberOfWeaponIcons 2
 ObjectTemplate.setPrimaryAmmoIcon "Ammo/Icon_cannon.tga"
 ObjectTemplate.setPrimaryAmmoBar ABAmmoBarReloadBar
 ObjectTemplate.setSecondaryAmmoIcon "Ammo/Icon_bullet.tga"
@@ -1211,6 +1213,10 @@ ObjectTemplate.setSecondaryAmmoBar ABAmmoBarHeatBar
         self.assertEqual("Ammo/Icon_cannon.tga", defgun.vehicle_primary_ammo_icon)
         self.assertEqual("ABAmmoBarReloadBar", defgun.vehicle_primary_ammo_bar)
         self.assertIsNone(defgun.vehicle_secondary_ammo_bar)
+        # `menu/InGame` paints the one-panel copy of the ammo bar at 1 and the
+        # two-panel copy at 2 (verify-r2.md R2-13); a seat that declares
+        # neither paints no ammo at all.
+        self.assertEqual(1, defgun.vehicle_weapon_icons)
 
         self.assertEqual("Vehicle/Icon_sherman.tga", sherman.vehicle_icon)
         self.assertEqual("ABAmmoBarReloadBar", sherman.vehicle_primary_ammo_bar)
@@ -1218,6 +1224,7 @@ ObjectTemplate.setSecondaryAmmoBar ABAmmoBarHeatBar
         self.assertEqual("ABAmmoBarHeatBar", sherman.vehicle_secondary_ammo_bar)
         self.assertEqual(100.0, sherman.hitpoints)
         self.assertEqual(100.0, sherman.max_hitpoints)
+        self.assertEqual(2, sherman.vehicle_weapon_icons)
 
     def test_vehicle_firearms_carry_magazine_reload_and_heat_words(self) -> None:
         # Objects/Vehicles/Land/Defgun/Weapons.con (no heat -- a single-shot

@@ -2035,6 +2035,7 @@ class Assembler:
                 "hitpoints": template.hitpoints,
                 "maxHitpoints": template.max_hitpoints,
                 "vehicleIcon": template.vehicle_icon,
+                "numberOfWeaponIcons": template.vehicle_weapon_icons,
                 "primaryAmmoIcon": template.vehicle_primary_ammo_icon,
                 "primaryAmmoBar": template.vehicle_primary_ammo_bar,
                 "secondaryAmmoIcon": template.vehicle_secondary_ammo_icon,

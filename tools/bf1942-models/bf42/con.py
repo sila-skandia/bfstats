@@ -542,6 +542,12 @@ class ObjectTemplate:
     # `ABAmmoBarHeatBar`, `ABAmmoBarReloadBar`, ...), not a texture path;
     # kept as authored like `grip`/`vehicle_type` above.
     vehicle_icon: str | None = None
+    # `setNumberOfWeaponIcons` (79 uses in vanilla): how many weapon panels the
+    # seated HUD shows -- the Sherman's root declares 2 (cannon then coax), its
+    # hull gunner 1, every stationary gun 1. `menu/InGame` keys which copy of
+    # the ammo panel it paints on `Ammo/NumberOfWeaponIcons` being 1 or 2
+    # (ledger VHUD, verify-r2.md R2-13), so a seat without it paints neither.
+    vehicle_weapon_icons: int | None = None
     vehicle_primary_ammo_icon: str | None = None
     vehicle_primary_ammo_bar: str | None = None
     vehicle_secondary_ammo_icon: str | None = None
@@ -1417,6 +1423,11 @@ class ObjectLibrary:
                             "workonvehicles": "supply_work_on_vehicles",
                         }[cmd], value)
                 # -- Vehicle HUD, on the PlayerControlObject root.
+                elif cmd == "setnumberofweaponicons":
+                    try:
+                        obj.vehicle_weapon_icons = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        pass
                 elif cmd in ("setvehicleicon", "setprimaryammoicon", "setprimaryammobar",
                              "setsecondaryammoicon", "setsecondaryammobar"):
                     if token := args.strip().strip('"'):
