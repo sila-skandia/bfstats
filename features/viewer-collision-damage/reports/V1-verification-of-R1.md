@@ -4,6 +4,14 @@ Sonnet verifier, 2026-09-17, against
 [R1-collision-damage-and-destruction.md](R1-collision-damage-and-destruction.md).
 Re-derived independently from `bf1942_lnxded.static` and the shipped archives.
 
+> **Superseded in one place.** This verifier's Finding I reading — that
+> `playEffect`'s `+0x128` latch fires on the first *non-dead* run, making the
+> tier single-shot — is **wrong**: it had the x87 branch inverted. The latch is
+> set only on death, the alive path never touches it, and `status()` clears it.
+> See [R2](R2-client-effect-cadence-and-critical-state.md) and the lead's own
+> `objdump` re-derivation there. Everything else here stands, including the
+> round's headline. Kept unedited as the record of what was checked and when.
+
 18 claims examined: **13 confirmed, 4 corrected, 1 not checked, 0 refuted.**
 
 **The round's headline survives.** HP-6 / Finding E is safe to plan against,

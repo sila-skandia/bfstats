@@ -215,10 +215,11 @@ critical from a safe state. What a client HUD actually does on receipt of
 each id was not read — this is a server-side finding about *when* a signal
 fires, not what it looks like.
 
-## 8. `addArmorEffect`: the smoke and fire tiers, and the latch on them
+## 8. `addArmorEffect`: the smoke and fire tiers, and the tick that drives them
 
-Settled 2026-09-17 (ARM-1, ARM-2). This is the mechanism behind a burning
-tank, and it is authored data the extraction pipeline does not yet parse.
+Settled 2026-09-17 (ARM-1, ARM-2, ARM-4). This is the mechanism behind a
+burning tank, and it is authored data the extraction pipeline does not yet
+parse.
 
 `ObjectTemplate.addArmorEffect <hp> <effectTemplate> <x/y/z>` — 430 uses in
 vanilla, 2,271 templates across all installed mods. A Sherman declares five:
@@ -234,20 +235,50 @@ it. At construction the three fold into an `std::map<int,DamageEffects*>` at
 `Armor+0x148`, and `Armor::getEffect(int)` (`0x08172820`) reads it as a
 nearest-threshold-below lookup (`_Rb_tree::find` plus `_M_decrement`).
 
-**The catch is how rarely that gets consulted.** `Armor::playEffect()`
-(`0x08172960`, 1385 bytes) is what compares the applicable tier against the
-last-shown field at `Armor+0x50` and rebuilds the live effect instances — and
-its only call site in the whole binary is inside `Armor::update()` at
-`0x08173100`, behind `cmp byte [edi+0x128],0`. `playEffect` sets that same byte
-to 1 on its first non-dead run. The only other writes to `+0x128` anywhere are
-the two Armor constructors initialising it to 0. **Nothing resets it**, so on
-the dedicated server the tier is evaluated at most once per Armor's lifetime,
-not once per second and not per tick.
+**The `+0x128` byte is a death latch, not a first-run latch.** This was read
+backwards once (the first pass called it "set on the first non-dead run", which
+made the tier look single-shot); corrected 2026-09-17 and re-derived a third
+time straight from `objdump`. `Armor::playEffect()` (`0x08172960`, 1385 bytes)
+compares the applicable tier against the last-shown field at `Armor+0x50` and
+rebuilds the live effect instances, and its only call site is inside
+`Armor::update()` at `0x08173100` — but its own branch test is
 
-Whether the *client* re-evaluates continuously is unread, and it is the only
-thing that could explain a tank that visibly starts smoking partway through a
-fight. Until someone reads `BF1942.exe` for it, a viewer that polls HP against
-these thresholds is making a house rule, not mirroring the engine.
+    flds  0x38(%edx)        ; hitPoints
+    flds  0x86c0308         ; 0.001
+    fxch  %st(1)
+    fucom %st(1)
+    fnstsw %ax
+    test  $0x45,%ah
+    je    8172e6d
+
+and `test $0x45,%ah` clears ZF for every x87 result except *greater*, so the
+jump is taken exactly when `hp > 0.001`. That target, `0x8172e6d`–`0x8172ec7`,
+is the **alive** path: `fnstcw`, `or $0x800` to force round-up, `frndint`,
+`fistpl`, then a jump into the same single `getEffect` call. **It never writes
+`+0x128`.** The `movb $0x1,0x128(%edx)` at `0x81729a2` sits on the fallthrough
+— the death path — next to the `push $0xffffffff` that makes the call
+`getEffect(-1)`.
+
+Every literal write to `+0x128` inside Armor's range (`0x08172000`–`0x08178000`)
+is accounted for: `0x8172231` and `0x8172381`, the two constructors, writing 0;
+`0x81729a2`, writing 1, on death; and `0x8173aed`, writing 0, inside
+`Armor::status()` immediately after `push $0x14` — the revived-into-critical
+message. So `status()` clears the latch on a critical-state transition, and a
+repaired vehicle resumes evaluating its tier.
+
+**Which means the cadence is simply the tick.** A living vehicle re-checks its
+smoke/fire tier at 30 Hz, takes the nearest authored threshold at or below
+`ceil(hitPoints)`, and swaps the visible effect only when that tier changes.
+The latch's one externally visible effect is freezing whatever was showing when
+the object died. A viewer gets that for free by stopping the check at
+`hitPoints <= 0.001`; it does not need to port the latch.
+
+The client's `Armor` is a field-for-field port of the server's — same offsets,
+same 82-slot vtable, no GCC RTTI header, CID `0xc4a5` instead of `0xc4a4`
+(ARM-4) — and `playEffect` (`0x004bc3d0`), its latch write (`0x004bc419`),
+`update` (`0x004bc650`) and `status` (`0x004bbad0`) all behave the same way. So
+there is no client-only per-frame mechanism to find: there never needed to be
+one.
 
 `Armor+0x38` is current `hitPoints` — both `setHitPoints` and `getHitPoints`
 touch it — which is what `playEffect` tests against §1's 0.001 epsilon before
@@ -270,17 +301,59 @@ templates under its own `objects/Vegetation/BreakableTree/` do declare one, as
 do FH's `EU_pine6_M1_nosway` and DC_Final's `SniperBush_deploy`. Destructible
 vegetation is a mod feature built on exactly this component.
 
+## 9. What else in the engine reads an Armor
+
+Settled 2026-09-17 (ARM-6, ARM-7), by mapping every `push $0xc4a4` — the
+argument pair of `getComponent(0xc4a4, 0xc4a4)` — to its enclosing symbol.
+145 call sites across 56 functions, swept twice at different widths.
+
+**Nothing in the drivetrain or the turret path is among them (ARM-6).** Not
+`PhysicsEngine::updatePhysics`, not `getCurrentDifferentialRPM` or
+`getCurrentRatio`, not `RotationalBundle::calculateAndClipAngle`, `setState` or
+`handlePlayerInput`. A critically damaged vehicle therefore drives and traverses
+exactly as a healthy one; what ends it is §2's once-per-second tick. If a player
+remembers a burning tank as sluggish or stiff, that is not this engine doing it.
+
+Five physics subnodes do query an Armor and look, at first glance, like where
+such a rule would live — `Engine`, `Wing`, `Spring`, `Bundle` and
+`FloatingBundle`, all inside `handleMessage`. They are not: in both
+`Engine::handleMessage` (`0x0823e730`) and `Wing::handleMessage`
+(`0x08250bf0`) the call after `getComponent` is vtable `+0x94`, which the
+82-slot dump resolves to `Armor::isSendingMessage()` (`0x081741c0`). Message
+plumbing, not a damage gate.
+
+**What does read an Armor's state (ARM-7).** `isDestroyed()` (call `+0xc8`,
+`0x08174300`) gates entry-point validation: `validateBFEntryPoint`
+(`0x0831d5f0`, call at `0x831d68f`) and `BFfindEntryPoint` (`0x0831d770`, call
+at `0x831d911`) each resolve the Armor and reject the candidate when it returns
+true — you cannot spawn into or select a wrecked vehicle's entry point. That
+closes [seats-and-entry-points.md](seats-and-entry-points.md)'s own open item,
+which had the check's existence but not what it tested.
+
+`PlayerControlObject::enter()` queries `isCriticalDamaged()` (call `+0xcc`,
+`0x08174320`) at `0x8317095`, and on true calls
+`getHpLostWhileCriticalDamage()` (call `+0xd4`, `0x08174390`) at `0x83172b9`
+before rejoining the normal entry flow. What consumes that float is untraced, so
+the consequence of entering a burning vehicle is open — do not build a "cannot
+enter" rule on it. `exit(bool)` also resolves an Armor (`0x83180b7`) but only to
+call `setLastCollisionHeight` (`+0xf8`).
+
 ## Open
 
-- **ARM-1**: whether the **client** re-evaluates the `addArmorEffect` tier
-  continuously. On the dedicated server it cannot — the latch at `Armor+0x128`
-  is set once and never cleared (§8). This is the one question standing between
-  the viewer and a correct burning vehicle, and only `BF1942.exe` can answer
-  it.
-- **Q5, never investigated**: whether anything reads `isCriticalDamaged` in the
-  drive or turret path — i.e. whether the engine itself disables a burning
-  vehicle, or whether it simply dies within seconds. `tank-driving.md` and
-  `manned-guns.md` do not have it either.
+- **ARM-7**: what `PlayerControlObject::enter()` does with
+  `getHpLostWhileCriticalDamage()`'s return value, and an independent check of
+  `[this+0x60]`'s dynamic type there. Until both are settled, the consequence
+  of entering a critically damaged vehicle is unknown — the call is real, the
+  effect is not established.
+- **PCO-1**: `PlayerControlObject::handleFrameUpdate` (`0x08318d20`) calls
+  `damageAllAttachedSoldiers` at `0x8318eae`, gated by per-frame accumulators
+  `+0x19c`/`+0x17c` and a template threshold at `+0x22c`, independent of Armor.
+  What that gate measures — G-force, roll angle, something else — is unread.
+  It is the best remaining candidate for why a burning vehicle *feels*
+  undriveable: its crew keeps taking damage and the player bails.
+- **HP-13**: what the client does on receipt of `0x13`/`0x14`/`0x15`. Still
+  unread after two rounds; the client budget went to the Armor class and the
+  entry gates.
 - **The wreck**: what `status()` does past setting `isDestroyed` — whether the
   wreck is a configuration swap on the same object, a separately spawned
   template, or a flag-selected alternative; how long it lives; whether it stays
