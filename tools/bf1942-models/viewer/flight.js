@@ -369,6 +369,16 @@ export class Vehicle {
     // a RotationalBundle), so re-index rather than leaving them frozen.
     this.collect();
     this.setFirstPerson(this.firstPerson);
+    // The graft above reparents nodes and the swap only toggles `visible`;
+    // neither composes a matrix. The interior arrives whole seconds after the
+    // seat was taken, and a seat vacated in the meantime is back in
+    // freezeStatics' frozen set (map.html), whose per-frame walk is a no-op --
+    // so the interior would keep the cockpit glb's own world matrix, which on
+    // Wake left `CorsairCockpitInternal` 1,441 m from its own seat, hidden but
+    // one `setFirstPerson(true)` away from being drawn there, and reported by
+    // `__matrixDrift` ever after. Compose it once here, where the graft
+    // happens (features/mesh-viewer-performance, rule 2).
+    this.node.updateMatrixWorld(true);
     return this;
   }
 
