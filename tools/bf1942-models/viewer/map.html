@@ -565,9 +565,9 @@
       <span>Reset</span>
     </button>
   </div>
+  <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; M map &middot; Esc</div>
   <div id="crosshair" hidden><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
-  <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <div id="gate"><span>Tap or click to fly</span></div>
   <div id="gl-lost" hidden>
     <div class="gl-lost-card">
@@ -4755,17 +4755,40 @@ const STANCE_NATION = { us: 'us', ger: 'ger', brit: 'brit', rus: 'rus', jp: 'jap
 // The kit's own health-bar art, memoised: `kitLoadout` allocates a small
 // object per call, so this only re-resolves it when the level/team/kit
 // actually changed instead of on every rendered frame
-// (features/mesh-viewer-performance, rule 5).
-let kitArtKey = null;
+// (features/mesh-viewer-performance, rule 5). Compared field by field, not
+// via a joined-string key: a template literal built fresh every call to
+// throw away immediately is itself the per-frame allocation rule 5 rules out.
+let kitArtDir = null;
+let kitArtTeam = null;
+let kitArtKitName = null;
 let kitArtCache = null;
 function kitHealthArt(team, kitName) {
-  const key = `${currentDir}|${team}|${kitName}`;
-  if (key !== kitArtKey) {
-    kitArtKey = key;
+  if (team !== kitArtTeam || kitName !== kitArtKitName || currentDir !== kitArtDir) {
+    kitArtDir = currentDir;
+    kitArtTeam = team;
+    kitArtKitName = kitName;
     const resolved = kitLoadout(team, kitName).kit;
     kitArtCache = (resolved && loadouts?.kits?.[resolved]) || null;
   }
   return kitArtCache;
+}
+
+// The stance icon's own nation, memoised the same way and for a bigger
+// reason: `teamNation` allocates a `Map` and walks every control point on
+// the level (found while reviewing this track — it was being called
+// unmemoised, once per rendered frame, the exact per-frame-allocation-plus-
+// O(n)-scan shape rule 5 exists to catch). The team's nation cannot change
+// without a fresh spawn, so this only re-runs it when the team or level did.
+let nationArtDir = null;
+let nationArtTeam = null;
+let nationArtCache = null;
+function stanceNation(team) {
+  if (team !== nationArtTeam || currentDir !== nationArtDir) {
+    nationArtDir = currentDir;
+    nationArtTeam = team;
+    nationArtCache = STANCE_NATION[teamNation(team)] || (team === 1 ? 'ger' : 'us');
+  }
+  return nationArtCache;
 }
 
 /**
@@ -4773,7 +4796,8 @@ function kitHealthArt(team, kitName) {
  * rendered frame (HUD-3: the engine itself recomputes this HUD once per
  * `Renderer_drawFrame`, not the 30Hz tick) — called from `frame()`, right
  * before `gameHud.paint()`. Writes plain fields on an existing object only;
- * nothing here allocates per call except the memoised path above.
+ * the nation and kit-art lookups are memoised above (rule 5), so the only
+ * per-call allocation left is the display-string template literal itself.
  */
 function updateSoldierHud() {
   const vars = gameHud.vars;
@@ -4791,8 +4815,7 @@ function updateSoldierHud() {
   vars['Weapon/ShowWeaponIcon'] = onFootActive && !!handWeapon;
   if (!onFootActive) return;
 
-  const nationCode = teamNation(deployTeamId);
-  const iconNation = STANCE_NATION[nationCode] || (deployTeamId === 1 ? 'ger' : 'us');
+  const iconNation = stanceNation(deployTeamId);
   const stanceWord = STANCE_TEXTURE[soldier.stance] || 'standing';
   vars['Soldier/SoldierIcon'] = `Soldier/Icon_${iconNation}_soldier_${stanceWord}.tga`;
 
