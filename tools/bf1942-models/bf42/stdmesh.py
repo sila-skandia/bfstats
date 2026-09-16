@@ -4,7 +4,8 @@ Layout below follows the reference implementation in BfMeshView's `modStdMesh.ba
 (github.com/art567/BfMeshView), cross-checked against the engine where the
 corpus in `features/bf1942-engine-reference/` has read it.
 
-    u32   version              9 or 10
+    u32   version              8, 9 or 10 (client 0x005b61f0 tests 7 < v < 0xb;
+                               lnxded loadHeader 0x083a6200 agrees)
     u32   unknown              0
     f32   boundsMin[3]
     f32   boundsMax[3]
@@ -311,7 +312,10 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
     c = _Cursor(data)
 
     version = c.u32()
-    if version not in (9, 10, 11):
+    # SM-8: the engine accepts exactly 8, 9 and 10 (client 0x005b61f0 tests
+    # 7 < v < 0xb; lnxded loadHeader 0x083a6200 agrees). This reader used to
+    # accept 11, which no installed file is, and reject 8, which some are.
+    if version not in (8, 9, 10):
         raise MeshError(f"{name}: unexpected version {version}")
     c.u32()  # always zero
 
