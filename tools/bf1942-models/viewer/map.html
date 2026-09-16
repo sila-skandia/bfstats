@@ -7694,10 +7694,6 @@ if (params.has('shots')) {
       },
     };
   };
-  // P1's `hud.js` contract (`hud.vars['Engine/Var'] = x`) — see `hudBridge`'s
-  // own declaration, above, for why this worktree publishes it under a
-  // different name than the briefing's `hud`.
-  window.__hud = hudBridge;
   // Seed every random draw the shot path makes — the spread cone, the
   // flash roll, the recoil, the emitters' distributions — so two captures
   // of the same stepped frames are the same picture and a pixel diff
