@@ -613,7 +613,7 @@ import { GroundVehicle } from './ground.js';
 import * as GroundModule from './ground.js';
 import {
   VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
-  FireState, chainOnShot, readWorldPose,
+  FireState, chainOnShot, readWorldPose, pickNearest,
 } from './seats.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          WEAPON_HEADROOM } from './engine-audio.js';
@@ -3378,11 +3378,15 @@ function collectMannedGuns() {
       roundLifetime: 'data',
       tracerLength: 'data',
       // A bare gun/seat root never moves under its own power (no `Vehicle`
-      // instance backs it); a nested seat's own vehicle, if it has one, is
-      // paused for as long as that seat is active rather than the drivetrain
-      // seat — see `mannedActive()` — so there is no live velocity to add
-      // either way.
-      platformVelocity: () => null,
+      // instance backs it, so `aircraft`/`car` both stay null) — but a
+      // nested seat's own vehicle, if it has one, no longer freezes for as
+      // long as that seat is active (round 3's first disclosed gap: it now
+      // coasts, see `drive()`/`pilot()`'s own comments), so its velocity is
+      // real and live exactly like `vehicleGuns`' own copy of this option —
+      // the Sherman's hull machine gun fired while the hull is moving should
+      // inherit the hull's motion the same way its cannon does from the
+      // driver's seat.
+      platformVelocity: () => (aircraft || car)?.state.velocity ?? null,
     }))
     : [];
 }
@@ -3728,30 +3732,56 @@ const HUD_DRIVE = 'W/S drive and brake · A/D steer · C view · mouse look arou
   + 'R reset · 1-9 seats · E get out · Esc';
 const HUD_MANNED = 'Mouse aims · Space fires · 1-9 seats · E get out · Esc';
 
-/** Read the keyboard into the car and step the drive model. */
+/**
+ * Read the keyboard into the car and step the drive model.
+ *
+ * Round 3's first disclosed gap: this now runs every frame the vehicle
+ * exists, not only while its own root/driver seat is the one active. Before,
+ * `frame()`'s dispatch called this exclusively (never alongside `manned()`),
+ * so switching to a nested seat — the Sherman's own hull gunner — stopped
+ * `car.integrate(dt)` from ever being called again, freezing the hull's
+ * momentum, suspension and gravity dead rather than leaving it to coast on
+ * whatever throttle and steering the driver last set, the way it would if
+ * the driver had simply let go of the wheel instead of climbing to a
+ * different seat. Reading fresh keyboard input, firing this seat's own
+ * `vehicleGuns` and moving the camera all stay exclusive to the frames the
+ * driver's own root seat is actually the one occupied (`driving` below) —
+ * otherwise nobody is holding this wheel right now, and `manned()` (not this
+ * function) owns the camera and the trigger for whichever seat really is.
+ */
 function drive(dt) {
   if (!car) return;
-  const held = captured ? keys : EMPTY_KEYS;
+  const driving = occupancy.isActiveRoot();
+  if (driving) {
+    const held = captured ? keys : EMPTY_KEYS;
 
-  // One axis, three jobs — accelerate, brake, reverse — which is exactly the
-  // split `ground.js` reads off `c_PIThrottle`. Unlike the aircraft's
-  // latching quadrant this springs back to centre: a lifted pedal is engine
-  // braking, not a held power setting.
-  car.setInput('c_PIThrottle', axisToward(car.input('c_PIThrottle'),
-    (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0), dt));
-  car.setInput('c_PIYaw', axisToward(car.input('c_PIYaw'),
-    (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
-  // A Willys carries no guns, but the input costs nothing and whatever
-  // armed car arrives next inherits the trigger with it.
-  car.setInput('c_PIFire', held.has('Space') ? 1 : 0);
+    // One axis, three jobs — accelerate, brake, reverse — which is exactly the
+    // split `ground.js` reads off `c_PIThrottle`. Unlike the aircraft's
+    // latching quadrant this springs back to centre: a lifted pedal is engine
+    // braking, not a held power setting.
+    car.setInput('c_PIThrottle', axisToward(car.input('c_PIThrottle'),
+      (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0), dt));
+    car.setInput('c_PIYaw', axisToward(car.input('c_PIYaw'),
+      (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
+    // A Willys carries no guns, but the input costs nothing and whatever
+    // armed car arrives next inherits the trigger with it.
+    car.setInput('c_PIFire', held.has('Space') ? 1 : 0);
+  }
 
   car.integrate(dt);
 
+  // Kept unconditional rather than folded into `if (driving)` above: a
+  // vehicle's own weapon must stop the instant nobody is in the seat that
+  // fires it, and gating the *value* passed to `setFiring` on `driving` (not
+  // skipping the call) is what actually turns it off the same frame the seat
+  // stops being active, instead of leaving it latched at whatever it was
+  // firing the moment the seat switched away.
   guns.firstPerson = car.firstPerson;
   for (const group of vehicleGuns) {
-    guns.setFiring(group, car.input(group.stats.input || 'c_PIFire') > 0);
+    guns.setFiring(group, driving && car.input(group.stats.input || 'c_PIFire') > 0);
   }
 
+  if (!driving) return;
   const pose = view.update(dt);
   camera.position.copy(pose.position);
   camera.quaternion.copy(pose.quaternion);
@@ -3766,14 +3796,18 @@ function drive(dt) {
 }
 const driveFwd = new THREE.Vector3();
 
-// --- manned guns and bare seats: everything `drive()`/`pilot()` do not own -
+// --- manned guns and bare seats: the camera and trigger `drive()`/`pilot()`
+// stop owning once you are not the one driving --------------------------
 //
 // Any seat whose root is not a drivable `air`/`ground`/`tank` (a Defgun, the
 // AA guns, the Brownings — GUN-10, verify-r6.md's "manned gun" definition —
 // or a bare passenger/observer seat), and *every* nested seat regardless of
-// what its root is (the Sherman's own hull gunner, riding a vehicle
-// `drive()` otherwise knows how to steer). `frame()`'s dispatch runs this
-// instead of `pilot`/`drive` exactly when `mannedActive()` says so.
+// what its root is (the Sherman's own hull gunner, riding a vehicle whose own
+// physics `drive()` still steps every frame, coasting, per round 3's first
+// disclosed gap). `frame()`'s dispatch calls this *alongside* `pilot`/`drive`
+// exactly when `mannedActive()` says so — never instead of them any more:
+// the drivetrain's own momentum has to keep integrating even while `manned()`
+// holds the camera and the trigger for the seat you are actually sitting in.
 function mannedActive() {
   if (!occupancy) return false;
   return !(occupancy.isActiveRoot() && (aircraft || car));
@@ -4019,21 +4053,29 @@ const entryWorld = new THREE.Vector3();
  * own team check, and `validateBFEntryPoint`'s separate component check) —
  * this page has exactly one soldier and no second team's vehicles ever
  * appear as hostile, so there is nothing here for either gate to reject.
+ *
+ * Round 3's second disclosed gap: `pickNearest` (`seats.js`), not a bare
+ * `distance < best` compare, because more than one `EntryPoint` can sit at
+ * the exact same world position — the Sherman's driver and hull-gunner
+ * doors, M3A1's four passenger seats sharing one side door (confirmed
+ * against the live Wake scene: the Sherman's pair differs by ~1.1e-13 m,
+ * M3A1's four-way tie by exactly 0) — where a plain compare would let
+ * accumulated floating-point noise in each seat's own transform chain decide
+ * the winner instead of the level's own data. `entryPoints` is built by
+ * `collectEntryPoints()` in `surveyVehicle`'s own declaration order (root
+ * seat first, SEAT-22), so `pickNearest`'s "first within `TIE_EPSILON` wins"
+ * rule seats the driver ahead of the gunner at a shared Sherman door, and the
+ * lowest-numbered passenger PCO at M3A1's — the same seat order the number
+ * keys already use, not an arbitrary pick.
  */
 function nearestEntry() {
   if (!entryPoints) collectEntryPoints();
-  let best = null;
-  let bestDistance = Infinity;
-  for (const entry of entryPoints) {
+  return pickNearest(entryPoints, entry => {
     entry.node.getWorldPosition(entryWorld);
     const distance = Math.hypot(entryWorld.x - soldier.x,
       entryWorld.y - (soldier.y + 1), entryWorld.z - soldier.z);
-    if (distance <= entry.radius && distance < bestDistance) {
-      best = entry;
-      bestDistance = distance;
-    }
-  }
-  return best;
+    return distance <= entry.radius ? distance : Infinity;
+  });
 }
 
 /**
@@ -4196,14 +4238,18 @@ const exitFwd = new THREE.Vector3();
 
 /**
  * `exitPose`'s twin for a seat with no `Vehicle` instance behind it: a bare
- * gun/seat root has no simulated `.state` to read, and a nested seat's own
- * drivetrain (if it has one) is paused, not ticking, for as long as that seat
- * is active (`mannedActive()`'s own note on why `drive()`/`pilot()` do not
- * run that frame) — either way the ROOT's live world transform is the
- * accurate, current pose, never stale. Always the root's transform, not the
- * active seat's own: stepping out relative to a spinning turret's own frame
- * would swing the exit point with the aim, which is not what a hull door
- * does.
+ * gun/seat root has no simulated `.state` to read at all, so this reads the
+ * ROOT's own live world transform instead — `Object3D.matrixWorld`, not
+ * `Vehicle.state`, which is the only thing a bare seat has. For a nested seat
+ * of a vehicle that *does* have a drivetrain (the Sherman's hull gunner) that
+ * transform is not a stale snapshot either: `drive()`/`pilot()` keep
+ * integrating it every frame regardless of which seat is active (round 3's
+ * first disclosed gap), so stepping out while the hull is still coasting
+ * places the soldier at the tank's real current position, not wherever it
+ * was the moment the turret seat was taken. Always the root's transform, not
+ * the active seat's own: stepping out relative to a spinning turret's own
+ * frame would swing the exit point with the aim, which is not what a hull
+ * door does.
  */
 function exitPoseManned(occ) {
   const declared = occ.exitLocationNode()?.userData?.physics?.soldierExitLocation;
@@ -5773,38 +5819,52 @@ function axisToward(current, demand, dt) {
   return Math.abs(gap) <= rate ? demand : current + Math.sign(gap) * rate;
 }
 
-/** Read the keyboard into the aircraft's inputs and step the sim. */
+/**
+ * Read the keyboard into the aircraft and step the flight model.
+ *
+ * Round 3's first disclosed gap, `drive()`'s own twin: runs every frame the
+ * aircraft exists, not only while its own root/pilot seat is the one active,
+ * so a nested seat of a flyable root (a rear-gunner position, once one is
+ * enterable) cannot stop the airframe's own momentum and aerodynamics from
+ * integrating — see `drive()`'s comment for the full reasoning, which
+ * applies here unchanged. Reading fresh stick/rudder/throttle input and
+ * moving the camera stay exclusive to the frames the pilot's own root seat
+ * is actually the one occupied (`flying` below).
+ */
 function pilot(dt) {
   if (!aircraft) return;
-  const held = captured ? keys : new Set();
+  const flying = occupancy.isActiveRoot();
+  if (flying) {
+    const held = captured ? keys : new Set();
 
-  // W/S throttle. It latches rather than springs — you set a power setting and
-  // it stays there, which is what a throttle quadrant does.
-  const power = (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0);
-  if (power) {
-    aircraft.setInput('c_PIThrottle', Math.max(0, Math.min(1,
-      aircraft.input('c_PIThrottle') + power * dt)));
+    // W/S throttle. It latches rather than springs — you set a power setting and
+    // it stays there, which is what a throttle quadrant does.
+    const power = (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0);
+    if (power) {
+      aircraft.setInput('c_PIThrottle', Math.max(0, Math.min(1,
+        aircraft.input('c_PIThrottle') + power * dt)));
+    }
+
+    // A/D rudder, arrows for the stick.
+    aircraft.setInput('c_PIYaw',
+      axisToward(aircraft.input('c_PIYaw'),
+        (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
+    stick.roll = axisToward(stick.roll,
+      (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0), dt);
+    // Pitch is inverted, which is a real stick and the game's own default for
+    // aircraft: pull back to climb. Up arrow puts the nose down.
+    stick.pitch = axisToward(stick.pitch,
+      (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0), dt);
+    aircraft.setInput('c_PIRoll', stick.roll);
+    aircraft.setInput('c_PIPitch', stick.pitch);
+
+    // The trigger is an input like any other, so a replay frame that writes
+    // `c_PIFire` fires the guns without knowing a keyboard exists. Which gun a
+    // given input pulls is the gun's own business: `CorsairGuns` declares
+    // `c_PIFire` and `CorsairBombDummy` declares `c_PIAltFire`, and the extractor
+    // ships both, so nothing here names either one.
+    aircraft.setInput('c_PIFire', held.has('Space') ? 1 : 0);
   }
-
-  // A/D rudder, arrows for the stick.
-  aircraft.setInput('c_PIYaw',
-    axisToward(aircraft.input('c_PIYaw'),
-      (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
-  stick.roll = axisToward(stick.roll,
-    (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0), dt);
-  // Pitch is inverted, which is a real stick and the game's own default for
-  // aircraft: pull back to climb. Up arrow puts the nose down.
-  stick.pitch = axisToward(stick.pitch,
-    (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0), dt);
-  aircraft.setInput('c_PIRoll', stick.roll);
-  aircraft.setInput('c_PIPitch', stick.pitch);
-
-  // The trigger is an input like any other, so a replay frame that writes
-  // `c_PIFire` fires the guns without knowing a keyboard exists. Which gun a
-  // given input pulls is the gun's own business: `CorsairGuns` declares
-  // `c_PIFire` and `CorsairBombDummy` declares `c_PIAltFire`, and the extractor
-  // ships both, so nothing here names either one.
-  aircraft.setInput('c_PIFire', held.has('Space') ? 1 : 0);
 
   aircraft.integrate(dt);
 
@@ -5816,11 +5876,17 @@ function pilot(dt) {
   // the view: the pilot gets `em_1P_MuzzHeavy`'s 0.4 m sprite, an observer
   // outside gets the 1.76 m `MuzzHeavy_m1` mesh that would otherwise hang five
   // metres off the wing two metres from his eye.
+  //
+  // Unconditional like `drive()`'s own copy of this loop, and for the same
+  // reason: `driving`/`flying` gates the value, not the call, so the
+  // aircraft's own guns actually stop the frame nobody is in the seat that
+  // fires them rather than staying latched at whatever they were doing.
   guns.firstPerson = aircraft.firstPerson;
   for (const group of vehicleGuns) {
-    guns.setFiring(group, aircraft.input(group.stats.input || 'c_PIFire') > 0);
+    guns.setFiring(group, flying && aircraft.input(group.stats.input || 'c_PIFire') > 0);
   }
 
+  if (!flying) return;
   // The view rig owns all four modes and their smoothing; this just takes the
   // pose. It runs after `integrate` so an external camera hangs off this frame's
   // attitude rather than last frame's — at 55 m/s that is a metre of lag, and on
@@ -7217,29 +7283,40 @@ spawnFlagSelect.addEventListener('change', () => {
 
 const clock = new THREE.Clock();
 function frame(dt) {
-  if (optPilot.checked && mannedActive()) {
-    // A bare gun/seat root, or a nested seat of a vehicle whose own root
-    // `pilot`/`drive` would otherwise run — checked first so the two never
-    // both claim the camera the same frame.
-    //
-    // FOV correction lives here, not a one-time set on entry: switching seats
-    // moves between a manned gun and a drivetrain root without ever calling
-    // `enterVehicle` again, and neither `pilot()`/`drive()` nor `VehicleCamera`
-    // (outside this track) touch `camera.fov` at all, so whichever mode ran
-    // last otherwise leaves its FOV behind for the next one. Guarded on an
-    // actual change so a held seat costs one float compare, not an
-    // `updateProjectionMatrix()`, every frame.
-    if (camera.fov !== MANNED_GUN_FOV) {
-      camera.fov = MANNED_GUN_FOV;
+  if (optPilot.checked && occupancy) {
+    // Round 3's first disclosed gap: the occupied vehicle's own drivetrain
+    // physics steps every frame it exists, no matter which of its seats is
+    // actually active — `pilot()`/`drive()` now run unconditionally here
+    // (each gated internally on `occupancy.isActiveRoot()`, see their own
+    // comments) instead of only when that root seat was the one active, so a
+    // nested seat (the Sherman's hull gunner) leaves the hull coasting on its
+    // existing momentum rather than freezing it. A bare gun/seat root has no
+    // drivetrain to step either way — `aircraft`/`car` both stay null for
+    // one — so neither call does anything for it.
+    if (aircraft) pilot(dt);
+    else if (car) drive(dt);
+    if (mannedActive()) {
+      // A bare gun/seat root, or a nested seat of a vehicle whose own root
+      // `pilot`/`drive` just took its physics step above — the camera and
+      // the trigger are `manned()`'s alone from here, checked after so the
+      // two paths never both claim the camera the same frame.
+      //
+      // FOV correction lives here, not a one-time set on entry: switching seats
+      // moves between a manned gun and a drivetrain root without ever calling
+      // `enterVehicle` again, and neither `pilot()`/`drive()` nor `VehicleCamera`
+      // (outside this track) touch `camera.fov` at all, so whichever mode ran
+      // last otherwise leaves its FOV behind for the next one. Guarded on an
+      // actual change so a held seat costs one float compare, not an
+      // `updateProjectionMatrix()`, every frame.
+      if (camera.fov !== MANNED_GUN_FOV) {
+        camera.fov = MANNED_GUN_FOV;
+        camera.updateProjectionMatrix();
+      }
+      manned(dt);
+    } else if (camera.fov !== FLY_FOV) {
+      camera.fov = FLY_FOV;
       camera.updateProjectionMatrix();
     }
-    manned(dt);
-  } else if (optPilot.checked && aircraft) {
-    if (camera.fov !== FLY_FOV) { camera.fov = FLY_FOV; camera.updateProjectionMatrix(); }
-    pilot(dt);
-  } else if (optPilot.checked && car) {
-    if (camera.fov !== FLY_FOV) { camera.fov = FLY_FOV; camera.updateProjectionMatrix(); }
-    drive(dt);
   } else if (optOnFoot.checked && soldier) {
     onFoot(dt);
   } else {
@@ -7476,6 +7553,16 @@ if (params.has('shots')) {
   window.__nearEntry = () => nearEntry
     && { control: nearEntry.control, seatId: nearEntry.seatId };
   window.__switchSeat = switchSeat;
+  // Group-index bookkeeping, independent of `occupancy` (which reads null the
+  // instant a seat is vacated) so a headless enter/exit cycle can check the
+  // *count* left behind afterwards, not just while still seated: a group
+  // `releaseGuns()` failed to splice out of `guns.groups` would otherwise be
+  // invisible until a second entry's own `collect()` piled a duplicate on top
+  // of it — this is `guns.groups.length` itself, so a leak shows up as soon
+  // as the first exit leaves it above 0 with nobody occupying anything.
+  window.__gunGroups = () => ({
+    vehicle: vehicleGuns.length, manned: mannedGuns.length, total: guns.groups.length,
+  });
   window.__hudVars = () => (window.__hud && window.__hud.vars) || null;
   // Turning, for the screenshot harness. It calls the same `lookDelta` a
   // pointer-lock `pointermove` calls, so it exercises the real routing rather

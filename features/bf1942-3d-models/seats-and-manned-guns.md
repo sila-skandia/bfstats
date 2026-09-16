@@ -75,6 +75,20 @@ Sherman's hull-gunner door were all unreachable before this, confirmed via
   `VehicleOccupancy`, a drivetrain if the root has one, and activates
   whichever seat's door you actually walked up to — direct entry into a
   nested seat (the hull gunner) works without ever sitting in the root first.
+  **Fixed in round 3**: `nearestEntry` picks among candidates with
+  `seats.js`'s new `pickNearest`, not a bare `distance < best` compare — the
+  Sherman declares a separate `EntryPoint` for the driver and the hull gunner
+  at each of its two doors, and both compose to the *same* world position
+  (confirmed against the live Wake scene: ~1.1457e-13 m apart, double-
+  precision noise, not real data — M3A1's four passenger seats go one further
+  and tie at exactly 0 m). A plain compare let whichever candidate's own
+  transform chain happened to round a hair smaller win the door, effectively
+  at random; `pickNearest` only lets a candidate more than `TIE_EPSILON`
+  (1e-6 m — far above the measured noise, far below any real gap between two
+  distinct doors) closer displace the incumbent, so the first one reached in
+  `surveyVehicle`'s own declaration order — SEAT-22, root seat first — wins
+  every time. At a shared Sherman door that seats the driver, matching where
+  the number keys already put position 0.
 - **Switch**: the number row, `c_PIMenuSelect1..9` → seat position 0..8
   (SEAT-23/24, verify-r5.md), looked up in `VehicleOccupancy.seatIdAt` —
   declaration order, root always position 0 (Sherman: driver = key 1,
@@ -162,17 +176,31 @@ vehicle fire to Space for both the aircraft and the car, and reaching for the
 on-foot mousedown state machine (`triggerHeld`/`clickQueued`) instead would
 mean editing code scoped to the hand weapon.
 
-**Approximation, not open**: `drive()`/`pilot()`'s WASD/Space input reading is
-outside this track's ownership and unconditional — it does not know how to
-gate itself on which seat is active. Because `frame()`'s dispatch is
-exclusive (`manned()` *or* `drive()`, never both the same frame), a vehicle's
-own physics integration simply pauses for as long as a non-root seat is
-active, rather than continuing under momentum with WASD ignored. A stationary
-gun mount is unaffected; a moving vehicle whose driver switches to a gun seat
-mid-drive will freeze in place rather than coast. Fixing this needs a change
-inside `drive()`/`pilot()` (gating their own input read on
-`occupancy.isActiveRoot()`), which is outside this track's file ownership —
-flagged here rather than made.
+**Fixed in round 3** (this section originally flagged it as an approximation
+outside the prior round's file ownership): `frame()`'s dispatch is no longer
+exclusive between `manned()` and `drive()`/`pilot()`. It now calls
+`pilot()`/`drive()` unconditionally whenever `occupancy` exists — each gated
+*internally* on `occupancy.isActiveRoot()` — so `car`/`aircraft.integrate(dt)`
+steps every frame the vehicle exists, no matter which seat is active, while
+reading fresh WASD/Space input, firing the seat's own `vehicleGuns` and
+moving the camera stay exclusive to the frames the driver's own root seat
+really is the one occupied. A moving Sherman whose driver switches to the
+hull gunner now keeps coasting on its last throttle/steering — proven
+headless (T2's final report): 0.5 s of throttle build a real ~11 m baseline,
+then two full seconds *while the gunner seat was active* moved the hull a
+further ~40 m each, with before/after screenshots showing the background
+scenery having visibly scrolled past. `vehicleGuns`' own firing loop is kept
+unconditional too, but the *value* passed to `setFiring` is now
+`isActiveRoot() && ...` rather than the call itself being skipped — a
+vehicle's weapon now actually stops the instant its own seat is vacated
+(mid-fire and switch seats: previously it would have stayed latched firing,
+since nothing ran `setFiring(false)` again until the driver's seat became
+active once more), rather than only while `drive()`/`pilot()` happened to be
+the mode running. `mannedGuns`' own `platformVelocity` (previously hard-coded
+`null`, correct only because the vehicle used to be provably frozen while
+nested) now reads the live `(aircraft||car)?.state.velocity` exactly like
+`vehicleGuns`' copy, so a hull machine gun fired from a coasting tank
+inherits the hull's motion the same way its cannon already did.
 
 ## HUD variables fed (BRIEFING2.md's contract)
 
