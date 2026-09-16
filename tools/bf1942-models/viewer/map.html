@@ -3352,6 +3352,35 @@ function collectGuns() {
       platformVelocity: () => (aircraft || car)?.state.velocity ?? null,
     })
     : [];
+  // `vehicle.node` is the whole vehicle -- root plus every nested seat -- so
+  // the collect above also builds a group for a nested seat's own FireArms
+  // (the Sherman's hull `Browning`). `mannedGuns`' own doc, just above,
+  // already promises that never happens ("folding a nested seat's FireArms
+  // into that same array would let the driver's Space bar also fire a hull
+  // gunner's own gun nobody is manning"), but nothing enforced it here:
+  // `drive()`/`pilot()` fire every `vehicleGuns` entry whose `stats.input`
+  // matches the vehicle's own held input, and the hull `Browning` binds the
+  // same `c_PIFire` the cannon does, so holding Space while driving fired it
+  // for real (shots incrementing, ammo draining) with nobody in that seat --
+  // reproduced headless, round 3 T2 review. Drop anything here that is not
+  // the root seat's own FireArms; a nested seat's gun gets its real group
+  // from `collectMannedGuns()` once someone actually sits in that seat, the
+  // same as a bare gun/seat root already works. `hideEffects`'s sweep above
+  // still walked the whole vehicle, so nothing above needs to change to keep
+  // hiding baked effects elsewhere in the tree -- this only decides which
+  // collected groups stay live for firing.
+  if (vehicle) {
+    const rootFireArms = new Set(occupancy.seatInfo(occupancy.rootId).fireArms);
+    const foreign = vehicleGuns.filter(group => !rootFireArms.has(group.node));
+    if (foreign.length) {
+      vehicleGuns = vehicleGuns.filter(group => rootFireArms.has(group.node));
+      for (const group of foreign) {
+        guns.setFiring(group, false);
+        const index = guns.groups.indexOf(group);
+        if (index >= 0) guns.groups.splice(index, 1);
+      }
+    }
+  }
   collectMannedGuns();
 }
 
