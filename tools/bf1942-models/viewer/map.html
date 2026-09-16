@@ -3936,18 +3936,27 @@ function feedVehicleHud() {
   // variant) shared by both panels' heat-bar copy — R2-30's own Sherman is the
   // real case this matters for, since its heat weapon is the coax (secondary),
   // not the cannon (primary): reading only `nodes[0]` would silently show no
-  // heat at all while the coax cooked.
-  const heated = [primary, secondary].find(s => s?.hasHeat);
+  // heat at all while the coax cooked. No array/closure here — this runs every
+  // tick `manned()` steps (rule 5, features/mesh-viewer-performance/README.md).
+  const heated = primary?.hasHeat ? primary : secondary?.hasHeat ? secondary : null;
   setHudVar('Overheat/OverHeat', heated ? heated.heat : null);
-  // Both reload-bar copies are fed as a fraction of `reloadTime` remaining,
-  // scaled to the `max: 1.0` the layout declares — direction (counts down to
-  // empty vs. fills up as reload completes) is not settled by anything in
+  // Both reload-bar copies are a fraction of `reloadTime` remaining, scaled to
+  // the `max: 1.0` the layout declares — direction (counts down to empty vs.
+  // fills up as reload completes) is not settled by anything in
   // verify-r2.md/verify-r6.md or `hud-layout.json`'s own metadata, so this is
   // an approximation: counts down from full (just started) to empty (ready).
-  const reloadFraction = state => (state && state.stats.reloadTime > 0)
-    ? state.reloadRemaining / state.stats.reloadTime : null;
+  // `reloadFraction` is a module-level function, not a closure allocated here,
+  // for the same per-tick reason as `heated` above.
   setHudVar('Ammo/ReloadTime', reloadFraction(primary));
   setHudVar('Ammo/ReloadTimeSecondary', reloadFraction(secondary));
+}
+
+/** `state.reloadRemaining/reloadTime` as a `[0,1]` fraction, or `null` when
+ *  there is nothing to show — see `feedVehicleHud`'s own comment on why this
+ *  lives at module scope instead of being defined inside it. */
+function reloadFraction(state) {
+  return state && state.stats.reloadTime > 0
+    ? state.reloadRemaining / state.stats.reloadTime : null;
 }
 
 // --- walking up to a seat ----------------------------------------------------
@@ -4271,6 +4280,13 @@ let flags = [];
 let prone = false;           // `c_PILie` is a toggle, not a hold
 const FLY_FOV = camera.fov;
 const FLY_NEAR = camera.near;
+// GUN-6 (verify-r6.md): a manned gun's own Camera never sets its own FOV in
+// vanilla (`setVehicleFov` — no vanilla vehicle calls it) and the render
+// view's own default is 57.30 degrees vertical. `enterVehicle` sets
+// `camera.fov = FLY_FOV` (60) on the way in for every kind alike — fine for
+// an aircraft/car, whose `VehicleCamera` owns the view already, but a manned
+// gun never gets that camera at all, so nothing else was ever correcting it.
+const MANNED_GUN_FOV = 57.3;
 
 /** Fill the flag picker from the level's own control points.
  *
@@ -6886,10 +6902,24 @@ function frame(dt) {
     // A bare gun/seat root, or a nested seat of a vehicle whose own root
     // `pilot`/`drive` would otherwise run — checked first so the two never
     // both claim the camera the same frame.
+    //
+    // FOV correction lives here, not a one-time set on entry: switching seats
+    // moves between a manned gun and a drivetrain root without ever calling
+    // `enterVehicle` again, and neither `pilot()`/`drive()` nor `VehicleCamera`
+    // (outside this track) touch `camera.fov` at all, so whichever mode ran
+    // last otherwise leaves its FOV behind for the next one. Guarded on an
+    // actual change so a held seat costs one float compare, not an
+    // `updateProjectionMatrix()`, every frame.
+    if (camera.fov !== MANNED_GUN_FOV) {
+      camera.fov = MANNED_GUN_FOV;
+      camera.updateProjectionMatrix();
+    }
     manned(dt);
   } else if (optPilot.checked && aircraft) {
+    if (camera.fov !== FLY_FOV) { camera.fov = FLY_FOV; camera.updateProjectionMatrix(); }
     pilot(dt);
   } else if (optPilot.checked && car) {
+    if (camera.fov !== FLY_FOV) { camera.fov = FLY_FOV; camera.updateProjectionMatrix(); }
     drive(dt);
   } else if (optOnFoot.checked && soldier) {
     onFoot(dt);
