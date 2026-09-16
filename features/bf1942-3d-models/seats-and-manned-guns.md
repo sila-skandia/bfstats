@@ -135,7 +135,19 @@ The gunner's eye is always the seat's own Camera node's live world pose
 (`readWorldPose`), read after the turret steps — GUN-5/6 confirm a gunner
 Camera never aims itself, it only rides the RotationalBundle chain it is
 parented under, so there is no cockpit/orbit/fly-by mode to speak of, unlike
-`VehicleCamera`'s four for a plane or car.
+`VehicleCamera`'s four for a plane or car. Its FOV is `frame()`'s own
+`MANNED_GUN_FOV` (57.3°, GUN-6's confirmed render-view default — no vanilla
+vehicle calls `setVehicleFov`), corrected every frame `manned()` is the active
+dispatch rather than once on entry: a review pass found `enterVehicle` set
+`camera.fov` to the free-fly default (60°) for every kind alike, and neither
+`pilot()`/`drive()`/`VehicleCamera` (outside this track) ever touch `fov` at
+all, so a manned gun kept whatever FOV the *previous* mode left behind,
+wrong the moment you first entered one and never fixed by switching seats.
+
+**Not simulated**: SEAT-13/13b's team/hostility gates on which door you can
+even use — this page has one soldier and no second team's vehicle for either
+gate to reject, so there is nothing to exercise it against (noted in
+`nearestEntry`'s own comment, not previously documented anywhere).
 
 Firing goes through the existing `gunfire.js`, scoped per seat (`mannedGuns`,
 rebuilt on every seat switch) rather than the whole vehicle at once — sharing
