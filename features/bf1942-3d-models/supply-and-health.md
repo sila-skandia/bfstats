@@ -58,15 +58,30 @@ SAFE_FALL_SPEED   = JUMP_SPEED * 2   ≈ 10.8 m/s  (~4 m of drop)
 LETHAL_FALL_SPEED = 25 m/s                        (~21 m of drop)
 ```
 
-`onFoot()` tracks the steepest downward speed seen while airborne
-(`soldier.velocityY`) and, the instant `soldier.grounded` reports true again,
-ramps `0..1` linearly between the two thresholds and applies
-`ramp * maxHitPoints` as damage — ordinary traversal costs nothing, a hard
-fall is progressively worse, and anything past `LETHAL_FALL_SPEED` is a kill.
-**Open question this approximation stands on: R4-18** — replace this ramp
-outright if the real formula ever surfaces (the same two leads it was last
-seen from: `ResponsePhysics::addFriction` `0x0825b6e0`,
+Both thresholds are converted once to the heights that produce them
+(`v^2 = 2|g|h`; a soldier's drag is inert enough over any survivable drop —
+`physics.js`'s own terminal-velocity note, ~730 m/s — that this inversion is
+exact to the precision this ramp needs). `onFoot()` tracks the highest `y`
+seen while airborne (a jump's own apex, when it was a jump) and, the instant
+`soldier.grounded` reports true again, ramps `0..1` linearly between
+`SAFE_FALL_HEIGHT` and `LETHAL_FALL_HEIGHT` against the actual drop and
+applies `ramp * maxHitPoints` as damage — ordinary traversal costs nothing, a
+hard fall is progressively worse, and anything past `LETHAL_FALL_SPEED` is a
+kill. **Open question this approximation stands on: R4-18** — replace this
+ramp outright if the real formula ever surfaces (the same two leads it was
+last seen from: `ResponsePhysics::addFriction` `0x0825b6e0`,
 `PhysicsNode::updatePhysics` `0x082543d0`).
+
+Tracked as a height rather than a sampled velocity on the adversarial
+reviewer's pass over this round: `SoldierBody#settle()` zeroes `velocity.y`
+in the very same `step()` call that flips `grounded` true (it has to, to
+plant the body on the floor), so a peak read from `soldier.velocityY`
+*after* `step()` returns always misses the last partial tick's own
+acceleration — this was the round's own first cut, and it under-reported a
+12 m drop's damage by about 5% against the closed-form prediction (see
+Known issues). A landed body's `y` is the ground height exactly, never a
+clamped derivative of it, so the height the body actually fell is exact at
+any tick rate.
 
 `window.__damage(n)` (the round briefing's own ask) goes through the same
 `applyDamage` sign dispatch, so a test can move HP without waiting on a
@@ -166,12 +181,16 @@ for a mod.
 
 ## Performance
 
-`SupplyField.tick` runs from `onFoot`, every frame, over all 52 depots. The
-common case (`_elapsed < 0.5`) returns a shared, `Object.freeze`d `NO_EFFECT`
-— no allocation on the per-frame path (rule 5). A depot that actually fires
-allocates one small result object, at most twice a second per depot — far
-below the threshold the mesh-viewer-performance pass was concerned with
-(shot/particle-rate allocation), so no further pooling was done here.
+`SupplyField.tick` runs from `onFoot`, every frame, over all 52 depots. Each
+depot's own common case (`_elapsed < 0.5`) returns a shared, `Object.freeze`d
+`NO_EFFECT`, and a depot that actually fires allocates one small result
+object at most twice a second — far below the threshold the
+mesh-viewer-performance pass was concerned with (shot/particle-rate
+allocation). `SupplyField.tick` itself, on the review pass, was found
+allocating a fresh `{gaveAmmo, healed}` summary on every single call
+regardless — its one caller (`onFoot`) never reads it, so this was rule 5's
+exact shape of waste with zero consumers; it now mutates one instance-level
+result object in place instead, matching `NO_EFFECT`'s own pattern.
 `collectSupplyDepots`'s scene walk runs once per level load, not per frame.
 
 ## Tests
@@ -217,12 +236,14 @@ measured off the scene graph.
   `rounds` `2 -> 20`, `mags` `1 -> 5` — exactly the full loadout
   `ensureHandWeapon` equips fresh with.
 - **Fall damage, end to end** (`window.__dropFromHeight`, driving the real
-  physics integration, not `Armor.applyDamage` directly): a 2.5m drop cost
-  nothing (`hp` unchanged, below `SAFE_FALL_SPEED`'s ~4m); a 12m drop cost
-  16.1 HP (predicted from the ramp: impact speed `sqrt(2×14.73×12) ≈ 18.8
-  m/s`, ramp `0.563`, `0.563×30 ≈ 16.9` — matches to within the
-  peak-capture approximation's own one-frame lag); a 40m drop was lethal
-  (`hp: 0, destroyed: true`).
+  physics integration, not `Armor.applyDamage` directly), re-measured after
+  the height-tracking fix above, on open ground (a spawn with a low roof
+  nearby had been quietly capping the drop short — see Known issues): a
+  2.5m drop cost nothing (`hp` unchanged, below `SAFE_FALL_HEIGHT`'s
+  ~3.96m); a clean 12m drop cost 13.97 HP against a closed-form prediction
+  of `sqrt(2×14.73×12) ≈ 18.8 m/s` -> ramp `0.466` -> `0.466×30 ≈ 13.98` —
+  matching to within 0.01 HP, not the ~0.8 HP gap the velocity-sampled first
+  cut left; a 40m drop was lethal (`hp: 0, destroyed: true`).
 
 ### Pixel evidence
 
@@ -247,6 +268,16 @@ still the real captured data):
   scene (name, world position, radius, team, `workOnSoldiers`/`Vehicles`,
   `health`, `ammoTypes`) — the source the heal/ammo depots above were picked
   from, not hand-picked coordinates.
+
+The adversarial reviewer's own pass re-ran all three scenarios independently
+(own script, own browser session, `wake-depots.json`'s coordinates but not
+this session's screenshots) and captured its own crops under
+`scratchpad/p3-review/`: `heal-canvas-2.jpg`, `ammo-canvas-2.jpg` (both the
+correct first-person view via `window.__renderer.domElement` directly —
+`document.querySelectorAll('canvas')` also matches `#fullmap-canvas`,
+1024x1024, so a `width >= 1000` filter is not enough to exclude it either),
+and `fall-lethal-canvas-2.jpg` (the `Landing_Beach` re-run, sand and palm
+trees, `hp: 0`).
 
 ## Known issues / open items
 
@@ -281,3 +312,19 @@ still the real captured data):
 - Fall damage (R4-18) and the ammo per-magazine mechanics (SUP-23) are both
   viewer approximations standing on an explicitly open engine question —
   see the sections above for exactly what to replace if either surfaces.
+- **Fixed on the adversarial review pass**: the fall-damage ramp sampled
+  `soldier.velocityY` *after* `soldier.step()` returned, which is always
+  post-`settle()` and therefore already zeroed on the very tick a landing is
+  detected — a systematic ~5% undercount (see Fall damage, above), not
+  random noise, confirmed by deriving the exact expected miss (one tick's
+  gravity) before re-running anything. Switched to tracking the highest `y`
+  reached while airborne and ramping on the actual drop instead — exact
+  regardless of tick timing, and it also does not care how many real
+  animation-frame ticks land between two `__renderOnce` calls, unlike a
+  velocity sample would.
+- **The_Airfield's own spawn point has a low ceiling** (a roof or similar
+  geometry roughly 5.5 m above the ground) that silently capped an
+  `__dropFromHeight(12)` there to a ~7.3 m actual fall — caught by logging
+  the actual start/end `y` alongside the intended height rather than trusting
+  the parameter. Re-run on `Landing_Beach`'s open sand for a clean 12 m
+  drop. Worth knowing for any future fall-damage check at that spawn.

@@ -185,20 +185,30 @@ export class SupplyDepot {
 /** A level's whole set of depots, ticked and queried together so `map.html`'s
  *  per-frame code stays a couple of calls. */
 export class SupplyField {
-  constructor(depots = []) { this.depots = depots; }
+  constructor(depots = []) {
+    this.depots = depots;
+    // Mutated and returned in place rather than allocated fresh every call
+    // (features/mesh-viewer-performance/README.md rule 5) — `onFoot` calls
+    // `tick` unconditionally every frame, so a literal here would be exactly
+    // the per-frame allocation rule 5 exists to catch, for a summary its one
+    // caller does not even read (the HUD icon vars come from `canHeal`/
+    // `canRearm` below instead, since those are continuous, not throttled).
+    this._result = { gaveAmmo: false, healed: false };
+  }
 
   /** `SupplyDepot.tick` against every depot, folded into one `{gaveAmmo,
-   *  healed}` for the frame (the caller — the on-foot soldier only, this
-   *  round — reads it for tests; the HUD icon vars come from `canHeal`/
-   *  `canRearm` below instead, since those are continuous, not throttled). */
+   *  healed}` for the frame — a caller that keeps a reference across two
+   *  calls sees it change, by design; read it before the next `tick()`. */
   tick(dt, target) {
-    let gaveAmmo = false, healed = false;
+    const result = this._result;
+    result.gaveAmmo = false;
+    result.healed = false;
     for (const depot of this.depots) {
       const r = depot.tick(dt, target);
-      if (r.gaveAmmo) gaveAmmo = true;
-      if (r.healed) healed = true;
+      if (r.gaveAmmo) result.gaveAmmo = true;
+      if (r.healed) result.healed = true;
     }
-    return { gaveAmmo, healed };
+    return result;
   }
 
   /** `ShowReloadIcon` (SUP-34/showAmmoIconInMenu): is any depot in range,
