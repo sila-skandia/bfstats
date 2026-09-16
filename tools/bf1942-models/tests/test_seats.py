@@ -95,6 +95,22 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("Sherman", order[0])
         self.assertEqual("shermanBrowning_PCO1", order[1])
 
+    def test_a_nested_pco_buckets_by_control_tag_not_by_its_own_node_name(self) -> None:
+        # Confirmed against the live Wake scene headless this round: a second
+        # Sherman instance's `shermanBrowning_PCO1` node is itself renamed
+        # `shermanBrowning_PCO1_1` (scene-wide name disambiguation) while its
+        # own descendants keep reporting the bare name as `control` --
+        # bucketing the PCO by its own (possibly renamed) node name instead
+        # split one seat into an empty `.node`-only half and a fully-armed
+        # half with no `.node`, and pushed the real gunner to seat position 2.
+        r = self.results["renamedGunnerNode"]
+        self.assertEqual(["Sherman", "shermanBrowning_PCO1"], r["order"])
+        self.assertTrue(r["gunnerSeatExists"])
+        self.assertTrue(r["gunnerSeatHasNode"])
+        self.assertEqual(["Browning"], r["gunnerSeatFireArms"])
+        self.assertEqual(1, r["gunnerSeatAxisCount"])
+        self.assertEqual("gun", r["gunnerKind"])
+
     # --- every PlayerControlObject's own EntryPoint is found ----------------
 
     def test_findAllVehicleRoots_sees_the_bare_gun_and_the_tank(self) -> None:
@@ -173,11 +189,12 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertTrue(after["canFire"])
 
     def test_heat_clamps_at_one_and_blocks_fire_there(self) -> None:
-        # GUN-12 (verify-r6.md, corrected): the real gate is
-        # `template+0x300 > template+0x304`, strictly greater -- this
-        # viewer's own [0,1] heat scale reproduces that at its ceiling (>=1
-        # on a scale that never exceeds 1 is the same comparison at its one
-        # reachable point, per `FireState.canFire`'s own comment).
+        # GUN-12's corrected `getHasHeat()` reading (`template+0x300 >
+        # template+0x304`) is a different, template-level predicate, not this
+        # runtime gate -- see `FireState.canFire`'s own comment. Blocking at
+        # heat>=1 on this viewer's [0,1] scale follows the corrected report's
+        # Viewer Recipe ("clamp [0,1] ... block fire ... on reaching 1.0"),
+        # an approximation of the real trigger, not a confirmed comparison.
         self.assertTrue(self.results["fireState"]["heatClampsAtOne"])
 
     def test_overheat_blocks_fire_for_the_declared_delay_then_releases_it(self) -> None:
