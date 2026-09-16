@@ -318,5 +318,250 @@ class GroundModelTests(unittest.TestCase):
         self.assertLess(camera["y"], 1.7)
 
 
+class TrackedVehicleTests(unittest.TestCase):
+    """`TrackedVehicle`: a Sherman and an M3A1 driven, not read.
+
+    Same harness process as `GroundModelTests` above (`run_harness()` builds
+    both fixtures in one node run), and the same split in what a failure
+    means: the gear-ratio curve and the differential-steering formula are
+    verify-r7.md's byte-exact claims (TANK-3/6/7/8, TANK-10) and these
+    assertions are exact; everything downstream of them — top speed, turn
+    rate, how stiff a track resists sliding — is this file's own [free]
+    tuning (`TANK` in `ground.js`), asserted only as a loose, survivable
+    band, the same convention `GroundModelTests` already uses for Willy's.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    # --- the corrected gear-ratio curve, in isolation -----------------------
+
+    def test_the_gear_ratio_curve_is_corrected_not_a_smooth_spline(self) -> None:
+        # The whole reason this track exists. Sherman and Willy (5 gears)
+        # land on an authored control point; the M3A1 (4 gears) does not,
+        # and a smooth interpolation between the five *named* points would
+        # have said ~5.51 where the real array says 17.5.
+        ratios = self.results["tankRatios"]
+        self.assertAlmostEqual(4.0, ratios["sherman"], places=4)
+        self.assertAlmostEqual(7.0, ratios["willy"], places=4)
+        self.assertAlmostEqual(17.5, ratios["m3a1"], places=4)
+        self.assertNotAlmostEqual(5.51, ratios["m3a1"], places=1)
+
+    def test_every_other_gear_count_reduces_to_differential_times_3_5(self) -> None:
+        # Only numberOfGears of 1 or 5 ever touch the curve's authored shape;
+        # sampled here at 3.5*differential = 12.25 across every count a mod
+        # could plausibly declare that is neither.
+        for ratio in self.results["tankRatios"]["offCurve"]:
+            self.assertAlmostEqual(12.25, ratio, places=4)
+
+    def test_differential_rpm_matches_tank_10_byte_exact(self) -> None:
+        d = self.results["diffRPM"]
+        self.assertAlmostEqual(1.0, d["straightFull"], places=4)
+        self.assertAlmostEqual(0.25, d["halfLockOuter"], places=4)
+        # 1*(1+1.5*0.5) = 1.75, clamped to the formula's own +-1.
+        self.assertAlmostEqual(1.0, d["halfLockInner"], places=4)
+        self.assertAlmostEqual(1.0, d["centreline"], places=4)
+
+    def test_tank_17_zero_throttle_is_zero_on_both_sides(self) -> None:
+        d = self.results["diffRPM"]
+        self.assertAlmostEqual(0.0, d["noThrottleRight"], places=6)
+        self.assertAlmostEqual(0.0, d["noThrottleLeft"], places=6)
+
+    # --- the chassis reads off the tree, for two very different tanks ------
+
+    def test_sherman_chassis_is_discovered_not_declared(self) -> None:
+        # Objects/Vehicles/Land/Sherman: two driven bogies a side (TANK-14's
+        # own "x2 per side"), no steered axle, differential 4 over 5 gears.
+        chassis = self.results["shermanChassis"]
+        self.assertEqual(12, chassis["wheels"])
+        self.assertEqual(4, chassis["driven"])
+        self.assertEqual(8, chassis["dummy"])
+        self.assertEqual(0, chassis["steered"])
+        self.assertEqual(4, chassis["engine"]["differential"])
+        self.assertEqual(5, chassis["engine"]["numberOfGears"])
+        self.assertAlmostEqual(4.0, chassis["ratio"], places=4)
+        # Two wheels a side, none dead on the centreline.
+        sides = chassis["drivenSides"]
+        self.assertEqual(2, sides.count(-1))
+        self.assertEqual(2, sides.count(1))
+
+    def test_m3a1_chassis_is_discovered_not_declared(self) -> None:
+        # Objects/Vehicles/Land/m3a1: the same two-bogies-a-side pattern plus
+        # a genuinely steered +-40 degree front axle (TANK-15), differential
+        # 5 over only 4 gears — the one combination the round's correction
+        # actually changes the answer for.
+        chassis = self.results["m3a1Chassis"]
+        self.assertEqual(16, chassis["wheels"])
+        self.assertEqual(4, chassis["driven"])
+        self.assertEqual(10, chassis["dummy"])
+        self.assertEqual(2, chassis["steered"])
+        self.assertEqual(5, chassis["engine"]["differential"])
+        self.assertEqual(4, chassis["engine"]["numberOfGears"])
+        self.assertAlmostEqual(17.5, chassis["ratio"], places=4)
+        for lock in chassis["steerMax"]:
+            self.assertAlmostEqual(40.0, lock, places=3)
+
+    # --- settling -------------------------------------------------------------
+
+    def test_both_tanks_settle_grounded_and_level(self) -> None:
+        for key in ("shermanSettle", "m3a1Settle"):
+            settle = self.results[key]
+            self.assertTrue(settle["grounded"], key)
+            self.assertLess(abs(settle["speed"]), 0.1, key)
+            # A hull this long carries a visible nose-down or nose-up rake
+            # once its own weight is on only 4 (Sherman) or 4+2 (M3A1)
+            # springs rather than every wheel — loose, since the exact
+            # angle is a function of the free suspensionTravel/strength
+            # split, not itself a claim.
+            self.assertLess(abs(settle["pitch"]), 10.0, key)
+            self.assertLess(abs(settle["roll"]), 2.0, key)
+
+    def test_a_shermans_whole_weight_rests_on_its_four_driven_wheels(self) -> None:
+        # No front axle to share it with, unlike the M3A1 — every one of the
+        # eight dummy rollers is legitimately zero (TANK-14), so the four
+        # real springs must carry exactly g between them, the same
+        # standing-still identity `GroundModelTests` checks for Willy.
+        settle = self.results["shermanSettle"]
+        self.assertAlmostEqual(14.73, settle["totalDrivenLoad"], delta=0.1)
+        for load in settle["drivenLoads"]:
+            self.assertGreater(load, 1.0)
+
+    def test_an_m3a1s_front_axle_shares_the_load_with_its_tracks(self) -> None:
+        # Its own front axle is a genuine spring (`c_PGFRollGrip`, real
+        # strength/damping) rather than furniture, so the rear driven wheels
+        # alone must fall short of the full 14.73 — some of it is on the
+        # front axle instead — but still carry the majority of a nose-heavy
+        # half-track's weight.
+        settle = self.results["m3a1Settle"]
+        self.assertLess(settle["totalDrivenLoad"], 14.73)
+        self.assertGreater(settle["totalDrivenLoad"], 7.0)
+
+    def test_dummy_wheels_carry_no_load_on_either_tank(self) -> None:
+        # TANK-14/6: the shipped data gives every one `setStrength 0`, so the
+        # existing spring formula already prices them at zero.
+        for key in ("shermanSettle", "m3a1Settle"):
+            for load in self.results[key]["dummyLoads"]:
+                self.assertAlmostEqual(0.0, load, places=6, msg=key)
+
+    # --- straight-line driving -------------------------------------------------
+
+    def test_both_tanks_reach_a_tank_scale_not_an_aircraft_scale_top_speed(self) -> None:
+        # The whole reason `TANK.trackResistance` exists rather than trusting
+        # the confirmed thrust law alone (see its own comment in ground.js):
+        # applied unconstrained, the M3A1's corrected ratio asymptotes toward
+        # ~68 m/s, well past anything a viewer should show driving. Loose
+        # bands, since neither figure is a measurement.
+        sherman = self.results["shermanStraight"]
+        m3a1 = self.results["m3a1Straight"]
+        self.assertGreater(sherman["kmh"], 10.0)
+        self.assertLess(sherman["kmh"], 60.0)
+        self.assertGreater(m3a1["kmh"], 20.0)
+        self.assertLess(m3a1["kmh"], 160.0)
+
+    def test_the_corrected_ratio_makes_the_m3a1_visibly_livelier(self) -> None:
+        # 17.5 against the Sherman's 4.0 has to show up as something a
+        # player can feel, not just a number nobody drives through — this is
+        # the one behavioural assertion tying the ratio correction to an
+        # observable outcome beyond the pure-function check above.
+        sherman = self.results["shermanStraight"]
+        m3a1 = self.results["m3a1Straight"]
+        self.assertGreater(m3a1["kmh"], sherman["kmh"] * 1.5)
+
+    def test_it_reaches_an_equilibrium_not_a_wall(self) -> None:
+        for key in ("shermanStraight", "m3a1Straight"):
+            run = self.results[key]
+            self.assertAlmostEqual(run["at10s"], run["along"], delta=max(0.5, abs(run["along"]) * 0.05))
+
+    def test_it_drives_straight_with_the_wheel_centred(self) -> None:
+        for key in ("shermanStraight", "m3a1Straight"):
+            run = self.results[key]
+            self.assertLess(abs(run["heading"] + 1.0), 0.02, key)   # nose down -Z
+
+    # --- turning ----------------------------------------------------------------
+
+    def test_positive_yaw_turns_right_on_both_tanks(self) -> None:
+        # The same convention `GroundModelTests` checks for Willy: positive
+        # c_PIYaw is a negative yaw rate. If this flips it flips for every
+        # differential-steered vehicle at once, not just one tank.
+        for key in ("shermanTurnRight", "m3a1TurnRight"):
+            self.assertLess(self.results[key]["yawRateDeg"], 0.0, key)
+        for key in ("shermanTurnLeft", "m3a1TurnLeft"):
+            self.assertGreater(self.results[key]["yawRateDeg"], 0.0, key)
+
+    def test_the_m3a1s_front_axle_turns_it_tighter_than_the_sherman(self) -> None:
+        # TANK-15: the front axle steers *in addition to* the differential,
+        # independently, off the same c_PIYaw sample — a half-track with one
+        # should out-turn a tank with only the tracks.
+        sherman_rate = abs(self.results["shermanTurnRight"]["yawRateDeg"])
+        m3a1_rate = abs(self.results["m3a1TurnRight"]["yawRateDeg"])
+        self.assertGreater(m3a1_rate, sherman_rate)
+
+    def test_turning_never_flips_either_tank(self) -> None:
+        # The regression this track's own work found: a sustained turn from
+        # a stand-still once rolled the M3A1 onto its roof (`worstUp` goes
+        # negative) before `TANK.angularDamping` was raised to fix it. 0.8,
+        # loose, well short of the roughly-zero a genuine tip-over crosses.
+        for key in ("shermanTurnRight", "shermanTurnLeft", "m3a1TurnRight", "m3a1TurnLeft"):
+            self.assertGreater(self.results[key]["worstUp"], 0.8, key)
+            self.assertTrue(self.results[key]["grounded"], key)
+        for case in self.results["tankStability"]:
+            self.assertGreater(case["worstUp"], 0.8, case)
+
+    def test_turning_never_flips_from_the_vehicles_own_top_speed_either(self) -> None:
+        # The harder of the two rollover cases this track's own work found:
+        # surviving a turn held from a stand-still (the test above) was not
+        # enough to survive the same turn entered from the vehicle's own
+        # straight-line top speed — the M3A1's extra ~10 m/s very nearly
+        # doubles the centripetal load through the identical suspension
+        # formula, and this is the case that actually pinned
+        # `TANK.angularDamping` at 12.0 being not quite enough and 15.0
+        # being comfortably enough.
+        for key in ("shermanHardTurn", "m3a1HardTurn"):
+            case = self.results[key]
+            self.assertGreater(case["worstUp"], 0.8, key)
+            self.assertTrue(case["grounded"], key)
+
+    # --- TANK-17: no pivoting on the spot ---------------------------------------
+
+    def test_it_cannot_pivot_from_a_stand_still_on_yaw_alone(self) -> None:
+        pivot = self.results["tankPivot"]
+        self.assertAlmostEqual(0.0, pivot["yawRate"], places=3)
+        self.assertLess(pivot["speed"], 0.05)
+
+    # --- reverse ------------------------------------------------------------
+
+    def test_negative_throttle_reverses_it(self) -> None:
+        # No separate brake/reverse state machine the way `GroundVehicle`
+        # needs one — TANK-10's own formula is signed throughout, so this is
+        # simply throttle's sign carried straight through.
+        self.assertLess(self.results["tankReverse"]["along"], -1.0)
+
+    # --- reset ----------------------------------------------------------------
+
+    def test_reset_clears_motion_and_the_wheels(self) -> None:
+        reset = self.results["tankReset"]
+        self.assertTrue(reset["everSpun"])   # the test drove it first
+        self.assertEqual([0, 0, 0], reset["velocity"])
+        self.assertEqual([0, 0, 0], reset["angularVelocity"])
+        for angle in reset["anglesAfter"]:
+            self.assertEqual(0, angle)
+
+    # --- the two tracks spin at different rates mid-turn ------------------------
+
+    def test_differential_steering_spins_the_two_sides_at_different_rates(self) -> None:
+        # The entire visible point of this track: the wheel a player watches
+        # spin is driven by TANK-10's own per-side value, not a shared body
+        # speed, so the two sides must visibly disagree during a turn.
+        spin = self.results["tankWheelSpin"]
+        self.assertGreater(max(spin["left"]), max(spin["right"]))
+        # Same side, same rate — one differential per vehicle, not one per
+        # bogie.
+        self.assertAlmostEqual(0.0, spin["leftConsistent"], places=2)
+        self.assertAlmostEqual(0.0, spin["rightConsistent"], places=2)
+
+
 if __name__ == "__main__":
     unittest.main()
